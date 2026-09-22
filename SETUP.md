@@ -37,6 +37,17 @@ Leave `npx convex dev` running. It watches `convex/`, pushes on save, and
 generates `convex/_generated`, which is why the project will not typecheck
 until this has run once.
 
+If the project already exists and you just need the code pushed without a
+browser login, generate a deploy key in the Convex dashboard under Settings,
+then:
+
+```bash
+export CONVEX_DEPLOY_KEY="<key>"
+npx convex deploy
+```
+
+That works headlessly, which matters if an agent is doing the deploying.
+
 ## 3. Local env
 
 ```bash
@@ -93,7 +104,34 @@ what do you know about me
 
 After that, messages from anyone else are dropped without a reply.
 
+## You do not need a tunnel
+
+The reflex from webhook development is to reach for ngrok or a Cloudflare
+tunnel. Perry has no local server to expose. Convex HTTP actions are hosted, so
+`https://<deployment>.convex.site` is already a public HTTPS endpoint on a
+stable domain, which is exactly and only what Telegram requires.
+
+A Cloudflare quick tunnel would be worse than nothing here. The
+`trycloudflare.com` hostname it hands out is ephemeral and dies with the
+process, so Perry would stop receiving messages the moment the tunnel exits,
+and the failure looks like silence rather than an error.
+
+Two cases where a tunnel is the right tool:
+
+- You are running the **self-hosted Convex backend** locally instead of using
+  the cloud deployment. Then there is a real local port to expose.
+- You want Perry on **your own domain** rather than the Convex one. A named
+  tunnel or a Cloudflare Worker proxying to the `.convex.site` origin both
+  work, and the webhook then points at your hostname.
+
+Neither applies to a standard cloud deployment.
+
 ## Troubleshooting
+
+**"This Convex deployment does not have HTTP actions enabled."** Curling
+`/health` returns this when the project exists but `convex/http.ts` has never
+been pushed. The deployment is empty. Run `npx convex dev` or the deploy-key
+command in step 2, then curl again; a healthy deployment answers with JSON.
 
 **No reply at all.** `npm run webhook:info` shows Telegram's view, including
 `last_error_message`. A 403 there means the secret in `.env.local` and the one on
