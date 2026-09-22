@@ -131,11 +131,18 @@ ai                          7.0    AI SDK, tool loop
 zod                         4.6    tool input schemas
 ```
 
-Models are `provider/model` strings, resolved through the Vercel AI Gateway by
-the AI SDK itself. Passing a constructed provider object instead means pinning
-a second copy of `@ai-sdk/provider` and matching its specification version to
-the one the Agent component demands. That is a version-skew argument nobody
-wins, and a string sidesteps it.
+Models are `provider/model` strings, and which gateway resolves them depends on
+what the installer had to sign up for.
+
+With a Vercel AI Gateway key set, the slug is passed straight through and the
+AI SDK resolves it. That sidesteps pinning a second copy of `@ai-sdk/provider`
+and matching its specification version to the one the Agent component demands,
+which is a version-skew argument nobody wins.
+
+Without a key, Convex's own gateway resolves it, so a fresh install can reach a
+model without signing up for anything beyond the deployment it already has.
+Neither gateway marks up token prices, so this is a friction choice, not a cost
+one.
 
 Planned, not installed yet:
 
