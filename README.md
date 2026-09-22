@@ -23,10 +23,13 @@ A mode is a config object with four knobs:
 
 | Knob | Perry | Agent P |
 |---|---|---|
-| Tool allowlist | read and recall only | full, including exec and send |
+| Tool allowlist | `recall`, `remember` | the above plus `forget`, and later exec and send |
 | Step budget | 4 | 40 |
-| Approval policy | never needed | confirm on write and send |
-| Model | small and fast | frontier |
+| Approval policy | never needed | confirm on destructive and outward-facing |
+| Model | Haiku 4.5 | Sonnet 5 |
+
+Those live in `convex/modes.ts`, which is the one file to read to know what
+Perry is allowed to do.
 
 Because a mode is just data, adding more later is a config entry, not a refactor.
 Obvious future ones: a focus mode that suppresses all proactive messages, and a
@@ -70,9 +73,9 @@ Perry inverts each of those choices:
 ## Architecture
 
 ```
-Telegram --> Vercel fn (verify + enqueue) --> Convex mutation
+Telegram --> Convex HTTP action (verify + enqueue) --> ingest mutation
                                                   |
-                                    Convex Workflow (durable steps)
+                                          scheduled action
                                                   |
                                       Convex Agent loop + mode
                                        (AI SDK + AI Gateway)
@@ -83,10 +86,19 @@ Telegram --> Vercel fn (verify + enqueue) --> Convex mutation
                                     reply --> Telegram sendMessage
 ```
 
-The Vercel function does nothing but verify the webhook signature and hand the
-update to Convex, so it returns in milliseconds and never holds the agent loop.
-The loop itself runs as a Convex workflow, which means a deploy, crash or timeout
-resumes from the last completed step instead of losing the turn.
+Ingress verifies the webhook secret, hands the update to a mutation, and returns
+200 in milliseconds. The turn itself is scheduled and runs after that returns,
+which matters because a slow response makes Telegram retry and deliver the same
+message twice.
+
+The original plan put a Vercel function in front of this. It bought nothing: the
+Convex HTTP endpoint is already HTTPS on a stable domain and the handler has to
+reach Convex anyway, so the hop would have added a second shared secret and a
+cold start. Vercel keeps the dashboard and the AI Gateway.
+
+Once turns get long enough to be worth checkpointing, the scheduled action
+becomes a Convex workflow and a crash mid-turn resumes from the last completed
+step instead of losing it.
 
 The active mode is resolved once at the top of the workflow and decides which
 tools get bound, what the step budget is, and which model is used. Nothing
@@ -94,16 +106,29 @@ downstream can widen it mid-turn.
 
 ### Packages
 
+In use today:
+
 ```
-@convex-dev/agent        threads, messages, tool-call history
+convex                     1.46   backend, HTTP actions, scheduler
+@convex-dev/agent          0.7.3  threads, messages, tool-call history
+ai                         7.0    AI SDK, tool loop
+@ai-sdk/gateway            4.0    Vercel AI Gateway
+@convex-dev/ai-sdk-provider 0.2   Convex gateway fallback
+zod                        4.6    tool arg schemas
+```
+
+Planned, not installed yet:
+
+```
 @convex-dev/workflow     durable multi-step execution
-@convex-dev/rag          per-user memory namespaces
-ai                       AI SDK v6 loop (ToolLoopAgent)
+@convex-dev/rag          embeddings for memory, replacing full-text search
 @composio/core           tool router sessions
-@composio/vercel         AI-SDK-shaped tools
 @daytona/sdk             sandboxes  (NOT @daytonaio/sdk, deprecated)
-grammy                   Telegram
 ```
+
+No Telegram library. Perry never polls and never runs a handler loop, so inbound
+is one HTTP action and outbound is one POST. A framework there would be weight
+without leverage.
 
 ## Memory model
 
@@ -149,19 +174,27 @@ waits.
 Model tokens are the only real line item. Defaulting to Perry mode on a small
 model is what keeps that number boring.
 
-## Build order
+## Status
 
-1. Telegram webhook to Convex, echo a reply. Proves ingress and auth.
-2. Agent component with AI Gateway and streaming, no tools. Proves the loop.
-3. Mode config and resolution, with Perry as the only mode. Proves the boundary.
-4. Memory: `remember` and `recall` tools over the RAG component.
-5. Composio tool router session, connect Gmail and Calendar.
-6. Daytona sandbox tools: `exec`, `write_file`, `read_file`.
-7. Agent P mode plus the approval prompt and the mode-switch offer.
-8. Convex Workflow wrapping the loop for durability and retries.
-9. Heartbeat cron plus agent-authored jobs.
-10. Next.js dashboard on Vercel for threads, memories and connections.
-11. Second channel: Discord HTTP interactions.
+Done:
+
+1. Telegram webhook to Convex, owner allowlist, commands. Ingress and auth.
+2. Agent loop on the Agent component through a gateway. The turn.
+3. Both modes, resolved once per turn and enforced by tool binding.
+4. Memory: `recall`, `remember`, `forget` over Convex full-text search.
+
+`SETUP.md` has the fifteen minutes of wiring needed to talk to it.
+
+Next:
+
+5. Daytona sandbox tools: `exec`, `write_file`, `read_file`, Agent P only.
+6. Composio tool router session, connect Gmail and Calendar.
+7. Approval gate for destructive calls, plus the mode-switch offer.
+8. Swap full-text memory for `@convex-dev/rag` embeddings.
+9. Convex Workflow wrapping the turn for durability and retries.
+10. Heartbeat cron plus agent-authored jobs.
+11. Next.js dashboard on Vercel for threads, memories and connections.
+12. Second channel: Discord HTTP interactions.
 
 ## Channel notes
 

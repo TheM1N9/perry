@@ -1,0 +1,84 @@
+import { httpRouter } from "convex/server";
+import { internal } from "./_generated/api";
+import { httpAction } from "./_generated/server";
+import { parseUpdate, type TelegramUpdate } from "./lib/telegram";
+
+/**
+ * Telegram posts straight here.
+ *
+ * The design doc put a Vercel function in front of this. It turned out to buy
+ * nothing: this endpoint is already HTTPS on a stable domain, and the handler
+ * has to reach Convex anyway. A hop in between would add a second shared
+ * secret, a cold start, and one more thing to deploy. Vercel still owns the
+ * dashboard and the AI Gateway.
+ *
+ * Contract with Telegram: answer 200 fast. Anything slow is scheduled and runs
+ * after this returns, because a non-200 means Telegram retries and you get the
+ * same message handled twice.
+ */
+
+const http = httpRouter();
+
+/** Compare in constant time so the secret cannot be guessed a byte at a time. */
+function secretMatches(provided: string | null, expected: string): boolean {
+  if (!provided || provided.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) {
+    diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+http.route({
+  path: "/telegram",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
+    if (!expected) {
+      console.error("TELEGRAM_WEBHOOK_SECRET is not set; refusing all updates");
+      return new Response("not configured", { status: 503 });
+    }
+
+    const provided = request.headers.get("x-telegram-bot-api-secret-token");
+    if (!secretMatches(provided, expected)) {
+      return new Response("forbidden", { status: 403 });
+    }
+
+    let update: TelegramUpdate;
+    try {
+      update = (await request.json()) as TelegramUpdate;
+    } catch {
+      return new Response("bad request", { status: 400 });
+    }
+
+    const inbound = parseUpdate(update);
+
+    // Anything that is not a text message from a human is acknowledged and
+    // ignored. Returning 200 stops Telegram retrying something we will never
+    // handle.
+    if (!inbound) return new Response("ok", { status: 200 });
+
+    await ctx.runMutation(internal.ingest.receive, {
+      chatId: inbound.chatId,
+      senderId: inbound.senderId,
+      text: inbound.text,
+      title: inbound.title,
+    });
+
+    return new Response("ok", { status: 200 });
+  }),
+});
+
+/** Cheap liveness check: curl the .site domain to confirm a deploy landed. */
+http.route({
+  path: "/health",
+  method: "GET",
+  handler: httpAction(async () => {
+    return new Response(JSON.stringify({ ok: true, service: "perry" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }),
+});
+
+export default http;

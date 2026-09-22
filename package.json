@@ -1,0 +1,36 @@
+{
+  "name": "perry",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "convex": "convex dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "webhook:set": "node scripts/telegram-webhook.mjs set",
+    "webhook:info": "node scripts/telegram-webhook.mjs info",
+    "webhook:delete": "node scripts/telegram-webhook.mjs delete"
+  },
+  "dependencies": {
+    "@ai-sdk/gateway": "^4.0.89",
+    "@ai-sdk/provider": "^4.0.0",
+    "@ai-sdk/provider-utils": "^5.0.0",
+    "@convex-dev/agent": "^0.7.3",
+    "@convex-dev/ai-sdk-provider": "^0.2.1",
+    "ai": "^7.0.110",
+    "convex": "^1.46.0",
+    "convex-helpers": "^0.1.103",
+    "next": "^15.5.26",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.0"
+  }
+}
