@@ -4,7 +4,17 @@ A personal AI assistant that lives in your chat app, remembers you, acts on your
 accounts, and runs code in a disposable sandbox. Inspired by OpenClaw, but
 cloud-native and built so the agent never touches a machine you care about.
 
-Single-user by design. This is built for one owner, not for everyone.
+One install, one owner. Anyone can run their own copy, and every copy is
+separate: its own deployment, its own bot, its own keys, its own memory. There
+is no shared server and nothing here phones home.
+
+```bash
+npm install
+npm run setup
+```
+
+Five prompts, then send the pairing code it prints to your bot. See
+[INSTALL.md](INSTALL.md).
 
 ## Modes
 
@@ -65,9 +75,11 @@ Perry inverts each of those choices:
 - **No host shell.** Every command runs inside an ephemeral Daytona sandbox.
 - **No raw credentials in the agent.** Composio holds OAuth tokens per connected
   account; the agent only gets scoped tool handles.
-- **No long-lived exposed daemon.** Ingress is a stateless Vercel function with
-  signature verification. State lives in Convex.
-- **Single tenant.** One owner, allowlisted chat IDs, everything else dropped.
+- **No long-lived exposed daemon.** Ingress is one stateless HTTP action that
+  verifies a webhook secret in constant time. Nothing runs between messages.
+- **One owner, proved by a pairing code.** Not an environment variable and not
+  whoever messages first. Once claimed, every other sender is dropped without a
+  reply.
 - **Least privilege by default.** Perry mode cannot do damage. Agent P is opt-in
   per task, not a standing grant.
 - **Durable, inspectable state.** Every message, tool call and result is a Convex
@@ -112,10 +124,11 @@ downstream can widen it mid-turn.
 In use today:
 
 ```
-convex              1.46   backend, HTTP actions, scheduler
-@convex-dev/agent   0.7.3  threads, messages, tool-call history
-ai                  7.0    AI SDK, tool loop, gateway model resolution
-zod                 4.6    tool input schemas
+convex                      1.46   backend, HTTP actions, scheduler
+@convex-dev/agent           0.7.3  threads, messages, tool-call history
+@convex-dev/ai-sdk-provider 0.2    keyless Convex gateway
+ai                          7.0    AI SDK, tool loop
+zod                         4.6    tool input schemas
 ```
 
 Models are `provider/model` strings, resolved through the Vercel AI Gateway by
@@ -195,7 +208,7 @@ Done:
 7. Dashboard: chat, memory editing, mode config, and a log of every turn with
    its tools, tokens and errors.
 
-`SETUP.md` has the wiring, including the dashboard key.
+[INSTALL.md](INSTALL.md) has the detail. `npm run doctor` checks it.
 
 Next:
 
@@ -209,9 +222,9 @@ Next:
 
 ## Handing Perry to someone else
 
-Perry stays single-owner. Giving it to another person means they run their own
-deployment, and everything they need to change is either an environment
-variable or a field in the dashboard. Nothing routine requires editing code.
+Send them the repo. `npm run setup` builds them a separate deployment with
+separate everything, and nothing routine requires editing code. Your data stays
+on your deployment and is never visible to theirs.
 
 What is not built: multiple people on one deployment. The dashboard key is a
 bearer token for one owner, and memories are a single shared pool with no

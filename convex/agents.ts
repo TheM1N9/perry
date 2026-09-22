@@ -1,5 +1,6 @@
 import { Agent, stepCountIs } from "@convex-dev/agent";
 import { components } from "./_generated/api";
+import { languageModel } from "./lib/models";
 import type { Mode } from "./modes";
 import { ALL_TOOLS } from "./tools";
 
@@ -29,7 +30,7 @@ function toolsFor(mode: Mode) {
 function buildAgent(mode: Mode) {
   return new Agent(components.agent, {
     name: mode.label,
-    languageModel: mode.model,
+    languageModel: languageModel(mode.model),
     instructions: mode.instructions,
     tools: toolsFor(mode),
     stopWhen: stepCountIs(mode.stepBudget),

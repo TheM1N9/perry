@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { Activity } from "./components/Activity";
@@ -16,6 +16,7 @@ const TABS = [
   { id: "memory", label: "Memory" },
   { id: "settings", label: "Settings" },
   { id: "activity", label: "Activity" },
+  { id: "setup", label: "Setup" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -31,13 +32,73 @@ function StatusLine({ dashboardKey }: { dashboardKey: string }) {
       {status.conversations.length} conversation
       {status.conversations.length === 1 ? "" : "s"}
       {" · "}
-      <span className={status.telegramClaimed ? undefined : "bad"}>
-        telegram {status.telegramClaimed ? "claimed" : "unclaimed"}
+      <span className={status.claimed ? undefined : "bad"}>
+        {status.claimed
+          ? `paired${status.ownerName ? ` with ${status.ownerName}` : ""}`
+          : "unpaired"}
       </span>
       {" · "}
-      <span className={status.gatewayConfigured ? undefined : "bad"}>
-        gateway {status.gatewayConfigured ? "ready" : "missing key"}
-      </span>
+      {status.gateway} gateway
+    </div>
+  );
+}
+
+/**
+ * Shown until someone claims this install. Perry answers nobody before that,
+ * so this is the only thing worth looking at on a fresh deployment.
+ */
+function Pairing({ dashboardKey }: { dashboardKey: string }) {
+  const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
+  const startPairing = useMutation(api.dashboard.startPairing);
+  const unclaim = useMutation(api.dashboard.unclaim);
+
+  if (!status) return null;
+
+  if (status.claimed) {
+    return (
+      <div className="panel">
+        <h3>Paired</h3>
+        <p className="hint">
+          This Perry belongs to{" "}
+          {status.ownerName ? <strong>{status.ownerName}</strong> : "you"}. Every
+          other sender is ignored.
+        </p>
+        <button className="ghost danger" onClick={() => void unclaim({ key: dashboardKey })}>
+          Unpair
+        </button>
+      </div>
+    );
+  }
+
+  const expired =
+    status.pairingExpiresAt !== undefined && Date.now() > status.pairingExpiresAt;
+
+  return (
+    <div className="panel">
+      <h3>Not paired yet</h3>
+      <p className="hint">
+        Message your bot with this code to claim Perry. Whoever sends it first
+        owns this install.
+      </p>
+      {status.pairingCode && !expired ? (
+        <div
+          style={{
+            fontSize: 32,
+            letterSpacing: "0.3em",
+            color: "var(--accent)",
+            padding: "12px 0 18px",
+          }}
+        >
+          {status.pairingCode}
+        </div>
+      ) : (
+        <p className="hint">
+          {expired ? "That code expired." : "No code yet."}
+        </p>
+      )}
+      <button className="primary" onClick={() => void startPairing({ key: dashboardKey })}>
+        {status.pairingCode && !expired ? "New code" : "Generate code"}
+      </button>
     </div>
   );
 }
@@ -49,14 +110,14 @@ function Gate({ onSubmit }: { onSubmit: (key: string) => void }) {
     <div className="gate">
       <h1 className="title">Perry</h1>
       <p className="hint" style={{ marginTop: 8 }}>
-        This dashboard is behind a single key, held on the deployment as
-        DASHBOARD_KEY. Set one if you have not:
+        This install is yours alone, and the dashboard is behind one key.
+        <code> npm run setup </code> prints it, and it is saved in .env.local.
       </p>
       <pre
         className="panel"
         style={{ fontSize: 12, color: "var(--dim)", margin: "0 0 16px" }}
       >
-        npx convex env set DASHBOARD_KEY &lt;long random string&gt;
+        npm run setup
       </pre>
       <div className="composer">
         <input
@@ -80,10 +141,57 @@ function Gate({ onSubmit }: { onSubmit: (key: string) => void }) {
   );
 }
 
+/** Lands on Setup when nobody has claimed this install yet. */
+function Shell({
+  dashboardKey,
+  onLock,
+}: {
+  dashboardKey: string;
+  onLock: () => void;
+}) {
+  const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
+  const [tab, setTab] = useState<TabId | null>(null);
+
+  useEffect(() => {
+    if (status && tab === null) setTab(status.claimed ? "chat" : "setup");
+  }, [status, tab]);
+
+  const active = tab ?? "chat";
+
+  return (
+    <div className="shell">
+      <div className="topbar">
+        <h1 className="title">Perry</h1>
+        <button className="ghost" onClick={onLock}>
+          Lock
+        </button>
+      </div>
+      <StatusLine dashboardKey={dashboardKey} />
+
+      <div className="tabs">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            className={t.id === active ? "tab active" : "tab"}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {active === "chat" && <Chat dashboardKey={dashboardKey} />}
+      {active === "memory" && <Memories dashboardKey={dashboardKey} />}
+      {active === "settings" && <Settings dashboardKey={dashboardKey} />}
+      {active === "activity" && <Activity dashboardKey={dashboardKey} />}
+      {active === "setup" && <Pairing dashboardKey={dashboardKey} />}
+    </div>
+  );
+}
+
 export default function Home() {
   const [dashboardKey, setDashboardKey] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [tab, setTab] = useState<TabId>("chat");
 
   // localStorage is only available after mount, so the first paint is blank
   // rather than briefly wrong.
@@ -107,32 +215,7 @@ export default function Home() {
 
   return (
     <ErrorBoundary onReset={forget}>
-      <div className="shell">
-        <div className="topbar">
-          <h1 className="title">Perry</h1>
-          <button className="ghost" onClick={forget}>
-            Lock
-          </button>
-        </div>
-        <StatusLine dashboardKey={dashboardKey} />
-
-        <div className="tabs">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              className={t.id === tab ? "tab active" : "tab"}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {tab === "chat" && <Chat dashboardKey={dashboardKey} />}
-        {tab === "memory" && <Memories dashboardKey={dashboardKey} />}
-        {tab === "settings" && <Settings dashboardKey={dashboardKey} />}
-        {tab === "activity" && <Activity dashboardKey={dashboardKey} />}
-      </div>
+      <Shell dashboardKey={dashboardKey} onLock={forget} />
     </ErrorBoundary>
   );
 }

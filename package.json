@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "pair": "node scripts/pair.mjs",
     "dev": "next dev",
     "convex": "convex dev",
     "build": "next build",
@@ -17,6 +20,7 @@
     "@ai-sdk/provider": "^4.0.0",
     "@ai-sdk/provider-utils": "^5.0.0",
     "@convex-dev/agent": "^0.7.3",
+    "@convex-dev/ai-sdk-provider": "^0.2.1",
     "ai": "^7.0.110",
     "convex": "^1.46.0",
     "convex-helpers": "^0.1.103",

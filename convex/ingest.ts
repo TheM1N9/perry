@@ -1,20 +1,25 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
+import type { ClaimResult } from "./installation";
 
 /**
  * The front door for Telegram. Runs as a mutation so the HTTP action can return
  * 200 immediately; the actual turn is scheduled and runs on its own.
  *
- * This is also where authorisation happens, once, before anything else.
+ * Authorisation happens here, once, before anything else. Perry belongs to
+ * exactly one person and that is decided by the pairing code, not by an
+ * environment variable and not by whoever messages first.
  */
 
-function allowedChatIds(): string[] {
-  return (process.env.TELEGRAM_OWNER_CHAT_ID ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
+const CLAIMED = `
+Paired. I'm yours now.
+
+Try:
+  remember that I drink coffee black
+  what do you know about me
+  /help for the rest
+`.trim();
 
 export const receive = internalMutation({
   args: {
@@ -25,29 +30,51 @@ export const receive = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const allowed = allowedChatIds();
+    const result: ClaimResult = await ctx.runMutation(
+      internal.installation.authorize,
+      {
+        channel: "telegram",
+        externalId: args.chatId,
+        name: args.title,
+        text: args.text,
+      },
+    );
 
-    // First-run convenience: with no owner configured, Perry will not think,
-    // will not call a model, and will not remember. It only tells you the id
-    // you need in order to claim it.
-    if (allowed.length === 0) {
+    const reply = async (text: string) => {
       await ctx.scheduler.runAfter(0, internal.brain.sendDirect, {
         chatId: args.chatId,
-        text:
-          `Not claimed yet. Your chat id is ${args.chatId}\n\n` +
-          `Run this, then message me again:\n` +
-          `npx convex env set TELEGRAM_OWNER_CHAT_ID ${args.chatId}`,
+        text,
       });
-      return null;
-    }
+    };
 
-    // Not the owner. Drop it on the floor without replying: a silent bot gives
-    // a stranger nothing to work with.
-    if (!allowed.includes(args.chatId) || !allowed.includes(args.senderId)) {
-      console.warn(
-        `dropped message from unauthorized chat=${args.chatId} sender=${args.senderId}`,
-      );
-      return null;
+    switch (result.outcome) {
+      case "already-owner":
+        break;
+
+      case "claimed":
+        await reply(CLAIMED);
+        return null;
+
+      case "needs-code":
+        await reply(
+          "Send me the six digit pairing code from your terminal.\n" +
+            "Lost it? Run: npm run pair",
+        );
+        return null;
+
+      case "bad-code":
+        await reply("That code is wrong.");
+        return null;
+
+      case "expired":
+        await reply("That code expired. Run `npm run pair` for a fresh one.");
+        return null;
+
+      case "not-owner":
+        // Someone else's message. Drop it without replying: a silent bot gives
+        // a stranger nothing to work with, and this one is already claimed.
+        console.warn(`dropped message from non-owner chat=${args.chatId}`);
+        return null;
     }
 
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {

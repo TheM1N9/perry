@@ -11,6 +11,25 @@ export const vMode = v.union(v.literal("perry"), v.literal("agentP"));
  */
 export default defineSchema({
   /**
+   * Exactly one row, describing this install and who owns it.
+   *
+   * The owner used to be an environment variable, which meant claiming your own
+   * Perry took a trip back to a terminal. It lives here instead so the whole
+   * flow is: run setup, send the code to your bot, done. One install, one
+   * owner, and the owner is whoever answered the code first.
+   */
+  installation: defineTable({
+    ownerChannel: v.optional(vChannel),
+    ownerExternalId: v.optional(v.string()),
+    ownerName: v.optional(v.string()),
+    /** Cleared the moment it is used. Null once claimed. */
+    pairingCode: v.optional(v.string()),
+    pairingExpiresAt: v.optional(v.number()),
+    claimedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  }),
+
+  /**
    * One row per chat Perry talks in. Holds the durable mode and the id of the
    * Agent component thread that carries the message history.
    */

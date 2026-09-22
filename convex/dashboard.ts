@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import { action, mutation, query } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
+import { activeGateway } from "./lib/models";
 import { MODE_NAMES, TOOL_NAMES, type Mode } from "./modes";
 import { vMode } from "./schema";
 
@@ -91,8 +92,22 @@ export const listModels = action({
     assertDashboardKey(args.key);
 
     const apiKey = process.env.AI_GATEWAY_API_KEY;
+
+    // On the Convex gateway there is no model index to query, so offer a short
+    // hand-kept list. The field is free text either way, so a wrong guess here
+    // costs nothing.
     if (!apiKey) {
-      return { models: [], error: "AI_GATEWAY_API_KEY is not set." };
+      return {
+        models: [
+          "anthropic/claude-haiku-4.5",
+          "anthropic/claude-sonnet-5",
+          "anthropic/claude-opus-5",
+          "openai/gpt-5-mini",
+          "openai/gpt-5",
+          "google/gemini-2.5-flash",
+          "google/gemini-2.5-pro",
+        ],
+      };
     }
 
     try {
@@ -278,14 +293,19 @@ export const getStatus = query({
   ): Promise<{
     memories: number;
     conversations: Array<{ channel: string; mode: string; lastMessageAt: number }>;
-    telegramClaimed: boolean;
-    gatewayConfigured: boolean;
+    claimed: boolean;
+    ownerName?: string;
+    pairingCode?: string;
+    pairingExpiresAt?: number;
+    gateway: "vercel" | "convex";
+    telegramConfigured: boolean;
     modeNames: string[];
   }> => {
     assertDashboardKey(args.key);
 
     const memories: number = await ctx.runQuery(internal.memories.count, {});
     const conversations = await ctx.runQuery(internal.conversations.list, {});
+    const install = await ctx.runQuery(internal.installation.status, {});
 
     return {
       memories,
@@ -294,9 +314,34 @@ export const getStatus = query({
         mode: c.mode,
         lastMessageAt: c.lastMessageAt,
       })),
-      telegramClaimed: Boolean(process.env.TELEGRAM_OWNER_CHAT_ID),
-      gatewayConfigured: Boolean(process.env.AI_GATEWAY_API_KEY),
+      claimed: install.claimed,
+      ownerName: install.ownerName,
+      pairingCode: install.pairingCode,
+      pairingExpiresAt: install.pairingExpiresAt,
+      gateway: activeGateway(),
+      telegramConfigured: Boolean(process.env.TELEGRAM_BOT_TOKEN),
       modeNames: [...MODE_NAMES],
     };
+  },
+});
+
+/** Mint a fresh pairing code, for a first claim or to move Perry to a new chat. */
+export const startPairing = mutation({
+  args: { key: vKey },
+  returns: v.object({ code: v.string(), expiresAt: v.number() }),
+  handler: async (ctx, args): Promise<{ code: string; expiresAt: number }> => {
+    assertDashboardKey(args.key);
+    return await ctx.runMutation(internal.installation.startPairing, {});
+  },
+});
+
+/** Release ownership. The next correct pairing code claims Perry again. */
+export const unclaim = mutation({
+  args: { key: vKey },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.installation.unclaim, {});
+    return null;
   },
 });

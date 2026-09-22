@@ -1,0 +1,173 @@
+import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
+import { internalMutation, internalQuery } from "./_generated/server";
+import { vChannel } from "./schema";
+
+/**
+ * Who owns this install, and how they proved it.
+ *
+ * Perry is one person's assistant. Not one person per row in a users table, one
+ * person per deployment: you install it, it is yours, and nobody else's data is
+ * anywhere near it. This file is the whole of that idea.
+ *
+ * Claiming works with a pairing code rather than first-message-wins, because a
+ * bot username is guessable and the window between registering the webhook and
+ * sending your first message is not zero.
+ */
+
+const PAIRING_TTL_MS = 60 * 60 * 1000; // an hour, same as OpenClaw
+
+/** Digits only, no ambiguity when read off a terminal and typed into a phone. */
+function newPairingCode(): string {
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += Math.floor(Math.random() * 10).toString();
+  }
+  return code;
+}
+
+async function read(ctx: {
+  db: { query: (t: "installation") => { unique: () => Promise<Doc<"installation"> | null> } };
+}): Promise<Doc<"installation"> | null> {
+  return await ctx.db.query("installation").unique();
+}
+
+export const get = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<Doc<"installation"> | null> => {
+    return await read(ctx);
+  },
+});
+
+/** Public-facing view. Never leaks the code once claimed. */
+export const status = internalQuery({
+  args: {},
+  handler: async (
+    ctx,
+  ): Promise<{
+    claimed: boolean;
+    ownerChannel?: string;
+    ownerName?: string;
+    pairingCode?: string;
+    pairingExpiresAt?: number;
+  }> => {
+    const install = await read(ctx);
+    if (!install) return { claimed: false };
+
+    const claimed = Boolean(install.claimedAt);
+    return {
+      claimed,
+      ownerChannel: install.ownerChannel,
+      ownerName: install.ownerName,
+      pairingCode: claimed ? undefined : install.pairingCode,
+      pairingExpiresAt: claimed ? undefined : install.pairingExpiresAt,
+    };
+  },
+});
+
+/**
+ * Mint a fresh pairing code. Called by setup, and by the dashboard when the
+ * code has expired or the owner wants to move Perry to a different chat.
+ */
+export const startPairing = internalMutation({
+  args: {},
+  returns: v.object({ code: v.string(), expiresAt: v.number() }),
+  handler: async (ctx) => {
+    const code = newPairingCode();
+    const expiresAt = Date.now() + PAIRING_TTL_MS;
+    const existing = await read(ctx);
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        pairingCode: code,
+        pairingExpiresAt: expiresAt,
+      });
+    } else {
+      await ctx.db.insert("installation", {
+        pairingCode: code,
+        pairingExpiresAt: expiresAt,
+        createdAt: Date.now(),
+      });
+    }
+
+    return { code, expiresAt };
+  },
+});
+
+export type ClaimResult =
+  | { outcome: "claimed"; }
+  | { outcome: "already-owner" }
+  | { outcome: "not-owner" }
+  | { outcome: "bad-code" }
+  | { outcome: "expired" }
+  | { outcome: "needs-code" };
+
+/**
+ * Decide what to do with an inbound message from `externalId`.
+ *
+ * Returns "claimed" when this message just took ownership, "already-owner" for
+ * the normal case, and everything else means do not process the message.
+ */
+export const authorize = internalMutation({
+  args: {
+    channel: vChannel,
+    externalId: v.string(),
+    name: v.optional(v.string()),
+    text: v.string(),
+  },
+  handler: async (ctx, args): Promise<ClaimResult> => {
+    const install = await read(ctx);
+
+    // No install row at all means setup never ran. Refuse rather than let the
+    // first stranger through.
+    if (!install) return { outcome: "needs-code" };
+
+    if (install.claimedAt) {
+      const isOwner =
+        install.ownerChannel === args.channel &&
+        install.ownerExternalId === args.externalId;
+      return isOwner ? { outcome: "already-owner" } : { outcome: "not-owner" };
+    }
+
+    // Unclaimed. Look for the pairing code anywhere in the message, so both
+    // "123456" and "/claim 123456" work.
+    const supplied = args.text.match(/\b(\d{6})\b/)?.[1];
+    if (!supplied) return { outcome: "needs-code" };
+
+    if (!install.pairingCode || supplied !== install.pairingCode) {
+      return { outcome: "bad-code" };
+    }
+    if (install.pairingExpiresAt && Date.now() > install.pairingExpiresAt) {
+      return { outcome: "expired" };
+    }
+
+    await ctx.db.patch(install._id, {
+      ownerChannel: args.channel,
+      ownerExternalId: args.externalId,
+      ownerName: args.name,
+      claimedAt: Date.now(),
+      pairingCode: undefined,
+      pairingExpiresAt: undefined,
+    });
+
+    return { outcome: "claimed" };
+  },
+});
+
+/** Hand Perry to a different chat, or to a different person entirely. */
+export const unclaim = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const install = await read(ctx);
+    if (!install) return null;
+
+    await ctx.db.patch(install._id, {
+      ownerChannel: undefined,
+      ownerExternalId: undefined,
+      ownerName: undefined,
+      claimedAt: undefined,
+    });
+    return null;
+  },
+});
