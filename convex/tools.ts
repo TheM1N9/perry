@@ -126,6 +126,92 @@ const read_page = createTool({
   },
 });
 
+// --- Connected accounts --------------------------------------------------
+
+type Connector = {
+  slug: string;
+  name: string;
+  connected: boolean;
+  status?: string;
+  needsAuth: boolean;
+};
+
+const list_connectors = createTool({
+  description:
+    "List the accounts the owner has connected: Gmail, Google Calendar, " +
+    "Notion, GitHub and so on. Check this before saying you cannot do " +
+    "something, and before asking the owner to connect something they may " +
+    "already have connected.",
+  inputSchema: z.object({}),
+  execute: async (
+    ctx,
+  ): Promise<{ configured: boolean; connectors: Connector[]; error?: string }> => {
+    return await ctx.runAction(internal.composio.connectors, {});
+  },
+});
+
+const find_action = createTool({
+  description:
+    "Find the exact operation to use on a connected account, by describing " +
+    "what you want to do. Always call this before run_action: the available " +
+    "operations depend on what the owner has connected right now, so a " +
+    "remembered or guessed name will be wrong. Returns action slugs with the " +
+    "arguments each one takes.",
+  inputSchema: z.object({
+    query: z
+      .string()
+      .min(2)
+      .max(300)
+      .describe("What you want to do, e.g. 'create a calendar event'."),
+    toolkits: z
+      .array(z.string())
+      .optional()
+      .describe("Narrow to these, e.g. ['googlecalendar']."),
+  }),
+  execute: async (
+    ctx,
+    input,
+  ): Promise<{
+    actions: Array<{
+      slug: string;
+      description?: string;
+      toolkit?: string;
+      inputSchema?: unknown;
+    }>;
+    error?: string;
+  }> => {
+    return await ctx.runAction(internal.composio.search, {
+      query: input.query,
+      toolkits: input.toolkits,
+    });
+  },
+});
+
+const run_action = createTool({
+  description:
+    "Run one operation on a connected account, using a slug from find_action " +
+    "and the arguments its schema asks for. This reaches the owner's real " +
+    "accounts: it sends real email, creates real calendar events, and edits " +
+    "real documents. Anything that sends, deletes, publishes or spends needs " +
+    "the owner's explicit go-ahead in chat first. Reading does not.",
+  inputSchema: z.object({
+    slug: z.string().min(1).describe("Exact action slug from find_action."),
+    args: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe("Arguments matching that action's input schema."),
+  }),
+  execute: async (
+    ctx,
+    input,
+  ): Promise<{ ok: boolean; data?: unknown; error?: string }> => {
+    return await ctx.runAction(internal.composio.execute, {
+      slug: input.slug,
+      args: input.args ?? {},
+    });
+  },
+});
+
 // --- The computer --------------------------------------------------------
 
 const computer_status = createTool({
@@ -432,6 +518,9 @@ export const ALL_TOOLS = {
   remember,
   forget,
   read_page,
+  list_connectors,
+  find_action,
+  run_action,
   computer_status,
   run_command,
   read_file,

@@ -21,9 +21,10 @@ asks for what is missing.
 2. **Telegram bot.** Message [@BotFather](https://t.me/BotFather), send
    `/newbot`, answer two questions, paste the token back. The wizard checks it
    against Telegram before continuing.
-3. **Model access.** Press enter to use Convex's own AI gateway, which needs no
-   extra signup. If you already have a Vercel AI Gateway key, paste it instead.
-   Neither marks up token prices.
+3. **Model access.** Paste a Vercel AI Gateway key, from the AI tab at
+   vercel.com. It routes to Anthropic, OpenAI and others at list price with no
+   markup. Leaving it blank falls back to Convex's own gateway, which needs no
+   key but is only enabled on paid Convex plans.
 4. **Secrets and deploy.** Generates a webhook secret and a dashboard key,
    writes them to a gitignored `.env.local`, sets them on your deployment,
    pushes the code, and registers the webhook.

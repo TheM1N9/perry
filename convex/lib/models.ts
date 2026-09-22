@@ -10,11 +10,11 @@ import { convexGateway } from "@convex-dev/ai-sdk-provider";
  *                       second copy of @ai-sdk/provider and matching its
  *                       specification version to the Agent component's.
  *
- *   Convex AI Gateway   the default. Needs no key beyond the Convex deployment
- *                       Perry already runs on, so a fresh install can talk to a
- *                       model without signing up for anything else.
+ *   Convex AI Gateway   the fallback, used when that key is absent. It needs
+ *                       no key of its own, but it is only enabled on paid
+ *                       Convex plans, so it is not a free-tier escape hatch.
  *
- * Neither marks up token prices, so this is a friction choice, not a cost one.
+ * Neither marks up token prices. Most installs will want the Vercel key.
  */
 export function languageModel(slug: string) {
   return process.env.AI_GATEWAY_API_KEY ? slug : convexGateway(slug);

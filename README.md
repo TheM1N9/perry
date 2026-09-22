@@ -62,14 +62,23 @@ computer, durable work and read-only sources is the right one.
 | `read_file` `write_file` `list_files` | /workspace, 256 KB per file, persists between commands. |
 | `computer_status` | Whether a sandbox exists and is running. |
 | `read_page` | Fetch a public page as text. No JavaScript, no login. |
+| `list_connectors` | Which accounts the owner has linked through Composio. |
+| `find_action` `run_action` | Look up and run an operation on a linked account. |
 | `start_task` `set_plan` `finish_task` | Open a job, keep a checklist current, close it with a result. |
 | `status_report` | Read back current tasks, goals and watches. |
 | `set_goal` | An outcome with milestones. |
 | `watch_page` | Recurring check: changed, contains text, or price below a number. |
 | `recall` `remember` `forget` | Long-term memory. |
 
-Perry mode gets four of these: `recall`, `remember`, `read_page` and
-`status_report`. Nothing in that set can change anything outside memory.
+Perry mode gets five: `recall`, `remember`, `read_page`, `status_report` and
+`list_connectors`. It can see which accounts are linked but cannot use them,
+and nothing in that set changes anything outside memory.
+
+Connected accounts are looked up at the moment of use, never baked in. Link
+Google Calendar in the dashboard and the next turn can create events, with no
+redeploy and no code change. Unlink it and the ability disappears the same way.
+Perry never holds a token: Composio keeps the OAuth and this deployment holds
+one key that can act only on accounts you linked.
 
 Three rules carried over from OpenMuse, because the reasoning holds:
 
@@ -99,7 +108,8 @@ tab shows what it actually wrote down.
 | Brain and state | Convex | Threads, messages, memory, durable workflows, crons |
 | Edge and ingress | Vercel | Channel webhooks, dashboard, AI Gateway |
 | Hands | Composio | Gmail, Calendar, Notion, GitHub, Linear via OAuth |
-| Sandbox | Daytona | Shell, code exec, browser, file work |
+| Sandbox | Daytona | Shell, code exec, file work |
+| Your machine | A runner you start | The same, on your own files |
 | Channel | Telegram first | Discord and Slack next |
 
 ## Why this shape
@@ -180,10 +190,9 @@ AI SDK resolves it. That sidesteps pinning a second copy of `@ai-sdk/provider`
 and matching its specification version to the one the Agent component demands,
 which is a version-skew argument nobody wins.
 
-Without a key, Convex's own gateway resolves it, so a fresh install can reach a
-model without signing up for anything beyond the deployment it already has.
-Neither gateway marks up token prices, so this is a friction choice, not a cost
-one.
+Without a key, Convex's own gateway resolves it instead. That one needs no key
+but is only enabled on paid Convex plans, so it is a fallback rather than a
+free-tier escape hatch. Neither gateway marks up token prices.
 
 Planned, not installed yet:
 
@@ -265,8 +274,13 @@ Done:
 
 Next:
 
-12. Composio tool router, for Gmail and Calendar. Needs a Composio key.
-13. Approval gate: propose, expire, decide, before anything destructive.
+12. Composio tool router: linked accounts become tools without a redeploy.
+13. Run commands on your own machine instead of the sandbox, through a
+    runner that dials out and never listens on a port.
+
+Next:
+
+14. Approval gate: propose, expire, decide, before anything destructive.
 14. A real browser with persistent profiles, for pages that need JavaScript.
 15. Swap full-text memory for `@convex-dev/rag` embeddings.
 16. Convex Workflow wrapping the turn for durability and retries.

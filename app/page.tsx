@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Activity } from "./components/Activity";
 import { Chat } from "./components/Chat";
 import { Computer } from "./components/Computer";
+import { Connectors } from "./components/Connectors";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Memories } from "./components/Memories";
 import { Settings } from "./components/Settings";
@@ -17,6 +18,7 @@ const TABS = [
   { id: "chat", label: "Chat" },
   { id: "work", label: "Work" },
   { id: "computer", label: "Computer" },
+  { id: "connectors", label: "Connectors" },
   { id: "memory", label: "Memory" },
   { id: "settings", label: "Settings" },
   { id: "activity", label: "Activity" },
@@ -187,6 +189,7 @@ function Shell({
       {active === "chat" && <Chat dashboardKey={dashboardKey} />}
       {active === "work" && <Work dashboardKey={dashboardKey} />}
       {active === "computer" && <Computer dashboardKey={dashboardKey} />}
+      {active === "connectors" && <Connectors dashboardKey={dashboardKey} />}
       {active === "memory" && <Memories dashboardKey={dashboardKey} />}
       {active === "settings" && <Settings dashboardKey={dashboardKey} />}
       {active === "activity" && <Activity dashboardKey={dashboardKey} />}

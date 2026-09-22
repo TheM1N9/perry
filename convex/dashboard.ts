@@ -519,3 +519,63 @@ export const revokeRunner = mutation({
     return null;
   },
 });
+
+// --- Connected accounts --------------------------------------------------
+
+export const getConnectors = action({
+  args: { key: vKey },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    configured: boolean;
+    connectors: Array<{
+      slug: string;
+      name: string;
+      connected: boolean;
+      status?: string;
+      needsAuth: boolean;
+    }>;
+    error?: string;
+  }> => {
+    assertDashboardKey(args.key);
+    return await ctx.runAction(internal.composio.connectors, {});
+  },
+});
+
+/** Returns a URL for the owner to open and finish OAuth in their browser. */
+export const connectToolkit = action({
+  args: { key: vKey, toolkit: v.string() },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ redirectUrl?: string; status?: string; error?: string }> => {
+    assertDashboardKey(args.key);
+    return await ctx.runAction(internal.composio.authorize, {
+      toolkit: args.toolkit,
+    });
+  },
+});
+
+/** Lets the owner see exactly which operations a connection exposes. */
+export const searchActions = action({
+  args: { key: vKey, query: v.string(), toolkits: v.optional(v.array(v.string())) },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    actions: Array<{
+      slug: string;
+      description?: string;
+      toolkit?: string;
+      inputSchema?: unknown;
+    }>;
+    error?: string;
+  }> => {
+    assertDashboardKey(args.key);
+    return await ctx.runAction(internal.composio.search, {
+      query: args.query,
+      toolkits: args.toolkits,
+    });
+  },
+});
