@@ -10,6 +10,7 @@
 
 import type * as agents from "../agents.js";
 import type * as brain from "../brain.js";
+import type * as compute from "../compute.js";
 import type * as config from "../config.js";
 import type * as conversations from "../conversations.js";
 import type * as crons from "../crons.js";
@@ -23,6 +24,7 @@ import type * as lib_telegram from "../lib/telegram.js";
 import type * as memories from "../memories.js";
 import type * as modes from "../modes.js";
 import type * as notify from "../notify.js";
+import type * as runner from "../runner.js";
 import type * as runs from "../runs.js";
 import type * as sandbox from "../sandbox.js";
 import type * as tools from "../tools.js";
@@ -38,6 +40,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   agents: typeof agents;
   brain: typeof brain;
+  compute: typeof compute;
   config: typeof config;
   conversations: typeof conversations;
   crons: typeof crons;
@@ -51,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   memories: typeof memories;
   modes: typeof modes;
   notify: typeof notify;
+  runner: typeof runner;
   runs: typeof runs;
   sandbox: typeof sandbox;
   tools: typeof tools;

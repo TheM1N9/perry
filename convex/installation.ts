@@ -174,6 +174,17 @@ export const setSandboxId = internalMutation({
   },
 });
 
+export const setComputeTarget = internalMutation({
+  args: { target: v.union(v.literal("sandbox"), v.literal("local")) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const install = await read(ctx);
+    if (!install) return null;
+    await ctx.db.patch(install._id, { computeTarget: args.target });
+    return null;
+  },
+});
+
 /** Hand Perry to a different chat, or to a different person entirely. */
 export const unclaim = internalMutation({
   args: {},

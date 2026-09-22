@@ -1,0 +1,126 @@
+#!/usr/bin/env node
+/**
+ * `npm run connect` — let Agent P work on this machine.
+ *
+ * Mints a runner token, points the install at local compute, writes the config
+ * to ~/.perry/runner.json, and starts the runner.
+ *
+ * To connect a second machine, run this on the first one with --token-only,
+ * then on the other machine run the runner with the url and token it printed.
+ */
+
+import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { hostname } from "node:os";
+import { resolve } from "node:path";
+
+const CONVEX_CLI = resolve(process.cwd(), "node_modules/convex/bin/main.js");
+const ENV_FILE = resolve(process.cwd(), ".env.local");
+
+const dim = (s) => `\x1b[2m${s}\x1b[0m`;
+const bold = (s) => `\x1b[1m${s}\x1b[0m`;
+const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
+const red = (s) => `\x1b[31m${s}\x1b[0m`;
+
+function readEnvFile() {
+  const values = {};
+  if (!existsSync(ENV_FILE)) return values;
+  for (const line of readFileSync(ENV_FILE, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    values[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+  }
+  return values;
+}
+
+function runConvex(args) {
+  return new Promise((resolvePromise) => {
+    const child = spawn(process.execPath, [CONVEX_CLI, ...args], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let out = "";
+    child.stdout.on("data", (d) => (out += d));
+    child.stderr.on("data", (d) => (out += d));
+    child.on("close", (code) => resolvePromise({ code, output: out }));
+  });
+}
+
+const args = process.argv.slice(2);
+const tokenOnly = args.includes("--token-only");
+const auto = args.includes("--auto");
+const dirFlag = args.indexOf("--dir");
+const dir = dirFlag !== -1 ? args[dirFlag + 1] : undefined;
+
+const env = readEnvFile();
+const url = env.NEXT_PUBLIC_CONVEX_URL;
+
+if (!url) {
+  console.error(
+    `\n${red("No Convex URL in .env.local.")} Run ${bold("npm run setup")} first.\n`,
+  );
+  process.exit(1);
+}
+
+const token = randomBytes(32).toString("base64url");
+const name = hostname();
+
+const created = await runConvex([
+  "run",
+  "runner:createToken",
+  JSON.stringify({ name, token }),
+]);
+
+if (created.code !== 0) {
+  console.error(`\n${red("Could not create a runner token.")}\n`);
+  console.error(dim(created.output.split("\n").slice(-6).join("\n")));
+  process.exit(1);
+}
+
+// Point this install's commands at a real machine instead of the cloud box.
+const pointed = await runConvex([
+  "run",
+  "installation:setComputeTarget",
+  JSON.stringify({ target: "local" }),
+]);
+if (pointed.code !== 0) {
+  console.error(yellow("  Could not switch the compute target; do it in Settings."));
+}
+
+if (tokenOnly) {
+  console.log(`\n${bold("Runner credentials")}\n`);
+  console.log(`  url    ${url}`);
+  console.log(`  token  ${token}`);
+  console.log(
+    dim(
+      `\n  On the other machine, in a clone of this repo:\n` +
+        `    npm install\n` +
+        `    node runner/index.mjs --url ${url} --token ${token} --dir <folder>\n`,
+    ),
+  );
+  process.exit(0);
+}
+
+console.log(`\n${bold("Connecting this machine")}`);
+console.log(dim("  Agent P's commands will run here instead of the cloud sandbox."));
+console.log(
+  dim(
+    "  Nothing listens on a port: the runner dials out and holds the\n" +
+      "  connection, so this machine stays invisible from the internet.\n",
+  ),
+);
+
+const runnerArgs = [
+  resolve(process.cwd(), "runner/index.mjs"),
+  "--url",
+  url,
+  "--token",
+  token,
+];
+if (dir) runnerArgs.push("--dir", dir);
+if (auto) runnerArgs.push("--auto");
+
+const runner = spawn(process.execPath, runnerArgs, { stdio: "inherit" });
+runner.on("close", (code) => process.exit(code ?? 0));

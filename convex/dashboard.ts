@@ -420,3 +420,102 @@ export const checkMonitorsNow = action({
     return null;
   },
 });
+
+// --- Compute -------------------------------------------------------------
+
+export type ComputeView = {
+  target: "sandbox" | "local";
+  sandboxConfigured: boolean;
+  runners: Array<{
+    id: string;
+    name: string;
+    platform?: string;
+    workdir?: string;
+    autoApprove: boolean;
+    online: boolean;
+    lastSeenAt?: number;
+    revoked: boolean;
+  }>;
+  commands: Array<{
+    id: string;
+    kind: string;
+    command?: string;
+    path?: string;
+    status: string;
+    exitCode?: number;
+    error?: string;
+    createdAt: number;
+  }>;
+};
+
+export const getCompute = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<ComputeView> => {
+    assertDashboardKey(args.key);
+
+    const install = await ctx.runQuery(internal.installation.get, {});
+    const runners: Doc<"runners">[] = await ctx.runQuery(
+      internal.runner.listRunners,
+      {},
+    );
+    const commands: Doc<"commands">[] = await ctx.runQuery(
+      internal.runner.recentCommands,
+      { limit: 20 },
+    );
+
+    const cutoff = Date.now() - 90_000;
+
+    return {
+      target: install?.computeTarget ?? "sandbox",
+      sandboxConfigured: Boolean(process.env.DAYTONA_API_KEY),
+      runners: runners.map((r) => ({
+        id: r._id,
+        name: r.name,
+        platform: r.platform,
+        workdir: r.workdir,
+        autoApprove: r.autoApprove,
+        online: !r.revoked && (r.lastSeenAt ?? 0) > cutoff,
+        lastSeenAt: r.lastSeenAt,
+        revoked: r.revoked,
+      })),
+      commands: commands.map((c) => ({
+        id: c._id,
+        kind: c.kind,
+        command: c.command,
+        path: c.path,
+        status: c.status,
+        exitCode: c.exitCode,
+        error: c.error,
+        createdAt: c.createdAt,
+      })),
+    };
+  },
+});
+
+export const setComputeTarget = mutation({
+  args: {
+    key: vKey,
+    target: v.union(v.literal("sandbox"), v.literal("local")),
+  },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.installation.setComputeTarget, {
+      target: args.target,
+    });
+    return null;
+  },
+});
+
+/** Cut a machine loose. The runner's next call fails and it stops getting work. */
+export const revokeRunner = mutation({
+  args: { key: vKey, runnerId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.runner.revokeRunner, {
+      runnerId: args.runnerId,
+    });
+    return null;
+  },
+});

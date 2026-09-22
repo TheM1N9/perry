@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit",
     "webhook:set": "node scripts/telegram-webhook.mjs set",
     "webhook:info": "node scripts/telegram-webhook.mjs info",
-    "webhook:delete": "node scripts/telegram-webhook.mjs delete"
+    "webhook:delete": "node scripts/telegram-webhook.mjs delete",
+    "connect": "node scripts/connect.mjs",
+    "runner": "node runner/index.mjs"
   },
   "dependencies": {
     "@ai-sdk/provider": "^4.0.0",

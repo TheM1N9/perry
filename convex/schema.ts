@@ -28,6 +28,8 @@ export default defineSchema({
     claimedAt: v.optional(v.number()),
     /** The Daytona sandbox this install works in, created on first use. */
     sandboxId: v.optional(v.string()),
+    /** Where run_command goes: a throwaway cloud box, or the owner's machine. */
+    computeTarget: v.optional(v.union(v.literal("sandbox"), v.literal("local"))),
     createdAt: v.number(),
   }),
 
@@ -132,6 +134,64 @@ export default defineSchema({
     startedAt: v.number(),
     finishedAt: v.optional(v.number()),
   }).index("by_operation", ["operationId"]),
+
+  /**
+   * A machine the owner has connected: their laptop, desktop or Mac.
+   *
+   * The critical property is the direction of the connection. The runner dials
+   * out to Convex and holds a subscription; Convex never dials in. There is no
+   * listening port, no inbound firewall rule and no tunnel, so a Perry install
+   * cannot be found by scanning the internet. OpenClaw's 135,000 exposed
+   * instances are the cost of getting this backwards.
+   */
+  runners: defineTable({
+    name: v.string(),
+    token: v.string(),
+    platform: v.optional(v.string()),
+    hostname: v.optional(v.string()),
+    workdir: v.optional(v.string()),
+    /** False means every command waits for a keypress on that machine. */
+    autoApprove: v.boolean(),
+    lastSeenAt: v.optional(v.number()),
+    revoked: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_token", ["token"]),
+
+  /**
+   * One row per operation handed to a runner. The runner subscribes to the
+   * queued ones, does the work, and writes the result back here.
+   */
+  commands: defineTable({
+    runnerId: v.id("runners"),
+    kind: v.union(
+      v.literal("exec"),
+      v.literal("read"),
+      v.literal("write"),
+      v.literal("list"),
+    ),
+    operationId: v.string(),
+    command: v.optional(v.string()),
+    path: v.optional(v.string()),
+    text: v.optional(v.string()),
+    cwd: v.optional(v.string()),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("done"),
+      v.literal("denied"),
+      v.literal("error"),
+    ),
+    exitCode: v.optional(v.number()),
+    output: v.optional(v.string()),
+    truncated: v.optional(v.boolean()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    startedAt: v.optional(v.number()),
+    finishedAt: v.optional(v.number()),
+  })
+    .index("by_runner_status", ["runnerId", "status"])
+    .index("by_operation", ["operationId"])
+    .index("by_created", ["createdAt"]),
 
   /**
    * One row per chat Perry talks in. Holds the durable mode and the id of the
