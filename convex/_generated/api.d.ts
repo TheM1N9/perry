@@ -28,6 +28,7 @@ import type * as notify from "../notify.js";
 import type * as runner from "../runner.js";
 import type * as runs from "../runs.js";
 import type * as sandbox from "../sandbox.js";
+import type * as secrets from "../secrets.js";
 import type * as tools from "../tools.js";
 import type * as web from "../web.js";
 import type * as work from "../work.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   runner: typeof runner;
   runs: typeof runs;
   sandbox: typeof sandbox;
+  secrets: typeof secrets;
   tools: typeof tools;
   web: typeof web;
   work: typeof work;

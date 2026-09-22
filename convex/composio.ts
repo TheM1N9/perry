@@ -2,6 +2,7 @@
 
 import { Composio } from "@composio/core";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 
 /**
@@ -29,8 +30,7 @@ import { internalAction } from "./_generated/server";
  */
 const USER_ID = "owner";
 
-function client(): Composio {
-  const apiKey = process.env.COMPOSIO_API_KEY;
+function client(apiKey: string | null): Composio {
   if (!apiKey) {
     throw new Error(
       "COMPOSIO_API_KEY is not set, so no accounts are connected. Get a key " +
@@ -40,8 +40,8 @@ function client(): Composio {
   return new Composio({ apiKey });
 }
 
-async function session(toolkits?: string[]) {
-  return await client().sessions.create(USER_ID, {
+async function session(apiKey: string | null, toolkits?: string[]) {
+  return await client(apiKey).sessions.create(USER_ID, {
     manageConnections: true,
     ...(toolkits && toolkits.length > 0 ? { toolkits } : {}),
   });
@@ -68,21 +68,26 @@ export type Connector = {
  */
 export const connectors = internalAction({
   args: {},
-  handler: async (): Promise<{
+  handler: async (
+    ctx,
+  ): Promise<{
     configured: boolean;
     connectors: Connector[];
     error?: string;
   }> => {
-    if (!process.env.COMPOSIO_API_KEY) {
+    const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
+      name: "COMPOSIO_API_KEY",
+    });
+    if (!apiKey) {
       return {
         configured: false,
         connectors: [],
-        error: "No COMPOSIO_API_KEY on this deployment.",
+        error: "No Composio key yet. Add one on the Keys page.",
       };
     }
 
     try {
-      const s = await session();
+      const s = await session(apiKey);
       const { items } = await s.toolkits();
 
       const connectors = items
@@ -111,11 +116,14 @@ export const connectors = internalAction({
 export const authorize = internalAction({
   args: { toolkit: v.string() },
   handler: async (
-    _ctx,
+    ctx,
     args,
   ): Promise<{ redirectUrl?: string; status?: string; error?: string }> => {
     try {
-      const s = await session();
+      const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
+        name: "COMPOSIO_API_KEY",
+      });
+      const s = await session(apiKey);
       const request = await s.authorize(args.toolkit.toLowerCase().trim());
 
       const raw = request as unknown as Record<string, unknown>;
@@ -156,11 +164,14 @@ export type FoundAction = {
 export const search = internalAction({
   args: { query: v.string(), toolkits: v.optional(v.array(v.string())) },
   handler: async (
-    _ctx,
+    ctx,
     args,
   ): Promise<{ actions: FoundAction[]; error?: string }> => {
     try {
-      const s = await session(args.toolkits);
+      const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
+        name: "COMPOSIO_API_KEY",
+      });
+      const s = await session(apiKey, args.toolkits);
       const found = await s.search({
         query: args.query,
         ...(args.toolkits && args.toolkits.length > 0
@@ -206,11 +217,14 @@ export const search = internalAction({
 export const execute = internalAction({
   args: { slug: v.string(), args: v.optional(v.any()) },
   handler: async (
-    _ctx,
+    ctx,
     input,
   ): Promise<{ ok: boolean; data?: unknown; error?: string }> => {
     try {
-      const s = await session();
+      const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
+        name: "COMPOSIO_API_KEY",
+      });
+      const s = await session(apiKey);
       const result = await s.execute(
         input.slug,
         (input.args ?? {}) as Record<string, unknown>,

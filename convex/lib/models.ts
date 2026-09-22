@@ -1,3 +1,4 @@
+import { createGateway } from "@ai-sdk/gateway";
 import { convexGateway } from "@convex-dev/ai-sdk-provider";
 
 /**
@@ -16,10 +17,13 @@ import { convexGateway } from "@convex-dev/ai-sdk-provider";
  *
  * Neither marks up token prices. Most installs will want the Vercel key.
  */
-export function languageModel(slug: string) {
-  return process.env.AI_GATEWAY_API_KEY ? slug : convexGateway(slug);
+export function languageModel(slug: string, apiKey: string | null) {
+  // The key is passed in rather than read from the environment, because it
+  // lives in the database now. That also means a key change takes effect on
+  // the next turn instead of the next deploy.
+  return apiKey ? createGateway({ apiKey })(slug) : convexGateway(slug);
 }
 
-export function activeGateway(): "vercel" | "convex" {
-  return process.env.AI_GATEWAY_API_KEY ? "vercel" : "convex";
+export function activeGateway(apiKey: string | null): "vercel" | "convex" {
+  return apiKey ? "vercel" : "convex";
 }

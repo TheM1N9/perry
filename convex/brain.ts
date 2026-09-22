@@ -42,13 +42,17 @@ Everything else is just talk to me.
  * Telegram requires an outbound call.
  */
 async function deliver(
+  ctx: ActionCtx,
   channel: Channel,
   externalId: string,
   text: string,
 ): Promise<void> {
-  if (channel === "telegram") {
-    await sendMessage(externalId, text);
-  }
+  if (channel !== "telegram") return;
+
+  const token: string | null = await ctx.runQuery(internal.secrets.get, {
+    name: "TELEGRAM_BOT_TOKEN",
+  });
+  await sendMessage(token, externalId, text);
 }
 
 /** Commands never reach the model. They are plumbing, not conversation. */
@@ -182,7 +186,7 @@ export const handleTurn = internalAction({
 
     if (args.text.startsWith("/")) {
       const reply = await runCommand(ctx, conversation, args.text);
-      await deliver(channel, args.externalId, reply);
+      await deliver(ctx, channel, args.externalId, reply);
       return null;
     }
 
@@ -200,10 +204,18 @@ export const handleTurn = internalAction({
       prompt: args.text,
     });
 
-    if (channel === "telegram") await sendTyping(args.externalId);
+    if (channel === "telegram") {
+      const token: string | null = await ctx.runQuery(internal.secrets.get, {
+        name: "TELEGRAM_BOT_TOKEN",
+      });
+      await sendTyping(token, args.externalId);
+    }
 
     try {
-      const result = await agentFor(mode).generateText(
+      const gatewayKey: string | null = await ctx.runQuery(internal.secrets.get, {
+        name: "AI_GATEWAY_API_KEY",
+      });
+      const result = await agentFor(mode, gatewayKey).generateText(
         ctx,
         {
           threadId: conversation.threadId,
@@ -225,7 +237,7 @@ export const handleTurn = internalAction({
           ? "Done."
           : "I came back with nothing. Try asking again.");
 
-      await deliver(channel, args.externalId, text);
+      await deliver(ctx, channel, args.externalId, text);
       await ctx.runMutation(internal.conversations.touch, {
         id: conversation._id,
       });
@@ -259,7 +271,10 @@ export const handleTurn = internalAction({
       // The dashboard reads the run record, so it only needs Telegram told.
       if (channel === "telegram") {
         try {
-          await sendMessage(args.externalId, `That broke: ${message.slice(0, 300)}`);
+          const token: string | null = await ctx.runQuery(internal.secrets.get, {
+            name: "TELEGRAM_BOT_TOKEN",
+          });
+          await sendMessage(token, args.externalId, `That broke: ${message.slice(0, 300)}`);
         } catch (sendError) {
           console.error(`could not report failure: ${String(sendError)}`);
         }
@@ -274,8 +289,11 @@ export const handleTurn = internalAction({
 export const sendDirect = internalAction({
   args: { chatId: v.string(), text: v.string() },
   returns: v.null(),
-  handler: async (_ctx, args) => {
-    await sendMessage(args.chatId, args.text);
+  handler: async (ctx, args) => {
+    const token: string | null = await ctx.runQuery(internal.secrets.get, {
+      name: "TELEGRAM_BOT_TOKEN",
+    });
+    await sendMessage(token, args.chatId, args.text);
     return null;
   },
 });

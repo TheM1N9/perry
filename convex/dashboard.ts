@@ -92,7 +92,9 @@ export const listModels = action({
   ): Promise<{ models: string[]; error?: string }> => {
     assertDashboardKey(args.key);
 
-    const apiKey = process.env.AI_GATEWAY_API_KEY;
+    const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
+      name: "AI_GATEWAY_API_KEY",
+    });
 
     // On the Convex gateway there is no model index to query, so offer a short
     // hand-kept list. The field is free text either way, so a wrong guess here
@@ -307,6 +309,13 @@ export const getStatus = query({
     const memories: number = await ctx.runQuery(internal.memories.count, {});
     const conversations = await ctx.runQuery(internal.conversations.list, {});
     const install = await ctx.runQuery(internal.installation.status, {});
+    const gatewayKey: string | null = await ctx.runQuery(internal.secrets.get, {
+      name: "AI_GATEWAY_API_KEY",
+    });
+    const telegramToken: string | null = await ctx.runQuery(
+      internal.secrets.get,
+      { name: "TELEGRAM_BOT_TOKEN" },
+    );
 
     return {
       memories,
@@ -319,8 +328,8 @@ export const getStatus = query({
       ownerName: install.ownerName,
       pairingCode: install.pairingCode,
       pairingExpiresAt: install.pairingExpiresAt,
-      gateway: activeGateway(),
-      telegramConfigured: Boolean(process.env.TELEGRAM_BOT_TOKEN),
+      gateway: activeGateway(gatewayKey),
+      telegramConfigured: Boolean(telegramToken),
       modeNames: [...MODE_NAMES],
     };
   },
@@ -462,12 +471,15 @@ export const getCompute = query({
       internal.runner.recentCommands,
       { limit: 20 },
     );
+    const daytonaKey: string | null = await ctx.runQuery(internal.secrets.get, {
+      name: "DAYTONA_API_KEY",
+    });
 
     const cutoff = Date.now() - 90_000;
 
     return {
       target: install?.computeTarget ?? "sandbox",
-      sandboxConfigured: Boolean(process.env.DAYTONA_API_KEY),
+      sandboxConfigured: Boolean(daytonaKey),
       runners: runners.map((r) => ({
         id: r._id,
         name: r.name,
@@ -577,5 +589,113 @@ export const searchActions = action({
       query: args.query,
       toolkits: args.toolkits,
     });
+  },
+});
+
+// --- Keys ----------------------------------------------------------------
+
+export type SecretView = {
+  name: string;
+  label: string;
+  hint: string;
+  set: boolean;
+  source: "dashboard" | "environment" | "none";
+  preview?: string;
+  updatedAt?: number;
+};
+
+/**
+ * Never returns a key, only whether one exists, where it came from, and its
+ * last four characters. Enough to tell two keys apart, not enough to use one.
+ */
+export const getKeys = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<SecretView[]> => {
+    assertDashboardKey(args.key);
+    return await ctx.runQuery(internal.secrets.status, {});
+  },
+});
+
+export const setKey = mutation({
+  args: { key: vKey, name: v.string(), value: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.secrets.set, {
+      name: args.name,
+      value: args.value,
+    });
+    return null;
+  },
+});
+
+export const clearKey = mutation({
+  args: { key: vKey, name: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.secrets.clear, { name: args.name });
+    return null;
+  },
+});
+
+/**
+ * Re-point Telegram at this deployment after the bot token or webhook secret
+ * changes, so a key edit does not silently leave the bot talking to nothing.
+ */
+export const registerWebhook = action({
+  args: { key: vKey },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ ok: boolean; url?: string; bot?: string; error?: string }> => {
+    assertDashboardKey(args.key);
+
+    const token: string | null = await ctx.runQuery(internal.secrets.get, {
+      name: "TELEGRAM_BOT_TOKEN",
+    });
+    const secret: string | null = await ctx.runQuery(internal.secrets.get, {
+      name: "TELEGRAM_WEBHOOK_SECRET",
+    });
+    if (!token) return { ok: false, error: "No bot token set." };
+    if (!secret) return { ok: false, error: "No webhook secret set." };
+
+    const site = process.env.CONVEX_SITE_URL;
+    if (!site) {
+      return { ok: false, error: "Could not work out this deployment URL." };
+    }
+
+    try {
+      const url = `${site}/telegram`;
+      const res = await fetch(
+        `https://api.telegram.org/bot${token}/setWebhook`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            url,
+            secret_token: secret,
+            allowed_updates: ["message", "edited_message"],
+            drop_pending_updates: true,
+          }),
+        },
+      );
+      const body = (await res.json()) as { ok?: boolean; description?: string };
+      if (!body.ok) {
+        return { ok: false, error: body.description ?? "Telegram refused it." };
+      }
+
+      const me = await fetch(`https://api.telegram.org/bot${token}/getMe`).then(
+        (r) => r.json() as Promise<{ result?: { username?: string } }>,
+        () => ({}) as { result?: { username?: string } },
+      );
+
+      return { ok: true, url, bot: me.result?.username };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   },
 });

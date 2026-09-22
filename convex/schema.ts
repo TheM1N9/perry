@@ -194,6 +194,24 @@ export default defineSchema({
     .index("by_created", ["createdAt"]),
 
   /**
+   * Service keys, set from the dashboard instead of a terminal.
+   *
+   * Convex environment variables can only be written by the CLI, which meant
+   * every key change was a trip to a shell. These rows take precedence over
+   * the matching environment variable, so an install configured the old way
+   * keeps working and the dashboard can override any of it.
+   *
+   * DASHBOARD_KEY deliberately stays an environment variable: it is the thing
+   * that guards this table, and a lockout should be recoverable from a
+   * terminal rather than not at all.
+   */
+  secrets: defineTable({
+    name: v.string(),
+    value: v.string(),
+    updatedAt: v.number(),
+  }).index("by_name", ["name"]),
+
+  /**
    * One row per chat Perry talks in. Holds the durable mode and the id of the
    * Agent component thread that carries the message history.
    */

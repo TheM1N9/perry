@@ -27,10 +27,10 @@ function toolsFor(mode: Mode) {
   return bound as Partial<typeof ALL_TOOLS>;
 }
 
-function buildAgent(mode: Mode) {
+function buildAgent(mode: Mode, apiKey: string | null) {
   return new Agent(components.agent, {
     name: mode.label,
-    languageModel: languageModel(mode.model),
+    languageModel: languageModel(mode.model, apiKey),
     instructions: mode.instructions,
     tools: toolsFor(mode),
     stopWhen: stepCountIs(mode.stepBudget),
@@ -44,21 +44,24 @@ function buildAgent(mode: Mode) {
  */
 const cache = new Map<string, ReturnType<typeof buildAgent>>();
 
-function cacheKey(mode: Mode): string {
+function cacheKey(mode: Mode, apiKey: string | null): string {
   return [
     mode.name,
     mode.model,
     mode.stepBudget,
     mode.tools.join(","),
     mode.instructions.length,
+    // Last few characters only, so swapping keys rebuilds the agent without
+    // putting a whole credential in a cache key.
+    apiKey ? apiKey.slice(-6) : "convex",
   ].join("|");
 }
 
-export function agentFor(mode: Mode) {
-  const key = cacheKey(mode);
+export function agentFor(mode: Mode, apiKey: string | null) {
+  const key = cacheKey(mode, apiKey);
   let agent = cache.get(key);
   if (!agent) {
-    agent = buildAgent(mode);
+    agent = buildAgent(mode, apiKey);
     // Bounded, so a long run of edits cannot grow this without limit.
     if (cache.size > 16) cache.clear();
     cache.set(key, agent);

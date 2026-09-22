@@ -26,7 +26,10 @@ export const toOwner = internalAction({
     }
 
     try {
-      await sendMessage(install.ownerExternalId, args.text);
+      const token: string | null = await ctx.runQuery(internal.secrets.get, {
+        name: "TELEGRAM_BOT_TOKEN",
+      });
+      await sendMessage(token, install.ownerExternalId, args.text);
       return true;
     } catch (error) {
       console.error(`could not notify owner: ${String(error)}`);

@@ -42,6 +42,25 @@ remember that I drink coffee black
 what do you know about me
 ```
 
+## Changing keys later
+
+Everything except the dashboard key is editable on the **Keys** page: the bot
+token, the webhook secret, the model gateway key, Composio and Daytona. No
+terminal, and changes apply on the next turn.
+
+Keys entered there are write-only. The page shows whether one is set, where it
+came from, and its last four characters, and never reads one back. A key saved
+there overrides the matching environment variable, and clearing it falls back
+to the environment variable if one exists.
+
+`DASHBOARD_KEY` stays a terminal-only environment variable on purpose. It is
+what guards that page, so it cannot be edited from behind it, and a lockout
+stays recoverable:
+
+```bash
+npx convex env set DASHBOARD_KEY "<new key>"
+```
+
 ## Giving Agent P a computer
 
 Optional, and only Agent P can reach it. Without it every other tool still

@@ -33,9 +33,11 @@ http.route({
   path: "/telegram",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
+    const expected: string | null = await ctx.runQuery(internal.secrets.get, {
+      name: "TELEGRAM_WEBHOOK_SECRET",
+    });
     if (!expected) {
-      console.error("TELEGRAM_WEBHOOK_SECRET is not set; refusing all updates");
+      console.error("No Telegram webhook secret is set; refusing all updates");
       return new Response("not configured", { status: 503 });
     }
 

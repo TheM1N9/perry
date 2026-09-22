@@ -34,13 +34,18 @@ const COMMAND_TIMEOUT_SECONDS = 30;
 const MAX_OUTPUT = 20_000;
 const MAX_FILE_BYTES = 256 * 1024;
 
-function requireKey(): void {
-  if (!process.env.DAYTONA_API_KEY) {
+async function apiKey(ctx: ActionCtx): Promise<string | null> {
+  return await ctx.runQuery(internal.secrets.get, { name: "DAYTONA_API_KEY" });
+}
+
+function requireKey(key: string | null): string {
+  if (!key) {
     throw new Error(
-      "DAYTONA_API_KEY is not set, so Perry has no computer. Get a key at " +
-        "daytona.io, then: npx convex env set DAYTONA_API_KEY <key>",
+      "No Daytona key, so Perry has no cloud computer. Add one on the Keys " +
+        "page, or point Agent P at your own machine instead.",
     );
   }
+  return key;
 }
 
 function clip(text: string): { text: string; truncated: boolean } {
@@ -50,8 +55,7 @@ function clip(text: string): { text: string; truncated: boolean } {
 
 /** Reuse the recorded sandbox, restart it if stopped, otherwise make one. */
 async function open(ctx: ActionCtx): Promise<Sandbox> {
-  requireKey();
-  const daytona = new Daytona();
+  const daytona = new Daytona({ apiKey: requireKey(await apiKey(ctx)) });
 
   const existingId: string | null = await ctx.runQuery(
     internal.installation.getSandboxId,
@@ -98,11 +102,12 @@ export const status = internalAction({
     workspace: string;
     note?: string;
   }> => {
-    if (!process.env.DAYTONA_API_KEY) {
+    const key = await apiKey(ctx);
+    if (!key) {
       return {
         configured: false,
         workspace: WORKSPACE,
-        note: "No DAYTONA_API_KEY on this deployment, so there is no computer yet.",
+        note: "No Daytona key yet, so there is no cloud computer.",
       };
     }
 
@@ -119,7 +124,7 @@ export const status = internalAction({
     }
 
     try {
-      const daytona = new Daytona();
+      const daytona = new Daytona({ apiKey: key });
       const sandbox = await daytona.get(existingId);
       return {
         configured: true,
@@ -308,8 +313,7 @@ export const destroy = internalAction({
     if (!existingId) return "There was no sandbox.";
 
     try {
-      requireKey();
-      const daytona = new Daytona();
+      const daytona = new Daytona({ apiKey: requireKey(await apiKey(ctx)) });
       const sandbox = await daytona.get(existingId);
       await daytona.delete(sandbox);
     } catch (error) {

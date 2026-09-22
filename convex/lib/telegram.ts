@@ -11,19 +11,26 @@ const API = "https://api.telegram.org";
 /** Telegram rejects messages over 4096 chars. */
 const MAX_MESSAGE_LENGTH = 4096;
 
-function botToken(): string {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
+/**
+ * The token is passed in rather than read from the environment, because it now
+ * lives in the database where the dashboard can change it.
+ */
+function requireToken(token: string | null): string {
   if (!token) {
     throw new Error(
-      "TELEGRAM_BOT_TOKEN is not set on the Convex deployment. " +
-        "Run: npx convex env set TELEGRAM_BOT_TOKEN <token>",
+      "No Telegram bot token. Set one on the Keys page, or run: " +
+        "npx convex env set TELEGRAM_BOT_TOKEN <token>",
     );
   }
   return token;
 }
 
-async function call(method: string, body: unknown): Promise<unknown> {
-  const res = await fetch(`${API}/bot${botToken()}/${method}`, {
+async function call(
+  token: string | null,
+  method: string,
+  body: unknown,
+): Promise<unknown> {
+  const res = await fetch(`${API}/bot${requireToken(token)}/${method}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -60,12 +67,16 @@ export function chunkMessage(text: string, limit = MAX_MESSAGE_LENGTH): string[]
   return chunks;
 }
 
-export async function sendMessage(chatId: string, text: string): Promise<void> {
+export async function sendMessage(
+  token: string | null,
+  chatId: string,
+  text: string,
+): Promise<void> {
   const body = text.trim();
   if (body.length === 0) return;
 
   for (const chunk of chunkMessage(body)) {
-    await call("sendMessage", {
+    await call(token, "sendMessage", {
       chat_id: chatId,
       text: chunk,
       link_preview_options: { is_disabled: true },
@@ -74,9 +85,12 @@ export async function sendMessage(chatId: string, text: string): Promise<void> {
 }
 
 /** The three dots in the chat while the model is thinking. */
-export async function sendTyping(chatId: string): Promise<void> {
+export async function sendTyping(
+  token: string | null,
+  chatId: string,
+): Promise<void> {
   try {
-    await call("sendChatAction", { chat_id: chatId, action: "typing" });
+    await call(token, "sendChatAction", { chat_id: chatId, action: "typing" });
   } catch {
     // Cosmetic only. Never fail a turn because the typing indicator failed.
   }

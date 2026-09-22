@@ -7,6 +7,7 @@ import { Activity } from "./components/Activity";
 import { Chat } from "./components/Chat";
 import { Computer } from "./components/Computer";
 import { Connectors } from "./components/Connectors";
+import { Keys } from "./components/Keys";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Memories } from "./components/Memories";
 import { Settings } from "./components/Settings";
@@ -22,6 +23,7 @@ const TABS = [
   { id: "memory", label: "Memory" },
   { id: "settings", label: "Settings" },
   { id: "activity", label: "Activity" },
+  { id: "keys", label: "Keys" },
   { id: "setup", label: "Setup" },
 ] as const;
 
@@ -193,6 +195,7 @@ function Shell({
       {active === "memory" && <Memories dashboardKey={dashboardKey} />}
       {active === "settings" && <Settings dashboardKey={dashboardKey} />}
       {active === "activity" && <Activity dashboardKey={dashboardKey} />}
+      {active === "keys" && <Keys dashboardKey={dashboardKey} />}
       {active === "setup" && <Pairing dashboardKey={dashboardKey} />}
     </div>
   );
