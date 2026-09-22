@@ -109,13 +109,17 @@ downstream can widen it mid-turn.
 In use today:
 
 ```
-convex                     1.46   backend, HTTP actions, scheduler
-@convex-dev/agent          0.7.3  threads, messages, tool-call history
-ai                         7.0    AI SDK, tool loop
-@ai-sdk/gateway            4.0    Vercel AI Gateway
-@convex-dev/ai-sdk-provider 0.2   Convex gateway fallback
-zod                        4.6    tool arg schemas
+convex              1.46   backend, HTTP actions, scheduler
+@convex-dev/agent   0.7.3  threads, messages, tool-call history
+ai                  7.0    AI SDK, tool loop, gateway model resolution
+zod                 4.6    tool input schemas
 ```
+
+Models are `provider/model` strings, resolved through the Vercel AI Gateway by
+the AI SDK itself. Passing a constructed provider object instead means pinning
+a second copy of `@ai-sdk/provider` and matching its specification version to
+the one the Agent component demands. That is a version-skew argument nobody
+wins, and a string sidesteps it.
 
 Planned, not installed yet:
 

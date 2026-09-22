@@ -4,7 +4,6 @@ import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { agentFor } from "./agents";
-import { activeGateway } from "./lib/models";
 import { sendMessage, sendTyping } from "./lib/telegram";
 import { DEFAULT_MODE, MODES, type ModeName } from "./modes";
 
@@ -88,7 +87,7 @@ async function runCommand(
         `mode      ${MODES[stats?.mode ?? conversation.mode].label}`,
         `memories  ${memoryCount}`,
         `runs      ${stats?.recentRuns ?? 0} recent`,
-        `gateway   ${activeGateway()}`,
+        `model     ${MODES[stats?.mode ?? conversation.mode].model}`,
       ];
       if (stats?.lastError) lines.push("", `last error: ${stats.lastError}`);
       return lines.join("\n");

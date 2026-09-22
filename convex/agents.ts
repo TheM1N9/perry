@@ -1,6 +1,5 @@
 import { Agent, stepCountIs } from "@convex-dev/agent";
 import { components } from "./_generated/api";
-import { languageModel } from "./lib/models";
 import { MODES, type Mode, type ModeName } from "./modes";
 import { ALL_TOOLS } from "./tools";
 
@@ -11,6 +10,12 @@ import { ALL_TOOLS } from "./tools";
  * This is the whole enforcement story: tools outside the mode's allowlist are
  * never bound, so they are not in the model's vocabulary for that turn. There
  * is no runtime permission check to forget to write.
+ *
+ * Models are passed as `provider/model` strings and resolved by the AI SDK
+ * through the Vercel AI Gateway. Passing a provider object instead would mean
+ * pinning a second copy of @ai-sdk/provider and matching its specification
+ * version to the one the Agent component expects, which is a version-skew
+ * argument nobody wins.
  */
 
 function toolsFor(mode: Mode) {
@@ -24,7 +29,7 @@ function toolsFor(mode: Mode) {
 function buildAgent(mode: Mode) {
   return new Agent(components.agent, {
     name: mode.label,
-    languageModel: languageModel(mode.model),
+    languageModel: mode.model,
     instructions: mode.instructions,
     tools: toolsFor(mode),
     stopWhen: stepCountIs(mode.stepBudget),

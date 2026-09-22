@@ -75,9 +75,11 @@ npx convex env set TELEGRAM_WEBHOOK_SECRET "<same secret as .env.local>"
 npx convex env set AI_GATEWAY_API_KEY      "<vercel ai gateway key>"
 ```
 
-`AI_GATEWAY_API_KEY` comes from the AI tab of your Vercel dashboard. It is
-optional: without it Perry falls back to Convex's own gateway, which needs no
-key. Neither marks up token prices.
+`AI_GATEWAY_API_KEY` comes from the AI tab of your Vercel dashboard and is
+required. Models are named as `provider/model` strings in `convex/modes.ts` and
+resolved by the AI SDK through the Vercel AI Gateway, which does not mark up
+token prices. Without the key every turn fails with an auth error from the
+gateway, which Perry will report in chat.
 
 Leave `TELEGRAM_OWNER_CHAT_ID` unset for now. Step 5 fills it in.
 

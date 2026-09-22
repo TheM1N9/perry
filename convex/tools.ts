@@ -5,16 +5,42 @@ import type { ToolName } from "./modes";
 
 /**
  * The full tool catalogue. Which of these a given turn can actually reach is
- * decided in modes.ts, and enforced in agents.ts by simply not binding the
- * rest. A tool the model was never handed cannot be called.
+ * decided in modes.ts and enforced in agents.ts by simply not binding the rest.
+ * A tool the model was never handed cannot be called.
+ *
+ * Every `execute` carries an explicit return type. Without one, TypeScript
+ * chases tools.ts -> _generated/api -> tools.ts and gives up with an implicit
+ * `any`. The annotations are what break that cycle, not decoration.
  */
+
+type MemoryRow = {
+  id: string;
+  text: string;
+  tags: string[];
+  createdAt: number;
+};
+
+type RecallResult = {
+  found: number;
+  memories: Array<{
+    id: string;
+    text: string;
+    tags: string[];
+    rememberedOn: string;
+  }>;
+  note?: string;
+};
+
+type RememberResult = { id: string; stored: boolean; note: string };
+
+type ForgetResult = { deleted: number; missing: string[] };
 
 const recall = createTool({
   description:
     "Search your long-term memory about the owner. Use this before saying you " +
     "do not know something, and before asking a question you may already have " +
     "the answer to. An empty query returns the most recent memories.",
-  args: z.object({
+  inputSchema: z.object({
     query: z
       .string()
       .describe("Keywords to search for. Empty string returns recent memories."),
@@ -26,10 +52,10 @@ const recall = createTool({
       .optional()
       .describe("How many memories to return. Defaults to 8."),
   }),
-  handler: async (ctx, args) => {
-    const results = await ctx.runQuery(internal.memories.search, {
-      query: args.query,
-      limit: args.limit,
+  execute: async (ctx, input): Promise<RecallResult> => {
+    const results: MemoryRow[] = await ctx.runQuery(internal.memories.search, {
+      query: input.query,
+      limit: input.limit,
     });
 
     if (results.length === 0) {
@@ -55,26 +81,30 @@ const remember = createTool({
     "sentence that will still make sense in six months, with no pronouns " +
     "referring to the current conversation. Do not store passing chatter, and " +
     "do not store secrets or credentials.",
-  args: z.object({
-    text: z
-      .string()
-      .min(3)
-      .describe("The fact, as one self-contained sentence."),
+  inputSchema: z.object({
+    text: z.string().min(3).describe("The fact, as one self-contained sentence."),
     tags: z
       .array(z.string())
       .optional()
       .describe("A few lowercase topic tags, e.g. ['work', 'travel']."),
   }),
-  handler: async (ctx, args) => {
-    const { id, duplicate } = await ctx.runMutation(internal.memories.add, {
-      text: args.text,
-      tags: args.tags ?? [],
-      source: ctx.userId ?? "unknown",
-    });
+  execute: async (ctx, input): Promise<RememberResult> => {
+    const result: { id: string; duplicate: boolean } = await ctx.runMutation(
+      internal.memories.add,
+      {
+        text: input.text,
+        tags: input.tags ?? [],
+        source: ctx.userId ?? "unknown",
+      },
+    );
 
-    return duplicate
-      ? { id, stored: false, note: "Already remembered, nothing to do." }
-      : { id, stored: true };
+    return {
+      id: result.id,
+      stored: !result.duplicate,
+      note: result.duplicate
+        ? "Already remembered, nothing to do."
+        : "Stored.",
+    };
   },
 });
 
@@ -83,15 +113,15 @@ const forget = createTool({
     "Permanently delete memories by id. Ids come from `recall`. This cannot be " +
     "undone, so confirm with the owner in chat before calling it, and quote " +
     "back the exact text of what you are about to delete.",
-  args: z.object({
+  inputSchema: z.object({
     ids: z.array(z.string()).min(1).describe("Memory ids returned by recall."),
   }),
-  handler: async (ctx, args) => {
-    const { deleted, missing } = await ctx.runMutation(
+  execute: async (ctx, input): Promise<ForgetResult> => {
+    const result: ForgetResult = await ctx.runMutation(
       internal.memories.removeMany,
-      { ids: args.ids },
+      { ids: input.ids },
     );
-    return { deleted, missing };
+    return result;
   },
 });
 
