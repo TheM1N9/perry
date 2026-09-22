@@ -154,6 +154,26 @@ export const authorize = internalMutation({
   },
 });
 
+export const getSandboxId = internalQuery({
+  args: {},
+  returns: v.union(v.string(), v.null()),
+  handler: async (ctx): Promise<string | null> => {
+    const install = await read(ctx);
+    return install?.sandboxId ?? null;
+  },
+});
+
+export const setSandboxId = internalMutation({
+  args: { sandboxId: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const install = await read(ctx);
+    if (!install) return null;
+    await ctx.db.patch(install._id, { sandboxId: args.sandboxId });
+    return null;
+  },
+});
+
 /** Hand Perry to a different chat, or to a different person entirely. */
 export const unclaim = internalMutation({
   args: {},

@@ -33,8 +33,8 @@ A mode is a config object with four knobs:
 
 | Knob | Perry | Agent P |
 |---|---|---|
-| Tool allowlist | `recall`, `remember` | the above plus `forget`, and later exec and send |
-| Step budget | 4 | 40 |
+| Tools | 4, all read-only | 15, including shell and file writes |
+| Step budget | 6 | 40 |
 | Approval policy | never needed | confirm on destructive and outward-facing |
 | Model | Haiku 4.5 | Sonnet 5 |
 
@@ -50,6 +50,47 @@ build mode pinned to the sandbox with no SaaS access at all.
 
 The transition is the fun part. Asking for something that needs a tool Perry does
 not have should not fail. It should surface as an offer to put the hat on.
+
+## What Agent P can do
+
+The tool surface is modelled on OpenMuse, whose split between a private
+computer, durable work and read-only sources is the right one.
+
+| Tool | What it does |
+|---|---|
+| `run_command` | One bash command in a private Linux sandbox. 30s cap, output capped. |
+| `read_file` `write_file` `list_files` | /workspace, 256 KB per file, persists between commands. |
+| `computer_status` | Whether a sandbox exists and is running. |
+| `read_page` | Fetch a public page as text. No JavaScript, no login. |
+| `start_task` `set_plan` `finish_task` | Open a job, keep a checklist current, close it with a result. |
+| `status_report` | Read back current tasks, goals and watches. |
+| `set_goal` | An outcome with milestones. |
+| `watch_page` | Recurring check: changed, contains text, or price below a number. |
+| `recall` `remember` `forget` | Long-term memory. |
+
+Perry mode gets four of these: `recall`, `remember`, `read_page` and
+`status_report`. Nothing in that set can change anything outside memory.
+
+Three rules carried over from OpenMuse, because the reasoning holds:
+
+- **No credentials in the sandbox.** Nothing there can leak a token, because no
+  token is ever put there.
+- **Receipts, not retries.** Every command carries an `operationId`. Asking
+  twice with the same id returns the first receipt instead of running again, so
+  an interrupted command is never silently repeated.
+- **Output is data, never instructions.** Command output, file contents and web
+  pages are framed as untrusted in the prompt, because prompt injection through
+  a fetched page is the obvious attack on an agent that reads the web.
+
+One deliberate difference: OpenMuse disables networking inside its container
+and browses in a separate worker. Perry leaves the sandbox network on, because
+without it the sandbox cannot install a package or clone a repo, which is most
+of what it is for. That widens the blast radius, and is why the sandbox is bound
+to Agent P alone.
+
+Tasks, goals and watches live in the database rather than the conversation. Ask
+an agent what it is doing and it will reconstruct a plausible answer; the Work
+tab shows what it actually wrote down.
 
 ## Stack
 
@@ -217,15 +258,20 @@ Done:
 
 [INSTALL.md](INSTALL.md) has the detail. `npm run doctor` checks it.
 
+8. Daytona sandbox: shell, files, receipts. Agent P only.
+9. Reading public pages, with the private-network addresses refused.
+10. Tasks with live plans, goals with milestones, recurring page watches.
+11. Work tab in the dashboard, and a cron that checks watches every 5 minutes.
+
 Next:
 
-8. Daytona sandbox tools: `exec`, `write_file`, `read_file`, Agent P only.
-9. Composio tool router session, connect Gmail and Calendar.
-10. Approval gate for destructive calls, plus the mode-switch offer.
-11. Swap full-text memory for `@convex-dev/rag` embeddings.
-12. Convex Workflow wrapping the turn for durability and retries.
-13. Heartbeat cron plus agent-authored jobs.
-14. Second channel: Discord HTTP interactions.
+12. Composio tool router, for Gmail and Calendar. Needs a Composio key.
+13. Approval gate: propose, expire, decide, before anything destructive.
+14. A real browser with persistent profiles, for pages that need JavaScript.
+15. Swap full-text memory for `@convex-dev/rag` embeddings.
+16. Convex Workflow wrapping the turn for durability and retries.
+17. Heartbeat cron plus agent-authored jobs.
+18. Second channel: Discord HTTP interactions.
 
 ## Handing Perry to someone else
 

@@ -26,8 +26,112 @@ export default defineSchema({
     pairingCode: v.optional(v.string()),
     pairingExpiresAt: v.optional(v.number()),
     claimedAt: v.optional(v.number()),
+    /** The Daytona sandbox this install works in, created on first use. */
+    sandboxId: v.optional(v.string()),
     createdAt: v.number(),
   }),
+
+  /**
+   * Work Perry has been asked to do, borrowed from OpenMuse's task model.
+   *
+   * A task is the unit that survives the conversation: the agent writes a plan
+   * into it, ticks steps off as it goes, and the dashboard renders progress
+   * without anyone having to scroll back through chat.
+   */
+  tasks: defineTable({
+    title: v.string(),
+    prompt: v.string(),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("blocked"),
+      v.literal("done"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    goalId: v.optional(v.id("goals")),
+    /** The agent's own checklist. Rewritten wholesale by `plan`. */
+    plan: v.array(
+      v.object({
+        title: v.string(),
+        status: v.union(
+          v.literal("pending"),
+          v.literal("active"),
+          v.literal("done"),
+          v.literal("skipped"),
+        ),
+        note: v.optional(v.string()),
+      }),
+    ),
+    /** What it needs from the owner, when status is blocked. */
+    question: v.optional(v.string()),
+    result: v.optional(v.string()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status"])
+    .index("by_updated", ["updatedAt"]),
+
+  /**
+   * An outcome the owner wants, with milestones. Slower moving than a task,
+   * and a task can belong to one.
+   */
+  goals: defineTable({
+    title: v.string(),
+    description: v.optional(v.string()),
+    status: v.union(
+      v.literal("active"),
+      v.literal("paused"),
+      v.literal("done"),
+    ),
+    milestones: v.array(v.object({ title: v.string(), done: v.boolean() })),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_status", ["status"]),
+
+  /**
+   * A recurring check on a public page. The cron ticks these, and Perry only
+   * speaks up when the condition actually fires.
+   */
+  monitors: defineTable({
+    title: v.string(),
+    url: v.string(),
+    condition: v.union(
+      v.literal("change"),
+      v.literal("contains"),
+      v.literal("price_below"),
+    ),
+    value: v.optional(v.string()),
+    intervalMinutes: v.number(),
+    active: v.boolean(),
+    /** Hash of the last body, for change detection. */
+    lastFingerprint: v.optional(v.string()),
+    lastCheckedAt: v.optional(v.number()),
+    nextCheckAt: v.number(),
+    lastObservation: v.optional(v.string()),
+    firedAt: v.optional(v.number()),
+    failures: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_next_check", ["nextCheckAt"])
+    .index("by_active", ["active"]),
+
+  /**
+   * Commands run in the sandbox, kept so a repeated operationId returns the
+   * first receipt instead of running twice. OpenMuse's idea: an interrupted
+   * command must never be silently retried.
+   */
+  receipts: defineTable({
+    operationId: v.string(),
+    command: v.string(),
+    exitCode: v.optional(v.number()),
+    output: v.optional(v.string()),
+    truncated: v.optional(v.boolean()),
+    error: v.optional(v.string()),
+    startedAt: v.number(),
+    finishedAt: v.optional(v.number()),
+  }).index("by_operation", ["operationId"]),
 
   /**
    * One row per chat Perry talks in. Holds the durable mode and the id of the

@@ -1,6 +1,7 @@
 import { listMessages } from "@convex-dev/agent";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
 import { action, mutation, query } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { activeGateway } from "./lib/models";
@@ -342,6 +343,80 @@ export const unclaim = mutation({
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
     await ctx.runMutation(internal.installation.unclaim, {});
+    return null;
+  },
+});
+
+// --- Work ----------------------------------------------------------------
+
+export type WorkView = {
+  tasks: Doc<"tasks">[];
+  goals: Doc<"goals">[];
+  monitors: Doc<"monitors">[];
+};
+
+export const getWork = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<WorkView> => {
+    assertDashboardKey(args.key);
+
+    const tasks: Doc<"tasks">[] = await ctx.runQuery(internal.work.listTasks, {
+      limit: 25,
+    });
+    const goals: Doc<"goals">[] = await ctx.runQuery(internal.work.listGoals, {});
+    const monitors: Doc<"monitors">[] = await ctx.runQuery(
+      internal.work.listMonitors,
+      {},
+    );
+
+    return { tasks, goals, monitors };
+  },
+});
+
+export const toggleMonitor = mutation({
+  args: { key: vKey, monitorId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.work.toggleMonitor, {
+      monitorId: args.monitorId,
+    });
+    return null;
+  },
+});
+
+export const deleteMonitor = mutation({
+  args: { key: vKey, monitorId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.work.deleteMonitor, {
+      monitorId: args.monitorId,
+    });
+    return null;
+  },
+});
+
+export const cancelTask = mutation({
+  args: { key: vKey, taskId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.work.updateTask, {
+      taskId: args.taskId,
+      status: "cancelled",
+    });
+    return null;
+  },
+});
+
+/** Run every due monitor now, instead of waiting for the next tick. */
+export const checkMonitorsNow = action({
+  args: { key: vKey },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runAction(internal.web.checkMonitors, {});
     return null;
   },
 });

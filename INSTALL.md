@@ -41,6 +41,23 @@ remember that I drink coffee black
 what do you know about me
 ```
 
+## Giving Agent P a computer
+
+Optional, and only Agent P can reach it. Without it every other tool still
+works and the sandbox tools report that no computer is configured.
+
+```bash
+npx convex env set DAYTONA_API_KEY "<key from daytona.io>"
+```
+
+Daytona gives $200 of signup credit and bills per second. A sandbox stops
+itself after 15 idle minutes, so an install used a few times a week costs
+close to nothing.
+
+The sandbox has bash, Python, Node and git. Its /workspace survives between
+commands, there are no credentials inside it, and nothing on your machine is
+reachable from it.
+
 ## Dashboard
 
 ```bash
