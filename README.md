@@ -28,8 +28,11 @@ A mode is a config object with four knobs:
 | Approval policy | never needed | confirm on destructive and outward-facing |
 | Model | Haiku 4.5 | Sonnet 5 |
 
-Those live in `convex/modes.ts`, which is the one file to read to know what
-Perry is allowed to do.
+The defaults live in `convex/modes.ts`, which is the one file to read to know
+what Perry is allowed to do. The dashboard can override any of them per mode,
+stored in the database and merged over the defaults at the top of each turn, so
+handing Perry to someone else does not hand them a TypeScript file to edit.
+Clearing a field restores the shipped value.
 
 Because a mode is just data, adding more later is a config entry, not a refactor.
 Obvious future ones: a focus mode that suppresses all proactive messages, and a
@@ -186,19 +189,36 @@ Done:
 2. Agent loop on the Agent component through a gateway. The turn.
 3. Both modes, resolved once per turn and enforced by tool binding.
 4. Memory: `recall`, `remember`, `forget` over Convex full-text search.
+5. Runtime config. Model, step budget, tools and instructions per mode, stored
+   in the database and editable without a redeploy.
+6. Web channel, sharing memory with Telegram but keeping its own thread.
+7. Dashboard: chat, memory editing, mode config, and a log of every turn with
+   its tools, tokens and errors.
 
-`SETUP.md` has the fifteen minutes of wiring needed to talk to it.
+`SETUP.md` has the wiring, including the dashboard key.
 
 Next:
 
-5. Daytona sandbox tools: `exec`, `write_file`, `read_file`, Agent P only.
-6. Composio tool router session, connect Gmail and Calendar.
-7. Approval gate for destructive calls, plus the mode-switch offer.
-8. Swap full-text memory for `@convex-dev/rag` embeddings.
-9. Convex Workflow wrapping the turn for durability and retries.
-10. Heartbeat cron plus agent-authored jobs.
-11. Next.js dashboard on Vercel for threads, memories and connections.
-12. Second channel: Discord HTTP interactions.
+8. Daytona sandbox tools: `exec`, `write_file`, `read_file`, Agent P only.
+9. Composio tool router session, connect Gmail and Calendar.
+10. Approval gate for destructive calls, plus the mode-switch offer.
+11. Swap full-text memory for `@convex-dev/rag` embeddings.
+12. Convex Workflow wrapping the turn for durability and retries.
+13. Heartbeat cron plus agent-authored jobs.
+14. Second channel: Discord HTTP interactions.
+
+## Handing Perry to someone else
+
+Perry stays single-owner. Giving it to another person means they run their own
+deployment, and everything they need to change is either an environment
+variable or a field in the dashboard. Nothing routine requires editing code.
+
+What is not built: multiple people on one deployment. The dashboard key is a
+bearer token for one owner, and memories are a single shared pool with no
+per-user scoping. Making Perry multi-tenant means replacing that key with
+Convex Auth and adding an owner id to `memories`, `conversations` and `runs`.
+Every public function already checks authorisation in the same place, so that
+change is contained, but it is a real change rather than a config switch.
 
 ## Channel notes
 

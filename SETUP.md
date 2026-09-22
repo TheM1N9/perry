@@ -106,6 +106,31 @@ what do you know about me
 
 After that, messages from anyone else are dropped without a reply.
 
+## 6. Dashboard
+
+The web dashboard chats with the same agent, edits what Perry remembers, changes
+the model per mode, and shows every turn it has taken. It is behind a single
+key, so set one:
+
+```bash
+npx convex env set DASHBOARD_KEY "$(node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))")"
+```
+
+Print it back with `npx convex env get DASHBOARD_KEY`, then:
+
+```bash
+npm run dev
+```
+
+Open http://localhost:3000 and paste the key. It is kept in the browser and
+sent with every call, so locking the tab is one button and rotating the key is
+one command.
+
+Note what this is: a bearer key for one person, not accounts. Every public
+function checks it before doing anything, so there is one line to audit per
+entry point, and that line is where Convex Auth would go if Perry ever served
+more than one person.
+
 ## You do not need a tunnel
 
 The reflex from webhook development is to reach for ngrok or a Cloudflare

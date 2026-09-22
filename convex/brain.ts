@@ -5,17 +5,18 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { agentFor } from "./agents";
 import { sendMessage, sendTyping } from "./lib/telegram";
-import { DEFAULT_MODE, MODES, type ModeName } from "./modes";
+import { DEFAULT_MODE, MODE_NAMES, type Mode, type ModeName } from "./modes";
+import { vChannel } from "./schema";
 
 /**
  * One turn, end to end: resolve the conversation, resolve the mode, run the
- * agent bound to that mode, reply.
+ * agent bound to that mode, deliver the reply.
  *
- * Scheduled from ingest, so it sits off the Telegram request path and may take
- * as long as it needs to.
+ * Scheduled rather than called inline, so it sits off the Telegram request path
+ * and may take as long as it needs to.
  */
 
-const CHANNEL = "telegram" as const;
+type Channel = "telegram" | "web";
 
 const HELP = `
 Perry, your assistant.
@@ -33,6 +34,23 @@ Other
 Everything else is just talk to me.
 `.trim();
 
+/**
+ * Where a reply goes depends on where the message came from.
+ *
+ * The web dashboard needs nothing here: it subscribes to the thread and the
+ * assistant message appears as soon as the Agent component stores it. Only
+ * Telegram requires an outbound call.
+ */
+async function deliver(
+  channel: Channel,
+  externalId: string,
+  text: string,
+): Promise<void> {
+  if (channel === "telegram") {
+    await sendMessage(externalId, text);
+  }
+}
+
 /** Commands never reach the model. They are plumbing, not conversation. */
 async function runCommand(
   ctx: ActionCtx,
@@ -42,18 +60,22 @@ async function runCommand(
   const [raw, ...rest] = text.trim().split(/\s+/);
   const command = raw.toLowerCase().replace(/@.*$/, ""); // strip /cmd@botname
 
-  const describe = (name: ModeName) => {
-    const mode = MODES[name];
+  const describe = async (name: ModeName) => {
+    const mode: Mode = await ctx.runQuery(internal.config.resolveMode, {
+      mode: name,
+    });
     return `${mode.label}: ${mode.tools.join(", ")}, ${mode.stepBudget} steps, ${mode.model}`;
   };
 
   const switchTo = async (name: ModeName) => {
-    if (name === conversation.mode) return `Already ${MODES[name].label}.`;
+    if (name === conversation.mode) {
+      return `Already ${name === "perry" ? "Perry" : "Agent P"}.`;
+    }
     await ctx.runMutation(internal.conversations.setMode, {
       id: conversation._id,
       mode: name,
     });
-    return describe(name);
+    return await describe(name);
   };
 
   switch (command) {
@@ -69,11 +91,9 @@ async function runCommand(
 
     case "/mode": {
       const requested = rest[0]?.toLowerCase();
-      if (!requested) return describe(conversation.mode);
+      if (!requested) return await describe(conversation.mode);
 
-      const match = (Object.keys(MODES) as ModeName[]).find(
-        (m) => m.toLowerCase() === requested,
-      );
+      const match = MODE_NAMES.find((m) => m.toLowerCase() === requested);
       if (!match) return "No such mode. Try /perry or /agentp.";
       return await switchTo(match);
     }
@@ -83,11 +103,15 @@ async function runCommand(
         id: conversation._id,
       });
       const memoryCount = await ctx.runQuery(internal.memories.count, {});
+      const mode: Mode = await ctx.runQuery(internal.config.resolveMode, {
+        mode: conversation.mode,
+      });
       const lines = [
-        `mode      ${MODES[stats?.mode ?? conversation.mode].label}`,
+        `mode      ${mode.label}`,
+        `model     ${mode.model}`,
+        `tools     ${mode.tools.join(", ")}`,
         `memories  ${memoryCount}`,
         `runs      ${stats?.recentRuns ?? 0} recent`,
-        `model     ${MODES[stats?.mode ?? conversation.mode].model}`,
       ];
       if (stats?.lastError) lines.push("", `last error: ${stats.lastError}`);
       return lines.join("\n");
@@ -110,25 +134,26 @@ async function runCommand(
  */
 async function loadConversation(
   ctx: ActionCtx,
-  chatId: string,
+  channel: Channel,
+  externalId: string,
   title?: string,
 ): Promise<Doc<"conversations">> {
   const find = () =>
     ctx.runQuery(internal.conversations.getByExternalId, {
-      channel: CHANNEL,
-      externalId: chatId,
+      channel,
+      externalId,
     });
 
   const existing = await find();
   if (existing) return existing;
 
   const threadId = await createThread(ctx, components.agent, {
-    userId: `telegram:${chatId}`,
+    userId: `${channel}:${externalId}`,
     title,
   });
   await ctx.runMutation(internal.conversations.create, {
-    channel: CHANNEL,
-    externalId: chatId,
+    channel,
+    externalId,
     threadId,
     title,
   });
@@ -140,23 +165,34 @@ async function loadConversation(
 
 export const handleTurn = internalAction({
   args: {
-    chatId: v.string(),
+    channel: vChannel,
+    externalId: v.string(),
     text: v.string(),
     title: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const conversation = await loadConversation(ctx, args.chatId, args.title);
+    const channel = args.channel as Channel;
+    const conversation = await loadConversation(
+      ctx,
+      channel,
+      args.externalId,
+      args.title,
+    );
 
     if (args.text.startsWith("/")) {
-      await sendMessage(args.chatId, await runCommand(ctx, conversation, args.text));
+      const reply = await runCommand(ctx, conversation, args.text);
+      await deliver(channel, args.externalId, reply);
       return null;
     }
 
-    // The mode is resolved exactly once, here. Everything below is bound by it
-    // and nothing downstream can widen it.
+    // The mode is resolved exactly once, here, from stored config layered over
+    // the code defaults. Everything below is bound by it and nothing downstream
+    // can widen it.
     const modeName: ModeName = conversation.mode ?? DEFAULT_MODE;
-    const mode = MODES[modeName];
+    const mode: Mode = await ctx.runQuery(internal.config.resolveMode, {
+      mode: modeName,
+    });
 
     const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
       conversationId: conversation._id,
@@ -164,12 +200,15 @@ export const handleTurn = internalAction({
       prompt: args.text,
     });
 
-    await sendTyping(args.chatId);
+    if (channel === "telegram") await sendTyping(args.externalId);
 
     try {
-      const result = await agentFor(modeName).generateText(
+      const result = await agentFor(mode).generateText(
         ctx,
-        { threadId: conversation.threadId, userId: `telegram:${args.chatId}` },
+        {
+          threadId: conversation.threadId,
+          userId: `${channel}:${args.externalId}`,
+        },
         { prompt: args.text },
       );
 
@@ -186,7 +225,7 @@ export const handleTurn = internalAction({
           ? "Done."
           : "I came back with nothing. Try asking again.");
 
-      await sendMessage(args.chatId, text);
+      await deliver(channel, args.externalId, text);
       await ctx.runMutation(internal.conversations.touch, {
         id: conversation._id,
       });
@@ -217,7 +256,14 @@ export const handleTurn = internalAction({
 
       // Say what broke. A bot that silently swallows failures is worse than one
       // that admits it, because you keep waiting for a reply that never comes.
-      await sendMessage(args.chatId, `That broke: ${message.slice(0, 300)}`);
+      // The dashboard reads the run record, so it only needs Telegram told.
+      if (channel === "telegram") {
+        try {
+          await sendMessage(args.externalId, `That broke: ${message.slice(0, 300)}`);
+        } catch (sendError) {
+          console.error(`could not report failure: ${String(sendError)}`);
+        }
+      }
     }
 
     return null;

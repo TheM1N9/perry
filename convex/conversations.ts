@@ -1,9 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
-import { DEFAULT_MODE, MODE_NAMES } from "./modes";
-
-const vChannel = v.literal("telegram");
-const vMode = v.union(v.literal("perry"), v.literal("agentP"));
+import { DEFAULT_MODE } from "./modes";
+import { vChannel, vMode } from "./schema";
 
 export const getByExternalId = internalQuery({
   args: { channel: vChannel, externalId: v.string() },
@@ -71,8 +69,8 @@ export const touch = internalMutation({
 });
 
 /**
- * Wipe the thread pointer so the next message starts a fresh one. Memories
- * survive on purpose: /reset clears the conversation, not what Perry knows.
+ * Drop the conversation so the next message starts a fresh thread. Memories
+ * survive on purpose: reset clears the conversation, not what Perry knows.
  */
 export const clearThread = internalMutation({
   args: { id: v.id("conversations") },
@@ -97,10 +95,16 @@ export const stats = internalQuery({
 
     return {
       mode: conversation.mode,
-      modes: MODE_NAMES,
       threadId: conversation.threadId,
       recentRuns: runs.length,
       lastError: runs.find((r) => r.status === "error")?.error,
     };
+  },
+});
+
+export const list = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("conversations").order("desc").take(50);
   },
 });

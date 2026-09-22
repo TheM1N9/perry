@@ -10,9 +10,12 @@
 
 import type * as agents from "../agents.js";
 import type * as brain from "../brain.js";
+import type * as config from "../config.js";
 import type * as conversations from "../conversations.js";
+import type * as dashboard from "../dashboard.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
+import type * as lib_auth from "../lib/auth.js";
 import type * as lib_telegram from "../lib/telegram.js";
 import type * as memories from "../memories.js";
 import type * as modes from "../modes.js";
@@ -28,9 +31,12 @@ import type {
 declare const fullApi: ApiFromModules<{
   agents: typeof agents;
   brain: typeof brain;
+  config: typeof config;
   conversations: typeof conversations;
+  dashboard: typeof dashboard;
   http: typeof http;
   ingest: typeof ingest;
+  "lib/auth": typeof lib_auth;
   "lib/telegram": typeof lib_telegram;
   memories: typeof memories;
   modes: typeof modes;

@@ -3,8 +3,8 @@ import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
 
 /**
- * The front door. Runs as a mutation so the HTTP action can return 200 to
- * Telegram immediately; the actual turn is scheduled and runs on its own.
+ * The front door for Telegram. Runs as a mutation so the HTTP action can return
+ * 200 immediately; the actual turn is scheduled and runs on its own.
  *
  * This is also where authorisation happens, once, before anything else.
  */
@@ -51,7 +51,8 @@ export const receive = internalMutation({
     }
 
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
-      chatId: args.chatId,
+      channel: "telegram",
+      externalId: args.chatId,
       text: args.text,
       title: args.title,
     });

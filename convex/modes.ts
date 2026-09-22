@@ -7,23 +7,27 @@
  * passed to the model at all, so there is no "the model tried and we said no"
  * path to get wrong.
  *
- * Modes are plain data. Adding one is an entry in MODES, not a refactor.
+ * What follows are the defaults. They ship in code so a fresh deployment works
+ * with an empty database, and so this file stays the readable answer to what
+ * Perry is allowed to do. The `modeConfigs` table can override any field, which
+ * is how the dashboard changes the model without a redeploy.
  */
 
 export const MODE_NAMES = ["perry", "agentP"] as const;
 export type ModeName = (typeof MODE_NAMES)[number];
 
-export type ToolName = "recall" | "remember" | "forget";
+export const TOOL_NAMES = ["recall", "remember", "forget"] as const;
+export type ToolName = (typeof TOOL_NAMES)[number];
 
 export interface Mode {
   name: ModeName;
   label: string;
-  /** Model slug, resolved through the Vercel AI Gateway. */
+  /** Model slug, `provider/model`, resolved through the Vercel AI Gateway. */
   model: string;
   /** Hard ceiling on tool-call round trips in one turn. */
   stepBudget: number;
   /** The only tools that get bound. Order is irrelevant, membership is not. */
-  tools: readonly ToolName[];
+  tools: ToolName[];
   /** Whether destructive tool calls must be confirmed by the owner first. */
   requiresApproval: boolean;
   instructions: string;
@@ -38,7 +42,7 @@ You are not a search engine. You know the owner. Use what you remember.
 Never invent a fact about the owner's life; if you do not know, say so and ask.
 `.trim();
 
-export const MODES: Record<ModeName, Mode> = {
+export const MODE_DEFAULTS: Record<ModeName, Mode> = {
   /**
    * The pet. Ambient, cheap, quiet, and structurally incapable of damage.
    * This is the default and where the large majority of turns should land.
@@ -91,19 +95,54 @@ State plainly when something failed. Never report success you did not verify.
 
 export const DEFAULT_MODE: ModeName = "perry";
 
-export function getMode(name: ModeName): Mode {
-  return MODES[name];
-}
-
 export function isModeName(value: string): value is ModeName {
   return (MODE_NAMES as readonly string[]).includes(value);
 }
 
-/** Every tool the owner could reach if they switched modes. Used for /help. */
-export function toolsAcrossAllModes(): ToolName[] {
+export function isToolName(value: string): value is ToolName {
+  return (TOOL_NAMES as readonly string[]).includes(value);
+}
+
+/** Drop anything that is not a real tool. Stored config is user input. */
+export function sanitizeTools(values: string[]): ToolName[] {
   const seen = new Set<ToolName>();
-  for (const mode of Object.values(MODES)) {
-    for (const tool of mode.tools) seen.add(tool);
+  for (const value of values) {
+    if (isToolName(value)) seen.add(value);
   }
   return [...seen];
+}
+
+export type ModeOverride = {
+  model?: string;
+  stepBudget?: number;
+  tools?: string[];
+  instructions?: string;
+};
+
+/**
+ * Merge a stored override onto the code default. Unset and blank fields fall
+ * through to the default, so clearing a box in the dashboard restores shipped
+ * behaviour rather than producing an empty prompt.
+ */
+export function applyOverride(name: ModeName, override?: ModeOverride): Mode {
+  const base = MODE_DEFAULTS[name];
+  if (!override) return { ...base };
+
+  const tools =
+    override.tools && override.tools.length > 0
+      ? sanitizeTools(override.tools)
+      : base.tools;
+
+  return {
+    ...base,
+    model: override.model?.trim() || base.model,
+    stepBudget:
+      typeof override.stepBudget === "number" &&
+      Number.isFinite(override.stepBudget) &&
+      override.stepBudget > 0
+        ? Math.min(Math.floor(override.stepBudget), 200)
+        : base.stepBudget,
+    tools: tools.length > 0 ? tools : base.tools,
+    instructions: override.instructions?.trim() || base.instructions,
+  };
 }

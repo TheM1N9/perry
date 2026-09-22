@@ -1,0 +1,299 @@
+:root {
+  --bg: #0b0b0c;
+  --panel: #131316;
+  --panel-2: #1a1a1f;
+  --line: #26262d;
+  --text: #e8e8ea;
+  --dim: #8a8a92;
+  --dimmer: #5c5c66;
+  --accent: #6ee7a8;
+  --accent-dim: #2f6b4f;
+  --danger: #f87171;
+  --warn: #fbbf24;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--dimmer);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: #eafff3;
+}
+
+button.danger {
+  color: var(--danger);
+}
+
+button.ghost {
+  background: transparent;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--dimmer);
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--accent);
+}
+
+.shell {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 32px 20px 80px;
+}
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.statusline {
+  color: var(--dim);
+  font-size: 12px;
+  margin-bottom: 24px;
+}
+
+.statusline .bad {
+  color: var(--warn);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
+}
+
+.tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px 14px;
+  color: var(--dim);
+}
+
+.tab:hover {
+  color: var(--text);
+  border-color: transparent;
+}
+
+.tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.panel h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.hint {
+  color: var(--dim);
+  font-size: 12px;
+  margin: 0 0 16px;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.field {
+  margin-bottom: 14px;
+}
+
+.field label {
+  display: block;
+  color: var(--dim);
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+}
+
+.badge.on {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.badge.err {
+  color: var(--danger);
+  border-color: #5b2b2b;
+}
+
+/* chat */
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 280px;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 6px;
+  margin-bottom: 16px;
+}
+
+.msg {
+  max-width: 82%;
+  padding: 9px 13px;
+  border-radius: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg.user {
+  align-self: flex-end;
+  background: var(--accent-dim);
+  color: #eafff3;
+}
+
+.msg.assistant {
+  align-self: flex-start;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.msg.pending {
+  opacity: 0.55;
+}
+
+.composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.composer textarea {
+  min-height: 44px;
+  max-height: 160px;
+}
+
+/* lists */
+
+.item {
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+}
+
+.item:first-child {
+  border-top: none;
+}
+
+.item-meta {
+  color: var(--dimmer);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.empty {
+  color: var(--dimmer);
+  padding: 28px 0;
+  text-align: center;
+}
+
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.tools label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 13px;
+  margin: 0;
+}
+
+.tools input {
+  width: auto;
+}
+
+.gate {
+  max-width: 420px;
+  margin: 18vh auto 0;
+  padding: 0 20px;
+}

@@ -1,7 +1,31 @@
 import { v } from "convex/values";
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
+import { vMode } from "./schema";
 
-const vMode = v.union(v.literal("perry"), v.literal("agentP"));
+export const recent = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("runs")
+      .withIndex("by_started")
+      .order("desc")
+      .take(Math.min(args.limit ?? 30, 100));
+
+    return rows.map((r) => ({
+      id: r._id as string,
+      mode: r.mode as string,
+      prompt: r.prompt,
+      status: r.status as string,
+      steps: r.steps,
+      toolCalls: r.toolCalls,
+      model: r.model,
+      totalTokens: r.usage?.totalTokens,
+      error: r.error,
+      startedAt: r.startedAt,
+      durationMs: r.finishedAt ? r.finishedAt - r.startedAt : undefined,
+    }));
+  },
+});
 
 export const start = internalMutation({
   args: {
