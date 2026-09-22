@@ -7,7 +7,7 @@ const url = process.env.NEXT_PUBLIC_CONVEX_URL;
 
 if (!url) {
   throw new Error(
-    "NEXT_PUBLIC_CONVEX_URL is not set. It is written to .env.local by `npx convex dev`.",
+    "NEXT_PUBLIC_CONVEX_URL is not set. It is written to .env.local by `pnpm exec convex dev`.",
   );
 }
 

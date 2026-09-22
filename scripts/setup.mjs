@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * One command to install Perry: `npm run setup`.
+ * One command to install Perry: `pnpm run setup`.
  *
  * Everything this touches belongs to whoever runs it. Your own Convex
  * deployment, your own bot, your own keys, your own data. Nothing is shared
@@ -76,7 +76,7 @@ function readEnvFile() {
 
 function writeEnvFile(values) {
   const lines = [
-    "# Perry, local env. Gitignored. Written by `npm run setup`.",
+    "# Perry, local env. Gitignored. Written by `pnpm run setup`.",
     "# Deployment secrets live on Convex; these are the local copies the",
     "# scripts need.",
     "",
@@ -130,7 +130,7 @@ async function main() {
 
   const cloudUrl = env.NEXT_PUBLIC_CONVEX_URL || env.CONVEX_URL;
   if (!cloudUrl) {
-    say(yellow("  No Convex URL in .env.local. Run `npx convex dev` once, then re-run."));
+    say(yellow("  No Convex URL in .env.local. Run `pnpm exec convex dev` once, then re-run."));
     process.exit(1);
   }
   const siteUrl = cloudUrl.replace(".convex.cloud", ".convex.site");
@@ -234,7 +234,7 @@ async function main() {
   const code = pair.output.match(/"code":\s*"(\d{6})"/)?.[1];
 
   if (!code) {
-    say(yellow("  Could not mint a pairing code. Run `npm run pair` to retry."));
+    say(yellow("  Could not mint a pairing code. Run `pnpm run pair` to retry."));
   } else {
     say("");
     say(`  Message ${bold("@" + probe.result.username)} on Telegram with:`);
@@ -244,9 +244,9 @@ async function main() {
   }
 
   say(bold("\nDashboard"));
-  say(`  npm run dev  then open http://localhost:3000`);
+  say(`  pnpm run dev  then open http://localhost:3000`);
   say(`  key: ${dashboardKey}`);
-  say(dim("\n  (also saved in .env.local; `npm run doctor` checks everything)\n"));
+  say(dim("\n  (also saved in .env.local; `pnpm run doctor` checks everything)\n"));
 
   rl.close();
 }

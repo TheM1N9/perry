@@ -150,6 +150,9 @@ async function loadConversation(
 
   const existing = await find();
   if (existing) return existing;
+  if (channel === "web" && externalId !== "dashboard") {
+    throw new Error("This chat was deleted.");
+  }
 
   const threadId = await createThread(ctx, components.agent, {
     userId: `${channel}:${externalId}`,
@@ -184,7 +187,9 @@ export const handleTurn = internalAction({
       args.title,
     );
 
-    if (args.text.startsWith("/")) {
+    try {
+
+    if (channel === "telegram" && args.text.startsWith("/")) {
       const reply = await runCommand(ctx, conversation, args.text);
       await deliver(ctx, channel, args.externalId, reply);
       return null;
@@ -219,7 +224,7 @@ export const handleTurn = internalAction({
         ctx,
         {
           threadId: conversation.threadId,
-          userId: `${channel}:${args.externalId}`,
+          userId: channel === "web" ? "web:dashboard" : `${channel}:${args.externalId}`,
         },
         { prompt: args.text },
       );
@@ -282,6 +287,11 @@ export const handleTurn = internalAction({
     }
 
     return null;
+    } finally {
+      if (channel === "web") {
+        await ctx.runMutation(internal.conversations.finishWebTurn, { id: conversation._id });
+      }
+    }
   },
 });
 

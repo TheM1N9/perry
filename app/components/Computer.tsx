@@ -98,7 +98,7 @@ export function Computer({ dashboardKey }: { dashboardKey: string }) {
 
         {compute.runners.length === 0 && (
           <div className="empty">
-            None. Run <code>npm run connect</code> on the machine you want.
+            None. Run <code>pnpm run connect</code> on the machine you want.
           </div>
         )}
 

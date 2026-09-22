@@ -58,7 +58,7 @@ export const receive = internalMutation({
       case "needs-code":
         await reply(
           "Send me the six digit pairing code from your terminal.\n" +
-            "Lost it? Run: npm run pair",
+            "Lost it? Run: pnpm run pair",
         );
         return null;
 
@@ -67,7 +67,7 @@ export const receive = internalMutation({
         return null;
 
       case "expired":
-        await reply("That code expired. Run `npm run pair` for a fresh one.");
+        await reply("That code expired. Run `pnpm run pair` for a fresh one.");
         return null;
 
       case "not-owner":

@@ -63,7 +63,7 @@ export function Keys({ dashboardKey }: { dashboardKey: string }) {
         <h3>Keys</h3>
         <p className="hint">
           Saved to your deployment, never shown again. These override anything
-          set with <code>npx convex env set</code>, and clearing one falls back
+          set with <code>pnpm exec convex env set</code>, and clearing one falls back
           to the environment variable if there is one.
         </p>
         {notice && (
@@ -148,7 +148,7 @@ export function Keys({ dashboardKey }: { dashboardKey: string }) {
         <p className="hint">
           The dashboard key itself, <code>DASHBOARD_KEY</code>, is what guards
           this page, so it cannot be edited from behind it. Change it with{" "}
-          <code>npx convex env set DASHBOARD_KEY</code>. That also makes a
+          <code>pnpm exec convex env set DASHBOARD_KEY</code>. That also makes a
           lockout recoverable rather than permanent.
         </p>
       </div>

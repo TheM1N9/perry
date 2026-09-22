@@ -9,8 +9,8 @@ separate: its own deployment, its own bot, its own keys, its own memory. There
 is no shared server and nothing here phones home.
 
 ```bash
-npm install
-npm run setup
+pnpm install
+pnpm run setup
 ```
 
 Five prompts, then send the pairing code it prints to your bot. See
@@ -261,11 +261,12 @@ Done:
 4. Memory: `recall`, `remember`, `forget` over Convex full-text search.
 5. Runtime config. Model, step budget, tools and instructions per mode, stored
    in the database and editable without a redeploy.
-6. Web channel, sharing memory with Telegram but keeping its own thread.
-7. Dashboard: chat, memory editing, mode config, and a log of every turn with
-   its tools, tokens and errors.
+6. Web channel with separate chat sessions, branching, search, and shared
+   memory with Telegram.
+7. Dashboard: chat management, memory editing, mode config, and a log of every
+   turn with its tools, tokens and errors.
 
-[INSTALL.md](INSTALL.md) has the detail. `npm run doctor` checks it.
+[INSTALL.md](INSTALL.md) has the detail. `pnpm run doctor` checks it.
 
 8. Daytona sandbox: shell, files, receipts. Agent P only.
 9. Reading public pages, with the private-network addresses refused.
@@ -289,7 +290,7 @@ Next:
 
 ## Handing Perry to someone else
 
-Send them the repo. `npm run setup` builds them a separate deployment with
+Send them the repo. `pnpm run setup` builds them a separate deployment with
 separate everything, and nothing routine requires editing code. Your data stays
 on your deployment and is never visible to theirs.
 

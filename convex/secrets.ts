@@ -7,7 +7,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
  * Every key is read here rather than straight from `process.env`, and the
  * database wins over the environment. That single rule is what lets the
  * dashboard change a key without a terminal, while an install that was set up
- * with `npx convex env set` keeps working untouched.
+ * with `pnpm exec convex env set` keeps working untouched.
  *
  * Keys are write-and-forget: they go in, and nothing ever reads one back out
  * to a browser. The dashboard sees whether a key is set, where it came from,

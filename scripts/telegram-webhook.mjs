@@ -2,13 +2,13 @@
 /**
  * Register, inspect, or remove Perry's Telegram webhook.
  *
- *   npm run webhook:set
- *   npm run webhook:info
- *   npm run webhook:delete
+ *   pnpm run webhook:set
+ *   pnpm run webhook:info
+ *   pnpm run webhook:delete
  *
  * Reads TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET and CONVEX_SITE_URL from
  * .env.local. These are the local copies; the Convex deployment needs its own
- * via `npx convex env set`.
+ * via `pnpm exec convex env set`.
  */
 
 import { readFileSync, existsSync } from "node:fs";

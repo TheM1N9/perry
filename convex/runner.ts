@@ -36,7 +36,7 @@ async function authenticate(
     .unique();
 
   if (!runner || runner.revoked || !sameToken(runner.token, token)) {
-    throw new Error("This runner token is not valid. Run `npm run connect` again.");
+    throw new Error("This runner token is not valid. Run `pnpm run connect` again.");
   }
   return runner;
 }

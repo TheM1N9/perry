@@ -19,7 +19,7 @@ function requireToken(token: string | null): string {
   if (!token) {
     throw new Error(
       "No Telegram bot token. Set one on the Keys page, or run: " +
-        "npx convex env set TELEGRAM_BOT_TOKEN <token>",
+        "pnpm exec convex env set TELEGRAM_BOT_TOKEN <token>",
     );
   }
   return token;

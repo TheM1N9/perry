@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `npm run connect` — let Agent P work on this machine.
+ * `pnpm run connect` — let Agent P work on this machine.
  *
  * Mints a runner token, points the install at local compute, writes the config
  * to ~/.perry/runner.json, and starts the runner.
@@ -59,7 +59,7 @@ const url = env.NEXT_PUBLIC_CONVEX_URL;
 
 if (!url) {
   console.error(
-    `\n${red("No Convex URL in .env.local.")} Run ${bold("npm run setup")} first.\n`,
+    `\n${red("No Convex URL in .env.local.")} Run ${bold("pnpm run setup")} first.\n`,
   );
   process.exit(1);
 }
@@ -96,7 +96,7 @@ if (tokenOnly) {
   console.log(
     dim(
       `\n  On the other machine, in a clone of this repo:\n` +
-        `    npm install\n` +
+        `    pnpm install\n` +
         `    node runner/index.mjs --url ${url} --token ${token} --dir <folder>\n`,
     ),
   );

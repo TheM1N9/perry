@@ -27,7 +27,7 @@ export function assertDashboardKey(key: string): void {
   if (!expected) {
     throw new Error(
       "DASHBOARD_KEY is not set on this deployment, so the dashboard is " +
-        "closed. Run: npx convex env set DASHBOARD_KEY <a long random string>",
+        "closed. Run: pnpm exec convex env set DASHBOARD_KEY <a long random string>",
     );
   }
 

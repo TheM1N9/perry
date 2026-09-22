@@ -111,7 +111,7 @@ export function Connectors({ dashboardKey }: { dashboardKey: string }) {
           token. Get a key at composio.dev, then run:
         </p>
         <pre style={{ fontSize: 12, color: "var(--dim)" }}>
-          npx convex env set COMPOSIO_API_KEY &lt;key&gt;
+          pnpm exec convex env set COMPOSIO_API_KEY &lt;key&gt;
         </pre>
         {state.error && <p className="hint">{state.error}</p>}
       </div>

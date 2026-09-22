@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `npm run pair` — mint a fresh pairing code.
+ * `pnpm run pair` — mint a fresh pairing code.
  *
  * Use it when the first code expired, or to move Perry to a different Telegram
  * chat. Minting a code does not unclaim an existing owner; do that from the

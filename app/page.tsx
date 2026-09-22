@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Activity } from "./components/Activity";
 import { Chat } from "./components/Chat";
 import { Computer } from "./components/Computer";
@@ -26,6 +27,17 @@ const TABS = [
   { id: "keys", label: "Keys" },
   { id: "setup", label: "Setup" },
 ] as const;
+
+const SECTION_DESCRIPTIONS: Record<string, string> = {
+  work: "Tasks, goals, and monitors Perry is working on.",
+  computer: "Your connected computer and local runner.",
+  connectors: "Accounts and services Perry can use with your permission.",
+  memory: "Facts Perry has saved for future conversations.",
+  settings: "Choose how Perry and Agent P think and work.",
+  activity: "A record of recent turns, tools, and errors.",
+  keys: "Manage the credentials this installation uses.",
+  setup: "Pair this installation with your chat account.",
+};
 
 type TabId = (typeof TABS)[number]["id"];
 
@@ -119,13 +131,13 @@ function Gate({ onSubmit }: { onSubmit: (key: string) => void }) {
       <h1 className="title">Perry</h1>
       <p className="hint" style={{ marginTop: 8 }}>
         This install is yours alone, and the dashboard is behind one key.
-        <code> npm run setup </code> prints it, and it is saved in .env.local.
+        <code> pnpm run setup </code> prints it, and it is saved in .env.local.
       </p>
       <pre
         className="panel"
         style={{ fontSize: 12, color: "var(--dim)", margin: "0 0 16px" }}
       >
-        npm run setup
+        pnpm run setup
       </pre>
       <div className="composer">
         <input
@@ -159,46 +171,53 @@ function Shell({
 }) {
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
   const [tab, setTab] = useState<TabId | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (status && tab === null) setTab(status.claimed ? "chat" : "setup");
   }, [status, tab]);
 
-  const active = tab ?? "chat";
+  const active = tab ?? (status?.claimed ? "chat" : "setup");
+  const openChat = (id: Id<"conversations">) => {
+    window.localStorage.setItem("perry.activeChat", id);
+    setTab("chat");
+  };
 
-  return (
-    <div className="shell">
-      <div className="topbar">
-        <h1 className="title">Perry</h1>
-        <button className="ghost" onClick={onLock}>
-          Lock
-        </button>
-      </div>
-      <StatusLine dashboardKey={dashboardKey} />
+  if (active === "chat") {
+    return <Chat dashboardKey={dashboardKey} onNavigate={setTab} onLock={onLock} />;
+  }
 
-      <div className="tabs">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            className={t.id === active ? "tab active" : "tab"}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {active === "chat" && <Chat dashboardKey={dashboardKey} />}
-      {active === "work" && <Work dashboardKey={dashboardKey} />}
-      {active === "computer" && <Computer dashboardKey={dashboardKey} />}
-      {active === "connectors" && <Connectors dashboardKey={dashboardKey} />}
-      {active === "memory" && <Memories dashboardKey={dashboardKey} />}
-      {active === "settings" && <Settings dashboardKey={dashboardKey} />}
-      {active === "activity" && <Activity dashboardKey={dashboardKey} />}
-      {active === "keys" && <Keys dashboardKey={dashboardKey} />}
-      {active === "setup" && <Pairing dashboardKey={dashboardKey} />}
-    </div>
-  );
+  return <div className="chat-workspace dashboard-workspace">
+    {menuOpen && <button className="chat-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
+    <aside className={`chat-sidebar dashboard-sidebar ${menuOpen ? "open" : ""}`}>
+      <div className="chat-brand"><span className="chat-brand-mark">P</span><span>Perry</span><span className="chat-brand-sub">your space</span></div>
+      <div className="dashboard-sidebar-heading">WORKSPACE</div>
+      <nav className="dashboard-nav" aria-label="Workspace navigation">
+        {TABS.map((item) => <button key={item.id} className={item.id === active ? "active" : ""} onClick={() => { setTab(item.id); setMenuOpen(false); }}>
+          <span className="dashboard-nav-dot" />{item.label}<span className="dashboard-nav-arrow">›</span>
+        </button>)}
+      </nav>
+      <div className="dashboard-sidebar-spacer" />
+      <div className="dashboard-sidebar-footer"><StatusLine dashboardKey={dashboardKey} /><button onClick={onLock}>Lock dashboard</button></div>
+    </aside>
+    <main className="chat-main">
+      <header className="chat-header dashboard-header">
+        <div className="chat-header-left"><button className="chat-mobile-menu" aria-label="Open navigation" onClick={() => setMenuOpen(true)}>☰</button><span>Workspace <span className="dashboard-header-slash">/</span> {TABS.find((item) => item.id === active)?.label}</span></div>
+        <button className="dashboard-back-chat" onClick={() => setTab("chat")}>Open chat <span>↗</span></button>
+      </header>
+      <div className="dashboard-scroll"><div className="dashboard-content">
+        <div className="dashboard-intro"><div className="chat-eyebrow">PERRY WORKSPACE</div><h1>{TABS.find((item) => item.id === active)?.label}</h1><p>{SECTION_DESCRIPTIONS[active]}</p></div>
+        {active === "work" && <Work dashboardKey={dashboardKey} />}
+        {active === "computer" && <Computer dashboardKey={dashboardKey} />}
+        {active === "connectors" && <Connectors dashboardKey={dashboardKey} />}
+        {active === "memory" && <Memories dashboardKey={dashboardKey} />}
+        {active === "settings" && <Settings dashboardKey={dashboardKey} />}
+        {active === "activity" && <Activity dashboardKey={dashboardKey} onOpenChat={openChat} />}
+        {active === "keys" && <Keys dashboardKey={dashboardKey} />}
+        {active === "setup" && <Pairing dashboardKey={dashboardKey} />}
+      </div></div>
+    </main>
+  </div>;
 }
 
 export default function Home() {

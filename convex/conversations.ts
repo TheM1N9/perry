@@ -68,6 +68,58 @@ export const touch = internalMutation({
   },
 });
 
+export const finishWebTurn = internalMutation({
+  args: { id: v.id("conversations") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const chat = await ctx.db.get(args.id);
+    if (chat?.channel === "web") {
+      await ctx.db.patch(args.id, { pendingTurns: Math.max(0, (chat.pendingTurns ?? 0) - 1) });
+    }
+    return null;
+  },
+});
+
+export const listWeb = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<import("./_generated/dataModel").Doc<"conversations">[]> => await ctx.db.query("conversations")
+    .withIndex("by_channel_last", (q) => q.eq("channel", "web"))
+    .order("desc")
+    .collect(),
+});
+
+export const getWebById = internalQuery({
+  args: { id: v.id("conversations") },
+  handler: async (ctx, args) => {
+    const chat = await ctx.db.get(args.id);
+    return chat?.channel === "web" ? chat : null;
+  },
+});
+
+export const createBranch = internalMutation({
+  args: {
+    parentId: v.id("conversations"),
+    threadId: v.string(),
+    title: v.string(),
+    messageId: v.string(),
+  },
+  returns: v.id("conversations"),
+  handler: async (ctx, args) => {
+    const parent = await ctx.db.get(args.parentId);
+    if (parent?.channel !== "web") throw new Error("Source chat was deleted.");
+    return await ctx.db.insert("conversations", {
+      channel: "web",
+      externalId: `session:${args.threadId}`,
+      threadId: args.threadId,
+      mode: parent.mode,
+      title: args.title,
+      lastMessageAt: Date.now(),
+      parentConversationId: parent._id,
+      branchedFromMessageId: args.messageId,
+    });
+  },
+});
+
 /**
  * Drop the conversation so the next message starts a fresh thread. Memories
  * survive on purpose: reset clears the conversation, not what Perry knows.
@@ -105,6 +157,6 @@ export const stats = internalQuery({
 export const list = internalQuery({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db.query("conversations").order("desc").take(50);
+    return await ctx.db.query("conversations").order("desc").collect();
   },
 });

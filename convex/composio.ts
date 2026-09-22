@@ -34,7 +34,7 @@ function client(apiKey: string | null): Composio {
   if (!apiKey) {
     throw new Error(
       "COMPOSIO_API_KEY is not set, so no accounts are connected. Get a key " +
-        "at composio.dev, then: npx convex env set COMPOSIO_API_KEY <key>",
+        "at composio.dev, then: pnpm exec convex env set COMPOSIO_API_KEY <key>",
     );
   }
   return new Composio({ apiKey });

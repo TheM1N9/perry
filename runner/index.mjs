@@ -173,8 +173,8 @@ async function main() {
   if (!url || !token) {
     console.error(
       `\n${red("Not configured.")}\n\n` +
-        `  On the machine where you installed Perry:  ${bold("npm run connect")}\n` +
-        `  On another machine:  ${bold("npm run connect -- --url <convex url> --token <token>")}\n`,
+        `  On the machine where you installed Perry:  ${bold("pnpm run connect")}\n` +
+        `  On another machine:  ${bold("pnpm run connect -- --url <convex url> --token <token>")}\n`,
     );
     process.exit(1);
   }

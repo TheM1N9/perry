@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `npm run doctor` — check every moving part and say which one is broken.
+ * `pnpm run doctor` — check every moving part and say which one is broken.
  *
  * Reports only. It changes nothing, so it is safe to run when you are not sure
  * what state an install is in.
@@ -75,19 +75,19 @@ async function main() {
 
   // Local env
   if (!existsSync(ENV_FILE)) {
-    bad(".env.local", "missing. Run: npm run setup");
+    bad(".env.local", "missing. Run: pnpm run setup");
   } else {
     ok(".env.local");
   }
 
   const cloudUrl = env.NEXT_PUBLIC_CONVEX_URL;
   if (cloudUrl) ok("convex url", cloudUrl);
-  else bad("convex url", "NEXT_PUBLIC_CONVEX_URL not set. Run: npm run setup");
+  else bad("convex url", "NEXT_PUBLIC_CONVEX_URL not set. Run: pnpm run setup");
 
   // Deployment env vars
   const list = await runConvex(["env", "list"]);
   if (list.code !== 0) {
-    bad("convex deployment", "cannot reach it. Is `npx convex dev` configured?");
+    bad("convex deployment", "cannot reach it. Is `pnpm exec convex dev` configured?");
   } else {
     const names = new Set(
       list.output
@@ -101,7 +101,7 @@ async function main() {
       "DASHBOARD_KEY",
     ]) {
       if (names.has(required)) ok(`env ${required}`);
-      else bad(`env ${required}`, "not set. Run: npm run setup");
+      else bad(`env ${required}`, "not set. Run: pnpm run setup");
     }
     if (names.has("AI_GATEWAY_API_KEY")) ok("gateway", "vercel");
     else ok("gateway", "convex (no key needed)");
@@ -115,7 +115,7 @@ async function main() {
       () => null,
     );
     if (health?.ok) ok("http actions", `${siteUrl}/health`);
-    else bad("http actions", "not answering. Run: npx convex dev --once");
+    else bad("http actions", "not answering. Run: pnpm exec convex dev --once");
   }
 
   // Telegram webhook
@@ -137,7 +137,7 @@ async function main() {
     if (!info?.ok) {
       bad("webhook", "could not read it");
     } else if (!info.result.url) {
-      bad("webhook", "not registered. Run: npm run webhook:set");
+      bad("webhook", "not registered. Run: pnpm run webhook:set");
     } else {
       ok("webhook", info.result.url);
       if (info.result.last_error_message) {
@@ -159,7 +159,7 @@ async function main() {
     const code = status.output.match(/"pairingCode":\s*"(\d{6})"/)?.[1];
     warn(
       "ownership",
-      code ? `unclaimed. Send ${code} to your bot.` : "unclaimed. Run: npm run pair",
+      code ? `unclaimed. Send ${code} to your bot.` : "unclaimed. Run: pnpm run pair",
     );
   }
 

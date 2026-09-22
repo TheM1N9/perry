@@ -3,16 +3,26 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import { vMode } from "./schema";
 
 export const recent = internalQuery({
-  args: { limit: v.optional(v.number()) },
+  args: { limit: v.optional(v.number()), conversationId: v.optional(v.id("conversations")) },
   handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("runs")
-      .withIndex("by_started")
-      .order("desc")
-      .take(Math.min(args.limit ?? 30, 100));
+    const limit = Math.min(args.limit ?? 30, 100);
+    const rows = args.conversationId
+      ? await ctx.db.query("runs")
+        .withIndex("by_conversation", (q) => q.eq("conversationId", args.conversationId!))
+        .order("desc")
+        .take(limit)
+      : await ctx.db.query("runs")
+        .withIndex("by_started")
+        .order("desc")
+        .take(limit);
+    const conversations = await Promise.all(rows.map((run) => ctx.db.get(run.conversationId)));
 
-    return rows.map((r) => ({
+    return rows.map((r, index) => ({
       id: r._id as string,
+      sessionId: r.conversationId,
+      threadId: conversations[index]?.threadId,
+      chatTitle: conversations[index]?.title ?? (conversations[index] ? "Untitled chat" : "Deleted chat"),
+      channel: conversations[index]?.channel ?? "deleted",
       mode: r.mode as string,
       prompt: r.prompt,
       status: r.status as string,

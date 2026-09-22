@@ -114,7 +114,7 @@ async function noRunner(): Promise<ComputeResult> {
     target: "none",
     error:
       "This install is set to run commands on your own machine, but no " +
-      "runner is connected. Start one with `npm run connect`, or switch the " +
+      "runner is connected. Start one with `pnpm run connect`, or switch the " +
       "target back to the cloud sandbox in Settings.",
   };
 }
@@ -294,7 +294,7 @@ export const status = internalAction({
           target,
           note:
             "No machine is connected right now. Start the runner with " +
-            "`npm run connect`, or switch to the cloud sandbox in Settings.",
+            "`pnpm run connect`, or switch to the cloud sandbox in Settings.",
         };
       }
       return {

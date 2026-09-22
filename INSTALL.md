@@ -5,8 +5,8 @@ keys, and nobody else's data is anywhere near it. There is no shared server, no
 account on someone else's system, and nothing in this repo phones home.
 
 ```bash
-npm install
-npm run setup
+pnpm install
+pnpm run setup
 ```
 
 That is the whole install. The wizard walks five steps, tells you what it is
@@ -58,7 +58,7 @@ what guards that page, so it cannot be edited from behind it, and a lockout
 stays recoverable:
 
 ```bash
-npx convex env set DASHBOARD_KEY "<new key>"
+pnpm exec convex env set DASHBOARD_KEY "<new key>"
 ```
 
 ## Giving Agent P a computer
@@ -67,7 +67,7 @@ Optional, and only Agent P can reach it. Without it every other tool still
 works and the sandbox tools report that no computer is configured.
 
 ```bash
-npx convex env set DAYTONA_API_KEY "<key from daytona.io>"
+pnpm exec convex env set DAYTONA_API_KEY "<key from daytona.io>"
 ```
 
 Daytona gives $200 of signup credit and bills per second. A sandbox stops
@@ -81,15 +81,23 @@ reachable from it.
 ## Dashboard
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Open http://localhost:3000 and paste the dashboard key the wizard printed. It
 is also in `.env.local`.
 
-From there you can chat with the same agent Telegram talks to, edit what Perry
-remembers, change the model and step budget and tool allowlist per mode, and
-read a log of every turn with its tools, tokens and errors.
+The chat workspace keeps separate web conversations. Use **New chat** to start
+one, search titles or message text with **Ctrl+K**, rename or delete a chat from
+its sidebar menu, or choose **Branch from here** on a message to continue from
+that point in a separate thread. Each chat shows a stable session ID in the
+sidebar and header; the header copies the full ID. Older messages load on demand. Web chats share
+Perry's saved memories with Telegram while keeping their histories separate.
+
+The sidebar also opens Work, Computer, Connectors, Memory, Settings, Activity,
+Keys, and Setup. Settings controls the model, step budget, and tools per mode;
+Activity is a run log with session filters, tools, tokens, errors, and a link
+back to each web chat. Chat holds the message history.
 
 The key is a bearer token for one person, not a login system. Localhost does
 not bypass it, because a dashboard that can read your memory should not be open
@@ -99,19 +107,19 @@ to anything else running on your machine.
 
 | Command | What it does |
 |---|---|
-| `npm run doctor` | Checks every moving part and names the broken one. Changes nothing. |
-| `npm run pair` | Fresh pairing code, for an expired one or a new chat. |
-| `npm run webhook:info` | What Telegram thinks, including delivery errors. |
-| `npx convex dev` | Watches `convex/`, pushes on save, streams logs. |
+| `pnpm run doctor` | Checks every moving part and names the broken one. Changes nothing. |
+| `pnpm run pair` | Fresh pairing code, for an expired one or a new chat. |
+| `pnpm run webhook:info` | What Telegram thinks, including delivery errors. |
+| `pnpm exec convex dev` | Watches `convex/`, pushes on save, streams logs. |
 
-`npm run doctor` is the first thing to run when something seems wrong. It
+`pnpm run doctor` is the first thing to run when something seems wrong. It
 checks the local env file, the deployment, its environment variables, the HTTP
 endpoint, the bot token, the webhook registration and its delivery errors, and
 whether anyone has claimed the install.
 
 ## Giving Perry to someone else
 
-Send them the repo. They run `npm run setup`, which builds them a separate
+Send them the repo. They run `pnpm run setup`, which builds them a separate
 deployment with separate everything. Your memories, keys, and conversations
 stay on your deployment and are never visible to theirs.
 
@@ -122,9 +130,9 @@ id to three tables.
 
 ## Troubleshooting
 
-**Perry will not answer.** `npm run doctor`. If ownership is unclaimed, send the
+**Perry will not answer.** `pnpm run doctor`. If ownership is unclaimed, send the
 pairing code. If the webhook shows a delivery error, the secret on the
-deployment and the one in `.env.local` disagree, so re-run `npm run setup`.
+deployment and the one in `.env.local` disagree, so re-run `pnpm run setup`.
 
 **"That broke: ..." in chat.** Perry reports failures instead of swallowing
 them. The full error is in the Convex dashboard logs and in the Activity tab.
@@ -132,6 +140,6 @@ them. The full error is in the Convex dashboard logs and in the Activity tab.
 **A model is rejected.** Model names live in the Settings tab. The gateway's
 rejection arrives in chat verbatim, so you can paste a different one and retry.
 
-**Moving to production.** `npx convex deploy` pushes to a separate production
+**Moving to production.** `pnpm exec convex deploy` pushes to a separate production
 deployment with its own environment variables, so set them again there and
 re-run the webhook registration against the production `.convex.site` URL.

@@ -1,7 +1,8 @@
-import { listMessages } from "@convex-dev/agent";
+import { createThread, listMessages, saveMessages } from "@convex-dev/agent";
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { components, internal } from "./_generated/api";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { action, mutation, query } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { activeGateway } from "./lib/models";
@@ -16,9 +17,8 @@ import { vMode } from "./schema";
  * one line to audit per entry point.
  */
 
-/** The web chat is a single conversation, distinct from any Telegram chat. */
+/** Web sessions have their own Agent threads and share the same memory pool. */
 const WEB_CHANNEL = "web" as const;
-const WEB_ID = "dashboard";
 
 const vKey = v.string();
 
@@ -144,70 +144,247 @@ export type ChatMessage = {
   createdAt: number;
 };
 
-export const getChat = query({
+function webChat(conversation: Doc<"conversations"> | null) {
+  if (!conversation || conversation.channel !== WEB_CHANNEL) {
+    throw new Error("Chat not found.");
+  }
+  return conversation;
+}
+
+export const listChats = query({
   args: { key: vKey },
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const chats = await ctx.db.query("conversations")
+      .withIndex("by_channel_last", (q) => q.eq("channel", WEB_CHANNEL))
+      .order("desc")
+      .collect();
+    return chats.map((chat) => ({
+      id: chat._id,
+      title: chat.title ?? "Untitled chat",
+      mode: chat.mode,
+      lastMessageAt: chat.lastMessageAt,
+      parentConversationId: chat.parentConversationId,
+      branchedFromMessageId: chat.branchedFromMessageId,
+    }));
+  },
+});
+
+export const createChat = mutation({
+  args: { key: vKey },
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const threadId = await createThread(ctx, components.agent, { userId: "web:dashboard", title: "New chat" });
+    return await ctx.db.insert("conversations", {
+      channel: WEB_CHANNEL,
+      externalId: `session:${threadId}`,
+      threadId,
+      mode: "perry",
+      title: "New chat",
+      lastMessageAt: Date.now(),
+    });
+  },
+});
+
+export const renameChat = mutation({
+  args: { key: vKey, id: v.id("conversations"), title: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    webChat(await ctx.db.get(args.id));
+    const title = args.title.trim().slice(0, 100);
+    if (!title) throw new Error("Enter a chat name.");
+    await ctx.db.patch(args.id, { title });
+    return null;
+  },
+});
+
+export const deleteChat = mutation({
+  args: { key: vKey, id: v.id("conversations") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const chat = webChat(await ctx.db.get(args.id));
+    if ((chat.pendingTurns ?? 0) > 0) {
+      throw new Error("Wait for this chat to finish before deleting it.");
+    }
+    const runs = await ctx.db.query("runs")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
+      .collect();
+    if (runs.some((run) => run.status === "running")) {
+      throw new Error("Wait for this chat to finish before deleting it.");
+    }
+    for (const run of runs) await ctx.db.delete(run._id);
+    await ctx.db.delete(args.id);
+    await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
+      threadId: chat.threadId,
+    });
+    return null;
+  },
+});
+
+export const branchChat = action({
+  args: { key: vKey, id: v.id("conversations"), messageId: v.string() },
+  handler: async (ctx, args): Promise<Id<"conversations">> => {
+    assertDashboardKey(args.key);
+    const source = await ctx.runQuery(internal.conversations.getWebById, { id: args.id });
+    if (!source) throw new Error("Source chat was deleted.");
+    const newest: Array<{ _id: string; message?: { role: string }; text?: string }> = [];
+    let cursor: string | null = null;
+    let found = false;
+    while (true) {
+      const page = await listMessages(ctx, components.agent, {
+        threadId: source.threadId,
+        excludeToolMessages: true,
+        paginationOpts: { cursor, numItems: 100 },
+      });
+      for (const message of page.page) {
+        if (message._id === args.messageId) {
+          found = true;
+        }
+        if (found) newest.push(message);
+      }
+      if (page.isDone) break;
+      cursor = page.continueCursor;
+    }
+    if (!found) throw new Error("That message is no longer available to branch.");
+
+    const title = `${source.title ?? "Chat"} · branch`.slice(0, 100);
+    const threadId = await createThread(ctx, components.agent, { userId: "web:dashboard", title });
+    const history = newest.reverse()
+      .filter((message) =>
+        (message.message?.role === "user" || message.message?.role === "assistant") &&
+        typeof message.text === "string" && message.text.trim().length > 0,
+      );
+    try {
+      for (let start = 0; start < history.length; start += 100) {
+        await saveMessages(ctx, components.agent, {
+          threadId,
+          userId: "web:dashboard",
+          order: "next",
+          messages: history.slice(start, start + 100).map((message) => ({
+            role: message.message!.role as "user" | "assistant",
+            content: message.text!,
+          })),
+        });
+      }
+      return await ctx.runMutation(internal.conversations.createBranch, {
+        parentId: source._id,
+        threadId,
+        title,
+        messageId: args.messageId,
+      });
+    } catch (error) {
+      await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, { threadId });
+      throw error;
+    }
+  },
+});
+
+export const searchChats = action({
+  args: { key: vKey, search: v.string() },
+  handler: async (ctx, args): Promise<Array<{ id: Id<"conversations">; title: string; snippet: string; lastMessageAt: number }>> => {
+    assertDashboardKey(args.key);
+    const needle = args.search.trim().toLocaleLowerCase();
+    if (!needle) return [];
+    const [chats, messages] = await Promise.all([
+      ctx.runQuery(internal.conversations.listWeb, {}),
+      ctx.runAction(components.agent.messages.searchMessages, {
+        searchAllMessagesForUserId: "web:dashboard",
+        text: args.search.trim(),
+        textSearch: true,
+        vectorSearch: false,
+        limit: 100,
+      }),
+    ]);
+    const snippets = new Map(messages.map((message) => [message.threadId, message.text ?? ""]));
+    return chats.filter((chat) =>
+      (chat.title ?? "").toLocaleLowerCase().includes(needle) || snippets.has(chat.threadId),
+    ).slice(0, 30).map((chat) => ({
+      id: chat._id,
+      title: chat.title ?? "Untitled chat",
+      snippet: snippets.get(chat.threadId)?.slice(0, 160) ?? "",
+      lastMessageAt: chat.lastMessageAt,
+    }));
+  },
+});
+
+export const getChat = query({
+  args: { key: vKey, id: v.id("conversations") },
   handler: async (
     ctx,
     args,
-  ): Promise<{ mode: string | null; messages: ChatMessage[] }> => {
+  ): Promise<{ mode: string; title: string; isRunning: boolean; lastError?: string }> => {
     assertDashboardKey(args.key);
+    const conversation = webChat(await ctx.db.get(args.id));
+    const isRunning = (conversation.pendingTurns ?? 0) > 0;
+    const latestRun = await ctx.db.query("runs")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
+      .order("desc")
+      .first();
+    return {
+      mode: conversation.mode,
+      title: conversation.title ?? "Untitled chat",
+      isRunning,
+      lastError: latestRun?.status === "error" ? latestRun.error : undefined,
+    };
+  },
+});
 
-    const conversation = await ctx.runQuery(
-      internal.conversations.getByExternalId,
-      { channel: WEB_CHANNEL, externalId: WEB_ID },
-    );
-    if (!conversation) return { mode: null, messages: [] };
-
+export const getChatMessages = query({
+  args: { key: vKey, id: v.id("conversations"), paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const conversation = webChat(await ctx.db.get(args.id));
     const page = await listMessages(ctx, components.agent, {
       threadId: conversation.threadId,
       excludeToolMessages: true,
-      paginationOpts: { cursor: null, numItems: 100 },
+      paginationOpts: args.paginationOpts,
     });
-
-    const messages: ChatMessage[] = page.page
-      .map((doc) => ({
+    return {
+      ...page,
+      page: page.page.map((doc): ChatMessage => ({
         id: doc._id,
         role: doc.message?.role ?? "assistant",
         text: typeof doc.text === "string" ? doc.text : "",
         createdAt: doc._creationTime,
-      }))
-      .filter((m) => m.text.trim().length > 0)
-      .sort((a, b) => a.createdAt - b.createdAt);
-
-    return { mode: conversation.mode, messages };
+      })).filter((message) => message.text.trim().length > 0),
+    };
   },
 });
 
 export const sendChat = mutation({
-  args: { key: vKey, text: v.string() },
+  args: { key: vKey, id: v.id("conversations"), text: v.string() },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
 
     const text = args.text.trim();
     if (text.length === 0) return null;
+    const chat = webChat(await ctx.db.get(args.id));
+    await ctx.db.patch(args.id, {
+      lastMessageAt: Date.now(),
+      title: chat.title === "New chat" ? text.slice(0, 80) : chat.title,
+      pendingTurns: (chat.pendingTurns ?? 0) + 1,
+    });
 
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
       channel: WEB_CHANNEL,
-      externalId: WEB_ID,
+      externalId: chat.externalId,
       text,
-      title: "Dashboard",
+      title: chat.title,
     });
     return null;
   },
 });
 
 export const setChatMode = mutation({
-  args: { key: vKey, mode: vMode },
+  args: { key: vKey, id: v.id("conversations"), mode: vMode },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
 
-    const conversation = await ctx.runQuery(
-      internal.conversations.getByExternalId,
-      { channel: WEB_CHANNEL, externalId: WEB_ID },
-    );
-    if (!conversation) return null;
+    const conversation = webChat(await ctx.db.get(args.id));
 
     await ctx.runMutation(internal.conversations.setMode, {
       id: conversation._id,
@@ -268,6 +445,10 @@ export const deleteMemory = mutation({
 
 export type RunView = {
   id: string;
+  sessionId: Id<"conversations">;
+  threadId?: string;
+  chatTitle: string;
+  channel: string;
   mode: string;
   prompt: string;
   status: string;
@@ -281,10 +462,27 @@ export type RunView = {
 };
 
 export const listRuns = query({
-  args: { key: vKey },
+  args: { key: vKey, conversationId: v.optional(v.id("conversations")) },
   handler: async (ctx, args): Promise<RunView[]> => {
     assertDashboardKey(args.key);
-    return await ctx.runQuery(internal.runs.recent, { limit: 30 });
+    return await ctx.runQuery(internal.runs.recent, { limit: 100, conversationId: args.conversationId });
+  },
+});
+
+export const listActivitySessions = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<Array<{
+    id: Id<"conversations">;
+    title: string;
+    channel: "telegram" | "web";
+  }>> => {
+    assertDashboardKey(args.key);
+    const conversations: Doc<"conversations">[] = await ctx.runQuery(internal.conversations.list, {});
+    return conversations.map((chat) => ({
+      id: chat._id,
+      title: chat.title ?? (chat.channel === "web" ? "Untitled chat" : "Telegram chat"),
+      channel: chat.channel,
+    }));
   },
 });
 

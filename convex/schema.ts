@@ -217,12 +217,17 @@ export default defineSchema({
    */
   conversations: defineTable({
     channel: vChannel,
-    externalId: v.string(), // telegram chat id, or "dashboard" for the web chat
+    externalId: v.string(), // telegram chat id, or a unique web session id
     threadId: v.string(),
     mode: vMode,
     title: v.optional(v.string()),
+    parentConversationId: v.optional(v.id("conversations")),
+    branchedFromMessageId: v.optional(v.string()),
+    pendingTurns: v.optional(v.number()),
     lastMessageAt: v.number(),
-  }).index("by_channel_external", ["channel", "externalId"]),
+  })
+    .index("by_channel_external", ["channel", "externalId"])
+    .index("by_channel_last", ["channel", "lastMessageAt"]),
 
   /**
    * Per-mode overrides layered on top of the defaults in modes.ts.
