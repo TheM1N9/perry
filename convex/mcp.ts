@@ -24,6 +24,19 @@ export const CODEX_TOOLS: readonly ToolName[] = [
   "status_report", "start_task", "set_plan", "finish_task", "set_goal", "watch_page",
 ];
 
+/**
+ * Only Codex runs on the machine where its files are, so only Codex can show
+ * them: the chat serves a shared file from wherever the agent saved it.
+ */
+const SHARE_FILE = {
+  name: "share_file",
+  description:
+    "Show a file from this computer in the chat: an image, video, audio clip or document you created, " +
+    "saved or found. Save it wherever makes sense, then pass its absolute path. The chat serves it from " +
+    "that location, so do not move or delete it afterwards. Generated images are shown automatically.",
+  inputSchema: z.object({ path: z.string().min(3).describe("Absolute path to the file on this computer.") }),
+};
+
 type Bindable = {
   description?: string;
   inputSchema: z.ZodType;
@@ -60,12 +73,26 @@ export const handle = httpAction(async (ctx, request) => {
       return reply(message.id, {});
     case "tools/list":
       return reply(message.id, {
-        tools: tools.map((name) => {
-          const tool = ALL_TOOLS[name] as unknown as Bindable;
-          return { name, description: tool.description ?? name, inputSchema: z.toJSONSchema(tool.inputSchema) };
-        }),
+        tools: [
+          ...tools.map((name) => {
+            const tool = ALL_TOOLS[name] as unknown as Bindable;
+            return { name, description: tool.description ?? name, inputSchema: z.toJSONSchema(tool.inputSchema) };
+          }),
+          { name: SHARE_FILE.name, description: SHARE_FILE.description, inputSchema: z.toJSONSchema(SHARE_FILE.inputSchema) },
+        ],
       });
     case "tools/call": {
+      if (message.params?.name === SHARE_FILE.name) {
+        const parsed = SHARE_FILE.inputSchema.safeParse(message.params?.arguments ?? {});
+        if (!parsed.success) return reply(message.id, { isError: true, content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }] });
+        await ctx.runMutation(internal.codex.noteToolCall, { turnId: access.turnId, name: SHARE_FILE.name });
+        try {
+          const shared = await ctx.runMutation(internal.media.shareFromTurn, { turnId: access.turnId, path: parsed.data.path });
+          return reply(message.id, { content: [{ type: "text", text: JSON.stringify({ shared: true, ...shared }) }] });
+        } catch (error) {
+          return reply(message.id, { isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }] });
+        }
+      }
       const name = String(message.params?.name ?? "") as ToolName;
       if (!tools.includes(name)) return fail(message.id, -32602, `Unknown tool: ${name}`);
       const tool = ALL_TOOLS[name] as unknown as Bindable;

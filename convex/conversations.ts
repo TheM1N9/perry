@@ -143,6 +143,7 @@ export const copyAttachments = internalMutation({
         conversationId: args.targetId,
         messageKey: attachment.messageKey,
         storageId: attachment.storageId,
+        localPath: attachment.localPath,
         fileName: attachment.fileName,
         contentType: attachment.contentType,
         size: attachment.size,

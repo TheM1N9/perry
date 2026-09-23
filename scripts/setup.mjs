@@ -15,6 +15,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
+import { ensureHome, HOME } from "../runner/home.mjs";
 
 /**
  * Call the Convex CLI through this same Node binary rather than npx.
@@ -194,6 +195,7 @@ async function main() {
     ...(gatewayKey ? { AI_GATEWAY_API_KEY: gatewayKey } : {}),
   });
   say(`  ${green("wrote")} .env.local`);
+  say(`  ${green("home")} ${ensureHome() && HOME}`);
 
   await setConvexEnv("TELEGRAM_BOT_TOKEN", token);
   await setConvexEnv("TELEGRAM_WEBHOOK_SECRET", webhookSecret);

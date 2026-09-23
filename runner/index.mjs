@@ -24,7 +24,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
 import { homedir, hostname, platform } from "node:os";
@@ -32,10 +32,11 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ConvexClient } from "convex/browser";
 import { ASSISTANT_MCP, CodexAppServer } from "./codex.mjs";
+import { ensureHome, HOME, PATHS } from "./home.mjs";
 
-const CONFIG_DIR = join(homedir(), ".perry");
-const CONFIG_FILE = join(CONFIG_DIR, "runner.json");
-const CODEX_RESULTS = join(CONFIG_DIR, "codex-results");
+const CONFIG_DIR = HOME;
+const CONFIG_FILE = PATHS.runnerConfig;
+const CODEX_RESULTS = PATHS.codexResults;
 
 const COMMAND_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT = 20_000;
@@ -183,6 +184,7 @@ async function main() {
     process.exit(1);
   }
 
+  ensureHome();
   holdLock(token);
 
   const workdir = resolve(flags.dir ?? stored.dir ?? process.cwd());
@@ -489,11 +491,22 @@ async function main() {
     if (request) void handleCodexAuth(request);
   });
 
-  // Generated images live on this machine; the chat can only show what is uploaded.
-  const uploadImages = async (turnId, images = []) => {
+  // Generated images stay where Codex saved them, and web chats serve them from
+  // there. Telegram fetches images by URL, so those are uploaded to Convex.
+  const keepImages = async (turnId, channel, images = []) => {
     const media = [];
     for (const image of images) {
       try {
+        if (channel === "web") {
+          let localPath = image.path;
+          if (!localPath) {
+            localPath = join(PATHS.files, "generated", `${randomUUID()}.png`);
+            await mkdir(dirname(localPath), { recursive: true });
+            await writeFile(localPath, Buffer.from(image.base64, "base64"), { flag: "wx" });
+          }
+          media.push({ localPath, fileName: `${image.id}.png`, contentType: "image/png" });
+          continue;
+        }
         const bytes = image.path ? await readFile(image.path) : Buffer.from(image.base64, "base64");
         const uploadUrl = await client.mutation(api.codex.mediaUploadUrl, { token, id: turnId });
         const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": "image/png" }, body: bytes });
@@ -501,7 +514,7 @@ async function main() {
         const { storageId } = await response.json();
         media.push({ storageId, fileName: `${image.id}.png`, contentType: "image/png" });
       } catch (error) {
-        console.error(red(`  Could not upload a generated image: ${error.message ?? error}`));
+        console.error(red(`  Could not keep a generated image: ${error.message ?? error}`));
       }
     }
     return media;
@@ -533,7 +546,7 @@ async function main() {
               attachments: job.attachments,
               onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
             });
-            const media = await uploadImages(job._id, completed.images);
+            const media = await keepImages(job._id, job.channel, completed.images);
             result = { response: completed.response, model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription", ...(media.length ? { media } : {}) };
           } catch (error) {
             result = { error: String(error.message ?? error), model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription" };

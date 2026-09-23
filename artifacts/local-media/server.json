@@ -1,0 +1,36 @@
+{
+  "chat": "j574nmemj1v3my063d6byn8vb18eze95",
+  "upload": {
+    "status": 200,
+    "inUploads": true
+  },
+  "uploadWithoutKey": 401,
+  "served": {
+    "uploadedImage": {
+      "status": 200,
+      "type": "image/png",
+      "sameBytes": true
+    },
+    "agentFile": {
+      "status": 200,
+      "body": "hi from the agent's folder"
+    },
+    "html": {
+      "status": 200,
+      "type": "application/octet-stream",
+      "downloads": true
+    },
+    "videoRange": {
+      "status": 206,
+      "contentRange": "bytes 100-199/4096",
+      "bytes": 100
+    }
+  },
+  "refused": {
+    "noCookie": 401,
+    "wrongKey": 403,
+    "unknownId": 404
+  },
+  "pass": true,
+  "ranAt": "2026-09-23T10:06:07.990Z"
+}

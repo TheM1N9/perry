@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createInterface } from "node:readline";
+import { PATHS } from "./home.mjs";
 
 /** Name of the MCP server that serves the deployment's tools to Codex. */
 export const ASSISTANT_MCP = "assistant";
@@ -46,7 +47,10 @@ export class CodexAppServer extends EventEmitter {
         if (message.method === "turn/completed" && message.params?.turn?.id) {
           this.completedTurns.set(message.params.turn.id, message.params);
         }
-        this.emit(message.method, message.params);
+        // Codex reports turn failures, such as a usage limit, as an "error"
+        // notification. Re-emitting that as Node's special "error" event would
+        // crash the runner, so it travels as "turn/error" instead.
+        this.emit(message.method === "error" ? "turn/error" : message.method, message.params);
       }
     });
     this.child.on("error", (error) => this.fail(error));
@@ -143,11 +147,15 @@ export class CodexAppServer extends EventEmitter {
 
   waitForTurn(turnId, timeoutMs = 8 * 60_000) {
     return new Promise((resolve, reject) => {
-      const finish = (event) => {
-        if (event?.turn?.id !== turnId) return;
+      const stop = () => {
         clearTimeout(timer);
         this.off("turn/completed", finish);
+        this.off("turn/error", onError);
         this.off("closed", onClose);
+      };
+      const finish = (event) => {
+        if (event?.turn?.id !== turnId) return;
+        stop();
         this.completedTurns.delete(turnId);
         // App-server extension items can be omitted from turn.items even though
         // item/completed delivered them. Keep both sources, keyed by item id.
@@ -170,17 +178,22 @@ export class CodexAppServer extends EventEmitter {
           .map((item) => ({ id: item.id, path: item.savedPath, base64: item.savedPath ? undefined : item.result }));
         resolve({ text: final?.text?.trim() || (images.length ? "" : "Codex completed without a text reply."), images });
       };
+      const onError = (event) => {
+        if (event?.turnId !== turnId || event.willRetry) return;
+        stop();
+        this.turnItems.delete(turnId);
+        reject(new Error(event.error?.message || "Codex turn failed."));
+      };
       const onClose = (error) => {
-        clearTimeout(timer);
-        this.off("turn/completed", finish);
+        stop();
         reject(error);
       };
       const timer = setTimeout(() => {
-        this.off("turn/completed", finish);
-        this.off("closed", onClose);
+        stop();
         reject(new Error("Codex turn timed out."));
       }, timeoutMs);
       this.on("turn/completed", finish);
+      this.on("turn/error", onError);
       this.on("closed", onClose);
       const completed = this.completedTurns.get(turnId);
       if (completed) finish(completed);
@@ -188,9 +201,10 @@ export class CodexAppServer extends EventEmitter {
   }
 
   async runTurn({ threadId, instructions, history, prompt, cwd, mode, model, tools, attachments = [], onThread }) {
+    const home = `Your own folder for files you make is ${PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`;
     const fullInstructions = history
-      ? `${instructions}\n\nEarlier chat history (context, not a new user request):\n${history}`
-      : instructions;
+      ? `${instructions}\n\n${home}\n\nEarlier chat history (context, not a new user request):\n${history}`
+      : `${instructions}\n\n${home}`;
     const policy = "on-request";
     const sandbox = "workspace-write";
     // The deployment's own tools: memory, connected accounts, task tracking.
@@ -210,10 +224,12 @@ export class CodexAppServer extends EventEmitter {
     if (!threadId) await onThread(id);
     const input = [{ type: "text", text: prompt }];
     for (const attachment of attachments) {
+      // Local media is read straight from this machine's media folder.
+      const path = attachment.localPath ?? null;
       if (attachment.contentType?.startsWith("image/")) {
-        input.push({ type: "image", url: attachment.url });
+        input.push(path ? { type: "localImage", path } : { type: "image", url: attachment.url });
       } else {
-        input[0].text += `\nAttached file: ${attachment.fileName} (${attachment.url})`;
+        input[0].text += `\nAttached file: ${attachment.fileName} (${path ?? attachment.url})`;
       }
     }
     const started = await this.request("turn/start", {
@@ -222,7 +238,7 @@ export class CodexAppServer extends EventEmitter {
       ...(model ? { model } : {}),
       cwd,
       approvalPolicy: policy,
-      sandboxPolicy: { type: "workspaceWrite", writableRoots: [cwd], networkAccess: false },
+      sandboxPolicy: { type: "workspaceWrite", writableRoots: [cwd, PATHS.files], networkAccess: false },
     }, 30_000);
     if (!started.turn?.id) throw new Error("Codex did not start a turn.");
     const { text, images } = await this.waitForTurn(started.turn.id);

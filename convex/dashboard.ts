@@ -7,6 +7,7 @@ import { action, mutation, query } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { activeGateway } from "./lib/models";
 import { MODE_NAMES, TOOL_NAMES, type Mode } from "./modes";
+import { ABSOLUTE_PATH } from "./media";
 import { vEngine, vMemoryKind, vMode } from "./schema";
 
 /**
@@ -239,9 +240,11 @@ export const deleteChat = mutation({
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
       .collect();
     for (const attachment of attachments) {
-      await ctx.storage.delete(attachment.storageId);
+      // Local files stay where they are on the owner's machine; Convex cannot reach them.
+      if (attachment.storageId) await ctx.storage.delete(attachment.storageId);
       await ctx.db.delete(attachment._id);
     }
+    await ctx.runMutation(internal.codex.pruneOrphans, { conversationId: args.id });
     await ctx.db.delete(args.id);
     await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
       threadId: chat.threadId,
@@ -386,7 +389,10 @@ export const getChatMessages = query({
       .collect();
     const attachmentMap = new Map<string, Array<{ url: string; fileName: string; contentType: string }>>();
     for (const attachment of attachments) {
-      const url = await ctx.storage.getUrl(attachment.storageId);
+      // Local media is served by the Next.js server on the owner's machine.
+      const url = attachment.localPath
+        ? `/api/media/${attachment._id}`
+        : attachment.storageId ? await ctx.storage.getUrl(attachment.storageId) : null;
       if (!url) continue;
       const list = attachmentMap.get(attachment.messageKey) ?? [];
       list.push({ url, fileName: attachment.fileName, contentType: attachment.contentType });
@@ -441,7 +447,9 @@ export const registerAttachment = mutation({
     key: vKey,
     conversationId: v.id("conversations"),
     messageKey: v.string(),
-    storageId: v.id("_storage"),
+    /** Exactly one: a Convex upload, or where the local media server saved it. */
+    storageId: v.optional(v.id("_storage")),
+    localPath: v.optional(v.string()),
     fileName: v.string(),
     contentType: v.string(),
     size: v.number(),
@@ -453,14 +461,17 @@ export const registerAttachment = mutation({
     if (!args.fileName.trim() || args.size <= 0 || args.size > 50 * 1024 * 1024) {
       throw new Error("Attachments must be between 1 byte and 50 MB.");
     }
-    const stored = await ctx.storage.getMetadata(args.storageId);
-    if (!stored) throw new Error("Upload could not be found.");
+    if (Boolean(args.storageId) === Boolean(args.localPath)) throw new Error("Attach either an upload or a local file.");
+    if (args.localPath && !ABSOLUTE_PATH.test(args.localPath)) throw new Error("Local files need an absolute path.");
+    const stored = args.storageId ? await ctx.storage.getMetadata(args.storageId) : null;
+    if (args.storageId && !stored) throw new Error("Upload could not be found.");
     return await ctx.db.insert("chatAttachments", {
       conversationId: args.conversationId,
       messageKey: args.messageKey,
       storageId: args.storageId,
+      localPath: args.localPath,
       fileName: args.fileName.trim().slice(0, 200),
-      contentType: args.contentType || stored.contentType || "application/octet-stream",
+      contentType: args.contentType || stored?.contentType || "application/octet-stream",
       size: args.size,
       createdAt: Date.now(),
     });
