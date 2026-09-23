@@ -17,6 +17,7 @@ import type * as compute from "../compute.js";
 import type * as conversations from "../conversations.js";
 import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
+import type * as history from "../history.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as installation from "../installation.js";
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   conversations: typeof conversations;
   crons: typeof crons;
   dashboard: typeof dashboard;
+  history: typeof history;
   http: typeof http;
   ingest: typeof ingest;
   installation: typeof installation;
