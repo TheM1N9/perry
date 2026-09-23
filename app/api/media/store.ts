@@ -1,12 +1,12 @@
 import { ConvexHttpClient } from "convex/browser";
 import type { NextRequest } from "next/server";
-import { ensureHome } from "@/runner/home.mjs";
+import { ensureHome } from "@/runner/home";
 
 /**
  * Local media: chat files that stay on this machine.
  *
  * Each attachment records where its file lives, usually somewhere in
- * Assistant's home (runner/home.mjs), and this server serves it from there.
+ * Assistant's home (runner/home.ts), and this server serves it from there.
  * Files the owner attaches land in the home's uploads folder. The runner on
  * the same machine reads the same paths, so Codex opens attachments straight
  * from disk. Set PERRY_MEDIA=convex when the dashboard is hosted elsewhere;

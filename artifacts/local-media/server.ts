@@ -1,24 +1,24 @@
 // End-to-end check of the local media server, without a Codex turn:
-// node artifacts/local-media/server.mjs <outDir> <dashboardKey> <perryHome>
+// bun artifacts/local-media/server.ts <outDir> <dashboardKey> <perryHome>
 // Needs `next dev -p 3005` running with PERRY_HOME=<perryHome>.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ConvexHttpClient } from "convex/browser";
-import { makeFunctionReference } from "convex/server";
+import type { Id } from "../../convex/_generated/dataModel";
+import { api } from "../../convex/_generated/api";
 
 const [, , outDir, key, perryHome] = process.argv;
 const base = "http://localhost:3005";
-const convex = new ConvexHttpClient(process.env.CONVEX_URL);
-const mutation = (name, args) => convex.mutation(makeFunctionReference(name), { key, ...args });
-const cookie = (value) => ({ cookie: `perry_media=${encodeURIComponent(value)}` });
+const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+const cookie = (value: string) => ({ cookie: `perry_media=${encodeURIComponent(value)}` });
 
-const chat = await mutation("dashboard:createChat", {});
-const results = { chat };
+const chat = await convex.mutation(api.dashboard.createChat, { key });
+const results: Record<string, any> = { chat };
 try {
   // 1. An upload lands in the home's uploads folder.
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
   const upload = await fetch(`${base}/api/media`, { method: "POST", headers: { ...cookie(key), "x-file-name": "dot.png" }, body: png });
-  const { path: uploadPath } = await upload.json();
+  const { path: uploadPath } = await upload.json() as { path: string };
   results.upload = { status: upload.status, inUploads: uploadPath?.startsWith(join(perryHome, "uploads")) };
   results.uploadWithoutKey = (await fetch(`${base}/api/media`, { method: "POST", body: png })).status;
 
@@ -31,8 +31,8 @@ try {
   const video = join(perryHome, "files", "clip.mp4");
   writeFileSync(video, Buffer.alloc(4096, 7));
 
-  const register = (localPath, fileName, contentType, size) =>
-    mutation("dashboard:registerAttachment", { conversationId: chat, messageKey: "e2e", localPath, fileName, contentType, size });
+  const register = (localPath: string, fileName: string, contentType: string, size: number) =>
+    convex.mutation(api.dashboard.registerAttachment, { key, conversationId: chat, messageKey: "e2e", localPath, fileName, contentType, size });
   const ids = {
     upload: await register(uploadPath, "dot.png", "image/png", png.length),
     agentFile: await register(agentFile, "hello.txt", "text/plain", 27),
@@ -40,7 +40,7 @@ try {
     video: await register(video, "clip.mp4", "video/mp4", 4096),
   };
 
-  const get = async (id, headers = cookie(key)) => {
+  const get = async (id: Id<"chatAttachments"> | string, headers: Record<string, string> = cookie(key)) => {
     const response = await fetch(`${base}/api/media/${id}`, { headers });
     return { status: response.status, type: response.headers.get("content-type"), disposition: response.headers.get("content-disposition"), body: Buffer.from(await response.arrayBuffer()) };
   };
@@ -66,7 +66,7 @@ try {
     && results.served.videoRange.status === 206 && results.served.videoRange.contentRange === "bytes 100-199/4096" && results.served.videoRange.bytes === 100
     && results.refused.noCookie === 401 && results.refused.wrongKey === 403 && results.refused.unknownId === 404;
 } finally {
-  await mutation("dashboard:deleteChat", { id: chat });
+  await convex.mutation(api.dashboard.deleteChat, { key, id: chat });
 }
 results.ranAt = new Date().toISOString();
 mkdirSync(outDir, { recursive: true });

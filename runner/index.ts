@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Assistant's runner: the piece that lets Assistant work on this machine.
  *
@@ -31,8 +31,10 @@ import { homedir, hostname, platform } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ConvexClient } from "convex/browser";
-import { ASSISTANT_MCP, CodexAppServer } from "./codex.mjs";
-import { ensureHome, HOME, PATHS } from "./home.mjs";
+import type { Doc, Id } from "../convex/_generated/dataModel";
+import { api } from "../convex/_generated/api";
+import { ASSISTANT_MCP, CodexAppServer, type GeneratedImage, type RpcMessage } from "./codex";
+import { ensureHome, HOME, PATHS } from "./home";
 
 const CONFIG_DIR = HOME;
 const CONFIG_FILE = PATHS.runnerConfig;
@@ -43,12 +45,17 @@ const MAX_OUTPUT = 20_000;
 const MAX_FILE_BYTES = 256 * 1024;
 const CHECKIN_MS = 30_000;
 
-const dim = (s) => `\x1b[2m${s}\x1b[0m`;
-const bold = (s) => `\x1b[1m${s}\x1b[0m`;
-const green = (s) => `\x1b[32m${s}\x1b[0m`;
-const red = (s) => `\x1b[31m${s}\x1b[0m`;
-const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
-const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
+const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
+const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
+const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
+const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
+const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
+const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
+const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+type Config = { url?: string; token?: string; dir?: string; name?: string; auto?: boolean };
+type Flags = Config & { auto?: boolean };
+type CodexResult = { response?: string; error?: string; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
 
 /**
  * Commands that are never a good idea from an agent, regardless of approval.
@@ -70,7 +77,7 @@ const DENY = [
   { pattern: /\bhistory\s+-c\b|\brm\b[^|;&]*\.bash_history/, why: "covering its tracks" },
 ];
 
-function denied(command) {
+function denied(command: string): string | null {
   for (const rule of DENY) {
     if (rule.pattern.test(command)) return rule.why;
   }
@@ -79,7 +86,7 @@ function denied(command) {
 
 // --- Config --------------------------------------------------------------
 
-function loadConfig() {
+function loadConfig(): Config {
   if (!existsSync(CONFIG_FILE)) return {};
   try {
     return JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
@@ -88,7 +95,7 @@ function loadConfig() {
   }
 }
 
-function saveConfig(config) {
+function saveConfig(config: Config) {
   mkdirSync(CONFIG_DIR, { recursive: true });
   writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
     encoding: "utf8",
@@ -96,8 +103,8 @@ function saveConfig(config) {
   });
 }
 
-function parseArgs(argv) {
-  const args = { auto: false };
+function parseArgs(argv: string[]): Flags {
+  const args: Flags = { auto: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--auto") args.auto = true;
@@ -113,7 +120,7 @@ function parseArgs(argv) {
 // --- Safety --------------------------------------------------------------
 
 /** Keep every path inside the working directory. No .. escapes, no absolutes. */
-function confine(workdir, path) {
+function confine(workdir: string, path?: string): string | null {
   const target = resolve(workdir, path ?? ".");
   const rel = relative(workdir, target);
   if (rel.startsWith("..") || (rel !== "" && resolve(workdir, rel) !== target)) {
@@ -123,14 +130,14 @@ function confine(workdir, path) {
   return target;
 }
 
-function clip(text) {
+function clip(text: string) {
   if (text.length <= MAX_OUTPUT) return { text, truncated: false };
   return { text: text.slice(0, MAX_OUTPUT), truncated: true };
 }
 
 // --- Execution -----------------------------------------------------------
 
-function runShell(command, cwd) {
+function runShell(command: string, cwd: string): Promise<{ exitCode: number | null; output: string; timedOut: boolean }> {
   return new Promise((resolvePromise) => {
     const isWindows = process.platform === "win32";
     const shell = isWindows ? process.env.COMSPEC || "cmd.exe" : "/bin/sh";
@@ -214,11 +221,8 @@ async function main() {
   console.log(dim(`\n  Ctrl-C takes Assistant's hands away.\n`));
 
   const client = new ConvexClient(url);
-  const { api } = await import(
-    new URL("../convex/_generated/api.js", import.meta.url).href
-  );
 
-  let codex = null;
+  let codex: CodexAppServer | null = null;
   let lastCodexAttempt = 0;
   const ensureCodex = async () => {
     if (codex && !codex.closed) return codex;
@@ -229,24 +233,24 @@ async function main() {
     const instance = new CodexAppServer();
     try {
       await instance.start();
-      instance.on("serverRequest", (message) => {
+      instance.on("serverRequest", (request: RpcMessage) => {
         void (async () => {
-          const method = message.method;
+          const method = request.method ?? "";
           if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval") {
-            const params = message.params ?? {};
+            const params = request.params ?? {};
             const command = params.command ?? (method.includes("fileChange") ? "Codex file change" : "Codex command");
             const reason = method.includes("commandExecution") ? denied(command) : null;
             const approved = !reason && await approve(rl, command, params.reason ?? null, autoApprove, params.cwd, workdir);
-            instance.respond(message.id, { decision: approved ? "accept" : "decline" });
-          } else if (method === "mcpServer/elicitation/request" && message.params?.serverName === ASSISTANT_MCP) {
+            instance.respond(request.id, { decision: approved ? "accept" : "decline" });
+          } else if (method === "mcpServer/elicitation/request" && request.params?.serverName === ASSISTANT_MCP) {
             // Our own tools. Consequential actions are gated in chat, as on the gateway path.
-            instance.respond(message.id, { action: "accept", content: {}, _meta: null });
+            instance.respond(request.id, { action: "accept", content: {}, _meta: null });
           } else if (method === "item/permissions/requestApproval") {
-            instance.respond(message.id, { permissions: {} });
+            instance.respond(request.id, { permissions: {} });
           } else {
-            instance.rejectRequest(message.id, `Assistant does not support ${method}.`);
+            instance.rejectRequest(request.id, `Assistant does not support ${method}.`);
           }
-        })().catch((error) => instance.rejectRequest(message.id, String(error.message ?? error)));
+        })().catch((error) => instance.rejectRequest(request.id, message(error)));
       });
       instance.on("closed", () => { if (codex === instance) codex = null; });
       codex = instance;
@@ -267,7 +271,7 @@ async function main() {
       await client.mutation(api.codex.reportAccount, {
         token,
         available: false,
-        error: String(error.message ?? error),
+        error: message(error),
       });
     }
   };
@@ -282,7 +286,7 @@ async function main() {
         autoApprove,
       });
     } catch (error) {
-      console.error(red(`  check-in failed: ${error.message ?? error}`));
+      console.error(red(`  check-in failed: ${message(error)}`));
     }
   };
 
@@ -290,19 +294,19 @@ async function main() {
   await client.mutation(api.codex.recoverAuth, { token });
   await refreshCodexAccount();
   mkdirSync(CODEX_RESULTS, { recursive: true });
-  const resultPath = (id) => join(CODEX_RESULTS, `${id}.json`);
-  const savedResult = (id) => {
+  const resultPath = (id: string) => join(CODEX_RESULTS, `${id}.json`);
+  const savedResult = (id: string): CodexResult | null => {
     try { return JSON.parse(readFileSync(resultPath(id), "utf8")); }
     catch { return null; }
   };
-  const saveResult = (id, result) => {
+  const saveResult = (id: string, result: CodexResult) => {
     const target = resultPath(id);
     const temporary = `${target}.tmp`;
     writeFileSync(temporary, JSON.stringify(result), { encoding: "utf8", mode: 0o600 });
     renameSync(temporary, target);
     console.log(dim(`  saved Codex turn ${id}`));
   };
-  const recoverCodexTurns = async (markIncomplete) => {
+  const recoverCodexTurns = async (markIncomplete: boolean) => {
     const running = await client.query(api.codex.runningTurns, { token });
     for (const job of running) {
       const result = savedResult(job._id);
@@ -318,13 +322,13 @@ async function main() {
   const heartbeat = setInterval(() => {
     void checkIn();
     void refreshCodexAccount();
-    void recoverCodexTurns(false).catch((error) => console.error(red(`  Codex delivery retry failed: ${error.message ?? error}`)));
+    void recoverCodexTurns(false).catch((error) => console.error(red(`  Codex delivery retry failed: ${message(error)}`)));
   }, CHECKIN_MS);
   console.log(green("  connected.\n"));
 
-  const busy = new Set();
+  const busy = new Set<string>();
 
-  const handle = async (command) => {
+  const handle = async (command: Doc<"commands">) => {
     if (busy.has(command._id)) return;
     busy.add(command._id);
 
@@ -335,7 +339,7 @@ async function main() {
       });
       if (!claimed) return;
 
-      const finish = (payload) =>
+      const finish = (payload: { status: "done" | "error" | "denied"; output?: string; error?: string; exitCode?: number; truncated?: boolean }) =>
         client.mutation(api.runner.finishCommand, {
           token,
           commandId: command._id,
@@ -393,16 +397,17 @@ async function main() {
             await finish({ status: "done", exitCode: 0, output: "written" });
           }
         } catch (error) {
-          console.log(red(`  ${command.kind} failed: ${error.message ?? error}`));
-          await finish({ status: "error", error: String(error.message ?? error) });
+          console.log(red(`  ${command.kind} failed: ${message(error)}`));
+          await finish({ status: "error", error: message(error) });
         }
         return;
       }
 
       // --- shell ---
-      const reason = denied(command.command);
+      const shellCommand = command.command ?? "";
+      const reason = denied(shellCommand);
       if (reason) {
-        console.log(red(`\n  refused: ${command.command}`));
+        console.log(red(`\n  refused: ${shellCommand}`));
         console.log(red(`  reason: ${reason}\n`));
         await finish({
           status: "denied",
@@ -417,7 +422,7 @@ async function main() {
         return;
       }
 
-      const approved = await approve(rl, command.command, null, autoApprove, cwd, workdir);
+      const approved = await approve(rl, shellCommand, null, autoApprove, cwd, workdir);
       if (!approved) {
         console.log(yellow("  declined.\n"));
         await finish({ status: "denied", error: "You declined it." });
@@ -425,7 +430,7 @@ async function main() {
       }
 
       const started = Date.now();
-      const { exitCode, output, timedOut } = await runShell(command.command, cwd);
+      const { exitCode, output, timedOut } = await runShell(shellCommand, cwd);
       const { text, truncated } = clip(output);
       const seconds = ((Date.now() - started) / 1000).toFixed(1);
 
@@ -446,7 +451,7 @@ async function main() {
         truncated,
       });
     } catch (error) {
-      console.error(red(`  runner error: ${error.message ?? error}`));
+      console.error(red(`  runner error: ${message(error)}`));
     } finally {
       busy.delete(command._id);
     }
@@ -457,11 +462,10 @@ async function main() {
     for (const command of commands ?? []) void handle(command);
   });
 
-  const handleCodexAuth = async (request) => {
-    if (!request) return;
+  const handleCodexAuth = async (request: { id: number; kind: "login" | "logout" }) => {
     const claimed = await client.mutation(api.codex.claimAuth, { token, id: request.id });
     if (!claimed) return;
-    const update = (payload) => client.mutation(api.codex.updateAuth, {
+    const update = (payload: { status: "running" | "done" | "error"; verificationUrl?: string; userCode?: string; error?: string }) => client.mutation(api.codex.updateAuth, {
       token, id: request.id, ...payload,
     });
     try {
@@ -471,7 +475,7 @@ async function main() {
       } else {
         const account = await app.account();
         if (account.authMode !== "chatgpt") {
-          const login = await app.request("account/login/start", { type: "chatgptDeviceCode" });
+          const login = await app.request<{ type?: string; loginId?: string; verificationUrl?: string; userCode?: string }>("account/login/start", { type: "chatgptDeviceCode" });
           if (login.type !== "chatgptDeviceCode" || !login.loginId || !login.verificationUrl || !login.userCode) {
             throw new Error("Codex did not return a device code.");
           }
@@ -482,7 +486,7 @@ async function main() {
       await refreshCodexAccount();
       await update({ status: "done" });
     } catch (error) {
-      await update({ status: "error", error: String(error.message ?? error) });
+      await update({ status: "error", error: message(error) });
       await refreshCodexAccount();
     }
   };
@@ -493,8 +497,8 @@ async function main() {
 
   // Generated images stay where Codex saved them, and web chats serve them from
   // there. Telegram fetches images by URL, so those are uploaded to Convex.
-  const keepImages = async (turnId, channel, images = []) => {
-    const media = [];
+  const keepImages = async (turnId: Id<"codexTurns">, channel: "web" | "telegram", images: GeneratedImage[] = []) => {
+    const media: NonNullable<CodexResult["media"]> = [];
     for (const image of images) {
       try {
         if (channel === "web") {
@@ -502,32 +506,32 @@ async function main() {
           if (!localPath) {
             localPath = join(PATHS.files, "generated", `${randomUUID()}.png`);
             await mkdir(dirname(localPath), { recursive: true });
-            await writeFile(localPath, Buffer.from(image.base64, "base64"), { flag: "wx" });
+            await writeFile(localPath, Buffer.from(image.base64 ?? "", "base64"), { flag: "wx" });
           }
           media.push({ localPath, fileName: `${image.id}.png`, contentType: "image/png" });
           continue;
         }
-        const bytes = image.path ? await readFile(image.path) : Buffer.from(image.base64, "base64");
+        const bytes = image.path ? await readFile(image.path) : Buffer.from(image.base64 ?? "", "base64");
         const uploadUrl = await client.mutation(api.codex.mediaUploadUrl, { token, id: turnId });
         const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": "image/png" }, body: bytes });
         if (!response.ok) throw new Error(`upload failed (${response.status})`);
-        const { storageId } = await response.json();
+        const { storageId } = await response.json() as { storageId: Id<"_storage"> };
         media.push({ storageId, fileName: `${image.id}.png`, contentType: "image/png" });
       } catch (error) {
-        console.error(red(`  Could not keep a generated image: ${error.message ?? error}`));
+        console.error(red(`  Could not keep a generated image: ${message(error)}`));
       }
     }
     return media;
   };
 
   let codexTurnBusy = false;
-  let codexQueue = [];
+  let codexQueue: Doc<"codexTurns">[] = [];
   const pumpCodex = async () => {
     if (codexTurnBusy) return;
     codexTurnBusy = true;
     try {
       while (codexQueue.length > 0) {
-        const next = codexQueue.shift();
+        const next = codexQueue.shift()!;
         const job = await client.mutation(api.codex.claimTurn, { token, id: next._id });
         if (!job) continue;
         let result = savedResult(job._id);
@@ -540,7 +544,6 @@ async function main() {
               history: job.history,
               prompt: job.prompt,
               cwd: workdir,
-              mode: job.mode,
               model: job.requestedModel,
               tools: job.mcpUrl ? { url: job.mcpUrl, token } : undefined,
               attachments: job.attachments,
@@ -549,7 +552,7 @@ async function main() {
             const media = await keepImages(job._id, job.channel, completed.images);
             result = { response: completed.response, model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription", ...(media.length ? { media } : {}) };
           } catch (error) {
-            result = { error: String(error.message ?? error), model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription" };
+            result = { error: message(error), model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription" };
           }
           saveResult(job._id, result);
         }
@@ -557,7 +560,7 @@ async function main() {
         codexQueue = await client.query(api.codex.queuedTurns, { token });
       }
     } catch (error) {
-      console.error(red(`  Codex turn failed: ${error.message ?? error}`));
+      console.error(red(`  Codex turn failed: ${message(error)}`));
     } finally {
       codexTurnBusy = false;
     }
@@ -585,7 +588,7 @@ async function main() {
  * turns, and Codex lets only one process write to a thread, so every other
  * turn in a chat would fail with "thread already has an active writer".
  */
-function holdLock(token) {
+function holdLock(token: string) {
   mkdirSync(CONFIG_DIR, { recursive: true });
   const lock = join(CONFIG_DIR, `runner-${createHash("sha256").update(token).digest("hex").slice(0, 12)}.lock`);
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -594,14 +597,12 @@ function holdLock(token) {
       process.on("exit", () => { try { if (readFileSync(lock, "utf8") === String(process.pid)) unlinkSync(lock); } catch {} });
       return;
     } catch (error) {
-      if (error.code !== "EEXIST") throw error;
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       const pid = Number(readFileSync(lock, "utf8"));
       let alive = false;
-      try { process.kill(pid, 0); alive = pid > 0; } catch (check) { alive = check.code === "EPERM"; }
+      try { process.kill(pid, 0); alive = pid > 0; } catch (check) { alive = (check as NodeJS.ErrnoException).code === "EPERM"; }
       if (alive) {
-        console.error(`
-${red(`This runner is already running (process ${pid}).`)} Stop it before starting another.
-`);
+        console.error(`\n${red(`This runner is already running (process ${pid}).`)} Stop it before starting another.\n`);
         process.exit(1);
       }
       unlinkSync(lock);
@@ -610,7 +611,14 @@ ${red(`This runner is already running (process ${pid}).`)} Stop it before starti
 }
 
 /** The real control: a human, at the machine, reading the command. */
-async function approve(rl, what, detail, autoApprove, cwd, workdir) {
+async function approve(
+  rl: ReturnType<typeof createInterface> | null,
+  what: string,
+  detail: string | null,
+  autoApprove: boolean,
+  cwd?: string,
+  workdir?: string,
+): Promise<boolean> {
   if (autoApprove) {
     console.log(`${cyan("  auto")} ${what}`);
     return true;
@@ -624,6 +632,7 @@ async function approve(rl, what, detail, autoApprove, cwd, workdir) {
   }
   if (detail) console.log(dim(detail.split("\n").map((l) => `    ${l}`).join("\n")));
 
+  if (!rl) return false;
   const answer = (await rl.question(`  ${bold("run it?")} [y/N] `)).trim().toLowerCase();
   return answer === "y" || answer === "yes";
 }

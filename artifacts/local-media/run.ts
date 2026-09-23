@@ -1,65 +1,17 @@
-import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "../../convex/_generated/api";
+import { openChat, sleep } from "../browser";
 
 const [, , outDir, dashboardKey, runnerToken] = process.argv;
 const base = "http://localhost:3005";
 mkdirSync(outDir, { recursive: true });
-
-const chrome = spawn("C:/Program Files/Google/Chrome/Application/chrome.exe", [
-  "--headless=new", "--remote-debugging-port=9333", `--user-data-dir=${join(tmpdir(), "composer-e2e-profile")}`,
-  "--window-size=1280,800", "--autoplay-policy=no-user-gesture-required", "about:blank",
-], { stdio: "ignore" });
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-let targets;
-for (let i = 0; i < 50; i++) {
-  try { targets = await (await fetch("http://127.0.0.1:9333/json/list")).json(); if (targets.some((t) => t.type === "page")) break; } catch {}
-  await sleep(200);
-}
-const page = targets.find((t) => t.type === "page");
-const ws = new WebSocket(page.webSocketDebuggerUrl);
-await new Promise((r) => ws.addEventListener("open", r, { once: true }));
-let nextId = 0;
-const waiting = new Map();
-ws.addEventListener("message", (event) => {
-  const msg = JSON.parse(event.data);
-  if (msg.id && waiting.has(msg.id)) { waiting.get(msg.id)(msg); waiting.delete(msg.id); }
-});
-const send = (method, params = {}) => new Promise((resolve, reject) => {
-  const id = ++nextId;
-  waiting.set(id, (msg) => msg.error ? reject(new Error(`${method}: ${msg.error.message}`)) : resolve(msg.result));
-  ws.send(JSON.stringify({ id, method, params }));
-});
-const evaluate = async (expression) => {
-  const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
-  if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
-  return result.result.value;
-};
-const errors = [];
-await send("Runtime.enable");
-ws.addEventListener("message", (event) => {
-  const msg = JSON.parse(event.data);
-  if (msg.method === "Runtime.exceptionThrown") errors.push(msg.params.exceptionDetails.exception?.description ?? msg.params.exceptionDetails.text);
-});
-await send("Page.enable");
-await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-
-await send("Page.navigate", { url: base });
-await sleep(1500);
-await evaluate(`localStorage.setItem("perry.dashboard.key", ${JSON.stringify(dashboardKey)}); localStorage.removeItem("perry.activeChat"); true`);
-await send("Page.navigate", { url: `${base}/chat` });
-await evaluate(`new Promise((resolve, reject) => { const start = Date.now(); const tick = () => document.querySelector('input[type=file]') ? resolve(true) : Date.now() - start > 30000 ? reject(new Error('composer never rendered')) : setTimeout(tick, 200); tick(); })`);
-
-await sleep(4000);
-await evaluate(`new Promise((resolve) => { const tick = () => document.body.innerText.includes('Loading chats') ? setTimeout(tick, 200) : resolve(true); tick(); })`);
+const { evaluate, send, errors, close } = await openChat(base, dashboardKey);
 
 // The chat binds to the most recently seen Codex runner, so check the test runner in right before sending.
-const { ConvexHttpClient } = await import("convex/browser");
-const { makeFunctionReference } = await import("convex/server");
-const convex = new ConvexHttpClient(process.env.CONVEX_URL);
-const checkIn = () => convex.mutation(makeFunctionReference("runner:checkIn"), { token: runnerToken, platform: "win32", hostname: "e2e", workdir: process.env.E2E_WORKDIR, autoApprove: true });
+const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
+const checkIn = () => convex.mutation(api.runner.checkIn, { token: runnerToken, platform: "win32", hostname: "e2e", workdir: process.env.E2E_WORKDIR, autoApprove: true });
 
 await evaluate(`document.querySelector('.chat-header-new').click(); true`);
 await evaluate(`new Promise((resolve, reject) => {
@@ -130,7 +82,7 @@ const chatId = await evaluate(`decodeURIComponent(location.pathname.split('/')[2
 
 // Access rules of the local media server.
 const generated = reply.images?.[0]?.src;
-const probe = async (path, cookie) => (await fetch(`${base}${path}`, cookie === undefined ? {} : { headers: { cookie: `perry_media=${cookie}` } })).status;
+const probe = async (path: string, cookie?: string) => (await fetch(`${base}${path}`, cookie === undefined ? {} : { headers: { cookie: `perry_media=${cookie}` } })).status;
 const access = generated ? {
   withKey: await probe(generated, encodeURIComponent(dashboardKey)),
   noCookie: await probe(generated),
@@ -145,9 +97,9 @@ writeFileSync(join(outDir, "local-media-chat.png"), Buffer.from(full.data, "base
 const result = { ranAt: new Date().toISOString(), chatId, sentImage: sent, reply, access, pageErrors: errors };
 writeFileSync(join(outDir, "chat.json"), JSON.stringify(result, null, 2) + "\n");
 console.log(JSON.stringify(result, null, 2));
-ws.close(); chrome.kill();
-const local = (src) => typeof src === "string" && src.startsWith("/api/media/");
-const pass = local(sent?.src) && sent.loaded && local(generated) && reply.images[0].loaded
+close();
+const local = (src: unknown) => typeof src === "string" && src.startsWith("/api/media/");
+const pass = local(sent?.src) && sent.loaded && local(generated) && reply.images[0].loaded && access !== null
   && access.withKey === 200 && access.noCookie === 401 && access.wrongKey === 403 && access.unknownId === 404 && access.traversal === 404
   && typeof access.sharedFile === "string" && access.sharedFile.trim().toLowerCase().startsWith("hi");
 process.exit(pass ? 0 : 1);

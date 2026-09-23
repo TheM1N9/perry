@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * `pnpm run doctor` — check every moving part and say which one is broken.
  *
@@ -6,72 +6,40 @@
  * what state an install is in.
  */
 
-import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { dim, green, red, runConvex, yellow } from "./lib";
 
 /**
  * Call the Convex CLI through this same Node binary rather than npx.
  * Windows refuses to spawn a .cmd without a shell, and a shell needs quoting,
  * and quoting secrets on a command line is how secrets get mangled.
  */
-const CONVEX_CLI = resolve(process.cwd(), "node_modules/convex/bin/main.js");
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
 
-const green = (s) => `\x1b[32m${s}\x1b[0m`;
-const red = (s) => `\x1b[31m${s}\x1b[0m`;
-const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
-const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
 let failures = 0;
 
-function ok(label, detail = "") {
+function ok(label: string, detail = "") {
   console.log(`${green("ok")}    ${label}${detail ? dim(`  ${detail}`) : ""}`);
 }
-function bad(label, detail = "") {
+function bad(label: string, detail = "") {
   failures += 1;
   console.log(`${red("fail")}  ${label}${detail ? `  ${detail}` : ""}`);
 }
-function warn(label, detail = "") {
+function warn(label: string, detail = "") {
   console.log(`${yellow("warn")}  ${label}${detail ? dim(`  ${detail}`) : ""}`);
 }
 
-function readEnvFile() {
-  const values = {};
-  if (!existsSync(ENV_FILE)) return values;
-  for (const line of readFileSync(ENV_FILE, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    values[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
-  }
-  return values;
-}
 
-function run(command, args) {
-  return new Promise((resolvePromise) => {
-    const child = spawn(command, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-      shell: false,
-    });
-    let out = "";
-    child.stdout?.on("data", (d) => (out += d));
-    child.stderr?.on("data", (d) => (out += d));
-    child.on("close", (code) => resolvePromise({ code, output: out }));
-  });
-}
 
 /** The Convex CLI, run in-process by path. */
-function runConvex(args, options) {
-  return run(process.execPath, [CONVEX_CLI, ...args], options);
-}
 
 async function main() {
   console.log("");
 
-  const env = readEnvFile();
+  const env = process.env;
 
   // Local env
   if (!existsSync(ENV_FILE)) {

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * One command to install Perry: `pnpm run setup`.
  *
@@ -10,26 +10,16 @@
  * is missing.
  */
 
-import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
-import { ensureHome, HOME } from "../runner/home.mjs";
+import { ensureHome, HOME } from "../runner/home";
+import { bold, dim, green, runConvex, yellow } from "./lib";
 
-/**
- * Call the Convex CLI through this same Node binary rather than npx.
- * Windows refuses to spawn a .cmd without a shell, and a shell needs quoting,
- * and quoting secrets on a command line is how secrets get mangled.
- */
-const CONVEX_CLI = resolve(process.cwd(), "node_modules/convex/bin/main.js");
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
 
-const dim = (s) => `\x1b[2m${s}\x1b[0m`;
-const bold = (s) => `\x1b[1m${s}\x1b[0m`;
-const green = (s) => `\x1b[32m${s}\x1b[0m`;
-const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 
@@ -37,33 +27,14 @@ function say(text = "") {
   console.log(text);
 }
 
-function step(n, total, text) {
+function step(n: number, total: number, text: string) {
   say(`\n${bold(`[${n}/${total}]`)} ${text}`);
 }
 
-/** Run a command, streaming its output. Resolves with the exit code. */
-function run(command, args, { quiet = false } = {}) {
-  return new Promise((resolvePromise) => {
-    const child = spawn(command, args, {
-      stdio: quiet ? ["ignore", "pipe", "pipe"] : "inherit",
-      shell: false,
-    });
-    let buffered = "";
-    if (quiet) {
-      child.stdout?.on("data", (d) => (buffered += d));
-      child.stderr?.on("data", (d) => (buffered += d));
-    }
-    child.on("close", (code) => resolvePromise({ code, output: buffered }));
-  });
-}
 
-/** The Convex CLI, run in-process by path. */
-function runConvex(args, options) {
-  return run(process.execPath, [CONVEX_CLI, ...args], options);
-}
 
-function readEnvFile() {
-  const values = {};
+function readEnvFile(): Record<string, string> {
+  const values: Record<string, string> = {};
   if (!existsSync(ENV_FILE)) return values;
   for (const line of readFileSync(ENV_FILE, "utf8").split("\n")) {
     const trimmed = line.trim();
@@ -75,7 +46,7 @@ function readEnvFile() {
   return values;
 }
 
-function writeEnvFile(values) {
+function writeEnvFile(values: Record<string, string | undefined>) {
   const lines = [
     "# Perry, local env. Gitignored. Written by `pnpm run setup`.",
     "# Deployment secrets live on Convex; these are the local copies the",
@@ -88,10 +59,8 @@ function writeEnvFile(values) {
   writeFileSync(ENV_FILE, lines.join("\n") + "\n", "utf8");
 }
 
-async function setConvexEnv(name, value) {
-  const { code, output } = await runConvex(["env", "set", name, value],
-    { quiet: true },
-  );
+async function setConvexEnv(name: string, value: string) {
+  const { code, output } = await runConvex(["env", "set", name, value]);
   if (code !== 0) {
     say(yellow(`  could not set ${name}`));
     say(dim(output.split("\n").slice(-4).join("\n")));
@@ -121,7 +90,7 @@ async function main() {
     say(dim(`  already configured: ${env.CONVEX_DEPLOYMENT}`));
   } else {
     say(dim("  Opening a browser to log in and create your project."));
-    const { code } = await runConvex(["dev", "--once"]);
+    const { code } = await runConvex(["dev", "--once"], { quiet: false });
     if (code !== 0) {
       say(yellow("\n  Convex setup did not finish. Fix the error above and re-run."));
       process.exit(1);
@@ -202,7 +171,7 @@ async function main() {
   await setConvexEnv("DASHBOARD_KEY", dashboardKey);
   if (gatewayKey) await setConvexEnv("AI_GATEWAY_API_KEY", gatewayKey);
 
-  const deploy = await runConvex(["dev", "--once"], { quiet: true });
+  const deploy = await runConvex(["dev", "--once"]);
   if (deploy.code !== 0) {
     say(yellow("  Push failed:"));
     say(dim(deploy.output.split("\n").slice(-8).join("\n")));
@@ -230,9 +199,7 @@ async function main() {
   // --- 5. Pair ------------------------------------------------------------
   step(5, TOTAL, "Claim it");
 
-  const pair = await runConvex(["run", "installation:startPairing", "{}"],
-    { quiet: true },
-  );
+  const pair = await runConvex(["run", "installation:startPairing", "{}"]);
   const code = pair.output.match(/"code":\s*"(\d{6})"/)?.[1];
 
   if (!code) {

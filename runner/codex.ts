@@ -1,60 +1,76 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createInterface } from "node:readline";
-import { PATHS } from "./home.mjs";
+import { PATHS } from "./home";
 
 /** Name of the MCP server that serves the deployment's tools to Codex. */
 export const ASSISTANT_MCP = "assistant";
 
+/**
+ * The slice of the app-server protocol this runner uses. Codex's own generated
+ * types (`codex app-server generate-ts`) are the full reference.
+ */
+type Json = Record<string, any>;
+export type RpcMessage = { id?: number | string; method?: string; params?: Json; result?: any; error?: { message?: string } };
+type Pending = { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
+type TurnItem = Json & { id: string; type?: string };
+type TurnEvent = { turn: { id: string; status: string; items?: TurnItem[]; error?: { message?: string } } };
+type LoginEvent = { loginId: string; success: boolean; error?: string };
+type TurnErrorEvent = { turnId: string; willRetry?: boolean; error?: { message?: string } };
+
+export type GeneratedImage = { id: string; path?: string; base64?: string };
+export type CodexAttachment = { url?: string; localPath?: string; fileName: string; contentType?: string };
+export type CodexModel = { id: string; name: string; isDefault: boolean };
+
 /** A stdio client for the official Codex app-server protocol. */
 export class CodexAppServer extends EventEmitter {
-  constructor() {
-    super();
-    this.nextId = 1;
-    this.pending = new Map();
-    this.completedLogins = new Map();
-    this.completedTurns = new Map();
-    this.turnItems = new Map();
-    this.closed = false;
-  }
+  private nextId = 1;
+  private pending = new Map<number | string, Pending>();
+  private completedLogins = new Map<string, LoginEvent>();
+  private completedTurns = new Map<string, TurnEvent>();
+  private turnItems = new Map<string, TurnItem[]>();
+  private child?: ChildProcessWithoutNullStreams;
+  closed = false;
 
-  async start() {
+  async start(): Promise<this> {
     const windows = process.platform === "win32";
-    this.child = spawn(
+    const child = spawn(
       windows ? process.env.COMSPEC || "cmd.exe" : "codex",
       windows ? ["/d", "/s", "/c", "codex app-server --stdio"] : ["app-server", "--stdio"],
       { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
     );
-    createInterface({ input: this.child.stdout }).on("line", (line) => {
-      let message;
+    this.child = child;
+    createInterface({ input: child.stdout }).on("line", (line) => {
+      let message: RpcMessage;
       try { message = JSON.parse(line); } catch { return; }
-      if (message.id !== undefined && this.pending.has(message.id)) {
-        const { resolve, reject, timer } = this.pending.get(message.id);
-        clearTimeout(timer);
+      const pending = message.id !== undefined ? this.pending.get(message.id) : undefined;
+      if (message.id !== undefined && pending) {
+        clearTimeout(pending.timer);
         this.pending.delete(message.id);
-        message.error ? reject(new Error(message.error.message || "Codex request failed.")) : resolve(message.result);
+        message.error ? pending.reject(new Error(message.error.message || "Codex request failed.")) : pending.resolve(message.result);
       } else if (message.method && message.id !== undefined) {
         this.emit("serverRequest", message);
       } else if (message.method) {
-        if (message.method === "account/login/completed" && message.params?.loginId) {
-          this.completedLogins.set(message.params.loginId, message.params);
+        const params = message.params ?? {};
+        if (message.method === "account/login/completed" && params.loginId) {
+          this.completedLogins.set(params.loginId, params as LoginEvent);
         }
-        if (message.method === "item/completed" && message.params?.turnId) {
-          const items = this.turnItems.get(message.params.turnId) ?? [];
-          items.push(message.params.item);
-          this.turnItems.set(message.params.turnId, items);
+        if (message.method === "item/completed" && params.turnId) {
+          const items = this.turnItems.get(params.turnId) ?? [];
+          items.push(params.item);
+          this.turnItems.set(params.turnId, items);
         }
-        if (message.method === "turn/completed" && message.params?.turn?.id) {
-          this.completedTurns.set(message.params.turn.id, message.params);
+        if (message.method === "turn/completed" && params.turn?.id) {
+          this.completedTurns.set(params.turn.id, params as TurnEvent);
         }
         // Codex reports turn failures, such as a usage limit, as an "error"
         // notification. Re-emitting that as Node's special "error" event would
         // crash the runner, so it travels as "turn/error" instead.
-        this.emit(message.method === "error" ? "turn/error" : message.method, message.params);
+        this.emit(message.method === "error" ? "turn/error" : message.method, params);
       }
     });
-    this.child.on("error", (error) => this.fail(error));
-    this.child.on("close", (code) => this.fail(new Error(`Codex app-server exited (${code}).`)));
+    child.on("error", (error) => this.fail(error));
+    child.on("close", (code) => this.fail(new Error(`Codex app-server exited (${code}).`)));
     await this.request("initialize", {
       clientInfo: { name: "perry", title: "Assistant", version: "0.1.0" },
     });
@@ -62,7 +78,7 @@ export class CodexAppServer extends EventEmitter {
     return this;
   }
 
-  fail(error) {
+  private fail(error: Error) {
     if (this.closed) return;
     this.closed = true;
     for (const { reject, timer } of this.pending.values()) {
@@ -73,34 +89,38 @@ export class CodexAppServer extends EventEmitter {
     this.emit("closed", error);
   }
 
-  notify(method, params) {
-    if (this.closed) throw new Error("Codex app-server is not running.");
-    this.child.stdin.write(`${JSON.stringify({ method, params })}\n`);
+  private write(message: object) {
+    if (!this.child || this.closed) throw new Error("Codex app-server is not running.");
+    this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
-  respond(id, result) {
-    this.child.stdin.write(`${JSON.stringify({ id, result })}\n`);
+  notify(method: string, params: object) {
+    this.write({ method, params });
   }
 
-  rejectRequest(id, message) {
-    this.child.stdin.write(`${JSON.stringify({ id, error: { code: -32601, message } })}\n`);
+  respond(id: RpcMessage["id"], result: object) {
+    this.write({ id, result });
   }
 
-  request(method, params, timeoutMs = 15_000) {
+  rejectRequest(id: RpcMessage["id"], message: string) {
+    this.write({ id, error: { code: -32601, message } });
+  }
+
+  request<T = any>(method: string, params: object, timeoutMs = 15_000): Promise<T> {
     if (this.closed) return Promise.reject(new Error("Codex app-server is not running."));
     const id = this.nextId++;
-    return new Promise((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`Codex ${method} timed out.`));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
-      this.child.stdin.write(`${JSON.stringify({ method, id, params })}\n`);
+      this.write({ method, id, params });
     });
   }
 
-  async account() {
-    const result = await this.request("account/read", { refreshToken: false });
+  async account(): Promise<{ available: true; authMode?: string; planType?: string }> {
+    const result = await this.request<{ account?: { type?: string; planType?: string | null } | null }>("account/read", { refreshToken: false });
     const account = result.account;
     return {
       available: true,
@@ -109,19 +129,19 @@ export class CodexAppServer extends EventEmitter {
     };
   }
 
-  async models() {
-    const result = await this.request("model/list", { limit: 100 });
+  async models(): Promise<CodexModel[]> {
+    const result = await this.request<{ data?: Array<{ model: string; displayName?: string; isDefault?: boolean }> }>("model/list", { limit: 100 });
     return (result.data ?? []).map((model) => ({ id: model.model, name: model.displayName || model.model, isDefault: Boolean(model.isDefault) }));
   }
 
-  waitForLogin(loginId, timeoutMs = 10 * 60_000) {
+  waitForLogin(loginId: string, timeoutMs = 10 * 60_000): Promise<void> {
     const completed = this.completedLogins.get(loginId);
     if (completed) {
       this.completedLogins.delete(loginId);
       return completed.success ? Promise.resolve() : Promise.reject(new Error(completed.error || "Codex sign-in failed."));
     }
-    return new Promise((resolve, reject) => {
-      const onComplete = (result) => {
+    return new Promise<void>((resolve, reject) => {
+      const onComplete = (result: LoginEvent) => {
         if (result?.loginId !== loginId) return;
         this.completedLogins.delete(loginId);
         clearTimeout(timer);
@@ -129,7 +149,7 @@ export class CodexAppServer extends EventEmitter {
         this.off("closed", onClose);
         result.success ? resolve() : reject(new Error(result.error || "Codex sign-in failed."));
       };
-      const onClose = (error) => {
+      const onClose = (error: Error) => {
         clearTimeout(timer);
         this.off("account/login/completed", onComplete);
         reject(error);
@@ -145,7 +165,7 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  waitForTurn(turnId, timeoutMs = 8 * 60_000) {
+  waitForTurn(turnId: string, timeoutMs = 8 * 60_000): Promise<{ text: string; images: GeneratedImage[] }> {
     return new Promise((resolve, reject) => {
       const stop = () => {
         clearTimeout(timer);
@@ -153,7 +173,7 @@ export class CodexAppServer extends EventEmitter {
         this.off("turn/error", onError);
         this.off("closed", onClose);
       };
-      const finish = (event) => {
+      const finish = (event: TurnEvent) => {
         if (event?.turn?.id !== turnId) return;
         stop();
         this.completedTurns.delete(turnId);
@@ -175,16 +195,16 @@ export class CodexAppServer extends EventEmitter {
             (item?.type === "imageGeneration" && !item.failure && (item.savedPath || item.result)) ||
             (item?.type === "Extension" && item.kind === "image_gen.generation" && item.status === "completed" && typeof item.result === "string"),
           )
-          .map((item) => ({ id: item.id, path: item.savedPath, base64: item.savedPath ? undefined : item.result }));
+          .map((item) => ({ id: item.id, path: item.savedPath as string | undefined, base64: item.savedPath ? undefined : item.result as string }));
         resolve({ text: final?.text?.trim() || (images.length ? "" : "Codex completed without a text reply."), images });
       };
-      const onError = (event) => {
+      const onError = (event: TurnErrorEvent) => {
         if (event?.turnId !== turnId || event.willRetry) return;
         stop();
         this.turnItems.delete(turnId);
         reject(new Error(event.error?.message || "Codex turn failed."));
       };
-      const onClose = (error) => {
+      const onClose = (error: Error) => {
         stop();
         reject(error);
       };
@@ -200,7 +220,17 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  async runTurn({ threadId, instructions, history, prompt, cwd, mode, model, tools, attachments = [], onThread }) {
+  async runTurn({ threadId, instructions, history, prompt, cwd, model, tools, attachments = [], onThread }: {
+    threadId?: string;
+    instructions: string;
+    history?: string;
+    prompt: string;
+    cwd: string;
+    model?: string;
+    tools?: { url: string; token: string };
+    attachments?: CodexAttachment[];
+    onThread: (threadId: string) => Promise<unknown>;
+  }): Promise<{ threadId: string; response: string; images: GeneratedImage[] }> {
     const home = `Your own folder for files you make is ${PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`;
     const fullInstructions = history
       ? `${instructions}\n\n${home}\n\nEarlier chat history (context, not a new user request):\n${history}`
@@ -217,22 +247,23 @@ export class CodexAppServer extends EventEmitter {
       },
     } : undefined;
     const thread = threadId
-      ? await this.request("thread/resume", { threadId, cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions }, 30_000)
-      : await this.request("thread/start", { cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions, serviceName: "perry" }, 30_000);
+      ? await this.request<{ thread?: { id?: string } }>("thread/resume", { threadId, cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions }, 30_000)
+      : await this.request<{ thread?: { id?: string } }>("thread/start", { cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions, serviceName: "perry" }, 30_000);
     const id = thread.thread?.id;
     if (!id) throw new Error("Codex did not return a thread ID.");
     if (!threadId) await onThread(id);
-    const input = [{ type: "text", text: prompt }];
+    const text = { type: "text", text: prompt };
+    const input: object[] = [text];
     for (const attachment of attachments) {
-      // Local media is read straight from this machine's media folder.
+      // Local files are read straight from where they are on this machine.
       const path = attachment.localPath ?? null;
       if (attachment.contentType?.startsWith("image/")) {
         input.push(path ? { type: "localImage", path } : { type: "image", url: attachment.url });
       } else {
-        input[0].text += `\nAttached file: ${attachment.fileName} (${path ?? attachment.url})`;
+        text.text += `\nAttached file: ${attachment.fileName} (${path ?? attachment.url})`;
       }
     }
-    const started = await this.request("turn/start", {
+    const started = await this.request<{ turn?: { id?: string } }>("turn/start", {
       threadId: id,
       input,
       ...(model ? { model } : {}),
@@ -241,8 +272,8 @@ export class CodexAppServer extends EventEmitter {
       sandboxPolicy: { type: "workspaceWrite", writableRoots: [cwd, PATHS.files], networkAccess: false },
     }, 30_000);
     if (!started.turn?.id) throw new Error("Codex did not start a turn.");
-    const { text, images } = await this.waitForTurn(started.turn.id);
-    return { threadId: id, response: text, images };
+    const { text: response, images } = await this.waitForTurn(started.turn.id);
+    return { threadId: id, response, images };
   }
 
   close() {

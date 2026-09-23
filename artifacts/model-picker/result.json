@@ -1,18 +1,26 @@
 {
-  "ranAt": "2026-09-23T06:11:15.429Z",
+  "ranAt": "2026-09-23T10:13:14.762Z",
   "url": "http://localhost:3005/chat",
   "before": {
-    "selected": "codex:",
-    "title": "Codex subscription · default",
+    "selected": "codex:gpt-6-astra",
+    "title": "Codex subscription · gpt-6-astra",
     "insidePromptBox": true,
     "groups": [
       {
         "label": "Codex subscription",
-        "count": 1,
+        "count": 7,
         "first": [
           {
-            "value": "codex:",
-            "text": "Codex default"
+            "value": "codex:gpt-6-astra",
+            "text": "GPT-6-Astra"
+          },
+          {
+            "value": "codex:gpt-6-sol",
+            "text": "GPT-6-Sol"
+          },
+          {
+            "value": "codex:gpt-6-luna",
+            "text": "GPT-6-Luna"
           }
         ]
       },
