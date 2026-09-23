@@ -54,6 +54,20 @@ export const forTurn = internalQuery({
   },
 });
 
+/** A file downloaded from Telegram, stored and attached to the message it came with. */
+export const attachStored = internalMutation({
+  args: {
+    conversationId: v.id("conversations"),
+    messageKey: v.string(),
+    storageId: v.id("_storage"),
+    fileName: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+  },
+  returns: v.id("chatAttachments"),
+  handler: async (ctx, args) => await ctx.db.insert("chatAttachments", { ...args, createdAt: Date.now() }),
+});
+
 /** The local media server asks this before accepting an upload. */
 export const canStoreLocally = query({
   args: { key: v.string() },

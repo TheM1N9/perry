@@ -2,6 +2,8 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export const vChannel = v.union(v.literal("telegram"), v.literal("web"));
+/** A file the owner sent on Telegram, before it is downloaded. */
+export const vTelegramMedia = v.object({ fileId: v.string(), fileName: v.string(), contentType: v.string() });
 export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.literal("daily"));
 
 /**

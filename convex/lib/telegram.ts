@@ -148,25 +148,63 @@ export interface TelegramUpdate {
   edited_message?: TelegramMessage;
 }
 
+type TelegramFile = { file_id: string; file_size?: number; file_name?: string; mime_type?: string };
+
 export interface TelegramMessage {
   message_id: number;
   date: number;
   text?: string;
   caption?: string;
+  photo?: Array<TelegramFile & { width: number; height: number }>;
+  voice?: TelegramFile;
+  audio?: TelegramFile;
+  video?: TelegramFile;
+  video_note?: TelegramFile;
+  document?: TelegramFile;
   chat: { id: number; type: string; title?: string; username?: string };
   from?: { id: number; is_bot: boolean; first_name?: string; username?: string };
 }
+
+/** A file attached to a Telegram message, fetched later with getFile. */
+export type InboundMedia = { fileId: string; fileName: string; contentType: string };
 
 export interface InboundMessage {
   chatId: string;
   senderId: string;
   text: string;
   title?: string;
+  media: InboundMedia[];
+}
+
+/** Photos come in several sizes; take the largest. Everything else is one file. */
+function mediaOf(message: TelegramMessage): InboundMedia[] {
+  const media: InboundMedia[] = [];
+  const photo = message.photo?.at(-1);
+  if (photo) media.push({ fileId: photo.file_id, fileName: "photo.jpg", contentType: "image/jpeg" });
+  if (message.voice) media.push({ fileId: message.voice.file_id, fileName: "voice-note.ogg", contentType: message.voice.mime_type ?? "audio/ogg" });
+  if (message.audio) media.push({ fileId: message.audio.file_id, fileName: message.audio.file_name ?? "audio", contentType: message.audio.mime_type ?? "audio/mpeg" });
+  if (message.video) media.push({ fileId: message.video.file_id, fileName: message.video.file_name ?? "video.mp4", contentType: message.video.mime_type ?? "video/mp4" });
+  if (message.video_note) media.push({ fileId: message.video_note.file_id, fileName: "video-note.mp4", contentType: "video/mp4" });
+  if (message.document) media.push({ fileId: message.document.file_id, fileName: message.document.file_name ?? "document", contentType: message.document.mime_type ?? "application/octet-stream" });
+  return media;
 }
 
 /**
- * Narrow a raw update to the one shape Assistant handles: a text message from a
- * human. Anything else returns null and is acknowledged without work.
+ * Download a file the owner sent. The Bot API serves files up to 20 MB this
+ * way; getFile answers with a path that is valid for about an hour.
+ */
+export async function downloadFile(token: string | null, fileId: string): Promise<ArrayBuffer> {
+  const file = await call(token, "getFile", { file_id: fileId }) as { file_path?: string };
+  if (!file.file_path) throw new Error("Telegram did not return a path for that file.");
+  const response = await fetch(`${API}/file/bot${requireToken(token)}/${file.file_path}`);
+  if (!response.ok) throw new Error(`Could not download a file from Telegram (${response.status}).`);
+  return await response.arrayBuffer();
+}
+
+/**
+ * Narrow a raw update to the one shape Assistant handles: a message from a
+ * human, with text, media, or both. Anything else returns null and is
+ * acknowledged without work.
  */
 export function parseUpdate(update: TelegramUpdate): InboundMessage | null {
   const message = update.message ?? update.edited_message;
@@ -174,12 +212,14 @@ export function parseUpdate(update: TelegramUpdate): InboundMessage | null {
   if (message.from?.is_bot) return null;
 
   const text = (message.text ?? message.caption ?? "").trim();
-  if (text.length === 0) return null;
+  const media = mediaOf(message);
+  if (text.length === 0 && media.length === 0) return null;
 
   return {
     chatId: String(message.chat.id),
     senderId: String(message.from?.id ?? message.chat.id),
     text,
     title: message.chat.title ?? message.from?.username,
+    media,
   };
 }

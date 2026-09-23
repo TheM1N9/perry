@@ -28,7 +28,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
 import { homedir, hostname, platform } from "node:os";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ConvexClient } from "convex/browser";
 import type { Doc, Id } from "../convex/_generated/dataModel";
@@ -589,6 +589,24 @@ async function main() {
     return media;
   };
 
+  // Attachments stored in the cloud (a Telegram photo, say) are fetched into the
+  // uploads folder first, so Codex reads every attachment from this disk.
+  const localise = async (attachments: NonNullable<Doc<"codexTurns">["attachments"]> = []) => Promise.all(attachments.map(async (attachment) => {
+    if (attachment.localPath || !attachment.url) return attachment;
+    try {
+      const response = await fetch(attachment.url);
+      if (!response.ok) throw new Error(`download failed (${response.status})`);
+      const extension = extname(attachment.fileName).toLowerCase().replace(/[^.a-z0-9]/g, "");
+      const localPath = join(PATHS.uploads, `${randomUUID()}${extension}`);
+      await mkdir(PATHS.uploads, { recursive: true });
+      await writeFile(localPath, Buffer.from(await response.arrayBuffer()));
+      return { ...attachment, localPath };
+    } catch (error) {
+      console.error(red(`  Could not fetch ${attachment.fileName}: ${message(error)}`));
+      return attachment;
+    }
+  }));
+
   let codexTurnBusy = false;
   let codexQueue: Doc<"codexTurns">[] = [];
   // The turn Codex is working on, and the turns the owner asked to stop.
@@ -630,7 +648,7 @@ async function main() {
               cwd: workdir,
               model: job.requestedModel,
               tools: job.mcpUrl ? { url: job.mcpUrl, token } : undefined,
-              attachments: job.attachments,
+              attachments: await localise(job.attachments),
               onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
               onText: (text) => {
                 latest = text;

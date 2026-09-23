@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
 import type { ClaimResult } from "./installation";
+import { vTelegramMedia } from "./schema";
 
 /**
  * The front door for Telegram. Runs as a mutation so the HTTP action can return
@@ -27,6 +28,7 @@ export const receive = internalMutation({
     senderId: v.string(),
     text: v.string(),
     title: v.optional(v.string()),
+    media: v.optional(v.array(vTelegramMedia)),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -82,6 +84,7 @@ export const receive = internalMutation({
       externalId: args.chatId,
       text: args.text,
       title: args.title,
+      telegramMedia: args.media,
     });
     return null;
   },
