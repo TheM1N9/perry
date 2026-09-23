@@ -216,6 +216,7 @@ export const handleTurn = internalAction({
         const message = error instanceof Error ? error.message : String(error);
         console.error(`turn failed: ${message}`);
         await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model, error: message.slice(0, 1000) });
+        if (conversation.jobId) await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, error: message });
         if (telegramToken) {
           await sendMessage(telegramToken, args.externalId, `That broke: ${message.slice(0, 300)}`)
             .catch((sendError) => console.error(`could not report failure: ${String(sendError)}`));

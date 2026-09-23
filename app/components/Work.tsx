@@ -3,6 +3,7 @@
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 import { api } from "@/convex/_generated/api";
+import { Jobs } from "./Jobs";
 
 function ago(ts?: number): string {
   if (!ts) return "never";
@@ -50,6 +51,7 @@ export function Work({ dashboardKey }: { dashboardKey: string }) {
 
   return (
     <>
+      <Jobs dashboardKey={dashboardKey} />
       <div className="panel">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <h3>Tasks</h3>

@@ -1,0 +1,28 @@
+{
+  "ranAt": "2026-09-23T17:00:58.276Z",
+  "timezone": "Asia/Calcutta",
+  "created": {
+    "name": "E2E ping",
+    "schedule": "59 23 * * *",
+    "nextRunAt": "2026-09-23T18:29:00.000Z"
+  },
+  "run": {
+    "lastRunAt": "2026-09-23T17:01:25.056Z",
+    "lastResult": "NOTHING",
+    "chat": "⏰ E2E ping",
+    "messagesInItsChat": 0
+  },
+  "heartbeat": {
+    "schedule": "0 9,13,17,21 * * *",
+    "enabled": true,
+    "nextRunAt": "2026-09-24T03:30:00.000Z"
+  },
+  "cleanup": {
+    "chats": [
+      "j579nf79j6mnd0663ksw88sgdh8ezh8j",
+      "j575cpxbx63j0aybkc1px1mr7x8eytcm"
+    ]
+  },
+  "pageErrors": [],
+  "pass": true
+}

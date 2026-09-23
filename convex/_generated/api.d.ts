@@ -21,6 +21,7 @@ import type * as history from "../history.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as installation from "../installation.js";
+import type * as jobs from "../jobs.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_commands from "../lib/commands.js";
 import type * as lib_telegram from "../lib/telegram.js";
@@ -57,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   ingest: typeof ingest;
   installation: typeof installation;
+  jobs: typeof jobs;
   "lib/auth": typeof lib_auth;
   "lib/commands": typeof lib_commands;
   "lib/telegram": typeof lib_telegram;

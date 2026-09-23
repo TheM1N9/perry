@@ -17,4 +17,7 @@ crons.interval(
   {},
 );
 
+// Proactivity: scheduled jobs and the heartbeat. Each job decides if it is due.
+crons.interval("run due jobs", { minutes: 1 }, internal.jobs.tick, {});
+
 export default crons;
