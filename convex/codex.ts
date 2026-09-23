@@ -2,10 +2,11 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { components, internal } from "./_generated/api";
 import { saveMessages } from "@convex-dev/agent";
-import { sendMessage } from "./lib/telegram";
+import { sendMessage, sendPhoto } from "./lib/telegram";
 import { vEngine, vMode } from "./schema";
 import { assertDashboardKey } from "./lib/auth";
 import { authenticate } from "./runner";
+import { ABSOLUTE_PATH } from "./media";
 import type { Id } from "./_generated/dataModel";
 import type { Mode } from "./modes";
 
@@ -183,7 +184,8 @@ export const enqueueTurn = internalMutation({
     instructions: v.string(),
     model: v.optional(v.string()),
     attachments: v.optional(v.array(v.object({
-      url: v.string(),
+      url: v.optional(v.string()),
+      localPath: v.optional(v.string()),
       fileName: v.string(),
       contentType: v.string(),
     }))),
@@ -251,7 +253,7 @@ export const claimTurn = mutation({
     if (running) return null;
     await ctx.db.patch(job._id, { status: "running", startedAt: Date.now() });
     const site = process.env.CONVEX_SITE_URL;
-    return { ...job, codexThreadId: conversation.codexThreadId, mcpUrl: site ? `${site}/mcp` : undefined };
+    return { ...job, codexThreadId: conversation.codexThreadId, channel: conversation.channel, mcpUrl: site ? `${site}/mcp` : undefined };
   },
 });
 
@@ -338,7 +340,10 @@ export const finishTurn = mutation({
     token: v.string(), id: v.id("codexTurns"),
     response: v.optional(v.string()), error: v.optional(v.string()), model: v.optional(v.string()),
     media: v.optional(v.array(v.object({
-      storageId: v.id("_storage"),
+      /** Uploaded to Convex storage, or left where it is on the runner's machine. */
+      storageId: v.optional(v.id("_storage")),
+      localPath: v.optional(v.string()),
+      size: v.optional(v.number()),
       fileName: v.string(),
       contentType: v.string(),
     }))),
@@ -348,18 +353,20 @@ export const finishTurn = mutation({
     const runner = await authenticate(ctx, args.token);
     const job = await ctx.db.get(args.id);
     if (!job || job.runnerId !== runner._id || job.status !== "running") return null;
-    let mediaKey: string | undefined;
+    // share_file may already have attached files to this turn.
+    let mediaKey = job.mediaKey;
     for (const item of args.media ?? []) {
-      const stored = await ctx.storage.getMetadata(item.storageId);
-      if (!stored) continue;
+      const stored = item.storageId ? await ctx.storage.getMetadata(item.storageId) : null;
+      const local = item.localPath && ABSOLUTE_PATH.test(item.localPath) ? item.localPath : undefined;
+      if (!stored && !local) continue;
       mediaKey = `codex-${job._id}`;
       await ctx.db.insert("chatAttachments", {
         conversationId: job.conversationId,
         messageKey: mediaKey,
-        storageId: item.storageId,
+        ...(stored ? { storageId: item.storageId } : { localPath: local }),
         fileName: item.fileName.slice(0, 200),
-        contentType: item.contentType || stored.contentType || "application/octet-stream",
-        size: stored.size,
+        contentType: item.contentType || stored?.contentType || "application/octet-stream",
+        size: stored?.size ?? item.size ?? 0,
         createdAt: Date.now(),
       });
     }
@@ -373,6 +380,19 @@ export const finishTurn = mutation({
     });
     await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: job._id });
     return null;
+  },
+});
+
+/** Storage URLs for the media a Codex turn produced. */
+export const mediaUrls = internalQuery({
+  args: { conversationId: v.id("conversations"), messageKey: v.string() },
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    const rows = await ctx.db.query("chatAttachments")
+      .withIndex("by_message", (q) => q.eq("conversationId", args.conversationId).eq("messageKey", args.messageKey))
+      .collect();
+    const urls = await Promise.all(rows.map((row) => row.storageId ? ctx.storage.getUrl(row.storageId) : null));
+    return urls.filter((url): url is string => Boolean(url));
   },
 });
 
@@ -424,7 +444,7 @@ export const finalizeTurn = internalAction({
   handler: async (ctx, args) => {
     const result: {
       job: { prompt: string; response?: string; error?: string; status: string; finalizedAt?: number; mediaKey?: string };
-      conversation: { threadId: string; channel: "web" | "telegram"; externalId: string } | null;
+      conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string } | null;
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
     const { job, conversation } = result;
@@ -446,11 +466,39 @@ export const finalizeTurn = internalAction({
     });
     if (conversation.channel === "telegram") {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
-      try { await sendMessage(token, conversation.externalId, job.response || `That broke: ${job.error || "Codex did not reply."}`); }
+      const photos: string[] = job.mediaKey
+        ? await ctx.runQuery(internal.codex.mediaUrls, { conversationId: conversation._id, messageKey: job.mediaKey })
+        : [];
+      try {
+        if (job.response || !photos.length) await sendMessage(token, conversation.externalId, job.response || `That broke: ${job.error || "Codex did not reply."}`);
+        // Telegram fetches photos by URL only up to 5 MB; send a link for anything it refuses.
+        for (const url of photos) await sendPhoto(token, conversation.externalId, url).catch(() => sendMessage(token, conversation.externalId, url));
+      }
       catch (error) { console.error(`Could not deliver Codex reply: ${String(error)}`); }
     }
     await ctx.runMutation(internal.codex.markFinalized, args);
     return null;
+  },
+});
+
+/**
+ * Delete Codex turns whose chat is gone: one chat's, when it is being deleted,
+ * or every orphan when called without a chat.
+ */
+export const pruneOrphans = internalMutation({
+  args: { conversationId: v.optional(v.id("conversations")) },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const turns = args.conversationId
+      ? await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", args.conversationId!)).collect()
+      : await ctx.db.query("codexTurns").collect();
+    let deleted = 0;
+    for (const turn of turns) {
+      if (!args.conversationId && await ctx.db.get(turn.conversationId)) continue;
+      await ctx.db.delete(turn._id);
+      deleted += 1;
+    }
+    return deleted;
   },
 });
 

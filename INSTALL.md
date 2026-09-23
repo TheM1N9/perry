@@ -9,6 +9,9 @@ pnpm install
 pnpm run setup
 ```
 
+The setup wizard, the runner and the other scripts run on [Bun](https://bun.sh),
+so install it first; pnpm still manages the packages.
+
 That is the whole install. The wizard walks five steps, tells you what it is
 doing, and is safe to re-run: it keeps whatever is already configured and only
 asks for what is missing.
@@ -77,6 +80,27 @@ close to nothing.
 The sandbox has bash, Python, Node and git. Its /workspace survives between
 commands, there are no credentials inside it, and nothing on your machine is
 reachable from it.
+
+## Perry's folder on your machine
+
+Setup and the runner create `~/.perry`, the way Claude Code has `~/.claude`
+and Codex has `~/.codex`. Set `PERRY_HOME` to put it somewhere else.
+
+```
+~/.perry/
+  runner.json      how this machine's runner connects
+  uploads/         files you attach in chat
+  files/           the agent's own folder for what it makes
+  codex-results/   finished Codex turns not yet delivered
+```
+
+Chat media stays on your machine. Files you attach land in `uploads/`, the
+agent saves what it makes wherever it decides (usually `files/`), and the
+dashboard serves each file from where it is, only to someone holding the
+dashboard key. Telegram is the exception: it can only fetch images by URL, so
+images for Telegram chats go to Convex storage. If you host the dashboard
+somewhere other than this machine, set `PERRY_MEDIA=convex` so uploads go to
+Convex storage instead.
 
 ## Dashboard
 

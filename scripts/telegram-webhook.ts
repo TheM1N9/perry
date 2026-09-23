@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Register, inspect, or remove Perry's Telegram webhook.
  *
@@ -11,32 +11,10 @@
  * via `pnpm exec convex env set`.
  */
 
-import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+// Bun loads .env and .env.local into process.env before this runs.
+export {};
 
-function loadEnvFile(file) {
-  if (!existsSync(file)) return;
-  for (const line of readFileSync(file, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    if (!(key in process.env)) process.env[key] = value;
-  }
-}
-
-loadEnvFile(resolve(process.cwd(), ".env.local"));
-loadEnvFile(resolve(process.cwd(), ".env"));
-
-function required(name) {
+function required(name: string): string {
   const value = process.env[name];
   if (!value) {
     console.error(`Missing ${name}. Copy .env.example to .env.local and fill it in.`);
@@ -45,14 +23,14 @@ function required(name) {
   return value;
 }
 
-async function telegram(method, body) {
+async function telegram(method: string, body?: object): Promise<any> {
   const token = required("TELEGRAM_BOT_TOKEN");
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body ?? {}),
   });
-  const json = await res.json();
+  const json = await res.json() as { ok: boolean; description?: string; result?: unknown };
   if (!json.ok) {
     console.error(`Telegram ${method} failed: ${json.description}`);
     process.exit(1);

@@ -224,6 +224,18 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); return null; }
     finally { setBusy(false); }
   }
+  /** Keep the file on this machine through the local media server, or in Convex storage when that is turned off. */
+  async function store(file: File): Promise<{ localPath: string } | { storageId: Id<"_storage"> }> {
+    const local = await fetch("/api/media", { method: "POST", headers: { "x-file-name": encodeURIComponent(file.name) }, body: file });
+    if (local.ok) return { localPath: (await local.json() as { path: string }).path };
+    if (local.status !== 501) throw new Error((await local.json().catch(() => null) as { error?: string } | null)?.error ?? `Could not save ${file.name}.`);
+    const uploadUrl = await generateUploadUrl({ key: dashboardKey });
+    const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+    if (!response.ok) throw new Error(`Could not upload ${file.name}.`);
+    const body = await response.json() as { storageId?: Id<"_storage"> };
+    if (!body.storageId) throw new Error(`Could not store ${file.name}.`);
+    return { storageId: body.storageId };
+  }
   async function submit(text = draft) {
     const message = text.trim();
     if ((!message && pickedFiles.length === 0) || busy || pending?.id === selectedId) return;
@@ -235,12 +247,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     try {
       const uploaded: PendingAttachment[] = [];
       for (const file of files) {
-        const uploadUrl = await generateUploadUrl({ key: dashboardKey });
-        const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
-        if (!response.ok) throw new Error(`Could not upload ${file.name}.`);
-        const body = await response.json() as { storageId?: Id<"_storage"> };
-        if (!body.storageId) throw new Error(`Could not store ${file.name}.`);
-        const attachmentId = await registerAttachment({ key: dashboardKey, conversationId: id, messageKey: messageKey!, storageId: body.storageId, fileName: file.name, contentType: file.type || "application/octet-stream", size: file.size });
+        const attachmentId = await registerAttachment({ key: dashboardKey, conversationId: id, messageKey: messageKey!, ...await store(file), fileName: file.name, contentType: file.type || "application/octet-stream", size: file.size });
         uploaded.push({ id: attachmentId, url: URL.createObjectURL(file), fileName: file.name, contentType: file.type || "application/octet-stream" });
       }
       setPending({ id, text: message, attachments: uploaded, baselineCount: selectedId === id ? messages.filter((item) => item.role === "user" && item.text === message).length : 0, seenRunning: false });

@@ -18,6 +18,14 @@ import { vChannel } from "./schema";
 
 type Channel = "telegram" | "web";
 
+/** Gateway models run in the cloud, so local media is named but cannot be opened. */
+function describeAttachments(attachments: Array<{ url?: string; localPath?: string; fileName: string }>): string {
+  if (!attachments.length) return "";
+  return `\n\nAttached files:\n${attachments.map((item) => item.url
+    ? `- ${item.fileName}: ${item.url}`
+    : `- ${item.fileName}: stored on the owner's computer, which this model cannot open. Say so if the request depends on it.`).join("\n")}`;
+}
+
 const HELP = `
 Your private assistant.
 
@@ -221,6 +229,7 @@ export const handleTurn = internalAction({
           mode.instructions,
           "This is a private assistant chat. Be direct, thoughtful, and explicit about uncertainty. The runner controls filesystem access.",
           "Images you generate with your image generation tool are delivered to the chat automatically, even when the tool's text output looks empty. Do not retry just because no image data was printed, and never paste image data into your reply.",
+          "Files you create or save stay on this machine; you decide where, and your own files folder is named below. To show one in the chat (an image, video, audio clip or document), call the `share_file` tool with its absolute path. The chat serves it from that location, so don't move or delete a file after sharing it.",
           "Your `assistant` MCP tools are the owner's memory (recall, remember, read_memory, forget), their connected accounts (list_connectors, then find_action, then run_action), and task tracking. When a request involves email, calendar, documents or any other account, check list_connectors before saying you cannot do it, and never guess an action name. Ask before consequential external actions such as sending, deleting, publishing or spending.",
           memoryContext,
         ].filter(Boolean).join("\n\n");
@@ -241,9 +250,7 @@ export const handleTurn = internalAction({
           console.warn(`Codex unavailable, using gateway: ${String(error)}`);
         }
       }
-      const attachmentContext = attachments.length
-        ? `\n\nAttached files:\n${attachments.map((item) => `- ${item.fileName}: ${item.url}`).join("\n")}`
-        : "";
+      const attachmentContext = describeAttachments(attachments);
       const result = await agentFor(mode, gatewayKey).generateText(
         ctx,
         {
@@ -334,7 +341,7 @@ export const gatewayFallback = internalAction({
       const result = await agentFor(mode, gatewayKey).generateText(ctx, {
         threadId: conversation.threadId,
         userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
-      }, { instructions: `${mode.instructions}\n\n${memoryContext}`, prompt: `${job.prompt}${job.attachments?.length ? `\n\nAttached files:\n${job.attachments.map((item) => `- ${item.fileName}: ${item.url}`).join("\n")}` : ""}` });
+      }, { instructions: `${mode.instructions}\n\n${memoryContext}`, prompt: `${job.prompt}${describeAttachments(job.attachments ?? [])}` });
       const toolCalls = (result.steps ?? []).flatMap((step) => (step.toolCalls ?? []).map((call) => call?.toolName).filter((name): name is string => Boolean(name)));
       await deliver(ctx, conversation.channel, conversation.externalId,
         result.text?.trim() || (toolCalls.length ? "Done." : "I came back with nothing. Try asking again."));

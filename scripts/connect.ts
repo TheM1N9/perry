@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * `pnpm run connect` — let Agent P work on this machine.
  *
@@ -11,42 +11,13 @@
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
+import { bold, dim, red, runConvex, yellow } from "./lib";
 
-const CONVEX_CLI = resolve(process.cwd(), "node_modules/convex/bin/main.js");
-const ENV_FILE = resolve(process.cwd(), ".env.local");
 
-const dim = (s) => `\x1b[2m${s}\x1b[0m`;
-const bold = (s) => `\x1b[1m${s}\x1b[0m`;
-const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
-const red = (s) => `\x1b[31m${s}\x1b[0m`;
 
-function readEnvFile() {
-  const values = {};
-  if (!existsSync(ENV_FILE)) return values;
-  for (const line of readFileSync(ENV_FILE, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    values[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
-  }
-  return values;
-}
 
-function runConvex(args) {
-  return new Promise((resolvePromise) => {
-    const child = spawn(process.execPath, [CONVEX_CLI, ...args], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let out = "";
-    child.stdout.on("data", (d) => (out += d));
-    child.stderr.on("data", (d) => (out += d));
-    child.on("close", (code) => resolvePromise({ code, output: out }));
-  });
-}
 
 const args = process.argv.slice(2);
 const tokenOnly = args.includes("--token-only");
@@ -54,8 +25,7 @@ const auto = args.includes("--auto");
 const dirFlag = args.indexOf("--dir");
 const dir = dirFlag !== -1 ? args[dirFlag + 1] : undefined;
 
-const env = readEnvFile();
-const url = env.NEXT_PUBLIC_CONVEX_URL;
+const url = process.env.NEXT_PUBLIC_CONVEX_URL;
 
 if (!url) {
   console.error(
@@ -97,7 +67,7 @@ if (tokenOnly) {
     dim(
       `\n  On the other machine, in a clone of this repo:\n` +
         `    pnpm install\n` +
-        `    node runner/index.mjs --url ${url} --token ${token} --dir <folder>\n`,
+        `    bun runner/index.ts --url ${url} --token ${token} --dir <folder>\n`,
     ),
   );
   process.exit(0);
@@ -113,7 +83,7 @@ console.log(
 );
 
 const runnerArgs = [
-  resolve(process.cwd(), "runner/index.mjs"),
+  resolve(process.cwd(), "runner/index.ts"),
   "--url",
   url,
   "--token",

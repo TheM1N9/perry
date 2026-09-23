@@ -13,7 +13,7 @@ pnpm install
 pnpm run setup
 ```
 
-Five prompts, then send the pairing code it prints to your bot. See
+The scripts and the runner need [Bun](https://bun.sh). Five prompts, then send the pairing code it prints to your bot. See
 [INSTALL.md](INSTALL.md).
 
 ## Modes

@@ -238,6 +238,14 @@ export default function Home() {
     setReady(true);
   }, []);
 
+  // Local chat media is served by this app's own server, which reads the key
+  // from a cookie scoped to /api/media so it never appears in a media URL.
+  useEffect(() => {
+    document.cookie = dashboardKey
+      ? `perry_media=${encodeURIComponent(dashboardKey)}; Path=/api/media; SameSite=Strict; Max-Age=31536000`
+      : "perry_media=; Path=/api/media; SameSite=Strict; Max-Age=0";
+  }, [dashboardKey]);
+
   const remember = (key: string) => {
     window.localStorage.setItem(STORAGE_KEY, key);
     setDashboardKey(key);

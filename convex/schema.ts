@@ -252,11 +252,18 @@ export default defineSchema({
     .index("by_channel_external", ["channel", "externalId"])
     .index("by_channel_last", ["channel", "lastMessageAt"]),
 
-  /** Files attached to a chat turn. The bytes live in Convex storage. */
+  /**
+   * Files attached to a chat turn. The bytes live either in Convex storage or
+   * on the owner's machine at `localPath`, wherever the agent (or the upload
+   * inbox) put them, and the Next.js server on that machine serves them from
+   * there. See app/api/media.
+   */
   chatAttachments: defineTable({
     conversationId: v.id("conversations"),
     messageKey: v.string(),
-    storageId: v.id("_storage"),
+    storageId: v.optional(v.id("_storage")),
+    /** Absolute path on the owner's machine. */
+    localPath: v.optional(v.string()),
     fileName: v.string(),
     contentType: v.string(),
     size: v.number(),
@@ -361,7 +368,8 @@ export default defineSchema({
     /** Attachment key for media the turn produced, such as generated images. */
     mediaKey: v.optional(v.string()),
     attachments: v.optional(v.array(v.object({
-      url: v.string(),
+      url: v.optional(v.string()),
+      localPath: v.optional(v.string()),
       fileName: v.string(),
       contentType: v.string(),
     }))),
