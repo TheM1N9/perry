@@ -84,6 +84,15 @@ export async function sendMessage(
   }
 }
 
+/** Telegram fetches the image from the URL itself, so it must be publicly readable. */
+export async function sendPhoto(
+  token: string | null,
+  chatId: string,
+  url: string,
+): Promise<void> {
+  await call(token, "sendPhoto", { chat_id: chatId, photo: url });
+}
+
 /** The three dots in the chat while the model is thinking. */
 export async function sendTyping(
   token: string | null,

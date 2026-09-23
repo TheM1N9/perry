@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { components, internal } from "./_generated/api";
 import { saveMessages } from "@convex-dev/agent";
-import { sendMessage } from "./lib/telegram";
+import { sendMessage, sendPhoto } from "./lib/telegram";
 import { vEngine, vMode } from "./schema";
 import { assertDashboardKey } from "./lib/auth";
 import { authenticate } from "./runner";
@@ -376,6 +376,19 @@ export const finishTurn = mutation({
   },
 });
 
+/** Storage URLs for the media a Codex turn produced. */
+export const mediaUrls = internalQuery({
+  args: { conversationId: v.id("conversations"), messageKey: v.string() },
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    const rows = await ctx.db.query("chatAttachments")
+      .withIndex("by_message", (q) => q.eq("conversationId", args.conversationId).eq("messageKey", args.messageKey))
+      .collect();
+    const urls = await Promise.all(rows.map((row) => ctx.storage.getUrl(row.storageId)));
+    return urls.filter((url): url is string => Boolean(url));
+  },
+});
+
 export const getTurn = internalQuery({
   args: { id: v.id("codexTurns") },
   handler: async (ctx, args) => {
@@ -424,7 +437,7 @@ export const finalizeTurn = internalAction({
   handler: async (ctx, args) => {
     const result: {
       job: { prompt: string; response?: string; error?: string; status: string; finalizedAt?: number; mediaKey?: string };
-      conversation: { threadId: string; channel: "web" | "telegram"; externalId: string } | null;
+      conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string } | null;
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
     const { job, conversation } = result;
@@ -446,7 +459,14 @@ export const finalizeTurn = internalAction({
     });
     if (conversation.channel === "telegram") {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
-      try { await sendMessage(token, conversation.externalId, job.response || `That broke: ${job.error || "Codex did not reply."}`); }
+      const photos: string[] = job.mediaKey
+        ? await ctx.runQuery(internal.codex.mediaUrls, { conversationId: conversation._id, messageKey: job.mediaKey })
+        : [];
+      try {
+        if (job.response || !photos.length) await sendMessage(token, conversation.externalId, job.response || `That broke: ${job.error || "Codex did not reply."}`);
+        // Telegram fetches photos by URL only up to 5 MB; send a link for anything it refuses.
+        for (const url of photos) await sendPhoto(token, conversation.externalId, url).catch(() => sendMessage(token, conversation.externalId, url));
+      }
       catch (error) { console.error(`Could not deliver Codex reply: ${String(error)}`); }
     }
     await ctx.runMutation(internal.codex.markFinalized, args);
