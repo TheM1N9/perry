@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
-import { vMode } from "./schema";
 
 export const recent = internalQuery({
   args: { limit: v.optional(v.number()), conversationId: v.optional(v.id("conversations")) },
@@ -23,7 +22,6 @@ export const recent = internalQuery({
       threadId: conversations[index]?.threadId,
       chatTitle: conversations[index]?.title ?? (conversations[index] ? "Untitled chat" : "Deleted chat"),
       channel: conversations[index]?.channel ?? "deleted",
-      mode: r.mode as string,
       prompt: r.prompt,
       status: r.status as string,
       steps: r.steps,
@@ -40,14 +38,12 @@ export const recent = internalQuery({
 export const start = internalMutation({
   args: {
     conversationId: v.id("conversations"),
-    mode: vMode,
     prompt: v.string(),
   },
   returns: v.id("runs"),
   handler: async (ctx, args) => {
     return await ctx.db.insert("runs", {
       conversationId: args.conversationId,
-      mode: args.mode,
       prompt: args.prompt.slice(0, 2000),
       status: "running",
       startedAt: Date.now(),

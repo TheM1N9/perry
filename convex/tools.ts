@@ -3,7 +3,6 @@ import { z } from "zod";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { SearchResult } from "./composio";
-import type { ToolName } from "./modes";
 
 /**
  * The full tool catalogue. Which of these a given turn can reach is decided in
@@ -559,4 +558,6 @@ export const ALL_TOOLS = {
   finish_task,
   set_goal,
   watch_page,
-} satisfies Record<ToolName, unknown>;
+};
+
+export type ToolName = keyof typeof ALL_TOOLS;

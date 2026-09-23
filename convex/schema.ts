@@ -2,8 +2,6 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export const vChannel = v.union(v.literal("telegram"), v.literal("web"));
-export const vMode = v.union(v.literal("perry"), v.literal("agentP"));
-export const vEngine = v.union(v.literal("codex"), v.literal("gateway"));
 export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.literal("daily"));
 
 /**
@@ -32,8 +30,6 @@ export default defineSchema({
     sandboxId: v.optional(v.string()),
     /** Where run_command goes: a throwaway cloud box, or the owner's machine. */
     computeTarget: v.optional(v.union(v.literal("sandbox"), v.literal("local"))),
-    /** Codex subscription is the default engine for chats. */
-    chatEngine: v.optional(vEngine),
     createdAt: v.number(),
   }),
 
@@ -239,9 +235,7 @@ export default defineSchema({
     threadId: v.string(),
     codexThreadId: v.optional(v.string()),
     codexRunnerId: v.optional(v.id("runners")),
-    mode: vMode,
-    /** Picked in the composer. Unset means the install default engine and model. */
-    engine: v.optional(vEngine),
+    /** Codex model picked for this chat. Unset means the Codex default. */
     model: v.optional(v.string()),
     title: v.optional(v.string()),
     parentConversationId: v.optional(v.id("conversations")),
@@ -273,28 +267,6 @@ export default defineSchema({
     .index("by_message", ["conversationId", "messageKey"]),
 
   /**
-   * Per-mode overrides layered on top of the defaults in modes.ts.
-   *
-   * The defaults stay in code so a fresh deployment works with an empty table
-   * and so the file remains the readable answer to "what is Assistant allowed to
-   * do". This table exists so the next person to run Assistant can change the model
-   * from the dashboard instead of editing TypeScript and redeploying.
-   */
-  modeConfigs: defineTable({
-    mode: vMode,
-    model: v.optional(v.string()),
-    stepBudget: v.optional(v.number()),
-    tools: v.optional(v.array(v.string())),
-    instructions: v.optional(v.string()),
-    updatedAt: v.number(),
-  }).index("by_mode", ["mode"]),
-
-  /**
-   * Durable facts, written only when the agent explicitly calls `remember`.
-   * Full-text search for now. Swapping in @convex-dev/rag for embeddings is a
-   * later step and does not change the tool surface.
-   */
-  /**
    * Layered like OpenClaw's workspace memory. `profile` is USER.md: standing
    * preferences and relationships, written as directives. `core` is MEMORY.md:
    * durable facts and decisions. Both load into every turn. `daily` is
@@ -312,24 +284,19 @@ export default defineSchema({
     day: v.optional(v.string()),
     /** Replaced facts stay for the record and drop out of context and search. */
     supersededBy: v.optional(v.id("memories")),
-    /** Set once nightly consolidation has considered this daily note. */
-    reviewedAt: v.optional(v.number()),
-    embedding: v.optional(v.array(v.float64())),
   })
     .index("by_created", ["createdAt"])
     .index("by_kind", ["kind", "createdAt"])
     .index("by_day", ["day", "createdAt"])
-    .searchIndex("search_text", { searchField: "text" })
-    .vectorIndex("by_embedding", { vectorField: "embedding", dimensions: 1536 }),
+    .searchIndex("search_text", { searchField: "text" }),
 
   /**
-   * One row per agent turn: what came in, which mode handled it, which tools
+   * One row per agent turn: what came in, which model handled it, which tools
    * fired, what it cost, and how it ended. Debugging a chat bot without this is
    * guesswork.
    */
   runs: defineTable({
     conversationId: v.id("conversations"),
-    mode: vMode,
     prompt: v.string(),
     status: v.union(
       v.literal("running"),
@@ -359,7 +326,6 @@ export default defineSchema({
     runnerId: v.id("runners"),
     conversationId: v.id("conversations"),
     runId: v.id("runs"),
-    mode: vMode,
     prompt: v.string(),
     history: v.optional(v.string()),
     instructions: v.string(),

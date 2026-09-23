@@ -8,12 +8,11 @@
  * @module
  */
 
-import type * as agents from "../agents.js";
+import type * as assistant from "../assistant.js";
 import type * as brain from "../brain.js";
 import type * as codex from "../codex.js";
 import type * as composio from "../composio.js";
 import type * as compute from "../compute.js";
-import type * as config from "../config.js";
 import type * as conversations from "../conversations.js";
 import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
@@ -21,13 +20,11 @@ import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as installation from "../installation.js";
 import type * as lib_auth from "../lib/auth.js";
-import type * as lib_models from "../lib/models.js";
 import type * as lib_telegram from "../lib/telegram.js";
 import type * as mcp from "../mcp.js";
 import type * as media from "../media.js";
 import type * as memories from "../memories.js";
 import type * as models from "../models.js";
-import type * as modes from "../modes.js";
 import type * as notify from "../notify.js";
 import type * as runner from "../runner.js";
 import type * as runs from "../runs.js";
@@ -44,12 +41,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  agents: typeof agents;
+  assistant: typeof assistant;
   brain: typeof brain;
   codex: typeof codex;
   composio: typeof composio;
   compute: typeof compute;
-  config: typeof config;
   conversations: typeof conversations;
   crons: typeof crons;
   dashboard: typeof dashboard;
@@ -57,13 +53,11 @@ declare const fullApi: ApiFromModules<{
   ingest: typeof ingest;
   installation: typeof installation;
   "lib/auth": typeof lib_auth;
-  "lib/models": typeof lib_models;
   "lib/telegram": typeof lib_telegram;
   mcp: typeof mcp;
   media: typeof media;
   memories: typeof memories;
   models: typeof models;
-  modes: typeof modes;
   notify: typeof notify;
   runner: typeof runner;
   runs: typeof runs;

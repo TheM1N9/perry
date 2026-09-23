@@ -1,53 +1,46 @@
 {
-  "ranAt": "2026-09-23T10:13:14.762Z",
+  "ranAt": "2026-09-23T15:08:12.474Z",
   "url": "http://localhost:3005/chat",
   "before": {
-    "selected": "codex:gpt-6-astra",
-    "title": "Codex subscription · gpt-6-astra",
+    "selected": "gpt-6-astra",
+    "title": "Codex · gpt-6-astra",
     "insidePromptBox": true,
-    "groups": [
+    "groups": 0,
+    "options": [
       {
-        "label": "Codex subscription",
-        "count": 7,
-        "first": [
-          {
-            "value": "codex:gpt-6-astra",
-            "text": "GPT-6-Astra"
-          },
-          {
-            "value": "codex:gpt-6-sol",
-            "text": "GPT-6-Sol"
-          },
-          {
-            "value": "codex:gpt-6-luna",
-            "text": "GPT-6-Luna"
-          }
-        ]
+        "value": "gpt-6-astra",
+        "text": "GPT-6-Astra"
       },
       {
-        "label": "AI Gateway",
-        "count": 236,
-        "first": [
-          {
-            "value": "gateway:alibaba/qwen-3-14b",
-            "text": "Qwen3-14B · alibaba"
-          },
-          {
-            "value": "gateway:alibaba/qwen-3-235b",
-            "text": "Qwen3 235B A22B · alibaba"
-          },
-          {
-            "value": "gateway:alibaba/qwen-3-30b",
-            "text": "Qwen3-30B-A3B · alibaba"
-          }
-        ]
+        "value": "gpt-6-sol",
+        "text": "GPT-6-Sol"
+      },
+      {
+        "value": "gpt-6-luna",
+        "text": "GPT-6-Luna"
+      },
+      {
+        "value": "gpt-5.6-sol",
+        "text": "GPT-5.6-Sol"
+      },
+      {
+        "value": "gpt-5.6-terra",
+        "text": "GPT-5.6-Terra"
+      },
+      {
+        "value": "gpt-5.6-luna",
+        "text": "GPT-5.6-Luna"
+      },
+      {
+        "value": "gpt-5.5",
+        "text": "GPT-5.5"
       }
     ]
   },
-  "picked": "gateway:openai/gpt-3.5-turbo",
+  "picked": "gpt-6-sol",
   "after": {
-    "selected": "gateway:openai/gpt-3.5-turbo",
-    "title": "AI Gateway · openai/gpt-3.5-turbo",
+    "selected": "gpt-6-sol",
+    "title": "Codex · gpt-6-sol",
     "draft": true
   },
   "pageErrors": [],

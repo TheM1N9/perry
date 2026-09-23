@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
-import { DEFAULT_MODE } from "./modes";
-import { vChannel, vMode } from "./schema";
+import { vChannel } from "./schema";
 
 export const getByExternalId = internalQuery({
   args: { channel: vChannel, externalId: v.string() },
@@ -43,21 +42,12 @@ export const create = internalMutation({
       channel: args.channel,
       externalId: args.externalId,
       threadId: args.threadId,
-      mode: DEFAULT_MODE,
       title: args.title,
       lastMessageAt: Date.now(),
     });
   },
 });
 
-export const setMode = internalMutation({
-  args: { id: v.id("conversations"), mode: vMode },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, { mode: args.mode });
-    return null;
-  },
-});
 
 export const touch = internalMutation({
   args: { id: v.id("conversations") },
@@ -111,8 +101,6 @@ export const createBranch = internalMutation({
       channel: "web",
       externalId: `session:${args.threadId}`,
       threadId: args.threadId,
-      mode: parent.mode,
-      engine: parent.engine,
       model: parent.model,
       title: args.title,
       lastMessageAt: Date.now(),
@@ -180,7 +168,6 @@ export const stats = internalQuery({
       .take(50);
 
     return {
-      mode: conversation.mode,
       threadId: conversation.threadId,
       recentRuns: runs.length,
       lastError: runs.find((r) => r.status === "error")?.error,

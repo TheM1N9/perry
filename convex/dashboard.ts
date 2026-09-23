@@ -5,10 +5,8 @@ import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, mutation, query } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
-import { activeGateway } from "./lib/models";
-import { MODE_NAMES, TOOL_NAMES, type Mode } from "./modes";
 import { ABSOLUTE_PATH } from "./media";
-import { vEngine, vMemoryKind, vMode } from "./schema";
+import { vMemoryKind } from "./schema";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -22,119 +20,6 @@ import { vEngine, vMemoryKind, vMode } from "./schema";
 const WEB_CHANNEL = "web" as const;
 
 const vKey = v.string();
-
-// --- Configuration -------------------------------------------------------
-
-export type ModeView = Mode & { overridden: string[] };
-
-export const getConfig = query({
-  args: { key: vKey },
-  handler: async (ctx, args): Promise<{ modes: ModeView[]; tools: string[] }> => {
-    assertDashboardKey(args.key);
-
-    const modes: Mode[] = await ctx.runQuery(internal.config.resolveAllModes, {});
-    const overrides: Record<string, string[]> = await ctx.runQuery(
-      internal.config.overriddenFields,
-      {},
-    );
-
-    return {
-      modes: modes.map((mode) => ({
-        ...mode,
-        overridden: overrides[mode.name] ?? [],
-      })),
-      tools: [...TOOL_NAMES],
-    };
-  },
-});
-
-/**
- * Update one mode. Omit a field to leave it, pass null to clear it back to the
- * value shipped in modes.ts.
- */
-export const updateMode = mutation({
-  args: {
-    key: vKey,
-    mode: vMode,
-    model: v.optional(v.union(v.string(), v.null())),
-    stepBudget: v.optional(v.union(v.number(), v.null())),
-    tools: v.optional(v.union(v.array(v.string()), v.null())),
-    instructions: v.optional(v.union(v.string(), v.null())),
-  },
-  returns: v.null(),
-  handler: async (ctx, args): Promise<null> => {
-    assertDashboardKey(args.key);
-    const { key: _key, ...rest } = args;
-    await ctx.runMutation(internal.config.updateMode, rest);
-    return null;
-  },
-});
-
-export const resetMode = mutation({
-  args: { key: vKey, mode: vMode },
-  returns: v.null(),
-  handler: async (ctx, args): Promise<null> => {
-    assertDashboardKey(args.key);
-    await ctx.runMutation(internal.config.resetMode, { mode: args.mode });
-    return null;
-  },
-});
-
-/**
- * Ask the gateway which models exist, so picking one is a list rather than a
- * guess at a slug. Falls back to the modes already configured if the gateway
- * will not answer, because a broken dropdown should not block the page.
- */
-export const listModels = action({
-  args: { key: vKey },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{ models: string[]; error?: string }> => {
-    assertDashboardKey(args.key);
-
-    const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
-      name: "AI_GATEWAY_API_KEY",
-    });
-
-    // On the Convex gateway there is no model index to query, so offer a short
-    // hand-kept list. The field is free text either way, so a wrong guess here
-    // costs nothing.
-    if (!apiKey) {
-      return {
-        models: [
-          "anthropic/claude-haiku-4.5",
-          "anthropic/claude-sonnet-5",
-          "anthropic/claude-opus-5",
-          "openai/gpt-5-mini",
-          "openai/gpt-5",
-          "google/gemini-2.5-flash",
-          "google/gemini-2.5-pro",
-        ],
-      };
-    }
-
-    try {
-      const res = await fetch("https://ai-gateway.vercel.sh/v1/models", {
-        headers: { authorization: `Bearer ${apiKey}` },
-      });
-      if (!res.ok) {
-        return { models: [], error: `Gateway returned ${res.status}.` };
-      }
-      const body = (await res.json()) as { data?: Array<{ id?: string }> };
-      const models = (body.data ?? [])
-        .map((m) => m.id)
-        .filter((id): id is string => typeof id === "string")
-        .sort();
-      return { models };
-    } catch (error) {
-      return {
-        models: [],
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  },
-});
 
 // --- Web chat ------------------------------------------------------------
 
@@ -183,7 +68,6 @@ export const listChats = query({
     return chats.map((chat) => ({
       id: chat._id,
       title: chat.title ?? "Untitled chat",
-      mode: chat.mode,
       lastMessageAt: chat.lastMessageAt,
       parentConversationId: chat.parentConversationId,
       branchedFromMessageId: chat.branchedFromMessageId,
@@ -200,7 +84,6 @@ export const createChat = mutation({
       channel: WEB_CHANNEL,
       externalId: `session:${threadId}`,
       threadId,
-      mode: "perry",
       title: "New chat",
       lastMessageAt: Date.now(),
     });
@@ -355,7 +238,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ mode: string; engine?: "codex" | "gateway"; model?: string; title: string; isRunning: boolean; lastError?: string }> => {
+  ): Promise<{ model?: string; title: string; isRunning: boolean; lastError?: string }> => {
     assertDashboardKey(args.key);
     const conversation = webChat(await ctx.db.get(args.id));
     const isRunning = (conversation.pendingTurns ?? 0) > 0;
@@ -364,8 +247,6 @@ export const getChat = query({
       .order("desc")
       .first();
     return {
-      mode: conversation.mode,
-      engine: conversation.engine,
       model: conversation.model,
       title: conversation.title ?? "Untitled chat",
       isRunning,
@@ -485,7 +366,7 @@ export const sendChat = mutation({
     text: v.string(),
     attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
     messageKey: v.optional(v.string()),
-    engine: v.optional(vEngine),
+    /** The Codex model picked in the composer. Unset keeps the chat's current one. */
     model: v.optional(v.string()),
   },
   returns: v.null(),
@@ -508,7 +389,7 @@ export const sendChat = mutation({
       lastMessageAt: Date.now(),
       title: chat.title === "New chat" ? (text || "Attached files").slice(0, 80) : chat.title,
       pendingTurns: (chat.pendingTurns ?? 0) + 1,
-      ...(args.engine ? { engine: args.engine, model: args.model?.trim() || undefined } : {}),
+      ...(args.model !== undefined ? { model: args.model.trim() || undefined } : {}),
     });
 
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
@@ -522,29 +403,14 @@ export const sendChat = mutation({
   },
 });
 
+/** Pick this chat's Codex model. Unset means the Codex default. */
 export const setChatModel = mutation({
-  args: { key: vKey, id: v.id("conversations"), engine: vEngine, model: v.optional(v.string()) },
+  args: { key: vKey, id: v.id("conversations"), model: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
     webChat(await ctx.db.get(args.id));
-    await ctx.db.patch(args.id, { engine: args.engine, model: args.model?.trim() || undefined });
-    return null;
-  },
-});
-
-export const setChatMode = mutation({
-  args: { key: vKey, id: v.id("conversations"), mode: vMode },
-  returns: v.null(),
-  handler: async (ctx, args): Promise<null> => {
-    assertDashboardKey(args.key);
-
-    const conversation = webChat(await ctx.db.get(args.id));
-
-    await ctx.runMutation(internal.conversations.setMode, {
-      id: conversation._id,
-      mode: args.mode,
-    });
+    await ctx.db.patch(args.id, { model: args.model?.trim() || undefined });
     return null;
   },
 });
@@ -609,7 +475,6 @@ export type RunView = {
   threadId?: string;
   chatTitle: string;
   channel: string;
-  mode: string;
   prompt: string;
   status: string;
   steps?: number;
@@ -653,24 +518,18 @@ export const getStatus = query({
     args,
   ): Promise<{
     memories: number;
-    conversations: Array<{ channel: string; mode: string; lastMessageAt: number }>;
+    conversations: Array<{ channel: string; lastMessageAt: number }>;
     claimed: boolean;
     ownerName?: string;
     pairingCode?: string;
     pairingExpiresAt?: number;
-    gateway: "vercel" | "convex";
-    engine: "codex" | "gateway";
     telegramConfigured: boolean;
-    modeNames: string[];
   }> => {
     assertDashboardKey(args.key);
 
     const memories: number = await ctx.runQuery(internal.memories.count, {});
     const conversations = await ctx.runQuery(internal.conversations.list, {});
     const install = await ctx.runQuery(internal.installation.status, {});
-    const gatewayKey: string | null = await ctx.runQuery(internal.secrets.get, {
-      name: "AI_GATEWAY_API_KEY",
-    });
     const telegramToken: string | null = await ctx.runQuery(
       internal.secrets.get,
       { name: "TELEGRAM_BOT_TOKEN" },
@@ -680,17 +539,13 @@ export const getStatus = query({
       memories,
       conversations: conversations.map((c) => ({
         channel: c.channel,
-        mode: c.mode,
         lastMessageAt: c.lastMessageAt,
       })),
       claimed: install.claimed,
       ownerName: install.ownerName,
       pairingCode: install.pairingCode,
       pairingExpiresAt: install.pairingExpiresAt,
-      gateway: activeGateway(gatewayKey),
-      engine: await ctx.runQuery(internal.codex.activeEngine, {}),
       telegramConfigured: Boolean(telegramToken),
-      modeNames: [...MODE_NAMES],
     };
   },
 });

@@ -2,7 +2,7 @@
 
 import { CodexAccount } from "./CodexAccount";
 
-/** Settings for the single assistant. Engine fallback remains configurable; modes are intentionally gone. */
+/** Settings for the single assistant, which runs on the owner's Codex subscription. */
 export function Settings({ dashboardKey }: { dashboardKey: string }) {
   return (
     <>
@@ -13,7 +13,7 @@ export function Settings({ dashboardKey }: { dashboardKey: string }) {
           <span className="badge">One consistent assistant</span>
         </div>
         <p className="hint">
-          The assistant keeps the same capabilities in every chat. It uses your Codex subscription first and automatically falls back to the configured gateway if the subscription is unavailable.
+          The assistant keeps the same capabilities in every chat and runs on your Codex subscription, through the runner on your machine. When no runner is online, a message fails with an error instead of being answered.
         </p>
         <div className="field">
           <label>Working instructions</label>

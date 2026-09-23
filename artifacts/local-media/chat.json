@@ -1,0 +1,20 @@
+{
+  "ranAt": "2026-09-23T15:11:36.803Z",
+  "chatId": "j5774hr93x0w4r1xhny95f07sn8ezjqq",
+  "sentImage": {
+    "src": "/api/media/ks73b8n7gqnxnbw6x3z0c6k4s58eypsv",
+    "loaded": true
+  },
+  "reply": {
+    "text": "hello.txt",
+    "images": [],
+    "files": [
+      {
+        "name": "hello.txt",
+        "href": "/api/media/ks79pr1d70m9ad4jwptzqq0pzh8ez4bx"
+      }
+    ]
+  },
+  "access": null,
+  "pageErrors": []
+}

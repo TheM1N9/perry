@@ -132,20 +132,12 @@ async function main() {
   }
   say(`  ${green("bot")} @${probe.result.username}`);
 
-  // --- 3. Model access -----------------------------------------------------
-  step(3, TOTAL, "Model access");
+  // --- 3. Codex -------------------------------------------------------------
+  step(3, TOTAL, "Codex");
 
-  let gatewayKey = env.AI_GATEWAY_API_KEY ?? "";
-  if (gatewayKey) {
-    say(dim("  using your Vercel AI Gateway key"));
-  } else {
-    say(dim("  Perry uses Convex's own AI gateway by default, which needs no"));
-    say(dim("  extra signup. A Vercel AI Gateway key works too if you have one."));
-    gatewayKey = (
-      await rl.question("\n  Vercel AI Gateway key, or blank for Convex: ")
-    ).trim();
-  }
-  say(`  ${green("gateway")} ${gatewayKey ? "vercel" : "convex"}`);
+  say(dim("  Perry thinks with your ChatGPT subscription, through the Codex CLI on"));
+  say(dim("  this machine. After setup: install Codex, run `pnpm run connect`, and"));
+  say(dim("  sign in to Codex from the dashboard's Settings page."));
 
   // --- 4. Secrets and deploy ----------------------------------------------
   step(4, TOTAL, "Pushing config");
@@ -161,7 +153,6 @@ async function main() {
     TELEGRAM_BOT_TOKEN: token,
     TELEGRAM_WEBHOOK_SECRET: webhookSecret,
     DASHBOARD_KEY: dashboardKey,
-    ...(gatewayKey ? { AI_GATEWAY_API_KEY: gatewayKey } : {}),
   });
   say(`  ${green("wrote")} .env.local`);
   say(`  ${green("home")} ${ensureHome() && HOME}`);
@@ -169,7 +160,6 @@ async function main() {
   await setConvexEnv("TELEGRAM_BOT_TOKEN", token);
   await setConvexEnv("TELEGRAM_WEBHOOK_SECRET", webhookSecret);
   await setConvexEnv("DASHBOARD_KEY", dashboardKey);
-  if (gatewayKey) await setConvexEnv("AI_GATEWAY_API_KEY", gatewayKey);
 
   const deploy = await runConvex(["dev", "--once"]);
   if (deploy.code !== 0) {

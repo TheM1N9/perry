@@ -34,7 +34,6 @@ function groupName(timestamp: number) {
 const quickStarts = ["Help me plan my day", "Summarize what we worked on recently", "I have an idea to think through"];
 type Attachment = { url: string; fileName: string; contentType: string };
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
-type ModelChoice = { engine: "codex" | "gateway"; model?: string };
 function AttachmentList({ attachments }: { attachments: Attachment[] }) {
   if (!attachments.length) return null;
   return <div className="chat-attachments">{attachments.map((attachment) => {
@@ -59,13 +58,12 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const generateUploadUrl = useMutation(api.dashboard.generateUploadUrl);
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
-  const listGatewayModels = useAction(api.models.gatewayModels);
   const setChatModel = useMutation(api.dashboard.setChatModel).withOptimisticUpdate((store, args) => {
     const current = store.getQuery(api.dashboard.getChat, { key: args.key, id: args.id });
-    if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, engine: args.engine, model: args.model });
+    if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, model: args.model });
   });
-  const [gatewayModels, setGatewayModels] = useState<Array<{ id: string; name: string }>>([]);
-  const [draftChoice, setDraftChoice] = useState<ModelChoice | null>(null);
+  /** The model picked for a chat that has not been sent yet. */
+  const [draftModel, setDraftModel] = useState<string | undefined>(undefined);
   const [selectedId, setSelectedId] = useState<ChatId | null>(null);
   const [restored, setRestored] = useState(false);
   const [draft, setDraft] = useState("");
@@ -159,13 +157,6 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     );
   }, [chat?.isRunning, pending, selectedId]);
   useEffect(() => {
-    let current = true;
-    void listGatewayModels({ key: dashboardKey })
-      .then((models) => { if (current) setGatewayModels(models); })
-      .catch(() => { if (current) setGatewayModels([]); });
-    return () => { current = false; };
-  }, [dashboardKey, listGatewayModels]);
-  useEffect(() => {
     const previews = new Map(pickedFiles.map((file) => [file, URL.createObjectURL(file)]));
     setPickedPreviews(previews);
     return () => previews.forEach((url) => URL.revokeObjectURL(url));
@@ -184,24 +175,12 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const active = chats?.find((item) => item.id === selectedId);
   const parent = chats?.find((item) => item.id === active?.parentConversationId);
   const waiting = Boolean(pending?.id === selectedId) || Boolean(chat?.isRunning);
-  const stored = selectedId ? (chat?.engine ? { engine: chat.engine, model: chat.model } : null) : draftChoice;
-  const choiceEngine = stored?.engine ?? modelOptions?.defaultEngine ?? "codex";
-  const gatewayDefault = modelOptions?.gatewayDefaults[chat?.mode ?? "perry"];
-  const choice: ModelChoice = {
-    engine: choiceEngine,
-    model: stored?.model ?? (choiceEngine === "codex"
-      ? (modelOptions?.codex.find((item) => item.isDefault) ?? modelOptions?.codex[0])?.id
-      : gatewayDefault),
-  };
-  const gatewayChoices = [...gatewayModels];
-  for (const id of [gatewayDefault, choice.engine === "gateway" ? choice.model : undefined]) {
-    if (id && !gatewayChoices.some((item) => item.id === id)) gatewayChoices.unshift({ id, name: id });
-  }
-  function pickModel(value: string) {
-    const split = value.indexOf(":");
-    const next: ModelChoice = { engine: value.slice(0, split) as ModelChoice["engine"], model: value.slice(split + 1) || undefined };
-    if (!selectedId) { setDraftChoice(next); return; }
-    void setChatModel({ key: dashboardKey, id: selectedId, ...next }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+  const codexModels = modelOptions?.codex ?? [];
+  const model = (selectedId ? chat?.model : draftModel)
+    ?? (codexModels.find((item) => item.isDefault) ?? codexModels[0])?.id;
+  function pickModel(next: string) {
+    if (!selectedId) { setDraftModel(next || undefined); return; }
+    void setChatModel({ key: dashboardKey, id: selectedId, model: next || undefined }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   }
 
   function startNewChat() {
@@ -251,7 +230,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
         uploaded.push({ id: attachmentId, url: URL.createObjectURL(file), fileName: file.name, contentType: file.type || "application/octet-stream" });
       }
       setPending({ id, text: message, attachments: uploaded, baselineCount: selectedId === id ? messages.filter((item) => item.role === "user" && item.text === message).length : 0, seenRunning: false });
-      await sendChat({ key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, engine: choice.engine, model: choice.model });
+      await sendChat({ key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, model });
     } catch (cause) { setPending(null); setDraft(message); setPickedFiles(files); setError(cause instanceof Error ? cause.message : String(cause)); }
   }
   async function branch(messageId: string) {
@@ -370,11 +349,10 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
             : url && file.type.startsWith("video/") ? <video src={url} muted playsInline preload="metadata" />
             : <span className="chat-picked-name"><Icon name="paperclip" size={14} />{file.name}</span>;
           return <div className="chat-picked-file" key={`${index}-${file.name}-${file.lastModified}`} title={file.name}>{preview}<button aria-label={`Remove ${file.name}`} onClick={() => setPickedFiles((items) => items.filter((item) => item !== file))}><Icon name="close" size={12} /></button></div>;
-        })}</div>}<textarea ref={composer} value={draft} rows={1} placeholder="Message your assistant…" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} /><div className="chat-composer-foot"><button className="chat-attach" aria-label="Attach files" title="Attach images, video, audio, or files" onClick={() => filePicker.current?.click()} disabled={busy}><Icon name="paperclip" size={17} /></button><input ref={filePicker} type="file" multiple hidden accept="image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json" onChange={(event) => { const files = Array.from(event.target.files ?? []); setPickedFiles((items) => [...items, ...files].slice(0, 10)); event.currentTarget.value = ""; }} /><select className="chat-model" aria-label="Model" title={`${choice.engine === "codex" ? "Codex subscription" : "AI Gateway"} · ${choice.model ?? "default"}`} value={`${choice.engine}:${choice.model ?? ""}`} onChange={(event) => pickModel(event.target.value)}>
-          <optgroup label="Codex subscription">{modelOptions?.codex.length
-            ? modelOptions.codex.map((item) => <option key={item.id} value={`codex:${item.id}`}>{item.name}</option>)
-            : <option value="codex:">Codex default</option>}</optgroup>
-          <optgroup label="AI Gateway">{gatewayChoices.map((item) => <option key={item.id} value={`gateway:${item.id}`}>{item.name === item.id ? item.id : `${item.name} · ${item.id.split("/")[0]}`}</option>)}</optgroup>
+        })}</div>}<textarea ref={composer} value={draft} rows={1} placeholder="Message your assistant…" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} /><div className="chat-composer-foot"><button className="chat-attach" aria-label="Attach files" title="Attach images, video, audio, or files" onClick={() => filePicker.current?.click()} disabled={busy}><Icon name="paperclip" size={17} /></button><input ref={filePicker} type="file" multiple hidden accept="image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json" onChange={(event) => { const files = Array.from(event.target.files ?? []); setPickedFiles((items) => [...items, ...files].slice(0, 10)); event.currentTarget.value = ""; }} /><select className="chat-model" aria-label="Codex model" title={`Codex · ${model ?? "default"}`} value={model ?? ""} onChange={(event) => pickModel(event.target.value)}>
+          {codexModels.length
+            ? codexModels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)
+            : <option value="">Codex default</option>}
         </select><span className="chat-composer-hint">Shift + Enter for a new line</span><button className="chat-send" aria-label="Send message" onClick={() => void submit()} disabled={(!draft.trim() && pickedFiles.length === 0) || busy || pending?.id === selectedId}><Icon name="arrow" size={18} /></button></div></div>
         <div className="chat-composer-caption">Attach images, video, audio, or documents. The assistant can inspect supported files and link to shared media.</div>
       </div></div>

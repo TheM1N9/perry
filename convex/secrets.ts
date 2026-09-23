@@ -18,7 +18,6 @@ import { internalMutation, internalQuery } from "./_generated/server";
 export const SECRET_NAMES = [
   "TELEGRAM_BOT_TOKEN",
   "TELEGRAM_WEBHOOK_SECRET",
-  "AI_GATEWAY_API_KEY",
   "COMPOSIO_API_KEY",
   "DAYTONA_API_KEY",
 ] as const;
@@ -37,10 +36,6 @@ export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> 
   TELEGRAM_WEBHOOK_SECRET: {
     label: "Telegram webhook secret",
     hint: "Shared with Telegram so a stranger cannot post fake updates. Change it and re-register the webhook.",
-  },
-  AI_GATEWAY_API_KEY: {
-    label: "Vercel AI Gateway key",
-    hint: "How Assistant reaches a model. Without it, Convex's own gateway is used, which needs a paid Convex plan.",
   },
   COMPOSIO_API_KEY: {
     label: "Composio key",

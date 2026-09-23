@@ -3,38 +3,10 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { components, internal } from "./_generated/api";
 import { saveMessages } from "@convex-dev/agent";
 import { sendMessage, sendPhoto } from "./lib/telegram";
-import { vEngine, vMode } from "./schema";
 import { assertDashboardKey } from "./lib/auth";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH } from "./media";
 import type { Id } from "./_generated/dataModel";
-import type { Mode } from "./modes";
-
-export const engine = query({
-  args: { key: v.string() },
-  handler: async (ctx, args) => {
-    assertDashboardKey(args.key);
-    const install = await ctx.db.query("installation").first();
-    return install?.chatEngine ?? "codex";
-  },
-});
-
-export const setEngine = mutation({
-  args: { key: v.string(), engine: vEngine },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    assertDashboardKey(args.key);
-    const install = await ctx.db.query("installation").first();
-    if (!install) throw new Error("Installation is missing.");
-    await ctx.db.patch(install._id, { chatEngine: args.engine });
-    return null;
-  },
-});
-
-export const activeEngine = internalQuery({
-  args: {},
-  handler: async (ctx) => (await ctx.db.query("installation").first())?.chatEngine ?? "codex",
-});
 
 /** Only device codes and account metadata cross Convex. Codex tokens never do. */
 export const accounts = query({
@@ -178,7 +150,6 @@ export const enqueueTurn = internalMutation({
   args: {
     conversationId: v.id("conversations"),
     runId: v.id("runs"),
-    mode: vMode,
     prompt: v.string(),
     history: v.optional(v.string()),
     instructions: v.string(),
@@ -207,7 +178,6 @@ export const enqueueTurn = internalMutation({
       runnerId: runner._id,
       conversationId: args.conversationId,
       runId: args.runId,
-      mode: args.mode,
       prompt: args.prompt,
       history: args.history,
       instructions: args.instructions,
@@ -407,26 +377,16 @@ export const getTurn = internalQuery({
 });
 
 export const markFinalized = internalMutation({
-  args: {
-    id: v.id("codexTurns"),
-    fallback: v.optional(v.object({
-      status: v.union(v.literal("ok"), v.literal("error")),
-      model: v.string(),
-      error: v.optional(v.string()),
-      toolCalls: v.optional(v.array(v.string())),
-    })),
-  },
+  args: { id: v.id("codexTurns") },
   returns: v.null(),
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.id);
     if (!job || job.finalizedAt) return null;
     await ctx.db.patch(job._id, { finalizedAt: Date.now() });
-    const run = await ctx.db.get(job.runId);
     await ctx.db.patch(job.runId, {
-      status: args.fallback?.status ?? (job.status === "done" ? "ok" : "error"),
-      model: args.fallback?.model ?? job.model ?? "codex subscription",
-      error: args.fallback?.error ?? (args.fallback ? undefined : job.error),
-      ...(args.fallback?.toolCalls ? { toolCalls: [...(run?.toolCalls ?? []), ...args.fallback.toolCalls] } : {}),
+      status: job.status === "done" ? "ok" : "error",
+      model: job.model ?? "codex subscription",
+      error: job.error,
       finishedAt: Date.now(),
     });
     const conversation = await ctx.db.get(job.conversationId);
@@ -448,11 +408,7 @@ export const finalizeTurn = internalAction({
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
     const { job, conversation } = result;
-    if (job.status === "error") {
-      const fallback = await ctx.runAction(internal.brain.gatewayFallback, args);
-      await ctx.runMutation(internal.codex.markFinalized, { id: args.id, fallback });
-      return null;
-    }
+    // A failed turn keeps the owner's message; the error shows on the run and, on Telegram, as a reply.
     await saveMessages(ctx, components.agent, {
       threadId: conversation.threadId,
       userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
@@ -505,7 +461,7 @@ export const pruneOrphans = internalMutation({
 /** Who may use the MCP endpoint: a runner, while it has a Codex turn running. */
 export const mcpAccess = internalQuery({
   args: { token: v.string() },
-  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; tools: string[]; userId: string; threadId: string } | null> => {
+  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string } | null> => {
     const runner = await authenticate(ctx, args.token).catch(() => null);
     if (!runner) return null;
     const job = await ctx.db.query("codexTurns")
@@ -513,10 +469,8 @@ export const mcpAccess = internalQuery({
       .first();
     const conversation = job && await ctx.db.get(job.conversationId);
     if (!job || !conversation) return null;
-    const mode: Mode = await ctx.runQuery(internal.config.resolveMode, { mode: job.mode });
     return {
       turnId: job._id,
-      tools: mode.tools,
       userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
       threadId: conversation.threadId,
     };
