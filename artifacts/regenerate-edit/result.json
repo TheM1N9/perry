@@ -1,0 +1,55 @@
+{
+  "ranAt": "2026-09-23T15:50:13.252Z",
+  "chatId": "j577vpw4kgeq0wmqgx0g0nxy6n8eyfqg",
+  "beforeEdit": [
+    {
+      "role": "user",
+      "text": "This is an automated test. Remember the number 7 for this chat. Reply with just OK."
+    },
+    {
+      "role": "assistant",
+      "text": "OK"
+    },
+    {
+      "role": "user",
+      "text": "What number did I ask you to remember? Reply with just the number."
+    },
+    {
+      "role": "assistant",
+      "text": "7"
+    }
+  ],
+  "afterEdit": [
+    {
+      "role": "user",
+      "text": "This is an automated test. Remember the number 3 for this chat. Reply with just OK."
+    },
+    {
+      "role": "assistant",
+      "text": "OK"
+    }
+  ],
+  "recalled": "3",
+  "afterRegenerate": [
+    {
+      "role": "user",
+      "text": "This is an automated test. Remember the number 3 for this chat. Reply with just OK."
+    },
+    {
+      "role": "assistant",
+      "text": "OK"
+    },
+    {
+      "role": "user",
+      "text": "What number did I ask you to remember? Reply with just the number."
+    },
+    {
+      "role": "assistant",
+      "text": "3"
+    }
+  ],
+  "runsBefore": 4,
+  "runsAfter": 5,
+  "pageErrors": [],
+  "pass": true
+}
