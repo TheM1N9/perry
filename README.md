@@ -85,6 +85,12 @@ a token; Composio keeps the OAuth.
   asking but still records what ran.
 - **Stop.** A running reply can be stopped from the chat or with `/stop`; what
   it had written is kept.
+- **Steer.** A message sent while a reply is running joins that reply (Codex's
+  `turn/steer`) instead of waiting behind it, on the web and on Telegram. If
+  the reply ends first, the message is answered next as usual. Job prompts
+  still wait their turn.
+- **Compact.** `/compact` has Codex summarise a long chat's thread so it
+  carries less context; the chat's messages are unchanged.
 - **Regenerate and edit.** Rewrite a reply, or change a message you sent and
   resend it; Codex starts from the history as it now stands.
 - **Models.** Pick a Codex model per chat in the composer, or with `/model`.
@@ -171,8 +177,8 @@ short enough to be a caption rides on the first file; a longer one comes first.
 
 ## Channels
 
-Telegram and the web dashboard. Commands on both: `/model`, `/stop`, `/reset`;
-on Telegram also `/status`, `/help`.
+Telegram and the web dashboard. Commands on both: `/model`, `/stop`, `/compact`,
+`/reset`; on Telegram also `/status`, `/help`.
 
 ## Terminal chat
 

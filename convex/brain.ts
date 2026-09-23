@@ -25,6 +25,7 @@ Your private assistant.
 
   /model    list the Codex models; /model <name> switches this chat
   /stop     stop the reply I am writing
+  /compact  shrink what Codex carries of this chat, keep the chat
   /status   plumbing and recent errors
   /reset    save this chat to memory, then start a fresh one
   /help     this
@@ -72,6 +73,16 @@ async function runCommand(
     case "/stop": {
       const stopped: number = await ctx.runMutation(internal.codex.requestStop, { conversationId: conversation._id });
       return stopped ? "Stopping." : "Nothing is running.";
+    }
+
+    case "/compact": {
+      // finalizeTurn says when it is done. An offline runner is said, not thrown.
+      try {
+        const compacting = await ctx.runMutation(internal.codex.requestCompact, { conversationId: conversation._id });
+        return compacting ? "Compacting this chat…" : "Nothing to compact yet.";
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
     }
 
     case "/reset":
@@ -298,6 +309,8 @@ export const handleTurn = internalAction({
           ...await prepareTurn(ctx, conversation, args.text),
           model: conversation.model,
           attachments,
+          // The owner's message joins a reply that is running; a job's prompt waits its turn.
+          policy: conversation.jobId ? "queue" : "steer",
         });
         delegated = true;
       } catch (error) {

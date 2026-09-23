@@ -411,6 +411,7 @@ export const sendChat = mutation({
       ...(args.model !== undefined ? { model: args.model.trim() || undefined } : {}),
     });
 
+    // Sent while a reply is running, this joins that reply (see codex.enqueueTurn).
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
       channel: WEB_CHANNEL,
       externalId: chat.externalId,
@@ -499,6 +500,27 @@ export const resetChat = action({
   handler: async (ctx, args): Promise<string> => {
     assertDashboardKey(args.key);
     return await ctx.runAction(internal.brain.resetChat, { id: args.id });
+  },
+});
+
+/** /compact: summarise the chat's Codex thread. Null when there is nothing to compact yet. */
+export const compactChat = mutation({
+  args: { key: vKey, id: v.id("conversations") },
+  returns: v.union(v.null(), v.id("codexTurns")),
+  handler: async (ctx, args): Promise<Id<"codexTurns"> | null> => {
+    assertDashboardKey(args.key);
+    webChat(await ctx.db.get(args.id));
+    return await ctx.runMutation(internal.codex.requestCompact, { conversationId: args.id });
+  },
+});
+
+/** How a /compact is going, for the composer to report when it is done. */
+export const getCompaction = query({
+  args: { key: vKey, id: v.id("codexTurns") },
+  handler: async (ctx, args): Promise<{ status: Doc<"codexTurns">["status"]; error?: string } | null> => {
+    assertDashboardKey(args.key);
+    const turn = await ctx.db.get(args.id);
+    return turn?.kind === "compact" ? { status: turn.status, error: turn.error } : null;
   },
 });
 

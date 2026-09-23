@@ -24,6 +24,13 @@ export const vSpanKind = v.union(
 export const vSpanStatus = v.union(v.literal("running"), v.literal("ok"), v.literal("error"), v.literal("declined"));
 /** Where a memory came from: the owner, tool output such as a web page or email, or a scheduled job. */
 export const vMemoryOrigin = v.union(v.literal("owner"), v.literal("tool"), v.literal("job"));
+/** A file a Codex turn is given: on the runner's machine, or at a URL it fetches first. */
+export const vTurnAttachment = v.object({
+  url: v.optional(v.string()),
+  localPath: v.optional(v.string()),
+  fileName: v.string(),
+  contentType: v.string(),
+});
 
 /**
  * Assistant is single-owner, so there is no users table. The owner is identified by
@@ -424,6 +431,8 @@ export default defineSchema({
     fallback: v.optional(v.boolean()),
     conversationId: v.id("conversations"),
     runId: v.id("runs"),
+    /** A turn that compacts the chat's Codex thread (/compact) rather than answering a message. */
+    kind: v.optional(v.literal("compact")),
     prompt: v.string(),
     history: v.optional(v.string()),
     instructions: v.string(),
@@ -438,6 +447,8 @@ export default defineSchema({
     flush: v.optional(v.boolean()),
     /** Codex model id to run this turn with. Unset means the Codex default. */
     requestedModel: v.optional(v.string()),
+    /** Codex's own id for the turn, recorded when it starts; a steer must name it. */
+    codexTurnId: v.optional(v.string()),
     /** Attachment key for media the turn produced, such as generated images. */
     mediaKey: v.optional(v.string()),
     /** The owner asked to stop this turn; the runner interrupts Codex. */
@@ -454,12 +465,7 @@ export default defineSchema({
     telegramMessageId: v.optional(v.number()),
     telegramEditedAt: v.optional(v.number()),
     telegramEditing: v.optional(v.boolean()),
-    attachments: v.optional(v.array(v.object({
-      url: v.optional(v.string()),
-      localPath: v.optional(v.string()),
-      fileName: v.string(),
-      contentType: v.string(),
-    }))),
+    attachments: v.optional(v.array(vTurnAttachment)),
     status: v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("error")),
     response: v.optional(v.string()),
     error: v.optional(v.string()),
@@ -471,4 +477,31 @@ export default defineSchema({
   })
     .index("by_runner_status", ["runnerId", "status"])
     .index("by_conversation_status", ["conversationId", "status"]),
+
+  /**
+   * A message the owner sent while a reply was running. It joins that turn
+   * through Codex's turn/steer; one that cannot (the turn ended, or Codex
+   * refused) becomes an ordinary queued turn, so it keeps what a turn needs.
+   */
+  codexSteers: defineTable({
+    /** The running turn it joins. */
+    turnId: v.id("codexTurns"),
+    runnerId: v.id("runners"),
+    conversationId: v.id("conversations"),
+    runId: v.id("runs"),
+    prompt: v.string(),
+    history: v.optional(v.string()),
+    instructions: v.string(),
+    requestedModel: v.optional(v.string()),
+    attachments: v.optional(v.array(vTurnAttachment)),
+    /** Waiting for the runner, joined the turn, or turned into a queued turn of its own. */
+    status: v.union(v.literal("pending"), v.literal("applied"), v.literal("queued")),
+    /** Why Codex would not take it, when it was queued instead. */
+    error: v.optional(v.string()),
+    queuedTurnId: v.optional(v.id("codexTurns")),
+    createdAt: v.number(),
+    appliedAt: v.optional(v.number()),
+  })
+    .index("by_turn_status", ["turnId", "status"])
+    .index("by_status", ["status"]),
 });
