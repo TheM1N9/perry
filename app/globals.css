@@ -458,6 +458,8 @@ a {
 .chat-send { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 9px; background: #bdd8b7; color: #1c2a1e; }
 .chat-send:hover:not(:disabled) { background: #d8ecd3; }
 .chat-send:disabled { background: #46534a; color: #91a294; }
+.chat-stop { background: #e6c9a8; color: #2a1f14; }
+.chat-stop:hover { background: #f0d8bc; }
 .chat-composer-caption { text-align: center; color: #6c766e; font-size: 10px; margin-top: 8px; }
 .chat-error { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 11px; margin-bottom: 10px; background: #4a2927; border: 1px solid #80514d; color: #ffd0cb; border-radius: 8px; font-size: 11px; }
 .chat-error button { display: grid; place-items: center; background: transparent; color: inherit; padding: 0; }

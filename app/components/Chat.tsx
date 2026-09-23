@@ -24,6 +24,7 @@ const paths = {
   spark: "m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2ZM19 17l.6 1.4L21 19l-1.4.6L19 21l-.6-1.4L17 19l1.4-.6L19 17Z",
   lock: "M5 10h14v11H5V10Zm3 0V7a4 4 0 0 1 8 0v3",
   chevron: "m9 18 6-6-6-6",
+  stop: "M7 7h10v10H7z",
 } as const;
 function Icon({ name, size = 18 }: { name: keyof typeof paths; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
@@ -69,6 +70,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const deleteChat = useMutation(api.dashboard.deleteChat);
   const branchChat = useAction(api.dashboard.branchChat);
   const sendChat = useMutation(api.dashboard.sendChat);
+  const stopChat = useMutation(api.dashboard.stopChat);
   const generateUploadUrl = useMutation(api.dashboard.generateUploadUrl);
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
@@ -369,7 +371,9 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
           {codexModels.length
             ? codexModels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)
             : <option value="">Codex default</option>}
-        </select><span className="chat-composer-hint">Shift + Enter for a new line</span><button className="chat-send" aria-label="Send message" onClick={() => void submit()} disabled={(!draft.trim() && pickedFiles.length === 0) || busy || pending?.id === selectedId}><Icon name="arrow" size={18} /></button></div></div>
+        </select><span className="chat-composer-hint">Shift + Enter for a new line</span>{waiting && selectedId
+          ? <button className="chat-send chat-stop" aria-label="Stop the reply" title="Stop the reply" onClick={() => void stopChat({ key: dashboardKey, id: selectedId }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))}><Icon name="stop" size={16} /></button>
+          : <button className="chat-send" aria-label="Send message" onClick={() => void submit()} disabled={(!draft.trim() && pickedFiles.length === 0) || busy || pending?.id === selectedId}><Icon name="arrow" size={18} /></button>}</div></div>
         <div className="chat-composer-caption">Attach images, video, audio, or documents. The assistant can inspect supported files and link to shared media.</div>
       </div></div>
     </main>

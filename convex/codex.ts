@@ -199,6 +199,45 @@ export const queuedTurns = query({
   },
 });
 
+/** Running turns of this runner that the owner asked to stop. */
+export const stopRequests = query({
+  args: { token: v.string() },
+  handler: async (ctx, args): Promise<string[]> => {
+    const runner = await authenticate(ctx, args.token);
+    const running = await ctx.db.query("codexTurns")
+      .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "running"))
+      .take(20);
+    return running.filter((job) => job.stopRequested).map((job) => job._id);
+  },
+});
+
+/**
+ * Stop a chat's turns: a running one is flagged and its runner interrupts
+ * Codex, keeping what it produced; one still queued ends right away.
+ */
+export const requestStop = internalMutation({
+  args: { conversationId: v.id("conversations") },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    let stopped = 0;
+    for (const status of ["running", "queued"] as const) {
+      const turns = await ctx.db.query("codexTurns")
+        .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.conversationId).eq("status", status))
+        .collect();
+      for (const job of turns) {
+        if (status === "running") {
+          await ctx.db.patch(job._id, { stopRequested: true });
+        } else {
+          await ctx.db.patch(job._id, { status: "done", stopped: true, finishedAt: Date.now() });
+          await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: job._id });
+        }
+        stopped += 1;
+      }
+    }
+    return stopped;
+  },
+});
+
 export const runningTurns = query({
   args: { token: v.string() },
   handler: async (ctx, args) => {
@@ -366,6 +405,8 @@ export const finishTurn = mutation({
   args: {
     token: v.string(), id: v.id("codexTurns"),
     response: v.optional(v.string()), error: v.optional(v.string()), model: v.optional(v.string()),
+    /** Codex was interrupted because the owner stopped the turn. */
+    stopped: v.optional(v.boolean()),
     media: v.optional(v.array(v.object({
       /** Uploaded to Convex storage, or left where it is on the runner's machine. */
       storageId: v.optional(v.id("_storage")),
@@ -400,6 +441,7 @@ export const finishTurn = mutation({
     await ctx.db.patch(job._id, {
       mediaKey,
       status: args.error ? "error" : "done",
+      ...(args.stopped ? { stopped: true } : {}),
       response: args.response?.slice(0, 100_000),
       error: args.error?.slice(0, 2000),
       model: args.model,
@@ -460,11 +502,13 @@ export const finalizeTurn = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const result: {
-      job: { prompt: string; response?: string; error?: string; status: string; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number };
+      job: { prompt: string; response?: string; error?: string; status: string; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean };
       conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string } | null;
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
     const { job, conversation } = result;
+    // A stopped turn keeps whatever it had written, marked as stopped.
+    const reply = job.stopped ? `${job.response ?? ""}\n\n_Stopped._`.trim() : job.response;
     // A failed turn keeps the owner's message; the error shows on the run and, on Telegram, as a reply.
     await saveMessages(ctx, components.agent, {
       threadId: conversation.threadId,
@@ -472,8 +516,8 @@ export const finalizeTurn = internalAction({
       order: "next",
       messages: [
         { role: "user", content: job.prompt },
-        ...(job.response || job.mediaKey
-          ? [{ role: "assistant" as const, content: `${job.response ?? ""}${job.mediaKey ? `\n\n<!-- attachments: ${job.mediaKey} -->` : ""}`.trim() }]
+        ...(reply || job.mediaKey
+          ? [{ role: "assistant" as const, content: `${reply ?? ""}${job.mediaKey ? `\n\n<!-- attachments: ${job.mediaKey} -->` : ""}`.trim() }]
           : []),
       ],
     });
@@ -483,7 +527,9 @@ export const finalizeTurn = internalAction({
         ? await ctx.runQuery(internal.codex.mediaUrls, { conversationId: conversation._id, messageKey: job.mediaKey })
         : [];
       try {
-        const text = job.response || (photos.length ? "" : `That broke: ${job.error || "Codex did not reply."}`);
+        const text = job.error
+          ? `${job.response ? `${job.response}\n\n` : ""}That broke: ${job.error}`
+          : reply || (photos.length ? "" : "Codex did not reply.");
         // A streamed reply lands in the message that showed it growing.
         if (job.telegramMessageId) await finishDraft(token, conversation.externalId, job.telegramMessageId, text || "Done.");
         else if (text) await sendMessage(token, conversation.externalId, text);

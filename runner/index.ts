@@ -33,7 +33,7 @@ import { createInterface } from "node:readline/promises";
 import { ConvexClient } from "convex/browser";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
-import { ASSISTANT_MCP, CodexAppServer, type GeneratedImage, type RpcMessage } from "./codex";
+import { ASSISTANT_MCP, CodexAppServer, TurnFailed, type GeneratedImage, type RpcMessage } from "./codex";
 import { ensureHome, HOME, PATHS } from "./home";
 
 const CONFIG_DIR = HOME;
@@ -55,7 +55,7 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 
 type Config = { url?: string; token?: string; dir?: string; name?: string; auto?: boolean };
 type Flags = Config & { auto?: boolean };
-type CodexResult = { response?: string; error?: string; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
+type CodexResult = { response?: string; error?: string; stopped?: boolean; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
 
 /**
  * Commands that are never a good idea from an agent, regardless of approval.
@@ -526,6 +526,14 @@ async function main() {
 
   let codexTurnBusy = false;
   let codexQueue: Doc<"codexTurns">[] = [];
+  // The turn Codex is working on, and the turns the owner asked to stop.
+  let current: { jobId: Id<"codexTurns">; threadId: string; turnId: string } | null = null;
+  let stopRequested = new Set<string>();
+  const interruptIfAsked = () => {
+    if (!current || !stopRequested.has(current.jobId) || !codex) return;
+    console.log(yellow("  stopping the Codex turn, as asked"));
+    void codex.interrupt(current.threadId, current.turnId).catch((error) => console.error(red(`  Could not stop the Codex turn: ${message(error)}`)));
+  };
   const pumpCodex = async () => {
     if (codexTurnBusy) return;
     codexTurnBusy = true;
@@ -562,11 +570,30 @@ async function main() {
                 latest = text;
                 streamTimer ??= setTimeout(flush, 300);
               },
+              onStarted: (turn) => {
+                current = { jobId: job._id, ...turn };
+                interruptIfAsked();
+              },
             });
             const media = await keepImages(job._id, job.channel, completed.images);
-            result = { response: completed.response, model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription", ...(media.length ? { media } : {}) };
+            result = {
+              response: completed.response,
+              ...(completed.interrupted ? { stopped: true } : {}),
+              model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription",
+              ...(media.length ? { media } : {}),
+            };
           } catch (error) {
-            result = { error: message(error), model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription" };
+            // A late failure keeps what the turn had already produced.
+            const partial = error instanceof TurnFailed ? error.partial : null;
+            const media = partial ? await keepImages(job._id, job.channel, partial.images) : [];
+            result = {
+              error: message(error),
+              ...(partial?.text ? { response: partial.text } : {}),
+              model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription",
+              ...(media.length ? { media } : {}),
+            };
+          } finally {
+            current = null;
           }
           if (streamTimer) clearTimeout(streamTimer);
           saveResult(job._id, result);
@@ -583,6 +610,10 @@ async function main() {
   client.onUpdate(api.codex.queuedTurns, { token }, (jobs) => {
     codexQueue = jobs ?? [];
     void pumpCodex();
+  });
+  client.onUpdate(api.codex.stopRequests, { token }, (ids) => {
+    stopRequested = new Set(ids ?? []);
+    interruptIfAsked();
   });
 
   const stop = async () => {
