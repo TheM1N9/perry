@@ -33,19 +33,16 @@ const SPAN_KINDS: Record<SpanView["kind"], string> = {
 };
 
 /**
- * What Codex did during a run, as a timeline from the moment the run started.
- * Loaded only while open. Span times come from the runner's clock and the
- * run's from Convex's, so a bar that would start before the run starts at it.
+ * What Codex did during a run, as a timeline from its first span to its last.
+ * Loaded only while open. Span times come from the runner's clock, which can
+ * be well off Convex's, so the run's own times are not mixed in.
  */
 function Trace({ dashboardKey, run }: { dashboardKey: string; run: RunView }) {
   const spans = useQuery(api.dashboard.runTrace, { key: dashboardKey, runId: run.id as Id<"runs"> });
   if (spans === undefined) return <div className="trace-empty">Loading trace…</div>;
   if (spans.length === 0) return <div className="trace-empty">Nothing was traced for this run.</div>;
-  const origin = run.startedAt;
-  const end = Math.max(
-    run.durationMs !== undefined ? origin + run.durationMs : Date.now(),
-    ...spans.map((span) => span.startedAt + (span.durationMs ?? Date.now() - span.startedAt)),
-  );
+  const origin = Math.min(...spans.map((span) => span.startedAt));
+  const end = Math.max(...spans.map((span) => span.startedAt + (span.durationMs ?? Date.now() - span.startedAt)));
   const total = Math.max(1, end - origin);
   const percent = (ms: number) => Math.min(100, Math.max(0, (ms / total) * 100));
   return (
