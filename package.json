@@ -17,7 +17,9 @@
     "webhook:info": "bun scripts/telegram-webhook.ts info",
     "webhook:delete": "bun scripts/telegram-webhook.ts delete",
     "connect": "bun scripts/connect.ts",
-    "runner": "bun runner/index.ts"
+    "runner": "bun runner/index.ts",
+    "chat": "bun scripts/chat.ts",
+    "evals": "bun evals/run.ts"
   },
   "dependencies": {
     "@ai-sdk/provider": "^4.0.0",

@@ -138,6 +138,46 @@ speech-to-text tool on the machine.
 Telegram and the web dashboard. Commands on both: `/model`, `/stop`; on
 Telegram also `/status`, `/reset`, `/help`.
 
+## Terminal chat
+
+`pnpm chat` talks to Perry from the terminal, as a web chat that also shows in
+the dashboard, using the dashboard key in `.env.local`. `--chat <id>` continues
+a chat. The reply streams in place; Ctrl+C stops it and a second Ctrl+C exits.
+`/new`, `/model [name]` and `/quit` work as you would expect, and each reply
+ends with its time and tokens.
+
+## Evals
+
+Behaviour checks against the live Perry, modelled on
+[eve](https://github.com/vercel/eve)'s evals. Each `evals/*.eval.ts` drives
+fresh web chats and asserts on the replies and on which of Perry's tools ran;
+`t.judge(...)` has Codex grade a reply with `codex exec` on your subscription.
+Every eval deletes its chats, and anything it put in memory, when it ends. None
+of them message Telegram.
+
+```bash
+pnpm evals                  # all of them
+pnpm evals --tag memory     # those tagged memory
+pnpm evals search-chats     # one, by its file name
+pnpm evals --strict         # soft scores below their bar fail too
+```
+
+They need a runner started with `--auto`, since nobody is there to approve.
+To keep them off your own runner, start a short-lived one and pass its token:
+
+```bash
+TOKEN=$(bun -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")
+RUNNER=$(pnpm exec convex run runner:createToken "{\"name\":\"evals\",\"token\":\"$TOKEN\"}" 2>/dev/null | tail -1 | tr -d '"\r')
+mkdir -p /tmp/perry-evals-work
+# Its own PERRY_HOME, so your runner's saved settings are left alone.
+PERRY_HOME=/tmp/perry-evals bun runner/index.ts --url <your Convex URL> --token "$TOKEN" --dir /tmp/perry-evals-work --name evals --auto &
+pnpm evals --runner-token "$TOKEN"
+kill %1; pnpm exec convex run runner:revokeRunner "{\"runnerId\":\"$RUNNER\"}"
+```
+
+Results land in `artifacts/evals/<time>/`: `summary.json`, `results.jsonl` and
+one file per eval with every turn.
+
 ## Stack
 
 | Layer | Choice |
