@@ -176,7 +176,11 @@ async function history(ctx: ActionCtx, threadId: string): Promise<ModelMessage[]
 
 /** The owner's message, with images it links to; files on the offline computer are named only. */
 function prompt(job: Doc<"codexTurns">): UserContent {
-  const content: Exclude<UserContent, string> = [{ type: "text", text: job.prompt }];
+  // Recalled memory goes in as data ahead of the prompt, as the runner sends it to Codex.
+  const content: Exclude<UserContent, string> = [
+    ...(job.recalled ? [{ type: "text" as const, text: job.recalled }] : []),
+    { type: "text", text: job.prompt },
+  ];
   for (const attachment of job.attachments ?? []) {
     if (attachment.url && attachment.contentType.startsWith("image/")) {
       content.push({ type: "image", image: new URL(attachment.url), mediaType: attachment.contentType });

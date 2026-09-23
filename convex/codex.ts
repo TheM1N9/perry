@@ -1,7 +1,7 @@
 import { v, type Infer } from "convex/values";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
 import { components, internal } from "./_generated/api";
-import { saveMessages } from "@convex-dev/agent";
+import { createThread, saveMessages } from "@convex-dev/agent";
 import { editDraft, finishDraft, sendDraft, sendMessage, sendPhoto } from "./lib/telegram";
 import { assertDashboardKey } from "./lib/auth";
 import { authenticate } from "./runner";
@@ -156,6 +156,9 @@ export const enqueueTurn = internalMutation({
     prompt: v.string(),
     history: v.optional(v.string()),
     instructions: v.string(),
+    recalled: v.optional(v.string()),
+    recallDigest: v.optional(v.string()),
+    flush: v.optional(v.boolean()),
     model: v.optional(v.string()),
     attachments: v.optional(v.array(v.object({
       url: v.optional(v.string()),
@@ -195,6 +198,9 @@ export const enqueueTurn = internalMutation({
       prompt: args.prompt,
       history: args.history,
       instructions: args.instructions,
+      recalled: args.recalled || undefined,
+      recallDigest: args.recallDigest,
+      ...(args.flush ? { flush: true } : {}),
       requestedModel: args.model,
       attachments: args.attachments,
       status: "queued",
@@ -317,7 +323,8 @@ export const streamTurn = mutation({
 
 async function recordPartial(ctx: MutationCtx, job: Doc<"codexTurns">, text: string) {
   const conversation = await ctx.db.get(job.conversationId);
-  const edit = conversation?.channel === "telegram" && !job.telegramEditing
+  // The flush before /reset works quietly, so it never shows on Telegram.
+  const edit = conversation?.channel === "telegram" && !job.flush && !job.telegramEditing
     && Date.now() - (job.telegramEditedAt ?? 0) >= TELEGRAM_EDIT_MS;
   await ctx.db.patch(job._id, {
     partial: text.slice(0, 100_000),
@@ -498,6 +505,8 @@ export const finishTurn = mutation({
     response: v.optional(v.string()), error: v.optional(v.string()), model: v.optional(v.string()),
     /** Codex was interrupted because the owner stopped the turn. */
     stopped: v.optional(v.boolean()),
+    /** Codex compacted the thread's context during the turn, so recalled memory may be gone from it. */
+    compacted: v.optional(v.boolean()),
     media: v.optional(v.array(v.object({
       /** Uploaded to Convex storage, or left where it is on the runner's machine. */
       storageId: v.optional(v.id("_storage")),
@@ -538,6 +547,11 @@ export const finishTurn = mutation({
       model: args.model,
       finishedAt: Date.now(),
     });
+    // The chat's Codex thread has now seen this turn's recalled memory, unless
+    // compaction summarised it away; either way the next turn knows what to send.
+    if ((args.compacted || !args.error) && await ctx.db.get(job.conversationId)) {
+      await ctx.db.patch(job.conversationId, { recallDigest: args.compacted ? undefined : job.recallDigest });
+    }
     await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: job._id });
     return null;
   },
@@ -655,8 +669,8 @@ export const finalizeTurn = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const result: {
-      job: { prompt: string; response?: string; error?: string; status: string; model?: string; fallback?: boolean; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
-      conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string; jobId?: Id<"jobs"> } | null;
+      job: { prompt: string; response?: string; error?: string; status: string; model?: string; fallback?: boolean; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; flush?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
+      conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string; title?: string; jobId?: Id<"jobs"> } | null;
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
     const { job, conversation } = result;
@@ -664,6 +678,25 @@ export const finalizeTurn = internalAction({
     const reply = job.stopped ? `${job.response ?? ""}\n\n_Stopped._`.trim() : job.response;
     // Each step is recorded once done, so recovery can retry this safely (see recovery.ts).
     const done = (step: "reportedAt" | "savedAt" | "deliveredAt") => ctx.runMutation(internal.codex.markStep, { id: args.id, step });
+    const userId = conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`;
+    // The flush before /reset leaves nothing in the chat: finishing it, even
+    // with an error, starts the chat afresh ("saved" here), and only a failure
+    // is worth telling a Telegram chat about.
+    if (job.flush) {
+      if (!job.savedAt) {
+        const threadId = await createThread(ctx, components.agent, { userId, title: conversation.title });
+        await ctx.runMutation(internal.conversations.clearThread, { id: conversation._id, threadId });
+        await done("savedAt");
+      }
+      if (conversation.channel === "telegram" && job.error && !job.deliveredAt) {
+        const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
+        await sendMessage(token, conversation.externalId, `Fresh start, but this chat was not summarised into memory first: ${job.error}`)
+          .catch((error) => console.error(`Could not report the flush: ${String(error)}`));
+        await done("deliveredAt");
+      }
+      await ctx.runMutation(internal.codex.markFinalized, args);
+      return null;
+    }
     if (conversation.jobId) {
       if (!job.reportedAt) {
         await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, result: job.response, error: job.error });
@@ -679,7 +712,7 @@ export const finalizeTurn = internalAction({
     const answered = Boolean(reply || job.mediaKey);
     if (!job.savedAt) await saveMessages(ctx, components.agent, {
       threadId: conversation.threadId,
-      userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
+      userId,
       order: "next",
       messages: [
         { role: "user", content: job.prompt },
@@ -739,7 +772,7 @@ export const pruneOrphans = internalMutation({
 /** Who may use the MCP endpoint: a runner, while it has a Codex turn running. */
 export const mcpAccess = internalQuery({
   args: { token: v.string() },
-  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string } | null> => {
+  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean } | null> => {
     const runner = await authenticate(ctx, args.token).catch(() => null);
     if (!runner) return null;
     const job = await ctx.db.query("codexTurns")
@@ -751,6 +784,7 @@ export const mcpAccess = internalQuery({
       turnId: job._id,
       userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
       threadId: conversation.threadId,
+      fromJob: Boolean(conversation.jobId),
     };
   },
 });

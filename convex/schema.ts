@@ -22,6 +22,8 @@ export const vSpanKind = v.union(
   v.literal("webSearch"), v.literal("imageGeneration"), v.literal("reasoning"),
 );
 export const vSpanStatus = v.union(v.literal("running"), v.literal("ok"), v.literal("error"), v.literal("declined"));
+/** Where a memory came from: the owner, tool output such as a web page or email, or a scheduled job. */
+export const vMemoryOrigin = v.union(v.literal("owner"), v.literal("tool"), v.literal("job"));
 
 /**
  * Assistant is single-owner, so there is no users table. The owner is identified by
@@ -284,6 +286,8 @@ export default defineSchema({
     parentConversationId: v.optional(v.id("conversations")),
     branchedFromMessageId: v.optional(v.string()),
     pendingTurns: v.optional(v.number()),
+    /** Digest of the recalled memory this chat's Codex thread last saw, so an unchanged block is not sent again. */
+    recallDigest: v.optional(v.string()),
     lastMessageAt: v.number(),
   })
     .index("by_channel_external", ["channel", "externalId"])
@@ -327,6 +331,8 @@ export default defineSchema({
     day: v.optional(v.string()),
     /** Replaced facts stay for the record and drop out of context and search. */
     supersededBy: v.optional(v.id("memories")),
+    /** Unset on memories from before provenance was recorded. */
+    origin: v.optional(vMemoryOrigin),
   })
     .index("by_created", ["createdAt"])
     .index("by_kind", ["kind", "createdAt"])
@@ -421,6 +427,15 @@ export default defineSchema({
     prompt: v.string(),
     history: v.optional(v.string()),
     instructions: v.string(),
+    /**
+     * Memory recalled for this turn, sent to Codex as data ahead of the prompt
+     * rather than as instructions. Never saved to the chat.
+     */
+    recalled: v.optional(v.string()),
+    /** Digest of the long-term and recent memory this turn carried; see conversations.recallDigest. */
+    recallDigest: v.optional(v.string()),
+    /** A memory flush before /reset: nothing is shown or saved, and finishing it starts the chat afresh. */
+    flush: v.optional(v.boolean()),
     /** Codex model id to run this turn with. Unset means the Codex default. */
     requestedModel: v.optional(v.string()),
     /** Attachment key for media the turn produced, such as generated images. */

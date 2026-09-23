@@ -4,7 +4,7 @@ import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { INSTRUCTIONS } from "./assistant";
-import { ownerNow } from "./jobs";
+import { ownerNow, QUIET } from "./jobs";
 import { describeModels, parseModelCommand, pickModel, type ModelOption } from "./lib/commands";
 import { downloadFile, sendMessage, sendTyping } from "./lib/telegram";
 import { vChannel, vTelegramMedia } from "./schema";
@@ -26,7 +26,7 @@ Your private assistant.
   /model    list the Codex models; /model <name> switches this chat
   /stop     stop the reply I am writing
   /status   plumbing and recent errors
-  /reset    start a fresh conversation, keep memories
+  /reset    save this chat to memory, then start a fresh one
   /help     this
 
 Everything else is just talk to me.
@@ -75,15 +75,106 @@ async function runCommand(
     }
 
     case "/reset":
-      await ctx.runMutation(internal.conversations.clearThread, {
-        id: conversation._id,
-      });
-      return "Fresh start. I still remember what I remembered.";
+      return await reset(ctx, conversation);
 
     default:
       return `Don't know ${command}. /help lists what I do know.`;
   }
 }
+
+/**
+ * What Codex gets besides the prompt: the instructions with the memory guide
+ * and owner profile, the memory recalled as data for this turn, and, for a
+ * fresh Codex thread that has not seen this chat, its recent history.
+ */
+async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, query: string) {
+  const fresh = !conversation.codexThreadId;
+  const memory: { instructions: string; recalled: string; digest: string } | null = await ctx.runAction(internal.memories.context, {
+    query,
+    seen: fresh ? undefined : conversation.recallDigest,
+  }).catch((error) => { console.error(`Memory context unavailable: ${String(error)}`); return null; });
+  let history: string | undefined;
+  if (fresh) {
+    const page = await listMessages(ctx, components.agent, {
+      threadId: conversation.threadId,
+      excludeToolMessages: true,
+      paginationOpts: { cursor: null, numItems: 60 },
+    });
+    const lines = page.page.reverse()
+      .filter((item) => item.message?.role === "user" || item.message?.role === "assistant")
+      .map((item) => `${item.message?.role}: ${item.text ?? ""}`);
+    history = lines.join("\n\n").slice(-24_000) || undefined;
+  }
+  // Codex knows the date but not the time, and "remind me in an hour" needs both.
+  const now = `It is now ${ownerNow(await ctx.runQuery(internal.jobs.ownerTimezone, {}))}.`;
+  return {
+    instructions: [INSTRUCTIONS, now, memory?.instructions].filter(Boolean).join("\n\n"),
+    recalled: memory?.recalled || undefined,
+    recallDigest: memory?.digest,
+    history,
+  };
+}
+
+// Adapted from vercel/eve (Apache-2.0): packages/eve/src/harness/compaction-prompt.ts
+const FLUSH = [
+  "This is a memory checkpoint before the owner resets this chat, not a message from the owner. Afterwards this conversation is gone from the chat.",
+  "Write a handoff for a future you who will not see it, with remember kind=daily, one self-contained note per item:",
+  "- key decisions made and work completed, stated as done so it is not repeated;",
+  "- important context, constraints and owner preferences;",
+  "- what remains to be done, with clear next steps;",
+  "- critical data needed to continue: exact names, dates, numbers, paths and identifiers.",
+  "Skip what today's notes already say, anything trivial, and secrets. A standing preference or durable fact can go to kind=profile or kind=core instead, superseding what it replaces.",
+  `Do not continue the conversation, answer its questions, or invent facts. Do not message the owner: reply with exactly ${QUIET} when done.`,
+].join("\n");
+
+/**
+ * /reset, like OpenClaw's memory flush before compaction: a quiet Codex turn
+ * in this chat first writes what is worth keeping to today's notes, and when
+ * it finishes the chat starts afresh (codex.finalizeTurn). With no runner to
+ * write it, the chat is reset at once and says the summary was skipped.
+ */
+async function reset(ctx: ActionCtx, conversation: Doc<"conversations">): Promise<string> {
+  await ctx.runMutation(internal.conversations.beginReset, { id: conversation._id });
+  const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, { conversationId: conversation._id, prompt: "/reset" });
+  let delegated = false;
+  try {
+    await ctx.runMutation(internal.codex.enqueueTurn, {
+      conversationId: conversation._id,
+      runId,
+      prompt: FLUSH,
+      ...await prepareTurn(ctx, conversation, ""),
+      model: conversation.model,
+      flush: true,
+    });
+    delegated = true;
+    return "Saving what is worth keeping from this chat to memory, then starting fresh.";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: "codex subscription", error: message.slice(0, 1000) });
+    const threadId = await createThread(ctx, components.agent, { userId: userIdOf(conversation), title: conversation.title });
+    await ctx.runMutation(internal.conversations.clearThread, { id: conversation._id, threadId });
+    return `Fresh start, but this chat was not summarised into memory first: ${message}`;
+  } finally {
+    if (conversation.channel === "web" && !delegated) {
+      await ctx.runMutation(internal.conversations.finishWebTurn, { id: conversation._id });
+    }
+  }
+}
+
+/** The web chat's /reset. */
+export const resetChat = internalAction({
+  args: { id: v.id("conversations") },
+  returns: v.string(),
+  handler: async (ctx, args): Promise<string> => {
+    const conversation = await ctx.runQuery(internal.conversations.getWebById, { id: args.id });
+    if (!conversation) throw new Error("This chat was deleted.");
+    return await reset(ctx, conversation);
+  },
+});
+
+/** Whose messages a chat's agent thread holds. */
+const userIdOf = (conversation: Doc<"conversations">) =>
+  conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`;
 
 /**
  * Find the conversation for this chat, creating it and its agent thread on
@@ -178,8 +269,6 @@ export const handleTurn = internalAction({
       const attachments = attachmentIds.length > 0
         ? await ctx.runQuery(internal.media.forTurn, { conversationId: conversation._id, attachmentIds })
         : [];
-      const memoryContext: string = await ctx.runAction(internal.memories.context, { query: args.text })
-        .catch((error) => { console.error(`Memory context unavailable: ${String(error)}`); return ""; });
       const model = conversation.model ? `codex/${conversation.model}` : "codex subscription";
       const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
         conversationId: conversation._id,
@@ -188,27 +277,11 @@ export const handleTurn = internalAction({
       if (telegramToken) await sendTyping(telegramToken, args.externalId);
 
       try {
-        // A fresh Codex thread has not seen this chat, so it gets the recent history once.
-        let history: string | undefined;
-        if (!conversation.codexThreadId) {
-          const page = await listMessages(ctx, components.agent, {
-            threadId: conversation.threadId,
-            excludeToolMessages: true,
-            paginationOpts: { cursor: null, numItems: 60 },
-          });
-          const lines = page.page.reverse()
-            .filter((item) => item.message?.role === "user" || item.message?.role === "assistant")
-            .map((item) => `${item.message?.role}: ${item.text ?? ""}`);
-          history = lines.join("\n\n").slice(-24_000) || undefined;
-        }
-        // Codex knows the date but not the time, and "remind me in an hour" needs both.
-        const now = `It is now ${ownerNow(await ctx.runQuery(internal.jobs.ownerTimezone, {}))}.`;
         await ctx.runMutation(internal.codex.enqueueTurn, {
           conversationId: conversation._id,
           runId,
           prompt,
-          history,
-          instructions: [INSTRUCTIONS, now, memoryContext].filter(Boolean).join("\n\n"),
+          ...await prepareTurn(ctx, conversation, args.text),
           model: conversation.model,
           attachments,
         });

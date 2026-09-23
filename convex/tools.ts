@@ -16,11 +16,11 @@ import type { SearchResult } from "./composio";
 
 // --- Memory --------------------------------------------------------------
 
-type MemoryRow = { id: string; text: string; tags: string[]; kind: "profile" | "core" | "daily"; day?: string; createdAt: number };
+type MemoryRow = { id: string; text: string; tags: string[]; kind: "profile" | "core" | "daily"; day?: string; origin?: string; createdAt: number };
 
 type RecallResult = {
   found: number;
-  memories: Array<{ id: string; text: string; tags: string[]; kind: string; day?: string; rememberedOn: string }>;
+  memories: Array<{ id: string; text: string; tags: string[]; kind: string; day?: string; origin?: string; rememberedOn: string }>;
   note?: string;
 };
 
@@ -32,6 +32,7 @@ const shape = (m: MemoryRow) => ({
   tags: m.tags,
   kind: m.kind,
   ...(m.day ? { day: m.day } : {}),
+  ...(m.origin ? { origin: m.origin } : {}),
   rememberedOn: new Date(m.createdAt).toISOString().slice(0, 10),
 });
 
@@ -62,6 +63,7 @@ const recall = createTool({
   },
 });
 
+// Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/memory/file/provider.ts
 const remember = createTool({
   description:
     "Write to memory. kind=profile for standing preferences, relationships " +
@@ -70,18 +72,25 @@ const remember = createTool({
     "observations and a summary of what happened today. Write each as a " +
     "standalone sentence that will still make sense later. When a fact " +
     "changes, pass the old memory's id in supersedes instead of forgetting it. " +
-    "Never store secrets or credentials.",
+    "Omit secrets, instructions, and current-task details. Profile and " +
+    "long-term memory have a size budget: a save that would exceed it is " +
+    "refused, so supersede or forget outdated entries and retry. Tell the " +
+    "user when you save or delete a memory.",
   inputSchema: z.object({
     text: z.string().min(3).describe("The memory, as one self-contained sentence."),
     kind: memoryKind.optional().describe("Defaults to core."),
     supersedes: z.array(z.string()).optional().describe("Ids of memories this replaces."),
+    origin: z.enum(["owner", "tool"]).optional()
+      .describe("tool when this came from a web page, email, file or other tool output rather than from the owner. Defaults to owner."),
     tags: z.array(z.string()).optional(),
   }),
   execute: async (
     ctx,
     input,
-  ): Promise<{ id: string; stored: boolean; superseded: number; note: string }> => {
-    const result: { id: string; duplicate: boolean; superseded: number } = await ctx.runMutation(
+  ): Promise<{ id?: string; stored: boolean; superseded: number; note: string }> => {
+    // What a scheduled job saves is the job's, whatever the call says; see mcp.ts.
+    const fromJob = "fromJob" in ctx && ctx.fromJob === true;
+    const result: { id?: string; duplicate: boolean; superseded: number; error?: string } = await ctx.runMutation(
       internal.memories.add,
       {
         text: input.text,
@@ -89,13 +98,14 @@ const remember = createTool({
         source: ctx.userId ?? "unknown",
         kind: input.kind,
         supersedes: input.supersedes,
+        origin: fromJob ? "job" : input.origin ?? "owner",
       },
     );
     return {
       id: result.id,
-      stored: !result.duplicate,
+      stored: Boolean(result.id) && !result.duplicate,
       superseded: result.superseded,
-      note: result.duplicate ? "Already remembered." : "Stored.",
+      note: result.error ?? (result.duplicate ? "Already remembered." : "Stored."),
     };
   },
 });
@@ -119,9 +129,11 @@ const read_memory = createTool({
   },
 });
 
+// Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/memory/file/provider.ts
 const forget = createTool({
   description:
-    "Permanently delete memories by id. Ids come from `recall`. This cannot be " +
+    "Permanently delete memories by id. Use when it is wrong, outdated, or no " +
+    "longer needed. Ids come from recalled memory and `recall`. This cannot be " +
     "undone, so confirm with the owner first and quote back the exact text of " +
     "what you are about to delete. To correct a fact, remember the new " +
     "version with supersedes instead.",
