@@ -95,7 +95,8 @@ const checks = {
   truncated: large.truncated === true && Boolean(notice) && Number(notice?.[1]) < Number(notice?.[2])
     && new TextEncoder().encode(large.text ?? "").length <= 50 * 1024 + 200,
   sizeCap: /over the 5 MB limit/i.test(oversized.error ?? "") && oversized.text === undefined,
-  networkHint: /ENOTFOUND/.test(missing.error ?? "") && Boolean(missing.hint),
+  // Convex's Node runtime can drop the DNS code under undici's "fetch failed"; either way the hint must come.
+  networkHint: /network request failed/i.test(missing.error ?? "") && Boolean(missing.hint),
 };
 
 // --- 2. Through Perry, in a web chat ----------------------------------------
