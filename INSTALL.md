@@ -24,10 +24,10 @@ asks for what is missing.
 2. **Telegram bot.** Message [@BotFather](https://t.me/BotFather), send
    `/newbot`, answer two questions, paste the token back. The wizard checks it
    against Telegram before continuing.
-3. **Model access.** Paste a Vercel AI Gateway key, from the AI tab at
-   vercel.com. It routes to Anthropic, OpenAI and others at list price with no
-   markup. Leaving it blank falls back to Convex's own gateway, which needs no
-   key but is only enabled on paid Convex plans.
+3. **Codex.** Perry thinks with your ChatGPT subscription, through the
+   [Codex CLI](https://github.com/openai/codex) on your machine. Install Codex,
+   then after setup run `pnpm run connect` and sign in to Codex from the
+   dashboard's Settings page.
 4. **Secrets and deploy.** Generates a webhook secret and a dashboard key,
    writes them to a gitignored `.env.local`, sets them on your deployment,
    pushes the code, and registers the webhook.
@@ -48,7 +48,7 @@ what do you know about me
 ## Changing keys later
 
 Everything except the dashboard key is editable on the **Keys** page: the bot
-token, the webhook secret, the model gateway key, Composio and Daytona. No
+token, the webhook secret, Composio and Daytona. No
 terminal, and changes apply on the next turn.
 
 Keys entered there are write-only. The page shows whether one is set, where it
@@ -161,8 +161,9 @@ deployment and the one in `.env.local` disagree, so re-run `pnpm run setup`.
 **"That broke: ..." in chat.** Perry reports failures instead of swallowing
 them. The full error is in the Convex dashboard logs and in the Activity tab.
 
-**A model is rejected.** Model names live in the Settings tab. The gateway's
-rejection arrives in chat verbatim, so you can paste a different one and retry.
+**"No runner" or "Connect a ChatGPT account" in chat.** Every reply comes from
+Codex on a connected machine. Start the runner with `pnpm run runner` and check
+the Codex account on the Settings page.
 
 **Moving to production.** `pnpm exec convex deploy` pushes to a separate production
 deployment with its own environment variables, so set them again there and

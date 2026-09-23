@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
-import type { ToolName } from "./modes";
-import { ALL_TOOLS } from "./tools";
+import { ALL_TOOLS, type ToolName } from "./tools";
 
 /**
  * Assistant's own tools, served to Codex over MCP.
@@ -15,7 +14,7 @@ import { ALL_TOOLS } from "./tools";
  *
  * Streamable HTTP, stateless, JSON responses only. The caller authenticates
  * with its runner token and is served only while that runner has a Codex turn
- * running, with exactly the tools that turn's mode allows.
+ * running.
  */
 
 export const CODEX_TOOLS: readonly ToolName[] = [
@@ -60,7 +59,7 @@ export const handle = httpAction(async (ctx, request) => {
   catch { return fail(null, -32700, "Parse error"); }
   if (message.id === undefined || message.id === null) return new Response(null, { status: 202 });
 
-  const tools = CODEX_TOOLS.filter((name) => access.tools.includes(name));
+  const tools = CODEX_TOOLS;
   switch (message.method) {
     case "initialize":
       return reply(message.id, {

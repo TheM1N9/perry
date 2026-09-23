@@ -71,8 +71,6 @@ async function main() {
       if (names.has(required)) ok(`env ${required}`);
       else bad(`env ${required}`, "not set. Run: pnpm run setup");
     }
-    if (names.has("AI_GATEWAY_API_KEY")) ok("gateway", "vercel");
-    else ok("gateway", "convex (no key needed)");
   }
 
   // HTTP actions reachable

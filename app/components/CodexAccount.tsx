@@ -7,9 +7,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 
 export function CodexAccount({ dashboardKey }: { dashboardKey: string }) {
   const accounts = useQuery(api.codex.accounts, { key: dashboardKey });
-  const engine = useQuery(api.codex.engine, { key: dashboardKey });
   const requestAuth = useMutation(api.codex.requestAuth);
-  const setEngine = useMutation(api.codex.setEngine);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,16 +31,6 @@ export function CodexAccount({ dashboardKey }: { dashboardKey: string }) {
     <p className="hint">
       Sign in to Codex on a connected machine using your ChatGPT account. The Codex CLI keeps credentials on that machine; Assistant stores only account status and the temporary device code.
     </p>
-    <div style={{ display: "grid", gap: 8, margin: "14px 0" }}>
-      <label className="item" style={{ display: "flex", gap: 10, cursor: "pointer" }}>
-        <input type="radio" name="chat-engine" style={{ width: "auto" }} checked={engine === "codex"} onChange={() => void setEngine({ key: dashboardKey, engine: "codex" })} />
-        <span><strong>Codex primary</strong><span className="item-meta" style={{ display: "block" }}>Use your ChatGPT subscription. If Codex is unavailable or a turn fails, retry through the configured gateway model.</span></span>
-      </label>
-      <label className="item" style={{ display: "flex", gap: 10, cursor: "pointer" }}>
-        <input type="radio" name="chat-engine" style={{ width: "auto" }} checked={engine === "gateway"} onChange={() => void setEngine({ key: dashboardKey, engine: "gateway" })} />
-        <span><strong>Gateway only</strong><span className="item-meta" style={{ display: "block" }}>Use the configured model for every turn.</span></span>
-      </label>
-    </div>
     {error && <p className="hint" role="alert" style={{ color: "var(--warn)" }}>{error}</p>}
     {accounts === undefined && <p className="hint">Checking connected machines…</p>}
     {accounts?.length === 0 && <p className="hint">Run <code>pnpm run connect</code> on the machine that will host Codex.</p>}
@@ -74,6 +62,6 @@ export function CodexAccount({ dashboardKey }: { dashboardKey: string }) {
         </div>
       </div>;
     })}
-    <p className="hint" style={{ marginTop: 12 }}>Codex uses this runner&apos;s workspace and approval policy. Gateway backup retains Assistant&apos;s configured tools.</p>
+    <p className="hint" style={{ marginTop: 12 }}>Codex uses this runner&apos;s workspace and approval policy, and reaches memory and connected accounts through Assistant&apos;s tools.</p>
   </div>;
 }

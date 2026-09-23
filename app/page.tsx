@@ -57,8 +57,7 @@ function StatusLine({ dashboardKey }: { dashboardKey: string }) {
           ? `paired${status.ownerName ? ` with ${status.ownerName}` : ""}`
           : "unpaired"}
       </span>
-      {" · "}
-      {status.engine === "codex" ? "codex · gateway backup" : `${status.gateway} gateway`}
+      {" · codex"}
     </div>
   );
 }
