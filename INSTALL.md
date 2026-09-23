@@ -95,6 +95,7 @@ and Codex has `~/.codex`. Set `PERRY_HOME` to put it somewhere else.
   runner.json      how this machine's runner connects
   uploads/         files you attach in chat
   files/           the agent's own folder for what it makes
+  skills/          the agent's skills, one folder each with a SKILL.md
   codex-results/   finished Codex turns not yet delivered
 ```
 

@@ -54,7 +54,7 @@ running:
 | `list_connectors` `find_action` `run_action` | Your connected accounts, through Composio |
 | `start_task` `set_plan` `finish_task` `status_report` `set_goal` | Work that outlives the message |
 | `watch_page` `read_page` | Recurring page checks, and reading public pages |
-| `create_job` `list_jobs` `delete_job` | Scheduled prompts in your timezone |
+| `create_job` `list_jobs` `update_job` `delete_job` | Scheduled prompts and one-time reminders in your timezone |
 | `share_file` | Show a file from your machine in the chat |
 
 Connected accounts are looked up at the moment of use, never baked in: link
@@ -103,11 +103,26 @@ memory. Both work quietly.
 ## Proactivity
 
 Jobs are prompts on a cron schedule in your timezone (reported by the
-dashboard), run as Codex turns. Each has a chat where its results collect, and
-a result is also sent to you on Telegram. The built-in **heartbeat** looks over
-tasks, goals, watches and recent memory a few times a day and speaks only when
-something needs you; a reply of `NOTHING` stays silent. Ask the assistant for a
-job ("every weekday at 8, brief me on my calendar") and it creates one.
+dashboard), or run once at a set time, run as Codex turns. Each has a chat
+where its results collect, and a result is also sent to you on Telegram. A job
+whose prompt makes delivery conditional ("only tell me if…") stays silent when
+there is nothing new, by replying `NOTHING`. The built-in **heartbeat** looks
+over tasks, goals, watches and recent memory a few times a day and speaks only
+when something needs you. Ask the assistant for a job ("every weekday at 8,
+brief me on my calendar") or a reminder ("remind me in 20 minutes to call
+Sam") and it creates one; a one-time job pauses after it runs. It can rename,
+reschedule, pause or resume them too.
+
+## Skills
+
+Skills are instructions for a kind of work, one folder each in
+`~/.perry/skills/<name>/SKILL.md`, with `name` and `description` frontmatter.
+The runner registers the folder with Codex, which lists every skill to the
+agent by its description, and a turn may write there without asking. Ask for a
+lasting change ("from now on, always…", "stop doing X") and the agent makes it
+last instead of complying once: a preference goes to profile memory, a way of
+doing something into a skill it writes or updates. The skill rules follow
+Vercel's [eve](https://github.com/vercel/eve).
 
 ## Media
 
@@ -144,7 +159,7 @@ Done: Telegram and web chat with separate sessions, branching, search,
 regenerate and edit; Codex as the engine with a per-chat model; streaming,
 Markdown and stop; runner approvals from the dashboard; connected accounts over
 MCP; layered memory and chat search; local media and Telegram media; scheduled
-jobs and the heartbeat.
+jobs, one-time reminders and the heartbeat; skills.
 
 Open work is tracked in [issues](https://github.com/TheM1N9/me-bot/issues),
 among them automatic daily summaries into memory, durable turns, a browser for

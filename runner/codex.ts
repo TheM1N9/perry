@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { isAbsolute, relative } from "node:path";
 import { createInterface } from "node:readline";
 import { PATHS } from "./home";
 
@@ -266,6 +267,24 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
+  /** Have Codex find the skills in Perry's home alongside its own, for the life of this app-server. */
+  useSkills(): Promise<unknown> {
+    return this.request("skills/extraRoots/set", { extraRoots: [PATHS.skills] });
+  }
+
+  /**
+   * Codex caches what its skill folders hold and does not watch extra roots,
+   * so a skill written in one turn is listed in the next only after a re-scan.
+   * Returns the skills of Perry's that failed to load, so the agent can say so.
+   */
+  private async reloadSkills(cwd: string): Promise<string[]> {
+    const result = await this.request<{ data?: Array<{ errors?: Array<{ path: string; message: string }> }> }>("skills/list", { cwds: [cwd], forceReload: true });
+    const errors = (result.data ?? []).flatMap((entry) => entry.errors ?? [])
+      .filter((error) => { const inside = relative(PATHS.skills, error.path); return !inside.startsWith("..") && !isAbsolute(inside); })
+      .map((error) => `${error.path}: ${error.message}`);
+    return [...new Set(errors)];
+  }
+
   /** Ask Codex to stop a turn. It ends as interrupted, keeping what it produced. */
   interrupt(threadId: string, turnId: string): Promise<unknown> {
     return this.request("turn/interrupt", { threadId, turnId });
@@ -290,7 +309,12 @@ export class CodexAppServer extends EventEmitter {
     /** One model response's tokens, once per response. */
     onUsage?: (usage: TokenUsage) => void;
   }): Promise<{ threadId: string; response: string; images: GeneratedImage[]; interrupted?: boolean }> {
-    const home = `Your own folder for files you make is ${PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`;
+    const broken = await this.reloadSkills(cwd).catch(() => []);
+    const home = [
+      `Your own folder for files you make is ${PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`,
+      `Your skills folder is ${PATHS.skills}.`,
+      ...(broken.length ? [`These skills failed to load, so they are not listed:\n${broken.map((line) => `- ${line}`).join("\n")}`] : []),
+    ].join(" ");
     const fullInstructions = history
       ? `${instructions}\n\n${home}\n\nEarlier chat history (context, not a new user request):\n${history}`
       : `${instructions}\n\n${home}`;
@@ -360,7 +384,7 @@ export class CodexAppServer extends EventEmitter {
       ...(model ? { model } : {}),
       cwd,
       approvalPolicy: policy,
-      sandboxPolicy: { type: "workspaceWrite", writableRoots: [cwd, PATHS.files], networkAccess: false },
+      sandboxPolicy: { type: "workspaceWrite", writableRoots: [cwd, PATHS.files, PATHS.skills], networkAccess: false },
     }, 30_000);
     if (!started.turn?.id) throw new Error("Codex did not start a turn.");
     turnId = started.turn.id;

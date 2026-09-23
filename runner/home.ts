@@ -12,6 +12,7 @@ import { join } from "node:path";
  *   codex-results/  finished Codex turns not yet delivered
  *   uploads/        files the owner attached in chat
  *   files/          the agent's own folder for what it makes, organised as it sees fit
+ *   skills/         the agent's skills, one folder each with a SKILL.md, found by Codex
  *
  * PERRY_HOME moves the whole thing.
  */
@@ -22,9 +23,10 @@ export const PATHS = {
   codexResults: join(HOME, "codex-results"),
   uploads: join(HOME, "uploads"),
   files: join(HOME, "files"),
+  skills: join(HOME, "skills"),
 };
 
 export function ensureHome() {
-  for (const dir of [HOME, PATHS.codexResults, PATHS.uploads, PATHS.files]) mkdirSync(dir, { recursive: true });
+  for (const dir of [HOME, PATHS.codexResults, PATHS.uploads, PATHS.files, PATHS.skills]) mkdirSync(dir, { recursive: true });
   return PATHS;
 }
