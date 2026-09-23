@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
+import { describeError, errorText } from "./lib/errors";
 import { ALL_TOOLS, type ToolName } from "./tools";
 
 /**
@@ -49,6 +50,21 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const reply = (id: RpcMessage["id"], result: unknown) => json({ jsonrpc: "2.0", id, result });
 const fail = (id: RpcMessage["id"], code: number, message: string) => json({ jsonrpc: "2.0", id, error: { code, message } });
+/** A thrown failure, described with a hint when it is a known one. */
+const toolError = (id: RpcMessage["id"], error: unknown) => reply(id, { isError: true, content: [{ type: "text", text: errorText(error) }] });
+
+/**
+ * Most tools catch their own failures and return `{ error }` as data, so the
+ * hint is added there too: a returned "fetch failed" deserves the same advice
+ * as a thrown one.
+ */
+function withHint(output: unknown): unknown {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return output;
+  const record = output as Record<string, unknown>;
+  if (typeof record.error !== "string" || "hint" in record) return output;
+  const { hint } = describeError(new Error(record.error));
+  return hint ? { ...record, hint } : output;
+}
 
 export const handle = httpAction(async (ctx, request) => {
   const token = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
@@ -89,7 +105,7 @@ export const handle = httpAction(async (ctx, request) => {
           const shared = await ctx.runMutation(internal.media.shareFromTurn, { turnId: access.turnId, path: parsed.data.path });
           return reply(message.id, { content: [{ type: "text", text: JSON.stringify({ shared: true, ...shared }) }] });
         } catch (error) {
-          return reply(message.id, { isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }] });
+          return toolError(message.id, error);
         }
       }
       const name = String(message.params?.name ?? "") as ToolName;
@@ -102,9 +118,9 @@ export const handle = httpAction(async (ctx, request) => {
       try {
         const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId } };
         const output = await bound.execute(parsed.data, { toolCallId: String(message.id), messages: [] });
-        return reply(message.id, { content: [{ type: "text", text: JSON.stringify(output ?? null) }] });
+        return reply(message.id, { content: [{ type: "text", text: JSON.stringify(withHint(output) ?? null) }] });
       } catch (error) {
-        return reply(message.id, { isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }] });
+        return toolError(message.id, error);
       }
     }
     default:

@@ -4,6 +4,8 @@ import { Daytona, type Sandbox } from "@daytona/sdk";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction, type ActionCtx } from "./_generated/server";
+import { describeError } from "./lib/errors";
+import { truncateCommandOutput, truncateHead } from "./lib/truncate";
 
 /**
  * Assistant's computer: one Linux sandbox, created on first use, reused after.
@@ -14,8 +16,9 @@ import { internalAction, type ActionCtx } from "./_generated/server";
  *   No credentials inside.   Nothing in here can leak a token, because no token
  *                            is ever put here. Composio holds OAuth and stays
  *                            on the Convex side.
- *   Bounded commands.        30 seconds, output capped. A command that hangs
- *                            fails loudly instead of holding a turn open.
+ *   Bounded commands.        30 seconds, output capped to its last lines,
+ *                            where errors and results are. A command that
+ *                            hangs fails loudly instead of holding a turn open.
  *   Receipts, not retries.   Every command carries an operationId. Asking twice
  *                            with the same id returns the first receipt rather
  *                            than running it again, so an interrupted command
@@ -31,7 +34,6 @@ import { internalAction, type ActionCtx } from "./_generated/server";
 
 const WORKSPACE = "/home/daytona/workspace";
 const COMMAND_TIMEOUT_SECONDS = 30;
-const MAX_OUTPUT = 20_000;
 const MAX_FILE_BYTES = 256 * 1024;
 
 async function apiKey(ctx: ActionCtx): Promise<string | null> {
@@ -48,9 +50,13 @@ function requireKey(key: string | null): string {
   return key;
 }
 
-function clip(text: string): { text: string; truncated: boolean } {
-  if (text.length <= MAX_OUTPUT) return { text, truncated: false };
-  return { text: text.slice(0, MAX_OUTPUT), truncated: true };
+/**
+ * A Daytona failure as the agent should read it. The error's class is lost
+ * once it becomes a string, so it is described here, while it is still known.
+ */
+function failure(error: unknown): string {
+  const { message, hint } = describeError(error);
+  return hint ? `${message} ${hint}` : message;
 }
 
 /** Reuse the recorded sandbox, restart it if stopped, otherwise make one. */
@@ -191,7 +197,7 @@ export const exec = internalAction({
         COMMAND_TIMEOUT_SECONDS,
       );
 
-      const { text, truncated } = clip(response.result ?? "");
+      const { output: text, truncated } = truncateCommandOutput(response.result ?? "");
       await ctx.runMutation(internal.work.finishReceipt, {
         id: receiptId,
         exitCode: response.exitCode,
@@ -201,7 +207,7 @@ export const exec = internalAction({
 
       return { exitCode: response.exitCode, output: text, truncated };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = failure(error);
       await ctx.runMutation(internal.work.finishReceipt, {
         id: receiptId,
         error: message.slice(0, 1000),
@@ -220,16 +226,16 @@ export const readFile = internalAction({
     try {
       const sandbox = await open(ctx);
       const buffer = await sandbox.fs.downloadFile(resolvePath(args.path));
-      const truncated = buffer.length > MAX_FILE_BYTES;
+      const { output, truncated } = truncateHead(buffer.subarray(0, MAX_FILE_BYTES).toString("utf8"));
       return {
         path: args.path,
-        text: buffer.subarray(0, MAX_FILE_BYTES).toString("utf8"),
-        truncated,
+        text: output,
+        truncated: truncated || buffer.length > MAX_FILE_BYTES,
       };
     } catch (error) {
       return {
         path: args.path,
-        error: error instanceof Error ? error.message : String(error),
+        error: failure(error),
       };
     }
   },
@@ -254,7 +260,7 @@ export const writeFile = internalAction({
     } catch (error) {
       return {
         path: args.path,
-        error: error instanceof Error ? error.message : String(error),
+        error: failure(error),
       };
     }
   },
@@ -281,7 +287,7 @@ export const listFiles = internalAction({
     } catch (error) {
       return {
         path: args.path ?? WORKSPACE,
-        error: error instanceof Error ? error.message : String(error),
+        error: failure(error),
       };
     }
   },
