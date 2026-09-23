@@ -621,3 +621,12 @@ a {
 .approval-actions button { padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .approval-approve { background: #bdd8b7; color: #1c2a1e; border: 0; }
 .approval-decline { background: transparent; color: #efe6d8; border: 1px solid #5a4a33; }
+
+/* Slash commands in the composer. */
+.chat-commands { display: grid; gap: 2px; margin-bottom: 8px; padding: 5px; max-height: 240px; overflow-y: auto; background: #1d2222; border: 1px solid #3b4440; border-radius: 12px; }
+.chat-commands button { display: flex; align-items: baseline; gap: 10px; padding: 7px 10px; border-radius: 8px; background: transparent; color: #e6ece5; text-align: left; font-size: 13px; cursor: pointer; }
+.chat-commands button:hover { background: #283130; }
+.chat-commands small { color: #8e9a91; font-size: 11px; }
+.chat-notice { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; margin-bottom: 8px; padding: 9px 12px; background: #1f2624; border: 1px solid #3b4a42; border-radius: 12px; color: #d9e4d8; }
+.chat-notice pre { margin: 0; font-family: inherit; font-size: 12px; white-space: pre-wrap; }
+.chat-notice button { background: transparent; color: #9ca99e; padding: 0; cursor: pointer; }

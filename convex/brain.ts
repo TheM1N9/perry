@@ -4,6 +4,7 @@ import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { INSTRUCTIONS } from "./assistant";
+import { describeModels, parseModelCommand, pickModel, type ModelOption } from "./lib/commands";
 import { sendMessage, sendTyping } from "./lib/telegram";
 import { vChannel } from "./schema";
 
@@ -21,6 +22,7 @@ type Channel = "telegram" | "web";
 const HELP = `
 Your private assistant.
 
+  /model    list the Codex models; /model <name> switches this chat
   /stop     stop the reply I am writing
   /status   plumbing and recent errors
   /reset    start a fresh conversation, keep memories
@@ -37,6 +39,15 @@ async function runCommand(
 ): Promise<string> {
   const [raw] = text.trim().split(/\s+/);
   const command = raw.toLowerCase().replace(/@.*$/, ""); // strip /cmd@botname
+
+  const modelCommand = parseModelCommand(text);
+  if (modelCommand) {
+    const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
+    if (!modelCommand.name) return describeModels(models, conversation.model);
+    const { model, reply } = pickModel(models, modelCommand.name);
+    if (model) await ctx.runMutation(internal.conversations.setModel, { id: conversation._id, model: model.id });
+    return reply;
+  }
 
   switch (command) {
     case "/start":
