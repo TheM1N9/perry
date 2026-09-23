@@ -334,7 +334,7 @@ export default defineSchema({
     schedule: v.string(),
     prompt: v.string(),
     enabled: v.boolean(),
-    builtin: v.optional(v.literal("heartbeat")),
+    builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"))),
     nextRunAt: v.number(),
     lastRunAt: v.optional(v.number()),
     lastResult: v.optional(v.string()),

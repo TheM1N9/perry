@@ -40,6 +40,16 @@ export const setModel = internalMutation({
   },
 });
 
+/** Chats with messages since a time, leaving out the chats where jobs report. */
+export const activeSince = internalQuery({
+  args: { since: v.number() },
+  handler: async (ctx, args) => (await ctx.db.query("conversations").collect())
+    .filter((chat) => chat.lastMessageAt >= args.since && !chat.jobId)
+    .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
+    .slice(0, 40)
+    .map((chat) => ({ id: chat._id, title: chat.title ?? "Untitled chat", channel: chat.channel })),
+});
+
 export const getByExternalId = internalQuery({
   args: { channel: vChannel, externalId: v.string() },
   handler: async (ctx, args) => {

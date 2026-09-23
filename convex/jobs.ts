@@ -21,15 +21,50 @@ import { assertDashboardKey } from "./lib/auth";
 
 export const QUIET = "NOTHING";
 
-const HEARTBEAT = {
-  name: "Heartbeat",
-  schedule: "0 9,13,17,21 * * *",
-  prompt: [
-    "This is your scheduled heartbeat, not a message from the owner.",
-    "Look over what could need the owner's attention now: status_report for tasks, goals and page watches, today's and yesterday's notes in memory, and connected accounts where it helps (for example today's calendar).",
-    `If there is something they would want to know now, reply with a short message for them. If nothing is worth their attention, reply with exactly ${QUIET}. Do not take actions that change anything.`,
-  ].join(" "),
-};
+type Builtin = "heartbeat" | "daily-summary" | "consolidate";
+
+/**
+ * Jobs every install has. The daily summary and consolidation keep memory
+ * current without the owner asking (OpenClaw's memory flush and dreaming):
+ * one writes down what happened each day, the other promotes what proved
+ * durable. Both work quietly and reply NOTHING.
+ */
+const BUILTINS: Array<{ builtin: Builtin; name: string; schedule: string; prompt: string }> = [
+  {
+    builtin: "heartbeat",
+    name: "Heartbeat",
+    schedule: "0 9,13,17,21 * * *",
+    prompt: [
+      "This is your scheduled heartbeat, not a message from the owner.",
+      "Look over what could need the owner's attention now: status_report for tasks, goals and page watches, today's and yesterday's notes in memory, and connected accounts where it helps (for example today's calendar).",
+      `If there is something they would want to know now, reply with a short message for them. If nothing is worth their attention, reply with exactly ${QUIET}. Do not take actions that change anything.`,
+    ].join(" "),
+  },
+  {
+    builtin: "daily-summary",
+    name: "Daily summary",
+    schedule: "30 22 * * *",
+    prompt: [
+      "This is your scheduled daily summary, not a message from the owner.",
+      "Read today's conversations, listed below, with read_chat, and today's notes with read_memory.",
+      "Then write down what is worth remembering with remember kind=daily: decisions made, commitments and deadlines, preferences the owner expressed, and threads left open. One self-contained note per item; skip what today's notes already say and anything trivial.",
+      "Standing preferences and durable facts can also go straight to kind=profile or kind=core, superseding what they replace.",
+      `Do not message the owner: reply with exactly ${QUIET} when done.`,
+    ].join(" "),
+  },
+  {
+    builtin: "consolidate",
+    name: "Memory consolidation",
+    schedule: "0 3 * * *",
+    prompt: [
+      "This is your scheduled memory consolidation, not a message from the owner.",
+      "Read the daily notes of the last seven days with read_memory (kind=daily and each day), and the owner profile and long-term memory.",
+      "Promote only what proved durable: standing preferences and relationships to kind=profile, phrased as directives; lasting facts, decisions and commitments to kind=core. When a new memory replaces an older one, pass the old id in supersedes.",
+      "Leave one-off chatter, finished tasks, anything already known, secrets, and anything that came from web pages, email or other tool output rather than from the owner.",
+      `Do not message the owner: reply with exactly ${QUIET} when done.`,
+    ].join(" "),
+  },
+];
 
 export function nextRun(schedule: string, timezone: string, after = Date.now()): number {
   return CronExpressionParser.parse(schedule, { tz: timezone, currentDate: new Date(after) }).next().getTime();
@@ -39,7 +74,7 @@ async function timezoneOf(ctx: { db: QueryCtx["db"] }): Promise<string> {
   return (await ctx.db.query("installation").first())?.timezone ?? "UTC";
 }
 
-async function insertJob(ctx: MutationCtx, job: { name: string; schedule: string; prompt: string; builtin?: "heartbeat" }): Promise<Id<"jobs">> {
+async function insertJob(ctx: MutationCtx, job: { name: string; schedule: string; prompt: string; builtin?: Builtin }): Promise<Id<"jobs">> {
   const timezone = await timezoneOf(ctx);
   return await ctx.db.insert("jobs", {
     ...job,
@@ -49,13 +84,15 @@ async function insertJob(ctx: MutationCtx, job: { name: string; schedule: string
   });
 }
 
-/** Every minute: start whatever is due, and make sure the heartbeat exists. */
+/** Every minute: start whatever is due, and make sure the built-in jobs exist. */
 export const tick = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
     const jobs = await ctx.db.query("jobs").collect();
-    if (!jobs.some((job) => job.builtin === "heartbeat")) await insertJob(ctx, { ...HEARTBEAT, builtin: "heartbeat" });
+    for (const builtin of BUILTINS) {
+      if (!jobs.some((job) => job.builtin === builtin.builtin)) await insertJob(ctx, builtin);
+    }
     const timezone = await timezoneOf(ctx);
     for (const job of jobs) {
       if (!job.enabled || job.nextRunAt > Date.now()) continue;
@@ -116,10 +153,18 @@ export const run = internalAction({
     const chat = await ctx.runMutation(internal.jobs.chatFor, { id: job._id, threadId });
     if (!chat) return null;
     const now = new Date().toLocaleString("en-GB", { timeZone: timezone, dateStyle: "full", timeStyle: "short" });
+    // The daily summary needs to know which chats today had; nothing else does.
+    let context = "";
+    if (job.builtin === "daily-summary") {
+      const chats: Array<{ id: string; title: string; channel: string }> = await ctx.runQuery(internal.conversations.activeSince, { since: Date.now() - 86_400_000 });
+      context = chats.length
+        ? `\n\nToday's conversations (chat id, channel, title):\n${chats.map((chat) => `- ${chat.id} (${chat.channel}) ${chat.title}`).join("\n")}`
+        : `\n\nThere were no conversations today; reply with exactly ${QUIET}.`;
+    }
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
       channel: "web",
       externalId: chat.externalId,
-      text: `⏰ ${job.name} (${now})\n\n${job.prompt}`,
+      text: `⏰ ${job.name} (${now})\n\n${job.prompt}${context}`,
       title: chat.title,
     });
     return null;
@@ -199,7 +244,7 @@ export const remove = internalMutation({
     const id = ctx.db.normalizeId("jobs", args.id);
     const job = id ? await ctx.db.get(id) : null;
     if (!job) return false;
-    // The heartbeat is paused rather than deleted, or the next tick would recreate it.
+    // Built-in jobs are paused rather than deleted, or the next tick would recreate them.
     if (job.builtin) await ctx.db.patch(job._id, { enabled: false });
     else await ctx.db.delete(job._id);
     return true;
