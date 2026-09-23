@@ -32,6 +32,8 @@ export default defineSchema({
     sandboxId: v.optional(v.string()),
     /** Where run_command goes: a throwaway cloud box, or the owner's machine. */
     computeTarget: v.optional(v.union(v.literal("sandbox"), v.literal("local"))),
+    /** The owner's IANA timezone, reported by the dashboard. Jobs run on it. */
+    timezone: v.optional(v.string()),
     createdAt: v.number(),
   }),
 
@@ -240,6 +242,8 @@ export default defineSchema({
     /** Codex model picked for this chat. Unset means the Codex default. */
     model: v.optional(v.string()),
     title: v.optional(v.string()),
+    /** Set on the chat where a scheduled job's results collect. */
+    jobId: v.optional(v.id("jobs")),
     parentConversationId: v.optional(v.id("conversations")),
     branchedFromMessageId: v.optional(v.string()),
     pendingTurns: v.optional(v.number()),
@@ -322,6 +326,22 @@ export default defineSchema({
   })
     .index("by_conversation", ["conversationId"])
     .index("by_started", ["startedAt"]),
+
+  /** Scheduled prompts, run as Codex turns. See jobs.ts. */
+  jobs: defineTable({
+    name: v.string(),
+    /** A cron expression in the owner's timezone. */
+    schedule: v.string(),
+    prompt: v.string(),
+    enabled: v.boolean(),
+    builtin: v.optional(v.literal("heartbeat")),
+    nextRunAt: v.number(),
+    lastRunAt: v.optional(v.number()),
+    lastResult: v.optional(v.string()),
+    lastError: v.optional(v.string()),
+    conversationId: v.optional(v.id("conversations")),
+    createdAt: v.number(),
+  }),
 
   /** What a runner asked the owner before acting on their machine. See approvals.ts. */
   approvals: defineTable({

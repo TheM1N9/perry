@@ -165,6 +165,42 @@ const read_chat = createTool({
   },
 });
 
+// --- Scheduled jobs ------------------------------------------------------
+
+const create_job = createTool({
+  description:
+    "Schedule a recurring job: a prompt you will run on a cron schedule in the " +
+    "owner's timezone, such as a weekday morning briefing or a Friday inbox " +
+    "sweep. Each run is a fresh turn; its reply goes to the owner, and a reply " +
+    "of exactly NOTHING sends nothing. Write the prompt so it stands on its " +
+    "own. Confirm the schedule with the owner before creating it.",
+  inputSchema: z.object({
+    name: z.string().min(2).max(80).describe("Short name, e.g. 'Morning briefing'."),
+    schedule: z.string().min(9).describe("Cron expression: minute hour day-of-month month day-of-week, e.g. '0 8 * * 1-5' for 8am on weekdays."),
+    prompt: z.string().min(10).describe("What to do on each run."),
+  }),
+  execute: async (ctx, input): Promise<{ id?: string; nextRun?: string; error?: string }> => {
+    return await ctx.runMutation(internal.jobs.create, input);
+  },
+});
+
+const list_jobs = createTool({
+  description: "List the scheduled jobs, including the heartbeat, with their schedules and when they next run.",
+  inputSchema: z.object({}),
+  execute: async (ctx): Promise<Array<{ id: string; name: string; schedule: string; enabled: boolean; nextRunAt: string; lastResult?: string }>> => {
+    const jobs: Array<{ id: string; name: string; schedule: string; enabled: boolean; nextRunAt: number; lastResult?: string }> = await ctx.runQuery(internal.jobs.list, {});
+    return jobs.map((job) => ({ ...job, nextRunAt: new Date(job.nextRunAt).toISOString() }));
+  },
+});
+
+const delete_job = createTool({
+  description: "Delete a scheduled job by id, from list_jobs. The heartbeat is paused instead. Confirm with the owner first.",
+  inputSchema: z.object({ id: z.string().min(1) }),
+  execute: async (ctx, input): Promise<{ deleted: boolean }> => {
+    return { deleted: await ctx.runMutation(internal.jobs.remove, { id: input.id }) };
+  },
+});
+
 // --- The world -----------------------------------------------------------
 
 type PageResult = {
@@ -576,6 +612,9 @@ export const ALL_TOOLS = {
   forget,
   search_chats,
   read_chat,
+  create_job,
+  list_jobs,
+  delete_job,
   read_page,
   list_connectors,
   find_action,

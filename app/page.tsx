@@ -237,6 +237,12 @@ export default function Home() {
     setReady(true);
   }, []);
 
+  // Scheduled jobs run in the owner's timezone, which only the browser knows.
+  const setTimezone = useMutation(api.jobs.setTimezone);
+  useEffect(() => {
+    if (dashboardKey) void setTimezone({ key: dashboardKey, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
+  }, [dashboardKey, setTimezone]);
+
   // Local chat media is served by this app's own server, which reads the key
   // from a cookie scoped to /api/media so it never appears in a media URL.
   useEffect(() => {

@@ -6,6 +6,7 @@ import { editDraft, finishDraft, sendDraft, sendMessage, sendPhoto } from "./lib
 import { assertDashboardKey } from "./lib/auth";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH } from "./media";
+import { QUIET } from "./jobs";
 import type { Id } from "./_generated/dataModel";
 
 /** Only device codes and account metadata cross Convex. Codex tokens never do. */
@@ -503,12 +504,20 @@ export const finalizeTurn = internalAction({
   handler: async (ctx, args) => {
     const result: {
       job: { prompt: string; response?: string; error?: string; status: string; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean };
-      conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string } | null;
+      conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string; jobId?: Id<"jobs"> } | null;
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
     const { job, conversation } = result;
     // A stopped turn keeps whatever it had written, marked as stopped.
     const reply = job.stopped ? `${job.response ?? ""}\n\n_Stopped._`.trim() : job.response;
+    if (conversation.jobId) {
+      await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, result: job.response, error: job.error });
+      // A job with nothing to say leaves no trace in its chat.
+      if (!job.error && job.response?.trim() === QUIET && !job.mediaKey) {
+        await ctx.runMutation(internal.codex.markFinalized, args);
+        return null;
+      }
+    }
     // A failed turn keeps the owner's message; the error shows on the run and, on Telegram, as a reply.
     await saveMessages(ctx, components.agent, {
       threadId: conversation.threadId,
