@@ -1,0 +1,163 @@
+{
+  "ranAt": "2026-09-23T15:26:40.094Z",
+  "chatId": "j5739brden8447dhjstr9zz5gh8ezpgy",
+  "streamedSteps": 14,
+  "growing": true,
+  "firstPartialAtMs": 9930,
+  "samples": [
+    {
+      "at": 9930,
+      "chars": 9,
+      "caret": true
+    },
+    {
+      "at": 10095,
+      "chars": 9,
+      "caret": true
+    },
+    {
+      "at": 10254,
+      "chars": 23,
+      "caret": true
+    },
+    {
+      "at": 10407,
+      "chars": 23,
+      "caret": true
+    },
+    {
+      "at": 10561,
+      "chars": 23,
+      "caret": true
+    },
+    {
+      "at": 10715,
+      "chars": 23,
+      "caret": true
+    },
+    {
+      "at": 10871,
+      "chars": 38,
+      "caret": true
+    },
+    {
+      "at": 11037,
+      "chars": 38,
+      "caret": true
+    },
+    {
+      "at": 11196,
+      "chars": 47,
+      "caret": true
+    },
+    {
+      "at": 11348,
+      "chars": 47,
+      "caret": true
+    },
+    {
+      "at": 11510,
+      "chars": 47,
+      "caret": true
+    },
+    {
+      "at": 11665,
+      "chars": 77,
+      "caret": true
+    },
+    {
+      "at": 11820,
+      "chars": 89,
+      "caret": true
+    },
+    {
+      "at": 11978,
+      "chars": 101,
+      "caret": true
+    },
+    {
+      "at": 12134,
+      "chars": 101,
+      "caret": true
+    },
+    {
+      "at": 12289,
+      "chars": 101,
+      "caret": true
+    },
+    {
+      "at": 12451,
+      "chars": 128,
+      "caret": true
+    },
+    {
+      "at": 12606,
+      "chars": 128,
+      "caret": true
+    },
+    {
+      "at": 12762,
+      "chars": 146,
+      "caret": true
+    },
+    {
+      "at": 12926,
+      "chars": 164,
+      "caret": true
+    },
+    {
+      "at": 13082,
+      "chars": 164,
+      "caret": true
+    },
+    {
+      "at": 13245,
+      "chars": 164,
+      "caret": true
+    },
+    {
+      "at": 13400,
+      "chars": 182,
+      "caret": true
+    },
+    {
+      "at": 13556,
+      "chars": 182,
+      "caret": true
+    },
+    {
+      "at": 13712,
+      "chars": 197,
+      "caret": true
+    },
+    {
+      "at": 13872,
+      "chars": 197,
+      "caret": true
+    },
+    {
+      "at": 14034,
+      "chars": 197,
+      "caret": true
+    },
+    {
+      "at": 14189,
+      "chars": 215,
+      "caret": true
+    },
+    {
+      "at": 14340,
+      "chars": 215,
+      "caret": true
+    },
+    {
+      "at": 14496,
+      "chars": 230,
+      "caret": true
+    }
+  ],
+  "finalLines": 80,
+  "error": null,
+  "pageErrors": [],
+  "pass": true
+}

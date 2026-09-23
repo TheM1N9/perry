@@ -411,6 +411,8 @@ a {
 .from-user .chat-bubble { background: #2c3730; border: 1px solid #405247; border-radius: 14px 14px 4px 14px; padding: 11px 15px; }
 .from-assistant .chat-bubble { padding: 2px 0; color: #e0e5df; }
 .chat-markdown { white-space: normal; }
+.chat-streaming .chat-markdown > :last-child::after { content: ""; display: inline-block; width: 7px; height: 13px; margin-left: 3px; vertical-align: -2px; background: #a9cfa7; animation: chat-caret 1s steps(2) infinite; }
+@keyframes chat-caret { 50% { opacity: 0; } }
 .chat-markdown > :first-child { margin-top: 0; }
 .chat-markdown > :last-child { margin-bottom: 0; }
 .chat-markdown p, .chat-markdown ul, .chat-markdown ol, .chat-markdown pre, .chat-markdown table, .chat-markdown blockquote { margin: 0 0 10px; }

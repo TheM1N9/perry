@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { components, internal } from "./_generated/api";
 import { saveMessages } from "@convex-dev/agent";
-import { sendMessage, sendPhoto } from "./lib/telegram";
+import { editDraft, finishDraft, sendDraft, sendMessage, sendPhoto } from "./lib/telegram";
 import { assertDashboardKey } from "./lib/auth";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH } from "./media";
@@ -242,6 +242,63 @@ export const setThread = mutation({
   },
 });
 
+/** Telegram allows about one edit a second per chat; stay under it. */
+const TELEGRAM_EDIT_MS = 1_500;
+
+/**
+ * The runner reports the reply as Codex writes it. The web chat reads it live
+ * from the turn; a Telegram chat gets one message that is edited as it grows,
+ * one edit at a time and no faster than TELEGRAM_EDIT_MS.
+ */
+export const streamTurn = mutation({
+  args: { token: v.string(), id: v.id("codexTurns"), text: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token);
+    const job = await ctx.db.get(args.id);
+    if (!job || job.runnerId !== runner._id || job.status !== "running") return null;
+    const conversation = await ctx.db.get(job.conversationId);
+    const edit = conversation?.channel === "telegram" && !job.telegramEditing
+      && Date.now() - (job.telegramEditedAt ?? 0) >= TELEGRAM_EDIT_MS;
+    await ctx.db.patch(job._id, {
+      partial: args.text.slice(0, 100_000),
+      ...(edit ? { telegramEditing: true, telegramEditedAt: Date.now() } : {}),
+    });
+    if (edit) await ctx.scheduler.runAfter(0, internal.codex.streamToTelegram, { id: job._id });
+    return null;
+  },
+});
+
+export const streamToTelegram = internalAction({
+  args: { id: v.id("codexTurns") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const data = await ctx.runQuery(internal.codex.getTurn, args);
+    let messageId = data?.job.telegramMessageId;
+    try {
+      if (data?.conversation && data.job.partial && !data.job.finalizedAt) {
+        const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
+        if (messageId) await editDraft(token, data.conversation.externalId, messageId, data.job.partial);
+        else messageId = await sendDraft(token, data.conversation.externalId, data.job.partial);
+      }
+    } catch (error) {
+      console.error(`Could not stream to Telegram: ${String(error)}`);
+    } finally {
+      await ctx.runMutation(internal.codex.streamedToTelegram, { id: args.id, messageId });
+    }
+    return null;
+  },
+});
+
+export const streamedToTelegram = internalMutation({
+  args: { id: v.id("codexTurns"), messageId: v.optional(v.number()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (await ctx.db.get(args.id)) await ctx.db.patch(args.id, { telegramEditing: false, telegramMessageId: args.messageId });
+    return null;
+  },
+});
+
 /** Where a runner uploads media a Codex turn produced, while that turn runs. */
 export const mediaUploadUrl = mutation({
   args: { token: v.string(), id: v.id("codexTurns") },
@@ -403,7 +460,7 @@ export const finalizeTurn = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const result: {
-      job: { prompt: string; response?: string; error?: string; status: string; finalizedAt?: number; mediaKey?: string };
+      job: { prompt: string; response?: string; error?: string; status: string; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number };
       conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string } | null;
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
@@ -426,7 +483,10 @@ export const finalizeTurn = internalAction({
         ? await ctx.runQuery(internal.codex.mediaUrls, { conversationId: conversation._id, messageKey: job.mediaKey })
         : [];
       try {
-        if (job.response || !photos.length) await sendMessage(token, conversation.externalId, job.response || `That broke: ${job.error || "Codex did not reply."}`);
+        const text = job.response || (photos.length ? "" : `That broke: ${job.error || "Codex did not reply."}`);
+        // A streamed reply lands in the message that showed it growing.
+        if (job.telegramMessageId) await finishDraft(token, conversation.externalId, job.telegramMessageId, text || "Done.");
+        else if (text) await sendMessage(token, conversation.externalId, text);
         // Telegram fetches photos by URL only up to 5 MB; send a link for anything it refuses.
         for (const url of photos) await sendPhoto(token, conversation.externalId, url).catch(() => sendMessage(token, conversation.externalId, url));
       }

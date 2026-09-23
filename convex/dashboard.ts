@@ -241,7 +241,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ model?: string; title: string; isRunning: boolean; lastError?: string }> => {
+  ): Promise<{ model?: string; title: string; isRunning: boolean; streaming?: string; lastError?: string }> => {
     assertDashboardKey(args.key);
     const conversation = webChat(await ctx.db.get(args.id));
     const isRunning = (conversation.pendingTurns ?? 0) > 0;
@@ -249,10 +249,16 @@ export const getChat = query({
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
       .order("desc")
       .first();
+    const running = isRunning
+      ? await ctx.db.query("codexTurns")
+        .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.id).eq("status", "running"))
+        .first()
+      : null;
     return {
       model: conversation.model,
       title: conversation.title ?? "Untitled chat",
       isRunning,
+      streaming: running?.partial,
       lastError: latestRun?.status === "error" ? latestRun.error : undefined,
     };
   },

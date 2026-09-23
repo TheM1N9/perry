@@ -333,6 +333,12 @@ export default defineSchema({
     requestedModel: v.optional(v.string()),
     /** Attachment key for media the turn produced, such as generated images. */
     mediaKey: v.optional(v.string()),
+    /** The reply so far, while Codex is still writing it. */
+    partial: v.optional(v.string()),
+    /** Telegram: the message that shows the reply as it streams, edited as it grows. */
+    telegramMessageId: v.optional(v.number()),
+    telegramEditedAt: v.optional(v.number()),
+    telegramEditing: v.optional(v.boolean()),
     attachments: v.optional(v.array(v.object({
       url: v.optional(v.string()),
       localPath: v.optional(v.string()),
