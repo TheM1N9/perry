@@ -20,4 +20,7 @@ crons.interval(
 // Proactivity: scheduled jobs and the heartbeat. Each job decides if it is due.
 crons.interval("run due jobs", { minutes: 1 }, internal.jobs.tick, {});
 
+// Durable turns: retry unfinished finalizing, and release what an offline runner abandoned.
+crons.interval("recover turns", { minutes: 1 }, internal.recovery.sweep, {});
+
 export default crons;

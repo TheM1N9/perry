@@ -373,6 +373,10 @@ export default defineSchema({
     stopRequested: v.optional(v.boolean()),
     /** The turn ended because the owner stopped it. */
     stopped: v.optional(v.boolean()),
+    /** Finalizing steps already done, so a retried finalize never repeats one. */
+    reportedAt: v.optional(v.number()),
+    savedAt: v.optional(v.number()),
+    deliveredAt: v.optional(v.number()),
     /** The reply so far, while Codex is still writing it. */
     partial: v.optional(v.string()),
     /** Telegram: the message that shows the reply as it streams, edited as it grows. */
