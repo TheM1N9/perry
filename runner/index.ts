@@ -44,6 +44,8 @@ const COMMAND_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT = 20_000;
 const MAX_FILE_BYTES = 256 * 1024;
 const CHECKIN_MS = 30_000;
+/** Matches APPROVAL_TTL_MS in convex/approvals.ts: an unanswered request is declined. */
+const APPROVAL_TIMEOUT_MS = 10 * 60_000;
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -222,6 +224,65 @@ async function main() {
 
   const client = new ConvexClient(url);
 
+  /** The chat whose Codex turn is running, so an approval can say which chat asked. */
+  let activeConversation: Id<"conversations"> | undefined;
+  // Without a terminal, stdin may already be closed and would read as "no"; ask only the dashboard then.
+  const terminal = rl && process.stdin.isTTY ? rl : null;
+
+  /**
+   * The real control: the owner, deciding before anything runs here. The
+   * request is recorded in Convex and asked in this terminal at once; the
+   * dashboard shows it too, and whichever answers first wins. Unanswered, it
+   * is declined after APPROVAL_TIMEOUT_MS.
+   */
+  const askOwner = async (request: { kind: "command" | "file" | "write"; what: string; detail: string | null; cwd?: string }): Promise<boolean> => {
+    const id = await client.mutation(api.approvals.request, {
+      token,
+      kind: request.kind,
+      title: request.what,
+      detail: request.detail ?? undefined,
+      cwd: request.cwd,
+      conversationId: activeConversation,
+      auto: autoApprove,
+    });
+    if (autoApprove) {
+      console.log(`${cyan("  auto")} ${request.what}`);
+      return true;
+    }
+
+    console.log(`\n${bold("  Assistant wants to run:")}`);
+    console.log(`    ${cyan(request.what)}`);
+    if (request.cwd) {
+      const where = relative(workdir, request.cwd);
+      console.log(dim(`    in ${where === "" ? workdir : where}`));
+    }
+    if (request.detail) console.log(dim(request.detail.split("\n").map((l) => `    ${l}`).join("\n")));
+    if (!terminal) console.log(dim("    approve or decline it in the dashboard"));
+
+    return await new Promise<boolean>((resolve) => {
+      let done = false;
+      const abort = new AbortController();
+      let unsubscribe = () => {};
+      const settle = (approved: boolean, by: "terminal" | "dashboard" | "timeout") => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        unsubscribe();
+        abort.abort();
+        if (by !== "dashboard") void client.mutation(api.approvals.settle, { token, id, approved, by: by === "timeout" ? "timeout" : "terminal" }).catch(() => {});
+        if (by !== "terminal") console.log(dim(by === "timeout" ? "  nobody answered; declined." : `  ${approved ? "approved" : "declined"} in the dashboard.`));
+        resolve(approved);
+      };
+      const timer = setTimeout(() => settle(false, "timeout"), APPROVAL_TIMEOUT_MS);
+      unsubscribe = client.onUpdate(api.approvals.decision, { token, id }, (status) => {
+        if (status === "approved" || status === "declined") settle(status === "approved", "dashboard");
+      });
+      terminal?.question(`  ${bold("run it?")} [y/N] `, { signal: abort.signal })
+        .then((answer) => settle(["y", "yes"].includes(answer.trim().toLowerCase()), "terminal"))
+        .catch(() => {});
+    });
+  };
+
   let codex: CodexAppServer | null = null;
   let lastCodexAttempt = 0;
   const ensureCodex = async () => {
@@ -240,7 +301,12 @@ async function main() {
             const params = request.params ?? {};
             const command = params.command ?? (method.includes("fileChange") ? "Codex file change" : "Codex command");
             const reason = method.includes("commandExecution") ? denied(command) : null;
-            const approved = !reason && await approve(rl, command, params.reason ?? null, autoApprove, params.cwd, workdir);
+            const approved = !reason && await askOwner({
+              kind: method.includes("fileChange") ? "file" : "command",
+              what: command,
+              detail: params.reason ?? null,
+              cwd: params.cwd,
+            });
             instance.respond(request.id, { decision: approved ? "accept" : "decline" });
           } else if (method === "mcpServer/elicitation/request" && request.params?.serverName === ASSISTANT_MCP) {
             // Our own tools. Consequential actions are gated in chat, as on the gateway path.
@@ -381,12 +447,11 @@ async function main() {
               await finish({ status: "error", error: "Over the 256 KB limit." });
               return;
             }
-            const approved = await approve(
-              rl,
-              `write ${relative(workdir, target) || target}`,
-              `${(command.text ?? "").slice(0, 400)}${(command.text ?? "").length > 400 ? "\n..." : ""}`,
-              autoApprove,
-            );
+            const approved = await askOwner({
+              kind: "write",
+              what: `write ${relative(workdir, target) || target}`,
+              detail: `${(command.text ?? "").slice(0, 400)}${(command.text ?? "").length > 400 ? "\n..." : ""}`,
+            });
             if (!approved) {
               await finish({ status: "denied", error: "Declined." });
               return;
@@ -422,7 +487,7 @@ async function main() {
         return;
       }
 
-      const approved = await approve(rl, shellCommand, null, autoApprove, cwd, workdir);
+      const approved = await askOwner({ kind: "command", what: shellCommand, detail: null, cwd });
       if (!approved) {
         console.log(yellow("  declined.\n"));
         await finish({ status: "denied", error: "You declined it." });
@@ -542,6 +607,7 @@ async function main() {
         const next = codexQueue.shift()!;
         const job = await client.mutation(api.codex.claimTurn, { token, id: next._id });
         if (!job) continue;
+        activeConversation = job.conversationId;
         let result = savedResult(job._id);
         if (!result) {
           // The reply so far goes to Convex about three times a second while Codex writes it.
@@ -594,6 +660,7 @@ async function main() {
             };
           } finally {
             current = null;
+            activeConversation = undefined;
           }
           if (streamTimer) clearTimeout(streamTimer);
           saveResult(job._id, result);
@@ -654,33 +721,6 @@ function holdLock(token: string) {
       unlinkSync(lock);
     }
   }
-}
-
-/** The real control: a human, at the machine, reading the command. */
-async function approve(
-  rl: ReturnType<typeof createInterface> | null,
-  what: string,
-  detail: string | null,
-  autoApprove: boolean,
-  cwd?: string,
-  workdir?: string,
-): Promise<boolean> {
-  if (autoApprove) {
-    console.log(`${cyan("  auto")} ${what}`);
-    return true;
-  }
-
-  console.log(`\n${bold("  Assistant wants to run:")}`);
-  console.log(`    ${cyan(what)}`);
-  if (cwd && workdir) {
-    const where = relative(workdir, cwd);
-    console.log(dim(`    in ${where === "" ? workdir : where}`));
-  }
-  if (detail) console.log(dim(detail.split("\n").map((l) => `    ${l}`).join("\n")));
-
-  if (!rl) return false;
-  const answer = (await rl.question(`  ${bold("run it?")} [y/N] `)).trim().toLowerCase();
-  return answer === "y" || answer === "yes";
 }
 
 main().catch((error) => {

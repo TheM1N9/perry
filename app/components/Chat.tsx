@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { api } from "@/convex/_generated/api";
+import { Approvals } from "./Approvals";
 import type { Id } from "@/convex/_generated/dataModel";
 
 type ChatId = Id<"conversations">;
@@ -360,6 +361,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
           </div>}
       </div>
       <div className="chat-composer-area"><div className="chat-composer-wrap">
+        <Approvals dashboardKey={dashboardKey} />
         {error && <div className="chat-error" role="alert">{error}<button aria-label="Dismiss error" onClick={() => setError("")}><Icon name="close" size={15} /></button></div>}
         <div className="chat-composer-box">{pickedFiles.length > 0 && <div className="chat-picked-files">{pickedFiles.map((file, index) => {
           const url = pickedPreviews.get(file);

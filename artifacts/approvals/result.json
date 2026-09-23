@@ -1,0 +1,32 @@
+{
+  "ranAt": "2026-09-23T15:40:54.128Z",
+  "approved": {
+    "answer": "Approve",
+    "chatId": "j578e6d0a88a0q8szmfjr6ksxn8ez7ps",
+    "asked": {
+      "head": "e2e-issues wants to run · This is an automated test of approvals. Use your shell to write the word ok into",
+      "what": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Set-Content -LiteralPath 'C:\\\\Users\\\\Pranav\\\\AppData\\\\Local\\\\Temp\\\\perry-approval-approved.txt' -Value 'ok' -NoNewline\""
+    },
+    "reply": {
+      "text": "It worked—the file was written with ok.",
+      "cardGone": true
+    },
+    "written": "ok"
+  },
+  "declined": {
+    "answer": "Decline",
+    "chatId": "j5774yr7nhy8c9nee7vrsnc37n8ey78b",
+    "asked": {
+      "head": "e2e-issues wants to run · This is an automated test of approvals. Use your shell to write the word ok into",
+      "what": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Set-Content -LiteralPath 'C:\\\\Users\\\\Pranav\\\\AppData\\\\Local\\\\Temp\\\\perry-approval-declined.txt' -Value 'ok' -NoNewline\""
+    },
+    "reply": {
+      "text": "It didn’t work because approval to write the file was declined.",
+      "cardGone": true
+    },
+    "written": null
+  },
+  "runnerLogSawDashboardAnswers": true,
+  "pageErrors": [],
+  "pass": true
+}
