@@ -412,6 +412,17 @@ export const sendChat = mutation({
   },
 });
 
+/** Stop the chat's running reply, keeping what it has written so far. */
+export const stopChat = mutation({
+  args: { key: vKey, id: v.id("conversations") },
+  returns: v.number(),
+  handler: async (ctx, args): Promise<number> => {
+    assertDashboardKey(args.key);
+    webChat(await ctx.db.get(args.id));
+    return await ctx.runMutation(internal.codex.requestStop, { conversationId: args.id });
+  },
+});
+
 /** Pick this chat's Codex model. Unset means the Codex default. */
 export const setChatModel = mutation({
   args: { key: vKey, id: v.id("conversations"), model: v.optional(v.string()) },

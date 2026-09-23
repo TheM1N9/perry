@@ -19,6 +19,14 @@ type LoginEvent = { loginId: string; success: boolean; error?: string };
 type TurnErrorEvent = { turnId: string; willRetry?: boolean; error?: { message?: string } };
 
 export type GeneratedImage = { id: string; path?: string; base64?: string };
+export type TurnOutput = { text: string; images: GeneratedImage[]; interrupted?: boolean };
+
+/** A turn that failed, with whatever it had produced before it did. */
+export class TurnFailed extends Error {
+  constructor(message: string, readonly partial: TurnOutput) {
+    super(message);
+  }
+}
 export type CodexAttachment = { url?: string; localPath?: string; fileName: string; contentType?: string };
 export type CodexModel = { id: string; name: string; isDefault: boolean };
 
@@ -165,7 +173,13 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  waitForTurn(turnId: string, timeoutMs = 8 * 60_000): Promise<{ text: string; images: GeneratedImage[] }> {
+  /**
+   * Wait for a turn to end. A completed turn resolves with its final reply and
+   * generated images; an interrupted one (stopped by the owner) resolves with
+   * what it had produced so far. A failed turn rejects with a TurnFailed that
+   * still carries its partial output, so a late failure does not lose it.
+   */
+  waitForTurn(turnId: string, timeoutMs = 8 * 60_000): Promise<TurnOutput> {
     return new Promise((resolve, reject) => {
       const stop = () => {
         clearTimeout(timer);
@@ -173,21 +187,11 @@ export class CodexAppServer extends EventEmitter {
         this.off("turn/error", onError);
         this.off("closed", onClose);
       };
-      const finish = (event: TurnEvent) => {
-        if (event?.turn?.id !== turnId) return;
-        stop();
-        this.completedTurns.delete(turnId);
-        // App-server extension items can be omitted from turn.items even though
-        // item/completed delivered them. Keep both sources, keyed by item id.
-        const items = [...new Map([
-          ...(event.turn.items ?? []),
-          ...(this.turnItems.get(turnId) ?? []),
-        ].map((item) => [item.id, item])).values()];
+      // App-server extension items can be omitted from turn.items even though
+      // item/completed delivered them. Keep both sources, keyed by item id.
+      const collect = (turnItems: TurnItem[] = []) => {
+        const items = [...new Map([...turnItems, ...(this.turnItems.get(turnId) ?? [])].map((item) => [item.id, item])).values()];
         this.turnItems.delete(turnId);
-        if (event.turn.status !== "completed") {
-          reject(new Error(event.turn.error?.message || `Codex turn ${event.turn.status}.`));
-          return;
-        }
         const messages = items.filter((item) => item?.type === "agentMessage" && item.text?.trim());
         const final = messages.filter((item) => item.phase === "final_answer").at(-1) ?? messages.at(-1);
         const images = items
@@ -196,22 +200,34 @@ export class CodexAppServer extends EventEmitter {
             (item?.type === "Extension" && item.kind === "image_gen.generation" && item.status === "completed" && typeof item.result === "string"),
           )
           .map((item) => ({ id: item.id, path: item.savedPath as string | undefined, base64: item.savedPath ? undefined : item.result as string }));
-        resolve({ text: final?.text?.trim() || (images.length ? "" : "Codex completed without a text reply."), images });
+        return { text: (final?.text as string | undefined)?.trim() ?? "", images };
+      };
+      const fail = (message: string, turnItems?: TurnItem[]) => {
+        stop();
+        reject(new TurnFailed(message, collect(turnItems)));
+      };
+      const finish = (event: TurnEvent) => {
+        if (event?.turn?.id !== turnId) return;
+        this.completedTurns.delete(turnId);
+        if (event.turn.status === "completed" || event.turn.status === "interrupted") {
+          stop();
+          const output = collect(event.turn.items);
+          const interrupted = event.turn.status === "interrupted";
+          resolve({
+            ...output,
+            text: output.text || (output.images.length || interrupted ? "" : "Codex completed without a text reply."),
+            interrupted,
+          });
+          return;
+        }
+        fail(event.turn.error?.message || `Codex turn ${event.turn.status}.`, event.turn.items);
       };
       const onError = (event: TurnErrorEvent) => {
         if (event?.turnId !== turnId || event.willRetry) return;
-        stop();
-        this.turnItems.delete(turnId);
-        reject(new Error(event.error?.message || "Codex turn failed."));
+        fail(event.error?.message || "Codex turn failed.");
       };
-      const onClose = (error: Error) => {
-        stop();
-        reject(error);
-      };
-      const timer = setTimeout(() => {
-        stop();
-        reject(new Error("Codex turn timed out."));
-      }, timeoutMs);
+      const onClose = (error: Error) => fail(error.message);
+      const timer = setTimeout(() => fail("Codex turn timed out."), timeoutMs);
       this.on("turn/completed", finish);
       this.on("turn/error", onError);
       this.on("closed", onClose);
@@ -220,7 +236,12 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  async runTurn({ threadId, instructions, history, prompt, cwd, model, tools, attachments = [], onThread, onText }: {
+  /** Ask Codex to stop a turn. It ends as interrupted, keeping what it produced. */
+  interrupt(threadId: string, turnId: string): Promise<unknown> {
+    return this.request("turn/interrupt", { threadId, turnId });
+  }
+
+  async runTurn({ threadId, instructions, history, prompt, cwd, model, tools, attachments = [], onThread, onText, onStarted }: {
     threadId?: string;
     instructions: string;
     history?: string;
@@ -232,7 +253,9 @@ export class CodexAppServer extends EventEmitter {
     onThread: (threadId: string) => Promise<unknown>;
     /** The reply so far, as Codex writes it: the text of the message it is currently writing. */
     onText?: (text: string) => void;
-  }): Promise<{ threadId: string; response: string; images: GeneratedImage[] }> {
+    /** Called once Codex has started the turn, with what interrupt() needs. */
+    onStarted?: (turn: { threadId: string; turnId: string }) => void;
+  }): Promise<{ threadId: string; response: string; images: GeneratedImage[]; interrupted?: boolean }> {
     const home = `Your own folder for files you make is ${PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`;
     const fullInstructions = history
       ? `${instructions}\n\n${home}\n\nEarlier chat history (context, not a new user request):\n${history}`
@@ -267,11 +290,12 @@ export class CodexAppServer extends EventEmitter {
     }
     // Deltas can arrive before turn/start answers, so match them by thread.
     const written = new Map<string, string>();
+    let latest = "";
     const onDelta = (event: { threadId?: string; itemId?: string; delta?: string }) => {
       if (event.threadId !== id || !event.itemId || !event.delta) return;
-      const text = (written.get(event.itemId) ?? "") + event.delta;
-      written.set(event.itemId, text);
-      onText?.(text);
+      latest = (written.get(event.itemId) ?? "") + event.delta;
+      written.set(event.itemId, latest);
+      onText?.(latest);
     };
     this.on("item/agentMessage/delta", onDelta);
     try {
@@ -284,8 +308,15 @@ export class CodexAppServer extends EventEmitter {
       sandboxPolicy: { type: "workspaceWrite", writableRoots: [cwd, PATHS.files], networkAccess: false },
     }, 30_000);
     if (!started.turn?.id) throw new Error("Codex did not start a turn.");
-    const { text: response, images } = await this.waitForTurn(started.turn.id);
-    return { threadId: id, response, images };
+    onStarted?.({ threadId: id, turnId: started.turn.id });
+    try {
+      const { text, images, interrupted } = await this.waitForTurn(started.turn.id);
+      // A stopped turn may not have finished its message; the streamed text is the best record of it.
+      return { threadId: id, response: text || (interrupted ? latest : ""), images, interrupted };
+    } catch (error) {
+      if (error instanceof TurnFailed && !error.partial.text) error.partial.text = latest;
+      throw error;
+    }
     } finally {
       this.off("item/agentMessage/delta", onDelta);
     }

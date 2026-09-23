@@ -333,6 +333,10 @@ export default defineSchema({
     requestedModel: v.optional(v.string()),
     /** Attachment key for media the turn produced, such as generated images. */
     mediaKey: v.optional(v.string()),
+    /** The owner asked to stop this turn; the runner interrupts Codex. */
+    stopRequested: v.optional(v.boolean()),
+    /** The turn ended because the owner stopped it. */
+    stopped: v.optional(v.boolean()),
     /** The reply so far, while Codex is still writing it. */
     partial: v.optional(v.string()),
     /** Telegram: the message that shows the reply as it streams, edited as it grows. */

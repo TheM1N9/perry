@@ -21,6 +21,7 @@ type Channel = "telegram" | "web";
 const HELP = `
 Your private assistant.
 
+  /stop     stop the reply I am writing
   /status   plumbing and recent errors
   /reset    start a fresh conversation, keep memories
   /help     this
@@ -54,6 +55,11 @@ async function runCommand(
       ];
       if (stats?.lastError) lines.push("", `last error: ${stats.lastError}`);
       return lines.join("\n");
+    }
+
+    case "/stop": {
+      const stopped: number = await ctx.runMutation(internal.codex.requestStop, { conversationId: conversation._id });
+      return stopped ? "Stopping." : "Nothing is running.";
     }
 
     case "/reset":
