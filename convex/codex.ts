@@ -498,20 +498,34 @@ export const markFinalized = internalMutation({
   },
 });
 
+export const markStep = internalMutation({
+  args: { id: v.id("codexTurns"), step: v.union(v.literal("reportedAt"), v.literal("savedAt"), v.literal("deliveredAt")) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (await ctx.db.get(args.id)) await ctx.db.patch(args.id, { [args.step]: Date.now() });
+    return null;
+  },
+});
+
 export const finalizeTurn = internalAction({
   args: { id: v.id("codexTurns") },
   returns: v.null(),
   handler: async (ctx, args) => {
     const result: {
-      job: { prompt: string; response?: string; error?: string; status: string; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean };
+      job: { prompt: string; response?: string; error?: string; status: string; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
       conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string; jobId?: Id<"jobs"> } | null;
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
     const { job, conversation } = result;
     // A stopped turn keeps whatever it had written, marked as stopped.
     const reply = job.stopped ? `${job.response ?? ""}\n\n_Stopped._`.trim() : job.response;
+    // Each step is recorded once done, so recovery can retry this safely (see recovery.ts).
+    const done = (step: "reportedAt" | "savedAt" | "deliveredAt") => ctx.runMutation(internal.codex.markStep, { id: args.id, step });
     if (conversation.jobId) {
-      await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, result: job.response, error: job.error });
+      if (!job.reportedAt) {
+        await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, result: job.response, error: job.error });
+        await done("reportedAt");
+      }
       // A job with nothing to say leaves no trace in its chat.
       if (!job.error && job.response?.trim() === QUIET && !job.mediaKey) {
         await ctx.runMutation(internal.codex.markFinalized, args);
@@ -519,7 +533,7 @@ export const finalizeTurn = internalAction({
       }
     }
     // A failed turn keeps the owner's message; the error shows on the run and, on Telegram, as a reply.
-    await saveMessages(ctx, components.agent, {
+    if (!job.savedAt) await saveMessages(ctx, components.agent, {
       threadId: conversation.threadId,
       userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
       order: "next",
@@ -529,8 +543,8 @@ export const finalizeTurn = internalAction({
           ? [{ role: "assistant" as const, content: `${reply ?? ""}${job.mediaKey ? `\n\n<!-- attachments: ${job.mediaKey} -->` : ""}`.trim() }]
           : []),
       ],
-    });
-    if (conversation.channel === "telegram") {
+    }).then(() => done("savedAt"));
+    if (conversation.channel === "telegram" && !job.deliveredAt) {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
       const photos: string[] = job.mediaKey
         ? await ctx.runQuery(internal.codex.mediaUrls, { conversationId: conversation._id, messageKey: job.mediaKey })
@@ -546,6 +560,8 @@ export const finalizeTurn = internalAction({
         for (const url of photos) await sendPhoto(token, conversation.externalId, url).catch(() => sendMessage(token, conversation.externalId, url));
       }
       catch (error) { console.error(`Could not deliver Codex reply: ${String(error)}`); }
+      // Marked even when sending failed part-way, so a retry never sends a reply twice.
+      await done("deliveredAt");
     }
     await ctx.runMutation(internal.codex.markFinalized, args);
     return null;
