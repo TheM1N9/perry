@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { vPolicy } from "./schema";
 
 /**
  * The protocol between Assistant and a machine the owner has connected.
@@ -41,6 +42,13 @@ export async function authenticate(
   return runner;
 }
 
+export type Policy = "ask" | "review" | "trust";
+
+/** A runner's approval policy. Runners from before policies stored only autoApprove. */
+export function policyOf(runner: Doc<"runners">): Policy {
+  return runner.policy ?? (runner.autoApprove ? "trust" : "ask");
+}
+
 // --- Runner side ---------------------------------------------------------
 
 /**
@@ -48,6 +56,9 @@ export async function authenticate(
  * `fallback` says whether the owner lets turns be answered without this
  * machine, which is when the runner pushes its ChatGPT token (chatgpt.ts),
  * and `holdsToken` whether Convex still has the one it pushed.
+ * A policy is sent only when the runner was started with --policy; otherwise
+ * the one chosen in the dashboard stands. autoApprove is the older form of
+ * the same setting.
  */
 export const checkIn = mutation({
   args: {
@@ -55,23 +66,27 @@ export const checkIn = mutation({
     platform: v.optional(v.string()),
     hostname: v.optional(v.string()),
     workdir: v.optional(v.string()),
+    policy: v.optional(vPolicy),
     autoApprove: v.optional(v.boolean()),
   },
-  returns: v.object({ name: v.string(), fallback: v.boolean(), holdsToken: v.boolean() }),
-  handler: async (ctx, args): Promise<{ name: string; fallback: boolean; holdsToken: boolean }> => {
+  returns: v.object({ name: v.string(), policy: vPolicy, fallback: v.boolean(), holdsToken: v.boolean() }),
+  handler: async (ctx, args): Promise<{ name: string; policy: Policy; fallback: boolean; holdsToken: boolean }> => {
     const runner = await authenticate(ctx, args.token);
+    const policy = args.policy
+      ?? (args.autoApprove === undefined ? policyOf(runner) : args.autoApprove ? "trust" : "ask");
 
     await ctx.db.patch(runner._id, {
       platform: args.platform ?? runner.platform,
       hostname: args.hostname ?? runner.hostname,
       workdir: args.workdir ?? runner.workdir,
-      autoApprove: args.autoApprove ?? runner.autoApprove,
+      policy,
+      autoApprove: policy === "trust",
       lastSeenAt: Date.now(),
     });
 
     const install = await ctx.db.query("installation").unique();
     const held = await ctx.db.query("chatgptTokens").withIndex("by_runner", (q) => q.eq("runnerId", runner._id)).first();
-    return { name: runner.name, fallback: install?.offlineFallback === true, holdsToken: held !== null };
+    return { name: runner.name, policy, fallback: install?.offlineFallback === true, holdsToken: held !== null };
   },
 });
 
@@ -176,6 +191,18 @@ export const liveRunner = internalQuery({
       .sort((a, b) => (b.lastSeenAt ?? 0) - (a.lastSeenAt ?? 0));
 
     return live[0] ?? null;
+  },
+});
+
+/** Chosen in the dashboard. Every request reads it, so it applies at once. */
+export const setPolicy = internalMutation({
+  args: { runnerId: v.string(), policy: vPolicy },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    const id = ctx.db.normalizeId("runners", args.runnerId);
+    if (!id) return null;
+    await ctx.db.patch(id, { policy: args.policy, autoApprove: args.policy === "trust" });
+    return null;
   },
 });
 

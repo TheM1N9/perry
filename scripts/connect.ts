@@ -21,7 +21,9 @@ import { bold, dim, red, runConvex, yellow } from "./lib";
 
 const args = process.argv.slice(2);
 const tokenOnly = args.includes("--token-only");
-const auto = args.includes("--auto");
+const policyFlag = args.indexOf("--policy");
+// --auto is the older name for --policy trust.
+const policy = policyFlag !== -1 ? args[policyFlag + 1] : args.includes("--auto") ? "trust" : undefined;
 const dirFlag = args.indexOf("--dir");
 const dir = dirFlag !== -1 ? args[dirFlag + 1] : undefined;
 
@@ -90,7 +92,7 @@ const runnerArgs = [
   token,
 ];
 if (dir) runnerArgs.push("--dir", dir);
-runnerArgs.push(auto ? "--auto" : "--no-auto");
+if (policy) runnerArgs.push("--policy", policy);
 
 const runner = spawn(process.execPath, runnerArgs, { stdio: "inherit" });
 runner.on("close", (code) => process.exit(code ?? 0));

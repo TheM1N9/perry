@@ -87,8 +87,22 @@ token its Codex holds, and it stays in your Convex deployment until it expires,
 usable by anyone who can read that deployment's data. The refresh token never
 leaves the machine, and turning the setting off deletes every stored token.
 
-What Codex wants to do beyond its sandbox is asked in the runner's terminal and
-in the dashboard, where you can approve or decline it.
+What Codex wants to do beyond its sandbox is asked in the runner's terminal, in
+the dashboard and, if you own Perry from Telegram, as a Telegram message with
+Approve, Decline and Always allow buttons. The buttons need the webhook to
+receive `callback_query` updates: an install whose webhook was set before this
+must set it again, with `pnpm run webhook:set` or the Keys page's re-register
+button. Turn Telegram prompts off on the Computer page.
+
+Each machine has a policy, set on the Computer page or when starting it:
+
+```bash
+pnpm run runner -- --policy review   # ask | review | trust; --auto means trust
+```
+
+With `review`, a quick Codex turn on your subscription looks at each request
+first and runs the routine ones; the rest are asked. `PERRY_REVIEW_MODEL`
+picks its model (by default the first model Codex lists as fast).
 
 On Windows the runner uses Codex's unelevated sandbox, because the elevated one
 fails on long paths in Codex's own runtime. Set

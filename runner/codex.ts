@@ -13,7 +13,7 @@ import { PATHS } from "./home";
  * (a restricted token) has no such check, so the runner's threads use it.
  * PERRY_CODEX_WINDOWS_SANDBOX=elevated restores Codex's own choice.
  */
-const WINDOWS_SANDBOX = process.platform === "win32"
+export const WINDOWS_SANDBOX = process.platform === "win32"
   ? { "windows.sandbox": process.env.PERRY_CODEX_WINDOWS_SANDBOX ?? "unelevated" }
   : {};
 
@@ -93,6 +93,9 @@ function userInput(prompt: string, attachments: CodexAttachment[], recalled?: st
   return input;
 }
 
+/** One file in a fileChange item: add, delete or update, with its diff. */
+export type FileChange = { path: string; kind?: { type?: string }; diff?: string };
+
 /** A stdio client for the official Codex app-server protocol. */
 export class CodexAppServer extends EventEmitter {
   private nextId = 1;
@@ -101,8 +104,14 @@ export class CodexAppServer extends EventEmitter {
   private completedTurns = new Map<string, TurnEvent>();
   private turnItems = new Map<string, TurnItem[]>();
   private tokenTotals = new Map<string, number>();
+  private fileChanges = new Map<string, FileChange[]>();
   private child?: ChildProcessWithoutNullStreams;
   closed = false;
+
+  /** What a file-change item is about to change, for its approval request. */
+  changesFor(itemId?: string): FileChange[] {
+    return (itemId && this.fileChanges.get(itemId)) || [];
+  }
 
   async start(): Promise<this> {
     const windows = process.platform === "win32";
@@ -127,7 +136,16 @@ export class CodexAppServer extends EventEmitter {
         if (message.method === "account/login/completed" && params.loginId) {
           this.completedLogins.set(params.loginId, params as LoginEvent);
         }
+        // A file change's approval request names only its item, so keep the
+        // item's paths from when it starts (and as its patch is updated).
+        if (message.method === "item/started" && params.item?.type === "fileChange") {
+          this.fileChanges.set(params.item.id, params.item.changes ?? []);
+        }
+        if (message.method === "item/fileChange/patchUpdated" && params.itemId) {
+          this.fileChanges.set(params.itemId, params.changes ?? []);
+        }
         if (message.method === "item/completed" && params.turnId) {
+          this.fileChanges.delete(params.item?.id);
           const items = this.turnItems.get(params.turnId) ?? [];
           items.push(params.item);
           this.turnItems.set(params.turnId, items);
