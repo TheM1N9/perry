@@ -321,6 +321,20 @@ export default defineSchema({
     .index("by_conversation", ["conversationId"])
     .index("by_started", ["startedAt"]),
 
+  /** What a runner asked the owner before acting on their machine. See approvals.ts. */
+  approvals: defineTable({
+    runnerId: v.id("runners"),
+    conversationId: v.optional(v.id("conversations")),
+    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write")),
+    title: v.string(),
+    detail: v.optional(v.string()),
+    cwd: v.optional(v.string()),
+    status: v.union(v.literal("pending"), v.literal("approved"), v.literal("declined"), v.literal("expired"), v.literal("auto")),
+    decidedBy: v.optional(v.union(v.literal("terminal"), v.literal("dashboard"), v.literal("timeout"))),
+    createdAt: v.number(),
+    decidedAt: v.optional(v.number()),
+  }).index("by_status", ["status", "createdAt"]),
+
   /** Subscription turns are queued for the owner's outbound local runner. */
   codexTurns: defineTable({
     runnerId: v.id("runners"),

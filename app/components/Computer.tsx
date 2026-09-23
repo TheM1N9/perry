@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { Approvals } from "./Approvals";
 
 function ago(ts?: number): string {
   if (!ts) return "never";
@@ -30,6 +31,7 @@ export function Computer({ dashboardKey }: { dashboardKey: string }) {
 
   return (
     <>
+      <Approvals dashboardKey={dashboardKey} />
       <div className="panel">
         <h3>Where commands run</h3>
         <p className="hint">

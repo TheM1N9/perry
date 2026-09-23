@@ -608,3 +608,16 @@ a {
   .activity-summary > div { padding: 12px; }
   .activity-summary strong { font-size: 18px; }
 }
+
+/* Runner approvals, above the chat composer and on the Computer page. */
+.approvals { display: grid; gap: 8px; margin-bottom: 10px; }
+.approval { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 11px 13px; background: #2a2620; border: 1px solid #5a4a33; border-radius: 12px; color: #efe6d8; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.approval-text { min-width: 0; flex: 1; }
+.approval-head { font-size: 12px; font-weight: 600; color: #f3dcb8; }
+.approval-head span { font-weight: 400; color: #bfae95; }
+.approval-what { display: block; margin-top: 6px; padding: 6px 9px; background: #1c1915; border-radius: 7px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.approval-meta { margin-top: 5px; font-size: 11px; color: #bfae95; white-space: pre-wrap; overflow-wrap: anywhere; }
+.approval-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.approval-actions button { padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.approval-approve { background: #bdd8b7; color: #1c2a1e; border: 0; }
+.approval-decline { background: transparent; color: #efe6d8; border: 1px solid #5a4a33; }
