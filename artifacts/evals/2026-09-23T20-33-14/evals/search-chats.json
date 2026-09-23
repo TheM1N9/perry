@@ -1,0 +1,103 @@
+{
+  "id": "search-chats",
+  "description": "Finds something said in an earlier chat with search_chats.",
+  "tags": [
+    "tools",
+    "chats"
+  ],
+  "verdict": "passed",
+  "assertions": [
+    {
+      "name": "notCalledTool(remember)",
+      "score": 1,
+      "severity": "soft",
+      "passed": true,
+      "errored": false
+    },
+    {
+      "name": "calledTool(search_chats)",
+      "score": 1,
+      "severity": "gate",
+      "passed": true,
+      "errored": false,
+      "metadata": {
+        "calls": 1
+      }
+    },
+    {
+      "name": "includes(Tumiveve)",
+      "score": 1,
+      "severity": "gate",
+      "passed": true,
+      "errored": false
+    }
+  ],
+  "turns": [
+    {
+      "chatId": "j5732x8rjyd073yzm6aqt297g98ezrzk",
+      "prompt": "This is an automated test. Don't save anything to memory. The codeword for this test is Tumiveve. Reply with just OK.",
+      "message": "OK",
+      "toolCalls": [],
+      "run": {
+        "channel": "web",
+        "chatTitle": "This is an automated test. Don't save anything to memory. The codeword for this ",
+        "durationMs": 6375,
+        "id": "jd7f68x2ewnqr9fz6cbfrem5mx8ezh9x",
+        "model": "codex subscription",
+        "prompt": "This is an automated test. Don't save anything to memory. The codeword for this test is Tumiveve. Reply with just OK.",
+        "sessionId": "j5732x8rjyd073yzm6aqt297g98ezrzk",
+        "startedAt": 1790195758438,
+        "status": "ok",
+        "steps": 1,
+        "threadId": "m9719ddntc3v5hfa8djmnr7wp18eyskp",
+        "toolCalls": [],
+        "totalTokens": 22068,
+        "usage": {
+          "cachedInputTokens": 12032,
+          "inputTokens": 22063,
+          "outputTokens": 5,
+          "reasoningTokens": 0,
+          "totalTokens": 22068
+        }
+      },
+      "elapsedMs": 8684
+    },
+    {
+      "chatId": "j572gz9rc5x46cj0ayw6w2mfrd8eys4q",
+      "prompt": "This is an automated test. In an earlier chat I told you the codeword for this test. Search our earlier chats for it and reply with just the codeword.",
+      "message": "Tumiveve",
+      "toolCalls": [
+        "search_chats"
+      ],
+      "run": {
+        "channel": "web",
+        "chatTitle": "This is an automated test. In an earlier chat I told you the codeword for this t",
+        "durationMs": 18364,
+        "id": "jd7e2wswwwec98z909spekdssn8ezcms",
+        "model": "codex subscription",
+        "prompt": "This is an automated test. In an earlier chat I told you the codeword for this test. Search our earlier chats for it and reply with just the codeword.",
+        "sessionId": "j572gz9rc5x46cj0ayw6w2mfrd8eys4q",
+        "startedAt": 1790195767348,
+        "status": "ok",
+        "steps": 3,
+        "threadId": "m973pafasnhc50sxd3epaxc23n8ezv7f",
+        "toolCalls": [
+          "search_chats"
+        ],
+        "totalTokens": 84542,
+        "usage": {
+          "cachedInputTokens": 63744,
+          "inputTokens": 84400,
+          "outputTokens": 142,
+          "reasoningTokens": 50,
+          "totalTokens": 84542
+        }
+      },
+      "elapsedMs": 19612
+    }
+  ],
+  "logs": [],
+  "cleanupErrors": [],
+  "startedAt": "2026-09-23T20:35:18.676Z",
+  "durationMs": 32236
+}

@@ -1,0 +1,75 @@
+{
+  "id": "markdown-answer",
+  "description": "Answers a comparison in clean Markdown that the chat can render.",
+  "tags": [
+    "style"
+  ],
+  "verdict": "passed",
+  "assertions": [
+    {
+      "name": "includes(/^\\s*\\|?\\s*:?-{3,}:?\\s*\\|/m) [table separator row]",
+      "score": 1,
+      "severity": "gate",
+      "passed": true,
+      "errored": false
+    },
+    {
+      "name": "includes(/^\\s*[-*] \\S/m) [bulleted list]",
+      "score": 1,
+      "severity": "gate",
+      "passed": true,
+      "errored": false
+    },
+    {
+      "name": "judge",
+      "score": 1,
+      "severity": "gate",
+      "threshold": 0.7,
+      "passed": true,
+      "errored": false,
+      "message": "The reply contains a correctly formatted Markdown table with the required header, separator, and three aspect rows, followed by exactly two bulleted tips with no extra text.",
+      "metadata": {
+        "criteria": "The reply is well-formed Markdown: a table with a header row, a separator row and one row per aspect (caffeine, taste, price), followed by a bulleted list of two tips, with no filler preamble or sign-off.",
+        "judgment": {
+          "probability": 1,
+          "reason": "The reply contains a correctly formatted Markdown table with the required header, separator, and three aspect rows, followed by exactly two bulleted tips with no extra text."
+        }
+      }
+    }
+  ],
+  "turns": [
+    {
+      "chatId": "j57fkhqxfz9xsxsqt1e4fwesps8eya9r",
+      "prompt": "This is an automated test. Compare tea and coffee on caffeine, taste and price in a Markdown table, then give two tips as a bulleted list.",
+      "message": "| Aspect | Tea | Coffee |\n|---|---|---|\n| Caffeine | Usually lower: about 20–70 mg per cup | Usually higher: about 80–120 mg per cup |\n| Taste | Lighter, more varied, sometimes herbal or floral | Rich, bold, roasted, and often bitter |\n| Price | Often cheaper per serving, especially loose-leaf or tea bags | Can be more expensive, particularly specialty coffee |\n\n- Choose tea if you want gentler stimulation or more flavor variety.\n- Choose coffee if you need a stronger caffeine boost and prefer a bold taste.",
+      "toolCalls": [],
+      "run": {
+        "channel": "web",
+        "chatTitle": "This is an automated test. Compare tea and coffee on caffeine, taste and price i",
+        "durationMs": 12132,
+        "id": "jd74a03demtbeg7xjmq7vdb5t98ez6v7",
+        "model": "codex subscription",
+        "prompt": "This is an automated test. Compare tea and coffee on caffeine, taste and price in a Markdown table, then give two tips as a bulleted list.",
+        "sessionId": "j57fkhqxfz9xsxsqt1e4fwesps8eya9r",
+        "startedAt": 1790195660969,
+        "status": "ok",
+        "steps": 1,
+        "threadId": "m977r695c4ks3r2hrvx49hwvp18eyjfg",
+        "toolCalls": [],
+        "totalTokens": 22215,
+        "usage": {
+          "cachedInputTokens": 12032,
+          "inputTokens": 22066,
+          "outputTokens": 149,
+          "reasoningTokens": 22,
+          "totalTokens": 22215
+        }
+      },
+      "elapsedMs": 14006
+    }
+  ],
+  "logs": [],
+  "cleanupErrors": [],
+  "startedAt": "2026-09-23T20:33:41.320Z",
+  "durationMs": 23479
+}

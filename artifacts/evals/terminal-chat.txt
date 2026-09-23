@@ -1,0 +1,7 @@
+Perry · a new chat
+/new starts a chat, /model [name] picks a model, /quit leaves. Ctrl+C stops a reply.
+you › chat j577abvcz9fd00weqyvpxfjm3s8ezyzv
+perry
+42
+  11.3s · 22,060 tokens · codex subscription
+you › 

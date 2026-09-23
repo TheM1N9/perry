@@ -1,0 +1,67 @@
+{
+  "id": "reads-web-page",
+  "description": "Reads a URL with its read_page tool rather than guessing.",
+  "tags": [
+    "tools",
+    "web"
+  ],
+  "verdict": "passed",
+  "assertions": [
+    {
+      "name": "calledTool(read_page)",
+      "score": 1,
+      "severity": "gate",
+      "passed": true,
+      "errored": false,
+      "metadata": {
+        "calls": 1
+      }
+    },
+    {
+      "name": "includes(Example Domain)",
+      "score": 1,
+      "severity": "gate",
+      "passed": true,
+      "errored": false
+    }
+  ],
+  "turns": [
+    {
+      "chatId": "j57dnc64skn8y9cd0tejmxkqwn8ey0p7",
+      "prompt": "This is an automated test. Read https://example.com and tell me the page's main heading, exactly as written.",
+      "message": "Example Domain",
+      "toolCalls": [
+        "read_page"
+      ],
+      "run": {
+        "channel": "web",
+        "chatTitle": "This is an automated test. Read https://example.com and tell me the page's main ",
+        "durationMs": 19087,
+        "id": "jd7aemmjgpq1r3ebn3bnz5x9818eyc61",
+        "model": "codex subscription",
+        "prompt": "This is an automated test. Read https://example.com and tell me the page's main heading, exactly as written.",
+        "sessionId": "j57dnc64skn8y9cd0tejmxkqwn8ey0p7",
+        "startedAt": 1790195683804,
+        "status": "ok",
+        "steps": 3,
+        "threadId": "m973ncxeqnjsz4ewv45ffvshkh8ez3kd",
+        "toolCalls": [
+          "read_page"
+        ],
+        "totalTokens": 86157,
+        "usage": {
+          "cachedInputTokens": 59648,
+          "inputTokens": 86020,
+          "outputTokens": 137,
+          "reasoningTokens": 57,
+          "totalTokens": 86157
+        }
+      },
+      "elapsedMs": 21638
+    }
+  ],
+  "logs": [],
+  "cleanupErrors": [],
+  "startedAt": "2026-09-23T20:34:04.799Z",
+  "durationMs": 24719
+}

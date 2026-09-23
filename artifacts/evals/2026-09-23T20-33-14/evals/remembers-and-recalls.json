@@ -1,0 +1,153 @@
+{
+  "id": "remembers-and-recalls",
+  "description": "Remembers a fact in one chat, recalls it in a fresh one, then forgets it when asked.",
+  "tags": [
+    "memory"
+  ],
+  "verdict": "passed",
+  "assertions": [
+    {
+      "name": "calledTool(remember)",
+      "score": 1,
+      "severity": "gate",
+      "passed": true,
+      "errored": false,
+      "metadata": {
+        "calls": 1
+      }
+    },
+    {
+      "name": "includes(Lolofape)",
+      "score": 1,
+      "severity": "gate",
+      "passed": true,
+      "errored": false
+    },
+    {
+      "name": "similarity [just the name]",
+      "score": 1,
+      "severity": "soft",
+      "passed": true,
+      "errored": false,
+      "message": "expected similarity to \"Lolofape\"; received \"Lolofape\""
+    },
+    {
+      "name": "calledTool(forget)",
+      "score": 1,
+      "severity": "gate",
+      "passed": true,
+      "errored": false,
+      "metadata": {
+        "calls": 1
+      }
+    },
+    {
+      "name": "equals [gone from memory]",
+      "score": 1,
+      "severity": "gate",
+      "passed": true,
+      "errored": false
+    }
+  ],
+  "turns": [
+    {
+      "chatId": "j5786symd91k7drdrfsd3sm4wn8eynfb",
+      "prompt": "This is an automated test. Please remember this for later: my houseplant is called Lolofape.",
+      "message": "I’ll remember that your houseplant is called Lolofape.",
+      "toolCalls": [
+        "remember"
+      ],
+      "run": {
+        "channel": "web",
+        "chatTitle": "This is an automated test. Please remember this for later: my houseplant is call",
+        "durationMs": 14853,
+        "id": "jd7cexgv13k6z3n5jmrvgfhyxs8ezw3w",
+        "model": "codex subscription",
+        "prompt": "This is an automated test. Please remember this for later: my houseplant is called Lolofape.",
+        "sessionId": "j5786symd91k7drdrfsd3sm4wn8eynfb",
+        "startedAt": 1790195710980,
+        "status": "ok",
+        "steps": 3,
+        "threadId": "m979dgkqa9egpvwezb83a6hvhx8ez64d",
+        "toolCalls": [
+          "remember"
+        ],
+        "totalTokens": 85812,
+        "usage": {
+          "cachedInputTokens": 59648,
+          "inputTokens": 85670,
+          "outputTokens": 142,
+          "reasoningTokens": 34,
+          "totalTokens": 85812
+        }
+      },
+      "elapsedMs": 17690
+    },
+    {
+      "chatId": "j57a0sqvgks3mkr9hc3wzt268n8ezyv6",
+      "prompt": "This is an automated test. What is my houseplant called? Reply with just its name.",
+      "message": "Lolofape",
+      "toolCalls": [],
+      "run": {
+        "channel": "web",
+        "chatTitle": "This is an automated test. What is my houseplant called? Reply with just its nam",
+        "durationMs": 8802,
+        "id": "jd7f7cqmpse712vhptq6eqft8s8ez7sn",
+        "model": "codex subscription",
+        "prompt": "This is an automated test. What is my houseplant called? Reply with just its name.",
+        "sessionId": "j57a0sqvgks3mkr9hc3wzt268n8ezyv6",
+        "startedAt": 1790195728798,
+        "status": "ok",
+        "steps": 1,
+        "threadId": "m979s0v27j86yv284vyt0hez4s8ezb2x",
+        "toolCalls": [],
+        "totalTokens": 22092,
+        "usage": {
+          "cachedInputTokens": 12032,
+          "inputTokens": 22085,
+          "outputTokens": 7,
+          "reasoningTokens": 0,
+          "totalTokens": 22092
+        }
+      },
+      "elapsedMs": 11338
+    },
+    {
+      "chatId": "j57a0sqvgks3mkr9hc3wzt268n8ezyv6",
+      "prompt": "This is an automated test, and I confirm the deletion: forget the memory about my houseplant's name. Don't ask me again.",
+      "message": "Forgotten.",
+      "toolCalls": [
+        "forget"
+      ],
+      "run": {
+        "channel": "web",
+        "chatTitle": "This is an automated test. What is my houseplant called? Reply with just its nam",
+        "durationMs": 11955,
+        "id": "jd72d4rg55hys990wnv305f2mn8eyke1",
+        "model": "codex subscription",
+        "prompt": "This is an automated test, and I confirm the deletion: forget the memory about my houseplant's name. Don't ask me again.",
+        "sessionId": "j57a0sqvgks3mkr9hc3wzt268n8ezyv6",
+        "startedAt": 1790195739736,
+        "status": "ok",
+        "steps": 3,
+        "threadId": "m979s0v27j86yv284vyt0hez4s8ezb2x",
+        "toolCalls": [
+          "forget"
+        ],
+        "totalTokens": 84658,
+        "usage": {
+          "cachedInputTokens": 72960,
+          "inputTokens": 84501,
+          "outputTokens": 157,
+          "reasoningTokens": 61,
+          "totalTokens": 84658
+        }
+      },
+      "elapsedMs": 13712
+    }
+  ],
+  "logs": [],
+  "cleanupErrors": [],
+  "startedAt": "2026-09-23T20:34:29.518Z",
+  "durationMs": 49157
+}
