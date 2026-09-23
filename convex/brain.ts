@@ -5,8 +5,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { INSTRUCTIONS } from "./assistant";
 import { describeModels, parseModelCommand, pickModel, type ModelOption } from "./lib/commands";
-import { sendMessage, sendTyping } from "./lib/telegram";
-import { vChannel } from "./schema";
+import { downloadFile, sendMessage, sendTyping } from "./lib/telegram";
+import { vChannel, vTelegramMedia } from "./schema";
 
 /**
  * One turn, end to end: resolve the conversation, gather what the assistant
@@ -129,6 +129,8 @@ export const handleTurn = internalAction({
     text: v.string(),
     title: v.optional(v.string()),
     attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
+    /** Files sent on Telegram, downloaded here before the turn. */
+    telegramMedia: v.optional(v.array(vTelegramMedia)),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -145,13 +147,33 @@ export const handleTurn = internalAction({
 
     let delegated = false;
     try {
-      if (channel === "telegram" && args.text.startsWith("/")) {
+      if (channel === "telegram" && args.text.startsWith("/") && !args.telegramMedia?.length) {
         const reply = await runCommand(ctx, conversation, args.text);
         await sendMessage(telegramToken, args.externalId, reply);
         return null;
       }
 
-      const attachmentIds = args.attachmentIds ?? [];
+      // Telegram files live on Telegram's servers; bring them into storage so
+      // they show in the chat and reach Codex like any attachment.
+      let prompt = args.text;
+      const attachmentIds = [...(args.attachmentIds ?? [])];
+      if (args.telegramMedia?.length) {
+        const messageKey = crypto.randomUUID();
+        for (const item of args.telegramMedia) {
+          try {
+            const bytes = await downloadFile(telegramToken, item.fileId);
+            const storageId = await ctx.storage.store(new Blob([bytes], { type: item.contentType }));
+            attachmentIds.push(await ctx.runMutation(internal.media.attachStored, {
+              conversationId: conversation._id, messageKey, storageId, fileName: item.fileName, contentType: item.contentType, size: bytes.byteLength,
+            }));
+          } catch (error) {
+            console.error(`Could not fetch a Telegram file: ${String(error)}`);
+            prompt = `${prompt}\n\n(${item.fileName} could not be downloaded from Telegram.)`.trim();
+          }
+        }
+        if (attachmentIds.length) prompt = `${prompt}\n\n<!-- attachments: ${messageKey} -->`.trim();
+      }
+
       const attachments = attachmentIds.length > 0
         ? await ctx.runQuery(internal.media.forTurn, { conversationId: conversation._id, attachmentIds })
         : [];
@@ -181,7 +203,7 @@ export const handleTurn = internalAction({
         await ctx.runMutation(internal.codex.enqueueTurn, {
           conversationId: conversation._id,
           runId,
-          prompt: args.text,
+          prompt,
           history,
           instructions: [INSTRUCTIONS, memoryContext].filter(Boolean).join("\n\n"),
           model: conversation.model,

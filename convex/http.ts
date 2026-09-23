@@ -66,6 +66,7 @@ http.route({
       senderId: inbound.senderId,
       text: inbound.text,
       title: inbound.title,
+      media: inbound.media,
     });
 
     return new Response("ok", { status: 200 });
