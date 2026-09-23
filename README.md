@@ -1,8 +1,8 @@
 # Perry
 
-A personal AI assistant that lives in your chat app, remembers you, acts on your
-accounts, and runs code in a disposable sandbox. Inspired by OpenClaw, but
-cloud-native and built so the agent never touches a machine you care about.
+A personal AI assistant that lives in your chat app and your browser, remembers
+you, acts on your connected accounts, and works on your own machine. It thinks
+with your ChatGPT subscription, through the Codex CLI. Inspired by OpenClaw.
 
 One install, one owner. Anyone can run their own copy, and every copy is
 separate: its own deployment, its own bot, its own keys, its own memory. There
@@ -13,280 +13,135 @@ pnpm install
 pnpm run setup
 ```
 
-The scripts and the runner need [Bun](https://bun.sh). Five prompts, then send the pairing code it prints to your bot. See
-[INSTALL.md](INSTALL.md).
+The scripts and the runner need [Bun](https://bun.sh), and the assistant needs
+the [Codex CLI](https://github.com/openai/codex) signed in with a ChatGPT
+account. See [INSTALL.md](INSTALL.md).
 
-## Modes
+## How it works
 
-Perry has two personalities, and the joke is load-bearing. A mode is not flavor
-text, it is the security and cost boundary of a turn.
+```
+Telegram ─┐
+          ├─> Convex (state, memory, scheduling, MCP tools) ─> runner on your machine ─> Codex
+Web chat ─┘                                                    (dials out, never listens)
+```
 
-**Perry** is the pet. Ambient, cheap, quiet. Answers when spoken to, reads
-things, remembers things, and never touches anything that can cause damage. This
-is the default and it is where most turns should live.
+- **Convex** is the brain's memory and plumbing: chats, messages, memory, tasks,
+  jobs, approvals and every run, as documents you can query. Telegram posts to
+  a Convex HTTP action that verifies the webhook secret; the web dashboard talks
+  to Convex directly.
+- **The runner** (`pnpm run runner`) is a process on your machine. It dials out
+  to Convex and holds a subscription; nothing listens on a port, so the machine
+  cannot be found from the internet. It runs one process per token.
+- **Codex** does the thinking and the work. Each chat turn becomes a Codex turn
+  on the runner, in a workspace folder you chose, with your model of choice.
+  Codex has a shell and file access there under its sandbox, and reaches
+  Perry's own tools over MCP.
 
-**Agent P** is the spy. Full tool access, sandbox, multi-step autonomy, and the
-ability to write, send and deploy. Entered explicitly, on a leash, and it reports
-back when done.
+A turn: the message is stored, memory and recent history are gathered, the turn
+is queued for the runner, Codex writes the reply (streamed live to the web chat
+and into a single Telegram message), and the finished reply is saved.
 
-A mode is a config object with four knobs:
+## What the assistant can do
 
-| Knob | Perry | Agent P |
-|---|---|---|
-| Tools | 4, all read-only | 15, including shell and file writes |
-| Step budget | 6 | 40 |
-| Approval policy | never needed | confirm on destructive and outward-facing |
-| Model | Haiku 4.5 | Sonnet 5 |
-
-The defaults live in `convex/modes.ts`, which is the one file to read to know
-what Perry is allowed to do. The dashboard can override any of them per mode,
-stored in the database and merged over the defaults at the top of each turn, so
-handing Perry to someone else does not hand them a TypeScript file to edit.
-Clearing a field restores the shipped value.
-
-Because a mode is just data, adding more later is a config entry, not a refactor.
-Obvious future ones: a focus mode that suppresses all proactive messages, and a
-build mode pinned to the sandbox with no SaaS access at all.
-
-The transition is the fun part. Asking for something that needs a tool Perry does
-not have should not fail. It should surface as an offer to put the hat on.
-
-## What Agent P can do
-
-The tool surface is modelled on OpenMuse, whose split between a private
-computer, durable work and read-only sources is the right one.
+Codex brings its own shell, files, image generation and plugins. Perry adds its
+tools over MCP (`convex/mcp.ts`), served only while the runner has a turn
+running:
 
 | Tool | What it does |
 |---|---|
-| `run_command` | One bash command in a private Linux sandbox. 30s cap, output capped. |
-| `read_file` `write_file` `list_files` | /workspace, 256 KB per file, persists between commands. |
-| `computer_status` | Whether a sandbox exists and is running. |
-| `read_page` | Fetch a public page as text. No JavaScript, no login. |
-| `list_connectors` | Which accounts the owner has linked through Composio. |
-| `find_action` `run_action` | Look up and run an operation on a linked account. |
-| `start_task` `set_plan` `finish_task` | Open a job, keep a checklist current, close it with a result. |
-| `status_report` | Read back current tasks, goals and watches. |
-| `set_goal` | An outcome with milestones. |
-| `watch_page` | Recurring check: changed, contains text, or price below a number. |
-| `recall` `remember` `forget` | Long-term memory. |
+| `recall` `remember` `read_memory` `forget` | Layered memory: profile, long-term, daily notes |
+| `search_chats` `read_chat` | Search and read earlier conversations, on every channel |
+| `list_connectors` `find_action` `run_action` | Your connected accounts, through Composio |
+| `start_task` `set_plan` `finish_task` `status_report` `set_goal` | Work that outlives the message |
+| `watch_page` `read_page` | Recurring page checks, and reading public pages |
+| `create_job` `list_jobs` `delete_job` | Scheduled prompts in your timezone |
+| `share_file` | Show a file from your machine in the chat |
 
-Perry mode gets five: `recall`, `remember`, `read_page`, `status_report` and
-`list_connectors`. It can see which accounts are linked but cannot use them,
-and nothing in that set changes anything outside memory.
+Connected accounts are looked up at the moment of use, never baked in: link
+Google Calendar in the dashboard and the next turn can use it. Perry never holds
+a token; Composio keeps the OAuth.
 
-Connected accounts are looked up at the moment of use, never baked in. Link
-Google Calendar in the dashboard and the next turn can create events, with no
-redeploy and no code change. Unlink it and the ability disappears the same way.
-Perry never holds a token: Composio keeps the OAuth and this deployment holds
-one key that can act only on accounts you linked.
+## You stay in control
 
-Three rules carried over from OpenMuse, because the reasoning holds:
+- **Approvals.** Whatever Codex or the runner wants to do beyond its sandbox is
+  asked in the runner's terminal and in the dashboard at once; the first answer
+  wins, and an unanswered request is declined after ten minutes. `--auto` skips
+  asking but still records what ran.
+- **Stop.** A running reply can be stopped from the chat or with `/stop`; what
+  it had written is kept.
+- **Regenerate and edit.** Rewrite a reply, or change a message you sent and
+  resend it; Codex starts from the history as it now stands.
+- **Models.** Pick a Codex model per chat in the composer, or with `/model`.
+- **Receipts.** Every turn is a run in the Activity page, with its model, tools
+  and errors.
 
-- **No credentials in the sandbox.** Nothing there can leak a token, because no
-  token is ever put there.
-- **Receipts, not retries.** Every command carries an `operationId`. Asking
-  twice with the same id returns the first receipt instead of running again, so
-  an interrupted command is never silently repeated.
-- **Output is data, never instructions.** Command output, file contents and web
-  pages are framed as untrusted in the prompt, because prompt injection through
-  a fetched page is the obvious attack on an agent that reads the web.
+Tool output, web pages and account data are treated as untrusted data in the
+instructions, and consequential actions (sending, deleting, publishing,
+spending) are to be confirmed in chat first.
 
-One deliberate difference: OpenMuse disables networking inside its container
-and browses in a separate worker. Perry leaves the sandbox network on, because
-without it the sandbox cannot install a package or clone a repo, which is most
-of what it is for. That widens the blast radius, and is why the sandbox is bound
-to Agent P alone.
+## Memory
 
-Tasks, goals and watches live in the database rather than the conversation. Ask
-an agent what it is doing and it will reconstruct a plausible answer; the Work
-tab shows what it actually wrote down.
+Modelled on OpenClaw's workspace memory, in Convex:
 
-## Stack
+- **Profile** (like `USER.md`): standing preferences and relationships, as
+  directives. Loaded into every turn.
+- **Long-term** (like `MEMORY.md`): durable facts and decisions. Loaded into
+  every turn, within a budget.
+- **Daily notes** (like `memory/YYYY-MM-DD.md`): today's and yesterday's load;
+  older days are found by search, with a 30-day half-life on their ranking.
 
-| Layer | Choice | Role |
-|---|---|---|
-| Brain and state | Convex | Threads, messages, memory, durable workflows, crons |
-| Edge and ingress | Vercel | Channel webhooks, dashboard, AI Gateway |
-| Hands | Composio | Gmail, Calendar, Notion, GitHub, Linear via OAuth |
-| Sandbox | Daytona | Shell, code exec, file work |
-| Your machine | A runner you start | The same, on your own files |
-| Channel | Telegram first | Discord and Slack next |
-
-## Why this shape
-
-OpenClaw is a stateful Node process on your own hardware with shell, browser and
-credential access, and sandboxing that is opt-in. That design produced the first
-big agent security crisis of 2026: 512 vulnerabilities in a January audit,
-CVE-2026-25253 at CVSS 8.8, 135k exposed instances found by internet scanning,
-12,812 of them remotely exploitable, plus roughly 335 malicious skills on
-ClawHub.
-
-Perry inverts each of those choices:
-
-- **No host shell.** Every command runs inside an ephemeral Daytona sandbox.
-- **No raw credentials in the agent.** Composio holds OAuth tokens per connected
-  account; the agent only gets scoped tool handles.
-- **No long-lived exposed daemon.** Ingress is one stateless HTTP action that
-  verifies a webhook secret in constant time. Nothing runs between messages.
-- **One owner, proved by a pairing code.** Not an environment variable and not
-  whoever messages first. Once claimed, every other sender is dropped without a
-  reply.
-- **Least privilege by default.** Perry mode cannot do damage. Agent P is opt-in
-  per task, not a standing grant.
-- **Durable, inspectable state.** Every message, tool call and result is a Convex
-  document you can query, not a process in memory.
-
-## Architecture
-
-```
-Telegram --> Convex HTTP action (verify + enqueue) --> ingest mutation
-                                                  |
-                                          scheduled action
-                                                  |
-                                      Convex Agent loop + mode
-                                       (AI SDK + AI Gateway)
-                                     /            |            \
-                              Composio         Daytona      Convex RAG
-                            (SaaS tools)     (code/shell)    (memory)
-                                                  |
-                                    reply --> Telegram sendMessage
-```
-
-Ingress verifies the webhook secret, hands the update to a mutation, and returns
-200 in milliseconds. The turn itself is scheduled and runs after that returns,
-which matters because a slow response makes Telegram retry and deliver the same
-message twice.
-
-The original plan put a Vercel function in front of this. It bought nothing: the
-Convex HTTP endpoint is already HTTPS on a stable domain and the handler has to
-reach Convex anyway, so the hop would have added a second shared secret and a
-cold start. Vercel keeps the dashboard and the AI Gateway.
-
-Once turns get long enough to be worth checkpointing, the scheduled action
-becomes a Convex workflow and a crash mid-turn resumes from the last completed
-step instead of losing it.
-
-The active mode is resolved once at the top of the workflow and decides which
-tools get bound, what the step budget is, and which model is used. Nothing
-downstream can widen it mid-turn.
-
-### Packages
-
-In use today:
-
-```
-convex                      1.46   backend, HTTP actions, scheduler
-@convex-dev/agent           0.7.3  threads, messages, tool-call history
-@convex-dev/ai-sdk-provider 0.2    keyless Convex gateway
-ai                          7.0    AI SDK, tool loop
-zod                         4.6    tool input schemas
-```
-
-Models are `provider/model` strings, and which gateway resolves them depends on
-what the installer had to sign up for.
-
-With a Vercel AI Gateway key set, the slug is passed straight through and the
-AI SDK resolves it. That sidesteps pinning a second copy of `@ai-sdk/provider`
-and matching its specification version to the one the Agent component demands,
-which is a version-skew argument nobody wins.
-
-Without a key, Convex's own gateway resolves it instead. That one needs no key
-but is only enabled on paid Convex plans, so it is a fallback rather than a
-free-tier escape hatch. Neither gateway marks up token prices.
-
-Planned, not installed yet:
-
-```
-@convex-dev/workflow     durable multi-step execution
-@convex-dev/rag          embeddings for memory, replacing full-text search
-@composio/core           tool router sessions
-@daytona/sdk             sandboxes  (NOT @daytonaio/sdk, deprecated)
-```
-
-No Telegram library. Perry never polls and never runs a handler loop, so inbound
-is one HTTP action and outbound is one POST. A framework there would be weight
-without leverage.
-
-## Memory model
-
-Three tiers, all in Convex:
-
-1. **Thread history** stored by the Agent component, windowed into context.
-2. **Durable facts** in a `memories` table, written by a `remember` tool the
-   agent calls explicitly, retrieved by hybrid vector plus text search.
-3. **Daily log** appended per day, summarized by a nightly cron so the agent can
-   answer "what did I do last week" without replaying raw history.
-
-The RAG component handles embeddings, so there is no separate vector database.
-Memory is shared across modes. Agent P remembers what Perry was told.
+A fact that changes is superseded, not deleted. Chat history is separate and
+searchable by the agent with `search_chats`.
 
 ## Proactivity
 
-Two mechanisms, backed by Convex crons:
+Jobs are prompts on a cron schedule in your timezone (reported by the
+dashboard), run as Codex turns. Each has a chat where its results collect, and
+a result is also sent to you on Telegram. The built-in **heartbeat** looks over
+tasks, goals, watches and recent memory a few times a day and speaks only when
+something needs you; a reply of `NOTHING` stays silent. Ask the assistant for a
+job ("every weekday at 8, brief me on my calendar") and it creates one.
 
-- **Heartbeat.** One scheduled tick that wakes Perry with recent context and lets
-  it decide whether anything is worth surfacing. Silence is a valid answer, and
-  the heartbeat always runs in Perry mode.
-- **Jobs.** Named cron entries the agent creates for itself, such as a morning
-  briefing or a Friday inbox sweep. A job can request Agent P, which is exactly
-  the case that needs an approval prompt rather than silent execution.
+## Media
 
-## Sandbox policy
+Files stay on your machine. Attachments land in `~/.perry/uploads`, the agent
+keeps what it makes wherever it decides (usually `~/.perry/files`), and the
+dashboard's own server serves each file from where it is, only to the holder of
+the dashboard key. Telegram photos, voice notes and documents are downloaded
+and attached like any upload. Codex cannot hear audio, so voice notes need a
+speech-to-text tool on the machine.
 
-One Daytona sandbox per owner, created from a snapshot with the usual tooling
-preinstalled. Auto-stop after 15 minutes idle keeps cost near zero; a mounted
-volume keeps the working directory across restarts. Long jobs run detached and
-call back into a Convex HTTP action when they finish, so no function sits and
-waits.
+## Channels
 
-## Cost at rest
+Telegram and the web dashboard. Commands on both: `/model`, `/stop`; on
+Telegram also `/status`, `/reset`, `/help`.
 
-| Service | Free allowance |
+## Stack
+
+| Layer | Choice |
 |---|---|
-| Convex | 1M function calls/mo, 0.5 GB |
-| Composio | 100k tool calls/mo, 50k triggers |
-| Daytona | $200 signup credit, per-second billing |
-| Vercel AI Gateway | $5 credit/mo, no markup on tokens |
+| State, memory, scheduling, HTTP | [Convex](https://convex.dev) |
+| Thinking and doing | Codex CLI on your ChatGPT subscription, via its app-server protocol |
+| Your machine | The runner (`runner/`, Bun) |
+| Connected accounts | [Composio](https://composio.dev) |
+| Dashboard | Next.js |
+| Chat | Telegram, web |
 
-Model tokens are the only real line item. Defaulting to Perry mode on a small
-model is what keeps that number boring.
+Packages in use: `convex`, `@convex-dev/agent` (threads and messages),
+`@composio/core`, `cron-parser`, `react-markdown` with `remark-gfm` and
+`remark-breaks` and `zod`. `@daytona/sdk` backs cloud-sandbox tools that Codex does not use; it has its own shell on your machine.
 
 ## Status
 
-Done:
+Done: Telegram and web chat with separate sessions, branching, search,
+regenerate and edit; Codex as the engine with a per-chat model; streaming,
+Markdown and stop; runner approvals from the dashboard; connected accounts over
+MCP; layered memory and chat search; local media and Telegram media; scheduled
+jobs and the heartbeat.
 
-1. Telegram webhook to Convex, owner allowlist, commands. Ingress and auth.
-2. Agent loop on the Agent component through a gateway. The turn.
-3. Both modes, resolved once per turn and enforced by tool binding.
-4. Memory: `recall`, `remember`, `forget` over Convex full-text search.
-5. Runtime config. Model, step budget, tools and instructions per mode, stored
-   in the database and editable without a redeploy.
-6. Web channel with separate chat sessions, branching, search, and shared
-   memory with Telegram.
-7. Dashboard: chat management, memory editing, mode config, and a log of every
-   turn with its tools, tokens and errors.
-
-[INSTALL.md](INSTALL.md) has the detail. `pnpm run doctor` checks it.
-
-8. Daytona sandbox: shell, files, receipts. Agent P only.
-9. Reading public pages, with the private-network addresses refused.
-10. Tasks with live plans, goals with milestones, recurring page watches.
-11. Work tab in the dashboard, and a cron that checks watches every 5 minutes.
-
-Next:
-
-12. Composio tool router: linked accounts become tools without a redeploy.
-13. Run commands on your own machine instead of the sandbox, through a
-    runner that dials out and never listens on a port.
-
-Next:
-
-14. Approval gate: propose, expire, decide, before anything destructive.
-14. A real browser with persistent profiles, for pages that need JavaScript.
-15. Swap full-text memory for `@convex-dev/rag` embeddings.
-16. Convex Workflow wrapping the turn for durability and retries.
-17. Heartbeat cron plus agent-authored jobs.
-18. Second channel: Discord HTTP interactions.
+Open work is tracked in [issues](https://github.com/TheM1N9/me-bot/issues),
+among them automatic daily summaries into memory, durable turns, a browser for
+the agent, and a permission model for what the agent may do.
 
 ## Handing Perry to someone else
 
@@ -303,8 +158,8 @@ change is contained, but it is a real change rather than a config switch.
 
 ## Channel notes
 
-Telegram is the right first channel. Webhooks suit serverless, voice notes come
-free, file limits are generous, and there is no business verification.
+Telegram is the right first channel. Webhooks suit serverless, file limits are
+generous, and there is no business verification.
 
 WhatsApp is out. In January 2026 Meta banned open-ended AI assistant bots on the
 Business Platform, allowing only structured flows. The unofficial Baileys route
