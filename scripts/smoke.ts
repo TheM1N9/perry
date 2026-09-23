@@ -40,7 +40,7 @@ const { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig } = await i
 const { describeMachine, runShell } = await import("../runner/shell");
 const { sandboxMode } = await import("../runner/codex");
 const { ABSOLUTE_PATH, describePath } = await import("../convex/media");
-const { servicePlan, TASK } = await import("./service");
+const { serviceContext, servicePlan, TASK } = await import("./service");
 
 type Check = { name: string; pass: boolean; detail?: unknown };
 const checks: Check[] = [];
@@ -167,7 +167,9 @@ await check("service plans", () => {
 });
 
 await check("service lint", () => {
-  const ctx = { ...nasty(process.platform), repo: resolve("."), bun: process.execPath, home: HOME, userHome: join(scratch, "user home"), logFile: join(HOME, "logs", "runner.log"), env: { PATH: process.env.PATH ?? "" }, user: "501" };
+  const ctx = { ...nasty(process.platform), repo: resolve("."), bun: process.execPath, home: HOME, userHome: join(scratch, "user home"), logFile: join(HOME, "logs", "runner.log"), env: { PATH: process.env.PATH ?? "" },
+    // Task Scheduler checks the account exists, so on Windows the lint registers under this machine's own user.
+    user: process.platform === "win32" ? serviceContext().user : "501" };
   const plan = servicePlan(ctx);
   const file = join(scratch, "lint", plan.files.at(-1)!.path.split(/[\\/]/).pop()!);
   mkdirSync(join(scratch, "lint"), { recursive: true });
