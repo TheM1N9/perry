@@ -159,8 +159,15 @@ Files stay on your machine. Attachments land in `~/.perry/uploads`, the agent
 keeps what it makes wherever it decides (usually `~/.perry/files`), and the
 dashboard's own server serves each file from where it is, only to the holder of
 the dashboard key. Telegram photos, voice notes and documents are downloaded
-and attached like any upload. Codex cannot hear audio, so voice notes need a
+and attached like any upload, up to the 20 MB a bot may download; a bigger one
+gets a plain reply saying so. Codex cannot hear audio, so voice notes need a
 speech-to-text tool on the machine.
+
+On Telegram, what the agent shares or generates is uploaded by the runner to
+Convex storage and sent as a real file: photos, GIFs, videos, audio and voice
+notes as themselves, anything else (or anything Telegram refuses in its own
+form) as a document, and past Telegram's 50 MB as a download link. A reply
+short enough to be a caption rides on the first file; a longer one comes first.
 
 ## Channels
 
@@ -206,6 +213,13 @@ kill %1; pnpm exec convex run runner:revokeRunner "{\"runnerId\":\"$RUNNER\"}"
 
 Results land in `artifacts/evals/<time>/`: `summary.json`, `results.jsonl` and
 one file per eval with every turn.
+
+Telegram replies stream as plain text and land formatted: the Markdown becomes
+Telegram HTML (bold, italic, code, code blocks, links), sent as plain text if
+Telegram refuses it. When Telegram says to slow down, a call waits as asked
+and tries again, twice at most. `TELEGRAM_API_BASE` (a Convex env var, unset
+normally) points the bot at a stand-in Bot API; `artifacts/telegram-delivery`
+uses it to test delivery without messaging anyone.
 
 ## Stack
 

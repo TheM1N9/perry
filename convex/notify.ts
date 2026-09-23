@@ -29,7 +29,8 @@ export const toOwner = internalAction({
       const token: string | null = await ctx.runQuery(internal.secrets.get, {
         name: "TELEGRAM_BOT_TOKEN",
       });
-      await sendMessage(token, install.ownerExternalId, args.text);
+      // Job results are the agent's Markdown; plain alerts read the same either way.
+      await sendMessage(token, install.ownerExternalId, args.text, { markdown: true });
       return true;
     } catch (error) {
       console.error(`could not notify owner: ${String(error)}`);

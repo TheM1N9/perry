@@ -3,7 +3,7 @@ import { v } from "convex/values";
 
 export const vChannel = v.union(v.literal("telegram"), v.literal("web"));
 /** A file the owner sent on Telegram, before it is downloaded. */
-export const vTelegramMedia = v.object({ fileId: v.string(), fileName: v.string(), contentType: v.string() });
+export const vTelegramMedia = v.object({ fileId: v.string(), fileName: v.string(), contentType: v.string(), size: v.optional(v.number()) });
 export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.literal("daily"));
 /**
  * Tokens a run used, named after OpenTelemetry's gen_ai.usage.* attributes.

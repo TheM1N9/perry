@@ -26,7 +26,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
+import { readFile, writeFile, readdir, mkdir, stat } from "node:fs/promises";
 import { homedir, hostname, platform } from "node:os";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -48,6 +48,8 @@ const MAX_FILE_BYTES = 256 * 1024;
 const CHECKIN_MS = 30_000;
 /** Matches APPROVAL_TTL_MS in convex/approvals.ts: an unanswered request is declined. */
 const APPROVAL_TIMEOUT_MS = 10 * 60_000;
+/** Shared files past this stay on the machine rather than go to Convex for Telegram. */
+const SHARED_UPLOAD_LIMIT = 200 * 1024 * 1024;
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -606,9 +608,19 @@ async function main() {
     if (request) void handleCodexAuth(request);
   });
 
-  // Generated images stay where Codex saved them, and web chats serve them from
-  // there. Telegram fetches images by URL, so those are uploaded to Convex.
-  const keepImages = async (turnId: Id<"codexTurns">, channel: "web" | "telegram", images: GeneratedImage[] = []) => {
+  const upload = async (turnId: Id<"codexTurns">, bytes: Buffer<ArrayBuffer>, contentType: string) => {
+    const uploadUrl = await client.mutation(api.codex.mediaUploadUrl, { token, id: turnId });
+    const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": contentType }, body: bytes });
+    if (!response.ok) throw new Error(`upload failed (${response.status})`);
+    const { storageId } = await response.json() as { storageId: Id<"_storage"> };
+    return storageId;
+  };
+
+  // Generated images and shared files stay where they are on this machine, and
+  // web chats serve them from there. Telegram needs the bytes, so for a
+  // Telegram chat both are uploaded to Convex too. Past Telegram's 50 MB the
+  // chat gets a download link instead, so the upload stops somewhere sensible.
+  const keepMedia = async (turnId: Id<"codexTurns">, channel: "web" | "telegram", images: GeneratedImage[] = []) => {
     const media: NonNullable<CodexResult["media"]> = [];
     for (const image of images) {
       try {
@@ -623,13 +635,23 @@ async function main() {
           continue;
         }
         const bytes = image.path ? await readFile(image.path) : Buffer.from(image.base64 ?? "", "base64");
-        const uploadUrl = await client.mutation(api.codex.mediaUploadUrl, { token, id: turnId });
-        const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": "image/png" }, body: bytes });
-        if (!response.ok) throw new Error(`upload failed (${response.status})`);
-        const { storageId } = await response.json() as { storageId: Id<"_storage"> };
-        media.push({ storageId, fileName: `${image.id}.png`, contentType: "image/png" });
+        media.push({ storageId: await upload(turnId, bytes, "image/png"), fileName: `${image.id}.png`, contentType: "image/png" });
       } catch (error) {
         console.error(red(`  Could not keep a generated image: ${message(error)}`));
+      }
+    }
+    if (channel !== "telegram") return media;
+    const shared = await client.query(api.codex.sharedFiles, { token, id: turnId }).catch(() => []);
+    for (const file of shared) {
+      try {
+        if ((await stat(file.localPath)).size > SHARED_UPLOAD_LIMIT) {
+          console.log(dim(`  ${file.fileName} is too big to send to Telegram; it stays here`));
+          continue;
+        }
+        const storageId = await upload(turnId, await readFile(file.localPath), file.contentType);
+        media.push({ storageId, localPath: file.localPath, fileName: file.fileName, contentType: file.contentType });
+      } catch (error) {
+        console.error(red(`  Could not upload ${file.fileName} for Telegram: ${message(error)}`));
       }
     }
     return media;
@@ -722,7 +744,7 @@ async function main() {
                 schedule();
               },
             });
-            const media = await keepImages(job._id, job.channel, completed.images);
+            const media = await keepMedia(job._id, job.channel, completed.images);
             result = {
               response: completed.response,
               ...(completed.interrupted ? { stopped: true } : {}),
@@ -733,7 +755,7 @@ async function main() {
           } catch (error) {
             // A late failure keeps what the turn had already produced.
             const partial = error instanceof TurnFailed ? error.partial : null;
-            const media = partial ? await keepImages(job._id, job.channel, partial.images) : [];
+            const media = await keepMedia(job._id, job.channel, partial?.images);
             result = {
               error: message(error),
               ...(partial?.text ? { response: partial.text } : {}),
