@@ -27,6 +27,7 @@ const paths = {
   lock: "M5 10h14v11H5V10Zm3 0V7a4 4 0 0 1 8 0v3",
   chevron: "m9 18 6-6-6-6",
   stop: "M7 7h10v10H7z",
+  redo: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
 } as const;
 function Icon({ name, size = 18 }: { name: keyof typeof paths; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
@@ -71,6 +72,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const renameChat = useMutation(api.dashboard.renameChat);
   const deleteChat = useMutation(api.dashboard.deleteChat);
   const branchChat = useAction(api.dashboard.branchChat);
+  const rewindChat = useAction(api.dashboard.rewindChat);
   const sendChat = useMutation(api.dashboard.sendChat);
   const stopChat = useMutation(api.dashboard.stopChat);
   const generateUploadUrl = useMutation(api.dashboard.generateUploadUrl);
@@ -102,6 +104,8 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const [renameId, setRenameId] = useState<ChatId | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleteId, setDeleteId] = useState<ChatId | null>(null);
+  /** The message you are editing, if any. */
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const olderScroll = useRef<{ height: number; top: number } | null>(null);
   const draftingNew = useRef(false);
@@ -297,6 +301,20 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
       await sendChat({ key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, model });
     } catch (cause) { setPending(null); setDraft(message); setPickedFiles(files); setError(cause instanceof Error ? cause.message : String(cause)); }
   }
+  /** Regenerate from an assistant reply, or resend one of your messages with new text. */
+  async function rewind(messageId: string, text?: string) {
+    if (!selectedId || busy || waiting) return;
+    const index = messages.findIndex((message) => message.id === messageId);
+    const sent = [...messages.slice(0, index + 1)].reverse().find((message) => message.role === "user");
+    const shown = text ?? sent?.text ?? "";
+    setBusy(true); setError(""); setEditing(null);
+    try {
+      // The old copy of the message counts until it is removed, so it is part of the baseline.
+      setPending({ id: selectedId, text: shown, attachments: sent?.attachments ?? [], baselineCount: messages.filter((message) => message.role === "user" && message.text === shown).length, seenRunning: false });
+      await rewindChat({ key: dashboardKey, id: selectedId, messageId, text });
+    } catch (cause) { setPending(null); setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); }
+  }
   async function branch(messageId: string) {
     if (!selectedId || busy) return;
     setBusy(true); setError("");
@@ -398,7 +416,19 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
             {chat && messageStatus !== "LoadingFirstPage" && messages.length === 0 && pending?.id !== selectedId && <div className="chat-thread-empty"><div className="chat-welcome-mark small"><Icon name="spark" size={24} /></div><h2>Start a conversation</h2><p>Messages in this chat stay together. Your saved memories are available in every chat.</p></div>}
             {messages.map((message) => <div key={message.id} className={`chat-turn ${message.role === "user" ? "from-user" : "from-assistant"}`}>
               {message.role !== "user" && <div className="chat-avatar">A</div>}
-              <div className="chat-turn-body"><div className="chat-bubble">{message.role === "user" ? message.text : <Markdown text={message.text} />}<AttachmentList attachments={message.attachments ?? []} /></div><div className="chat-turn-actions"><button title="Branch from this message" onClick={() => void branch(message.id)} disabled={busy}><Icon name="branch" size={14} /> Branch from here</button></div></div>
+              <div className="chat-turn-body">
+                {editing?.id === message.id
+                  ? <form className="chat-edit" onSubmit={(event) => { event.preventDefault(); if (editing.text.trim()) void rewind(message.id, editing.text); }}>
+                      <textarea autoFocus value={editing.text} rows={Math.min(8, editing.text.split("\n").length + 1)} onChange={(event) => setEditing({ id: message.id, text: event.target.value })} onKeyDown={(event) => { if (event.key === "Escape") setEditing(null); }} />
+                      <div className="chat-edit-actions"><button type="button" onClick={() => setEditing(null)}>Cancel</button><button type="submit" className="chat-edit-save" disabled={!editing.text.trim() || busy}>Save and resend</button></div>
+                    </form>
+                  : <div className="chat-bubble">{message.role === "user" ? message.text : <Markdown text={message.text} />}<AttachmentList attachments={message.attachments ?? []} /></div>}
+                <div className="chat-turn-actions">
+                  {message.role === "user" && !waiting && editing?.id !== message.id && <button title="Edit and resend this message" onClick={() => setEditing({ id: message.id, text: message.text })} disabled={busy}><Icon name="pencil" size={14} /> Edit</button>}
+                  {message.role !== "user" && message.id === messages.at(-1)?.id && !waiting && <button title="Write this reply again" onClick={() => void rewind(message.id)} disabled={busy}><Icon name="redo" size={14} /> Regenerate</button>}
+                  <button title="Branch from this message" onClick={() => void branch(message.id)} disabled={busy}><Icon name="branch" size={14} /> Branch from here</button>
+                </div>
+              </div>
             </div>)}
             {pending?.id === selectedId && <div className="chat-turn from-user pending"><div className="chat-turn-body"><div className="chat-bubble">{pending.text}<AttachmentList attachments={pending.attachments} /></div></div></div>}
             {waiting && <div className="chat-turn from-assistant pending"><div className="chat-avatar">A</div>{chat?.streaming

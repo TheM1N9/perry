@@ -2,6 +2,34 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { vChannel } from "./schema";
 
+/**
+ * Rewind a web chat for a regenerate or an edit: its Codex thread has seen the
+ * turns being replaced and cannot drop them, so the next turn starts a fresh
+ * Codex thread seeded with the chat's remaining history.
+ */
+export const rewind = internalMutation({
+  args: { id: v.id("conversations") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const chat = await ctx.db.get(args.id);
+    if (!chat) throw new Error("This chat was deleted.");
+    if ((chat.pendingTurns ?? 0) > 0) throw new Error("Wait for the reply to finish, or stop it first.");
+    await ctx.db.patch(args.id, {
+      codexThreadId: undefined,
+      pendingTurns: 1,
+      lastMessageAt: Date.now(),
+    });
+    return null;
+  },
+});
+
+export const attachmentIdsFor = internalQuery({
+  args: { conversationId: v.id("conversations"), messageKey: v.string() },
+  handler: async (ctx, args) => (await ctx.db.query("chatAttachments")
+    .withIndex("by_message", (q) => q.eq("conversationId", args.conversationId).eq("messageKey", args.messageKey))
+    .collect()).map((row) => row._id),
+});
+
 /** A chat's Codex model, set with /model. Unset means the Codex default. */
 export const setModel = internalMutation({
   args: { id: v.id("conversations"), model: v.optional(v.string()) },

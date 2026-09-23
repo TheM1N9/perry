@@ -412,6 +412,65 @@ export const sendChat = mutation({
   },
 });
 
+/**
+ * Regenerate a reply, or edit a message you sent. Given an assistant reply,
+ * the message you sent before it is sent again as it was; given one of your
+ * messages and new text, that is sent instead. Either way the message and
+ * everything after it are removed first, attachments are kept, and Codex
+ * starts from a fresh thread seeded with the history that remains.
+ */
+export const rewindChat = action({
+  args: { key: vKey, id: v.id("conversations"), messageId: v.string(), text: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    const chat = await ctx.runQuery(internal.conversations.getWebById, { id: args.id });
+    if (!chat) throw new Error("This chat was deleted.");
+
+    // Newest first, until the target message and the message you sent at or before it.
+    const newest: Array<{ _id: string; order: number; message?: { role: string }; text?: string }> = [];
+    let cursor: string | null = null;
+    let target: (typeof newest)[number] | undefined;
+    let sent: (typeof newest)[number] | undefined;
+    while (!sent) {
+      const page = await listMessages(ctx, components.agent, { threadId: chat.threadId, paginationOpts: { cursor, numItems: 100 } });
+      for (const message of page.page) {
+        newest.push(message);
+        if (message._id === args.messageId) target = message;
+        if (target && message.message?.role === "user") { sent = message; break; }
+      }
+      if (page.isDone) break;
+      cursor = page.continueCursor;
+    }
+    if (!target || !sent) throw new Error("That message is no longer in this chat.");
+    if (args.text !== undefined && target.message?.role !== "user") throw new Error("Only your own messages can be edited.");
+
+    const raw = typeof sent.text === "string" ? sent.text : "";
+    const marker = raw.match(/\n?<!-- attachments:([^>]+) -->\s*$/);
+    const messageKey = marker?.[1]?.trim();
+    const original = marker ? raw.slice(0, marker.index).trimEnd() : raw;
+    const text = (args.text ?? original).trim();
+    const attachmentIds = messageKey
+      ? await ctx.runQuery(internal.conversations.attachmentIdsFor, { conversationId: chat._id, messageKey })
+      : [];
+    if (!text && attachmentIds.length === 0) throw new Error("The message is empty.");
+
+    await ctx.runMutation(internal.conversations.rewind, { id: chat._id });
+    const replaced = newest.filter((message) => message.order >= sent!.order).map((message) => message._id);
+    for (let start = 0; start < replaced.length; start += 100) {
+      await ctx.runMutation(components.agent.messages.deleteByIds, { messageIds: replaced.slice(start, start + 100) });
+    }
+    await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
+      channel: WEB_CHANNEL,
+      externalId: chat.externalId,
+      text: messageKey ? `${text}\n\n<!-- attachments: ${messageKey} -->`.trim() : text,
+      title: chat.title,
+      attachmentIds,
+    });
+    return null;
+  },
+});
+
 /** Stop the chat's running reply, keeping what it has written so far. */
 export const stopChat = mutation({
   args: { key: vKey, id: v.id("conversations") },
