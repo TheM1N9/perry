@@ -1,10 +1,11 @@
-import { v } from "convex/values";
-import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { v, type Infer } from "convex/values";
+import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
 import { components, internal } from "./_generated/api";
 import { saveMessages } from "@convex-dev/agent";
 import { editDraft, finishDraft, sendDraft, sendMessage, sendPhoto } from "./lib/telegram";
 import { assertDashboardKey } from "./lib/auth";
 import { authenticate } from "./runner";
+import { FALLBACK_PROVIDER, startFallback } from "./chatgpt";
 import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
 import { vSpanKind, vSpanStatus, vUsage } from "./schema";
@@ -172,9 +173,20 @@ export const enqueueTurn = internalMutation({
       : await ctx.db.query("runners").order("desc").take(20);
     const runner = runners.filter((item) => item && !item.revoked && item.codexAvailable && item.codexAuthMode === "chatgpt" && (item.lastSeenAt ?? 0) > Date.now() - 90_000)
       .sort((a, b) => (b!.lastSeenAt ?? 0) - (a!.lastSeenAt ?? 0))[0];
-    if (!runner) throw new Error(conversation.codexRunnerId
-      ? "The Codex runner for this chat is offline. Start it to continue."
-      : "Connect a ChatGPT account in Settings and start its runner to chat with Codex.");
+    if (!runner) {
+      // No runner can take it; answer without the computer if the owner allows that.
+      const fallback = await startFallback(ctx, {
+        conversationId: args.conversationId, runId: args.runId, prompt: args.prompt, history: args.history,
+        instructions: args.instructions, requestedModel: args.model, attachments: args.attachments,
+      });
+      if ("id" in fallback) return fallback.id;
+      const offline = conversation.codexRunnerId
+        ? "The Codex runner for this chat is offline. Start it to continue"
+        : "Connect a ChatGPT account in Settings and start its runner to chat with Codex";
+      throw new Error(fallback.reason === "off"
+        ? `${offline}, or turn on answering without the computer in Settings.`
+        : `${offline}. Answering without the computer needs a ChatGPT token from a runner, and none is valid now.`);
+    }
     if (!conversation.codexRunnerId) await ctx.db.patch(conversation._id, { codexRunnerId: runner._id });
     return await ctx.db.insert("codexTurns", {
       runnerId: runner._id,
@@ -298,17 +310,21 @@ export const streamTurn = mutation({
     const runner = await authenticate(ctx, args.token);
     const job = await ctx.db.get(args.id);
     if (!job || job.runnerId !== runner._id || job.status !== "running") return null;
-    const conversation = await ctx.db.get(job.conversationId);
-    const edit = conversation?.channel === "telegram" && !job.telegramEditing
-      && Date.now() - (job.telegramEditedAt ?? 0) >= TELEGRAM_EDIT_MS;
-    await ctx.db.patch(job._id, {
-      partial: args.text.slice(0, 100_000),
-      ...(edit ? { telegramEditing: true, telegramEditedAt: Date.now() } : {}),
-    });
-    if (edit) await ctx.scheduler.runAfter(0, internal.codex.streamToTelegram, { id: job._id });
+    await recordPartial(ctx, job, args.text);
     return null;
   },
 });
+
+async function recordPartial(ctx: MutationCtx, job: Doc<"codexTurns">, text: string) {
+  const conversation = await ctx.db.get(job.conversationId);
+  const edit = conversation?.channel === "telegram" && !job.telegramEditing
+    && Date.now() - (job.telegramEditedAt ?? 0) >= TELEGRAM_EDIT_MS;
+  await ctx.db.patch(job._id, {
+    partial: text.slice(0, 100_000),
+    ...(edit ? { telegramEditing: true, telegramEditedAt: Date.now() } : {}),
+  });
+  if (edit) await ctx.scheduler.runAfter(0, internal.codex.streamToTelegram, { id: job._id });
+}
 
 export const streamToTelegram = internalAction({
   args: { id: v.id("codexTurns") },
@@ -358,56 +374,60 @@ const toolName = (span: { kind: Doc<"runSpans">["kind"]; name: string }) =>
  * same item updates it. Every new span but reasoning also lands in the run's
  * tool calls, and each model response counts as one step.
  */
+const vTrace = v.object({
+  spans: v.array(v.object({
+    callId: v.string(),
+    kind: vSpanKind,
+    name: v.string(),
+    status: vSpanStatus,
+    startedAt: v.number(),
+    durationMs: v.optional(v.number()),
+    input: v.optional(v.string()),
+    output: v.optional(v.string()),
+  })),
+  usage: v.optional(vUsage),
+  steps: v.optional(v.number()),
+});
+
 export const traceTurn = mutation({
-  args: {
-    token: v.string(),
-    id: v.id("codexTurns"),
-    spans: v.array(v.object({
-      callId: v.string(),
-      kind: vSpanKind,
-      name: v.string(),
-      status: vSpanStatus,
-      startedAt: v.number(),
-      durationMs: v.optional(v.number()),
-      input: v.optional(v.string()),
-      output: v.optional(v.string()),
-    })),
-    usage: v.optional(vUsage),
-    steps: v.optional(v.number()),
-  },
+  args: { token: v.string(), id: v.id("codexTurns"), ...vTrace.fields },
   returns: v.null(),
-  handler: async (ctx, args) => {
-    const runner = await authenticate(ctx, args.token);
-    const job = await ctx.db.get(args.id);
+  handler: async (ctx, { token, id, ...trace }) => {
+    const runner = await authenticate(ctx, token);
+    const job = await ctx.db.get(id);
     if (!job || job.runnerId !== runner._id || job.status !== "running") return null;
-    const run = await ctx.db.get(job.runId);
-    if (!run) return null;
-    const toolCalls = [...(run.toolCalls ?? [])];
-    for (const span of args.spans) {
-      const row = {
-        ...span,
-        name: span.name.slice(0, 300),
-        input: span.input?.slice(0, SPAN_TEXT),
-        output: span.output?.slice(0, SPAN_TEXT),
-      };
-      const existing = await ctx.db.query("runSpans")
-        .withIndex("by_run", (q) => q.eq("runId", run._id).eq("callId", span.callId))
-        .first();
-      if (existing) {
-        await ctx.db.patch(existing._id, row);
-        continue;
-      }
-      await ctx.db.insert("runSpans", { runId: run._id, ...row });
-      if (span.kind !== "reasoning") toolCalls.push(toolName(span));
-    }
-    await ctx.db.patch(run._id, {
-      toolCalls,
-      ...(args.usage ? { usage: args.usage } : {}),
-      ...(args.steps !== undefined ? { steps: args.steps } : {}),
-    });
+    await recordTrace(ctx, job, trace);
     return null;
   },
 });
+
+async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infer<typeof vTrace>) {
+  const run = await ctx.db.get(job.runId);
+  if (!run) return;
+  const toolCalls = [...(run.toolCalls ?? [])];
+  for (const span of trace.spans) {
+    const row = {
+      ...span,
+      name: span.name.slice(0, 300),
+      input: span.input?.slice(0, SPAN_TEXT),
+      output: span.output?.slice(0, SPAN_TEXT),
+    };
+    const existing = await ctx.db.query("runSpans")
+      .withIndex("by_run", (q) => q.eq("runId", run._id).eq("callId", span.callId))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, row);
+      continue;
+    }
+    await ctx.db.insert("runSpans", { runId: run._id, ...row });
+    if (span.kind !== "reasoning") toolCalls.push(toolName(span));
+  }
+  await ctx.db.patch(run._id, {
+    toolCalls,
+    ...(trace.usage ? { usage: trace.usage } : {}),
+    ...(trace.steps !== undefined ? { steps: trace.steps } : {}),
+  });
+}
 
 /** Where a runner uploads media a Codex turn produced, while that turn runs. */
 export const mediaUploadUrl = mutation({
@@ -523,6 +543,59 @@ export const finishTurn = mutation({
   },
 });
 
+// --- Fallback turns, answered in Convex without a runner (fallback.ts) ----
+
+const fallbackTurn = async (ctx: MutationCtx, id: Id<"codexTurns">) => {
+  const job = await ctx.db.get(id);
+  return job?.fallback && job.status === "running" ? job : null;
+};
+
+/** The reply so far. Returns true once the turn should stop: the owner asked, or it already ended. */
+export const streamFallback = internalMutation({
+  args: { id: v.id("codexTurns"), text: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const job = await fallbackTurn(ctx, args.id);
+    if (!job) return true;
+    await recordPartial(ctx, job, args.text);
+    return job.stopRequested === true;
+  },
+});
+
+/** Tool calls and usage, as traceTurn records them for a runner. Returns true once the turn should stop. */
+export const traceFallback = internalMutation({
+  args: { id: v.id("codexTurns"), ...vTrace.fields },
+  returns: v.boolean(),
+  handler: async (ctx, { id, ...trace }) => {
+    const job = await fallbackTurn(ctx, id);
+    if (!job) return true;
+    await recordTrace(ctx, job, trace);
+    return job.stopRequested === true;
+  },
+});
+
+export const finishFallback = internalMutation({
+  args: { id: v.id("codexTurns"), response: v.optional(v.string()), error: v.optional(v.string()), model: v.string(), stopped: v.optional(v.boolean()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const job = await fallbackTurn(ctx, args.id);
+    if (!job) return null;
+    await ctx.db.patch(job._id, {
+      status: args.error ? "error" : "done",
+      ...(args.stopped ? { stopped: true } : {}),
+      response: args.response?.slice(0, 100_000),
+      error: args.error?.slice(0, 2000),
+      model: args.model,
+      finishedAt: Date.now(),
+    });
+    // The chat's Codex thread never saw this exchange, so the next Codex turn
+    // starts a fresh one, seeded with the history as it now stands.
+    if (args.response) await ctx.db.patch(job.conversationId, { codexThreadId: undefined });
+    await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: job._id });
+    return null;
+  },
+});
+
 /** Storage URLs for the media a Codex turn produced. */
 export const mediaUrls = internalQuery({
   args: { conversationId: v.id("conversations"), messageKey: v.string() },
@@ -582,7 +655,7 @@ export const finalizeTurn = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const result: {
-      job: { prompt: string; response?: string; error?: string; status: string; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
+      job: { prompt: string; response?: string; error?: string; status: string; model?: string; fallback?: boolean; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
       conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string; jobId?: Id<"jobs"> } | null;
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
@@ -603,16 +676,19 @@ export const finalizeTurn = internalAction({
       }
     }
     // A failed turn keeps the owner's message; the error shows on the run and, on Telegram, as a reply.
+    const answered = Boolean(reply || job.mediaKey);
     if (!job.savedAt) await saveMessages(ctx, components.agent, {
       threadId: conversation.threadId,
       userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
       order: "next",
       messages: [
         { role: "user", content: job.prompt },
-        ...(reply || job.mediaKey
+        ...(answered
           ? [{ role: "assistant" as const, content: `${reply ?? ""}${job.mediaKey ? `\n\n<!-- attachments: ${job.mediaKey} -->` : ""}`.trim() }]
           : []),
       ],
+      // A reply written without the computer says so in the web chat.
+      ...(job.fallback && answered ? { metadata: [{}, { provider: FALLBACK_PROVIDER, model: job.model }] } : {}),
     }).then(() => done("savedAt"));
     if (conversation.channel === "telegram" && !job.deliveredAt) {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
@@ -620,9 +696,10 @@ export const finalizeTurn = internalAction({
         ? await ctx.runQuery(internal.codex.mediaUrls, { conversationId: conversation._id, messageKey: job.mediaKey })
         : [];
       try {
-        const text = job.error
+        const answer = job.error
           ? `${job.response ? `${job.response}\n\n` : ""}That broke: ${job.error}`
           : reply || (photos.length ? "" : "Codex did not reply.");
+        const text = job.fallback && answer ? `${answer}\n\n(Answered without your computer.)` : answer;
         // A streamed reply lands in the message that showed it growing.
         if (job.telegramMessageId) await finishDraft(token, conversation.externalId, job.telegramMessageId, text || "Done.");
         else if (text) await sendMessage(token, conversation.externalId, text);

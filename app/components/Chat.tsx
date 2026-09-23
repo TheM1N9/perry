@@ -423,6 +423,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
                       <div className="chat-edit-actions"><button type="button" onClick={() => setEditing(null)}>Cancel</button><button type="submit" className="chat-edit-save" disabled={!editing.text.trim() || busy}>Save and resend</button></div>
                     </form>
                   : <div className="chat-bubble">{message.role === "user" ? message.text : <Markdown text={message.text} />}<AttachmentList attachments={message.attachments ?? []} /></div>}
+                {message.fallback && <div className="chat-fallback-note">Answered without your computer</div>}
                 <div className="chat-turn-actions">
                   {message.role === "user" && !waiting && editing?.id !== message.id && <button title="Edit and resend this message" onClick={() => setEditing({ id: message.id, text: message.text })} disabled={busy}><Icon name="pencil" size={14} /> Edit</button>}
                   {message.role !== "user" && message.id === messages.at(-1)?.id && !waiting && <button title="Write this reply again" onClick={() => void rewind(message.id)} disabled={busy}><Icon name="redo" size={14} /> Regenerate</button>}
@@ -432,7 +433,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
             </div>)}
             {pending?.id === selectedId && <div className="chat-turn from-user pending"><div className="chat-turn-body"><div className="chat-bubble">{pending.text}<AttachmentList attachments={pending.attachments} /></div></div></div>}
             {waiting && <div className="chat-turn from-assistant pending"><div className="chat-avatar">A</div>{chat?.streaming
-              ? <div className="chat-turn-body"><div className="chat-bubble chat-streaming"><Markdown text={chat.streaming} /></div></div>
+              ? <div className="chat-turn-body"><div className="chat-bubble chat-streaming"><Markdown text={chat.streaming} /></div>{chat.fallback && <div className="chat-fallback-note">Answering without your computer</div>}</div>
               : <div className="chat-thinking"><i /><i /><i /></div>}</div>}
             {chat?.lastError && !chat.isRunning && <div className="chat-turn-error" role="alert">The assistant couldn’t finish the last reply: {chat.lastError}</div>}
           </div>}

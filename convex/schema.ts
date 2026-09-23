@@ -51,6 +51,11 @@ export default defineSchema({
     computeTarget: v.optional(v.union(v.literal("sandbox"), v.literal("local"))),
     /** The owner's IANA timezone, reported by the dashboard. Jobs run on it. */
     timezone: v.optional(v.string()),
+    /**
+     * Answer in Convex on the ChatGPT subscription when no runner can take a
+     * turn. Off unless the owner turns it on, since it needs chatgptTokens.
+     */
+    offlineFallback: v.optional(v.boolean()),
     createdAt: v.number(),
   }),
 
@@ -191,6 +196,21 @@ export default defineSchema({
     codexRequestError: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_token", ["token"]),
+
+  /**
+   * The ChatGPT access token each runner's Codex holds, with its account id
+   * and expiry, so a turn can be answered while that machine is offline (see
+   * chatgpt.ts). Runners push it only while offlineFallback is on. No public
+   * query reads this table, and a row is deleted when its token expires. Codex
+   * keeps the refresh token on the machine; it never comes here.
+   */
+  chatgptTokens: defineTable({
+    runnerId: v.id("runners"),
+    accessToken: v.string(),
+    accountId: v.optional(v.string()),
+    expiresAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_runner", ["runnerId"]),
 
   /**
    * One row per operation handed to a runner. The runner subscribes to the
@@ -392,7 +412,10 @@ export default defineSchema({
 
   /** Subscription turns are queued for the owner's outbound local runner. */
   codexTurns: defineTable({
-    runnerId: v.id("runners"),
+    /** Unset on a fallback turn, which no runner takes. */
+    runnerId: v.optional(v.id("runners")),
+    /** Answered in Convex on the ChatGPT subscription, because no runner could take it. */
+    fallback: v.optional(v.boolean()),
     conversationId: v.id("conversations"),
     runId: v.id("runs"),
     prompt: v.string(),

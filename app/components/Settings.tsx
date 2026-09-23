@@ -1,19 +1,21 @@
 "use client";
 
 import { CodexAccount } from "./CodexAccount";
+import { OfflineAnswers } from "./OfflineAnswers";
 
 /** Settings for the single assistant, which runs on the owner's Codex subscription. */
 export function Settings({ dashboardKey }: { dashboardKey: string }) {
   return (
     <>
       <CodexAccount dashboardKey={dashboardKey} />
+      <OfflineAnswers dashboardKey={dashboardKey} />
       <div className="panel">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <h3>Assistant behavior</h3>
           <span className="badge">One consistent assistant</span>
         </div>
         <p className="hint">
-          The assistant keeps the same capabilities in every chat and runs on your Codex subscription, through the runner on your machine. When no runner is online, a message fails with an error instead of being answered.
+          The assistant keeps the same capabilities in every chat and runs on your Codex subscription, through the runner on your machine. When no runner is online, a message fails with an error, unless you let it be answered without the computer above.
         </p>
         <div className="field">
           <label>Working instructions</label>

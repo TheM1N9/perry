@@ -362,15 +362,40 @@ async function main() {
     }
   };
 
+  /**
+   * While the owner lets turns be answered without this machine, Convex holds
+   * the ChatGPT access token Codex has now. It is pushed again when Codex has a
+   * different one, cleared when Codex is signed out, and refreshed first when
+   * Convex dropped the one pushed (ChatGPT refused it, or it expired).
+   */
+  let pushedToken: string | null | undefined;
+  const pushChatgptToken = async (fallback: boolean, holdsToken: boolean) => {
+    if (!fallback) {
+      pushedToken = undefined;
+      return;
+    }
+    try {
+      const app = await ensureCodex();
+      let current = await app.chatgptToken();
+      if (current && current.accessToken === pushedToken && !holdsToken) current = await app.chatgptToken(true);
+      if ((current?.accessToken ?? null) === pushedToken && (holdsToken || !current)) return;
+      await client.mutation(api.chatgpt.pushToken, { token, ...current });
+      pushedToken = current?.accessToken ?? null;
+    } catch (error) {
+      console.error(red(`  could not share the ChatGPT token: ${message(error)}`));
+    }
+  };
+
   const checkIn = async () => {
     try {
-      await client.mutation(api.runner.checkIn, {
+      const { fallback, holdsToken } = await client.mutation(api.runner.checkIn, {
         token,
         platform: platform(),
         hostname: hostname(),
         workdir,
         autoApprove,
       });
+      await pushChatgptToken(fallback, holdsToken);
     } catch (error) {
       console.error(red(`  check-in failed: ${message(error)}`));
     }

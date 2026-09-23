@@ -435,6 +435,7 @@ a {
 .chat-turn:hover .chat-turn-actions, .chat-turn-actions:focus-within { opacity: 1; }
 .from-user .chat-turn-actions { justify-content: flex-end; }
 .chat-turn-actions button { display: flex; align-items: center; gap: 6px; color: #839286; background: transparent; font-size: 10px; padding: 3px 1px; }
+.chat-fallback-note { margin-top: 5px; color: #839286; font-size: 10px; }
 .chat-turn-actions button:hover { color: #cce0ca; }
 .chat-turn.pending { opacity: .6; }
 .chat-turn-error { margin: 0 0 25px 40px; padding: 10px 12px; color: #ffcbc6; background: #462b2a; border: 1px solid #734946; border-radius: 9px; font-size: 11px; }

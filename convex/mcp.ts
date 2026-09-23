@@ -7,10 +7,10 @@ import { ALL_TOOLS, type ToolName } from "./tools";
 /**
  * Assistant's own tools, served to Codex over MCP.
  *
- * A Codex turn runs on the owner's machine, so it cannot call the tools the
- * gateway agent binds in-process. Each turn points Codex at this endpoint
- * instead, which makes connected accounts, memory and work tracking the same
- * on both engines. The computer tools are left out: Codex already has a shell
+ * A Codex turn runs on the owner's machine, so it cannot call the tools a
+ * fallback turn binds in-process (fallback.ts). Each turn points Codex at this
+ * endpoint instead, which makes connected accounts, memory and work tracking
+ * the same on both paths. The computer tools are left out: Codex already has a shell
  * and file access on that machine, under the runner's approval policy.
  *
  * Streamable HTTP, stateless, JSON responses only. The caller authenticates
