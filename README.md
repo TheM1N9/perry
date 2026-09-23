@@ -93,6 +93,12 @@ Modelled on OpenClaw's workspace memory, in Convex:
 A fact that changes is superseded, not deleted. Chat history is separate and
 searchable by the agent with `search_chats`.
 
+Memory keeps itself current, like OpenClaw's memory flush and dreaming: the
+built-in **daily summary** job (22:30) reads the day's chats and writes what is
+worth keeping as daily notes, and **memory consolidation** (03:00) promotes
+what the last week's notes show to be durable into the profile and long-term
+memory. Both work quietly.
+
 ## Proactivity
 
 Jobs are prompts on a cron schedule in your timezone (reported by the
