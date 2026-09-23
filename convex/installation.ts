@@ -185,6 +185,18 @@ export const setComputeTarget = internalMutation({
   },
 });
 
+/** Whether approval requests also go to the owner on Telegram. */
+export const setTelegramApprovals = internalMutation({
+  args: { enabled: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const install = await read(ctx);
+    if (!install) return null;
+    await ctx.db.patch(install._id, { telegramApprovals: args.enabled });
+    return null;
+  },
+});
+
 /** Hand Assistant to a different chat, or to a different person entirely. */
 export const unclaim = internalMutation({
   args: {},

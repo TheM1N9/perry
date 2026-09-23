@@ -9,7 +9,8 @@ const KIND = { command: "run", file: "change files", write: "write a file" } as 
 
 /**
  * What a runner is waiting to be allowed to do on the owner's machine. The
- * runner asks in its terminal too; whichever is answered first wins.
+ * runner asks in its terminal and on Telegram too; whichever is answered
+ * first wins.
  */
 export function Approvals({ dashboardKey }: { dashboardKey: string }) {
   const pending = useQuery(api.approvals.pending, { key: dashboardKey });
@@ -21,8 +22,8 @@ export function Approvals({ dashboardKey }: { dashboardKey: string }) {
     return () => window.clearInterval(timer);
   }, []);
 
-  const answer = (id: Id<"approvals">, approved: boolean) =>
-    void decide({ key: dashboardKey, id, approved })
+  const answer = (id: Id<"approvals">, approved: boolean, always = false) =>
+    void decide({ key: dashboardKey, id, approved, always })
       .then((applied) => setError(applied ? "" : "That request was already answered or has expired."))
       .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
 
@@ -35,9 +36,12 @@ export function Approvals({ dashboardKey }: { dashboardKey: string }) {
         <code className="approval-what">{item.title}</code>
         {item.cwd && <div className="approval-meta">in {item.cwd}</div>}
         {item.detail && <div className="approval-meta">{item.detail}</div>}
+        {item.review && <div className="approval-meta approval-review">Reviewer: {item.review.verdict}. {item.review.reason}</div>}
+        {item.alwaysAllow && <div className="approval-meta">Always allow saves a rule for {item.alwaysAllow}.</div>}
       </div>
       <div className="approval-actions">
         <button className="approval-decline" onClick={() => answer(item.id, false)}>Decline</button>
+        {item.alwaysAllow && <button className="approval-decline approval-always" onClick={() => answer(item.id, true, true)}>Always allow</button>}
         <button className="approval-approve" onClick={() => answer(item.id, true)}>Approve</button>
       </div>
     </div>)}

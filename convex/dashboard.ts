@@ -7,7 +7,8 @@ import { action, mutation, query } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { FALLBACK_PROVIDER } from "./chatgpt";
 import { ABSOLUTE_PATH } from "./media";
-import { vMemoryKind } from "./schema";
+import { policyOf, type Policy } from "./runner";
+import { vMemoryKind, vPolicy } from "./schema";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -795,12 +796,14 @@ export const checkMonitorsNow = action({
 export type ComputeView = {
   target: "sandbox" | "local";
   sandboxConfigured: boolean;
+  /** Approval requests go to Telegram only when the owner is there and has not turned it off. */
+  telegramApprovals: { ownerOnTelegram: boolean; enabled: boolean };
   runners: Array<{
     id: string;
     name: string;
     platform?: string;
     workdir?: string;
-    autoApprove: boolean;
+    policy: Policy;
     online: boolean;
     lastSeenAt?: number;
     revoked: boolean;
@@ -840,12 +843,16 @@ export const getCompute = query({
     return {
       target: install?.computeTarget ?? "sandbox",
       sandboxConfigured: Boolean(daytonaKey),
+      telegramApprovals: {
+        ownerOnTelegram: Boolean(install?.claimedAt) && install?.ownerChannel === "telegram",
+        enabled: install?.telegramApprovals !== false,
+      },
       runners: runners.map((r) => ({
         id: r._id,
         name: r.name,
         platform: r.platform,
         workdir: r.workdir,
-        autoApprove: r.autoApprove,
+        policy: policyOf(r),
         online: !r.revoked && (r.lastSeenAt ?? 0) > cutoff,
         lastSeenAt: r.lastSeenAt,
         revoked: r.revoked,
@@ -875,6 +882,27 @@ export const setComputeTarget = mutation({
     await ctx.runMutation(internal.installation.setComputeTarget, {
       target: args.target,
     });
+    return null;
+  },
+});
+
+/** What a runner does before acting: ask the owner, have Codex review first, or trust it. */
+export const setRunnerPolicy = mutation({
+  args: { key: vKey, runnerId: v.string(), policy: vPolicy },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.runner.setPolicy, { runnerId: args.runnerId, policy: args.policy });
+    return null;
+  },
+});
+
+export const setTelegramApprovals = mutation({
+  args: { key: vKey, enabled: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.installation.setTelegramApprovals, { enabled: args.enabled });
     return null;
   },
 });
@@ -1035,7 +1063,7 @@ export const registerWebhook = action({
           body: JSON.stringify({
             url,
             secret_token: secret,
-            allowed_updates: ["message", "edited_message"],
+            allowed_updates: ["message", "edited_message", "callback_query"],
             drop_pending_updates: true,
           }),
         },

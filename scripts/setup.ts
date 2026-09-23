@@ -175,7 +175,7 @@ async function main() {
     body: JSON.stringify({
       url: `${siteUrl}/telegram`,
       secret_token: webhookSecret,
-      allowed_updates: ["message", "edited_message"],
+      allowed_updates: ["message", "edited_message", "callback_query"],
       drop_pending_updates: true,
     }),
   }).then((r) => r.json(), () => null);

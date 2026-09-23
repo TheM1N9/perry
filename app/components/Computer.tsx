@@ -3,6 +3,16 @@
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Approvals } from "./Approvals";
+import { Permissions } from "./Permissions";
+
+type Policy = "ask" | "review" | "trust";
+
+/** A runner's approval policy, in the words the owner chooses by. */
+const POLICIES: Array<{ value: Policy; label: string }> = [
+  { value: "ask", label: "Ask me every time" },
+  { value: "review", label: "Codex reviews; ask me about the risky ones" },
+  { value: "trust", label: "Run without asking" },
+];
 
 function ago(ts?: number): string {
   if (!ts) return "never";
@@ -24,6 +34,7 @@ export function Computer({ dashboardKey }: { dashboardKey: string }) {
   const compute = useQuery(api.dashboard.getCompute, { key: dashboardKey });
   const setTarget = useMutation(api.dashboard.setComputeTarget);
   const revoke = useMutation(api.dashboard.revokeRunner);
+  const setPolicy = useMutation(api.dashboard.setRunnerPolicy);
 
   if (compute === undefined) return <div className="panel empty">Loading.</div>;
 
@@ -109,16 +120,28 @@ export function Computer({ dashboardKey }: { dashboardKey: string }) {
             <div className="row" style={{ justifyContent: "space-between", gap: 14 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <strong>{runner.name}</strong>
-                {runner.autoApprove && (
-                  <span className="badge" style={{ marginLeft: 8 }}>
-                    auto-approve
-                  </span>
-                )}
                 <div className="item-meta" style={{ overflowWrap: "anywhere" }}>
                   {runner.platform ?? "unknown"}
                   {runner.workdir ? ` · ${runner.workdir}` : ""}
                 </div>
                 <div className="item-meta">seen {ago(runner.lastSeenAt)}</div>
+                {!runner.revoked && (
+                  <label className="item-meta" style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+                    Before it acts
+                    <select
+                      className="runner-policy"
+                      style={{ width: "auto" }}
+                      value={runner.policy}
+                      onChange={(event) =>
+                        void setPolicy({ key: dashboardKey, runnerId: runner.id, policy: event.target.value as Policy })
+                      }
+                    >
+                      {POLICIES.map((policy) => (
+                        <option key={policy.value} value={policy.value}>{policy.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </div>
 
               <div style={{ textAlign: "right" }}>
@@ -146,6 +169,8 @@ export function Computer({ dashboardKey }: { dashboardKey: string }) {
           </div>
         ))}
       </div>
+
+      <Permissions dashboardKey={dashboardKey} telegram={compute.telegramApprovals} />
 
       <div className="panel">
         <div className="row" style={{ justifyContent: "space-between" }}>

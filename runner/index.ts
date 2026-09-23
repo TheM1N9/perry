@@ -13,8 +13,10 @@
  * What protects you, in order of how much it actually matters:
  *
  *   1. This process. Close the terminal and Assistant has no hands again.
- *   2. Approval. Every command is printed here and waits for you to press y,
- *      unless you started it with --auto.
+ *   2. Approval. Every command waits for you, here, in the dashboard or on
+ *      Telegram, unless a rule you saved with "Always allow" covers it or the
+ *      runner's policy says otherwise: "review" lets a Codex reviewer clear
+ *      routine actions first, "trust" (--auto) runs everything.
  *   3. The working directory. Commands run in one directory you chose, and
  *      file reads and writes cannot escape it.
  *   4. A denylist of commands that are never worth running.
@@ -36,6 +38,7 @@ import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { truncateCommandOutput, truncateHead } from "../convex/lib/truncate";
 import { ASSISTANT_MCP, CodexAppServer, TurnFailed, type GeneratedImage, type RpcMessage } from "./codex";
+import { isReviewThread, review } from "./review";
 import { ensureHome, HOME, PATHS } from "./home";
 import { TurnTrace } from "./trace";
 
@@ -59,8 +62,11 @@ const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
 const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
+type Policy = "ask" | "review" | "trust";
+/** `auto` is from before policies; the policy now lives on the runner's record in Convex. */
 type Config = { url?: string; token?: string; dir?: string; name?: string; auto?: boolean };
-type Flags = Config & { auto?: boolean };
+type Flags = Config & { policy?: Policy };
+const POLICIES: Policy[] = ["ask", "review", "trust"];
 type CodexResult = { response?: string; error?: string; stopped?: boolean; compacted?: boolean; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
 
 /**
@@ -110,11 +116,20 @@ function saveConfig(config: Config) {
 }
 
 function parseArgs(argv: string[]): Flags {
-  const args: Flags = { auto: false };
+  const args: Flags = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--auto") args.auto = true;
-    else if (arg === "--no-auto") args.auto = false;
+    if (arg === "--policy") {
+      const policy = argv[++i] as Policy;
+      if (!POLICIES.includes(policy)) {
+        console.error(`\n${red(`--policy is one of ${POLICIES.join(", ")}.`)}\n`);
+        process.exit(1);
+      }
+      args.policy = policy;
+    }
+    // The older flags, kept as aliases.
+    else if (arg === "--auto") args.policy = "trust";
+    else if (arg === "--no-auto") args.policy = "ask";
     else if (arg === "--url") args.url = argv[++i];
     else if (arg === "--token") args.token = argv[++i];
     else if (arg === "--dir") args.dir = argv[++i];
@@ -201,27 +216,45 @@ async function main() {
     process.exit(1);
   }
 
-  const autoApprove = flags.auto ?? stored.auto === true;
   const name = flags.name ?? stored.name ?? hostname();
 
-  saveConfig({ ...stored, url, token, dir: workdir, name, auto: autoApprove });
+  const { auto: _legacy, ...kept } = stored;
+  saveConfig({ ...kept, url, token, dir: workdir, name });
 
-  const rl = autoApprove
-    ? null
-    : createInterface({ input: process.stdin, output: process.stdout });
+  // The policy can change from the dashboard at any time, so the terminal is always ready to ask.
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
 
+  const client = new ConvexClient(url);
+
+  const checkIn = async (policy?: Policy) => {
+    try {
+      return await client.mutation(api.runner.checkIn, {
+        token,
+        platform: platform(),
+        hostname: hostname(),
+        workdir,
+        policy,
+      });
+    } catch (error) {
+      console.error(red(`  check-in failed: ${message(error)}`));
+      return null;
+    }
+  };
+
+  // A --policy flag sets the policy once; after that the dashboard's choice stands.
+  const first = await checkIn(flags.policy);
+  const policy = first?.policy ?? flags.policy ?? "ask";
   console.log(`\n${bold("Assistant runner")}`);
   console.log(dim(`  machine    ${name} (${platform()})`));
   console.log(dim(`  directory  ${workdir}`));
   console.log(
-    autoApprove
-      ? yellow("  approval   off, commands run without asking")
-      : dim("  approval   every command waits for you"),
+    policy === "trust"
+      ? yellow("  approval   trust: commands run without asking")
+      : dim(`  approval   ${policy === "review" ? "review: a Codex reviewer clears routine actions, the rest wait for you" : "ask: every command waits for you"}`),
   );
+  console.log(dim(`             change it on the dashboard's Computer page`));
   console.log(dim(`  connection outbound only, nothing is listening here`));
   console.log(dim(`\n  Ctrl-C takes Assistant's hands away.\n`));
-
-  const client = new ConvexClient(url);
 
   /**
    * Subscribe for as long as the runner lives. A query can fail for a moment
@@ -247,29 +280,68 @@ async function main() {
   /** The chat whose Codex turn is running, so an approval can say which chat asked. */
   let activeConversation: Id<"conversations"> | undefined;
   // Without a terminal, stdin may already be closed and would read as "no"; ask only the dashboard then.
-  const terminal = rl && process.stdin.isTTY ? rl : null;
+  const terminal = process.stdin.isTTY ? rl : null;
+
+  type Request = {
+    kind: "command" | "file" | "write";
+    what: string;
+    detail: string | null;
+    cwd?: string;
+    paths?: string[];
+    /** Codex's proposed command prefix, which "Always allow" may remember instead of the exact command. */
+    amendment?: string[];
+    /** More for the reviewer to judge by than is worth storing, such as a diff. */
+    evidence?: string;
+  };
 
   /**
-   * The real control: the owner, deciding before anything runs here. The
-   * request is recorded in Convex and asked in this terminal at once; the
-   * dashboard shows it too, and whichever answers first wins. Unanswered, it
-   * is declined after APPROVAL_TIMEOUT_MS.
+   * Whether something may run here. The hard deny list is checked before this
+   * is called; Convex then applies the owner's saved rules and this runner's
+   * policy, and says whether to run it, have the reviewer look, or ask.
    */
-  const askOwner = async (request: { kind: "command" | "file" | "write"; what: string; detail: string | null; cwd?: string }): Promise<boolean> => {
-    const id = await client.mutation(api.approvals.request, {
+  const approve = async (request: Request): Promise<boolean> => {
+    const { id, next } = await client.mutation(api.approvals.request, {
       token,
       kind: request.kind,
       title: request.what,
       detail: request.detail ?? undefined,
       cwd: request.cwd,
+      paths: request.paths,
+      amendment: request.amendment,
       conversationId: activeConversation,
-      auto: autoApprove,
     });
-    if (autoApprove) {
-      console.log(`${cyan("  auto")} ${request.what}`);
+    if (next === "run") {
+      console.log(`${cyan("  allowed")} ${request.what}`);
       return true;
     }
+    if (next === "review") {
+      const verdict = await ensureCodex()
+        .then((app) => review(app, {
+          kind: request.kind,
+          title: request.what,
+          cwd: request.cwd,
+          workdir,
+          paths: request.paths,
+          detail: [request.detail, request.evidence].filter(Boolean).join("\n\n") || undefined,
+        }))
+        .catch((error) => ({ verdict: "error" as const, reason: message(error), model: undefined, ms: 0 }));
+      const run = await client.mutation(api.approvals.reviewed, { token, id, ...verdict });
+      if (run) {
+        console.log(`${cyan("  reviewed")} ${request.what} ${dim(`(${verdict.reason})`)}`);
+        return true;
+      }
+      console.log(yellow(`\n  reviewer: ${verdict.verdict}. ${verdict.reason}`));
+    }
+    return await askOwner(id, request);
+  };
 
+  /**
+   * The real control: the owner, deciding before anything runs here. The
+   * request is asked in this terminal, the dashboard and on Telegram at once,
+   * and whichever answers first wins. Unanswered, it is declined after
+   * APPROVAL_TIMEOUT_MS.
+   */
+  const askOwner = async (id: Id<"approvals">, request: Request): Promise<boolean> => {
     console.log(`\n${bold("  Assistant wants to run:")}`);
     console.log(`    ${cyan(request.what)}`);
     if (request.cwd) {
@@ -277,28 +349,31 @@ async function main() {
       console.log(dim(`    in ${where === "" ? workdir : where}`));
     }
     if (request.detail) console.log(dim(request.detail.split("\n").map((l) => `    ${l}`).join("\n")));
-    if (!terminal) console.log(dim("    approve or decline it in the dashboard"));
+    if (!terminal) console.log(dim("    approve or decline it in the dashboard or on Telegram"));
 
     return await new Promise<boolean>((resolve) => {
       let done = false;
       const abort = new AbortController();
       let unsubscribe = () => {};
-      const settle = (approved: boolean, by: "terminal" | "dashboard" | "timeout") => {
+      const settle = (approved: boolean, by: "terminal" | "elsewhere" | "timeout", always = false) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
         unsubscribe();
         abort.abort();
-        if (by !== "dashboard") void client.mutation(api.approvals.settle, { token, id, approved, by: by === "timeout" ? "timeout" : "terminal" }).catch(() => {});
-        if (by !== "terminal") console.log(dim(by === "timeout" ? "  nobody answered; declined." : `  ${approved ? "approved" : "declined"} in the dashboard.`));
+        if (by !== "elsewhere") void client.mutation(api.approvals.settle, { token, id, approved, by, always }).catch(() => {});
+        if (by !== "terminal") console.log(dim(by === "timeout" ? "  nobody answered; declined." : `  ${approved ? "approved" : "declined"} in the dashboard or on Telegram.`));
         resolve(approved);
       };
       const timer = setTimeout(() => settle(false, "timeout"), APPROVAL_TIMEOUT_MS);
       unsubscribe = client.onUpdate(api.approvals.decision, { token, id }, (status) => {
-        if (status === "approved" || status === "declined") settle(status === "approved", "dashboard");
+        if (status === "approved" || status === "declined") settle(status === "approved", "elsewhere");
       }, (error) => console.error(red(`  could not follow the dashboard's answer: ${message(error)}`)));
-      terminal?.question(`  ${bold("run it?")} [y/N] `, { signal: abort.signal })
-        .then((answer) => settle(["y", "yes"].includes(answer.trim().toLowerCase()), "terminal"))
+      terminal?.question(`  ${bold("run it?")} [y/N/a = always] `, { signal: abort.signal })
+        .then((answer) => {
+          const choice = answer.trim().toLowerCase();
+          settle(["y", "yes", "a", "always"].includes(choice), "terminal", ["a", "always"].includes(choice));
+        })
         .catch(() => {});
     });
   };
@@ -319,15 +394,31 @@ async function main() {
       instance.on("serverRequest", (request: RpcMessage) => {
         void (async () => {
           const method = request.method ?? "";
-          if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval") {
+          if (isReviewThread(request.params?.threadId)) {
+            // The reviewer only answers; it never gets to act or ask.
+            instance.rejectRequest(request.id, "The reviewer cannot do this.");
+          } else if (method === "item/commandExecution/requestApproval") {
             const params = request.params ?? {};
-            const command = params.command ?? (method.includes("fileChange") ? "Codex file change" : "Codex command");
-            const reason = method.includes("commandExecution") ? denied(command) : null;
-            const approved = !reason && await askOwner({
-              kind: method.includes("fileChange") ? "file" : "command",
+            const command = params.command ?? "Codex command";
+            const approved = !denied(command) && await approve({
+              kind: "command",
               what: command,
               detail: params.reason ?? null,
-              cwd: params.cwd,
+              cwd: params.cwd ?? undefined,
+              amendment: params.proposedExecpolicyAmendment ?? undefined,
+            });
+            instance.respond(request.id, { decision: approved ? "accept" : "decline" });
+          } else if (method === "item/fileChange/requestApproval") {
+            const params = request.params ?? {};
+            const changes = instance.changesFor(params.itemId);
+            const paths = changes.map((change) => resolve(workdir, change.path));
+            const listed = changes.map((change, i) => `${change.kind?.type ?? "change"} ${paths[i]}`).join("\n");
+            const approved = await approve({
+              kind: "file",
+              what: paths.length === 1 ? `change ${paths[0]}` : paths.length ? `change ${paths.length} files` : "Codex file change",
+              detail: [params.reason, listed].filter(Boolean).join("\n") || null,
+              paths,
+              evidence: changes.map((change) => change.diff ?? "").join("\n").slice(0, 6000) || undefined,
             });
             instance.respond(request.id, { decision: approved ? "accept" : "decline" });
           } else if (method === "mcpServer/elicitation/request" && request.params?.serverName === ASSISTANT_MCP) {
@@ -388,22 +479,12 @@ async function main() {
     }
   };
 
-  const checkIn = async () => {
-    try {
-      const { fallback, holdsToken } = await client.mutation(api.runner.checkIn, {
-        token,
-        platform: platform(),
-        hostname: hostname(),
-        workdir,
-        autoApprove,
-      });
-      await pushChatgptToken(fallback, holdsToken);
-    } catch (error) {
-      console.error(red(`  check-in failed: ${message(error)}`));
-    }
+  /** Check in, and share the ChatGPT token as the answer says. */
+  const checkInAndShare = async () => {
+    const result = await checkIn();
+    if (result) await pushChatgptToken(result.fallback, result.holdsToken);
   };
-
-  await checkIn();
+  if (first) await pushChatgptToken(first.fallback, first.holdsToken);
   await client.mutation(api.codex.recoverAuth, { token });
   await refreshCodexAccount();
   mkdirSync(CODEX_RESULTS, { recursive: true });
@@ -433,7 +514,7 @@ async function main() {
   };
   await recoverCodexTurns(true);
   const heartbeat = setInterval(() => {
-    void checkIn();
+    void checkInAndShare();
     void refreshCodexAccount();
     void recoverCodexTurns(false).catch((error) => console.error(red(`  Codex delivery retry failed: ${message(error)}`)));
   }, CHECKIN_MS);
@@ -494,10 +575,12 @@ async function main() {
               await finish({ status: "error", error: "Over the 256 KB limit." });
               return;
             }
-            const approved = await askOwner({
+            const approved = await approve({
               kind: "write",
               what: `write ${relative(workdir, target) || target}`,
               detail: `${(command.text ?? "").slice(0, 400)}${(command.text ?? "").length > 400 ? "\n..." : ""}`,
+              paths: [target],
+              evidence: (command.text ?? "").slice(0, 6000),
             });
             if (!approved) {
               await finish({ status: "denied", error: "Declined." });
@@ -534,7 +617,7 @@ async function main() {
         return;
       }
 
-      const approved = await askOwner({ kind: "command", what: shellCommand, detail: null, cwd });
+      const approved = await approve({ kind: "command", what: shellCommand, detail: null, cwd });
       if (!approved) {
         console.log(yellow("  declined.\n"));
         await finish({ status: "denied", error: "You declined it." });
