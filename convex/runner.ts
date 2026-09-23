@@ -177,7 +177,12 @@ export const revokeRunner = internalMutation({
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     const id = ctx.db.normalizeId("runners", args.runnerId);
-    if (id) await ctx.db.patch(id, { revoked: true });
+    if (!id) return null;
+    await ctx.db.patch(id, { revoked: true });
+    // Chats that ran on it move to whichever runner is online next.
+    for (const chat of await ctx.db.query("conversations").collect()) {
+      if (chat.codexRunnerId === id) await ctx.db.patch(chat._id, { codexRunnerId: undefined });
+    }
     return null;
   },
 });
