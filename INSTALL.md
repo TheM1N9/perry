@@ -64,22 +64,26 @@ stays recoverable:
 pnpm exec convex env set DASHBOARD_KEY "<new key>"
 ```
 
-## Giving Agent P a computer
+## Connecting your machine
 
-Optional, and only Agent P can reach it. Without it every other tool still
-works and the sandbox tools report that no computer is configured.
+Perry thinks and works through Codex on a machine you connect. On it:
 
 ```bash
-pnpm exec convex env set DAYTONA_API_KEY "<key from daytona.io>"
+pnpm run connect   # mints a runner token and starts the runner
 ```
 
-Daytona gives $200 of signup credit and bills per second. A sandbox stops
-itself after 15 idle minutes, so an install used a few times a week costs
-close to nothing.
+Then open Settings in the dashboard and sign in to Codex with your ChatGPT
+account; the runner reports which Codex models your subscription offers. Keep
+the runner running (`pnpm run runner` after the first time): chats wait for it,
+and a message sent while it is offline fails with a clear error. Run one runner
+per token; a second one refuses to start.
 
-The sandbox has bash, Python, Node and git. Its /workspace survives between
-commands, there are no credentials inside it, and nothing on your machine is
-reachable from it.
+What Codex wants to do beyond its sandbox is asked in the runner's terminal and
+in the dashboard, where you can approve or decline it.
+
+On Windows the runner uses Codex's unelevated sandbox, because the elevated one
+fails on long paths in Codex's own runtime. Set
+`PERRY_CODEX_WINDOWS_SANDBOX=elevated` to use Codex's choice instead.
 
 ## Perry's folder on your machine
 
@@ -119,7 +123,7 @@ sidebar and header; the header copies the full ID. Older messages load on demand
 Perry's saved memories with Telegram while keeping their histories separate.
 
 The sidebar also opens Work, Computer, Connectors, Memory, Settings, Activity,
-Keys, and Setup. Settings controls the model, step budget, and tools per mode;
+Keys, and Setup. Settings shows the Codex account on each connected machine;
 Activity is a run log with session filters, tools, tokens, errors, and a link
 back to each web chat. Chat holds the message history.
 
