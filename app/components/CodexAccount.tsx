@@ -31,7 +31,7 @@ export function CodexAccount({ dashboardKey }: { dashboardKey: string }) {
       <span className="badge">local sign-in</span>
     </div>
     <p className="hint">
-      Sign in to Codex on a connected machine using your ChatGPT account. The Codex CLI keeps credentials on that machine; Perry stores only account status and the temporary device code.
+      Sign in to Codex on a connected machine using your ChatGPT account. The Codex CLI keeps credentials on that machine; Assistant stores only account status and the temporary device code.
     </p>
     <div style={{ display: "grid", gap: 8, margin: "14px 0" }}>
       <label className="item" style={{ display: "flex", gap: 10, cursor: "pointer" }}>
@@ -74,6 +74,6 @@ export function CodexAccount({ dashboardKey }: { dashboardKey: string }) {
         </div>
       </div>;
     })}
-    <p className="hint" style={{ marginTop: 12 }}>Codex uses this runner&apos;s workspace and approval policy. Gateway backup retains Perry&apos;s configured tools.</p>
+    <p className="hint" style={{ marginTop: 12 }}>Codex uses this runner&apos;s workspace and approval policy. Gateway backup retains Assistant&apos;s configured tools.</p>
   </div>;
 }

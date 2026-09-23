@@ -4,7 +4,7 @@ import { internalAction } from "./_generated/server";
 import { sendMessage } from "./lib/telegram";
 
 /**
- * Perry speaking first.
+ * Assistant speaking first.
  *
  * Everything proactive goes through here, so there is exactly one place that
  * decides whether an unprompted message is allowed to leave. If nobody has

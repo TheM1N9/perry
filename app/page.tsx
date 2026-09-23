@@ -29,11 +29,11 @@ const TABS = [
 ] as const;
 
 const SECTION_DESCRIPTIONS: Record<string, string> = {
-  work: "Tasks, goals, and monitors Perry is working on.",
+  work: "Tasks, goals, and monitors Assistant is working on.",
   computer: "Your connected computer and local runner.",
-  connectors: "Accounts and services Perry can use with your permission.",
-  memory: "Facts Perry has saved for future conversations.",
-  settings: "Choose how Perry and Agent P think and work.",
+  connectors: "Accounts and services Assistant can use with your permission.",
+  memory: "Facts Assistant has saved for future conversations.",
+  settings: "Configure the assistant, memory, and fallback engine.",
   activity: "A record of recent turns, tools, and errors.",
   keys: "Manage the credentials this installation uses.",
   setup: "Pair this installation with your chat account.",
@@ -64,7 +64,7 @@ function StatusLine({ dashboardKey }: { dashboardKey: string }) {
 }
 
 /**
- * Shown until someone claims this install. Perry answers nobody before that,
+ * Shown until someone claims this install. Assistant answers nobody before that,
  * so this is the only thing worth looking at on a fresh deployment.
  */
 function Pairing({ dashboardKey }: { dashboardKey: string }) {
@@ -79,7 +79,7 @@ function Pairing({ dashboardKey }: { dashboardKey: string }) {
       <div className="panel">
         <h3>Paired</h3>
         <p className="hint">
-          This Perry belongs to{" "}
+          This Assistant belongs to{" "}
           {status.ownerName ? <strong>{status.ownerName}</strong> : "you"}. Every
           other sender is ignored.
         </p>
@@ -97,7 +97,7 @@ function Pairing({ dashboardKey }: { dashboardKey: string }) {
     <div className="panel">
       <h3>Not paired yet</h3>
       <p className="hint">
-        Message your bot with this code to claim Perry. Whoever sends it first
+        Message your bot with this code to claim Assistant. Whoever sends it first
         owns this install.
       </p>
       {status.pairingCode && !expired ? (
@@ -128,7 +128,7 @@ function Gate({ onSubmit }: { onSubmit: (key: string) => void }) {
 
   return (
     <div className="gate">
-      <h1 className="title">Perry</h1>
+      <h1 className="title">Assistant</h1>
       <p className="hint" style={{ marginTop: 8 }}>
         This install is yours alone, and the dashboard is behind one key.
         <code> pnpm run setup </code> prints it, and it is saved in .env.local.
@@ -197,7 +197,7 @@ function Shell({
   return <div className="chat-workspace dashboard-workspace">
     {menuOpen && <button className="chat-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
     <aside className={`chat-sidebar dashboard-sidebar ${menuOpen ? "open" : ""}`}>
-      <div className="chat-brand"><span className="chat-brand-mark">P</span><span>Perry</span><span className="chat-brand-sub">your space</span></div>
+      <div className="chat-brand"><span className="chat-brand-mark">A</span><span>Assistant</span><span className="chat-brand-sub">your space</span></div>
       <div className="dashboard-sidebar-heading">WORKSPACE</div>
       <nav className="dashboard-nav" aria-label="Workspace navigation">
         {TABS.map((item) => <button key={item.id} className={item.id === active ? "active" : ""} onClick={() => { setTab(item.id); setMenuOpen(false); }}>

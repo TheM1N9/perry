@@ -4,7 +4,7 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Perry",
+  title: "Assistant",
   description: "A personal assistant that lives in your chat app.",
 };
 

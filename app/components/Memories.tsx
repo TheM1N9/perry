@@ -9,7 +9,7 @@ function when(ts: number): string {
 }
 
 /**
- * What Perry knows, and the only place to correct it. The agent writes here
+ * What Assistant knows, and the only place to correct it. The agent writes here
  * through the remember tool; this view exists because a memory it got slightly
  * wrong is worse than one it never stored.
  */
@@ -34,7 +34,7 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
   return (
     <>
       <div className="panel">
-        <h3>Teach Perry something</h3>
+        <h3>Teach Assistant something</h3>
         <p className="hint">
           One self-contained sentence that will still make sense in six months.
         </p>
@@ -77,7 +77,7 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
         {memories === undefined && <div className="empty">Loading.</div>}
         {memories?.length === 0 && (
           <div className="empty">
-            {search ? "Nothing matched." : "Perry has not learned anything yet."}
+            {search ? "Nothing matched." : "Assistant has not learned anything yet."}
           </div>
         )}
 

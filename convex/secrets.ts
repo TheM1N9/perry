@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 
 /**
- * Where Perry's service keys live.
+ * Where Assistant's service keys live.
  *
  * Every key is read here rather than straight from `process.env`, and the
  * database wins over the environment. That single rule is what lets the
@@ -32,7 +32,7 @@ export function isSecretName(value: string): value is SecretName {
 export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> = {
   TELEGRAM_BOT_TOKEN: {
     label: "Telegram bot token",
-    hint: "From @BotFather. Changing it points Perry at a different bot, so re-register the webhook afterwards.",
+    hint: "From @BotFather. Changing it points Assistant at a different bot, so re-register the webhook afterwards.",
   },
   TELEGRAM_WEBHOOK_SECRET: {
     label: "Telegram webhook secret",
@@ -40,7 +40,7 @@ export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> 
   },
   AI_GATEWAY_API_KEY: {
     label: "Vercel AI Gateway key",
-    hint: "How Perry reaches a model. Without it, Convex's own gateway is used, which needs a paid Convex plan.",
+    hint: "How Assistant reaches a model. Without it, Convex's own gateway is used, which needs a paid Convex plan.",
   },
   COMPOSIO_API_KEY: {
     label: "Composio key",
@@ -48,7 +48,7 @@ export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> 
   },
   DAYTONA_API_KEY: {
     label: "Daytona key",
-    hint: "The cloud sandbox. Not needed if Agent P runs on your own machine instead.",
+    hint: "The cloud sandbox. Not needed if Assistant runs on your own machine instead.",
   },
 };
 

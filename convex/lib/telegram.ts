@@ -1,7 +1,7 @@
 /**
  * Minimal Telegram Bot API client.
  *
- * Deliberately not grammY: Perry never polls and never runs a handler loop.
+ * Deliberately not grammY: Assistant never polls and never runs a handler loop.
  * Inbound arrives as an HTTP action, outbound is one POST. A framework here
  * would be weight without leverage.
  */
@@ -96,7 +96,7 @@ export async function sendTyping(
   }
 }
 
-// --- Inbound update shapes. Only the fields Perry actually reads. ---
+// --- Inbound update shapes. Only the fields Assistant actually reads. ---
 
 export interface TelegramUpdate {
   update_id: number;
@@ -121,7 +121,7 @@ export interface InboundMessage {
 }
 
 /**
- * Narrow a raw update to the one shape Perry handles: a text message from a
+ * Narrow a raw update to the one shape Assistant handles: a text message from a
  * human. Anything else returns null and is acknowledged without work.
  */
 export function parseUpdate(update: TelegramUpdate): InboundMessage | null {

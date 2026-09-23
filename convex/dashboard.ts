@@ -142,7 +142,27 @@ export type ChatMessage = {
   role: string;
   text: string;
   createdAt: number;
+  attachments: Array<{ url: string; fileName: string; contentType: string }>;
 };
+
+function assistantMedia(text: string): Array<{ url: string; fileName: string; contentType: string }> {
+  const found = new Set<string>();
+  const result: Array<{ url: string; fileName: string; contentType: string }> = [];
+  const pattern = /(?:!\[[^\]]*\]|\[[^\]]*\])\((https?:\/\/[^)\s]+)\)|(?<![\w"'=])(https?:\/\/[^\s)]+\.(?:png|jpe?g|gif|webp|svg|mp4|webm|mov|mp3|wav|m4a)(?:\?[^\s)]*)?)/gi;
+  for (const match of text.matchAll(pattern)) {
+    const url = match[1] ?? match[2];
+    if (!url || found.has(url)) continue;
+    found.add(url);
+    const clean = url.split("?")[0];
+    const extension = clean.split(".").pop()?.toLowerCase() ?? "";
+    const contentType = ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(extension)
+      ? `image/${extension === "jpg" ? "jpeg" : extension}`
+      : ["mp4", "webm", "mov"].includes(extension) ? `video/${extension === "mov" ? "quicktime" : extension}`
+        : `audio/${extension === "mp3" ? "mpeg" : extension}`;
+    result.push({ url, fileName: clean.split("/").pop() || "shared media", contentType });
+  }
+  return result;
+}
 
 function webChat(conversation: Doc<"conversations"> | null) {
   if (!conversation || conversation.channel !== WEB_CHANNEL) {
@@ -215,6 +235,13 @@ export const deleteChat = mutation({
       throw new Error("Wait for this chat to finish before deleting it.");
     }
     for (const run of runs) await ctx.db.delete(run._id);
+    const attachments = await ctx.db.query("chatAttachments")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
+      .collect();
+    for (const attachment of attachments) {
+      await ctx.storage.delete(attachment.storageId);
+      await ctx.db.delete(attachment._id);
+    }
     await ctx.db.delete(args.id);
     await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
       threadId: chat.threadId,
@@ -268,12 +295,23 @@ export const branchChat = action({
           })),
         });
       }
-      return await ctx.runMutation(internal.conversations.createBranch, {
+      const branchId = await ctx.runMutation(internal.conversations.createBranch, {
         parentId: source._id,
         threadId,
         title,
         messageId: args.messageId,
       });
+      const keys = new Set(newest.flatMap((message) => {
+        const raw = typeof message.text === "string" ? message.text : "";
+        const match = raw.match(/\n?<!-- attachments:([^>]+) -->\s*$/);
+        return match?.[1] ? [match[1].trim()] : [];
+      }));
+      await ctx.runMutation(internal.conversations.copyAttachments, {
+        sourceId: source._id,
+        targetId: branchId,
+        messageKeys: [...keys],
+      });
+      return branchId;
     } catch (error) {
       await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, { threadId });
       throw error;
@@ -341,38 +379,111 @@ export const getChatMessages = query({
       excludeToolMessages: true,
       paginationOpts: args.paginationOpts,
     });
+    const attachments = await ctx.db.query("chatAttachments")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
+      .collect();
+    const attachmentMap = new Map<string, Array<{ url: string; fileName: string; contentType: string }>>();
+    for (const attachment of attachments) {
+      const url = await ctx.storage.getUrl(attachment.storageId);
+      if (!url) continue;
+      const list = attachmentMap.get(attachment.messageKey) ?? [];
+      list.push({ url, fileName: attachment.fileName, contentType: attachment.contentType });
+      attachmentMap.set(attachment.messageKey, list);
+    }
     return {
       ...page,
-      page: page.page.map((doc): ChatMessage => ({
-        id: doc._id,
-        role: doc.message?.role ?? "assistant",
-        text: typeof doc.text === "string" ? doc.text : "",
-        createdAt: doc._creationTime,
-      })).filter((message) => message.text.trim().length > 0),
+      page: page.page.map((doc): ChatMessage => {
+        const raw = typeof doc.text === "string" ? doc.text : "";
+        const marker = raw.match(/\n?<!-- attachments:([^>]+) -->\s*$/);
+        const messageKey = marker?.[1]?.trim();
+        return {
+          id: doc._id,
+          role: doc.message?.role ?? "assistant",
+          text: (marker ? raw.slice(0, marker.index).trimEnd() : raw),
+          createdAt: doc._creationTime,
+          attachments: messageKey ? attachmentMap.get(messageKey) ?? [] : (doc.message?.role === "assistant" ? assistantMedia(raw) : []),
+        };
+      }).filter((message) => message.text.trim().length > 0 || message.attachments.length > 0),
     };
   },
 });
 
+export const generateUploadUrl = mutation({
+  args: { key: vKey },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const registerAttachment = mutation({
+  args: {
+    key: vKey,
+    conversationId: v.id("conversations"),
+    messageKey: v.string(),
+    storageId: v.id("_storage"),
+    fileName: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+  },
+  returns: v.id("chatAttachments"),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    webChat(await ctx.db.get(args.conversationId));
+    if (!args.fileName.trim() || args.size <= 0 || args.size > 50 * 1024 * 1024) {
+      throw new Error("Attachments must be between 1 byte and 50 MB.");
+    }
+    const stored = await ctx.storage.getMetadata(args.storageId);
+    if (!stored) throw new Error("Upload could not be found.");
+    return await ctx.db.insert("chatAttachments", {
+      conversationId: args.conversationId,
+      messageKey: args.messageKey,
+      storageId: args.storageId,
+      fileName: args.fileName.trim().slice(0, 200),
+      contentType: args.contentType || stored.contentType || "application/octet-stream",
+      size: args.size,
+      createdAt: Date.now(),
+    });
+  },
+});
+
 export const sendChat = mutation({
-  args: { key: vKey, id: v.id("conversations"), text: v.string() },
+  args: {
+    key: vKey,
+    id: v.id("conversations"),
+    text: v.string(),
+    attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
+    messageKey: v.optional(v.string()),
+  },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
 
     const text = args.text.trim();
-    if (text.length === 0) return null;
+    const attachmentIds = args.attachmentIds ?? [];
+    if (text.length === 0 && attachmentIds.length === 0) return null;
     const chat = webChat(await ctx.db.get(args.id));
+    const messageKey = args.messageKey?.trim() || crypto.randomUUID();
+    const attachments = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
+    if (attachments.some((attachment) => !attachment || attachment.conversationId !== args.id || attachment.messageKey !== messageKey)) {
+      throw new Error("One of the attachments is no longer available.");
+    }
+    const prompt = attachmentIds.length > 0
+      ? `${text}\n\n<!-- attachments: ${messageKey} -->`.trim()
+      : text;
     await ctx.db.patch(args.id, {
       lastMessageAt: Date.now(),
-      title: chat.title === "New chat" ? text.slice(0, 80) : chat.title,
+      title: chat.title === "New chat" ? (text || "Attached files").slice(0, 80) : chat.title,
       pendingTurns: (chat.pendingTurns ?? 0) + 1,
     });
 
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
       channel: WEB_CHANNEL,
       externalId: chat.externalId,
-      text,
+      text: prompt,
       title: chat.title,
+      attachmentIds,
     });
     return null;
   },
@@ -535,7 +646,7 @@ export const getStatus = query({
   },
 });
 
-/** Mint a fresh pairing code, for a first claim or to move Perry to a new chat. */
+/** Mint a fresh pairing code, for a first claim or to move Assistant to a new chat. */
 export const startPairing = mutation({
   args: { key: vKey },
   returns: v.object({ code: v.string(), expiresAt: v.number() }),
@@ -545,7 +656,7 @@ export const startPairing = mutation({
   },
 });
 
-/** Release ownership. The next correct pairing code claims Perry again. */
+/** Release ownership. The next correct pairing code claims Assistant again. */
 export const unclaim = mutation({
   args: { key: vKey },
   returns: v.null(),

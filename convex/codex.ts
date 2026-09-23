@@ -177,6 +177,11 @@ export const enqueueTurn = internalMutation({
     prompt: v.string(),
     history: v.optional(v.string()),
     instructions: v.string(),
+    attachments: v.optional(v.array(v.object({
+      url: v.string(),
+      fileName: v.string(),
+      contentType: v.string(),
+    }))),
   },
   returns: v.id("codexTurns"),
   handler: async (ctx, args) => {
@@ -199,6 +204,7 @@ export const enqueueTurn = internalMutation({
       prompt: args.prompt,
       history: args.history,
       instructions: args.instructions,
+      attachments: args.attachments,
       status: "queued",
       createdAt: Date.now(),
     });

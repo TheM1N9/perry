@@ -92,7 +92,7 @@ export function Activity({
               <time dateTime={new Date(run.startedAt).toISOString()} title={new Date(run.startedAt).toLocaleString()}>
                 {ago(run.startedAt)}
               </time>
-              <span>{run.mode === "perry" ? "Perry" : "Agent P"}</span>
+              <span>Assistant</span>
               {run.model && <span>{run.model}</span>}
               {typeof run.steps === "number" && <span>{run.steps} steps</span>}
               {typeof run.totalTokens === "number" && <span>{run.totalTokens.toLocaleString()} tokens</span>}

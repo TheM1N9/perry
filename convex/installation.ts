@@ -6,7 +6,7 @@ import { vChannel } from "./schema";
 /**
  * Who owns this install, and how they proved it.
  *
- * Perry is one person's assistant. Not one person per row in a users table, one
+ * Assistant is one person's assistant. Not one person per row in a users table, one
  * person per deployment: you install it, it is yours, and nobody else's data is
  * anywhere near it. This file is the whole of that idea.
  *
@@ -67,7 +67,7 @@ export const status = internalQuery({
 
 /**
  * Mint a fresh pairing code. Called by setup, and by the dashboard when the
- * code has expired or the owner wants to move Perry to a different chat.
+ * code has expired or the owner wants to move Assistant to a different chat.
  */
 export const startPairing = internalMutation({
   args: {},
@@ -185,7 +185,7 @@ export const setComputeTarget = internalMutation({
   },
 });
 
-/** Hand Perry to a different chat, or to a different person entirely. */
+/** Hand Assistant to a different chat, or to a different person entirely. */
 export const unclaim = internalMutation({
   args: {},
   returns: v.null(),

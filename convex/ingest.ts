@@ -7,7 +7,7 @@ import type { ClaimResult } from "./installation";
  * The front door for Telegram. Runs as a mutation so the HTTP action can return
  * 200 immediately; the actual turn is scheduled and runs on its own.
  *
- * Authorisation happens here, once, before anything else. Perry belongs to
+ * Authorisation happens here, once, before anything else. Assistant belongs to
  * exactly one person and that is decided by the pairing code, not by an
  * environment variable and not by whoever messages first.
  */

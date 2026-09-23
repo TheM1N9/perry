@@ -3,7 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 
 /**
- * The protocol between Perry and a machine the owner has connected.
+ * The protocol between Assistant and a machine the owner has connected.
  *
  * These are public functions because the runner is not a browser session and
  * has no Convex identity. It authenticates with a token that this deployment
@@ -134,7 +134,7 @@ export const finishCommand = mutation({
   },
 });
 
-// --- Perry side ----------------------------------------------------------
+// --- Assistant side ----------------------------------------------------------
 
 export const createToken = internalMutation({
   args: { name: v.string(), token: v.string() },

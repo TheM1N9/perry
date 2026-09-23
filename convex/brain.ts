@@ -5,7 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { agentFor } from "./agents";
 import { sendMessage, sendTyping } from "./lib/telegram";
-import { DEFAULT_MODE, MODE_NAMES, type Mode, type ModeName } from "./modes";
+import { DEFAULT_MODE, type Mode, type ModeName } from "./modes";
 import { vChannel } from "./schema";
 
 /**
@@ -19,13 +19,11 @@ import { vChannel } from "./schema";
 type Channel = "telegram" | "web";
 
 const HELP = `
-Perry, your assistant.
+Your private assistant.
 
 Modes
   /perry    read and remember only. cheap, safe, default
   /agentp   full tools, long leash. say what you want done
-  /mode     which mode am I in
-
 Other
   /status   plumbing and recent errors
   /reset    start a fresh conversation, keep memories
@@ -64,43 +62,15 @@ async function runCommand(
   const [raw, ...rest] = text.trim().split(/\s+/);
   const command = raw.toLowerCase().replace(/@.*$/, ""); // strip /cmd@botname
 
-  const describe = async (name: ModeName) => {
-    const mode: Mode = await ctx.runQuery(internal.config.resolveMode, {
-      mode: name,
-    });
-    return `${mode.label}: ${mode.tools.join(", ")}, ${mode.stepBudget} steps, ${mode.model}`;
-  };
-
-  const switchTo = async (name: ModeName) => {
-    if (name === conversation.mode) {
-      return `Already ${name === "perry" ? "Perry" : "Agent P"}.`;
-    }
-    await ctx.runMutation(internal.conversations.setMode, {
-      id: conversation._id,
-      mode: name,
-    });
-    return await describe(name);
-  };
-
   switch (command) {
     case "/start":
     case "/help":
       return HELP;
 
     case "/perry":
-      return await switchTo("perry");
-
     case "/agentp":
-      return await switchTo("agentP");
-
-    case "/mode": {
-      const requested = rest[0]?.toLowerCase();
-      if (!requested) return await describe(conversation.mode);
-
-      const match = MODE_NAMES.find((m) => m.toLowerCase() === requested);
-      if (!match) return "No such mode. Try /perry or /agentp.";
-      return await switchTo(match);
-    }
+    case "/mode":
+      return "There is one assistant now; mode switching has been retired. Use /help for commands.";
 
     case "/status": {
       const stats = await ctx.runQuery(internal.conversations.stats, {
@@ -111,7 +81,6 @@ async function runCommand(
         mode: conversation.mode,
       });
       const lines = [
-        `mode      ${mode.label}`,
         `model     ${mode.model}`,
         `tools     ${mode.tools.join(", ")}`,
         `memories  ${memoryCount}`,
@@ -176,6 +145,7 @@ export const handleTurn = internalAction({
     externalId: v.string(),
     text: v.string(),
     title: v.optional(v.string()),
+    attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -196,7 +166,12 @@ export const handleTurn = internalAction({
       return null;
     }
 
-    // The mode is resolved exactly once, here, from stored config layered over
+    const attachmentIds = args.attachmentIds ?? [];
+    const attachments = attachmentIds.length > 0
+      ? await ctx.runQuery(internal.media.forTurn, { conversationId: conversation._id, attachmentIds })
+      : [];
+
+    // The assistant configuration is resolved exactly once, here, from stored config layered over
     // the code defaults. Everything below is bound by it and nothing downstream
     // can widen it.
     const modeName: ModeName = conversation.mode ?? DEFAULT_MODE;
@@ -235,11 +210,15 @@ export const handleTurn = internalAction({
             .map((item) => `${item.message?.role}: ${item.text ?? ""}`);
           history = lines.join("\n\n").slice(-24_000) || undefined;
         }
-        const memories = await ctx.runQuery(internal.memories.search, { query: "", limit: 12 });
+        const [recentMemories, relevantMemories] = await Promise.all([
+          ctx.runQuery(internal.memories.search, { query: "", limit: 8 }),
+          args.text.trim() ? ctx.runQuery(internal.memories.search, { query: args.text, limit: 8 }) : Promise.resolve([]),
+        ]);
+        const memories = [...new Map([...relevantMemories, ...recentMemories].map((memory) => [memory.id, memory])).values()].slice(0, 12);
         const instructions = [
           mode.instructions,
-          "This is a Perry chat. Keep the answer in chat style. Use the local Codex tools only when needed; the runner controls filesystem access.",
-          memories.length ? `Known facts about the owner:\n${memories.map((m) => `- ${m.text}`).join("\n")}` : "",
+          "This is a private assistant chat. Be direct, thoughtful, and explicit about uncertainty. Use the connected tools when they can answer or complete the request; ask before consequential external actions. The runner controls filesystem access.",
+          memories.length ? `Known facts about the owner (use only when relevant):\n${memories.map((m) => `- ${m.text}${m.tags.length ? ` [${m.tags.join(", ")}]` : ""}`).join("\n")}` : "",
         ].filter(Boolean).join("\n\n");
         try {
           await ctx.runMutation(internal.codex.enqueueTurn, {
@@ -249,6 +228,7 @@ export const handleTurn = internalAction({
             prompt: args.text,
             history,
             instructions,
+            attachments,
           });
           delegated = true;
           return null;
@@ -256,13 +236,16 @@ export const handleTurn = internalAction({
           console.warn(`Codex unavailable, using gateway: ${String(error)}`);
         }
       }
+      const attachmentContext = attachments.length
+        ? `\n\nAttached files:\n${attachments.map((item) => `- ${item.fileName}: ${item.url}`).join("\n")}`
+        : "";
       const result = await agentFor(mode, gatewayKey).generateText(
         ctx,
         {
           threadId: conversation.threadId,
           userId: channel === "web" ? "web:dashboard" : `${channel}:${args.externalId}`,
         },
-        { prompt: args.text },
+        { prompt: `${args.text}${attachmentContext}` },
       );
 
       const toolCalls: string[] = [];
@@ -344,7 +327,7 @@ export const gatewayFallback = internalAction({
       const result = await agentFor(mode, gatewayKey).generateText(ctx, {
         threadId: conversation.threadId,
         userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
-      }, { prompt: job.prompt });
+      }, { prompt: `${job.prompt}${job.attachments?.length ? `\n\nAttached files:\n${job.attachments.map((item) => `- ${item.fileName}: ${item.url}`).join("\n")}` : ""}` });
       const toolCalls = (result.steps ?? []).flatMap((step) => (step.toolCalls ?? []).map((call) => call?.toolName).filter((name): name is string => Boolean(name)));
       await deliver(ctx, conversation.channel, conversation.externalId,
         result.text?.trim() || (toolCalls.length ? "Done." : "I came back with nothing. Try asking again."));

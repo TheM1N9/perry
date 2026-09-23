@@ -13,7 +13,7 @@ function ago(ts?: number): string {
 }
 
 /**
- * Where Agent P's commands run: a throwaway cloud box, or this person's own
+ * Where Assistant's commands run: a throwaway cloud box, or this person's own
  * machine.
  *
  * The choice is a real one, so the page says what each side costs rather than
@@ -33,7 +33,7 @@ export function Computer({ dashboardKey }: { dashboardKey: string }) {
       <div className="panel">
         <h3>Where commands run</h3>
         <p className="hint">
-          Agent P only. Perry mode cannot run anything either way.
+          Commands are available to the assistant when you connect a machine.
         </p>
 
         <div style={{ display: "grid", gap: 10 }}>

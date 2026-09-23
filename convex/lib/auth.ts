@@ -1,12 +1,12 @@
 /**
  * Dashboard access control.
  *
- * Perry is single-owner, so this is a bearer key rather than a login system:
+ * Assistant is single-owner, so this is a bearer key rather than a login system:
  * the browser holds one secret and sends it with every call, and every public
  * function checks it before touching anything. That is proportionate for one
  * user and honest about what it is.
  *
- * What it is not: per-user accounts, sessions, or revocation. If Perry ever
+ * What it is not: per-user accounts, sessions, or revocation. If Assistant ever
  * serves more than one person, this is the piece that gets replaced by Convex
  * Auth, and every function already has the check in the right place.
  */

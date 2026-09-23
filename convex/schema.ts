@@ -5,7 +5,7 @@ export const vChannel = v.union(v.literal("telegram"), v.literal("web"));
 export const vMode = v.union(v.literal("perry"), v.literal("agentP"));
 
 /**
- * Perry is single-owner, so there is no users table. The owner is identified by
+ * Assistant is single-owner, so there is no users table. The owner is identified by
  * channel plus external id, checked against an env allowlist on every inbound
  * message. Everything below is scoped to that one owner.
  */
@@ -14,7 +14,7 @@ export default defineSchema({
    * Exactly one row, describing this install and who owns it.
    *
    * The owner used to be an environment variable, which meant claiming your own
-   * Perry took a trip back to a terminal. It lives here instead so the whole
+   * Assistant took a trip back to a terminal. It lives here instead so the whole
    * flow is: run setup, send the code to your bot, done. One install, one
    * owner, and the owner is whoever answered the code first.
    */
@@ -36,7 +36,7 @@ export default defineSchema({
   }),
 
   /**
-   * Work Perry has been asked to do, borrowed from OpenMuse's task model.
+   * Work Assistant has been asked to do, borrowed from OpenMuse's task model.
    *
    * A task is the unit that survives the conversation: the agent writes a plan
    * into it, ticks steps off as it goes, and the dashboard renders progress
@@ -95,7 +95,7 @@ export default defineSchema({
   }).index("by_status", ["status"]),
 
   /**
-   * A recurring check on a public page. The cron ticks these, and Perry only
+   * A recurring check on a public page. The cron ticks these, and Assistant only
    * speaks up when the condition actually fires.
    */
   monitors: defineTable({
@@ -142,7 +142,7 @@ export default defineSchema({
    *
    * The critical property is the direction of the connection. The runner dials
    * out to Convex and holds a subscription; Convex never dials in. There is no
-   * listening port, no inbound firewall rule and no tunnel, so a Perry install
+   * listening port, no inbound firewall rule and no tunnel, so a Assistant install
    * cannot be found by scanning the internet. OpenClaw's 135,000 exposed
    * instances are the cost of getting this backwards.
    */
@@ -226,7 +226,7 @@ export default defineSchema({
   }).index("by_name", ["name"]),
 
   /**
-   * One row per chat Perry talks in. Holds the durable mode and the id of the
+   * One row per chat Assistant talks in. Holds the durable mode and the id of the
    * Agent component thread that carries the message history.
    */
   conversations: defineTable({
@@ -245,12 +245,25 @@ export default defineSchema({
     .index("by_channel_external", ["channel", "externalId"])
     .index("by_channel_last", ["channel", "lastMessageAt"]),
 
+  /** Files attached to a chat turn. The bytes live in Convex storage. */
+  chatAttachments: defineTable({
+    conversationId: v.id("conversations"),
+    messageKey: v.string(),
+    storageId: v.id("_storage"),
+    fileName: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId"])
+    .index("by_message", ["conversationId", "messageKey"]),
+
   /**
    * Per-mode overrides layered on top of the defaults in modes.ts.
    *
    * The defaults stay in code so a fresh deployment works with an empty table
-   * and so the file remains the readable answer to "what is Perry allowed to
-   * do". This table exists so the next person to run Perry can change the model
+   * and so the file remains the readable answer to "what is Assistant allowed to
+   * do". This table exists so the next person to run Assistant can change the model
    * from the dashboard instead of editing TypeScript and redeploying.
    */
   modeConfigs: defineTable({
@@ -317,6 +330,11 @@ export default defineSchema({
     prompt: v.string(),
     history: v.optional(v.string()),
     instructions: v.string(),
+    attachments: v.optional(v.array(v.object({
+      url: v.string(),
+      fileName: v.string(),
+      contentType: v.string(),
+    }))),
     status: v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("error")),
     response: v.optional(v.string()),
     error: v.optional(v.string()),

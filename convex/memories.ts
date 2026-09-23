@@ -58,6 +58,7 @@ export const search = internalQuery({
       id: d._id,
       text: d.text,
       tags: d.tags,
+      source: d.source,
       createdAt: d.createdAt,
     }));
   },

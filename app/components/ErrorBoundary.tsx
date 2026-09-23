@@ -26,7 +26,7 @@ export class ErrorBoundary extends Component<
 
     return (
       <div className="gate">
-        <h1 className="title">Perry</h1>
+        <h1 className="title">Assistant</h1>
         <p className="hint" style={{ marginTop: 8 }}>
           {isKeyProblem
             ? "That key was rejected."

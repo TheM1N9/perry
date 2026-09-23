@@ -120,9 +120,40 @@ export const createBranch = internalMutation({
   },
 });
 
+export const attachmentsForConversation = internalQuery({
+  args: { id: v.id("conversations") },
+  handler: async (ctx, args) => await ctx.db.query("chatAttachments")
+    .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
+    .collect(),
+});
+
+export const copyAttachments = internalMutation({
+  args: { sourceId: v.id("conversations"), targetId: v.id("conversations"), messageKeys: v.array(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const keys = new Set(args.messageKeys);
+    const attachments = await ctx.db.query("chatAttachments")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", args.sourceId))
+      .collect();
+    for (const attachment of attachments) {
+      if (!keys.has(attachment.messageKey)) continue;
+      await ctx.db.insert("chatAttachments", {
+        conversationId: args.targetId,
+        messageKey: attachment.messageKey,
+        storageId: attachment.storageId,
+        fileName: attachment.fileName,
+        contentType: attachment.contentType,
+        size: attachment.size,
+        createdAt: Date.now(),
+      });
+    }
+    return null;
+  },
+});
+
 /**
  * Drop the conversation so the next message starts a fresh thread. Memories
- * survive on purpose: reset clears the conversation, not what Perry knows.
+ * survive on purpose: reset clears the conversation, not what Assistant knows.
  */
 export const clearThread = internalMutation({
   args: { id: v.id("conversations") },

@@ -31,11 +31,11 @@ const SUGGESTED = [
 ];
 
 /**
- * Connect an account here and Agent P can use it on the next turn.
+ * Connect an account here and Assistant can use it on the next turn.
  *
  * Nothing about the agent changes when you do. It looks up what is connected
  * at the moment it needs to act, so this page is the only place that decides
- * what Perry can reach.
+ * what Assistant can reach.
  */
 export function Connectors({ dashboardKey }: { dashboardKey: string }) {
   const getConnectors = useAction(api.dashboard.getConnectors);
@@ -107,7 +107,7 @@ export function Connectors({ dashboardKey }: { dashboardKey: string }) {
       <div className="panel">
         <h3>Not set up</h3>
         <p className="hint">
-          Composio holds the OAuth for your accounts so Perry never sees a
+          Composio holds the OAuth for your accounts so Assistant never sees a
           token. Get a key at composio.dev, then run:
         </p>
         <pre style={{ fontSize: 12, color: "var(--dim)" }}>
@@ -133,8 +133,8 @@ export function Connectors({ dashboardKey }: { dashboardKey: string }) {
           </div>
         </div>
         <p className="hint">
-          Agent P can use these on the next turn. Perry mode can see the list
-          but cannot use any of them.
+          The assistant can look up the available actions on the next turn and
+          use them only after you have connected the account.
         </p>
 
         {notice && (
@@ -214,7 +214,7 @@ export function Connectors({ dashboardKey }: { dashboardKey: string }) {
       <div className="panel">
         <h3>What can it actually do</h3>
         <p className="hint">
-          The same lookup Agent P runs before acting. Useful for checking a
+          The same lookup Assistant runs before acting. Useful for checking a
           connection really works.
         </p>
 

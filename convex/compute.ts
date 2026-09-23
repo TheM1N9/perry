@@ -4,7 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, type ActionCtx } from "./_generated/server";
 
 /**
- * Where Agent P's commands actually run.
+ * Where Assistant's commands actually run.
  *
  * Two targets, and the difference is entirely about what is at risk:
  *

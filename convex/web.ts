@@ -116,7 +116,7 @@ export async function fetchPage(raw: string): Promise<FetchedPage> {
       redirect: "follow",
       signal: controller.signal,
       headers: {
-        "user-agent": "Perry/0.1 (personal assistant; +https://github.com)",
+        "user-agent": "Assistant/0.1 (personal assistant; +https://github.com)",
         accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8",
       },
     });
@@ -188,7 +188,7 @@ function firstPrice(text: string): number | null {
  *
  * The rule that makes this bearable to live with: the first check of a
  * `change` monitor only records a baseline. Otherwise every new watch fires
- * immediately and the owner learns to ignore Perry.
+ * immediately and the owner learns to ignore Assistant.
  */
 export const checkMonitors = internalAction({
   args: {},

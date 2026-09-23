@@ -23,7 +23,7 @@ const STEP_MARK: Record<string, string> = {
 };
 
 /**
- * What Perry is doing, borrowed wholesale from OpenMuse's idea that progress
+ * What Assistant is doing, borrowed wholesale from OpenMuse's idea that progress
  * belongs in a row rather than in the conversation.
  *
  * The agent writes the plan through a tool, so this view is the truth rather
@@ -56,7 +56,7 @@ export function Work({ dashboardKey }: { dashboardKey: string }) {
           <span className="badge">{work.tasks.length}</span>
         </div>
         <p className="hint">
-          Opened by Agent P for anything with more than a couple of steps.
+          Opened by Assistant for anything with more than a couple of steps.
         </p>
 
         {work.tasks.length === 0 && <div className="empty">Nothing yet.</div>}

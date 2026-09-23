@@ -49,7 +49,7 @@ export class CodexAppServer extends EventEmitter {
     this.child.on("error", (error) => this.fail(error));
     this.child.on("close", (code) => this.fail(new Error(`Codex app-server exited (${code}).`)));
     await this.request("initialize", {
-      clientInfo: { name: "perry", title: "Perry", version: "0.1.0" },
+      clientInfo: { name: "perry", title: "Assistant", version: "0.1.0" },
     });
     this.notify("initialized", {});
     return this;
@@ -168,27 +168,32 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  async runTurn({ threadId, instructions, history, prompt, cwd, mode, onThread }) {
+  async runTurn({ threadId, instructions, history, prompt, cwd, mode, attachments = [], onThread }) {
     const fullInstructions = history
       ? `${instructions}\n\nEarlier chat history (context, not a new user request):\n${history}`
       : instructions;
-    const agentP = mode === "agentP";
-    const policy = agentP ? "on-request" : "never";
-    const sandbox = agentP ? "workspace-write" : "read-only";
+    const policy = "on-request";
+    const sandbox = "workspace-write";
     const thread = threadId
       ? await this.request("thread/resume", { threadId, cwd, approvalPolicy: policy, sandbox, developerInstructions: fullInstructions }, 30_000)
       : await this.request("thread/start", { cwd, approvalPolicy: policy, sandbox, developerInstructions: fullInstructions, serviceName: "perry" }, 30_000);
     const id = thread.thread?.id;
     if (!id) throw new Error("Codex did not return a thread ID.");
     if (!threadId) await onThread(id);
+    const input = [{ type: "text", text: prompt }];
+    for (const attachment of attachments) {
+      if (attachment.contentType?.startsWith("image/")) {
+        input.push({ type: "image", url: attachment.url });
+      } else {
+        input[0].text += `\nAttached file: ${attachment.fileName} (${attachment.url})`;
+      }
+    }
     const started = await this.request("turn/start", {
       threadId: id,
-      input: [{ type: "text", text: prompt }],
+      input,
       cwd,
       approvalPolicy: policy,
-      sandboxPolicy: agentP
-        ? { type: "workspaceWrite", writableRoots: [cwd], networkAccess: false }
-        : { type: "readOnly" },
+      sandboxPolicy: { type: "workspaceWrite", writableRoots: [cwd], networkAccess: false },
     }, 30_000);
     if (!started.turn?.id) throw new Error("Codex did not start a turn.");
     return { threadId: id, response: await this.waitForTurn(started.turn.id) };

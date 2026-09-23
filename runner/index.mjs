@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Perry's runner: the piece that lets Agent P work on this machine.
+ * Assistant's runner: the piece that lets Assistant work on this machine.
  *
  * How it connects, and why that shape:
  *
@@ -12,7 +12,7 @@
  *
  * What protects you, in order of how much it actually matters:
  *
- *   1. This process. Close the terminal and Agent P has no hands again.
+ *   1. This process. Close the terminal and Assistant has no hands again.
  *   2. Approval. Every command is printed here and waits for you to press y,
  *      unless you started it with --auto.
  *   3. The working directory. Commands run in one directory you chose, and
@@ -176,7 +176,7 @@ async function main() {
   if (!url || !token) {
     console.error(
       `\n${red("Not configured.")}\n\n` +
-        `  On the machine where you installed Perry:  ${bold("pnpm run connect")}\n` +
+        `  On the machine where you installed Assistant:  ${bold("pnpm run connect")}\n` +
         `  On another machine:  ${bold("pnpm run connect -- --url <convex url> --token <token>")}\n`,
     );
     process.exit(1);
@@ -197,7 +197,7 @@ async function main() {
     ? null
     : createInterface({ input: process.stdin, output: process.stdout });
 
-  console.log(`\n${bold("Perry runner")}`);
+  console.log(`\n${bold("Assistant runner")}`);
   console.log(dim(`  machine    ${name} (${platform()})`));
   console.log(dim(`  directory  ${workdir}`));
   console.log(
@@ -206,7 +206,7 @@ async function main() {
       : dim("  approval   every command waits for you"),
   );
   console.log(dim(`  connection outbound only, nothing is listening here`));
-  console.log(dim(`\n  Ctrl-C takes Perry's hands away.\n`));
+  console.log(dim(`\n  Ctrl-C takes Assistant's hands away.\n`));
 
   const client = new ConvexClient(url);
   const { api } = await import(
@@ -236,7 +236,7 @@ async function main() {
           } else if (method === "item/permissions/requestApproval") {
             instance.respond(message.id, { permissions: {} });
           } else {
-            instance.rejectRequest(message.id, `Perry does not support ${method}.`);
+            instance.rejectRequest(message.id, `Assistant does not support ${method}.`);
           }
         })().catch((error) => instance.rejectRequest(message.id, String(error.message ?? error)));
       });
@@ -502,6 +502,7 @@ async function main() {
               prompt: job.prompt,
               cwd: workdir,
               mode: job.mode,
+              attachments: job.attachments,
               onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
             });
             result = { response: completed.response, model: "codex subscription" };
@@ -529,7 +530,7 @@ async function main() {
     codex?.close();
     rl?.close();
     await client.close();
-    console.log(dim("\n  runner stopped. Perry has no hands here now.\n"));
+    console.log(dim("\n  runner stopped. Assistant has no hands here now.\n"));
     process.exit(0);
   };
 
@@ -544,7 +545,7 @@ async function approve(rl, what, detail, autoApprove, cwd, workdir) {
     return true;
   }
 
-  console.log(`\n${bold("  Perry wants to run:")}`);
+  console.log(`\n${bold("  Assistant wants to run:")}`);
   console.log(`    ${cyan(what)}`);
   if (cwd && workdir) {
     const where = relative(workdir, cwd);

@@ -16,6 +16,7 @@ const paths = {
   menu: "M4 7h16M4 12h16M4 17h16",
   arrow: "M12 19V5m-6 6 6-6 6 6",
   close: "M5 5l14 14M19 5 5 19",
+  paperclip: "m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5",
   more: "M5 12h.01M12 12h.01M19 12h.01",
   spark: "m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2ZM19 17l.6 1.4L21 19l-1.4.6L19 21l-.6-1.4L17 19l1.4-.6L19 17Z",
   lock: "M5 10h14v11H5V10Zm3 0V7a4 4 0 0 1 8 0v3",
@@ -31,6 +32,17 @@ function groupName(timestamp: number) {
   return "Previous";
 }
 const quickStarts = ["Help me plan my day", "Summarize what we worked on recently", "I have an idea to think through"];
+type Attachment = { url: string; fileName: string; contentType: string };
+type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
+function AttachmentList({ attachments }: { attachments: Attachment[] }) {
+  if (!attachments.length) return null;
+  return <div className="chat-attachments">{attachments.map((attachment) => {
+    if (attachment.contentType.startsWith("image/")) return <a key={attachment.url} href={attachment.url} target="_blank" rel="noreferrer"><img src={attachment.url} alt={attachment.fileName} /></a>;
+    if (attachment.contentType.startsWith("video/")) return <video key={attachment.url} controls preload="metadata" src={attachment.url} />;
+    if (attachment.contentType.startsWith("audio/")) return <audio key={attachment.url} controls src={attachment.url} />;
+    return <a className="chat-attachment-file" key={attachment.url} href={attachment.url} target="_blank" rel="noreferrer"><Icon name="paperclip" size={15} />{attachment.fileName}</a>;
+  })}</div>;
+}
 
 export function Chat({ dashboardKey, onNavigate, onLock }: {
   dashboardKey: string;
@@ -43,11 +55,13 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const deleteChat = useMutation(api.dashboard.deleteChat);
   const branchChat = useAction(api.dashboard.branchChat);
   const sendChat = useMutation(api.dashboard.sendChat);
-  const setChatMode = useMutation(api.dashboard.setChatMode);
+  const generateUploadUrl = useMutation(api.dashboard.generateUploadUrl);
+  const registerAttachment = useMutation(api.dashboard.registerAttachment);
   const [selectedId, setSelectedId] = useState<ChatId | null>(null);
   const [restored, setRestored] = useState(false);
   const [draft, setDraft] = useState("");
-  const [pending, setPending] = useState<{ id: ChatId; text: string; baselineCount: number; seenRunning: boolean } | null>(null);
+  const [pending, setPending] = useState<{ id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean } | null>(null);
+  const [pickedFiles, setPickedFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -64,6 +78,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const olderScroll = useRef<{ height: number; top: number } | null>(null);
   const draftingNew = useRef(false);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const filePicker = useRef<HTMLInputElement>(null);
   const chat = useQuery(api.dashboard.getChat, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
   const { results: newestMessages, status: messageStatus, loadMore } = usePaginatedQuery(
     api.dashboard.getChatMessages,
@@ -170,12 +185,26 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   }
   async function submit(text = draft) {
     const message = text.trim();
-    if (!message || busy || pending?.id === selectedId) return;
+    if ((!message && pickedFiles.length === 0) || busy || pending?.id === selectedId) return;
     const id = selectedId ?? await makeChat();
     if (!id) return;
-    setDraft(""); setError(""); setPending({ id, text: message, baselineCount: selectedId === id ? messages.filter((item) => item.role === "user" && item.text === message).length : 0, seenRunning: false });
-    try { await sendChat({ key: dashboardKey, id, text: message }); }
-    catch (cause) { setPending(null); setDraft(message); setError(cause instanceof Error ? cause.message : String(cause)); }
+    const files = pickedFiles;
+    const messageKey = files.length ? crypto.randomUUID() : undefined;
+    setDraft(""); setPickedFiles([]); setError("");
+    try {
+      const uploaded: PendingAttachment[] = [];
+      for (const file of files) {
+        const uploadUrl = await generateUploadUrl({ key: dashboardKey });
+        const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+        if (!response.ok) throw new Error(`Could not upload ${file.name}.`);
+        const body = await response.json() as { storageId?: Id<"_storage"> };
+        if (!body.storageId) throw new Error(`Could not store ${file.name}.`);
+        const attachmentId = await registerAttachment({ key: dashboardKey, conversationId: id, messageKey: messageKey!, storageId: body.storageId, fileName: file.name, contentType: file.type || "application/octet-stream", size: file.size });
+        uploaded.push({ id: attachmentId, url: URL.createObjectURL(file), fileName: file.name, contentType: file.type || "application/octet-stream" });
+      }
+      setPending({ id, text: message, attachments: uploaded, baselineCount: selectedId === id ? messages.filter((item) => item.role === "user" && item.text === message).length : 0, seenRunning: false });
+      await sendChat({ key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey });
+    } catch (cause) { setPending(null); setDraft(message); setPickedFiles(files); setError(cause instanceof Error ? cause.message : String(cause)); }
   }
   async function branch(messageId: string) {
     if (!selectedId || busy) return;
@@ -216,7 +245,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   return <div className="chat-workspace">
     {sidebarOpen && <button className="chat-scrim" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} />}
     <aside className={`chat-sidebar ${sidebarOpen ? "open" : ""}`}>
-      <div className="chat-brand"><span className="chat-brand-mark">P</span><span>Perry</span><span className="chat-brand-sub">your space</span></div>
+      <div className="chat-brand"><span className="chat-brand-mark">A</span><span>Assistant</span><span className="chat-brand-sub">your space</span></div>
       <div className="chat-sidebar-actions">
         <button className="chat-new" onClick={startNewChat} disabled={busy}><Icon name="plus" size={19} /> New chat</button>
         <button className="chat-search-trigger" onClick={() => setSearchOpen(true)}><Icon name="search" size={17} /><span>Search chats</span><kbd>Ctrl K</kbd></button>
@@ -266,30 +295,30 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
           </div>
         </div>
         <div className="chat-header-controls">
-          <div className="chat-mode" aria-label="Chat mode">{(["perry", "agentP"] as const).map((mode) => <button key={mode} className={(chat?.mode ?? "perry") === mode ? "active" : ""} disabled={!selectedId || busy} onClick={() => { if (selectedId) void setChatMode({ key: dashboardKey, id: selectedId, mode }).catch((cause) => setError(String(cause))); }}>{mode === "perry" ? "Perry" : "Agent P"}</button>)}</div>
           <button className="chat-header-new" title="New chat" aria-label="New chat" onClick={startNewChat} disabled={busy}><Icon name="plus" /></button>
         </div>
       </header>
       <div className="chat-scroll" ref={scroller}>
-        {!selectedId ? <div className="chat-welcome"><div className="chat-welcome-mark"><Icon name="spark" size={33} /></div><div className="chat-eyebrow">YOUR PERSONAL ASSISTANT</div><h1>Where should we start?</h1><p>Ask a question, make a plan, or pick up where you left off. Perry remembers what matters across your chats.</p><div className="chat-prompts">{quickStarts.map((prompt) => <button key={prompt} onClick={() => { setDraft(prompt); composer.current?.focus(); }}>{prompt}<Icon name="chevron" size={15} /></button>)}</div></div> :
+        {!selectedId ? <div className="chat-welcome"><div className="chat-welcome-mark"><Icon name="spark" size={33} /></div><div className="chat-eyebrow">YOUR PERSONAL ASSISTANT</div><h1>Where should we start?</h1><p>Ask a question, make a plan, or pick up where you left off. Your assistant remembers what matters across your chats.</p><div className="chat-prompts">{quickStarts.map((prompt) => <button key={prompt} onClick={() => { setDraft(prompt); composer.current?.focus(); }}>{prompt}<Icon name="chevron" size={15} /></button>)}</div></div> :
           <div className="chat-thread">
             {(chat === undefined || messageStatus === "LoadingFirstPage") && <div className="chat-thread-loading">Loading conversation…</div>}
             {messageStatus === "CanLoadMore" && <div className="chat-load-older"><button onClick={() => { if (scroller.current) olderScroll.current = { height: scroller.current.scrollHeight, top: scroller.current.scrollTop }; loadMore(50); }}>Load earlier messages</button></div>}
             {messageStatus === "LoadingMore" && <div className="chat-thread-loading">Loading earlier messages…</div>}
             {chat && messageStatus !== "LoadingFirstPage" && messages.length === 0 && pending?.id !== selectedId && <div className="chat-thread-empty"><div className="chat-welcome-mark small"><Icon name="spark" size={24} /></div><h2>Start a conversation</h2><p>Messages in this chat stay together. Your saved memories are available in every chat.</p></div>}
             {messages.map((message) => <div key={message.id} className={`chat-turn ${message.role === "user" ? "from-user" : "from-assistant"}`}>
-              {message.role !== "user" && <div className="chat-avatar">P</div>}
-              <div className="chat-turn-body"><div className="chat-bubble">{message.text}</div><div className="chat-turn-actions"><button title="Branch from this message" onClick={() => void branch(message.id)} disabled={busy}><Icon name="branch" size={14} /> Branch from here</button></div></div>
+              {message.role !== "user" && <div className="chat-avatar">A</div>}
+              <div className="chat-turn-body"><div className="chat-bubble">{message.text}<AttachmentList attachments={message.attachments ?? []} /></div><div className="chat-turn-actions"><button title="Branch from this message" onClick={() => void branch(message.id)} disabled={busy}><Icon name="branch" size={14} /> Branch from here</button></div></div>
             </div>)}
-            {pending?.id === selectedId && <div className="chat-turn from-user pending"><div className="chat-turn-body"><div className="chat-bubble">{pending.text}</div></div></div>}
-            {waiting && <div className="chat-turn from-assistant pending"><div className="chat-avatar">P</div><div className="chat-thinking"><i /><i /><i /></div></div>}
-            {chat?.lastError && !chat.isRunning && <div className="chat-turn-error" role="alert">Perry couldn’t finish the last reply: {chat.lastError}</div>}
+            {pending?.id === selectedId && <div className="chat-turn from-user pending"><div className="chat-turn-body"><div className="chat-bubble">{pending.text}<AttachmentList attachments={pending.attachments} /></div></div></div>}
+            {waiting && <div className="chat-turn from-assistant pending"><div className="chat-avatar">A</div><div className="chat-thinking"><i /><i /><i /></div></div>}
+            {chat?.lastError && !chat.isRunning && <div className="chat-turn-error" role="alert">The assistant couldn’t finish the last reply: {chat.lastError}</div>}
           </div>}
       </div>
       <div className="chat-composer-area"><div className="chat-composer-wrap">
         {error && <div className="chat-error" role="alert">{error}<button aria-label="Dismiss error" onClick={() => setError("")}><Icon name="close" size={15} /></button></div>}
-        <div className="chat-composer-box"><textarea ref={composer} value={draft} rows={1} placeholder="Message Perry…" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} /><div className="chat-composer-foot"><span>Shift + Enter for a new line</span><button className="chat-send" aria-label="Send message" onClick={() => void submit()} disabled={!draft.trim() || busy || pending?.id === selectedId}><Icon name="arrow" size={18} /></button></div></div>
-        <div className="chat-composer-caption">Perry can make mistakes. Check important information.</div>
+        {pickedFiles.length > 0 && <div className="chat-picked-files">{pickedFiles.map((file) => <span key={`${file.name}-${file.lastModified}`}><Icon name="paperclip" size={14} />{file.name}<button aria-label={`Remove ${file.name}`} onClick={() => setPickedFiles((items) => items.filter((item) => item !== file))}>×</button></span>)}</div>}
+        <div className="chat-composer-box"><textarea ref={composer} value={draft} rows={1} placeholder="Message your assistant…" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} /><div className="chat-composer-foot"><button className="chat-attach" aria-label="Attach files" title="Attach images, video, audio, or files" onClick={() => filePicker.current?.click()} disabled={busy}><Icon name="paperclip" size={17} /></button><input ref={filePicker} type="file" multiple hidden accept="image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json" onChange={(event) => { setPickedFiles((items) => [...items, ...Array.from(event.target.files ?? [])].slice(0, 10)); event.currentTarget.value = ""; }} /><span>Shift + Enter for a new line</span><button className="chat-send" aria-label="Send message" onClick={() => void submit()} disabled={(!draft.trim() && pickedFiles.length === 0) || busy || pending?.id === selectedId}><Icon name="arrow" size={18} /></button></div></div>
+        <div className="chat-composer-caption">Attach images, video, audio, or documents. The assistant can inspect supported files and link to shared media.</div>
       </div></div>
     </main>
     {searchOpen && <div className="chat-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSearchOpen(false); }}><div className="chat-search-dialog" role="dialog" aria-modal="true" aria-label="Search chats"><div className="chat-search-field"><Icon name="search" size={20} /><input autoFocus value={search} placeholder="Search your chats…" onChange={(event) => setSearch(event.target.value)} /><button onClick={() => setSearchOpen(false)} aria-label="Close search"><Icon name="close" size={17} /></button></div><div className="chat-search-results">{!searchTerm && <div className="chat-search-help">Find a conversation by title or message text.</div>}{searchTerm && searchResults === null && !searchError && <div className="chat-search-help">Searching…</div>}{searchError && <div className="chat-search-help">{searchError}</div>}{searchTerm && searchResults?.length === 0 && <div className="chat-search-help">No chats found for “{searchTerm}”.</div>}{searchResults?.map((item) => <button key={item.id} onClick={() => { setSelectedId(item.id); setSearchOpen(false); setSidebarOpen(false); }}><Icon name="chat" size={17} /><span><strong>{item.title}</strong>{item.snippet && <small>{item.snippet}</small>}</span><Icon name="chevron" size={16} /></button>)}</div><div className="chat-search-tip">ESC to close</div></div></div>}

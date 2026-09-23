@@ -6,7 +6,7 @@ import { internal } from "./_generated/api";
 import { internalAction, type ActionCtx } from "./_generated/server";
 
 /**
- * Agent P's computer: one Linux sandbox, created on first use, reused after.
+ * Assistant's computer: one Linux sandbox, created on first use, reused after.
  *
  * The shape is lifted from OpenMuse's container model, because the reasoning
  * behind it is right:
@@ -23,10 +23,10 @@ import { internalAction, type ActionCtx } from "./_generated/server";
  *   Persistent workspace.    /workspace survives stop and restart.
  *
  * One deliberate difference: OpenMuse disables networking in the container and
- * browses in a separate worker. Perry leaves the network on, because without it
+ * browses in a separate worker. Assistant leaves the network on, because without it
  * the sandbox cannot install a package or clone a repo, which is most of what
  * it is for. That is a real widening of the blast radius and the reason this
- * whole file is bound to Agent P only.
+ * whole file is bound to Assistant only.
  */
 
 const WORKSPACE = "/home/daytona/workspace";
@@ -41,8 +41,8 @@ async function apiKey(ctx: ActionCtx): Promise<string | null> {
 function requireKey(key: string | null): string {
   if (!key) {
     throw new Error(
-      "No Daytona key, so Perry has no cloud computer. Add one on the Keys " +
-        "page, or point Agent P at your own machine instead.",
+      "No Daytona key, so Assistant has no cloud computer. Add one on the Keys " +
+        "page, or point Assistant at your own machine instead.",
     );
   }
   return key;

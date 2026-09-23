@@ -6,9 +6,9 @@ import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 
 /**
- * Perry's hands on your accounts, through Composio.
+ * Assistant's hands on your accounts, through Composio.
  *
- * The important property: Perry does not ship a Gmail tool, a Calendar tool
+ * The important property: Assistant does not ship a Gmail tool, a Calendar tool
  * and a Notion tool. It ships three tools that ask Composio what you have
  * connected and use whatever that turns out to be. Connect Google Calendar in
  * the dashboard and the next turn can already create events, with no redeploy
@@ -19,13 +19,13 @@ import { internalAction } from "./_generated/server";
  * your connected accounts, instead of stuffing a thousand tool schemas into
  * the model's context.
  *
- * Perry never sees a token. OAuth lives with Composio, and this deployment
+ * Assistant never sees a token. OAuth lives with Composio, and this deployment
  * holds one API key that can act only on the accounts you linked.
  */
 
 /**
  * One owner per install, so the Composio user id is a constant. This is the
- * same reasoning as the rest of Perry: the isolation boundary is the
+ * same reasoning as the rest of Assistant: the isolation boundary is the
  * deployment, not a row.
  */
 const USER_ID = "owner";
@@ -110,7 +110,7 @@ export const connectors = internalAction({
 /**
  * Start an OAuth flow for a toolkit and hand back the URL to open.
  *
- * The owner finishes it in a browser. Perry only ever learns that the account
+ * The owner finishes it in a browser. Assistant only ever learns that the account
  * exists, never the token behind it.
  */
 export const authorize = internalAction({
