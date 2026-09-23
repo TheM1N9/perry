@@ -76,6 +76,7 @@ const afterRetry = await messages();
 
 const pass = stuck?.isRunning === true && first.abandoned >= 1 && /runner stopped/i.test(recovered.lastError ?? "")
   && !recovered.isRunning && Boolean(banner) && afterFirst.filter((message) => message.role === "user").length === 1
+  && afterFirst.some((message) => message.role === "assistant" && /^1\s+2\s+3/.test(message.text)) && first.released === 0
   && second.abandoned === 0 && second.refinalized === 0 && afterRetry.length === afterFirst.length
   && Boolean(turn?.savedAt) && Boolean(turn?.finalizedAt) && turn?.status === "error" && errors.length === 0;
 const result = {

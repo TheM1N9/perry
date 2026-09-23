@@ -42,6 +42,8 @@ export const sweep = internalMutation({
       return runnerOnline.get(id)!;
     };
 
+    // Chats whose turn this sweep already failed; finalizing that turn releases them.
+    const handled = new Set<string>();
     for (const turn of turns) {
       if (turn.finalizedAt) continue;
       if ((turn.status === "done" || turn.status === "error") && (turn.finishedAt ?? 0) < now - RETRY_FINALIZE_MS) {
@@ -53,8 +55,11 @@ export const sweep = internalMutation({
         ? turn.createdAt < now - QUEUED_OFFLINE_MS
         : turn.status === "running" && (turn.startedAt ?? turn.createdAt) < now - RUNNING_OFFLINE_MS;
       if (stale && !(await online(turn.runnerId))) {
+        // What it had written so far is kept, as when the owner stops a turn.
         await ctx.db.patch(turn._id, {
           status: "error",
+          response: turn.response ?? turn.partial,
+          partial: undefined,
           error: turn.status === "queued"
             ? "The runner was offline, so this message was not answered. Start the runner and send it again."
             : "The runner stopped during this turn and did not come back. Start the runner and send the message again.",
@@ -62,13 +67,14 @@ export const sweep = internalMutation({
         });
         await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: turn._id });
         abandoned += 1;
+        handled.add(turn.conversationId);
       }
     }
 
     // A chat marked busy with nothing queued or running behind it.
     const chats = args.only ? [await ctx.db.get(args.only)].filter((chat) => chat !== null) : await ctx.db.query("conversations").collect();
     for (const chat of chats) {
-      if (!chat.pendingTurns || chat.lastMessageAt > now - STUCK_CHAT_MS) continue;
+      if (!chat.pendingTurns || chat.lastMessageAt > now - STUCK_CHAT_MS || handled.has(chat._id)) continue;
       const active = await ctx.db.query("codexTurns")
         .withIndex("by_conversation_status", (q) => q.eq("conversationId", chat._id).eq("status", "queued"))
         .first() ?? await ctx.db.query("codexTurns")
