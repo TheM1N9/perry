@@ -167,16 +167,21 @@ const read_chat = createTool({
 
 // --- Scheduled jobs ------------------------------------------------------
 
+const schedule = z.string().min(9).describe("For repeating work: a cron expression in the owner's timezone, minute hour day-of-month month day-of-week, e.g. '0 8 * * 1-5' for 8am on weekdays.");
+const at = z.iso.datetime({ offset: true }).describe("For a one-time run, such as a reminder: ISO 8601 with the owner's UTC offset, e.g. '2026-09-24T17:00:00+05:30'. Work out 'in two hours' or 'tomorrow at 5' from the current time.");
+
 const create_job = createTool({
   description:
-    "Schedule a recurring job: a prompt you will run on a cron schedule in the " +
-    "owner's timezone, such as a weekday morning briefing or a Friday inbox " +
-    "sweep. Each run is a fresh turn; its reply goes to the owner, and a reply " +
-    "of exactly NOTHING sends nothing. Write the prompt so it stands on its " +
-    "own. Confirm the schedule with the owner before creating it.",
+    "Schedule a job: a prompt you will run later as a fresh turn, either on a " +
+    "cron schedule (a weekday morning briefing, a Friday inbox sweep) or once " +
+    "at a set time (a reminder). Give exactly one of schedule or at. Its reply " +
+    "goes to the owner; when the prompt makes delivery conditional (\"only tell " +
+    "me if…\"), a run with nothing new delivers nothing. Write the prompt so it " +
+    "stands on its own. Confirm the time with the owner before creating it.",
   inputSchema: z.object({
     name: z.string().min(2).max(80).describe("Short name, e.g. 'Morning briefing'."),
-    schedule: z.string().min(9).describe("Cron expression: minute hour day-of-month month day-of-week, e.g. '0 8 * * 1-5' for 8am on weekdays."),
+    schedule: schedule.optional(),
+    at: at.optional(),
     prompt: z.string().min(10).describe("What to do on each run."),
   }),
   execute: async (ctx, input): Promise<{ id?: string; nextRun?: string; error?: string }> => {
@@ -184,12 +189,38 @@ const create_job = createTool({
   },
 });
 
+type JobRow = { id: string; name: string; schedule?: string; runAt?: number; enabled: boolean; nextRunAt: number; lastRunAt?: number; lastResult?: string };
+
 const list_jobs = createTool({
-  description: "List the scheduled jobs, including the heartbeat, with their schedules and when they next run.",
+  description: "List the scheduled jobs, including the heartbeat, with their schedules or one-time runs and when they next run.",
   inputSchema: z.object({}),
-  execute: async (ctx): Promise<Array<{ id: string; name: string; schedule: string; enabled: boolean; nextRunAt: string; lastResult?: string }>> => {
-    const jobs: Array<{ id: string; name: string; schedule: string; enabled: boolean; nextRunAt: number; lastResult?: string }> = await ctx.runQuery(internal.jobs.list, {});
-    return jobs.map((job) => ({ ...job, nextRunAt: new Date(job.nextRunAt).toISOString() }));
+  execute: async (ctx): Promise<Array<Omit<JobRow, "runAt" | "nextRunAt" | "lastRunAt"> & { runAt?: string; nextRunAt: string; lastRunAt?: string }>> => {
+    const jobs: JobRow[] = await ctx.runQuery(internal.jobs.list, {});
+    const iso = (ms?: number) => ms === undefined ? undefined : new Date(ms).toISOString();
+    return jobs.map((job) => ({
+      id: job.id, name: job.name, schedule: job.schedule, runAt: iso(job.runAt), enabled: job.enabled,
+      nextRunAt: iso(job.nextRunAt)!, lastRunAt: iso(job.lastRunAt), lastResult: job.lastResult,
+    }));
+  },
+});
+
+// Adapted from vercel/eve (Apache-2.0): docs/patterns/dynamic-scheduling.md
+const update_job = createTool({
+  description:
+    "Change, pause, or resume a scheduled job by id, from list_jobs: rename it, " +
+    "change its prompt, or move it to a cron schedule or a one-time at. A new " +
+    "time also resumes it unless enabled is false. List jobs before changing an " +
+    "ambiguous one. The heartbeat and other built-in jobs can only be rescheduled, paused or resumed.",
+  inputSchema: z.object({
+    id: z.string().min(1),
+    name: z.string().min(2).max(80).optional(),
+    prompt: z.string().min(10).max(4000).optional(),
+    schedule: schedule.optional().describe("Make it repeat on this cron schedule, replacing a one-time at."),
+    at: at.optional().describe("Make it run once at this time (ISO 8601 with the owner's UTC offset), replacing a cron schedule."),
+    enabled: z.boolean().optional().describe("false pauses it, true resumes it."),
+  }),
+  execute: async (ctx, input): Promise<{ updated: boolean; nextRun?: string; error?: string }> => {
+    return await ctx.runMutation(internal.jobs.update, input);
   },
 });
 
@@ -616,6 +647,7 @@ export const ALL_TOOLS = {
   read_chat,
   create_job,
   list_jobs,
+  update_job,
   delete_job,
   read_page,
   list_connectors,

@@ -4,6 +4,7 @@ import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { INSTRUCTIONS } from "./assistant";
+import { ownerNow } from "./jobs";
 import { describeModels, parseModelCommand, pickModel, type ModelOption } from "./lib/commands";
 import { downloadFile, sendMessage, sendTyping } from "./lib/telegram";
 import { vChannel, vTelegramMedia } from "./schema";
@@ -200,12 +201,14 @@ export const handleTurn = internalAction({
             .map((item) => `${item.message?.role}: ${item.text ?? ""}`);
           history = lines.join("\n\n").slice(-24_000) || undefined;
         }
+        // Codex knows the date but not the time, and "remind me in an hour" needs both.
+        const now = `It is now ${ownerNow(await ctx.runQuery(internal.jobs.ownerTimezone, {}))}.`;
         await ctx.runMutation(internal.codex.enqueueTurn, {
           conversationId: conversation._id,
           runId,
           prompt,
           history,
-          instructions: [INSTRUCTIONS, memoryContext].filter(Boolean).join("\n\n"),
+          instructions: [INSTRUCTIONS, now, memoryContext].filter(Boolean).join("\n\n"),
           model: conversation.model,
           attachments,
         });

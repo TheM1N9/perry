@@ -312,6 +312,8 @@ async function main() {
     const instance = new CodexAppServer();
     try {
       await instance.start();
+      // Without them Codex still works, just without the agent's own skills.
+      await instance.useSkills().catch((error) => console.log(yellow(`  skills unavailable: ${message(error)}`)));
       instance.on("serverRequest", (request: RpcMessage) => {
         void (async () => {
           const method = request.method ?? "";

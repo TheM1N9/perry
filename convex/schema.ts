@@ -361,8 +361,10 @@ export default defineSchema({
   /** Scheduled prompts, run as Codex turns. See jobs.ts. */
   jobs: defineTable({
     name: v.string(),
-    /** A cron expression in the owner's timezone. */
-    schedule: v.string(),
+    /** A cron expression in the owner's timezone. Absent for a one-time job. */
+    schedule: v.optional(v.string()),
+    /** When a one-time job runs. It runs once and is then paused. */
+    runAt: v.optional(v.number()),
     prompt: v.string(),
     enabled: v.boolean(),
     builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"))),

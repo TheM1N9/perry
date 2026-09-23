@@ -22,7 +22,7 @@ export const CODEX_TOOLS: readonly ToolName[] = [
   "recall", "remember", "read_memory", "forget", "search_chats", "read_chat", "read_page",
   "list_connectors", "find_action", "run_action",
   "status_report", "start_task", "set_plan", "finish_task", "set_goal", "watch_page",
-  "create_job", "list_jobs", "delete_job",
+  "create_job", "list_jobs", "update_job", "delete_job",
 ];
 
 /**

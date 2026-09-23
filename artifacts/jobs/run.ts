@@ -65,7 +65,7 @@ clearInterval(heartbeat);
 // 5. Clean up the test job.
 await convex.mutation(api.jobs.removeFromDashboard, { key: dashboardKey, id: created.id });
 
-const pass = timezone === browserTimezone && created.schedule.replace(/\s+/g, " ").startsWith("59 23")
+const pass = timezone === browserTimezone && Boolean(created.schedule?.replace(/\s+/g, " ").startsWith("59 23"))
   && ran.lastResult?.trim() === "NOTHING" && !ran.lastError && jobChat?.title === "⏰ E2E ping" && jobMessages.length === 0
   && Boolean(heartbeatJob?.enabled) && (heartbeatJob?.nextRunAt ?? 0) > Date.now()
   && errors.length === 0;
