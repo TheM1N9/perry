@@ -31,6 +31,7 @@ import { homedir, hostname, platform } from "node:os";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ConvexClient } from "convex/browser";
+import { getFunctionName, type FunctionArgs, type FunctionReference, type FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { truncateCommandOutput, truncateHead } from "../convex/lib/truncate";
@@ -220,6 +221,27 @@ async function main() {
 
   const client = new ConvexClient(url);
 
+  /**
+   * Subscribe for as long as the runner lives. A query can fail for a moment
+   * (a Convex timeout, a redeploy), and without an error handler the client
+   * throws and takes the whole runner down; so a failure is logged and the
+   * query subscribed to again shortly.
+   */
+  const watch = <Query extends FunctionReference<"query">>(
+    query: Query,
+    args: FunctionArgs<Query>,
+    onResult: (result: FunctionReturnType<Query>) => void,
+  ) => {
+    const subscribe = () => {
+      const unsubscribe = client.onUpdate(query, args, onResult, (error) => {
+        console.error(red(`  ${getFunctionName(query)} failed: ${message(error)}; trying again shortly.`));
+        unsubscribe();
+        setTimeout(subscribe, 5_000);
+      });
+    };
+    subscribe();
+  };
+
   /** The chat whose Codex turn is running, so an approval can say which chat asked. */
   let activeConversation: Id<"conversations"> | undefined;
   // Without a terminal, stdin may already be closed and would read as "no"; ask only the dashboard then.
@@ -272,7 +294,7 @@ async function main() {
       const timer = setTimeout(() => settle(false, "timeout"), APPROVAL_TIMEOUT_MS);
       unsubscribe = client.onUpdate(api.approvals.decision, { token, id }, (status) => {
         if (status === "approved" || status === "declined") settle(status === "approved", "dashboard");
-      });
+      }, (error) => console.error(red(`  could not follow the dashboard's answer: ${message(error)}`)));
       terminal?.question(`  ${bold("run it?")} [y/N] `, { signal: abort.signal })
         .then((answer) => settle(["y", "yes"].includes(answer.trim().toLowerCase()), "terminal"))
         .catch(() => {});
@@ -520,7 +542,7 @@ async function main() {
   };
 
   // Convex pushes queued work down the connection this process opened.
-  client.onUpdate(api.runner.queued, { token }, (commands) => {
+  watch(api.runner.queued, { token }, (commands) => {
     for (const command of commands ?? []) void handle(command);
   });
 
@@ -553,7 +575,7 @@ async function main() {
     }
   };
 
-  client.onUpdate(api.codex.queuedAuth, { token }, (request) => {
+  watch(api.codex.queuedAuth, { token }, (request) => {
     if (request) void handleCodexAuth(request);
   });
 
@@ -708,11 +730,11 @@ async function main() {
       codexTurnBusy = false;
     }
   };
-  client.onUpdate(api.codex.queuedTurns, { token }, (jobs) => {
+  watch(api.codex.queuedTurns, { token }, (jobs) => {
     codexQueue = jobs ?? [];
     void pumpCodex();
   });
-  client.onUpdate(api.codex.stopRequests, { token }, (ids) => {
+  watch(api.codex.stopRequests, { token }, (ids) => {
     stopRequested = new Set(ids ?? []);
     interruptIfAsked();
   });
