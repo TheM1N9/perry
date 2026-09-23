@@ -184,7 +184,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     } else {
       element.scrollTop = element.scrollHeight;
     }
-  }, [selectedId, messages.length, pending]);
+  }, [selectedId, messages.length, pending, chat?.streaming]);
 
   const active = chats?.find((item) => item.id === selectedId);
   const parent = chats?.find((item) => item.id === active?.parentConversationId);
@@ -351,7 +351,9 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
               <div className="chat-turn-body"><div className="chat-bubble">{message.role === "user" ? message.text : <Markdown text={message.text} />}<AttachmentList attachments={message.attachments ?? []} /></div><div className="chat-turn-actions"><button title="Branch from this message" onClick={() => void branch(message.id)} disabled={busy}><Icon name="branch" size={14} /> Branch from here</button></div></div>
             </div>)}
             {pending?.id === selectedId && <div className="chat-turn from-user pending"><div className="chat-turn-body"><div className="chat-bubble">{pending.text}<AttachmentList attachments={pending.attachments} /></div></div></div>}
-            {waiting && <div className="chat-turn from-assistant pending"><div className="chat-avatar">A</div><div className="chat-thinking"><i /><i /><i /></div></div>}
+            {waiting && <div className="chat-turn from-assistant pending"><div className="chat-avatar">A</div>{chat?.streaming
+              ? <div className="chat-turn-body"><div className="chat-bubble chat-streaming"><Markdown text={chat.streaming} /></div></div>
+              : <div className="chat-thinking"><i /><i /><i /></div>}</div>}
             {chat?.lastError && !chat.isRunning && <div className="chat-turn-error" role="alert">The assistant couldn’t finish the last reply: {chat.lastError}</div>}
           </div>}
       </div>

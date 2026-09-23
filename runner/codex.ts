@@ -233,7 +233,7 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  async runTurn({ threadId, instructions, history, prompt, cwd, model, tools, attachments = [], onThread }: {
+  async runTurn({ threadId, instructions, history, prompt, cwd, model, tools, attachments = [], onThread, onText }: {
     threadId?: string;
     instructions: string;
     history?: string;
@@ -243,6 +243,8 @@ export class CodexAppServer extends EventEmitter {
     tools?: { url: string; token: string };
     attachments?: CodexAttachment[];
     onThread: (threadId: string) => Promise<unknown>;
+    /** The reply so far, as Codex writes it: the text of the message it is currently writing. */
+    onText?: (text: string) => void;
   }): Promise<{ threadId: string; response: string; images: GeneratedImage[] }> {
     const home = `Your own folder for files you make is ${PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`;
     const fullInstructions = history
@@ -279,6 +281,16 @@ export class CodexAppServer extends EventEmitter {
         text.text += `\nAttached file: ${attachment.fileName} (${path ?? attachment.url})`;
       }
     }
+    // Deltas can arrive before turn/start answers, so match them by thread.
+    const written = new Map<string, string>();
+    const onDelta = (event: { threadId?: string; itemId?: string; delta?: string }) => {
+      if (event.threadId !== id || !event.itemId || !event.delta) return;
+      const text = (written.get(event.itemId) ?? "") + event.delta;
+      written.set(event.itemId, text);
+      onText?.(text);
+    };
+    this.on("item/agentMessage/delta", onDelta);
+    try {
     const started = await this.request<{ turn?: { id?: string } }>("turn/start", {
       threadId: id,
       input,
@@ -290,6 +302,9 @@ export class CodexAppServer extends EventEmitter {
     if (!started.turn?.id) throw new Error("Codex did not start a turn.");
     const { text: response, images } = await this.waitForTurn(started.turn.id);
     return { threadId: id, response, images };
+    } finally {
+      this.off("item/agentMessage/delta", onDelta);
+    }
   }
 
   close() {

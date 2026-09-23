@@ -536,6 +536,16 @@ async function main() {
         if (!job) continue;
         let result = savedResult(job._id);
         if (!result) {
+          // The reply so far goes to Convex about three times a second while Codex writes it.
+          let latest = "";
+          let sent = "";
+          let streamTimer: ReturnType<typeof setTimeout> | null = null;
+          const flush = () => {
+            streamTimer = null;
+            if (latest === sent) return;
+            sent = latest;
+            void client.mutation(api.codex.streamTurn, { token, id: job._id, text: latest }).catch(() => {});
+          };
           try {
             const app = await ensureCodex();
             const completed = await app.runTurn({
@@ -548,12 +558,17 @@ async function main() {
               tools: job.mcpUrl ? { url: job.mcpUrl, token } : undefined,
               attachments: job.attachments,
               onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
+              onText: (text) => {
+                latest = text;
+                streamTimer ??= setTimeout(flush, 300);
+              },
             });
             const media = await keepImages(job._id, job.channel, completed.images);
             result = { response: completed.response, model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription", ...(media.length ? { media } : {}) };
           } catch (error) {
             result = { error: message(error), model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription" };
           }
+          if (streamTimer) clearTimeout(streamTimer);
           saveResult(job._id, result);
         }
         await client.mutation(api.codex.finishTurn, { token, id: job._id, ...result });

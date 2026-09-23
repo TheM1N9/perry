@@ -84,6 +84,41 @@ export async function sendMessage(
   }
 }
 
+/**
+ * A reply that grows: the first call sends a message, later calls edit it.
+ * Telegram caps a message at 4096 characters, so a streamed preview shows the
+ * first chunk and the final delivery sends the rest as further messages.
+ */
+export async function sendDraft(token: string | null, chatId: string, text: string): Promise<number> {
+  const result = await call(token, "sendMessage", {
+    chat_id: chatId,
+    text: chunkMessage(text.trim() || "…")[0],
+    link_preview_options: { is_disabled: true },
+  }) as { message_id: number };
+  return result.message_id;
+}
+
+export async function editDraft(token: string | null, chatId: string, messageId: number, text: string): Promise<void> {
+  try {
+    await call(token, "editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text: chunkMessage(text.trim() || "…")[0],
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (error) {
+    // Editing to the same text is an error on Telegram's side, and harmless.
+    if (!String(error).includes("message is not modified")) throw error;
+  }
+}
+
+/** Finish a streamed reply: the draft becomes the first chunk, the rest follow as new messages. */
+export async function finishDraft(token: string | null, chatId: string, messageId: number, text: string): Promise<void> {
+  const [first, ...rest] = chunkMessage(text.trim() || "…");
+  await editDraft(token, chatId, messageId, first);
+  for (const chunk of rest) await sendMessage(token, chatId, chunk);
+}
+
 /** Telegram fetches the image from the URL itself, so it must be publicly readable. */
 export async function sendPhoto(
   token: string | null,
