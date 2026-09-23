@@ -17,7 +17,7 @@ await evaluate(`document.querySelector('.chat-header-new').click(); true`);
 const picker = await evaluate(`new Promise((resolve, reject) => {
   const start = Date.now();
   const tick = () => {
-    const options = [...document.querySelectorAll('select.chat-model optgroup[label="Codex subscription"] option')];
+    const options = [...document.querySelectorAll('select.chat-model option')];
     if (options.length > 1) return resolve(options.map((option) => ({ value: option.value, text: option.textContent })));
     if (Date.now() - start > 30000) return reject(new Error('Codex models never listed'));
     setTimeout(tick, 250);

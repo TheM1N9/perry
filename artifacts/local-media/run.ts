@@ -17,8 +17,8 @@ await evaluate(`document.querySelector('.chat-header-new').click(); true`);
 await evaluate(`new Promise((resolve, reject) => {
   const start = Date.now();
   const tick = () => {
-    const option = document.querySelector('select.chat-model optgroup[label="Codex subscription"] option');
-    if (option && option.value !== 'codex:') {
+    const option = document.querySelector('select.chat-model option');
+    if (option && option.value !== '') {
       const select = document.querySelector('select.chat-model');
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, option.value);
       select.dispatchEvent(new Event('change', { bubbles: true }));
