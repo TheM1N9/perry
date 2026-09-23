@@ -2,6 +2,16 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { vChannel } from "./schema";
 
+/** A chat's Codex model, set with /model. Unset means the Codex default. */
+export const setModel = internalMutation({
+  args: { id: v.id("conversations"), model: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { model: args.model });
+    return null;
+  },
+});
+
 export const getByExternalId = internalQuery({
   args: { channel: vChannel, externalId: v.string() },
   handler: async (ctx, args) => {

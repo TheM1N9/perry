@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { api } from "@/convex/_generated/api";
+import { describeModels, findModel, parseModelCommand, pickModel } from "@/convex/lib/commands";
 import { Approvals } from "./Approvals";
 import type { Id } from "@/convex/_generated/dataModel";
 
@@ -84,6 +85,8 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const [selectedId, setSelectedId] = useState<ChatId | null>(null);
   const [restored, setRestored] = useState(false);
   const [draft, setDraft] = useState("");
+  /** A command's answer, shown above the composer instead of being sent as a message. */
+  const [notice, setNotice] = useState("");
   const [pending, setPending] = useState<{ id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean } | null>(null);
   const [pickedFiles, setPickedFiles] = useState<File[]>([]);
   const [pickedPreviews, setPickedPreviews] = useState<Map<File, string>>(new Map());
@@ -195,7 +198,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const codexModels = modelOptions?.codex ?? [];
   const model = (selectedId ? chat?.model : draftModel)
     ?? (codexModels.find((item) => item.isDefault) ?? codexModels[0])?.id;
-  function pickModel(next: string) {
+  function applyModel(next: string) {
     if (!selectedId) { setDraftModel(next || undefined); return; }
     void setChatModel({ key: dashboardKey, id: selectedId, model: next || undefined }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   }
@@ -232,8 +235,52 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     if (!body.storageId) throw new Error(`Could not store ${file.name}.`);
     return { storageId: body.storageId };
   }
+  const COMMANDS = [
+    { command: "/model", hint: "List the Codex models, or /model <name> to switch this chat" },
+    { command: "/set model", hint: "Switch this chat's model: /set model <name>" },
+    { command: "/stop", hint: "Stop the reply being written" },
+  ];
+  const typedCommand = parseModelCommand(draft);
+  const suggestions: Array<{ key: string; label: string; hint: string; apply: () => void }> = !draft.startsWith("/")
+    ? []
+    : typedCommand && /^\/(?:set\s+)?model\s/i.test(draft)
+      ? (typedCommand.name ? findModel(codexModels, typedCommand.name).matches : codexModels).map((item) => ({
+          key: item.id,
+          label: item.name,
+          hint: `${item.id}${item.id === model ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
+          apply: () => void runCommand(`/model ${item.id}`),
+        }))
+      : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
+          key: item.command,
+          label: item.command,
+          hint: item.hint,
+          apply: () => { setDraft(item.command === "/stop" ? "/stop" : `${item.command} `); composer.current?.focus(); },
+        }));
+
+  /** Commands never become messages: they change this chat, then say what they did. */
+  async function runCommand(text: string): Promise<boolean> {
+    const trimmed = text.trim();
+    const modelCommand = parseModelCommand(trimmed);
+    if (modelCommand) {
+      if (!modelCommand.name) { setDraft(""); setNotice(describeModels(codexModels, model)); return true; }
+      const picked = pickModel(codexModels, modelCommand.name);
+      // A name that matched nothing, or several models, stays in the box to be fixed.
+      if (picked.model) { applyModel(picked.model.id); setDraft(""); }
+      setNotice(picked.reply);
+      return true;
+    }
+    if (trimmed.toLowerCase() === "/stop") {
+      setDraft("");
+      if (selectedId && waiting) await stopChat({ key: dashboardKey, id: selectedId });
+      setNotice(selectedId && waiting ? "Stopping." : "Nothing is running.");
+      return true;
+    }
+    return false;
+  }
+
   async function submit(text = draft) {
     const message = text.trim();
+    if (message.startsWith("/") && pickedFiles.length === 0 && await runCommand(message)) return;
     if ((!message && pickedFiles.length === 0) || busy || pending?.id === selectedId) return;
     const id = selectedId ?? await makeChat();
     if (!id) return;
@@ -363,13 +410,15 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
       <div className="chat-composer-area"><div className="chat-composer-wrap">
         <Approvals dashboardKey={dashboardKey} />
         {error && <div className="chat-error" role="alert">{error}<button aria-label="Dismiss error" onClick={() => setError("")}><Icon name="close" size={15} /></button></div>}
+        {notice && <div className="chat-notice" role="status"><pre>{notice}</pre><button aria-label="Dismiss" onClick={() => setNotice("")}><Icon name="close" size={14} /></button></div>}
+        {suggestions.length > 0 && <div className="chat-commands" role="listbox" aria-label="Commands">{suggestions.map((item) => <button key={item.key} role="option" aria-selected="false" onMouseDown={(event) => { event.preventDefault(); item.apply(); }}><span>{item.label}</span><small>{item.hint}</small></button>)}</div>}
         <div className="chat-composer-box">{pickedFiles.length > 0 && <div className="chat-picked-files">{pickedFiles.map((file, index) => {
           const url = pickedPreviews.get(file);
           const preview = url && file.type.startsWith("image/") ? <img src={url} alt={file.name} />
             : url && file.type.startsWith("video/") ? <video src={url} muted playsInline preload="metadata" />
             : <span className="chat-picked-name"><Icon name="paperclip" size={14} />{file.name}</span>;
           return <div className="chat-picked-file" key={`${index}-${file.name}-${file.lastModified}`} title={file.name}>{preview}<button aria-label={`Remove ${file.name}`} onClick={() => setPickedFiles((items) => items.filter((item) => item !== file))}><Icon name="close" size={12} /></button></div>;
-        })}</div>}<textarea ref={composer} value={draft} rows={1} placeholder="Message your assistant…" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} /><div className="chat-composer-foot"><button className="chat-attach" aria-label="Attach files" title="Attach images, video, audio, or files" onClick={() => filePicker.current?.click()} disabled={busy}><Icon name="paperclip" size={17} /></button><input ref={filePicker} type="file" multiple hidden accept="image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json" onChange={(event) => { const files = Array.from(event.target.files ?? []); setPickedFiles((items) => [...items, ...files].slice(0, 10)); event.currentTarget.value = ""; }} /><select className="chat-model" aria-label="Codex model" title={`Codex · ${model ?? "default"}`} value={model ?? ""} onChange={(event) => pickModel(event.target.value)}>
+        })}</div>}<textarea ref={composer} value={draft} rows={1} placeholder="Message your assistant…" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} /><div className="chat-composer-foot"><button className="chat-attach" aria-label="Attach files" title="Attach images, video, audio, or files" onClick={() => filePicker.current?.click()} disabled={busy}><Icon name="paperclip" size={17} /></button><input ref={filePicker} type="file" multiple hidden accept="image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json" onChange={(event) => { const files = Array.from(event.target.files ?? []); setPickedFiles((items) => [...items, ...files].slice(0, 10)); event.currentTarget.value = ""; }} /><select className="chat-model" aria-label="Codex model" title={`Codex · ${model ?? "default"}`} value={model ?? ""} onChange={(event) => applyModel(event.target.value)}>
           {codexModels.length
             ? codexModels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)
             : <option value="">Codex default</option>}

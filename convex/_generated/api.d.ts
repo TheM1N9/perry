@@ -21,6 +21,7 @@ import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as installation from "../installation.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_commands from "../lib/commands.js";
 import type * as lib_telegram from "../lib/telegram.js";
 import type * as mcp from "../mcp.js";
 import type * as media from "../media.js";
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   ingest: typeof ingest;
   installation: typeof installation;
   "lib/auth": typeof lib_auth;
+  "lib/commands": typeof lib_commands;
   "lib/telegram": typeof lib_telegram;
   mcp: typeof mcp;
   media: typeof media;
