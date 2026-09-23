@@ -12,7 +12,8 @@
  *
  * What protects you, in order of how much it actually matters:
  *
- *   1. This process. Close the terminal and Assistant has no hands again.
+ *   1. This process. Close the terminal, or stop the service, and Assistant
+ *      has no hands again.
  *   2. Approval. Every command waits for you, here, in the dashboard or on
  *      Telegram, unless a rule you saved with "Always allow" covers it or the
  *      runner's policy says otherwise: "review" lets a Codex reviewer clear
@@ -21,11 +22,11 @@
  *      file reads and writes cannot escape it.
  *   4. A denylist of commands that are never worth running.
  *
- * Nothing here runs at boot, installs a service, or survives a reboot. That is
- * deliberate.
+ * Nothing here runs at boot or survives a reboot unless you ask for it with
+ * `pnpm run service install` (scripts/service.ts). Without a terminal, as a
+ * service, approvals are asked in the dashboard only.
  */
 
-import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile, writeFile, readdir, mkdir, stat } from "node:fs/promises";
@@ -39,14 +40,13 @@ import { api } from "../convex/_generated/api";
 import { truncateCommandOutput, truncateHead } from "../convex/lib/truncate";
 import { ASSISTANT_MCP, CodexAppServer, TurnFailed, type GeneratedImage, type RpcMessage } from "./codex";
 import { isReviewThread, review } from "./review";
-import { ensureHome, HOME, PATHS } from "./home";
+import { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig, type RunnerConfig } from "./home";
+import { runShell } from "./shell";
 import { TurnTrace } from "./trace";
 
 const CONFIG_DIR = HOME;
-const CONFIG_FILE = PATHS.runnerConfig;
 const CODEX_RESULTS = PATHS.codexResults;
 
-const COMMAND_TIMEOUT_MS = 120_000;
 const MAX_FILE_BYTES = 256 * 1024;
 const CHECKIN_MS = 30_000;
 /** Matches APPROVAL_TTL_MS in convex/approvals.ts: an unanswered request is declined. */
@@ -63,9 +63,8 @@ const cyan = (s: string) => `\x1b[36m${s}\x1b[0m`;
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 type Policy = "ask" | "review" | "trust";
-/** `auto` is from before policies; the policy now lives on the runner's record in Convex. */
-type Config = { url?: string; token?: string; dir?: string; name?: string; auto?: boolean };
-type Flags = Config & { policy?: Policy };
+/** The policy lives on the runner's record in Convex; `auto` in runner.json is from before policies. */
+type Flags = RunnerConfig & { policy?: Policy; help?: boolean };
 const POLICIES: Policy[] = ["ask", "review", "trust"];
 type CodexResult = { response?: string; error?: string; stopped?: boolean; compacted?: boolean; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
 
@@ -98,23 +97,6 @@ function denied(command: string): string | null {
 
 // --- Config --------------------------------------------------------------
 
-function loadConfig(): Config {
-  if (!existsSync(CONFIG_FILE)) return {};
-  try {
-    return JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
-  } catch {
-    return {};
-  }
-}
-
-function saveConfig(config: Config) {
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-}
-
 function parseArgs(argv: string[]): Flags {
   const args: Flags = {};
   for (let i = 0; i < argv.length; i++) {
@@ -134,6 +116,7 @@ function parseArgs(argv: string[]): Flags {
     else if (arg === "--token") args.token = argv[++i];
     else if (arg === "--dir") args.dir = argv[++i];
     else if (arg === "--name") args.name = argv[++i];
+    else if (arg === "--help" || arg === "-h") args.help = true;
   }
   return args;
 }
@@ -151,49 +134,19 @@ function confine(workdir: string, path?: string): string | null {
   return target;
 }
 
-// --- Execution -----------------------------------------------------------
-
-function runShell(command: string, cwd: string): Promise<{ exitCode: number | null; output: string; timedOut: boolean }> {
-  return new Promise((resolvePromise) => {
-    const isWindows = process.platform === "win32";
-    const shell = isWindows ? process.env.COMSPEC || "cmd.exe" : "/bin/sh";
-    const shellArgs = isWindows ? ["/d", "/s", "/c", command] : ["-c", command];
-
-    const child = spawn(shell, shellArgs, {
-      cwd,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, PERRY_RUNNER: "1" },
-    });
-
-    let output = "";
-    let killed = false;
-
-    const timer = setTimeout(() => {
-      killed = true;
-      child.kill("SIGKILL");
-    }, COMMAND_TIMEOUT_MS);
-
-    child.stdout.on("data", (d) => (output += d));
-    child.stderr.on("data", (d) => (output += d));
-
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      resolvePromise({ exitCode: null, output: String(error), timedOut: false });
-    });
-
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      resolvePromise({ exitCode: code, output, timedOut: killed });
-    });
-  });
-}
-
 // --- Main ----------------------------------------------------------------
 
 async function main() {
   const flags = parseArgs(process.argv.slice(2));
-  const stored = loadConfig();
+  if (flags.help) {
+    console.log(
+      `\n${bold("Assistant runner")}  ${dim(`${platform()}, home ${HOME}`)}\n\n` +
+        `  bun runner/index.ts [--url <convex url>] [--token <token>] [--dir <folder>] [--name <name>] [--policy ask|review|trust]\n\n` +
+        dim(`  Flags are saved to ${PATHS.runnerConfig}; later runs need none.\n`),
+    );
+    return;
+  }
+  const stored = readRunnerConfig();
 
   const url = flags.url ?? stored.url ?? process.env.PERRY_CONVEX_URL;
   const token = flags.token ?? stored.token ?? process.env.PERRY_RUNNER_TOKEN;
@@ -209,6 +162,12 @@ async function main() {
 
   ensureHome();
   holdLock(token);
+  // Started by the Windows logon task, which cannot end what it started: `pnpm run service stop` ends this PID.
+  const pidFile = process.env.PERRY_SERVICE_PID_FILE;
+  if (pidFile) {
+    mkdirSync(dirname(pidFile), { recursive: true });
+    writeFileSync(pidFile, String(process.pid));
+  }
 
   const workdir = resolve(flags.dir ?? stored.dir ?? process.cwd());
   if (!existsSync(workdir)) {
@@ -219,7 +178,7 @@ async function main() {
   const name = flags.name ?? stored.name ?? hostname();
 
   const { auto: _legacy, ...kept } = stored;
-  saveConfig({ ...kept, url, token, dir: workdir, name });
+  writeRunnerConfig({ ...kept, url, token, dir: workdir, name });
 
   // The policy can change from the dashboard at any time, so the terminal is always ready to ask.
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -250,11 +209,11 @@ async function main() {
   console.log(
     policy === "trust"
       ? yellow("  approval   trust: commands run without asking")
-      : dim(`  approval   ${policy === "review" ? "review: a Codex reviewer clears routine actions, the rest wait for you" : "ask: every command waits for you"}`),
+      : dim(`  approval   ${policy === "review" ? "review: a Codex reviewer clears routine actions, the rest wait for you" : "ask: every command waits for you"}${process.stdin.isTTY ? "" : " in the dashboard and on Telegram"}`),
   );
   console.log(dim(`             change it on the dashboard's Computer page`));
   console.log(dim(`  connection outbound only, nothing is listening here`));
-  console.log(dim(`\n  Ctrl-C takes Assistant's hands away.\n`));
+  console.log(dim(`\n  ${process.stdin.isTTY ? "Ctrl-C" : "`pnpm run service stop`"} takes Assistant's hands away.\n`));
 
   /**
    * Subscribe for as long as the runner lives. A query can fail for a moment

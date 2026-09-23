@@ -19,7 +19,9 @@
     "connect": "bun scripts/connect.ts",
     "runner": "bun runner/index.ts",
     "chat": "bun scripts/chat.ts",
-    "evals": "bun evals/run.ts"
+    "evals": "bun evals/run.ts",
+    "service": "bun scripts/service.ts",
+    "smoke": "bun scripts/smoke.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.72",

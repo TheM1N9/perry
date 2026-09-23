@@ -1,0 +1,74 @@
+
+win32 x64, bun 1.3.8, scratch C:\Users\Pranav\AppData\Local\Temp\perry-smoke-A3jQ1F
+
+[32mok[0m    runner --help
+[32mok[0m    home[2m  C:\Users\Pranav\AppData\Local\Temp\perry-smoke-A3jQ1F\perry home ü[0m
+[32mok[0m    shell[2m  C:\Windows\system32\cmd.exe[0m
+[32mok[0m    machine[2m  {"os":"Windows 10.0.22631 (x64)","shell":"PowerShell","open":"Start-Process"}[0m
+[32mok[0m    sandbox
+[32mok[0m    media paths
+[32mok[0m    service plans[2m  {"launchd":"/Users/o'neil müller/Library/LaunchAgents/com.perry.runner.plist","systemd":"/home/o'neil müller/.config/systemd/user/perry-runner.service","taskScheduler":"Perry runner"}[0m
+[32mok[0m    service lint[2m  well-formed; pass --register to have Task Scheduler read it (CI only)[0m
+[32mok[0m    service dry run[2m  Installing the runner as a Task Scheduler service  (dry run: nothing is written or run)[0m
+
+[32mAll 9 checks passed.[0m
+
+{
+  "ranAt": "2026-09-23T23:48:47.361Z",
+  "platform": "win32",
+  "arch": "x64",
+  "bun": "1.3.8",
+  "pass": true,
+  "checks": [
+    {
+      "name": "runner --help",
+      "pass": true
+    },
+    {
+      "name": "home",
+      "pass": true,
+      "detail": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-smoke-A3jQ1F\\perry home ü"
+    },
+    {
+      "name": "shell",
+      "pass": true,
+      "detail": "C:\\Windows\\system32\\cmd.exe"
+    },
+    {
+      "name": "machine",
+      "pass": true,
+      "detail": {
+        "os": "Windows 10.0.22631 (x64)",
+        "shell": "PowerShell",
+        "open": "Start-Process"
+      }
+    },
+    {
+      "name": "sandbox",
+      "pass": true
+    },
+    {
+      "name": "media paths",
+      "pass": true
+    },
+    {
+      "name": "service plans",
+      "pass": true,
+      "detail": {
+        "launchd": "/Users/o'neil müller/Library/LaunchAgents/com.perry.runner.plist",
+        "systemd": "/home/o'neil müller/.config/systemd/user/perry-runner.service",
+        "taskScheduler": "Perry runner"
+      }
+    },
+    {
+      "name": "service lint",
+      "pass": true,
+      "detail": "well-formed; pass --register to have Task Scheduler read it (CI only)"
+    },
+    {
+      "name": "service dry run",
+      "pass": true,
+      "detail": "Installing the runner as a Task Scheduler service  (dry run: nothing is written or run)"
+    }
+  ]
+}
