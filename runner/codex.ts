@@ -3,6 +3,19 @@ import { EventEmitter } from "node:events";
 import { createInterface } from "node:readline";
 import { PATHS } from "./home";
 
+/**
+ * Codex's "elevated" Windows sandbox runs a setup check over every file its
+ * runtimes need, and that check cannot open paths longer than 260 characters
+ * even with long paths enabled; one deep path in Codex's own computer-use
+ * runtime then fails every sandboxed command with "CreateProcess: Rejected -
+ * helper_unknown_error: setup refresh had errors". The unelevated sandbox
+ * (a restricted token) has no such check, so the runner's threads use it.
+ * PERRY_CODEX_WINDOWS_SANDBOX=elevated restores Codex's own choice.
+ */
+const WINDOWS_SANDBOX = process.platform === "win32"
+  ? { "windows.sandbox": process.env.PERRY_CODEX_WINDOWS_SANDBOX ?? "unelevated" }
+  : {};
+
 /** Name of the MCP server that serves the deployment's tools to Codex. */
 export const ASSISTANT_MCP = "assistant";
 
@@ -263,14 +276,17 @@ export class CodexAppServer extends EventEmitter {
     const policy = "on-request";
     const sandbox = "workspace-write";
     // The deployment's own tools: memory, connected accounts, task tracking.
-    const config = tools ? {
-      [`mcp_servers.${ASSISTANT_MCP}`]: {
-        url: tools.url,
-        http_headers: { Authorization: `Bearer ${tools.token}` },
-        default_tools_approval_mode: "approve",
-        tool_timeout_sec: 120,
-      },
-    } : undefined;
+    const config = {
+      ...(tools ? {
+        [`mcp_servers.${ASSISTANT_MCP}`]: {
+          url: tools.url,
+          http_headers: { Authorization: `Bearer ${tools.token}` },
+          default_tools_approval_mode: "approve",
+          tool_timeout_sec: 120,
+        },
+      } : {}),
+      ...WINDOWS_SANDBOX,
+    };
     const thread = threadId
       ? await this.request<{ thread?: { id?: string } }>("thread/resume", { threadId, cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions }, 30_000)
       : await this.request<{ thread?: { id?: string } }>("thread/start", { cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions, serviceName: "perry" }, 30_000);
