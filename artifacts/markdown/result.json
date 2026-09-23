@@ -1,0 +1,26 @@
+{
+  "ranAt": "2026-09-23T15:16:17.708Z",
+  "chatId": "j57d6zbf57sq3w5aktb8wtf5xd8ezzzj",
+  "rendered": {
+    "heading": "Plan",
+    "listItems": 2,
+    "bold": "bold",
+    "inlineCode": "inline code",
+    "tableCells": [
+      "alpha",
+      "1"
+    ],
+    "codeBlock": "const answer = 42;",
+    "link": {
+      "href": "https://www.convex.dev",
+      "target": "_blank",
+      "rel": "noreferrer"
+    },
+    "rawHtmlElement": false,
+    "rawHtmlShownAsText": true,
+    "userBubbleIsPlain": true,
+    "strayMedia": 0
+  },
+  "pageErrors": [],
+  "pass": true
+}

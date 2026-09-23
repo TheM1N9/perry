@@ -41,10 +41,13 @@ function assistantMedia(text: string): Array<{ url: string; fileName: string; co
     found.add(url);
     const clean = url.split("?")[0];
     const extension = clean.split(".").pop()?.toLowerCase() ?? "";
+    // A link to a page is just a link; only real media files become players.
     const contentType = ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(extension)
       ? `image/${extension === "jpg" ? "jpeg" : extension}`
       : ["mp4", "webm", "mov"].includes(extension) ? `video/${extension === "mov" ? "quicktime" : extension}`
-        : `audio/${extension === "mp3" ? "mpeg" : extension}`;
+        : ["mp3", "wav", "m4a"].includes(extension) ? `audio/${extension === "mp3" ? "mpeg" : extension === "m4a" ? "mp4" : extension}`
+          : null;
+    if (!contentType) continue;
     result.push({ url, fileName: clean.split("/").pop() || "shared media", contentType });
   }
   return result;

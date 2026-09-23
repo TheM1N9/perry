@@ -2,6 +2,9 @@
 
 import { useAction, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
@@ -42,6 +45,17 @@ function AttachmentList({ attachments }: { attachments: Attachment[] }) {
     if (attachment.contentType.startsWith("audio/")) return <audio key={attachment.url} controls src={attachment.url} />;
     return <a className="chat-attachment-file" key={attachment.url} href={attachment.url} target="_blank" rel="noreferrer"><Icon name="paperclip" size={15} />{attachment.fileName}</a>;
   })}</div>;
+}
+
+/**
+ * Assistant replies are GitHub-flavoured Markdown, with single line breaks kept
+ * as a chat reader expects. Raw HTML in a reply stays text, since replies can
+ * quote web pages and email, and links open in a new tab.
+ */
+function Markdown({ text }: { text: string }) {
+  return <div className="chat-markdown">
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}>{text}</ReactMarkdown>
+  </div>;
 }
 
 export function Chat({ dashboardKey, onNavigate, onLock }: {
@@ -334,7 +348,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
             {chat && messageStatus !== "LoadingFirstPage" && messages.length === 0 && pending?.id !== selectedId && <div className="chat-thread-empty"><div className="chat-welcome-mark small"><Icon name="spark" size={24} /></div><h2>Start a conversation</h2><p>Messages in this chat stay together. Your saved memories are available in every chat.</p></div>}
             {messages.map((message) => <div key={message.id} className={`chat-turn ${message.role === "user" ? "from-user" : "from-assistant"}`}>
               {message.role !== "user" && <div className="chat-avatar">A</div>}
-              <div className="chat-turn-body"><div className="chat-bubble">{message.text}<AttachmentList attachments={message.attachments ?? []} /></div><div className="chat-turn-actions"><button title="Branch from this message" onClick={() => void branch(message.id)} disabled={busy}><Icon name="branch" size={14} /> Branch from here</button></div></div>
+              <div className="chat-turn-body"><div className="chat-bubble">{message.role === "user" ? message.text : <Markdown text={message.text} />}<AttachmentList attachments={message.attachments ?? []} /></div><div className="chat-turn-actions"><button title="Branch from this message" onClick={() => void branch(message.id)} disabled={busy}><Icon name="branch" size={14} /> Branch from here</button></div></div>
             </div>)}
             {pending?.id === selectedId && <div className="chat-turn from-user pending"><div className="chat-turn-body"><div className="chat-bubble">{pending.text}<AttachmentList attachments={pending.attachments} /></div></div></div>}
             {waiting && <div className="chat-turn from-assistant pending"><div className="chat-avatar">A</div><div className="chat-thinking"><i /><i /><i /></div></div>}

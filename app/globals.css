@@ -410,6 +410,25 @@ a {
 .chat-picked-file button:hover { background: #33403a; }
 .from-user .chat-bubble { background: #2c3730; border: 1px solid #405247; border-radius: 14px 14px 4px 14px; padding: 11px 15px; }
 .from-assistant .chat-bubble { padding: 2px 0; color: #e0e5df; }
+.chat-markdown { white-space: normal; }
+.chat-markdown > :first-child { margin-top: 0; }
+.chat-markdown > :last-child { margin-bottom: 0; }
+.chat-markdown p, .chat-markdown ul, .chat-markdown ol, .chat-markdown pre, .chat-markdown table, .chat-markdown blockquote { margin: 0 0 10px; }
+.chat-markdown ul, .chat-markdown ol { padding-left: 22px; }
+.chat-markdown li { margin: 2px 0; }
+.chat-markdown li > p { margin: 0; }
+.chat-markdown h1, .chat-markdown h2, .chat-markdown h3, .chat-markdown h4 { margin: 16px 0 8px; font-size: 14px; line-height: 1.4; color: #f0f3ee; }
+.chat-markdown h1 { font-size: 16px; }
+.chat-markdown a { color: #a9cfa7; text-decoration: underline; text-underline-offset: 2px; }
+.chat-markdown code { font-family: var(--mono); font-size: 12px; background: #1d2322; border: 1px solid #2d3533; border-radius: 5px; padding: 1px 5px; }
+.chat-markdown pre { background: #141918; border: 1px solid #2d3533; border-radius: 9px; padding: 11px 13px; overflow-x: auto; white-space: pre; }
+.chat-markdown pre code { background: none; border: 0; padding: 0; font-size: 12px; line-height: 1.6; }
+.chat-markdown blockquote { border-left: 3px solid #405247; padding-left: 12px; color: #b8c2ba; }
+.chat-markdown table { border-collapse: collapse; display: block; overflow-x: auto; }
+.chat-markdown th, .chat-markdown td { border: 1px solid #2d3533; padding: 5px 10px; text-align: left; }
+.chat-markdown th { background: #1d2322; }
+.chat-markdown hr { border: 0; border-top: 1px solid #2d3533; margin: 14px 0; }
+.chat-markdown input[type="checkbox"] { width: auto; margin-right: 6px; }
 .chat-turn-actions { display: flex; opacity: 0; margin-top: 5px; }
 .chat-turn:hover .chat-turn-actions, .chat-turn-actions:focus-within { opacity: 1; }
 .from-user .chat-turn-actions { justify-content: flex-end; }
