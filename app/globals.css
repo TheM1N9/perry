@@ -597,6 +597,26 @@ a {
 .activity-prompt p { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 650px; margin: 8px 0 0; padding: 10px; background: #181e1a; border-radius: 7px; color: #c3cdc2; }
 .activity-open-chat { flex: 0 0 auto; border: 1px solid #4c644f !important; border-radius: 7px; background: #2c3b30; color: #cce4ca; padding: 5px 9px; font-size: 10px; }
 .activity-open-chat:hover { background: #39513d; }
+.activity-tokens { color: #93a595; font-size: 10px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+/* A run's trace: one bar per span, offset from the run's start. */
+.activity-trace { margin-top: 12px; color: #92a294; font-size: 11px; }
+.activity-trace > summary { cursor: pointer; }
+.trace { list-style: none; margin: 9px 0 0; padding: 10px; background: #181e1a; border-radius: 7px; display: grid; gap: 6px; }
+.trace-empty { margin-top: 8px; color: #7f8e82; }
+.trace-row { display: grid; grid-template-columns: minmax(0, 34%) 1fr 56px; align-items: center; gap: 10px; }
+.trace-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c3cdc2; font-family: ui-monospace, monospace; font-size: 10px; }
+.trace-label em { font-style: normal; color: #7f8e82; margin-right: 6px; }
+.trace-track { position: relative; height: 8px; background: #232b25; border-radius: 4px; }
+.trace-bar { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: #6fbf73; }
+.trace-span.error .trace-bar { background: #e0736b; }
+.trace-span.declined .trace-bar { background: #d9b45a; }
+.trace-span.running .trace-bar { background: #6fa8d9; animation: chat-caret 1.2s infinite; }
+.trace-time { text-align: right; color: #93a595; font-size: 10px; font-variant-numeric: tabular-nums; }
+.trace-io { margin: 3px 0 2px; font-size: 10px; }
+.trace-io summary { cursor: pointer; color: #7f8e82; }
+.trace-span.error .trace-io summary { color: #e8a39d; }
+.trace-io h5 { margin: 7px 0 3px; font-size: 10px; font-weight: 600; color: #93a595; }
+.trace-io pre { margin: 0; padding: 8px; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #111612; border-radius: 6px; color: #c3cdc2; font-size: 10px; }
 @media (max-width: 700px) {
   .activity-toolbar { flex-direction: column; }
   .activity-filters { width: 100%; }

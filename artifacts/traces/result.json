@@ -1,0 +1,76 @@
+{
+  "ranAt": "2026-09-23T17:49:15.547Z",
+  "chatId": "j57df4gxwd83jcyh0ftphmm2d18eyc19",
+  "fileName": "perry-trace-1790185721918.txt",
+  "answer": {
+    "reply": "DONE",
+    "error": null
+  },
+  "run": {
+    "id": "jd78t0gqqnj1mh4vfmhv02n4rd8ez8ed",
+    "status": "ok",
+    "steps": 3,
+    "toolCalls": [
+      "apply_patch",
+      "shell"
+    ],
+    "usage": {
+      "cachedInputTokens": 58624,
+      "inputTokens": 77827,
+      "outputTokens": 140,
+      "reasoningTokens": 0,
+      "totalTokens": 77967
+    },
+    "durationMs": 23487
+  },
+  "spans": [
+    {
+      "kind": "fileChange",
+      "name": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\e2e-work\\perry-trace-1790185721918.txt",
+      "status": "ok",
+      "offsetMs": -25481,
+      "durationMs": 146,
+      "input": "add C:\\Users\\Pranav\\AppData\\Local\\Temp\\e2e-work\\perry-trace-1790185721918.txt",
+      "output": "traced\n"
+    },
+    {
+      "kind": "command",
+      "name": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command Get-ChildItem",
+      "status": "ok",
+      "offsetMs": -20603,
+      "durationMs": 141,
+      "input": "$ \"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command Get-ChildItem\ncwd: C:\\Users\\Pranav\\AppData\\Local\\Temp\\e2e-work",
+      "output": "--- ----                                                                 \r\n-a----        23-09-2026     23:18              7 perry-trace-1790185721918.txt                                        \r\n\r\n\r\n"
+    }
+  ],
+  "checks": {
+    "command": true,
+    "fileChange": true,
+    "timed": true,
+    "sized": true,
+    "usageOk": true,
+    "fileMade": true
+  },
+  "page": {
+    "runsListed": 1,
+    "tokens": "Tokens 77,827 in / 58,624 cached / 140 out",
+    "rows": [
+      {
+        "status": "ok",
+        "label": "filesC:\\Users\\Pranav\\AppData\\Local\\Temp\\e2e-work\\perry-trace-1790185721918.txt",
+        "barWidth": 2.953125,
+        "time": "146ms"
+      },
+      {
+        "status": "ok",
+        "label": "shell\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command Get-ChildItem",
+        "barWidth": 2.84375,
+        "time": "141ms"
+      }
+    ],
+    "shellDetails": "Details\nInput\n$ \"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command Get-ChildItem\ncwd: C:\\Users\\Pranav\\AppData\\Local\\Temp\\e2e-work\nOutput\nexit 0\n\r\n\r\n    Directory: C:\\Users\\Pranav\\AppData\\Local\\Temp\\e2e-work\r\n\r\n\r\nMode                 LastWriteTime         Length Name                                                                 \r\n----                 -------------         ------ ----                                                                 \r\n-a----        23-09-2026     23:18              7 perry-trace-1790185721918.txt                                        \r\n\r\n\r\n"
+  },
+  "spansAfterDelete": 0,
+  "pageErrors": [],
+  "pass": true
+}

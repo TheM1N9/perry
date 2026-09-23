@@ -72,8 +72,9 @@ a token; Composio keeps the OAuth.
 - **Regenerate and edit.** Rewrite a reply, or change a message you sent and
   resend it; Codex starts from the history as it now stands.
 - **Models.** Pick a Codex model per chat in the composer, or with `/model`.
-- **Receipts.** Every turn is a run in the Activity page, with its model, tools
-  and errors.
+- **Receipts.** Every turn is a run in the Activity page, with its model, tools,
+  tokens and errors, and a trace of what Codex did: each command, file change,
+  tool call and search on a timeline, with its input, output and status.
 
 Tool output, web pages and account data are treated as untrusted data in the
 instructions, and consequential actions (sending, deleting, publishing,

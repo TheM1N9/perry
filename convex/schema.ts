@@ -5,6 +5,23 @@ export const vChannel = v.union(v.literal("telegram"), v.literal("web"));
 /** A file the owner sent on Telegram, before it is downloaded. */
 export const vTelegramMedia = v.object({ fileId: v.string(), fileName: v.string(), contentType: v.string() });
 export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.literal("daily"));
+/**
+ * Tokens a run used, named after OpenTelemetry's gen_ai.usage.* attributes.
+ * Cached input is part of input, and reasoning part of output.
+ */
+export const vUsage = v.object({
+  inputTokens: v.optional(v.number()),
+  cachedInputTokens: v.optional(v.number()),
+  outputTokens: v.optional(v.number()),
+  reasoningTokens: v.optional(v.number()),
+  totalTokens: v.optional(v.number()),
+});
+/** The Codex items a run's trace records. See runSpans. */
+export const vSpanKind = v.union(
+  v.literal("command"), v.literal("fileChange"), v.literal("mcpToolCall"), v.literal("dynamicToolCall"),
+  v.literal("webSearch"), v.literal("imageGeneration"), v.literal("reasoning"),
+);
+export const vSpanStatus = v.union(v.literal("running"), v.literal("ok"), v.literal("error"), v.literal("declined"));
 
 /**
  * Assistant is single-owner, so there is no users table. The owner is identified by
@@ -313,19 +330,33 @@ export default defineSchema({
     steps: v.optional(v.number()),
     toolCalls: v.optional(v.array(v.string())),
     model: v.optional(v.string()),
-    usage: v.optional(
-      v.object({
-        inputTokens: v.optional(v.number()),
-        outputTokens: v.optional(v.number()),
-        totalTokens: v.optional(v.number()),
-      }),
-    ),
+    usage: v.optional(vUsage),
     error: v.optional(v.string()),
     startedAt: v.number(),
     finishedAt: v.optional(v.number()),
   })
     .index("by_conversation", ["conversationId"])
     .index("by_started", ["startedAt"]),
+
+  /**
+   * What Codex did inside a run, one row per item: a command, a file change,
+   * a tool call, a web search, a stretch of reasoning. The runner reports them
+   * as they start and finish, so a trace fills in while its run is going.
+   * Shaped like OpenTelemetry's gen_ai tool spans: `callId` is
+   * gen_ai.tool.call.id, and `input` and `output` hold the call's arguments
+   * and result, cut to about 2 KB.
+   */
+  runSpans: defineTable({
+    runId: v.id("runs"),
+    kind: vSpanKind,
+    name: v.string(),
+    callId: v.string(),
+    status: vSpanStatus,
+    startedAt: v.number(),
+    durationMs: v.optional(v.number()),
+    input: v.optional(v.string()),
+    output: v.optional(v.string()),
+  }).index("by_run", ["runId", "callId"]),
 
   /** Scheduled prompts, run as Codex turns. See jobs.ts. */
   jobs: defineTable({

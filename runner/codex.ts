@@ -26,10 +26,19 @@ export const ASSISTANT_MCP = "assistant";
 type Json = Record<string, any>;
 export type RpcMessage = { id?: number | string; method?: string; params?: Json; result?: any; error?: { message?: string } };
 type Pending = { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
-type TurnItem = Json & { id: string; type?: string };
+export type TurnItem = Json & { id: string; type?: string };
 type TurnEvent = { turn: { id: string; status: string; items?: TurnItem[]; error?: { message?: string } } };
 type LoginEvent = { loginId: string; success: boolean; error?: string };
 type TurnErrorEvent = { turnId: string; willRetry?: boolean; error?: { message?: string } };
+/** item/started carries startedAtMs, item/completed completedAtMs. */
+type ItemEvent = { threadId: string; turnId: string; item: TurnItem; startedAtMs?: number; completedAtMs?: number };
+/** TokenUsageBreakdown: cached input is part of input, reasoning part of output. */
+export type TokenUsage = {
+  totalTokens: number; inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number;
+  outputTokens: number; reasoningOutputTokens: number;
+};
+/** thread/tokenUsage/updated: the thread's running total, and the latest model response's share. */
+type TokenUsageEvent = { threadId: string; turnId: string; tokenUsage: { total: TokenUsage; last: TokenUsage } };
 
 export type GeneratedImage = { id: string; path?: string; base64?: string };
 export type TurnOutput = { text: string; images: GeneratedImage[]; interrupted?: boolean };
@@ -50,6 +59,7 @@ export class CodexAppServer extends EventEmitter {
   private completedLogins = new Map<string, LoginEvent>();
   private completedTurns = new Map<string, TurnEvent>();
   private turnItems = new Map<string, TurnItem[]>();
+  private tokenTotals = new Map<string, number>();
   private child?: ChildProcessWithoutNullStreams;
   closed = false;
 
@@ -83,6 +93,13 @@ export class CodexAppServer extends EventEmitter {
         }
         if (message.method === "turn/completed" && params.turn?.id) {
           this.completedTurns.set(params.turn.id, params as TurnEvent);
+        }
+        // Codex can report a thread's usage again without a new model response,
+        // such as when rate limits change. Only a changed total is new usage.
+        if (message.method === "thread/tokenUsage/updated" && params.threadId) {
+          const total = params.tokenUsage?.total?.totalTokens;
+          if (total === this.tokenTotals.get(params.threadId)) return;
+          this.tokenTotals.set(params.threadId, total);
         }
         // Codex reports turn failures, such as a usage limit, as an "error"
         // notification. Re-emitting that as Node's special "error" event would
@@ -254,7 +271,7 @@ export class CodexAppServer extends EventEmitter {
     return this.request("turn/interrupt", { threadId, turnId });
   }
 
-  async runTurn({ threadId, instructions, history, prompt, cwd, model, tools, attachments = [], onThread, onText, onStarted }: {
+  async runTurn({ threadId, instructions, history, prompt, cwd, model, tools, attachments = [], onThread, onText, onStarted, onItem, onUsage }: {
     threadId?: string;
     instructions: string;
     history?: string;
@@ -268,6 +285,10 @@ export class CodexAppServer extends EventEmitter {
     onText?: (text: string) => void;
     /** Called once Codex has started the turn, with what interrupt() needs. */
     onStarted?: (turn: { threadId: string; turnId: string }) => void;
+    /** An item of this turn started or completed: a command, a file change, a tool call and so on. */
+    onItem?: (phase: "started" | "completed", item: TurnItem, atMs: number) => void;
+    /** One model response's tokens, once per response. */
+    onUsage?: (usage: TokenUsage) => void;
   }): Promise<{ threadId: string; response: string; images: GeneratedImage[]; interrupted?: boolean }> {
     const home = `Your own folder for files you make is ${PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`;
     const fullInstructions = history
@@ -313,7 +334,25 @@ export class CodexAppServer extends EventEmitter {
       written.set(event.itemId, latest);
       onText?.(latest);
     };
+    // Items and usage carry the turn's id, which is known only once turn/start
+    // answers; anything of this thread that comes earlier waits until then.
+    let turnId: string | undefined;
+    const early: Array<() => void> = [];
+    const ofTurn = <T extends { threadId?: string; turnId?: string }>(handle: (event: T) => void) => {
+      const listener = (event: T) => {
+        if (event?.threadId !== id) return;
+        if (!turnId) early.push(() => listener(event));
+        else if (event.turnId === turnId) handle(event);
+      };
+      return listener;
+    };
+    const onItemStarted = ofTurn((event: ItemEvent) => onItem?.("started", event.item, event.startedAtMs ?? Date.now()));
+    const onItemCompleted = ofTurn((event: ItemEvent) => onItem?.("completed", event.item, event.completedAtMs ?? Date.now()));
+    const onTokens = ofTurn((event: TokenUsageEvent) => { if (event.tokenUsage?.last) onUsage?.(event.tokenUsage.last); });
     this.on("item/agentMessage/delta", onDelta);
+    this.on("item/started", onItemStarted);
+    this.on("item/completed", onItemCompleted);
+    this.on("thread/tokenUsage/updated", onTokens);
     try {
     const started = await this.request<{ turn?: { id?: string } }>("turn/start", {
       threadId: id,
@@ -324,6 +363,8 @@ export class CodexAppServer extends EventEmitter {
       sandboxPolicy: { type: "workspaceWrite", writableRoots: [cwd, PATHS.files], networkAccess: false },
     }, 30_000);
     if (!started.turn?.id) throw new Error("Codex did not start a turn.");
+    turnId = started.turn.id;
+    for (const replay of early.splice(0)) replay();
     onStarted?.({ threadId: id, turnId: started.turn.id });
     try {
       const { text, images, interrupted } = await this.waitForTurn(started.turn.id);
@@ -335,6 +376,9 @@ export class CodexAppServer extends EventEmitter {
     }
     } finally {
       this.off("item/agentMessage/delta", onDelta);
+      this.off("item/started", onItemStarted);
+      this.off("item/completed", onItemCompleted);
+      this.off("thread/tokenUsage/updated", onTokens);
     }
   }
 
