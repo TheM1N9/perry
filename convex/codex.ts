@@ -4,11 +4,12 @@ import { components, internal } from "./_generated/api";
 import { createThread, saveMessages } from "@convex-dev/agent";
 import { CAPTION_LIMIT, UPLOAD_LIMIT, deleteMessage, editDraft, finishDraft, sendDraft, sendFile, sendMessage } from "./lib/telegram";
 import { assertDashboardKey } from "./lib/auth";
+import { COMPACTED } from "./lib/commands";
 import { authenticate } from "./runner";
 import { FALLBACK_PROVIDER, startFallback } from "./chatgpt";
 import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
-import { vSpanKind, vSpanStatus, vUsage } from "./schema";
+import { vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
 
 /** Only device codes and account metadata cross Convex. Codex tokens never do. */
@@ -149,6 +150,35 @@ export const reportAccount = mutation({
   },
 });
 
+/** The chat's runner, or the freshest online one for a chat that has none yet. */
+async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">): Promise<Id<"runners"> | null> {
+  const runners = conversation.codexRunnerId
+    ? [await ctx.db.get(conversation.codexRunnerId)]
+    : await ctx.db.query("runners").order("desc").take(20);
+  const runner = runners.filter((item) => item && !item.revoked && item.codexAvailable && item.codexAuthMode === "chatgpt" && (item.lastSeenAt ?? 0) > Date.now() - 90_000)
+    .sort((a, b) => (b!.lastSeenAt ?? 0) - (a!.lastSeenAt ?? 0))[0];
+  if (!runner) return null;
+  if (!conversation.codexRunnerId) await ctx.db.patch(conversation._id, { codexRunnerId: runner._id });
+  return runner._id;
+}
+
+// Adapted from vercel/eve (Apache-2.0): packages/eve/src/execution/session/input-queue.ts
+/**
+ * Whether a new message joins the running turn instead of waiting behind it:
+ * only when it asks to steer, and only into a reply that is not being stopped
+ * and is not a compaction, which Codex cannot steer.
+ */
+function isSteering(policy: "steer" | "queue" | undefined, running: Doc<"codexTurns"> | null): running is Doc<"codexTurns"> {
+  return (policy ?? "queue") === "steer" && running !== null && !running.stopRequested && running.kind !== "compact"
+    // A reply written without the computer has no runner to hand the message to.
+    && !running.fallback && running.runnerId !== undefined;
+}
+
+/**
+ * Hand a message to Codex. With the "steer" policy, a message sent while the
+ * chat's reply is running joins that reply (see codexSteers); otherwise, and
+ * for "queue", it becomes a turn of its own behind whatever is running.
+ */
 export const enqueueTurn = internalMutation({
   args: {
     conversationId: v.id("conversations"),
@@ -160,23 +190,36 @@ export const enqueueTurn = internalMutation({
     recallDigest: v.optional(v.string()),
     flush: v.optional(v.boolean()),
     model: v.optional(v.string()),
-    attachments: v.optional(v.array(v.object({
-      url: v.optional(v.string()),
-      localPath: v.optional(v.string()),
-      fileName: v.string(),
-      contentType: v.string(),
-    }))),
+    attachments: v.optional(v.array(vTurnAttachment)),
+    policy: v.optional(v.union(v.literal("steer"), v.literal("queue"))),
   },
-  returns: v.id("codexTurns"),
+  returns: v.union(v.id("codexTurns"), v.id("codexSteers")),
   handler: async (ctx, args) => {
     const conversation = await ctx.db.get(args.conversationId);
     if (!conversation) throw new Error("This chat was deleted.");
-    const runners = conversation.codexRunnerId
-      ? [await ctx.db.get(conversation.codexRunnerId)]
-      : await ctx.db.query("runners").order("desc").take(20);
-    const runner = runners.filter((item) => item && !item.revoked && item.codexAvailable && item.codexAuthMode === "chatgpt" && (item.lastSeenAt ?? 0) > Date.now() - 90_000)
-      .sort((a, b) => (b!.lastSeenAt ?? 0) - (a!.lastSeenAt ?? 0))[0];
-    if (!runner) {
+    const running = await ctx.db.query("codexTurns")
+      .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.conversationId).eq("status", "running"))
+      .first();
+    const message = {
+      conversationId: args.conversationId,
+      runId: args.runId,
+      prompt: args.prompt,
+      history: args.history,
+      instructions: args.instructions,
+      recalled: args.recalled || undefined,
+      recallDigest: args.recallDigest,
+      ...(args.flush ? { flush: true } : {}),
+      requestedModel: args.model,
+      attachments: args.attachments,
+      createdAt: Date.now(),
+    };
+    if (isSteering(args.policy, running)) {
+      // The running turn already carries recalled memory; a steer adds only the message.
+      const { recalled: _recalled, recallDigest: _digest, flush: _flush, ...steer } = message;
+      return await ctx.db.insert("codexSteers", { ...steer, turnId: running._id, runnerId: running.runnerId!, status: "pending" });
+    }
+    const runnerId = await pickRunner(ctx, conversation);
+    if (!runnerId) {
       // No runner can take it; answer without the computer if the owner allows that.
       const fallback = await startFallback(ctx, {
         conversationId: args.conversationId, runId: args.runId, prompt: args.prompt, history: args.history,
@@ -190,24 +233,35 @@ export const enqueueTurn = internalMutation({
         ? `${offline}, or turn on answering without the computer in Settings.`
         : `${offline}. Answering without the computer needs a ChatGPT token from a runner, and none is valid now.`);
     }
-    if (!conversation.codexRunnerId) await ctx.db.patch(conversation._id, { codexRunnerId: runner._id });
-    return await ctx.db.insert("codexTurns", {
-      runnerId: runner._id,
-      conversationId: args.conversationId,
-      runId: args.runId,
-      prompt: args.prompt,
-      history: args.history,
-      instructions: args.instructions,
-      recalled: args.recalled || undefined,
-      recallDigest: args.recallDigest,
-      ...(args.flush ? { flush: true } : {}),
-      requestedModel: args.model,
-      attachments: args.attachments,
-      status: "queued",
-      createdAt: Date.now(),
-    });
+    return await ctx.db.insert("codexTurns", { ...message, runnerId, status: "queued" });
   },
 });
+
+/**
+ * A steer that could not join its turn becomes an ordinary turn of its own,
+ * queued behind it; one the owner stopped along with its turn ends at once.
+ */
+export async function queueSteer(ctx: MutationCtx, steer: Doc<"codexSteers">, outcome: { error?: string; stopped?: boolean } = {}) {
+  const queuedTurnId = await ctx.db.insert("codexTurns", {
+    runnerId: steer.runnerId,
+    conversationId: steer.conversationId,
+    runId: steer.runId,
+    prompt: steer.prompt,
+    history: steer.history,
+    instructions: steer.instructions,
+    requestedModel: steer.requestedModel,
+    attachments: steer.attachments,
+    createdAt: Date.now(),
+    ...(outcome.stopped ? { status: "done", stopped: true, finishedAt: Date.now() } : { status: "queued" }),
+  });
+  await ctx.db.patch(steer._id, { status: "queued", queuedTurnId, error: outcome.error?.slice(0, 500) });
+  if (outcome.stopped) await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: queuedTurnId });
+}
+
+/** Every steer of a turn still waiting for the runner. */
+const pendingSteersOf = (ctx: MutationCtx, turnId: Id<"codexTurns">) => ctx.db.query("codexSteers")
+  .withIndex("by_turn_status", (q) => q.eq("turnId", turnId).eq("status", "pending"))
+  .collect();
 
 export const queuedTurns = query({
   args: { token: v.string() },
@@ -231,6 +285,36 @@ export const stopRequests = query({
   },
 });
 
+/** Messages the owner sent into this runner's running turns, for it to steer Codex with. */
+export const pendingSteers = query({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token);
+    const steers = await ctx.db.query("codexSteers")
+      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .take(50);
+    return steers.filter((steer) => steer.runnerId === runner._id)
+      .map((steer) => ({ _id: steer._id, turnId: steer.turnId, prompt: steer.prompt, attachments: steer.attachments }));
+  },
+});
+
+/**
+ * The runner's answer for a steer: Codex took it into the running turn, or it
+ * could not ("no active turn", a turn id mismatch), and it is queued instead.
+ */
+export const ackSteer = mutation({
+  args: { token: v.string(), id: v.id("codexSteers"), applied: v.boolean(), error: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token);
+    const steer = await ctx.db.get(args.id);
+    if (!steer || steer.runnerId !== runner._id || steer.status !== "pending") return null;
+    if (args.applied) await ctx.db.patch(steer._id, { status: "applied", appliedAt: Date.now() });
+    else await queueSteer(ctx, steer, { error: args.error });
+    return null;
+  },
+});
+
 /**
  * Stop a chat's turns: a running one is flagged and its runner interrupts
  * Codex, keeping what it produced; one still queued ends right away.
@@ -245,8 +329,12 @@ export const requestStop = internalMutation({
         .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.conversationId).eq("status", status))
         .collect();
       for (const job of turns) {
+        // A /compact is not a reply, and Codex finishes it quickly on its own.
+        if (job.kind === "compact") continue;
         if (status === "running") {
           await ctx.db.patch(job._id, { stopRequested: true });
+          // A message sent into the reply stops with it, but stays in the chat.
+          for (const steer of await pendingSteersOf(ctx, job._id)) await queueSteer(ctx, steer, { stopped: true });
         } else {
           await ctx.db.patch(job._id, { status: "done", stopped: true, finishedAt: Date.now() });
           await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: job._id });
@@ -255,6 +343,35 @@ export const requestStop = internalMutation({
       }
     }
     return stopped;
+  },
+});
+
+/**
+ * /compact: ask Codex to summarise the chat's thread so it carries less
+ * context. It waits in the chat's queue like a turn, so it never runs while a
+ * reply is being written. Null when the chat has no Codex thread yet.
+ */
+export const requestCompact = internalMutation({
+  args: { conversationId: v.id("conversations") },
+  returns: v.union(v.null(), v.id("codexTurns")),
+  handler: async (ctx, args) => {
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) throw new Error("This chat was deleted.");
+    if (!conversation.codexThreadId) return null;
+    const runnerId = await pickRunner(ctx, conversation);
+    // Only a runner's Codex holds the thread; answering without the computer cannot compact it.
+    if (!runnerId) throw new Error("The Codex runner for this chat is offline. Start it to compact this chat.");
+    const runId = await ctx.db.insert("runs", { conversationId: conversation._id, prompt: "/compact", status: "running", startedAt: Date.now() });
+    return await ctx.db.insert("codexTurns", {
+      runnerId,
+      conversationId: conversation._id,
+      runId,
+      kind: "compact",
+      prompt: "/compact",
+      instructions: "",
+      status: "queued",
+      createdAt: Date.now(),
+    });
   },
 });
 
@@ -297,6 +414,19 @@ export const setThread = mutation({
     if (!conversation) return null;
     if (conversation.codexThreadId && conversation.codexThreadId !== args.threadId) throw new Error("Chat already has another Codex thread.");
     await ctx.db.patch(conversation._id, { codexThreadId: args.threadId });
+    return null;
+  },
+});
+
+/** Codex has started the turn; its id is what a steer is checked against. */
+export const setCodexTurn = mutation({
+  args: { token: v.string(), id: v.id("codexTurns"), codexTurnId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token);
+    const job = await ctx.db.get(args.id);
+    if (!job || job.runnerId !== runner._id || job.status !== "running") return null;
+    await ctx.db.patch(job._id, { codexTurnId: args.codexTurnId });
     return null;
   },
 });
@@ -563,6 +693,8 @@ export const finishTurn = mutation({
     if ((args.compacted || !args.error) && await ctx.db.get(job.conversationId)) {
       await ctx.db.patch(job.conversationId, { recallDigest: args.compacted ? undefined : job.recallDigest });
     }
+    // Messages the turn ended before taking are answered next, in the same transaction.
+    for (const steer of await pendingSteersOf(ctx, job._id)) await queueSteer(ctx, steer, { error: "The reply finished before this message could join it." });
     await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: job._id });
     return null;
   },
@@ -720,7 +852,11 @@ export const getTurn = internalQuery({
     const job = await ctx.db.get(args.id);
     if (!job) return null;
     const conversation = await ctx.db.get(job.conversationId);
-    return { job, conversation };
+    // The messages that joined the turn, in the order Codex took them.
+    const steers = (await ctx.db.query("codexSteers")
+      .withIndex("by_turn_status", (q) => q.eq("turnId", job._id).eq("status", "applied"))
+      .collect()).sort((a, b) => (a.appliedAt ?? 0) - (b.appliedAt ?? 0));
+    return { job, conversation, steers: steers.map((steer) => steer.prompt) };
   },
 });
 
@@ -731,16 +867,23 @@ export const markFinalized = internalMutation({
     const job = await ctx.db.get(args.id);
     if (!job || job.finalizedAt) return null;
     await ctx.db.patch(job._id, { finalizedAt: Date.now() });
-    await ctx.db.patch(job.runId, {
-      status: job.status === "done" ? "ok" : "error",
-      model: job.model ?? "codex subscription",
-      error: job.error,
-      finishedAt: Date.now(),
-    });
-    const conversation = await ctx.db.get(job.conversationId);
+    // Each message that joined the turn has its own run, and ends with it.
+    const steers = await ctx.db.query("codexSteers")
+      .withIndex("by_turn_status", (q) => q.eq("turnId", job._id).eq("status", "applied"))
+      .collect();
+    for (const runId of [job.runId, ...steers.map((steer) => steer.runId)]) {
+      await ctx.db.patch(runId, {
+        status: job.status === "done" ? "ok" : "error",
+        model: job.model ?? "codex subscription",
+        error: job.error,
+        finishedAt: Date.now(),
+      });
+    }
+    // A compaction is not a message: the chat was never marked busy for it.
+    const conversation = job.kind === "compact" ? null : await ctx.db.get(job.conversationId);
     if (conversation) await ctx.db.patch(conversation._id, {
       lastMessageAt: Date.now(),
-      pendingTurns: conversation.channel === "web" ? Math.max(0, (conversation.pendingTurns ?? 0) - 1) : conversation.pendingTurns,
+      pendingTurns: conversation.channel === "web" ? Math.max(0, (conversation.pendingTurns ?? 0) - 1 - steers.length) : conversation.pendingTurns,
     });
     return null;
   },
@@ -760,11 +903,12 @@ export const finalizeTurn = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const result: {
-      job: { prompt: string; response?: string; error?: string; status: string; model?: string; fallback?: boolean; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; flush?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
+      job: { kind?: "compact"; prompt: string; response?: string; error?: string; status: string; model?: string; fallback?: boolean; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; flush?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
       conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string; title?: string; jobId?: Id<"jobs"> } | null;
+      steers: string[];
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
-    const { job, conversation } = result;
+    const { job, conversation, steers } = result;
     // A stopped turn keeps whatever it had written, marked as stopped.
     const reply = job.stopped ? `${job.response ?? ""}\n\n_Stopped._`.trim() : job.response;
     // Each step is recorded once done, so recovery can retry this safely (see recovery.ts).
@@ -788,6 +932,18 @@ export const finalizeTurn = internalAction({
       await ctx.runMutation(internal.codex.markFinalized, args);
       return null;
     }
+    // A compaction leaves the chat as it was. The web chat watches it finish;
+    // Telegram is told, like any command.
+    if (job.kind === "compact") {
+      if (conversation.channel === "telegram" && !job.deliveredAt) {
+        const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
+        await sendMessage(token, conversation.externalId, job.error ? `Could not compact: ${job.error}` : COMPACTED)
+          .catch((error) => console.error(`Could not report compaction: ${String(error)}`));
+        await done("deliveredAt");
+      }
+      await ctx.runMutation(internal.codex.markFinalized, args);
+      return null;
+    }
     if (conversation.jobId) {
       if (!job.reportedAt) {
         await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, result: job.response, error: job.error });
@@ -800,19 +956,21 @@ export const finalizeTurn = internalAction({
       }
     }
     // A failed turn keeps the owner's message; the error shows on the run and, on Telegram, as a reply.
+    // Messages that joined the reply come after the one that started it, and before the reply.
+    const prompts = [job.prompt, ...steers];
     const answered = Boolean(reply || job.mediaKey);
     if (!job.savedAt) await saveMessages(ctx, components.agent, {
       threadId: conversation.threadId,
       userId,
       order: "next",
       messages: [
-        { role: "user", content: job.prompt },
+        ...prompts.map((content) => ({ role: "user" as const, content })),
         ...(answered
           ? [{ role: "assistant" as const, content: `${reply ?? ""}${job.mediaKey ? `\n\n<!-- attachments: ${job.mediaKey} -->` : ""}`.trim() }]
           : []),
       ],
       // A reply written without the computer says so in the web chat.
-      ...(job.fallback && answered ? { metadata: [{}, { provider: FALLBACK_PROVIDER, model: job.model }] } : {}),
+      ...(job.fallback && answered ? { metadata: [...prompts.map(() => ({})), { provider: FALLBACK_PROVIDER, model: job.model }] } : {}),
     }).then(() => done("savedAt"));
     if (conversation.channel === "telegram" && !job.deliveredAt) {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
@@ -852,6 +1010,8 @@ export const pruneOrphans = internalMutation({
     let deleted = 0;
     for (const turn of turns) {
       if (!args.conversationId && await ctx.db.get(turn.conversationId)) continue;
+      const steers = await ctx.db.query("codexSteers").withIndex("by_turn_status", (q) => q.eq("turnId", turn._id)).collect();
+      for (const steer of steers) await ctx.db.delete(steer._id);
       await ctx.db.delete(turn._id);
       deleted += 1;
     }

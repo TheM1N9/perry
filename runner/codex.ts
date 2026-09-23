@@ -76,6 +76,23 @@ function tokenFromCodex(accessToken: string): ChatgptToken | null {
   return { accessToken, accountId, expiresAt: claims.exp * 1000 };
 }
 
+/** A message as Codex input: its text, images inline, other files named by where they are. */
+function userInput(prompt: string, attachments: CodexAttachment[], recalled?: string): object[] {
+  const text = { type: "text", text: prompt, text_elements: [] };
+  // Recalled memory goes first, as its own part of the owner's message.
+  const input: object[] = recalled ? [{ type: "text", text: recalled, text_elements: [] }, text] : [text];
+  for (const attachment of attachments) {
+    // Local files are read straight from where they are on this machine.
+    const path = attachment.localPath ?? null;
+    if (attachment.contentType?.startsWith("image/")) {
+      input.push(path ? { type: "localImage", path } : { type: "image", url: attachment.url });
+    } else {
+      text.text += `\nAttached file: ${attachment.fileName} (${path ?? attachment.url})`;
+    }
+  }
+  return input;
+}
+
 /** A stdio client for the official Codex app-server protocol. */
 export class CodexAppServer extends EventEmitter {
   private nextId = 1;
@@ -331,6 +348,39 @@ export class CodexAppServer extends EventEmitter {
     return this.request("turn/interrupt", { threadId, turnId });
   }
 
+  /**
+   * Add a message to a running turn. Codex reads it at its next step and
+   * carries on in the same turn. Fails with "no active turn to steer" once the
+   * turn has ended, and when expectedTurnId is no longer the active turn.
+   */
+  steer(threadId: string, turnId: string, prompt: string, attachments: CodexAttachment[] = []): Promise<unknown> {
+    return this.request("turn/steer", { threadId, expectedTurnId: turnId, input: userInput(prompt, attachments) }, 30_000);
+  }
+
+  /**
+   * Compact a thread: Codex replaces its history with a summary, as it does on
+   * its own near the context limit. It runs as a turn of its own, which this
+   * waits for.
+   */
+  async compact(threadId: string, cwd: string): Promise<void> {
+    await this.request("thread/resume", { threadId, cwd, excludeTurns: true }, 30_000);
+    // Like deltas, turn/started can arrive before the request answers.
+    let onStarted: (event: { threadId?: string; turn?: { id?: string } }) => void = () => {};
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const started = new Promise<string>((resolve, reject) => {
+      onStarted = (event) => { if (event.threadId === threadId && event.turn?.id) resolve(event.turn.id); };
+      this.on("turn/started", onStarted);
+      timer = setTimeout(() => reject(new Error("Codex did not start compacting.")), 60_000);
+    });
+    try {
+      await this.request("thread/compact/start", { threadId }, 30_000);
+      await this.waitForTurn(await started, 10 * 60_000);
+    } finally {
+      clearTimeout(timer);
+      this.off("turn/started", onStarted);
+    }
+  }
+
   async runTurn({ threadId, instructions, history, recalled, prompt, cwd, model, tools, attachments = [], onThread, onText, onStarted, onItem, onUsage }: {
     threadId?: string;
     instructions: string;
@@ -381,18 +431,7 @@ export class CodexAppServer extends EventEmitter {
     const id = thread.thread?.id;
     if (!id) throw new Error("Codex did not return a thread ID.");
     if (!threadId) await onThread(id);
-    const text = { type: "text", text: prompt, text_elements: [] };
-    // Recalled memory goes first, as its own part of the owner's message.
-    const input: object[] = recalled ? [{ type: "text", text: recalled, text_elements: [] }, text] : [text];
-    for (const attachment of attachments) {
-      // Local files are read straight from where they are on this machine.
-      const path = attachment.localPath ?? null;
-      if (attachment.contentType?.startsWith("image/")) {
-        input.push(path ? { type: "localImage", path } : { type: "image", url: attachment.url });
-      } else {
-        text.text += `\nAttached file: ${attachment.fileName} (${path ?? attachment.url})`;
-      }
-    }
+    const input = userInput(prompt, attachments, recalled);
     // Deltas can arrive before turn/start answers, so match them by thread.
     const written = new Map<string, string>();
     let latest = "";

@@ -685,6 +685,32 @@ async function main() {
     console.log(yellow("  stopping the Codex turn, as asked"));
     void codex.interrupt(current.threadId, current.turnId).catch((error) => console.error(red(`  Could not stop the Codex turn: ${message(error)}`)));
   };
+  // Messages the owner sent while the turn runs, and those already handed to Codex.
+  let pendingSteers: Array<{ _id: Id<"codexSteers">; turnId: Id<"codexTurns">; prompt: string; attachments?: Doc<"codexTurns">["attachments"] }> = [];
+  const steered = new Map<string, Promise<unknown>>();
+  /**
+   * Hand each new message for the running turn to Codex with turn/steer, then
+   * tell Convex whether Codex took it. One it refused ("no active turn to
+   * steer", a turn id mismatch) is queued as a turn of its own there.
+   */
+  const steerIfAsked = () => {
+    if (!current || !codex) return;
+    const { jobId, threadId, turnId } = current;
+    const app = codex;
+    for (const steer of pendingSteers) {
+      if (steer.turnId !== jobId || steered.has(steer._id)) continue;
+      steered.set(steer._id, (async () => {
+        try {
+          await app.steer(threadId, turnId, steer.prompt, await localise(steer.attachments));
+          console.log(dim("  steered the Codex turn with a new message"));
+          await client.mutation(api.codex.ackSteer, { token, id: steer._id, applied: true });
+        } catch (error) {
+          console.log(yellow(`  could not steer the Codex turn, so the message waits its turn: ${message(error)}`));
+          await client.mutation(api.codex.ackSteer, { token, id: steer._id, applied: false, error: message(error) });
+        }
+      })().catch((error) => console.error(red(`  Could not report a steer: ${message(error)}`))));
+    }
+  };
   const pumpCodex = async () => {
     if (codexTurnBusy) return;
     codexTurnBusy = true;
@@ -717,41 +743,50 @@ async function main() {
           const schedule = () => { streamTimer ??= setTimeout(flush, 300); };
           try {
             const app = await ensureCodex();
-            const completed = await app.runTurn({
-              threadId: job.codexThreadId,
-              instructions: job.instructions,
-              history: job.history,
-              recalled: job.recalled,
-              prompt: job.prompt,
-              cwd: workdir,
-              model: job.requestedModel,
-              tools: job.mcpUrl ? { url: job.mcpUrl, token } : undefined,
-              attachments: await localise(job.attachments),
-              onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
-              onText: (text) => {
-                latest = text;
-                schedule();
-              },
-              onStarted: (turn) => {
-                current = { jobId: job._id, ...turn };
-                interruptIfAsked();
-              },
-              onItem: (phase, item, atMs) => {
-                if (trace.item(phase, item, atMs)) schedule();
-              },
-              onUsage: (usage) => {
-                trace.addUsage(usage);
-                schedule();
-              },
-            });
-            const media = await keepMedia(job._id, job.channel, completed.images);
-            result = {
-              response: completed.response,
-              ...(completed.interrupted ? { stopped: true } : {}),
-              ...(completed.compacted ? { compacted: true } : {}),
-              model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription",
-              ...(media.length ? { media } : {}),
-            };
+            if (job.kind === "compact") {
+              if (!job.codexThreadId) throw new Error("This chat has no Codex thread to compact yet.");
+              console.log(dim("  compacting a chat's Codex thread"));
+              await app.compact(job.codexThreadId, workdir);
+              result = { response: "Compacted.", compacted: true, model: "codex subscription" };
+            } else {
+              const completed = await app.runTurn({
+                threadId: job.codexThreadId,
+                instructions: job.instructions,
+                history: job.history,
+                recalled: job.recalled,
+                prompt: job.prompt,
+                cwd: workdir,
+                model: job.requestedModel,
+                tools: job.mcpUrl ? { url: job.mcpUrl, token } : undefined,
+                attachments: await localise(job.attachments),
+                onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
+                onText: (text) => {
+                  latest = text;
+                  schedule();
+                },
+                onStarted: (turn) => {
+                  current = { jobId: job._id, ...turn };
+                  void client.mutation(api.codex.setCodexTurn, { token, id: job._id, codexTurnId: turn.turnId }).catch(() => {});
+                  interruptIfAsked();
+                  steerIfAsked();
+                },
+                onItem: (phase, item, atMs) => {
+                  if (trace.item(phase, item, atMs)) schedule();
+                },
+                onUsage: (usage) => {
+                  trace.addUsage(usage);
+                  schedule();
+                },
+              });
+              const media = await keepMedia(job._id, job.channel, completed.images);
+              result = {
+                response: completed.response,
+                ...(completed.interrupted ? { stopped: true } : {}),
+                ...(completed.compacted ? { compacted: true } : {}),
+                model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription",
+                ...(media.length ? { media } : {}),
+              };
+            }
           } catch (error) {
             // A late failure keeps what the turn had already produced.
             const partial = error instanceof TurnFailed ? error.partial : null;
@@ -768,6 +803,10 @@ async function main() {
             activeConversation = undefined;
           }
           if (streamTimer) clearTimeout(streamTimer);
+          // A steer still being answered must be recorded as applied or not
+          // before finishTurn queues whatever the turn did not take.
+          await Promise.all(steered.values());
+          steered.clear();
           saveResult(job._id, result);
           // The trace's last report goes before the turn ends; Convex takes reports only while it runs.
           trace.drain(Date.now());
@@ -789,6 +828,10 @@ async function main() {
   watch(api.codex.stopRequests, { token }, (ids) => {
     stopRequested = new Set(ids ?? []);
     interruptIfAsked();
+  });
+  watch(api.codex.pendingSteers, { token }, (steers) => {
+    pendingSteers = steers ?? [];
+    steerIfAsked();
   });
 
   const stop = async () => {

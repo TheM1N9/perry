@@ -60,7 +60,7 @@ const run = runs.find((item) => item.sessionId === chatId);
 await type("/model");
 const listed = await enter();
 
-const pass = commands.join(",") === "/model,/set model,/stop" && models.length >= 2
+const pass = commands.join(",") === "/model,/set model,/stop,/compact" && models.length >= 2
   && (ambiguous.notice ?? "").includes("matches") && ambiguous.draft === "/model luna" && !ambiguous.sentAnything
   && (switched.notice ?? "").includes("gpt-5.5") && switched.model === "gpt-5.5" && switched.draft === "" && !switched.sentAnything
   && run?.model === "codex/gpt-5.5" && /• gpt-5\.5/.test(listed.notice ?? "") && errors.length === 0;

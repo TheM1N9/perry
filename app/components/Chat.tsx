@@ -6,7 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { api } from "@/convex/_generated/api";
-import { describeModels, findModel, parseModelCommand, pickModel } from "@/convex/lib/commands";
+import { COMPACTED, describeModels, findModel, parseModelCommand, pickModel } from "@/convex/lib/commands";
 import { Approvals } from "./Approvals";
 import type { Id } from "@/convex/_generated/dataModel";
 
@@ -41,6 +41,8 @@ function groupName(timestamp: number) {
 const quickStarts = ["Help me plan my day", "Summarize what we worked on recently", "I have an idea to think through"];
 type Attachment = { url: string; fileName: string; contentType: string };
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
+/** A message you sent that the history does not show yet: the one that started a reply, or one sent into it. */
+type Pending = { id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean };
 function AttachmentList({ attachments }: { attachments: Attachment[] }) {
   if (!attachments.length) return null;
   return <div className="chat-attachments">{attachments.map((attachment) => {
@@ -76,6 +78,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const sendChat = useMutation(api.dashboard.sendChat);
   const stopChat = useMutation(api.dashboard.stopChat);
   const resetChat = useAction(api.dashboard.resetChat);
+  const compactChat = useMutation(api.dashboard.compactChat);
   const generateUploadUrl = useMutation(api.dashboard.generateUploadUrl);
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
@@ -90,7 +93,9 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const [draft, setDraft] = useState("");
   /** A command's answer, shown above the composer instead of being sent as a message. */
   const [notice, setNotice] = useState("");
-  const [pending, setPending] = useState<{ id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean } | null>(null);
+  const [pending, setPending] = useState<Pending[]>([]);
+  /** The /compact being waited on, to say when it is done. */
+  const [compaction, setCompaction] = useState<Id<"codexTurns"> | null>(null);
   const [pickedFiles, setPickedFiles] = useState<File[]>([]);
   const [pickedPreviews, setPickedPreviews] = useState<Map<File, string>>(new Map());
   const [busy, setBusy] = useState(false);
@@ -120,6 +125,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   );
   const messages = useMemo(() => [...newestMessages].sort((a, b) => a.createdAt - b.createdAt), [newestMessages]);
   const searchChats = useAction(api.dashboard.searchChats);
+  const compactionStatus = useQuery(api.dashboard.getCompaction, compaction ? { key: dashboardKey, id: compaction } : "skip");
 
   useEffect(() => {
     const match = window.location.pathname.match(/^\/chat\/([^/]+)/);
@@ -167,20 +173,34 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  // A sent message stops being pending once the history has it, or once the
+  // reply it started or joined has come and gone.
   useEffect(() => {
-    if (!pending || pending.id !== selectedId) return;
-    const count = messages.filter((message) => message.role === "user" && message.text === pending.text).length;
-    if (count > pending.baselineCount) setPending(null);
-  }, [messages, pending, selectedId]);
+    setPending((items) => {
+      const next = items.filter((item) => item.id !== selectedId
+        || messages.filter((message) => message.role === "user" && message.text === item.text).length <= item.baselineCount);
+      return next.length === items.length ? items : next;
+    });
+  }, [messages, selectedId]);
   useEffect(() => {
-    if (!pending || pending.id !== selectedId) return;
-    if (chat?.isRunning && !pending.seenRunning) setPending((current) =>
-      current?.id === pending.id && current.text === pending.text ? { ...current, seenRunning: true } : current,
-    );
-    if (pending.seenRunning && chat?.isRunning === false) setPending((current) =>
-      current?.id === pending.id && current.text === pending.text ? null : current,
-    );
-  }, [chat?.isRunning, pending, selectedId]);
+    const running = chat?.isRunning;
+    if (running === undefined) return;
+    setPending((items) => {
+      let changed = false;
+      const next = items.flatMap((item) => {
+        if (item.id !== selectedId) return [item];
+        if (running && !item.seenRunning) { changed = true; return [{ ...item, seenRunning: true }]; }
+        if (item.seenRunning && !running) { changed = true; return []; }
+        return [item];
+      });
+      return changed ? next : items;
+    });
+  }, [chat?.isRunning, selectedId]);
+  useEffect(() => {
+    if (!compactionStatus || compactionStatus.status === "queued" || compactionStatus.status === "running") return;
+    setNotice(compactionStatus.status === "done" ? COMPACTED : `Could not compact: ${compactionStatus.error ?? "Codex did not say why."}`);
+    setCompaction(null);
+  }, [compactionStatus]);
   useEffect(() => {
     const previews = new Map(pickedFiles.map((file) => [file, URL.createObjectURL(file)]));
     setPickedPreviews(previews);
@@ -199,7 +219,8 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
 
   const active = chats?.find((item) => item.id === selectedId);
   const parent = chats?.find((item) => item.id === active?.parentConversationId);
-  const waiting = Boolean(pending?.id === selectedId) || Boolean(chat?.isRunning);
+  const shownPending = pending.filter((item) => item.id === selectedId);
+  const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
   const codexModels = modelOptions?.codex ?? [];
   const model = (selectedId ? chat?.model : draftModel)
     ?? (codexModels.find((item) => item.isDefault) ?? codexModels[0])?.id;
@@ -244,6 +265,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     { command: "/model", hint: "List the Codex models, or /model <name> to switch this chat" },
     { command: "/set model", hint: "Switch this chat's model: /set model <name>" },
     { command: "/stop", hint: "Stop the reply being written" },
+    { command: "/compact", hint: "Shrink what Codex carries of this chat; the messages stay" },
     { command: "/reset", hint: "Save this chat to memory, then start it afresh" },
   ];
   const typedCommand = parseModelCommand(draft);
@@ -260,7 +282,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
           key: item.command,
           label: item.command,
           hint: item.hint,
-          apply: () => { setDraft(item.command === "/stop" || item.command === "/reset" ? item.command : `${item.command} `); composer.current?.focus(); },
+          apply: () => { setDraft(item.command === "/stop" || item.command === "/compact" || item.command === "/reset" ? item.command : `${item.command} `); composer.current?.focus(); },
         }));
 
   /** Commands never become messages: they change this chat, then say what they did. */
@@ -288,27 +310,40 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
       catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
       return true;
     }
+    if (trimmed.toLowerCase() === "/compact") {
+      setDraft("");
+      try {
+        const id = selectedId ? await compactChat({ key: dashboardKey, id: selectedId }) : null;
+        setCompaction(id);
+        setNotice(id ? "Compacting this chat…" : "Nothing to compact yet.");
+      } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); }
+      return true;
+    }
     return false;
   }
 
   async function submit(text = draft) {
     const message = text.trim();
     if (message.startsWith("/") && pickedFiles.length === 0 && await runCommand(message)) return;
-    if ((!message && pickedFiles.length === 0) || busy || pending?.id === selectedId) return;
+    // Sent while a reply is running, the message joins that reply (it steers it).
+    if ((!message && pickedFiles.length === 0) || busy) return;
     const id = selectedId ?? await makeChat();
     if (!id) return;
     const files = pickedFiles;
     const messageKey = files.length ? crypto.randomUUID() : undefined;
     setDraft(""); setPickedFiles([]); setError("");
+    let sent: Pending | undefined;
     try {
       const uploaded: PendingAttachment[] = [];
       for (const file of files) {
         const attachmentId = await registerAttachment({ key: dashboardKey, conversationId: id, messageKey: messageKey!, ...await store(file), fileName: file.name, contentType: file.type || "application/octet-stream", size: file.size });
         uploaded.push({ id: attachmentId, url: URL.createObjectURL(file), fileName: file.name, contentType: file.type || "application/octet-stream" });
       }
-      setPending({ id, text: message, attachments: uploaded, baselineCount: selectedId === id ? messages.filter((item) => item.role === "user" && item.text === message).length : 0, seenRunning: false });
+      const entry: Pending = { id, text: message, attachments: uploaded, baselineCount: selectedId === id ? messages.filter((item) => item.role === "user" && item.text === message).length : 0, seenRunning: selectedId === id && Boolean(chat?.isRunning) };
+      sent = entry;
+      setPending((items) => [...items, entry]);
       await sendChat({ key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, model });
-    } catch (cause) { setPending(null); setDraft(message); setPickedFiles(files); setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { setPending((items) => items.filter((item) => item !== sent)); setDraft(message); setPickedFiles(files); setError(cause instanceof Error ? cause.message : String(cause)); }
   }
   /** Regenerate from an assistant reply, or resend one of your messages with new text. */
   async function rewind(messageId: string, text?: string) {
@@ -317,11 +352,12 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     const sent = [...messages.slice(0, index + 1)].reverse().find((message) => message.role === "user");
     const shown = text ?? sent?.text ?? "";
     setBusy(true); setError(""); setEditing(null);
+    // The old copy of the message counts until it is removed, so it is part of the baseline.
+    const entry: Pending = { id: selectedId, text: shown, attachments: sent?.attachments ?? [], baselineCount: messages.filter((message) => message.role === "user" && message.text === shown).length, seenRunning: false };
     try {
-      // The old copy of the message counts until it is removed, so it is part of the baseline.
-      setPending({ id: selectedId, text: shown, attachments: sent?.attachments ?? [], baselineCount: messages.filter((message) => message.role === "user" && message.text === shown).length, seenRunning: false });
+      setPending((items) => [...items, entry]);
       await rewindChat({ key: dashboardKey, id: selectedId, messageId, text });
-    } catch (cause) { setPending(null); setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { setPending((items) => items.filter((item) => item !== entry)); setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
   }
   async function branch(messageId: string) {
@@ -422,7 +458,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
             {(chat === undefined || messageStatus === "LoadingFirstPage") && <div className="chat-thread-loading">Loading conversation…</div>}
             {messageStatus === "CanLoadMore" && <div className="chat-load-older"><button onClick={() => { if (scroller.current) olderScroll.current = { height: scroller.current.scrollHeight, top: scroller.current.scrollTop }; loadMore(50); }}>Load earlier messages</button></div>}
             {messageStatus === "LoadingMore" && <div className="chat-thread-loading">Loading earlier messages…</div>}
-            {chat && messageStatus !== "LoadingFirstPage" && messages.length === 0 && pending?.id !== selectedId && <div className="chat-thread-empty"><div className="chat-welcome-mark small"><Icon name="spark" size={24} /></div><h2>Start a conversation</h2><p>Messages in this chat stay together. Your saved memories are available in every chat.</p></div>}
+            {chat && messageStatus !== "LoadingFirstPage" && messages.length === 0 && shownPending.length === 0 && <div className="chat-thread-empty"><div className="chat-welcome-mark small"><Icon name="spark" size={24} /></div><h2>Start a conversation</h2><p>Messages in this chat stay together. Your saved memories are available in every chat.</p></div>}
             {messages.map((message) => <div key={message.id} className={`chat-turn ${message.role === "user" ? "from-user" : "from-assistant"}`}>
               {message.role !== "user" && <div className="chat-avatar">A</div>}
               <div className="chat-turn-body">
@@ -440,7 +476,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
                 </div>
               </div>
             </div>)}
-            {pending?.id === selectedId && <div className="chat-turn from-user pending"><div className="chat-turn-body"><div className="chat-bubble">{pending.text}<AttachmentList attachments={pending.attachments} /></div></div></div>}
+            {shownPending.map((item, index) => <div key={index} className="chat-turn from-user pending"><div className="chat-turn-body"><div className="chat-bubble">{item.text}<AttachmentList attachments={item.attachments} /></div></div></div>)}
             {waiting && <div className="chat-turn from-assistant pending"><div className="chat-avatar">A</div>{chat?.streaming
               ? <div className="chat-turn-body"><div className="chat-bubble chat-streaming"><Markdown text={chat.streaming} /></div>{chat.fallback && <div className="chat-fallback-note">Answering without your computer</div>}</div>
               : <div className="chat-thinking"><i /><i /><i /></div>}</div>}
@@ -458,13 +494,15 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
             : url && file.type.startsWith("video/") ? <video src={url} muted playsInline preload="metadata" />
             : <span className="chat-picked-name"><Icon name="paperclip" size={14} />{file.name}</span>;
           return <div className="chat-picked-file" key={`${index}-${file.name}-${file.lastModified}`} title={file.name}>{preview}<button aria-label={`Remove ${file.name}`} onClick={() => setPickedFiles((items) => items.filter((item) => item !== file))}><Icon name="close" size={12} /></button></div>;
-        })}</div>}<textarea ref={composer} value={draft} rows={1} placeholder="Message your assistant…" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} /><div className="chat-composer-foot"><button className="chat-attach" aria-label="Attach files" title="Attach images, video, audio, or files" onClick={() => filePicker.current?.click()} disabled={busy}><Icon name="paperclip" size={17} /></button><input ref={filePicker} type="file" multiple hidden accept="image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json" onChange={(event) => { const files = Array.from(event.target.files ?? []); setPickedFiles((items) => [...items, ...files].slice(0, 10)); event.currentTarget.value = ""; }} /><select className="chat-model" aria-label="Codex model" title={`Codex · ${model ?? "default"}`} value={model ?? ""} onChange={(event) => applyModel(event.target.value)}>
+        })}</div>}<textarea ref={composer} value={draft} rows={1} placeholder={waiting ? "Add to the reply, or stop it…" : "Message your assistant…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} /><div className="chat-composer-foot"><button className="chat-attach" aria-label="Attach files" title="Attach images, video, audio, or files" onClick={() => filePicker.current?.click()} disabled={busy}><Icon name="paperclip" size={17} /></button><input ref={filePicker} type="file" multiple hidden accept="image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json" onChange={(event) => { const files = Array.from(event.target.files ?? []); setPickedFiles((items) => [...items, ...files].slice(0, 10)); event.currentTarget.value = ""; }} /><select className="chat-model" aria-label="Codex model" title={`Codex · ${model ?? "default"}`} value={model ?? ""} onChange={(event) => applyModel(event.target.value)}>
           {codexModels.length
             ? codexModels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)
             : <option value="">Codex default</option>}
-        </select><span className="chat-composer-hint">Shift + Enter for a new line</span>{waiting && selectedId
+        </select><span className="chat-composer-hint">Shift + Enter for a new line</span>{/* Adapted from vercel/eve (Apache-2.0): packages/eve/src/setup/scaffold/create/web-template.ts */}
+        {/* While a reply runs, a draft is sent into it; with nothing typed, the button stops it. */}
+        {waiting && selectedId && !draft.trim() && pickedFiles.length === 0
           ? <button className="chat-send chat-stop" aria-label="Stop the reply" title="Stop the reply" onClick={() => void stopChat({ key: dashboardKey, id: selectedId }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))}><Icon name="stop" size={16} /></button>
-          : <button className="chat-send" aria-label="Send message" onClick={() => void submit()} disabled={(!draft.trim() && pickedFiles.length === 0) || busy || pending?.id === selectedId}><Icon name="arrow" size={18} /></button>}</div></div>
+          : <button className="chat-send" aria-label="Send message" title={waiting ? "Send into the reply" : undefined} onClick={() => void submit()} disabled={(!draft.trim() && pickedFiles.length === 0) || busy}><Icon name="arrow" size={18} /></button>}</div></div>
         <div className="chat-composer-caption">Attach images, video, audio, or documents. The assistant can inspect supported files and link to shared media.</div>
       </div></div>
     </main>

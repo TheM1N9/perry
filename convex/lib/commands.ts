@@ -5,6 +5,9 @@
 
 export type ModelOption = { id: string; name: string; isDefault: boolean };
 
+/** What /compact reports once Codex has summarised the chat's thread. */
+export const COMPACTED = "Compacted. Codex now works from a summary of this chat; the messages here are unchanged.";
+
 /** "/model", "/model <name>", "/set model <name>" (and "/model@botname" on Telegram). */
 export function parseModelCommand(text: string): { name?: string } | null {
   const match = text.trim().match(/^\/(?:set\s+)?model(?:@\S+)?(?:\s+([\s\S]+))?$/i);

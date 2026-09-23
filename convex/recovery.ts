@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
+import { queueSteer } from "./codex";
 
 /**
  * Durable turns. The runner keeps finished Codex results on disk and delivers
@@ -12,6 +13,8 @@ import { internalMutation } from "./_generated/server";
  * - a queued turn whose runner stayed offline fails with a clear error;
  * - a running turn whose runner died and did not return fails the same way,
  *   as does a fallback turn whose action died (see chatgpt.ts);
+ * - a message sent into a reply that ended without taking it (the sweep
+ *   failed that turn, say) is queued as a turn of its own;
  * - a chat still marked busy with no turn behind it is released, and its run
  *   is closed.
  */
@@ -25,11 +28,12 @@ const STUCK_CHAT_MS = 5 * 60_000;
 export const sweep = internalMutation({
   // A test looks at one chat (`only`) as it will be later (`now`).
   args: { now: v.optional(v.number()), only: v.optional(v.id("conversations")) },
-  returns: v.object({ refinalized: v.number(), abandoned: v.number(), released: v.number() }),
+  returns: v.object({ refinalized: v.number(), abandoned: v.number(), requeued: v.number(), released: v.number() }),
   handler: async (ctx, args) => {
     const now = args.now ?? Date.now();
     let refinalized = 0;
     let abandoned = 0;
+    let requeued = 0;
     let released = 0;
     const turns = args.only
       ? await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", args.only!)).collect()
@@ -76,6 +80,18 @@ export const sweep = internalMutation({
       }
     }
 
+    // Steers whose reply is no longer running. finishTurn queues its own, so
+    // these are left by turns this sweep failed, or whose chat is gone.
+    const steers = await ctx.db.query("codexSteers").withIndex("by_status", (q) => q.eq("status", "pending")).take(100);
+    for (const steer of steers) {
+      if (args.only && steer.conversationId !== args.only) continue;
+      const turn = await ctx.db.get(steer.turnId);
+      if (turn?.status === "running") continue;
+      if (!turn || !(await ctx.db.get(steer.conversationId))) await ctx.db.delete(steer._id);
+      else await queueSteer(ctx, steer, { error: "The reply ended before this message could join it." });
+      requeued += 1;
+    }
+
     // A chat marked busy with nothing queued or running behind it.
     const chats = args.only ? [await ctx.db.get(args.only)].filter((chat) => chat !== null) : await ctx.db.query("conversations").collect();
     for (const chat of chats) {
@@ -99,6 +115,6 @@ export const sweep = internalMutation({
       }
       released += 1;
     }
-    return { refinalized, abandoned, released };
+    return { refinalized, abandoned, requeued, released };
   },
 });
