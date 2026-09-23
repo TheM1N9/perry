@@ -489,6 +489,24 @@ async function main() {
     if (request) void handleCodexAuth(request);
   });
 
+  // Generated images live on this machine; the chat can only show what is uploaded.
+  const uploadImages = async (turnId, images = []) => {
+    const media = [];
+    for (const image of images) {
+      try {
+        const bytes = image.path ? await readFile(image.path) : Buffer.from(image.base64, "base64");
+        const uploadUrl = await client.mutation(api.codex.mediaUploadUrl, { token, id: turnId });
+        const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": "image/png" }, body: bytes });
+        if (!response.ok) throw new Error(`upload failed (${response.status})`);
+        const { storageId } = await response.json();
+        media.push({ storageId, fileName: `${image.id}.png`, contentType: "image/png" });
+      } catch (error) {
+        console.error(red(`  Could not upload a generated image: ${error.message ?? error}`));
+      }
+    }
+    return media;
+  };
+
   let codexTurnBusy = false;
   let codexQueue = [];
   const pumpCodex = async () => {
@@ -515,7 +533,8 @@ async function main() {
               attachments: job.attachments,
               onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
             });
-            result = { response: completed.response, model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription" };
+            const media = await uploadImages(job._id, completed.images);
+            result = { response: completed.response, model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription", ...(media.length ? { media } : {}) };
           } catch (error) {
             result = { error: String(error.message ?? error), model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription" };
           }

@@ -358,6 +358,8 @@ export default defineSchema({
     instructions: v.string(),
     /** Codex model id to run this turn with. Unset means the Codex default. */
     requestedModel: v.optional(v.string()),
+    /** Attachment key for media the turn produced, such as generated images. */
+    mediaKey: v.optional(v.string()),
     attachments: v.optional(v.array(v.object({
       url: v.string(),
       fileName: v.string(),

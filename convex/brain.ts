@@ -220,6 +220,7 @@ export const handleTurn = internalAction({
         const instructions = [
           mode.instructions,
           "This is a private assistant chat. Be direct, thoughtful, and explicit about uncertainty. The runner controls filesystem access.",
+          "Images you generate with your image generation tool are delivered to the chat automatically, even when the tool's text output looks empty. Do not retry just because no image data was printed, and never paste image data into your reply.",
           "Your `assistant` MCP tools are the owner's memory (recall, remember, read_memory, forget), their connected accounts (list_connectors, then find_action, then run_action), and task tracking. When a request involves email, calendar, documents or any other account, check list_connectors before saying you cannot do it, and never guess an action name. Ask before consequential external actions such as sending, deleting, publishing or spending.",
           memoryContext,
         ].filter(Boolean).join("\n\n");

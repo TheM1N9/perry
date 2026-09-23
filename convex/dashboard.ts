@@ -392,18 +392,35 @@ export const getChatMessages = query({
       list.push({ url, fileName: attachment.fileName, contentType: attachment.contentType });
       attachmentMap.set(attachment.messageKey, list);
     }
+    // Earlier Codex turns could finish before their media was uploaded. When
+    // recovered later, their saved assistant message has no attachment marker.
+    const codexTurns = await ctx.db.query("codexTurns")
+      .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.id))
+      .collect();
     return {
       ...page,
       page: page.page.map((doc): ChatMessage => {
         const raw = typeof doc.text === "string" ? doc.text : "";
         const marker = raw.match(/\n?<!-- attachments:([^>]+) -->\s*$/);
         const messageKey = marker?.[1]?.trim();
+        const recovered = !messageKey && doc.message?.role === "assistant"
+          ? codexTurns.find((turn) =>
+              turn.response === raw && turn.finishedAt !== undefined &&
+              doc._creationTime >= turn.finishedAt &&
+              doc._creationTime <= (turn.finalizedAt ?? turn.finishedAt) + 60_000 &&
+              attachmentMap.has(`codex-${turn._id}`),
+            )
+          : undefined;
         return {
           id: doc._id,
           role: doc.message?.role ?? "assistant",
           text: (marker ? raw.slice(0, marker.index).trimEnd() : raw),
           createdAt: doc._creationTime,
-          attachments: messageKey ? attachmentMap.get(messageKey) ?? [] : (doc.message?.role === "assistant" ? assistantMedia(raw) : []),
+          attachments: messageKey
+            ? attachmentMap.get(messageKey) ?? []
+            : recovered
+              ? attachmentMap.get(`codex-${recovered._id}`) ?? []
+              : doc.message?.role === "assistant" ? assistantMedia(raw) : [],
         };
       }).filter((message) => message.text.trim().length > 0 || message.attachments.length > 0),
     };

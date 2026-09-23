@@ -270,17 +270,101 @@ export const setThread = mutation({
   },
 });
 
+/** Where a runner uploads media a Codex turn produced, while that turn runs. */
+export const mediaUploadUrl = mutation({
+  args: { token: v.string(), id: v.id("codexTurns") },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token);
+    const job = await ctx.db.get(args.id);
+    if (!job || job.runnerId !== runner._id || job.status !== "running") throw new Error("This Codex turn is not running.");
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+/** Repair media from a completed turn produced by an older runner build. */
+export const recoverMediaUploadUrl = mutation({
+  args: { token: v.string(), id: v.id("codexTurns") },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token);
+    const job = await ctx.db.get(args.id);
+    if (!job || job.runnerId !== runner._id || job.status !== "done") {
+      throw new Error("Only completed Codex turns can be repaired.");
+    }
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const recoverMedia = mutation({
+  args: {
+    token: v.string(),
+    id: v.id("codexTurns"),
+    storageId: v.id("_storage"),
+    fileName: v.string(),
+    contentType: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token);
+    const job = await ctx.db.get(args.id);
+    if (!job || job.runnerId !== runner._id || job.status !== "done") {
+      throw new Error("Only completed Codex turns can be repaired.");
+    }
+    const stored = await ctx.storage.getMetadata(args.storageId);
+    if (!stored) throw new Error("Uploaded media was not found.");
+    const mediaKey = `codex-${job._id}`;
+    const existing = await ctx.db.query("chatAttachments")
+      .withIndex("by_message", (q) => q.eq("conversationId", job.conversationId).eq("messageKey", mediaKey))
+      .collect();
+    if (!existing.some((item) => item.storageId === args.storageId)) {
+      await ctx.db.insert("chatAttachments", {
+        conversationId: job.conversationId,
+        messageKey: mediaKey,
+        storageId: args.storageId,
+        fileName: args.fileName.slice(0, 200),
+        contentType: args.contentType || stored.contentType || "image/png",
+        size: stored.size,
+        createdAt: Date.now(),
+      });
+    }
+    await ctx.db.patch(job._id, { mediaKey });
+    return null;
+  },
+});
+
 export const finishTurn = mutation({
   args: {
     token: v.string(), id: v.id("codexTurns"),
     response: v.optional(v.string()), error: v.optional(v.string()), model: v.optional(v.string()),
+    media: v.optional(v.array(v.object({
+      storageId: v.id("_storage"),
+      fileName: v.string(),
+      contentType: v.string(),
+    }))),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     const runner = await authenticate(ctx, args.token);
     const job = await ctx.db.get(args.id);
     if (!job || job.runnerId !== runner._id || job.status !== "running") return null;
+    let mediaKey: string | undefined;
+    for (const item of args.media ?? []) {
+      const stored = await ctx.storage.getMetadata(item.storageId);
+      if (!stored) continue;
+      mediaKey = `codex-${job._id}`;
+      await ctx.db.insert("chatAttachments", {
+        conversationId: job.conversationId,
+        messageKey: mediaKey,
+        storageId: item.storageId,
+        fileName: item.fileName.slice(0, 200),
+        contentType: item.contentType || stored.contentType || "application/octet-stream",
+        size: stored.size,
+        createdAt: Date.now(),
+      });
+    }
     await ctx.db.patch(job._id, {
+      mediaKey,
       status: args.error ? "error" : "done",
       response: args.response?.slice(0, 100_000),
       error: args.error?.slice(0, 2000),
@@ -339,7 +423,7 @@ export const finalizeTurn = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const result: {
-      job: { prompt: string; response?: string; error?: string; status: string; finalizedAt?: number };
+      job: { prompt: string; response?: string; error?: string; status: string; finalizedAt?: number; mediaKey?: string };
       conversation: { threadId: string; channel: "web" | "telegram"; externalId: string } | null;
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
@@ -355,7 +439,9 @@ export const finalizeTurn = internalAction({
       order: "next",
       messages: [
         { role: "user", content: job.prompt },
-        ...(job.response ? [{ role: "assistant" as const, content: job.response }] : []),
+        ...(job.response || job.mediaKey
+          ? [{ role: "assistant" as const, content: `${job.response ?? ""}${job.mediaKey ? `\n\n<!-- attachments: ${job.mediaKey} -->` : ""}`.trim() }]
+          : []),
       ],
     });
     if (conversation.channel === "telegram") {

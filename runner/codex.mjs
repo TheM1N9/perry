@@ -149,7 +149,12 @@ export class CodexAppServer extends EventEmitter {
         this.off("turn/completed", finish);
         this.off("closed", onClose);
         this.completedTurns.delete(turnId);
-        const items = event.turn.items?.length ? event.turn.items : this.turnItems.get(turnId) ?? [];
+        // App-server extension items can be omitted from turn.items even though
+        // item/completed delivered them. Keep both sources, keyed by item id.
+        const items = [...new Map([
+          ...(event.turn.items ?? []),
+          ...(this.turnItems.get(turnId) ?? []),
+        ].map((item) => [item.id, item])).values()];
         this.turnItems.delete(turnId);
         if (event.turn.status !== "completed") {
           reject(new Error(event.turn.error?.message || `Codex turn ${event.turn.status}.`));
@@ -157,7 +162,13 @@ export class CodexAppServer extends EventEmitter {
         }
         const messages = items.filter((item) => item?.type === "agentMessage" && item.text?.trim());
         const final = messages.filter((item) => item.phase === "final_answer").at(-1) ?? messages.at(-1);
-        resolve(final?.text?.trim() || "Codex completed without a text reply.");
+        const images = items
+          .filter((item) =>
+            (item?.type === "imageGeneration" && !item.failure && (item.savedPath || item.result)) ||
+            (item?.type === "Extension" && item.kind === "image_gen.generation" && item.status === "completed" && typeof item.result === "string"),
+          )
+          .map((item) => ({ id: item.id, path: item.savedPath, base64: item.savedPath ? undefined : item.result }));
+        resolve({ text: final?.text?.trim() || (images.length ? "" : "Codex completed without a text reply."), images });
       };
       const onClose = (error) => {
         clearTimeout(timer);
@@ -214,7 +225,8 @@ export class CodexAppServer extends EventEmitter {
       sandboxPolicy: { type: "workspaceWrite", writableRoots: [cwd], networkAccess: false },
     }, 30_000);
     if (!started.turn?.id) throw new Error("Codex did not start a turn.");
-    return { threadId: id, response: await this.waitForTurn(started.turn.id) };
+    const { text, images } = await this.waitForTurn(started.turn.id);
+    return { threadId: id, response: text, images };
   }
 
   close() {
