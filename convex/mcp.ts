@@ -85,7 +85,6 @@ export const handle = httpAction(async (ctx, request) => {
       if (message.params?.name === SHARE_FILE.name) {
         const parsed = SHARE_FILE.inputSchema.safeParse(message.params?.arguments ?? {});
         if (!parsed.success) return reply(message.id, { isError: true, content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }] });
-        await ctx.runMutation(internal.codex.noteToolCall, { turnId: access.turnId, name: SHARE_FILE.name });
         try {
           const shared = await ctx.runMutation(internal.media.shareFromTurn, { turnId: access.turnId, path: parsed.data.path });
           return reply(message.id, { content: [{ type: "text", text: JSON.stringify({ shared: true, ...shared }) }] });
@@ -100,7 +99,6 @@ export const handle = httpAction(async (ctx, request) => {
       if (!parsed.success) {
         return reply(message.id, { isError: true, content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }] });
       }
-      await ctx.runMutation(internal.codex.noteToolCall, { turnId: access.turnId, name });
       try {
         const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId } };
         const output = await bound.execute(parsed.data, { toolCallId: String(message.id), messages: [] });

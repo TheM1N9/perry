@@ -35,6 +35,7 @@ import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { ASSISTANT_MCP, CodexAppServer, TurnFailed, type GeneratedImage, type RpcMessage } from "./codex";
 import { ensureHome, HOME, PATHS } from "./home";
+import { TurnTrace } from "./trace";
 
 const CONFIG_DIR = HOME;
 const CONFIG_FILE = PATHS.runnerConfig;
@@ -628,16 +629,25 @@ async function main() {
         activeConversation = job.conversationId;
         let result = savedResult(job._id);
         if (!result) {
-          // The reply so far goes to Convex about three times a second while Codex writes it.
+          // The reply so far, and the trace of what Codex is doing, go to Convex
+          // about three times a second while the turn runs.
           let latest = "";
           let sent = "";
           let streamTimer: ReturnType<typeof setTimeout> | null = null;
+          const trace = new TurnTrace();
+          const report = async () => {
+            const changes = trace.take();
+            if (!changes) return;
+            await client.mutation(api.codex.traceTurn, { token, id: job._id, ...changes }).catch(() => trace.retry(changes));
+          };
           const flush = () => {
             streamTimer = null;
+            void report();
             if (latest === sent) return;
             sent = latest;
             void client.mutation(api.codex.streamTurn, { token, id: job._id, text: latest }).catch(() => {});
           };
+          const schedule = () => { streamTimer ??= setTimeout(flush, 300); };
           try {
             const app = await ensureCodex();
             const completed = await app.runTurn({
@@ -652,11 +662,18 @@ async function main() {
               onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
               onText: (text) => {
                 latest = text;
-                streamTimer ??= setTimeout(flush, 300);
+                schedule();
               },
               onStarted: (turn) => {
                 current = { jobId: job._id, ...turn };
                 interruptIfAsked();
+              },
+              onItem: (phase, item, atMs) => {
+                if (trace.item(phase, item, atMs)) schedule();
+              },
+              onUsage: (usage) => {
+                trace.addUsage(usage);
+                schedule();
               },
             });
             const media = await keepImages(job._id, job.channel, completed.images);
@@ -682,6 +699,9 @@ async function main() {
           }
           if (streamTimer) clearTimeout(streamTimer);
           saveResult(job._id, result);
+          // The trace's last report goes before the turn ends; Convex takes reports only while it runs.
+          trace.drain(Date.now());
+          await report();
         }
         await client.mutation(api.codex.finishTurn, { token, id: job._id, ...result });
         codexQueue = await client.query(api.codex.queuedTurns, { token });

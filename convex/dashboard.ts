@@ -121,7 +121,11 @@ export const deleteChat = mutation({
     if (runs.some((run) => run.status === "running")) {
       throw new Error("Wait for this chat to finish before deleting it.");
     }
-    for (const run of runs) await ctx.db.delete(run._id);
+    for (const run of runs) {
+      const spans = await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).collect();
+      for (const span of spans) await ctx.db.delete(span._id);
+      await ctx.db.delete(run._id);
+    }
     const attachments = await ctx.db.query("chatAttachments")
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
       .collect();
@@ -560,6 +564,7 @@ export type RunView = {
   toolCalls?: string[];
   model?: string;
   totalTokens?: number;
+  usage?: Doc<"runs">["usage"];
   error?: string;
   startedAt: number;
   durationMs?: number;
@@ -570,6 +575,26 @@ export const listRuns = query({
   handler: async (ctx, args): Promise<RunView[]> => {
     assertDashboardKey(args.key);
     return await ctx.runQuery(internal.runs.recent, { limit: 100, conversationId: args.conversationId });
+  },
+});
+
+export type SpanView = {
+  id: string;
+  kind: Doc<"runSpans">["kind"];
+  name: string;
+  status: Doc<"runSpans">["status"];
+  startedAt: number;
+  durationMs?: number;
+  input?: string;
+  output?: string;
+};
+
+/** One run's trace, loaded only when its row is opened. */
+export const runTrace = query({
+  args: { key: vKey, runId: v.id("runs") },
+  handler: async (ctx, args): Promise<SpanView[]> => {
+    assertDashboardKey(args.key);
+    return await ctx.runQuery(internal.runs.spans, { runId: args.runId });
   },
 });
 

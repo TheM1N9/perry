@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
+import { vUsage } from "./schema";
 
 export const recent = internalQuery({
   args: { limit: v.optional(v.number()), conversationId: v.optional(v.id("conversations")) },
@@ -28,9 +29,30 @@ export const recent = internalQuery({
       toolCalls: r.toolCalls,
       model: r.model,
       totalTokens: r.usage?.totalTokens,
+      usage: r.usage,
       error: r.error,
       startedAt: r.startedAt,
       durationMs: r.finishedAt ? r.finishedAt - r.startedAt : undefined,
+    }));
+  },
+});
+
+/** A run's trace, in the order its spans started. */
+export const spans = internalQuery({
+  args: { runId: v.id("runs") },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db.query("runSpans")
+      .withIndex("by_run", (q) => q.eq("runId", args.runId))
+      .take(500);
+    return rows.sort((a, b) => a.startedAt - b.startedAt).map((span) => ({
+      id: span._id as string,
+      kind: span.kind,
+      name: span.name,
+      status: span.status,
+      startedAt: span.startedAt,
+      durationMs: span.durationMs,
+      input: span.input,
+      output: span.output,
     }));
   },
 });
@@ -62,13 +84,7 @@ export const finish = internalMutation({
     steps: v.optional(v.number()),
     toolCalls: v.optional(v.array(v.string())),
     model: v.optional(v.string()),
-    usage: v.optional(
-      v.object({
-        inputTokens: v.optional(v.number()),
-        outputTokens: v.optional(v.number()),
-        totalTokens: v.optional(v.number()),
-      }),
-    ),
+    usage: v.optional(vUsage),
     error: v.optional(v.string()),
   },
   returns: v.null(),

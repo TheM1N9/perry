@@ -7,7 +7,8 @@ import { assertDashboardKey } from "./lib/auth";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
-import type { Id } from "./_generated/dataModel";
+import { vSpanKind, vSpanStatus, vUsage } from "./schema";
+import type { Doc, Id } from "./_generated/dataModel";
 
 /** Only device codes and account metadata cross Convex. Codex tokens never do. */
 export const accounts = query({
@@ -339,6 +340,75 @@ export const streamedToTelegram = internalMutation({
   },
 });
 
+/** The runner cuts span input and output to this many bytes; this is the backstop. */
+const SPAN_TEXT = 2_048;
+
+/** How a span is listed in the run's tool calls, as gen_ai.tool.name would name it. */
+const toolName = (span: { kind: Doc<"runSpans">["kind"]; name: string }) =>
+  span.kind === "command" ? "shell"
+    : span.kind === "fileChange" ? "apply_patch"
+    : span.kind === "webSearch" ? "web_search"
+    : span.kind === "imageGeneration" ? "image_generation"
+    : span.name;
+
+/**
+ * The runner reports what Codex is doing, on the same cadence as the reply:
+ * spans that started or finished since the last report, and the turn's token
+ * usage so far. A span is keyed by its Codex item id, so a later report of the
+ * same item updates it. Every new span but reasoning also lands in the run's
+ * tool calls, and each model response counts as one step.
+ */
+export const traceTurn = mutation({
+  args: {
+    token: v.string(),
+    id: v.id("codexTurns"),
+    spans: v.array(v.object({
+      callId: v.string(),
+      kind: vSpanKind,
+      name: v.string(),
+      status: vSpanStatus,
+      startedAt: v.number(),
+      durationMs: v.optional(v.number()),
+      input: v.optional(v.string()),
+      output: v.optional(v.string()),
+    })),
+    usage: v.optional(vUsage),
+    steps: v.optional(v.number()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token);
+    const job = await ctx.db.get(args.id);
+    if (!job || job.runnerId !== runner._id || job.status !== "running") return null;
+    const run = await ctx.db.get(job.runId);
+    if (!run) return null;
+    const toolCalls = [...(run.toolCalls ?? [])];
+    for (const span of args.spans) {
+      const row = {
+        ...span,
+        name: span.name.slice(0, 300),
+        input: span.input?.slice(0, SPAN_TEXT),
+        output: span.output?.slice(0, SPAN_TEXT),
+      };
+      const existing = await ctx.db.query("runSpans")
+        .withIndex("by_run", (q) => q.eq("runId", run._id).eq("callId", span.callId))
+        .first();
+      if (existing) {
+        await ctx.db.patch(existing._id, row);
+        continue;
+      }
+      await ctx.db.insert("runSpans", { runId: run._id, ...row });
+      if (span.kind !== "reasoning") toolCalls.push(toolName(span));
+    }
+    await ctx.db.patch(run._id, {
+      toolCalls,
+      ...(args.usage ? { usage: args.usage } : {}),
+      ...(args.steps !== undefined ? { steps: args.steps } : {}),
+    });
+    return null;
+  },
+});
+
 /** Where a runner uploads media a Codex turn produced, while that turn runs. */
 export const mediaUploadUrl = mutation({
   args: { token: v.string(), id: v.id("codexTurns") },
@@ -605,17 +675,5 @@ export const mcpAccess = internalQuery({
       userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
       threadId: conversation.threadId,
     };
-  },
-});
-
-/** Codex's calls into our tools show up on the run like the gateway agent's do. */
-export const noteToolCall = internalMutation({
-  args: { turnId: v.id("codexTurns"), name: v.string() },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const job = await ctx.db.get(args.turnId);
-    const run = job && await ctx.db.get(job.runId);
-    if (run) await ctx.db.patch(run._id, { toolCalls: [...(run.toolCalls ?? []), args.name] });
-    return null;
   },
 });
