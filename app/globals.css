@@ -402,9 +402,12 @@ a {
 .chat-attachments video { display: block; width: min(360px, 100%); max-height: 260px; border-radius: 10px; background: #101313; }
 .chat-attachments audio { width: min(360px, 100%); }
 .chat-attachment-file { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid #46544b; border-radius: 9px; color: #c8d9c9; font-size: 12px; text-decoration: none; }
-.chat-picked-files { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.chat-picked-files span { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 8px; border: 1px solid #46544b; background: #252e29; color: #c8d9c9; font-size: 11px; }
-.chat-picked-files button { border: 0; background: transparent; color: #9ca99e; cursor: pointer; padding: 0 1px; }
+.chat-picked-files { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0 10px; }
+.chat-picked-file { position: relative; display: flex; }
+.chat-picked-file img, .chat-picked-file video { display: block; width: 64px; height: 64px; border-radius: 10px; border: 1px solid #46544b; object-fit: cover; background: #101313; }
+.chat-picked-name { display: inline-flex; align-items: center; gap: 5px; height: 64px; max-width: 180px; padding: 0 12px; border-radius: 10px; border: 1px solid #46544b; background: #252e29; color: #c8d9c9; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-picked-file button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid #46544b; border-radius: 50%; background: #1b2020; color: #c8d9c9; cursor: pointer; padding: 0; }
+.chat-picked-file button:hover { background: #33403a; }
 .from-user .chat-bubble { background: #2c3730; border: 1px solid #405247; border-radius: 14px 14px 4px 14px; padding: 11px 15px; }
 .from-assistant .chat-bubble { padding: 2px 0; color: #e0e5df; }
 .chat-turn-actions { display: flex; opacity: 0; margin-top: 5px; }
@@ -428,6 +431,9 @@ a {
 .chat-composer-foot { display: flex; justify-content: space-between; align-items: center; padding-left: 4px; color: #77837a; font-size: 10px; }
 .chat-attach { display: inline-flex; align-items: center; justify-content: center; padding: 4px; border: 0; background: transparent; color: #9bad9e; cursor: pointer; }
 .chat-attach:hover { color: #d9e9da; }
+.chat-composer-foot .chat-model { width: auto; max-width: 220px; margin: 0 auto 0 6px; padding: 4px 8px; border: 1px solid #3b4440; border-radius: 8px; background: #1d2222; color: #c8d9c9; font-size: 11px; cursor: pointer; }
+.chat-composer-foot .chat-model:hover { border-color: #56655b; }
+.chat-composer-hint { margin-right: 10px; }
 .chat-send { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 9px; background: #bdd8b7; color: #1c2a1e; }
 .chat-send:hover:not(:disabled) { background: #d8ecd3; }
 .chat-send:disabled { background: #46534a; color: #91a294; }
@@ -477,8 +483,7 @@ a {
   .chat-prompts button { min-height: 49px; align-items: center; }
   .chat-thread { padding: 22px 15px 50px; }
   .chat-turn-body { max-width: 88%; }
-  .chat-composer-foot span { display: none; }
-  .chat-composer-foot { justify-content: flex-end; }
+  .chat-composer-hint { display: none; }
 }
 
 /* The rest of the dashboard uses the same workspace language as chat. */

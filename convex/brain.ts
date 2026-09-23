@@ -175,9 +175,13 @@ export const handleTurn = internalAction({
     // the code defaults. Everything below is bound by it and nothing downstream
     // can widen it.
     const modeName: ModeName = conversation.mode ?? DEFAULT_MODE;
-    const mode: Mode = await ctx.runQuery(internal.config.resolveMode, {
+    const configured: Mode = await ctx.runQuery(internal.config.resolveMode, {
       mode: modeName,
     });
+    // A model picked in the composer applies to its own engine only.
+    const mode: Mode = conversation.engine === "gateway" && conversation.model
+      ? { ...configured, model: conversation.model }
+      : configured;
 
     const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
       conversationId: conversation._id,
@@ -196,7 +200,7 @@ export const handleTurn = internalAction({
       const gatewayKey: string | null = await ctx.runQuery(internal.secrets.get, {
         name: "AI_GATEWAY_API_KEY",
       });
-      const engine: "codex" | "gateway" = await ctx.runQuery(internal.codex.activeEngine, {});
+      const engine: "codex" | "gateway" = conversation.engine ?? await ctx.runQuery(internal.codex.activeEngine, {});
       if (engine === "codex") {
         let history: string | undefined;
         if (!conversation.codexThreadId) {
@@ -228,6 +232,7 @@ export const handleTurn = internalAction({
             prompt: args.text,
             history,
             instructions,
+            model: conversation.engine === "codex" ? conversation.model : undefined,
             attachments,
           });
           delegated = true;

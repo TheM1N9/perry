@@ -1,0 +1,48 @@
+{
+  "ranAt": "2026-09-23T06:11:15.429Z",
+  "url": "http://localhost:3005/chat",
+  "before": {
+    "selected": "codex:",
+    "title": "Codex subscription · default",
+    "insidePromptBox": true,
+    "groups": [
+      {
+        "label": "Codex subscription",
+        "count": 1,
+        "first": [
+          {
+            "value": "codex:",
+            "text": "Codex default"
+          }
+        ]
+      },
+      {
+        "label": "AI Gateway",
+        "count": 236,
+        "first": [
+          {
+            "value": "gateway:alibaba/qwen-3-14b",
+            "text": "Qwen3-14B · alibaba"
+          },
+          {
+            "value": "gateway:alibaba/qwen-3-235b",
+            "text": "Qwen3 235B A22B · alibaba"
+          },
+          {
+            "value": "gateway:alibaba/qwen-3-30b",
+            "text": "Qwen3-30B-A3B · alibaba"
+          }
+        ]
+      }
+    ]
+  },
+  "picked": "gateway:openai/gpt-3.5-turbo",
+  "after": {
+    "selected": "gateway:openai/gpt-3.5-turbo",
+    "title": "AI Gateway · openai/gpt-3.5-turbo",
+    "draft": true
+  },
+  "pageErrors": [],
+  "nothingSent": true,
+  "pass": true
+}

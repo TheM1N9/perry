@@ -102,6 +102,11 @@ export class CodexAppServer extends EventEmitter {
     };
   }
 
+  async models() {
+    const result = await this.request("model/list", { limit: 100 });
+    return (result.data ?? []).map((model) => ({ id: model.model, name: model.displayName || model.model, isDefault: Boolean(model.isDefault) }));
+  }
+
   waitForLogin(loginId, timeoutMs = 10 * 60_000) {
     const completed = this.completedLogins.get(loginId);
     if (completed) {
@@ -168,7 +173,7 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  async runTurn({ threadId, instructions, history, prompt, cwd, mode, attachments = [], onThread }) {
+  async runTurn({ threadId, instructions, history, prompt, cwd, mode, model, attachments = [], onThread }) {
     const fullInstructions = history
       ? `${instructions}\n\nEarlier chat history (context, not a new user request):\n${history}`
       : instructions;
@@ -191,6 +196,7 @@ export class CodexAppServer extends EventEmitter {
     const started = await this.request("turn/start", {
       threadId: id,
       input,
+      ...(model ? { model } : {}),
       cwd,
       approvalPolicy: policy,
       sandboxPolicy: { type: "workspaceWrite", writableRoots: [cwd], networkAccess: false },

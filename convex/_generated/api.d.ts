@@ -25,6 +25,7 @@ import type * as lib_models from "../lib/models.js";
 import type * as lib_telegram from "../lib/telegram.js";
 import type * as media from "../media.js";
 import type * as memories from "../memories.js";
+import type * as models from "../models.js";
 import type * as modes from "../modes.js";
 import type * as notify from "../notify.js";
 import type * as runner from "../runner.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   "lib/telegram": typeof lib_telegram;
   media: typeof media;
   memories: typeof memories;
+  models: typeof models;
   modes: typeof modes;
   notify: typeof notify;
   runner: typeof runner;

@@ -3,6 +3,7 @@ import { v } from "convex/values";
 
 export const vChannel = v.union(v.literal("telegram"), v.literal("web"));
 export const vMode = v.union(v.literal("perry"), v.literal("agentP"));
+export const vEngine = v.union(v.literal("codex"), v.literal("gateway"));
 
 /**
  * Assistant is single-owner, so there is no users table. The owner is identified by
@@ -31,7 +32,7 @@ export default defineSchema({
     /** Where run_command goes: a throwaway cloud box, or the owner's machine. */
     computeTarget: v.optional(v.union(v.literal("sandbox"), v.literal("local"))),
     /** Codex subscription is the default engine for chats. */
-    chatEngine: v.optional(v.union(v.literal("codex"), v.literal("gateway"))),
+    chatEngine: v.optional(vEngine),
     createdAt: v.number(),
   }),
 
@@ -162,6 +163,8 @@ export default defineSchema({
     codexPlanType: v.optional(v.string()),
     codexError: v.optional(v.string()),
     codexUpdatedAt: v.optional(v.number()),
+    /** What `model/list` returned on this runner, for the chat model picker. */
+    codexModels: v.optional(v.array(v.object({ id: v.string(), name: v.string(), isDefault: v.boolean() }))),
     codexRequestId: v.optional(v.number()),
     codexRequestKind: v.optional(v.union(v.literal("login"), v.literal("logout"))),
     codexRequestStatus: v.optional(v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("error"))),
@@ -236,6 +239,9 @@ export default defineSchema({
     codexThreadId: v.optional(v.string()),
     codexRunnerId: v.optional(v.id("runners")),
     mode: vMode,
+    /** Picked in the composer. Unset means the install default engine and model. */
+    engine: v.optional(vEngine),
+    model: v.optional(v.string()),
     title: v.optional(v.string()),
     parentConversationId: v.optional(v.id("conversations")),
     branchedFromMessageId: v.optional(v.string()),
@@ -330,6 +336,8 @@ export default defineSchema({
     prompt: v.string(),
     history: v.optional(v.string()),
     instructions: v.string(),
+    /** Codex model id to run this turn with. Unset means the Codex default. */
+    requestedModel: v.optional(v.string()),
     attachments: v.optional(v.array(v.object({
       url: v.string(),
       fileName: v.string(),

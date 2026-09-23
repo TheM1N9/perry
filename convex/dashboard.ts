@@ -7,7 +7,7 @@ import { action, mutation, query } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { activeGateway } from "./lib/models";
 import { MODE_NAMES, TOOL_NAMES, type Mode } from "./modes";
-import { vMode } from "./schema";
+import { vEngine, vMode } from "./schema";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -352,7 +352,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ mode: string; title: string; isRunning: boolean; lastError?: string }> => {
+  ): Promise<{ mode: string; engine?: "codex" | "gateway"; model?: string; title: string; isRunning: boolean; lastError?: string }> => {
     assertDashboardKey(args.key);
     const conversation = webChat(await ctx.db.get(args.id));
     const isRunning = (conversation.pendingTurns ?? 0) > 0;
@@ -362,6 +362,8 @@ export const getChat = query({
       .first();
     return {
       mode: conversation.mode,
+      engine: conversation.engine,
+      model: conversation.model,
       title: conversation.title ?? "Untitled chat",
       isRunning,
       lastError: latestRun?.status === "error" ? latestRun.error : undefined,
@@ -455,6 +457,8 @@ export const sendChat = mutation({
     text: v.string(),
     attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
     messageKey: v.optional(v.string()),
+    engine: v.optional(vEngine),
+    model: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
@@ -476,6 +480,7 @@ export const sendChat = mutation({
       lastMessageAt: Date.now(),
       title: chat.title === "New chat" ? (text || "Attached files").slice(0, 80) : chat.title,
       pendingTurns: (chat.pendingTurns ?? 0) + 1,
+      ...(args.engine ? { engine: args.engine, model: args.model?.trim() || undefined } : {}),
     });
 
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
@@ -485,6 +490,17 @@ export const sendChat = mutation({
       title: chat.title,
       attachmentIds,
     });
+    return null;
+  },
+});
+
+export const setChatModel = mutation({
+  args: { key: vKey, id: v.id("conversations"), engine: vEngine, model: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    webChat(await ctx.db.get(args.id));
+    await ctx.db.patch(args.id, { engine: args.engine, model: args.model?.trim() || undefined });
     return null;
   },
 });

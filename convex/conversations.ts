@@ -112,6 +112,8 @@ export const createBranch = internalMutation({
       externalId: `session:${args.threadId}`,
       threadId: args.threadId,
       mode: parent.mode,
+      engine: parent.engine,
+      model: parent.model,
       title: args.title,
       lastMessageAt: Date.now(),
       parentConversationId: parent._id,

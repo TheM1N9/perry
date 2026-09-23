@@ -3,7 +3,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { components, internal } from "./_generated/api";
 import { saveMessages } from "@convex-dev/agent";
 import { sendMessage } from "./lib/telegram";
-import { vMode } from "./schema";
+import { vEngine, vMode } from "./schema";
 import { assertDashboardKey } from "./lib/auth";
 import { authenticate } from "./runner";
 
@@ -17,7 +17,7 @@ export const engine = query({
 });
 
 export const setEngine = mutation({
-  args: { key: v.string(), engine: v.union(v.literal("codex"), v.literal("gateway")) },
+  args: { key: v.string(), engine: vEngine },
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
@@ -154,6 +154,7 @@ export const reportAccount = mutation({
     authMode: v.optional(v.string()),
     planType: v.optional(v.string()),
     error: v.optional(v.string()),
+    models: v.optional(v.array(v.object({ id: v.string(), name: v.string(), isDefault: v.boolean() }))),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -163,6 +164,7 @@ export const reportAccount = mutation({
       codexAuthMode: args.authMode,
       codexPlanType: args.planType,
       codexError: args.error?.slice(0, 500),
+      codexModels: args.models ?? runner.codexModels,
       codexUpdatedAt: Date.now(),
     });
     return null;
@@ -177,6 +179,7 @@ export const enqueueTurn = internalMutation({
     prompt: v.string(),
     history: v.optional(v.string()),
     instructions: v.string(),
+    model: v.optional(v.string()),
     attachments: v.optional(v.array(v.object({
       url: v.string(),
       fileName: v.string(),
@@ -204,6 +207,7 @@ export const enqueueTurn = internalMutation({
       prompt: args.prompt,
       history: args.history,
       instructions: args.instructions,
+      requestedModel: args.model,
       attachments: args.attachments,
       status: "queued",
       createdAt: Date.now(),

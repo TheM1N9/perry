@@ -251,8 +251,10 @@ async function main() {
 
   const refreshCodexAccount = async () => {
     try {
-      const account = await (await ensureCodex()).account();
-      await client.mutation(api.codex.reportAccount, { token, ...account });
+      const app = await ensureCodex();
+      const account = await app.account();
+      const models = account.authMode === "chatgpt" ? await app.models().catch(() => undefined) : undefined;
+      await client.mutation(api.codex.reportAccount, { token, ...account, models });
     } catch (error) {
       await client.mutation(api.codex.reportAccount, {
         token,
@@ -502,12 +504,13 @@ async function main() {
               prompt: job.prompt,
               cwd: workdir,
               mode: job.mode,
+              model: job.requestedModel,
               attachments: job.attachments,
               onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
             });
-            result = { response: completed.response, model: "codex subscription" };
+            result = { response: completed.response, model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription" };
           } catch (error) {
-            result = { error: String(error.message ?? error), model: "codex subscription" };
+            result = { error: String(error.message ?? error), model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription" };
           }
           saveResult(job._id, result);
         }
