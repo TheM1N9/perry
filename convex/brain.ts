@@ -6,7 +6,7 @@ import { internalAction, type ActionCtx } from "./_generated/server";
 import { INSTRUCTIONS } from "./assistant";
 import { ownerNow, QUIET } from "./jobs";
 import { describeModels, parseModelCommand, pickModel, type ModelOption } from "./lib/commands";
-import { downloadFile, sendMessage, sendTyping } from "./lib/telegram";
+import { DOWNLOAD_LIMIT, downloadFile, sendMessage, sendTyping } from "./lib/telegram";
 import { vChannel, vTelegramMedia } from "./schema";
 
 /**
@@ -251,7 +251,14 @@ export const handleTurn = internalAction({
       const attachmentIds = [...(args.attachmentIds ?? [])];
       if (args.telegramMedia?.length) {
         const messageKey = crypto.randomUUID();
+        const tooBig: string[] = [];
         for (const item of args.telegramMedia) {
+          // A bot can download only 20 MB; asking for more fails after the wait.
+          if ((item.size ?? 0) > DOWNLOAD_LIMIT) {
+            tooBig.push(item.fileName);
+            prompt = `${prompt}\n\n(${item.fileName} was too big to download from Telegram.)`.trim();
+            continue;
+          }
           try {
             const bytes = await downloadFile(telegramToken, item.fileId);
             const storageId = await ctx.storage.store(new Blob([bytes], { type: item.contentType }));
@@ -264,6 +271,13 @@ export const handleTurn = internalAction({
           }
         }
         if (attachmentIds.length) prompt = `${prompt}\n\n<!-- attachments: ${messageKey} -->`.trim();
+        if (tooBig.length) {
+          await sendMessage(telegramToken, args.externalId,
+            `${tooBig.join(", ")} ${tooBig.length === 1 ? "is" : "are"} too big for me: Telegram lets bots download files up to 20 MB. ` +
+            "Send a smaller file, or put it somewhere I can reach, like a link.");
+          // Nothing else came with it, so there is nothing to answer.
+          if (!args.text && !attachmentIds.length) return null;
+        }
       }
 
       const attachments = attachmentIds.length > 0

@@ -1,8 +1,8 @@
 import { v, type Infer } from "convex/values";
-import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx } from "./_generated/server";
 import { components, internal } from "./_generated/api";
 import { createThread, saveMessages } from "@convex-dev/agent";
-import { editDraft, finishDraft, sendDraft, sendMessage, sendPhoto } from "./lib/telegram";
+import { CAPTION_LIMIT, UPLOAD_LIMIT, deleteMessage, editDraft, finishDraft, sendDraft, sendFile, sendMessage } from "./lib/telegram";
 import { assertDashboardKey } from "./lib/auth";
 import { authenticate } from "./runner";
 import { FALLBACK_PROVIDER, startFallback } from "./chatgpt";
@@ -180,7 +180,7 @@ export const enqueueTurn = internalMutation({
       // No runner can take it; answer without the computer if the owner allows that.
       const fallback = await startFallback(ctx, {
         conversationId: args.conversationId, runId: args.runId, prompt: args.prompt, history: args.history,
-        instructions: args.instructions, requestedModel: args.model, attachments: args.attachments,
+        instructions: args.instructions, recalled: args.recalled, flush: args.flush, requestedModel: args.model, attachments: args.attachments,
       });
       if ("id" in fallback) return fallback.id;
       const offline = conversation.codexRunnerId
@@ -523,11 +523,22 @@ export const finishTurn = mutation({
     if (!job || job.runnerId !== runner._id || job.status !== "running") return null;
     // share_file may already have attached files to this turn.
     let mediaKey = job.mediaKey;
+    const shared = job.mediaKey
+      ? await ctx.db.query("chatAttachments")
+        .withIndex("by_message", (q) => q.eq("conversationId", job.conversationId).eq("messageKey", job.mediaKey!))
+        .collect()
+      : [];
     for (const item of args.media ?? []) {
       const stored = item.storageId ? await ctx.storage.getMetadata(item.storageId) : null;
       const local = item.localPath && ABSOLUTE_PATH.test(item.localPath) ? item.localPath : undefined;
       if (!stored && !local) continue;
       mediaKey = `codex-${job._id}`;
+      // A shared file uploaded for Telegram gains its copy; the chat keeps serving it from the machine.
+      const row = stored && local ? shared.find((existing) => existing.localPath === local && !existing.storageId) : undefined;
+      if (row) {
+        await ctx.db.patch(row._id, { storageId: item.storageId, size: stored!.size });
+        continue;
+      }
       await ctx.db.insert("chatAttachments", {
         conversationId: job.conversationId,
         messageKey: mediaKey,
@@ -610,18 +621,98 @@ export const finishFallback = internalMutation({
   },
 });
 
-/** Storage URLs for the media a Codex turn produced. */
-export const mediaUrls = internalQuery({
+const vTurnFile = v.object({
+  storageId: v.optional(v.id("_storage")),
+  localPath: v.optional(v.string()),
+  fileName: v.string(),
+  contentType: v.string(),
+  size: v.number(),
+});
+type TurnFile = typeof vTurnFile.type;
+
+/** The files a Codex turn produced or shared, in the order they came. */
+export const turnFiles = internalQuery({
   args: { conversationId: v.id("conversations"), messageKey: v.string() },
-  returns: v.array(v.string()),
+  returns: v.array(vTurnFile),
   handler: async (ctx, args) => {
     const rows = await ctx.db.query("chatAttachments")
       .withIndex("by_message", (q) => q.eq("conversationId", args.conversationId).eq("messageKey", args.messageKey))
       .collect();
-    const urls = await Promise.all(rows.map((row) => row.storageId ? ctx.storage.getUrl(row.storageId) : null));
-    return urls.filter((url): url is string => Boolean(url));
+    return rows.map((row) => ({
+      storageId: row.storageId, localPath: row.localPath, fileName: row.fileName, contentType: row.contentType, size: row.size,
+    }));
   },
 });
+
+/**
+ * Files share_file attached to a running turn that are still only on the
+ * owner's machine. For a Telegram chat the runner uploads them, since
+ * Telegram needs the bytes.
+ */
+export const sharedFiles = query({
+  args: { token: v.string(), id: v.id("codexTurns") },
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token);
+    const job = await ctx.db.get(args.id);
+    if (!job || job.runnerId !== runner._id || job.status !== "running" || !job.mediaKey) return [];
+    const rows = await ctx.db.query("chatAttachments")
+      .withIndex("by_message", (q) => q.eq("conversationId", job.conversationId).eq("messageKey", job.mediaKey!))
+      .collect();
+    return rows.filter((row) => row.localPath && !row.storageId)
+      .map((row) => ({ localPath: row.localPath!, fileName: row.fileName, contentType: row.contentType }));
+  },
+});
+
+/**
+ * Send a finished reply and its files to Telegram. A reply short enough to be
+ * a caption rides on the first file and takes the place of the streamed draft;
+ * a longer one goes first, as text, with the files after it. A file too big to
+ * upload goes as a link, and one that never left the owner's machine is named.
+ */
+async function deliverToTelegram(
+  ctx: ActionCtx, token: string | null, chatId: string, text: string, draftId: number | undefined, files: TurnFile[],
+): Promise<void> {
+  const send = async (file: TurnFile, caption?: string) => {
+    if (!file.storageId) {
+      await sendMessage(token, chatId, `${file.fileName} is on your computer at ${file.localPath}; it could not be uploaded.`);
+      return;
+    }
+    if (file.size > UPLOAD_LIMIT) {
+      const url = await ctx.storage.getUrl(file.storageId);
+      await sendMessage(token, chatId, `${file.fileName} is too big to send on Telegram. Download it here: ${url}`);
+      return;
+    }
+    const blob = await ctx.storage.get(file.storageId);
+    if (!blob) throw new Error(`${file.fileName} is gone from storage.`);
+    await sendFile(token, chatId, { blob, fileName: file.fileName, contentType: file.contentType, caption });
+  };
+
+  // Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/channels/slack/api.ts
+  const first = files.find((file) => file.storageId && file.size <= UPLOAD_LIMIT);
+  let captioned = false;
+  if (first && text && text.length <= CAPTION_LIMIT) {
+    try {
+      await send(first, text);
+      captioned = true;
+    } catch (error) {
+      console.error(`Could not send ${first.fileName} with its caption: ${String(error)}`);
+    }
+  }
+  if (captioned) {
+    if (draftId) await deleteMessage(token, chatId, draftId);
+  } else if (draftId) {
+    await finishDraft(token, chatId, draftId, text || "Done.");
+  } else if (text) {
+    await sendMessage(token, chatId, text, { markdown: true });
+  }
+  for (const file of files) {
+    if (captioned && file === first) continue;
+    await send(file).catch(async (error) => {
+      console.error(`Could not send ${file.fileName}: ${String(error)}`);
+      await sendMessage(token, chatId, `Could not send ${file.fileName}.`);
+    });
+  }
+}
 
 export const getTurn = internalQuery({
   args: { id: v.id("codexTurns") },
@@ -725,19 +816,18 @@ export const finalizeTurn = internalAction({
     }).then(() => done("savedAt"));
     if (conversation.channel === "telegram" && !job.deliveredAt) {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
-      const photos: string[] = job.mediaKey
-        ? await ctx.runQuery(internal.codex.mediaUrls, { conversationId: conversation._id, messageKey: job.mediaKey })
+      const files: TurnFile[] = job.mediaKey
+        ? await ctx.runQuery(internal.codex.turnFiles, { conversationId: conversation._id, messageKey: job.mediaKey })
         : [];
       try {
         const answer = job.error
           ? `${job.response ? `${job.response}\n\n` : ""}That broke: ${job.error}`
-          : reply || (photos.length ? "" : "Codex did not reply.");
-        const text = job.fallback && answer ? `${answer}\n\n(Answered without your computer.)` : answer;
-        // A streamed reply lands in the message that showed it growing.
-        if (job.telegramMessageId) await finishDraft(token, conversation.externalId, job.telegramMessageId, text || "Done.");
-        else if (text) await sendMessage(token, conversation.externalId, text);
-        // Telegram fetches photos by URL only up to 5 MB; send a link for anything it refuses.
-        for (const url of photos) await sendPhoto(token, conversation.externalId, url).catch(() => sendMessage(token, conversation.externalId, url));
+          : reply || (files.length ? "" : "Codex did not reply.");
+        const text = job.fallback && answer ? `${answer}
+
+(Answered without your computer.)` : answer;
+        // A streamed reply lands in the message that showed it growing, unless a file carries it.
+        await deliverToTelegram(ctx, token, conversation.externalId, text, job.telegramMessageId, files);
       }
       catch (error) { console.error(`Could not deliver Codex reply: ${String(error)}`); }
       // Marked even when sending failed part-way, so a retry never sends a reply twice.

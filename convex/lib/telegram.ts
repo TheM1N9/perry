@@ -6,10 +6,30 @@
  * would be weight without leverage.
  */
 
-const API = "https://api.telegram.org";
+import { balanceFences, toTelegramHtml } from "./telegramFormat";
+
+/**
+ * TELEGRAM_API_BASE points the bot at a stand-in for the Bot API, which is how
+ * the end-to-end test sees what would have been sent. Unset in normal use.
+ */
+const api = () => (process.env.TELEGRAM_API_BASE || "https://api.telegram.org").replace(/\/+$/, "");
 
 /** Telegram rejects messages over 4096 chars. */
 const MAX_MESSAGE_LENGTH = 4096;
+
+/** A caption is capped at 1024 characters; a longer reply goes as its own message. */
+export const CAPTION_LIMIT = 1024;
+
+/** Bots may upload files up to 50 MB, and download ones up to 20 MB. */
+export const UPLOAD_LIMIT = 50 * 1024 * 1024;
+export const DOWNLOAD_LIMIT = 20 * 1024 * 1024;
+
+/** Photos up to 10 MB are shown as photos; a bigger one goes as a document. */
+const PHOTO_LIMIT = 10 * 1024 * 1024;
+
+/** Told to slow down, a call waits as long as Telegram asks: twice at most, and never for long. */
+const MAX_RETRIES = 2;
+const MAX_RETRY_AFTER_S = 30;
 
 /**
  * The token is passed in rather than read from the environment, because it now
@@ -25,21 +45,67 @@ function requireToken(token: string | null): string {
   return token;
 }
 
+/** Telegram refused a call. The code and description let callers tell refusals apart. */
+export class TelegramError extends Error {
+  constructor(method: string, readonly code: number, readonly description: string) {
+    super(`Telegram ${method} failed: ${description}`);
+  }
+}
+
+// Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/channels/telegram/api.ts
+/** A gateway's error page is not JSON; keep its text rather than throw on it. */
+async function parseResponseBody(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+type ApiResponse = {
+  ok?: boolean;
+  description?: string;
+  result?: unknown;
+  error_code?: number;
+  parameters?: { retry_after?: number };
+};
+
 async function call(
   token: string | null,
   method: string,
-  body: unknown,
+  body: object | FormData,
 ): Promise<unknown> {
-  const res = await fetch(`${API}/bot${requireToken(token)}/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const json = (await res.json()) as { ok: boolean; description?: string; result?: unknown };
-  if (!json.ok) {
-    throw new Error(`Telegram ${method} failed: ${json.description ?? res.status}`);
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${api()}/bot${requireToken(token)}/${method}`, body instanceof FormData
+      ? { method: "POST", body }
+      : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const parsed = await parseResponseBody(res);
+    const json: ApiResponse = parsed && typeof parsed === "object" ? parsed : { description: String(parsed ?? res.status) };
+    if (json.ok) return json.result;
+    const code = json.error_code ?? res.status;
+    const wait = json.parameters?.retry_after;
+    if (code === 429 && wait !== undefined && wait <= MAX_RETRY_AFTER_S && attempt < MAX_RETRIES) {
+      await new Promise((resolve) => setTimeout(resolve, wait * 1000));
+      continue;
+    }
+    throw new TelegramError(method, code, json.description ?? String(res.status));
   }
-  return json.result;
+}
+
+/** Telegram refuses HTML it cannot parse. The words matter more than the markup, so they go again as plain text. */
+function unparsable(error: unknown): boolean {
+  return error instanceof TelegramError && error.code === 400 && /can't parse entities/i.test(error.description);
+}
+
+async function withHtml<T>(send: (html: boolean) => Promise<T>): Promise<T> {
+  try {
+    return await send(true);
+  } catch (error) {
+    if (!unparsable(error)) throw error;
+    return await send(false);
+  }
 }
 
 /**
@@ -67,20 +133,27 @@ export function chunkMessage(text: string, limit = MAX_MESSAGE_LENGTH): string[]
   return chunks;
 }
 
+/**
+ * Send text, split to fit. A reply the agent wrote is Markdown and goes as
+ * Telegram HTML: split first, then each piece formatted on its own.
+ */
 export async function sendMessage(
   token: string | null,
   chatId: string,
   text: string,
+  options: { markdown?: boolean } = {},
 ): Promise<void> {
   const body = text.trim();
   if (body.length === 0) return;
 
-  for (const chunk of chunkMessage(body)) {
-    await call(token, "sendMessage", {
+  const chunks = options.markdown ? balanceFences(chunkMessage(body)) : chunkMessage(body);
+  for (const chunk of chunks) {
+    await withHtml((html) => call(token, "sendMessage", {
       chat_id: chatId,
-      text: chunk,
+      text: html && options.markdown ? toTelegramHtml(chunk) : chunk,
+      ...(html && options.markdown ? { parse_mode: "HTML" } : {}),
       link_preview_options: { is_disabled: true },
-    });
+    }));
   }
 }
 
@@ -112,20 +185,78 @@ export async function editDraft(token: string | null, chatId: string, messageId:
   }
 }
 
-/** Finish a streamed reply: the draft becomes the first chunk, the rest follow as new messages. */
+/**
+ * Finish a streamed reply: the draft, plain while it grew, becomes the first
+ * chunk formatted, and the rest follow as new messages.
+ */
 export async function finishDraft(token: string | null, chatId: string, messageId: number, text: string): Promise<void> {
-  const [first, ...rest] = chunkMessage(text.trim() || "…");
-  await editDraft(token, chatId, messageId, first);
-  for (const chunk of rest) await sendMessage(token, chatId, chunk);
+  const [first, ...rest] = balanceFences(chunkMessage(text.trim() || "…"));
+  await withHtml(async (html) => {
+    try {
+      await call(token, "editMessageText", {
+        chat_id: chatId,
+        message_id: messageId,
+        text: html ? toTelegramHtml(first) : first,
+        ...(html ? { parse_mode: "HTML" } : {}),
+        link_preview_options: { is_disabled: true },
+      });
+    } catch (error) {
+      if (!String(error).includes("message is not modified")) throw error;
+    }
+  });
+  for (const chunk of rest) await sendMessage(token, chatId, chunk, { markdown: true });
 }
 
-/** Telegram fetches the image from the URL itself, so it must be publicly readable. */
-export async function sendPhoto(
+/** Remove a message the bot sent. Best effort: Telegram keeps messages older than 48 hours. */
+export async function deleteMessage(token: string | null, chatId: string, messageId: number): Promise<void> {
+  try {
+    await call(token, "deleteMessage", { chat_id: chatId, message_id: messageId });
+  } catch (error) {
+    console.error(`Could not delete a Telegram message: ${String(error)}`);
+  }
+}
+
+/** The Bot API method, and its file field, that shows this kind of file best. */
+function methodFor(contentType: string, size: number): [method: string, field: string] {
+  const type = contentType.toLowerCase().split(";")[0].trim();
+  if (/^image\/(png|jpe?g|webp)$/.test(type) && size <= PHOTO_LIMIT) return ["sendPhoto", "photo"];
+  if (type === "image/gif") return ["sendAnimation", "animation"];
+  if (type === "video/mp4") return ["sendVideo", "video"];
+  if (/^audio\/(mpeg|mp3|mp4|m4a|x-m4a)$/.test(type)) return ["sendAudio", "audio"];
+  if (/^audio\/(ogg|opus)$/.test(type)) return ["sendVoice", "voice"];
+  return ["sendDocument", "document"];
+}
+
+/**
+ * Upload a file with the method that shows it best: a photo, animation, video,
+ * audio or voice note, else a document. Telegram is pickier about those (a
+ * photo's dimensions, a voice note's codec) than about documents, so one it
+ * refuses goes again as a document. The caption is Markdown, sent as HTML.
+ */
+export async function sendFile(
   token: string | null,
   chatId: string,
-  url: string,
+  file: { blob: Blob; fileName: string; contentType: string; caption?: string },
 ): Promise<void> {
-  await call(token, "sendPhoto", { chat_id: chatId, photo: url });
+  if (file.blob.size > UPLOAD_LIMIT) throw new Error(`${file.fileName} is over Telegram's 50 MB limit for bots.`);
+  const bytes = new Blob([file.blob], { type: file.contentType });
+  const send = (method: string, field: string) => withHtml(async (html) => {
+    const form = new FormData();
+    form.set("chat_id", chatId);
+    form.set(field, bytes, file.fileName);
+    if (file.caption) {
+      form.set("caption", html ? toTelegramHtml(file.caption) : file.caption);
+      if (html) form.set("parse_mode", "HTML");
+    }
+    await call(token, method, form);
+  });
+  const [method, field] = methodFor(file.contentType, file.blob.size);
+  try {
+    await send(method, field);
+  } catch (error) {
+    if (method === "sendDocument" || !(error instanceof TelegramError) || error.code !== 400) throw error;
+    await send("sendDocument", "document");
+  }
 }
 
 /** The three dots in the chat while the model is thinking. */
@@ -165,8 +296,8 @@ export interface TelegramMessage {
   from?: { id: number; is_bot: boolean; first_name?: string; username?: string };
 }
 
-/** A file attached to a Telegram message, fetched later with getFile. */
-export type InboundMedia = { fileId: string; fileName: string; contentType: string };
+/** A file attached to a Telegram message, fetched later with getFile. Size is as Telegram reports it, when it does. */
+export type InboundMedia = { fileId: string; fileName: string; contentType: string; size?: number };
 
 export interface InboundMessage {
   chatId: string;
@@ -179,13 +310,15 @@ export interface InboundMessage {
 /** Photos come in several sizes; take the largest. Everything else is one file. */
 function mediaOf(message: TelegramMessage): InboundMedia[] {
   const media: InboundMedia[] = [];
+  const add = (file: TelegramFile, fileName: string, contentType: string) =>
+    media.push({ fileId: file.file_id, fileName, contentType, ...(file.file_size ? { size: file.file_size } : {}) });
   const photo = message.photo?.at(-1);
-  if (photo) media.push({ fileId: photo.file_id, fileName: "photo.jpg", contentType: "image/jpeg" });
-  if (message.voice) media.push({ fileId: message.voice.file_id, fileName: "voice-note.ogg", contentType: message.voice.mime_type ?? "audio/ogg" });
-  if (message.audio) media.push({ fileId: message.audio.file_id, fileName: message.audio.file_name ?? "audio", contentType: message.audio.mime_type ?? "audio/mpeg" });
-  if (message.video) media.push({ fileId: message.video.file_id, fileName: message.video.file_name ?? "video.mp4", contentType: message.video.mime_type ?? "video/mp4" });
-  if (message.video_note) media.push({ fileId: message.video_note.file_id, fileName: "video-note.mp4", contentType: "video/mp4" });
-  if (message.document) media.push({ fileId: message.document.file_id, fileName: message.document.file_name ?? "document", contentType: message.document.mime_type ?? "application/octet-stream" });
+  if (photo) add(photo, "photo.jpg", "image/jpeg");
+  if (message.voice) add(message.voice, "voice-note.ogg", message.voice.mime_type ?? "audio/ogg");
+  if (message.audio) add(message.audio, message.audio.file_name ?? "audio", message.audio.mime_type ?? "audio/mpeg");
+  if (message.video) add(message.video, message.video.file_name ?? "video.mp4", message.video.mime_type ?? "video/mp4");
+  if (message.video_note) add(message.video_note, "video-note.mp4", "video/mp4");
+  if (message.document) add(message.document, message.document.file_name ?? "document", message.document.mime_type ?? "application/octet-stream");
   return media;
 }
 
@@ -196,7 +329,7 @@ function mediaOf(message: TelegramMessage): InboundMedia[] {
 export async function downloadFile(token: string | null, fileId: string): Promise<ArrayBuffer> {
   const file = await call(token, "getFile", { file_id: fileId }) as { file_path?: string };
   if (!file.file_path) throw new Error("Telegram did not return a path for that file.");
-  const response = await fetch(`${API}/file/bot${requireToken(token)}/${file.file_path}`);
+  const response = await fetch(`${api()}/file/bot${requireToken(token)}/${file.file_path}`);
   if (!response.ok) throw new Error(`Could not download a file from Telegram (${response.status}).`);
   return await response.arrayBuffer();
 }
