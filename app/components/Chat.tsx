@@ -3,6 +3,7 @@
 import { useAction, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -47,12 +48,13 @@ function AttachmentList({ attachments }: { attachments: Attachment[] }) {
 }
 
 /**
- * Assistant replies are GitHub-flavoured Markdown. Raw HTML in a reply stays
- * text, since replies can quote web pages and email, and links open in a new tab.
+ * Assistant replies are GitHub-flavoured Markdown, with single line breaks kept
+ * as a chat reader expects. Raw HTML in a reply stays text, since replies can
+ * quote web pages and email, and links open in a new tab.
  */
 function Markdown({ text }: { text: string }) {
   return <div className="chat-markdown">
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}>{text}</ReactMarkdown>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}>{text}</ReactMarkdown>
   </div>;
 }
 
