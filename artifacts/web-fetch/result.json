@@ -1,0 +1,140 @@
+{
+  "ranAt": "2026-09-23T17:55:49.389Z",
+  "checks": {
+    "markdown": true,
+    "plainHttp": true,
+    "redirectFollowed": true,
+    "redirectLimit": true,
+    "privateRefused": true,
+    "truncated": true,
+    "sizeCap": true,
+    "networkHint": true
+  },
+  "pages": {
+    "example": {
+      "chars": 167,
+      "text": "# Example Domain\n\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\n\n[Learn more](https://iana.org/domains/e ... without needing permission. Avoid use in operations.\n\n[Learn more](https://iana.org/domains/example)",
+      "title": "Example Domain",
+      "truncated": false,
+      "url": "https://example.com/"
+    },
+    "plainHttp": {
+      "chars": 167,
+      "text": "# Example Domain\n\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\n\n[Learn more](https://iana.org/domains/e ... without needing permission. Avoid use in operations.\n\n[Learn more](https://iana.org/domains/example)",
+      "title": "Example Domain",
+      "truncated": false,
+      "url": "http://example.com/"
+    },
+    "redirected": {
+      "chars": 547,
+      "text": "{\n  \"args\": {}, \n  \"headers\": {\n    \"Accept\": \"text/html,application/xhtml+xml,text/markdown;q=0.9,text/plain;q=0.9,*/*;q=0.8\", \n    \"Accept-Encoding\": \"br, gzi ... 2-18bdf312106a2b937b15f994\"\n  }, \n  \"origin\": \"216.235.222.5\", \n  \"url\": \"https://httpbin.org/get\"\n}",
+      "title": "",
+      "truncated": false,
+      "url": "https://httpbin.org/get"
+    },
+    "tooManyRedirects": {
+      "error": "More than 10 redirects."
+    },
+    "privateTargets": [
+      {
+        "url": "http://127.0.0.1",
+        "page": {
+          "error": "That address is not public: local, private, link-local and reserved addresses cannot be read.",
+          "hint": "Only public internet addresses can be read. Local, private and cloud-metadata addresses are refused on purpose; do not try another route to them."
+        }
+      },
+      {
+        "url": "http://169.254.169.254/latest/meta-data/",
+        "page": {
+          "error": "That address is not public: local, private, link-local and reserved addresses cannot be read.",
+          "hint": "Only public internet addresses can be read. Local, private and cloud-metadata addresses are refused on purpose; do not try another route to them."
+        }
+      },
+      {
+        "url": "http://[::1]/",
+        "page": {
+          "error": "That address is not public: local, private, link-local and reserved addresses cannot be read.",
+          "hint": "Only public internet addresses can be read. Local, private and cloud-metadata addresses are refused on purpose; do not try another route to them."
+        }
+      },
+      {
+        "url": "http://[::ffff:169.254.169.254]/",
+        "page": {
+          "error": "That address is not public: local, private, link-local and reserved addresses cannot be read.",
+          "hint": "Only public internet addresses can be read. Local, private and cloud-metadata addresses are refused on purpose; do not try another route to them."
+        }
+      },
+      {
+        "url": "http://0x7f.1/",
+        "page": {
+          "error": "That address is not public: local, private, link-local and reserved addresses cannot be read.",
+          "hint": "Only public internet addresses can be read. Local, private and cloud-metadata addresses are refused on purpose; do not try another route to them."
+        }
+      },
+      {
+        "url": "http://localhost:3005/",
+        "page": {
+          "error": "That address is not public: local, private, link-local and reserved addresses cannot be read.",
+          "hint": "Only public internet addresses can be read. Local, private and cloud-metadata addresses are refused on purpose; do not try another route to them."
+        }
+      },
+      {
+        "url": "http://localtest.me/",
+        "page": {
+          "error": "That address is not public: local, private, link-local and reserved addresses cannot be read.",
+          "hint": "Only public internet addresses can be read. Local, private and cloud-metadata addresses are refused on purpose; do not try another route to them."
+        }
+      },
+      {
+        "url": "https://httpbin.org/redirect-to?url=http://127.0.0.1/",
+        "page": {
+          "error": "That address is not public: local, private, link-local and reserved addresses cannot be read.",
+          "hint": "Only public internet addresses can be read. Local, private and cloud-metadata addresses are refused on purpose; do not try another route to them."
+        }
+      },
+      {
+        "url": "https://httpbin.org/redirect-to?url=http://169.254.169.254/latest/meta-data/",
+        "page": {
+          "error": "That address is not public: local, private, link-local and reserved addresses cannot be read.",
+          "hint": "Only public internet addresses can be read. Local, private and cloud-metadata addresses are refused on purpose; do not try another route to them."
+        }
+      }
+    ],
+    "large": {
+      "chars": 502901,
+      "text": "Internet Engineering Task Force (IETF)                  R. Fielding, Ed.\nRequest for Comments: 9110                                         Adobe\nSTD: 97        ... number ([URI], Section 3.2.3).  If the port\n\n[page truncated: showing the first 1125 of 10781 lines]",
+      "title": "",
+      "truncated": true,
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.txt"
+    },
+    "oversized": {
+      "error": "The page is over the 5 MB limit."
+    },
+    "missing": {
+      "error": "A network request failed before completing (fetch failed).",
+      "hint": "Check the address is right and the site is up. If it is, this is likely temporary: try once more, then tell the owner."
+    }
+  },
+  "chatId": "j57bcvzvehjg5e1wyj64crz4ss8ezt4d",
+  "chat": {
+    "summarised": true,
+    "usedReadPage": true,
+    "hintRelayed": true
+  },
+  "replies": {
+    "summary": {
+      "reply": "Example.com is the “Example Domain,” reserved for documentation examples. It advises avoiding operational use and links to more information from IANA.",
+      "error": null
+    },
+    "failure": {
+      "reply": "The page returned the error “A network request failed before completing (fetch failed).” The hint was: “Check the address is right and the site is up. If it is, this is likely temporary: try once more, then tell the owner.”",
+      "error": null
+    }
+  },
+  "toolCalls": [
+    "read_page",
+    "read_page"
+  ],
+  "pageErrors": [],
+  "pass": true
+}

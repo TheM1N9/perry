@@ -136,7 +136,7 @@ Telegram also `/status`, `/reset`, `/help`.
 
 Packages in use: `convex`, `@convex-dev/agent` (threads and messages),
 `@composio/core`, `cron-parser`, `react-markdown` with `remark-gfm` and
-`remark-breaks` and `zod`. `@daytona/sdk` backs cloud-sandbox tools that Codex does not use; it has its own shell on your machine.
+`remark-breaks`, `turndown` and `undici` (reading pages) and `zod`. `@daytona/sdk` backs cloud-sandbox tools that Codex does not use; it has its own shell on your machine.
 
 ## Status
 

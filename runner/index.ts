@@ -33,6 +33,7 @@ import { createInterface } from "node:readline/promises";
 import { ConvexClient } from "convex/browser";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
+import { truncateCommandOutput, truncateHead } from "../convex/lib/truncate";
 import { ASSISTANT_MCP, CodexAppServer, TurnFailed, type GeneratedImage, type RpcMessage } from "./codex";
 import { ensureHome, HOME, PATHS } from "./home";
 import { TurnTrace } from "./trace";
@@ -42,7 +43,6 @@ const CONFIG_FILE = PATHS.runnerConfig;
 const CODEX_RESULTS = PATHS.codexResults;
 
 const COMMAND_TIMEOUT_MS = 120_000;
-const MAX_OUTPUT = 20_000;
 const MAX_FILE_BYTES = 256 * 1024;
 const CHECKIN_MS = 30_000;
 /** Matches APPROVAL_TTL_MS in convex/approvals.ts: an unanswered request is declined. */
@@ -131,11 +131,6 @@ function confine(workdir: string, path?: string): string | null {
   }
   if (target !== workdir && !target.startsWith(workdir + sep)) return null;
   return target;
-}
-
-function clip(text: string) {
-  if (text.length <= MAX_OUTPUT) return { text, truncated: false };
-  return { text: text.slice(0, MAX_OUTPUT), truncated: true };
 }
 
 // --- Execution -----------------------------------------------------------
@@ -428,7 +423,7 @@ async function main() {
         try {
           if (command.kind === "read") {
             const buffer = await readFile(target);
-            const { text, truncated } = clip(
+            const { output: text, truncated } = truncateHead(
               buffer.subarray(0, MAX_FILE_BYTES).toString("utf8"),
             );
             console.log(dim(`  read ${relative(workdir, target) || "."}`));
@@ -497,7 +492,8 @@ async function main() {
 
       const started = Date.now();
       const { exitCode, output, timedOut } = await runShell(shellCommand, cwd);
-      const { text, truncated } = clip(output);
+      // The end of the output is where errors and results are.
+      const { output: text, truncated } = truncateCommandOutput(output);
       const seconds = ((Date.now() - started) / 1000).toFixed(1);
 
       console.log(
