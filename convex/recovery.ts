@@ -10,7 +10,8 @@ import { internalMutation } from "./_generated/server";
  * - a finished turn whose finalizing failed is finalized again (finalizeTurn
  *   records each step, so a retry never saves or sends anything twice);
  * - a queued turn whose runner stayed offline fails with a clear error;
- * - a running turn whose runner died and did not return fails the same way;
+ * - a running turn whose runner died and did not return fails the same way,
+ *   as does a fallback turn whose action died (see chatgpt.ts);
  * - a chat still marked busy with no turn behind it is released, and its run
  *   is closed.
  */
@@ -34,7 +35,9 @@ export const sweep = internalMutation({
       ? await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", args.only!)).collect()
       : await ctx.db.query("codexTurns").order("desc").take(300);
     const runnerOnline = new Map<string, boolean>();
+    // A fallback turn has no runner; its action is gone once it is this stale.
     const online = async (id: (typeof turns)[number]["runnerId"]) => {
+      if (!id) return false;
       if (!runnerOnline.has(id)) {
         const runner = await ctx.db.get(id);
         runnerOnline.set(id, Boolean(runner && !runner.revoked && (runner.lastSeenAt ?? 0) > now - RUNNER_ONLINE_MS));
@@ -62,7 +65,9 @@ export const sweep = internalMutation({
           partial: undefined,
           error: turn.status === "queued"
             ? "The runner was offline, so this message was not answered. Start the runner and send it again."
-            : "The runner stopped during this turn and did not come back. Start the runner and send the message again.",
+            : turn.fallback
+              ? "The reply written without the computer was cut off. Send the message again."
+              : "The runner stopped during this turn and did not come back. Start the runner and send the message again.",
           finishedAt: now,
         });
         await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: turn._id });

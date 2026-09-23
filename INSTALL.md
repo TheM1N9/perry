@@ -78,6 +78,15 @@ the runner running (`pnpm run runner` after the first time): chats wait for it,
 and a message sent while it is offline fails with a clear error. Run one runner
 per token; a second one refuses to start.
 
+To be answered while the machine is off, turn on **Answer without the computer
+when it's offline** in Settings. A turn no runner can take is then answered in
+Convex on your ChatGPT subscription, with memory, chats, connected accounts,
+jobs and page reading but nothing from your machine. Settings shows whether a
+token is valid and until when. The risk: each runner shares the ChatGPT access
+token its Codex holds, and it stays in your Convex deployment until it expires,
+usable by anyone who can read that deployment's data. The refresh token never
+leaves the machine, and turning the setting off deletes every stored token.
+
 What Codex wants to do beyond its sandbox is asked in the runner's terminal and
 in the dashboard, where you can approve or decline it.
 
@@ -167,8 +176,9 @@ deployment and the one in `.env.local` disagree, so re-run `pnpm run setup`.
 them. The full error is in the Convex dashboard logs and in the Activity tab.
 
 **"No runner" or "Connect a ChatGPT account" in chat.** Every reply comes from
-Codex on a connected machine. Start the runner with `pnpm run runner` and check
-the Codex account on the Settings page.
+Codex on a connected machine, unless answering without the computer is on and a
+runner has shared a token that is still valid. Start the runner with
+`pnpm run runner` and check the Codex account on the Settings page.
 
 **Moving to production.** `pnpm exec convex deploy` pushes to a separate production
 deployment with its own environment variables, so set them again there and

@@ -41,6 +41,22 @@ A turn: the message is stored, memory and recent history are gathered, the turn
 is queued for the runner, Codex writes the reply (streamed live to the web chat
 and into a single Telegram message), and the finished reply is saved.
 
+**When the computer is offline.** Off by default. Turn on "Answer without the
+computer when it's offline" in Settings and a turn no runner can take is
+answered in Convex instead (`convex/fallback.ts`), on the same ChatGPT
+subscription, through the Codex backend the CLI uses (the transport is adapted
+from [vercel/eve](https://github.com/vercel/eve)). It has Perry's own tools
+(memory, earlier chats, connected accounts, jobs, tasks, page reading) but no
+shell, files or `share_file`. The reply streams like any other, its run is
+marked `chatgpt fallback · <model>`, and the chat notes it was answered without
+your computer. For this, each runner shares the ChatGPT access token its Codex
+holds (read with the app-server's `getAuthStatus`; Codex keeps and uses the
+refresh token). **The risk:** that token sits in your Convex deployment until
+it expires, so anyone who can read the deployment's data could use your
+subscription until then. It is never returned by a dashboard query, and it is
+deleted when it expires, when its runner is revoked and when you turn the
+setting off.
+
 ## What the assistant can do
 
 Codex brings its own shell, files, image generation and plugins. Perry adds its
@@ -190,6 +206,7 @@ one file per eval with every turn.
 | Chat | Telegram, web |
 
 Packages in use: `convex`, `@convex-dev/agent` (threads and messages),
+`ai` with `@ai-sdk/openai` (answering without the computer),
 `@composio/core`, `cron-parser`, `react-markdown` with `remark-gfm` and
 `remark-breaks`, `turndown` and `undici` (reading pages) and `zod`. `@daytona/sdk` backs cloud-sandbox tools that Codex does not use; it has its own shell on your machine.
 

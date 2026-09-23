@@ -5,6 +5,7 @@ import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, mutation, query } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
+import { FALLBACK_PROVIDER } from "./chatgpt";
 import { ABSOLUTE_PATH } from "./media";
 import { vMemoryKind } from "./schema";
 
@@ -29,6 +30,8 @@ export type ChatMessage = {
   text: string;
   createdAt: number;
   attachments: Array<{ url: string; fileName: string; contentType: string }>;
+  /** Written in Convex on the ChatGPT subscription, because the computer was offline. */
+  fallback?: boolean;
 };
 
 function assistantMedia(text: string): Array<{ url: string; fileName: string; contentType: string }> {
@@ -245,7 +248,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ model?: string; title: string; isRunning: boolean; streaming?: string; lastError?: string }> => {
+  ): Promise<{ model?: string; title: string; isRunning: boolean; streaming?: string; fallback?: boolean; lastError?: string }> => {
     assertDashboardKey(args.key);
     const conversation = webChat(await ctx.db.get(args.id));
     const isRunning = (conversation.pendingTurns ?? 0) > 0;
@@ -263,6 +266,7 @@ export const getChat = query({
       title: conversation.title ?? "Untitled chat",
       isRunning,
       streaming: running?.partial,
+      fallback: running?.fallback,
       lastError: latestRun?.status === "error" ? latestRun.error : undefined,
     };
   },
@@ -316,6 +320,7 @@ export const getChatMessages = query({
           role: doc.message?.role ?? "assistant",
           text: (marker ? raw.slice(0, marker.index).trimEnd() : raw),
           createdAt: doc._creationTime,
+          ...(doc.provider === FALLBACK_PROVIDER ? { fallback: true } : {}),
           attachments: messageKey
             ? attachmentMap.get(messageKey) ?? []
             : recovered

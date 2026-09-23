@@ -43,7 +43,12 @@ export async function authenticate(
 
 // --- Runner side ---------------------------------------------------------
 
-/** Called once at startup, and then on a timer, so the dashboard can show it. */
+/**
+ * Called once at startup, and then on a timer, so the dashboard can show it.
+ * `fallback` says whether the owner lets turns be answered without this
+ * machine, which is when the runner pushes its ChatGPT token (chatgpt.ts),
+ * and `holdsToken` whether Convex still has the one it pushed.
+ */
 export const checkIn = mutation({
   args: {
     token: v.string(),
@@ -52,8 +57,8 @@ export const checkIn = mutation({
     workdir: v.optional(v.string()),
     autoApprove: v.optional(v.boolean()),
   },
-  returns: v.object({ name: v.string() }),
-  handler: async (ctx, args): Promise<{ name: string }> => {
+  returns: v.object({ name: v.string(), fallback: v.boolean(), holdsToken: v.boolean() }),
+  handler: async (ctx, args): Promise<{ name: string; fallback: boolean; holdsToken: boolean }> => {
     const runner = await authenticate(ctx, args.token);
 
     await ctx.db.patch(runner._id, {
@@ -64,7 +69,9 @@ export const checkIn = mutation({
       lastSeenAt: Date.now(),
     });
 
-    return { name: runner.name };
+    const install = await ctx.db.query("installation").unique();
+    const held = await ctx.db.query("chatgptTokens").withIndex("by_runner", (q) => q.eq("runnerId", runner._id)).first();
+    return { name: runner.name, fallback: install?.offlineFallback === true, holdsToken: held !== null };
   },
 });
 
@@ -182,6 +189,10 @@ export const revokeRunner = internalMutation({
     // Chats that ran on it move to whichever runner is online next.
     for (const chat of await ctx.db.query("conversations").collect()) {
       if (chat.codexRunnerId === id) await ctx.db.patch(chat._id, { codexRunnerId: undefined });
+    }
+    // Its ChatGPT token goes with it.
+    for (const row of await ctx.db.query("chatgptTokens").withIndex("by_runner", (q) => q.eq("runnerId", id)).collect()) {
+      await ctx.db.delete(row._id);
     }
     return null;
   },
