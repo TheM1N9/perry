@@ -4,6 +4,7 @@ import { v } from "convex/values";
 export const vChannel = v.union(v.literal("telegram"), v.literal("web"));
 export const vMode = v.union(v.literal("perry"), v.literal("agentP"));
 export const vEngine = v.union(v.literal("codex"), v.literal("gateway"));
+export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.literal("daily"));
 
 /**
  * Assistant is single-owner, so there is no users table. The owner is identified by
@@ -286,14 +287,33 @@ export default defineSchema({
    * Full-text search for now. Swapping in @convex-dev/rag for embeddings is a
    * later step and does not change the tool surface.
    */
+  /**
+   * Layered like OpenClaw's workspace memory. `profile` is USER.md: standing
+   * preferences and relationships, written as directives. `core` is MEMORY.md:
+   * durable facts and decisions. Both load into every turn. `daily` is
+   * memory/YYYY-MM-DD.md: working notes, where today and yesterday load and
+   * older days are reached through search. Rows written before the layers
+   * existed have no kind and count as core.
+   */
   memories: defineTable({
     text: v.string(),
     tags: v.array(v.string()),
     source: v.string(),
     createdAt: v.number(),
+    kind: v.optional(vMemoryKind),
+    /** YYYY-MM-DD, for daily notes. */
+    day: v.optional(v.string()),
+    /** Replaced facts stay for the record and drop out of context and search. */
+    supersededBy: v.optional(v.id("memories")),
+    /** Set once nightly consolidation has considered this daily note. */
+    reviewedAt: v.optional(v.number()),
+    embedding: v.optional(v.array(v.float64())),
   })
     .index("by_created", ["createdAt"])
-    .searchIndex("search_text", { searchField: "text" }),
+    .index("by_kind", ["kind", "createdAt"])
+    .index("by_day", ["day", "createdAt"])
+    .searchIndex("search_text", { searchField: "text" })
+    .vectorIndex("by_embedding", { vectorField: "embedding", dimensions: 1536 }),
 
   /**
    * One row per agent turn: what came in, which mode handled it, which tools

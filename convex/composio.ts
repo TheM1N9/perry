@@ -154,6 +154,15 @@ export type FoundAction = {
   inputSchema?: unknown;
 };
 
+export type SearchResult = {
+  actions: FoundAction[];
+  /** Composio's advice for the matched use cases: how to run them and what goes wrong. */
+  guidance?: Array<{ useCase: string; executionGuidance?: string; knownPitfalls?: string[]; steps?: string[] }>;
+  /** Toolkits the search needed that are not connected, with why. */
+  notConnected?: string[];
+  error?: string;
+};
+
 /**
  * Find the actual operation for a request, across connected accounts.
  *
@@ -163,10 +172,7 @@ export type FoundAction = {
  */
 export const search = internalAction({
   args: { query: v.string(), toolkits: v.optional(v.array(v.string())) },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{ actions: FoundAction[]; error?: string }> => {
+  handler: async (ctx, args): Promise<SearchResult> => {
     try {
       const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
         name: "COMPOSIO_API_KEY",
@@ -178,35 +184,31 @@ export const search = internalAction({
           ? { toolkits: args.toolkits }
           : {}),
       });
+      if (!found.success && found.error) return { actions: [], error: found.error };
 
-      const raw = found as unknown as Record<string, unknown>;
-      const list = Array.isArray(raw.items)
-        ? raw.items
-        : Array.isArray(raw.tools)
-          ? raw.tools
-          : Array.isArray(found)
-            ? (found as unknown[])
-            : [];
-
-      const actions: FoundAction[] = list.slice(0, 15).map((entry) => {
-        const tool = entry as Record<string, unknown>;
+      const slugs = [...new Set(found.results.flatMap((result) => [...result.primaryToolSlugs, ...result.relatedToolSlugs]))];
+      const actions = slugs.slice(0, 15).map((slug) => {
+        const schema = found.toolSchemas[slug];
         return {
-          slug: String(tool.slug ?? tool.name ?? ""),
-          description:
-            typeof tool.description === "string"
-              ? tool.description.slice(0, 400)
-              : undefined,
-          toolkit:
-            typeof tool.toolkit === "string"
-              ? tool.toolkit
-              : typeof tool.toolkitSlug === "string"
-                ? (tool.toolkitSlug as string)
-                : undefined,
-          inputSchema: tool.inputSchema ?? tool.input_parameters ?? tool.parameters,
+          slug,
+          toolkit: schema?.toolkit,
+          description: schema?.description?.slice(0, 400),
+          inputSchema: schema?.inputSchema,
         };
       });
-
-      return { actions: actions.filter((a) => a.slug.length > 0) };
+      const notConnected = found.toolkitConnectionStatuses
+        .filter((status) => !status.hasActiveConnection)
+        .map((status) => `${status.toolkit}: ${status.statusMessage}`);
+      return {
+        actions,
+        guidance: found.results.slice(0, 3).map((result) => ({
+          useCase: result.useCase,
+          executionGuidance: result.executionGuidance,
+          knownPitfalls: result.knownPitfalls,
+          steps: result.recommendedPlanSteps,
+        })),
+        ...(notConnected.length ? { notConnected } : {}),
+      };
     } catch (error) {
       return { actions: [], error: message(error) };
     }
@@ -229,18 +231,8 @@ export const execute = internalAction({
         input.slug,
         (input.args ?? {}) as Record<string, unknown>,
       );
-
-      const raw = result as unknown as Record<string, unknown>;
-      if (raw.successful === false || raw.successfull === false) {
-        return {
-          ok: false,
-          error:
-            typeof raw.error === "string" ? raw.error : "The action failed.",
-          data: raw.data,
-        };
-      }
-
-      return { ok: true, data: raw.data ?? result };
+      if (result.error) return { ok: false, error: result.error, data: result.data };
+      return { ok: true, data: result.data };
     } catch (error) {
       return { ok: false, error: message(error) };
     }

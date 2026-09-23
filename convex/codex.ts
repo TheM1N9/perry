@@ -6,6 +6,8 @@ import { sendMessage } from "./lib/telegram";
 import { vEngine, vMode } from "./schema";
 import { assertDashboardKey } from "./lib/auth";
 import { authenticate } from "./runner";
+import type { Id } from "./_generated/dataModel";
+import type { Mode } from "./modes";
 
 export const engine = query({
   args: { key: v.string() },
@@ -248,7 +250,8 @@ export const claimTurn = mutation({
       .first();
     if (running) return null;
     await ctx.db.patch(job._id, { status: "running", startedAt: Date.now() });
-    return { ...job, codexThreadId: conversation.codexThreadId };
+    const site = process.env.CONVEX_SITE_URL;
+    return { ...job, codexThreadId: conversation.codexThreadId, mcpUrl: site ? `${site}/mcp` : undefined };
   },
 });
 
@@ -314,11 +317,12 @@ export const markFinalized = internalMutation({
     const job = await ctx.db.get(args.id);
     if (!job || job.finalizedAt) return null;
     await ctx.db.patch(job._id, { finalizedAt: Date.now() });
+    const run = await ctx.db.get(job.runId);
     await ctx.db.patch(job.runId, {
       status: args.fallback?.status ?? (job.status === "done" ? "ok" : "error"),
       model: args.fallback?.model ?? job.model ?? "codex subscription",
       error: args.fallback?.error ?? (args.fallback ? undefined : job.error),
-      toolCalls: args.fallback?.toolCalls,
+      ...(args.fallback?.toolCalls ? { toolCalls: [...(run?.toolCalls ?? []), ...args.fallback.toolCalls] } : {}),
       finishedAt: Date.now(),
     });
     const conversation = await ctx.db.get(job.conversationId);
@@ -360,6 +364,39 @@ export const finalizeTurn = internalAction({
       catch (error) { console.error(`Could not deliver Codex reply: ${String(error)}`); }
     }
     await ctx.runMutation(internal.codex.markFinalized, args);
+    return null;
+  },
+});
+
+/** Who may use the MCP endpoint: a runner, while it has a Codex turn running. */
+export const mcpAccess = internalQuery({
+  args: { token: v.string() },
+  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; tools: string[]; userId: string; threadId: string } | null> => {
+    const runner = await authenticate(ctx, args.token).catch(() => null);
+    if (!runner) return null;
+    const job = await ctx.db.query("codexTurns")
+      .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "running"))
+      .first();
+    const conversation = job && await ctx.db.get(job.conversationId);
+    if (!job || !conversation) return null;
+    const mode: Mode = await ctx.runQuery(internal.config.resolveMode, { mode: job.mode });
+    return {
+      turnId: job._id,
+      tools: mode.tools,
+      userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
+      threadId: conversation.threadId,
+    };
+  },
+});
+
+/** Codex's calls into our tools show up on the run like the gateway agent's do. */
+export const noteToolCall = internalMutation({
+  args: { turnId: v.id("codexTurns"), name: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.turnId);
+    const run = job && await ctx.db.get(job.runId);
+    if (run) await ctx.db.patch(run._id, { toolCalls: [...(run.toolCalls ?? []), args.name] });
     return null;
   },
 });

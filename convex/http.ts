@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { parseUpdate, type TelegramUpdate } from "./lib/telegram";
+import { handle as mcp } from "./mcp";
 
 /**
  * Telegram posts straight here.
@@ -70,6 +71,9 @@ http.route({
     return new Response("ok", { status: 200 });
   }),
 });
+
+/** Assistant's tools for Codex turns. See mcp.ts. */
+http.route({ path: "/mcp", method: "POST", handler: mcp });
 
 /** Cheap liveness check: curl the .site domain to confirm a deploy landed. */
 http.route({

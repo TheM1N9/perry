@@ -7,7 +7,7 @@ import { action, mutation, query } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { activeGateway } from "./lib/models";
 import { MODE_NAMES, TOOL_NAMES, type Mode } from "./modes";
-import { vEngine, vMode } from "./schema";
+import { vEngine, vMemoryKind, vMode } from "./schema";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -527,22 +527,26 @@ export type MemoryView = {
   id: string;
   text: string;
   tags: string[];
+  source: string;
+  kind: "profile" | "core" | "daily";
+  day?: string;
   createdAt: number;
 };
 
 export const listMemories = query({
-  args: { key: vKey, query: v.optional(v.string()) },
+  args: { key: vKey, query: v.optional(v.string()), kind: v.optional(vMemoryKind) },
   handler: async (ctx, args): Promise<MemoryView[]> => {
     assertDashboardKey(args.key);
     return await ctx.runQuery(internal.memories.search, {
       query: args.query ?? "",
       limit: 25,
+      kind: args.kind,
     });
   },
 });
 
 export const addMemory = mutation({
-  args: { key: vKey, text: v.string(), tags: v.optional(v.array(v.string())) },
+  args: { key: vKey, text: v.string(), tags: v.optional(v.array(v.string())), kind: v.optional(vMemoryKind) },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
@@ -553,6 +557,7 @@ export const addMemory = mutation({
       text,
       tags: args.tags ?? [],
       source: "dashboard",
+      kind: args.kind,
     });
     return null;
   },

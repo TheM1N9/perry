@@ -1,0 +1,2 @@
+{"status":"ok","model":"codex/gpt-6-astra"}
+{"status":"ok","model":"codex/gpt-6-astra","toolCalls":["list_connectors","find_action","run_action","remember"]}

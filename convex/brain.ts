@@ -183,6 +183,9 @@ export const handleTurn = internalAction({
       ? { ...configured, model: conversation.model }
       : configured;
 
+    const memoryContext: string = await ctx.runAction(internal.memories.context, { query: args.text })
+      .catch((error) => { console.error(`Memory context unavailable: ${String(error)}`); return ""; });
+
     const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
       conversationId: conversation._id,
       mode: modeName,
@@ -214,15 +217,11 @@ export const handleTurn = internalAction({
             .map((item) => `${item.message?.role}: ${item.text ?? ""}`);
           history = lines.join("\n\n").slice(-24_000) || undefined;
         }
-        const [recentMemories, relevantMemories] = await Promise.all([
-          ctx.runQuery(internal.memories.search, { query: "", limit: 8 }),
-          args.text.trim() ? ctx.runQuery(internal.memories.search, { query: args.text, limit: 8 }) : Promise.resolve([]),
-        ]);
-        const memories = [...new Map([...relevantMemories, ...recentMemories].map((memory) => [memory.id, memory])).values()].slice(0, 12);
         const instructions = [
           mode.instructions,
-          "This is a private assistant chat. Be direct, thoughtful, and explicit about uncertainty. Use the connected tools when they can answer or complete the request; ask before consequential external actions. The runner controls filesystem access.",
-          memories.length ? `Known facts about the owner (use only when relevant):\n${memories.map((m) => `- ${m.text}${m.tags.length ? ` [${m.tags.join(", ")}]` : ""}`).join("\n")}` : "",
+          "This is a private assistant chat. Be direct, thoughtful, and explicit about uncertainty. The runner controls filesystem access.",
+          "Your `assistant` MCP tools are the owner's memory (recall, remember, read_memory, forget), their connected accounts (list_connectors, then find_action, then run_action), and task tracking. When a request involves email, calendar, documents or any other account, check list_connectors before saying you cannot do it, and never guess an action name. Ask before consequential external actions such as sending, deleting, publishing or spending.",
+          memoryContext,
         ].filter(Boolean).join("\n\n");
         try {
           await ctx.runMutation(internal.codex.enqueueTurn, {
@@ -250,7 +249,7 @@ export const handleTurn = internalAction({
           threadId: conversation.threadId,
           userId: channel === "web" ? "web:dashboard" : `${channel}:${args.externalId}`,
         },
-        { prompt: `${args.text}${attachmentContext}` },
+        { prompt: `${args.text}${attachmentContext}`, instructions: `${mode.instructions}\n\n${memoryContext}` },
       );
 
       const toolCalls: string[] = [];
@@ -328,11 +327,13 @@ export const gatewayFallback = internalAction({
     const { job, conversation } = data;
     const mode: Mode = await ctx.runQuery(internal.config.resolveMode, { mode: job.mode });
     try {
+      const memoryContext: string = await ctx.runAction(internal.memories.context, { query: job.prompt })
+        .catch((error) => { console.error(`Memory context unavailable: ${String(error)}`); return ""; });
       const gatewayKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "AI_GATEWAY_API_KEY" });
       const result = await agentFor(mode, gatewayKey).generateText(ctx, {
         threadId: conversation.threadId,
         userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
-      }, { prompt: `${job.prompt}${job.attachments?.length ? `\n\nAttached files:\n${job.attachments.map((item) => `- ${item.fileName}: ${item.url}`).join("\n")}` : ""}` });
+      }, { instructions: `${mode.instructions}\n\n${memoryContext}`, prompt: `${job.prompt}${job.attachments?.length ? `\n\nAttached files:\n${job.attachments.map((item) => `- ${item.fileName}: ${item.url}`).join("\n")}` : ""}` });
       const toolCalls = (result.steps ?? []).flatMap((step) => (step.toolCalls ?? []).map((call) => call?.toolName).filter((name): name is string => Boolean(name)));
       await deliver(ctx, conversation.channel, conversation.externalId,
         result.text?.trim() || (toolCalls.length ? "Done." : "I came back with nothing. Try asking again."));

@@ -2,6 +2,7 @@ import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import type { SearchResult } from "./composio";
 import type { ToolName } from "./modes";
 
 /**
@@ -16,27 +17,40 @@ import type { ToolName } from "./modes";
 
 // --- Memory --------------------------------------------------------------
 
-type MemoryRow = { id: string; text: string; tags: string[]; createdAt: number };
+type MemoryRow = { id: string; text: string; tags: string[]; kind: "profile" | "core" | "daily"; day?: string; createdAt: number };
 
 type RecallResult = {
   found: number;
-  memories: Array<{ id: string; text: string; tags: string[]; rememberedOn: string }>;
+  memories: Array<{ id: string; text: string; tags: string[]; kind: string; day?: string; rememberedOn: string }>;
   note?: string;
 };
 
+const memoryKind = z.enum(["profile", "core", "daily"]);
+
+const shape = (m: MemoryRow) => ({
+  id: m.id,
+  text: m.text,
+  tags: m.tags,
+  kind: m.kind,
+  ...(m.day ? { day: m.day } : {}),
+  rememberedOn: new Date(m.createdAt).toISOString().slice(0, 10),
+});
+
 const recall = createTool({
   description:
-    "Search your long-term memory about the owner. Use this before saying you " +
-    "do not know something, and before asking a question you may already have " +
-    "the answer to. An empty query returns the most recent memories.",
+    "Search your long-term memory about the owner by meaning and keywords, " +
+    "across the profile, long-term facts and every day's notes. Use this for " +
+    "anything older than yesterday, before saying you do not know something, " +
+    "and before asking a question you may already have the answer to. An " +
+    "empty query returns the most recent memories.",
   inputSchema: z.object({
     query: z
       .string()
-      .describe("Keywords to search for. Empty string returns recent memories."),
+      .describe("What you are looking for. Empty string returns recent memories."),
     limit: z.number().int().min(1).max(25).optional(),
   }),
   execute: async (ctx, input): Promise<RecallResult> => {
-    const results: MemoryRow[] = await ctx.runQuery(internal.memories.search, {
+    const results: MemoryRow[] = await ctx.runAction(internal.memories.recall, {
       query: input.query,
       limit: input.limit,
     });
@@ -45,45 +59,64 @@ const recall = createTool({
       return { found: 0, memories: [], note: "No memories matched." };
     }
 
-    return {
-      found: results.length,
-      memories: results.map((m) => ({
-        id: m.id,
-        text: m.text,
-        tags: m.tags,
-        rememberedOn: new Date(m.createdAt).toISOString().slice(0, 10),
-      })),
-    };
+    return { found: results.length, memories: results.map(shape) };
   },
 });
 
 const remember = createTool({
   description:
-    "Store a durable fact about the owner: a preference, a relationship, a " +
-    "recurring commitment, a decision they made. Write it as a standalone " +
-    "sentence that will still make sense in six months. Do not store passing " +
-    "chatter, and never store secrets or credentials.",
+    "Write to memory. kind=profile for standing preferences, relationships " +
+    "and how the owner wants things done, phrased as directives. kind=core for " +
+    "durable facts, decisions and commitments. kind=daily for working notes, " +
+    "observations and a summary of what happened today. Write each as a " +
+    "standalone sentence that will still make sense later. When a fact " +
+    "changes, pass the old memory's id in supersedes instead of forgetting it. " +
+    "Never store secrets or credentials.",
   inputSchema: z.object({
-    text: z.string().min(3).describe("The fact, as one self-contained sentence."),
+    text: z.string().min(3).describe("The memory, as one self-contained sentence."),
+    kind: memoryKind.optional().describe("Defaults to core."),
+    supersedes: z.array(z.string()).optional().describe("Ids of memories this replaces."),
     tags: z.array(z.string()).optional(),
   }),
   execute: async (
     ctx,
     input,
-  ): Promise<{ id: string; stored: boolean; note: string }> => {
-    const result: { id: string; duplicate: boolean } = await ctx.runMutation(
+  ): Promise<{ id: string; stored: boolean; superseded: number; note: string }> => {
+    const result: { id: string; duplicate: boolean; superseded: number } = await ctx.runMutation(
       internal.memories.add,
       {
         text: input.text,
         tags: input.tags ?? [],
         source: ctx.userId ?? "unknown",
+        kind: input.kind,
+        supersedes: input.supersedes,
       },
     );
     return {
       id: result.id,
       stored: !result.duplicate,
+      superseded: result.superseded,
       note: result.duplicate ? "Already remembered." : "Stored.",
     };
+  },
+});
+
+const read_memory = createTool({
+  description:
+    "Read a whole memory layer: the owner profile, long-term memory, or the " +
+    "notes from one day. Use this to review what happened on a past day, or " +
+    "before reorganising memory.",
+  inputSchema: z.object({
+    kind: memoryKind,
+    day: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe("For kind=daily, the day as YYYY-MM-DD (UTC). Defaults to today."),
+  }),
+  execute: async (ctx, input): Promise<{ count: number; memories: ReturnType<typeof shape>[] }> => {
+    const rows: MemoryRow[] = await ctx.runQuery(internal.memories.read, { kind: input.kind, day: input.day });
+    return { count: rows.length, memories: rows.map(shape) };
   },
 });
 
@@ -91,7 +124,8 @@ const forget = createTool({
   description:
     "Permanently delete memories by id. Ids come from `recall`. This cannot be " +
     "undone, so confirm with the owner first and quote back the exact text of " +
-    "what you are about to delete.",
+    "what you are about to delete. To correct a fact, remember the new " +
+    "version with supersedes instead.",
   inputSchema: z.object({ ids: z.array(z.string()).min(1) }),
   execute: async (
     ctx,
@@ -171,15 +205,7 @@ const find_action = createTool({
   execute: async (
     ctx,
     input,
-  ): Promise<{
-    actions: Array<{
-      slug: string;
-      description?: string;
-      toolkit?: string;
-      inputSchema?: unknown;
-    }>;
-    error?: string;
-  }> => {
+  ): Promise<SearchResult> => {
     return await ctx.runAction(internal.composio.search, {
       query: input.query,
       toolkits: input.toolkits,
@@ -516,6 +542,7 @@ const watch_page = createTool({
 export const ALL_TOOLS = {
   recall,
   remember,
+  read_memory,
   forget,
   read_page,
   list_connectors,

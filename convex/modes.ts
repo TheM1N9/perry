@@ -20,6 +20,7 @@ export const TOOL_NAMES = [
   // memory
   "recall",
   "remember",
+  "read_memory",
   "forget",
   // the world, read only
   "read_page",
@@ -103,6 +104,7 @@ smallest action that completes the request.
     tools: [
       "recall",
       "remember",
+      "read_memory",
       "forget",
       "read_page",
       "list_connectors",

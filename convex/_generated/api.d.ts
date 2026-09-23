@@ -23,6 +23,7 @@ import type * as installation from "../installation.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_models from "../lib/models.js";
 import type * as lib_telegram from "../lib/telegram.js";
+import type * as mcp from "../mcp.js";
 import type * as media from "../media.js";
 import type * as memories from "../memories.js";
 import type * as models from "../models.js";
@@ -58,6 +59,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/models": typeof lib_models;
   "lib/telegram": typeof lib_telegram;
+  mcp: typeof mcp;
   media: typeof media;
   memories: typeof memories;
   models: typeof models;

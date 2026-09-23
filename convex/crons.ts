@@ -17,4 +17,7 @@ crons.interval(
   {},
 );
 
+// OpenClaw's "dreaming": promote what proved durable from the daily notes.
+crons.cron("consolidate memory", "0 3 * * *", internal.memories.consolidate, {});
+
 export default crons;

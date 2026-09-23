@@ -8,6 +8,13 @@ function when(ts: number): string {
   return new Date(ts).toISOString().slice(0, 10);
 }
 
+type Kind = "profile" | "core" | "daily";
+const KINDS: Array<{ kind: Kind; label: string; hint: string }> = [
+  { kind: "profile", label: "Profile", hint: "Standing preferences and relationships. Loaded in every chat." },
+  { kind: "core", label: "Long-term", hint: "Durable facts and decisions. Loaded in every chat." },
+  { kind: "daily", label: "Daily notes", hint: "What happened each day. Today and yesterday load; older days are searched." },
+];
+
 /**
  * What Assistant knows, and the only place to correct it. The agent writes here
  * through the remember tool; this view exists because a memory it got slightly
@@ -16,10 +23,13 @@ function when(ts: number): string {
 export function Memories({ dashboardKey }: { dashboardKey: string }) {
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
+  const [draftKind, setDraftKind] = useState<Kind>("core");
+  const [filter, setFilter] = useState<Kind | undefined>(undefined);
 
   const memories = useQuery(api.dashboard.listMemories, {
     key: dashboardKey,
     query: search,
+    kind: filter,
   });
   const addMemory = useMutation(api.dashboard.addMemory);
   const deleteMemory = useMutation(api.dashboard.deleteMemory);
@@ -28,7 +38,7 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
     const text = draft.trim();
     if (text.length === 0) return;
     setDraft("");
-    await addMemory({ key: dashboardKey, text });
+    await addMemory({ key: dashboardKey, text, kind: draftKind });
   };
 
   return (
@@ -37,8 +47,12 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
         <h3>Teach Assistant something</h3>
         <p className="hint">
           One self-contained sentence that will still make sense in six months.
+          {" "}{KINDS.find((item) => item.kind === draftKind)?.hint}
         </p>
         <div className="composer">
+          <select value={draftKind} style={{ width: "auto" }} aria-label="Memory layer" onChange={(e) => setDraftKind(e.target.value as Kind)}>
+            {KINDS.map((item) => <option key={item.kind} value={item.kind}>{item.label}</option>)}
+          </select>
           <input
             value={draft}
             placeholder="I drink coffee black"
@@ -65,7 +79,15 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
           <h3>Memory</h3>
           <span className="badge">{memories?.length ?? 0} shown</span>
         </div>
-        <p className="hint">Full-text search, newest first when the box is empty.</p>
+        <p className="hint">Keyword search, newest first when the box is empty. The assistant also searches by meaning.</p>
+
+        <div className="row" style={{ marginBottom: 8, flexWrap: "wrap" }}>
+          {[{ kind: undefined, label: "All" }, ...KINDS].map((item) => (
+            <button key={item.label} className={filter === item.kind ? "primary" : "ghost"} onClick={() => setFilter(item.kind)}>
+              {item.label}
+            </button>
+          ))}
+        </div>
 
         <input
           value={search}
@@ -87,7 +109,9 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
               <div style={{ flex: 1 }}>
                 <div>{memory.text}</div>
                 <div className="item-meta">
-                  {when(memory.createdAt)}
+                  <span className="badge">{KINDS.find((item) => item.kind === memory.kind)?.label}</span>
+                  {" "}{memory.day ?? when(memory.createdAt)}
+                  {memory.source === "dreaming" ? " · promoted overnight" : ""}
                   {memory.tags.length > 0 ? ` · ${memory.tags.join(", ")}` : ""}
                 </div>
               </div>

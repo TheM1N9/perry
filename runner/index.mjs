@@ -24,13 +24,14 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
 import { homedir, hostname, platform } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ConvexClient } from "convex/browser";
-import { CodexAppServer } from "./codex.mjs";
+import { ASSISTANT_MCP, CodexAppServer } from "./codex.mjs";
 
 const CONFIG_DIR = join(homedir(), ".perry");
 const CONFIG_FILE = join(CONFIG_DIR, "runner.json");
@@ -182,6 +183,8 @@ async function main() {
     process.exit(1);
   }
 
+  holdLock(token);
+
   const workdir = resolve(flags.dir ?? stored.dir ?? process.cwd());
   if (!existsSync(workdir)) {
     console.error(`\n${red(`No such directory: ${workdir}`)}\n`);
@@ -233,6 +236,9 @@ async function main() {
             const reason = method.includes("commandExecution") ? denied(command) : null;
             const approved = !reason && await approve(rl, command, params.reason ?? null, autoApprove, params.cwd, workdir);
             instance.respond(message.id, { decision: approved ? "accept" : "decline" });
+          } else if (method === "mcpServer/elicitation/request" && message.params?.serverName === ASSISTANT_MCP) {
+            // Our own tools. Consequential actions are gated in chat, as on the gateway path.
+            instance.respond(message.id, { action: "accept", content: {}, _meta: null });
           } else if (method === "item/permissions/requestApproval") {
             instance.respond(message.id, { permissions: {} });
           } else {
@@ -505,6 +511,7 @@ async function main() {
               cwd: workdir,
               mode: job.mode,
               model: job.requestedModel,
+              tools: job.mcpUrl ? { url: job.mcpUrl, token } : undefined,
               attachments: job.attachments,
               onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
             });
@@ -539,6 +546,35 @@ async function main() {
 
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
+}
+
+/**
+ * One process per runner token. Two would both claim that runner's Codex
+ * turns, and Codex lets only one process write to a thread, so every other
+ * turn in a chat would fail with "thread already has an active writer".
+ */
+function holdLock(token) {
+  mkdirSync(CONFIG_DIR, { recursive: true });
+  const lock = join(CONFIG_DIR, `runner-${createHash("sha256").update(token).digest("hex").slice(0, 12)}.lock`);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      writeFileSync(lock, String(process.pid), { flag: "wx" });
+      process.on("exit", () => { try { if (readFileSync(lock, "utf8") === String(process.pid)) unlinkSync(lock); } catch {} });
+      return;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      const pid = Number(readFileSync(lock, "utf8"));
+      let alive = false;
+      try { process.kill(pid, 0); alive = pid > 0; } catch (check) { alive = check.code === "EPERM"; }
+      if (alive) {
+        console.error(`
+${red(`This runner is already running (process ${pid}).`)} Stop it before starting another.
+`);
+        process.exit(1);
+      }
+      unlinkSync(lock);
+    }
+  }
 }
 
 /** The real control: a human, at the machine, reading the command. */

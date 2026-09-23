@@ -2,6 +2,9 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createInterface } from "node:readline";
 
+/** Name of the MCP server that serves the deployment's tools to Codex. */
+export const ASSISTANT_MCP = "assistant";
+
 /** A stdio client for the official Codex app-server protocol. */
 export class CodexAppServer extends EventEmitter {
   constructor() {
@@ -173,15 +176,24 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  async runTurn({ threadId, instructions, history, prompt, cwd, mode, model, attachments = [], onThread }) {
+  async runTurn({ threadId, instructions, history, prompt, cwd, mode, model, tools, attachments = [], onThread }) {
     const fullInstructions = history
       ? `${instructions}\n\nEarlier chat history (context, not a new user request):\n${history}`
       : instructions;
     const policy = "on-request";
     const sandbox = "workspace-write";
+    // The deployment's own tools: memory, connected accounts, task tracking.
+    const config = tools ? {
+      [`mcp_servers.${ASSISTANT_MCP}`]: {
+        url: tools.url,
+        http_headers: { Authorization: `Bearer ${tools.token}` },
+        default_tools_approval_mode: "approve",
+        tool_timeout_sec: 120,
+      },
+    } : undefined;
     const thread = threadId
-      ? await this.request("thread/resume", { threadId, cwd, approvalPolicy: policy, sandbox, developerInstructions: fullInstructions }, 30_000)
-      : await this.request("thread/start", { cwd, approvalPolicy: policy, sandbox, developerInstructions: fullInstructions, serviceName: "perry" }, 30_000);
+      ? await this.request("thread/resume", { threadId, cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions }, 30_000)
+      : await this.request("thread/start", { cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions, serviceName: "perry" }, 30_000);
     const id = thread.thread?.id;
     if (!id) throw new Error("Codex did not return a thread ID.");
     if (!threadId) await onThread(id);
