@@ -58,7 +58,7 @@ function StatusLine({ dashboardKey }: { dashboardKey: string }) {
           : "unpaired"}
       </span>
       {" · "}
-      {status.gateway} gateway
+      {status.engine === "codex" ? "codex · gateway backup" : `${status.gateway} gateway`}
     </div>
   );
 }
@@ -174,17 +174,24 @@ function Shell({
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    if (status && tab === null) setTab(status.claimed ? "chat" : "setup");
+    if (status && tab === null) setTab(window.location.pathname.startsWith("/chat") ? "chat" : status.claimed ? "chat" : "setup");
   }, [status, tab]);
+
+  useEffect(() => {
+    const onBack = () => setTab(window.location.pathname.startsWith("/chat") ? "chat" : "setup");
+    window.addEventListener("popstate", onBack);
+    return () => window.removeEventListener("popstate", onBack);
+  }, []);
 
   const active = tab ?? (status?.claimed ? "chat" : "setup");
   const openChat = (id: Id<"conversations">) => {
     window.localStorage.setItem("perry.activeChat", id);
+    window.history.pushState(null, "", `/chat/${encodeURIComponent(id)}`);
     setTab("chat");
   };
 
   if (active === "chat") {
-    return <Chat dashboardKey={dashboardKey} onNavigate={setTab} onLock={onLock} />;
+    return <Chat dashboardKey={dashboardKey} onNavigate={(next) => { window.history.pushState(null, "", "/"); setTab(next); }} onLock={onLock} />;
   }
 
   return <div className="chat-workspace dashboard-workspace">

@@ -24,15 +24,17 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
 import { homedir, hostname, platform } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ConvexClient } from "convex/browser";
+import { CodexAppServer } from "./codex.mjs";
 
 const CONFIG_DIR = join(homedir(), ".perry");
 const CONFIG_FILE = join(CONFIG_DIR, "runner.json");
+const CODEX_RESULTS = join(CONFIG_DIR, "codex-results");
 
 const COMMAND_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT = 20_000;
@@ -97,6 +99,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--auto") args.auto = true;
+    else if (arg === "--no-auto") args.auto = false;
     else if (arg === "--url") args.url = argv[++i];
     else if (arg === "--token") args.token = argv[++i];
     else if (arg === "--dir") args.dir = argv[++i];
@@ -185,7 +188,7 @@ async function main() {
     process.exit(1);
   }
 
-  const autoApprove = flags.auto || stored.auto === true;
+  const autoApprove = flags.auto ?? stored.auto === true;
   const name = flags.name ?? stored.name ?? hostname();
 
   saveConfig({ ...stored, url, token, dir: workdir, name, auto: autoApprove });
@@ -210,6 +213,55 @@ async function main() {
     new URL("../convex/_generated/api.js", import.meta.url).href
   );
 
+  let codex = null;
+  let lastCodexAttempt = 0;
+  const ensureCodex = async () => {
+    if (codex && !codex.closed) return codex;
+    if (Date.now() - lastCodexAttempt < 30_000) {
+      throw new Error("Codex app-server is unavailable. Retrying shortly.");
+    }
+    lastCodexAttempt = Date.now();
+    const instance = new CodexAppServer();
+    try {
+      await instance.start();
+      instance.on("serverRequest", (message) => {
+        void (async () => {
+          const method = message.method;
+          if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval") {
+            const params = message.params ?? {};
+            const command = params.command ?? (method.includes("fileChange") ? "Codex file change" : "Codex command");
+            const reason = method.includes("commandExecution") ? denied(command) : null;
+            const approved = !reason && await approve(rl, command, params.reason ?? null, autoApprove, params.cwd, workdir);
+            instance.respond(message.id, { decision: approved ? "accept" : "decline" });
+          } else if (method === "item/permissions/requestApproval") {
+            instance.respond(message.id, { permissions: {} });
+          } else {
+            instance.rejectRequest(message.id, `Perry does not support ${method}.`);
+          }
+        })().catch((error) => instance.rejectRequest(message.id, String(error.message ?? error)));
+      });
+      instance.on("closed", () => { if (codex === instance) codex = null; });
+      codex = instance;
+      return instance;
+    } catch (error) {
+      instance.close();
+      throw error;
+    }
+  };
+
+  const refreshCodexAccount = async () => {
+    try {
+      const account = await (await ensureCodex()).account();
+      await client.mutation(api.codex.reportAccount, { token, ...account });
+    } catch (error) {
+      await client.mutation(api.codex.reportAccount, {
+        token,
+        available: false,
+        error: String(error.message ?? error),
+      });
+    }
+  };
+
   const checkIn = async () => {
     try {
       await client.mutation(api.runner.checkIn, {
@@ -225,7 +277,39 @@ async function main() {
   };
 
   await checkIn();
-  const heartbeat = setInterval(checkIn, CHECKIN_MS);
+  await client.mutation(api.codex.recoverAuth, { token });
+  await refreshCodexAccount();
+  mkdirSync(CODEX_RESULTS, { recursive: true });
+  const resultPath = (id) => join(CODEX_RESULTS, `${id}.json`);
+  const savedResult = (id) => {
+    try { return JSON.parse(readFileSync(resultPath(id), "utf8")); }
+    catch { return null; }
+  };
+  const saveResult = (id, result) => {
+    const target = resultPath(id);
+    const temporary = `${target}.tmp`;
+    writeFileSync(temporary, JSON.stringify(result), { encoding: "utf8", mode: 0o600 });
+    renameSync(temporary, target);
+    console.log(dim(`  saved Codex turn ${id}`));
+  };
+  const recoverCodexTurns = async (markIncomplete) => {
+    const running = await client.query(api.codex.runningTurns, { token });
+    for (const job of running) {
+      const result = savedResult(job._id);
+      if (result || markIncomplete) {
+        await client.mutation(api.codex.finishTurn, {
+          token, id: job._id,
+          ...(result ?? { error: "Runner stopped during this Codex turn. Gateway fallback will handle it." }),
+        });
+      }
+    }
+  };
+  await recoverCodexTurns(true);
+  const heartbeat = setInterval(() => {
+    void checkIn();
+    void refreshCodexAccount();
+    void recoverCodexTurns(false).catch((error) => console.error(red(`  Codex delivery retry failed: ${error.message ?? error}`)));
+  }, CHECKIN_MS);
   console.log(green("  connected.\n"));
 
   const busy = new Set();
@@ -363,8 +447,86 @@ async function main() {
     for (const command of commands ?? []) void handle(command);
   });
 
+  const handleCodexAuth = async (request) => {
+    if (!request) return;
+    const claimed = await client.mutation(api.codex.claimAuth, { token, id: request.id });
+    if (!claimed) return;
+    const update = (payload) => client.mutation(api.codex.updateAuth, {
+      token, id: request.id, ...payload,
+    });
+    try {
+      const app = await ensureCodex();
+      if (request.kind === "logout") {
+        await app.request("account/logout", {});
+      } else {
+        const account = await app.account();
+        if (account.authMode !== "chatgpt") {
+          const login = await app.request("account/login/start", { type: "chatgptDeviceCode" });
+          if (login.type !== "chatgptDeviceCode" || !login.loginId || !login.verificationUrl || !login.userCode) {
+            throw new Error("Codex did not return a device code.");
+          }
+          await update({ status: "running", verificationUrl: login.verificationUrl, userCode: login.userCode });
+          await app.waitForLogin(login.loginId);
+        }
+      }
+      await refreshCodexAccount();
+      await update({ status: "done" });
+    } catch (error) {
+      await update({ status: "error", error: String(error.message ?? error) });
+      await refreshCodexAccount();
+    }
+  };
+
+  client.onUpdate(api.codex.queuedAuth, { token }, (request) => {
+    if (request) void handleCodexAuth(request);
+  });
+
+  let codexTurnBusy = false;
+  let codexQueue = [];
+  const pumpCodex = async () => {
+    if (codexTurnBusy) return;
+    codexTurnBusy = true;
+    try {
+      while (codexQueue.length > 0) {
+        const next = codexQueue.shift();
+        const job = await client.mutation(api.codex.claimTurn, { token, id: next._id });
+        if (!job) continue;
+        let result = savedResult(job._id);
+        if (!result) {
+          try {
+            const app = await ensureCodex();
+            const completed = await app.runTurn({
+              threadId: job.codexThreadId,
+              instructions: job.instructions,
+              history: job.history,
+              prompt: job.prompt,
+              cwd: workdir,
+              mode: job.mode,
+              onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
+            });
+            result = { response: completed.response, model: "codex subscription" };
+          } catch (error) {
+            result = { error: String(error.message ?? error), model: "codex subscription" };
+          }
+          saveResult(job._id, result);
+        }
+        await client.mutation(api.codex.finishTurn, { token, id: job._id, ...result });
+        codexQueue = await client.query(api.codex.queuedTurns, { token });
+      }
+    } catch (error) {
+      console.error(red(`  Codex turn failed: ${error.message ?? error}`));
+    } finally {
+      codexTurnBusy = false;
+    }
+  };
+  client.onUpdate(api.codex.queuedTurns, { token }, (jobs) => {
+    codexQueue = jobs ?? [];
+    void pumpCodex();
+  });
+
   const stop = async () => {
     clearInterval(heartbeat);
+    codex?.close();
     rl?.close();
     await client.close();
     console.log(dim("\n  runner stopped. Perry has no hands here now.\n"));

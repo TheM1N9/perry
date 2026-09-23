@@ -1,0 +1,13 @@
+﻿{
+  "name": "codex-subscription-chat-e2e",
+  "verifiedAt": "2026-09-23T10:20:00+05:30",
+  "checks": [
+    "Settings shows ChatGPT Plus connected on the local runner",
+    "Fresh chat reply returned SUBSCRIPTION_LIVE",
+    "Activity recorded the run as codex subscription",
+    "Chat URL included the conversation id: /chat/j57fatd20vvt5k59bk41vxmzw58eztfp",
+    "Gateway-only failure remains visible as a legacy error; current Codex turns do not use the invalid gateway key"
+  ],
+  "screenshot": "C:/Users/Pranav/.t3/userdata/browser-artifacts/browser-screenshot-localhost-mudmkxtm-5439d288.png",
+  "recording": "C:/Users/Pranav/.t3/userdata/attachments/6e22304b-9a90-4d5f-8da8-d82cb2cf445f-f26ff3c7-0da6-4c32-a57d-51f51ae5a04b-mp4.mp4"
+}

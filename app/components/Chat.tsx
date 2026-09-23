@@ -74,13 +74,22 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const searchChats = useAction(api.dashboard.searchChats);
 
   useEffect(() => {
-    setSelectedId(window.localStorage.getItem("perry.activeChat") as ChatId | null);
+    const match = window.location.pathname.match(/^\/chat\/([^/]+)/);
+    const fromUrl = match ? decodeURIComponent(match[1]) as ChatId : null;
+    setSelectedId(fromUrl ?? window.localStorage.getItem("perry.activeChat") as ChatId | null);
     setRestored(true);
   }, []);
   useEffect(() => {
     if (!restored) return;
-    if (selectedId) window.localStorage.setItem("perry.activeChat", selectedId);
-    else window.localStorage.removeItem("perry.activeChat");
+    if (selectedId) {
+      window.localStorage.setItem("perry.activeChat", selectedId);
+      if (window.location.pathname !== `/chat/${encodeURIComponent(selectedId)}`) {
+        window.history.replaceState(null, "", `/chat/${encodeURIComponent(selectedId)}`);
+      }
+    } else {
+      window.localStorage.removeItem("perry.activeChat");
+      if (window.location.pathname.startsWith("/chat")) window.history.replaceState(null, "", "/");
+    }
   }, [restored, selectedId]);
   useEffect(() => { if (selectedId) draftingNew.current = false; }, [selectedId]);
   useEffect(() => {

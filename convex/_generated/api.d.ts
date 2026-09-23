@@ -10,6 +10,7 @@
 
 import type * as agents from "../agents.js";
 import type * as brain from "../brain.js";
+import type * as codex from "../codex.js";
 import type * as composio from "../composio.js";
 import type * as compute from "../compute.js";
 import type * as config from "../config.js";
@@ -42,6 +43,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   agents: typeof agents;
   brain: typeof brain;
+  codex: typeof codex;
   composio: typeof composio;
   compute: typeof compute;
   config: typeof config;

@@ -499,6 +499,7 @@ export const getStatus = query({
     pairingCode?: string;
     pairingExpiresAt?: number;
     gateway: "vercel" | "convex";
+    engine: "codex" | "gateway";
     telegramConfigured: boolean;
     modeNames: string[];
   }> => {
@@ -527,6 +528,7 @@ export const getStatus = query({
       pairingCode: install.pairingCode,
       pairingExpiresAt: install.pairingExpiresAt,
       gateway: activeGateway(gatewayKey),
+      engine: await ctx.runQuery(internal.codex.activeEngine, {}),
       telegramConfigured: Boolean(telegramToken),
       modeNames: [...MODE_NAMES],
     };

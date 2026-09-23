@@ -3,6 +3,7 @@
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "@/convex/_generated/api";
+import { CodexAccount } from "./CodexAccount";
 
 type ModeName = "perry" | "agentP";
 
@@ -101,6 +102,7 @@ export function Settings({ dashboardKey }: { dashboardKey: string }) {
 
   return (
     <>
+      <CodexAccount dashboardKey={dashboardKey} />
       <p className="hint">
         Changes apply on the next turn, on every channel. Clearing a field
         restores the value shipped in convex/modes.ts.

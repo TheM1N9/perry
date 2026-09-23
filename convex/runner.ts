@@ -26,7 +26,7 @@ function sameToken(a: string, b: string): boolean {
   return diff === 0;
 }
 
-async function authenticate(
+export async function authenticate(
   ctx: { db: { query: (t: "runners") => any } },
   token: string,
 ): Promise<Doc<"runners">> {

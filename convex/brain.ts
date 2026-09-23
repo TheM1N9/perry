@@ -1,4 +1,4 @@
-import { createThread } from "@convex-dev/agent";
+import { createThread, listMessages } from "@convex-dev/agent";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -187,6 +187,7 @@ export const handleTurn = internalAction({
       args.title,
     );
 
+    let delegated = false;
     try {
 
     if (channel === "telegram" && args.text.startsWith("/")) {
@@ -220,6 +221,41 @@ export const handleTurn = internalAction({
       const gatewayKey: string | null = await ctx.runQuery(internal.secrets.get, {
         name: "AI_GATEWAY_API_KEY",
       });
+      const engine: "codex" | "gateway" = await ctx.runQuery(internal.codex.activeEngine, {});
+      if (engine === "codex") {
+        let history: string | undefined;
+        if (!conversation.codexThreadId) {
+          const page = await listMessages(ctx, components.agent, {
+            threadId: conversation.threadId,
+            excludeToolMessages: true,
+            paginationOpts: { cursor: null, numItems: 60 },
+          });
+          const lines = page.page.reverse()
+            .filter((item) => item.message?.role === "user" || item.message?.role === "assistant")
+            .map((item) => `${item.message?.role}: ${item.text ?? ""}`);
+          history = lines.join("\n\n").slice(-24_000) || undefined;
+        }
+        const memories = await ctx.runQuery(internal.memories.search, { query: "", limit: 12 });
+        const instructions = [
+          mode.instructions,
+          "This is a Perry chat. Keep the answer in chat style. Use the local Codex tools only when needed; the runner controls filesystem access.",
+          memories.length ? `Known facts about the owner:\n${memories.map((m) => `- ${m.text}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n\n");
+        try {
+          await ctx.runMutation(internal.codex.enqueueTurn, {
+            conversationId: conversation._id,
+            runId,
+            mode: modeName,
+            prompt: args.text,
+            history,
+            instructions,
+          });
+          delegated = true;
+          return null;
+        } catch (error) {
+          console.warn(`Codex unavailable, using gateway: ${String(error)}`);
+        }
+      }
       const result = await agentFor(mode, gatewayKey).generateText(
         ctx,
         {
@@ -288,9 +324,36 @@ export const handleTurn = internalAction({
 
     return null;
     } finally {
-      if (channel === "web") {
+      if (channel === "web" && !delegated) {
         await ctx.runMutation(internal.conversations.finishWebTurn, { id: conversation._id });
       }
+    }
+  },
+});
+
+/** A failed subscription turn continues through the configured gateway model. */
+export const gatewayFallback = internalAction({
+  args: { id: v.id("codexTurns") },
+  handler: async (ctx, args): Promise<{ status: "ok" | "error"; model: string; error?: string; toolCalls?: string[] }> => {
+    const data = await ctx.runQuery(internal.codex.getTurn, args);
+    if (!data?.conversation) return { status: "error", model: "codex subscription", error: "Chat was deleted." };
+    const { job, conversation } = data;
+    const mode: Mode = await ctx.runQuery(internal.config.resolveMode, { mode: job.mode });
+    try {
+      const gatewayKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "AI_GATEWAY_API_KEY" });
+      const result = await agentFor(mode, gatewayKey).generateText(ctx, {
+        threadId: conversation.threadId,
+        userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
+      }, { prompt: job.prompt });
+      const toolCalls = (result.steps ?? []).flatMap((step) => (step.toolCalls ?? []).map((call) => call?.toolName).filter((name): name is string => Boolean(name)));
+      await deliver(ctx, conversation.channel, conversation.externalId,
+        result.text?.trim() || (toolCalls.length ? "Done." : "I came back with nothing. Try asking again."));
+      return { status: "ok", model: mode.model, toolCalls };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await deliver(ctx, conversation.channel, conversation.externalId, `Codex and gateway failed: ${message.slice(0, 300)}`)
+        .catch((cause) => console.error(`Could not deliver fallback failure: ${String(cause)}`));
+      return { status: "error", model: mode.model, error: `Codex: ${job.error ?? "failed"}; gateway: ${message}`.slice(0, 1000) };
     }
   },
 });

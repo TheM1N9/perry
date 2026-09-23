@@ -120,7 +120,7 @@ const runnerArgs = [
   token,
 ];
 if (dir) runnerArgs.push("--dir", dir);
-if (auto) runnerArgs.push("--auto");
+runnerArgs.push(auto ? "--auto" : "--no-auto");
 
 const runner = spawn(process.execPath, runnerArgs, { stdio: "inherit" });
 runner.on("close", (code) => process.exit(code ?? 0));

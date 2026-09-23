@@ -30,6 +30,8 @@ export default defineSchema({
     sandboxId: v.optional(v.string()),
     /** Where run_command goes: a throwaway cloud box, or the owner's machine. */
     computeTarget: v.optional(v.union(v.literal("sandbox"), v.literal("local"))),
+    /** Codex subscription is the default engine for chats. */
+    chatEngine: v.optional(v.union(v.literal("codex"), v.literal("gateway"))),
     createdAt: v.number(),
   }),
 
@@ -154,6 +156,18 @@ export default defineSchema({
     autoApprove: v.boolean(),
     lastSeenAt: v.optional(v.number()),
     revoked: v.boolean(),
+    /** Codex credentials stay in the CLI's local store on this runner. */
+    codexAvailable: v.optional(v.boolean()),
+    codexAuthMode: v.optional(v.string()),
+    codexPlanType: v.optional(v.string()),
+    codexError: v.optional(v.string()),
+    codexUpdatedAt: v.optional(v.number()),
+    codexRequestId: v.optional(v.number()),
+    codexRequestKind: v.optional(v.union(v.literal("login"), v.literal("logout"))),
+    codexRequestStatus: v.optional(v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("error"))),
+    codexVerificationUrl: v.optional(v.string()),
+    codexUserCode: v.optional(v.string()),
+    codexRequestError: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_token", ["token"]),
 
@@ -219,6 +233,8 @@ export default defineSchema({
     channel: vChannel,
     externalId: v.string(), // telegram chat id, or a unique web session id
     threadId: v.string(),
+    codexThreadId: v.optional(v.string()),
+    codexRunnerId: v.optional(v.id("runners")),
     mode: vMode,
     title: v.optional(v.string()),
     parentConversationId: v.optional(v.id("conversations")),
@@ -291,4 +307,25 @@ export default defineSchema({
   })
     .index("by_conversation", ["conversationId"])
     .index("by_started", ["startedAt"]),
+
+  /** Subscription turns are queued for the owner's outbound local runner. */
+  codexTurns: defineTable({
+    runnerId: v.id("runners"),
+    conversationId: v.id("conversations"),
+    runId: v.id("runs"),
+    mode: vMode,
+    prompt: v.string(),
+    history: v.optional(v.string()),
+    instructions: v.string(),
+    status: v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("error")),
+    response: v.optional(v.string()),
+    error: v.optional(v.string()),
+    model: v.optional(v.string()),
+    createdAt: v.number(),
+    startedAt: v.optional(v.number()),
+    finishedAt: v.optional(v.number()),
+    finalizedAt: v.optional(v.number()),
+  })
+    .index("by_runner_status", ["runnerId", "status"])
+    .index("by_conversation_status", ["conversationId", "status"]),
 });
