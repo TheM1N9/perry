@@ -24,7 +24,6 @@ import type * as lib_telegram from "../lib/telegram.js";
 import type * as mcp from "../mcp.js";
 import type * as media from "../media.js";
 import type * as memories from "../memories.js";
-import type * as migrations from "../migrations.js";
 import type * as models from "../models.js";
 import type * as notify from "../notify.js";
 import type * as runner from "../runner.js";
@@ -58,7 +57,6 @@ declare const fullApi: ApiFromModules<{
   mcp: typeof mcp;
   media: typeof media;
   memories: typeof memories;
-  migrations: typeof migrations;
   models: typeof models;
   notify: typeof notify;
   runner: typeof runner;

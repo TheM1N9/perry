@@ -2,8 +2,6 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export const vChannel = v.union(v.literal("telegram"), v.literal("web"));
-/** Retired fields, kept only until migrations.retireModesAndGateway clears them. */
-const retired = v.optional(v.string());
 export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.literal("daily"));
 
 /**
@@ -32,7 +30,6 @@ export default defineSchema({
     sandboxId: v.optional(v.string()),
     /** Where run_command goes: a throwaway cloud box, or the owner's machine. */
     computeTarget: v.optional(v.union(v.literal("sandbox"), v.literal("local"))),
-    chatEngine: retired,
     createdAt: v.number(),
   }),
 
@@ -238,8 +235,6 @@ export default defineSchema({
     threadId: v.string(),
     codexThreadId: v.optional(v.string()),
     codexRunnerId: v.optional(v.id("runners")),
-    mode: retired,
-    engine: retired,
     /** Codex model picked for this chat. Unset means the Codex default. */
     model: v.optional(v.string()),
     title: v.optional(v.string()),
@@ -302,7 +297,6 @@ export default defineSchema({
    */
   runs: defineTable({
     conversationId: v.id("conversations"),
-    mode: retired,
     prompt: v.string(),
     status: v.union(
       v.literal("running"),
@@ -332,7 +326,6 @@ export default defineSchema({
     runnerId: v.id("runners"),
     conversationId: v.id("conversations"),
     runId: v.id("runs"),
-    mode: retired,
     prompt: v.string(),
     history: v.optional(v.string()),
     instructions: v.string(),
