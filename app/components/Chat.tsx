@@ -75,6 +75,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const rewindChat = useAction(api.dashboard.rewindChat);
   const sendChat = useMutation(api.dashboard.sendChat);
   const stopChat = useMutation(api.dashboard.stopChat);
+  const resetChat = useAction(api.dashboard.resetChat);
   const generateUploadUrl = useMutation(api.dashboard.generateUploadUrl);
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
@@ -243,6 +244,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     { command: "/model", hint: "List the Codex models, or /model <name> to switch this chat" },
     { command: "/set model", hint: "Switch this chat's model: /set model <name>" },
     { command: "/stop", hint: "Stop the reply being written" },
+    { command: "/reset", hint: "Save this chat to memory, then start it afresh" },
   ];
   const typedCommand = parseModelCommand(draft);
   const suggestions: Array<{ key: string; label: string; hint: string; apply: () => void }> = !draft.startsWith("/")
@@ -258,7 +260,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
           key: item.command,
           label: item.command,
           hint: item.hint,
-          apply: () => { setDraft(item.command === "/stop" ? "/stop" : `${item.command} `); composer.current?.focus(); },
+          apply: () => { setDraft(item.command === "/stop" || item.command === "/reset" ? item.command : `${item.command} `); composer.current?.focus(); },
         }));
 
   /** Commands never become messages: they change this chat, then say what they did. */
@@ -277,6 +279,13 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
       setDraft("");
       if (selectedId && waiting) await stopChat({ key: dashboardKey, id: selectedId });
       setNotice(selectedId && waiting ? "Stopping." : "Nothing is running.");
+      return true;
+    }
+    if (trimmed.toLowerCase() === "/reset") {
+      setDraft("");
+      if (!selectedId) { setNotice("Nothing to reset yet."); return true; }
+      try { setNotice(await resetChat({ key: dashboardKey, id: selectedId })); }
+      catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
       return true;
     }
     return false;

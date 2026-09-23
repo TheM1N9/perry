@@ -116,7 +116,8 @@ export const handle = httpAction(async (ctx, request) => {
         return reply(message.id, { isError: true, content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }] });
       }
       try {
-        const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId } };
+        // fromJob marks what a scheduled job's turn saves to memory as the job's.
+        const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob } };
         const output = await bound.execute(parsed.data, { toolCallId: String(message.id), messages: [] });
         return reply(message.id, { content: [{ type: "text", text: JSON.stringify(withHint(output) ?? null) }] });
       } catch (error) {

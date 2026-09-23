@@ -101,14 +101,27 @@ spending) are to be confirmed in chat first.
 Modelled on OpenClaw's workspace memory, in Convex:
 
 - **Profile** (like `USER.md`): standing preferences and relationships, as
-  directives. Loaded into every turn.
-- **Long-term** (like `MEMORY.md`): durable facts and decisions. Loaded into
-  every turn, within a budget.
-- **Daily notes** (like `memory/YYYY-MM-DD.md`): today's and yesterday's load;
-  older days are found by search, with a 30-day half-life on their ranking.
+  directives. In every turn's instructions.
+- **Long-term** (like `MEMORY.md`): durable facts and decisions. Recalled into
+  every turn.
+- **Daily notes** (like `memory/YYYY-MM-DD.md`): today's and yesterday's are
+  recalled; older days are found by search, with a 30-day half-life on their
+  ranking.
+
+Recalled memory is data, not instructions (as in Vercel's
+[eve](https://github.com/vercel/eve)): long-term memory, recent notes and older
+memories that match the message go to Codex ahead of the message, marked as
+possibly incomplete or outdated, and are never saved into the chat. A chat is
+sent them again only when they change. Profile and long-term memory each have a
+budget, and a save that would exceed it is refused with a request to supersede
+or forget something first, so nothing silently drops out of context. Each
+memory records whether it came from you, from tool output such as a web page,
+or from a scheduled job.
 
 A fact that changes is superseded, not deleted. Chat history is separate and
-searchable by the agent with `search_chats`.
+searchable by the agent with `search_chats`. `/reset` first has the assistant
+write what is worth keeping from the chat into today's notes, then starts the
+chat afresh; if the runner is offline it resets anyway and says so.
 
 Memory keeps itself current, like OpenClaw's memory flush and dreaming: the
 built-in **daily summary** job (22:30) reads the day's chats and writes what is
@@ -151,8 +164,8 @@ speech-to-text tool on the machine.
 
 ## Channels
 
-Telegram and the web dashboard. Commands on both: `/model`, `/stop`; on
-Telegram also `/status`, `/reset`, `/help`.
+Telegram and the web dashboard. Commands on both: `/model`, `/stop`, `/reset`;
+on Telegram also `/status`, `/help`.
 
 ## Terminal chat
 

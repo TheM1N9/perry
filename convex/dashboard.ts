@@ -265,7 +265,8 @@ export const getChat = query({
       model: conversation.model,
       title: conversation.title ?? "Untitled chat",
       isRunning,
-      streaming: running?.partial,
+      // The flush before /reset works quietly.
+      streaming: running?.flush ? undefined : running?.partial,
       fallback: running?.fallback,
       lastError: latestRun?.status === "error" ? latestRun.error : undefined,
     };
@@ -491,6 +492,16 @@ export const stopChat = mutation({
   },
 });
 
+/** /reset: save what is worth keeping from this chat to memory, then start it afresh. Says what happened. */
+export const resetChat = action({
+  args: { key: vKey, id: v.id("conversations") },
+  returns: v.string(),
+  handler: async (ctx, args): Promise<string> => {
+    assertDashboardKey(args.key);
+    return await ctx.runAction(internal.brain.resetChat, { id: args.id });
+  },
+});
+
 /** Pick this chat's Codex model. Unset means the Codex default. */
 export const setChatModel = mutation({
   args: { key: vKey, id: v.id("conversations"), model: v.optional(v.string()) },
@@ -512,6 +523,7 @@ export type MemoryView = {
   source: string;
   kind: "profile" | "core" | "daily";
   day?: string;
+  origin?: "owner" | "tool" | "job";
   createdAt: number;
 };
 
@@ -529,19 +541,21 @@ export const listMemories = query({
 
 export const addMemory = mutation({
   args: { key: vKey, text: v.string(), tags: v.optional(v.array(v.string())), kind: v.optional(vMemoryKind) },
-  returns: v.null(),
-  handler: async (ctx, args): Promise<null> => {
+  /** Why the memory was refused, such as a full layer; null once saved. */
+  returns: v.union(v.null(), v.string()),
+  handler: async (ctx, args): Promise<string | null> => {
     assertDashboardKey(args.key);
     const text = args.text.trim();
     if (text.length === 0) return null;
 
-    await ctx.runMutation(internal.memories.add, {
+    const result: { error?: string } = await ctx.runMutation(internal.memories.add, {
       text,
       tags: args.tags ?? [],
       source: "dashboard",
       kind: args.kind,
+      origin: "owner",
     });
-    return null;
+    return result.error ?? null;
   },
 });
 

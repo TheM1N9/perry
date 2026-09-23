@@ -59,7 +59,7 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 
 type Config = { url?: string; token?: string; dir?: string; name?: string; auto?: boolean };
 type Flags = Config & { auto?: boolean };
-type CodexResult = { response?: string; error?: string; stopped?: boolean; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
+type CodexResult = { response?: string; error?: string; stopped?: boolean; compacted?: boolean; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
 
 /**
  * Commands that are never a good idea from an agent, regardless of approval.
@@ -699,6 +699,7 @@ async function main() {
               threadId: job.codexThreadId,
               instructions: job.instructions,
               history: job.history,
+              recalled: job.recalled,
               prompt: job.prompt,
               cwd: workdir,
               model: job.requestedModel,
@@ -725,6 +726,7 @@ async function main() {
             result = {
               response: completed.response,
               ...(completed.interrupted ? { stopped: true } : {}),
+              ...(completed.compacted ? { compacted: true } : {}),
               model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription",
               ...(media.length ? { media } : {}),
             };
@@ -735,6 +737,7 @@ async function main() {
             result = {
               error: message(error),
               ...(partial?.text ? { response: partial.text } : {}),
+              ...(partial?.compacted ? { compacted: true } : {}),
               model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription",
               ...(media.length ? { media } : {}),
             };

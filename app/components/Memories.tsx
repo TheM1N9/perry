@@ -14,6 +14,7 @@ const KINDS: Array<{ kind: Kind; label: string; hint: string }> = [
   { kind: "core", label: "Long-term", hint: "Durable facts and decisions. Loaded in every chat." },
   { kind: "daily", label: "Daily notes", hint: "What happened each day. Today and yesterday load; older days are searched." },
 ];
+const ORIGINS = { owner: "from you", tool: "from a tool", job: "from a job" } as const;
 
 /**
  * What Assistant knows, and the only place to correct it. The agent writes here
@@ -25,6 +26,7 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
   const [draft, setDraft] = useState("");
   const [draftKind, setDraftKind] = useState<Kind>("core");
   const [filter, setFilter] = useState<Kind | undefined>(undefined);
+  const [refused, setRefused] = useState("");
 
   const memories = useQuery(api.dashboard.listMemories, {
     key: dashboardKey,
@@ -38,7 +40,10 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
     const text = draft.trim();
     if (text.length === 0) return;
     setDraft("");
-    await addMemory({ key: dashboardKey, text, kind: draftKind });
+    // A full layer refuses the memory; it stays in the box to be shortened or saved later.
+    const reason = await addMemory({ key: dashboardKey, text, kind: draftKind });
+    setRefused(reason ?? "");
+    if (reason) setDraft(text);
   };
 
   return (
@@ -72,6 +77,7 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
             Add
           </button>
         </div>
+        {refused && <p className="hint">{refused}</p>}
       </div>
 
       <div className="panel">
@@ -111,6 +117,7 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
                 <div className="item-meta">
                   <span className="badge">{KINDS.find((item) => item.kind === memory.kind)?.label}</span>
                   {" "}{memory.day ?? when(memory.createdAt)}
+                  {memory.origin ? ` · ${ORIGINS[memory.origin]}` : ""}
                   {memory.source === "dreaming" ? " · promoted overnight" : ""}
                   {memory.tags.length > 0 ? ` · ${memory.tags.join(", ")}` : ""}
                 </div>

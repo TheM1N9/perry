@@ -42,7 +42,8 @@ export type TokenUsage = {
 type TokenUsageEvent = { threadId: string; turnId: string; tokenUsage: { total: TokenUsage; last: TokenUsage } };
 
 export type GeneratedImage = { id: string; path?: string; base64?: string };
-export type TurnOutput = { text: string; images: GeneratedImage[]; interrupted?: boolean };
+/** `compacted`: Codex compacted the thread's context during the turn (a contextCompaction item). */
+export type TurnOutput = { text: string; images: GeneratedImage[]; interrupted?: boolean; compacted?: boolean };
 
 /** A turn that failed, with whatever it had produced before it did. */
 export class TurnFailed extends Error {
@@ -270,7 +271,8 @@ export class CodexAppServer extends EventEmitter {
             (item?.type === "Extension" && item.kind === "image_gen.generation" && item.status === "completed" && typeof item.result === "string"),
           )
           .map((item) => ({ id: item.id, path: item.savedPath as string | undefined, base64: item.savedPath ? undefined : item.result as string }));
-        return { text: (final?.text as string | undefined)?.trim() ?? "", images };
+        const compacted = items.some((item) => item?.type === "contextCompaction");
+        return { text: (final?.text as string | undefined)?.trim() ?? "", images, ...(compacted ? { compacted } : {}) };
       };
       const fail = (message: string, turnItems?: TurnItem[]) => {
         stop();
@@ -329,10 +331,12 @@ export class CodexAppServer extends EventEmitter {
     return this.request("turn/interrupt", { threadId, turnId });
   }
 
-  async runTurn({ threadId, instructions, history, prompt, cwd, model, tools, attachments = [], onThread, onText, onStarted, onItem, onUsage }: {
+  async runTurn({ threadId, instructions, history, recalled, prompt, cwd, model, tools, attachments = [], onThread, onText, onStarted, onItem, onUsage }: {
     threadId?: string;
     instructions: string;
     history?: string;
+    /** Memory recalled for this turn: data for Codex, sent ahead of the prompt rather than as instructions. */
+    recalled?: string;
     prompt: string;
     cwd: string;
     model?: string;
@@ -347,7 +351,7 @@ export class CodexAppServer extends EventEmitter {
     onItem?: (phase: "started" | "completed", item: TurnItem, atMs: number) => void;
     /** One model response's tokens, once per response. */
     onUsage?: (usage: TokenUsage) => void;
-  }): Promise<{ threadId: string; response: string; images: GeneratedImage[]; interrupted?: boolean }> {
+  }): Promise<{ threadId: string; response: string; images: GeneratedImage[]; interrupted?: boolean; compacted?: boolean }> {
     const broken = await this.reloadSkills(cwd).catch(() => []);
     const home = [
       `Your own folder for files you make is ${PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`,
@@ -377,8 +381,9 @@ export class CodexAppServer extends EventEmitter {
     const id = thread.thread?.id;
     if (!id) throw new Error("Codex did not return a thread ID.");
     if (!threadId) await onThread(id);
-    const text = { type: "text", text: prompt };
-    const input: object[] = [text];
+    const text = { type: "text", text: prompt, text_elements: [] };
+    // Recalled memory goes first, as its own part of the owner's message.
+    const input: object[] = recalled ? [{ type: "text", text: recalled, text_elements: [] }, text] : [text];
     for (const attachment of attachments) {
       // Local files are read straight from where they are on this machine.
       const path = attachment.localPath ?? null;
@@ -430,9 +435,9 @@ export class CodexAppServer extends EventEmitter {
     for (const replay of early.splice(0)) replay();
     onStarted?.({ threadId: id, turnId: started.turn.id });
     try {
-      const { text, images, interrupted } = await this.waitForTurn(started.turn.id);
+      const { text, images, interrupted, compacted } = await this.waitForTurn(started.turn.id);
       // A stopped turn may not have finished its message; the streamed text is the best record of it.
-      return { threadId: id, response: text || (interrupted ? latest : ""), images, interrupted };
+      return { threadId: id, response: text || (interrupted ? latest : ""), images, interrupted, compacted };
     } catch (error) {
       if (error instanceof TurnFailed && !error.partial.text) error.partial.text = latest;
       throw error;
