@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-24T17:52:39.555Z",
+  "ranAt": "2026-09-24T18:52:03.677Z",
   "checks": {
     "noChatNavItem": true,
     "nothingCurrentOnChat": true,
@@ -23,7 +23,7 @@
         "Tasks"
       ],
       "navToChat": 0,
-      "rows": 25,
+      "rows": 27,
       "currentNav": []
     },
     "sameSidebar": {
