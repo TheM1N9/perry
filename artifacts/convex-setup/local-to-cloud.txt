@@ -1,0 +1,33 @@
+
+Perry setup
+Your deployment, your bot, your keys, your data.
+Perry can read and write your memory, and in Agent P mode it can act
+on whatever you connect. Only you will be able to talk to it.
+
+[1/5] Convex deployment
+  anonymous:anonymous-perry runs on this machine, where Telegram cannot reach it; making one in the cloud instead.
+  Perry keeps your chats and memory in your own free Convex project.
+  Log in to Convex in the browser window that opens (GitHub or Google works):
+
+Visit https://auth.convex.dev/activate?user_code=WXYZ-1234 to finish logging in.
+You should see the following code which expires in 15 minutes: WXYZ-1234
+
+  Which Convex team should Perry's project be in?
+    1. first Team
+    2. second Team
+  Team [1]:   Creating the project "perry" in second Team…
+  created dev:happy-otter-123
+  webhook host: https://happy-otter-123.convex.site
+
+[2/5] Telegram bot
+  Open Telegram, message @BotFather, send /newbot, answer two
+  questions. It gives you a token like 8123456789:AAH...
+
+  Paste the bot token:   That does not look like a bot token.
+
+--- calls ---
+{"args":["login","status"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
+{"args":["login","--device-name","Perry on DESKTOP-27SQLCP","--no-open"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
+{"args":["login","status"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
+{"args":["login","status"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
+{"args":["dev","--once","--configure","new","--team","second","--project","perry","--dev-deployment","cloud"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
