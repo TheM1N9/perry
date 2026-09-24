@@ -1,12 +1,12 @@
 {
-  "ranAt": "2026-09-24T17:06:00.459Z",
+  "ranAt": "2026-09-24T17:52:52.786Z",
   "checks": {
     "profileButtonOnChat": true,
-    "sidebarIsWorkOnly": true,
+    "sidebarIsTasksOnly": true,
     "profileOpensFromButton": true,
     "profileLinksEveryMovedPage": true,
     "everyMovedPageOpensWithProfileCrumb": true,
-    "workIsTopLevel": true,
+    "tasksIsTopLevel": true,
     "directLinkStillWorks": true,
     "phoneRowsStayInline": true,
     "phoneDrawerHasProfile": true,
@@ -14,7 +14,7 @@
   },
   "notes": {
     "mainNav": [
-      "Work"
+      "Tasks"
     ],
     "profileLinks": [
       "/memory",
