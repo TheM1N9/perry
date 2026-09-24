@@ -3,8 +3,10 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh
 #
-# Installs what Perry needs that is missing (Node.js, pnpm, Bun and the Codex
-# CLI; none of it needs root), gets Perry into ~/perry, installs its packages,
+# Uses the Node.js, pnpm, Bun and Codex CLI you already have, wherever your
+# shell or a version manager keeps them, and installs only what is missing,
+# none of it needing root. A Node older than Perry needs is left alone: Perry
+# gets its own copy in ~/.perry/node. It gets Perry into ~/perry, installs its packages,
 # and runs `perry setup`, which sets up your own Convex deployment and Telegram
 # bot, connects this computer, starts Perry in the background and opens the
 # dashboard. Safe to run again: it updates what is there.
@@ -24,11 +26,34 @@ LOCAL_NPM="$PERRY_HOME/npm"
 
 step() { printf '\n\033[36m%s\033[0m\n' "$*"; }
 ok() { printf '  \033[32m%s\033[0m\n' "$*"; }
+found() { printf '  \033[32m%s\033[0m \033[2m(already installed)\033[0m\n' "$*"; }
+added() { printf '  \033[32m%s\033[0m \033[2m(installed for Perry)\033[0m\n' "$*"; }
+note() { printf '  \033[2m%s\033[0m\n' "$*"; }
 fail() { printf '\n  \033[31m%s\033[0m\n  \033[2mFix that, then run the installer again; it picks up where it stopped.\033[0m\n\n' "$*"; exit 1; }
 has() { command -v "$1" >/dev/null 2>&1; }
+# After everything already here, so a tool you have always wins over one this script adds.
+add_path() { case ":$PATH:" in *":$1:"*) ;; *) PATH="$PATH:$1" ;; esac; }
 
-node_ok() {
-  has node && node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>20||(a===20&&b>=9)?0:1)' 2>/dev/null
+NODE_OK_JS='const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>20||(a===20&&b>=9)?0:1)'
+node_ok() { has node && node -e "$NODE_OK_JS" 2>/dev/null; }
+
+# Tools you already have, where a version manager or your shell's startup files keep them rather than
+# the PATH this script was started with: Homebrew, Bun, pnpm, Volta, asdf, mise, fnm, nvm, and npm's
+# own global folder. Looked for before anything is installed, so nothing you have is installed twice.
+find_existing() {
+  for d in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/.bun/bin" "$HOME/.volta/bin" \
+    "$HOME/.asdf/shims" "$HOME/.local/share/mise/shims" "$HOME/.local/share/pnpm" "$HOME/Library/pnpm" \
+    "$HOME/.local/share/fnm/aliases/default/bin" "$HOME/Library/Application Support/fnm/aliases/default/bin"; do
+    [ -d "$d" ] && add_path "$d"
+  done
+  # An nvm-installed Node new enough for Perry, if the one on PATH is not.
+  if ! node_ok; then
+    for d in "$HOME"/.nvm/versions/node/*/bin; do
+      [ -x "$d/node" ] && "$d/node" -e "$NODE_OK_JS" 2>/dev/null && { add_path "$d"; break; }
+    done
+  fi
+  if has npm; then prefix=$(npm prefix -g 2>/dev/null) && [ -d "$prefix/bin" ] && add_path "$prefix/bin"; fi
+  export PATH
 }
 
 # Node's own build for this machine, checked against its published SHA-256, into ~/.perry/node.
@@ -57,39 +82,70 @@ real_tty() {
   [ -r "$name" ] && [ -w "$name" ] && printf '%s' "$name"
 }
 
-# Keep what was installed on PATH for new terminals and for the background service.
+# The perry command, and whatever this script installed, on PATH for new terminals. After your own
+# PATH, never before it: a Node or pnpm you already have stays the one your terminal runs.
 remember_path() {
-  line="export PATH=\"$PERRY_HOME/bin:$LOCAL_NPM/bin:$LOCAL_NODE/bin:\$HOME/.bun/bin:\$PATH\"  # added by Perry"
+  dirs="$PERRY_HOME/bin"
+  [ -d "$LOCAL_NPM/bin" ] && dirs="$dirs:$LOCAL_NPM/bin"
+  [ -d "$LOCAL_NODE/bin" ] && dirs="$dirs:$LOCAL_NODE/bin"
+  line="export PATH=\"\$PATH:$dirs\"  # added by Perry"
   case "${SHELL:-}" in *zsh) rc="$HOME/.zshrc" ;; *bash) rc="$HOME/.bashrc" ;; *) rc="$HOME/.profile" ;; esac
   for f in "$rc" "$HOME/.profile"; do
-    [ -f "$f" ] && grep -q "added by Perry" "$f" && continue
-    printf '\n%s\n' "$line" >> "$f"
+    # One Perry line per file, replaced when this run installed something an earlier one did not.
+    if [ -f "$f" ] && grep -q "added by Perry" "$f"; then
+      grep -qxF "$line" "$f" && continue
+      grep -v "added by Perry" "$f" > "$f.perry" && mv "$f.perry" "$f"
+      printf '%s\n' "$line" >> "$f"
+    else
+      printf '\n%s\n' "$line" >> "$f"
+    fi
   done
 }
 
 printf '\n\033[1mInstalling Perry\033[0m\n'
 step "Tools"
-export PATH="$PERRY_HOME/bin:$LOCAL_NPM/bin:$LOCAL_NODE/bin:$HOME/.bun/bin:$PATH"
+find_existing
+# What an earlier run installed for Perry, again after everything you have.
+add_path "$LOCAL_NPM/bin"; add_path "$HOME/.bun/bin"; export PATH
 has curl || fail "curl is needed. Install it with your package manager, then run this again."
 if ! has git; then
   if [ "$(uname -s)" = Darwin ]; then xcode-select --install 2>/dev/null || true; fail "Git is needed; macOS is offering to install it. Run this again once that finishes."; fi
   fail "Git is needed. Install it with your package manager (for example: sudo apt install git), then run this again."
 fi
-ok "git $(git --version | sed 's/git version //')"
-node_ok || { printf '  installing Node.js 22\n'; install_node; }
-node_ok || fail "Perry needs Node.js 20.9 or newer."
-ok "node $(node --version)"
-has pnpm || { printf '  installing pnpm\n'; npm install -g --prefix "$LOCAL_NPM" pnpm@10 >/dev/null || fail "Installing pnpm failed."; }
-ok "pnpm $(pnpm --version)"
-if ! has bun; then
+found "git $(git --version | sed 's/git version //')"
+
+if node_ok; then
+  found "node $(node --version)"
+elif [ -x "$LOCAL_NODE/bin/node" ] && "$LOCAL_NODE/bin/node" -e "$NODE_OK_JS" 2>/dev/null; then
+  export PATH="$LOCAL_NODE/bin:$PATH"
+  found "node $(node --version), Perry's own"
+else
+  # Perry's copy is Perry's alone: the Node you have, if any, stays the one your terminal runs.
+  has node && note "Your node $(node --version) is older than Perry needs (20.9); Perry gets its own copy and yours is left as it is."
+  printf '  installing Node.js 22\n'; install_node
+  export PATH="$LOCAL_NODE/bin:$PATH"
+  node_ok || fail "Perry needs Node.js 20.9 or newer."
+  added "node $(node --version)"
+fi
+
+if has pnpm; then found "pnpm $(pnpm --version)"
+else
+  printf '  installing pnpm\n'; npm install -g --prefix "$LOCAL_NPM" pnpm@10 >/dev/null || fail "Installing pnpm failed."
+  added "pnpm $(pnpm --version)"
+fi
+if has bun; then found "bun $(bun --version)"
+else
   printf '  installing Bun\n'
   # Bun's own installer needs unzip, which a fresh Linux often lacks; its npm package does not.
   if has unzip; then curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1 || fail "Installing Bun failed."
   else npm install -g --prefix "$LOCAL_NPM" bun >/dev/null || fail "Installing Bun failed."; fi
+  added "bun $(bun --version)"
 fi
-ok "bun $(bun --version)"
-has codex || { printf '  installing the Codex CLI\n'; npm install -g --prefix "$LOCAL_NPM" @openai/codex >/dev/null || fail "Installing Codex failed."; }
-ok "codex"
+if has codex; then found "codex"
+else
+  printf '  installing the Codex CLI\n'; npm install -g --prefix "$LOCAL_NPM" @openai/codex >/dev/null || fail "Installing Codex failed."
+  added "codex"
+fi
 remember_path
 
 step "Perry, in $DIR"
