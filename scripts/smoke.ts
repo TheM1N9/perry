@@ -21,6 +21,8 @@
  *     --register on a throwaway machine such as CI, schtasks
  *     registers, reads back and deletes a copy of the task)
  *   - `pnpm run service install --dry-run` fails or writes anything  → service dry run
+ *   - The `perry` command does not load here, or `perry run` starts
+ *     with no connection instead of saying to run `perry setup`      → perry command
  *
  * Not covered here: Codex itself, its sandbox and sign-in (`pnpm run doctor
  * -- --machine`), and a real chat turn (artifacts/multi-platform/run.ts).
@@ -144,13 +146,13 @@ await check("service plans", () => {
   const mac = servicePlan(nasty("darwin"));
   const plist = mac.files[0].content;
   expect(mac.files[0].path.endsWith("/Library/LaunchAgents/com.perry.runner.plist"), mac.files[0].path);
-  expect(plist.includes("<string>/Users/o&apos;neil müller/code/me bot 100% &amp; $HOME/runner/index.ts</string>"), "plist paths are not escaped");
+  expect(plist.includes("<string>/Users/o&apos;neil müller/code/me bot 100% &amp; $HOME/scripts/perry.ts</string>\n    <string>run</string>"), "plist does not run `perry run`, or paths are not escaped");
   expect(!plist.includes("--auto") && plist.includes("<key>PATH</key>"), "plist passes --auto, or lacks PATH");
   expect(mac.install.some((step) => step.argv.join(" ") === `launchctl bootstrap gui/501 ${mac.files[0].path}`), "no launchctl bootstrap");
 
   const linux = servicePlan(nasty("linux"));
   const unit = linux.files[0].content;
-  expect(unit.includes(`ExecStart="/home/o'neil müller/.bun/bin/bun" "/home/o'neil müller/code/me bot 100%% & $$HOME/runner/index.ts"\n`), `ExecStart is not quoted: ${unit}`);
+  expect(unit.includes(`ExecStart="/home/o'neil müller/.bun/bin/bun" "/home/o'neil müller/code/me bot 100%% & $$HOME/scripts/perry.ts" "run"\n`), `ExecStart does not run perry run, or is not quoted: ${unit}`);
   expect(unit.includes(`WorkingDirectory=/home/o'neil müller/code/me bot 100%% & $HOME`), "WorkingDirectory is not escaped");
   expect(unit.includes(`Environment="PATH=/opt/homebrew/bin:/usr/bin:/bin"`) && unit.includes("WantedBy=default.target"), "unit lacks PATH or [Install]");
 
@@ -159,7 +161,7 @@ await check("service plans", () => {
   const [launcher, task] = windows.files;
   expect(launcher.content.includes(`set "PERRY_CODEX_SANDBOX=workspace-write"`), "launcher does not carry PERRY_CODEX_SANDBOX");
   expect(launcher.content.includes(`cd /d "C:\\Users\\O'Neil Müller\\code\\me bot 100%% & $HOME"`), `launcher cd: ${launcher.content}`);
-  expect(launcher.content.includes(`>> "C:\\Users\\O'Neil Müller\\.perry\\logs\\runner.log" 2>&1`), "launcher does not log");
+  expect(launcher.content.includes(`\\scripts\\perry.ts" "run" >> "C:\\Users\\O'Neil Müller\\.perry\\logs\\runner.log" 2>&1`), "launcher does not run perry run, or does not log");
   expect(launcher.content.includes(`set "PERRY_SERVICE_PID_FILE=C:\\Users\\O'Neil Müller\\.perry\\service\\runner.pid"`), "launcher sets no PID file");
   expect(task.encoding === "utf16le" && task.content.includes("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"), "task keeps the 72-hour limit");
   expect(task.content.includes("<UserId>DESKTOP\\O&apos;Neil Müller</UserId>") && task.content.includes("O&apos;&apos;Neil"), "task XML is not escaped");
@@ -212,6 +214,16 @@ await check("service dry run", () => {
   expect(ran.output.includes("dry run"), "not a dry run");
   expect(!existsSync(join(scratch, "xdg")) && !existsSync(join(HOME, "service")), "a dry run wrote files");
   return ran.output.split("\n").find((line) => line.includes("Installing"))?.replace(/\x1b\[[0-9;]*m/g, "").trim();
+});
+
+await check("perry command", () => {
+  const help = exec([process.execPath, resolve("scripts", "perry.ts"), "help"]);
+  expect(help.code === 0 && help.output.includes("setup") && help.output.includes("uninstall"), `perry help: exit ${help.code}: ${help.output}`);
+  // PERRY_HOME is the scratch home, with no runner.json in it.
+  rmSync(PATHS.runnerConfig, { force: true });
+  const ran = exec([process.execPath, resolve("scripts", "perry.ts"), "run"]);
+  expect(ran.code === 1 && ran.output.includes("perry setup"), `perry run with no connection: exit ${ran.code}: ${ran.output}`);
+  return "help lists the commands; run without a connection points at perry setup";
 });
 
 rmSync(scratch, { recursive: true, force: true });

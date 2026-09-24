@@ -136,8 +136,7 @@ async function main() {
   step(3, TOTAL, "Codex");
 
   say(dim("  Perry thinks with your ChatGPT subscription, through the Codex CLI on"));
-  say(dim("  this machine. After setup: run `pnpm run connect`, and sign in to Codex"));
-  say(dim("  from the dashboard's Settings page."));
+  say(dim("  this machine. Sign in to Codex from the dashboard's Settings page."));
   const codex = await runCodex(["--version"]);
   if (codex.code !== 0) {
     say(yellow(`  Codex is not installed here yet. Install it with: ${INSTALL_HINTS.codex}`));
@@ -209,12 +208,14 @@ async function main() {
     say(dim("  everyone else is ignored from then on."));
   }
 
-  say(bold("\nDashboard"));
-  say(`  pnpm run dev  then open http://localhost:3000`);
-  say(`  key: ${dashboardKey}`);
-  say(dim("\n  (also saved in .env.local; `pnpm run doctor` checks everything)\n"));
-
   rl.close();
+  // `perry setup` goes on to connect this computer, start Perry and open the dashboard.
+  if (process.argv.includes("--from-perry")) return;
+
+  say(bold("\nNext"));
+  say(`  ${bold("pnpm perry start")}  connects this computer, then runs Perry in the background`);
+  say(`  dashboard key: ${dashboardKey}`);
+  say(dim("\n  (also saved in .env.local; `pnpm perry doctor` checks everything)\n"));
 }
 
 main().catch((error) => {
