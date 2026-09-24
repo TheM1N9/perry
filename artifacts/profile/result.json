@@ -1,0 +1,40 @@
+{
+  "ranAt": "2026-09-24T17:06:00.459Z",
+  "checks": {
+    "profileButtonOnChat": true,
+    "sidebarIsWorkOnly": true,
+    "profileOpensFromButton": true,
+    "profileLinksEveryMovedPage": true,
+    "everyMovedPageOpensWithProfileCrumb": true,
+    "workIsTopLevel": true,
+    "directLinkStillWorks": true,
+    "phoneRowsStayInline": true,
+    "phoneDrawerHasProfile": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "mainNav": [
+      "Work"
+    ],
+    "profileLinks": [
+      "/memory",
+      "/connectors",
+      "/activity",
+      "/computer",
+      "/settings",
+      "/keys",
+      "/setup"
+    ],
+    "visits": {
+      "memory": true,
+      "connectors": true,
+      "activity": true,
+      "computer": true,
+      "settings": true,
+      "keys": true,
+      "setup": true
+    },
+    "pageErrors": []
+  },
+  "passed": true
+}

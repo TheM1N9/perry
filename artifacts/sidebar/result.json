@@ -1,0 +1,37 @@
+{
+  "ranAt": "2026-09-24T17:05:42.095Z",
+  "checks": {
+    "noChatNavItem": true,
+    "nothingCurrentOnChat": true,
+    "enoughChats": true,
+    "workIsCurrent": true,
+    "sameSidebarEverywhere": true,
+    "searchOnWork": true,
+    "rowActionsOnWork": true,
+    "rowsUnchanged": true,
+    "chatOpensFromWork": true,
+    "newChatFromWork": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "onChat": {
+      "actions": [
+        "New chat",
+        "Search"
+      ],
+      "nav": [
+        "Work"
+      ],
+      "navToChat": 0,
+      "rows": 24,
+      "currentNav": []
+    },
+    "sameSidebar": {
+      "/work": true,
+      "/profile": true,
+      "/keys": true
+    },
+    "pageErrors": []
+  },
+  "passed": true
+}

@@ -1,0 +1,27 @@
+{
+  "ranAt": "2026-09-24T16:04:13.378Z",
+  "checks": {
+    "everyActiveAccountListed": true,
+    "callbackAccepted": true,
+    "returnSaysConnected": true,
+    "returnClearsQuery": true,
+    "returnSaysFailed": true,
+    "connectUsesSameTab": true,
+    "cleanedUp": true
+  },
+  "notes": {
+    "active": [
+      "gmail",
+      "googlecalendar",
+      "higgsfield_mcp"
+    ],
+    "shown": [
+      "gmail",
+      "googlecalendar",
+      "higgsfield_mcp"
+    ],
+    "connectLanded": "https://slack.com/workspace-signin",
+    "pageErrors": []
+  },
+  "passed": true
+}
