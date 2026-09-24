@@ -1,0 +1,15 @@
+{
+  "ranAt": "2026-09-24T19:35:25Z",
+  "system": "Linux x86_64",
+  "checks": {
+    "firstRunSucceeds": true,
+    "secondRunSucceeds": true,
+    "installsVerifiedNode": true,
+    "toolsWithoutRoot": true,
+    "clonesAndInstalls": true,
+    "perryCommandWorksAnywhere": true,
+    "onePathLine": true
+  },
+  "notes": { "node": "v22.23.3", "bunFrom": "bun.sh installer", "pathLines": 1, "checksumFailures": 0 },
+  "passed": true
+}
