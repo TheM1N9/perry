@@ -123,7 +123,8 @@ const page = await evaluate(`new Promise((resolve, reject) => {
     first.scrollIntoView({ block: 'start' });
     resolve({
       runsListed: runs.length,
-      tokens: first.querySelector('.activity-tokens')?.innerText ?? null,
+      // Inside the collapsed Details, so its text is read, not its rendering.
+      tokens: first.querySelector('.activity-tokens')?.textContent ?? null,
       rows: rows.map((row) => ({
         status: row.className.replace('trace-span', '').trim(),
         label: row.querySelector('.trace-label')?.innerText,

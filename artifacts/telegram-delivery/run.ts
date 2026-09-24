@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -193,7 +193,9 @@ try {
   pointed = true;
   // 1: nothing goes to the owner until a probe to a chat that does not exist lands here.
   await waitFor("the probe", () => {
-    try { convexRun("brain:sendDirect", { chatId: "e2e-probe", text: "probe" }); } catch {}
+    // Not execFileSync: that would block this process, and with it the stand-in
+    // that has to answer the very call the probe makes.
+    execFile("node", ["node_modules/convex/bin/main.js", "run", "brain:sendDirect", JSON.stringify({ chatId: "e2e-probe", text: "probe" })], () => {});
     return calls.some((call) => call.chatId === "e2e-probe");
   }, 60_000);
 

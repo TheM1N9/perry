@@ -1,0 +1,46 @@
+{
+  "ranAt": "2026-09-24T12:24:57.343Z",
+  "chatId": "k17a9529pjs3999athfd6btndx8f025c",
+  "reply": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\nDONE",
+  "steering": {
+    "stopShownWhileEmpty": true,
+    "sendShownWithDraft": true,
+    "steerShownMs": 0,
+    "replyEndsWithDone": true,
+    "highestNumberInReply": 20,
+    "historyInOrder": true,
+    "assistantMessages": 1,
+    "replyTurns": 1,
+    "steer": [
+      {
+        "status": "applied",
+        "joinedReplyTurn": true,
+        "error": null
+      }
+    ],
+    "codexTurnIdRecorded": true,
+    "chatStillRunning": false,
+    "runs": [
+      {
+        "prompt": "Actually stop at 20 and then say DONE",
+        "status": "ok"
+      },
+      {
+        "prompt": "This is an automated test. Count from 1 to 300, one number per line, and nothing else.",
+        "status": "ok"
+      }
+    ]
+  },
+  "compaction": {
+    "compactStarted": "Compacting this chat…",
+    "compactNotice": "Compacted. Codex now works from a summary of this chat; the messages here are unchanged.",
+    "compactTurn": {
+      "status": "done",
+      "error": null
+    },
+    "historyUnchanged": true,
+    "replyAfterCompact": "pong"
+  },
+  "pageErrors": [],
+  "pass": true
+}

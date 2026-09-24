@@ -16,3 +16,7 @@ pnpm-debug.log*
 .vercel
 *.tsbuildinfo
 next-env.d.ts
+
+# Written by artifacts/telegram-delivery on every run (big.bin is 51 MB)
+artifacts/telegram-delivery/files/
+artifacts/telegram-delivery/received/
