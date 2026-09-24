@@ -5,11 +5,11 @@ keys, and nobody else's data is anywhere near it. There is no shared server, no
 account on someone else's system, and nothing in this repo phones home.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TheM1N9/me-bot/main/install.sh | sh    # macOS, Linux, WSL
+curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh    # macOS, Linux, WSL
 ```
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/TheM1N9/me-bot/main/install.ps1 | iex   # Windows
+iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex   # Windows
 ```
 
 The installer adds what is missing: Git (Windows, through winget), Node.js 20.9

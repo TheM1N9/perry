@@ -11,13 +11,13 @@ is no shared server and nothing here phones home.
 One line installs it, on macOS or Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TheM1N9/me-bot/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh
 ```
 
 or on Windows, in PowerShell:
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/TheM1N9/me-bot/main/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
 ```
 
 It installs what is missing (Node.js, pnpm, [Bun](https://bun.sh) and the
@@ -305,7 +305,7 @@ saved rules and an automatic reviewer; connected accounts over
 MCP; layered memory and chat search; local media and Telegram media; scheduled
 jobs, one-time reminders and the heartbeat; skills.
 
-Open work is tracked in [issues](https://github.com/TheM1N9/me-bot/issues),
+Open work is tracked in [issues](https://github.com/TheM1N9/perry/issues),
 among them automatic daily summaries into memory, durable turns and a browser for
 the agent.
 

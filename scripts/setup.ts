@@ -90,6 +90,8 @@ async function main() {
     say(dim(`  already configured: ${env.CONVEX_DEPLOYMENT}`));
   } else {
     say(dim("  Opening a browser to log in and create your project."));
+    say(dim("  Choose \"Login or create an account\": Telegram has to reach your deployment,"));
+    say(dim("  which one run locally on this machine cannot be."));
     const { code } = await runConvex(["dev", "--once"], { quiet: false });
     if (code !== 0) {
       say(yellow("\n  Convex setup did not finish. Fix the error above and re-run."));
@@ -101,6 +103,11 @@ async function main() {
   const cloudUrl = env.NEXT_PUBLIC_CONVEX_URL || env.CONVEX_URL;
   if (!cloudUrl) {
     say(yellow("  No Convex URL in .env.local. Run `pnpm exec convex dev` once, then re-run."));
+    process.exit(1);
+  }
+  if (!cloudUrl.includes(".convex.cloud")) {
+    say(yellow(`  This is a local deployment (${cloudUrl}); Telegram cannot reach it.`));
+    say(yellow(`  Run ${bold("pnpm exec convex dev --once --configure new")}, choose "Login or create an account", then run setup again.`));
     process.exit(1);
   }
   const siteUrl = cloudUrl.replace(".convex.cloud", ".convex.site");

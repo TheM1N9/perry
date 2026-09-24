@@ -1,7 +1,7 @@
 #!/bin/sh
 # Perry installer for macOS and Linux (and WSL).
 #
-#   curl -fsSL https://raw.githubusercontent.com/TheM1N9/me-bot/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh
 #
 # Installs what Perry needs that is missing (Node.js, pnpm, Bun and the Codex
 # CLI; none of it needs root), gets Perry into ~/perry, installs its packages,
@@ -14,7 +14,7 @@
 
 set -eu
 
-REPO="${PERRY_REPO:-https://github.com/TheM1N9/me-bot.git}"
+REPO="${PERRY_REPO:-https://github.com/TheM1N9/perry.git}"
 BRANCH="${PERRY_BRANCH:-main}"
 DIR="${PERRY_DIR:-$HOME/perry}"
 PERRY_HOME="${PERRY_HOME:-$HOME/.perry}"
@@ -45,6 +45,16 @@ install_node() {
   rm -rf "$LOCAL_NODE"; mkdir -p "$LOCAL_NODE"
   tar -xzf "$tmp/$file" -C "$LOCAL_NODE" --strip-components=1
   rm -rf "$tmp"
+}
+
+# This terminal's own device, such as /dev/ttys003 or /dev/pts/0, for setup to read from. Not /dev/tty:
+# macOS cannot poll a file opened through that alias, and Bun, which runs setup, polls its stdin
+# ("EINVAL: invalid argument, kqueue"). ps names the terminal this script runs in even with stdin piped.
+real_tty() {
+  name=$(ps -o tty= -p $$ 2>/dev/null | tr -d ' ')
+  case "$name" in ""|"?"|"??") return 1 ;; esac
+  case "$name" in /dev/*) ;; *) name="/dev/$name" ;; esac
+  [ -r "$name" ] && [ -w "$name" ] && printf '%s' "$name"
 }
 
 # Keep what was installed on PATH for new terminals and for the background service.
@@ -97,9 +107,12 @@ ok "packages installed"
 if [ "${PERRY_NO_SETUP:-}" = 1 ]; then
   bun --cwd "$DIR" "$DIR/scripts/perry.ts" link
   printf '\n  \033[32mInstalled.\033[0m Run \033[1mperry setup\033[0m in a new terminal to finish.\n\n'
-elif [ -r /dev/tty ]; then
-  # Piped into sh, this script's stdin is the script itself; setup asks questions, so it reads the terminal.
-  bun --cwd "$DIR" "$DIR/scripts/perry.ts" setup </dev/tty
-else
+elif [ -t 0 ]; then
   bun --cwd "$DIR" "$DIR/scripts/perry.ts" setup
+elif terminal=$(real_tty); then
+  # Piped into sh, this script's stdin is the script itself; setup asks questions, so it reads the terminal.
+  bun --cwd "$DIR" "$DIR/scripts/perry.ts" setup <"$terminal"
+else
+  printf '\n  \033[32mInstalled.\033[0m There is no terminal to ask questions in; run \033[1mperry setup\033[0m in one.\n\n'
+  bun --cwd "$DIR" "$DIR/scripts/perry.ts" link
 fi
