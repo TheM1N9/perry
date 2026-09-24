@@ -329,10 +329,13 @@ export class CodexAppServer extends EventEmitter {
       // App-server extension items can be omitted from turn.items even though
       // item/completed delivered them. Keep both sources, keyed by item id.
       const collect = (turnItems: TurnItem[] = []) => {
-        const items = [...new Map([...turnItems, ...(this.turnItems.get(turnId) ?? [])].map((item) => [item.id, item])).values()];
+        // In the order Codex completed them, with turn.items filling any gaps.
+        const items = [...new Map([...(this.turnItems.get(turnId) ?? []), ...turnItems].map((item) => [item.id, item])).values()];
         this.turnItems.delete(turnId);
         const messages = items.filter((item) => item?.type === "agentMessage" && item.text?.trim());
-        const final = messages.filter((item) => item.phase === "final_answer").at(-1) ?? messages.at(-1);
+        // The last message that is not commentary. A steered turn answers again
+        // after its first final answer, and that later message may carry no phase.
+        const final = messages.filter((item) => item.phase !== "commentary").at(-1) ?? messages.at(-1);
         const images = items
           .filter((item) =>
             (item?.type === "imageGeneration" && !item.failure && (item.savedPath || item.result)) ||
