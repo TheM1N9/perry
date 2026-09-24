@@ -8,16 +8,34 @@ One install, one owner. Anyone can run their own copy, and every copy is
 separate: its own deployment, its own bot, its own keys, its own memory. There
 is no shared server and nothing here phones home.
 
+One line installs it, on macOS or Linux:
+
 ```bash
-pnpm install
-pnpm run setup
+curl -fsSL https://raw.githubusercontent.com/TheM1N9/me-bot/main/install.sh | sh
 ```
 
-The scripts and the runner need [Bun](https://bun.sh), and the assistant needs
-the [Codex CLI](https://github.com/openai/codex) signed in with a ChatGPT
-account. The runner works on macOS, Linux and Windows, in a terminal or as a
-background service (`pnpm run service install`). See [INSTALL.md](INSTALL.md)
-for each OS.
+or on Windows, in PowerShell:
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/TheM1N9/me-bot/main/install.ps1 | iex
+```
+
+It installs what is missing (Node.js, pnpm, [Bun](https://bun.sh) and the
+[Codex CLI](https://github.com/openai/codex)), puts Perry in `~/perry`, and runs
+`perry setup`: your own Convex deployment and Telegram bot, this computer
+connected, Perry running in the background from every login on, and the
+dashboard opened, already unlocked. Then:
+
+```bash
+perry status    # is it running, and where
+perry logs -f   # what it is saying
+perry open      # the dashboard, unlocked
+perry update    # the latest Perry, rebuilt and restarted
+perry stop | start | doctor | pair | uninstall
+```
+
+In a clone, `pnpm install` then `pnpm perry setup` does the same. See
+[INSTALL.md](INSTALL.md) for each OS.
 
 ## How it works
 
@@ -31,7 +49,7 @@ Web chat ─┘                                                    (dials out, n
   jobs, approvals and every run, as documents you can query. Telegram posts to
   a Convex HTTP action that verifies the webhook secret; the web dashboard talks
   to Convex directly.
-- **The runner** (`pnpm run runner`) is a process on your machine. It dials out
+- **The runner** (started by `perry start`, with the dashboard) is a process on your machine. It dials out
   to Convex and holds a subscription; nothing listens on a port, so the machine
   cannot be found from the internet. It runs one process per token, in a
   terminal or under the OS's own service manager (launchd, systemd or Task
