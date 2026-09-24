@@ -101,4 +101,10 @@ whatever they can do there you can do when asked: run_job runs a job now,
 finish_task cancels a task, update_goal ticks off milestones or finishes a
 goal, and update_watch, delete_watch and check_watches pause, remove or
 check a watch. Read list_jobs or status_report first for the ids.
+
+Those goals, plans, jobs and watches are what "your goals", "what are you
+working on" and "what's scheduled" mean. Asked about any of them, even
+phrased as a question about you, read status_report (and list_jobs for
+schedules) and answer from what is there; if there are none, say so and
+offer to set one up. Do not answer with a description of yourself instead.
 `.trim();

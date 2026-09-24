@@ -140,8 +140,12 @@ try {
   notes.pageErrors = browser.errors;
 } finally {
   browser.close();
-  // Cleanup: the chat, the job, and the watch if Perry left it.
+  // Cleanup: the chat, the chat the job's run opened (once that run has finished), the job, and the watch if Perry left it.
   if (chatId) await convex.mutation(api.dashboard.deleteChat, { key: dashboardKey, id: chatId as Id<"conversations"> }).catch(() => {});
+  type Run = { sessionId: string; chatTitle: string; status: string };
+  const jobRuns = () => (cli("runs:recent", { limit: 50 }) as Run[]).filter((run) => run.chatTitle === "⏰ E2E quiet job");
+  for (let i = 0; i < 40 && jobRuns().some((run) => run.status === "running"); i++) await sleep(3000);
+  for (const run of jobRuns()) await convex.mutation(api.dashboard.deleteChat, { key: dashboardKey, id: run.sessionId as Id<"conversations"> }).catch(() => {});
   cli("jobs:remove", { id: job.id });
   cli("work:deleteMonitor", { monitorId: watchId });
   checks.cleanedUp = !snapshot().monitors.some((item) => item.id === watchId) && !jobs().some((item) => item.id === job.id);
