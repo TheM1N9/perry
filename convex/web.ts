@@ -41,7 +41,7 @@ const MONITOR_TEXT_CHARS = 30_000;
  */
 const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
-const HONEST_USER_AGENT = "Perry/0.1 (personal assistant; +https://github.com/TheM1N9/me-bot)";
+const HONEST_USER_AGENT = "Perry/0.1 (personal assistant; +https://github.com/TheM1N9/perry)";
 
 // --- Which addresses are public --------------------------------------------
 

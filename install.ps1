@@ -1,6 +1,6 @@
 # Perry installer for Windows.
 #
-#   iwr -useb https://raw.githubusercontent.com/TheM1N9/me-bot/main/install.ps1 | iex
+#   iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
 #
 # Installs what Perry needs that is missing (Git, Node.js, pnpm, Bun and the
 # Codex CLI), gets Perry into ~\perry, installs its packages, and runs
@@ -13,7 +13,7 @@
 
 & {
   $ErrorActionPreference = 'Stop'
-  $repo = if ($env:PERRY_REPO) { $env:PERRY_REPO } else { 'https://github.com/TheM1N9/me-bot.git' }
+  $repo = if ($env:PERRY_REPO) { $env:PERRY_REPO } else { 'https://github.com/TheM1N9/perry.git' }
   $branch = if ($env:PERRY_BRANCH) { $env:PERRY_BRANCH } else { 'main' }
   $dir = if ($env:PERRY_DIR) { $env:PERRY_DIR } else { Join-Path $HOME 'perry' }
 
