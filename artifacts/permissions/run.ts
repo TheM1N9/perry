@@ -59,7 +59,8 @@ const site = process.env.CONVEX_SITE_URL ?? process.env.CONVEX_URL!.replace(".co
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 const cli = (...args: string[]) => execFileSync("node", ["node_modules/convex/bin/main.js", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
 const convexRun = (fn: string, args: object) => JSON.parse(cli("run", fn, JSON.stringify(args)).trim() || "null");
-const table = (name: string) => JSON.parse(cli("data", name, "--limit", "50", "--order", "desc", "--format", "jsonArray"));
+// An empty table prints nothing at all.
+const table = (name: string) => JSON.parse(cli("data", name, "--limit", "50", "--order", "desc", "--format", "jsonArray").trim() || "[]");
 
 const until = async <T>(check: () => Promise<T | undefined | null | false>, what: string, ms = 120_000): Promise<T> => {
   const start = Date.now();

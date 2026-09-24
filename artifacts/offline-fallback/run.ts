@@ -42,7 +42,8 @@ mkdirSync(outDir, { recursive: true });
 const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 const checkIn = () => convex.mutation(api.runner.checkIn, { token: runnerToken, platform: "win32", hostname: "e2e", workdir: process.env.E2E_WORKDIR, autoApprove: true });
 const cli = (...args: string[]) => execFileSync("node", ["node_modules/convex/bin/main.js", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-const table = (name: string) => JSON.parse(cli("data", name, "--limit", "100", "--format", "jsonArray")) as Array<Record<string, any>>;
+// An empty table prints nothing at all.
+const table = (name: string) => JSON.parse(cli("data", name, "--limit", "100", "--format", "jsonArray").trim() || "[]") as Array<Record<string, any>>;
 const waitFor = async <T>(what: string, check: () => Promise<T | null | undefined | false>, ms = 180_000): Promise<T> => {
   for (const start = Date.now(); Date.now() - start < ms; await sleep(1000)) {
     const value = await check();

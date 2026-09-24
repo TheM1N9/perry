@@ -1,0 +1,37 @@
+{
+  "ranAt": "2026-09-24T12:31:22.531Z",
+  "chatId": "k179rrddxkyk2zwr2z9a7myj6s8f0t75",
+  "settingRestoredTo": false,
+  "tokenPushed": {
+    "expiresAt": "2026-10-02T22:14:16.000Z",
+    "hasAccountId": true
+  },
+  "normal": {
+    "reply": "ready",
+    "model": "codex/gpt-6-astra",
+    "runnerId": "ks7cmsfx1wp2761fz03fcx9f1h8f08fx",
+    "fallback": false
+  },
+  "fallback": {
+    "offline": true,
+    "reply": "42",
+    "model": "chatgpt fallback · gpt-6-astra",
+    "marked": true,
+    "notesShown": 1
+  },
+  "tools": {
+    "rememberCalls": [
+      "remember"
+    ],
+    "stored": 1,
+    "recallReply": "zephyrwnybcj",
+    "recallCalls": [],
+    "marked": true
+  },
+  "tokenLeak": {
+    "queriesChecked": 19,
+    "leaked": false
+  },
+  "pageErrors": [],
+  "pass": true
+}

@@ -41,7 +41,8 @@ const convex = new ConvexHttpClient(process.env.CONVEX_URL!);
 const checkIn = () => convex.mutation(api.runner.checkIn, { token: runnerToken, platform: "win32", hostname: "e2e", workdir: process.env.E2E_WORKDIR, autoApprove: true });
 const { evaluate, send, errors, close } = await openChat(base, dashboardKey);
 const cli = (...args: string[]) => execFileSync("node", ["node_modules/convex/bin/main.js", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-const table = (name: string) => JSON.parse(cli("data", name, "--limit", "50", "--order", "desc", "--format", "jsonArray")) as Array<Record<string, any>>;
+// An empty table prints nothing at all.
+const table = (name: string) => JSON.parse(cli("data", name, "--limit", "50", "--order", "desc", "--format", "jsonArray").trim() || "[]") as Array<Record<string, any>>;
 
 const PROMPT = "This is an automated test. Count from 1 to 300, one number per line, and nothing else.";
 const STEER = "Actually stop at 20 and then say DONE";
