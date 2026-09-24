@@ -224,10 +224,12 @@ that point in a separate thread. Each chat shows a stable session ID in the
 sidebar and header; the header copies the full ID. Older messages load on demand. Web chats share
 Perry's saved memories with Telegram while keeping their histories separate.
 
-The sidebar also opens Work, Computer, Connectors, Memory, Settings, Activity,
-Keys, and Setup. Settings shows the Codex account on each connected machine;
-Activity is a run log with session filters, tools, tokens, errors, and a link
-back to each web chat. Chat holds the message history.
+The sidebar holds your chats, Search, and Tasks: scheduled jobs, Perry's plans,
+goals, and watched pages. Everything else opens from your name at the bottom of
+the sidebar: Memory, Connectors, Activity, Computer, Settings, Keys, and Setup.
+Settings shows the Codex account on each connected machine; Activity is a run
+log with session filters, tools, tokens, errors, and a link back to each web
+chat.
 
 The key is a bearer token for one person, not a login system. Localhost does
 not bypass it, because a dashboard that can read your memory should not be open

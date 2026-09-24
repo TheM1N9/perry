@@ -1,0 +1,72 @@
+{
+  "ranAt": "2026-09-24T17:51:17.971Z",
+  "checks": {
+    "workRedirectsToTasks": true,
+    "workLandsOnTasks": true,
+    "renamedEverywhere": true,
+    "builtinsNotTopLevel": true,
+    "groupStartsClosedWithCount": true,
+    "yourJobsLead": true,
+    "foldedLineShowsFailures": true,
+    "builtinsReachable": true,
+    "phoneFits": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "server": {
+      "builtins": [
+        "Heartbeat",
+        "Daily summary",
+        "Memory consolidation"
+      ],
+      "yours": [],
+      "failingBuiltins": 2
+    },
+    "workRedirect": {
+      "status": 307,
+      "location": "/tasks"
+    },
+    "names": {
+      "nav": [
+        "Tasks"
+      ],
+      "heading": "Tasks",
+      "crumb": "Perry / Tasks",
+      "title": "Tasks · Perry",
+      "saysWork": false
+    },
+    "layout": {
+      "topRows": [],
+      "empty": true,
+      "groupOpen": false,
+      "groupCount": 3,
+      "summary": "Built in 3 Heartbeat, daily summary and memory upkeep 2 failed",
+      "summaryFits": true
+    },
+    "inside": [
+      {
+        "name": "Heartbeat",
+        "buttons": [
+          "Run now",
+          "Pause"
+        ]
+      },
+      {
+        "name": "Daily summary",
+        "buttons": [
+          "Run now",
+          "Pause"
+        ]
+      },
+      {
+        "name": "Memory consolidation",
+        "buttons": [
+          "Run now",
+          "Pause"
+        ]
+      }
+    ],
+    "pageErrors": []
+  },
+  "passed": true
+}

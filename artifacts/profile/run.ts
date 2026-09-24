@@ -8,7 +8,7 @@ import { openChat, sleep } from "../browser";
 //
 // Ways this could fail, and what catches each:
 //   1. The sidebar still lists every page: its Main nav must hold exactly
-//      Work (chats are the list below it), and there must be no Configure group.
+//      Tasks (chats are the list below it), and there must be no Configure group.
 //   2. A page becomes unreachable: the Profile page must link Memory,
 //      Connectors, Activity, Computer, Settings, Keys and Setup, and each link
 //      must open that page with its own heading.
@@ -43,7 +43,7 @@ try {
   // 1. The sidebar's main nav.
   const mainNav = await evaluate(`[...document.querySelectorAll("nav[aria-label=Main] a")].map((a) => a.innerText.trim())`);
   notes.mainNav = mainNav;
-  checks.sidebarIsWorkOnly = JSON.stringify(mainNav) === JSON.stringify(["Work"]) && !(await evaluate(`!!document.querySelector("nav[aria-label=Configure]")`));
+  checks.sidebarIsTasksOnly = JSON.stringify(mainNav) === JSON.stringify(["Tasks"]) && !(await evaluate(`!!document.querySelector("nav[aria-label=Configure]")`));
   await shot("chat-sidebar.png");
 
   // Open Profile from the button.
@@ -71,11 +71,11 @@ try {
   notes.visits = visits;
   checks.everyMovedPageOpensWithProfileCrumb = Object.values(visits).every(Boolean);
 
-  // Work stays a top-level page, with no Profile crumb.
-  await evaluate(`document.querySelector("nav[aria-label=Main] a[href='/work']").click(); true`);
-  await waitFor(`location.pathname === "/work"`, "Work never opened");
+  // Tasks stays a top-level page, with no Profile crumb.
+  await evaluate(`document.querySelector("nav[aria-label=Main] a[href='/tasks']").click(); true`);
+  await waitFor(`location.pathname === "/tasks"`, "Tasks never opened");
   await sleep(300);
-  checks.workIsTopLevel = await evaluate(`!document.querySelector(".breadcrumb a[href='/profile']") && document.querySelector("nav[aria-label=Main] a[href='/work']").getAttribute("aria-current") === "page"`);
+  checks.tasksIsTopLevel = await evaluate(`!document.querySelector(".breadcrumb a[href='/profile']") && document.querySelector("nav[aria-label=Main] a[href='/tasks']").getAttribute("aria-current") === "page"`);
 
   // 5. A direct link still works.
   await send("Page.navigate", { url: `${base}/connectors` });

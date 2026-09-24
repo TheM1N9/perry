@@ -14,7 +14,7 @@ import { Profile } from "./components/Profile";
 import { Settings } from "./components/Settings";
 import { Setup } from "./components/Setup";
 import { SECTIONS, Sidebar, linkClick, sectionPath, underProfile, type NavigationState, type SectionId } from "./components/Sidebar";
-import { Work } from "./components/Work";
+import { Tasks } from "./components/Tasks";
 import { Command, Icon, SecretInput, Spinner, errorText } from "./components/ui";
 
 const STORAGE_KEY = "perry.dashboard.key";
@@ -144,7 +144,7 @@ function Shell({ dashboardKey, onLock }: { dashboardKey: string; onLock: () => v
             <p>{section.description}</p>
           </div>
           <ErrorBoundary key={active} inline onReset={onLock}>
-            {active === "work" && <Work dashboardKey={dashboardKey} />}
+            {active === "tasks" && <Tasks dashboardKey={dashboardKey} />}
             {active === "computer" && <Computer dashboardKey={dashboardKey} />}
             {active === "connectors" && <Connectors dashboardKey={dashboardKey} />}
             {active === "memory" && <Memories dashboardKey={dashboardKey} />}

@@ -1,0 +1,32 @@
+{
+  "ranAt": "2026-09-24T18:11:57.671Z",
+  "activeGoals": [
+    "E2E goal",
+    "Ship Perry v1"
+  ],
+  "checks": {
+    "readsTheGoals": true,
+    "namesEveryActiveGoal": true,
+    "everyTurnReplied": true,
+    "noPageErrors": true
+  },
+  "asked": [
+    {
+      "question": "what are your goals?",
+      "reply": "You currently have two active goals:\n\nE2E goal — “Seeded by artifacts/agent-tasks.” First step is complete; second step remains.\nShip Perry v1 — “Agent P can actually do work.” None of its milestones are complete yet: Sandbox tools, Task planning, Recurring watches, and Email via Composio.\n\nThere are no active page watches.",
+      "toolCalls": [
+        "status_report"
+      ],
+      "namesEveryGoal": true
+    },
+    {
+      "question": "What goals am I working toward?",
+      "reply": "You’re currently working toward two active goals:\n\nE2E goal — “Seeded by artifacts/agent-tasks.”\nFirst step is complete; Second step remains.\n\nShip Perry v1 — make sure Perry can handle:\n\nSandbox tools\nTask planning\nRecurring watches\nEmail via Composio\n\nThere are no active page watches.",
+      "toolCalls": [
+        "status_report"
+      ],
+      "namesEveryGoal": true
+    }
+  ],
+  "passed": true
+}

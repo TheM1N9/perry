@@ -17,7 +17,7 @@ import { assertDashboardKey } from "./lib/auth";
  * The heartbeat is the built-in job: every few hours in the day it looks over
  * tasks, goals, watches and recent memory and speaks only when something is
  * worth the owner's attention. The agent creates its own jobs with the
- * create_job tool; the Work page lists them all.
+ * create_job tool; the Tasks page lists them all.
  */
 
 export const QUIET = "NOTHING";
@@ -242,7 +242,7 @@ export const finished = internalMutation({
   },
 });
 
-// --- The agent's tools and the Work page -----------------------------------
+// --- The agent's tools and the Tasks page ----------------------------------
 
 export type JobView = {
   id: Id<"jobs">;
@@ -382,14 +382,25 @@ export const removeFromDashboard = mutation({
   },
 });
 
+/** Run a job now, outside its schedule, which stays as it was. Whether there was such a job. */
+export const trigger = internalMutation({
+  args: { id: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const id = ctx.db.normalizeId("jobs", args.id);
+    if (!id || !(await ctx.db.get(id))) return false;
+    await ctx.db.patch(id, { lastRunAt: Date.now(), lastResult: undefined, lastError: undefined });
+    await ctx.scheduler.runAfter(0, internal.jobs.run, { id });
+    return true;
+  },
+});
+
 export const runNow = mutation({
   args: { key: v.string(), id: v.id("jobs") },
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
-    if (!(await ctx.db.get(args.id))) return null;
-    await ctx.db.patch(args.id, { lastRunAt: Date.now(), lastResult: undefined, lastError: undefined });
-    await ctx.scheduler.runAfter(0, internal.jobs.run, { id: args.id });
+    await ctx.runMutation(internal.jobs.trigger, { id: args.id });
     return null;
   },
 });

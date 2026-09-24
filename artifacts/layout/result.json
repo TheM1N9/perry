@@ -1,16 +1,17 @@
 {
-  "ranAt": "2026-09-24T17:07:06.321Z",
+  "ranAt": "2026-09-24T17:52:21.534Z",
   "checks": {
     "chatListHasRows": true,
     "noChatIcons": true,
     "noChatCount": true,
     "noDateGroups": true,
     "oneScrollbarEverywhere": true,
+    "titledOnDirectLoad": true,
     "noPageErrors": true
   },
   "notes": {
     "chatList": {
-      "rows": 24,
+      "rows": 25,
       "rowIcons": 0,
       "label": [
         "Chats"
@@ -20,7 +21,7 @@
     },
     "documentOverflow": {
       "1280/chat": 0,
-      "1280/work": 0,
+      "1280/tasks": 0,
       "1280/computer": 0,
       "1280/connectors": 0,
       "1280/memory": 0,
@@ -30,7 +31,7 @@
       "1280/setup": 0,
       "1280/profile": 0,
       "390/chat": 0,
-      "390/work": 0,
+      "390/tasks": 0,
       "390/computer": 0,
       "390/connectors": 0,
       "390/memory": 0,
@@ -39,6 +40,17 @@
       "390/keys": 0,
       "390/setup": 0,
       "390/profile": 0
+    },
+    "titles": {
+      "/tasks": "Tasks · Perry",
+      "/computer": "Computer · Perry",
+      "/connectors": "Connectors · Perry",
+      "/memory": "Memory · Perry",
+      "/activity": "Activity · Perry",
+      "/settings": "Settings · Perry",
+      "/keys": "Keys · Perry",
+      "/setup": "Setup · Perry",
+      "/profile": "Profile · Perry"
     },
     "pageErrors": []
   },

@@ -9,21 +9,21 @@ import { openChat, sleep } from "../browser";
 //
 // Ways this could fail, and what catches each:
 //   1. "Chat" is still a sidebar item: no nav link may point at /chat, and the
-//      Main nav must read exactly Work.
-//   2. Leaving the chat page strips the sidebar: on Work, Profile and Keys the
-//      sidebar must show New chat, Search, Work and the same chat rows, in the
+//      Main nav must read exactly Tasks.
+//   2. Leaving the chat page strips the sidebar: on Tasks, Profile and Keys the
+//      sidebar must show New chat, Search, Tasks and the same chat rows, in the
 //      same order, as on the chat page.
 //   3. A chat picked from another page goes nowhere, or to the wrong chat: from
-//      Work, clicking the second chat must open /chat/<its id> with its title
+//      Tasks, clicking the second chat must open /chat/<its id> with its title
 //      in the header, and that row must be marked current.
-//   4. Search only works on the chat page: Ctrl K on Work must open the search
+//   4. Search only works on the chat page: Ctrl K on Tasks must open the search
 //      dialog, and Escape must close it.
-//   5. Rename and delete only work on the chat page: on Work, a row's menu must
+//   5. Rename and delete only work on the chat page: on Tasks, a row's menu must
 //      open, and Rename and Delete must each open their dialog (then cancel).
-//   6. New chat from another page lands on an old chat: from Work it must open
+//   6. New chat from another page lands on an old chat: from Tasks it must open
 //      /chat with the welcome screen, not a conversation.
-//   7. Work loses its highlight or the chat page gains one: Work is current on
-//      /work, and no nav link is current on the chat page.
+//   7. Tasks loses its highlight or the chat page gains one: Tasks is current on
+//      /tasks, and no nav link is current on the chat page.
 
 const [outDir, dashboardKey] = process.argv.slice(2);
 if (!outDir || !dashboardKey) throw new Error("usage: bun artifacts/sidebar/run.ts <outDir> <dashboardKey>");
@@ -54,67 +54,67 @@ try {
   // The chat page, as the reference.
   const onChat = await sidebar();
   notes.onChat = { ...onChat, rows: onChat.rows.length };
-  checks.noChatNavItem = onChat.navToChat === 0 && JSON.stringify(onChat.nav) === JSON.stringify(["Work"]);
+  checks.noChatNavItem = onChat.navToChat === 0 && JSON.stringify(onChat.nav) === JSON.stringify(["Tasks"]);
   checks.nothingCurrentOnChat = onChat.currentNav.length === 0;
   checks.enoughChats = onChat.rows.length >= 2;
 
   // 2. The same sidebar elsewhere.
   const same: Record<string, boolean> = {};
-  for (const path of ["/work", "/profile", "/keys"]) {
+  for (const path of ["/tasks", "/profile", "/keys"]) {
     await open(path);
     const here = await sidebar();
     same[path] = JSON.stringify(here.actions) === JSON.stringify(["New chat", "Search"])
-      && JSON.stringify(here.nav) === JSON.stringify(["Work"])
+      && JSON.stringify(here.nav) === JSON.stringify(["Tasks"])
       && JSON.stringify(here.rows) === JSON.stringify(onChat.rows);
-    if (path === "/work") checks.workIsCurrent = JSON.stringify(here.currentNav) === JSON.stringify(["Work"]);
+    if (path === "/tasks") checks.tasksIsCurrent = JSON.stringify(here.currentNav) === JSON.stringify(["Tasks"]);
     await shot(`sidebar-${path.slice(1)}.png`);
   }
   notes.sameSidebar = same;
   checks.sameSidebarEverywhere = Object.values(same).every(Boolean);
 
-  // 4. Search from Work.
-  await open("/work");
+  // 4. Search from Tasks.
+  await open("/tasks");
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "k", code: "KeyK", modifiers: 2, windowsVirtualKeyCode: 75 });
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: "k", code: "KeyK", modifiers: 2, windowsVirtualKeyCode: 75 });
-  await waitFor(`!!document.querySelector("dialog[open] input[aria-label='Search chats']")`, "Ctrl K did not open search on Work");
-  await shot("search-on-work.png");
+  await waitFor(`!!document.querySelector("dialog[open] input[aria-label='Search chats']")`, "Ctrl K did not open search on Tasks");
+  await shot("search-on-tasks.png");
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
   await waitFor(`!document.querySelector("dialog[open]")`, "search did not close");
-  checks.searchOnWork = true;
+  checks.searchOnTasks = true;
 
-  // 5. Rename and delete dialogs from Work, both cancelled.
+  // 5. Rename and delete dialogs from Tasks, both cancelled.
   const openMenu = `(() => { const row = document.querySelectorAll(".chat-list-item")[1]; row.querySelector(".chat-list-more").click(); return true; })()`;
   await evaluate(openMenu);
-  await waitFor(`!!document.querySelector(".chat-list-item .menu")`, "row menu did not open on Work");
+  await waitFor(`!!document.querySelector(".chat-list-item .menu")`, "row menu did not open on Tasks");
   await evaluate(`[...document.querySelectorAll(".menu button")].find((b) => b.innerText.includes("Rename")).click(); true`);
-  await waitFor(`!!document.querySelector("dialog[open] #rename-chat")`, "rename dialog did not open on Work");
-  await shot("rename-on-work.png");
+  await waitFor(`!!document.querySelector("dialog[open] #rename-chat")`, "rename dialog did not open on Tasks");
+  await shot("rename-on-tasks.png");
   await evaluate(`[...document.querySelectorAll("dialog[open] button")].find((b) => b.innerText === "Cancel").click(); true`);
   await waitFor(`!document.querySelector("dialog[open]")`, "rename did not cancel");
   await evaluate(openMenu);
   await waitFor(`!!document.querySelector(".chat-list-item .menu")`, "row menu did not reopen");
   await evaluate(`[...document.querySelectorAll(".menu button")].find((b) => b.innerText.includes("Delete")).click(); true`);
-  await waitFor(`!!document.querySelector("dialog[open][role=alertdialog]")`, "delete dialog did not open on Work");
+  await waitFor(`!!document.querySelector("dialog[open][role=alertdialog]")`, "delete dialog did not open on Tasks");
   await evaluate(`[...document.querySelectorAll("dialog[open] button")].find((b) => b.innerText === "Cancel").click(); true`);
   await waitFor(`!document.querySelector("dialog[open]")`, "delete did not cancel");
-  checks.rowActionsOnWork = true;
+  checks.rowActionsOnTasks = true;
   checks.rowsUnchanged = JSON.stringify((await sidebar()).rows) === JSON.stringify(onChat.rows);
 
-  // 3. Opening a chat from Work.
+  // 3. Opening a chat from Tasks.
   const target = await evaluate(`(() => { const a = document.querySelectorAll(".chat-list-select")[1]; return { href: a.getAttribute("href"), title: a.title }; })()`);
   await evaluate(`document.querySelectorAll(".chat-list-select")[1].click(); true`);
-  await waitFor(`location.pathname === ${JSON.stringify(target.href)} && !!document.querySelector(".chat-header-title strong")`, "picking a chat on Work did not open it");
+  await waitFor(`location.pathname === ${JSON.stringify(target.href)} && !!document.querySelector(".chat-header-title strong")`, "picking a chat on Tasks did not open it");
   await waitFor(`document.querySelector(".chat-header-title strong").innerText === ${JSON.stringify(target.title)}`, "the wrong chat opened");
-  checks.chatOpensFromWork = await evaluate(`document.querySelector(".chat-list-select[aria-current=page]")?.getAttribute("href") === ${JSON.stringify(target.href)}`);
-  await shot("opened-from-work.png");
+  checks.chatOpensFromTasks = await evaluate(`document.querySelector(".chat-list-select[aria-current=page]")?.getAttribute("href") === ${JSON.stringify(target.href)}`);
+  await shot("opened-from-tasks.png");
 
-  // 6. New chat from Work.
-  await open("/work");
+  // 6. New chat from Tasks.
+  await open("/tasks");
   await evaluate(`[...document.querySelectorAll(".sidebar-actions button")].find((b) => b.innerText.includes("New chat")).click(); true`);
-  await waitFor(`location.pathname === "/chat" && !!document.querySelector(".chat-welcome")`, "New chat on Work did not open a fresh chat");
-  checks.newChatFromWork = await evaluate(`!document.querySelector(".chat-list-select[aria-current=page]")`);
-  await shot("new-chat-from-work.png");
+  await waitFor(`location.pathname === "/chat" && !!document.querySelector(".chat-welcome")`, "New chat on Tasks did not open a fresh chat");
+  checks.newChatFromTasks = await evaluate(`!document.querySelector(".chat-list-select[aria-current=page]")`);
+  await shot("new-chat-from-tasks.png");
 
   notes.pageErrors = browser.errors;
   checks.noPageErrors = browser.errors.length === 0;

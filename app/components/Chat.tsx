@@ -13,7 +13,7 @@ import {
 import { Approvals } from "./Approvals";
 import type { ChatId } from "./ChatList";
 import { Sidebar, type NavigationState, type SectionId } from "./Sidebar";
-import { CopyButton, Icon, Kbd, Notice, Spinner, errorText, fullDate, useToast } from "./ui";
+import { CopyButton, Icon, Kbd, Notice, Spinner, errorText, fullDate, useCopy, useToast } from "./ui";
 import type { Id } from "@/convex/_generated/dataModel";
 
 
@@ -644,18 +644,16 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
 }
 
 function CopySessionId({ id }: { id: string }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => { if (!copied) return; const timer = window.setTimeout(() => setCopied(false), 1600); return () => window.clearTimeout(timer); }, [copied]);
-  return <button type="button" className="chat-session-id" title={`Copy session ID ${id}`} onClick={() => void navigator.clipboard.writeText(id).then(() => setCopied(true))}>
+  const { copied, copy } = useCopy();
+  return <button type="button" className="chat-session-id" title={`Copy session ID ${id}`} onClick={() => copy(id)}>
     {copied ? <><Icon name="check" size={11} />Copied</> : <>{id.slice(-8)}<Icon name="copy" size={11} /></>}
     <span className="sr-only" aria-live="polite">{copied ? "Session ID copied" : ""}</span>
   </button>;
 }
 
 function CopyMessage({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => { if (!copied) return; const timer = window.setTimeout(() => setCopied(false), 1600); return () => window.clearTimeout(timer); }, [copied]);
-  return <button type="button" title="Copy this message" onClick={() => void navigator.clipboard.writeText(text).then(() => setCopied(true))}>
+  const { copied, copy } = useCopy();
+  return <button type="button" title="Copy this message" onClick={() => copy(text)}>
     <Icon name={copied ? "check" : "copy"} size={13} />{copied ? "Copied" : "Copy"}
   </button>;
 }

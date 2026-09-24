@@ -17,6 +17,8 @@ import { openChat, sleep } from "../browser";
 //   3. The count beside "Chats" is back: the label must read exactly "Chats".
 //   4. Date groups are back: no Today, Yesterday, Previous 7 days or Older
 //      labels, and the rows must be one list in the order the server sent.
+//   5. The tab says "Perry" on a page opened directly: every page but Chat
+//      must be titled "<page> · Perry" once it has loaded.
 
 const [outDir, dashboardKey] = process.argv.slice(2);
 if (!outDir || !dashboardKey) throw new Error("usage: bun artifacts/layout/run.ts <outDir> <dashboardKey>");
@@ -53,6 +55,7 @@ try {
 
   // 1. No page scrolls the document, at either width.
   const overflow: Record<string, number> = {};
+  const titles: Record<string, string> = {};
   for (const [width, height, mobile] of [[1280, 800, false], [390, 844, true]] as const) {
     await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile });
     for (const section of SECTIONS) {
@@ -61,13 +64,16 @@ try {
       await sleep(500);
       await settle();
       overflow[`${width}${path}`] = await documentOverflow();
+      if (width === 1280 && section.id !== "chat") titles[path] = await evaluate(`document.title`);
     }
   }
   notes.documentOverflow = overflow;
   checks.oneScrollbarEverywhere = Object.values(overflow).every((extra) => extra <= 0);
+  notes.titles = titles;
+  checks.titledOnDirectLoad = SECTIONS.filter((section) => section.id !== "chat").every((section) => titles[`/${section.id}`] === `${section.label} · Perry`);
 
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  for (const path of ["/keys", "/work"]) {
+  for (const path of ["/keys", "/tasks"]) {
     await send("Page.navigate", { url: `${base}${path}` });
     await sleep(500);
     await settle();

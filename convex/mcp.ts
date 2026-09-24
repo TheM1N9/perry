@@ -21,8 +21,9 @@ import { ALL_TOOLS, type ToolName } from "./tools";
 export const CODEX_TOOLS: readonly ToolName[] = [
   "recall", "remember", "read_memory", "forget", "search_chats", "read_chat", "read_page",
   "list_connectors", "find_action", "run_action",
-  "status_report", "start_task", "set_plan", "finish_task", "set_goal", "watch_page",
-  "create_job", "list_jobs", "update_job", "delete_job",
+  "status_report", "start_task", "set_plan", "finish_task", "set_goal", "update_goal",
+  "watch_page", "update_watch", "delete_watch", "check_watches",
+  "create_job", "list_jobs", "update_job", "delete_job", "run_job",
 ];
 
 /**

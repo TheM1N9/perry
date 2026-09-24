@@ -19,7 +19,7 @@ const label = (status: string, labels: Record<string, string> = {}) => labels[st
  * The agent writes the plan through a tool, so this view is the truth rather
  * than a summary it produced on request.
  */
-export function Work({ dashboardKey }: { dashboardKey: string }) {
+export function Tasks({ dashboardKey }: { dashboardKey: string }) {
   const work = useQuery(api.dashboard.getWork, { key: dashboardKey });
   const toggleMonitor = useMutation(api.dashboard.toggleMonitor);
   const deleteMonitor = useMutation(api.dashboard.deleteMonitor);
@@ -31,9 +31,9 @@ export function Work({ dashboardKey }: { dashboardKey: string }) {
     <>
       <Jobs dashboardKey={dashboardKey} />
 
-      <Section title="Tasks" count={work?.tasks.length} description="Perry opens a task for anything with more than a couple of steps, and keeps its plan here.">
+      <Section title="Plans" count={work?.tasks.length} description="Perry makes a plan for anything with more than a couple of steps, and keeps it here as it works.">
         {work === undefined && <Loading rows={2} />}
-        {work?.tasks.length === 0 && <Empty icon="work" title="No tasks yet">Ask Perry for something that takes a few steps, and its plan shows up here.</Empty>}
+        {work?.tasks.length === 0 && <Empty icon="work" title="No plans yet">Ask Perry for something that takes a few steps, and its plan shows up here.</Empty>}
         {work?.tasks.map((task) => {
           const done = task.plan.filter((step) => step.status === "done").length;
           return <div className="item" key={task._id}>
