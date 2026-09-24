@@ -5,13 +5,31 @@ keys, and nobody else's data is anywhere near it. There is no shared server, no
 account on someone else's system, and nothing in this repo phones home.
 
 ```bash
-pnpm install
-pnpm run setup
+curl -fsSL https://raw.githubusercontent.com/TheM1N9/me-bot/main/install.sh | sh    # macOS, Linux, WSL
 ```
 
-The setup wizard, the runner and the other scripts run on [Bun](https://bun.sh),
-so install it first; pnpm still manages the packages. Perry runs on macOS,
-Linux and Windows:
+```powershell
+iwr -useb https://raw.githubusercontent.com/TheM1N9/me-bot/main/install.ps1 | iex   # Windows
+```
+
+The installer adds what is missing: Git (Windows, through winget), Node.js 20.9
+or newer (winget on Windows; on macOS and Linux, Node's own build in
+`~/.perry/node`, checked against its published checksum), pnpm, Bun and the
+Codex CLI. On macOS and Linux nothing it installs needs sudo. It clones Perry
+into `~/perry` (`PERRY_DIR` changes that), installs the packages, and runs
+`perry setup`, which walks the steps below, connects this computer, builds the
+dashboard, starts Perry in the background, and opens the dashboard already
+unlocked. Run the installer again to update; `perry update` does the same from
+then on.
+
+In a clone of your own, the same without the installer:
+
+```bash
+pnpm install
+pnpm perry setup
+```
+
+Perry runs on macOS, Linux and Windows:
 
 | | macOS | Linux | Windows |
 |---|---|---|---|
@@ -20,11 +38,33 @@ Linux and Windows:
 | Codex's sandbox | Seatbelt, built in | bubblewrap, shipped with Codex; needs user namespaces | a restricted token, set up by Codex |
 | Background service | launchd agent | systemd user unit | Task Scheduler task at logon |
 
-`pnpm run doctor -- --machine` checks all of that on the machine it runs on.
+`perry doctor --machine` checks all of that on the machine it runs on.
 
 That is the whole install. The wizard walks five steps, tells you what it is
 doing, and is safe to re-run: it keeps whatever is already configured and only
 asks for what is missing.
+
+## Running it
+
+`perry setup` leaves Perry running: the runner and the dashboard (a production
+build on port 3000; `PERRY_PORT` changes it) under one background service that
+starts at every login and restarts either one if it crashes. From then on:
+
+| | |
+|---|---|
+| `perry status` | whether it is running, and where the dashboard is |
+| `perry logs [-f]` | what the runner and the dashboard have been saying |
+| `perry open` | the dashboard, already unlocked in this browser |
+| `perry stop` / `perry start` | stop it, or start it again |
+| `perry update` | pull the latest Perry, install, push the backend, rebuild, restart |
+| `perry doctor` | check this machine and your deployment |
+| `perry pair` | a new code to claim Perry on Telegram |
+| `perry run` | run it in this terminal instead, to watch it or to answer approvals there |
+| `perry uninstall` | stop starting it at login; your settings and data stay |
+
+The `perry` command is a small launcher in `~/.perry/bin`, added to your PATH,
+that runs the CLI from your checkout whatever folder you are in. Codex works in
+`~/.perry/workspace` unless you connected with another folder.
 
 ## What the wizard does
 
@@ -35,9 +75,8 @@ asks for what is missing.
    `/newbot`, answer two questions, paste the token back. The wizard checks it
    against Telegram before continuing.
 3. **Codex.** Perry thinks with your ChatGPT subscription, through the
-   [Codex CLI](https://github.com/openai/codex) on your machine. Install Codex,
-   then after setup run `pnpm run connect` and sign in to Codex from the
-   dashboard's Settings page.
+   [Codex CLI](https://github.com/openai/codex) on your machine. Sign in to
+   Codex from the dashboard's Settings page once Perry is running.
 4. **Secrets and deploy.** Generates a webhook secret and a dashboard key,
    writes them to a gitignored `.env.local`, sets them on your deployment,
    pushes the code, and registers the webhook.

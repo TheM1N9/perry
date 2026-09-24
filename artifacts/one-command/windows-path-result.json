@@ -1,0 +1,16 @@
+{
+  "ranAt": "2026-09-24T19:36:12.370Z",
+  "checks": {
+    "added": true,
+    "restUntouched": true,
+    "noDuplicate": true,
+    "windowsSeesIt": true,
+    "restored": true
+  },
+  "notes": {
+    "kind": "ExpandString",
+    "entries": 7,
+    "hadVariables": true
+  },
+  "passed": true
+}

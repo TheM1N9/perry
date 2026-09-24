@@ -167,6 +167,12 @@ export default function Home() {
   // localStorage is only available after mount, so the first paint is blank
   // rather than briefly wrong.
   useEffect(() => {
+    // `perry open` passes the key in the fragment, which never reaches a server; it is kept and taken out of the address.
+    const fromLink = new URLSearchParams(window.location.hash.slice(1)).get("key");
+    if (fromLink) {
+      window.localStorage.setItem(STORAGE_KEY, fromLink);
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    }
     setDashboardKey(window.localStorage.getItem(STORAGE_KEY));
     setReady(true);
   }, []);
