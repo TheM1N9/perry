@@ -29,6 +29,9 @@ export const WINDOWS_SANDBOX = process.platform === "win32"
  * PERRY_CODEX_SANDBOX picks another mode on any OS: read-only, or
  * danger-full-access for a machine that is already isolated, where Codex then
  * asks for almost nothing.
+ *
+ * That is the mode of a Supervised chat. A chat on Full access ignores it and
+ * always runs danger-full-access with approval policy never (see runTurn).
  */
 export const SANDBOX_MODES = ["read-only", "workspace-write", "danger-full-access"] as const;
 export type SandboxMode = (typeof SANDBOX_MODES)[number];
@@ -83,7 +86,7 @@ export class TurnFailed extends Error {
   }
 }
 export type CodexAttachment = { url?: string; localPath?: string; fileName: string; contentType?: string };
-export type CodexModel = { id: string; name: string; isDefault: boolean };
+export type CodexModel = { id: string; name: string; isDefault: boolean; efforts: string[]; defaultEffort?: string };
 export type ChatgptToken = { accessToken: string; accountId?: string; expiresAt: number };
 
 /** Refresh a token this close to expiry before handing it out, as eve does. */
@@ -276,9 +279,19 @@ export class CodexAppServer extends EventEmitter {
     return await read(true);
   }
 
+  /** The account's models, each with the reasoning efforts turn/start takes for it (a chat's thinking level). */
   async models(): Promise<CodexModel[]> {
-    const result = await this.request<{ data?: Array<{ model: string; displayName?: string; isDefault?: boolean }> }>("model/list", { limit: 100 });
-    return (result.data ?? []).map((model) => ({ id: model.model, name: model.displayName || model.model, isDefault: Boolean(model.isDefault) }));
+    const result = await this.request<{ data?: Array<{
+      model: string; displayName?: string; isDefault?: boolean;
+      supportedReasoningEfforts?: Array<{ reasoningEffort: string }>; defaultReasoningEffort?: string;
+    }> }>("model/list", { limit: 100 });
+    return (result.data ?? []).map((model) => ({
+      id: model.model,
+      name: model.displayName || model.model,
+      isDefault: Boolean(model.isDefault),
+      efforts: (model.supportedReasoningEfforts ?? []).map((option) => option.reasoningEffort),
+      defaultEffort: model.defaultReasoningEffort || undefined,
+    }));
   }
 
   waitForLogin(loginId: string, timeoutMs = 10 * 60_000): Promise<void> {
@@ -435,7 +448,7 @@ export class CodexAppServer extends EventEmitter {
     }
   }
 
-  async runTurn({ threadId, instructions, history, recalled, prompt, cwd, model, tools, attachments = [], onThread, onText, onStarted, onItem, onUsage }: {
+  async runTurn({ threadId, instructions, history, recalled, prompt, cwd, model, effort, access = "supervised", tools, attachments = [], onThread, onText, onStarted, onItem, onUsage }: {
     threadId?: string;
     instructions: string;
     history?: string;
@@ -444,6 +457,14 @@ export class CodexAppServer extends EventEmitter {
     prompt: string;
     cwd: string;
     model?: string;
+    /** The reasoning effort, one the model takes. Unset leaves the thread's own. */
+    effort?: string;
+    /**
+     * Supervised: the sandbox (PERRY_CODEX_SANDBOX, workspace-write by default)
+     * and on-request approvals, which reach the owner through the runner. Full:
+     * no sandbox, and Codex never asks.
+     */
+    access?: "supervised" | "full";
     tools?: { url: string; token: string };
     attachments?: CodexAttachment[];
     onThread: (threadId: string) => Promise<unknown>;
@@ -468,8 +489,9 @@ export class CodexAppServer extends EventEmitter {
     const fullInstructions = history
       ? `${instructions}\n\n${home}\n\nEarlier chat history (context, not a new user request):\n${history}`
       : `${instructions}\n\n${home}`;
-    const policy = "on-request";
-    const sandbox = sandboxMode();
+    const full = access === "full";
+    const policy = full ? "never" : "on-request";
+    const sandbox: SandboxMode = full ? "danger-full-access" : sandboxMode();
     // The deployment's own tools: memory, connected accounts, task tracking.
     const config = {
       ...(tools ? {
@@ -518,10 +540,15 @@ export class CodexAppServer extends EventEmitter {
     this.on("item/completed", onItemCompleted);
     this.on("thread/tokenUsage/updated", onTokens);
     try {
+    // turn/start's overrides hold "for this turn and subsequent turns", and
+    // thread/resume of a thread this app-server still has loaded just rejoins
+    // it, so every turn states its access and effort: a chat switched mid-way
+    // takes the new ones, and nothing lingers from an earlier turn.
     const started = await this.request<{ turn?: { id?: string } }>("turn/start", {
       threadId: id,
       input,
       ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
       cwd,
       approvalPolicy: policy,
       sandboxPolicy: sandboxPolicy(sandbox, [cwd, PATHS.files, PATHS.skills]),

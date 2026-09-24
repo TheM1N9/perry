@@ -7,8 +7,10 @@ import { action, mutation, query } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { FALLBACK_PROVIDER } from "./chatgpt";
 import { ABSOLUTE_PATH } from "./media";
+import { defaultAccess } from "./installation";
+import type { Access } from "./lib/commands";
 import { policyOf, type Policy } from "./runner";
-import { vMemoryKind, vPolicy } from "./schema";
+import { vAccess, vMemoryKind, vPolicy } from "./schema";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -92,6 +94,7 @@ export const createChat = mutation({
       externalId: `session:${threadId}`,
       threadId,
       title: "New chat",
+      access: await defaultAccess(ctx),
       lastMessageAt: Date.now(),
     });
   },
@@ -249,7 +252,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ model?: string; title: string; isRunning: boolean; streaming?: string; fallback?: boolean; lastError?: string }> => {
+  ): Promise<{ model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; fallback?: boolean; lastError?: string }> => {
     assertDashboardKey(args.key);
     const conversation = webChat(await ctx.db.get(args.id));
     const isRunning = (conversation.pendingTurns ?? 0) > 0;
@@ -264,6 +267,8 @@ export const getChat = query({
       : null;
     return {
       model: conversation.model,
+      effort: conversation.effort,
+      access: conversation.access ?? "supervised",
       title: conversation.title ?? "Untitled chat",
       isRunning,
       // The flush before /reset works quietly.
@@ -388,6 +393,9 @@ export const sendChat = mutation({
     messageKey: v.optional(v.string()),
     /** The Codex model picked in the composer. Unset keeps the chat's current one. */
     model: v.optional(v.string()),
+    /** Picked in the composer before the chat existed; "" is the model's default. Unset keeps the chat's. */
+    effort: v.optional(v.string()),
+    access: v.optional(vAccess),
   },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
@@ -410,6 +418,8 @@ export const sendChat = mutation({
       title: chat.title === "New chat" ? (text || "Attached files").slice(0, 80) : chat.title,
       pendingTurns: (chat.pendingTurns ?? 0) + 1,
       ...(args.model !== undefined ? { model: args.model.trim() || undefined } : {}),
+      ...(args.effort !== undefined ? { effort: args.effort.trim() || undefined } : {}),
+      ...(args.access !== undefined ? { access: args.access } : {}),
     });
 
     // Sent while a reply is running, this joins that reply (see codex.enqueueTurn).
@@ -533,6 +543,49 @@ export const setChatModel = mutation({
     assertDashboardKey(args.key);
     webChat(await ctx.db.get(args.id));
     await ctx.db.patch(args.id, { model: args.model?.trim() || undefined });
+    return null;
+  },
+});
+
+/** Pick this chat's thinking level. Unset means the model's default. */
+export const setChatEffort = mutation({
+  args: { key: vKey, id: v.id("conversations"), effort: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    webChat(await ctx.db.get(args.id));
+    await ctx.db.patch(args.id, { effort: args.effort?.trim().toLowerCase() || undefined });
+    return null;
+  },
+});
+
+/** Supervised or Full access for this chat, from its next turn. */
+export const setChatAccess = mutation({
+  args: { key: vKey, id: v.id("conversations"), access: vAccess },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    webChat(await ctx.db.get(args.id));
+    await ctx.db.patch(args.id, { access: args.access });
+    return null;
+  },
+});
+
+/** The access new chats start with, for Settings and the composer of a chat not yet sent. */
+export const getDefaultAccess = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<Access> => {
+    assertDashboardKey(args.key);
+    return await defaultAccess(ctx);
+  },
+});
+
+export const setDefaultAccess = mutation({
+  args: { key: vKey, access: vAccess },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.installation.setDefaultAccess, { access: args.access });
     return null;
   },
 });

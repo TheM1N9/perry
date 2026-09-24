@@ -173,6 +173,14 @@ off, and anything else is asked for. How Codex enforces that depends on the OS:
 are isolated already. `pnpm run doctor -- --machine` runs one sandboxed command
 on macOS and Linux to show the sandbox works.
 
+All of this is for **Supervised** chats, the default. A chat set to **Full
+access** (in its composer, with `/access full`, or by the default for new chats
+in Settings) runs every turn with `danger-full-access` and approval policy
+`never` whatever `PERRY_CODEX_SANDBOX` says: no sandbox, and Codex never asks.
+`PERRY_CODEX_SANDBOX` still sets the sandbox of every Supervised chat on that
+machine, so with it set to `danger-full-access` even a Supervised chat runs
+unsandboxed, though Codex still asks there before anything it judges risky.
+
 ## Perry's folder on your machine
 
 Setup and the runner create `~/.perry`, the way Claude Code has `~/.claude`

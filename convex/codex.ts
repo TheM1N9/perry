@@ -9,7 +9,7 @@ import { authenticate } from "./runner";
 import { FALLBACK_PROVIDER, startFallback } from "./chatgpt";
 import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
-import { vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
+import { vAccess, vCodexModel, vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
 
 /** Only device codes and account metadata cross Convex. Codex tokens never do. */
@@ -133,7 +133,7 @@ export const reportAccount = mutation({
     authMode: v.optional(v.string()),
     planType: v.optional(v.string()),
     error: v.optional(v.string()),
-    models: v.optional(v.array(v.object({ id: v.string(), name: v.string(), isDefault: v.boolean() }))),
+    models: v.optional(v.array(vCodexModel)),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -190,6 +190,9 @@ export const enqueueTurn = internalMutation({
     recallDigest: v.optional(v.string()),
     flush: v.optional(v.boolean()),
     model: v.optional(v.string()),
+    /** The reasoning effort for turn/start, already checked against the model (commands.turnEffort). */
+    effort: v.optional(v.string()),
+    access: v.optional(vAccess),
     attachments: v.optional(v.array(vTurnAttachment)),
     policy: v.optional(v.union(v.literal("steer"), v.literal("queue"))),
   },
@@ -210,6 +213,8 @@ export const enqueueTurn = internalMutation({
       recallDigest: args.recallDigest,
       ...(args.flush ? { flush: true } : {}),
       requestedModel: args.model,
+      requestedEffort: args.effort,
+      access: args.access,
       attachments: args.attachments,
       createdAt: Date.now(),
     };
@@ -250,6 +255,8 @@ export async function queueSteer(ctx: MutationCtx, steer: Doc<"codexSteers">, ou
     history: steer.history,
     instructions: steer.instructions,
     requestedModel: steer.requestedModel,
+    requestedEffort: steer.requestedEffort,
+    access: steer.access,
     attachments: steer.attachments,
     createdAt: Date.now(),
     ...(outcome.stopped ? { status: "done", stopped: true, finishedAt: Date.now() } : { status: "queued" }),

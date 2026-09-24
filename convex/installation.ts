@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
-import { vChannel } from "./schema";
+import { vAccess, vChannel } from "./schema";
 
 /**
  * Who owns this install, and how they proved it.
@@ -193,6 +193,26 @@ export const setTelegramApprovals = internalMutation({
     const install = await read(ctx);
     if (!install) return null;
     await ctx.db.patch(install._id, { telegramApprovals: args.enabled });
+    return null;
+  },
+});
+
+/**
+ * The access a new chat starts with. Read when a chat is created, so changing
+ * it leaves existing chats as they are. Job chats never take it: a job runs
+ * supervised unless its chat is set otherwise.
+ */
+export async function defaultAccess(ctx: Parameters<typeof read>[0]): Promise<"supervised" | "full"> {
+  return (await read(ctx))?.defaultAccess ?? "supervised";
+}
+
+export const setDefaultAccess = internalMutation({
+  args: { access: vAccess },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const install = await read(ctx);
+    if (!install) throw new Error("Run pnpm run setup first.");
+    await ctx.db.patch(install._id, { defaultAccess: args.access });
     return null;
   },
 });

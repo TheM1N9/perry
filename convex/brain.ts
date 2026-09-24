@@ -5,7 +5,10 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { INSTRUCTIONS } from "./assistant";
 import { ownerNow, QUIET } from "./jobs";
-import { describeModels, parseModelCommand, pickModel, type ModelOption } from "./lib/commands";
+import {
+  ACCESS_LABELS, chatModel, describeAccess, describeEfforts, describeModels, effortUnused, parseAccessCommand, parseModelCommand,
+  parseThinkCommand, pickAccess, pickEffort, pickModel, runLabel, turnEffort, type ModelOption,
+} from "./lib/commands";
 import { DOWNLOAD_LIMIT, downloadFile, sendMessage, sendTyping } from "./lib/telegram";
 import { vChannel, vTelegramMedia } from "./schema";
 
@@ -24,6 +27,8 @@ const HELP = `
 Your private assistant.
 
   /model    list the Codex models; /model <name> switches this chat
+  /think    list the thinking levels; /think <level> sets this chat's
+  /access   supervised or full: whether Codex asks before acting
   /stop     stop the reply I am writing
   /compact  shrink what Codex carries of this chat, keep the chat
   /status   plumbing and recent errors
@@ -46,8 +51,25 @@ async function runCommand(
   if (modelCommand) {
     const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
     if (!modelCommand.name) return describeModels(models, conversation.model);
-    const { model, reply } = pickModel(models, modelCommand.name);
+    const { model, reply } = pickModel(models, modelCommand.name, conversation.effort);
     if (model) await ctx.runMutation(internal.conversations.setModel, { id: conversation._id, model: model.id });
+    return reply;
+  }
+
+  const thinkCommand = parseThinkCommand(text);
+  if (thinkCommand) {
+    const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
+    if (!thinkCommand.level) return describeEfforts(models, conversation.model, conversation.effort);
+    const picked = pickEffort(models, conversation.model, thinkCommand.level);
+    if (picked.ok) await ctx.runMutation(internal.conversations.setEffort, { id: conversation._id, effort: picked.effort });
+    return picked.reply;
+  }
+
+  const accessCommand = parseAccessCommand(text);
+  if (accessCommand) {
+    if (!accessCommand.mode) return describeAccess(conversation.access ?? "supervised");
+    const { access, reply } = pickAccess(accessCommand.mode);
+    if (access) await ctx.runMutation(internal.conversations.setAccess, { id: conversation._id, access });
     return reply;
   }
 
@@ -61,8 +83,14 @@ async function runCommand(
         id: conversation._id,
       });
       const memoryCount = await ctx.runQuery(internal.memories.count, {});
+      const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
+      const model = chatModel(models, conversation.model);
+      const effort = turnEffort(models, conversation.model, conversation.effort);
+      const unused = model && effortUnused(model, conversation.effort) ? ` (${conversation.effort} is not one ${model.name} takes)` : "";
       const lines = [
         `model     ${conversation.model ? `codex/${conversation.model}` : "codex default"}`,
+        `thinking  ${conversation.effort && !unused ? conversation.effort : `default${effort ? ` (${effort})` : ""}${unused}`}`,
+        `access    ${ACCESS_LABELS[conversation.access ?? "supervised"]}`,
         `memories  ${memoryCount}`,
         `runs      ${stats?.recentRuns ?? 0} recent`,
       ];
@@ -126,6 +154,19 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   };
 }
 
+/**
+ * How the chat's turns run: its model, the thinking level that model takes
+ * (a level it does not take falls back to its default), and its access.
+ */
+async function turnSettings(ctx: ActionCtx, conversation: Doc<"conversations">) {
+  const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
+  return {
+    model: conversation.model,
+    effort: turnEffort(models, conversation.model, conversation.effort),
+    access: conversation.access ?? "supervised" as const,
+  };
+}
+
 // Adapted from vercel/eve (Apache-2.0): packages/eve/src/harness/compaction-prompt.ts
 const FLUSH = [
   "This is a memory checkpoint before the owner resets this chat, not a message from the owner. Afterwards this conversation is gone from the chat.",
@@ -147,6 +188,7 @@ const FLUSH = [
 async function reset(ctx: ActionCtx, conversation: Doc<"conversations">): Promise<string> {
   await ctx.runMutation(internal.conversations.beginReset, { id: conversation._id });
   const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, { conversationId: conversation._id, prompt: "/reset" });
+  const settings = await turnSettings(ctx, conversation);
   let delegated = false;
   try {
     await ctx.runMutation(internal.codex.enqueueTurn, {
@@ -154,14 +196,14 @@ async function reset(ctx: ActionCtx, conversation: Doc<"conversations">): Promis
       runId,
       prompt: FLUSH,
       ...await prepareTurn(ctx, conversation, ""),
-      model: conversation.model,
+      ...settings,
       flush: true,
     });
     delegated = true;
     return "Saving what is worth keeping from this chat to memory, then starting fresh.";
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: "codex subscription", error: message.slice(0, 1000) });
+    await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access), error: message.slice(0, 1000) });
     const threadId = await createThread(ctx, components.agent, { userId: userIdOf(conversation), title: conversation.title });
     await ctx.runMutation(internal.conversations.clearThread, { id: conversation._id, threadId });
     return `Fresh start, but this chat was not summarised into memory first: ${message}`;
@@ -294,7 +336,7 @@ export const handleTurn = internalAction({
       const attachments = attachmentIds.length > 0
         ? await ctx.runQuery(internal.media.forTurn, { conversationId: conversation._id, attachmentIds })
         : [];
-      const model = conversation.model ? `codex/${conversation.model}` : "codex subscription";
+      const settings = await turnSettings(ctx, conversation);
       const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
         conversationId: conversation._id,
         prompt: args.text,
@@ -307,7 +349,7 @@ export const handleTurn = internalAction({
           runId,
           prompt,
           ...await prepareTurn(ctx, conversation, args.text),
-          model: conversation.model,
+          ...settings,
           attachments,
           // The owner's message joins a reply that is running; a job's prompt waits its turn.
           policy: conversation.jobId ? "queue" : "steer",
@@ -318,7 +360,7 @@ export const handleTurn = internalAction({
         // an admitted one, because you keep waiting for a reply that never comes.
         const message = error instanceof Error ? error.message : String(error);
         console.error(`turn failed: ${message}`);
-        await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model, error: message.slice(0, 1000) });
+        await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access), error: message.slice(0, 1000) });
         if (conversation.jobId) await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, error: message });
         if (telegramToken) {
           await sendMessage(telegramToken, args.externalId, `That broke: ${message.slice(0, 300)}`)
