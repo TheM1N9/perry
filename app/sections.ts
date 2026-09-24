@@ -9,6 +9,7 @@ export const SECTIONS = [
   { id: "settings", label: "Settings", icon: "settings", description: "Your Codex account and how Perry answers when your computer is offline." },
   { id: "keys", label: "Keys", icon: "key", description: "Service credentials this installation uses. Saved keys are never shown again." },
   { id: "setup", label: "Setup", icon: "link", description: "Pair Perry with your Telegram account so it knows who it works for." },
+  { id: "profile", label: "Profile", icon: "user", description: "What Perry knows about you, what it can reach, and how it's set up." },
 ] as const;
 
 export type SectionId = (typeof SECTIONS)[number]["id"];

@@ -10,9 +10,10 @@ import { Connectors } from "./components/Connectors";
 import { Keys } from "./components/Keys";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Memories } from "./components/Memories";
+import { Profile } from "./components/Profile";
 import { Settings } from "./components/Settings";
 import { Setup } from "./components/Setup";
-import { SECTIONS, Sidebar, linkClick, sectionPath, type SectionId } from "./components/Sidebar";
+import { SECTIONS, Sidebar, linkClick, sectionPath, underProfile, type NavigationState, type SectionId } from "./components/Sidebar";
 import { Work } from "./components/Work";
 import { Command, Icon, SecretInput, Spinner, errorText } from "./components/ui";
 
@@ -85,10 +86,11 @@ function Shell({ dashboardKey, onLock }: { dashboardKey: string; onLock: () => v
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const navigate = useCallback((section: SectionId) => {
+  // `state` rides on the history entry, so the chat page can tell "New chat" from "back to my chats".
+  const navigate = useCallback((section: SectionId, state?: NavigationState) => {
     const chatId = window.localStorage.getItem("perry.activeChat");
     const to = section === "chat" ? (chatId ? `/chat/${encodeURIComponent(chatId)}` : "/chat") : sectionPath(section);
-    if (window.location.pathname !== to) window.history.pushState(null, "", to);
+    if (window.location.pathname !== to) window.history.pushState(state ?? null, "", to);
     setPath(to);
     document.querySelector<HTMLElement>(".workspace-scroll")?.scrollTo({ top: 0 });
   }, []);
@@ -123,14 +125,15 @@ function Shell({ dashboardKey, onLock }: { dashboardKey: string; onLock: () => v
 
   return <div className="app">
     <a className="skip-link" href="#content">Skip to content</a>
-    <Sidebar dashboardKey={dashboardKey} current={active} onNavigate={navigate} onLock={onLock} open={menuOpen} onClose={closeMenu}
-      actions={<a className="chat-new" href="/chat" onClick={(event) => linkClick(event, () => { window.localStorage.removeItem("perry.activeChat"); navigate("chat"); })}><Icon name="plus" size={15} />New chat</a>} />
+    <Sidebar dashboardKey={dashboardKey} current={active} onNavigate={navigate} onLock={onLock} open={menuOpen} onClose={closeMenu} />
     <main className="main" inert={menuOpen || undefined}>
       <header className="topbar">
         <div className="topbar-left">
           <button type="button" className="icon-button mobile-menu" aria-label="Open navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Icon name="menu" /></button>
           <nav className="breadcrumb" aria-label="Breadcrumb">
-            <span>Perry</span><span className="sep" aria-hidden="true">/</span><strong aria-current="page">{section.label}</strong>
+            <span>Perry</span><span className="sep" aria-hidden="true">/</span>
+            {underProfile(active) && <><a href={sectionPath("profile")} onClick={(event) => linkClick(event, () => navigate("profile"))}>Profile</a><span className="sep" aria-hidden="true">/</span></>}
+            <strong aria-current="page">{section.label}</strong>
           </nav>
         </div>
       </header>
@@ -149,6 +152,7 @@ function Shell({ dashboardKey, onLock }: { dashboardKey: string; onLock: () => v
             {active === "activity" && <Activity dashboardKey={dashboardKey} onOpenChat={openChat} />}
             {active === "keys" && <Keys dashboardKey={dashboardKey} />}
             {active === "setup" && <Setup dashboardKey={dashboardKey} />}
+            {active === "profile" && <Profile dashboardKey={dashboardKey} onNavigate={navigate} />}
           </ErrorBoundary>
         </div>
       </div>

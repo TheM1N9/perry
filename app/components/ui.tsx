@@ -50,6 +50,7 @@ const paths = {
   play: "M7 5v14l11-7L7 5Z",
   pause: "M8 5v14M16 5v14",
   info: "M12 16v-5M12 8h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z",
+  user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21a8 8 0 0 1 16 0",
 } as const;
 export type IconName = keyof typeof paths;
 
