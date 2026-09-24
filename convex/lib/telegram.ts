@@ -279,7 +279,9 @@ export async function sendFile(
   file: { blob: Blob; fileName: string; contentType: string; caption?: string },
 ): Promise<void> {
   if (file.blob.size > UPLOAD_LIMIT) throw new Error(`${file.fileName} is over Telegram's 50 MB limit for bots.`);
-  const bytes = new Blob([file.blob], { type: file.contentType });
+  // Read once: a stored file arrives as a streaming Blob, which a retry (after
+  // a 429, or as a document) could not read again.
+  const bytes = new Blob([await file.blob.arrayBuffer()], { type: file.contentType });
   const send = (method: string, field: string) => withHtml(async (html) => {
     const form = new FormData();
     form.set("chat_id", chatId);

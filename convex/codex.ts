@@ -889,6 +889,26 @@ export const markFinalized = internalMutation({
   },
 });
 
+/**
+ * Start finalizing, unless another finalize of this turn started within the
+ * lease: delivering files can take minutes (uploads, rate limits), and a
+ * second finalize beside it would send them again.
+ */
+export const beginFinalize = internalMutation({
+  args: { id: v.id("codexTurns") },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.id);
+    if (!job || job.finalizedAt) return false;
+    if (job.finalizingAt && job.finalizingAt > Date.now() - FINALIZE_LEASE_MS) return false;
+    await ctx.db.patch(args.id, { finalizingAt: Date.now() });
+    return true;
+  },
+});
+
+/** Long enough for a finalize with slow uploads to finish; a crashed one is retried after it. */
+export const FINALIZE_LEASE_MS = 10 * 60_000;
+
 export const markStep = internalMutation({
   args: { id: v.id("codexTurns"), step: v.union(v.literal("reportedAt"), v.literal("savedAt"), v.literal("deliveredAt")) },
   returns: v.null(),
@@ -908,6 +928,7 @@ export const finalizeTurn = internalAction({
       steers: string[];
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
+    if (!(await ctx.runMutation(internal.codex.beginFinalize, args))) return null;
     const { job, conversation, steers } = result;
     // A stopped turn keeps whatever it had written, marked as stopped.
     const reply = job.stopped ? `${job.response ?? ""}\n\n_Stopped._`.trim() : job.response;

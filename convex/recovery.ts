@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
-import { queueSteer } from "./codex";
+import { FINALIZE_LEASE_MS, queueSteer } from "./codex";
 
 /**
  * Durable turns. The runner keeps finished Codex results on disk and delivers
@@ -53,7 +53,9 @@ export const sweep = internalMutation({
     const handled = new Set<string>();
     for (const turn of turns) {
       if (turn.finalizedAt) continue;
-      if ((turn.status === "done" || turn.status === "error") && (turn.finishedAt ?? 0) < now - RETRY_FINALIZE_MS) {
+      // Not while a finalize that started recently may still be delivering.
+      if ((turn.status === "done" || turn.status === "error") && (turn.finishedAt ?? 0) < now - RETRY_FINALIZE_MS
+        && (turn.finalizingAt ?? 0) < now - FINALIZE_LEASE_MS) {
         await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: turn._id });
         refinalized += 1;
         continue;
