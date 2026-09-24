@@ -39,43 +39,58 @@ export function Jobs({ dashboardKey }: { dashboardKey: string }) {
   const runNow = useMutation(api.jobs.runNow);
   const now = useNow();
 
-  const description = "Prompts Perry runs on a schedule, like a morning briefing, or once, like a reminder. Ask for one in chat. The heartbeat checks in a few times a day and only speaks up when something needs you.";
-  if (data === undefined) return <Section title="Scheduled jobs" description={description}><Loading rows={2} /></Section>;
+  const description = "Prompts Perry runs on a schedule, like a morning briefing, or once, like a reminder. Ask for one in chat.";
+  if (data === undefined) return <Section title="Scheduled" description={description}><Loading rows={2} /></Section>;
   const when = (ms: number) => fullDate(ms, data.timezone);
+  type Job = (typeof data.jobs)[number];
+  const yours = data.jobs.filter((job) => !job.builtin);
+  // The heartbeat, daily summary and memory consolidation keep Perry running; they fold away so your own jobs lead.
+  const builtins = data.jobs.filter((job) => job.builtin);
+  const builtinFailures = builtins.filter((job) => job.enabled && job.lastError).length;
+
+  const row = (job: Job) => {
+    // A one-time job whose time has passed has run, or was paused past it; either way it is over.
+    const over = job.runAt !== undefined && !job.enabled && job.runAt <= Date.now();
+    const readable = job.schedule ? describeSchedule(job.schedule) : null;
+    return (
+      <div className="item" key={job.id}>
+        <div className="item-main">
+          <div className="item-title">{job.name}</div>
+          <div className="item-meta">
+            {job.runAt !== undefined
+              ? <span>Once, {when(job.runAt)}</span>
+              : <span title={job.schedule}>{readable ?? <code className="inline">{job.schedule}</code>}</span>}
+            {job.enabled && job.runAt === undefined && <span title={when(job.nextRunAt)}>Next {ago(job.nextRunAt, now)}</span>}
+            {job.lastRunAt ? <span title={when(job.lastRunAt)}>Last ran {ago(job.lastRunAt, now)}</span> : <span>Hasn&apos;t run yet</span>}
+          </div>
+          {job.lastError && <div className="item-callout danger"><strong>Last run failed.</strong> {job.lastError}</div>}
+          {!job.lastError && job.lastResult && <div className="item-callout neutral">{job.lastResult}</div>}
+        </div>
+        <div className="item-side">
+          <Status tone={job.enabled ? "success" : over ? "neutral" : "warning"}>{job.enabled ? "Active" : over ? "Done" : "Paused"}</Status>
+          <div className="item-actions">
+            <ActionButton variant="secondary" action={() => runNow({ key: dashboardKey, id: job.id })} success={`Running “${job.name}” now.`}>Run now</ActionButton>
+            {!over && <ActionButton variant="ghost" action={() => setEnabled({ key: dashboardKey, id: job.id, enabled: !job.enabled })} success={job.enabled ? "Paused." : "Resumed."}>{job.enabled ? "Pause" : "Resume"}</ActionButton>}
+            {!job.builtin && <ActionButton variant="ghost" className="btn-danger-ghost" action={() => remove({ key: dashboardKey, id: job.id })} success="Job deleted."
+              confirm={{ title: `Delete “${job.name}”?`, body: "It won't run again. To bring it back, ask Perry to set it up again.", confirmLabel: "Delete job" }}>Delete</ActionButton>}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <Section title="Scheduled jobs" count={data.jobs.length} description={description} actions={<span className="tag" title="Jobs run in this timezone">{data.timezone}</span>}>
-      {data.jobs.length === 0 && <Empty icon="work" title="No scheduled jobs">Try asking in chat: “Every weekday at 8am, send me a summary of my calendar.”</Empty>}
-      {data.jobs.map((job) => {
-        // A one-time job whose time has passed has run, or was paused past it; either way it is over.
-        const over = job.runAt !== undefined && !job.enabled && job.runAt <= Date.now();
-        const readable = job.schedule ? describeSchedule(job.schedule) : null;
-        return (
-          <div className="item" key={job.id}>
-            <div className="item-main">
-              <div className="item-title">{job.name}{job.builtin && <span className="tag">Built in</span>}</div>
-              <div className="item-meta">
-                {job.runAt !== undefined
-                  ? <span>Once, {when(job.runAt)}</span>
-                  : <span title={job.schedule}>{readable ?? <code className="inline">{job.schedule}</code>}</span>}
-                {job.enabled && job.runAt === undefined && <span title={when(job.nextRunAt)}>Next {ago(job.nextRunAt, now)}</span>}
-                {job.lastRunAt ? <span title={when(job.lastRunAt)}>Last ran {ago(job.lastRunAt, now)}</span> : <span>Hasn&apos;t run yet</span>}
-              </div>
-              {job.lastError && <div className="item-callout danger"><strong>Last run failed.</strong> {job.lastError}</div>}
-              {!job.lastError && job.lastResult && <div className="item-callout neutral">{job.lastResult}</div>}
-            </div>
-            <div className="item-side">
-              <Status tone={job.enabled ? "success" : over ? "neutral" : "warning"}>{job.enabled ? "Active" : over ? "Done" : "Paused"}</Status>
-              <div className="item-actions">
-                <ActionButton variant="secondary" action={() => runNow({ key: dashboardKey, id: job.id })} success={`Running “${job.name}” now.`}>Run now</ActionButton>
-                {!over && <ActionButton variant="ghost" action={() => setEnabled({ key: dashboardKey, id: job.id, enabled: !job.enabled })} success={job.enabled ? "Paused." : "Resumed."}>{job.enabled ? "Pause" : "Resume"}</ActionButton>}
-                {!job.builtin && <ActionButton variant="ghost" className="btn-danger-ghost" action={() => remove({ key: dashboardKey, id: job.id })} success="Job deleted."
-                  confirm={{ title: `Delete “${job.name}”?`, body: "It won't run again. To bring it back, ask Perry to set it up again.", confirmLabel: "Delete job" }}>Delete</ActionButton>}
-              </div>
-            </div>
-          </div>
-        );
-      })}
+    <Section title="Scheduled" count={yours.length} description={description} actions={<span className="tag" title="Jobs run in this timezone">{data.timezone}</span>}>
+      {yours.length === 0 && <Empty icon="work" title="Nothing scheduled yet">Try asking in chat: “Every weekday at 8am, send me a summary of my calendar.”</Empty>}
+      {yours.map(row)}
+      {builtins.length > 0 && <details className="disclosure builtin-jobs">
+        <summary>
+          <span>Built in</span><span className="section-count">{builtins.length}</span>
+          <span className="builtin-jobs-hint">Heartbeat, daily summary and memory upkeep</span>
+          {builtinFailures > 0 && <Status tone="danger">{builtinFailures} failed</Status>}
+        </summary>
+        {builtins.map(row)}
+      </details>}
     </Section>
   );
 }

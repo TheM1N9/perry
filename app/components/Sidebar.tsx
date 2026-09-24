@@ -10,7 +10,7 @@ import { Icon, Kbd, Status } from "./ui";
 export { SECTIONS, type SectionId };
 
 /** What you open every day besides your chats. Everything else is a visit, so it lives on the Profile page. */
-const PRIMARY: SectionId[] = ["work"];
+const PRIMARY: SectionId[] = ["tasks"];
 
 /** The Profile page's groups, in order. */
 export const PROFILE_GROUPS: Array<{ label: string; ids: SectionId[] }> = [

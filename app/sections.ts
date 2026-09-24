@@ -1,7 +1,7 @@
 /** Every page of the dashboard, in sidebar order. Shared by the client shell and the server routes. */
 export const SECTIONS = [
   { id: "chat", label: "Chat", icon: "chat", description: "" },
-  { id: "work", label: "Work", icon: "work", description: "Scheduled jobs, tasks, goals, and the pages Perry watches for you." },
+  { id: "tasks", label: "Tasks", icon: "work", description: "What Perry runs on a schedule, the plans it is working through, your goals, and the pages it watches." },
   { id: "computer", label: "Computer", icon: "computer", description: "Where Perry runs commands, and the machines connected to it." },
   { id: "connectors", label: "Connectors", icon: "plug", description: "Accounts Perry can use on your behalf, with your permission." },
   { id: "memory", label: "Memory", icon: "memory", description: "What Perry has saved about you, and the place to correct it." },
