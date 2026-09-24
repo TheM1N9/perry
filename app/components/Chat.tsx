@@ -1,56 +1,65 @@
 "use client";
 
 import { useAction, useMutation, usePaginatedQuery, useQuery } from "convex/react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { api } from "@/convex/_generated/api";
 import { COMPACTED, describeModels, findModel, parseModelCommand, pickModel } from "@/convex/lib/commands";
 import { Approvals } from "./Approvals";
+import { Sidebar, linkClick, type SectionId } from "./Sidebar";
+import { CopyButton, Dialog, Icon, Kbd, Notice, Spinner, errorText, fullDate, useToast } from "./ui";
 import type { Id } from "@/convex/_generated/dataModel";
 
 type ChatId = Id<"conversations">;
-const paths = {
-  plus: "M12 5v14M5 12h14",
-  search: "m21 21-4.35-4.35M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z",
-  chat: "M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-9.5A7.5 7.5 0 0 1 10.5 4h2A7.5 7.5 0 0 1 20 11.5Z",
-  branch: "M7 4v9a5 5 0 0 0 5 5h5M7 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM19 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM7 13a5 5 0 0 0 5-5h5",
-  trash: "M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3",
-  pencil: "m4 20 4.5-1 10.8-10.8-3.5-3.5L5 15.5 4 20ZM14.7 5.3l3.5 3.5",
-  menu: "M4 7h16M4 12h16M4 17h16",
-  arrow: "M12 19V5m-6 6 6-6 6 6",
-  close: "M5 5l14 14M19 5 5 19",
-  paperclip: "m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5",
-  more: "M5 12h.01M12 12h.01M19 12h.01",
-  spark: "m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2ZM19 17l.6 1.4L21 19l-1.4.6L19 21l-.6-1.4L17 19l1.4-.6L19 17Z",
-  lock: "M5 10h14v11H5V10Zm3 0V7a4 4 0 0 1 8 0v3",
-  chevron: "m9 18 6-6-6-6",
-  stop: "M7 7h10v10H7z",
-  redo: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
-} as const;
-function Icon({ name, size = 18 }: { name: keyof typeof paths; size?: number }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
-}
+
+const DAY = 86_400_000;
 function groupName(timestamp: number) {
-  const day = new Date(timestamp).toDateString();
-  if (day === new Date().toDateString()) return "Today";
-  if (day === new Date(Date.now() - 86400000).toDateString()) return "Yesterday";
-  return "Previous";
+  const startOfToday = new Date().setHours(0, 0, 0, 0);
+  if (timestamp >= startOfToday) return "Today";
+  if (timestamp >= startOfToday - DAY) return "Yesterday";
+  if (timestamp >= startOfToday - 7 * DAY) return "Previous 7 days";
+  return "Older";
 }
-const quickStarts = ["Help me plan my day", "Summarize what we worked on recently", "I have an idea to think through"];
+const GROUPS = ["Today", "Yesterday", "Previous 7 days", "Older"];
+/** How many older chats show before "Show more", so a long history stays scannable. */
+const OLDER_PAGE = 20;
+
+const quickStarts = [
+  { text: "Help me plan my day", hint: "Uses your calendar and tasks when they're connected" },
+  { text: "Summarize what we worked on recently", hint: "Draws on earlier chats and saved memory" },
+  { text: "I have an idea to think through", hint: "Talk it out, then save what matters" },
+];
+
+const MAX_FILES = 10;
+const MAX_BYTES = 50 * 1024 * 1024;
+const ACCEPT = "image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json";
+
 type Attachment = { url: string; fileName: string; contentType: string };
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
 /** A message you sent that the history does not show yet: the one that started a reply, or one sent into it. */
 type Pending = { id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean };
+
+const bytes = (size: number) => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`;
+const timeOf = (timestamp: number) => new Date(timestamp).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
 function AttachmentList({ attachments }: { attachments: Attachment[] }) {
   if (!attachments.length) return null;
   return <div className="chat-attachments">{attachments.map((attachment) => {
-    if (attachment.contentType.startsWith("image/")) return <a key={attachment.url} href={attachment.url} target="_blank" rel="noreferrer"><img src={attachment.url} alt={attachment.fileName} /></a>;
-    if (attachment.contentType.startsWith("video/")) return <video key={attachment.url} controls preload="metadata" src={attachment.url} />;
-    if (attachment.contentType.startsWith("audio/")) return <audio key={attachment.url} controls src={attachment.url} />;
-    return <a className="chat-attachment-file" key={attachment.url} href={attachment.url} target="_blank" rel="noreferrer"><Icon name="paperclip" size={15} />{attachment.fileName}</a>;
+    if (attachment.contentType.startsWith("image/")) return <a key={attachment.url} href={attachment.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${attachment.fileName}`}><img src={attachment.url} alt={attachment.fileName} loading="lazy" /></a>;
+    if (attachment.contentType.startsWith("video/")) return <video key={attachment.url} controls preload="metadata" src={attachment.url} aria-label={attachment.fileName} />;
+    if (attachment.contentType.startsWith("audio/")) return <audio key={attachment.url} controls src={attachment.url} aria-label={attachment.fileName} />;
+    return <a className="chat-attachment-file" key={attachment.url} href={attachment.url} target="_blank" rel="noopener noreferrer"><Icon name="paperclip" size={14} />{attachment.fileName}</a>;
   })}</div>;
+}
+
+/** The text of a React node tree, for copying a code block. */
+function textOf(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  if (node && typeof node === "object" && "props" in node) return textOf((node.props as { children?: ReactNode }).children);
+  return "";
 }
 
 /**
@@ -60,15 +69,107 @@ function AttachmentList({ attachments }: { attachments: Attachment[] }) {
  */
 function Markdown({ text }: { text: string }) {
   return <div className="chat-markdown">
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}>{text}</ReactMarkdown>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{
+      a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+      pre: ({ node: _node, children, ...props }) => <div className="code-block"><pre {...props}>{children}</pre><CopyButton value={textOf(children).replace(/\n$/, "")} iconOnly label="Copy code" /></div>,
+      table: ({ node: _node, ...props }) => <div className="table-wrap"><table {...props} /></div>,
+    }}>{text}</ReactMarkdown>
+  </div>;
+}
+
+/** Wrap each match of `term` in <mark>. */
+function highlight(text: string, term: string): ReactNode {
+  if (!term) return text;
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.split(new RegExp(`(${escaped})`, "ig")).map((part, index) => index % 2 ? <mark key={index}>{part}</mark> : part);
+}
+
+function ChatSearch({ dashboardKey, onPick, onClose }: { dashboardKey: string; onPick: (id: ChatId) => void; onClose: () => void }) {
+  const searchChats = useAction(api.dashboard.searchChats);
+  const [search, setSearch] = useState("");
+  const [term, setTerm] = useState("");
+  const [results, setResults] = useState<Array<{ id: ChatId; title: string; snippet: string; lastMessageAt: number }> | null>(null);
+  const [error, setError] = useState("");
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setTerm(search.trim()), 220);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+  useEffect(() => {
+    if (!term) { setResults(null); setError(""); return; }
+    let current = true;
+    setResults(null);
+    setError("");
+    void searchChats({ key: dashboardKey, search: term })
+      .then((found) => { if (current) { setResults(found); setActive(0); } })
+      .catch((cause) => { if (current) setError(errorText(cause)); });
+    return () => { current = false; };
+  }, [dashboardKey, searchChats, term]);
+
+  const count = results?.length ?? 0;
+  return <Dialog title={<span className="sr-only">Search chats</span>} className="search-dialog" onClose={onClose}>
+    <div className="chat-search-field">
+      <Icon name="search" size={16} />
+      <input autoFocus value={search} placeholder="Search chats by title or message…" aria-label="Search chats" role="combobox" aria-expanded={count > 0} aria-controls="chat-search-results"
+        aria-activedescendant={count > 0 ? `chat-search-${active}` : undefined} aria-autocomplete="list" autoComplete="off" spellCheck={false}
+        onChange={(event) => setSearch(event.target.value)}
+        onKeyDown={(event) => {
+          if (!results?.length) return;
+          if (event.key === "ArrowDown") { event.preventDefault(); setActive((active + 1) % count); }
+          if (event.key === "ArrowUp") { event.preventDefault(); setActive((active - 1 + count) % count); }
+          if (event.key === "Enter") { event.preventDefault(); onPick(results[active].id); }
+        }} />
+      {search && <button type="button" className="icon-button sm" aria-label="Clear search" onClick={() => setSearch("")}><Icon name="close" size={14} /></button>}
+    </div>
+    <div className="chat-search-results" id="chat-search-results" role="listbox" aria-label="Matching chats" aria-busy={Boolean(term) && results === null && !error}>
+      {!term && <div className="chat-search-help">Find a conversation by its title or anything said in it.</div>}
+      {term && results === null && !error && <div className="chat-search-help" role="status"><Spinner /> Searching…</div>}
+      {error && <div className="chat-search-help" role="alert">Search failed: {error}</div>}
+      {term && results?.length === 0 && <div className="chat-search-help" role="status">No chats match “{term}”.</div>}
+      {results?.map((item, index) => <button type="button" key={item.id} id={`chat-search-${index}`} role="option" aria-selected={index === active} tabIndex={-1}
+        onMouseMove={() => setActive(index)} onClick={() => onPick(item.id)}>
+        <Icon name="chat" size={15} />
+        <span><strong>{highlight(item.title, term)}</strong>{item.snippet && <small>{highlight(item.snippet, term)}</small>}</span>
+        <small className="nums">{new Date(item.lastMessageAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</small>
+      </button>)}
+    </div>
+    <div className="chat-search-tip" aria-hidden="true"><span><Kbd>↑</Kbd><Kbd>↓</Kbd> to move</span><span><Kbd>Enter</Kbd> to open</span><span><Kbd>Esc</Kbd> to close</span></div>
+  </Dialog>;
+}
+
+/** A chat row's action menu, closed by Escape or a click anywhere else. */
+function ChatMenu({ onRename, onDelete, onClose }: { onRename: () => void; onDelete: () => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.querySelector("button")?.focus();
+    const onPointer = (event: PointerEvent) => {
+      if (!ref.current?.parentElement?.contains(event.target as Node)) onClose();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.stopPropagation(); onClose(); (ref.current?.previousElementSibling as HTMLElement | null)?.focus(); }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const items = [...(ref.current?.querySelectorAll("button") ?? [])];
+        const index = items.indexOf(document.activeElement as HTMLButtonElement);
+        items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey, true);
+    return () => { document.removeEventListener("pointerdown", onPointer); document.removeEventListener("keydown", onKey, true); };
+  }, [onClose]);
+  return <div className="menu" role="menu" ref={ref}>
+    <button type="button" role="menuitem" onClick={onRename}><Icon name="pencil" size={14} />Rename</button>
+    <button type="button" role="menuitem" className="danger" onClick={onDelete}><Icon name="trash" size={14} />Delete</button>
   </div>;
 }
 
 export function Chat({ dashboardKey, onNavigate, onLock }: {
   dashboardKey: string;
-  onNavigate: (tab: "work" | "computer" | "connectors" | "memory" | "settings" | "activity" | "keys" | "setup") => void;
+  onNavigate: (section: SectionId) => void;
   onLock: () => void;
 }) {
+  const toast = useToast();
   const chats = useQuery(api.dashboard.listChats, { key: dashboardKey });
   const createChat = useMutation(api.dashboard.createChat);
   const renameChat = useMutation(api.dashboard.renameChat);
@@ -98,22 +199,30 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const [compaction, setCompaction] = useState<Id<"codexTurns"> | null>(null);
   const [pickedFiles, setPickedFiles] = useState<File[]>([]);
   const [pickedPreviews, setPickedPreviews] = useState<Map<File, string>>(new Map());
+  /** Which upload is in flight, to say so while files are sent. */
+  const [uploading, setUploading] = useState<{ index: number; total: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchResults, setSearchResults] = useState<Array<{ id: ChatId; title: string; snippet: string; lastMessageAt: number }> | null>(null);
-  const [searchError, setSearchError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [menuId, setMenuId] = useState<ChatId | null>(null);
   const [renameId, setRenameId] = useState<ChatId | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleteId, setDeleteId] = useState<ChatId | null>(null);
+  const [dialogError, setDialogError] = useState("");
+  const [olderShown, setOlderShown] = useState(OLDER_PAGE);
   /** The message you are editing, if any. */
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  /** The highlighted slash-command suggestion. */
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
+  /** Whether the arrow keys moved through the suggestions since the draft last changed. */
+  const [suggestionPicked, setSuggestionPicked] = useState(false);
+  /** Whether the reader is at the newest message; only then does new content scroll into view. */
+  const [atBottom, setAtBottom] = useState(true);
   const scroller = useRef<HTMLDivElement>(null);
   const olderScroll = useRef<{ height: number; top: number } | null>(null);
+  const stickToBottom = useRef(true);
   const draftingNew = useRef(false);
   const composer = useRef<HTMLTextAreaElement>(null);
   const filePicker = useRef<HTMLInputElement>(null);
@@ -124,26 +233,29 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     { initialNumItems: 50 },
   );
   const messages = useMemo(() => [...newestMessages].sort((a, b) => a.createdAt - b.createdAt), [newestMessages]);
-  const searchChats = useAction(api.dashboard.searchChats);
   const compactionStatus = useQuery(api.dashboard.getCompaction, compaction ? { key: dashboardKey, id: compaction } : "skip");
 
-  useEffect(() => {
+  const fromUrl = () => {
     const match = window.location.pathname.match(/^\/chat\/([^/]+)/);
-    const fromUrl = match ? decodeURIComponent(match[1]) as ChatId : null;
-    setSelectedId(fromUrl ?? window.localStorage.getItem("perry.activeChat") as ChatId | null);
+    return match ? decodeURIComponent(match[1]) as ChatId : null;
+  };
+  useEffect(() => {
+    setSelectedId(fromUrl() ?? window.localStorage.getItem("perry.activeChat") as ChatId | null);
     setRestored(true);
+    // Back and forward move between chats.
+    const onPop = () => { if (window.location.pathname.startsWith("/chat")) { draftingNew.current = !fromUrl(); setSelectedId(fromUrl()); } };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
   useEffect(() => {
     if (!restored) return;
-    if (selectedId) {
-      window.localStorage.setItem("perry.activeChat", selectedId);
-      if (window.location.pathname !== `/chat/${encodeURIComponent(selectedId)}`) {
-        window.history.replaceState(null, "", `/chat/${encodeURIComponent(selectedId)}`);
-      }
-    } else {
-      window.localStorage.removeItem("perry.activeChat");
-      if (window.location.pathname.startsWith("/chat")) window.history.replaceState(null, "", "/");
-    }
+    const path = selectedId ? `/chat/${encodeURIComponent(selectedId)}` : "/chat";
+    if (selectedId) window.localStorage.setItem("perry.activeChat", selectedId);
+    else window.localStorage.removeItem("perry.activeChat");
+    if (window.location.pathname === path) return;
+    // Picking a chat is a step back can undo; settling on one after load is not.
+    if (/^\/chat\/[^/]+/.test(window.location.pathname)) window.history.pushState(null, "", path);
+    else window.history.replaceState(null, "", path);
   }, [restored, selectedId]);
   useEffect(() => { if (selectedId) draftingNew.current = false; }, [selectedId]);
   useEffect(() => {
@@ -152,27 +264,16 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     setSelectedId(chats[0]?.id ?? null);
   }, [chats, restored]);
   useEffect(() => {
-    const timer = window.setTimeout(() => setSearchTerm(search.trim()), 220);
-    return () => window.clearTimeout(timer);
-  }, [search]);
-  useEffect(() => {
-    if (!searchTerm) { setSearchResults(null); setSearchError(""); return; }
-    let current = true;
-    setSearchResults(null);
-    setSearchError("");
-    void searchChats({ key: dashboardKey, search: searchTerm })
-      .then((results) => { if (current) setSearchResults(results); })
-      .catch((cause) => { if (current) setSearchError(cause instanceof Error ? cause.message : String(cause)); });
-    return () => { current = false; };
-  }, [dashboardKey, searchChats, searchTerm]);
-  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setSearchOpen(true); }
-      if (event.key === "Escape") { setSearchOpen(false); setMenuId(null); setRenameId(null); setDeleteId(null); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  useEffect(() => {
+    const title = chats?.find((item) => item.id === selectedId)?.title;
+    document.title = title ? `${title} · Perry` : "Perry";
+  }, [chats, selectedId]);
   // A sent message stops being pending once the history has it, or once the
   // reply it started or joined has come and gone.
   useEffect(() => {
@@ -206,35 +307,58 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     setPickedPreviews(previews);
     return () => previews.forEach((url) => URL.revokeObjectURL(url));
   }, [pickedFiles]);
+
+  // A new chat opens at its newest message; after that, new content only
+  // scrolls into view for a reader who is already at the bottom.
+  useLayoutEffect(() => { stickToBottom.current = true; setAtBottom(true); }, [selectedId]);
+  const onScroll = useCallback(() => {
+    const element = scroller.current;
+    if (!element) return;
+    const bottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+    stickToBottom.current = bottom;
+    setAtBottom(bottom);
+  }, []);
+
+  const shownPending = pending.filter((item) => item.id === selectedId);
+  const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
   useLayoutEffect(() => {
     const element = scroller.current;
     if (!element) return;
     if (olderScroll.current) {
       element.scrollTop = olderScroll.current.top + element.scrollHeight - olderScroll.current.height;
       olderScroll.current = null;
-    } else {
+    } else if (stickToBottom.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [selectedId, messages.length, pending, chat?.streaming]);
+  }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming]);
+  const jumpToLatest = () => {
+    stickToBottom.current = true;
+    setAtBottom(true);
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  };
 
   const active = chats?.find((item) => item.id === selectedId);
   const parent = chats?.find((item) => item.id === active?.parentConversationId);
-  const shownPending = pending.filter((item) => item.id === selectedId);
-  const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
   const codexModels = modelOptions?.codex ?? [];
   const model = (selectedId ? chat?.model : draftModel)
     ?? (codexModels.find((item) => item.isDefault) ?? codexModels[0])?.id;
   function applyModel(next: string) {
     if (!selectedId) { setDraftModel(next || undefined); return; }
-    void setChatModel({ key: dashboardKey, id: selectedId, model: next || undefined }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+    void setChatModel({ key: dashboardKey, id: selectedId, model: next || undefined }).catch((cause) => setError(errorText(cause)));
+  }
+
+  function select(id: ChatId | null) {
+    draftingNew.current = id === null;
+    setSelectedId(id);
+    setSidebarOpen(false);
+    setMenuId(null);
+    setEditing(null);
+    setError("");
   }
 
   function startNewChat() {
-    draftingNew.current = true;
-    setSelectedId(null);
+    select(null);
     setDraft("");
-    setError("");
-    setSidebarOpen(false);
     window.setTimeout(() => composer.current?.focus(), 0);
   }
 
@@ -246,7 +370,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
       setSelectedId(id); setSidebarOpen(false); setDraft("");
       window.setTimeout(() => composer.current?.focus(), 0);
       return id;
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); return null; }
+    } catch (cause) { setError(errorText(cause)); return null; }
     finally { setBusy(false); }
   }
   /** Keep the file on this machine through the local media server, or in Convex storage when that is turned off. */
@@ -261,6 +385,23 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     if (!body.storageId) throw new Error(`Could not store ${file.name}.`);
     return { storageId: body.storageId };
   }
+  /** Add files from the picker, a paste or a drop, turning away what cannot be sent. */
+  function addFiles(files: File[]) {
+    if (!files.length) return;
+    const tooBig = files.filter((file) => file.size > MAX_BYTES);
+    const empty = files.filter((file) => file.size === 0);
+    const usable = files.filter((file) => file.size > 0 && file.size <= MAX_BYTES);
+    const room = Math.max(0, MAX_FILES - pickedFiles.length);
+    const left = usable.length - room;
+    const problems = [
+      tooBig.length ? `${tooBig.map((file) => file.name).join(", ")} ${tooBig.length === 1 ? "is" : "are"} over 50 MB.` : "",
+      empty.length ? `${empty.map((file) => file.name).join(", ")} ${empty.length === 1 ? "is" : "are"} empty.` : "",
+      left > 0 ? `Only ${MAX_FILES} files fit in one message, so ${left} ${left === 1 ? "was" : "were"} left out.` : "",
+    ].filter(Boolean);
+    if (problems.length) setError(problems.join(" "));
+    setPickedFiles((items) => [...items, ...usable].slice(0, MAX_FILES));
+  }
+
   const COMMANDS = [
     { command: "/model", hint: "List the Codex models, or /model <name> to switch this chat" },
     { command: "/set model", hint: "Switch this chat's model: /set model <name>" },
@@ -269,7 +410,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     { command: "/reset", hint: "Save this chat to memory, then start it afresh" },
   ];
   const typedCommand = parseModelCommand(draft);
-  const suggestions: Array<{ key: string; label: string; hint: string; apply: () => void }> = !draft.startsWith("/")
+  const suggestions: Array<{ key: string; label: string; hint: string; apply: () => void }> = !draft.startsWith("/") || suggestionsDismissed
     ? []
     : typedCommand && /^\/(?:set\s+)?model\s/i.test(draft)
       ? (typedCommand.name ? findModel(codexModels, typedCommand.name).matches : codexModels).map((item) => ({
@@ -284,6 +425,10 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
           hint: item.hint,
           apply: () => { setDraft(item.command === "/stop" || item.command === "/compact" || item.command === "/reset" ? item.command : `${item.command} `); composer.current?.focus(); },
         }));
+  const highlighted = Math.min(suggestionIndex, Math.max(0, suggestions.length - 1));
+  const completingCommand = draft.startsWith("/") && !(typedCommand && /^\/(?:set\s+)?model\s/i.test(draft));
+  useEffect(() => { setSuggestionIndex(0); setSuggestionPicked(false); }, [draft]);
+  useEffect(() => { if (!draft.startsWith("/")) setSuggestionsDismissed(false); }, [draft]);
 
   /** Commands never become messages: they change this chat, then say what they did. */
   async function runCommand(text: string): Promise<boolean> {
@@ -306,8 +451,9 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     if (trimmed.toLowerCase() === "/reset") {
       setDraft("");
       if (!selectedId) { setNotice("Nothing to reset yet."); return true; }
+      setNotice("Saving this chat to memory and starting it afresh…");
       try { setNotice(await resetChat({ key: dashboardKey, id: selectedId })); }
-      catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+      catch (cause) { setNotice(""); setError(errorText(cause)); }
       return true;
     }
     if (trimmed.toLowerCase() === "/compact") {
@@ -316,7 +462,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
         const id = selectedId ? await compactChat({ key: dashboardKey, id: selectedId }) : null;
         setCompaction(id);
         setNotice(id ? "Compacting this chat…" : "Nothing to compact yet.");
-      } catch (cause) { setNotice(cause instanceof Error ? cause.message : String(cause)); }
+      } catch (cause) { setNotice(errorText(cause)); }
       return true;
     }
     return false;
@@ -326,24 +472,32 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     const message = text.trim();
     if (message.startsWith("/") && pickedFiles.length === 0 && await runCommand(message)) return;
     // Sent while a reply is running, the message joins that reply (it steers it).
-    if ((!message && pickedFiles.length === 0) || busy) return;
+    if ((!message && pickedFiles.length === 0) || busy || uploading) return;
     const id = selectedId ?? await makeChat();
     if (!id) return;
     const files = pickedFiles;
     const messageKey = files.length ? crypto.randomUUID() : undefined;
     setDraft(""); setPickedFiles([]); setError("");
+    stickToBottom.current = true;
     let sent: Pending | undefined;
     try {
       const uploaded: PendingAttachment[] = [];
-      for (const file of files) {
+      for (const [index, file] of files.entries()) {
+        setUploading({ index: index + 1, total: files.length });
         const attachmentId = await registerAttachment({ key: dashboardKey, conversationId: id, messageKey: messageKey!, ...await store(file), fileName: file.name, contentType: file.type || "application/octet-stream", size: file.size });
         uploaded.push({ id: attachmentId, url: URL.createObjectURL(file), fileName: file.name, contentType: file.type || "application/octet-stream" });
       }
+      setUploading(null);
       const entry: Pending = { id, text: message, attachments: uploaded, baselineCount: selectedId === id ? messages.filter((item) => item.role === "user" && item.text === message).length : 0, seenRunning: selectedId === id && Boolean(chat?.isRunning) };
       sent = entry;
       setPending((items) => [...items, entry]);
       await sendChat({ key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, model });
-    } catch (cause) { setPending((items) => items.filter((item) => item !== sent)); setDraft(message); setPickedFiles(files); setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) {
+      setUploading(null);
+      setPending((items) => items.filter((item) => item !== sent));
+      setDraft(message); setPickedFiles(files);
+      setError(`Your message wasn't sent: ${errorText(cause)}`);
+    }
   }
   /** Regenerate from an assistant reply, or resend one of your messages with new text. */
   async function rewind(messageId: string, text?: string) {
@@ -352,12 +506,13 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     const sent = [...messages.slice(0, index + 1)].reverse().find((message) => message.role === "user");
     const shown = text ?? sent?.text ?? "";
     setBusy(true); setError(""); setEditing(null);
+    stickToBottom.current = true;
     // The old copy of the message counts until it is removed, so it is part of the baseline.
     const entry: Pending = { id: selectedId, text: shown, attachments: sent?.attachments ?? [], baselineCount: messages.filter((message) => message.role === "user" && message.text === shown).length, seenRunning: false };
     try {
       setPending((items) => [...items, entry]);
       await rewindChat({ key: dashboardKey, id: selectedId, messageId, text });
-    } catch (cause) { setPending((items) => items.filter((item) => item !== entry)); setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { setPending((items) => items.filter((item) => item !== entry)); setError(errorText(cause)); }
     finally { setBusy(false); }
   }
   async function branch(messageId: string) {
@@ -367,147 +522,215 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
       const id = await branchChat({ key: dashboardKey, id: selectedId, messageId });
       draftingNew.current = false;
       setSelectedId(id); setSidebarOpen(false); window.setTimeout(() => composer.current?.focus(), 0);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+      toast({ tone: "success", text: "Branched into a new chat." });
+    } catch (cause) { setError(errorText(cause)); }
     finally { setBusy(false); }
   }
   async function saveName() {
     if (!renameId) return;
-    setBusy(true);
-    try { await renameChat({ key: dashboardKey, id: renameId, title: renameValue }); setRenameId(null); setError(""); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    setBusy(true); setDialogError("");
+    try { await renameChat({ key: dashboardKey, id: renameId, title: renameValue }); setRenameId(null); }
+    catch (cause) { setDialogError(errorText(cause)); }
     finally { setBusy(false); }
   }
   async function removeChat() {
     if (!deleteId) return;
     const deleting = deleteId;
     const wasSelected = selectedId === deleting;
-    if (wasSelected) setSelectedId(chats?.find((item) => item.id !== deleting)?.id ?? null);
-    setBusy(true);
+    setBusy(true); setDialogError("");
     try {
       await deleteChat({ key: dashboardKey, id: deleting });
-      setDeleteId(null); setError("");
-    } catch (cause) { if (wasSelected) setSelectedId(deleting); setError(cause instanceof Error ? cause.message : String(cause)); }
+      if (wasSelected) setSelectedId(chats?.find((item) => item.id !== deleting)?.id ?? null);
+      setDeleteId(null);
+      toast({ tone: "success", text: "Chat deleted." });
+    } catch (cause) { setDialogError(errorText(cause)); }
     finally { setBusy(false); }
   }
-  const groups = ["Today", "Yesterday", "Previous"];
-  const navigation = [
-    { label: "Work", tab: "work" as const }, { label: "Computer", tab: "computer" as const },
-    { label: "Connectors", tab: "connectors" as const }, { label: "Memory", tab: "memory" as const },
-    { label: "Settings", tab: "settings" as const }, { label: "Activity", tab: "activity" as const },
-  ];
+  const closeMenu = useCallback(() => setMenuId(null), []);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  const lastUser = [...messages].reverse().find((message) => message.role === "user");
+  const deleting = chats?.find((item) => item.id === deleteId);
 
-  return <div className="chat-workspace">
-    {sidebarOpen && <button className="chat-scrim" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} />}
-    <aside className={`chat-sidebar ${sidebarOpen ? "open" : ""}`}>
-      <div className="chat-brand"><span className="chat-brand-mark">A</span><span>Assistant</span><span className="chat-brand-sub">your space</span></div>
-      <div className="chat-sidebar-actions">
-        <button className="chat-new" onClick={startNewChat} disabled={busy}><Icon name="plus" size={19} /> New chat</button>
-        <button className="chat-search-trigger" onClick={() => setSearchOpen(true)}><Icon name="search" size={17} /><span>Search chats</span><kbd>Ctrl K</kbd></button>
-      </div>
-      <div className="chat-sidebar-scroll">
-        <div className="chat-sidebar-label">Your conversations <span>{chats?.length ?? 0}</span></div>
-        {chats === undefined && <div className="chat-list-empty">Loading chats…</div>}
-        {chats?.length === 0 && <div className="chat-list-empty">Your chats will show up here.</div>}
-        {groups.map((group) => {
-          const items = chats?.filter((item) => groupName(item.lastMessageAt) === group) ?? [];
-          if (!items.length) return null;
-          return <div className="chat-group" key={group}><div className="chat-group-label">{group}</div>
-            {items.map((item) => <div key={item.id} className={`chat-list-item ${selectedId === item.id ? "selected" : ""}`}>
-              <button className="chat-list-select" onClick={() => { draftingNew.current = false; setSelectedId(item.id); setSidebarOpen(false); setMenuId(null); setError(""); }}>
-                <Icon name={item.parentConversationId ? "branch" : "chat"} size={16} />
-                <span className="chat-list-text" title={`${item.title} · ${item.id}`}>
-                  <span>{item.title}</span><small>Session {item.id.slice(-8)}</small>
-                </span>
-              </button>
-              <button className="chat-list-more" aria-label={`Actions for ${item.title}`} onClick={() => setMenuId(menuId === item.id ? null : item.id)}><Icon name="more" size={17} /></button>
-              {menuId === item.id && <div className="chat-item-menu">
-                <button onClick={() => { setError(""); setRenameId(item.id); setRenameValue(item.title); setMenuId(null); }}><Icon name="pencil" size={15} /> Rename</button>
-                <button className="danger" onClick={() => { setError(""); setDeleteId(item.id); setMenuId(null); }}><Icon name="trash" size={15} /> Delete</button>
-              </div>}
-            </div>)}
-          </div>;
-        })}
-      </div>
-      <div className="chat-sidebar-footer">
-        <div className="chat-sidebar-label">Workspace</div>
-        <div className="chat-nav-grid">{navigation.map((item) => <button key={item.tab} onClick={() => onNavigate(item.tab)}>{item.label}<Icon name="chevron" size={14} /></button>)}</div>
-        <div className="chat-sidebar-bottom"><button onClick={() => onNavigate("keys")}>Keys</button><button onClick={() => onNavigate("setup")}>Setup</button><button onClick={onLock}><Icon name="lock" size={14} /> Lock</button></div>
-      </div>
-    </aside>
-    <main className="chat-main">
-      <header className="chat-header">
-        <div className="chat-header-left">
-          <button className="chat-mobile-menu" aria-label="Open sidebar" onClick={() => setSidebarOpen(true)}><Icon name="menu" /></button>
+  const chatList = <>
+    <div className="sidebar-label"><span>Chats</span>{chats && chats.length > 0 && <span className="nums">{chats.length}</span>}</div>
+    {chats === undefined && <div className="chat-list-empty" role="status">Loading chats…</div>}
+    {chats?.length === 0 && <div className="chat-list-empty">Your chats will show up here.</div>}
+    {GROUPS.map((group) => {
+      const all = chats?.filter((item) => groupName(item.lastMessageAt) === group) ?? [];
+      const items = group === "Older" ? all.slice(0, olderShown) : all;
+      if (!items.length) return null;
+      return <div className="chat-group" key={group} role="group" aria-label={group}><div className="chat-group-label" aria-hidden="true">{group}</div>
+        {items.map((item) => <div key={item.id} className={`chat-list-item ${selectedId === item.id ? "selected" : ""}`}>
+          <a className="chat-list-select" href={`/chat/${encodeURIComponent(item.id)}`} aria-current={selectedId === item.id ? "page" : undefined} title={item.title}
+            onClick={(event) => linkClick(event, () => select(item.id))}>
+            <Icon name={item.parentConversationId ? "branch" : "chat"} size={14} />
+            <span className="chat-list-text">{item.title}</span>
+          </a>
+          <button type="button" className="chat-list-more" aria-label={`Actions for ${item.title}`} aria-haspopup="menu" aria-expanded={menuId === item.id} onClick={() => setMenuId(menuId === item.id ? null : item.id)}><Icon name="more" size={15} /></button>
+          {menuId === item.id && <ChatMenu onClose={closeMenu}
+            onRename={() => { setDialogError(""); setRenameId(item.id); setRenameValue(item.title); setMenuId(null); }}
+            onDelete={() => { setDialogError(""); setDeleteId(item.id); setMenuId(null); }} />}
+        </div>)}
+        {group === "Older" && all.length > olderShown && <button type="button" className="btn btn-ghost btn-sm chat-list-older" onClick={() => setOlderShown(olderShown + OLDER_PAGE)}>Show {Math.min(OLDER_PAGE, all.length - olderShown)} more</button>}
+      </div>;
+    })}
+  </>;
+
+  return <div className="app chat-workspace">
+    <a className="skip-link" href="#composer">Skip to message box</a>
+    <Sidebar dashboardKey={dashboardKey} current="chat" onNavigate={onNavigate} onLock={onLock} open={sidebarOpen} onClose={closeSidebar}
+      actions={<>
+        <button type="button" className="chat-new" onClick={startNewChat} disabled={busy}><Icon name="plus" size={15} />New chat</button>
+        <button type="button" className="chat-search-trigger" onClick={() => setSearchOpen(true)} aria-keyshortcuts="Control+K Meta+K"><Icon name="search" size={15} /><span>Search</span><Kbd>Ctrl K</Kbd></button>
+      </>}>
+      {chatList}
+    </Sidebar>
+    <main className="main chat-main" inert={sidebarOpen || undefined}>
+      <header className="topbar chat-header">
+        <div className="topbar-left">
+          <button type="button" className="icon-button mobile-menu chat-mobile-menu" aria-label="Open navigation" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)}><Icon name="menu" /></button>
           <div className="chat-header-title">
-            <strong>{active?.title ?? "New chat"}</strong>
+            <strong>{active?.title ?? (selectedId && chats === undefined ? " " : "New chat")}</strong>
             {selectedId && <div className="chat-header-meta">
-              <button className="chat-session-id" title={selectedId} onClick={() => void navigator.clipboard.writeText(selectedId).catch((cause) => setError(String(cause)))}>
-                Session {selectedId.slice(-8)} · Copy ID
-              </button>
-              {active?.parentConversationId && <button className="chat-parent-link" disabled={!parent} onClick={() => { if (parent) { draftingNew.current = false; setSelectedId(parent.id); } }}><Icon name="branch" size={13} /> From {parent?.title ?? "deleted chat"}</button>}
+              <CopySessionId id={selectedId} />
+              {active?.parentConversationId && <button type="button" className="chat-parent-link" disabled={!parent} onClick={() => { if (parent) select(parent.id); }}><Icon name="branch" size={12} />Branched from {parent?.title ?? "a deleted chat"}</button>}
             </div>}
           </div>
         </div>
-        <div className="chat-header-controls">
-          <button className="chat-header-new" title="New chat" aria-label="New chat" onClick={startNewChat} disabled={busy}><Icon name="plus" /></button>
+        <div className="topbar-right">
+          <button type="button" className="icon-button chat-header-new" title="New chat" aria-label="New chat" onClick={startNewChat} disabled={busy}><Icon name="plus" /></button>
         </div>
       </header>
-      <div className="chat-scroll" ref={scroller}>
-        {!selectedId ? <div className="chat-welcome"><div className="chat-welcome-mark"><Icon name="spark" size={33} /></div><div className="chat-eyebrow">YOUR PERSONAL ASSISTANT</div><h1>Where should we start?</h1><p>Ask a question, make a plan, or pick up where you left off. Your assistant remembers what matters across your chats.</p><div className="chat-prompts">{quickStarts.map((prompt) => <button key={prompt} onClick={() => { setDraft(prompt); composer.current?.focus(); }}>{prompt}<Icon name="chevron" size={15} /></button>)}</div></div> :
-          <div className="chat-thread">
-            {(chat === undefined || messageStatus === "LoadingFirstPage") && <div className="chat-thread-loading">Loading conversation…</div>}
-            {messageStatus === "CanLoadMore" && <div className="chat-load-older"><button onClick={() => { if (scroller.current) olderScroll.current = { height: scroller.current.scrollHeight, top: scroller.current.scrollTop }; loadMore(50); }}>Load earlier messages</button></div>}
-            {messageStatus === "LoadingMore" && <div className="chat-thread-loading">Loading earlier messages…</div>}
-            {chat && messageStatus !== "LoadingFirstPage" && messages.length === 0 && shownPending.length === 0 && <div className="chat-thread-empty"><div className="chat-welcome-mark small"><Icon name="spark" size={24} /></div><h2>Start a conversation</h2><p>Messages in this chat stay together. Your saved memories are available in every chat.</p></div>}
+      <div className="chat-scroll" ref={scroller} onScroll={onScroll}>
+        {!selectedId ? <div className="chat-welcome">
+          <h1>What can Perry help with?</h1>
+          <p>Ask a question, plan something, or pick up an earlier thread. Perry remembers what you ask it to, across every chat.</p>
+          <div className="chat-prompts">{quickStarts.map((prompt) => <button type="button" key={prompt.text} onClick={() => { setDraft(prompt.text); composer.current?.focus(); }}>
+            <span>{prompt.text}<small>{prompt.hint}</small></span><Icon name="chevron" size={14} />
+          </button>)}</div>
+        </div> :
+          <div className="chat-thread" aria-busy={messageStatus === "LoadingFirstPage"}>
+            {(chat === undefined || messageStatus === "LoadingFirstPage") && <div className="chat-thread-loading" role="status"><Spinner /> Loading conversation…</div>}
+            {chat === null && <Notice tone="warning" title="This chat isn't available">It may have been deleted. Pick another chat or start a new one.</Notice>}
+            {messageStatus === "CanLoadMore" && <div className="chat-load-older"><button type="button" className="btn btn-secondary btn-sm" onClick={() => { if (scroller.current) olderScroll.current = { height: scroller.current.scrollHeight, top: scroller.current.scrollTop }; loadMore(50); }}>Load earlier messages</button></div>}
+            {messageStatus === "LoadingMore" && <div className="chat-thread-loading" role="status"><Spinner /> Loading earlier messages…</div>}
+            {chat && messageStatus !== "LoadingFirstPage" && messages.length === 0 && shownPending.length === 0 && <div className="chat-thread-empty"><h2>Start the conversation</h2><p>Messages here stay together. Saved memories are available in every chat.</p></div>}
             {messages.map((message) => <div key={message.id} className={`chat-turn ${message.role === "user" ? "from-user" : "from-assistant"}`}>
-              {message.role !== "user" && <div className="chat-avatar">A</div>}
+              {message.role !== "user" && <div className="chat-avatar" aria-hidden="true">P</div>}
               <div className="chat-turn-body">
+                <span className="sr-only">{message.role === "user" ? "You said" : "Perry said"}</span>
                 {editing?.id === message.id
                   ? <form className="chat-edit" onSubmit={(event) => { event.preventDefault(); if (editing.text.trim()) void rewind(message.id, editing.text); }}>
-                      <textarea autoFocus value={editing.text} rows={Math.min(8, editing.text.split("\n").length + 1)} onChange={(event) => setEditing({ id: message.id, text: event.target.value })} onKeyDown={(event) => { if (event.key === "Escape") setEditing(null); }} />
-                      <div className="chat-edit-actions"><button type="button" onClick={() => setEditing(null)}>Cancel</button><button type="submit" className="chat-edit-save" disabled={!editing.text.trim() || busy}>Save and resend</button></div>
+                      <textarea autoFocus aria-label="Edit your message" value={editing.text} onChange={(event) => setEditing({ id: message.id, text: event.target.value })}
+                        onKeyDown={(event) => { if (event.key === "Escape") setEditing(null); if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
+                      <div className="chat-edit-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(null)}>Cancel</button><button type="submit" className="btn btn-primary btn-sm chat-edit-save" disabled={!editing.text.trim() || busy}>Save and resend</button></div>
                     </form>
                   : <div className="chat-bubble">{message.role === "user" ? message.text : <Markdown text={message.text} />}<AttachmentList attachments={message.attachments ?? []} /></div>}
-                {message.fallback && <div className="chat-fallback-note">Answered without your computer</div>}
-                <div className="chat-turn-actions">
-                  {message.role === "user" && !waiting && editing?.id !== message.id && <button title="Edit and resend this message" onClick={() => setEditing({ id: message.id, text: message.text })} disabled={busy}><Icon name="pencil" size={14} /> Edit</button>}
-                  {message.role !== "user" && message.id === messages.at(-1)?.id && !waiting && <button title="Write this reply again" onClick={() => void rewind(message.id)} disabled={busy}><Icon name="redo" size={14} /> Regenerate</button>}
-                  <button title="Branch from this message" onClick={() => void branch(message.id)} disabled={busy}><Icon name="branch" size={14} /> Branch from here</button>
-                </div>
+                {message.fallback && <div className="chat-fallback-note"><Icon name="computer" size={13} />Answered without your computer</div>}
+                {editing?.id !== message.id && <div className="chat-turn-foot">
+                  {message.role === "user" && <time className="chat-turn-time" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>{timeOf(message.createdAt)}</time>}
+                  <div className="chat-turn-actions">
+                    <CopyMessage text={message.text} />
+                    {message.role === "user" && !waiting && <button type="button" title="Edit and resend this message" onClick={() => setEditing({ id: message.id, text: message.text })} disabled={busy}><Icon name="pencil" size={13} />Edit</button>}
+                    {message.role !== "user" && message.id === messages.at(-1)?.id && !waiting && <button type="button" title="Write this reply again" onClick={() => void rewind(message.id)} disabled={busy}><Icon name="redo" size={13} />Regenerate</button>}
+                    <button type="button" title="Branch from this message into a new chat" onClick={() => void branch(message.id)} disabled={busy}><Icon name="branch" size={13} />Branch</button>
+                  </div>
+                  {message.role !== "user" && <time className="chat-turn-time" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>{timeOf(message.createdAt)}</time>}
+                </div>}
               </div>
             </div>)}
-            {shownPending.map((item, index) => <div key={index} className="chat-turn from-user pending"><div className="chat-turn-body"><div className="chat-bubble">{item.text}<AttachmentList attachments={item.attachments} /></div></div></div>)}
-            {waiting && <div className="chat-turn from-assistant pending"><div className="chat-avatar">A</div>{chat?.streaming
-              ? <div className="chat-turn-body"><div className="chat-bubble chat-streaming"><Markdown text={chat.streaming} /></div>{chat.fallback && <div className="chat-fallback-note">Answering without your computer</div>}</div>
-              : <div className="chat-thinking"><i /><i /><i /></div>}</div>}
-            {chat?.lastError && !chat.isRunning && <div className="chat-turn-error" role="alert">The assistant couldn’t finish the last reply: {chat.lastError}</div>}
+            {shownPending.map((item, index) => <div key={index} className="chat-turn from-user pending"><div className="chat-turn-body"><div className="chat-bubble">{item.text}<AttachmentList attachments={item.attachments} /></div><div className="chat-turn-foot"><span className="chat-turn-time" style={{ opacity: 1 }}>Sending…</span></div></div></div>)}
+            {waiting && <div className="chat-turn from-assistant pending" aria-live="polite" aria-busy="true"><div className="chat-avatar" aria-hidden="true">P</div>{chat?.streaming
+              ? <div className="chat-turn-body"><div className="chat-bubble chat-streaming"><Markdown text={chat.streaming} /></div>{chat.fallback && <div className="chat-fallback-note"><Icon name="computer" size={13} />Answering without your computer</div>}</div>
+              : <div className="chat-thinking" role="status" aria-label="Perry is thinking"><i /><i /><i /></div>}</div>}
+            {chat?.lastError && !chat.isRunning && <div className="chat-turn-error"><Notice tone="danger" title="Perry couldn't finish the last reply" details={chat.lastError}
+              action={lastUser && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void rewind(lastUser.id)}><Icon name="redo" size={13} />Try again</button>}>
+              {/runner|offline|computer/i.test(chat.lastError) ? "Your computer may be offline. Start the runner, then try again." : "Try again, or open Activity for the full run."}
+            </Notice></div>}
           </div>}
+        {!atBottom && selectedId && <div className="chat-jump"><button type="button" className="btn btn-secondary btn-sm" onClick={jumpToLatest}><Icon name="arrowDown" size={13} />{waiting ? "New reply below" : "Jump to latest"}</button></div>}
       </div>
       <div className="chat-composer-area"><div className="chat-composer-wrap">
         <Approvals dashboardKey={dashboardKey} />
-        {error && <div className="chat-error" role="alert">{error}<button aria-label="Dismiss error" onClick={() => setError("")}><Icon name="close" size={15} /></button></div>}
-        {notice && <div className="chat-notice" role="status"><pre>{notice}</pre><button aria-label="Dismiss" onClick={() => setNotice("")}><Icon name="close" size={14} /></button></div>}
-        {suggestions.length > 0 && <div className="chat-commands" role="listbox" aria-label="Commands">{suggestions.map((item) => <button key={item.key} role="option" aria-selected="false" onMouseDown={(event) => { event.preventDefault(); item.apply(); }}><span>{item.label}</span><small>{item.hint}</small></button>)}</div>}
-        <div className="chat-composer-box">{pickedFiles.length > 0 && <div className="chat-picked-files">{pickedFiles.map((file, index) => {
-          const url = pickedPreviews.get(file);
-          const preview = url && file.type.startsWith("image/") ? <img src={url} alt={file.name} />
-            : url && file.type.startsWith("video/") ? <video src={url} muted playsInline preload="metadata" />
-            : <span className="chat-picked-name"><Icon name="paperclip" size={14} />{file.name}</span>;
-          return <div className="chat-picked-file" key={`${index}-${file.name}-${file.lastModified}`} title={file.name}>{preview}<button aria-label={`Remove ${file.name}`} onClick={() => setPickedFiles((items) => items.filter((item) => item !== file))}><Icon name="close" size={12} /></button></div>;
-        })}</div>}<textarea ref={composer} value={draft} rows={1} placeholder={waiting ? "Add to the reply, or stop it…" : "Message your assistant…"} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} /><div className="chat-composer-foot"><button className="chat-attach" aria-label="Attach files" title="Attach images, video, audio, or files" onClick={() => filePicker.current?.click()} disabled={busy}><Icon name="paperclip" size={17} /></button><input ref={filePicker} type="file" multiple hidden accept="image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json" onChange={(event) => { const files = Array.from(event.target.files ?? []); setPickedFiles((items) => [...items, ...files].slice(0, 10)); event.currentTarget.value = ""; }} /><select className="chat-model" aria-label="Codex model" title={`Codex · ${model ?? "default"}`} value={model ?? ""} onChange={(event) => applyModel(event.target.value)}>
-          {codexModels.length
-            ? codexModels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)
-            : <option value="">Codex default</option>}
-        </select><span className="chat-composer-hint">Shift + Enter for a new line</span>{/* Adapted from vercel/eve (Apache-2.0): packages/eve/src/setup/scaffold/create/web-template.ts */}
-        {/* While a reply runs, a draft is sent into it; with nothing typed, the button stops it. */}
-        {waiting && selectedId && !draft.trim() && pickedFiles.length === 0
-          ? <button className="chat-send chat-stop" aria-label="Stop the reply" title="Stop the reply" onClick={() => void stopChat({ key: dashboardKey, id: selectedId }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))}><Icon name="stop" size={16} /></button>
-          : <button className="chat-send" aria-label="Send message" title={waiting ? "Send into the reply" : undefined} onClick={() => void submit()} disabled={(!draft.trim() && pickedFiles.length === 0) || busy}><Icon name="arrow" size={18} /></button>}</div></div>
-        <div className="chat-composer-caption">Attach images, video, audio, or documents. The assistant can inspect supported files and link to shared media.</div>
+        {error && <div className="chat-error" role="alert"><span>{error}</span><button type="button" className="icon-button sm" aria-label="Dismiss error" onClick={() => setError("")}><Icon name="close" size={14} /></button></div>}
+        {notice && <div className="chat-notice" role="status"><pre>{notice}</pre><button type="button" className="icon-button sm" aria-label="Dismiss" onClick={() => setNotice("")}><Icon name="close" size={14} /></button></div>}
+        {suggestions.length > 0 && <div className="chat-commands" role="listbox" id="chat-commands" aria-label="Commands">{suggestions.map((item, index) => <button type="button" key={item.key} id={`chat-command-${index}`} role="option" aria-selected={index === highlighted} tabIndex={-1}
+          onMouseMove={() => setSuggestionIndex(index)} onMouseDown={(event) => { event.preventDefault(); item.apply(); }}><span>{item.label}</span><small>{item.hint}</small></button>)}</div>}
+        <div className="chat-composer-box" onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); addFiles(Array.from(event.dataTransfer.files)); } }}>
+          {pickedFiles.length > 0 && <div className="chat-picked-files">{pickedFiles.map((file, index) => {
+            const url = pickedPreviews.get(file);
+            const preview = url && file.type.startsWith("image/") ? <img src={url} alt={file.name} />
+              : url && file.type.startsWith("video/") ? <video src={url} muted playsInline preload="metadata" aria-label={file.name} />
+              : <span className="chat-picked-name"><span><Icon name="paperclip" size={12} /> {file.name}</span><small>{bytes(file.size)}</small></span>;
+            return <div className="chat-picked-file" key={`${index}-${file.name}-${file.lastModified}`} title={`${file.name} · ${bytes(file.size)}`}>{preview}<button type="button" aria-label={`Remove ${file.name}`} disabled={Boolean(uploading)} onClick={() => setPickedFiles((items) => items.filter((item) => item !== file))}><Icon name="close" size={11} /></button></div>;
+          })}</div>}
+          <textarea ref={composer} id="composer" value={draft} rows={1} aria-label="Message Perry" placeholder={waiting ? "Add to the reply, or stop it…" : "Message Perry…"}
+            role="combobox" aria-expanded={suggestions.length > 0} aria-controls={suggestions.length ? "chat-commands" : undefined} aria-autocomplete="list" aria-activedescendant={suggestions.length ? `chat-command-${highlighted}` : undefined}
+            onChange={(event) => setDraft(event.target.value)}
+            onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); addFiles(files); } }}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (suggestions.length) {
+                if (event.key === "ArrowDown") { event.preventDefault(); setSuggestionPicked(true); setSuggestionIndex((highlighted + 1) % suggestions.length); return; }
+                if (event.key === "ArrowUp") { event.preventDefault(); setSuggestionPicked(true); setSuggestionIndex((highlighted - 1 + suggestions.length) % suggestions.length); return; }
+                if (event.key === "Tab") { event.preventDefault(); suggestions[highlighted].apply(); return; }
+                if (event.key === "Escape") { event.preventDefault(); setSuggestionsDismissed(true); return; }
+                // Enter takes a suggestion you arrowed to, or finishes a half-typed command
+                // name; anything already typed out in full runs as typed.
+                if (event.key === "Enter" && !event.shiftKey && (suggestionPicked || (completingCommand && suggestions[highlighted].label.trim() !== draft.trim()))) { event.preventDefault(); suggestions[highlighted].apply(); return; }
+              }
+              if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); }
+            }} />
+          <div className="chat-composer-foot">
+            <button type="button" className="chat-attach" aria-label="Attach files" title="Attach images, video, audio, or documents (up to 10, 50 MB each)" onClick={() => filePicker.current?.click()} disabled={busy || Boolean(uploading) || pickedFiles.length >= MAX_FILES}><Icon name="paperclip" size={16} /></button>
+            <input ref={filePicker} type="file" multiple hidden accept={ACCEPT} onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
+            <select className="chat-model" aria-label="Codex model" title={`Codex model: ${model ?? "default"}`} value={model ?? ""} disabled={modelOptions === undefined} onChange={(event) => applyModel(event.target.value)}>
+              {modelOptions === undefined
+                ? <option value="">Loading models…</option>
+                : codexModels.length
+                  ? codexModels.map((item) => <option key={item.id} value={item.id}>{item.name}{item.isDefault ? " (default)" : ""}</option>)
+                  : <option value="">Codex default</option>}
+            </select>
+            <span className="chat-composer-hint" aria-live="polite">{uploading ? <><Spinner size={11} /> Uploading {uploading.index} of {uploading.total}…</> : <><Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> new line</>}</span>
+            {/* Adapted from vercel/eve (Apache-2.0): packages/eve/src/setup/scaffold/create/web-template.ts */}
+            {/* While a reply runs, a draft is sent into it; with nothing typed, the button stops it. */}
+            {waiting && selectedId && !draft.trim() && pickedFiles.length === 0
+              ? <button type="button" className="chat-send chat-stop" aria-label="Stop the reply" title="Stop the reply" onClick={() => void stopChat({ key: dashboardKey, id: selectedId }).catch((cause) => setError(errorText(cause)))}><Icon name="stop" size={14} /></button>
+              : <button type="button" className="chat-send" aria-label={waiting ? "Send into the reply" : "Send message"} title={waiting ? "Send into the reply" : "Send"} onClick={() => void submit()} disabled={(!draft.trim() && pickedFiles.length === 0) || busy || Boolean(uploading)}>{uploading ? <Spinner /> : <Icon name="arrow" size={16} />}</button>}
+          </div>
+        </div>
+        <div className="chat-composer-caption">Type / for commands. Drop or paste files to attach them.</div>
       </div></div>
     </main>
-    {searchOpen && <div className="chat-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSearchOpen(false); }}><div className="chat-search-dialog" role="dialog" aria-modal="true" aria-label="Search chats"><div className="chat-search-field"><Icon name="search" size={20} /><input autoFocus value={search} placeholder="Search your chats…" onChange={(event) => setSearch(event.target.value)} /><button onClick={() => setSearchOpen(false)} aria-label="Close search"><Icon name="close" size={17} /></button></div><div className="chat-search-results">{!searchTerm && <div className="chat-search-help">Find a conversation by title or message text.</div>}{searchTerm && searchResults === null && !searchError && <div className="chat-search-help">Searching…</div>}{searchError && <div className="chat-search-help">{searchError}</div>}{searchTerm && searchResults?.length === 0 && <div className="chat-search-help">No chats found for “{searchTerm}”.</div>}{searchResults?.map((item) => <button key={item.id} onClick={() => { setSelectedId(item.id); setSearchOpen(false); setSidebarOpen(false); }}><Icon name="chat" size={17} /><span><strong>{item.title}</strong>{item.snippet && <small>{item.snippet}</small>}</span><Icon name="chevron" size={16} /></button>)}</div><div className="chat-search-tip">ESC to close</div></div></div>}
-    {renameId && <div className="chat-modal-backdrop"><form className="chat-confirm-dialog" onSubmit={(event) => { event.preventDefault(); void saveName(); }}><h2>Rename chat</h2><p>Give this conversation a name that is easy to find later.</p><input autoFocus value={renameValue} maxLength={100} onChange={(event) => setRenameValue(event.target.value)} />{error && <div className="chat-dialog-error" role="alert">{error}</div>}<div className="chat-dialog-actions"><button type="button" onClick={() => setRenameId(null)}>Cancel</button><button className="chat-dialog-primary" type="submit" disabled={!renameValue.trim() || busy}>Save name</button></div></form></div>}
-    {deleteId && <div className="chat-modal-backdrop"><div className="chat-confirm-dialog" role="alertdialog" aria-modal="true"><h2>Delete this chat?</h2><p>This removes the conversation and its messages. This cannot be undone.</p>{error && <div className="chat-dialog-error" role="alert">{error}</div>}<div className="chat-dialog-actions"><button onClick={() => setDeleteId(null)}>Cancel</button><button className="chat-dialog-danger" onClick={() => void removeChat()} disabled={busy}>Delete chat</button></div></div></div>}
+    {searchOpen && <ChatSearch dashboardKey={dashboardKey} onClose={() => setSearchOpen(false)} onPick={(id) => { select(id); setSearchOpen(false); }} />}
+    {renameId && <Dialog title="Rename chat" description="A short name makes it easier to find later." onClose={() => { if (!busy) setRenameId(null); }}>
+      <form onSubmit={(event) => { event.preventDefault(); void saveName(); }}>
+        <label className="sr-only" htmlFor="rename-chat">Chat name</label>
+        <input id="rename-chat" className="input" autoFocus value={renameValue} maxLength={100} autoComplete="off" onChange={(event) => setRenameValue(event.target.value)} />
+        {dialogError && <p className="field-error" role="alert">{dialogError}</p>}
+        <div className="dialog-actions"><button type="button" className="btn btn-secondary btn-md" onClick={() => setRenameId(null)} disabled={busy}>Cancel</button><button className="btn btn-primary btn-md" type="submit" disabled={!renameValue.trim() || busy}>{busy && <Spinner />}Save name</button></div>
+      </form>
+    </Dialog>}
+    {deleteId && <Dialog role="alertdialog" title="Delete this chat?" description={<>“{deleting?.title ?? "This chat"}” and all its messages will be removed. This can&apos;t be undone.</>} onClose={() => { if (!busy) setDeleteId(null); }}>
+      {dialogError && <Notice tone="danger">{dialogError}</Notice>}
+      <div className="dialog-actions"><button type="button" className="btn btn-secondary btn-md" onClick={() => setDeleteId(null)} disabled={busy} autoFocus>Cancel</button><button type="button" className="btn btn-danger btn-md" onClick={() => void removeChat()} disabled={busy}>{busy && <Spinner />}Delete chat</button></div>
+    </Dialog>}
   </div>;
+}
+
+function CopySessionId({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { if (!copied) return; const timer = window.setTimeout(() => setCopied(false), 1600); return () => window.clearTimeout(timer); }, [copied]);
+  return <button type="button" className="chat-session-id" title={`Copy session ID ${id}`} onClick={() => void navigator.clipboard.writeText(id).then(() => setCopied(true))}>
+    {copied ? <><Icon name="check" size={11} />Copied</> : <>{id.slice(-8)}<Icon name="copy" size={11} /></>}
+    <span className="sr-only" aria-live="polite">{copied ? "Session ID copied" : ""}</span>
+  </button>;
+}
+
+function CopyMessage({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { if (!copied) return; const timer = window.setTimeout(() => setCopied(false), 1600); return () => window.clearTimeout(timer); }, [copied]);
+  return <button type="button" title="Copy this message" onClick={() => void navigator.clipboard.writeText(text).then(() => setCopied(true))}>
+    <Icon name={copied ? "check" : "copy"} size={13} />{copied ? "Copied" : "Copy"}
+  </button>;
 }

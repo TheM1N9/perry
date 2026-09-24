@@ -1,0 +1,400 @@
+{
+  "ranAt": "2026-09-24T00:17:12.359Z",
+  "base": "http://localhost:3017",
+  "pass": true,
+  "checks": [
+    {
+      "name": "dark: chat marks Chat as current",
+      "pass": true,
+      "detail": {
+        "path": "/chat/j57cf4v6d35b4atmpbnv0vn5jn8eydhe",
+        "heading": null,
+        "current": [
+          "Chat"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "dark: work has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/work",
+        "heading": "Work",
+        "current": [
+          "Work"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "dark: work fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "dark: computer has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/computer",
+        "heading": "Computer",
+        "current": [
+          "Computer"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "dark: computer fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "dark: connectors has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/connectors",
+        "heading": "Connectors",
+        "current": [
+          "Connectors"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "dark: connectors fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "dark: memory has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/memory",
+        "heading": "Memory",
+        "current": [
+          "Memory"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "dark: memory fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "dark: activity has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/activity",
+        "heading": "Activity",
+        "current": [
+          "Activity"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "dark: activity fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "dark: settings has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/settings",
+        "heading": "Settings",
+        "current": [
+          "Settings"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "dark: settings fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "dark: keys has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/keys",
+        "heading": "Keys",
+        "current": [
+          "Keys"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "dark: keys fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "dark: setup has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/setup",
+        "heading": "Setup",
+        "current": [
+          "Setup"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "dark: setup fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "light: chat marks Chat as current",
+      "pass": true,
+      "detail": {
+        "path": "/chat/j57cf4v6d35b4atmpbnv0vn5jn8eydhe",
+        "heading": null,
+        "current": [
+          "Chat"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "light: work has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/work",
+        "heading": "Work",
+        "current": [
+          "Work"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "light: work fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "light: computer has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/computer",
+        "heading": "Computer",
+        "current": [
+          "Computer"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "light: computer fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "light: connectors has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/connectors",
+        "heading": "Connectors",
+        "current": [
+          "Connectors"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "light: connectors fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "light: memory has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/memory",
+        "heading": "Memory",
+        "current": [
+          "Memory"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "light: memory fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "light: activity has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/activity",
+        "heading": "Activity",
+        "current": [
+          "Activity"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "light: activity fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "light: settings has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/settings",
+        "heading": "Settings",
+        "current": [
+          "Settings"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "light: settings fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "light: keys has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/keys",
+        "heading": "Keys",
+        "current": [
+          "Keys"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "light: keys fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "light: setup has its own URL, heading, and current nav item",
+      "pass": true,
+      "detail": {
+        "path": "/setup",
+        "heading": "Setup",
+        "current": [
+          "Setup"
+        ],
+        "overflow": 0
+      }
+    },
+    {
+      "name": "light: setup fits 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "back returns to the previous section",
+      "pass": true
+    },
+    {
+      "name": "forward returns to the next section",
+      "pass": true
+    },
+    {
+      "name": "deep link to /memory opens Memory",
+      "pass": true
+    },
+    {
+      "name": "an unknown path is a 404",
+      "pass": true,
+      "detail": 404
+    },
+    {
+      "name": "Ctrl+K opens search as a modal with the field focused",
+      "pass": true,
+      "detail": {
+        "modal": true,
+        "focused": "Search chats"
+      }
+    },
+    {
+      "name": "Escape closes search and restores focus",
+      "pass": true,
+      "detail": true
+    },
+    {
+      "name": "chat fits 375px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "mobile drawer makes the page inert and takes focus",
+      "pass": true,
+      "detail": {
+        "inert": true,
+        "focusInside": true
+      }
+    },
+    {
+      "name": "Escape closes the mobile drawer",
+      "pass": true
+    },
+    {
+      "name": "work fits 375px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "computer fits 375px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "memory fits 375px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "activity fits 375px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "keys fits 375px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "work fits 320px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "memory fits 320px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "a wrong key is refused with an inline error and never stored",
+      "pass": true,
+      "detail": {
+        "error": "That key doesn't match this deployment. Copy it again from .env.local and try once more.",
+        "invalid": "true",
+        "stored": null
+      }
+    },
+    {
+      "name": "no page errors",
+      "pass": true,
+      "detail": []
+    }
+  ],
+  "errors": []
+}

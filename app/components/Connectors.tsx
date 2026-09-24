@@ -1,8 +1,9 @@
 "use client";
 
 import { useAction } from "convex/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "@/convex/_generated/api";
+import { Command, Empty, Icon, Loading, Notice, Section, Spinner, Status, errorText, type Tone } from "./ui";
 
 type Connector = {
   slug: string;
@@ -30,12 +31,21 @@ const SUGGESTED = [
   { slug: "googlesheets", name: "Google Sheets" },
 ];
 
+function connectionStatus(status?: string): { tone: Tone; label: string } {
+  const value = (status ?? "active").toLowerCase();
+  if (value === "active") return { tone: "success", label: "Connected" };
+  if (value === "initiated" || value === "initializing" || value === "pending") return { tone: "info", label: "Finishing sign-in" };
+  if (value === "expired") return { tone: "warning", label: "Expired" };
+  if (value === "failed" || value === "error") return { tone: "danger", label: "Failed" };
+  return { tone: "neutral", label: value.charAt(0).toUpperCase() + value.slice(1) };
+}
+
 /**
- * Connect an account here and Assistant can use it on the next turn.
+ * Connect an account here and Perry can use it on the next turn.
  *
  * Nothing about the agent changes when you do. It looks up what is connected
  * at the moment it needs to act, so this page is the only place that decides
- * what Assistant can reach.
+ * what Perry can reach.
  */
 export function Connectors({ dashboardKey }: { dashboardKey: string }) {
   const getConnectors = useAction(api.dashboard.getConnectors);
@@ -47,21 +57,25 @@ export function Connectors({ dashboardKey }: { dashboardKey: string }) {
     connectors: Connector[];
     error?: string;
   } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [custom, setCustom] = useState("");
   const [query, setQuery] = useState("");
+  const [looking, setLooking] = useState(false);
   const [actions, setActions] = useState<FoundAction[] | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [lookupError, setLookupError] = useState("");
+  const [notice, setNotice] = useState<{ tone: Tone; text: string } | null>(null);
+  /** A sign-in opened in another tab; the list refreshes when you come back to this one. */
+  const [awaiting, setAwaiting] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    setRefreshing(true);
     try {
       setState(await getConnectors({ key: dashboardKey }));
     } catch (error) {
-      setState({
-        configured: false,
-        connectors: [],
-        error: error instanceof Error ? error.message : String(error),
-      });
+      setState((current) => ({ configured: current?.configured ?? false, connectors: current?.connectors ?? [], error: errorText(error) }));
+    } finally {
+      setRefreshing(false);
     }
   }, [dashboardKey, getConnectors]);
 
@@ -69,9 +83,24 @@ export function Connectors({ dashboardKey }: { dashboardKey: string }) {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    if (!awaiting) return;
+    const onFocus = () => { if (document.visibilityState === "visible") void refresh(); };
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
+    return () => { document.removeEventListener("visibilitychange", onFocus); window.removeEventListener("focus", onFocus); };
+  }, [awaiting, refresh]);
+
+  useEffect(() => {
+    if (awaiting && state?.connectors.some((item) => item.slug === awaiting && item.connected)) {
+      setNotice({ tone: "success", text: `${state.connectors.find((item) => item.slug === awaiting)?.name ?? awaiting} is connected. Perry can use it from the next message.` });
+      setAwaiting(null);
+    }
+  }, [awaiting, state]);
+
   const connect = async (toolkit: string) => {
     const slug = toolkit.trim().toLowerCase();
-    if (!slug) return;
+    if (!slug || busy) return;
 
     setBusy(slug);
     setNotice(null);
@@ -79,174 +108,123 @@ export function Connectors({ dashboardKey }: { dashboardKey: string }) {
       const result = await connectToolkit({ key: dashboardKey, toolkit: slug });
       if (result.redirectUrl) {
         window.open(result.redirectUrl, "_blank", "noopener");
-        setNotice(
-          `Finish signing in to ${slug} in the tab that just opened, then press Refresh.`,
-        );
+        setAwaiting(slug);
+        setNotice({ tone: "info", text: `Finish signing in to ${slug} in the new tab. This list updates when you come back.` });
+        if (slug === custom.trim().toLowerCase()) setCustom("");
       } else {
-        setNotice(result.error ?? `Could not start a connection for ${slug}.`);
+        setNotice({ tone: "danger", text: result.error ?? `Couldn't start a connection for “${slug}”. Check the toolkit name and try again.` });
       }
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
+      setNotice({ tone: "danger", text: errorText(error) });
     } finally {
       setBusy(null);
     }
   };
 
-  const look = async () => {
-    if (query.trim().length < 2) return;
-    setActions(null);
-    const result = await searchActions({ key: dashboardKey, query: query.trim() });
-    setActions(result.actions);
-    if (result.error) setNotice(result.error);
+  const look = async (event: FormEvent) => {
+    event.preventDefault();
+    if (query.trim().length < 2 || looking) return;
+    setLooking(true);
+    setLookupError("");
+    try {
+      const result = await searchActions({ key: dashboardKey, query: query.trim() });
+      setActions(result.actions);
+      if (result.error) setLookupError(result.error);
+    } catch (error) {
+      setActions(null);
+      setLookupError(errorText(error));
+    } finally {
+      setLooking(false);
+    }
   };
 
-  if (state === null) return <div className="panel empty">Loading.</div>;
+  if (state === null) return <Section title="Connected accounts"><Loading /></Section>;
 
   if (!state.configured) {
     return (
-      <div className="panel">
-        <h3>Not set up</h3>
-        <p className="hint">
-          Composio holds the OAuth for your accounts so Assistant never sees a
-          token. Get a key at composio.dev, then run:
-        </p>
-        <pre style={{ fontSize: 12, color: "var(--dim)" }}>
-          pnpm exec convex env set COMPOSIO_API_KEY &lt;key&gt;
-        </pre>
-        {state.error && <p className="hint">{state.error}</p>}
-      </div>
+      <Section title="Connect your accounts" description="Composio holds the sign-ins for your accounts, so Perry never sees a password or token.">
+        <div className="section-pad" style={{ display: "grid", gap: 12 }}>
+          <ol className="steps" style={{ margin: 0 }}>
+            <li><span className="step-mark" aria-hidden="true" />Create a Composio account and copy an API key from composio.dev.</li>
+            <li><span className="step-mark" aria-hidden="true" />Add it on the Keys page, or run this in the project folder:</li>
+          </ol>
+          <Command>pnpm exec convex env set COMPOSIO_API_KEY your-key</Command>
+          {state.error && <Notice tone="danger" title="Couldn't reach Composio" details={state.error} />}
+          <div><button type="button" className="btn btn-secondary btn-sm" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? <Spinner /> : <Icon name="refresh" size={14} />}Check again</button></div>
+        </div>
+      </Section>
     );
   }
 
   const connected = state.connectors.filter((c) => c.connected);
+  const suggestions = SUGGESTED.filter((s) => !connected.some((c) => c.slug === s.slug));
 
   return (
     <>
-      <div className="panel">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h3>Connected</h3>
-          <div className="row" style={{ gap: 8 }}>
-            <span className="badge">{connected.length}</span>
-            <button className="ghost" onClick={() => void refresh()}>
-              Refresh
-            </button>
-          </div>
-        </div>
-        <p className="hint">
-          The assistant can look up the available actions on the next turn and
-          use them only after you have connected the account.
-        </p>
+      {notice && <Notice tone={notice.tone} onDismiss={() => setNotice(null)}>{notice.text}</Notice>}
+      {state.error && <Notice tone="danger" title="Couldn't load every connection" details={state.error} />}
 
-        {notice && (
-          <p className="hint" style={{ color: "var(--warn)" }}>
-            {notice}
-          </p>
-        )}
-        {state.error && (
-          <p className="hint" style={{ color: "var(--danger)" }}>
-            {state.error}
-          </p>
-        )}
-
-        {connected.length === 0 && (
-          <div className="empty">Nothing connected yet.</div>
-        )}
-
-        {connected.map((connector) => (
-          <div className="item" key={connector.slug}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <div>
-                <strong>{connector.name}</strong>
-                <div className="item-meta">{connector.slug}</div>
-              </div>
-              <span className="badge on">{connector.status ?? "active"}</span>
+      <Section title="Connected accounts" count={connected.length}
+        description="Perry looks up what it can do with these at the moment it needs to act."
+        actions={<button type="button" className="btn btn-secondary btn-sm" onClick={() => void refresh()} disabled={refreshing} aria-busy={refreshing || undefined}>{refreshing ? <Spinner /> : <Icon name="refresh" size={14} />}Refresh</button>}>
+        {connected.length === 0 && <Empty icon="plug" title="No accounts connected">Connect one below. Sign-in happens on the provider&apos;s own page.</Empty>}
+        {connected.map((connector) => {
+          const status = connectionStatus(connector.status);
+          return <div className="item" key={connector.slug}>
+            <div className="item-main">
+              <div className="item-title">{connector.name}</div>
+              <div className="item-meta"><span className="mono" style={{ fontSize: 12 }}>{connector.slug}</span></div>
             </div>
-          </div>
-        ))}
-      </div>
+            <div className="item-side">
+              <Status tone={status.tone}>{status.label}</Status>
+              {status.tone !== "success" && <button type="button" className="btn btn-secondary btn-sm" disabled={busy !== null} onClick={() => void connect(connector.slug)}>{busy === connector.slug && <Spinner />}Reconnect</button>}
+            </div>
+          </div>;
+        })}
+      </Section>
 
-      <div className="panel">
-        <h3>Connect an account</h3>
-        <p className="hint">
-          Opens the provider's own sign-in. The token stays with Composio.
-        </p>
-
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 8,
-            marginBottom: 14,
-          }}
-        >
-          {SUGGESTED.filter(
-            (s) => !connected.some((c) => c.slug === s.slug),
-          ).map((suggestion) => (
-            <button
-              key={suggestion.slug}
-              disabled={busy !== null}
-              onClick={() => void connect(suggestion.slug)}
-            >
-              {busy === suggestion.slug ? "Opening" : suggestion.name}
-            </button>
-          ))}
+      <Section title="Connect an account" description="Opens the provider's own sign-in in a new tab. The token stays with Composio.">
+        <div className="section-pad" style={{ display: "grid", gap: 16 }}>
+          {suggestions.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {suggestions.map((suggestion) => (
+              <button type="button" key={suggestion.slug} className="btn btn-secondary btn-sm" disabled={busy !== null} aria-busy={busy === suggestion.slug || undefined} onClick={() => void connect(suggestion.slug)}>
+                {busy === suggestion.slug ? <Spinner /> : <Icon name="plus" size={13} />}{suggestion.name}
+              </button>
+            ))}
+          </div>}
+          <form className="field" style={{ margin: 0 }} onSubmit={(event) => { event.preventDefault(); void connect(custom); }}>
+            <label htmlFor="custom-toolkit">Another service</label>
+            <div className="inline-form">
+              <input id="custom-toolkit" className="input" value={custom} placeholder="Toolkit name, e.g. hubspot…" autoComplete="off" spellCheck={false} onChange={(e) => setCustom(e.target.value.replace(/\s+/g, ""))} />
+              <button type="submit" className="btn btn-primary btn-md" disabled={custom.trim().length === 0 || busy !== null}>{busy === custom.trim().toLowerCase() && <Spinner />}Connect</button>
+            </div>
+            <p className="field-hint">Use the toolkit&apos;s name from Composio&apos;s catalog: lowercase, no spaces.</p>
+          </form>
         </div>
+      </Section>
 
-        <div className="composer">
-          <input
-            value={custom}
-            placeholder="Any other toolkit slug, e.g. hubspot"
-            onChange={(e) => setCustom(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void connect(custom);
-            }}
-          />
-          <button
-            className="primary"
-            disabled={custom.trim().length === 0 || busy !== null}
-            onClick={() => void connect(custom)}
-          >
-            Connect
-          </button>
+      <Section title="Test what Perry can do" description="Runs the same lookup Perry does before acting. Useful for checking a connection really works.">
+        <div className="section-pad" style={{ display: "grid", gap: 12 }}>
+          <form className="inline-form" onSubmit={(event) => void look(event)}>
+            <label htmlFor="action-search" className="sr-only">Describe an action</label>
+            <input id="action-search" className="input" value={query} placeholder="Describe an action, e.g. create a calendar event…" autoComplete="off" onChange={(e) => setQuery(e.target.value)} />
+            <button type="submit" className="btn btn-secondary btn-md" disabled={query.trim().length < 2 || looking}>{looking && <Spinner />}{looking ? "Looking…" : "Look up"}</button>
+          </form>
+          {lookupError && <Notice tone="danger">{lookupError}</Notice>}
+          {actions?.length === 0 && !lookupError && <p className="field-hint" role="status">No actions match. Try different words, or connect the service first.</p>}
+          {actions && actions.length > 0 && <div className="section-body" role="status">
+            <p className="result-count" style={{ padding: "10px 16px 0", margin: 0 }}>{actions.length} {actions.length === 1 ? "action" : "actions"} found</p>
+            {actions.map((action) => (
+              <div className="item" key={action.slug}>
+                <div className="item-main">
+                  <div className="item-title"><code className="mono" style={{ fontSize: 12.5 }}>{action.slug}</code>{action.toolkit && <span className="tag">{action.toolkit}</span>}</div>
+                  {action.description && <div className="item-text">{action.description}</div>}
+                </div>
+              </div>
+            ))}
+          </div>}
         </div>
-      </div>
-
-      <div className="panel">
-        <h3>What can it actually do</h3>
-        <p className="hint">
-          The same lookup Assistant runs before acting. Useful for checking a
-          connection really works.
-        </p>
-
-        <div className="composer">
-          <input
-            value={query}
-            placeholder="create a calendar event"
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void look();
-            }}
-          />
-          <button
-            disabled={query.trim().length < 2}
-            onClick={() => void look()}
-          >
-            Look up
-          </button>
-        </div>
-
-        {actions?.length === 0 && (
-          <div className="empty">Nothing matched.</div>
-        )}
-        {actions?.map((action) => (
-          <div className="item" key={action.slug}>
-            <code>{action.slug}</code>
-            {action.description && (
-              <div className="item-meta">{action.description}</div>
-            )}
-          </div>
-        ))}
-      </div>
+      </Section>
     </>
   );
 }

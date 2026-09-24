@@ -1,30 +1,19 @@
 "use client";
 
 import { useAction, useMutation, useQuery } from "convex/react";
-import { useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { Jobs } from "./Jobs";
+import { ActionButton, Empty, Icon, Loading, RelativeTime, Section, Status, useNow, ago, type Tone } from "./ui";
 
-function ago(ts?: number): string {
-  if (!ts) return "never";
-  const seconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
+const TASK_TONE: Record<string, Tone> = { queued: "neutral", running: "info", blocked: "warning", failed: "danger", done: "success", cancelled: "neutral" };
+const TASK_LABEL: Record<string, string> = { running: "Running", blocked: "Needs you", failed: "Failed", done: "Done", cancelled: "Cancelled" };
+const GOAL_TONE: Record<string, Tone> = { active: "info", done: "success", paused: "warning" };
+const CONDITION: Record<string, string> = { change: "When anything changes", contains: "When it contains", price_below: "When the price drops below" };
 
-const STEP_MARK: Record<string, string> = {
-  done: "x",
-  active: ">",
-  pending: " ",
-  skipped: "-",
-};
+const label = (status: string, labels: Record<string, string> = {}) => labels[status] ?? status.charAt(0).toUpperCase() + status.slice(1);
 
 /**
- * What Assistant is doing, borrowed wholesale from OpenMuse's idea that progress
+ * What Perry is doing, borrowed wholesale from OpenMuse's idea that progress
  * belongs in a row rather than in the conversation.
  *
  * The agent writes the plan through a tool, so this view is the truth rather
@@ -36,205 +25,97 @@ export function Work({ dashboardKey }: { dashboardKey: string }) {
   const deleteMonitor = useMutation(api.dashboard.deleteMonitor);
   const cancelTask = useMutation(api.dashboard.cancelTask);
   const checkNow = useAction(api.dashboard.checkMonitorsNow);
-  const [checking, setChecking] = useState(false);
-
-  if (work === undefined) return <div className="panel empty">Loading.</div>;
-
-  const runNow = async () => {
-    setChecking(true);
-    try {
-      await checkNow({ key: dashboardKey });
-    } finally {
-      setChecking(false);
-    }
-  };
+  const now = useNow();
 
   return (
     <>
       <Jobs dashboardKey={dashboardKey} />
-      <div className="panel">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h3>Tasks</h3>
-          <span className="badge">{work.tasks.length}</span>
-        </div>
-        <p className="hint">
-          Opened by Assistant for anything with more than a couple of steps.
-        </p>
 
-        {work.tasks.length === 0 && <div className="empty">Nothing yet.</div>}
-
-        {work.tasks.map((task) => (
-          <div className="item" key={task._id}>
-            <div className="row" style={{ justifyContent: "space-between", gap: 14 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <strong>{task.title}</strong>
-                <div className="item-meta">
-                  {ago(task.updatedAt)}
-                  {task.plan.length > 0
-                    ? ` · ${task.plan.filter((s) => s.status === "done").length}/${task.plan.length} steps`
-                    : ""}
-                </div>
-
-                {task.plan.length > 0 && (
-                  <pre
-                    style={{
-                      margin: "8px 0 0",
-                      fontSize: 12,
-                      color: "var(--dim)",
-                      whiteSpace: "pre-wrap",
-                    }}
-                  >
-                    {task.plan
-                      .map((s) => `[${STEP_MARK[s.status] ?? " "}] ${s.title}`)
-                      .join("\n")}
-                  </pre>
-                )}
-
-                {task.question && (
-                  <div className="item-meta" style={{ color: "var(--warn)" }}>
-                    Needs you: {task.question}
-                  </div>
-                )}
-                {task.result && <div className="item-meta">{task.result}</div>}
-                {task.error && (
-                  <div className="item-meta" style={{ color: "var(--danger)" }}>
-                    {task.error}
-                  </div>
-                )}
+      <Section title="Tasks" count={work?.tasks.length} description="Perry opens a task for anything with more than a couple of steps, and keeps its plan here.">
+        {work === undefined && <Loading rows={2} />}
+        {work?.tasks.length === 0 && <Empty icon="work" title="No tasks yet">Ask Perry for something that takes a few steps, and its plan shows up here.</Empty>}
+        {work?.tasks.map((task) => {
+          const done = task.plan.filter((step) => step.status === "done").length;
+          return <div className="item" key={task._id}>
+            <div className="item-main">
+              <div className="item-title">{task.title}</div>
+              <div className="item-meta">
+                <span>Updated {ago(task.updatedAt, now)}</span>
+                {task.plan.length > 0 && <span className="nums">{done} of {task.plan.length} steps</span>}
               </div>
-
-              <div style={{ textAlign: "right" }}>
-                <span
-                  className={
-                    task.status === "failed" ? "badge err" : "badge"
-                  }
-                >
-                  {task.status}
-                </span>
-                {(task.status === "running" || task.status === "blocked") && (
-                  <div style={{ marginTop: 8 }}>
-                    <button
-                      className="ghost danger"
-                      onClick={() =>
-                        void cancelTask({ key: dashboardKey, taskId: task._id })
-                      }
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
+              {task.plan.length > 0 && <div className="progress" role="progressbar" aria-label="Task progress" aria-valuemin={0} aria-valuemax={task.plan.length} aria-valuenow={done}><span style={{ width: `${(done / task.plan.length) * 100}%` }} /></div>}
+              {task.question && <div className="item-callout warning"><strong>Needs you:</strong> {task.question}</div>}
+              {task.plan.length > 0 && <ol className="steps" aria-label="Plan">
+                {task.plan.map((step, index) => <li key={index} className={step.status}>
+                  <span className="step-mark" aria-hidden="true">{step.status === "done" && <Icon name="check" size={10} />}</span>
+                  <span className="step-title">{step.title}<span className="sr-only"> ({step.status})</span></span>
+                </li>)}
+              </ol>}
+              {task.result && <div className="item-callout neutral">{task.result}</div>}
+              {task.error && <div className="item-callout danger"><strong>Failed:</strong> {task.error}</div>}
             </div>
-          </div>
-        ))}
-      </div>
+            <div className="item-side">
+              <Status tone={TASK_TONE[task.status] ?? "neutral"} pulse={task.status === "running"}>{label(task.status, TASK_LABEL)}</Status>
+              {(task.status === "running" || task.status === "blocked") && <ActionButton variant="ghost" className="btn-danger-ghost" action={() => cancelTask({ key: dashboardKey, taskId: task._id })} success="Task cancelled."
+                confirm={{ title: "Cancel this task?", body: `Perry will stop working on “${task.title}”. Anything it already did stays done.`, confirmLabel: "Cancel task" }}>Cancel</ActionButton>}
+            </div>
+          </div>;
+        })}
+      </Section>
 
-      <div className="panel">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h3>Goals</h3>
-          <span className="badge">{work.goals.length}</span>
-        </div>
-        <p className="hint">Outcomes with milestones. Slower than tasks.</p>
+      <Section title="Goals" count={work?.goals.length} description="Longer-running outcomes, broken into milestones.">
+        {work === undefined && <Loading rows={2} />}
+        {work?.goals.length === 0 && <Empty icon="check" title="No goals yet">Tell Perry about something you&apos;re working toward, and it can track the milestones.</Empty>}
+        {work?.goals.map((goal) => {
+          const reached = goal.milestones.filter((milestone) => milestone.done).length;
+          return <div className="item" key={goal._id}>
+            <div className="item-main">
+              <div className="item-title">{goal.title}</div>
+              {goal.description && <div className="item-text">{goal.description}</div>}
+              {goal.milestones.length > 0 && <>
+                <div className="item-meta"><span className="nums">{reached} of {goal.milestones.length} milestones</span></div>
+                <ol className="steps" aria-label="Milestones">
+                  {goal.milestones.map((milestone, index) => <li key={index} className={milestone.done ? "done" : ""}>
+                    <span className="step-mark" aria-hidden="true">{milestone.done && <Icon name="check" size={10} />}</span>
+                    <span className="step-title">{milestone.title}<span className="sr-only"> ({milestone.done ? "done" : "not done"})</span></span>
+                  </li>)}
+                </ol>
+              </>}
+            </div>
+            <div className="item-side"><Status tone={GOAL_TONE[goal.status] ?? "neutral"}>{label(goal.status)}</Status></div>
+          </div>;
+        })}
+      </Section>
 
-        {work.goals.length === 0 && <div className="empty">None yet.</div>}
-
-        {work.goals.map((goal) => (
-          <div className="item" key={goal._id}>
-            <strong>{goal.title}</strong>
-            <span className="badge" style={{ marginLeft: 8 }}>
-              {goal.status}
-            </span>
-            {goal.description && <div className="item-meta">{goal.description}</div>}
-            {goal.milestones.length > 0 && (
-              <pre
-                style={{
-                  margin: "8px 0 0",
-                  fontSize: 12,
-                  color: "var(--dim)",
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {goal.milestones
-                  .map((m) => `[${m.done ? "x" : " "}] ${m.title}`)
-                  .join("\n")}
-              </pre>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className="panel">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h3>Watches</h3>
-          <div className="row" style={{ gap: 8 }}>
-            <span className="badge">{work.monitors.length}</span>
-            <button className="ghost" disabled={checking} onClick={() => void runNow()}>
-              {checking ? "Checking" : "Check now"}
-            </button>
-          </div>
-        </div>
-        <p className="hint">
-          Checked every five minutes, each on its own interval. A new change
-          watch records a baseline first and stays quiet.
-        </p>
-
-        {work.monitors.length === 0 && <div className="empty">Nothing watched.</div>}
-
-        {work.monitors.map((monitor) => (
+      <Section title="Watches" count={work?.monitors.length}
+        description="Pages Perry checks on an interval. A new watch records a baseline first and stays quiet until something changes."
+        actions={work && work.monitors.length > 0 && <ActionButton variant="secondary" icon="refresh" action={() => checkNow({ key: dashboardKey })} pendingLabel="Checking…" success="Checked every watch that was due.">Check now</ActionButton>}>
+        {work === undefined && <Loading rows={2} />}
+        {work?.monitors.length === 0 && <Empty icon="eye" title="Nothing watched">Ask Perry to watch a page, for example: “Tell me when this product is back in stock.”</Empty>}
+        {work?.monitors.map((monitor) => (
           <div className="item" key={monitor._id}>
-            <div className="row" style={{ justifyContent: "space-between", gap: 14 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <strong>{monitor.title}</strong>
-                <div className="item-meta" style={{ overflowWrap: "anywhere" }}>
-                  {monitor.url}
-                </div>
-                <div className="item-meta">
-                  {monitor.condition}
-                  {monitor.value ? ` "${monitor.value}"` : ""}
-                  {" · every "}
-                  {monitor.intervalMinutes}m
-                  {" · checked "}
-                  {ago(monitor.lastCheckedAt)}
-                  {monitor.failures > 0 ? ` · ${monitor.failures} failures` : ""}
-                </div>
-                {monitor.lastObservation && (
-                  <div className="item-meta">{monitor.lastObservation}</div>
-                )}
+            <div className="item-main">
+              <div className="item-title">{monitor.title}</div>
+              <a className="item-meta mono wrap-anywhere" href={monitor.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>{monitor.url}</a>
+              <div className="item-meta">
+                <span>{CONDITION[monitor.condition] ?? monitor.condition}{monitor.value ? ` “${monitor.value}”` : ""}</span>
+                <span>Every {monitor.intervalMinutes >= 60 && monitor.intervalMinutes % 60 === 0 ? `${monitor.intervalMinutes / 60}h` : `${monitor.intervalMinutes}m`}</span>
+                <RelativeTime at={monitor.lastCheckedAt} prefix="Checked " />
               </div>
-
-              <div style={{ textAlign: "right" }}>
-                <span className={monitor.active ? "badge on" : "badge"}>
-                  {monitor.active ? "on" : "paused"}
-                </span>
-                <div className="row" style={{ marginTop: 8, gap: 6 }}>
-                  <button
-                    className="ghost"
-                    onClick={() =>
-                      void toggleMonitor({
-                        key: dashboardKey,
-                        monitorId: monitor._id,
-                      })
-                    }
-                  >
-                    {monitor.active ? "Pause" : "Resume"}
-                  </button>
-                  <button
-                    className="ghost danger"
-                    onClick={() =>
-                      void deleteMonitor({
-                        key: dashboardKey,
-                        monitorId: monitor._id,
-                      })
-                    }
-                  >
-                    Delete
-                  </button>
-                </div>
+              {monitor.failures > 0 && <div className="item-callout warning"><strong>{monitor.failures} failed {monitor.failures === 1 ? "check" : "checks"}.</strong> Perry keeps trying on schedule.</div>}
+              {monitor.lastObservation && <div className="item-callout neutral">{monitor.lastObservation}</div>}
+            </div>
+            <div className="item-side">
+              <Status tone={monitor.active ? "success" : "warning"}>{monitor.active ? "Watching" : "Paused"}</Status>
+              <div className="item-actions">
+                <ActionButton variant="ghost" action={() => toggleMonitor({ key: dashboardKey, monitorId: monitor._id })} success={monitor.active ? "Watch paused." : "Watch resumed."}>{monitor.active ? "Pause" : "Resume"}</ActionButton>
+                <ActionButton variant="ghost" className="btn-danger-ghost" action={() => deleteMonitor({ key: dashboardKey, monitorId: monitor._id })} success="Watch deleted."
+                  confirm={{ title: `Stop watching “${monitor.title}”?`, body: "The watch and its history will be deleted.", confirmLabel: "Delete watch" }}>Delete</ActionButton>
               </div>
             </div>
           </div>
         ))}
-      </div>
+      </Section>
     </>
   );
 }

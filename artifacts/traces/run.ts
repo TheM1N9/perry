@@ -100,7 +100,7 @@ const usageOk = Boolean(usage && (usage.inputTokens ?? 0) > 0 && (usage.outputTo
   && (run.steps ?? 0) >= 1;
 
 // 3. The Activity page, filtered to this chat, with the run's trace open.
-await evaluate(`[...document.querySelectorAll('.chat-nav-grid button')].find((button) => button.textContent.includes('Activity')).click(); true`);
+await evaluate(`[...document.querySelectorAll('.chat-nav-grid a')].find((link) => link.textContent.includes('Activity')).click(); true`);
 await evaluate(`new Promise((resolve, reject) => { const start = Date.now(); const tick = () => document.querySelector('.activity-run') ? resolve(true) : Date.now() - start > 30000 ? reject(new Error('Activity never rendered')) : setTimeout(tick, 200); tick(); })`);
 await evaluate(`(() => {
   const select = [...document.querySelectorAll('.activity-filters select')][0];

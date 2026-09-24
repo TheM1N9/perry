@@ -56,7 +56,7 @@ const consolidate = await runJob(builtins.consolidate.id);
 clearInterval(heartbeat);
 
 const { evaluate, send, errors, close } = await openChat(base, dashboardKey);
-await evaluate(`[...document.querySelectorAll('.chat-nav-grid button')].find((button) => button.textContent.includes('Work')).click(); true`);
+await evaluate(`[...document.querySelectorAll('.chat-nav-grid a')].find((link) => link.textContent.includes('Work')).click(); true`);
 await sleep(2000);
 const shot = await send("Page.captureScreenshot", { format: "png" });
 writeFileSync(join(outDir, "work-page.png"), Buffer.from(shot.data, "base64"));

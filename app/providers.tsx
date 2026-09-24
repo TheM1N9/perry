@@ -2,6 +2,7 @@
 
 import { ConvexProvider, ConvexReactClient } from "convex/react";
 import type { ReactNode } from "react";
+import { ToastProvider } from "./components/ui";
 
 const url = process.env.NEXT_PUBLIC_CONVEX_URL;
 
@@ -14,5 +15,5 @@ if (!url) {
 const convex = new ConvexReactClient(url);
 
 export function Providers({ children }: { children: ReactNode }) {
-  return <ConvexProvider client={convex}>{children}</ConvexProvider>;
+  return <ConvexProvider client={convex}><ToastProvider>{children}</ToastProvider></ConvexProvider>;
 }

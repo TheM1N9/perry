@@ -1,9 +1,8 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
-import { useEffect, useState } from "react";
+import { useConvex, useMutation, useQuery } from "convex/react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
 import { Activity } from "./components/Activity";
 import { Chat } from "./components/Chat";
 import { Computer } from "./components/Computer";
@@ -12,216 +11,147 @@ import { Keys } from "./components/Keys";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Memories } from "./components/Memories";
 import { Settings } from "./components/Settings";
+import { Setup } from "./components/Setup";
+import { SECTIONS, Sidebar, linkClick, sectionPath, type SectionId } from "./components/Sidebar";
 import { Work } from "./components/Work";
+import { Command, Icon, SecretInput, Spinner, errorText } from "./components/ui";
 
 const STORAGE_KEY = "perry.dashboard.key";
 
-const TABS = [
-  { id: "chat", label: "Chat" },
-  { id: "work", label: "Work" },
-  { id: "computer", label: "Computer" },
-  { id: "connectors", label: "Connectors" },
-  { id: "memory", label: "Memory" },
-  { id: "settings", label: "Settings" },
-  { id: "activity", label: "Activity" },
-  { id: "keys", label: "Keys" },
-  { id: "setup", label: "Setup" },
-] as const;
-
-const SECTION_DESCRIPTIONS: Record<string, string> = {
-  work: "Tasks, goals, and monitors Assistant is working on.",
-  computer: "Your connected computer and local runner.",
-  connectors: "Accounts and services Assistant can use with your permission.",
-  memory: "Facts Assistant has saved for future conversations.",
-  settings: "Configure the assistant, memory, and fallback engine.",
-  activity: "A record of recent turns, tools, and errors.",
-  keys: "Manage the credentials this installation uses.",
-  setup: "Pair this installation with your chat account.",
-};
-
-type TabId = (typeof TABS)[number]["id"];
-
-function StatusLine({ dashboardKey }: { dashboardKey: string }) {
-  const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
-  if (!status) return <div className="statusline">&nbsp;</div>;
-
-  return (
-    <div className="statusline">
-      {status.memories} memories
-      {" · "}
-      {status.conversations.length} conversation
-      {status.conversations.length === 1 ? "" : "s"}
-      {" · "}
-      <span className={status.claimed ? undefined : "bad"}>
-        {status.claimed
-          ? `paired${status.ownerName ? ` with ${status.ownerName}` : ""}`
-          : "unpaired"}
-      </span>
-      {" · codex"}
-    </div>
-  );
-}
-
-/**
- * Shown until someone claims this install. Assistant answers nobody before that,
- * so this is the only thing worth looking at on a fresh deployment.
- */
-function Pairing({ dashboardKey }: { dashboardKey: string }) {
-  const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
-  const startPairing = useMutation(api.dashboard.startPairing);
-  const unclaim = useMutation(api.dashboard.unclaim);
-
-  if (!status) return null;
-
-  if (status.claimed) {
-    return (
-      <div className="panel">
-        <h3>Paired</h3>
-        <p className="hint">
-          This Assistant belongs to{" "}
-          {status.ownerName ? <strong>{status.ownerName}</strong> : "you"}. Every
-          other sender is ignored.
-        </p>
-        <button className="ghost danger" onClick={() => void unclaim({ key: dashboardKey })}>
-          Unpair
-        </button>
-      </div>
-    );
-  }
-
-  const expired =
-    status.pairingExpiresAt !== undefined && Date.now() > status.pairingExpiresAt;
-
-  return (
-    <div className="panel">
-      <h3>Not paired yet</h3>
-      <p className="hint">
-        Message your bot with this code to claim Assistant. Whoever sends it first
-        owns this install.
-      </p>
-      {status.pairingCode && !expired ? (
-        <div
-          style={{
-            fontSize: 32,
-            letterSpacing: "0.3em",
-            color: "var(--accent)",
-            padding: "12px 0 18px",
-          }}
-        >
-          {status.pairingCode}
-        </div>
-      ) : (
-        <p className="hint">
-          {expired ? "That code expired." : "No code yet."}
-        </p>
-      )}
-      <button className="primary" onClick={() => void startPairing({ key: dashboardKey })}>
-        {status.pairingCode && !expired ? "New code" : "Generate code"}
-      </button>
-    </div>
-  );
+/** The section a path names, or null for the root, which depends on whether Perry is paired. */
+function sectionFrom(pathname: string): SectionId | null {
+  const first = pathname.split("/")[1] ?? "";
+  if (!first) return null;
+  return SECTIONS.find((section) => section.id === first)?.id ?? "chat";
 }
 
 function Gate({ onSubmit }: { onSubmit: (key: string) => void }) {
+  const convex = useConvex();
   const [value, setValue] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState("");
 
-  return (
-    <div className="gate">
-      <h1 className="title">Assistant</h1>
-      <p className="hint" style={{ marginTop: 8 }}>
-        This install is yours alone, and the dashboard is behind one key.
-        <code> pnpm run setup </code> prints it, and it is saved in .env.local.
-      </p>
-      <pre
-        className="panel"
-        style={{ fontSize: 12, color: "var(--dim)", margin: "0 0 16px" }}
-      >
-        pnpm run setup
-      </pre>
-      <div className="composer">
-        <input
-          type="password"
-          value={value}
-          placeholder="Dashboard key"
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && value.trim()) onSubmit(value.trim());
-          }}
-        />
-        <button
-          className="primary"
-          disabled={value.trim().length === 0}
-          onClick={() => onSubmit(value.trim())}
-        >
-          Open
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** Lands on Setup when nobody has claimed this install yet. */
-function Shell({
-  dashboardKey,
-  onLock,
-}: {
-  dashboardKey: string;
-  onLock: () => void;
-}) {
-  const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
-  const [tab, setTab] = useState<TabId | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  useEffect(() => {
-    if (status && tab === null) setTab(window.location.pathname.startsWith("/chat") ? "chat" : status.claimed ? "chat" : "setup");
-  }, [status, tab]);
-
-  useEffect(() => {
-    const onBack = () => setTab(window.location.pathname.startsWith("/chat") ? "chat" : "setup");
-    window.addEventListener("popstate", onBack);
-    return () => window.removeEventListener("popstate", onBack);
-  }, []);
-
-  const active = tab ?? (status?.claimed ? "chat" : "setup");
-  const openChat = (id: Id<"conversations">) => {
-    window.localStorage.setItem("perry.activeChat", id);
-    window.history.pushState(null, "", `/chat/${encodeURIComponent(id)}`);
-    setTab("chat");
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const key = value.trim();
+    if (!key) { setError("Paste your dashboard key to continue."); return; }
+    setChecking(true);
+    setError("");
+    try {
+      await convex.query(api.dashboard.getStatus, { key });
+      onSubmit(key);
+    } catch (cause) {
+      const message = errorText(cause);
+      setError(/dashboard key|DASHBOARD_KEY/i.test(message)
+        ? "That key doesn't match this deployment. Copy it again from .env.local and try once more."
+        : `Perry's server didn't answer: ${message}`);
+    } finally {
+      setChecking(false);
+    }
   };
 
+  return <main className="gate-page">
+    <div className="gate">
+      <span className="brand-mark" aria-hidden="true">P</span>
+      <h1>Open Perry</h1>
+      <p>Enter the dashboard key for this installation. It stays in this browser.</p>
+      <form onSubmit={(event) => void submit(event)} noValidate>
+        <div className="field" style={{ margin: 0 }}>
+          <label htmlFor="dashboard-key">Dashboard key</label>
+          <SecretInput id="dashboard-key" name="dashboard-key" value={value} onChange={(next) => { setValue(next); setError(""); }} placeholder="Paste your key…" autoFocus invalid={Boolean(error)} describedBy={error ? "dashboard-key-error" : undefined} />
+          {error && <p className="field-error" id="dashboard-key-error" role="alert">{error}</p>}
+        </div>
+        <button type="submit" className="btn btn-primary btn-lg" disabled={checking} aria-busy={checking || undefined}>
+          {checking && <Spinner />}{checking ? "Checking…" : "Continue"}
+        </button>
+      </form>
+      <div className="gate-help">
+        <p>Don&apos;t have it? Setup prints the key and saves it as <code className="inline">DASHBOARD_KEY</code> in <code className="inline">.env.local</code>.</p>
+        <Command>pnpm run setup</Command>
+      </div>
+    </div>
+  </main>;
+}
+
+function Shell({ dashboardKey, onLock }: { dashboardKey: string; onLock: () => void }) {
+  const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
+  const [path, setPath] = useState(() => window.location.pathname);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+
+  useEffect(() => {
+    const onPop = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const navigate = useCallback((section: SectionId) => {
+    const chatId = window.localStorage.getItem("perry.activeChat");
+    const to = section === "chat" ? (chatId ? `/chat/${encodeURIComponent(chatId)}` : "/chat") : sectionPath(section);
+    if (window.location.pathname !== to) window.history.pushState(null, "", to);
+    setPath(to);
+    document.querySelector<HTMLElement>(".workspace-scroll")?.scrollTo({ top: 0 });
+  }, []);
+
+  // The root opens Chat once Perry is paired, and Setup until then.
+  const named = sectionFrom(path);
+  const active: SectionId | null = named ?? (status ? (status.claimed ? "chat" : "setup") : null);
+  useEffect(() => {
+    if (!named && active) {
+      const to = active === "chat" ? "/chat" : sectionPath(active);
+      window.history.replaceState(null, "", to);
+      setPath(to);
+    }
+  }, [named, active]);
+
+  useEffect(() => {
+    const section = SECTIONS.find((item) => item.id === active);
+    document.title = section && section.id !== "chat" ? `${section.label} · Perry` : "Perry";
+  }, [active]);
+
+  if (!active) return null;
+
   if (active === "chat") {
-    return <Chat dashboardKey={dashboardKey} onNavigate={(next) => { window.history.pushState(null, "", "/"); setTab(next); }} onLock={onLock} />;
+    return <Chat dashboardKey={dashboardKey} onNavigate={navigate} onLock={onLock} />;
   }
 
-  return <div className="chat-workspace dashboard-workspace">
-    {menuOpen && <button className="chat-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
-    <aside className={`chat-sidebar dashboard-sidebar ${menuOpen ? "open" : ""}`}>
-      <div className="chat-brand"><span className="chat-brand-mark">A</span><span>Assistant</span><span className="chat-brand-sub">your space</span></div>
-      <div className="dashboard-sidebar-heading">WORKSPACE</div>
-      <nav className="dashboard-nav" aria-label="Workspace navigation">
-        {TABS.map((item) => <button key={item.id} className={item.id === active ? "active" : ""} onClick={() => { setTab(item.id); setMenuOpen(false); }}>
-          <span className="dashboard-nav-dot" />{item.label}<span className="dashboard-nav-arrow">›</span>
-        </button>)}
-      </nav>
-      <div className="dashboard-sidebar-spacer" />
-      <div className="dashboard-sidebar-footer"><StatusLine dashboardKey={dashboardKey} /><button onClick={onLock}>Lock dashboard</button></div>
-    </aside>
-    <main className="chat-main">
-      <header className="chat-header dashboard-header">
-        <div className="chat-header-left"><button className="chat-mobile-menu" aria-label="Open navigation" onClick={() => setMenuOpen(true)}>☰</button><span>Workspace <span className="dashboard-header-slash">/</span> {TABS.find((item) => item.id === active)?.label}</span></div>
-        <button className="dashboard-back-chat" onClick={() => setTab("chat")}>Open chat <span>↗</span></button>
+  const section = SECTIONS.find((item) => item.id === active)!;
+  const openChat = (id: string) => {
+    window.localStorage.setItem("perry.activeChat", id);
+    navigate("chat");
+  };
+
+  return <div className="app">
+    <a className="skip-link" href="#content">Skip to content</a>
+    <Sidebar dashboardKey={dashboardKey} current={active} onNavigate={navigate} onLock={onLock} open={menuOpen} onClose={closeMenu}
+      actions={<a className="chat-new" href="/chat" onClick={(event) => linkClick(event, () => { window.localStorage.removeItem("perry.activeChat"); navigate("chat"); })}><Icon name="plus" size={15} />New chat</a>} />
+    <main className="main" inert={menuOpen || undefined}>
+      <header className="topbar">
+        <div className="topbar-left">
+          <button type="button" className="icon-button mobile-menu" aria-label="Open navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}><Icon name="menu" /></button>
+          <nav className="breadcrumb" aria-label="Breadcrumb">
+            <span>Perry</span><span className="sep" aria-hidden="true">/</span><strong aria-current="page">{section.label}</strong>
+          </nav>
+        </div>
       </header>
-      <div className="dashboard-scroll"><div className="dashboard-content">
-        <div className="dashboard-intro"><div className="chat-eyebrow">PERRY WORKSPACE</div><h1>{TABS.find((item) => item.id === active)?.label}</h1><p>{SECTION_DESCRIPTIONS[active]}</p></div>
-        {active === "work" && <Work dashboardKey={dashboardKey} />}
-        {active === "computer" && <Computer dashboardKey={dashboardKey} />}
-        {active === "connectors" && <Connectors dashboardKey={dashboardKey} />}
-        {active === "memory" && <Memories dashboardKey={dashboardKey} />}
-        {active === "settings" && <Settings dashboardKey={dashboardKey} />}
-        {active === "activity" && <Activity dashboardKey={dashboardKey} onOpenChat={openChat} />}
-        {active === "keys" && <Keys dashboardKey={dashboardKey} />}
-        {active === "setup" && <Pairing dashboardKey={dashboardKey} />}
-      </div></div>
+      <div className="workspace-scroll">
+        <div className="workspace" id="content" tabIndex={-1}>
+          <div className="page-head">
+            <h1>{section.label}</h1>
+            <p>{section.description}</p>
+          </div>
+          <ErrorBoundary key={active} inline onReset={onLock}>
+            {active === "work" && <Work dashboardKey={dashboardKey} />}
+            {active === "computer" && <Computer dashboardKey={dashboardKey} />}
+            {active === "connectors" && <Connectors dashboardKey={dashboardKey} />}
+            {active === "memory" && <Memories dashboardKey={dashboardKey} />}
+            {active === "settings" && <Settings dashboardKey={dashboardKey} />}
+            {active === "activity" && <Activity dashboardKey={dashboardKey} onOpenChat={openChat} />}
+            {active === "keys" && <Keys dashboardKey={dashboardKey} />}
+            {active === "setup" && <Setup dashboardKey={dashboardKey} />}
+          </ErrorBoundary>
+        </div>
+      </div>
     </main>
   </div>;
 }
@@ -270,3 +200,4 @@ export default function Home() {
     </ErrorBoundary>
   );
 }
+

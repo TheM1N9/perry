@@ -2,6 +2,31 @@
 
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { ActionButton, Empty, Loading, Section, Status, fullDate, useNow, ago } from "./ui";
+
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** A plain-English reading of the common cron shapes; anything else is shown as written. */
+export function describeSchedule(schedule: string): string | null {
+  const parts = schedule.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+  const at = /^\d+$/.test(minute) && /^\d+$/.test(hour)
+    ? new Date(2000, 0, 1, Number(hour), Number(minute)).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    : null;
+  if (/^\*\/\d+$/.test(minute) && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") return `Every ${minute.slice(2)} minutes`;
+  if (/^\d+$/.test(minute) && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") return `Every hour at :${minute.padStart(2, "0")}`;
+  if (/^\d+$/.test(minute) && /^\*\/\d+$/.test(hour) && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") return `Every ${hour.slice(2)} hours`;
+  if (/^\d+$/.test(minute) && /^\d+(,\d+)+$/.test(hour) && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return `Daily at ${hour.split(",").map((h) => new Date(2000, 0, 1, Number(h), Number(minute)).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })).join(", ")}`;
+  }
+  if (!at || month !== "*") return null;
+  if (dayOfMonth === "*" && dayOfWeek === "*") return `Every day at ${at}`;
+  if (dayOfMonth === "*" && dayOfWeek === "1-5") return `Weekdays at ${at}`;
+  if (dayOfMonth === "*" && /^[0-6]$/.test(dayOfWeek)) return `Every ${DAYS[Number(dayOfWeek)]} at ${at}`;
+  if (/^\d+$/.test(dayOfMonth) && dayOfWeek === "*") return `Monthly on day ${dayOfMonth} at ${at}`;
+  return null;
+}
 
 /**
  * Scheduled jobs, the heartbeat among them. Each runs as a Codex turn and
@@ -12,46 +37,45 @@ export function Jobs({ dashboardKey }: { dashboardKey: string }) {
   const setEnabled = useMutation(api.jobs.setEnabled);
   const remove = useMutation(api.jobs.removeFromDashboard);
   const runNow = useMutation(api.jobs.runNow);
-  if (data === undefined) return null;
-  const when = (ms: number) => new Date(ms).toLocaleString(undefined, { timeZone: data.timezone, dateStyle: "medium", timeStyle: "short" });
+  const now = useNow();
+
+  const description = "Prompts Perry runs on a schedule, like a morning briefing, or once, like a reminder. Ask for one in chat. The heartbeat checks in a few times a day and only speaks up when something needs you.";
+  if (data === undefined) return <Section title="Scheduled jobs" description={description}><Loading rows={2} /></Section>;
+  const when = (ms: number) => fullDate(ms, data.timezone);
 
   return (
-    <div className="panel">
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <h3>Scheduled jobs</h3>
-        <span className="badge">{data.timezone}</span>
-      </div>
-      <p className="hint">
-        Prompts the assistant runs on a schedule, like a morning briefing, or once, like a reminder. Ask it in chat to set one up. The heartbeat checks in a few times a day and only speaks when something needs you.
-      </p>
-      {data.jobs.length === 0 && <div className="empty">No jobs yet.</div>}
+    <Section title="Scheduled jobs" count={data.jobs.length} description={description} actions={<span className="tag" title="Jobs run in this timezone">{data.timezone}</span>}>
+      {data.jobs.length === 0 && <Empty icon="work" title="No scheduled jobs">Try asking in chat: “Every weekday at 8am, send me a summary of my calendar.”</Empty>}
       {data.jobs.map((job) => {
         // A one-time job whose time has passed has run, or was paused past it; either way it is over.
         const over = job.runAt !== undefined && !job.enabled && job.runAt <= Date.now();
+        const readable = job.schedule ? describeSchedule(job.schedule) : null;
         return (
           <div className="item" key={job.id}>
-            <div className="row" style={{ justifyContent: "space-between", gap: 14, alignItems: "flex-start" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div>
-                  {job.name}{" "}
-                  <span className={`badge ${job.enabled ? "on" : ""}`}>{job.enabled ? "on" : over ? "done" : "paused"}</span>
-                </div>
-                <div className="item-meta">
-                  {job.runAt !== undefined ? `once at ${when(job.runAt)}` : <><code>{job.schedule}</code>{job.enabled ? ` · next ${when(job.nextRunAt)}` : ""}</>}
-                  {job.lastRunAt ? ` · last ${when(job.lastRunAt)}` : ""}
-                </div>
-                {job.lastError && <div className="item-meta" style={{ color: "var(--warn)" }}>Last run failed: {job.lastError}</div>}
-                {!job.lastError && job.lastResult && <div className="item-meta">Last result: {job.lastResult}</div>}
+            <div className="item-main">
+              <div className="item-title">{job.name}{job.builtin && <span className="tag">Built in</span>}</div>
+              <div className="item-meta">
+                {job.runAt !== undefined
+                  ? <span>Once, {when(job.runAt)}</span>
+                  : <span title={job.schedule}>{readable ?? <code className="inline">{job.schedule}</code>}</span>}
+                {job.enabled && job.runAt === undefined && <span title={when(job.nextRunAt)}>Next {ago(job.nextRunAt, now)}</span>}
+                {job.lastRunAt ? <span title={when(job.lastRunAt)}>Last ran {ago(job.lastRunAt, now)}</span> : <span>Hasn&apos;t run yet</span>}
               </div>
-              <div className="row" style={{ gap: 6 }}>
-                <button className="ghost" onClick={() => void runNow({ key: dashboardKey, id: job.id })}>Run now</button>
-                {!over && <button className="ghost" onClick={() => void setEnabled({ key: dashboardKey, id: job.id, enabled: !job.enabled })}>{job.enabled ? "Pause" : "Resume"}</button>}
-                {!job.builtin && <button className="ghost danger" onClick={() => void remove({ key: dashboardKey, id: job.id })}>Delete</button>}
+              {job.lastError && <div className="item-callout danger"><strong>Last run failed.</strong> {job.lastError}</div>}
+              {!job.lastError && job.lastResult && <div className="item-callout neutral">{job.lastResult}</div>}
+            </div>
+            <div className="item-side">
+              <Status tone={job.enabled ? "success" : over ? "neutral" : "warning"}>{job.enabled ? "Active" : over ? "Done" : "Paused"}</Status>
+              <div className="item-actions">
+                <ActionButton variant="secondary" action={() => runNow({ key: dashboardKey, id: job.id })} success={`Running “${job.name}” now.`}>Run now</ActionButton>
+                {!over && <ActionButton variant="ghost" action={() => setEnabled({ key: dashboardKey, id: job.id, enabled: !job.enabled })} success={job.enabled ? "Paused." : "Resumed."}>{job.enabled ? "Pause" : "Resume"}</ActionButton>}
+                {!job.builtin && <ActionButton variant="ghost" className="btn-danger-ghost" action={() => remove({ key: dashboardKey, id: job.id })} success="Job deleted."
+                  confirm={{ title: `Delete “${job.name}”?`, body: "It won't run again. To bring it back, ask Perry to set it up again.", confirmLabel: "Delete job" }}>Delete</ActionButton>}
               </div>
             </div>
           </div>
         );
       })}
-    </div>
+    </Section>
   );
 }

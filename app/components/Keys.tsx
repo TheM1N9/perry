@@ -1,8 +1,15 @@
 "use client";
 
 import { useAction, useMutation, useQuery } from "convex/react";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { api } from "@/convex/_generated/api";
+import { ActionButton, Command, Loading, Notice, SecretInput, Section, Spinner, Status, errorText, useToast } from "./ui";
+
+const SOURCE = {
+  dashboard: "Saved here",
+  environment: "From an environment variable",
+  none: "Not set",
+} as const;
 
 /**
  * Service keys, editable here instead of in a terminal.
@@ -17,141 +24,85 @@ export function Keys({ dashboardKey }: { dashboardKey: string }) {
   const setKey = useMutation(api.dashboard.setKey);
   const clearKey = useMutation(api.dashboard.clearKey);
   const registerWebhook = useAction(api.dashboard.registerWebhook);
+  const toast = useToast();
 
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [telegramChanged, setTelegramChanged] = useState(false);
+  const [webhook, setWebhook] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
 
-  if (keys === undefined) return <div className="panel empty">Loading.</div>;
+  if (keys === undefined) return <Section title="Service keys"><Loading /></Section>;
 
-  const save = async (name: string) => {
+  const save = async (event: FormEvent, name: string) => {
+    event.preventDefault();
     const value = (drafts[name] ?? "").trim();
-    if (value.length === 0) return;
-
+    if (value.length === 0 || saving) return;
     setSaving(name);
-    setNotice(null);
+    setErrors((current) => ({ ...current, [name]: "" }));
     try {
       await setKey({ key: dashboardKey, name, value });
       setDrafts((current) => ({ ...current, [name]: "" }));
-      setNotice(
-        name.startsWith("TELEGRAM")
-          ? `Saved. Telegram keys changed, so press Re-register below.`
-          : "Saved. It takes effect on the next turn.",
-      );
+      if (name.startsWith("TELEGRAM")) setTelegramChanged(true);
+      toast({ tone: "success", text: name.startsWith("TELEGRAM") ? "Saved. Register the webhook below so Telegram uses it." : "Saved. It takes effect on the next message." });
+    } catch (cause) {
+      setErrors((current) => ({ ...current, [name]: errorText(cause) }));
     } finally {
       setSaving(null);
     }
   };
 
-  const reregister = async () => {
-    setSaving("webhook");
-    try {
-      const result = await registerWebhook({ key: dashboardKey });
-      setNotice(
-        result.ok
-          ? `Telegram now points here${result.bot ? `, as @${result.bot}` : ""}.`
-          : `Could not register: ${result.error}`,
-      );
-    } finally {
-      setSaving(null);
-    }
+  const register = async () => {
+    setWebhook(null);
+    const result = await registerWebhook({ key: dashboardKey });
+    if (result.ok) setTelegramChanged(false);
+    setWebhook(result.ok
+      ? { tone: "success", text: `Telegram now sends messages here${result.bot ? `, as @${result.bot}` : ""}.` }
+      : { tone: "danger", text: `Couldn't register the webhook: ${result.error}` });
   };
 
   return (
     <>
-      <div className="panel">
-        <h3>Keys</h3>
-        <p className="hint">
-          Saved to your deployment, never shown again. These override anything
-          set with <code>pnpm exec convex env set</code>, and clearing one falls back
-          to the environment variable if there is one.
-        </p>
-        {notice && (
-          <p className="hint" style={{ color: "var(--accent)" }}>
-            {notice}
-          </p>
-        )}
-      </div>
-
-      {keys.map((entry) => (
-        <div className="panel" key={entry.name}>
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <h3>{entry.label}</h3>
-            <span className={entry.set ? "badge on" : "badge"}>
-              {entry.set ? `set ${entry.preview}` : "not set"}
-            </span>
-          </div>
-          <p className="hint">{entry.hint}</p>
-
-          <div className="composer">
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder={entry.set ? "Replace it" : "Paste it"}
-              value={drafts[entry.name] ?? ""}
-              onChange={(e) =>
-                setDrafts((current) => ({
-                  ...current,
-                  [entry.name]: e.target.value,
-                }))
-              }
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void save(entry.name);
-              }}
-            />
-            <button
-              className="primary"
-              disabled={
-                (drafts[entry.name] ?? "").trim().length === 0 ||
-                saving === entry.name
-              }
-              onClick={() => void save(entry.name)}
-            >
-              {saving === entry.name ? "Saving" : "Save"}
-            </button>
-          </div>
-
-          <div className="item-meta" style={{ marginTop: 8 }}>
-            {entry.source === "dashboard" && "Set from here."}
-            {entry.source === "environment" &&
-              "Coming from an environment variable. Saving here overrides it."}
-            {entry.source === "none" && "Nothing set."}
-            {entry.source === "dashboard" && (
-              <button
-                className="ghost danger"
-                style={{ marginLeft: 10 }}
-                onClick={() => void clearKey({ key: dashboardKey, name: entry.name })}
-              >
-                Clear
+      <Section title="Service keys" description={<>Saved to your deployment and never shown again. A key saved here overrides one set with <code className="inline">convex env set</code>. Clearing it falls back to the environment variable, if there is one.</>}>
+        {keys.map((entry) => {
+          const id = `key-${entry.name}`;
+          const error = errors[entry.name];
+          return <form className="item" key={entry.name} onSubmit={(event) => void save(event, entry.name)} style={{ flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, width: "100%" }}>
+              <div className="item-main">
+                <label className="item-title" htmlFor={id}>{entry.label}</label>
+                <div className="item-text">{entry.hint}</div>
+              </div>
+              {entry.set ? <Status tone="success"><span translate="no">Set{entry.preview ? ` · ${entry.preview}` : ""}</span></Status> : <Status>Not set</Status>}
+            </div>
+            <div className="inline-form" style={{ width: "100%" }}>
+              <SecretInput id={id} name={entry.name} value={drafts[entry.name] ?? ""} placeholder={entry.set ? "Paste a new value to replace it…" : "Paste the key…"} invalid={Boolean(error)} describedBy={error ? `${id}-error` : undefined}
+                onChange={(value) => { setDrafts((current) => ({ ...current, [entry.name]: value })); setErrors((current) => ({ ...current, [entry.name]: "" })); }} />
+              <button type="submit" className="btn btn-primary btn-md" disabled={(drafts[entry.name] ?? "").trim().length === 0 || saving !== null} aria-busy={saving === entry.name || undefined}>
+                {saving === entry.name && <Spinner />}{saving === entry.name ? "Saving…" : "Save"}
               </button>
-            )}
-          </div>
-        </div>
-      ))}
+            </div>
+            {error && <p className="field-error" id={`${id}-error`} role="alert">{error}</p>}
+            <div className="item-meta" style={{ width: "100%" }}>
+              <span>{SOURCE[entry.source as keyof typeof SOURCE] ?? entry.source}{entry.source === "environment" ? ". Saving here overrides it." : ""}</span>
+              {entry.source === "dashboard" && <span><ActionButton variant="ghost" className="btn-danger-ghost" action={() => clearKey({ key: dashboardKey, name: entry.name })} success={`${entry.label} cleared.`}
+                confirm={{ title: `Clear the ${entry.label}?`, body: "Perry falls back to the environment variable if one is set. Otherwise anything that needs this key stops working.", confirmLabel: "Clear key" }}>Clear</ActionButton></span>}
+            </div>
+          </form>;
+        })}
+      </Section>
 
-      <div className="panel">
-        <h3>Telegram webhook</h3>
-        <p className="hint">
-          Points Telegram at this deployment. Run it after changing the bot
-          token or the webhook secret, or the bot goes quiet without saying why.
-        </p>
-        <button
-          disabled={saving === "webhook"}
-          onClick={() => void reregister()}
-        >
-          {saving === "webhook" ? "Registering" : "Re-register"}
-        </button>
-      </div>
+      <Section title="Telegram webhook" description="Points Telegram at this deployment. Run it after changing the bot token or webhook secret, or the bot goes quiet without saying why."
+        actions={<ActionButton variant={telegramChanged ? "primary" : "secondary"} icon="refresh" action={register} pendingLabel="Registering…">Register webhook</ActionButton>}>
+        {(telegramChanged || webhook) && <div className="section-pad">
+          {webhook ? <Notice tone={webhook.tone} onDismiss={() => setWebhook(null)}>{webhook.text}</Notice>
+            : <Notice tone="warning">Telegram keys changed. Register the webhook so Telegram uses them.</Notice>}
+        </div>}
+      </Section>
 
-      <div className="panel">
-        <h3>The one key that stays in a terminal</h3>
-        <p className="hint">
-          The dashboard key itself, <code>DASHBOARD_KEY</code>, is what guards
-          this page, so it cannot be edited from behind it. Change it with{" "}
-          <code>pnpm exec convex env set DASHBOARD_KEY</code>. That also makes a
-          lockout recoverable rather than permanent.
-        </p>
-      </div>
+      <Section title="Dashboard key" description="The key that guards this page can't be changed from behind it, which keeps a lockout recoverable. Change it in a terminal:">
+        <div className="section-pad"><Command>pnpm exec convex env set DASHBOARD_KEY</Command></div>
+      </Section>
     </>
   );
 }

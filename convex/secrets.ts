@@ -31,7 +31,7 @@ export function isSecretName(value: string): value is SecretName {
 export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> = {
   TELEGRAM_BOT_TOKEN: {
     label: "Telegram bot token",
-    hint: "From @BotFather. Changing it points Assistant at a different bot, so re-register the webhook afterwards.",
+    hint: "From @BotFather. Changing it points Perry at a different bot, so re-register the webhook afterwards.",
   },
   TELEGRAM_WEBHOOK_SECRET: {
     label: "Telegram webhook secret",
@@ -43,7 +43,7 @@ export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> 
   },
   DAYTONA_API_KEY: {
     label: "Daytona key",
-    hint: "The cloud sandbox. Not needed if Assistant runs on your own machine instead.",
+    hint: "The cloud sandbox. Not needed if Perry runs on your own machine instead.",
   },
 };
 
