@@ -2,8 +2,10 @@
 #
 #   iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
 #
-# Installs what Perry needs that is missing (Git, Node.js, pnpm, Bun and the
-# Codex CLI), gets Perry into ~\perry, installs its packages, and runs
+# Uses the Git, Node.js, pnpm, Bun and Codex CLI you already have, wherever
+# they are installed, and installs only what is missing. A Node older than
+# Perry needs is not upgraded behind your back: it says so and stops. Then it
+# gets Perry into ~\perry, installs its packages, and runs
 # `perry setup`, which sets up your own Convex deployment and Telegram bot,
 # connects this computer, starts Perry in the background and opens the
 # dashboard. Safe to run again: it updates what is there.
@@ -19,10 +21,29 @@
 
   function Step($text) { Write-Host "`n$text" -ForegroundColor Cyan }
   function Ok($text) { Write-Host "  $text" -ForegroundColor Green }
+  function Found($text) { Write-Host "  $text" -ForegroundColor Green -NoNewline; Write-Host ' (already installed)' -ForegroundColor DarkGray }
+  function Added($text) { Write-Host "  $text" -ForegroundColor Green -NoNewline; Write-Host ' (installed for Perry)' -ForegroundColor DarkGray }
   function Has($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }
-  # A tool installed a moment ago is on the saved PATH, not yet on this session's.
+  # This session's PATH, then the saved ones (a tool installed a moment ago, or since this window opened), then
+  # where tools you already have usually live: nvm-windows, Volta, Scoop, npm's global folder, Bun and winget.
+  # Appended in that order, so a tool already on your PATH always wins.
+  # iex runs this in your own PowerShell window, so its PATH is only ever added to, never reordered or trimmed.
   function Refresh-Path {
-    $env:Path = @([Environment]::GetEnvironmentVariable('Path', 'Machine'), [Environment]::GetEnvironmentVariable('Path', 'User'), (Join-Path $HOME '.bun\bin')) -join ';'
+    $path = @($env:Path -split ';' | Where-Object { $_ })
+    $seen = @{}
+    foreach ($dir in $path) { $seen[$dir.TrimEnd('\').ToLower()] = $true }
+    $candidates = @(([Environment]::GetEnvironmentVariable('Path', 'Machine')) -split ';') + @(([Environment]::GetEnvironmentVariable('Path', 'User')) -split ';') + @(
+      $env:NVM_SYMLINK, (Join-Path $env:LOCALAPPDATA 'Volta\bin'), (Join-Path $HOME 'scoop\shims'), (Join-Path $env:APPDATA 'npm'),
+      (Join-Path $HOME '.bun\bin'), (Join-Path $env:LOCALAPPDATA 'pnpm'), (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'),
+      (Join-Path $env:ProgramFiles 'nodejs'), (Join-Path $env:ProgramFiles 'Git\cmd'))
+    foreach ($dir in $candidates) {
+      if (-not $dir) { continue }
+      $key = $dir.TrimEnd('\').ToLower()
+      if ($seen[$key] -or -not (Test-Path -LiteralPath $dir)) { continue }
+      $path += $dir
+      $seen[$key] = $true
+    }
+    $env:Path = $path -join ';'
   }
   function Check($what) { if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)." } }
   function Winget($id, $what) {
@@ -42,17 +63,24 @@
     Write-Host "`nInstalling Perry" -ForegroundColor White
 
     Step 'Tools'
-    if (-not (Has git)) { Winget 'Git.Git' 'Git' }
-    Ok "git $((git --version) -replace 'git version ', '')"
-    if (-not (NodeVersionOk)) { Winget 'OpenJS.NodeJS.LTS' 'Node.js' }
-    if (-not (NodeVersionOk)) { throw 'Perry needs Node.js 20.9 or newer. Update Node.js, then run this again.' }
-    Ok "node $(node --version)"
-    if (-not (Has pnpm)) { Write-Host '  installing pnpm'; npm install -g pnpm@10 | Out-Host; Check 'Installing pnpm'; Refresh-Path }
-    Ok "pnpm $(pnpm --version)"
-    if (-not (Has bun)) { Write-Host '  installing Bun'; powershell -NoProfile -ExecutionPolicy Bypass -Command "irm bun.sh/install.ps1 | iex" | Out-Host; Check 'Installing Bun'; Refresh-Path }
-    Ok "bun $(bun --version)"
-    if (-not (Has codex)) { Write-Host '  installing the Codex CLI'; npm install -g @openai/codex | Out-Host; Check 'Installing Codex'; Refresh-Path }
-    Ok 'codex'
+    Refresh-Path
+    if (Has git) { Found "git $((git --version) -replace 'git version ', '')" }
+    else { Winget 'Git.Git' 'Git'; Added "git $((git --version) -replace 'git version ', '')" }
+    if (NodeVersionOk) { Found "node $(node --version)" }
+    elseif (Has node) {
+      # Your Node is yours: Perry does not upgrade it behind your back.
+      throw "Perry needs Node.js 20.9 or newer, and this machine has $(node --version). Update it (winget upgrade OpenJS.NodeJS.LTS, or your version manager), then run this again."
+    } else {
+      Winget 'OpenJS.NodeJS.LTS' 'Node.js'
+      if (-not (NodeVersionOk)) { throw 'Node.js did not install. Install Node.js 20.9 or newer, then run this again.' }
+      Added "node $(node --version)"
+    }
+    if (Has pnpm) { Found "pnpm $(pnpm --version)" }
+    else { Write-Host '  installing pnpm'; npm install -g pnpm@10 | Out-Host; Check 'Installing pnpm'; Refresh-Path; Added "pnpm $(pnpm --version)" }
+    if (Has bun) { Found "bun $(bun --version)" }
+    else { Write-Host '  installing Bun'; powershell -NoProfile -ExecutionPolicy Bypass -Command "irm bun.sh/install.ps1 | iex" | Out-Host; Check 'Installing Bun'; Refresh-Path; Added "bun $(bun --version)" }
+    if (Has codex) { Found 'codex' }
+    else { Write-Host '  installing the Codex CLI'; npm install -g @openai/codex | Out-Host; Check 'Installing Codex'; Refresh-Path; Added 'codex' }
 
     Step "Perry, in $dir"
     if (Test-Path (Join-Path $dir '.git')) {

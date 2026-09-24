@@ -200,7 +200,11 @@ async function runForeground() {
 function link(): boolean {
   mkdirSync(BIN_DIR, { recursive: true });
   const script = join(REPO, "scripts", "perry.ts");
-  const sh = `#!/bin/sh\n# Perry's command. Written by \`perry setup\`; runs ${REPO}.\nexec "${process.execPath}" --cwd "${REPO}" "${script}" "$@"\n`;
+  // A Node the installer put in ~/.perry/node (the owner's was missing or too old) comes first for Perry alone.
+  const ownNode = join(HOME, "node", "bin");
+  const sh = `#!/bin/sh\n# Perry's command. Written by \`perry setup\`; runs ${REPO}.\n` +
+    (existsSync(ownNode) ? `PATH="${ownNode}:$PATH"; export PATH\n` : "") +
+    `exec "${process.execPath}" --cwd "${REPO}" "${script}" "$@"\n`;
   writeFileSync(join(BIN_DIR, "perry"), sh, { mode: 0o755 });
   if (process.platform === "win32") {
     const cmd = `@echo off\r\nrem Perry's command. Written by perry setup; runs ${REPO}.\r\n"${process.execPath}" --cwd "${REPO}" "${script}" %*\r\n`;
