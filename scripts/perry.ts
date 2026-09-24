@@ -254,17 +254,14 @@ function unlink() {
 // --- Opening the dashboard ----------------------------------------------------
 
 /** Open the dashboard with its key in the fragment, which the page stores and removes; a fragment is never sent to a server. */
-function open(): boolean {
+async function open(): Promise<boolean> {
   const key = readEnvFile().DASHBOARD_KEY;
   if (!key) {
     say(`\n${red("No dashboard key in .env.local.")} Run ${bold("perry setup")} first.\n`);
     return false;
   }
-  const url = `${dashboardUrl()}/#key=${encodeURIComponent(key)}`;
-  const opener = process.platform === "win32"
-    ? ["powershell", "-NoProfile", "-NonInteractive", "-Command", `Start-Process '${url.replace(/'/g, "''")}'`]
-    : [process.platform === "darwin" ? "open" : "xdg-open", url];
-  if (process.env.PERRY_NO_BROWSER === "1" || exec(opener, { quiet: true }).code !== 0) {
+  const { openUrl } = await import("./lib");
+  if (!(await openUrl(`${dashboardUrl()}/#key=${encodeURIComponent(key)}`))) {
     say(`  Open ${bold(dashboardUrl())} and use this key: ${key}`);
   } else {
     say(`  ${green("opened")} ${dashboardUrl()}`);
@@ -369,7 +366,7 @@ async function setup() {
   say(`\n${bold("The perry command")}`);
   link();
   say(`\n${bold("Dashboard")}`);
-  open();
+  await open();
   say(dim(`\n  Sign in to Codex on the dashboard's Settings page if it asks.`));
   say(dim(`  perry status | logs | stop | start | open | update | doctor\n`));
 }
@@ -426,7 +423,7 @@ async function main() {
     case "stop": return stop();
     case "status": return status();
     case "logs": return process.exit(exec(bunScript("service.ts", ["logs", ...rest])).code);
-    case "open": return process.exit(open() ? 0 : 1);
+    case "open": return process.exit((await open()) ? 0 : 1);
     case "update": return update();
     case "doctor": return process.exit(exec(bunScript("doctor.ts", rest)).code);
     case "pair": return process.exit(exec(bunScript("pair.ts")).code);

@@ -68,9 +68,12 @@ that runs the CLI from your checkout whatever folder you are in. Codex works in
 
 ## What the wizard does
 
-1. **Convex deployment.** Opens a browser once so you can log in and create
-   your own project. This is your database and your backend. Free tier is
-   ample for one person.
+1. **Convex deployment.** Opens a browser once so you can log in to Convex,
+   then creates a project named `perry` in your account, in Convex's cloud
+   (where Telegram can reach it). If you belong to several Convex teams, it
+   asks which one; nothing else. This is your database and your backend. Free
+   tier is ample for one person. A deployment left over from choosing "Start
+   without an account" is replaced with a cloud one.
 2. **Telegram bot.** Message [@BotFather](https://t.me/BotFather), send
    `/newbot`, answer two questions, paste the token back. The wizard checks it
    against Telegram before continuing.
