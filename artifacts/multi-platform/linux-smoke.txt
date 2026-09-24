@@ -1,0 +1,136 @@
+# Perry on Linux: WSL smoke test for issue #49, 2026-09-23T20:45:19Z
+
+==== machine
+Linux 6.18.33.1-microsoft-standard-WSL2 x86_64 GNU/Linux
+PRETTY_NAME="Ubuntu 24.04.1 LTS"
+bun 1.3.9 at /home/prostacklabs/.local/bin/bun
+codex codex-cli 0.156.1 at /tmp/perry-codex/package/vendor/x86_64-unknown-linux-musl/bin/codex  (the npm linux-x64 build, unpacked; not signed in)
+system bwrap: none
+systemd --user: running
+
+==== bun scripts/smoke.ts
+
+linux x64, bun 1.3.9, scratch /tmp/perry-smoke-CujVeA
+
+ok    runner --help
+ok    home  /tmp/perry-smoke-CujVeA/perry home ü
+ok    shell  /bin/sh
+ok    machine  {"os":"Ubuntu 24.04.1 LTS under WSL (Linux 6.18.33.1-microsoft-standard-WSL2, x64)","shell":"zsh","open":"explorer.exe or wslview"}
+ok    sandbox
+ok    media paths
+ok    service plans  {"launchd":"/Users/o'neil müller/Library/LaunchAgents/com.perry.runner.plist","systemd":"/home/o'neil müller/.config/systemd/user/perry-runner.service","taskScheduler":"Perry runner"}
+ok    service lint  systemd-analyze verify: clean
+ok    service dry run  Installing the runner as a systemd service  (dry run: nothing is written or run)
+
+All 9 checks passed.
+exit=0
+
+==== what Codex is told about this machine (runner/codex.ts)
+This machine runs Ubuntu 24.04.1 LTS under WSL (Linux 6.18.33.1-microsoft-standard-WSL2, x64), and your commands run in zsh; write commands, paths and quoting for that, and open files or apps with explorer.exe or wslview.
+
+==== Codex's Linux sandbox, as the runner asks for it (workspace-write)
+write in workspace: ok
+write outside: blocked
+write /tmp: ok
+network: blocked
+exit=0
+read-only write: blocked
+inside ü.txt
+
+==== pnpm run doctor -- --machine
+
+info  machine  linux 6.18.33.1-microsoft-standard-WSL2
+ok    bun  1.3.9
+ok    codex  codex-cli 0.156.1
+warn  codex sign-in  not signed in. Connect the runner, then sign in on the dashboard's Settings page
+ok    codex sandbox  workspace-write works (bubblewrap)
+warn  runner  not connected. Run: pnpm run connect
+info  background service  not installed (optional): pnpm run service install
+
+Perry looks healthy.
+
+exit=0
+
+==== service lifecycle (systemd --user), runner pointed at a closed local port
+
+Installing the runner as a systemd service
+  write /home/prostacklabs/.config/systemd/user/perry-runner.service
+  $ systemctl --user daemon-reload
+  $ systemctl --user enable perry-runner.service
+  $ systemctl --user restart perry-runner.service
+  installed. It starts now and whenever you log in.
+  Approve what Codex asks for in the dashboard; there is no terminal to ask in.
+  pnpm run service status | logs | stop | start | uninstall
+
+
+Runner service  systemd
+  running  active (running), pid 7472
+  file  /home/prostacklabs/.config/systemd/user/perry-runner.service
+  logs  journalctl --user -u perry-runner.service -n 200 --no-pager
+
+-- unit file
+# Perry's runner. Written by `pnpm run service install`; removed by `pnpm run service uninstall`.
+[Unit]
+Description=Perry runner
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/c/Users/Pranav/Desktop/Developer/me-bot/.claude/worktrees/agent-a8acdb4e9d7388364
+ExecStart="/home/prostacklabs/.bun/bin/bun" "/mnt/c/Users/Pranav/Desktop/Developer/me-bot/.claude/worktrees/agent-a8acdb4e9d7388364/runner/index.ts"
+Environment="PATH=/tmp/perry-codex/package/vendor/x86_64-unknown-linux-musl/bin:/home/prostacklabs/.local/bin:/home/prostacklabs/.bun/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PERRY_HOME=/tmp/tmp.bTeslaQh1K/perry home ü"
+Environment="CODEX_HOME=/home/prostacklabs/.cache/perry-codex-test"
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
+-- journal
+Sep 23 20:45:20 DESKTOP-27SQLCP bun[7472]: 
+Sep 23 20:45:20 DESKTOP-27SQLCP bun[7472]:   `pnpm run service stop` takes Assistant's hands away.
+Sep 23 20:45:20 DESKTOP-27SQLCP bun[7472]: 
+Sep 23 20:45:20 DESKTOP-27SQLCP bun[7472]: WebSocket error message: WebSocket connection to 'ws://127.0.0.1:9/api/1.46.0/sync' failed: Failed to connect
+Sep 23 20:45:20 DESKTOP-27SQLCP bun[7472]: WebSocket closed with code 1006: Failed to connect
+Sep 23 20:45:20 DESKTOP-27SQLCP bun[7472]: Attempting reconnect in 942ms
+Sep 23 20:45:21 DESKTOP-27SQLCP bun[7472]: WebSocket error message: WebSocket connection to 'ws://127.0.0.1:9/api/1.46.0/sync' failed: Failed to connect
+Sep 23 20:45:21 DESKTOP-27SQLCP bun[7472]: WebSocket closed with code 1006: Failed to connect
+Sep 23 20:45:21 DESKTOP-27SQLCP bun[7472]: Attempting reconnect in 2733ms
+Sep 23 20:45:24 DESKTOP-27SQLCP bun[7472]: WebSocket error message: WebSocket connection to 'ws://127.0.0.1:9/api/1.46.0/sync' failed: Failed to connect
+Sep 23 20:45:24 DESKTOP-27SQLCP bun[7472]: WebSocket closed with code 1006: Failed to connect
+Sep 23 20:45:24 DESKTOP-27SQLCP bun[7472]: Attempting reconnect in 2098ms
+  $ systemctl --user stop perry-runner.service
+
+Runner service  systemd
+  stopped  inactive (dead)
+  file  /home/prostacklabs/.config/systemd/user/perry-runner.service
+  logs  journalctl --user -u perry-runner.service -n 200 --no-pager
+
+  $ systemctl --user start perry-runner.service
+
+Runner service  systemd
+  running  active (running), pid 7600
+  file  /home/prostacklabs/.config/systemd/user/perry-runner.service
+  logs  journalctl --user -u perry-runner.service -n 200 --no-pager
+
+
+Removing the systemd service
+  $ systemctl --user disable --now perry-runner.service
+  remove /home/prostacklabs/.config/systemd/user/perry-runner.service
+  The runner no longer starts on its own. Its settings in /tmp/tmp.bTeslaQh1K/perry home ü/runner.json are kept.
+
+
+Runner service  systemd
+  not installed
+  file  /home/prostacklabs/.config/systemd/user/perry-runner.service
+  logs  journalctl --user -u perry-runner.service -n 200 --no-pager
+
+unit file removed
+
+==== artifacts/multi-platform/run.ts plumbing, pointed at a closed local port (expected: fails at connect)
+  "os": "linux",
+  "platform": "linux",
+  "error": "timed out waiting for the runner to connect",
+  "pass": false
+exit=1
+runner.log lines: 35
+outside dir cleaned up

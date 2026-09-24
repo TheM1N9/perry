@@ -15,7 +15,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { ensureHome, HOME } from "../runner/home";
-import { bold, dim, green, runConvex, yellow } from "./lib";
+import { bold, dim, green, INSTALL_HINTS, runCodex, runConvex, yellow } from "./lib";
 
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
@@ -136,8 +136,15 @@ async function main() {
   step(3, TOTAL, "Codex");
 
   say(dim("  Perry thinks with your ChatGPT subscription, through the Codex CLI on"));
-  say(dim("  this machine. After setup: install Codex, run `pnpm run connect`, and"));
-  say(dim("  sign in to Codex from the dashboard's Settings page."));
+  say(dim("  this machine. After setup: run `pnpm run connect`, and sign in to Codex"));
+  say(dim("  from the dashboard's Settings page."));
+  const codex = await runCodex(["--version"]);
+  if (codex.code !== 0) {
+    say(yellow(`  Codex is not installed here yet. Install it with: ${INSTALL_HINTS.codex}`));
+  } else {
+    const login = await runCodex(["login", "status"]);
+    say(`  ${green("codex")} ${codex.output.trim().split(/\r?\n/).at(-1)}${login.code === 0 ? dim(", signed in") : dim(", not signed in yet")}`);
+  }
 
   // --- 4. Secrets and deploy ----------------------------------------------
   step(4, TOTAL, "Pushing config");
@@ -175,7 +182,7 @@ async function main() {
     body: JSON.stringify({
       url: `${siteUrl}/telegram`,
       secret_token: webhookSecret,
-      allowed_updates: ["message", "edited_message"],
+      allowed_updates: ["message", "edited_message", "callback_query"],
       drop_pending_updates: true,
     }),
   }).then((r) => r.json(), () => null);

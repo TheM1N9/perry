@@ -59,7 +59,7 @@ if (command === "set") {
   await telegram("setWebhook", {
     url,
     secret_token: secret,
-    allowed_updates: ["message", "edited_message"],
+    allowed_updates: ["message", "edited_message", "callback_query"],
     drop_pending_updates: true,
   });
 

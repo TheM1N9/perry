@@ -15,21 +15,22 @@ function remaining(ms: number) {
 
 /**
  * What a runner is waiting to be allowed to do on the owner's machine. The
- * runner asks in its terminal too; whichever is answered first wins.
+ * runner asks in its terminal and on Telegram too; whichever is answered
+ * first wins.
  */
 export function Approvals({ dashboardKey }: { dashboardKey: string }) {
   const pending = useQuery(api.approvals.pending, { key: dashboardKey });
   const decide = useMutation(api.approvals.decide);
   const toast = useToast();
   const now = useNow(1000);
-  const [answering, setAnswering] = useState<{ id: Id<"approvals">; approved: boolean } | null>(null);
+  const [answering, setAnswering] = useState<{ id: Id<"approvals">; approved: boolean; always: boolean } | null>(null);
 
-  const answer = async (id: Id<"approvals">, approved: boolean) => {
-    setAnswering({ id, approved });
+  const answer = async (id: Id<"approvals">, approved: boolean, always = false) => {
+    setAnswering({ id, approved, always });
     try {
-      const applied = await decide({ key: dashboardKey, id, approved });
+      const applied = await decide({ key: dashboardKey, id, approved, always });
       toast(applied
-        ? { tone: "success", text: approved ? "Approved. The runner will go ahead." : "Declined. The runner won't do it." }
+        ? { tone: "success", text: always ? "Allowed, and saved as a rule for next time." : approved ? "Approved. The runner will go ahead." : "Declined. The runner won't do it." }
         : { tone: "danger", text: "That request was already answered or has expired." });
     } catch (cause) {
       toast({ tone: "danger", text: `Couldn't send your answer: ${errorText(cause)}` });
@@ -57,13 +58,18 @@ export function Approvals({ dashboardKey }: { dashboardKey: string }) {
             <span className="nums" aria-live="off">Expires in {remaining(left)}</span>
           </div>
           {item.detail && <div className="approval-meta">{item.detail}</div>}
+          {item.review && <div className="approval-meta approval-review">Reviewer: {item.review.verdict}. {item.review.reason}</div>}
+          {item.alwaysAllow && <div className="approval-meta">Always allow saves a rule for {item.alwaysAllow}.</div>}
         </div>
         <div className="approval-actions">
           <button type="button" className="btn btn-secondary btn-sm approval-decline" disabled={Boolean(answering)} onClick={() => void answer(item.id, false)}>
             {busy && !answering.approved && <Spinner />}Decline
           </button>
+          {item.alwaysAllow && <button type="button" className="btn btn-secondary btn-sm approval-always" disabled={Boolean(answering)} onClick={() => void answer(item.id, true, true)}>
+            {busy && answering.always && <Spinner />}Always allow
+          </button>}
           <button type="button" className="btn btn-primary btn-sm approval-approve" disabled={Boolean(answering)} onClick={() => void answer(item.id, true)}>
-            {busy && answering.approved && <Spinner />}Approve
+            {busy && answering.approved && !answering.always && <Spinner />}Approve
           </button>
         </div>
       </div>;

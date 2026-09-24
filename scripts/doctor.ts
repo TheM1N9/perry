@@ -4,11 +4,18 @@
  *
  * Reports only. It changes nothing, so it is safe to run when you are not sure
  * what state an install is in.
+ *
+ * `pnpm run doctor -- --machine` checks only this machine (Bun, Codex, the
+ * runner and its service), for a second machine with no .env.local.
  */
 
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { dim, green, red, runConvex, yellow } from "./lib";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { platform, release, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { sandboxMode } from "../runner/codex";
+import { readRunnerConfig } from "../runner/home";
+import { dim, green, INSTALL_HINTS, red, runCodex, runConvex, yellow } from "./lib";
+import { serviceState } from "./service";
 
 /**
  * Call the Convex CLI through this same Node binary rather than npx.
@@ -31,6 +38,52 @@ function bad(label: string, detail = "") {
 function warn(label: string, detail = "") {
   console.log(`${yellow("warn")}  ${label}${detail ? dim(`  ${detail}`) : ""}`);
 }
+function note(label: string, detail = "") {
+  console.log(`${dim("info")}  ${label}${detail ? dim(`  ${detail}`) : ""}`);
+}
+
+const lastLine = (text: string) => text.trim().split(/\r?\n/).at(-1) ?? "";
+
+/** This machine: what the runner and Codex need here, on any OS. */
+async function checkMachine() {
+  note("machine", `${platform()} ${release()}`);
+  ok("bun", process.versions.bun ?? process.version);
+
+  const codex = await runCodex(["--version"]);
+  if (codex.code !== 0) {
+    bad("codex", `not found on PATH. Install it: ${INSTALL_HINTS.codex}`);
+  } else {
+    ok("codex", lastLine(codex.output));
+    const login = await runCodex(["login", "status"]);
+    if (login.code === 0) ok("codex sign-in", lastLine(login.output));
+    else warn("codex sign-in", "not signed in. Connect the runner, then sign in on the dashboard's Settings page");
+
+    // Windows's sandbox is set up by Codex itself on first use; elsewhere a real sandboxed write shows it works.
+    if (process.platform !== "win32") {
+      const probe = mkdtempSync(join(tmpdir(), "perry-doctor-"));
+      const sandboxed = await runCodex(["sandbox", "-P", ":workspace", "-C", probe, "--", "/bin/sh", "-c", "echo ok > probe.txt"]);
+      const how = process.platform === "darwin" ? "Seatbelt" : "bubblewrap";
+      if (sandboxed.code === 0 && existsSync(join(probe, "probe.txt"))) ok("codex sandbox", `workspace-write works (${how})`);
+      else warn("codex sandbox", `a sandboxed command failed: ${lastLine(sandboxed.output)}. See INSTALL.md, "Codex's sandbox"`);
+      rmSync(probe, { recursive: true, force: true });
+    }
+  }
+  try {
+    const mode = sandboxMode();
+    if (mode !== "workspace-write") warn("PERRY_CODEX_SANDBOX", `Codex runs ${mode}`);
+  } catch (error) {
+    bad("PERRY_CODEX_SANDBOX", (error as Error).message);
+  }
+
+  const runner = readRunnerConfig();
+  if (runner.url && runner.token) ok("runner", `${runner.name ?? "this machine"}, working in ${runner.dir ?? "the folder it starts in"}`);
+  else warn("runner", "not connected. Run: pnpm run connect");
+
+  const service = serviceState();
+  if (service.running) ok("background service", service.detail);
+  else if (service.installed) warn("background service", `${service.detail}. Run: pnpm run service start`);
+  else note("background service", "not installed (optional): pnpm run service install");
+}
 
 
 
@@ -38,6 +91,9 @@ function warn(label: string, detail = "") {
 
 async function main() {
   console.log("");
+
+  await checkMachine();
+  if (process.argv.includes("--machine")) return finish();
 
   const env = process.env;
 
@@ -129,6 +185,10 @@ async function main() {
     );
   }
 
+  finish();
+}
+
+function finish() {
   console.log("");
   if (failures === 0) {
     console.log(green("Perry looks healthy.\n"));

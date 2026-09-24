@@ -15,7 +15,9 @@ pnpm run setup
 
 The scripts and the runner need [Bun](https://bun.sh), and the assistant needs
 the [Codex CLI](https://github.com/openai/codex) signed in with a ChatGPT
-account. See [INSTALL.md](INSTALL.md).
+account. The runner works on macOS, Linux and Windows, in a terminal or as a
+background service (`pnpm run service install`). See [INSTALL.md](INSTALL.md)
+for each OS.
 
 ## How it works
 
@@ -31,11 +33,14 @@ Web chat ─┘                                                    (dials out, n
   to Convex directly.
 - **The runner** (`pnpm run runner`) is a process on your machine. It dials out
   to Convex and holds a subscription; nothing listens on a port, so the machine
-  cannot be found from the internet. It runs one process per token.
+  cannot be found from the internet. It runs one process per token, in a
+  terminal or under the OS's own service manager (launchd, systemd or Task
+  Scheduler).
 - **Codex** does the thinking and the work. Each chat turn becomes a Codex turn
   on the runner, in a workspace folder you chose, with your model of choice.
-  Codex has a shell and file access there under its sandbox, and reaches
-  Perry's own tools over MCP.
+  Codex has a shell and file access there under its sandbox (Seatbelt on
+  macOS, bubblewrap on Linux, a restricted token on Windows), is told which OS
+  and shell it is on, and reaches Perry's own tools over MCP.
 
 A turn: the message is stored, memory and recent history are gathered, the turn
 is queued for the runner, Codex writes the reply (streamed live to the web chat
@@ -80,9 +85,23 @@ a token; Composio keeps the OAuth.
 ## You stay in control
 
 - **Approvals.** Whatever Codex or the runner wants to do beyond its sandbox is
-  asked in the runner's terminal and in the dashboard at once; the first answer
-  wins, and an unanswered request is declined after ten minutes. `--auto` skips
-  asking but still records what ran.
+  asked in the runner's terminal, in the dashboard and on Telegram (with
+  Approve, Decline and Always allow buttons) at once; the first answer wins,
+  and an unanswered request is declined after ten minutes. A hard deny list is
+  refused outright. A runner running as a background service has no terminal,
+  so it asks only in the dashboard and on Telegram.
+- **Always allow.** Saves a rule on that machine: the exact command (or a
+  command prefix Codex proposes) in that folder, or file changes under a
+  folder. Rules, and how often each was used, are listed on the Computer page,
+  where you can delete them. Declines are never remembered.
+- **Policy per machine.** Chosen on the Computer page, or with
+  `--policy ask|review|trust` on the runner. *Ask* (the default) asks you.
+  *Review* first has a separate, tool-less Codex turn on your subscription
+  (in the manner of [eve](https://github.com/vercel/eve)'s `auto()`) judge the
+  single action, never the conversation: routine ones run, and anything risky,
+  unclear or unanswered in 30 seconds is asked. *Trust* (`--auto`) runs
+  everything. Every request is recorded, with who or what allowed it and the
+  reviewer's verdict.
 - **Stop.** A running reply can be stopped from the chat or with `/stop`; what
   it had written is kept.
 - **Steer.** A message sent while a reply is running joins that reply (Codex's
@@ -247,13 +266,14 @@ Packages in use: `convex`, `@convex-dev/agent` (threads and messages),
 
 Done: Telegram and web chat with separate sessions, branching, search,
 regenerate and edit; Codex as the engine with a per-chat model; streaming,
-Markdown and stop; runner approvals from the dashboard; connected accounts over
+Markdown and stop; runner approvals from the dashboard and Telegram, with
+saved rules and an automatic reviewer; connected accounts over
 MCP; layered memory and chat search; local media and Telegram media; scheduled
 jobs, one-time reminders and the heartbeat; skills.
 
 Open work is tracked in [issues](https://github.com/TheM1N9/me-bot/issues),
-among them automatic daily summaries into memory, durable turns, a browser for
-the agent, and a permission model for what the agent may do.
+among them automatic daily summaries into memory, durable turns and a browser for
+the agent.
 
 ## Handing Perry to someone else
 

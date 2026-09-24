@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -13,6 +13,7 @@ import { join } from "node:path";
  *   uploads/        files the owner attached in chat
  *   files/          the agent's own folder for what it makes, organised as it sees fit
  *   skills/         the agent's skills, one folder each with a SKILL.md, found by Codex
+ *   logs/           the runner's output when it runs as a background service
  *
  * PERRY_HOME moves the whole thing.
  */
@@ -24,9 +25,27 @@ export const PATHS = {
   uploads: join(HOME, "uploads"),
   files: join(HOME, "files"),
   skills: join(HOME, "skills"),
+  logs: join(HOME, "logs"),
 };
 
 export function ensureHome() {
   for (const dir of [HOME, PATHS.codexResults, PATHS.uploads, PATHS.files, PATHS.skills]) mkdirSync(dir, { recursive: true });
   return PATHS;
+}
+
+/** How this machine's runner connects. Written by the runner and by `pnpm run connect -- --service`. */
+export type RunnerConfig = { url?: string; token?: string; dir?: string; name?: string; auto?: boolean };
+
+export function readRunnerConfig(): RunnerConfig {
+  if (!existsSync(PATHS.runnerConfig)) return {};
+  try {
+    return JSON.parse(readFileSync(PATHS.runnerConfig, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+export function writeRunnerConfig(config: RunnerConfig) {
+  mkdirSync(HOME, { recursive: true });
+  writeFileSync(PATHS.runnerConfig, JSON.stringify(config, null, 2), { encoding: "utf8", mode: 0o600 });
 }

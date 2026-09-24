@@ -10,7 +10,17 @@ pnpm run setup
 ```
 
 The setup wizard, the runner and the other scripts run on [Bun](https://bun.sh),
-so install it first; pnpm still manages the packages.
+so install it first; pnpm still manages the packages. Perry runs on macOS,
+Linux and Windows:
+
+| | macOS | Linux | Windows |
+|---|---|---|---|
+| Bun | `curl -fsSL https://bun.sh/install \| bash` | `curl -fsSL https://bun.sh/install \| bash` | `powershell -c "irm bun.sh/install.ps1 \| iex"` |
+| Codex CLI | `brew install --cask codex` or `npm i -g @openai/codex` | `npm i -g @openai/codex` or `curl -fsSL https://chatgpt.com/codex/install.sh \| sh` | `npm i -g @openai/codex` |
+| Codex's sandbox | Seatbelt, built in | bubblewrap, shipped with Codex; needs user namespaces | a restricted token, set up by Codex |
+| Background service | launchd agent | systemd user unit | Task Scheduler task at logon |
+
+`pnpm run doctor -- --machine` checks all of that on the machine it runs on.
 
 That is the whole install. The wizard walks five steps, tells you what it is
 doing, and is safe to re-run: it keeps whatever is already configured and only
@@ -87,12 +97,81 @@ token its Codex holds, and it stays in your Convex deployment until it expires,
 usable by anyone who can read that deployment's data. The refresh token never
 leaves the machine, and turning the setting off deletes every stored token.
 
-What Codex wants to do beyond its sandbox is asked in the runner's terminal and
-in the dashboard, where you can approve or decline it.
+What Codex wants to do beyond its sandbox is asked in the runner's terminal, in
+the dashboard and, if you own Perry from Telegram, as a Telegram message with
+Approve, Decline and Always allow buttons. The buttons need the webhook to
+receive `callback_query` updates: an install whose webhook was set before this
+must set it again, with `pnpm run webhook:set` or the Keys page's re-register
+button. Turn Telegram prompts off on the Computer page.
 
-On Windows the runner uses Codex's unelevated sandbox, because the elevated one
-fails on long paths in Codex's own runtime. Set
-`PERRY_CODEX_WINDOWS_SANDBOX=elevated` to use Codex's choice instead.
+Each machine has a policy, set on the Computer page or when starting it:
+
+```bash
+pnpm run runner -- --policy review   # ask | review | trust; --auto means trust
+```
+
+With `review`, a quick Codex turn on your subscription looks at each request
+first and runs the routine ones; the rest are asked. `PERRY_REVIEW_MODEL`
+picks its model (by default the first model Codex lists as fast).
+
+Codex is told which OS and shell it is on (PowerShell on Windows, your login
+shell such as zsh or bash elsewhere), so its commands, paths and "open this"
+requests fit the machine.
+
+### Running it in the background
+
+To keep the runner going without a terminal, and start it whenever you log in:
+
+```bash
+pnpm run connect -- --service   # connect, and install the runner as a service
+pnpm run service install        # or: install it for a runner already connected
+pnpm run service status         # also: start, stop, logs [-f], uninstall
+```
+
+Each OS's own service manager runs it, for your user only and without admin
+rights:
+
+- **macOS**: a launchd agent, `~/Library/LaunchAgents/com.perry.runner.plist`.
+  Logs go to `~/.perry/logs/runner.log`.
+- **Linux**: a systemd user unit, `~/.config/systemd/user/perry-runner.service`.
+  Logs are in the journal (`pnpm run service logs`). A user unit stops when you
+  log out; `loginctl enable-linger $USER` keeps it running and starts it at boot.
+  Under WSL, systemd must be on (`[boot] systemd=true` in `/etc/wsl.conf`).
+- **Windows**: a Task Scheduler task, "Perry runner", that starts at logon in a
+  hidden window. Logs go to `~/.perry/logs/runner.log`. Unlike the task
+  defaults, it has no time limit and keeps running on battery.
+
+The service remembers the `PATH` it was installed from (launchd and systemd
+start services with a bare one), and any `PERRY_HOME`, `PERRY_CODEX_SANDBOX`,
+`PERRY_CODEX_WINDOWS_SANDBOX` or `CODEX_HOME`, so reinstall it after changing
+those or moving the repo. With no terminal to ask in, approvals are answered in
+the dashboard. Stop the service before running the runner in a terminal with
+the same token; a second runner refuses to start.
+
+### Codex's sandbox
+
+The runner asks Codex for its `workspace-write` sandbox: Codex may write in the
+working directory, in `~/.perry/files` and in the temp folder, the network is
+off, and anything else is asked for. How Codex enforces that depends on the OS:
+
+- **macOS**: Seatbelt (`sandbox-exec`), part of macOS. Nothing to install.
+- **Linux**: bubblewrap, which Codex ships with (Landlock is its older
+  fallback). It needs unprivileged user namespaces, which desktop distributions
+  and WSL 2 have. Inside Docker and similar containers they are usually off,
+  and every sandboxed command fails; either allow them, or, since a container is
+  already a sandbox, set `PERRY_CODEX_SANDBOX=danger-full-access`. Some
+  distributions restrict user namespaces with AppArmor (Ubuntu 24.04 and later
+  can); if sandboxed commands fail there, install the distribution's
+  `bubblewrap` package, which Codex can use instead of its own.
+- **Windows**: a restricted token. The runner uses Codex's unelevated sandbox,
+  because the elevated one fails on long paths in Codex's own runtime. Set
+  `PERRY_CODEX_WINDOWS_SANDBOX=elevated` to use Codex's choice instead.
+
+`PERRY_CODEX_SANDBOX` overrides the mode on any OS: `read-only`,
+`workspace-write` (the default) or `danger-full-access`. With
+`danger-full-access` Codex asks for almost nothing, so keep it to machines that
+are isolated already. `pnpm run doctor -- --machine` runs one sandboxed command
+on macOS and Linux to show the sandbox works.
 
 ## Perry's folder on your machine
 
@@ -106,7 +185,12 @@ and Codex has `~/.codex`. Set `PERRY_HOME` to put it somewhere else.
   files/           the agent's own folder for what it makes
   skills/          the agent's skills, one folder each with a SKILL.md
   codex-results/   finished Codex turns not yet delivered
+  logs/            the runner's output as a service (macOS, Windows)
+  service/         the Windows task's launcher
 ```
+
+Paths work as each OS writes them: `/Users/...` on macOS, `/home/...` on Linux,
+`C:\Users\...` on Windows, spaces and non-ASCII names included.
 
 Chat media stays on your machine. Files you attach land in `uploads/`, the
 agent saves what it makes wherever it decides (usually `files/`), and the
@@ -146,14 +230,18 @@ to anything else running on your machine.
 | Command | What it does |
 |---|---|
 | `pnpm run doctor` | Checks every moving part and names the broken one. Changes nothing. |
+| `pnpm run doctor -- --machine` | Only this machine: Bun, Codex and its sign-in and sandbox, the runner, the service. |
+| `pnpm run service <command>` | The runner as a background service: `install`, `uninstall`, `start`, `stop`, `status`, `logs`. `--dry-run` shows what it would do. |
+| `pnpm run smoke` | The runner's parts on this OS, with no deployment or Codex. CI runs it on all three. |
 | `pnpm run pair` | Fresh pairing code, for an expired one or a new chat. |
 | `pnpm run webhook:info` | What Telegram thinks, including delivery errors. |
 | `pnpm exec convex dev` | Watches `convex/`, pushes on save, streams logs. |
 
 `pnpm run doctor` is the first thing to run when something seems wrong. It
-checks the local env file, the deployment, its environment variables, the HTTP
-endpoint, the bot token, the webhook registration and its delivery errors, and
-whether anyone has claimed the install.
+checks this machine (Bun, the Codex CLI, its sign-in and sandbox, the runner and
+its service), the local env file, the deployment, its environment variables,
+the HTTP endpoint, the bot token, the webhook registration and its delivery
+errors, and whether anyone has claimed the install.
 
 ## Giving Perry to someone else
 
@@ -178,7 +266,11 @@ them. The full error is in the Convex dashboard logs and in the Activity tab.
 **"No runner" or "Connect a ChatGPT account" in chat.** Every reply comes from
 Codex on a connected machine, unless answering without the computer is on and a
 runner has shared a token that is still valid. Start the runner with
-`pnpm run runner` and check the Codex account on the Settings page.
+`pnpm run runner` (or `pnpm run service start`) and check the Codex account on
+the Settings page.
+
+**Codex's commands all fail on Linux.** Its sandbox needs user namespaces; see
+"Codex's sandbox" above, and run `pnpm run doctor -- --machine`.
 
 **Moving to production.** `pnpm exec convex deploy` pushes to a separate production
 deployment with its own environment variables, so set them again there and

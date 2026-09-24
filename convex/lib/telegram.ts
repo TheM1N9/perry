@@ -207,6 +207,46 @@ export async function finishDraft(token: string | null, chatId: string, messageI
   for (const chunk of rest) await sendMessage(token, chatId, chunk, { markdown: true });
 }
 
+/** One row of inline buttons under a message. `data` comes back in a callback_query, at most 64 bytes. */
+export type Buttons = Array<Array<{ text: string; data: string }>>;
+
+const keyboard = (buttons: Buttons) => ({
+  inline_keyboard: buttons.map((row) => row.map((button) => ({ text: button.text, callback_data: button.data }))),
+});
+
+/** A message with buttons under it, such as an approval request. Returns its id, for editing later. */
+export async function sendButtons(token: string | null, chatId: string, text: string, buttons: Buttons): Promise<number> {
+  const result = await call(token, "sendMessage", {
+    chat_id: chatId,
+    text: chunkMessage(text.trim())[0],
+    reply_markup: keyboard(buttons),
+    link_preview_options: { is_disabled: true },
+  }) as { message_id: number };
+  return result.message_id;
+}
+
+// Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/channels/telegram/api.ts
+/** Rewrite a message and replace its buttons; no buttons removes them. */
+export async function editButtons(token: string | null, chatId: string, messageId: number, text: string, buttons: Buttons = []): Promise<void> {
+  try {
+    await call(token, "editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text: chunkMessage(text.trim())[0],
+      reply_markup: keyboard(buttons),
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (error) {
+    if (!String(error).includes("message is not modified")) throw error;
+  }
+}
+
+// Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/channels/telegram/api.ts
+/** Clear the spinner on a tapped button, with a short note shown to whoever tapped it. */
+export async function answerCallback(token: string | null, callbackQueryId: string, text?: string): Promise<void> {
+  await call(token, "answerCallbackQuery", { callback_query_id: callbackQueryId, ...(text ? { text } : {}) });
+}
+
 /** Remove a message the bot sent. Best effort: Telegram keeps messages older than 48 hours. */
 export async function deleteMessage(token: string | null, chatId: string, messageId: number): Promise<void> {
   try {
@@ -277,6 +317,15 @@ export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
+}
+
+/** A tap on an inline button. `from` is who tapped; `message` is the message the button was on. */
+export interface TelegramCallbackQuery {
+  id: string;
+  from: { id: number; is_bot: boolean };
+  data?: string;
+  message?: { message_id: number; chat: { id: number } };
 }
 
 type TelegramFile = { file_id: string; file_size?: number; file_name?: string; mime_type?: string };
@@ -307,6 +356,21 @@ export interface InboundMessage {
   media: InboundMedia[];
 }
 
+/**
+ * A button tap. The sender id is Telegram's word for who tapped, which the
+ * webhook secret vouches for; it still has to match the stored owner.
+ */
+export interface InboundCallback {
+  callbackId: string;
+  senderId: string;
+  data: string;
+}
+
+function parseCallback(query: TelegramCallbackQuery): InboundCallback | null {
+  if (query.from?.is_bot || !query.data) return null;
+  return { callbackId: query.id, senderId: String(query.from.id), data: query.data };
+}
+
 /** Photos come in several sizes; take the largest. Everything else is one file. */
 function mediaOf(message: TelegramMessage): InboundMedia[] {
   const media: InboundMedia[] = [];
@@ -335,11 +399,12 @@ export async function downloadFile(token: string | null, fileId: string): Promis
 }
 
 /**
- * Narrow a raw update to the one shape Assistant handles: a message from a
- * human, with text, media, or both. Anything else returns null and is
- * acknowledged without work.
+ * Narrow a raw update to the two shapes Assistant handles: a message from a
+ * human, with text, media, or both; or a tap on one of its buttons. Anything
+ * else returns null and is acknowledged without work.
  */
-export function parseUpdate(update: TelegramUpdate): InboundMessage | null {
+export function parseUpdate(update: TelegramUpdate): InboundMessage | InboundCallback | null {
+  if (update.callback_query) return parseCallback(update.callback_query);
   const message = update.message ?? update.edited_message;
   if (!message) return null;
   if (message.from?.is_bot) return null;

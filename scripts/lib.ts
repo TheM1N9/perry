@@ -21,6 +21,8 @@ export function run(command: string, args: string[], { quiet = true }: { quiet?:
     let output = "";
     child.stdout?.on("data", (d) => (output += d));
     child.stderr?.on("data", (d) => (output += d));
+    // A command that is not installed fails to start at all.
+    child.on("error", (error) => resolvePromise({ code: null, output: error.message }));
     child.on("close", (code) => resolvePromise({ code, output }));
   });
 }
@@ -35,3 +37,26 @@ const CONVEX_CLI = resolve(process.cwd(), "node_modules/convex/bin/main.js");
 export function runConvex(args: string[], options?: { quiet?: boolean }): Promise<Ran> {
   return run(process.execPath, [CONVEX_CLI, ...args], options);
 }
+
+/**
+ * The Codex CLI on PATH. On Windows an npm install is a .cmd, which only a
+ * shell can start, so it goes through cmd.exe there, as the runner does; the
+ * arguments are this repo's own, never user text.
+ */
+export function runCodex(args: string[]): Promise<Ran> {
+  return process.platform === "win32"
+    ? run(process.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", ["codex", ...args].join(" ")])
+    : run("codex", args);
+}
+
+/** How to install what Perry needs on this OS, from each tool's own install docs. */
+export const INSTALL_HINTS = {
+  bun: process.platform === "win32"
+    ? `powershell -c "irm bun.sh/install.ps1 | iex"`
+    : "curl -fsSL https://bun.sh/install | bash",
+  codex: process.platform === "win32"
+    ? "npm i -g @openai/codex"
+    : process.platform === "darwin"
+      ? "brew install --cask codex  (or: npm i -g @openai/codex)"
+      : "npm i -g @openai/codex  (or: curl -fsSL https://chatgpt.com/codex/install.sh | sh)",
+};

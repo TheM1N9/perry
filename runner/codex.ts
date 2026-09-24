@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { isAbsolute, relative } from "node:path";
 import { createInterface } from "node:readline";
 import { PATHS } from "./home";
+import { describeMachine } from "./shell";
 
 /**
  * Codex's "elevated" Windows sandbox runs a setup check over every file its
@@ -13,9 +14,39 @@ import { PATHS } from "./home";
  * (a restricted token) has no such check, so the runner's threads use it.
  * PERRY_CODEX_WINDOWS_SANDBOX=elevated restores Codex's own choice.
  */
-const WINDOWS_SANDBOX = process.platform === "win32"
+export const WINDOWS_SANDBOX = process.platform === "win32"
   ? { "windows.sandbox": process.env.PERRY_CODEX_WINDOWS_SANDBOX ?? "unelevated" }
   : {};
+
+/**
+ * How Codex fences in the commands it runs. workspace-write lets it write in
+ * the workspace, Perry's files folder and the temp folder, keeps the network
+ * off, and asks the owner for anything else. Codex enforces it with Seatbelt
+ * (sandbox-exec) on macOS, with its bundled bubblewrap on Linux (Landlock is
+ * its legacy fallback), and with a restricted token on Windows.
+ *
+ * Where that cannot work, such as a container without user namespaces,
+ * PERRY_CODEX_SANDBOX picks another mode on any OS: read-only, or
+ * danger-full-access for a machine that is already isolated, where Codex then
+ * asks for almost nothing.
+ */
+export const SANDBOX_MODES = ["read-only", "workspace-write", "danger-full-access"] as const;
+export type SandboxMode = (typeof SANDBOX_MODES)[number];
+
+export function sandboxMode(value = process.env.PERRY_CODEX_SANDBOX): SandboxMode {
+  if (!value) return "workspace-write";
+  if (!(SANDBOX_MODES as readonly string[]).includes(value)) {
+    throw new Error(`PERRY_CODEX_SANDBOX must be one of ${SANDBOX_MODES.join(", ")}; it is "${value}".`);
+  }
+  return value as SandboxMode;
+}
+
+/** The per-turn policy for a mode, as the app-server's SandboxPolicy. */
+function sandboxPolicy(mode: SandboxMode, writableRoots: string[]) {
+  if (mode === "read-only") return { type: "readOnly", networkAccess: false };
+  if (mode === "danger-full-access") return { type: "dangerFullAccess" };
+  return { type: "workspaceWrite", writableRoots, networkAccess: false };
+}
 
 /** Name of the MCP server that serves the deployment's tools to Codex. */
 export const ASSISTANT_MCP = "assistant";
@@ -93,6 +124,9 @@ function userInput(prompt: string, attachments: CodexAttachment[], recalled?: st
   return input;
 }
 
+/** One file in a fileChange item: add, delete or update, with its diff. */
+export type FileChange = { path: string; kind?: { type?: string }; diff?: string };
+
 /** A stdio client for the official Codex app-server protocol. */
 export class CodexAppServer extends EventEmitter {
   private nextId = 1;
@@ -101,10 +135,18 @@ export class CodexAppServer extends EventEmitter {
   private completedTurns = new Map<string, TurnEvent>();
   private turnItems = new Map<string, TurnItem[]>();
   private tokenTotals = new Map<string, number>();
+  private fileChanges = new Map<string, FileChange[]>();
   private child?: ChildProcessWithoutNullStreams;
   closed = false;
 
+  /** What a file-change item is about to change, for its approval request. */
+  changesFor(itemId?: string): FileChange[] {
+    return (itemId && this.fileChanges.get(itemId)) || [];
+  }
+
   async start(): Promise<this> {
+    // A mistyped escape hatch fails here, where the runner reports it, not mid-turn.
+    sandboxMode();
     const windows = process.platform === "win32";
     const child = spawn(
       windows ? process.env.COMSPEC || "cmd.exe" : "codex",
@@ -127,7 +169,16 @@ export class CodexAppServer extends EventEmitter {
         if (message.method === "account/login/completed" && params.loginId) {
           this.completedLogins.set(params.loginId, params as LoginEvent);
         }
+        // A file change's approval request names only its item, so keep the
+        // item's paths from when it starts (and as its patch is updated).
+        if (message.method === "item/started" && params.item?.type === "fileChange") {
+          this.fileChanges.set(params.item.id, params.item.changes ?? []);
+        }
+        if (message.method === "item/fileChange/patchUpdated" && params.itemId) {
+          this.fileChanges.set(params.itemId, params.changes ?? []);
+        }
         if (message.method === "item/completed" && params.turnId) {
+          this.fileChanges.delete(params.item?.id);
           const items = this.turnItems.get(params.turnId) ?? [];
           items.push(params.item);
           this.turnItems.set(params.turnId, items);
@@ -403,16 +454,19 @@ export class CodexAppServer extends EventEmitter {
     onUsage?: (usage: TokenUsage) => void;
   }): Promise<{ threadId: string; response: string; images: GeneratedImage[]; interrupted?: boolean; compacted?: boolean }> {
     const broken = await this.reloadSkills(cwd).catch(() => []);
+    const machine = describeMachine();
+    // The owner's OS and shell, so commands, paths and "open it" requests fit this machine.
     const home = [
       `Your own folder for files you make is ${PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`,
       `Your skills folder is ${PATHS.skills}.`,
       ...(broken.length ? [`These skills failed to load, so they are not listed:\n${broken.map((line) => `- ${line}`).join("\n")}`] : []),
-    ].join(" ");
+    ].join(" ") +
+      `\n\nThis machine runs ${machine.os}, and your commands run in ${machine.shell}; write commands, paths and quoting for that, and open files or apps with ${machine.open}.`;
     const fullInstructions = history
       ? `${instructions}\n\n${home}\n\nEarlier chat history (context, not a new user request):\n${history}`
       : `${instructions}\n\n${home}`;
     const policy = "on-request";
-    const sandbox = "workspace-write";
+    const sandbox = sandboxMode();
     // The deployment's own tools: memory, connected accounts, task tracking.
     const config = {
       ...(tools ? {
@@ -467,7 +521,7 @@ export class CodexAppServer extends EventEmitter {
       ...(model ? { model } : {}),
       cwd,
       approvalPolicy: policy,
-      sandboxPolicy: { type: "workspaceWrite", writableRoots: [cwd, PATHS.files, PATHS.skills], networkAccess: false },
+      sandboxPolicy: sandboxPolicy(sandbox, [cwd, PATHS.files, PATHS.skills]),
     }, 30_000);
     if (!started.turn?.id) throw new Error("Codex did not start a turn.");
     turnId = started.turn.id;

@@ -31,6 +31,8 @@ export const vTurnAttachment = v.object({
   fileName: v.string(),
   contentType: v.string(),
 });
+/** How a runner decides what needs the owner. See approvals.ts. */
+export const vPolicy = v.union(v.literal("ask"), v.literal("review"), v.literal("trust"));
 
 /**
  * Assistant is single-owner, so there is no users table. The owner is identified by
@@ -65,6 +67,8 @@ export default defineSchema({
      * turn. Off unless the owner turns it on, since it needs chatgptTokens.
      */
     offlineFallback: v.optional(v.boolean()),
+    /** False stops approval requests going to the owner on Telegram. Unset means on. */
+    telegramApprovals: v.optional(v.boolean()),
     createdAt: v.number(),
   }),
 
@@ -185,8 +189,10 @@ export default defineSchema({
     platform: v.optional(v.string()),
     hostname: v.optional(v.string()),
     workdir: v.optional(v.string()),
-    /** False means every command waits for a keypress on that machine. */
+    /** Legacy: true meant nothing waited for the owner. `policy` replaces it and wins. */
     autoApprove: v.boolean(),
+    /** ask: the owner decides; review: a Codex reviewer clears routine actions first; trust: run. */
+    policy: v.optional(vPolicy),
     lastSeenAt: v.optional(v.number()),
     revoked: v.boolean(),
     /** Codex credentials stay in the CLI's local store on this runner. */
@@ -417,11 +423,54 @@ export default defineSchema({
     title: v.string(),
     detail: v.optional(v.string()),
     cwd: v.optional(v.string()),
-    status: v.union(v.literal("pending"), v.literal("approved"), v.literal("declined"), v.literal("expired"), v.literal("auto")),
-    decidedBy: v.optional(v.union(v.literal("terminal"), v.literal("dashboard"), v.literal("timeout"))),
+    /** Files a change touches, which file rules match on. */
+    paths: v.optional(v.array(v.string())),
+    /** What "Always allow" would remember for this request. Unset means it cannot be remembered. */
+    alwaysAllow: v.optional(v.object({
+      command: v.optional(v.string()),
+      prefix: v.optional(v.boolean()),
+      pathPrefix: v.optional(v.string()),
+    })),
+    /** "reviewing" while the runner's Codex reviewer looks at it; the owner is not asked yet. */
+    status: v.union(v.literal("pending"), v.literal("approved"), v.literal("declined"), v.literal("expired"), v.literal("auto"), v.literal("reviewing")),
+    decidedBy: v.optional(v.union(
+      v.literal("terminal"), v.literal("dashboard"), v.literal("timeout"), v.literal("telegram"),
+      v.literal("rule"), v.literal("reviewer"), v.literal("trust"),
+    )),
+    /** The rule that allowed it, or the rule an "Always allow" answer created. */
+    ruleId: v.optional(v.id("approvalRules")),
+    /** The automatic reviewer's verdict. "error" is a failure or timeout, which asks the owner. */
+    review: v.optional(v.object({
+      verdict: v.union(v.literal("clear"), v.literal("caution"), v.literal("error")),
+      reason: v.string(),
+      model: v.optional(v.string()),
+      ms: v.optional(v.number()),
+    })),
+    /** The prompt sent to the owner on Telegram, edited to the outcome once settled. */
+    telegramChatId: v.optional(v.string()),
+    telegramMessageId: v.optional(v.number()),
     createdAt: v.number(),
     decidedAt: v.optional(v.number()),
   }).index("by_status", ["status", "createdAt"]),
+
+  /**
+   * What the owner said to always allow on one runner: an exact command, or a
+   * command prefix, within a folder; or file changes under a folder. Only a
+   * yes is remembered. A decline is asked again next time.
+   */
+  approvalRules: defineTable({
+    runnerId: v.id("runners"),
+    kind: v.union(v.literal("command"), v.literal("file")),
+    command: v.optional(v.string()),
+    /** Matches commands that start with `command` and chain nothing after it. */
+    prefix: v.optional(v.boolean()),
+    cwd: v.optional(v.string()),
+    pathPrefix: v.optional(v.string()),
+    uses: v.number(),
+    lastUsedAt: v.optional(v.number()),
+    createdFrom: v.optional(v.id("approvals")),
+    createdAt: v.number(),
+  }).index("by_runner", ["runnerId"]),
 
   /** Subscription turns are queued for the owner's outbound local runner. */
   codexTurns: defineTable({

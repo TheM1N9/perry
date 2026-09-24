@@ -4,7 +4,17 @@ import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { Approvals } from "./Approvals";
+import { Permissions } from "./Permissions";
 import { ActionButton, Command, CopyButton, Empty, Icon, Loading, RelativeTime, Section, Spinner, Status, errorText, useToast, type Tone } from "./ui";
+
+type Policy = "ask" | "review" | "trust";
+
+/** A runner's approval policy, in the words the owner chooses by. */
+const POLICIES: Array<{ value: Policy; label: string }> = [
+  { value: "ask", label: "Ask me every time" },
+  { value: "review", label: "Codex reviews; ask me about the risky ones" },
+  { value: "trust", label: "Run without asking" },
+];
 
 const COMMAND_STATUS: Record<string, { tone: Tone; label: string }> = {
   queued: { tone: "neutral", label: "Queued" },
@@ -25,9 +35,23 @@ export function Computer({ dashboardKey }: { dashboardKey: string }) {
   const compute = useQuery(api.dashboard.getCompute, { key: dashboardKey });
   const setTarget = useMutation(api.dashboard.setComputeTarget);
   const revoke = useMutation(api.dashboard.revokeRunner);
+  const setPolicy = useMutation(api.dashboard.setRunnerPolicy);
   const toast = useToast();
   const [saving, setSaving] = useState<"sandbox" | "local" | null>(null);
   const [showRevoked, setShowRevoked] = useState(false);
+  const [savingPolicy, setSavingPolicy] = useState<string | null>(null);
+
+  const choosePolicy = async (runnerId: string, name: string, policy: Policy) => {
+    setSavingPolicy(runnerId);
+    try {
+      await setPolicy({ key: dashboardKey, runnerId, policy });
+      toast({ tone: "success", text: `${name}: ${POLICIES.find((item) => item.value === policy)?.label}.` });
+    } catch (cause) {
+      toast({ tone: "danger", text: `Couldn't change how ${name} asks: ${errorText(cause)}` });
+    } finally {
+      setSavingPolicy(null);
+    }
+  };
 
   const choose = async (target: "sandbox" | "local") => {
     setSaving(target);
@@ -89,13 +113,20 @@ export function Computer({ dashboardKey }: { dashboardKey: string }) {
           const state: { tone: Tone; label: string } = runner.revoked ? { tone: "danger", label: "Revoked" } : runner.online ? { tone: "success", label: "Online" } : { tone: "neutral", label: "Offline" };
           return <div className="item" key={runner.id}>
             <div className="item-main">
-              <div className="item-title">{runner.name}{runner.autoApprove && <span className="tag" title="Runs commands without asking">Auto-approve</span>}</div>
+              <div className="item-title"><strong>{runner.name}</strong>{runner.policy === "trust" && !runner.revoked && <span className="tag" title="Runs commands without asking">Runs without asking</span>}</div>
               <div className="item-meta">
                 <span>{runner.platform ?? "Unknown platform"}</span>
                 {runner.workdir && <span className="mono" style={{ fontSize: 12 }}>{runner.workdir}</span>}
                 <RelativeTime at={runner.lastSeenAt} prefix="Seen " />
               </div>
               {!runner.revoked && !runner.online && <div className="item-meta"><span>Start it again with <code className="inline">pnpm run connect</code> on that machine.</span></div>}
+              {!runner.revoked && <div className="field" style={{ margin: "6px 0 0", maxWidth: 360 }}>
+                <label htmlFor={`policy-${runner.id}`} className="field-hint">Before it acts {savingPolicy === runner.id && <Spinner size={11} />}</label>
+                <select id={`policy-${runner.id}`} className="select runner-policy" value={runner.policy} disabled={savingPolicy === runner.id}
+                  onChange={(event) => void choosePolicy(runner.id, runner.name, event.target.value as Policy)}>
+                  {POLICIES.map((policy) => <option key={policy.value} value={policy.value}>{policy.label}</option>)}
+                </select>
+              </div>}
             </div>
             <div className="item-side">
               <Status tone={state.tone}>{state.label}</Status>
@@ -110,6 +141,8 @@ export function Computer({ dashboardKey }: { dashboardKey: string }) {
           </button>
         </div>}
       </Section>
+
+      <Permissions dashboardKey={dashboardKey} telegram={compute.telegramApprovals} />
 
       <Section title="Recent commands" count={compute.commands.length} description="The last 20 things sent to a connected machine.">
         {compute.commands.length === 0 && <Empty icon="computer" title="No commands yet">Commands Perry runs on a connected machine will show up here.</Empty>}
