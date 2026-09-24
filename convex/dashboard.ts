@@ -998,7 +998,7 @@ export const getConnectors = action({
 
 /** Returns a URL for the owner to open and finish OAuth in their browser. */
 export const connectToolkit = action({
-  args: { key: vKey, toolkit: v.string() },
+  args: { key: vKey, toolkit: v.string(), callbackUrl: v.optional(v.string()) },
   handler: async (
     ctx,
     args,
@@ -1006,6 +1006,7 @@ export const connectToolkit = action({
     assertDashboardKey(args.key);
     return await ctx.runAction(internal.composio.authorize, {
       toolkit: args.toolkit,
+      callbackUrl: args.callbackUrl,
     });
   },
 });

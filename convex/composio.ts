@@ -64,7 +64,8 @@ export type Connector = {
  *
  * Returns only live connections, because the full Composio catalogue is over a
  * thousand toolkits and the agent asking "what can I reach" wants the short
- * list, not the catalogue.
+ * list, not the catalogue. Composio filters server-side and pages the result,
+ * so every page is read: a connection can sit anywhere in the catalogue order.
  */
 export const connectors = internalAction({
   args: {},
@@ -88,17 +89,22 @@ export const connectors = internalAction({
 
     try {
       const s = await session(apiKey);
-      const { items } = await s.toolkits();
-
-      const connectors = items
-        .filter((t) => t.connection?.isActive || t.isNoAuth)
-        .map((t) => ({
-          slug: t.slug,
-          name: t.name,
-          connected: Boolean(t.connection?.isActive) || t.isNoAuth,
-          status: t.connection?.connectedAccount?.status,
-          needsAuth: !t.isNoAuth,
-        }));
+      const connectors: Connector[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await s.toolkits({ isConnected: true, cursor });
+        for (const t of page.items) {
+          if (!t.connection?.isActive && !t.isNoAuth) continue;
+          connectors.push({
+            slug: t.slug,
+            name: t.name,
+            connected: true,
+            status: t.connection?.connectedAccount?.status,
+            needsAuth: !t.isNoAuth,
+          });
+        }
+        cursor = page.cursor;
+      } while (cursor);
 
       return { configured: true, connectors };
     } catch (error) {
@@ -111,10 +117,11 @@ export const connectors = internalAction({
  * Start an OAuth flow for a toolkit and hand back the URL to open.
  *
  * The owner finishes it in a browser. Assistant only ever learns that the account
- * exists, never the token behind it.
+ * exists, never the token behind it. Without a callback URL, Composio's
+ * hosted page ends the flow on its own screen instead of sending you back.
  */
 export const authorize = internalAction({
-  args: { toolkit: v.string() },
+  args: { toolkit: v.string(), callbackUrl: v.optional(v.string()) },
   handler: async (
     ctx,
     args,
@@ -124,7 +131,10 @@ export const authorize = internalAction({
         name: "COMPOSIO_API_KEY",
       });
       const s = await session(apiKey);
-      const request = await s.authorize(args.toolkit.toLowerCase().trim());
+      const request = await s.authorize(
+        args.toolkit.toLowerCase().trim(),
+        args.callbackUrl ? { callbackUrl: args.callbackUrl } : undefined,
+      );
 
       const raw = request as unknown as Record<string, unknown>;
       const redirectUrl =

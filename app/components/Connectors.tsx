@@ -65,8 +65,8 @@ export function Connectors({ dashboardKey }: { dashboardKey: string }) {
   const [actions, setActions] = useState<FoundAction[] | null>(null);
   const [lookupError, setLookupError] = useState("");
   const [notice, setNotice] = useState<{ tone: Tone; text: string } | null>(null);
-  /** A sign-in opened in another tab; the list refreshes when you come back to this one. */
-  const [awaiting, setAwaiting] = useState<string | null>(null);
+  /** The toolkit Composio just sent you back from, read off the callback URL. */
+  const [returned, setReturned] = useState<{ slug: string; status: string | null } | null>(null);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -84,19 +84,22 @@ export function Connectors({ dashboardKey }: { dashboardKey: string }) {
   }, [refresh]);
 
   useEffect(() => {
-    if (!awaiting) return;
-    const onFocus = () => { if (document.visibilityState === "visible") void refresh(); };
-    document.addEventListener("visibilitychange", onFocus);
-    window.addEventListener("focus", onFocus);
-    return () => { document.removeEventListener("visibilitychange", onFocus); window.removeEventListener("focus", onFocus); };
-  }, [awaiting, refresh]);
+    const params = new URLSearchParams(window.location.search);
+    const slug = params.get("connected");
+    if (!slug) return;
+    setReturned({ slug, status: params.get("status") });
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
 
   useEffect(() => {
-    if (awaiting && state?.connectors.some((item) => item.slug === awaiting && item.connected)) {
-      setNotice({ tone: "success", text: `${state.connectors.find((item) => item.slug === awaiting)?.name ?? awaiting} is connected. Perry can use it from the next message.` });
-      setAwaiting(null);
-    }
-  }, [awaiting, state]);
+    if (!returned || !state) return;
+    const found = state.connectors.find((item) => item.slug === returned.slug && item.connected);
+    const failed = returned.status !== null && returned.status.toLowerCase() !== "success";
+    if (found) setNotice({ tone: "success", text: `${found.name} is connected. Perry can use it from the next message.` });
+    else if (failed) setNotice({ tone: "danger", text: `Signing in to ${returned.slug} didn't finish. Try connecting it again.` });
+    else setNotice({ tone: "info", text: `${returned.slug} isn't showing as connected yet. Refresh in a moment.` });
+    setReturned(null);
+  }, [returned, state]);
 
   const connect = async (toolkit: string) => {
     const slug = toolkit.trim().toLowerCase();
@@ -105,20 +108,18 @@ export function Connectors({ dashboardKey }: { dashboardKey: string }) {
     setBusy(slug);
     setNotice(null);
     try {
-      const result = await connectToolkit({ key: dashboardKey, toolkit: slug });
+      const callbackUrl = `${window.location.origin}${window.location.pathname}?connected=${encodeURIComponent(slug)}`;
+      const result = await connectToolkit({ key: dashboardKey, toolkit: slug, callbackUrl });
       if (result.redirectUrl) {
-        window.open(result.redirectUrl, "_blank", "noopener");
-        setAwaiting(slug);
-        setNotice({ tone: "info", text: `Finish signing in to ${slug} in the new tab. This list updates when you come back.` });
-        if (slug === custom.trim().toLowerCase()) setCustom("");
-      } else {
-        setNotice({ tone: "danger", text: result.error ?? `Couldn't start a connection for “${slug}”. Check the toolkit name and try again.` });
+        // Same tab, so Composio can send you back here when sign-in ends.
+        window.location.assign(result.redirectUrl);
+        return;
       }
+      setNotice({ tone: "danger", text: result.error ?? `Couldn't start a connection for “${slug}”. Check the toolkit name and try again.` });
     } catch (error) {
       setNotice({ tone: "danger", text: errorText(error) });
-    } finally {
-      setBusy(null);
     }
+    setBusy(null);
   };
 
   const look = async (event: FormEvent) => {
@@ -183,7 +184,7 @@ export function Connectors({ dashboardKey }: { dashboardKey: string }) {
         })}
       </Section>
 
-      <Section title="Connect an account" description="Opens the provider's own sign-in in a new tab. The token stays with Composio.">
+      <Section title="Connect an account" description="Takes you to the provider's own sign-in, then back here. The token stays with Composio.">
         <div className="section-pad" style={{ display: "grid", gap: 16 }}>
           {suggestions.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {suggestions.map((suggestion) => (
