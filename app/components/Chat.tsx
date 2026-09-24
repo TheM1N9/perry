@@ -6,7 +6,10 @@ import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { api } from "@/convex/_generated/api";
-import { COMPACTED, describeModels, findModel, parseModelCommand, pickModel } from "@/convex/lib/commands";
+import {
+  ACCESS_LABELS, COMPACTED, chatModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel, parseAccessCommand,
+  parseModelCommand, parseThinkCommand, pickAccess, pickEffort, pickModel, type Access,
+} from "@/convex/lib/commands";
 import { Approvals } from "./Approvals";
 import { Sidebar, linkClick, type SectionId } from "./Sidebar";
 import { CopyButton, Dialog, Icon, Kbd, Notice, Spinner, errorText, fullDate, useToast } from "./ui";
@@ -40,6 +43,13 @@ type Attachment = { url: string; fileName: string; contentType: string };
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
 /** A message you sent that the history does not show yet: the one that started a reply, or one sent into it. */
 type Pending = { id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean };
+
+/** How the composer names a thinking level; Codex's own ids otherwise, capitalised. */
+const levelName = (level: string) => level === "xhigh" ? "Extra high" : `${level[0]?.toUpperCase() ?? ""}${level.slice(1)}`;
+const ACCESS_HINTS: Record<Access, string> = {
+  supervised: "Codex works in its sandbox, and asks you before anything beyond it",
+  full: "No sandbox: Codex acts on this computer without asking",
+};
 
 const bytes = (size: number) => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`;
 const timeOf = (timestamp: number) => new Date(timestamp).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -187,8 +197,20 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     const current = store.getQuery(api.dashboard.getChat, { key: args.key, id: args.id });
     if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, model: args.model });
   });
+  const setChatEffort = useMutation(api.dashboard.setChatEffort).withOptimisticUpdate((store, args) => {
+    const current = store.getQuery(api.dashboard.getChat, { key: args.key, id: args.id });
+    if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, effort: args.effort });
+  });
+  const setChatAccess = useMutation(api.dashboard.setChatAccess).withOptimisticUpdate((store, args) => {
+    const current = store.getQuery(api.dashboard.getChat, { key: args.key, id: args.id });
+    if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, access: args.access });
+  });
+  const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   /** The model picked for a chat that has not been sent yet. */
   const [draftModel, setDraftModel] = useState<string | undefined>(undefined);
+  /** Its thinking level and access; unset is the model's default level and the default access. */
+  const [draftEffort, setDraftEffort] = useState<string | undefined>(undefined);
+  const [draftAccess, setDraftAccess] = useState<Access | undefined>(undefined);
   const [selectedId, setSelectedId] = useState<ChatId | null>(null);
   const [restored, setRestored] = useState(false);
   const [draft, setDraft] = useState("");
@@ -342,9 +364,28 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const codexModels = modelOptions?.codex ?? [];
   const model = (selectedId ? chat?.model : draftModel)
     ?? (codexModels.find((item) => item.isDefault) ?? codexModels[0])?.id;
+  // The thinking levels are the model's own; a level it does not take is kept but unused.
+  const modelInfo = chatModel(codexModels, model);
+  const efforts = modelInfo?.efforts ?? [];
+  const pickedEffort = selectedId ? chat?.effort : draftEffort;
+  const effortIsUnused = Boolean(modelInfo && effortUnused(modelInfo, pickedEffort));
+  const effort = effortIsUnused ? undefined : pickedEffort;
+  const access: Access = (selectedId ? chat?.access : draftAccess) ?? defaultAccess ?? "supervised";
   function applyModel(next: string) {
+    const picked = codexModels.find((item) => item.id === next);
+    if (picked && pickedEffort && effortUnused(picked, pickedEffort)) {
+      setNotice(`${picked.name} does not take the ${pickedEffort} thinking level, so it thinks at its default here.`);
+    }
     if (!selectedId) { setDraftModel(next || undefined); return; }
     void setChatModel({ key: dashboardKey, id: selectedId, model: next || undefined }).catch((cause) => setError(errorText(cause)));
+  }
+  function applyEffort(next: string | undefined) {
+    if (!selectedId) { setDraftEffort(next); return; }
+    void setChatEffort({ key: dashboardKey, id: selectedId, effort: next }).catch((cause) => setError(errorText(cause)));
+  }
+  function applyAccess(next: Access) {
+    if (!selectedId) { setDraftAccess(next); return; }
+    void setChatAccess({ key: dashboardKey, id: selectedId, access: next }).catch((cause) => setError(errorText(cause)));
   }
 
   function select(id: ChatId | null) {
@@ -405,28 +446,49 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const COMMANDS = [
     { command: "/model", hint: "List the Codex models, or /model <name> to switch this chat" },
     { command: "/set model", hint: "Switch this chat's model: /set model <name>" },
+    { command: "/think", hint: "List the thinking levels, or /think <level> to set this chat's" },
+    { command: "/access", hint: "Supervised or Full access: whether Codex asks before acting" },
     { command: "/stop", hint: "Stop the reply being written" },
     { command: "/compact", hint: "Shrink what Codex carries of this chat; the messages stay" },
     { command: "/reset", hint: "Save this chat to memory, then start it afresh" },
   ];
   const typedCommand = parseModelCommand(draft);
-  const suggestions: Array<{ key: string; label: string; hint: string; apply: () => void }> = !draft.startsWith("/") || suggestionsDismissed
+  const typedThink = parseThinkCommand(draft);
+  const typedAccess = parseAccessCommand(draft);
+  // Past a command's name, the suggestions are its choices.
+  const choosing = /^\/(?:(?:set\s+)?model|think|access)\s/i.test(draft);
+  type Suggestion = { key: string; label: string; hint: string; apply: () => void };
+  const choices = (options: Array<{ value: string; label: string; hint: string }>, typed: string | undefined, command: string): Suggestion[] =>
+    options.filter((option) => !typed || option.value.startsWith(typed)).map((option) => ({
+      key: option.value, label: option.label, hint: option.hint, apply: () => void runCommand(`${command} ${option.value}`),
+    }));
+  const suggestions: Suggestion[] = !draft.startsWith("/") || suggestionsDismissed
     ? []
-    : typedCommand && /^\/(?:set\s+)?model\s/i.test(draft)
+    : typedCommand && choosing
       ? (typedCommand.name ? findModel(codexModels, typedCommand.name).matches : codexModels).map((item) => ({
           key: item.id,
           label: item.name,
           hint: `${item.id}${item.id === model ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
           apply: () => void runCommand(`/model ${item.id}`),
         }))
-      : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
-          key: item.command,
-          label: item.command,
-          hint: item.hint,
-          apply: () => { setDraft(item.command === "/stop" || item.command === "/compact" || item.command === "/reset" ? item.command : `${item.command} `); composer.current?.focus(); },
-        }));
+      : typedThink && choosing
+        ? choices([
+            { value: "default", label: "Default", hint: `${modelInfo?.defaultEffort ?? "the model's own"}${effort ? "" : " · current"}` },
+            ...efforts.map((level) => ({ value: level, label: levelName(level), hint: `${level}${level === effort ? " · current" : ""}` })),
+          ], typedThink.level, "/think")
+        : typedAccess && choosing
+          ? choices((["supervised", "full"] as const).map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
+          : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
+              key: item.command,
+              label: item.command,
+              hint: item.hint,
+              apply: () => { setDraft(item.command === "/stop" || item.command === "/compact" || item.command === "/reset" ? item.command : `${item.command} `); composer.current?.focus(); },
+            }));
   const highlighted = Math.min(suggestionIndex, Math.max(0, suggestions.length - 1));
-  const completingCommand = draft.startsWith("/") && !(typedCommand && /^\/(?:set\s+)?model\s/i.test(draft));
+  const completingCommand = draft.startsWith("/") && !choosing;
+  /** A half-typed level or access ("/think hi"), which Enter completes. */
+  const completingChoice = choosing && !typedCommand && suggestions.length > 0
+    && !suggestions.some((item) => item.key === (typedThink?.level ?? typedAccess?.mode));
   useEffect(() => { setSuggestionIndex(0); setSuggestionPicked(false); }, [draft]);
   useEffect(() => { if (!draft.startsWith("/")) setSuggestionsDismissed(false); }, [draft]);
 
@@ -436,9 +498,26 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     const modelCommand = parseModelCommand(trimmed);
     if (modelCommand) {
       if (!modelCommand.name) { setDraft(""); setNotice(describeModels(codexModels, model)); return true; }
-      const picked = pickModel(codexModels, modelCommand.name);
+      const picked = pickModel(codexModels, modelCommand.name, pickedEffort);
       // A name that matched nothing, or several models, stays in the box to be fixed.
       if (picked.model) { applyModel(picked.model.id); setDraft(""); }
+      setNotice(picked.reply);
+      return true;
+    }
+    const thinkCommand = parseThinkCommand(trimmed);
+    if (thinkCommand) {
+      if (!thinkCommand.level) { setDraft(""); setNotice(describeEfforts(codexModels, model, pickedEffort)); return true; }
+      const picked = pickEffort(codexModels, model, thinkCommand.level);
+      // A level the model does not take stays in the box to be fixed.
+      if (picked.ok) { applyEffort(picked.effort); setDraft(""); }
+      setNotice(picked.reply);
+      return true;
+    }
+    const accessCommand = parseAccessCommand(trimmed);
+    if (accessCommand) {
+      if (!accessCommand.mode) { setDraft(""); setNotice(describeAccess(access)); return true; }
+      const picked = pickAccess(accessCommand.mode);
+      if (picked.access) { applyAccess(picked.access); setDraft(""); }
       setNotice(picked.reply);
       return true;
     }
@@ -473,6 +552,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     if (message.startsWith("/") && pickedFiles.length === 0 && await runCommand(message)) return;
     // Sent while a reply is running, the message joins that reply (it steers it).
     if ((!message && pickedFiles.length === 0) || busy || uploading) return;
+    const fresh = !selectedId;
     const id = selectedId ?? await makeChat();
     if (!id) return;
     const files = pickedFiles;
@@ -491,7 +571,13 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
       const entry: Pending = { id, text: message, attachments: uploaded, baselineCount: selectedId === id ? messages.filter((item) => item.role === "user" && item.text === message).length : 0, seenRunning: selectedId === id && Boolean(chat?.isRunning) };
       sent = entry;
       setPending((items) => [...items, entry]);
-      await sendChat({ key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, model });
+      // A new chat takes what was picked before it existed; an existing one already has its own.
+      await sendChat({
+        key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, model,
+        ...(fresh ? { effort: draftEffort ?? "", access: draftAccess } : {}),
+      });
+      // Full access is chosen for a chat, never carried into the next new one.
+      if (fresh) setDraftAccess(undefined);
     } catch (cause) {
       setUploading(null);
       setPending((items) => items.filter((item) => item !== sent));
@@ -677,20 +763,36 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
                 if (event.key === "Escape") { event.preventDefault(); setSuggestionsDismissed(true); return; }
                 // Enter takes a suggestion you arrowed to, or finishes a half-typed command
                 // name; anything already typed out in full runs as typed.
-                if (event.key === "Enter" && !event.shiftKey && (suggestionPicked || (completingCommand && suggestions[highlighted].label.trim() !== draft.trim()))) { event.preventDefault(); suggestions[highlighted].apply(); return; }
+                if (event.key === "Enter" && !event.shiftKey && (suggestionPicked || completingChoice || (completingCommand && suggestions[highlighted].label.trim() !== draft.trim()))) { event.preventDefault(); suggestions[highlighted].apply(); return; }
               }
               if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); }
             }} />
           <div className="chat-composer-foot">
             <button type="button" className="chat-attach" aria-label="Attach files" title="Attach images, video, audio, or documents (up to 10, 50 MB each)" onClick={() => filePicker.current?.click()} disabled={busy || Boolean(uploading) || pickedFiles.length >= MAX_FILES}><Icon name="paperclip" size={16} /></button>
             <input ref={filePicker} type="file" multiple hidden accept={ACCEPT} onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
-            <select className="chat-model" aria-label="Codex model" title={`Codex model: ${model ?? "default"}`} value={model ?? ""} disabled={modelOptions === undefined} onChange={(event) => applyModel(event.target.value)}>
-              {modelOptions === undefined
-                ? <option value="">Loading models…</option>
-                : codexModels.length
-                  ? codexModels.map((item) => <option key={item.id} value={item.id}>{item.name}{item.isDefault ? " (default)" : ""}</option>)
-                  : <option value="">Codex default</option>}
-            </select>
+            <div className="chat-composer-controls">
+              <select className="chat-picker chat-model" aria-label="Codex model" title={`Codex model: ${model ?? "default"}`} value={model ?? ""} disabled={modelOptions === undefined} onChange={(event) => applyModel(event.target.value)}>
+                {modelOptions === undefined
+                  ? <option value="">Loading models…</option>
+                  : codexModels.length
+                    ? codexModels.map((item) => <option key={item.id} value={item.id}>{item.name}{item.isDefault ? " (default)" : ""}</option>)
+                    : <option value="">Codex default</option>}
+              </select>
+              {/* Only the levels the chosen model takes; Default leaves it to the model. */}
+              {efforts.length > 0 && <select className="chat-picker chat-effort" aria-label="Thinking level" value={effort ?? ""}
+                title={`Thinking level: ${effort ?? `default (${modelInfo?.defaultEffort ?? "the model's own"})`}${effortIsUnused ? `. ${modelInfo?.name} does not take ${pickedEffort}, so it thinks at its default.` : ""}`}
+                onChange={(event) => applyEffort(event.target.value || undefined)}>
+                <option value="">Default{modelInfo?.defaultEffort ? ` (${levelName(modelInfo.defaultEffort)})` : ""}</option>
+                {efforts.map((level) => <option key={level} value={level}>{levelName(level)}</option>)}
+              </select>}
+              <select className={`chat-picker chat-access${access === "full" ? " full" : ""}`} aria-label="Access" value={access}
+                title={`${ACCESS_LABELS[access]}: ${ACCESS_HINTS[access]}. Applies from the next reply.`}
+                disabled={selectedId ? chat === undefined : defaultAccess === undefined}
+                onChange={(event) => applyAccess(event.target.value as Access)}>
+                <option value="supervised">{ACCESS_LABELS.supervised}</option>
+                <option value="full">{ACCESS_LABELS.full}</option>
+              </select>
+            </div>
             <span className="chat-composer-hint" aria-live="polite">{uploading ? <><Spinner size={11} /> Uploading {uploading.index} of {uploading.total}…</> : <><Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> new line</>}</span>
             {/* Adapted from vercel/eve (Apache-2.0): packages/eve/src/setup/scaffold/create/web-template.ts */}
             {/* While a reply runs, a draft is sent into it; with nothing typed, the button stops it. */}
@@ -699,7 +801,9 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
               : <button type="button" className="chat-send" aria-label={waiting ? "Send into the reply" : "Send message"} title={waiting ? "Send into the reply" : "Send"} onClick={() => void submit()} disabled={(!draft.trim() && pickedFiles.length === 0) || busy || Boolean(uploading)}>{uploading ? <Spinner /> : <Icon name="arrow" size={16} />}</button>}
           </div>
         </div>
-        <div className="chat-composer-caption">Type / for commands. Drop or paste files to attach them.</div>
+        {access === "full"
+          ? <div className="chat-composer-caption chat-access-warning"><Icon name="alert" size={12} />Full access: Perry acts on this computer without asking. Every command still shows in Activity.</div>
+          : <div className="chat-composer-caption">Type / for commands. Drop or paste files to attach them.</div>}
       </div></div>
     </main>
     {searchOpen && <ChatSearch dashboardKey={dashboardKey} onClose={() => setSearchOpen(false)} onPick={(id) => { select(id); setSearchOpen(false); }} />}

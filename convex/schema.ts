@@ -33,6 +33,21 @@ export const vTurnAttachment = v.object({
 });
 /** How a runner decides what needs the owner. See approvals.ts. */
 export const vPolicy = v.union(v.literal("ask"), v.literal("review"), v.literal("trust"));
+/**
+ * How far a chat's Codex turns may reach. Supervised: Codex's workspace-write
+ * sandbox, and anything beyond it asks through the runner's approvals. Full:
+ * no sandbox, and Codex never asks.
+ */
+export const vAccess = v.union(v.literal("supervised"), v.literal("full"));
+/** A Codex model as `model/list` reports it, with the reasoning efforts it takes. */
+export const vCodexModel = v.object({
+  id: v.string(),
+  name: v.string(),
+  isDefault: v.boolean(),
+  /** Unset when reported by a runner from before thinking levels. */
+  efforts: v.optional(v.array(v.string())),
+  defaultEffort: v.optional(v.string()),
+});
 
 /**
  * Assistant is single-owner, so there is no users table. The owner is identified by
@@ -69,6 +84,8 @@ export default defineSchema({
     offlineFallback: v.optional(v.boolean()),
     /** False stops approval requests going to the owner on Telegram. Unset means on. */
     telegramApprovals: v.optional(v.boolean()),
+    /** The access a new chat starts with. Unset means supervised. */
+    defaultAccess: v.optional(vAccess),
     createdAt: v.number(),
   }),
 
@@ -202,7 +219,7 @@ export default defineSchema({
     codexError: v.optional(v.string()),
     codexUpdatedAt: v.optional(v.number()),
     /** What `model/list` returned on this runner, for the chat model picker. */
-    codexModels: v.optional(v.array(v.object({ id: v.string(), name: v.string(), isDefault: v.boolean() }))),
+    codexModels: v.optional(v.array(vCodexModel)),
     codexRequestId: v.optional(v.number()),
     codexRequestKind: v.optional(v.union(v.literal("login"), v.literal("logout"))),
     codexRequestStatus: v.optional(v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("error"))),
@@ -293,6 +310,10 @@ export default defineSchema({
     codexRunnerId: v.optional(v.id("runners")),
     /** Codex model picked for this chat. Unset means the Codex default. */
     model: v.optional(v.string()),
+    /** Reasoning effort picked for this chat (/think). Unset means the model's default. */
+    effort: v.optional(v.string()),
+    /** Set when the chat is created, from installation.defaultAccess. Unset means supervised. */
+    access: v.optional(vAccess),
     title: v.optional(v.string()),
     /** Set on the chat where a scheduled job's results collect. */
     jobId: v.optional(v.id("jobs")),
@@ -496,6 +517,10 @@ export default defineSchema({
     flush: v.optional(v.boolean()),
     /** Codex model id to run this turn with. Unset means the Codex default. */
     requestedModel: v.optional(v.string()),
+    /** Reasoning effort for turn/start. Unset leaves it to Codex, as before thinking levels. */
+    requestedEffort: v.optional(v.string()),
+    /** The chat's access when the turn was queued. Unset means supervised. */
+    access: v.optional(vAccess),
     /** Codex's own id for the turn, recorded when it starts; a steer must name it. */
     codexTurnId: v.optional(v.string()),
     /** Attachment key for media the turn produced, such as generated images. */
@@ -544,6 +569,8 @@ export default defineSchema({
     history: v.optional(v.string()),
     instructions: v.string(),
     requestedModel: v.optional(v.string()),
+    requestedEffort: v.optional(v.string()),
+    access: v.optional(vAccess),
     attachments: v.optional(v.array(vTurnAttachment)),
     /** Waiting for the runner, joined the turn, or turned into a queued turn of its own. */
     status: v.union(v.literal("pending"), v.literal("applied"), v.literal("queued")),

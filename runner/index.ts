@@ -22,6 +22,11 @@
  *      file reads and writes cannot escape it.
  *   4. A denylist of commands that are never worth running.
  *
+ *   A chat the owner put on Full access gives up 2 and 3 for its turns: Codex
+ *   runs without its sandbox and with approval policy "never", so its own
+ *   commands never reach this process to be asked about or denied. They still
+ *   show in the run's trace.
+ *
  * Nothing here runs at boot or survives a reboot unless you ask for it with
  * `pnpm run service install` (scripts/service.ts). Without a terminal, as a
  * service, approvals are asked in the dashboard only.
@@ -37,6 +42,7 @@ import { ConvexClient } from "convex/browser";
 import { getFunctionName, type FunctionArgs, type FunctionReference, type FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
+import { runLabel } from "../convex/lib/commands";
 import { truncateCommandOutput, truncateHead } from "../convex/lib/truncate";
 import { ASSISTANT_MCP, CodexAppServer, TurnFailed, type GeneratedImage, type RpcMessage } from "./codex";
 import { isReviewThread, review } from "./review";
@@ -783,6 +789,11 @@ async function main() {
             void client.mutation(api.codex.streamTurn, { token, id: job._id, text: latest }).catch(() => {});
           };
           const schedule = () => { streamTimer ??= setTimeout(flush, 300); };
+          // What the run records: the model, the effort sent, and full access when it was.
+          const label = runLabel(job.requestedModel, job.requestedEffort, job.access);
+          if (job.access === "full" && job.kind !== "compact") {
+            console.log(yellow("  full access: this turn runs without the sandbox, and Codex does not ask"));
+          }
           try {
             const app = await ensureCodex();
             if (job.kind === "compact") {
@@ -799,6 +810,8 @@ async function main() {
                 prompt: job.prompt,
                 cwd: workdir,
                 model: job.requestedModel,
+                effort: job.requestedEffort,
+                access: job.access,
                 tools: job.mcpUrl ? { url: job.mcpUrl, token } : undefined,
                 attachments: await localise(job.attachments),
                 onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
@@ -825,7 +838,7 @@ async function main() {
                 response: completed.response,
                 ...(completed.interrupted ? { stopped: true } : {}),
                 ...(completed.compacted ? { compacted: true } : {}),
-                model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription",
+                model: label,
                 ...(media.length ? { media } : {}),
               };
             }
@@ -837,7 +850,7 @@ async function main() {
               error: message(error),
               ...(partial?.text ? { response: partial.text } : {}),
               ...(partial?.compacted ? { compacted: true } : {}),
-              model: job.requestedModel ? `codex/${job.requestedModel}` : "codex subscription",
+              model: label,
               ...(media.length ? { media } : {}),
             };
           } finally {

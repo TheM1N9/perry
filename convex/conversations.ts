@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { components } from "./_generated/api";
 import { internalMutation, internalQuery } from "./_generated/server";
-import { vChannel } from "./schema";
+import { defaultAccess } from "./installation";
+import { vAccess, vChannel } from "./schema";
 
 /**
  * Rewind a web chat for a regenerate or an edit: its Codex thread has seen the
@@ -37,6 +38,26 @@ export const setModel = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { model: args.model });
+    return null;
+  },
+});
+
+/** A chat's thinking level, set with /think. Unset means the model's default. */
+export const setEffort = internalMutation({
+  args: { id: v.id("conversations"), effort: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { effort: args.effort });
+    return null;
+  },
+});
+
+/** A chat's access, set with /access. It applies from the chat's next turn. */
+export const setAccess = internalMutation({
+  args: { id: v.id("conversations"), access: vAccess },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { access: args.access });
     return null;
   },
 });
@@ -92,6 +113,7 @@ export const create = internalMutation({
       externalId: args.externalId,
       threadId: args.threadId,
       title: args.title,
+      access: await defaultAccess(ctx),
       lastMessageAt: Date.now(),
     });
   },
@@ -151,6 +173,8 @@ export const createBranch = internalMutation({
       externalId: `session:${args.threadId}`,
       threadId: args.threadId,
       model: parent.model,
+      effort: parent.effort,
+      access: parent.access,
       title: args.title,
       lastMessageAt: Date.now(),
       parentConversationId: parent._id,

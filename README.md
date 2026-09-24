@@ -84,6 +84,16 @@ a token; Composio keeps the OAuth.
 
 ## You stay in control
 
+- **Supervised or Full access, per chat.** A *Supervised* chat (the default)
+  runs Codex in its `workspace-write` sandbox, and anything beyond it goes
+  through the approvals below. *Full access* runs Codex with no sandbox
+  (`danger-full-access`) and approval policy `never`, so it acts without
+  asking; every command still shows in the trace, and the runner still refuses
+  its deny list for anything that reaches it, though Codex's own commands no
+  longer do. Pick it in the composer, where Full access is marked in amber, or
+  with `/access supervised|full`; it applies from the chat's next reply.
+  Settings has the default for new chats. A job's chat runs supervised unless
+  it is set otherwise.
 - **Approvals.** Whatever Codex or the runner wants to do beyond its sandbox is
   asked in the runner's terminal, in the dashboard and on Telegram (with
   Approve, Decline and Always allow buttons) at once; the first answer wins,
@@ -112,8 +122,13 @@ a token; Composio keeps the OAuth.
   carries less context; the chat's messages are unchanged.
 - **Regenerate and edit.** Rewrite a reply, or change a message you sent and
   resend it; Codex starts from the history as it now stands.
-- **Models.** Pick a Codex model per chat in the composer, or with `/model`.
-- **Receipts.** Every turn is a run in the Activity page, with its model, tools,
+- **Models and thinking.** Pick a Codex model per chat in the composer, or with
+  `/model`, and its thinking level (the reasoning effort Codex runs the turn
+  with) from the levels that model takes, or with `/think <level>`; `/think`
+  alone lists them. "Default" leaves it to the model. A level the chat's model
+  does not take is kept but unused, and says so.
+- **Receipts.** Every turn is a run in the Activity page, with its model and
+  thinking level (and "full access" when it had it), tools,
   tokens and errors, and a trace of what Codex did: each command, file change,
   tool call and search on a timeline, with its input, output and status.
 
@@ -196,8 +211,9 @@ short enough to be a caption rides on the first file; a longer one comes first.
 
 ## Channels
 
-Telegram and the web dashboard. Commands on both: `/model`, `/stop`, `/compact`,
-`/reset`; on Telegram also `/status`, `/help`.
+Telegram and the web dashboard. Commands on both: `/model`, `/think`, `/access`,
+`/stop`, `/compact`, `/reset`; on Telegram also `/status` (which shows the
+chat's model, thinking level and access) and `/help`.
 
 ## Terminal chat
 

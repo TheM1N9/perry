@@ -1,0 +1,194 @@
+{
+  "ranAt": "2026-09-24T13:06:18.530Z",
+  "chats": [
+    "k1724601fja87w0kgweb2pb22h8f06mf",
+    "k17940f6gp5k3t2tv4173wnke98f1193",
+    "k17196bhpaffm7yt08axx2t4098f0kc7"
+  ],
+  "thinking": {
+    "model": "gpt-6-astra",
+    "levels": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra"
+    ],
+    "picker": {
+      "efforts": [
+        "",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "effort": "",
+      "access": "supervised",
+      "accessMarked": false,
+      "warning": null
+    },
+    "listed": {
+      "notice": "Thinking levels for GPT-6-Astra:\n• default (low)\n  low\n  medium\n  high\n  xhigh\n  max\n  ultra\n\nSwitch with /think <level>, or /think default.",
+      "draft": "",
+      "sentAnything": false
+    },
+    "bogus": {
+      "notice": "GPT-6-Astra has no thinking level \"bogus\". It takes low, medium, high, xhigh, max, ultra. /think lists them.",
+      "draft": "/think bogus",
+      "sentAnything": false,
+      "effortAfter": ""
+    },
+    "setLow": "This chat now thinks at low on GPT-6-Astra.",
+    "setHigh": "This chat now thinks at high on GPT-6-Astra.",
+    "afterHigh": {
+      "efforts": [
+        "",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "effort": "high",
+      "access": "supervised",
+      "accessMarked": false,
+      "warning": null
+    },
+    "effortAfterHigh": "high",
+    "replies": [
+      "pong",
+      "ping"
+    ],
+    "turns": [
+      {
+        "requestedEffort": "low",
+        "access": "supervised"
+      },
+      {
+        "requestedEffort": "high",
+        "access": "supervised"
+      }
+    ],
+    "runs": [
+      {
+        "prompt": "This is an automated test. Reply with th",
+        "status": "ok",
+        "model": "codex/gpt-6-astra · low"
+      },
+      {
+        "prompt": "This is an automated test. Reply with th",
+        "status": "ok",
+        "model": "codex/gpt-6-astra · high"
+      }
+    ],
+    "session": [
+      "low",
+      "high"
+    ],
+    "setDefault": "This chat now thinks at GPT-6-Astra's default level (low).",
+    "effortAfterDefault": null,
+    "listedAfterDefault": "Thinking levels for GPT-6-Astra:\n• default (low)\n  low\n  medium\n  high\n  xhigh\n  max\n  ultra\n\nSwitch with /think <level>, or /think default."
+  },
+  "access": {
+    "defaults": {
+      "draftComposer": {
+        "efforts": [
+          "",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "effort": "",
+        "access": "full",
+        "accessMarked": true,
+        "warning": "Full access: Perry acts on this computer without asking. Every command still shows in Activity."
+      },
+      "newChatAccess": "full"
+    },
+    "accessBefore": "This chat is Supervised.\n\n• supervised  Codex works in its sandbox and asks you before anything beyond it\n  full        no sandbox, and Codex acts on this computer without asking\n\nSwitch with /access supervised or /access full.",
+    "toFull": "This chat is on Full access: Codex runs without its sandbox and acts without asking. Every command still shows in the trace. /access supervised turns it back.",
+    "fullComposer": {
+      "efforts": [
+        "",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "effort": "low",
+      "access": "full",
+      "accessMarked": true,
+      "warning": "Full access: Perry acts on this computer without asking. Every command still shows in Activity."
+    },
+    "fullChatAccess": "full",
+    "fullReply": "It worked—the file contains `ok`.",
+    "fullWritten": "ok",
+    "approvalsDuringFull": 0,
+    "toSupervised": "This chat is Supervised: Codex works in its sandbox and asks you before anything beyond it.",
+    "asked": {
+      "id": "j974xkmbtz6grpfbrarpj68h5d8f1v7n",
+      "title": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Set-Content -LiteralPath 'C:\\\\Users\\\\Pranav\\\\perry-e2e-supervised-1790255178464.txt' -Value 'ok' -NoNewline\""
+    },
+    "supervisedReply": "It didn’t work because approval to write outside the workspace was rejected.",
+    "supervisedWritten": false,
+    "approvals": [
+      {
+        "title": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Set-Content -LiteralPath 'C:\\\\Users\\\\Pranav\\\\perry-e2e-supervised-1790255178464.txt' ",
+        "status": "declined",
+        "decidedBy": "dashboard"
+      }
+    ],
+    "turns": [
+      {
+        "access": "full",
+        "requestedEffort": "low"
+      },
+      {
+        "access": "supervised",
+        "requestedEffort": "low"
+      }
+    ],
+    "runs": [
+      {
+        "prompt": "This is an automated test of access. Use",
+        "status": "ok",
+        "model": "codex/gpt-6-astra · low · full access"
+      },
+      {
+        "prompt": "This is an automated test of access. Use",
+        "status": "ok",
+        "model": "codex/gpt-6-astra · low"
+      }
+    ],
+    "session": [
+      {
+        "sandbox": "danger-full-access",
+        "approvalPolicy": "never"
+      },
+      {
+        "sandbox": "workspace-write",
+        "approvalPolicy": "on-request"
+      }
+    ],
+    "statusAfter": "This chat is Supervised.\n\n• supervised  Codex works in its sandbox and asks you before anything beyond it\n  full        no sandbox, and Codex acts on this computer without asking\n\nSwitch with /access supervised or /access full."
+  },
+  "sessionFilesChecked": true,
+  "thinkingPass": true,
+  "accessPass": true,
+  "cleanedUp": {
+    "policy": "trust",
+    "defaultAccess": "supervised",
+    "chatsDeleted": 3
+  },
+  "pageErrors": [],
+  "pass": true
+}
