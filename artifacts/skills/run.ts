@@ -141,7 +141,7 @@ try {
   checks.reminderRanOnceQuietly = ran.lastResult?.trim() === "NOTHING" && !ran.lastError && jobMessages.length === 0
     && !aTickLater.enabled && aTickLater.lastRunAt === ran.lastRunAt;
 
-  await evaluate(`[...document.querySelectorAll('.chat-nav-grid button')].find((button) => button.textContent.includes('Work')).click(); true`);
+  await evaluate(`[...document.querySelectorAll('.chat-nav-grid a')].find((link) => link.textContent.includes('Work')).click(); true`);
   await sleep(2000);
   const workRow: string | null = await evaluate(`[...document.querySelectorAll('.item')].find((row) => row.textContent.includes('E2E once'))?.innerText ?? null`);
   const workShot = await send("Page.captureScreenshot", { format: "png" });

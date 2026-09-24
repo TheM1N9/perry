@@ -112,7 +112,7 @@ const screenshot = async (png: string) => {
   const shot = await send("Page.captureScreenshot", { format: "png" });
   writeFileSync(join(outDir, png), Buffer.from(shot.data, "base64"));
 };
-await evaluate(`[...document.querySelectorAll('.chat-nav-grid button')].find((b) => b.innerText.trim().startsWith('Computer')).click(); true`);
+await evaluate(`[...document.querySelectorAll('.chat-nav-grid a')].find((b) => b.innerText.trim().startsWith('Computer')).click(); true`);
 
 /** Choose a policy with the runner's select on the Computer page, and wait for Convex to have it. */
 async function choosePolicy(policy: "ask" | "review" | "trust") {
@@ -226,7 +226,7 @@ const removalRun = await finished(removal);
 const declined = await latest(remove);
 const survived = existsSync(filePath);
 await sleep(1000);
-await evaluate(`window.scrollTo(0, document.body.scrollHeight); document.querySelector('.dashboard-scroll')?.scrollTo(0, 1e6); true`);
+await evaluate(`window.scrollTo(0, document.body.scrollHeight); document.querySelector('.workspace-scroll')?.scrollTo(0, 1e6); true`);
 await sleep(500);
 await screenshot("rules-and-recent.png");
 

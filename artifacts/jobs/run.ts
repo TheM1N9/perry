@@ -44,7 +44,7 @@ const setupChatId = await evaluate(`decodeURIComponent(location.pathname.split('
 await until(async () => (await evaluate(`!document.querySelector('.chat-streaming, .chat-thinking, .chat-turn.pending')`)) || undefined, "the setup reply");
 
 // 3. Run it now from the Work page.
-await evaluate(`[...document.querySelectorAll('.chat-nav-grid button')].find((button) => button.textContent.includes('Work')).click(); true`);
+await evaluate(`[...document.querySelectorAll('.chat-nav-grid a')].find((link) => link.textContent.includes('Work')).click(); true`);
 await sleep(1500);
 await evaluate(`(() => {
   const item = [...document.querySelectorAll('.item')].find((row) => row.textContent.includes('E2E ping'));
