@@ -155,7 +155,8 @@ try {
     historyFreeOfBlock: saidQuestion === question && first?.prompt === question,
     unchangedBlockSkipped: Boolean(second) && (second.recallDigest === first?.recallDigest ? !secondHasStanding : secondHasStanding),
     oversizedRefused: typeof refusal === "string" && /budget/i.test(refusal) && !oversizedStored,
-    resetSaysSaving: /saving what is worth keeping/i.test(notice),
+    // The composer says so at once, then shows the server's own words.
+    resetSaysSaving: /saving (what is worth keeping|this chat)/i.test(notice),
     flushQuiet: flushTurn?.status === "done" && flushTurn.response?.trim() === "NOTHING" && !sawStream,
     flushWroteNote: notesBefore === 0 && Boolean(note),
     noPageErrors: errors.length === 0,
