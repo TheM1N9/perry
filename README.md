@@ -73,9 +73,9 @@ running:
 | `recall` `remember` `read_memory` `forget` | Layered memory: profile, long-term, daily notes |
 | `search_chats` `read_chat` | Search and read earlier conversations, on every channel |
 | `list_connectors` `find_action` `run_action` | Your connected accounts, through Composio |
-| `start_task` `set_plan` `finish_task` `status_report` `set_goal` | Work that outlives the message |
-| `watch_page` `read_page` | Recurring page checks, and reading public pages |
-| `create_job` `list_jobs` `update_job` `delete_job` | Scheduled prompts and one-time reminders in your timezone |
+| `start_task` `set_plan` `finish_task` `status_report` `set_goal` `update_goal` | Work that outlives the message |
+| `watch_page` `update_watch` `delete_watch` `check_watches` `read_page` | Recurring page checks, and reading public pages |
+| `create_job` `list_jobs` `update_job` `delete_job` `run_job` | Scheduled prompts and one-time reminders in your timezone |
 | `share_file` | Show a file from your machine in the chat |
 
 Connected accounts are looked up at the moment of use, never baked in: link
