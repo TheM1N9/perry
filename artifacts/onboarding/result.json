@@ -1,0 +1,82 @@
+{
+  "ranAt": "2026-09-25T06:37:52.325Z",
+  "checks": {
+    "offerShownAndDismissed": true,
+    "getStartedOpensWelcome": true,
+    "rootOpensWelcomeWhenPending": true,
+    "previewUsesName": true,
+    "reviewHoldsAnswers": true,
+    "savedAsOwner": true,
+    "greetingArrives": false,
+    "noOwnerMessageInGreetingChat": true,
+    "greetingUsesUserMd": false,
+    "activityListsGreetingByLabel": true,
+    "nameShownInSidebarAndAvatar": true,
+    "nameReachesTurns": false,
+    "assistantAddsToUserMd": false,
+    "assistantKeepsRestOfUserMd": true,
+    "assistantRenamesWhenAsked": false,
+    "sidebarFollowsRename": false,
+    "everyTurnReplied": false,
+    "aboutShowsCurrent": true,
+    "restoreBringsBackOwnerVersion": true,
+    "startOverPrefillsName": true,
+    "justChatAsksFirst": false,
+    "phoneDoesNotScrollSideways": true,
+    "noPageErrors": true,
+    "leftAsFound": true
+  },
+  "notes": {
+    "before": {
+      "onboarding": "offer",
+      "persona": {
+        "name": "Perry",
+        "personality": "",
+        "user": ""
+      }
+    },
+    "review": "# About Sam\n\n- **Call them:** Sam\n- **Timezone:** Asia/Calcutta\n\n## Work\n\nI restore vintage bicycles in a small workshop I run.\n\n## A typical day\n\nWorkshop from 9 to 6, parts hunting online in the evenings.\n\n## People who matter\n\nMy sister Maya, who helps at the shop on Saturdays.\n\n## How they like replies\n\nShort and to the point; details only when asked.\n\n## What they want help with\n\n- Reminders\n- Research\n\n## Boundaries\n\nNever email a customer without asking me first.\n",
+    "savedPersona": {
+      "name": "Juniper",
+      "personality": "Calm, brief and to the point. No small talk; leads with the answer and adds detail only when it helps.",
+      "user": "# About Sam\n\n- **Call them:** Sam\n- **Timezone:** Asia/Calcutta\n\n## Work\n\nI restore vintage bicycles in a small workshop I run.\n\n## A typical day\n\nWorkshop from 9 to 6, parts hunting online in the evenings.\n\n## People who matter\n\nMy sister Maya, who helps at the shop on Saturdays.\n\n## How they like replies\n\nShort and to the point; details only when asked.\n\n## What they want help with\n\n- Reminders\n- Research\n\n## Boundaries\n\nNever email a customer without asking me first."
+    },
+    "firstReplyError": "Juniper couldn't finish the last reply\nTry again, or open Activity for the full run.\nTechnical details",
+    "greeting": null,
+    "greetingChat": [],
+    "greetingRun": [
+      "Welcome greeting"
+    ],
+    "userMdAfterAdd": "# About Sam\n\n- **Call them:** Sam\n- **Timezone:** Asia/Calcutta\n\n## Work\n\nI restore vintage bicycles in a small workshop I run.\n\n## A typical day\n\nWorkshop from 9 to 6, parts hunting online in the evenings.\n\n## People who matter\n\nMy sister Maya, who helps at the shop on Saturdays.\n\n## How they like replies\n\nShort and to the point; details only when asked.\n\n## What they want help with\n\n- Reminders\n- Research\n\n## Boundaries\n\nNever email a customer without asking me first.",
+    "wroteAssistantVersionForAboutYou": true,
+    "ownerVersionIndex": 1,
+    "interview": null,
+    "turns": [
+      {
+        "asked": "What's your name, and what do I do for work? One sentence.",
+        "reply": null,
+        "error": "Juniper couldn't finish the last reply\nTry again, or open Activity for the full run.\nTechnical details\nTry again"
+      },
+      {
+        "asked": "Maya just had a baby boy called Leo. Please add that to my USER.md.",
+        "reply": null,
+        "error": "Juniper couldn't finish the last reply\nTry again, or open Activity for the full run.\nTechnical details\nTry again"
+      },
+      {
+        "asked": "Please change your name to Juno.",
+        "reply": null,
+        "error": "Juniper couldn't finish the last reply\nTry again, or open Activity for the full run.\nTechnical details\nTry again"
+      }
+    ],
+    "pageErrors": [],
+    "restored": {
+      "onboarding": "offer",
+      "persona": {
+        "name": "Perry",
+        "personality": "",
+        "user": ""
+      }
+    }
+  },
+  "passed": false
+}
