@@ -16,6 +16,8 @@ import { vTelegramMedia } from "./schema";
 const CLAIMED = `
 Paired. I'm yours now.
 
+To tell me about yourself, open the dashboard's welcome page, or just tell me here.
+
 Try:
   remember that I drink coffee black
   what do you know about me

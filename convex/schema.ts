@@ -86,8 +86,32 @@ export default defineSchema({
     telegramApprovals: v.optional(v.boolean()),
     /** The access a new chat starts with. Unset means supervised. */
     defaultAccess: v.optional(vAccess),
+    /**
+     * Getting to know each other. A new install starts "pending" and opens on
+     * the dashboard's welcome page; unset is an install from before, offered it
+     * rather than sent to it.
+     */
+    onboarding: v.optional(v.union(v.literal("pending"), v.literal("done"), v.literal("skipped"))),
     createdAt: v.number(),
   }),
+
+  /**
+   * Who the owner is (USER.md) and who the assistant is (its name and
+   * personality). Append-only: the newest row of a kind is current and the
+   * older ones are its history, so any version can be restored. Written by
+   * the welcome page, the About you page, the assistant when told something
+   * lasting, and the nightly jobs.
+   */
+  persona: defineTable({
+    kind: v.union(v.literal("user"), v.literal("identity")),
+    /** USER.md, as Markdown. */
+    text: v.optional(v.string()),
+    /** The assistant's name and a line or two of personality. */
+    name: v.optional(v.string()),
+    personality: v.optional(v.string()),
+    by: v.union(v.literal("owner"), v.literal("assistant"), v.literal("job")),
+    createdAt: v.number(),
+  }).index("by_kind", ["kind", "createdAt"]),
 
   /**
    * Work Assistant has been asked to do, borrowed from OpenMuse's task model.
@@ -515,6 +539,8 @@ export default defineSchema({
     recallDigest: v.optional(v.string()),
     /** A memory flush before /reset: nothing is shown or saved, and finishing it starts the chat afresh. */
     flush: v.optional(v.boolean()),
+    /** Its prompt is not the owner's (a greeting after the welcome page): only the reply is saved to the chat. */
+    hidden: v.optional(v.boolean()),
     /** Codex model id to run this turn with. Unset means the Codex default. */
     requestedModel: v.optional(v.string()),
     /** Reasoning effort for turn/start. Unset leaves it to Codex, as before thinking levels. */

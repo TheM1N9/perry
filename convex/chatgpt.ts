@@ -119,7 +119,7 @@ export const discard = internalMutation({
  */
 export async function startFallback(
   ctx: MutationCtx,
-  turn: Pick<Doc<"codexTurns">, "conversationId" | "runId" | "prompt" | "history" | "instructions" | "recalled" | "flush" | "requestedModel" | "attachments">,
+  turn: Pick<Doc<"codexTurns">, "conversationId" | "runId" | "prompt" | "history" | "instructions" | "recalled" | "flush" | "hidden" | "requestedModel" | "attachments">,
 ): Promise<{ id: Id<"codexTurns"> } | { reason: "off" | "no-token" }> {
   if (!(await enabled(ctx))) return { reason: "off" };
   if ((await validTokens(ctx)).length === 0) return { reason: "no-token" };

@@ -32,6 +32,22 @@ async function read(ctx: {
   return await ctx.db.query("installation").unique();
 }
 
+/** Where getting to know each other stands; "offer" is an install from before it existed. */
+export type Onboarding = "pending" | "done" | "skipped" | "offer";
+
+/** "offer" clears it, as on an install from before: offered on the chat page, not opened. */
+export const setOnboarding = internalMutation({
+  args: { state: v.union(v.literal("pending"), v.literal("done"), v.literal("skipped"), v.literal("offer")) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const onboarding = args.state === "offer" ? undefined : args.state;
+    const install = await read(ctx);
+    if (install) await ctx.db.patch(install._id, { onboarding });
+    else await ctx.db.insert("installation", { onboarding, createdAt: Date.now() });
+    return null;
+  },
+});
+
 export const get = internalQuery({
   args: {},
   handler: async (ctx): Promise<Doc<"installation"> | null> => {
@@ -50,9 +66,11 @@ export const status = internalQuery({
     ownerName?: string;
     pairingCode?: string;
     pairingExpiresAt?: number;
+    onboarding: Onboarding;
   }> => {
     const install = await read(ctx);
-    if (!install) return { claimed: false };
+    // No row yet means setup has not finished making one: a new install, so pending.
+    if (!install) return { claimed: false, onboarding: "pending" };
 
     const claimed = Boolean(install.claimedAt);
     return {
@@ -61,6 +79,7 @@ export const status = internalQuery({
       ownerName: install.ownerName,
       pairingCode: claimed ? undefined : install.pairingCode,
       pairingExpiresAt: claimed ? undefined : install.pairingExpiresAt,
+      onboarding: install.onboarding ?? "offer",
     };
   },
 });
@@ -74,7 +93,7 @@ export const ensure = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
-    if (!(await read(ctx))) await ctx.db.insert("installation", { createdAt: Date.now() });
+    if (!(await read(ctx))) await ctx.db.insert("installation", { onboarding: "pending", createdAt: Date.now() });
     return null;
   },
 });
@@ -100,6 +119,7 @@ export const startPairing = internalMutation({
       await ctx.db.insert("installation", {
         pairingCode: code,
         pairingExpiresAt: expiresAt,
+        onboarding: "pending",
         createdAt: Date.now(),
       });
     }

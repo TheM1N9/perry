@@ -19,7 +19,7 @@ import { ALL_TOOLS, type ToolName } from "./tools";
  */
 
 export const CODEX_TOOLS: readonly ToolName[] = [
-  "recall", "remember", "read_memory", "forget", "search_chats", "read_chat", "read_page",
+  "recall", "remember", "read_memory", "forget", "update_user_md", "update_identity", "search_chats", "read_chat", "read_page",
   "list_connectors", "find_action", "run_action",
   "status_report", "start_task", "set_plan", "finish_task", "set_goal", "update_goal",
   "watch_page", "update_watch", "delete_watch", "check_watches",

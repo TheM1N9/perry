@@ -3,11 +3,12 @@ import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, mutation, query } from "./_generated/server";
+import { action, mutation, query, type MutationCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { FALLBACK_PROVIDER } from "./chatgpt";
 import { ABSOLUTE_PATH } from "./media";
-import { defaultAccess } from "./installation";
+import { defaultAccess, type Onboarding } from "./installation";
+import { DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./persona";
 import type { Access } from "./lib/commands";
 import { policyOf, type Policy } from "./runner";
 import { vAccess, vMemoryKind, vPolicy } from "./schema";
@@ -723,6 +724,8 @@ export const getStatus = query({
     pairingCode?: string;
     pairingExpiresAt?: number;
     telegramConfigured: boolean;
+    onboarding: Onboarding;
+    assistantName: string;
   }> => {
     assertDashboardKey(args.key);
 
@@ -745,7 +748,155 @@ export const getStatus = query({
       pairingCode: install.pairingCode,
       pairingExpiresAt: install.pairingExpiresAt,
       telegramConfigured: Boolean(telegramToken),
+      onboarding: install.onboarding,
+      assistantName: (await readPersona(ctx)).name,
     };
+  },
+});
+
+// --- Getting to know each other -------------------------------------------
+
+/**
+ * Written as the owner's turn but never shown as one: it asks for the first
+ * reply in the chat the welcome page lands on (see codex.finalizeTurn).
+ */
+const GREETING = `
+(This is not a message from the owner. They have just finished the welcome
+page, where they chose your name and personality and wrote USER.md, which is
+at the end of your instructions. This chat is where they land.)
+
+Greet them by what they asked to be called, in your personality, in two or
+three short sentences. Show you have read USER.md by picking up one or two
+specifics, not by summarising it. Then offer one concrete thing you could do
+for them right now, based on what they want help with, or ask the one
+question that would help you most. Do not call any tools for this reply.
+`.trim();
+
+/** The same, when the owner would rather talk than fill in the welcome page. */
+const INTERVIEW = `
+(This is not a message from the owner. They opened the welcome page and chose
+to get to know each other by chatting instead of filling it in. This chat is
+where they land.)
+
+Introduce yourself in one or two sentences, in your personality, and say you
+would like to learn a little about them so you can be useful. Then ask about
+one thing at a time, and wait for each answer: what to call them, what they
+do, what a typical day looks like, the people who matter to them, how they
+like replies, and what they most want help with. Keep it light; they can stop
+whenever they like. As you learn things, write them into USER.md with
+update_user_md, under short headings, and tell them it is there to read and
+edit under Profile, About you. Do not call any tools for this first reply.
+`.trim();
+
+async function startWelcomeChat(
+  ctx: MutationCtx,
+  options: { title: string; prompt: string; label: string },
+): Promise<Id<"conversations">> {
+  const threadId = await createThread(ctx, components.agent, { userId: "web:dashboard", title: options.title });
+  const id = await ctx.db.insert("conversations", {
+    channel: WEB_CHANNEL,
+    externalId: `session:${threadId}`,
+    threadId,
+    title: options.title,
+    access: await defaultAccess(ctx),
+    lastMessageAt: Date.now(),
+    pendingTurns: 1,
+  });
+  await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
+    channel: WEB_CHANNEL,
+    externalId: `session:${threadId}`,
+    text: options.prompt,
+    title: options.title,
+    hidden: true,
+    label: options.label,
+  });
+  return id;
+}
+
+export type PersonaView = Persona & { defaultName: string };
+
+export const getPersona = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<PersonaView> => {
+    assertDashboardKey(args.key);
+    return { ...(await readPersona(ctx)), defaultName: DEFAULT_NAME };
+  },
+});
+
+export const personaHistory = query({
+  args: { key: vKey, kind: v.union(v.literal("user"), v.literal("identity")) },
+  handler: async (ctx, args): Promise<PersonaVersion[]> => {
+    assertDashboardKey(args.key);
+    return await ctx.runQuery(internal.persona.history, { kind: args.kind, limit: 50 });
+  },
+});
+
+export const saveUserMd = mutation({
+  args: { key: vKey, text: v.string() },
+  returns: v.object({ changed: v.boolean() }),
+  handler: async (ctx, args): Promise<{ changed: boolean }> => {
+    assertDashboardKey(args.key);
+    return await ctx.runMutation(internal.persona.writeUser, { text: args.text, by: "owner" });
+  },
+});
+
+export const saveIdentity = mutation({
+  args: { key: vKey, name: v.string(), personality: v.string() },
+  returns: v.object({ changed: v.boolean() }),
+  handler: async (ctx, args): Promise<{ changed: boolean }> => {
+    assertDashboardKey(args.key);
+    return await ctx.runMutation(internal.persona.writeIdentity, { name: args.name, personality: args.personality, by: "owner" });
+  },
+});
+
+export const restorePersonaVersion = mutation({
+  args: { key: vKey, id: v.id("persona") },
+  returns: v.boolean(),
+  handler: async (ctx, args): Promise<boolean> => {
+    assertDashboardKey(args.key);
+    return await ctx.runMutation(internal.persona.restore, { id: args.id });
+  },
+});
+
+/**
+ * The welcome page's last step: save who the assistant is and USER.md, then
+ * open the chat it lands on, where the assistant speaks first. Without
+ * userMd, the owner chose to chat instead, and the assistant asks.
+ */
+export const finishOnboarding = mutation({
+  args: { key: vKey, name: v.string(), personality: v.string(), userMd: v.optional(v.string()) },
+  returns: v.id("conversations"),
+  handler: async (ctx, args): Promise<Id<"conversations">> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.persona.writeIdentity, { name: args.name, personality: args.personality, by: "owner" });
+    const userMd = args.userMd?.trim();
+    if (userMd) await ctx.runMutation(internal.persona.writeUser, { text: userMd, by: "owner" });
+    await ctx.runMutation(internal.installation.setOnboarding, { state: "done" });
+    return await startWelcomeChat(ctx, userMd
+      ? { title: "Welcome", prompt: GREETING, label: "Welcome greeting" }
+      : { title: "Getting to know you", prompt: INTERVIEW, label: "Getting to know you" });
+  },
+});
+
+/** Not now: the dashboard opens on chat, and About you can start it again. */
+export const skipOnboarding = mutation({
+  args: { key: vKey },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.installation.setOnboarding, { state: "skipped" });
+    return null;
+  },
+});
+
+/** Go through the welcome page again; what it saves becomes the newest version. */
+export const redoOnboarding = mutation({
+  args: { key: vKey },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.installation.setOnboarding, { state: "pending" });
+    return null;
   },
 });
 
