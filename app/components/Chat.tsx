@@ -81,6 +81,11 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   onLock: () => void;
 }) {
   const toast = useToast();
+  const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
+  const skipOnboarding = useMutation(api.dashboard.skipOnboarding);
+  const redoOnboarding = useMutation(api.dashboard.redoOnboarding);
+  /** What the owner named the assistant on the welcome page. */
+  const assistant = status?.assistantName ?? "Perry";
   const chats = useQuery(api.dashboard.listChats, { key: dashboardKey });
   const createChat = useMutation(api.dashboard.createChat);
   const branchChat = useAction(api.dashboard.branchChat);
@@ -521,10 +526,20 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
           <button type="button" className="icon-button chat-header-new" title="New chat" aria-label="New chat" onClick={startNewChat} disabled={busy}><Icon name="plus" /></button>
         </div>
       </header>
+        {/* An install from before the welcome page: offered once, never forced, and kept in view above the messages. */}
+        {status?.onboarding === "offer" && <div className="chat-offer">
+          <Notice tone="info" title={`Tell ${assistant} about yourself`} onDismiss={() => void skipOnboarding({ key: dashboardKey }).catch((cause) => toast({ tone: "danger", text: errorText(cause) }))}
+            action={<>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => void redoOnboarding({ key: dashboardKey }).then(() => onNavigate("welcome"), (cause) => toast({ tone: "danger", text: errorText(cause) }))}>Get started</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => void skipOnboarding({ key: dashboardKey }).catch((cause) => toast({ tone: "danger", text: errorText(cause) }))}>Not now</button>
+            </>}>
+            A few questions, a name and a personality, and a USER.md {assistant} reads before every reply. It takes about two minutes, and you can edit everything later.
+          </Notice>
+        </div>}
       <div className="chat-scroll" ref={scroller} onScroll={onScroll}>
         {!selectedId ? <div className="chat-welcome">
-          <h1>What can Perry help with?</h1>
-          <p>Ask a question, plan something, or pick up an earlier thread. Perry remembers what you ask it to, across every chat.</p>
+          <h1>What can {assistant} help with?</h1>
+          <p>Ask a question, plan something, or pick up an earlier thread. {assistant} remembers what you ask it to, across every chat.</p>
           <div className="chat-prompts">{quickStarts.map((prompt) => <button type="button" key={prompt.text} onClick={() => { setDraft(prompt.text); composer.current?.focus(); }}>
             <span>{prompt.text}<small>{prompt.hint}</small></span><Icon name="chevron" size={14} />
           </button>)}</div>
@@ -536,9 +551,9 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
             {messageStatus === "LoadingMore" && <div className="chat-thread-loading" role="status"><Spinner /> Loading earlier messages…</div>}
             {chat && messageStatus !== "LoadingFirstPage" && messages.length === 0 && shownPending.length === 0 && <div className="chat-thread-empty"><h2>Start the conversation</h2><p>Messages here stay together. Saved memories are available in every chat.</p></div>}
             {messages.map((message) => <div key={message.id} className={`chat-turn ${message.role === "user" ? "from-user" : "from-assistant"}`}>
-              {message.role !== "user" && <div className="chat-avatar" aria-hidden="true">P</div>}
+              {message.role !== "user" && <div className="chat-avatar" aria-hidden="true">{assistant.charAt(0).toUpperCase()}</div>}
               <div className="chat-turn-body">
-                <span className="sr-only">{message.role === "user" ? "You said" : "Perry said"}</span>
+                <span className="sr-only">{message.role === "user" ? "You said" : `${assistant} said`}</span>
                 {editing?.id === message.id
                   ? <form className="chat-edit" onSubmit={(event) => { event.preventDefault(); if (editing.text.trim()) void rewind(message.id, editing.text); }}>
                       <textarea autoFocus aria-label="Edit your message" value={editing.text} onChange={(event) => setEditing({ id: message.id, text: event.target.value })}
@@ -560,10 +575,10 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
               </div>
             </div>)}
             {shownPending.map((item, index) => <div key={index} className="chat-turn from-user pending"><div className="chat-turn-body"><div className="chat-bubble">{item.text}<AttachmentList attachments={item.attachments} /></div><div className="chat-turn-foot"><span className="chat-turn-time" style={{ opacity: 1 }}>Sending…</span></div></div></div>)}
-            {waiting && <div className="chat-turn from-assistant pending" aria-live="polite" aria-busy="true"><div className="chat-avatar" aria-hidden="true">P</div>{chat?.streaming
+            {waiting && <div className="chat-turn from-assistant pending" aria-live="polite" aria-busy="true"><div className="chat-avatar" aria-hidden="true">{assistant.charAt(0).toUpperCase()}</div>{chat?.streaming
               ? <div className="chat-turn-body"><div className="chat-bubble chat-streaming"><Markdown text={chat.streaming} /></div>{chat.fallback && <div className="chat-fallback-note"><Icon name="computer" size={13} />Answering without your computer</div>}</div>
-              : <div className="chat-thinking" role="status" aria-label="Perry is thinking"><i /><i /><i /></div>}</div>}
-            {chat?.lastError && !chat.isRunning && <div className="chat-turn-error"><Notice tone="danger" title="Perry couldn't finish the last reply" details={chat.lastError}
+              : <div className="chat-thinking" role="status" aria-label={`${assistant} is thinking`}><i /><i /><i /></div>}</div>}
+            {chat?.lastError && !chat.isRunning && <div className="chat-turn-error"><Notice tone="danger" title={`${assistant} couldn't finish the last reply`} details={chat.lastError}
               action={lastUser && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void rewind(lastUser.id)}><Icon name="redo" size={13} />Try again</button>}>
               {/runner|offline|computer/i.test(chat.lastError) ? "Your computer may be offline. Start the runner, then try again." : "Try again, or open Activity for the full run."}
             </Notice></div>}
@@ -584,7 +599,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
               : <span className="chat-picked-name"><span><Icon name="paperclip" size={12} /> {file.name}</span><small>{bytes(file.size)}</small></span>;
             return <div className="chat-picked-file" key={`${index}-${file.name}-${file.lastModified}`} title={`${file.name} · ${bytes(file.size)}`}>{preview}<button type="button" aria-label={`Remove ${file.name}`} disabled={Boolean(uploading)} onClick={() => setPickedFiles((items) => items.filter((item) => item !== file))}><Icon name="close" size={11} /></button></div>;
           })}</div>}
-          <textarea ref={composer} id="composer" value={draft} rows={1} aria-label="Message Perry" placeholder={waiting ? "Add to the reply, or stop it…" : "Message Perry…"}
+          <textarea ref={composer} id="composer" value={draft} rows={1} aria-label={`Message ${assistant}`} placeholder={waiting ? "Add to the reply, or stop it…" : `Message ${assistant}…`}
             role="combobox" aria-expanded={suggestions.length > 0} aria-controls={suggestions.length ? "chat-commands" : undefined} aria-autocomplete="list" aria-activedescendant={suggestions.length ? `chat-command-${highlighted}` : undefined}
             onChange={(event) => setDraft(event.target.value)}
             onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); addFiles(files); } }}
@@ -636,7 +651,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
           </div>
         </div>
         {access === "full"
-          ? <div className="chat-composer-caption chat-access-warning"><Icon name="alert" size={12} />Full access: Perry acts on this computer without asking. Every command still shows in Activity.</div>
+          ? <div className="chat-composer-caption chat-access-warning"><Icon name="alert" size={12} />Full access: {assistant} acts on this computer without asking. Every command still shows in Activity.</div>
           : <div className="chat-composer-caption">Type / for commands. Drop or paste files to attach them.</div>}
       </div></div>
     </main>

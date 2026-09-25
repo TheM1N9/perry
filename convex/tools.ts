@@ -146,6 +146,48 @@ const forget = createTool({
   },
 });
 
+// --- Who the owner is, who the assistant is ------------------------------
+
+const update_user_md = createTool({
+  description:
+    "Rewrite USER.md, the owner's own account of who they are, shown in full at the end of your " +
+    "instructions. Pass the whole document, not a diff: start from the current text, keep its " +
+    "headings and everything still true, and change only what the owner told you or what is " +
+    "plainly out of date. For who they are (name, work, routine, people, how they like replies, " +
+    "boundaries); standing rules go to remember as profile memory. The owner can see every " +
+    "version and restore an older one. Tell them what you changed.",
+  inputSchema: z.object({
+    text: z.string().min(1).describe("The whole new USER.md, in Markdown."),
+  }),
+  execute: async (ctx, input): Promise<{ saved: boolean; note: string }> => {
+    const fromJob = "fromJob" in ctx && ctx.fromJob === true;
+    const result: { changed: boolean } = await ctx.runMutation(internal.persona.writeUser, {
+      text: input.text,
+      by: fromJob ? "job" : "assistant",
+    });
+    return { saved: result.changed, note: result.changed ? "Saved." : "Unchanged: it already says that." };
+  },
+});
+
+const update_identity = createTool({
+  description:
+    "Change your own name or personality. Only when the owner asks you to; what you leave out stays as it is.",
+  inputSchema: z.object({
+    name: z.string().min(1).max(40).optional(),
+    personality: z.string().max(600).optional().describe("How you come across, in a sentence or two."),
+  }),
+  execute: async (ctx, input): Promise<{ saved: boolean; note: string }> => {
+    if (input.name === undefined && input.personality === undefined) return { saved: false, note: "Nothing to change." };
+    const fromJob = "fromJob" in ctx && ctx.fromJob === true;
+    const result: { changed: boolean } = await ctx.runMutation(internal.persona.writeIdentity, {
+      name: input.name,
+      personality: input.personality,
+      by: fromJob ? "job" : "assistant",
+    });
+    return { saved: result.changed, note: result.changed ? "Saved; it applies from your next reply." : "Unchanged." };
+  },
+});
+
 // --- Past conversations --------------------------------------------------
 
 const search_chats = createTool({
@@ -727,6 +769,8 @@ export const ALL_TOOLS = {
   remember,
   read_memory,
   forget,
+  update_user_md,
+  update_identity,
   search_chats,
   read_chat,
   create_job,

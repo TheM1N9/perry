@@ -146,8 +146,10 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   }
   // Codex knows the date but not the time, and "remind me in an hour" needs both.
   const now = `It is now ${ownerNow(await ctx.runQuery(internal.jobs.ownerTimezone, {}))}.`;
+  // Who the assistant is opens the instructions; who the owner is (USER.md, whole) closes them.
+  const persona: { identity: string; user: string } = await ctx.runQuery(internal.persona.forPrompt, {});
   return {
-    instructions: [INSTRUCTIONS, now, memory?.instructions].filter(Boolean).join("\n\n"),
+    instructions: [persona.identity, INSTRUCTIONS, now, memory?.instructions, persona.user].filter(Boolean).join("\n\n"),
     recalled: memory?.recalled || undefined,
     recallDigest: memory?.digest,
     history,
@@ -276,6 +278,10 @@ export const handleTurn = internalAction({
     attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
     /** Files sent on Telegram, downloaded here before the turn. */
     telegramMedia: v.optional(v.array(vTelegramMedia)),
+    /** Not the owner's words (the greeting after the welcome page): only the reply is saved to the chat. */
+    hidden: v.optional(v.boolean()),
+    /** What the run is listed as in Activity, when the prompt itself is not the owner's. */
+    label: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -339,7 +345,7 @@ export const handleTurn = internalAction({
       const settings = await turnSettings(ctx, conversation);
       const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
         conversationId: conversation._id,
-        prompt: args.text,
+        prompt: args.label ?? args.text,
       });
       if (telegramToken) await sendTyping(telegramToken, args.externalId);
 
@@ -348,9 +354,10 @@ export const handleTurn = internalAction({
           conversationId: conversation._id,
           runId,
           prompt,
-          ...await prepareTurn(ctx, conversation, args.text),
+          ...await prepareTurn(ctx, conversation, args.hidden ? "" : args.text),
           ...settings,
           attachments,
+          ...(args.hidden ? { hidden: true } : {}),
           // The owner's message joins a reply that is running; a job's prompt waits its turn.
           policy: conversation.jobId ? "queue" : "steer",
         });

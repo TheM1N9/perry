@@ -14,7 +14,7 @@ const PRIMARY: SectionId[] = ["tasks"];
 
 /** The Profile page's groups, in order. */
 export const PROFILE_GROUPS: Array<{ label: string; ids: SectionId[] }> = [
-  { label: "About you", ids: ["memory", "connectors"] },
+  { label: "You", ids: ["about", "memory", "connectors"] },
   { label: "What Perry does", ids: ["activity", "computer"] },
   { label: "Configure", ids: ["settings", "keys", "setup"] },
 ];
@@ -93,6 +93,7 @@ export function Sidebar({ dashboardKey, current, onNavigate, onLock, open, onClo
   };
   const onProfile = current === "profile" || underProfile(current);
   const name = status === undefined ? "" : status.ownerName ?? "You";
+  const assistant = status?.assistantName ?? "Perry";
   // Only a Telegram bot that nobody has claimed yet needs pairing; without a bot there is nothing to pair.
   const waiting = Boolean(status?.telegramConfigured && !status.claimed);
 
@@ -101,7 +102,7 @@ export function Sidebar({ dashboardKey, current, onNavigate, onLock, open, onClo
     <aside ref={ref} className={`sidebar ${open ? "open" : ""}`} aria-label="Sidebar">
       <div className="sidebar-top">
         <a className="brand" href="/chat" onClick={(event) => linkClick(event, () => { onNavigate("chat"); onClose(); })}>
-          <span className="brand-mark" aria-hidden="true">P</span><span translate="no">Perry</span>
+          <span className="brand-mark" aria-hidden="true">{assistant.charAt(0).toUpperCase()}</span><span translate="no">{assistant}</span>
         </a>
         <button type="button" className="icon-button sidebar-close" aria-label="Close navigation" onClick={onClose}><Icon name="close" /></button>
       </div>

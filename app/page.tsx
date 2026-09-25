@@ -3,6 +3,7 @@
 import { useConvex, useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "@/convex/_generated/api";
+import { AboutYou } from "./components/AboutYou";
 import { Activity } from "./components/Activity";
 import { Chat } from "./components/Chat";
 import { Computer } from "./components/Computer";
@@ -15,11 +16,12 @@ import { Settings } from "./components/Settings";
 import { Setup } from "./components/Setup";
 import { SECTIONS, Sidebar, linkClick, sectionPath, underProfile, type NavigationState, type SectionId } from "./components/Sidebar";
 import { Tasks } from "./components/Tasks";
+import { Welcome } from "./components/Welcome";
 import { Command, Icon, SecretInput, Spinner, errorText } from "./components/ui";
 
 const STORAGE_KEY = "perry.dashboard.key";
 
-/** The section a path names, or null for the root, which depends on whether a Telegram bot waits to be paired. */
+/** The section a path names, or null for the root, which depends on onboarding and on whether a Telegram bot waits to be paired. */
 function sectionFrom(pathname: string): SectionId | null {
   const first = pathname.split("/")[1] ?? "";
   if (!first) return null;
@@ -96,8 +98,10 @@ function Shell({ dashboardKey, onLock }: { dashboardKey: string; onLock: () => v
   }, []);
 
   const named = sectionFrom(path);
-  // Setup first only while a Telegram bot waits to be claimed; without a bot, Perry is used from here.
-  const active: SectionId | null = named ?? (status ? (status.telegramConfigured && !status.claimed ? "setup" : "chat") : null);
+  // A new install opens on the welcome page; then setup, only while a Telegram bot waits to be claimed; then chat.
+  const active: SectionId | null = named ?? (status
+    ? status.onboarding === "pending" ? "welcome" : status.telegramConfigured && !status.claimed ? "setup" : "chat"
+    : null);
   useEffect(() => {
     if (!named && active) {
       const to = active === "chat" ? "/chat" : sectionPath(active);
@@ -115,6 +119,16 @@ function Shell({ dashboardKey, onLock }: { dashboardKey: string; onLock: () => v
 
   if (active === "chat") {
     return <Chat dashboardKey={dashboardKey} onNavigate={navigate} onLock={onLock} />;
+  }
+
+  // Full screen, before anything else: it ends in the chat it opens, or in chat when skipped.
+  if (active === "welcome") {
+    return <ErrorBoundary onReset={onLock}>
+      <Welcome dashboardKey={dashboardKey} onDone={(chatId) => {
+        if (chatId) window.localStorage.setItem("perry.activeChat", chatId);
+        navigate("chat");
+      }} />
+    </ErrorBoundary>;
   }
 
   const section = SECTIONS.find((item) => item.id === active)!;
@@ -147,6 +161,7 @@ function Shell({ dashboardKey, onLock }: { dashboardKey: string; onLock: () => v
             {active === "tasks" && <Tasks dashboardKey={dashboardKey} />}
             {active === "computer" && <Computer dashboardKey={dashboardKey} />}
             {active === "connectors" && <Connectors dashboardKey={dashboardKey} />}
+            {active === "about" && <AboutYou dashboardKey={dashboardKey} onNavigate={navigate} />}
             {active === "memory" && <Memories dashboardKey={dashboardKey} />}
             {active === "settings" && <Settings dashboardKey={dashboardKey} />}
             {active === "activity" && <Activity dashboardKey={dashboardKey} onOpenChat={openChat} />}
