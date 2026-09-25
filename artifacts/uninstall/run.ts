@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// bun artifacts/uninstall/run.ts <outDir> [branch]
+// bun artifacts/uninstall/run.ts <outDir> [branch] [origin]
 // Runs `perry uninstall` for real, each time on a fresh clone of <branch>
 // (default: the current one, which must be pushed) in a temp folder, with
-// PERRY_HOME in that folder too. On Linux, HOME is a temp folder as well
+// PERRY_HOME in that folder too. Pass the branch and origin where git cannot
+// read this checkout (WSL on a Windows worktree). On Linux, HOME is a temp folder as well
 // (the shell files it cleans), `systemctl` is a stub that only records what
 // it was asked, and the interactive cases run in a real terminal (`script`).
 // On Windows only the flag and no-terminal cases run; the "Perry runner" task
@@ -33,13 +34,13 @@ import { fileURLToPath } from "node:url";
 //   7. The flags do not work without a terminal: --keep-files and
 //      --remove-files must each do their part with no questions.
 
-const [outDir, branchArg] = process.argv.slice(2);
-if (!outDir) throw new Error("usage: bun artifacts/uninstall/run.ts <outDir> [branch]");
+const [outDir, branchArg, originArg] = process.argv.slice(2);
+if (!outDir) throw new Error("usage: bun artifacts/uninstall/run.ts <outDir> [branch] [origin]");
 mkdirSync(outDir, { recursive: true });
 
 const here = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const git = (args: string[], cwd = here) => spawnSync("git", args, { cwd, encoding: "utf8" });
-const origin = git(["remote", "get-url", "origin"]).stdout.trim();
+const origin = originArg ?? git(["remote", "get-url", "origin"]).stdout.trim();
 const branch = branchArg ?? git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.trim();
 const linux = process.platform === "linux";
 const checks: Record<string, boolean> = {};
@@ -51,7 +52,10 @@ function world(): World {
   const root = mkdtempSync(join(tmpdir(), "perry-uninstall-"));
   const repo = join(root, "perry");
   const cloned = git(["clone", "-q", "--depth", "1", "--branch", branch, origin, repo], root);
-  if (cloned.status !== 0) throw new Error(`clone failed: ${cloned.stderr}`);
+  if (cloned.status !== 0) {
+    rmSync(root, { recursive: true, force: true });
+    throw new Error(`clone failed: ${cloned.stderr}`);
+  }
   const home = join(root, ".perry");
   for (const dir of ["bin", "files", "uploads", "skills"]) mkdirSync(join(home, dir), { recursive: true });
   writeFileSync(join(home, "bin", "perry"), "#!/bin/sh\n");
@@ -80,6 +84,8 @@ function plain(w: World, flags: string[] = []) {
   return { code: ran.status, output: `${ran.stdout}${ran.stderr}` };
 }
 
+const clean = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "").replace(/\r/g, "");
+
 /** In a real terminal, answering each prompt as it appears. */
 function terminal(w: World, answers: Array<{ when: RegExp; say: string }>): Promise<{ code: number | null; output: string; asked: number }> {
   const command = cli(w).map((part) => `'${part.replace(/'/g, "'\\''")}'`).join(" ");
@@ -90,7 +96,8 @@ function terminal(w: World, answers: Array<{ when: RegExp; say: string }>): Prom
   const need = answers.map((answer, i) => answers.slice(0, i + 1).filter((other) => other.when.source === answer.when.source).length);
   const onData = (chunk: Buffer) => {
     output += chunk.toString();
-    while (next < answers.length && output.split(answers[next].when).length - 1 >= need[next]) {
+    // Matched without colours, which can sit between the words of a prompt.
+    while (next < answers.length && clean(output).split(answers[next].when).length - 1 >= need[next]) {
       const answer = answers[next++];
       setTimeout(() => child.stdin.write(`${answer.say}\r`), 150);
     }
@@ -101,7 +108,6 @@ function terminal(w: World, answers: Array<{ when: RegExp; say: string }>): Prom
   return new Promise((done) => child.on("close", (code) => { clearTimeout(timer); done({ code, output, asked: next }); }));
 }
 
-const clean = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "").replace(/\r/g, "");
 const intact = (w: World) => existsSync(join(w.repo, "scripts", "perry.ts")) && existsSync(join(w.home, "files", "made.txt")) && existsSync(join(w.home, "bin", "perry"));
 const rcLines = (w: World) => [".bashrc", ".profile"].map((name) => readFileSync(join(w.userHome, name), "utf8"));
 const worlds: World[] = [];

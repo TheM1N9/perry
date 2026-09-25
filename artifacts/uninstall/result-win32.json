@@ -1,0 +1,35 @@
+{
+  "ranAt": "2026-09-25T14:01:40.880Z",
+  "checks": {
+    "noChoiceChangesNothing": true,
+    "keepFilesFlag": true,
+    "removeFilesFlag": true,
+    "keepsCheckoutWithWork": true
+  },
+  "notes": {
+    "platform": "win32",
+    "origin": "https://github.com/TheM1N9/perry.git",
+    "branch": "uninstall-options",
+    "noChoice": [
+      "  Choose one: perry uninstall --keep-files, or perry uninstall --remove-files.",
+      "",
+      ""
+    ],
+    "removeFilesFlag": [
+      "",
+      "  Perry is removed from this computer.",
+      "  Its Convex deployment is still there, with your chats and memory. Delete it at dashboard.convex.dev if you want it gone.",
+      "  Open a new terminal so it no longer has Perry on its PATH.",
+      "",
+      ""
+    ],
+    "dirtyCheckout": [
+      "  remove C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-1xOdAZ\\.perry\\service\\runner.cmd",
+      "  remove C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-1xOdAZ\\.perry\\service\\task.xml",
+      "  Keeping C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-1xOdAZ\\perry: it has changes that are not committed. Delete it yourself if you do not need it.",
+      "  remove C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-1xOdAZ\\.perry  (its data on this computer)",
+      "  Perry is removed from this computer, except its checkout at C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-1xOdAZ\\perry, kept for your work in it."
+    ]
+  },
+  "passed": true
+}
