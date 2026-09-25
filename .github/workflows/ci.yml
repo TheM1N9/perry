@@ -1,5 +1,5 @@
 # Install, typecheck and smoke-test the runner on each OS Perry supports.
-# Needs no secrets: the smoke test (scripts/smoke.ts) uses no deployment and no Codex.
+# Needs no secrets: the smoke test (scripts/smoke.ts) uses no server and no Codex.
 name: CI
 
 on:
