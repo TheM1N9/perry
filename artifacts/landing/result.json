@@ -1,0 +1,166 @@
+{
+  "pass": true,
+  "at": "2026-09-25T22:51:40.494Z",
+  "performance": {
+    "lcpMs": 148,
+    "lcpElement": "P.font-mono text-[14px] text-tea",
+    "jsKb": 189
+  },
+  "checks": [
+    {
+      "name": "the body's font (Inter Tight) is loaded from the site",
+      "pass": true,
+      "detail": {
+        "sans": "interTight",
+        "mono": "jetbrains",
+        "loaded": [
+          "interTight",
+          "interTight Fallback",
+          "jetbrains"
+        ]
+      }
+    },
+    {
+      "name": "the terminal's font (JetBrains Mono) is loaded from the site",
+      "pass": true,
+      "detail": {
+        "sans": "interTight",
+        "mono": "jetbrains",
+        "loaded": [
+          "interTight",
+          "interTight Fallback",
+          "jetbrains"
+        ]
+      }
+    },
+    {
+      "name": "hero: tapping suggestion 1 gets Perry's answer",
+      "pass": true
+    },
+    {
+      "name": "hero: tapping suggestion 2 gets Perry's answer",
+      "pass": true
+    },
+    {
+      "name": "hero: tapping suggestion 3 gets Perry's answer",
+      "pass": true
+    },
+    {
+      "name": "hero: tapped suggestions go away",
+      "pass": true
+    },
+    {
+      "name": "every in-page link has its target",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "day: at 07:00 the phone shows the morning brief",
+      "pass": true
+    },
+    {
+      "name": "day: at 10:14 Perry has filed the invoices",
+      "pass": true
+    },
+    {
+      "name": "day: at 14:30 Perry asks before deleting",
+      "pass": true
+    },
+    {
+      "name": "day: approving gets the branches deleted",
+      "pass": true
+    },
+    {
+      "name": "day: by 18:00 the phone's clock and chat have moved on",
+      "pass": true
+    },
+    {
+      "name": "night: the 02:13 alert arrives while Perry sleeps",
+      "pass": true
+    },
+    {
+      "name": "after scrolling through, nothing in <main> is left invisible",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "text contrast meets AA (123 text nodes)",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "mascot: his eyes follow the pointer",
+      "pass": true,
+      "detail": {
+        "centred": "100",
+        "right": "103.99890853935958",
+        "left": "96.00470312881357"
+      }
+    },
+    {
+      "name": "mascot: poking him gets a line out of him",
+      "pass": true
+    },
+    {
+      "name": "mascot: the closing one says hello when it comes into view",
+      "pass": true
+    },
+    {
+      "name": "copy hands over the clone and setup commands",
+      "pass": true,
+      "detail": "git clone https://github.com/TheM1N9/perry.git perry && cd perry\npnpm install && pnpm run setup"
+    },
+    {
+      "name": "no horizontal overflow at 1440px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "no horizontal overflow at 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "no horizontal overflow at 768px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "no horizontal overflow at 375px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "404: Perry's own page, with the mascot",
+      "pass": true
+    },
+    {
+      "name": "reduced motion: the hero's chat still answers",
+      "pass": true
+    },
+    {
+      "name": "phone: the 14:30 card takes a Deny",
+      "pass": true
+    },
+    {
+      "name": "reduced motion: nothing in <main> is left invisible",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "text contrast meets AA on a phone",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "every request stays on the page's own origin",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "no page errors or hydration mismatches",
+      "pass": true,
+      "detail": []
+    }
+  ]
+}
