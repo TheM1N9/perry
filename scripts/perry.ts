@@ -391,7 +391,9 @@ async function uninstall(args: string[]): Promise<boolean> {
   process.chdir(homedir());
   unlinkPath();
   const removed = [unsaved ? true : removeFolder(REPO, "Perry itself"), removeFolder(HOME, "its data on this computer")].every(Boolean);
-  say(removed ? `\n  ${green("Perry is removed from this computer.")}` : `\n  ${yellow("Perry is mostly removed; see above for what is left.")}`);
+  say(!removed ? `\n  ${yellow("Perry is mostly removed; see above for what is left.")}`
+    : unsaved ? `\n  ${green("Perry is removed from this computer,")} except its checkout at ${REPO}, kept for your work in it.`
+      : `\n  ${green("Perry is removed from this computer.")}`);
   say(dim(`  Its Convex deployment is still there, with your chats and memory. Delete it at dashboard.convex.dev if you want it gone.`));
   say(dim(`  Open a new terminal so it no longer has Perry on its PATH.\n`));
   return removed;
