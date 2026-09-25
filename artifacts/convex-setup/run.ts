@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 
 // bun artifacts/convex-setup/run.ts <outDir>
 // Setup's first step, Convex, without the Convex CLI's own onboarding. The
@@ -38,6 +38,20 @@ import { join, resolve } from "node:path";
 //  11. A token Telegram rejects ends setup: it must say so and ask again,
 //      and Enter must still skip. (A made-up token, checked against Telegram's
 //      real getMe; no real bot is touched.)
+//
+// Codex is signed in during setup (step 3), since every reply is a Codex turn
+// and a first chat must not start without it. Against a stand-in Codex CLI:
+//  12. Someone signed in is asked again: no login call.
+//  13. Sign-in is only reported, not done: signed out, `codex login` must run
+//      and the status be checked again.
+//  14. A browser sign-in that does not finish strands them: setup must fall
+//      back to `codex login --device-auth`.
+//  15. No browser to open (a server, or over SSH): straight to --device-auth,
+//      never the browser flow.
+//  16. A failed sign-in stops setup, or passes silently: setup must finish,
+//      saying Perry cannot answer until Codex is signed in, and how.
+//  17. Codex missing is waved through: setup must stop with how to install
+//      it, before anything is pushed to the deployment.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/convex-setup/run.ts <outDir>");
@@ -87,7 +101,26 @@ function runSetup(dir: string, env: NodeJS.ProcessEnv, answers: Record<string, s
   });
 }
 
-async function scenario(name: string, opts: { loggedIn: boolean; teams: string[]; envFile?: string; answers: Record<string, string>; fail?: boolean }) {
+/** A stand-in for the Codex CLI: records its arguments, and signs in only as the scenario says. */
+const CODEX_STUB = `
+const fs = require("fs");
+const args = process.argv.slice(2);
+const state = process.env.CODEX_STATE;
+fs.appendFileSync(process.env.CODEX_LOG, JSON.stringify(args) + "\\n");
+if (process.env.CODEX_MISSING) { console.error("'codex' is not recognized as an internal or external command"); process.exit(1); }
+const signedIn = fs.existsSync(state + "/codex-signed-in");
+if (args[0] === "--version") console.log("codex-cli 9.9.9");
+else if (args[0] === "login" && args[1] === "status") { if (signedIn) console.log("Logged in using ChatGPT"); else { console.log("Not logged in"); process.exit(1); } }
+else if (args[0] === "login" && args[1] === "--device-auth") {
+  console.log("Visit https://auth.openai.com/codex/device and enter ABCD-1234");
+  if (process.env.CODEX_DEVICE_OK) fs.writeFileSync(state + "/codex-signed-in", ""); else process.exit(1);
+} else if (args[0] === "login") {
+  if (process.env.CODEX_BROWSER_OK) fs.writeFileSync(state + "/codex-signed-in", ""); else { console.error("Login was not completed"); process.exit(1); }
+}
+`;
+type CodexState = { signedIn?: boolean; browserOk?: boolean; deviceOk?: boolean; missing?: boolean };
+
+async function scenario(name: string, opts: { loggedIn: boolean; teams: string[]; envFile?: string; answers: Record<string, string>; fail?: boolean; codex?: CodexState; env?: Record<string, string> }) {
   const dir = mkdtempSync(join(tmpdir(), `perry-convex-${name}-`));
   cpSync(join(repo, "scripts"), join(dir, "scripts"), { recursive: true });
   cpSync(join(repo, "runner"), join(dir, "runner"), { recursive: true });
@@ -96,16 +129,33 @@ async function scenario(name: string, opts: { loggedIn: boolean; teams: string[]
   mkdirSync(join(dir, "state"));
   if (opts.loggedIn) writeFileSync(join(dir, "state", "logged-in"), "");
   if (opts.envFile) writeFileSync(join(dir, ".env.local"), opts.envFile);
+  // The stand-in Codex goes first on PATH, so the real one is never asked; signed in unless the scenario says not.
+  const codex: CodexState = { signedIn: true, ...opts.codex };
+  const bin = join(dir, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "codex-stub.js"), CODEX_STUB);
+  writeFileSync(join(bin, "codex.cmd"), `@"${process.execPath}" "${join(bin, "codex-stub.js")}" %*\r\n`);
+  writeFileSync(join(bin, "codex"), `#!/bin/sh\nexec "${process.execPath}" "${join(bin, "codex-stub.js")}" "$@"\n`, { mode: 0o755 });
+  if (codex.signedIn) writeFileSync(join(dir, "state", "codex-signed-in"), "");
+  const codexLog = join(dir, "codex.jsonl");
+  const pathKey = Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
   const log = join(dir, "calls.jsonl");
-  const ran = await runSetup(dir, { ...process.env, STUB_LOG: log, STUB_STATE: join(dir, "state"), STUB_TEAMS: opts.teams.join(","), PERRY_NO_BROWSER: "1", PERRY_HOME: join(dir, "home"), ...(opts.fail ? { STUB_FAIL: "1" } : {}) }, opts.answers);
+  const ran = await runSetup(dir, {
+    ...process.env, [pathKey]: `${bin}${delimiter}${process.env[pathKey] ?? ""}`,
+    STUB_LOG: log, STUB_STATE: join(dir, "state"), STUB_TEAMS: opts.teams.join(","), PERRY_NO_BROWSER: "1", PERRY_HOME: join(dir, "home"),
+    CODEX_LOG: codexLog, CODEX_STATE: join(dir, "state"),
+    ...(codex.browserOk ? { CODEX_BROWSER_OK: "1" } : {}), ...(codex.deviceOk ? { CODEX_DEVICE_OK: "1" } : {}), ...(codex.missing ? { CODEX_MISSING: "1" } : {}),
+    ...(opts.fail ? { STUB_FAIL: "1" } : {}), ...opts.env,
+  }, opts.answers);
+  const codexCalls: string[] = existsSync(codexLog) ? readFileSync(codexLog, "utf8").trim().split("\n").filter(Boolean).map((line) => (JSON.parse(line) as string[]).join(" ")) : [];
   const output = ran.output.replace(/\x1b\[[0-9;]*m/g, "");
   const calls: Call[] = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)) : [];
   const envAfter = existsSync(join(dir, ".env.local")) ? readFileSync(join(dir, ".env.local"), "utf8") : "";
   rmSync(dir, { recursive: true, force: true });
   // Values set on the deployment are generated secrets, even in a scratch run, so the record shows only their names.
   const shown = calls.map((c) => c.args[0] === "env" && c.args[1] === "set" ? { ...c, args: [...c.args.slice(0, 3), "<value>"] } : c);
-  writeFileSync(join(outDir, `${name}.txt`), `${output.replace(/dashboard key: \S+/g, "dashboard key: <key>")}\n--- calls ---\n${shown.map((c) => JSON.stringify(c)).join("\n")}\n`);
-  return { code: ran.status, output, calls, shown, envAfter };
+  writeFileSync(join(outDir, `${name}.txt`), `${output.replace(/dashboard key: \S+/g, "dashboard key: <key>")}\n--- calls ---\n${shown.map((c) => JSON.stringify(c)).join("\n")}\n--- codex ---\n${codexCalls.join("\n")}\n`);
+  return { code: ran.status, output, calls, shown, envAfter, codexCalls };
 }
 const creation = (calls: Call[]) => calls.find((c) => c.args[0] === "dev" && c.args.includes("--configure"));
 const flag = (call: Call | undefined, name: string) => call ? call.args[call.args.indexOf(name) + 1] : undefined;
@@ -161,6 +211,30 @@ checks.noHalfBot = !setKeys.includes("TELEGRAM_BOT_TOKEN") && !/TELEGRAM_BOT_TOK
 checks.botCanBeAddedLater = setKeys.includes("TELEGRAM_WEBHOOK_SECRET") && setKeys.includes("DASHBOARD_KEY") && /TELEGRAM_WEBHOOK_SECRET=[0-9a-f]{64}/.test(skipped.envAfter) && /DASHBOARD_KEY=\S{20,}/.test(skipped.envAfter);
 checks.settingsRowMade = skipped.calls.some((c) => c.args[0] === "run" && c.args[1] === "installation:ensure");
 checks.rejectedTokenAsksAgain = skipped.output.includes("Telegram rejected that token") && (skipped.output.match(/Bot token, or Enter to skip/g) ?? []).length === 2;
+
+// 12 to 17. Codex sign-in, each with Telegram skipped and Convex already set up.
+const codexScenario = (name: string, codex: CodexState, env: Record<string, string> = {}) =>
+  scenario(name, { loggedIn: true, teams: ["only"], envFile: cloudFile, answers: { "Enter to skip": "\n" }, codex, env });
+const logins = (calls: string[]) => calls.filter((c) => c.startsWith("login") && c !== "login status");
+
+const already = await codexScenario("codex-signed-in", { signedIn: true });
+checks.signedInNotAskedAgain = logins(already.codexCalls).length === 0 && /codex 9\.9\.9, signed in using ChatGPT/.test(already.output);
+
+const browser = await codexScenario("codex-browser", { signedIn: false, browserOk: true });
+notes.codexBrowserCalls = browser.codexCalls;
+checks.signsInWithBrowser = JSON.stringify(logins(browser.codexCalls)) === JSON.stringify(["login"]) && browser.output.includes("browser window that opens") && /signed in using chatgpt/i.test(browser.output);
+
+const fallback = await codexScenario("codex-device-fallback", { signedIn: false, deviceOk: true });
+checks.fallsBackToDeviceCode = JSON.stringify(logins(fallback.codexCalls)) === JSON.stringify(["login", "login --device-auth"]) && fallback.output.includes("did not finish; signing in with a code") && /signed in using chatgpt/i.test(fallback.output);
+
+const headless = await codexScenario("codex-headless", { signedIn: false, deviceOk: true }, { SSH_CONNECTION: "203.0.113.5 50000 203.0.113.9 22" });
+checks.headlessUsesDeviceCode = JSON.stringify(logins(headless.codexCalls)) === JSON.stringify(["login --device-auth"]) && headless.output.includes("No browser here");
+
+const unsigned = await codexScenario("codex-not-signed-in", { signedIn: false });
+checks.failedSignInExplained = unsigned.code === 0 && unsigned.output.includes("Codex is not signed in, so Perry cannot answer yet") && unsigned.output.includes("[5/5]");
+
+const missing = await codexScenario("codex-missing", { missing: true });
+checks.missingCodexStops = missing.code === 1 && missing.output.includes("Codex is not installed here") && !missing.calls.some((c) => c.args[0] === "env");
 
 const result = { ranAt: new Date().toISOString(), checks, notes, passed: Object.values(checks).every(Boolean) };
 writeFileSync(join(outDir, "result.json"), `${JSON.stringify(result, null, 2)}\n`);

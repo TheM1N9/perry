@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-25T05:57:37.281Z",
+  "ranAt": "2026-09-25T06:13:05.221Z",
   "checks": {
     "realCliMakesNoLocalDeployment": true,
     "endsInTheCloud": true,
@@ -15,7 +15,13 @@
     "noHalfBot": true,
     "botCanBeAddedLater": true,
     "settingsRowMade": true,
-    "rejectedTokenAsksAgain": true
+    "rejectedTokenAsksAgain": true,
+    "signedInNotAskedAgain": true,
+    "signsInWithBrowser": true,
+    "fallsBackToDeviceCode": true,
+    "headlessUsesDeviceCode": true,
+    "failedSignInExplained": true,
+    "missingCodexStops": true
   },
   "notes": {
     "realCli": [
@@ -38,6 +44,12 @@
       "env set DASHBOARD_KEY <value>",
       "dev --once",
       "run installation:ensure {}"
+    ],
+    "codexBrowserCalls": [
+      "--version",
+      "login status",
+      "login",
+      "login status"
     ]
   },
   "passed": true

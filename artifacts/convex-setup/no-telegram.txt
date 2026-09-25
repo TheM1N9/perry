@@ -18,13 +18,12 @@ on whatever you connect. Only you will be able to talk to it.
   Bot token, or Enter to skip:   Skipped: Perry is yours from the dashboard. Add a bot on the Keys page whenever you like.
 
 [3/5] Codex
-  Perry thinks with your ChatGPT subscription, through the Codex CLI on
-  this machine. Sign in to Codex from the dashboard's Settings page.
-  codex codex-cli 0.156.1, signed in
+  Perry thinks with your ChatGPT subscription, through the Codex CLI on this machine.
+  codex 9.9.9, signed in using ChatGPT
 
 [4/5] Pushing config
   wrote .env.local
-  home C:\Users\Pranav\AppData\Local\Temp\perry-convex-no-telegram-ouFdTc\home
+  home C:\Users\Pranav\AppData\Local\Temp\perry-convex-no-telegram-p7vATo\home
   set TELEGRAM_WEBHOOK_SECRET
   set DASHBOARD_KEY
   pushed functions
@@ -44,3 +43,6 @@ Next
 {"args":["env","set","DASHBOARD_KEY","<value>"],"allowAnonymous":"false","deploymentInEnv":"dev:happy-otter-123","stdinIsTTY":false}
 {"args":["dev","--once"],"allowAnonymous":"false","deploymentInEnv":"dev:happy-otter-123","stdinIsTTY":false}
 {"args":["run","installation:ensure","{}"],"allowAnonymous":"false","deploymentInEnv":"dev:happy-otter-123","stdinIsTTY":false}
+--- codex ---
+--version
+login status

@@ -1,0 +1,26 @@
+
+Perry setup
+Your deployment, your bot, your keys, your data.
+Perry can read and write your memory, and in Agent P mode it can act
+on whatever you connect. Only you will be able to talk to it.
+
+[1/5] Convex deployment
+  already configured: dev:happy-otter-123
+  webhook host: https://happy-otter-123.convex.site
+
+[2/5] Telegram bot (optional)
+  Talk to Perry from Telegram too, or only from the dashboard. For Telegram:
+  message @BotFather, send /newbot, answer two questions, and paste the
+  token it gives you (like 8123456789:AAH...). You can add one later on the Keys page.
+
+  Bot token, or Enter to skip:   Skipped: Perry is yours from the dashboard. Add a bot on the Keys page whenever you like.
+
+[3/5] Codex
+  Perry thinks with your ChatGPT subscription, through the Codex CLI on this machine.
+  Codex is not installed here. Install it with: npm i -g @openai/codex
+  Then run setup again.
+
+--- calls ---
+
+--- codex ---
+--version
