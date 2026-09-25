@@ -188,14 +188,41 @@ async function main() {
   // --- 3. Codex -------------------------------------------------------------
   step(3, TOTAL, "Codex");
 
-  say(dim("  Perry thinks with your ChatGPT subscription, through the Codex CLI on"));
-  say(dim("  this machine. Sign in to Codex from the dashboard's Settings page."));
+  // Every reply is a Codex turn on this machine, so a first chat needs Codex signed in before it starts.
+  say(dim("  Perry thinks with your ChatGPT subscription, through the Codex CLI on this machine."));
   const codex = await runCodex(["--version"]);
   if (codex.code !== 0) {
-    say(yellow(`  Codex is not installed here yet. Install it with: ${INSTALL_HINTS.codex}`));
+    say(yellow(`  Codex is not installed here. Install it with: ${INSTALL_HINTS.codex}`));
+    say(yellow("  Then run setup again."));
+    process.exit(1);
+  }
+  const version = (codex.output.trim().split(/\r?\n/).at(-1) ?? "").replace(/^codex-cli\s+/, "");
+  // `codex login status` exits 0 and says "Logged in using ChatGPT" (or an API key) once signed in.
+  const codexStatus = async () => {
+    const ran = await runCodex(["login", "status"]);
+    return ran.code === 0 && /Logged in/i.test(ran.output) ? ran.output.trim().split(/\r?\n/).at(-1) ?? "" : null;
+  };
+  let signedIn = await codexStatus();
+  if (!signedIn) {
+    // No display to open a browser on (a server, or over SSH): Codex's device code, entered on any device.
+    const headless = Boolean(process.env.SSH_CONNECTION || process.env.SSH_TTY) || (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY);
+    rl.pause();
+    if (!headless) {
+      say(dim("  Sign in with your ChatGPT account in the browser window that opens.\n"));
+      await runCodex(["login"], { quiet: false });
+      signedIn = await codexStatus();
+    }
+    if (!signedIn) {
+      say(dim(`\n  ${headless ? "No browser here" : "The browser sign-in did not finish"}; signing in with a code instead.\n`));
+      await runCodex(["login", "--device-auth"], { quiet: false });
+      signedIn = await codexStatus();
+    }
+    rl.resume();
+  }
+  if (signedIn) {
+    say(`  ${green("codex")} ${version}${dim(`, ${signedIn.replace(/^Logged in/i, "signed in")}`)}`);
   } else {
-    const login = await runCodex(["login", "status"]);
-    say(`  ${green("codex")} ${codex.output.trim().split(/\r?\n/).at(-1)}${login.code === 0 ? dim(", signed in") : dim(", not signed in yet")}`);
+    say(yellow(`  Codex is not signed in, so Perry cannot answer yet. Run ${bold("codex login")}, or sign in from the dashboard's Settings page.`));
   }
 
   // --- 4. Secrets and deploy ----------------------------------------------

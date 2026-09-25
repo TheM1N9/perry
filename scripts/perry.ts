@@ -397,8 +397,10 @@ async function setup() {
   link();
   say(`\n${bold("Dashboard")}`);
   await open();
-  say(dim(`\n  Sign in to Codex on the dashboard's Settings page if it asks.`));
-  say(dim(`  perry status | logs | stop | start | open | update | doctor\n`));
+  const { runCodex } = await import("./lib");
+  const codex = await runCodex(["login", "status"]);
+  if (codex.code !== 0) say(yellow(`\n  Codex is not signed in yet, so Perry cannot answer: run ${bold("codex login")}, or sign in from the dashboard's Settings page.`));
+  say(dim(`\n  perry status | logs | stop | start | open | update | doctor\n`));
 }
 
 async function update() {

@@ -83,8 +83,11 @@ that runs the CLI from your checkout whatever folder you are in. Codex works in
    job results and page-watch alerts stay in the dashboard (a job's results in
    its own chat) rather than reaching you as messages.
 3. **Codex.** Perry thinks with your ChatGPT subscription, through the
-   [Codex CLI](https://github.com/openai/codex) on your machine. Sign in to
-   Codex from the dashboard's Settings page once Perry is running.
+   [Codex CLI](https://github.com/openai/codex) on your machine, so it signs
+   you in now, before the first chat needs it: `codex login` in the browser,
+   or a device code where there is no browser (a server, or over SSH). If
+   you are already signed in, it says so and moves on. Setup stops if Codex
+   is not installed. The dashboard's Settings page can sign in too.
 4. **Secrets and deploy.** Generates a webhook secret and a dashboard key,
    writes them to a gitignored `.env.local`, sets them on your deployment,
    pushes the code, and registers the webhook if there is a bot.
