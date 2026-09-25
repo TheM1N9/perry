@@ -1,7 +1,7 @@
-import { createThread, listMessages, saveMessages } from "@convex-dev/agent";
+import { createThread, deleteMessages, deleteThread, listMessages, saveMessages, searchMessages } from "./lib/agent";
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { components, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, mutation, query, type MutationCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
@@ -89,7 +89,7 @@ export const createChat = mutation({
   args: { key: vKey },
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
-    const threadId = await createThread(ctx, components.agent, { userId: "web:dashboard", title: "New chat" });
+    const threadId = await createThread(ctx, { userId: "web:dashboard", title: "New chat" });
     return await ctx.db.insert("conversations", {
       channel: WEB_CHANNEL,
       externalId: `session:${threadId}`,
@@ -144,9 +144,7 @@ export const deleteChat = mutation({
     }
     await ctx.runMutation(internal.codex.pruneOrphans, { conversationId: args.id });
     await ctx.db.delete(args.id);
-    await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
-      threadId: chat.threadId,
-    });
+    await deleteThread(ctx, chat.threadId);
     return null;
   },
 });
@@ -161,7 +159,7 @@ export const branchChat = action({
     let cursor: string | null = null;
     let found = false;
     while (true) {
-      const page = await listMessages(ctx, components.agent, {
+      const page = await listMessages(ctx, {
         threadId: source.threadId,
         excludeToolMessages: true,
         paginationOpts: { cursor, numItems: 100 },
@@ -178,7 +176,7 @@ export const branchChat = action({
     if (!found) throw new Error("That message is no longer available to branch.");
 
     const title = `${source.title ?? "Chat"} · branch`.slice(0, 100);
-    const threadId = await createThread(ctx, components.agent, { userId: "web:dashboard", title });
+    const threadId = await createThread(ctx, { userId: "web:dashboard", title });
     const history = newest.reverse()
       .filter((message) =>
         (message.message?.role === "user" || message.message?.role === "assistant") &&
@@ -186,7 +184,7 @@ export const branchChat = action({
       );
     try {
       for (let start = 0; start < history.length; start += 100) {
-        await saveMessages(ctx, components.agent, {
+        await saveMessages(ctx, {
           threadId,
           userId: "web:dashboard",
           order: "next",
@@ -214,7 +212,7 @@ export const branchChat = action({
       });
       return branchId;
     } catch (error) {
-      await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, { threadId });
+      await deleteThread(ctx, threadId);
       throw error;
     }
   },
@@ -228,15 +226,9 @@ export const searchChats = action({
     if (!needle) return [];
     const [chats, messages] = await Promise.all([
       ctx.runQuery(internal.conversations.listWeb, {}),
-      ctx.runAction(components.agent.messages.searchMessages, {
-        searchAllMessagesForUserId: "web:dashboard",
-        text: args.search.trim(),
-        textSearch: true,
-        vectorSearch: false,
-        limit: 100,
-      }),
+      searchMessages(ctx, { userId: "web:dashboard", text: args.search.trim(), limit: 100 }),
     ]);
-    const snippets = new Map(messages.map((message) => [message.threadId, message.text ?? ""]));
+    const snippets = new Map<string, string>(messages.map((message) => [message.threadId, message.text ?? ""]));
     return chats.filter((chat) =>
       (chat.title ?? "").toLocaleLowerCase().includes(needle) || snippets.has(chat.threadId),
     ).slice(0, 30).map((chat) => ({
@@ -285,7 +277,7 @@ export const getChatMessages = query({
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const conversation = webChat(await ctx.db.get(args.id));
-    const page = await listMessages(ctx, components.agent, {
+    const page = await listMessages(ctx, {
       threadId: conversation.threadId,
       excludeToolMessages: true,
       paginationOpts: args.paginationOpts,
@@ -456,7 +448,7 @@ export const rewindChat = action({
     let target: (typeof newest)[number] | undefined;
     let sent: (typeof newest)[number] | undefined;
     while (!sent) {
-      const page = await listMessages(ctx, components.agent, { threadId: chat.threadId, paginationOpts: { cursor, numItems: 100 } });
+      const page = await listMessages(ctx, { threadId: chat.threadId, paginationOpts: { cursor, numItems: 100 } });
       for (const message of page.page) {
         newest.push(message);
         if (message._id === args.messageId) target = message;
@@ -481,7 +473,7 @@ export const rewindChat = action({
     await ctx.runMutation(internal.conversations.rewind, { id: chat._id });
     const replaced = newest.filter((message) => message.order >= sent!.order).map((message) => message._id);
     for (let start = 0; start < replaced.length; start += 100) {
-      await ctx.runMutation(components.agent.messages.deleteByIds, { messageIds: replaced.slice(start, start + 100) });
+      await deleteMessages(ctx, replaced.slice(start, start + 100));
     }
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
       channel: WEB_CHANNEL,
@@ -792,7 +784,7 @@ async function startWelcomeChat(
   ctx: MutationCtx,
   options: { title: string; prompt: string; label: string },
 ): Promise<Id<"conversations">> {
-  const threadId = await createThread(ctx, components.agent, { userId: "web:dashboard", title: options.title });
+  const threadId = await createThread(ctx, { userId: "web:dashboard", title: options.title });
   const id = await ctx.db.insert("conversations", {
     channel: WEB_CHANNEL,
     externalId: `session:${threadId}`,
@@ -1233,62 +1225,22 @@ export const clearKey = mutation({
 });
 
 /**
- * Re-point Telegram at this deployment after the bot token or webhook secret
- * changes, so a key edit does not silently leave the bot talking to nothing.
+ * Whether the saved bot token works. Perry polls Telegram with it on its own
+ * (server/telegram.ts), so there is nothing to register; this only asks
+ * Telegram who the bot is, so a wrong token shows up here and not as silence.
  */
-export const registerWebhook = action({
+export const checkBot = action({
   args: { key: vKey },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{ ok: boolean; url?: string; bot?: string; error?: string }> => {
+  handler: async (ctx, args): Promise<{ ok: boolean; bot?: string; error?: string }> => {
     assertDashboardKey(args.key);
-
-    const token: string | null = await ctx.runQuery(internal.secrets.get, {
-      name: "TELEGRAM_BOT_TOKEN",
-    });
-    const secret: string | null = await ctx.runQuery(internal.secrets.get, {
-      name: "TELEGRAM_WEBHOOK_SECRET",
-    });
+    const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
     if (!token) return { ok: false, error: "No bot token set." };
-    if (!secret) return { ok: false, error: "No webhook secret set." };
-
-    const site = process.env.CONVEX_SITE_URL;
-    if (!site) {
-      return { ok: false, error: "Could not work out this deployment URL." };
-    }
-
     try {
-      const url = `${site}/telegram`;
-      const res = await fetch(
-        `https://api.telegram.org/bot${token}/setWebhook`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            url,
-            secret_token: secret,
-            allowed_updates: ["message", "edited_message", "callback_query"],
-            drop_pending_updates: true,
-          }),
-        },
-      );
-      const body = (await res.json()) as { ok?: boolean; description?: string };
-      if (!body.ok) {
-        return { ok: false, error: body.description ?? "Telegram refused it." };
-      }
-
-      const me = await fetch(`https://api.telegram.org/bot${token}/getMe`).then(
-        (r) => r.json() as Promise<{ result?: { username?: string } }>,
-        () => ({}) as { result?: { username?: string } },
-      );
-
-      return { ok: true, url, bot: me.result?.username };
+      const me = await fetch(`${(process.env.TELEGRAM_API_BASE || "https://api.telegram.org").replace(/\/+$/, "")}/bot${token}/getMe`)
+        .then((r) => r.json() as Promise<{ ok?: boolean; description?: string; result?: { username?: string } }>);
+      return me.ok ? { ok: true, bot: me.result?.username } : { ok: false, error: me.description ?? "Telegram refused the token." };
     } catch (error) {
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
   },
 });

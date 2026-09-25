@@ -9,22 +9,15 @@
  * runner and its service), for a second machine with no .env.local.
  */
 
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { platform, release, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { sandboxMode } from "../runner/codex";
-import { readRunnerConfig } from "../runner/home";
-import { dim, green, INSTALL_HINTS, red, runCodex, runConvex, yellow } from "./lib";
+import { HOME, readRunnerConfig } from "../runner/home";
+import { dim, green, INSTALL_HINTS, red, runCodex, yellow } from "./lib";
 import { serviceState } from "./service";
 
-/**
- * Call the Convex CLI through this same Node binary rather than npx.
- * Windows refuses to spawn a .cmd without a shell, and a shell needs quoting,
- * and quoting secrets on a command line is how secrets get mangled.
- */
-
 const ENV_FILE = resolve(process.cwd(), ".env.local");
-
 
 let failures = 0;
 
@@ -79,17 +72,13 @@ async function checkMachine() {
 
   const runner = readRunnerConfig();
   if (runner.url && runner.token) ok("runner", `${runner.name ?? "this machine"}, working in ${runner.dir ?? "the folder it starts in"}`);
-  else warn("runner", "not connected. Run: pnpm run connect");
+  else warn("runner", "not connected yet; Perry's server connects it when it starts (perry start)");
 
   const service = serviceState();
   if (service.running) ok("background service", service.detail);
   else if (service.installed) warn("background service", `${service.detail}. Run: pnpm run service start`);
   else note("background service", "not installed (optional): pnpm run service install");
 }
-
-
-
-/** The Convex CLI, run in-process by path. */
 
 async function main() {
   console.log("");
@@ -106,86 +95,44 @@ async function main() {
     ok(".env.local");
   }
 
-  const cloudUrl = env.NEXT_PUBLIC_CONVEX_URL;
-  if (cloudUrl) ok("convex url", cloudUrl);
-  else bad("convex url", "NEXT_PUBLIC_CONVEX_URL not set. Run: pnpm run setup");
+  if (env.DASHBOARD_KEY) ok("dashboard key");
+  else bad("dashboard key", "DASHBOARD_KEY not set in .env.local. Run: perry setup");
 
-  // Deployment env vars
-  const list = await runConvex(["env", "list"]);
-  if (list.code !== 0) {
-    bad("convex deployment", "cannot reach it. Is `pnpm exec convex dev` configured?");
-  } else {
-    const names = new Set(
-      list.output
-        .split("\n")
-        .map((l) => l.split("=")[0].trim())
-        .filter(Boolean),
-    );
-    for (const required of ["TELEGRAM_WEBHOOK_SECRET", "DASHBOARD_KEY"]) {
-      if (names.has(required)) ok(`env ${required}`);
-      else bad(`env ${required}`, "not set. Run: perry setup");
-    }
-    // Telegram is optional: without a bot, Perry is used from the dashboard.
-    if (names.has("TELEGRAM_BOT_TOKEN")) ok("env TELEGRAM_BOT_TOKEN");
-    else ok("env TELEGRAM_BOT_TOKEN", "not set: Telegram is off (optional; a bot saved on the Keys page is not checked here)");
-  }
+  // Perry's server: the dashboard and the backend, one process.
+  const port = Number(env.PERRY_PORT ?? 3000);
+  const health = await fetch(`http://127.0.0.1:${port}/api/backend/http/health`).then((r) => (r.ok ? r.json() : null), () => null);
+  if (health?.ok) ok("perry server", `http://127.0.0.1:${port}`);
+  else bad("perry server", "not answering. Run: perry start");
 
-  // HTTP actions reachable
-  const siteUrl = env.CONVEX_SITE_URL || cloudUrl?.replace(".convex.cloud", ".convex.site");
-  if (siteUrl) {
-    const health = await fetch(`${siteUrl}/health`).then(
-      (r) => (r.ok ? r.json() : null),
-      () => null,
-    );
-    if (health?.ok) ok("http actions", `${siteUrl}/health`);
-    else bad("http actions", "not answering. Run: pnpm exec convex dev --once");
-  }
+  const database = join(HOME, "perry.sqlite");
+  if (existsSync(database)) ok("data", `${database} (${Math.round(statSync(database).size / 1024)} KB)`);
+  else warn("data", `no database yet in ${HOME}; the server makes it when it starts`);
+  if (env.CONVEX_DEPLOYMENT) warn("convex", "this install still names a Convex deployment. Run: perry migrate");
 
-  // Telegram webhook
+  // Telegram, which Perry polls: a webhook left from before stops that until the server removes it.
   const token = env.TELEGRAM_BOT_TOKEN;
   if (!token) {
-    ok("telegram", "not set up; Perry is used from the dashboard");
+    ok("telegram", "not set up; Perry is used from the dashboard (a bot saved on the Keys page is not checked here)");
   } else {
-    const me = await fetch(`https://api.telegram.org/bot${token}/getMe`).then(
-      (r) => r.json(),
-      () => null,
-    );
+    const me = await fetch(`https://api.telegram.org/bot${token}/getMe`).then((r) => r.json(), () => null);
     if (me?.ok) ok("telegram bot", `@${me.result.username}`);
     else bad("telegram bot", me?.description ?? "no response");
-
-    const info = await fetch(
-      `https://api.telegram.org/bot${token}/getWebhookInfo`,
-    ).then((r) => r.json(), () => null);
-
-    if (!info?.ok) {
-      bad("webhook", "could not read it");
-    } else if (!info.result.url) {
-      bad("webhook", "not registered. Run: pnpm run webhook:set");
-    } else {
-      ok("webhook", info.result.url);
-      if (info.result.last_error_message) {
-        warn("webhook delivery", info.result.last_error_message);
-      }
-      if (info.result.pending_update_count > 0) {
-        warn("webhook queue", `${info.result.pending_update_count} pending`);
-      }
-    }
+    const info = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`).then((r) => r.json(), () => null);
+    if (info?.ok && info.result.url) warn("telegram", "a webhook is still set; Perry removes it when its server starts");
+    else if (info?.ok) ok("telegram", info.result.pending_update_count ? `polling; ${info.result.pending_update_count} messages waiting` : "polling");
   }
 
-  // Ownership
-  const status = await runConvex(["run", "installation:status", "{}"]);
-  if (status.code !== 0) {
-    warn("ownership", "could not read");
-  } else if (/"claimed":\s*true/.test(status.output)) {
-    ok("ownership", "claimed");
-  } else if (!token) {
-    ok("ownership", "the dashboard key; there is no bot to claim");
-  } else {
-    const code = status.output.match(/"pairingCode":\s*"(\d{6})"/)?.[1];
-    warn(
-      "ownership",
-      code ? `unclaimed. Send ${code} to your bot.` : "unclaimed. Run: pnpm run pair",
-    );
+  // Ownership, from the running server.
+  if (health?.ok && env.DASHBOARD_KEY) {
+    const status = await fetch(`http://127.0.0.1:${port}/api/backend/admin`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-perry-key": env.DASHBOARD_KEY },
+      body: JSON.stringify({ path: "installation:status", args: {} }),
+    }).then((r) => r.json(), () => null) as { value?: { claimed: boolean; pairingCode?: string } } | null;
+    if (!status?.value) warn("ownership", "could not read");
+    else if (status.value.claimed) ok("ownership", "claimed");
+    else if (!token) ok("ownership", "the dashboard key; there is no bot to claim");
+    else warn("ownership", status.value.pairingCode ? `unclaimed. Send ${status.value.pairingCode} to your bot.` : "unclaimed. Run: perry pair");
   }
 
   finish();

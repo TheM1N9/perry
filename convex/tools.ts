@@ -1,4 +1,4 @@
-import { createTool } from "@convex-dev/agent";
+import { createTool } from "./lib/agent";
 import { z } from "zod";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";

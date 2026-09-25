@@ -1,7 +1,7 @@
 import { CronExpressionParser } from "cron-parser";
-import { createThread } from "@convex-dev/agent";
+import { createThread } from "./lib/agent";
 import { v } from "convex/values";
-import { components, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
@@ -207,7 +207,7 @@ export const run = internalAction({
     const existing = job.conversationId
       ? await ctx.runQuery(internal.conversations.getWebById, { id: job.conversationId })
       : null;
-    const threadId = existing?.threadId ?? await createThread(ctx, components.agent, { userId: "web:dashboard", title: `⏰ ${job.name}` });
+    const threadId = existing?.threadId ?? await createThread(ctx, { userId: "web:dashboard", title: `⏰ ${job.name}` });
     const chat = await ctx.runMutation(internal.jobs.chatFor, { id: job._id, threadId });
     if (!chat) return null;
     const now = new Date().toLocaleString("en-GB", { timeZone: timezone, dateStyle: "full", timeStyle: "short" });

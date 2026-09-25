@@ -608,4 +608,28 @@ export default defineSchema({
   })
     .index("by_turn_status", ["turnId", "status"])
     .index("by_status", ["status"]),
+
+  /**
+   * A chat's message history (the conversation's `threadId`). Each channel's
+   * chats share a userId ("web:dashboard", "telegram:<chat>"), which is what
+   * search_chats searches within. See agentStore.ts.
+   */
+  agentThreads: defineTable({
+    userId: v.optional(v.string()),
+    title: v.optional(v.string()),
+  }),
+
+  agentMessages: defineTable({
+    threadId: v.id("agentThreads"),
+    userId: v.optional(v.string()),
+    /** Position in the thread; later messages have higher numbers. */
+    order: v.number(),
+    message: v.object({ role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system"), v.literal("tool")), content: v.string() }),
+    text: v.string(),
+    /** Who wrote an assistant message when it was not Codex on the owner's computer. */
+    provider: v.optional(v.string()),
+    model: v.optional(v.string()),
+  })
+    .index("by_thread_order", ["threadId", "order"])
+    .searchIndex("search_text", { searchField: "text", filterFields: ["userId"] }),
 });

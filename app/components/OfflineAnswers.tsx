@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "@/client/react";
 import { useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { Notice, Section, Spinner, Status, errorText, fullDate, useToast } from "./ui";

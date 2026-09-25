@@ -1,6 +1,6 @@
 "use client";
 
-import { useAction, useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";

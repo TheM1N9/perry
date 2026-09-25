@@ -3,10 +3,10 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { APICallError, type LanguageModelV4, type LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import type { FetchFunction } from "@ai-sdk/provider-utils";
-import { listMessages } from "@convex-dev/agent";
+import { listMessages } from "./lib/agent";
 import { stepCountIs, streamText, type ModelMessage, type ToolSet, type UserContent } from "ai";
 import { v } from "convex/values";
-import { components, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import type { ModelOption } from "./lib/commands";
@@ -156,7 +156,7 @@ function pickModel(models: ModelOption[], requested?: string): string {
 
 /** The chat so far, newest last and within a budget, since Codex's own thread is on the computer. */
 async function history(ctx: ActionCtx, threadId: string): Promise<ModelMessage[]> {
-  const page = await listMessages(ctx, components.agent, {
+  const page = await listMessages(ctx, {
     threadId,
     excludeToolMessages: true,
     paginationOpts: { cursor: null, numItems: 60 },

@@ -1,7 +1,7 @@
 import { v, type Infer } from "convex/values";
 import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx } from "./_generated/server";
-import { components, internal } from "./_generated/api";
-import { createThread, saveMessages } from "@convex-dev/agent";
+import { internal } from "./_generated/api";
+import { createThread, saveMessages } from "./lib/agent";
 import { CAPTION_LIMIT, UPLOAD_LIMIT, deleteMessage, editDraft, finishDraft, sendDraft, sendFile, sendMessage } from "./lib/telegram";
 import { assertDashboardKey } from "./lib/auth";
 import { COMPACTED } from "./lib/commands";
@@ -408,8 +408,8 @@ export const claimTurn = mutation({
       .first();
     if (running) return null;
     await ctx.db.patch(job._id, { status: "running", startedAt: Date.now() });
-    const site = process.env.CONVEX_SITE_URL;
-    return { ...job, codexThreadId: conversation.codexThreadId, channel: conversation.channel, mcpUrl: site ? `${site}/mcp` : undefined };
+    // Relative: the runner reaches the server at its own address for it, which may be over Tailscale.
+    return { ...job, codexThreadId: conversation.codexThreadId, channel: conversation.channel, mcpUrl: "/api/backend/http/mcp" };
   },
 });
 
@@ -950,7 +950,7 @@ export const finalizeTurn = internalAction({
     // is worth telling a Telegram chat about.
     if (job.flush) {
       if (!job.savedAt) {
-        const threadId = await createThread(ctx, components.agent, { userId, title: conversation.title });
+        const threadId = await createThread(ctx, { userId, title: conversation.title });
         await ctx.runMutation(internal.conversations.clearThread, { id: conversation._id, threadId });
         await done("savedAt");
       }
@@ -991,7 +991,7 @@ export const finalizeTurn = internalAction({
     // A hidden prompt (the greeting after the welcome page) is not the owner's, so only what they sent is kept.
     const prompts = job.hidden ? steers : [job.prompt, ...steers];
     const answered = Boolean(reply || job.mediaKey);
-    if (!job.savedAt) await saveMessages(ctx, components.agent, {
+    if (!job.savedAt) await saveMessages(ctx, {
       threadId: conversation.threadId,
       userId,
       order: "next",

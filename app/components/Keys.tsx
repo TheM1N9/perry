@@ -1,13 +1,13 @@
 "use client";
 
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "@/client/react";
 import { useState, type FormEvent } from "react";
 import { api } from "@/convex/_generated/api";
 import { ActionButton, Command, Loading, Notice, SecretInput, Section, Spinner, Status, errorText, useToast } from "./ui";
 
 const SOURCE = {
   dashboard: "Saved here",
-  environment: "From an environment variable",
+  environment: "From .env.local",
   none: "Not set",
 } as const;
 
@@ -23,14 +23,14 @@ export function Keys({ dashboardKey }: { dashboardKey: string }) {
   const keys = useQuery(api.dashboard.getKeys, { key: dashboardKey });
   const setKey = useMutation(api.dashboard.setKey);
   const clearKey = useMutation(api.dashboard.clearKey);
-  const registerWebhook = useAction(api.dashboard.registerWebhook);
+  const checkBot = useAction(api.dashboard.checkBot);
   const toast = useToast();
 
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [telegramChanged, setTelegramChanged] = useState(false);
-  const [webhook, setWebhook] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
+  const [botCheck, setBotCheck] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
 
   if (keys === undefined) return <Section title="Service keys"><Loading /></Section>;
 
@@ -44,7 +44,7 @@ export function Keys({ dashboardKey }: { dashboardKey: string }) {
       await setKey({ key: dashboardKey, name, value });
       setDrafts((current) => ({ ...current, [name]: "" }));
       if (name.startsWith("TELEGRAM")) setTelegramChanged(true);
-      toast({ tone: "success", text: name.startsWith("TELEGRAM") ? "Saved. Register the webhook below so Telegram uses it." : "Saved. It takes effect on the next message." });
+      toast({ tone: "success", text: name.startsWith("TELEGRAM") ? "Saved. Perry listens to this bot within a few seconds." : "Saved. It takes effect on the next message." });
     } catch (cause) {
       setErrors((current) => ({ ...current, [name]: errorText(cause) }));
     } finally {
@@ -52,18 +52,18 @@ export function Keys({ dashboardKey }: { dashboardKey: string }) {
     }
   };
 
-  const register = async () => {
-    setWebhook(null);
-    const result = await registerWebhook({ key: dashboardKey });
+  const check = async () => {
+    setBotCheck(null);
+    const result = await checkBot({ key: dashboardKey });
     if (result.ok) setTelegramChanged(false);
-    setWebhook(result.ok
-      ? { tone: "success", text: `Telegram now sends messages here${result.bot ? `, as @${result.bot}` : ""}.` }
-      : { tone: "danger", text: `Couldn't register the webhook: ${result.error}` });
+    setBotCheck(result.ok
+      ? { tone: "success", text: `Perry is listening as @${result.bot}. Message it on Telegram.` }
+      : { tone: "danger", text: `The bot isn't working: ${result.error}` });
   };
 
   return (
     <>
-      <Section title="Service keys" description={<>Saved to your deployment and never shown again. A key saved here overrides one set with <code className="inline">convex env set</code>. Clearing it falls back to the environment variable, if there is one.</>}>
+      <Section title="Service keys" description={<>Saved on this computer and never shown again. A key saved here overrides one in <code className="inline">.env.local</code>; clearing it falls back to that one, if there is one.</>}>
         {keys.map((entry) => {
           const id = `key-${entry.name}`;
           const error = errors[entry.name];
@@ -92,16 +92,13 @@ export function Keys({ dashboardKey }: { dashboardKey: string }) {
         })}
       </Section>
 
-      <Section title="Telegram webhook" description="Points Telegram at this deployment. Run it after changing the bot token or webhook secret, or the bot goes quiet without saying why."
-        actions={<ActionButton variant={telegramChanged ? "primary" : "secondary"} icon="refresh" action={register} pendingLabel="Registering…">Register webhook</ActionButton>}>
-        {(telegramChanged || webhook) && <div className="section-pad">
-          {webhook ? <Notice tone={webhook.tone} onDismiss={() => setWebhook(null)}>{webhook.text}</Notice>
-            : <Notice tone="warning">Telegram keys changed. Register the webhook so Telegram uses them.</Notice>}
-        </div>}
+      <Section title="Telegram bot" description="Perry asks Telegram for new messages while it runs, so nothing here needs to be reachable from the internet. Check that the bot token works:"
+        actions={<ActionButton variant={telegramChanged ? "primary" : "secondary"} icon="refresh" action={check} pendingLabel="Checking…">Check bot</ActionButton>}>
+        {botCheck && <div className="section-pad"><Notice tone={botCheck.tone} onDismiss={() => setBotCheck(null)}>{botCheck.text}</Notice></div>}
       </Section>
 
-      <Section title="Dashboard key" description="The key that guards this page can't be changed from behind it, which keeps a lockout recoverable. Change it in a terminal:">
-        <div className="section-pad"><Command>pnpm exec convex env set DASHBOARD_KEY</Command></div>
+      <Section title="Dashboard key" description="The key that guards this page can't be changed from behind it, which keeps a lockout recoverable. Change DASHBOARD_KEY in .env.local, in Perry's folder, then restart Perry:">
+        <div className="section-pad"><Command>perry stop && perry start</Command></div>
       </Section>
     </>
   );

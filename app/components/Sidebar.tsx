@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useQuery } from "@/client/react";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { api } from "@/convex/_generated/api";
 import { SECTIONS, type SectionId } from "../sections";

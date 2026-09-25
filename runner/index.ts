@@ -38,7 +38,7 @@ import { readFile, writeFile, readdir, mkdir, stat } from "node:fs/promises";
 import { homedir, hostname, platform } from "node:os";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { ConvexClient } from "convex/browser";
+import { BackendClient } from "../client/backend";
 import { getFunctionName, type FunctionArgs, type FunctionReference, type FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
@@ -154,16 +154,19 @@ async function main() {
   }
   const stored = readRunnerConfig();
 
-  const url = flags.url ?? stored.url ?? process.env.PERRY_CONVEX_URL;
-  const token = flags.token ?? stored.token ?? process.env.PERRY_RUNNER_TOKEN;
+  let url = flags.url ?? stored.url ?? process.env.PERRY_SERVER_URL;
+  let token = flags.token ?? stored.token ?? process.env.PERRY_RUNNER_TOKEN;
 
+  // On the machine Perry is installed on, its server connects this runner as it starts (server/index.ts).
   if (!url || !token) {
-    console.error(
-      `\n${red("Not configured.")}\n\n` +
-        `  On the machine where you installed Assistant:  ${bold("pnpm run connect")}\n` +
-        `  On another machine:  ${bold("pnpm run connect -- --url <convex url> --token <token>")}\n`,
-    );
-    process.exit(1);
+    console.log(dim("  Waiting for Perry's server to connect this computer…"));
+    console.log(dim(`  On another machine: ${bold("pnpm run connect -- --url <server url> --token <token>")}`));
+    while (!url || !token) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      const fresh = readRunnerConfig();
+      url = fresh.url;
+      token = fresh.token;
+    }
   }
 
   ensureHome();
@@ -189,7 +192,7 @@ async function main() {
   // The policy can change from the dashboard at any time, so the terminal is always ready to ask.
   const rl = createInterface({ input: process.stdin, output: process.stdout });
 
-  const client = new ConvexClient(url);
+  const client = new BackendClient(url);
 
   const checkIn = async (policy?: Policy) => {
     try {
@@ -480,6 +483,17 @@ async function main() {
     }
   };
   await recoverCodexTurns(true);
+  // The server rewrites runner.json when it connects this computer anew (a first start on the local
+  // backend, say); a runner still holding the old address starts over, and perry run starts it again.
+  const configWatch = setInterval(() => {
+    const now = readRunnerConfig();
+    if (now.url && now.token && (now.url !== url || now.token !== token)) {
+      console.log(dim("  This computer's connection changed; restarting to use it."));
+      process.exit(0);
+    }
+  }, 5_000);
+  configWatch.unref?.();
+
   const heartbeat = setInterval(() => {
     void checkInAndShare();
     void refreshCodexAccount();
@@ -660,7 +674,7 @@ async function main() {
 
   const upload = async (turnId: Id<"codexTurns">, bytes: Buffer<ArrayBuffer>, contentType: string) => {
     const uploadUrl = await client.mutation(api.codex.mediaUploadUrl, { token, id: turnId });
-    const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": contentType }, body: bytes });
+    const response = await fetch(client.resolve(uploadUrl), { method: "POST", headers: { "Content-Type": contentType }, body: bytes });
     if (!response.ok) throw new Error(`upload failed (${response.status})`);
     const { storageId } = await response.json() as { storageId: Id<"_storage"> };
     return storageId;
@@ -712,7 +726,7 @@ async function main() {
   const localise = async (attachments: NonNullable<Doc<"codexTurns">["attachments"]> = []) => Promise.all(attachments.map(async (attachment) => {
     if (attachment.localPath || !attachment.url) return attachment;
     try {
-      const response = await fetch(attachment.url);
+      const response = await fetch(client.resolve(attachment.url));
       if (!response.ok) throw new Error(`download failed (${response.status})`);
       const extension = extname(attachment.fileName).toLowerCase().replace(/[^.a-z0-9]/g, "");
       const localPath = join(PATHS.uploads, `${randomUUID()}${extension}`);
@@ -814,7 +828,7 @@ async function main() {
                 model: job.requestedModel,
                 effort: job.requestedEffort,
                 access: job.access,
-                tools: job.mcpUrl ? { url: job.mcpUrl, token } : undefined,
+                tools: job.mcpUrl ? { url: client.resolve(job.mcpUrl), token } : undefined,
                 attachments: await localise(job.attachments),
                 onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
                 onText: (text) => {
@@ -895,7 +909,7 @@ async function main() {
     clearInterval(heartbeat);
     codex?.close();
     rl?.close();
-    await client.close();
+    client.close();
     console.log(dim("\n  runner stopped. Assistant has no hands here now.\n"));
     process.exit(0);
   };
