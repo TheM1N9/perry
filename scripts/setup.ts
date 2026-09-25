@@ -15,7 +15,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { ensureHome, HOME } from "../runner/home";
-import { bold, dim, green, INSTALL_HINTS, runCodex, runConvex, yellow } from "./lib";
+import { hostname } from "node:os";
+import { bold, dim, green, INSTALL_HINTS, openUrl, runCodex, runConvex, runConvexShown, yellow } from "./lib";
 
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
@@ -86,30 +87,67 @@ async function main() {
   // --- 1. Convex deployment ------------------------------------------------
   step(1, TOTAL, "Convex deployment");
 
-  if (env.CONVEX_DEPLOYMENT) {
-    say(dim(`  already configured: ${env.CONVEX_DEPLOYMENT}`));
+  // Perry's backend is the owner's own Convex project, in Convex's cloud, where Telegram can reach it.
+  // The Convex CLI's own onboarding is never shown: every choice it would ask about is made here, with
+  // at most one plain question (which team), and anonymous local deployments are off (runConvex).
+  const convexUrl = () => env.NEXT_PUBLIC_CONVEX_URL || env.CONVEX_URL || "";
+  // The CLI follows the name with a comment ("dev:x # team: y, project: z"), which is not part of it.
+  const deploymentName = () => (env.CONVEX_DEPLOYMENT ?? "").replace(/\s+#.*$/, "");
+  if (env.CONVEX_DEPLOYMENT && convexUrl().includes(".convex.cloud")) {
+    say(dim(`  already configured: ${deploymentName()}`));
   } else {
-    say(dim("  Opening a browser to log in and create your project."));
-    say(dim("  Choose \"Login or create an account\": Telegram has to reach your deployment,"));
-    say(dim("  which one run locally on this machine cannot be."));
-    const { code } = await runConvex(["dev", "--once"], { quiet: false });
-    if (code !== 0) {
-      say(yellow("\n  Convex setup did not finish. Fix the error above and re-run."));
+    if (env.CONVEX_DEPLOYMENT) {
+      say(yellow(`  ${deploymentName()} runs on this machine, where Telegram cannot reach it; making one in the cloud instead.`));
+      const { CONVEX_DEPLOYMENT: _local, CONVEX_URL: _url, NEXT_PUBLIC_CONVEX_URL: _publicUrl, CONVEX_SITE_URL: _site, ...rest } = env;
+      writeEnvFile(rest);
+      env = readEnvFile();
+    }
+    say(dim("  Perry keeps your chats and memory in your own free Convex project."));
+
+    // The CLI's exit codes are unreliable here, so its status line is what counts.
+    const status = async () => (await runConvex(["login", "status"])).output;
+    if (!/Status: Logged in/.test(await status())) {
+      say(dim("  Log in to Convex in the browser window that opens (GitHub or Google works):\n"));
+      let opened = false;
+      // The CLI has the terminal while it runs (it may ask to accept Convex's terms), so setup stops reading it.
+      rl.pause();
+      await runConvexShown(["login", "--device-name", `Perry on ${hostname()}`, "--no-open"], (text) => {
+        const link = text.match(/Visit (https:\/\/\S+) to finish logging in/)?.[1];
+        if (link && !opened) { opened = true; void openUrl(link); }
+      });
+      rl.resume();
+      if (!/Status: Logged in/.test(await status())) {
+        say(yellow("\n  Convex login did not finish. Run setup again to retry."));
+        process.exit(1);
+      }
+    }
+
+    const teams = [...(await status()).matchAll(/^\s*- (.+) \(([^()\s]+)\)\s*$/gm)].map((m) => ({ name: m[1], slug: m[2] }));
+    let team = teams[0];
+    if (teams.length > 1) {
+      say(`\n  Which Convex team should Perry's project be in?`);
+      teams.forEach((option, index) => say(`    ${index + 1}. ${option.name}`));
+      const picked = Number((await rl.question("  Team [1]: ")).trim() || "1");
+      team = teams[picked - 1] ?? teams[0];
+    }
+    if (!team) {
+      say(yellow("  Your Convex account has no team yet. Open https://dashboard.convex.dev once, then run setup again."));
       process.exit(1);
     }
+
+    // A new project each time: reusing one named perry could attach this install to another machine's Perry.
+    say(dim(`  Creating the project "perry" in ${team.name}…`));
+    const made = await runConvex(["dev", "--once", "--configure", "new", "--team", team.slug, "--project", "perry", "--dev-deployment", "cloud"]);
     env = readEnvFile();
+    if (!convexUrl().includes(".convex.cloud")) {
+      say(yellow("  Creating the Convex project failed:"));
+      say(dim(made.output.split(/\r?\n/).filter((line) => line.trim()).slice(-8).join("\n")));
+      process.exit(1);
+    }
+    say(`  ${green("created")} ${deploymentName()}`);
   }
 
-  const cloudUrl = env.NEXT_PUBLIC_CONVEX_URL || env.CONVEX_URL;
-  if (!cloudUrl) {
-    say(yellow("  No Convex URL in .env.local. Run `pnpm exec convex dev` once, then re-run."));
-    process.exit(1);
-  }
-  if (!cloudUrl.includes(".convex.cloud")) {
-    say(yellow(`  This is a local deployment (${cloudUrl}); Telegram cannot reach it.`));
-    say(yellow(`  Run ${bold("pnpm exec convex dev --once --configure new")}, choose "Login or create an account", then run setup again.`));
-    process.exit(1);
-  }
+  const cloudUrl = convexUrl();
   const siteUrl = cloudUrl.replace(".convex.cloud", ".convex.site");
   say(dim(`  webhook host: ${siteUrl}`));
 

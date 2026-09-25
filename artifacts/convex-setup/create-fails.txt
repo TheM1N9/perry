@@ -1,0 +1,16 @@
+
+Perry setup
+Your deployment, your bot, your keys, your data.
+Perry can read and write your memory, and in Agent P mode it can act
+on whatever you connect. Only you will be able to talk to it.
+
+[1/5] Convex deployment
+  Perry keeps your chats and memory in your own free Convex project.
+  Creating the project "perry" in only Team…
+  Creating the Convex project failed:
+✖ Error: Unable to create project: team limit reached
+
+--- calls ---
+{"args":["login","status"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
+{"args":["login","status"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
+{"args":["dev","--once","--configure","new","--team","only","--project","perry","--dev-deployment","cloud"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
