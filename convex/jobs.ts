@@ -17,7 +17,7 @@ import { assertDashboardKey } from "./lib/auth";
  * The heartbeat is the built-in job: every few hours in the day it looks over
  * tasks, goals, watches and recent memory and speaks only when something is
  * worth the owner's attention. The agent creates its own jobs with the
- * create_job tool; the Work page lists them all.
+ * create_job tool; the Tasks page lists them all.
  */
 
 export const QUIET = "NOTHING";
@@ -54,6 +54,7 @@ const BUILTINS: Array<{ builtin: Builtin; name: string; schedule: string; prompt
       "Read today's conversations, listed below, with read_chat, and today's notes with read_memory.",
       "Then write down what is worth remembering with remember kind=daily: decisions made, commitments and deadlines, preferences the owner expressed, and threads left open. One self-contained note per item; skip what today's notes already say and anything trivial.",
       "Standing preferences and durable facts can also go straight to kind=profile or kind=core, superseding what they replace.",
+      "USER.md is left to the nightly consolidation.",
       `This job never delivers anything to the owner: when done, deliver nothing by replying with exactly ${QUIET}.`,
     ].join(" "),
   },
@@ -67,6 +68,7 @@ const BUILTINS: Array<{ builtin: Builtin; name: string; schedule: string; prompt
       "Promote only what proved durable: standing preferences and relationships to kind=profile, phrased as directives; lasting facts, decisions and commitments to kind=core. When a new memory replaces an older one, pass the old id in supersedes.",
       "Both layers have a size budget and remember refuses a save that would exceed it. Keep them well under it: merge overlapping entries into one that supersedes them, and supersede what is outdated, so there is room for what matters.",
       "Leave one-off chatter, finished tasks, anything already known, secrets, and anything that came from web pages, email or other tool output rather than from the owner.",
+      "Then check USER.md, at the end of your instructions, against the week: if the owner said something lasting about who they are that it lacks or contradicts (their work, routine, people, how they like replies), save it with update_user_md, passing the whole document with only those changes. Keep the owner's own wording and headings, add only what they said themselves, and leave it alone when nothing changed.",
       `This job never delivers anything to the owner: when done, deliver nothing by replying with exactly ${QUIET}.`,
     ].join(" "),
   },
@@ -242,7 +244,7 @@ export const finished = internalMutation({
   },
 });
 
-// --- The agent's tools and the Work page -----------------------------------
+// --- The agent's tools and the Tasks page ----------------------------------
 
 export type JobView = {
   id: Id<"jobs">;
@@ -382,14 +384,25 @@ export const removeFromDashboard = mutation({
   },
 });
 
+/** Run a job now, outside its schedule, which stays as it was. Whether there was such a job. */
+export const trigger = internalMutation({
+  args: { id: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const id = ctx.db.normalizeId("jobs", args.id);
+    if (!id || !(await ctx.db.get(id))) return false;
+    await ctx.db.patch(id, { lastRunAt: Date.now(), lastResult: undefined, lastError: undefined });
+    await ctx.scheduler.runAfter(0, internal.jobs.run, { id });
+    return true;
+  },
+});
+
 export const runNow = mutation({
   args: { key: v.string(), id: v.id("jobs") },
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
-    if (!(await ctx.db.get(args.id))) return null;
-    await ctx.db.patch(args.id, { lastRunAt: Date.now(), lastResult: undefined, lastError: undefined });
-    await ctx.scheduler.runAfter(0, internal.jobs.run, { id: args.id });
+    await ctx.runMutation(internal.jobs.trigger, { id: args.id });
     return null;
   },
 });

@@ -450,6 +450,11 @@ details.disclosure > summary::-webkit-details-marker { display: none; }
 details.disclosure > summary::before { content: ""; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); margin-right: 4px; transition: transform 120ms var(--ease); }
 details.disclosure[open] > summary::before { transform: rotate(45deg); }
 details.disclosure > summary:hover { color: var(--text); }
+.builtin-jobs { border-top: 1px solid var(--border-subtle); }
+.builtin-jobs:first-child { border-top: 0; }
+details.disclosure.builtin-jobs > summary { display: flex; width: 100%; min-width: 0; gap: 8px; padding: 12px 16px; font-size: 13px; }
+.builtin-jobs-hint { min-width: 0; color: var(--text-3); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.builtin-jobs > summary .status { margin-left: auto; }
 
 /* ---------- Gate and error screens ---------- */
 
@@ -462,6 +467,42 @@ details.disclosure > summary:hover { color: var(--text); }
 .gate .btn { width: 100%; }
 .gate-help { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-subtle); display: grid; gap: 8px; font-size: 12.5px; color: var(--text-2); }
 .gate-help p { margin: 0; }
+
+/* Welcome: getting to know each other before the first chat. */
+.welcome-page { min-height: 100dvh; display: grid; justify-items: center; align-items: start; padding: 48px 20px; }
+.welcome-card { width: min(560px, 100%); }
+.welcome-top { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+.welcome-top .brand-mark { width: 32px; height: 32px; border-radius: 8px; font-size: 16px; flex: none; }
+.welcome-steps { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--text-3); flex-wrap: wrap; }
+.welcome-steps li { padding: 3px 9px; border: 1px solid var(--border); border-radius: 999px; }
+.welcome-steps li.done { color: var(--text-2); }
+.welcome-steps li[aria-current="step"] { color: var(--text); border-color: var(--border-strong); background: var(--surface-2); }
+.welcome-card h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; outline: none; }
+.welcome-lede { margin: 0 0 24px; color: var(--text-2); font-size: 13.5px; }
+.welcome-card fieldset { border: 0; padding: 0; min-width: 0; }
+.welcome-card legend { margin-bottom: 6px; padding: 0; }
+.welcome-choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); cursor: pointer; }
+.welcome-choice:hover { border-color: var(--border-strong); }
+.welcome-choice:has(input:checked) { border-color: var(--text-2); background: var(--surface-2); }
+.welcome-choice input { margin-top: 3px; accent-color: var(--primary); }
+.welcome-choice > span { display: grid; gap: 2px; font-size: 13px; }
+.welcome-choice > span > span { color: var(--text-2); font-size: 12.5px; }
+.welcome-preview { margin: 0 0 14px; padding: 12px 14px; border-radius: var(--r-lg); background: var(--surface-2); font-size: 13.5px; }
+.welcome-preview-name { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.welcome-preview p { margin: 0; }
+.welcome-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.welcome-chip { position: relative; }
+.welcome-chip input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.welcome-chip span { display: inline-block; padding: 5px 11px; border: 1px solid var(--border); border-radius: 999px; font-size: 12.5px; color: var(--text-2); }
+.welcome-chip input:checked + span { color: var(--text); border-color: var(--text-2); background: var(--surface-2); }
+.welcome-chip input:focus-visible + span { outline: 2px solid var(--ring); outline-offset: 2px; }
+.welcome-md { font-family: var(--mono); font-size: 12.5px; }
+.welcome-rebuild { justify-self: start; }
+.welcome-actions { display: flex; gap: 8px; margin-top: 20px; }
+.welcome-actions .btn-primary { flex: 1; }
+.welcome-escapes { display: flex; justify-content: center; gap: 4px; margin-top: 12px; flex-wrap: wrap; }
+.chat-offer { flex: none; width: 100%; max-width: 760px; margin: 0 auto; padding: 12px 24px 0; }
+.chat-offer .notice { margin: 0; }
 
 /* ---------- Chat ---------- */
 
@@ -748,6 +789,7 @@ details.disclosure > summary:hover { color: var(--text); }
   .item-side { flex-direction: row; align-items: center; justify-content: space-between; width: 100%; }
   .item-actions { justify-content: flex-start; }
   .item.item-link { flex-direction: row; gap: 12px; }
+  .builtin-jobs-hint { display: none; }
   .section-head { flex-direction: column; align-items: stretch; gap: 10px; }
   .section-actions { justify-content: flex-start; }
   .approval { flex-direction: column; }

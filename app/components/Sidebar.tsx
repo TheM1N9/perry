@@ -10,11 +10,11 @@ import { Icon, Kbd, Status } from "./ui";
 export { SECTIONS, type SectionId };
 
 /** What you open every day besides your chats. Everything else is a visit, so it lives on the Profile page. */
-const PRIMARY: SectionId[] = ["work"];
+const PRIMARY: SectionId[] = ["tasks"];
 
 /** The Profile page's groups, in order. */
 export const PROFILE_GROUPS: Array<{ label: string; ids: SectionId[] }> = [
-  { label: "About you", ids: ["memory", "connectors"] },
+  { label: "You", ids: ["about", "memory", "connectors"] },
   { label: "What Perry does", ids: ["activity", "computer"] },
   { label: "Configure", ids: ["settings", "keys", "setup"] },
 ];
@@ -93,13 +93,16 @@ export function Sidebar({ dashboardKey, current, onNavigate, onLock, open, onClo
   };
   const onProfile = current === "profile" || underProfile(current);
   const name = status === undefined ? "" : status.ownerName ?? "You";
+  const assistant = status?.assistantName ?? "Perry";
+  // Only a Telegram bot that nobody has claimed yet needs pairing; without a bot there is nothing to pair.
+  const waiting = Boolean(status?.telegramConfigured && !status.claimed);
 
   return <>
     {open && <button type="button" className="scrim" aria-label="Close navigation" onClick={onClose} />}
     <aside ref={ref} className={`sidebar ${open ? "open" : ""}`} aria-label="Sidebar">
       <div className="sidebar-top">
         <a className="brand" href="/chat" onClick={(event) => linkClick(event, () => { onNavigate("chat"); onClose(); })}>
-          <span className="brand-mark" aria-hidden="true">P</span><span translate="no">Perry</span>
+          <span className="brand-mark" aria-hidden="true">{assistant.charAt(0).toUpperCase()}</span><span translate="no">{assistant}</span>
         </a>
         <button type="button" className="icon-button sidebar-close" aria-label="Close navigation" onClick={onClose}><Icon name="close" /></button>
       </div>
@@ -117,9 +120,9 @@ export function Sidebar({ dashboardKey, current, onNavigate, onLock, open, onClo
           <span className="avatar" aria-hidden="true">{name.charAt(0).toUpperCase()}</span>
           <span className="profile-link-text">
             <span className="profile-link-name">{name}</span>
-            <span className="profile-link-meta">{status === undefined ? " " : status.claimed ? `${status.memories} memories` : "Not paired yet"}</span>
+            <span className="profile-link-meta">{status === undefined ? " " : waiting ? "Not paired yet" : `${status.memories} memories`}</span>
           </span>
-          {status && !status.claimed && <Status tone="warning">Unpaired</Status>}
+          {waiting && <Status tone="warning">Unpaired</Status>}
         </a>
         <button type="button" className="icon-button" onClick={onLock} aria-label="Lock dashboard" title="Lock dashboard"><Icon name="lock" size={15} /></button>
       </div>

@@ -8,16 +8,34 @@ One install, one owner. Anyone can run their own copy, and every copy is
 separate: its own deployment, its own bot, its own keys, its own memory. There
 is no shared server and nothing here phones home.
 
+One line installs it, on macOS or Linux:
+
 ```bash
-pnpm install
-pnpm run setup
+curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh
 ```
 
-The scripts and the runner need [Bun](https://bun.sh), and the assistant needs
-the [Codex CLI](https://github.com/openai/codex) signed in with a ChatGPT
-account. The runner works on macOS, Linux and Windows, in a terminal or as a
-background service (`pnpm run service install`). See [INSTALL.md](INSTALL.md)
-for each OS.
+or on Windows, in PowerShell:
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
+```
+
+It installs what is missing (Node.js, pnpm, [Bun](https://bun.sh) and the
+[Codex CLI](https://github.com/openai/codex)), puts Perry in `~/perry`, and runs
+`perry setup`: your own Convex deployment, a Telegram bot if you want one, this computer
+connected, Perry running in the background from every login on, and the
+dashboard opened, already unlocked. Then:
+
+```bash
+perry status    # is it running, and where
+perry logs -f   # what it is saying
+perry open      # the dashboard, unlocked
+perry update    # the latest Perry, rebuilt and restarted
+perry stop | start | doctor | pair | uninstall
+```
+
+In a clone, `pnpm install` then `pnpm perry setup` does the same. See
+[INSTALL.md](INSTALL.md) for each OS.
 
 ## How it works
 
@@ -31,7 +49,7 @@ Web chat ─┘                                                    (dials out, n
   jobs, approvals and every run, as documents you can query. Telegram posts to
   a Convex HTTP action that verifies the webhook secret; the web dashboard talks
   to Convex directly.
-- **The runner** (`pnpm run runner`) is a process on your machine. It dials out
+- **The runner** (started by `perry start`, with the dashboard) is a process on your machine. It dials out
   to Convex and holds a subscription; nothing listens on a port, so the machine
   cannot be found from the internet. It runs one process per token, in a
   terminal or under the OS's own service manager (launchd, systemd or Task
@@ -71,11 +89,12 @@ running:
 | Tool | What it does |
 |---|---|
 | `recall` `remember` `read_memory` `forget` | Layered memory: profile, long-term, daily notes |
+| `update_user_md` `update_identity` | Keep USER.md current; rename itself or change its personality when you ask |
 | `search_chats` `read_chat` | Search and read earlier conversations, on every channel |
 | `list_connectors` `find_action` `run_action` | Your connected accounts, through Composio |
-| `start_task` `set_plan` `finish_task` `status_report` `set_goal` | Work that outlives the message |
-| `watch_page` `read_page` | Recurring page checks, and reading public pages |
-| `create_job` `list_jobs` `update_job` `delete_job` | Scheduled prompts and one-time reminders in your timezone |
+| `start_task` `set_plan` `finish_task` `status_report` `set_goal` `update_goal` | Work that outlives the message |
+| `watch_page` `update_watch` `delete_watch` `check_watches` `read_page` | Recurring page checks, and reading public pages |
+| `create_job` `list_jobs` `update_job` `delete_job` `run_job` | Scheduled prompts and one-time reminders in your timezone |
 | `share_file` | Show a file from your machine in the chat |
 
 Connected accounts are looked up at the moment of use, never baked in: link
@@ -140,8 +159,14 @@ spending) are to be confirmed in chat first.
 
 Modelled on OpenClaw's workspace memory, in Convex:
 
-- **Profile** (like `USER.md`): standing preferences and relationships, as
-  directives. In every turn's instructions.
+- **USER.md**: who you are, in your own Markdown: what to call you, your work,
+  a typical day, the people who matter, how you like replies, what you want
+  help with and your boundaries. Loaded whole at the end of every turn's
+  instructions.
+- **Identity** (like `IDENTITY.md`): the assistant's name and personality,
+  which you choose. At the start of every turn's instructions.
+- **Profile**: standing preferences and rules for how to work, as directives.
+  In every turn's instructions.
 - **Long-term** (like `MEMORY.md`): durable facts and decisions. Recalled into
   every turn.
 - **Daily notes** (like `memory/YYYY-MM-DD.md`): today's and yesterday's are
@@ -167,7 +192,24 @@ Memory keeps itself current, like OpenClaw's memory flush and dreaming: the
 built-in **daily summary** job (22:30) reads the day's chats and writes what is
 worth keeping as daily notes, and **memory consolidation** (03:00) promotes
 what the last week's notes show to be durable into the profile and long-term
-memory. Both work quietly.
+memory, and brings USER.md up to date with what you said about yourself. Both
+work quietly.
+
+### Getting to know you
+
+A new install opens the dashboard on a welcome page before the first chat: name
+the assistant and pick its personality, answer a few questions about yourself
+(all optional), and review the USER.md written from your answers. Saving opens
+a chat where the assistant speaks first, having read it. "I'd rather just chat"
+skips the form and has the assistant ask the same questions in the chat,
+writing USER.md as it learns. An install from before the welcome page is
+offered it on the chat page instead.
+
+Afterwards, **Profile → About you** edits USER.md and the identity, shows every
+version with who wrote it (you, the assistant, or a scheduled job), restores an
+older one, and opens the welcome page again. The assistant updates USER.md
+when you tell it something lasting about yourself, and changes its name or
+personality only when you ask.
 
 ## Proactivity
 
@@ -310,7 +352,7 @@ saved rules and an automatic reviewer; connected accounts over
 MCP; layered memory and chat search; local media and Telegram media; scheduled
 jobs, one-time reminders and the heartbeat; skills.
 
-Open work is tracked in [issues](https://github.com/TheM1N9/me-bot/issues),
+Open work is tracked in [issues](https://github.com/TheM1N9/perry/issues),
 among them automatic daily summaries into memory, durable turns and a browser for
 the agent.
 

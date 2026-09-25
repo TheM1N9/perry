@@ -5,13 +5,31 @@ keys, and nobody else's data is anywhere near it. There is no shared server, no
 account on someone else's system, and nothing in this repo phones home.
 
 ```bash
-pnpm install
-pnpm run setup
+curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh    # macOS, Linux, WSL
 ```
 
-The setup wizard, the runner and the other scripts run on [Bun](https://bun.sh),
-so install it first; pnpm still manages the packages. Perry runs on macOS,
-Linux and Windows:
+```powershell
+iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex   # Windows
+```
+
+The installer adds what is missing: Git (Windows, through winget), Node.js 20.9
+or newer (winget on Windows; on macOS and Linux, Node's own build in
+`~/.perry/node`, checked against its published checksum), pnpm, Bun and the
+Codex CLI. On macOS and Linux nothing it installs needs sudo. It clones Perry
+into `~/perry` (`PERRY_DIR` changes that), installs the packages, and runs
+`perry setup`, which walks the steps below, connects this computer, builds the
+dashboard, starts Perry in the background, and opens the dashboard already
+unlocked. Run the installer again to update; `perry update` does the same from
+then on.
+
+In a clone of your own, the same without the installer:
+
+```bash
+pnpm install
+pnpm perry setup
+```
+
+Perry runs on macOS, Linux and Windows:
 
 | | macOS | Linux | Windows |
 |---|---|---|---|
@@ -20,28 +38,61 @@ Linux and Windows:
 | Codex's sandbox | Seatbelt, built in | bubblewrap, shipped with Codex; needs user namespaces | a restricted token, set up by Codex |
 | Background service | launchd agent | systemd user unit | Task Scheduler task at logon |
 
-`pnpm run doctor -- --machine` checks all of that on the machine it runs on.
+`perry doctor --machine` checks all of that on the machine it runs on.
 
 That is the whole install. The wizard walks five steps, tells you what it is
 doing, and is safe to re-run: it keeps whatever is already configured and only
 asks for what is missing.
 
+## Running it
+
+`perry setup` leaves Perry running: the runner and the dashboard (a production
+build on port 3000; `PERRY_PORT` changes it) under one background service that
+starts at every login and restarts either one if it crashes. From then on:
+
+| | |
+|---|---|
+| `perry status` | whether it is running, and where the dashboard is |
+| `perry logs [-f]` | what the runner and the dashboard have been saying |
+| `perry open` | the dashboard, already unlocked in this browser |
+| `perry stop` / `perry start` | stop it, or start it again |
+| `perry update` | pull the latest Perry, install, push the backend, rebuild, restart |
+| `perry doctor` | check this machine and your deployment |
+| `perry pair` | a new code to claim Perry on Telegram |
+| `perry run` | run it in this terminal instead, to watch it or to answer approvals there |
+| `perry uninstall` | stop starting it at login; your settings and data stay |
+
+The `perry` command is a small launcher in `~/.perry/bin`, added to your PATH,
+that runs the CLI from your checkout whatever folder you are in. Codex works in
+`~/.perry/workspace` unless you connected with another folder.
+
 ## What the wizard does
 
-1. **Convex deployment.** Opens a browser once so you can log in and create
-   your own project. This is your database and your backend. Free tier is
-   ample for one person.
-2. **Telegram bot.** Message [@BotFather](https://t.me/BotFather), send
-   `/newbot`, answer two questions, paste the token back. The wizard checks it
-   against Telegram before continuing.
+1. **Convex deployment.** Opens a browser once so you can log in to Convex,
+   then creates a project named `perry` in your account, in Convex's cloud
+   (where Telegram can reach it). If you belong to several Convex teams, it
+   asks which one; nothing else. This is your database and your backend. Free
+   tier is ample for one person. A deployment left over from choosing "Start
+   without an account" is replaced with a cloud one.
+2. **Telegram bot, optional.** To talk to Perry on Telegram as well as in the
+   dashboard, message [@BotFather](https://t.me/BotFather), send `/newbot`,
+   answer two questions, and paste the token back; the wizard checks it against
+   Telegram before continuing. Press Enter to skip, and Perry is yours from the
+   dashboard alone. A bot can be added later: save its token on the **Keys**
+   page, press **Register webhook**, then pair it from **Setup**. Without a bot,
+   job results and page-watch alerts stay in the dashboard (a job's results in
+   its own chat) rather than reaching you as messages.
 3. **Codex.** Perry thinks with your ChatGPT subscription, through the
-   [Codex CLI](https://github.com/openai/codex) on your machine. Install Codex,
-   then after setup run `pnpm run connect` and sign in to Codex from the
-   dashboard's Settings page.
+   [Codex CLI](https://github.com/openai/codex) on your machine, so it signs
+   you in now, before the first chat needs it: `codex login` in the browser,
+   or a device code where there is no browser (a server, or over SSH). If
+   you are already signed in, it says so and moves on. Setup stops if Codex
+   is not installed. The dashboard's Settings page can sign in too.
 4. **Secrets and deploy.** Generates a webhook secret and a dashboard key,
    writes them to a gitignored `.env.local`, sets them on your deployment,
-   pushes the code, and registers the webhook.
-5. **Pairing code.** Prints six digits.
+   pushes the code, and registers the webhook if there is a bot.
+5. **Pairing code.** With a bot, prints six digits. Without one there is
+   nothing to claim: the dashboard key is the owner's key.
 
 Send those six digits to your bot. Whoever sends them first owns that install,
 and from then on every other sender is ignored without a reply. Codes expire
@@ -224,10 +275,12 @@ that point in a separate thread. Each chat shows a stable session ID in the
 sidebar and header; the header copies the full ID. Older messages load on demand. Web chats share
 Perry's saved memories with Telegram while keeping their histories separate.
 
-The sidebar also opens Work, Computer, Connectors, Memory, Settings, Activity,
-Keys, and Setup. Settings shows the Codex account on each connected machine;
-Activity is a run log with session filters, tools, tokens, errors, and a link
-back to each web chat. Chat holds the message history.
+The sidebar holds your chats, Search, and Tasks: scheduled jobs, Perry's plans,
+goals, and watched pages. Everything else opens from your name at the bottom of
+the sidebar: Memory, Connectors, Activity, Computer, Settings, Keys, and Setup.
+Settings shows the Codex account on each connected machine; Activity is a run
+log with session filters, tools, tokens, errors, and a link back to each web
+chat.
 
 The key is a bearer token for one person, not a login system. Localhost does
 not bypass it, because a dashboard that can read your memory should not be open

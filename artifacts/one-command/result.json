@@ -1,0 +1,40 @@
+{
+  "ranAt": "2026-09-24T19:31:39.329Z",
+  "checks": {
+    "installerClonesAndInstalls": true,
+    "perryCommandWorksAnywhere": true,
+    "installerRunsAgain": true,
+    "startRunsEverything": true,
+    "statusSaysRunning": true,
+    "crashRestarts": true,
+    "logsShowBoth": true,
+    "openLinkUnlocks": true,
+    "stopEndsEverything": true,
+    "startsAgain": true,
+    "uninstallRemovesAll": true,
+    "ownerConfigUntouched": true
+  },
+  "notes": {
+    "start": {
+      "exit": 0,
+      "workdir": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-one-command-TPfSSe\\home\\workspace",
+      "lastSeenSecondsAgo": -21
+    },
+    "crash": {
+      "killed": 45444,
+      "replacedBy": 30636
+    },
+    "opened": {
+      "inDashboard": true,
+      "gate": false,
+      "hashLeft": false,
+      "stored": true
+    },
+    "stop": {
+      "exit": 0,
+      "left": []
+    },
+    "revokedRunner": "kd7983vw2epecssv7fy1k2x2ed8f0zvs"
+  },
+  "passed": true
+}

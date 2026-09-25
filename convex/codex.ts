@@ -189,6 +189,8 @@ export const enqueueTurn = internalMutation({
     recalled: v.optional(v.string()),
     recallDigest: v.optional(v.string()),
     flush: v.optional(v.boolean()),
+    /** The prompt is not the owner's: only the reply is saved to the chat (see finalizeTurn). */
+    hidden: v.optional(v.boolean()),
     model: v.optional(v.string()),
     /** The reasoning effort for turn/start, already checked against the model (commands.turnEffort). */
     effort: v.optional(v.string()),
@@ -212,6 +214,7 @@ export const enqueueTurn = internalMutation({
       recalled: args.recalled || undefined,
       recallDigest: args.recallDigest,
       ...(args.flush ? { flush: true } : {}),
+      ...(args.hidden ? { hidden: true } : {}),
       requestedModel: args.model,
       requestedEffort: args.effort,
       access: args.access,
@@ -220,7 +223,7 @@ export const enqueueTurn = internalMutation({
     };
     if (isSteering(args.policy, running)) {
       // The running turn already carries recalled memory; a steer adds only the message.
-      const { recalled: _recalled, recallDigest: _digest, flush: _flush, ...steer } = message;
+      const { recalled: _recalled, recallDigest: _digest, flush: _flush, hidden: _hidden, ...steer } = message;
       return await ctx.db.insert("codexSteers", { ...steer, turnId: running._id, runnerId: running.runnerId!, status: "pending" });
     }
     const runnerId = await pickRunner(ctx, conversation);
@@ -228,7 +231,7 @@ export const enqueueTurn = internalMutation({
       // No runner can take it; answer without the computer if the owner allows that.
       const fallback = await startFallback(ctx, {
         conversationId: args.conversationId, runId: args.runId, prompt: args.prompt, history: args.history,
-        instructions: args.instructions, recalled: args.recalled, flush: args.flush, requestedModel: args.model, attachments: args.attachments,
+        instructions: args.instructions, recalled: args.recalled, flush: args.flush, hidden: args.hidden, requestedModel: args.model, attachments: args.attachments,
       });
       if ("id" in fallback) return fallback.id;
       const offline = conversation.codexRunnerId
@@ -930,7 +933,7 @@ export const finalizeTurn = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const result: {
-      job: { kind?: "compact"; prompt: string; response?: string; error?: string; status: string; model?: string; fallback?: boolean; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; flush?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
+      job: { kind?: "compact"; prompt: string; response?: string; error?: string; status: string; model?: string; fallback?: boolean; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
       conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string; title?: string; jobId?: Id<"jobs"> } | null;
       steers: string[];
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
@@ -985,7 +988,8 @@ export const finalizeTurn = internalAction({
     }
     // A failed turn keeps the owner's message; the error shows on the run and, on Telegram, as a reply.
     // Messages that joined the reply come after the one that started it, and before the reply.
-    const prompts = [job.prompt, ...steers];
+    // A hidden prompt (the greeting after the welcome page) is not the owner's, so only what they sent is kept.
+    const prompts = job.hidden ? steers : [job.prompt, ...steers];
     const answered = Boolean(reply || job.mediaKey);
     if (!job.savedAt) await saveMessages(ctx, components.agent, {
       threadId: conversation.threadId,

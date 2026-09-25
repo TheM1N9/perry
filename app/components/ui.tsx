@@ -172,7 +172,31 @@ export function Notice({ tone = "neutral", title, children, details, onDismiss, 
   </div>;
 }
 
-export function CopyButton({ value, label = "Copy", className = "btn btn-ghost btn-sm", iconOnly }: { value: string; label?: string; className?: string; iconOnly?: boolean }) {
+/**
+ * Copy text. The Clipboard API exists only on secure pages (https, or
+ * localhost); opened over plain http at another address, such as a LAN IP,
+ * the dashboard falls back to the browser's older copy command.
+ */
+export async function copyText(text: string): Promise<void> {
+  if (navigator.clipboard && window.isSecureContext) return await navigator.clipboard.writeText(text);
+  const focused = document.activeElement as HTMLElement | null;
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.readOnly = true;
+  area.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+  // An open modal dialog makes the rest of the page inert, so the textarea goes inside it.
+  (focused?.closest("dialog[open]") ?? document.body).append(area);
+  area.select();
+  try {
+    if (!document.execCommand("copy")) throw new Error("The browser did not allow copying.");
+  } finally {
+    area.remove();
+    focused?.focus();
+  }
+}
+
+/** Copy with a brief "Copied" state, and a toast when the browser refuses. */
+export function useCopy(): { copied: boolean; copy: (text: string) => void } {
   const [copied, setCopied] = useState(false);
   const toast = useToast();
   useEffect(() => {
@@ -180,8 +204,16 @@ export function CopyButton({ value, label = "Copy", className = "btn btn-ghost b
     const timer = window.setTimeout(() => setCopied(false), 1600);
     return () => window.clearTimeout(timer);
   }, [copied]);
+  const copy = useCallback((text: string) => {
+    copyText(text).then(() => setCopied(true), () => toast({ tone: "danger", text: "The browser did not allow copying. Select the text and copy it instead." }));
+  }, [toast]);
+  return { copied, copy };
+}
+
+export function CopyButton({ value, label = "Copy", className = "btn btn-ghost btn-sm", iconOnly }: { value: string; label?: string; className?: string; iconOnly?: boolean }) {
+  const { copied, copy } = useCopy();
   return <button type="button" className={iconOnly ? "icon-button sm" : className} aria-label={iconOnly ? label : undefined} title={iconOnly ? label : undefined}
-    onClick={() => void navigator.clipboard.writeText(value).then(() => setCopied(true), () => toast({ tone: "danger", text: "The browser did not allow copying. Select the text and copy it instead." }))}>
+    onClick={() => copy(value)}>
     <Icon name={copied ? "check" : "copy"} size={14} />{!iconOnly && <span>{copied ? "Copied" : label}</span>}
     <span className="sr-only" aria-live="polite">{copied ? "Copied" : ""}</span>
   </button>;

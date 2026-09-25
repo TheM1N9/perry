@@ -12,11 +12,12 @@ export const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
 export type Ran = { code: number | null; output: string };
 
 /** Run a command. Quiet collects its output; otherwise it streams to this terminal. */
-export function run(command: string, args: string[], { quiet = true }: { quiet?: boolean } = {}): Promise<Ran> {
+export function run(command: string, args: string[], { quiet = true, env }: { quiet?: boolean; env?: NodeJS.ProcessEnv } = {}): Promise<Ran> {
   return new Promise((resolvePromise) => {
     const child = spawn(command, args, {
       stdio: quiet ? ["ignore", "pipe", "pipe"] : "inherit",
       shell: false,
+      env: env ?? process.env,
     });
     let output = "";
     child.stdout?.on("data", (d) => (output += d));
@@ -34,8 +35,55 @@ export function run(command: string, args: string[], { quiet = true }: { quiet?:
  */
 const CONVEX_CLI = resolve(process.cwd(), "node_modules/convex/bin/main.js");
 
+/**
+ * The environment the Convex CLI runs in.
+ *
+ * Perry's deployment has to be in Convex's cloud, where Telegram can reach it,
+ * so the CLI is never allowed to make one that runs on this machine: without
+ * CONVEX_ALLOW_ANONYMOUS=false a first run offers "Start without an account",
+ * and with no terminal it picks that on its own.
+ *
+ * Which deployment to use comes from .env.local as it is now: Bun copied the
+ * file into process.env when the script started, and the CLI would believe
+ * that stale copy over the file, even after setup has replaced the deployment.
+ */
+function convexEnv(): NodeJS.ProcessEnv {
+  const { CONVEX_DEPLOYMENT: _deployment, CONVEX_URL: _url, NEXT_PUBLIC_CONVEX_URL: _publicUrl, ...rest } = process.env;
+  return { ...rest, CONVEX_ALLOW_ANONYMOUS: "false" };
+}
+
 export function runConvex(args: string[], options?: { quiet?: boolean }): Promise<Ran> {
-  return run(process.execPath, [CONVEX_CLI, ...args], options);
+  return run(process.execPath, [CONVEX_CLI, ...args], { ...options, env: convexEnv() });
+}
+
+/**
+ * Run the Convex CLI where you can answer it, showing what it says and calling
+ * `onText` with each piece, so a caller can act on it (open a login link, say).
+ */
+export function runConvexShown(args: string[], onText: (text: string) => void): Promise<Ran> {
+  return new Promise((resolvePromise) => {
+    const child = spawn(process.execPath, [CONVEX_CLI, ...args], { stdio: ["inherit", "pipe", "pipe"], env: convexEnv() });
+    let output = "";
+    const relay = (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      output += text;
+      process.stdout.write(text);
+      onText(text);
+    };
+    child.stdout.on("data", relay);
+    child.stderr.on("data", relay);
+    child.on("error", (error) => resolvePromise({ code: null, output: error.message }));
+    child.on("close", (code) => resolvePromise({ code, output }));
+  });
+}
+
+/** Open a link in the default browser. False when there is none to open it in. */
+export function openUrl(url: string): Promise<boolean> {
+  if (process.env.PERRY_NO_BROWSER === "1") return Promise.resolve(false);
+  const opener = process.platform === "win32"
+    ? ["powershell", ["-NoProfile", "-NonInteractive", "-Command", `Start-Process '${url.replace(/'/g, "''")}'`]] as const
+    : [process.platform === "darwin" ? "open" : "xdg-open", [url]] as const;
+  return run(opener[0], [...opener[1]]).then((ran) => ran.code === 0);
 }
 
 /**
@@ -43,10 +91,10 @@ export function runConvex(args: string[], options?: { quiet?: boolean }): Promis
  * shell can start, so it goes through cmd.exe there, as the runner does; the
  * arguments are this repo's own, never user text.
  */
-export function runCodex(args: string[]): Promise<Ran> {
+export function runCodex(args: string[], options?: { quiet?: boolean }): Promise<Ran> {
   return process.platform === "win32"
-    ? run(process.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", ["codex", ...args].join(" ")])
-    : run("codex", args);
+    ? run(process.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", ["codex", ...args].join(" ")], options)
+    : run("codex", args, options);
 }
 
 /** How to install what Perry needs on this OS, from each tool's own install docs. */

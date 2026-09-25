@@ -64,6 +64,8 @@ async function checkMachine() {
       const sandboxed = await runCodex(["sandbox", "-P", ":workspace", "-C", probe, "--", "/bin/sh", "-c", "echo ok > probe.txt"]);
       const how = process.platform === "darwin" ? "Seatbelt" : "bubblewrap";
       if (sandboxed.code === 0 && existsSync(join(probe, "probe.txt"))) ok("codex sandbox", `workspace-write works (${how})`);
+      // Codex 0.106, for one, has no -P; Perry still runs on it, without its skills.
+      else if (/unexpected argument/.test(sandboxed.output)) warn("codex sandbox", `this Codex is too old to check. Update it: ${INSTALL_HINTS.codex}`);
       else warn("codex sandbox", `a sandboxed command failed: ${lastLine(sandboxed.output)}. See INSTALL.md, "Codex's sandbox"`);
       rmSync(probe, { recursive: true, force: true });
     }
@@ -119,14 +121,13 @@ async function main() {
         .map((l) => l.split("=")[0].trim())
         .filter(Boolean),
     );
-    for (const required of [
-      "TELEGRAM_BOT_TOKEN",
-      "TELEGRAM_WEBHOOK_SECRET",
-      "DASHBOARD_KEY",
-    ]) {
+    for (const required of ["TELEGRAM_WEBHOOK_SECRET", "DASHBOARD_KEY"]) {
       if (names.has(required)) ok(`env ${required}`);
-      else bad(`env ${required}`, "not set. Run: pnpm run setup");
+      else bad(`env ${required}`, "not set. Run: perry setup");
     }
+    // Telegram is optional: without a bot, Perry is used from the dashboard.
+    if (names.has("TELEGRAM_BOT_TOKEN")) ok("env TELEGRAM_BOT_TOKEN");
+    else ok("env TELEGRAM_BOT_TOKEN", "not set: Telegram is off (optional; a bot saved on the Keys page is not checked here)");
   }
 
   // HTTP actions reachable
@@ -143,7 +144,7 @@ async function main() {
   // Telegram webhook
   const token = env.TELEGRAM_BOT_TOKEN;
   if (!token) {
-    bad("telegram token", "not in .env.local");
+    ok("telegram", "not set up; Perry is used from the dashboard");
   } else {
     const me = await fetch(`https://api.telegram.org/bot${token}/getMe`).then(
       (r) => r.json(),
@@ -177,6 +178,8 @@ async function main() {
     warn("ownership", "could not read");
   } else if (/"claimed":\s*true/.test(status.output)) {
     ok("ownership", "claimed");
+  } else if (!token) {
+    ok("ownership", "the dashboard key; there is no bot to claim");
   } else {
     const code = status.output.match(/"pairingCode":\s*"(\d{6})"/)?.[1];
     warn(

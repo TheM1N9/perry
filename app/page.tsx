@@ -3,6 +3,7 @@
 import { useConvex, useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "@/convex/_generated/api";
+import { AboutYou } from "./components/AboutYou";
 import { Activity } from "./components/Activity";
 import { Chat } from "./components/Chat";
 import { Computer } from "./components/Computer";
@@ -14,12 +15,13 @@ import { Profile } from "./components/Profile";
 import { Settings } from "./components/Settings";
 import { Setup } from "./components/Setup";
 import { SECTIONS, Sidebar, linkClick, sectionPath, underProfile, type NavigationState, type SectionId } from "./components/Sidebar";
-import { Work } from "./components/Work";
+import { Tasks } from "./components/Tasks";
+import { Welcome } from "./components/Welcome";
 import { Command, Icon, SecretInput, Spinner, errorText } from "./components/ui";
 
 const STORAGE_KEY = "perry.dashboard.key";
 
-/** The section a path names, or null for the root, which depends on whether Perry is paired. */
+/** The section a path names, or null for the root, which depends on onboarding and on whether a Telegram bot waits to be paired. */
 function sectionFrom(pathname: string): SectionId | null {
   const first = pathname.split("/")[1] ?? "";
   if (!first) return null;
@@ -95,9 +97,11 @@ function Shell({ dashboardKey, onLock }: { dashboardKey: string; onLock: () => v
     document.querySelector<HTMLElement>(".workspace-scroll")?.scrollTo({ top: 0 });
   }, []);
 
-  // The root opens Chat once Perry is paired, and Setup until then.
   const named = sectionFrom(path);
-  const active: SectionId | null = named ?? (status ? (status.claimed ? "chat" : "setup") : null);
+  // A new install opens on the welcome page; then setup, only while a Telegram bot waits to be claimed; then chat.
+  const active: SectionId | null = named ?? (status
+    ? status.onboarding === "pending" ? "welcome" : status.telegramConfigured && !status.claimed ? "setup" : "chat"
+    : null);
   useEffect(() => {
     if (!named && active) {
       const to = active === "chat" ? "/chat" : sectionPath(active);
@@ -115,6 +119,16 @@ function Shell({ dashboardKey, onLock }: { dashboardKey: string; onLock: () => v
 
   if (active === "chat") {
     return <Chat dashboardKey={dashboardKey} onNavigate={navigate} onLock={onLock} />;
+  }
+
+  // Full screen, before anything else: it ends in the chat it opens, or in chat when skipped.
+  if (active === "welcome") {
+    return <ErrorBoundary onReset={onLock}>
+      <Welcome dashboardKey={dashboardKey} onDone={(chatId) => {
+        if (chatId) window.localStorage.setItem("perry.activeChat", chatId);
+        navigate("chat");
+      }} />
+    </ErrorBoundary>;
   }
 
   const section = SECTIONS.find((item) => item.id === active)!;
@@ -144,9 +158,10 @@ function Shell({ dashboardKey, onLock }: { dashboardKey: string; onLock: () => v
             <p>{section.description}</p>
           </div>
           <ErrorBoundary key={active} inline onReset={onLock}>
-            {active === "work" && <Work dashboardKey={dashboardKey} />}
+            {active === "tasks" && <Tasks dashboardKey={dashboardKey} />}
             {active === "computer" && <Computer dashboardKey={dashboardKey} />}
             {active === "connectors" && <Connectors dashboardKey={dashboardKey} />}
+            {active === "about" && <AboutYou dashboardKey={dashboardKey} onNavigate={navigate} />}
             {active === "memory" && <Memories dashboardKey={dashboardKey} />}
             {active === "settings" && <Settings dashboardKey={dashboardKey} />}
             {active === "activity" && <Activity dashboardKey={dashboardKey} onOpenChat={openChat} />}
@@ -167,6 +182,12 @@ export default function Home() {
   // localStorage is only available after mount, so the first paint is blank
   // rather than briefly wrong.
   useEffect(() => {
+    // `perry open` passes the key in the fragment, which never reaches a server; it is kept and taken out of the address.
+    const fromLink = new URLSearchParams(window.location.hash.slice(1)).get("key");
+    if (fromLink) {
+      window.localStorage.setItem(STORAGE_KEY, fromLink);
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    }
     setDashboardKey(window.localStorage.getItem(STORAGE_KEY));
     setReady(true);
   }, []);

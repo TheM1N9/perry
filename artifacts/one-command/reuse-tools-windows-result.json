@@ -1,0 +1,11 @@
+﻿{
+    "ranAt":  "2026-09-24T20:10:40.3496725Z",
+    "checks":  {
+                   "everyToolFound":  true,
+                   "nothingInstalled":  true,
+                   "sessionPathOnlyExtended":  true,
+                   "installed":  true,
+                   "oldNodeStopsWithAdvice":  true
+               },
+    "passed":  true
+}

@@ -1,0 +1,16 @@
+{
+  "ranAt": "2026-09-24T20:08:31Z",
+  "system": "Linux x86_64",
+  "checks": {
+    "freshInstallsEverything": true,
+    "managedToolsFound": true,
+    "managedNothingInstalled": true,
+    "oldNodeGetsPrivateCopy": true,
+    "ownerStillRunsOwnNode": true,
+    "launcherUsesPerrysNode": true,
+    "pathLineAppendsOnce": true,
+    "secondRunReusesPerrysNode": true
+  },
+  "notes": { "nvmNode": "v22.23.3", "ownerNodeInNewShell": "v18.20.0", "pathLines": 1 },
+  "passed": true
+}

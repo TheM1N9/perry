@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 /**
- * `pnpm run service <install|uninstall|start|stop|status|logs>` — keep the
- * runner running in the background, and start it again when you log in.
+ * `pnpm run service <install|uninstall|start|stop|status|logs>` — keep Perry
+ * (the runner and the dashboard, under `perry run`) running in the
+ * background, and start it again when you log in. `perry start`, `stop`,
+ * `status` and `logs` use this.
  *
  * Each OS's own service manager does the work, as a per-user service that
  * needs no admin rights:
@@ -10,10 +12,11 @@
  *   Linux    a systemd user unit    ~/.config/systemd/user/perry-runner.service
  *   Windows  a Task Scheduler task  "Perry runner", at logon
  *
- * The service runs `bun runner/index.ts` from this checkout with the settings
- * in ~/.perry/runner.json, so connect once first (`pnpm run connect`, or
- * `pnpm run connect -- --service`, which does both). A service has no
- * terminal, so approvals are answered in the dashboard.
+ * The service runs `bun scripts/perry.ts run` from this checkout with the
+ * settings in ~/.perry/runner.json, so connect once first (`perry setup` does
+ * it all). A service has no terminal, so approvals are answered in the
+ * dashboard. The names still say "runner", so an older install is replaced in
+ * place rather than left running beside the new one.
  *
  * --dry-run prints the files and commands instead of writing or running them.
  */
@@ -31,7 +34,7 @@ export const UNIT = "perry-runner.service";
 export const TASK = "Perry runner";
 
 /** Settings a service does not inherit from the shell it was installed from. */
-const CARRIED_ENV = ["PERRY_HOME", "PERRY_CODEX_SANDBOX", "PERRY_CODEX_WINDOWS_SANDBOX", "CODEX_HOME"];
+const CARRIED_ENV = ["PERRY_HOME", "PERRY_PORT", "PERRY_CODEX_SANDBOX", "PERRY_CODEX_WINDOWS_SANDBOX", "CODEX_HOME"];
 
 type Step = { argv: string[]; mayFail?: boolean; retries?: number };
 export type ServiceFile = { path: string; content: string; encoding?: "utf8" | "utf16le" };
@@ -92,9 +95,8 @@ const batch = (s: string) => `"${s.replace(/%/g, "%%")}"`;
 export function servicePlan(ctx: ServiceContext): ServicePlan {
   // The target OS's separators, so a plan for any OS can be built and checked on any other.
   const { join } = ctx.platform === "win32" ? win32 : posix;
-  const runner = join(ctx.repo, "runner", "index.ts");
-  // No policy flag: the one chosen on the dashboard's Computer page stands across restarts.
-  const args = [runner];
+  // The runner and the dashboard together. No policy flag: the one chosen on the dashboard's Computer page stands across restarts.
+  const args = [join(ctx.repo, "scripts", "perry.ts"), "run"];
 
   if (ctx.platform === "darwin") {
     const plist = join(ctx.userHome, "Library", "LaunchAgents", `${LABEL}.plist`);
@@ -106,7 +108,7 @@ export function servicePlan(ctx: ServiceContext): ServicePlan {
         path: plist,
         content: `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Perry's runner. Written by \`pnpm run service install\`; removed by \`pnpm run service uninstall\`. -->
+<!-- Perry: its runner and dashboard. Written by \`perry start\`; removed by \`perry uninstall\`. -->
 <plist version="1.0">
 <dict>
   <key>Label</key><string>${LABEL}</string>
@@ -144,7 +146,7 @@ ${env}
     const dir = join(ctx.home, "service");
     const launcher = join(dir, "runner.cmd");
     const taskXml = join(dir, "task.xml");
-    // Ending a task does not end the processes it started, so the runner notes its PID for `service stop`.
+    // Ending a task does not end the processes it started, so `perry run` notes its PID for `perry stop`.
     const env = { ...ctx.env, PERRY_SERVICE_PID_FILE: join(dir, "runner.pid") };
     const envLines = Object.entries(env).map(([k, v]) => `set "${k}=${v.replace(/%/g, "%%")}"`);
     // PowerShell only hides the console window; the launcher does the rest.
@@ -156,7 +158,7 @@ ${env}
           path: launcher,
           content: [
             "@echo off",
-            `rem Perry's runner, started at logon by the "${TASK}" task. Written by pnpm run service install.`,
+            `rem Perry, its runner and dashboard, started at logon by the "${TASK}" task. Written by perry start.`,
             "chcp 65001 >nul",
             ...envLines,
             `cd /d ${batch(ctx.repo)}`,
@@ -171,7 +173,7 @@ ${env}
           content: `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Perry's runner: lets Perry work on this machine. Written by pnpm run service install.</Description>
+    <Description>Perry: its runner, which lets Perry work on this machine, and its dashboard. Written by perry start.</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
@@ -237,16 +239,16 @@ ${env}
     files: [{
       path: join(unitDir, UNIT),
       content: [
-        "# Perry's runner. Written by `pnpm run service install`; removed by `pnpm run service uninstall`.",
+        "# Perry: its runner and dashboard. Written by `perry start`; removed by `perry uninstall`.",
         "[Unit]",
-        "Description=Perry runner",
+        "Description=Perry (runner and dashboard)",
         "",
         "[Service]",
         "Type=simple",
         `WorkingDirectory=${ctx.repo.replace(/%/g, "%%")}`,
         `ExecStart=${[ctx.bun, ...args].map((word) => unitWord(word, true)).join(" ")}`,
         ...Object.entries(ctx.env).map(([k, v]) => `Environment=${unitWord(`${k}=${v}`)}`),
-        // A crash restarts it; `pnpm run service stop` does not.
+        // A crash restarts it; `perry stop` does not.
         "Restart=on-failure",
         "RestartSec=30",
         "",
@@ -272,7 +274,7 @@ function exec(argv: string[], quiet = true) {
   return { code: result.status ?? (result.error ? 127 : 1), output: `${result.stdout ?? ""}${result.stderr ?? ""}`.trim() || String(result.error?.message ?? "") };
 }
 
-/** The Windows service's runner, if it is alive, by the PID its launcher asked it to write. */
+/** The Windows service's `perry run`, if it is alive, by the PID its launcher asked it to write. */
 function servicePid(): number | null {
   try {
     const pid = Number(readFileSync(join(HOME, "service", "runner.pid"), "utf8"));
@@ -316,7 +318,7 @@ export function serviceState(ctx = serviceContext()): ServiceState {
   };
 }
 
-function runSteps(steps: Step[], dryRun: boolean): boolean {
+export function runSteps(steps: Step[], dryRun: boolean): boolean {
   for (const step of steps) {
     console.log(dim(`  $ ${step.argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(" ")}`));
     if (dryRun) continue;
@@ -333,21 +335,25 @@ function runSteps(steps: Step[], dryRun: boolean): boolean {
   return true;
 }
 
-/** End the Windows service's runner, which outlives the task that started it. */
-function endServiceRunner() {
+/**
+ * End the Windows service's `perry run`, which outlives the task that started
+ * it, with the runner, the dashboard and Codex under it: a plain kill would
+ * leave those running.
+ */
+export function endServiceProcess() {
   const pid = servicePid();
-  if (pid) try { process.kill(pid); } catch {}
+  if (pid) spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
 }
 
 export function install({ dryRun = false } = {}): boolean {
   const ctx = serviceContext();
   const config = readRunnerConfig();
   if (!dryRun && (!config.url || !config.token)) {
-    console.error(`\n${red("The runner is not connected yet.")} Run ${bold("pnpm run connect -- --service")} first.\n`);
+    console.error(`\n${red("This computer is not connected yet.")} Run ${bold("perry setup")} first.\n`);
     return false;
   }
   const plan = servicePlan(ctx);
-  console.log(`\n${bold(`Installing the runner as a ${plan.manager} service`)}${dryRun ? dim("  (dry run: nothing is written or run)") : ""}`);
+  console.log(`\n${bold(`Installing Perry as a ${plan.manager} service`)}${dryRun ? dim("  (dry run: nothing is written or run)") : ""}`);
   for (const file of plan.files) {
     console.log(dim(`  write ${file.path}`));
     if (dryRun) {
@@ -360,14 +366,14 @@ export function install({ dryRun = false } = {}): boolean {
   }
   if (!dryRun) {
     mkdirSync(dirname(ctx.logFile), { recursive: true });
-    if (ctx.platform === "win32") endServiceRunner();
+    if (ctx.platform === "win32") endServiceProcess();
   }
   if (!runSteps(plan.install, dryRun)) return false;
   if (dryRun) return true;
 
   console.log(green(`  installed.`) + dim(` It starts now and whenever you log in.`));
   console.log(dim(`  Approve what Codex asks for in the dashboard; there is no terminal to ask in.`));
-  console.log(dim(`  pnpm run service status | logs | stop | start | uninstall`));
+  console.log(dim(`  perry status | logs | stop | start | uninstall`));
   if (ctx.platform === "linux") {
     const linger = exec(["loginctl", "show-user", userInfo().username, "-p", "Linger"]);
     if (/Linger=no/.test(linger.output)) {
@@ -388,9 +394,9 @@ export function uninstall({ dryRun = false } = {}): boolean {
     console.log(dim(`  remove ${file.path}`));
     if (!dryRun) rmSync(file.path, { force: true });
   }
-  if (!dryRun && ctx.platform === "win32") endServiceRunner();
+  if (!dryRun && ctx.platform === "win32") endServiceProcess();
   if (!dryRun && ctx.platform === "linux") exec(["systemctl", "--user", "daemon-reload"]);
-  console.log(dim(`  The runner no longer starts on its own. Its settings in ${PATHS.runnerConfig} are kept.\n`));
+  console.log(dim(`  Perry no longer starts on its own. Its settings in ${PATHS.runnerConfig} are kept.\n`));
   return true;
 }
 
@@ -428,12 +434,12 @@ async function main() {
   if (command === "uninstall") process.exit(uninstall({ dryRun }) ? 0 : 1);
   if (command === "start" || command === "stop") {
     const ok = runSteps(plan[command], dryRun);
-    if (command === "stop" && !dryRun && ctx.platform === "win32") endServiceRunner();
+    if (command === "stop" && !dryRun && ctx.platform === "win32") endServiceProcess();
     process.exit(ok ? 0 : 1);
   }
   if (command === "status") {
     const state = serviceState(ctx);
-    console.log(`\n${bold("Runner service")}  ${dim(plan.manager)}`);
+    console.log(`\n${bold("Perry service")}  ${dim(plan.manager)}`);
     const word = state.running ? green("running") : state.installed ? yellow("stopped") : dim("not installed");
     console.log(`  ${word}${state.detail === "not installed" ? "" : `  ${dim(state.detail)}`}`);
     console.log(dim(`  file  ${plan.files[0].path}`));

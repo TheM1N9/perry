@@ -1,0 +1,90 @@
+{
+  "ranAt": "2026-09-24T18:05:22.243Z",
+  "checks": {
+    "explainsJobFailure": true,
+    "runsJobNow": true,
+    "ticksMilestone": true,
+    "cancelsTask": true,
+    "checksWatchNow": true,
+    "pausesWatch": true,
+    "deletesWatch": true,
+    "everyTurnReplied": true,
+    "cleanedUp": true
+  },
+  "turns": [
+    {
+      "asked": "Why did my Daily summary job fail the last time it ran? Answer in one or two sentences.",
+      "reply": "The Daily summary job failed because the selected model was at capacity.",
+      "error": null,
+      "approvals": 0
+    },
+    {
+      "asked": "Run the job called “E2E quiet job” now.",
+      "reply": "Started “E2E quiet job” now.",
+      "error": null,
+      "approvals": 0
+    },
+    {
+      "asked": "On my goal “E2E goal”, mark the milestone “First step” as reached. Then cancel the task called “E2E task”.",
+      "reply": "Marked “First step” as reached on “E2E goal” and cancelled “E2E task.”",
+      "error": null,
+      "approvals": 0
+    },
+    {
+      "asked": "Check the watch called “E2E watch” right now and tell me what it saw. After that, pause that watch.",
+      "reply": "The watch saw no change on example.com. I then paused “E2E watch.”",
+      "error": null,
+      "approvals": 0
+    },
+    {
+      "asked": "Delete the watch called “E2E watch”.",
+      "reply": "Deleted “E2E watch.”",
+      "error": null,
+      "approvals": 0
+    }
+  ],
+  "notes": {
+    "seeded": {
+      "watchId": "jx7601e7txk120c9gts6fvk85h8f0jgm",
+      "goalId": "js7beebcwdzqtzd7nwadb6v6r58f1qbr",
+      "taskId": "k5730thscrtthm0jzc4ghfhtyd8f05hp",
+      "jobId": "m17em1nyhs4jjsa21ms98nzsqh8f0rge"
+    },
+    "dailySummaryLastError": "Selected model is at capacity. Please try a different model.",
+    "errorWordsEchoed": [
+      "selected",
+      "model",
+      "capacity",
+      "model"
+    ],
+    "goalAfter": {
+      "description": "Seeded by artifacts/agent-tasks.",
+      "id": "js7beebcwdzqtzd7nwadb6v6r58f1qbr",
+      "milestones": [
+        {
+          "done": true,
+          "title": "First step"
+        },
+        {
+          "done": false,
+          "title": "Second step"
+        }
+      ],
+      "status": "active",
+      "title": "E2E goal"
+    },
+    "watchAfter": {
+      "active": false,
+      "condition": "change",
+      "failures": 0,
+      "id": "jx7601e7txk120c9gts6fvk85h8f0jgm",
+      "intervalMinutes": 10080,
+      "lastCheckedAt": 1790273029363,
+      "lastObservation": "No change.",
+      "title": "E2E watch",
+      "url": "https://example.com"
+    },
+    "pageErrors": []
+  },
+  "passed": true
+}

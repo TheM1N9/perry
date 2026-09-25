@@ -15,7 +15,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { ensureHome, HOME } from "../runner/home";
-import { bold, dim, green, INSTALL_HINTS, runCodex, runConvex, yellow } from "./lib";
+import { hostname } from "node:os";
+import { bold, dim, green, INSTALL_HINTS, openUrl, runCodex, runConvex, runConvexShown, yellow } from "./lib";
 
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
@@ -86,69 +87,148 @@ async function main() {
   // --- 1. Convex deployment ------------------------------------------------
   step(1, TOTAL, "Convex deployment");
 
-  if (env.CONVEX_DEPLOYMENT) {
-    say(dim(`  already configured: ${env.CONVEX_DEPLOYMENT}`));
+  // Perry's backend is the owner's own Convex project, in Convex's cloud, where Telegram can reach it.
+  // The Convex CLI's own onboarding is never shown: every choice it would ask about is made here, with
+  // at most one plain question (which team), and anonymous local deployments are off (runConvex).
+  const convexUrl = () => env.NEXT_PUBLIC_CONVEX_URL || env.CONVEX_URL || "";
+  // The CLI follows the name with a comment ("dev:x # team: y, project: z"), which is not part of it.
+  const deploymentName = () => (env.CONVEX_DEPLOYMENT ?? "").replace(/\s+#.*$/, "");
+  if (env.CONVEX_DEPLOYMENT && convexUrl().includes(".convex.cloud")) {
+    say(dim(`  already configured: ${deploymentName()}`));
   } else {
-    say(dim("  Opening a browser to log in and create your project."));
-    const { code } = await runConvex(["dev", "--once"], { quiet: false });
-    if (code !== 0) {
-      say(yellow("\n  Convex setup did not finish. Fix the error above and re-run."));
+    if (env.CONVEX_DEPLOYMENT) {
+      say(yellow(`  ${deploymentName()} runs on this machine, where Telegram cannot reach it; making one in the cloud instead.`));
+      const { CONVEX_DEPLOYMENT: _local, CONVEX_URL: _url, NEXT_PUBLIC_CONVEX_URL: _publicUrl, CONVEX_SITE_URL: _site, ...rest } = env;
+      writeEnvFile(rest);
+      env = readEnvFile();
+    }
+    say(dim("  Perry keeps your chats and memory in your own free Convex project."));
+
+    // The CLI's exit codes are unreliable here, so its status line is what counts.
+    const status = async () => (await runConvex(["login", "status"])).output;
+    if (!/Status: Logged in/.test(await status())) {
+      say(dim("  Log in to Convex in the browser window that opens (GitHub or Google works):\n"));
+      let opened = false;
+      // The CLI has the terminal while it runs (it may ask to accept Convex's terms), so setup stops reading it.
+      rl.pause();
+      await runConvexShown(["login", "--device-name", `Perry on ${hostname()}`, "--no-open"], (text) => {
+        const link = text.match(/Visit (https:\/\/\S+) to finish logging in/)?.[1];
+        if (link && !opened) { opened = true; void openUrl(link); }
+      });
+      rl.resume();
+      if (!/Status: Logged in/.test(await status())) {
+        say(yellow("\n  Convex login did not finish. Run setup again to retry."));
+        process.exit(1);
+      }
+    }
+
+    const teams = [...(await status()).matchAll(/^\s*- (.+) \(([^()\s]+)\)\s*$/gm)].map((m) => ({ name: m[1], slug: m[2] }));
+    let team = teams[0];
+    if (teams.length > 1) {
+      say(`\n  Which Convex team should Perry's project be in?`);
+      teams.forEach((option, index) => say(`    ${index + 1}. ${option.name}`));
+      const picked = Number((await rl.question("  Team [1]: ")).trim() || "1");
+      team = teams[picked - 1] ?? teams[0];
+    }
+    if (!team) {
+      say(yellow("  Your Convex account has no team yet. Open https://dashboard.convex.dev once, then run setup again."));
       process.exit(1);
     }
+
+    // A new project each time: reusing one named perry could attach this install to another machine's Perry.
+    say(dim(`  Creating the project "perry" in ${team.name}…`));
+    const made = await runConvex(["dev", "--once", "--configure", "new", "--team", team.slug, "--project", "perry", "--dev-deployment", "cloud"]);
     env = readEnvFile();
+    if (!convexUrl().includes(".convex.cloud")) {
+      say(yellow("  Creating the Convex project failed:"));
+      say(dim(made.output.split(/\r?\n/).filter((line) => line.trim()).slice(-8).join("\n")));
+      process.exit(1);
+    }
+    say(`  ${green("created")} ${deploymentName()}`);
   }
 
-  const cloudUrl = env.NEXT_PUBLIC_CONVEX_URL || env.CONVEX_URL;
-  if (!cloudUrl) {
-    say(yellow("  No Convex URL in .env.local. Run `pnpm exec convex dev` once, then re-run."));
-    process.exit(1);
-  }
+  const cloudUrl = convexUrl();
   const siteUrl = cloudUrl.replace(".convex.cloud", ".convex.site");
   say(dim(`  webhook host: ${siteUrl}`));
 
-  // --- 2. Telegram bot -----------------------------------------------------
-  step(2, TOTAL, "Telegram bot");
+  // --- 2. Telegram bot, optional ------------------------------------------
+  step(2, TOTAL, "Telegram bot (optional)");
 
-  let token = env.TELEGRAM_BOT_TOKEN;
+  /** The bot's @username, or null when Telegram is skipped and Perry is used from the dashboard. */
+  const checkToken = async (candidate: string): Promise<string | null> => {
+    const probe = await fetch(`https://api.telegram.org/bot${candidate}/getMe`).then((r) => r.json(), () => null);
+    if (probe?.ok) return probe.result.username as string;
+    say(yellow(`  Telegram rejected that token: ${probe?.description ?? "no response"}`));
+    return null;
+  };
+  let token: string | undefined = env.TELEGRAM_BOT_TOKEN;
+  let botName: string | null = null;
   if (token) {
+    botName = await checkToken(token);
+    if (!botName) process.exit(1);
     say(dim("  already configured"));
   } else {
-    say(dim("  Open Telegram, message @BotFather, send /newbot, answer two"));
-    say(dim("  questions. It gives you a token like 8123456789:AAH..."));
-    token = (await rl.question("\n  Paste the bot token: ")).trim();
-    if (!token.includes(":")) {
-      say(yellow("  That does not look like a bot token."));
-      process.exit(1);
+    say(dim("  Talk to Perry from Telegram too, or only from the dashboard. For Telegram:"));
+    say(dim("  message @BotFather, send /newbot, answer two questions, and paste the"));
+    say(dim("  token it gives you (like 8123456789:AAH...). You can add one later on the Keys page."));
+    for (let attempt = 0; attempt < 3 && !botName; attempt++) {
+      const answer = (await rl.question("\n  Bot token, or Enter to skip: ")).trim();
+      if (!answer) break;
+      if (!answer.includes(":")) { say(yellow("  That does not look like a bot token.")); continue; }
+      botName = await checkToken(answer);
+      if (botName) token = answer;
+    }
+    if (!botName) {
+      token = undefined;
+      say(dim("  Skipped: Perry is yours from the dashboard. Add a bot on the Keys page whenever you like."));
     }
   }
-
-  const probe = await fetch(`https://api.telegram.org/bot${token}/getMe`).then(
-    (r) => r.json(),
-    () => null,
-  );
-  if (!probe?.ok) {
-    say(yellow(`  Telegram rejected that token: ${probe?.description ?? "no response"}`));
-    process.exit(1);
-  }
-  say(`  ${green("bot")} @${probe.result.username}`);
+  if (botName) say(`  ${green("bot")} @${botName}`);
 
   // --- 3. Codex -------------------------------------------------------------
   step(3, TOTAL, "Codex");
 
-  say(dim("  Perry thinks with your ChatGPT subscription, through the Codex CLI on"));
-  say(dim("  this machine. After setup: run `pnpm run connect`, and sign in to Codex"));
-  say(dim("  from the dashboard's Settings page."));
+  // Every reply is a Codex turn on this machine, so a first chat needs Codex signed in before it starts.
+  say(dim("  Perry thinks with your ChatGPT subscription, through the Codex CLI on this machine."));
   const codex = await runCodex(["--version"]);
   if (codex.code !== 0) {
-    say(yellow(`  Codex is not installed here yet. Install it with: ${INSTALL_HINTS.codex}`));
+    say(yellow(`  Codex is not installed here. Install it with: ${INSTALL_HINTS.codex}`));
+    say(yellow("  Then run setup again."));
+    process.exit(1);
+  }
+  const version = (codex.output.trim().split(/\r?\n/).at(-1) ?? "").replace(/^codex-cli\s+/, "");
+  // `codex login status` exits 0 and says "Logged in using ChatGPT" (or an API key) once signed in.
+  const codexStatus = async () => {
+    const ran = await runCodex(["login", "status"]);
+    return ran.code === 0 && /Logged in/i.test(ran.output) ? ran.output.trim().split(/\r?\n/).at(-1) ?? "" : null;
+  };
+  let signedIn = await codexStatus();
+  if (!signedIn) {
+    // No display to open a browser on (a server, or over SSH): Codex's device code, entered on any device.
+    const headless = Boolean(process.env.SSH_CONNECTION || process.env.SSH_TTY) || (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY);
+    rl.pause();
+    if (!headless) {
+      say(dim("  Sign in with your ChatGPT account in the browser window that opens.\n"));
+      await runCodex(["login"], { quiet: false });
+      signedIn = await codexStatus();
+    }
+    if (!signedIn) {
+      say(dim(`\n  ${headless ? "No browser here" : "The browser sign-in did not finish"}; signing in with a code instead.\n`));
+      await runCodex(["login", "--device-auth"], { quiet: false });
+      signedIn = await codexStatus();
+    }
+    rl.resume();
+  }
+  if (signedIn) {
+    say(`  ${green("codex")} ${version}${dim(`, ${signedIn.replace(/^Logged in/i, "signed in")}`)}`);
   } else {
-    const login = await runCodex(["login", "status"]);
-    say(`  ${green("codex")} ${codex.output.trim().split(/\r?\n/).at(-1)}${login.code === 0 ? dim(", signed in") : dim(", not signed in yet")}`);
+    say(yellow(`  Codex is not signed in, so Perry cannot answer yet. Run ${bold("codex login")}, or sign in from the dashboard's Settings page.`));
   }
 
   // --- 4. Secrets and deploy ----------------------------------------------
   step(4, TOTAL, "Pushing config");
 
+  // Made even without a bot, so one added later on the Keys page can register its webhook.
   const webhookSecret =
     env.TELEGRAM_WEBHOOK_SECRET || randomBytes(32).toString("hex");
   const dashboardKey = env.DASHBOARD_KEY || randomBytes(24).toString("base64url");
@@ -164,7 +244,7 @@ async function main() {
   say(`  ${green("wrote")} .env.local`);
   say(`  ${green("home")} ${ensureHome() && HOME}`);
 
-  await setConvexEnv("TELEGRAM_BOT_TOKEN", token);
+  if (token) await setConvexEnv("TELEGRAM_BOT_TOKEN", token);
   await setConvexEnv("TELEGRAM_WEBHOOK_SECRET", webhookSecret);
   await setConvexEnv("DASHBOARD_KEY", dashboardKey);
 
@@ -176,45 +256,55 @@ async function main() {
   }
   say(`  ${green("pushed")} functions`);
 
-  const hook = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      url: `${siteUrl}/telegram`,
-      secret_token: webhookSecret,
-      allowed_updates: ["message", "edited_message", "callback_query"],
-      drop_pending_updates: true,
-    }),
-  }).then((r) => r.json(), () => null);
+  if (token) {
+    const hook = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        url: `${siteUrl}/telegram`,
+        secret_token: webhookSecret,
+        allowed_updates: ["message", "edited_message", "callback_query"],
+        drop_pending_updates: true,
+      }),
+    }).then((r) => r.json(), () => null);
 
-  if (!hook?.ok) {
-    say(yellow(`  Webhook failed: ${hook?.description ?? "no response"}`));
-    process.exit(1);
+    if (!hook?.ok) {
+      say(yellow(`  Webhook failed: ${hook?.description ?? "no response"}`));
+      process.exit(1);
+    }
+    say(`  ${green("webhook")} ${siteUrl}/telegram`);
   }
-  say(`  ${green("webhook")} ${siteUrl}/telegram`);
 
-  // --- 5. Pair ------------------------------------------------------------
+  // --- 5. Claim it -----------------------------------------------------------
   step(5, TOTAL, "Claim it");
 
-  const pair = await runConvex(["run", "installation:startPairing", "{}"]);
-  const code = pair.output.match(/"code":\s*"(\d{6})"/)?.[1];
-
-  if (!code) {
-    say(yellow("  Could not mint a pairing code. Run `pnpm run pair` to retry."));
+  if (!botName) {
+    // Without a bot the dashboard key is the owner's key, and nothing is left to claim; the settings still need their row.
+    const made = await runConvex(["run", "installation:ensure", "{}"]);
+    if (made.code !== 0) say(yellow("  Could not save Perry's settings; run setup again."));
+    say(dim("  Nothing to claim without a bot: the dashboard key is yours alone."));
   } else {
-    say("");
-    say(`  Message ${bold("@" + probe.result.username)} on Telegram with:`);
-    say(`\n      ${bold(green(code))}\n`);
-    say(dim("  It expires in an hour. Whoever sends it first owns this Perry;"));
-    say(dim("  everyone else is ignored from then on."));
+    const pair = await runConvex(["run", "installation:startPairing", "{}"]);
+    const code = pair.output.match(/"code":\s*"(\d{6})"/)?.[1];
+    if (!code) {
+      say(yellow("  Could not mint a pairing code. Run `perry pair` to retry."));
+    } else {
+      say("");
+      say(`  Message ${bold("@" + botName)} on Telegram with:`);
+      say(`\n      ${bold(green(code))}\n`);
+      say(dim("  It expires in an hour. Whoever sends it first owns this Perry;"));
+      say(dim("  everyone else is ignored from then on."));
+    }
   }
 
-  say(bold("\nDashboard"));
-  say(`  pnpm run dev  then open http://localhost:3000`);
-  say(`  key: ${dashboardKey}`);
-  say(dim("\n  (also saved in .env.local; `pnpm run doctor` checks everything)\n"));
-
   rl.close();
+  // `perry setup` goes on to connect this computer, start Perry and open the dashboard.
+  if (process.argv.includes("--from-perry")) return;
+
+  say(bold("\nNext"));
+  say(`  ${bold("pnpm perry start")}  connects this computer, then runs Perry in the background`);
+  say(`  dashboard key: ${dashboardKey}`);
+  say(dim("\n  (also saved in .env.local; `pnpm perry doctor` checks everything)\n"));
 }
 
 main().catch((error) => {

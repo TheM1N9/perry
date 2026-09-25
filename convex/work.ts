@@ -253,30 +253,52 @@ export const recordCheck = internalMutation({
   },
 });
 
+/** Whether there was such a watch to delete. */
 export const deleteMonitor = internalMutation({
   args: { monitorId: v.string() },
-  returns: v.null(),
+  returns: v.boolean(),
   handler: async (ctx, args) => {
     const id = ctx.db.normalizeId("monitors", args.monitorId);
-    if (id) await ctx.db.delete(id);
-    return null;
+    if (!id || !(await ctx.db.get(id))) return false;
+    await ctx.db.delete(id);
+    return true;
   },
 });
 
+/** Pause or resume a watch; without `active` it flips. Whether there was such a watch. */
 export const toggleMonitor = internalMutation({
-  args: { monitorId: v.string() },
-  returns: v.null(),
+  args: { monitorId: v.string(), active: v.optional(v.boolean()) },
+  returns: v.boolean(),
   handler: async (ctx, args) => {
     const id = ctx.db.normalizeId("monitors", args.monitorId);
-    if (!id) return null;
+    if (!id) return false;
     const monitor = await ctx.db.get(id);
-    if (!monitor) return null;
+    if (!monitor) return false;
     await ctx.db.patch(id, {
-      active: !monitor.active,
+      active: args.active ?? !monitor.active,
       failures: 0,
       nextCheckAt: Date.now(),
     });
-    return null;
+    return true;
+  },
+});
+
+/** Make one active watch, or every active watch, due now, so the next check reads it. How many. */
+export const markMonitorsDue = internalMutation({
+  args: { monitorId: v.optional(v.string()) },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    if (args.monitorId !== undefined) {
+      const id = ctx.db.normalizeId("monitors", args.monitorId);
+      const monitor = id ? await ctx.db.get(id) : null;
+      if (!monitor?.active) return 0;
+      await ctx.db.patch(monitor._id, { nextCheckAt: now });
+      return 1;
+    }
+    const active = (await ctx.db.query("monitors").collect()).filter((m) => m.active);
+    for (const monitor of active) await ctx.db.patch(monitor._id, { nextCheckAt: now });
+    return active.length;
   },
 });
 
@@ -348,10 +370,12 @@ export const snapshot = internalQuery({
         plan: t.plan,
         question: t.question,
         result: t.result,
+        error: t.error,
       })),
       goals: goals.map((g) => ({
         id: g._id,
         title: g.title,
+        description: g.description,
         status: g.status,
         milestones: g.milestones,
       })),
@@ -362,6 +386,8 @@ export const snapshot = internalQuery({
         condition: m.condition,
         value: m.value,
         active: m.active,
+        intervalMinutes: m.intervalMinutes,
+        failures: m.failures,
         lastObservation: m.lastObservation,
         lastCheckedAt: m.lastCheckedAt,
       })),
