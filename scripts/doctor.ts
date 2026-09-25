@@ -64,6 +64,8 @@ async function checkMachine() {
       const sandboxed = await runCodex(["sandbox", "-P", ":workspace", "-C", probe, "--", "/bin/sh", "-c", "echo ok > probe.txt"]);
       const how = process.platform === "darwin" ? "Seatbelt" : "bubblewrap";
       if (sandboxed.code === 0 && existsSync(join(probe, "probe.txt"))) ok("codex sandbox", `workspace-write works (${how})`);
+      // Codex 0.106, for one, has no -P; Perry still runs on it, without its skills.
+      else if (/unexpected argument/.test(sandboxed.output)) warn("codex sandbox", `this Codex is too old to check. Update it: ${INSTALL_HINTS.codex}`);
       else warn("codex sandbox", `a sandboxed command failed: ${lastLine(sandboxed.output)}. See INSTALL.md, "Codex's sandbox"`);
       rmSync(probe, { recursive: true, force: true });
     }
