@@ -36,17 +36,17 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#08090a",
-  colorScheme: "dark",
+  themeColor: "#ffffff",
+  colorScheme: "light",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${interTight.variable} ${jetbrains.variable}`}>
-      <body className="min-h-dvh overflow-x-clip bg-canvas text-fg">
+      <body className="min-h-dvh overflow-x-clip bg-paper text-ink">
         <a
           href="#main"
-          className="fixed left-3 -top-16 z-50 rounded-lg bg-fg px-3 py-2 font-medium text-canvas focus:top-3"
+          className="fixed left-3 -top-16 z-50 rounded-lg bg-ink px-3 py-2 font-medium text-paper focus:top-3"
         >
           Skip to content
         </a>

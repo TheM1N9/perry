@@ -18,8 +18,8 @@ export default function Image() {
           width: "100%",
           height: "100%",
           display: "flex",
-          background: "#08090a",
-          color: "#f7f8f8",
+          background: "#f5f5f7",
+          color: "#1d1d1f",
           fontFamily: "Inter Tight",
           padding: "72px 80px",
         }}
@@ -31,7 +31,7 @@ export default function Image() {
           <div style={{ display: "flex", fontSize: 68, fontWeight: 600, lineHeight: 1.04, letterSpacing: "-0.03em" }}>
             The only AI assistant you need.
           </div>
-          <div style={{ display: "flex", fontSize: 26, color: "#2cc0b3" }}>Remembers everything. Tells no one.</div>
+          <div style={{ display: "flex", fontSize: 28, color: "#6e6e73" }}>Lives in your Telegram. Works on your computer.</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginLeft: 40, width: 392 }}>
           {/* The mascot, as drawn in components/mascot/Platypus.tsx (static here: no hooks in ImageResponse). */}

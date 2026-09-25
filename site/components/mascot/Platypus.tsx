@@ -24,65 +24,78 @@ const QUIPS = [
   "I never go rogue. It's in my contract.",
 ];
 
-/** The drawing alone, for places that don't move: the favicon, the image cards, small avatars. */
+const LINE = "#123f3b";
+
+/**
+ * The drawing alone, for places that don't move: the image card, small
+ * avatars. One ink outline of one weight, flat colour, one shadow tone.
+ */
 export function PlatypusArt({
-  look = { x: 0, y: 0 }, lid = 0.32, hatLift = 0, head = false, className = "",
-}: { look?: { x: number; y: number }; lid?: number; hatLift?: number; head?: boolean; className?: string }) {
+  look = { x: 0, y: 0 }, lid = 0.32, hatLift = 0, head = false, asleep = false, className = "",
+}: { look?: { x: number; y: number }; lid?: number; hatLift?: number; head?: boolean; asleep?: boolean; className?: string }) {
   const id = useId().replace(/:/g, "");
+  const ink = { stroke: LINE, strokeWidth: 3.2, strokeLinejoin: "round" as const };
+  // Asleep, the fedora slides down over his eyes.
+  const hatY = asleep ? 12 : -hatLift;
+  const hatTilt = asleep ? -2 : -7 - hatLift * 0.6;
   return (
-    <svg viewBox={head ? "44 44 152 132" : "0 0 240 262"} className={className} aria-hidden>
+    <svg viewBox={head ? "40 40 160 136" : "0 0 240 262"} className={className} aria-hidden>
       <defs>
         {[100, 140].map((cx) => (
           <clipPath key={cx} id={`${id}-eye-${cx}`}>
             <ellipse cx={cx} cy="116" rx="13" ry="15" />
           </clipPath>
         ))}
-        <linearGradient id={`${id}-body`} x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0" stopColor={TEAL} />
-          <stop offset="1" stopColor={TEAL_DARK} />
-        </linearGradient>
       </defs>
       {/* tail, behind the body */}
-      <path d="M160 208c34-10 64 2 66 18 2 17-26 24-62 14z" fill={BILL_DARK} />
-      <path d="M176 214l40 16M178 226l34 4" stroke="#b86a22" strokeWidth="3" strokeLinecap="round" opacity=".5" />
-      {/* body */}
-      <path d="M58 152c0-46 28-70 62-70s62 24 62 70v50c0 30-26 42-62 42s-62-12-62-42z" fill={`url(#${id}-body)`} />
+      <path d="M160 208c34-10 64 2 66 18 2 17-26 24-62 14z" fill={BILL_DARK} {...ink} />
+      {/* body, with its one shadow tone down the right */}
+      <path d="M58 152c0-46 28-70 62-70s62 24 62 70v50c0 30-26 42-62 42s-62-12-62-42z" fill={TEAL} />
+      <path d="M150 92c20 12 32 32 32 60v50c0 30-26 42-62 42 34-6 44-30 44-60v-44c0-20-4-36-14-48z" fill={TEAL_DARK} opacity=".55" />
+      <path d="M58 152c0-46 28-70 62-70s62 24 62 70v50c0 30-26 42-62 42s-62-12-62-42z" fill="none" {...ink} />
       {/* arms */}
-      <ellipse cx="60" cy="182" rx="10" ry="20" transform="rotate(12 60 182)" fill={TEAL_DARK} />
-      <ellipse cx="180" cy="182" rx="10" ry="20" transform="rotate(-12 180 182)" fill={TEAL_DARK} />
+      <path d="M62 164c-10 6-14 22-8 34 3 6 10 6 13 0" fill={TEAL_DARK} {...ink} />
+      <path d="M178 164c10 6 14 22 8 34-3 6-10 6-13 0" fill={TEAL_DARK} {...ink} />
       {/* feet */}
-      <ellipse cx="94" cy="246" rx="20" ry="8" fill={BILL} />
-      <ellipse cx="146" cy="246" rx="20" ry="8" fill={BILL} />
+      <ellipse cx="94" cy="246" rx="20" ry="8" fill={BILL} {...ink} />
+      <ellipse cx="146" cy="246" rx="20" ry="8" fill={BILL} {...ink} />
       {/* eyes */}
-      {[100, 140].map((cx) => (
-        <g key={cx}>
-          <ellipse cx={cx} cy="116" rx="13" ry="15" fill="#fff" />
-          <circle cx={cx + look.x * 4} cy={118 + look.y * 4} r="5.6" fill="#101214" />
-          <circle cx={cx + look.x * 4 + 1.8} cy={116 + look.y * 4} r="1.6" fill="#fff" />
-          {/* the lid: a little lowered is the platypus's usual unimpressed look */}
-          <g clipPath={`url(#${id}-eye-${cx})`}>
-            <rect x={cx - 15} y="99" width="30" height={34 * lid} fill={TEAL_DARK} />
-            <path d={`M${cx - 15} ${99 + 34 * lid}h30`} stroke="#14706a" strokeWidth="2.4" />
-          </g>
-        </g>
-      ))}
+      {asleep
+        ? [100, 140].map((cx) => <path key={cx} d={`M${cx - 11} 118q11 8 22 0`} fill="none" {...ink} strokeLinecap="round" />)
+        : [100, 140].map((cx) => (
+            <g key={cx}>
+              <ellipse cx={cx} cy="116" rx="13" ry="15" fill="#fff" {...ink} />
+              <circle cx={cx + look.x * 4} cy={118 + look.y * 4} r="5.6" fill="#101214" />
+              <circle cx={cx + look.x * 4 + 1.8} cy={116 + look.y * 4} r="1.6" fill="#fff" />
+              {/* the lid: a little lowered is the platypus's usual unimpressed look */}
+              <g clipPath={`url(#${id}-eye-${cx})`}>
+                <rect x={cx - 15} y="99" width="30" height={34 * lid} fill={TEAL_DARK} />
+                <path d={`M${cx - 15} ${99 + 34 * lid}h30`} stroke={LINE} strokeWidth="2.6" />
+              </g>
+            </g>
+          ))}
       {/* bill */}
-      <path d="M70 148c0-12 24-17 50-17s50 5 50 17c0 15-22 21-50 21s-50-6-50-21z" fill={BILL} />
-      <path d="M78 156c14 7 70 7 84 0" stroke={BILL_DARK} strokeWidth="2.6" strokeLinecap="round" fill="none" />
-      <circle cx="110" cy="141" r="2.2" fill={BILL_DARK} />
-      <circle cx="130" cy="141" r="2.2" fill={BILL_DARK} />
+      <path d="M70 148c0-12 24-17 50-17s50 5 50 17c0 15-22 21-50 21s-50-6-50-21z" fill={BILL} {...ink} />
+      <path d="M80 156c14 6 66 6 80 0" stroke={BILL_DARK} strokeWidth="2.6" strokeLinecap="round" fill="none" />
+      <circle cx="110" cy="141" r="2.2" fill={LINE} />
+      <circle cx="130" cy="141" r="2.2" fill={LINE} />
       {/* fedora, worn at an angle */}
       <motion.g
         initial={false}
-        animate={{ y: -hatLift, rotate: -7 - hatLift * 0.6 }}
+        animate={{ y: hatY, rotate: hatTilt }}
         transition={{ type: "spring", stiffness: 380, damping: 18 }}
         style={{ transformOrigin: "120px 90px", transformBox: "view-box" }}
       >
-        <ellipse cx="120" cy="89" rx="72" ry="11" fill={HAT} />
-        <path d="M84 89c2-26 14-38 26-35 6 2 14 2 20 0 12-3 24 9 26 35z" fill={HAT} />
-        <path d="M85 80h70v8H85z" fill={HAT_BAND} />
-        <path d="M100 60c6 2 34 2 40 0" stroke="#6a4a37" strokeWidth="2.4" strokeLinecap="round" fill="none" />
+        <path d="M84 89c2-26 14-38 26-35 6 2 14 2 20 0 12-3 24 9 26 35z" fill={HAT} {...ink} />
+        <path d="M85.5 79h69v9h-69z" fill={HAT_BAND} />
+        <ellipse cx="120" cy="89" rx="72" ry="11" fill={HAT} {...ink} />
+        <path d="M100 62c6 2 34 2 40 0" stroke="#6a4a37" strokeWidth="2.4" strokeLinecap="round" fill="none" />
       </motion.g>
+      {asleep ? (
+        <text x="186" y="70" fontFamily="ui-sans-serif, system-ui" fontWeight="700" fontSize="22" fill={LINE}>
+          z<tspan dx="3" dy="-14" fontSize="16">z</tspan>
+        </text>
+      ) : null}
     </svg>
   );
 }
@@ -167,7 +180,7 @@ export function Platypus({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ type: "spring", stiffness: 420, damping: 26 }}
-            className="absolute bottom-[92%] left-1/2 z-10 w-max max-w-[240px] -translate-x-1/2 rounded-2xl bg-fg px-3.5 py-2 text-center text-[14px] font-medium leading-snug text-canvas shadow-[0_10px_30px_rgb(0_0_0/0.4)] after:absolute after:left-1/2 after:top-full after:-translate-x-1/2 after:border-8 after:border-transparent after:border-t-fg"
+            className="absolute bottom-[92%] left-1/2 z-10 w-max max-w-[240px] -translate-x-1/2 rounded-2xl bg-ink px-3.5 py-2 text-center text-[14px] font-medium leading-snug text-paper shadow-[0_10px_30px_rgb(0_0_0/0.18)] after:absolute after:left-1/2 after:top-full after:-translate-x-1/2 after:border-8 after:border-transparent after:border-t-ink"
           >
             {said}
           </motion.p>
@@ -183,7 +196,7 @@ export function Platypus({
         transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
         whileTap={{ scale: 0.95 }}
       >
-        <PlatypusArt look={look} lid={blink ? 1 : 0.32} hatLift={tip ? 16 : 0} className="h-auto w-full drop-shadow-[0_24px_40px_rgb(0_0_0/0.45)]" />
+        <PlatypusArt look={look} lid={blink ? 1 : 0.32} hatLift={tip ? 16 : 0} className="h-auto w-full drop-shadow-[0_16px_20px_rgb(0_0_0/0.10)]" />
       </motion.button>
     </div>
   );

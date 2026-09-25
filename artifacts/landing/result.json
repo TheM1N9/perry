@@ -1,10 +1,10 @@
 {
   "pass": true,
-  "at": "2026-09-25T22:27:16.411Z",
+  "at": "2026-09-25T22:51:40.494Z",
   "performance": {
-    "lcpMs": 188,
-    "lcpElement": "DIV.whitespace-pre-wrap break-word",
-    "jsKb": 192
+    "lcpMs": 148,
+    "lcpElement": "P.font-mono text-[14px] text-tea",
+    "jsKb": 189
   },
   "checks": [
     {
@@ -16,8 +16,7 @@
         "loaded": [
           "interTight",
           "interTight Fallback",
-          "jetbrains",
-          "jetbrains Fallback"
+          "jetbrains"
         ]
       }
     },
@@ -30,25 +29,24 @@
         "loaded": [
           "interTight",
           "interTight Fallback",
-          "jetbrains",
-          "jetbrains Fallback"
+          "jetbrains"
         ]
       }
     },
     {
-      "name": "hero: the scene reaches Perry's approval request",
+      "name": "hero: tapping suggestion 1 gets Perry's answer",
       "pass": true
     },
     {
-      "name": "hero: approved on the phone, and the terminal runs it",
+      "name": "hero: tapping suggestion 2 gets Perry's answer",
       "pass": true
     },
     {
-      "name": "hero: the scene ends with Perry's reply",
+      "name": "hero: tapping suggestion 3 gets Perry's answer",
       "pass": true
     },
     {
-      "name": "hero: the scene starts over",
+      "name": "hero: tapped suggestions go away",
       "pass": true
     },
     {
@@ -57,77 +55,46 @@
       "detail": []
     },
     {
+      "name": "day: at 07:00 the phone shows the morning brief",
+      "pass": true
+    },
+    {
+      "name": "day: at 10:14 Perry has filed the invoices",
+      "pass": true
+    },
+    {
+      "name": "day: at 14:30 Perry asks before deleting",
+      "pass": true
+    },
+    {
+      "name": "day: approving gets the branches deleted",
+      "pass": true
+    },
+    {
+      "name": "day: by 18:00 the phone's clock and chat have moved on",
+      "pass": true
+    },
+    {
+      "name": "night: the 02:13 alert arrives while Perry sleeps",
+      "pass": true
+    },
+    {
       "name": "after scrolling through, nothing in <main> is left invisible",
       "pass": true,
       "detail": []
     },
     {
-      "name": "text contrast meets AA (141 text nodes)",
+      "name": "text contrast meets AA (123 text nodes)",
       "pass": true,
       "detail": []
-    },
-    {
-      "name": "control: approve gives its outcome",
-      "pass": true,
-      "detail": "case 03 · control\n\nNever goes rogue. Asks before it acts.\n\nPerry\n\n/ settings\n\nAccess\n\nthis chat\n\nSupervised\nFull access\n\nPolicy\n\nthis machine\n\nAsk\nReview\nTrust\n\nPerry\n\nbot\n\nToday\n\nlooks good, push the fix to main\n10:44\nPerry wants to run\ngit push origin main\nin ~/code/site · it needs the network\n✓ Approved by you\n10:44\nPushed to main. CI is running; I'll tell you if it fails.\n10:44\nWrite a message…\nAsk again"
-    },
-    {
-      "name": "control: after approve, it can be asked again",
-      "pass": true
-    },
-    {
-      "name": "control: decline gives its outcome",
-      "pass": true,
-      "detail": "case 03 · control\n\nNever goes rogue. Asks before it acts.\n\nPerry\n\n/ settings\n\nAccess\n\nthis chat\n\nSupervised\nFull access\n\nPolicy\n\nthis machine\n\nAsk\nReview\nTrust\n\nPerry\n\nbot\n\nToday\n\nlooks good, push the fix to main\n10:44\nPerry wants to run\ngit push origin main\nin ~/code/site · it needs the network\nDeclined by you\n10:44\nOkay, I won't push. The commit is ready whenever you are.\n10:44\nWrite a message…\nAsk again"
-    },
-    {
-      "name": "control: after decline, it can be asked again",
-      "pass": true
-    },
-    {
-      "name": "control: always gives its outcome",
-      "pass": true,
-      "detail": "case 03 · control\n\nNever goes rogue. Asks before it acts.\n\nPerry\n\n/ settings\n\nAccess\n\nthis chat\n\nSupervised\nFull access\n\nPolicy\n\nthis machine\n\nAsk\nReview\nTrust\n\nPerry\n\nbot\n\nToday\n\nlooks good, push the fix to main\n10:44\nPerry wants to run\ngit push origin main\nin ~/code/site · it needs the network\n✓ Approved, and saved as a rule for this command in this folder\n10:44\nPushed. Next time I'll push here without asking.\n10:44\nWrite a message…\nAsk again"
-    },
-    {
-      "name": "control: after always, it can be asked again",
-      "pass": true
-    },
-    {
-      "name": "control: Review shows the reviewer's verdicts, and asks about the push",
-      "pass": true
-    },
-    {
-      "name": "control: Trust runs the push under the machine's policy",
-      "pass": true
-    },
-    {
-      "name": "control: Full access runs without asking, goes amber and disables the policy",
-      "pass": true,
-      "detail": {
-        "ran": true,
-        "policyDisabled": true,
-        "amber": "rgb(240, 180, 76)"
-      }
-    },
-    {
-      "name": "schedule: no reminder yet at 13:00, and it has arrived by 15:00",
-      "pass": true,
-      "detail": {
-        "at13": "case 04 · schedule\n\nReports in on time.\n\n13:00\n\nnext · 14:30 reminder\n\nin your timezone\n\nmemory\nbrief\ncheck-in\nSam\ncheck-in\nnotes\n00\n06\n12\n18\n24\n\nPerry\n\nbot\n\nToday\n\n03:00 · memory consolidation · no m"
-      }
-    },
-    {
-      "name": "schedule: taking the dial pauses the day",
-      "pass": true
     },
     {
       "name": "mascot: his eyes follow the pointer",
       "pass": true,
       "detail": {
         "centred": "100",
-        "right": "103.93539670771645",
-        "left": "97.61724584572228"
+        "right": "103.99890853935958",
+        "left": "96.00470312881357"
       }
     },
     {
@@ -141,7 +108,7 @@
     {
       "name": "copy hands over the clone and setup commands",
       "pass": true,
-      "detail": "git clone https://github.com/TheM1N9/perry.git perry && cd perry\npnpm install\npnpm run setup"
+      "detail": "git clone https://github.com/TheM1N9/perry.git perry && cd perry\npnpm install && pnpm run setup"
     },
     {
       "name": "no horizontal overflow at 1440px",
@@ -168,12 +135,12 @@
       "pass": true
     },
     {
-      "name": "reduced motion: the hero's scene still plays once it is on screen",
-      "pass": true,
-      "detail": {
-        "before": 0,
-        "after": 3
-      }
+      "name": "reduced motion: the hero's chat still answers",
+      "pass": true
+    },
+    {
+      "name": "phone: the 14:30 card takes a Deny",
+      "pass": true
     },
     {
       "name": "reduced motion: nothing in <main> is left invisible",

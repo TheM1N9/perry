@@ -1,7 +1,11 @@
 "use client";
 
 import { motion } from "motion/react";
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
+
+/** Which Telegram theme the chat is drawn in: day on the light page, night for the night watch. */
+export type TgTheme = "day" | "night";
+export const TgThemeContext = createContext<TgTheme>("day");
 
 const pop = {
   initial: { opacity: 0, y: 14, scale: 0.96 },
@@ -10,23 +14,39 @@ const pop = {
   transition: { type: "spring" as const, stiffness: 420, damping: 32 },
 };
 
+const SKIN = {
+  day: {
+    in: "bg-tg-in text-[#000]",
+    out: "bg-tg-out text-[#000]",
+    meta: "text-tg-meta",
+    outMeta: "text-[#357d32]",
+    shadow: "shadow-[0_1px_1px_rgb(0_0_0/0.13)]",
+  },
+  night: {
+    in: "bg-tgn-in text-white",
+    out: "bg-tgn-out text-white",
+    meta: "text-tgn-meta",
+    outMeta: "text-[#b4d0ea]",
+    shadow: "",
+  },
+};
+
 /** A Telegram message bubble. `out` is you; `in` is Perry. */
-export function Bubble({
-  side, time, children, className = "",
-}: { side: "in" | "out"; time?: string; children: ReactNode; className?: string }) {
+export function Bubble({ side, time, children, className = "" }: { side: "in" | "out"; time?: string; children: ReactNode; className?: string }) {
+  const skin = SKIN[useContext(TgThemeContext)];
   const out = side === "out";
   return (
     <motion.div
       layout="position"
       {...pop}
       style={{ originX: out ? 1 : 0, originY: 1 }}
-      className={`relative w-fit max-w-[84%] shrink-0 rounded-[16px] px-3 pb-[18px] pt-[7px] text-[14.5px] leading-[1.38] text-white ${
-        out ? "ml-auto rounded-br-[5px] bg-tg-out" : "rounded-bl-[5px] bg-tg-in"
+      className={`relative w-fit max-w-[84%] shrink-0 rounded-[17px] px-3 pb-[19px] pt-[7px] text-[15px] leading-[1.36] ${skin.shadow} ${
+        out ? `ml-auto rounded-br-[5px] ${skin.out}` : `rounded-bl-[5px] ${skin.in}`
       } ${className}`}
     >
       {children}
       {time ? (
-        <span className={`absolute bottom-[3px] right-2.5 flex items-center gap-0.5 text-[11px] ${out ? "text-[#b4d0ea]" : "text-tg-meta"}`}>
+        <span className={`absolute bottom-[3px] right-2.5 flex items-center gap-0.5 text-[11.5px] ${out ? skin.outMeta : skin.meta}`}>
           {time}
           {out ? (
             <svg aria-hidden width="16" height="10" viewBox="0 0 16 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -41,6 +61,7 @@ export function Bubble({
 
 /** Perry is typing. */
 export function Typing() {
+  const skin = SKIN[useContext(TgThemeContext)];
   return (
     <motion.div
       layout="position"
@@ -48,17 +69,26 @@ export function Typing() {
       style={{ originX: 0, originY: 1 }}
       role="status"
       aria-label="Perry is typing"
-      className="flex w-fit shrink-0 items-center gap-1 rounded-[16px] rounded-bl-[5px] bg-tg-in px-3.5 py-3"
+      className={`flex w-fit shrink-0 items-center gap-1 rounded-[17px] rounded-bl-[5px] px-3.5 py-3 ${skin.in} ${skin.shadow}`}
     >
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}
-          className="size-[7px] rounded-full bg-tg-meta"
-          animate={{ opacity: [0.35, 1, 0.35], y: [0, -2, 0] }}
+          className="size-[7px] rounded-full bg-current opacity-40"
+          animate={{ opacity: [0.25, 0.7, 0.25], y: [0, -2, 0] }}
           transition={{ duration: 1, repeat: Infinity, delay: i * 0.16 }}
         />
       ))}
     </motion.div>
+  );
+}
+
+/** Telegram's date and notice pill. */
+export function Pill({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <motion.p layout="position" {...pop} className={`tg-pill mx-auto w-fit shrink-0 rounded-full px-2.5 py-0.5 text-center text-[12.5px] font-medium ${className}`}>
+      {children}
+    </motion.p>
   );
 }
 
@@ -72,37 +102,17 @@ export function InlineKeys({ children, label }: { children: ReactNode; label: st
 }
 
 export function Key({
-  children, wide, onClick, pressed, disabled, className = "", ...rest
-}: {
-  children: ReactNode; wide?: boolean; onClick?: () => void; pressed?: boolean; disabled?: boolean; className?: string;
-  "data-answer"?: string;
-}) {
+  children, onClick, wide, ...rest
+}: { children: ReactNode; onClick?: () => void; wide?: boolean; "data-answer"?: string }) {
   return (
     <motion.button
       type="button"
       onClick={onClick}
-      disabled={disabled}
-      animate={pressed ? { scale: [1, 0.93, 1] } : { scale: 1 }}
-      transition={{ duration: 0.3 }}
-      className={`relative rounded-[10px] px-2 py-2 text-[13.5px] font-semibold text-white backdrop-blur-md transition-colors enabled:hover:bg-black/55 disabled:cursor-default ${
-        pressed ? "bg-white/25" : "bg-black/40"
-      } ${wide ? "col-span-2" : ""} ${className}`}
+      whileTap={{ scale: 0.95 }}
+      className={`rounded-[10px] bg-black/50 px-2 py-2 text-[14px] font-semibold text-white backdrop-blur-md transition-colors hover:bg-black/60 ${wide ? "col-span-2" : ""}`}
       {...rest}
     >
       {children}
     </motion.button>
-  );
-}
-
-/** A finger tap, drawn where the demo presses a button. */
-export function Tap() {
-  return (
-    <motion.span
-      aria-hidden
-      className="pointer-events-none absolute left-1/2 top-1/2 size-9 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/80 bg-white/25"
-      initial={{ scale: 0.4, opacity: 0 }}
-      animate={{ scale: [0.4, 1, 1.5], opacity: [0, 1, 0] }}
-      transition={{ duration: 0.7, ease: "easeOut" }}
-    />
   );
 }

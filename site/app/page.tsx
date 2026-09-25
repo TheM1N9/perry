@@ -1,12 +1,11 @@
-import { FinalCta, Footer } from "@/components/sections/Closing";
-import { Control } from "@/components/sections/Control";
+import { Apps } from "@/components/sections/Apps";
+import { Close, Footer } from "@/components/sections/Close";
+import { Day } from "@/components/sections/Day";
 import { Hero } from "@/components/sections/Hero";
-import { Install } from "@/components/sections/Install";
-import { Integrations } from "@/components/sections/Integrations";
-import { Memory } from "@/components/sections/Memory";
 import { Nav } from "@/components/sections/Nav";
-import { Schedule } from "@/components/sections/Schedule";
-import { Work } from "@/components/sections/Work";
+import { Night } from "@/components/sections/Night";
+import { Promise } from "@/components/sections/Promise";
+import { Setup } from "@/components/sections/Setup";
 
 export default function Page() {
   return (
@@ -14,13 +13,12 @@ export default function Page() {
       <Nav />
       <main id="main">
         <Hero />
-        <Integrations />
-        <Memory />
-        <Work />
-        <Control />
-        <Schedule />
-        <Install />
-        <FinalCta />
+        <Day />
+        <Night />
+        <Promise />
+        <Apps />
+        <Setup />
+        <Close />
       </main>
       <Footer />
     </>

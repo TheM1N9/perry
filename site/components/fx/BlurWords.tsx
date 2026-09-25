@@ -3,10 +3,10 @@
 import { motion } from "motion/react";
 
 /** The hero headline: each word comes into focus in turn. */
-export function BlurWords({ text, className }: { text: string; className?: string }) {
+export function BlurWords({ text, className, id = "hero-title" }: { text: string; className?: string; id?: string }) {
   const words = text.split(" ");
   return (
-    <h1 className={className} aria-label={text}>
+    <h1 id={id} className={className} aria-label={text}>
       {words.map((word, i) => (
         <motion.span
           key={i}

@@ -12,28 +12,27 @@ import { sleep } from "../browser";
 // - It asks another server for something (fonts, analytics, a CDN), which the
 //   footer says it never does: every request must be to the page's own origin.
 // - A self-hosted font is missing and the page falls back to system fonts: the
-//   body's and the terminal's first font family must both be loaded.
-// - The hero's scene is stuck, or never loops: its step must reach the
-//   approval, then Perry's "Fixed." reply, then start over.
-// - The scene only plays for people with motion on: with reduced motion
-//   emulated it must still advance, and nothing may be left invisible.
+//   body's and the mono font's first family must both be loaded.
+// - The hero's chat is a picture: tapping each suggestion must get Perry's
+//   answer, and a tapped suggestion must go away.
+// - The day doesn't follow the reader: as each moment is scrolled to, the
+//   pinned phone must show what happened at that time, its clock included.
+// - The approval is a picture: tapping Approve must get the branches deleted,
+//   and on a phone-sized screen Deny must leave them alone.
+// - The night never comes: the 02:13 alert must arrive in the night scene.
 // - A section never appears because its reveal never fires: after scrolling
 //   the page through, no element in <main> may still be at opacity 0.
-// - The Control chapter lies or is dead: each answer (Approve, Decline, Always
-//   allow) must give its outcome; Full access must run without asking, go
-//   amber and disable the policy; Review must show the reviewer's verdicts;
-//   Trust must run under the machine's policy.
-// - The schedule dial doesn't drive the chat: at 13:00 there is no "Call Sam."
-//   message, at 15:00 there is, and taking the dial pauses the day.
-// - The mascot is only a picture: poking him must tip the hat and get a line
-//   out of him, his eyes must follow the pointer, and the closing one must say
-//   hello when it scrolls into view.
+// - The page only works with motion on: with reduced motion emulated, the
+//   chats must still answer and nothing may be left invisible.
+// - The mascot is only a picture: poking him must get a line out of him, his
+//   eyes must follow the pointer, and the closing one must say hello when it
+//   scrolls into view.
 // - A wrong URL shows a bare error: the 404 page must be Perry's own.
 // - Copy copies the wrong thing: it must hand over the clone and setup commands.
 // - A section lays out wider than the screen: no horizontal overflow at 1440,
 //   1280, 768 or 375px.
-// - Text is too faint on the dark canvas: every visible text node must meet
-//   WCAG AA (4.5:1, 3:1 for large text) against what is really behind it.
+// - Text is too faint: every visible text node must meet WCAG AA (4.5:1, 3:1
+//   for large text) against what is really behind it.
 // - An in-page link points nowhere: every href="#id" must have its target.
 // - Anything throws, or React reports a hydration mismatch: no page errors.
 // Also recorded, not judged: the LCP time and the JavaScript the page loads.
@@ -137,11 +136,15 @@ const text = (selector: string) => evaluate(`document.querySelector(${JSON.strin
 
 // Text against what is really behind it.
 const CONTRAST = `(() => {
-  // rgb() and rgba() come in 0-255; color-mix() and some alpha colours compute to color(srgb ...) in 0-1.
+  // Any CSS colour (rgb, color(srgb), oklab from Tailwind's opacity steps) becomes rgba by painting it once.
+  const paint = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
   const parse = (c) => {
-    const m = c.match(/[\\d.]+/g).map(Number);
-    const k = c.startsWith("color(") ? 255 : 1;
-    return { r: m[0] * k, g: m[1] * k, b: m[2] * k, a: m[3] ?? 1 };
+    paint.clearRect(0, 0, 1, 1);
+    paint.fillStyle = "rgba(0,0,0,0)";
+    paint.fillStyle = c;
+    paint.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = paint.getImageData(0, 0, 1, 1).data;
+    return { r, g, b, a: a / 255 };
   };
   const over = (top, under) => ({ r: top.r * top.a + under.r * (1 - top.a), g: top.g * top.a + under.g * (1 - top.a), b: top.b * top.a + under.b * (1 - top.a), a: 1 });
   // What is behind a text node is whatever is painted under it, sibling layers (like a sliding pill) included,
@@ -180,8 +183,6 @@ const CONTRAST = `(() => {
 })()`;
 const OVERFLOW = `document.documentElement.scrollWidth - document.documentElement.clientWidth`;
 const HIDDEN = `[...document.querySelectorAll("main *")].filter((el) => el.getClientRects().length && getComputedStyle(el).opacity === "0" && !el.closest("[aria-hidden=true]")).map((el) => el.tagName + "." + String(el.className).slice(0, 40)).slice(0, 8)`;
-const STEP = `Number(document.querySelector("[data-end]").dataset.step)`;
-const END = `Number(document.querySelector("[data-end]").dataset.end)`;
 
 await send("Runtime.enable");
 await send("Page.enable");
@@ -212,16 +213,36 @@ const perf = await evaluate(`new Promise((done) => {
 })`);
 console.log(`     LCP ${perf.lcpMs} ms (${perf.lcpElement}), JavaScript ${perf.jsKb} kB`);
 
-await shot("hero-0-start");
-check("hero: the scene reaches Perry's approval request", await until(`${STEP} >= 5 && document.body.innerText.includes("Perry wants to run")`));
-await shot("hero-1-approval");
-check("hero: approved on the phone, and the terminal runs it", await until(`${STEP} >= 8 && document.querySelector("[data-end]").innerText.includes("Compiled successfully")`));
-check("hero: the scene ends with Perry's reply", await until(`${STEP} === ${END} && document.querySelector("[data-end]").innerText.includes("Fixed.")`));
-await shot("hero-2-fixed");
-check("hero: the scene starts over", await until(`${STEP} < ${END}`, 8000));
+// The hero: each suggestion gets Perry's answer.
+await shot("hero");
+for (const [i, words] of [[0, "Weekdays at 7:00"], [1, "before anything is deleted"], [2, "I'll nudge you"]] as const) {
+  await click(`[data-ask="${i}"]`);
+  check(`hero: tapping suggestion ${i + 1} gets Perry's answer`, await until(`document.querySelector("#top").innerText.includes(${JSON.stringify(words)})`, 3000));
+}
+check("hero: tapped suggestions go away", await evaluate(`document.querySelectorAll("[data-ask]").length === 0`));
 
 const missing = await evaluate(`[...document.querySelectorAll('a[href^="#"]')].map((a) => a.getAttribute("href").slice(1)).filter((id) => !document.getElementById(id))`);
 check("every in-page link has its target", missing.length === 0, missing);
+
+// The day: the pinned phone follows the moment being read, and the approval is the reader's to give.
+const beat = (at: string) => evaluate(`document.querySelector('[data-beat="${at}"]').scrollIntoView({ block: "center", behavior: "instant" }); true`);
+const PHONE = `document.querySelector("#day .sticky")`;
+await beat("07:00");
+check("day: at 07:00 the phone shows the morning brief", await until(`${PHONE}.innerText.includes("Three things today")`, 4000));
+await beat("10:14");
+check("day: at 10:14 Perry has filed the invoices", await until(`${PHONE}.innerText.includes("212 invoices")`, 4000));
+await beat("14:30");
+check("day: at 14:30 Perry asks before deleting", await until(`!!${PHONE}.querySelector('[data-answer="approve"]')`, 4000));
+await shot("day-approval");
+await evaluate(`${PHONE}.querySelector('[data-answer="approve"]').click(); true`);
+check("day: approving gets the branches deleted", await until(`${PHONE}.innerText.includes("Deleted all three")`, 3000));
+await beat("18:00");
+check("day: by 18:00 the phone's clock and chat have moved on", await until(`${PHONE}.innerText.includes("Call Sam") && ${PHONE}.innerText.includes("18:00")`, 4000));
+
+// The night.
+await evaluate(`document.querySelector("#night").scrollIntoView({ block: "center", behavior: "instant" }); true`);
+check("night: the 02:13 alert arrives while Perry sleeps", await until(`document.querySelector("#night").innerText.includes("security patch")`, 6000));
+await shot("night");
 
 await scrollThrough();
 check("after scrolling through, nothing in <main> is left invisible", (await evaluate(HIDDEN)).length === 0, await evaluate(HIDDEN));
@@ -230,47 +251,6 @@ check(`text contrast meets AA (${contrast.seen} text nodes)`, contrast.failures.
 await evaluate(`scrollTo({ top: 0, behavior: "instant" }); true`);
 await sleep(400);
 await shot("desktop-full", true);
-
-// Control: each answer, then the switches.
-for (const [answer, outcome] of [["approve", "Pushed to main"], ["decline", "won't push"], ["always", "without asking"]] as const) {
-  await click(`#control [data-answer="${answer}"]`);
-  const shown = await until(`document.querySelector("#control").innerText.includes(${JSON.stringify(outcome)})`, 3000);
-  check(`control: ${answer} gives its outcome`, shown, await text("#control"));
-  await click(`#control button:not([aria-pressed]):not([data-answer])`); // "Ask again"
-  check(`control: after ${answer}, it can be asked again`, await until(`!!document.querySelector('#control [data-answer="approve"]')`, 3000));
-}
-await click(`#control [aria-label="Policy"] button:nth-child(2)`);
-check("control: Review shows the reviewer's verdicts, and asks about the push", await until(`document.querySelector("#control").innerText.includes("routine, ran it") && !!document.querySelector('#control [data-answer]')`, 3000));
-await click(`#control [aria-label="Policy"] button:nth-child(3)`);
-check("control: Trust runs the push under the machine's policy", await until(`document.querySelector("#control").innerText.includes("allowed by this machine's policy") && !document.querySelector('#control [data-answer]')`, 3000));
-await click(`#control [aria-label="Access"] button:nth-child(2)`);
-const full = await evaluate(`({
-  ran: document.querySelector("#control").innerText.includes("ran without asking"),
-  policyDisabled: [...document.querySelectorAll('#control [aria-label="Policy"] button')].every((b) => b.disabled),
-  amber: getComputedStyle(document.querySelector('#control [aria-label="Access"] [aria-pressed="true"] span')).backgroundColor,
-})`);
-check("control: Full access runs without asking, goes amber and disables the policy", full.ran && full.policyDisabled && full.amber === "rgb(240, 180, 76)", full);
-await sleep(500);
-await shot("control-full-access");
-await click(`#control [aria-label="Access"] button:nth-child(1)`);
-
-// Schedule: the dial drives the chat.
-const setTime = (minutes: number) => evaluate(`(() => {
-  const input = document.querySelector('input[aria-label="Time of day"]');
-  input.scrollIntoView({ block: "center", behavior: "instant" });
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "${minutes}");
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  return true;
-})()`);
-await setTime(13 * 60);
-await sleep(700);
-const at13 = await text("#schedule");
-await setTime(15 * 60);
-await sleep(700);
-const at15 = await text("#schedule");
-check("schedule: no reminder yet at 13:00, and it has arrived by 15:00", !at13.includes("Call Sam.") && at15.includes("Call Sam."), { at13: at13.slice(0, 200) });
-check("schedule: taking the dial pauses the day", (await evaluate(`document.querySelector('#schedule [aria-label="Play the day"]')?.getAttribute("aria-pressed")`)) === "true");
-await shot("schedule");
 
 // The mascot.
 const PUPIL = `document.querySelector('button[aria-label^="Perry, the platypus"] svg circle').getAttribute("cx")`;
@@ -287,7 +267,7 @@ check("mascot: poking him gets a line out of him", await until(`[...document.que
 // The closing mascot says hello once per visit, and the scroll-through above has used it, so start a fresh visit.
 await load();
 check("mascot: the closing one says hello when it comes into view", await evaluate(`(async () => {
-  document.querySelector("#cta-title").scrollIntoView({ block: "center", behavior: "instant" });
+  document.querySelector("#close-title").scrollIntoView({ block: "center", behavior: "instant" });
   for (let i = 0; i < 30; i++) {
     if ([...document.querySelectorAll('[role="status"]')].some((el) => el.textContent.includes("Ready when you are"))) return true;
     await new Promise((r) => setTimeout(r, 100));
@@ -300,7 +280,7 @@ await evaluate(`const write = navigator.clipboard.writeText.bind(navigator.clipb
 await click(`[data-copy]`);
 await sleep(200);
 const copied = await evaluate(`window.copied`);
-check("copy hands over the clone and setup commands", copied === "git clone https://github.com/TheM1N9/perry.git perry && cd perry\npnpm install\npnpm run setup", copied);
+check("copy hands over the clone and setup commands", copied === "git clone https://github.com/TheM1N9/perry.git perry && cd perry\npnpm install && pnpm run setup", copied);
 
 // Overflow at every width.
 for (const [width, height] of [[1440, 900], [1280, 800], [768, 1024], [375, 812]] as const) {
@@ -313,16 +293,16 @@ for (const [width, height] of [[1440, 900], [1280, 800], [768, 1024], [375, 812]
 // The 404 page.
 await send("Page.navigate", { url: `${base}/nowhere` });
 await sleep(1200);
-check("404: Perry's own page, with the mascot", await until(`document.body.innerText.includes("This page went undercover") && !!document.querySelector('button[aria-label^="Perry, the platypus"]')`, 5000));
+check("404: Perry's own page, with the mascot", await until(`document.body.innerText.includes("This page went dark") && !!document.querySelector('button[aria-label^="Perry, the platypus"]')`, 5000));
 
 // ---------- Phone, reduced motion ----------
 await viewport(390, 844);
 await motion("reduce");
 await load();
-await evaluate(`document.querySelector("[data-end]").scrollIntoView({ block: "start", behavior: "instant" }); true`);
-await sleep(300);
-const before = await evaluate(STEP);
-check("reduced motion: the hero's scene still plays once it is on screen", await until(`${STEP} > ${before} + 2`, 8000), { before, after: await evaluate(STEP) });
+await click(`[data-ask="0"]`);
+check("reduced motion: the hero's chat still answers", await until(`document.querySelector("#top").innerText.includes("Weekdays at 7:00")`, 3000));
+await click(`[data-beat="14:30"] [data-answer="deny"]`);
+check("phone: the 14:30 card takes a Deny", await until(`document.querySelector('[data-beat="14:30"]').innerText.includes("Leaving them alone")`, 3000));
 await scrollThrough();
 check("reduced motion: nothing in <main> is left invisible", (await evaluate(HIDDEN)).length === 0, await evaluate(HIDDEN));
 const phoneContrast = await evaluate(CONTRAST);
