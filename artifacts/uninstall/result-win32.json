@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-25T14:01:40.880Z",
+  "ranAt": "2026-09-25T14:02:43.506Z",
   "checks": {
     "noChoiceChangesNothing": true,
     "keepFilesFlag": true,
@@ -24,11 +24,11 @@
       ""
     ],
     "dirtyCheckout": [
-      "  remove C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-1xOdAZ\\.perry\\service\\runner.cmd",
-      "  remove C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-1xOdAZ\\.perry\\service\\task.xml",
-      "  Keeping C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-1xOdAZ\\perry: it has changes that are not committed. Delete it yourself if you do not need it.",
-      "  remove C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-1xOdAZ\\.perry  (its data on this computer)",
-      "  Perry is removed from this computer, except its checkout at C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-1xOdAZ\\perry, kept for your work in it."
+      "  remove C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-2rdhWH\\.perry\\service\\runner.cmd",
+      "  remove C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-2rdhWH\\.perry\\service\\task.xml",
+      "  Keeping C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-2rdhWH\\perry: it has changes that are not committed. Delete it yourself if you do not need it.",
+      "  remove C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-2rdhWH\\.perry  (its data on this computer)",
+      "  Perry is removed from this computer, except its checkout at C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-uninstall-2rdhWH\\perry, kept for your work in it."
     ]
   },
   "passed": true

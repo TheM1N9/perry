@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-25T14:01:21.388Z",
+  "ranAt": "2026-09-25T14:02:31.230Z",
   "checks": {
     "noChoiceChangesNothing": true,
     "keepFilesFlag": true,
@@ -29,12 +29,12 @@
       ""
     ],
     "dirtyCheckout": [
-      "  remove /tmp/perry-uninstall-9bQqRO/user/.config/systemd/user/perry-runner.service",
-      "  Keeping /tmp/perry-uninstall-9bQqRO/perry: it has changes that are not committed. Delete it yourself if you do not need it.",
+      "  remove /tmp/perry-uninstall-TI9JXW/user/.config/systemd/user/perry-runner.service",
+      "  Keeping /tmp/perry-uninstall-TI9JXW/perry: it has changes that are not committed. Delete it yourself if you do not need it.",
       "  remove Perry's PATH line from ~/.bashrc",
       "  remove Perry's PATH line from ~/.profile",
-      "  remove /tmp/perry-uninstall-9bQqRO/.perry  (its data on this computer)",
-      "  Perry is removed from this computer, except its checkout at /tmp/perry-uninstall-9bQqRO/perry, kept for your work in it."
+      "  remove /tmp/perry-uninstall-TI9JXW/.perry  (its data on this computer)",
+      "  Perry is removed from this computer, except its checkout at /tmp/perry-uninstall-TI9JXW/perry, kept for your work in it."
     ],
     "keep": {
       "code": 0,
