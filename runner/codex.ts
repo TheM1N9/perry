@@ -151,9 +151,11 @@ export class CodexAppServer extends EventEmitter {
     // A mistyped escape hatch fails here, where the runner reports it, not mid-turn.
     sandboxMode();
     const windows = process.platform === "win32";
+    // Stdio is the default transport. Older Codex (0.106, for one) has no --stdio
+    // flag and exits (2) on it, so it is left out rather than spelled out.
     const child = spawn(
       windows ? process.env.COMSPEC || "cmd.exe" : "codex",
-      windows ? ["/d", "/s", "/c", "codex app-server --stdio"] : ["app-server", "--stdio"],
+      windows ? ["/d", "/s", "/c", "codex app-server"] : ["app-server"],
       { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
     );
     this.child = child;

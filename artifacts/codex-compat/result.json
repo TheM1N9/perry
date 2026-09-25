@@ -1,0 +1,30 @@
+{
+  "ranAt": "2026-09-25T07:10:48.911Z",
+  "platform": "win32",
+  "checks": {
+    "oldCodexStarts": true,
+    "oldCodexAnswers": true,
+    "oldCodexSkillsFailAlone": true,
+    "currentCodexStarts": true,
+    "currentCodexLoadsSkills": true
+  },
+  "notes": {
+    "codex 0.106.0": {
+      "started": true,
+      "account": {
+        "available": true
+      },
+      "skills": "Invalid request: unknown variant `skills/extraRoots/set`, expected one of `initialize`, `thread/start`, `thread/resume`, `thread/fork`, `thread/archive`, `thread/unsubscribe`, `thread/name/set`, `thread/unarchive`, `thread/compact/start`, `thread/backgroundTerminals/clean`, `thread/rollback`, `thread/list`, `thread/loaded/list`, `thread/read`, `skills/list`, `skills/remote/list`, `skills/remote/export`, `app/list`, `skills/config/write`, `turn/start`, `turn/steer`, `turn/interrupt`, `thread/realtime/start`, `thread/realtime/appendAudio`, `thread/realtime/appendText`, `thread/realtime/stop`, `review/start`, `model/list`, `experimentalFeature/list`, `collaborationMode/list`, `mock/experimentalMethod`, `mcpServer/oauth/login`, `config/mcpServer/reload`, `mcpServerStatus/list`, `windowsSandbox/setupStart`, `account/login/start`, `account/login/cancel`, `account/logout`, `account/rateLimits/read`, `feedback/upload`, `command/exec`, `config/read`, `externalAgentConfig/detect`, `externalAgentConfig/import`, `config/value/write`, `config/batchWrite`, `configRequirements/read`, `account/read`, `newConversation`, `getConversationSummary`, `listConversations`, `resumeConversation`, `forkConversation`, `archiveConversation`, `sendUserMessage`, `sendUserTurn`, `interruptConversation`, `addConversationListener`, `removeConversationListener`, `gitDiffToRemote`, `loginApiKey`, `loginChatGpt`, `cancelLoginChatGpt`, `logoutChatGpt`, `getAuthStatus`, `getUserSavedConfig`, `setDefaultModel`, `getUserAgent`, `userInfo`, `fuzzyFileSearch`, `fuzzyFileSearch/sessionStart`, `fuzzyFileSearch/sessionUpdate`, `fuzzyFileSearch/sessionStop`, `execOneOffCommand`",
+      "answersAfterSkills": true
+    },
+    "codex on PATH": {
+      "started": true,
+      "account": {
+        "available": true
+      },
+      "skills": "loaded",
+      "answersAfterSkills": true
+    }
+  },
+  "passed": true
+}
