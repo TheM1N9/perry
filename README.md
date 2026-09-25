@@ -22,7 +22,7 @@ iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
 
 It installs what is missing (Node.js, pnpm, [Bun](https://bun.sh) and the
 [Codex CLI](https://github.com/openai/codex)), puts Perry in `~/perry`, and runs
-`perry setup`: your own Convex deployment and Telegram bot, this computer
+`perry setup`: your own Convex deployment, a Telegram bot if you want one, this computer
 connected, Perry running in the background from every login on, and the
 dashboard opened, already unlocked. Then:
 

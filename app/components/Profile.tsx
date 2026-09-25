@@ -17,6 +17,8 @@ export function Profile({ dashboardKey, onNavigate }: { dashboardKey: string; on
   if (status === undefined) return <Section title="You"><Loading /></Section>;
 
   const name = status.ownerName ?? "You";
+  // Only a Telegram bot that nobody has claimed yet needs pairing; without a bot, Perry is used from the dashboard.
+  const waiting = status.telegramConfigured && !status.claimed;
   const link = (id: SectionId) => {
     const section = SECTIONS.find((entry) => entry.id === id)!;
     return <a key={id} className="item item-link" href={sectionPath(id)} onClick={(event) => linkClick(event, () => onNavigate(id))}>
@@ -27,7 +29,7 @@ export function Profile({ dashboardKey, onNavigate }: { dashboardKey: string; on
       </span>
       <span className="item-link-side">
         {id === "memory" && <span className="section-count">{status.memories}</span>}
-        {id === "setup" && !status.claimed && <Status tone="warning">Unpaired</Status>}
+        {id === "setup" && waiting && <Status tone="warning">Unpaired</Status>}
         <Icon name="chevron" size={15} />
       </span>
     </a>;
@@ -39,11 +41,11 @@ export function Profile({ dashboardKey, onNavigate }: { dashboardKey: string; on
       <div className="profile-card-main">
         <div className="profile-card-name">{name}</div>
         <div className="item-meta">
-          <span>{status.claimed ? "Paired on Telegram" : "Not paired yet"}</span>
+          <span>{status.claimed ? "Paired on Telegram" : waiting ? "Not paired yet" : "Dashboard only"}</span>
           <span>{status.memories} {status.memories === 1 ? "memory" : "memories"}</span>
         </div>
       </div>
-      {!status.claimed && <a className="btn btn-primary btn-sm" href={sectionPath("setup")} onClick={(event) => linkClick(event, () => onNavigate("setup"))}>Pair Perry</a>}
+      {waiting && <a className="btn btn-primary btn-sm" href={sectionPath("setup")} onClick={(event) => linkClick(event, () => onNavigate("setup"))}>Pair Perry</a>}
     </div>
     {PROFILE_GROUPS.map((group) => <Section key={group.label} title={group.label}>{group.ids.map(link)}</Section>)}
   </>;

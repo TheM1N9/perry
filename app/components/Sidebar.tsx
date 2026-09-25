@@ -93,6 +93,8 @@ export function Sidebar({ dashboardKey, current, onNavigate, onLock, open, onClo
   };
   const onProfile = current === "profile" || underProfile(current);
   const name = status === undefined ? "" : status.ownerName ?? "You";
+  // Only a Telegram bot that nobody has claimed yet needs pairing; without a bot there is nothing to pair.
+  const waiting = Boolean(status?.telegramConfigured && !status.claimed);
 
   return <>
     {open && <button type="button" className="scrim" aria-label="Close navigation" onClick={onClose} />}
@@ -117,9 +119,9 @@ export function Sidebar({ dashboardKey, current, onNavigate, onLock, open, onClo
           <span className="avatar" aria-hidden="true">{name.charAt(0).toUpperCase()}</span>
           <span className="profile-link-text">
             <span className="profile-link-name">{name}</span>
-            <span className="profile-link-meta">{status === undefined ? " " : status.claimed ? `${status.memories} memories` : "Not paired yet"}</span>
+            <span className="profile-link-meta">{status === undefined ? " " : waiting ? "Not paired yet" : `${status.memories} memories`}</span>
           </span>
-          {status && !status.claimed && <Status tone="warning">Unpaired</Status>}
+          {waiting && <Status tone="warning">Unpaired</Status>}
         </a>
         <button type="button" className="icon-button" onClick={onLock} aria-label="Lock dashboard" title="Lock dashboard"><Icon name="lock" size={15} /></button>
       </div>

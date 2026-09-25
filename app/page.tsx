@@ -19,7 +19,7 @@ import { Command, Icon, SecretInput, Spinner, errorText } from "./components/ui"
 
 const STORAGE_KEY = "perry.dashboard.key";
 
-/** The section a path names, or null for the root, which depends on whether Perry is paired. */
+/** The section a path names, or null for the root, which depends on whether a Telegram bot waits to be paired. */
 function sectionFrom(pathname: string): SectionId | null {
   const first = pathname.split("/")[1] ?? "";
   if (!first) return null;
@@ -95,9 +95,9 @@ function Shell({ dashboardKey, onLock }: { dashboardKey: string; onLock: () => v
     document.querySelector<HTMLElement>(".workspace-scroll")?.scrollTo({ top: 0 });
   }, []);
 
-  // The root opens Chat once Perry is paired, and Setup until then.
   const named = sectionFrom(path);
-  const active: SectionId | null = named ?? (status ? (status.claimed ? "chat" : "setup") : null);
+  // Setup first only while a Telegram bot waits to be claimed; without a bot, Perry is used from here.
+  const active: SectionId | null = named ?? (status ? (status.telegramConfigured && !status.claimed ? "setup" : "chat") : null);
   useEffect(() => {
     if (!named && active) {
       const to = active === "chat" ? "/chat" : sectionPath(active);

@@ -7,8 +7,8 @@
 # shell or a version manager keeps them, and installs only what is missing,
 # none of it needing root. A Node older than Perry needs is left alone: Perry
 # gets its own copy in ~/.perry/node. It gets Perry into ~/perry, installs its packages,
-# and runs `perry setup`, which sets up your own Convex deployment and Telegram
-# bot, connects this computer, starts Perry in the background and opens the
+# and runs `perry setup`, which sets up your own Convex deployment (and a Telegram
+# bot, if you want one), connects this computer, starts Perry in the background and opens the
 # dashboard. Safe to run again: it updates what is there.
 #
 # PERRY_DIR, PERRY_REPO and PERRY_BRANCH change where it goes and what it

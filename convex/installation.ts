@@ -66,6 +66,20 @@ export const status = internalQuery({
 });
 
 /**
+ * Make the installation row if there is none. Setup calls it when Telegram is
+ * skipped: pairing is what otherwise makes the row, and settings such as the
+ * timezone, default access and the offline fallback are kept on it.
+ */
+export const ensure = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    if (!(await read(ctx))) await ctx.db.insert("installation", { createdAt: Date.now() });
+    return null;
+  },
+});
+
+/**
  * Mint a fresh pairing code. Called by setup, and by the dashboard when the
  * code has expired or the owner wants to move Assistant to a different chat.
  */
