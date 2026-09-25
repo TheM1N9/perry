@@ -119,14 +119,13 @@ async function main() {
         .map((l) => l.split("=")[0].trim())
         .filter(Boolean),
     );
-    for (const required of [
-      "TELEGRAM_BOT_TOKEN",
-      "TELEGRAM_WEBHOOK_SECRET",
-      "DASHBOARD_KEY",
-    ]) {
+    for (const required of ["TELEGRAM_WEBHOOK_SECRET", "DASHBOARD_KEY"]) {
       if (names.has(required)) ok(`env ${required}`);
-      else bad(`env ${required}`, "not set. Run: pnpm run setup");
+      else bad(`env ${required}`, "not set. Run: perry setup");
     }
+    // Telegram is optional: without a bot, Perry is used from the dashboard.
+    if (names.has("TELEGRAM_BOT_TOKEN")) ok("env TELEGRAM_BOT_TOKEN");
+    else ok("env TELEGRAM_BOT_TOKEN", "not set: Telegram is off (optional; a bot saved on the Keys page is not checked here)");
   }
 
   // HTTP actions reachable
@@ -143,7 +142,7 @@ async function main() {
   // Telegram webhook
   const token = env.TELEGRAM_BOT_TOKEN;
   if (!token) {
-    bad("telegram token", "not in .env.local");
+    ok("telegram", "not set up; Perry is used from the dashboard");
   } else {
     const me = await fetch(`https://api.telegram.org/bot${token}/getMe`).then(
       (r) => r.json(),
@@ -177,6 +176,8 @@ async function main() {
     warn("ownership", "could not read");
   } else if (/"claimed":\s*true/.test(status.output)) {
     ok("ownership", "claimed");
+  } else if (!token) {
+    ok("ownership", "the dashboard key; there is no bot to claim");
   } else {
     const code = status.output.match(/"pairingCode":\s*"(\d{6})"/)?.[1];
     warn(

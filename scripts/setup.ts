@@ -151,48 +151,84 @@ async function main() {
   const siteUrl = cloudUrl.replace(".convex.cloud", ".convex.site");
   say(dim(`  webhook host: ${siteUrl}`));
 
-  // --- 2. Telegram bot -----------------------------------------------------
-  step(2, TOTAL, "Telegram bot");
+  // --- 2. Telegram bot, optional ------------------------------------------
+  step(2, TOTAL, "Telegram bot (optional)");
 
-  let token = env.TELEGRAM_BOT_TOKEN;
+  /** The bot's @username, or null when Telegram is skipped and Perry is used from the dashboard. */
+  const checkToken = async (candidate: string): Promise<string | null> => {
+    const probe = await fetch(`https://api.telegram.org/bot${candidate}/getMe`).then((r) => r.json(), () => null);
+    if (probe?.ok) return probe.result.username as string;
+    say(yellow(`  Telegram rejected that token: ${probe?.description ?? "no response"}`));
+    return null;
+  };
+  let token: string | undefined = env.TELEGRAM_BOT_TOKEN;
+  let botName: string | null = null;
   if (token) {
+    botName = await checkToken(token);
+    if (!botName) process.exit(1);
     say(dim("  already configured"));
   } else {
-    say(dim("  Open Telegram, message @BotFather, send /newbot, answer two"));
-    say(dim("  questions. It gives you a token like 8123456789:AAH..."));
-    token = (await rl.question("\n  Paste the bot token: ")).trim();
-    if (!token.includes(":")) {
-      say(yellow("  That does not look like a bot token."));
-      process.exit(1);
+    say(dim("  Talk to Perry from Telegram too, or only from the dashboard. For Telegram:"));
+    say(dim("  message @BotFather, send /newbot, answer two questions, and paste the"));
+    say(dim("  token it gives you (like 8123456789:AAH...). You can add one later on the Keys page."));
+    for (let attempt = 0; attempt < 3 && !botName; attempt++) {
+      const answer = (await rl.question("\n  Bot token, or Enter to skip: ")).trim();
+      if (!answer) break;
+      if (!answer.includes(":")) { say(yellow("  That does not look like a bot token.")); continue; }
+      botName = await checkToken(answer);
+      if (botName) token = answer;
+    }
+    if (!botName) {
+      token = undefined;
+      say(dim("  Skipped: Perry is yours from the dashboard. Add a bot on the Keys page whenever you like."));
     }
   }
-
-  const probe = await fetch(`https://api.telegram.org/bot${token}/getMe`).then(
-    (r) => r.json(),
-    () => null,
-  );
-  if (!probe?.ok) {
-    say(yellow(`  Telegram rejected that token: ${probe?.description ?? "no response"}`));
-    process.exit(1);
-  }
-  say(`  ${green("bot")} @${probe.result.username}`);
+  if (botName) say(`  ${green("bot")} @${botName}`);
 
   // --- 3. Codex -------------------------------------------------------------
   step(3, TOTAL, "Codex");
 
-  say(dim("  Perry thinks with your ChatGPT subscription, through the Codex CLI on"));
-  say(dim("  this machine. Sign in to Codex from the dashboard's Settings page."));
+  // Every reply is a Codex turn on this machine, so a first chat needs Codex signed in before it starts.
+  say(dim("  Perry thinks with your ChatGPT subscription, through the Codex CLI on this machine."));
   const codex = await runCodex(["--version"]);
   if (codex.code !== 0) {
-    say(yellow(`  Codex is not installed here yet. Install it with: ${INSTALL_HINTS.codex}`));
+    say(yellow(`  Codex is not installed here. Install it with: ${INSTALL_HINTS.codex}`));
+    say(yellow("  Then run setup again."));
+    process.exit(1);
+  }
+  const version = (codex.output.trim().split(/\r?\n/).at(-1) ?? "").replace(/^codex-cli\s+/, "");
+  // `codex login status` exits 0 and says "Logged in using ChatGPT" (or an API key) once signed in.
+  const codexStatus = async () => {
+    const ran = await runCodex(["login", "status"]);
+    return ran.code === 0 && /Logged in/i.test(ran.output) ? ran.output.trim().split(/\r?\n/).at(-1) ?? "" : null;
+  };
+  let signedIn = await codexStatus();
+  if (!signedIn) {
+    // No display to open a browser on (a server, or over SSH): Codex's device code, entered on any device.
+    const headless = Boolean(process.env.SSH_CONNECTION || process.env.SSH_TTY) || (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY);
+    rl.pause();
+    if (!headless) {
+      say(dim("  Sign in with your ChatGPT account in the browser window that opens.\n"));
+      await runCodex(["login"], { quiet: false });
+      signedIn = await codexStatus();
+    }
+    if (!signedIn) {
+      say(dim(`\n  ${headless ? "No browser here" : "The browser sign-in did not finish"}; signing in with a code instead.\n`));
+      await runCodex(["login", "--device-auth"], { quiet: false });
+      signedIn = await codexStatus();
+    }
+    rl.resume();
+  }
+  if (signedIn) {
+    say(`  ${green("codex")} ${version}${dim(`, ${signedIn.replace(/^Logged in/i, "signed in")}`)}`);
   } else {
-    const login = await runCodex(["login", "status"]);
-    say(`  ${green("codex")} ${codex.output.trim().split(/\r?\n/).at(-1)}${login.code === 0 ? dim(", signed in") : dim(", not signed in yet")}`);
+    say(yellow(`  Codex is not signed in, so Perry cannot answer yet. Run ${bold("codex login")}, or sign in from the dashboard's Settings page.`));
   }
 
   // --- 4. Secrets and deploy ----------------------------------------------
   step(4, TOTAL, "Pushing config");
 
+  // Made even without a bot, so one added later on the Keys page can register its webhook.
   const webhookSecret =
     env.TELEGRAM_WEBHOOK_SECRET || randomBytes(32).toString("hex");
   const dashboardKey = env.DASHBOARD_KEY || randomBytes(24).toString("base64url");
@@ -208,7 +244,7 @@ async function main() {
   say(`  ${green("wrote")} .env.local`);
   say(`  ${green("home")} ${ensureHome() && HOME}`);
 
-  await setConvexEnv("TELEGRAM_BOT_TOKEN", token);
+  if (token) await setConvexEnv("TELEGRAM_BOT_TOKEN", token);
   await setConvexEnv("TELEGRAM_WEBHOOK_SECRET", webhookSecret);
   await setConvexEnv("DASHBOARD_KEY", dashboardKey);
 
@@ -220,37 +256,45 @@ async function main() {
   }
   say(`  ${green("pushed")} functions`);
 
-  const hook = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      url: `${siteUrl}/telegram`,
-      secret_token: webhookSecret,
-      allowed_updates: ["message", "edited_message", "callback_query"],
-      drop_pending_updates: true,
-    }),
-  }).then((r) => r.json(), () => null);
+  if (token) {
+    const hook = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        url: `${siteUrl}/telegram`,
+        secret_token: webhookSecret,
+        allowed_updates: ["message", "edited_message", "callback_query"],
+        drop_pending_updates: true,
+      }),
+    }).then((r) => r.json(), () => null);
 
-  if (!hook?.ok) {
-    say(yellow(`  Webhook failed: ${hook?.description ?? "no response"}`));
-    process.exit(1);
+    if (!hook?.ok) {
+      say(yellow(`  Webhook failed: ${hook?.description ?? "no response"}`));
+      process.exit(1);
+    }
+    say(`  ${green("webhook")} ${siteUrl}/telegram`);
   }
-  say(`  ${green("webhook")} ${siteUrl}/telegram`);
 
-  // --- 5. Pair ------------------------------------------------------------
+  // --- 5. Claim it -----------------------------------------------------------
   step(5, TOTAL, "Claim it");
 
-  const pair = await runConvex(["run", "installation:startPairing", "{}"]);
-  const code = pair.output.match(/"code":\s*"(\d{6})"/)?.[1];
-
-  if (!code) {
-    say(yellow("  Could not mint a pairing code. Run `pnpm run pair` to retry."));
+  if (!botName) {
+    // Without a bot the dashboard key is the owner's key, and nothing is left to claim; the settings still need their row.
+    const made = await runConvex(["run", "installation:ensure", "{}"]);
+    if (made.code !== 0) say(yellow("  Could not save Perry's settings; run setup again."));
+    say(dim("  Nothing to claim without a bot: the dashboard key is yours alone."));
   } else {
-    say("");
-    say(`  Message ${bold("@" + probe.result.username)} on Telegram with:`);
-    say(`\n      ${bold(green(code))}\n`);
-    say(dim("  It expires in an hour. Whoever sends it first owns this Perry;"));
-    say(dim("  everyone else is ignored from then on."));
+    const pair = await runConvex(["run", "installation:startPairing", "{}"]);
+    const code = pair.output.match(/"code":\s*"(\d{6})"/)?.[1];
+    if (!code) {
+      say(yellow("  Could not mint a pairing code. Run `perry pair` to retry."));
+    } else {
+      say("");
+      say(`  Message ${bold("@" + botName)} on Telegram with:`);
+      say(`\n      ${bold(green(code))}\n`);
+      say(dim("  It expires in an hour. Whoever sends it first owns this Perry;"));
+      say(dim("  everyone else is ignored from then on."));
+    }
   }
 
   rl.close();

@@ -6,7 +6,7 @@
 # they are installed, and installs only what is missing. A Node older than
 # Perry needs is not upgraded behind your back: it says so and stops. Then it
 # gets Perry into ~\perry, installs its packages, and runs
-# `perry setup`, which sets up your own Convex deployment and Telegram bot,
+# `perry setup`, which sets up your own Convex deployment (and a Telegram bot, if you want one),
 # connects this computer, starts Perry in the background and opens the
 # dashboard. Safe to run again: it updates what is there.
 #

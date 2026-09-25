@@ -91,10 +91,10 @@ export function openUrl(url: string): Promise<boolean> {
  * shell can start, so it goes through cmd.exe there, as the runner does; the
  * arguments are this repo's own, never user text.
  */
-export function runCodex(args: string[]): Promise<Ran> {
+export function runCodex(args: string[], options?: { quiet?: boolean }): Promise<Ran> {
   return process.platform === "win32"
-    ? run(process.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", ["codex", ...args].join(" ")])
-    : run("codex", args);
+    ? run(process.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", ["codex", ...args].join(" ")], options)
+    : run("codex", args, options);
 }
 
 /** How to install what Perry needs on this OS, from each tool's own install docs. */

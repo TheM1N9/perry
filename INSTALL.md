@@ -74,16 +74,25 @@ that runs the CLI from your checkout whatever folder you are in. Codex works in
    asks which one; nothing else. This is your database and your backend. Free
    tier is ample for one person. A deployment left over from choosing "Start
    without an account" is replaced with a cloud one.
-2. **Telegram bot.** Message [@BotFather](https://t.me/BotFather), send
-   `/newbot`, answer two questions, paste the token back. The wizard checks it
-   against Telegram before continuing.
+2. **Telegram bot, optional.** To talk to Perry on Telegram as well as in the
+   dashboard, message [@BotFather](https://t.me/BotFather), send `/newbot`,
+   answer two questions, and paste the token back; the wizard checks it against
+   Telegram before continuing. Press Enter to skip, and Perry is yours from the
+   dashboard alone. A bot can be added later: save its token on the **Keys**
+   page, press **Register webhook**, then pair it from **Setup**. Without a bot,
+   job results and page-watch alerts stay in the dashboard (a job's results in
+   its own chat) rather than reaching you as messages.
 3. **Codex.** Perry thinks with your ChatGPT subscription, through the
-   [Codex CLI](https://github.com/openai/codex) on your machine. Sign in to
-   Codex from the dashboard's Settings page once Perry is running.
+   [Codex CLI](https://github.com/openai/codex) on your machine, so it signs
+   you in now, before the first chat needs it: `codex login` in the browser,
+   or a device code where there is no browser (a server, or over SSH). If
+   you are already signed in, it says so and moves on. Setup stops if Codex
+   is not installed. The dashboard's Settings page can sign in too.
 4. **Secrets and deploy.** Generates a webhook secret and a dashboard key,
    writes them to a gitignored `.env.local`, sets them on your deployment,
-   pushes the code, and registers the webhook.
-5. **Pairing code.** Prints six digits.
+   pushes the code, and registers the webhook if there is a bot.
+5. **Pairing code.** With a bot, prints six digits. Without one there is
+   nothing to claim: the dashboard key is the owner's key.
 
 Send those six digits to your bot. Whoever sends them first owns that install,
 and from then on every other sender is ignored without a reply. Codes expire

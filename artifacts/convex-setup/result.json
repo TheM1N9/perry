@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-24T20:49:24.434Z",
+  "ranAt": "2026-09-25T06:13:05.221Z",
   "checks": {
     "realCliMakesNoLocalDeployment": true,
     "endsInTheCloud": true,
@@ -10,7 +10,18 @@
     "teamQuestionPicksTeam": true,
     "noConvexPrompts": true,
     "noLoginWhenLoggedIn": true,
-    "failureExplained": true
+    "failureExplained": true,
+    "skipFinishesSetup": true,
+    "noHalfBot": true,
+    "botCanBeAddedLater": true,
+    "settingsRowMade": true,
+    "rejectedTokenAsksAgain": true,
+    "signedInNotAskedAgain": true,
+    "signsInWithBrowser": true,
+    "fallsBackToDeviceCode": true,
+    "headlessUsesDeviceCode": true,
+    "failedSignInExplained": true,
+    "missingCodexStops": true
   },
   "notes": {
     "realCli": [
@@ -22,7 +33,23 @@
       "login --device-name Perry on DESKTOP-27SQLCP --no-open",
       "login status",
       "login status",
-      "dev --once --configure new --team second --project perry --dev-deployment cloud"
+      "dev --once --configure new --team second --project perry --dev-deployment cloud",
+      "env set TELEGRAM_WEBHOOK_SECRET <value>",
+      "env set DASHBOARD_KEY <value>",
+      "dev --once",
+      "run installation:ensure {}"
+    ],
+    "noTelegramCalls": [
+      "env set TELEGRAM_WEBHOOK_SECRET <value>",
+      "env set DASHBOARD_KEY <value>",
+      "dev --once",
+      "run installation:ensure {}"
+    ],
+    "codexBrowserCalls": [
+      "--version",
+      "login status",
+      "login",
+      "login status"
     ]
   },
   "passed": true

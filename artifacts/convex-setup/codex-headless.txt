@@ -5,18 +5,7 @@ Perry can read and write your memory, and in Agent P mode it can act
 on whatever you connect. Only you will be able to talk to it.
 
 [1/5] Convex deployment
-  anonymous:anonymous-perry runs on this machine, where Telegram cannot reach it; making one in the cloud instead.
-  Perry keeps your chats and memory in your own free Convex project.
-  Log in to Convex in the browser window that opens (GitHub or Google works):
-
-Visit https://auth.convex.dev/activate?user_code=WXYZ-1234 to finish logging in.
-You should see the following code which expires in 15 minutes: WXYZ-1234
-
-  Which Convex team should Perry's project be in?
-    1. first Team
-    2. second Team
-  Team [1]:   Creating the project "perry" in second Team…
-  created dev:happy-otter-123
+  already configured: dev:happy-otter-123
   webhook host: https://happy-otter-123.convex.site
 
 [2/5] Telegram bot (optional)
@@ -28,11 +17,15 @@ You should see the following code which expires in 15 minutes: WXYZ-1234
 
 [3/5] Codex
   Perry thinks with your ChatGPT subscription, through the Codex CLI on this machine.
+
+  No browser here; signing in with a code instead.
+
+Visit https://auth.openai.com/codex/device and enter ABCD-1234
   codex 9.9.9, signed in using ChatGPT
 
 [4/5] Pushing config
   wrote .env.local
-  home C:\Users\Pranav\AppData\Local\Temp\perry-convex-local-to-cloud-8fA3Cq\home
+  home C:\Users\Pranav\AppData\Local\Temp\perry-convex-codex-headless-sgCmOy\home
   set TELEGRAM_WEBHOOK_SECRET
   set DASHBOARD_KEY
   pushed functions
@@ -48,15 +41,12 @@ Next
 
 
 --- calls ---
-{"args":["login","status"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
-{"args":["login","--device-name","Perry on DESKTOP-27SQLCP","--no-open"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
-{"args":["login","status"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
-{"args":["login","status"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
-{"args":["dev","--once","--configure","new","--team","second","--project","perry","--dev-deployment","cloud"],"allowAnonymous":"false","deploymentInEnv":null,"stdinIsTTY":false}
 {"args":["env","set","TELEGRAM_WEBHOOK_SECRET","<value>"],"allowAnonymous":"false","deploymentInEnv":"dev:happy-otter-123","stdinIsTTY":false}
 {"args":["env","set","DASHBOARD_KEY","<value>"],"allowAnonymous":"false","deploymentInEnv":"dev:happy-otter-123","stdinIsTTY":false}
 {"args":["dev","--once"],"allowAnonymous":"false","deploymentInEnv":"dev:happy-otter-123","stdinIsTTY":false}
 {"args":["run","installation:ensure","{}"],"allowAnonymous":"false","deploymentInEnv":"dev:happy-otter-123","stdinIsTTY":false}
 --- codex ---
 --version
+login status
+login --device-auth
 login status
