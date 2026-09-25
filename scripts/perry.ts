@@ -27,7 +27,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, hostname } from "node:os";
+import { homedir, hostname, networkInterfaces } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HOME, readRunnerConfig } from "../runner/home";
@@ -77,6 +77,33 @@ function readEnvFile(): Record<string, string> {
 }
 
 const dashboardUrl = (host = "localhost") => `http://${host}:${PORT}`;
+
+/**
+ * The dashboard on this machine's other addresses, for opening it from a phone
+ * or another computer: its LAN addresses, and its Tailscale one (100.64.0.0/10)
+ * marked as such. The dashboard listens on all of them.
+ */
+function networkUrls(): string[] {
+  const urls: string[] = [];
+  for (const [name, addresses] of Object.entries(networkInterfaces())) {
+    // Adapters only this machine can reach: Hyper-V and WSL, Docker, VirtualBox, VMware, and bridges.
+    if (/^(vEthernet|docker|br-|veth|virbr|vboxnet|VirtualBox|VMware)/i.test(name)) continue;
+    for (const address of addresses ?? []) {
+      if (address.family !== "IPv4" || address.internal || address.address.startsWith("169.254.")) continue;
+      const [a, b] = address.address.split(".").map(Number);
+      const tailscale = a === 100 && b >= 64 && b <= 127;
+      urls.push(`${dashboardUrl(address.address)}${tailscale ? dim("  (Tailscale)") : ""}`);
+    }
+  }
+  return urls;
+}
+
+/** Where the dashboard is, on this machine and on the network, one address per line. */
+function sayWhere(label: string) {
+  say(`  ${label}  ${dashboardUrl()}`);
+  const pad = " ".repeat(label.replace(/\x1b\[[0-9;]*m/g, "").length);
+  for (const url of networkUrls()) say(`  ${pad}  ${url}`);
+}
 
 async function dashboardUp(): Promise<boolean> {
   try {
@@ -262,7 +289,8 @@ async function open(): Promise<boolean> {
   }
   const { openUrl } = await import("./lib");
   if (!(await openUrl(`${dashboardUrl()}/#key=${encodeURIComponent(key)}`))) {
-    say(`  Open ${bold(dashboardUrl())} and use this key: ${key}`);
+    say(`  Open the dashboard and use this key: ${key}`);
+    sayWhere("       ");
   } else {
     say(`  ${green("opened")} ${dashboardUrl()}`);
   }
@@ -278,7 +306,8 @@ async function status() {
   const up = await dashboardUp();
   say(`\n${bold("Perry")}  ${dim(REPO)}`);
   say(`  service    ${state.running ? green("running") : state.installed ? yellow("stopped") : dim("not installed")}${state.installed ? dim(`  ${state.detail}`) : ""}`);
-  say(`  dashboard  ${up ? green(dashboardUrl()) : yellow(`not answering on ${dashboardUrl()}`)}`);
+  if (up) sayWhere(`dashboard`);
+  else say(`  dashboard  ${yellow(`not answering on ${dashboardUrl()}`)}`);
   const config = readRunnerConfig();
   say(`  computer   ${config.token ? `${config.name ?? hostname()}${dim(`, working in ${config.dir ?? "?"}`)}` : yellow("not connected")}`);
   say(dim(`  logs       ${servicePlan(ctx).logs ? "perry logs" : ctx.logFile}\n`));
@@ -300,7 +329,8 @@ async function start(): Promise<boolean> {
   if (!ok) return false;
   say(dim("  Waiting for the dashboard…"));
   const up = await waitFor(dashboardUp, 90);
-  say(up ? `  ${green("running")}  ${dashboardUrl()}` : yellow(`  Started, but the dashboard is not answering yet. ${bold("perry logs")} says why.`));
+  if (up) sayWhere(green("running"));
+  else say(yellow(`  Started, but the dashboard is not answering yet. ${bold("perry logs")} says why.`));
   return up;
 }
 
