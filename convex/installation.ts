@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, type QueryCtx } from "./_generated/server";
 import { vAccess, vChannel } from "./schema";
 
 /**
@@ -34,6 +34,16 @@ async function read(ctx: {
 
 /** Where getting to know each other stands; "offer" is an install from before it existed. */
 export type Onboarding = "pending" | "done" | "skipped" | "offer";
+
+/**
+ * An install from before onboarding that was never used, such as one set up
+ * again: nothing written about the owner, and no chat but the built-in jobs'.
+ * It is as good as new, so it opens on the welcome page too.
+ */
+async function neverUsed(ctx: QueryCtx): Promise<boolean> {
+  if (await ctx.db.query("persona").first()) return false;
+  return !(await ctx.db.query("conversations").filter((q) => q.eq(q.field("jobId"), undefined)).first());
+}
 
 /** "offer" clears it, as on an install from before: offered on the chat page, not opened. */
 export const setOnboarding = internalMutation({
@@ -79,7 +89,7 @@ export const status = internalQuery({
       ownerName: install.ownerName,
       pairingCode: claimed ? undefined : install.pairingCode,
       pairingExpiresAt: claimed ? undefined : install.pairingExpiresAt,
-      onboarding: install.onboarding ?? "offer",
+      onboarding: install.onboarding ?? (await neverUsed(ctx) ? "pending" : "offer"),
     };
   },
 });
