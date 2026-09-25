@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 /*
- * Perry's site: near-black canvas, hairline light, one accent with meaning
- * (Telegram blue for what you send), green only for approved, amber only for
- * Full access. Dark only.
+ * Perry's site: near-black canvas and hairline light, dressed in the mascot's
+ * colours (platypus teal, bill orange). Telegram blue is only for what you
+ * send, green only for approved, amber only for Full access. Dark only.
  */
 @theme {
   --color-canvas: #08090a;
@@ -17,6 +17,9 @@
   --color-fg-2: #d0d6e0;
   --color-fg-3: #8a8f98;
   --color-accent: #3fb3f2;
+  --color-brand: #2cc0b3;
+  --color-brand-deep: #12302d;
+  --color-bill: #f5a13a;
   --color-ok: #4cc97c;
   --color-warn: #f0b44c;
   --color-bad: #ff6b6b;
@@ -112,11 +115,40 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
+  /*
+   * Telegram's dark patterned wallpaper: a doodle pattern that lets a colour
+   * gradient show through on near-black. The doodles are Perry's own.
+   */
   .tg-wallpaper {
-    background-color: var(--color-tg-bg);
-    background-image:
-      radial-gradient(circle at 20% 10%, rgb(43 82 120 / 0.28), transparent 45%),
-      radial-gradient(circle at 90% 80%, rgb(24 37 51 / 0.9), transparent 50%);
+    position: relative;
+    isolation: isolate;
+    background: #0c1013;
+  }
+  .tg-wallpaper::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(160deg, #2e7d6f 0%, #2b5f86 45%, #4b4f9a 75%, #2f7a74 100%);
+    -webkit-mask: url("/tg-pattern.svg") 0 0 / 168px 168px repeat;
+    mask: url("/tg-pattern.svg") 0 0 / 168px 168px repeat;
+    opacity: 0.2;
+  }
+
+  /* Telegram's "service" pills: dates and notices, on a smoked glass over the wallpaper. */
+  .tg-service {
+    background: rgb(0 0 0 / 0.42);
+    backdrop-filter: blur(8px);
+    color: #e8eef4;
+  }
+
+  /* The panel every demo stands on: a flat surface a step lighter than the page. */
+  .showcase {
+    position: relative;
+    overflow: hidden;
+    border-radius: 24px;
+    border: 1px solid rgb(255 255 255 / 0.07);
+    background: #101113;
   }
 }
 

@@ -24,12 +24,12 @@ const jetbrains = localFont({
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
-  title: "Perry: the assistant that works on your computer",
+  title: "Perry: the only AI assistant you need",
   description:
-    "Text Perry on Telegram. It remembers you, gets real work done on your own machine through the Codex CLI, and asks before it oversteps. You run your own copy.",
+    "Perry lives in your Telegram, remembers you, and gets real work done on your computer.",
   openGraph: {
-    title: "Meet Perry",
-    description: "The assistant that works on your computer. You run your own copy; nothing phones home.",
+    title: "Perry",
+    description: "The only AI assistant you need.",
     type: "website",
   },
   twitter: { card: "summary_large_image" },

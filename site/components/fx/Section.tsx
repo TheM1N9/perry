@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { Reveal } from "./Reveal";
-import { Spotlight } from "./Spotlight";
 
 /**
  * A chapter: a numbered label, a two-tone heading (the lead bright, the rest
@@ -13,13 +12,12 @@ export function Section({
 }) {
   return (
     <section id={id} aria-labelledby={`${id}-title`} className={`relative scroll-mt-16 py-24 md:py-28 ${className}`}>
-      <Spotlight className="-top-24" />
       <div className="relative mx-auto max-w-[1200px] px-6">
         <Reveal className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] lg:items-end lg:gap-16">
           <div>
             {label ? (
               <p className="mb-5 font-mono text-[13px] text-fg-3">
-                {index ? <span className="text-fg-2">{index} </span> : null}
+                {index ? <span className="text-brand">case {index} · </span> : null}
                 {label}
               </p>
             ) : null}

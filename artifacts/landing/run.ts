@@ -25,7 +25,10 @@ import { sleep } from "../browser";
 //   Trust must run under the machine's policy.
 // - The schedule dial doesn't drive the chat: at 13:00 there is no "Call Sam."
 //   message, at 15:00 there is, and taking the dial pauses the day.
-// - An FAQ answer can't be opened.
+// - The mascot is only a picture: poking him must tip the hat and get a line
+//   out of him, his eyes must follow the pointer, and the closing one must say
+//   hello when it scrolls into view.
+// - A wrong URL shows a bare error: the 404 page must be Perry's own.
 // - Copy copies the wrong thing: it must hand over the clone and setup commands.
 // - A section lays out wider than the screen: no horizontal overflow at 1440,
 //   1280, 768 or 375px.
@@ -269,14 +272,35 @@ check("schedule: no reminder yet at 13:00, and it has arrived by 15:00", !at13.i
 check("schedule: taking the dial pauses the day", (await evaluate(`document.querySelector('#schedule [aria-label="Play the day"]')?.getAttribute("aria-pressed")`)) === "true");
 await shot("schedule");
 
-// FAQ and Copy.
-await click(`#faq details summary`);
-check("faq: an answer opens", await evaluate(`document.querySelector("#faq details").open && document.querySelector("#faq details p").getClientRects().length > 0`));
+// The mascot.
+const PUPIL = `document.querySelector('button[aria-label^="Perry, the platypus"] svg circle').getAttribute("cx")`;
+const centred = await evaluate(`(() => { const b = document.querySelector('button[aria-label^="Perry, the platypus"]'); b.scrollIntoView({ block: "center", behavior: "instant" }); return ${PUPIL}; })()`);
+await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1400, y: 450 });
+await sleep(200);
+const right = await evaluate(PUPIL);
+await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: 450 });
+await sleep(200);
+const left = await evaluate(PUPIL);
+check("mascot: his eyes follow the pointer", Number(right) > Number(left), { centred, right, left });
+await click(`button[aria-label^="Perry, the platypus"]`);
+check("mascot: poking him gets a line out of him", await until(`[...document.querySelectorAll('[role="status"]')].some((el) => el.textContent.includes("Tells no one"))`, 2000));
+// The closing mascot says hello once per visit, and the scroll-through above has used it, so start a fresh visit.
+await load();
+check("mascot: the closing one says hello when it comes into view", await evaluate(`(async () => {
+  document.querySelector("#cta-title").scrollIntoView({ block: "center", behavior: "instant" });
+  for (let i = 0; i < 30; i++) {
+    if ([...document.querySelectorAll('[role="status"]')].some((el) => el.textContent.includes("Ready when you are"))) return true;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return false;
+})()`));
+
+// Copy.
 await evaluate(`const write = navigator.clipboard.writeText.bind(navigator.clipboard); navigator.clipboard.writeText = (t) => { window.copied = t; return write(t); }; true`);
 await click(`[data-copy]`);
 await sleep(200);
 const copied = await evaluate(`window.copied`);
-check("copy hands over the clone and setup commands", copied === "git clone https://github.com/TheM1N9/me-bot.git perry && cd perry\npnpm install\npnpm run setup", copied);
+check("copy hands over the clone and setup commands", copied === "git clone https://github.com/TheM1N9/perry.git perry && cd perry\npnpm install\npnpm run setup", copied);
 
 // Overflow at every width.
 for (const [width, height] of [[1440, 900], [1280, 800], [768, 1024], [375, 812]] as const) {
@@ -285,6 +309,11 @@ for (const [width, height] of [[1440, 900], [1280, 800], [768, 1024], [375, 812]
   const overflow = await evaluate(OVERFLOW);
   check(`no horizontal overflow at ${width}px`, overflow <= 0, overflow);
 }
+
+// The 404 page.
+await send("Page.navigate", { url: `${base}/nowhere` });
+await sleep(1200);
+check("404: Perry's own page, with the mascot", await until(`document.body.innerText.includes("This page went undercover") && !!document.querySelector('button[aria-label^="Perry, the platypus"]')`, 5000));
 
 // ---------- Phone, reduced motion ----------
 await viewport(390, 844);

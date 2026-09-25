@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ServicePill } from "./ChatPanel";
 import { PerryAvatar } from "./PerryAvatar";
 
 /** A phone showing Perry's chat in Telegram's dark theme. Messages sit at the bottom, as in the app. */
@@ -23,7 +24,7 @@ export function Phone({ children, className = "", status = "bot" }: { children: 
             </svg>
           </span>
         </div>
-        <div className="flex shrink-0 items-center gap-3 border-b border-black/30 bg-tg-head px-4 py-2.5">
+        <div className="flex shrink-0 items-center gap-3 border-b border-black/40 bg-tg-head/95 px-4 py-2.5 backdrop-blur">
           <svg aria-hidden width="10" height="17" viewBox="0 0 10 17" className="text-accent">
             <path d="M8.5 1.5 2 8.5l6.5 7" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -33,8 +34,11 @@ export function Phone({ children, className = "", status = "bot" }: { children: 
             <p className="text-[12.5px] text-tg-meta">{status}</p>
           </div>
         </div>
-        <div className="flex min-h-0 flex-1 flex-col justify-end gap-1.5 overflow-hidden px-2.5 pb-3 pt-2">{children}</div>
-        <div aria-hidden className="flex shrink-0 items-center gap-2 bg-tg-head px-3 py-2.5 text-tg-meta">
+        <div className="flex min-h-0 flex-1 flex-col justify-end gap-1.5 overflow-hidden px-2.5 pb-3 pt-2">
+          <ServicePill className="mb-1">Today</ServicePill>
+          {children}
+        </div>
+        <div aria-hidden className="flex shrink-0 items-center gap-2 border-t border-black/40 bg-tg-head/95 px-3 py-2.5 text-tg-meta">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M21 11.5 12.6 19.9a5.4 5.4 0 0 1-7.6-7.6l8.5-8.5a3.6 3.6 0 0 1 5.1 5.1l-8.5 8.5a1.8 1.8 0 0 1-2.5-2.5l7.8-7.8" strokeLinecap="round" />
           </svg>

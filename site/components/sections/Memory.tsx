@@ -65,8 +65,8 @@ export function Memory() {
   );
 
   return (
-    <Section id="memory" index="01" label="memory" lead="Remembers you." rest="And shows you what." intro="Your preferences, the facts that matter and what happened today, kept in three layers you can read and edit from the dashboard.">
-      <div ref={ref} data-step={s} className="relative mt-14 grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+    <Section id="memory" index="01" label="memory" lead="Remembers everything." rest="Tells no one.">
+      <div ref={ref} data-step={s} className="showcase mt-14 grid gap-5 p-4 pt-14 md:p-10 md:pt-14 lg:grid-cols-[360px_minmax(0,1fr)]">
         <Reveal>
           <ChatPanel className="h-[440px]">
             <AnimatePresence initial={false} mode="popLayout">
@@ -100,24 +100,8 @@ export function Memory() {
             ))}
           </Window>
         </Reveal>
-        <PlayToggle paused={paused} onToggle={toggle} label="the memory demo" className="absolute -top-12 right-0" />
+        <PlayToggle paused={paused} onToggle={toggle} label="the memory demo" className="absolute right-4 top-4 z-20" />
       </div>
-      <Reveal delay={0.15}>
-        <dl className="mt-10 grid gap-x-10 gap-y-5 text-[15px] md:grid-cols-3">
-          <div>
-            <dt className="font-medium text-fg">Superseded, never silently dropped</dt>
-            <dd className="text-fg-3">A fact that changes replaces the old one, and a full memory refuses new saves rather than forgetting.</dd>
-          </div>
-          <div>
-            <dt className="font-medium text-fg">Data, not instructions</dt>
-            <dd className="text-fg-3">What Perry recalls reaches it marked as possibly incomplete or out of date, and never as instructions to follow.</dd>
-          </div>
-          <div>
-            <dt className="font-medium text-fg">Tidied overnight</dt>
-            <dd className="text-fg-3">At 22:30 the day becomes notes; at 03:00 what lasted moves into your profile and long-term memory.</dd>
-          </div>
-        </dl>
-      </Reveal>
     </Section>
   );
 }

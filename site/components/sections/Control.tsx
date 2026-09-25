@@ -6,6 +6,8 @@ import { Reveal } from "@/components/fx/Reveal";
 import { Section } from "@/components/fx/Section";
 import { Bubble, InlineKeys, Key } from "@/components/mock/Chat";
 import { ChatPanel } from "@/components/mock/ChatPanel";
+import { PlatypusArt } from "@/components/mascot/Platypus";
+import { PlatypusHead } from "@/components/mascot/PlatypusHead";
 
 type Access = "supervised" | "full";
 type Policy = "ask" | "review" | "trust";
@@ -41,15 +43,6 @@ function Segmented<T extends string>({
   );
 }
 
-const ACCESS_TEXT: Record<Access, string> = {
-  supervised: "Codex writes in its folder with the network off. Anything beyond that is asked.",
-  full: "No sandbox, and Codex never asks. Every command still shows in the trace. Keep it for work you'd do yourself.",
-};
-const POLICY_TEXT: Record<Policy, string> = {
-  ask: "You answer, in Telegram, the dashboard or the runner's terminal. The first answer wins, and no answer in ten minutes is a no.",
-  review: "A separate Codex turn judges each single action. Routine ones run; anything risky or unclear is asked.",
-  trust: "Everything runs, and every request is recorded with who or what allowed it.",
-};
 
 const PUSHED = "Pushed to main. CI is running; I'll tell you if it fails.";
 
@@ -78,9 +71,9 @@ function Approval({ command, answer, onAnswer }: { command: string; answer: Answ
   );
 }
 
-function Note({ children, tone = "text-tg-meta" }: { children: React.ReactNode; tone?: string }) {
+function Note({ children, tone = "" }: { children: React.ReactNode; tone?: string }) {
   return (
-    <motion.p layout="position" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`mx-auto w-fit shrink-0 rounded-full bg-black/30 px-3 py-1 text-center text-[12px] ${tone}`}>
+    <motion.p layout="position" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`mx-auto w-fit shrink-0 tg-service rounded-full px-3 py-1 text-center text-[12px] ${tone}`}>
       {children}
     </motion.p>
   );
@@ -93,12 +86,21 @@ export function Control() {
   const mode = access === "full" ? "full" : policy;
 
   return (
-    <Section id="control" index="03" label="control" lead="Asks before it oversteps." rest="As often as you like." intro="You decide how far Perry goes, per chat and per machine. Try it: flip the switches and answer the request.">
-      <div className="mt-14 grid items-start gap-12 lg:grid-cols-[minmax(0,1fr)_420px]">
-        <Reveal className="flex flex-col gap-10">
-          <div>
-            <p className="font-mono text-[12.5px] text-fg-3">this chat</p>
-            <div className="mt-3">
+    <Section id="control" index="03" label="control" lead="Never goes rogue." rest="Asks before it acts.">
+      <div className="showcase mt-14 grid items-center gap-10 p-5 pt-24 md:p-12 md:pt-24 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-16">
+        {/* The switches, as Perry's own settings card. */}
+        <Reveal className="self-center">
+          <div className="rounded-[20px] border border-white/10 bg-black/40 p-6 backdrop-blur md:p-7">
+            <div className="flex items-center gap-2.5 border-b border-white/10 pb-4">
+              <PlatypusHead className="size-7" />
+              <p className="font-semibold text-fg">Perry</p>
+              <p className="font-mono text-[12.5px] text-fg-3">/ settings</p>
+            </div>
+            <div className="flex flex-col items-start gap-3 border-b border-white/10 py-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[15px] font-medium text-fg">Access</p>
+                <p className="text-[13px] text-fg-3">this chat</p>
+              </div>
               <Segmented
                 label="Access"
                 value={access}
@@ -107,11 +109,11 @@ export function Control() {
                 tone={(value) => (value === "full" ? "bg-warn" : "bg-fg")}
               />
             </div>
-            <p className="mt-3 max-w-[46ch] text-[15.5px] text-fg-2" aria-live="polite">{ACCESS_TEXT[access]}</p>
-          </div>
-          <div>
-            <p className="font-mono text-[12.5px] text-fg-3">this machine</p>
-            <div className="mt-3">
+            <div className="flex flex-col items-start gap-3 pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[15px] font-medium text-fg">Policy</p>
+                <p className="text-[13px] text-fg-3">this machine</p>
+              </div>
               <Segmented
                 label="Policy"
                 value={policy}
@@ -120,13 +122,7 @@ export function Control() {
                 options={[{ value: "ask", label: "Ask" }, { value: "review", label: "Review" }, { value: "trust", label: "Trust" }]}
               />
             </div>
-            <p className="mt-3 max-w-[46ch] text-[15.5px] text-fg-2" aria-live="polite">
-              {access === "full" ? "Full access skips asking, so the machine's policy has nothing to decide." : POLICY_TEXT[policy]}
-            </p>
           </div>
-          <p className="max-w-[46ch] border-l border-line-strong pl-4 text-[14.5px] text-fg-3">
-            Always allow saves a rule on that machine, for that exact command and folder. A decline is never remembered, and a hard deny list is refused outright.
-          </p>
         </Reveal>
 
         <Reveal delay={0.1} className="relative">
@@ -143,7 +139,11 @@ export function Control() {
               </motion.p>
             ) : null}
           </AnimatePresence>
-          <ChatPanel className={`h-[480px] transition-shadow duration-300 ${access === "full" ? "shadow-[0_0_0_1px_rgb(240_180_76/0.55)]" : ""}`}>
+          {/* Perry peeks over the top of the chat, keeping an eye on the request. */}
+          <div aria-hidden className="absolute -top-[62px] right-10 w-[104px]">
+            <PlatypusArt head look={{ x: -0.5, y: 0.9 }} lid={access === "full" ? 0.05 : 0.32} />
+          </div>
+          <ChatPanel className={`relative z-10 h-[480px] transition-shadow duration-300 ${access === "full" ? "shadow-[0_0_0_1px_rgb(240_180_76/0.55)]" : ""}`}>
             <AnimatePresence initial={false} mode="popLayout">
               <Bubble key={`ask-${mode}`} side="out" time="10:44">looks good, push the fix to main</Bubble>
               {mode === "full" ? (

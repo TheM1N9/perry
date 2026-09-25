@@ -22,7 +22,6 @@ export function HeroStage() {
 
   return (
     <div ref={ref} data-step={s} data-end={END} className="relative">
-      <div aria-hidden className="pointer-events-none absolute -left-10 top-0 h-[560px] w-[560px] rounded-full bg-[radial-gradient(closest-side,rgb(63_179_242/0.14),transparent)]" />
       <div className="relative flex flex-col items-center gap-6 lg:block lg:h-[640px]">
         <Window
           title="perry runner · ~/code/site"
@@ -94,7 +93,7 @@ export function HeroStage() {
             {s === 9 ? <Typing key="t2" /> : null}
             {s >= END ? (
               <Bubble key="fixed" side="in" time="10:42">
-                Fixed. The lockfile&apos;s updated and the build passes (14.2 s). Want me to commit and push it?
+                Fixed. Build passes (14.2 s), and nobody saw a thing. Commit and push?
               </Bubble>
             ) : null}
           </AnimatePresence>

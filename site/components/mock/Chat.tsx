@@ -84,8 +84,8 @@ export function Key({
       disabled={disabled}
       animate={pressed ? { scale: [1, 0.93, 1] } : { scale: 1 }}
       transition={{ duration: 0.3 }}
-      className={`relative rounded-[10px] px-2 py-2 text-[13.5px] font-medium text-white transition-colors enabled:hover:bg-white/15 disabled:cursor-default ${
-        pressed ? "bg-white/25" : "bg-tg-key"
+      className={`relative rounded-[10px] px-2 py-2 text-[13.5px] font-semibold text-white backdrop-blur-md transition-colors enabled:hover:bg-black/55 disabled:cursor-default ${
+        pressed ? "bg-white/25" : "bg-black/40"
       } ${wide ? "col-span-2" : ""} ${className}`}
       {...rest}
     >

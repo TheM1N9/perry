@@ -5,6 +5,8 @@ import { PlayToggle } from "@/components/fx/PlayToggle";
 import { Reveal } from "@/components/fx/Reveal";
 import { Section } from "@/components/fx/Section";
 import { Window } from "@/components/mock/Window";
+import { AnimatePresence } from "motion/react";
+import { PlatypusHead } from "@/components/mascot/PlatypusHead";
 import { useSequence } from "@/lib/useSequence";
 
 // Where each step starts and how long it runs, as shares of the whole turn.
@@ -59,31 +61,37 @@ function Trace({ shown }: { shown: number }) {
   );
 }
 
-const POINTS = [
-  { title: "Your subscription", body: "Perry thinks with the Codex CLI, signed in to your ChatGPT account. Pick the model and thinking level per chat." },
-  { title: "Your folder, sandboxed", body: "Each chat works in a folder you choose, under Codex's sandbox: Seatbelt on macOS, bubblewrap on Linux, a restricted token on Windows." },
-  { title: "Your receipts", body: "Every reply is a run on the Activity page, with each command, file change and tool call, its input and its output." },
-];
 
 export function Work() {
   const { ref, step, paused, toggle } = useSequence(HOLDS, { restartAfter: 4000 });
   return (
-    <Section id="work" index="02" label="work" lead="Does the real work." rest="On your machine." intro="Perry hands each message to Codex on your computer, with a shell, your files and your tools, and keeps a receipt of everything it did.">
-      <div ref={ref} data-step={step} className="relative mt-14 grid items-start gap-10 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-        <Reveal>
+    <Section id="work" index="02" label="work" lead="Works undercover." rest="On your computer.">
+      <div ref={ref} data-step={step} className="showcase mt-14 px-4 pb-16 pt-14 md:px-14 md:pb-20 md:pt-16">
+        <Reveal className="mx-auto max-w-[860px]">
           <Window title="Perry · Activity">
             <Trace shown={step} />
           </Window>
         </Reveal>
-        <ul className="flex flex-col gap-7 lg:pt-4">
-          {POINTS.map((point, i) => (
-            <Reveal as="li" key={point.title} delay={0.08 * i} className="border-l border-line-strong pl-5">
-              <p className="font-medium text-fg">{point.title}</p>
-              <p className="mt-1 text-[15.5px] text-fg-3">{point.body}</p>
-            </Reveal>
-          ))}
-        </ul>
-        <PlayToggle paused={paused} onToggle={toggle} label="the activity demo" className="absolute -top-12 right-0" />
+        {/* When the run finishes, the reply lands on your phone. */}
+        <AnimatePresence>
+          {step > STEPS.length ? (
+            <motion.div
+              key="done"
+              initial={{ opacity: 0, y: 16, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ type: "spring", stiffness: 380, damping: 30 }}
+              className="absolute bottom-6 right-4 z-10 flex w-[300px] items-start gap-3 rounded-2xl border border-white/10 bg-[#1c2733]/95 p-3.5 shadow-[0_20px_50px_rgb(0_0_0/0.6)] backdrop-blur md:bottom-10 md:right-10"
+            >
+              <PlatypusHead className="size-9" />
+              <div className="min-w-0 text-[13.5px] leading-snug">
+                <p className="flex justify-between font-semibold text-white">Perry <span className="font-normal text-tg-meta">now</span></p>
+                <p className="text-[#c9d6e2]">Fixed. Build passes, and nobody saw a thing.</p>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+        <PlayToggle paused={paused} onToggle={toggle} label="the activity demo" className="absolute right-4 top-4 z-20" />
       </div>
     </Section>
   );

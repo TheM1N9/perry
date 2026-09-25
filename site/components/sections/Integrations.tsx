@@ -28,13 +28,8 @@ export function Integrations() {
       <div className="mx-auto flex max-w-[1200px] flex-col gap-3 px-6 md:flex-row md:items-end md:justify-between">
         <Reveal>
           <h2 id="apps-title" className="text-[26px] font-[560] leading-tight tracking-[-0.02em] md:text-[30px]">
-            Plugs into the apps <span className="text-fg-3">you already use.</span>
+            Has contacts everywhere. <span className="text-fg-3">Works with the apps you use.</span>
           </h2>
-        </Reveal>
-        <Reveal delay={0.1}>
-          <p className="max-w-[44ch] text-[15.5px] text-fg-3">
-            Connect an account in the dashboard and the next message can use it. Composio keeps the sign-in; Perry never holds your tokens.
-          </p>
         </Reveal>
       </div>
       <div className="fade-x mt-12 flex flex-col gap-4 overflow-hidden">

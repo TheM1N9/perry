@@ -1,10 +1,10 @@
 {
   "pass": true,
-  "at": "2026-09-25T21:50:02.727Z",
+  "at": "2026-09-25T22:27:16.411Z",
   "performance": {
     "lcpMs": 188,
     "lcpElement": "DIV.whitespace-pre-wrap break-word",
-    "jsKb": 188
+    "jsKb": 192
   },
   "checks": [
     {
@@ -62,14 +62,14 @@
       "detail": []
     },
     {
-      "name": "text contrast meets AA (227 text nodes)",
+      "name": "text contrast meets AA (141 text nodes)",
       "pass": true,
       "detail": []
     },
     {
       "name": "control: approve gives its outcome",
       "pass": true,
-      "detail": "03 control\n\nAsks before it oversteps. As often as you like.\n\nYou decide how far Perry goes, per chat and per machine. Try it: flip the switches and answer the request.\n\nthis chat\n\nSupervised\nFull access\n\nCodex writes in its folder with the network off. Anything beyond that is asked.\n\nthis machine\n\nAsk\nReview\nTrust\n\nYou answer, in Telegram, the dashboard or the runner's terminal. The first answer wins, and no answer in ten minutes is a no.\n\nAlways allow saves a rule on that machine, for that exact command and folder. A decline is never remembered, and a hard deny list is refused outright.\n\nPerry\n\nbot\n\nlooks good, push the fix to main\n10:44\nPerry wants to run\ngit push origin main\nin ~/code/site · it needs the network\n✓ Approved by you\n10:44\nPushed to main. CI is running; I'll tell you if it fails.\n10:44\nAsk again"
+      "detail": "case 03 · control\n\nNever goes rogue. Asks before it acts.\n\nPerry\n\n/ settings\n\nAccess\n\nthis chat\n\nSupervised\nFull access\n\nPolicy\n\nthis machine\n\nAsk\nReview\nTrust\n\nPerry\n\nbot\n\nToday\n\nlooks good, push the fix to main\n10:44\nPerry wants to run\ngit push origin main\nin ~/code/site · it needs the network\n✓ Approved by you\n10:44\nPushed to main. CI is running; I'll tell you if it fails.\n10:44\nWrite a message…\nAsk again"
     },
     {
       "name": "control: after approve, it can be asked again",
@@ -78,7 +78,7 @@
     {
       "name": "control: decline gives its outcome",
       "pass": true,
-      "detail": "03 control\n\nAsks before it oversteps. As often as you like.\n\nYou decide how far Perry goes, per chat and per machine. Try it: flip the switches and answer the request.\n\nthis chat\n\nSupervised\nFull access\n\nCodex writes in its folder with the network off. Anything beyond that is asked.\n\nthis machine\n\nAsk\nReview\nTrust\n\nYou answer, in Telegram, the dashboard or the runner's terminal. The first answer wins, and no answer in ten minutes is a no.\n\nAlways allow saves a rule on that machine, for that exact command and folder. A decline is never remembered, and a hard deny list is refused outright.\n\nPerry\n\nbot\n\nlooks good, push the fix to main\n10:44\nPerry wants to run\ngit push origin main\nin ~/code/site · it needs the network\nDeclined by you\n10:44\nOkay, I won't push. The commit is ready whenever you are.\n10:44\nAsk again"
+      "detail": "case 03 · control\n\nNever goes rogue. Asks before it acts.\n\nPerry\n\n/ settings\n\nAccess\n\nthis chat\n\nSupervised\nFull access\n\nPolicy\n\nthis machine\n\nAsk\nReview\nTrust\n\nPerry\n\nbot\n\nToday\n\nlooks good, push the fix to main\n10:44\nPerry wants to run\ngit push origin main\nin ~/code/site · it needs the network\nDeclined by you\n10:44\nOkay, I won't push. The commit is ready whenever you are.\n10:44\nWrite a message…\nAsk again"
     },
     {
       "name": "control: after decline, it can be asked again",
@@ -87,7 +87,7 @@
     {
       "name": "control: always gives its outcome",
       "pass": true,
-      "detail": "03 control\n\nAsks before it oversteps. As often as you like.\n\nYou decide how far Perry goes, per chat and per machine. Try it: flip the switches and answer the request.\n\nthis chat\n\nSupervised\nFull access\n\nCodex writes in its folder with the network off. Anything beyond that is asked.\n\nthis machine\n\nAsk\nReview\nTrust\n\nYou answer, in Telegram, the dashboard or the runner's terminal. The first answer wins, and no answer in ten minutes is a no.\n\nAlways allow saves a rule on that machine, for that exact command and folder. A decline is never remembered, and a hard deny list is refused outright.\n\nPerry\n\nbot\n\nlooks good, push the fix to main\n10:44\nPerry wants to run\ngit push origin main\nin ~/code/site · it needs the network\n✓ Approved, and saved as a rule for this command in this folder\n10:44\nPushed. Next time I'll push here without asking.\n10:44\nAsk again"
+      "detail": "case 03 · control\n\nNever goes rogue. Asks before it acts.\n\nPerry\n\n/ settings\n\nAccess\n\nthis chat\n\nSupervised\nFull access\n\nPolicy\n\nthis machine\n\nAsk\nReview\nTrust\n\nPerry\n\nbot\n\nToday\n\nlooks good, push the fix to main\n10:44\nPerry wants to run\ngit push origin main\nin ~/code/site · it needs the network\n✓ Approved, and saved as a rule for this command in this folder\n10:44\nPushed. Next time I'll push here without asking.\n10:44\nWrite a message…\nAsk again"
     },
     {
       "name": "control: after always, it can be asked again",
@@ -114,7 +114,7 @@
       "name": "schedule: no reminder yet at 13:00, and it has arrived by 15:00",
       "pass": true,
       "detail": {
-        "at13": "04 schedule\n\nShows up on time. Quiet otherwise.\n\nBriefs, reminders and check-ins on a schedule in your timezone, and silence when there's nothing worth saying. Drag the dial through a day.\n\n13:00\n\nin "
+        "at13": "case 04 · schedule\n\nReports in on time.\n\n13:00\n\nnext · 14:30 reminder\n\nin your timezone\n\nmemory\nbrief\ncheck-in\nSam\ncheck-in\nnotes\n00\n06\n12\n18\n24\n\nPerry\n\nbot\n\nToday\n\n03:00 · memory consolidation · no m"
       }
     },
     {
@@ -122,13 +122,26 @@
       "pass": true
     },
     {
-      "name": "faq: an answer opens",
+      "name": "mascot: his eyes follow the pointer",
+      "pass": true,
+      "detail": {
+        "centred": "100",
+        "right": "103.93539670771645",
+        "left": "97.61724584572228"
+      }
+    },
+    {
+      "name": "mascot: poking him gets a line out of him",
+      "pass": true
+    },
+    {
+      "name": "mascot: the closing one says hello when it comes into view",
       "pass": true
     },
     {
       "name": "copy hands over the clone and setup commands",
       "pass": true,
-      "detail": "git clone https://github.com/TheM1N9/me-bot.git perry && cd perry\npnpm install\npnpm run setup"
+      "detail": "git clone https://github.com/TheM1N9/perry.git perry && cd perry\npnpm install\npnpm run setup"
     },
     {
       "name": "no horizontal overflow at 1440px",
@@ -149,6 +162,10 @@
       "name": "no horizontal overflow at 375px",
       "pass": true,
       "detail": 0
+    },
+    {
+      "name": "404: Perry's own page, with the mascot",
+      "pass": true
     },
     {
       "name": "reduced motion: the hero's scene still plays once it is on screen",
