@@ -89,6 +89,7 @@ running:
 | Tool | What it does |
 |---|---|
 | `recall` `remember` `read_memory` `forget` | Layered memory: profile, long-term, daily notes |
+| `update_user_md` `update_identity` | Keep USER.md current; rename itself or change its personality when you ask |
 | `search_chats` `read_chat` | Search and read earlier conversations, on every channel |
 | `list_connectors` `find_action` `run_action` | Your connected accounts, through Composio |
 | `start_task` `set_plan` `finish_task` `status_report` `set_goal` `update_goal` | Work that outlives the message |
@@ -158,8 +159,14 @@ spending) are to be confirmed in chat first.
 
 Modelled on OpenClaw's workspace memory, in Convex:
 
-- **Profile** (like `USER.md`): standing preferences and relationships, as
-  directives. In every turn's instructions.
+- **USER.md**: who you are, in your own Markdown: what to call you, your work,
+  a typical day, the people who matter, how you like replies, what you want
+  help with and your boundaries. Loaded whole at the end of every turn's
+  instructions.
+- **Identity** (like `IDENTITY.md`): the assistant's name and personality,
+  which you choose. At the start of every turn's instructions.
+- **Profile**: standing preferences and rules for how to work, as directives.
+  In every turn's instructions.
 - **Long-term** (like `MEMORY.md`): durable facts and decisions. Recalled into
   every turn.
 - **Daily notes** (like `memory/YYYY-MM-DD.md`): today's and yesterday's are
@@ -185,7 +192,24 @@ Memory keeps itself current, like OpenClaw's memory flush and dreaming: the
 built-in **daily summary** job (22:30) reads the day's chats and writes what is
 worth keeping as daily notes, and **memory consolidation** (03:00) promotes
 what the last week's notes show to be durable into the profile and long-term
-memory. Both work quietly.
+memory, and brings USER.md up to date with what you said about yourself. Both
+work quietly.
+
+### Getting to know you
+
+A new install opens the dashboard on a welcome page before the first chat: name
+the assistant and pick its personality, answer a few questions about yourself
+(all optional), and review the USER.md written from your answers. Saving opens
+a chat where the assistant speaks first, having read it. "I'd rather just chat"
+skips the form and has the assistant ask the same questions in the chat,
+writing USER.md as it learns. An install from before the welcome page is
+offered it on the chat page instead.
+
+Afterwards, **Profile → About you** edits USER.md and the identity, shows every
+version with who wrote it (you, the assistant, or a scheduled job), restores an
+older one, and opens the welcome page again. The assistant updates USER.md
+when you tell it something lasting about yourself, and changes its name or
+personality only when you ask.
 
 ## Proactivity
 
