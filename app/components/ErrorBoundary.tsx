@@ -27,7 +27,7 @@ export class ErrorBoundary extends Component<
     const isKeyProblem = /dashboard key|DASHBOARD_KEY/i.test(message);
 
     if (this.props.inline) {
-      const missing = /Could not find public function/i.test(message);
+      const missing = /No (public )?(function|query|mutation|action) named/i.test(message);
       return (
         <Notice tone="danger" title={isKeyProblem ? "That key was rejected" : "This page couldn't load"} details={errorText(error)}
           action={<>
@@ -35,7 +35,7 @@ export class ErrorBoundary extends Component<
             {isKeyProblem && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { this.setState({ error: null }); this.props.onReset(); }}>Enter a different key</button>}
           </>}>
           {isKeyProblem ? "The dashboard key in this browser doesn't match this deployment."
-            : missing ? "The Convex deployment is running older code than this dashboard. Deploy the latest functions with pnpm exec convex dev, then try again."
+            : missing ? "Perry's server is running older code than this page. Restart Perry (perry stop, then perry start) and reload."
             : "Perry's server returned an error. The rest of the dashboard still works."}
         </Notice>
       );

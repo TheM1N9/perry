@@ -198,37 +198,6 @@ export const authorize = internalMutation({
   },
 });
 
-export const getSandboxId = internalQuery({
-  args: {},
-  returns: v.union(v.string(), v.null()),
-  handler: async (ctx): Promise<string | null> => {
-    const install = await read(ctx);
-    return install?.sandboxId ?? null;
-  },
-});
-
-export const setSandboxId = internalMutation({
-  args: { sandboxId: v.optional(v.string()) },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const install = await read(ctx);
-    if (!install) return null;
-    await ctx.db.patch(install._id, { sandboxId: args.sandboxId });
-    return null;
-  },
-});
-
-export const setComputeTarget = internalMutation({
-  args: { target: v.union(v.literal("sandbox"), v.literal("local")) },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const install = await read(ctx);
-    if (!install) return null;
-    await ctx.db.patch(install._id, { computeTarget: args.target });
-    return null;
-  },
-});
-
 /** Whether approval requests also go to the owner on Telegram. */
 export const setTelegramApprovals = internalMutation({
   args: { enabled: v.boolean() },

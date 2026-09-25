@@ -6,14 +6,11 @@ import * as agentStore from "../convex/agentStore";
 import * as approvals from "../convex/approvals";
 import * as assistant from "../convex/assistant";
 import * as brain from "../convex/brain";
-import * as chatgpt from "../convex/chatgpt";
 import * as codex from "../convex/codex";
 import * as composio from "../convex/composio";
-import * as compute from "../convex/compute";
 import * as conversations from "../convex/conversations";
 import * as crons from "../convex/crons";
 import * as dashboard from "../convex/dashboard";
-import * as fallback from "../convex/fallback";
 import * as history from "../convex/history";
 import * as http from "../convex/http";
 import * as ingest from "../convex/ingest";
@@ -35,7 +32,6 @@ import * as persona from "../convex/persona";
 import * as recovery from "../convex/recovery";
 import * as runner from "../convex/runner";
 import * as runs from "../convex/runs";
-import * as sandbox from "../convex/sandbox";
 import * as secrets from "../convex/secrets";
 import * as tools from "../convex/tools";
 import * as web from "../convex/web";
@@ -46,14 +42,11 @@ export const modules: Record<string, Record<string, unknown>> = {
   "approvals": approvals,
   "assistant": assistant,
   "brain": brain,
-  "chatgpt": chatgpt,
   "codex": codex,
   "composio": composio,
-  "compute": compute,
   "conversations": conversations,
   "crons": crons,
   "dashboard": dashboard,
-  "fallback": fallback,
   "history": history,
   "http": http,
   "ingest": ingest,
@@ -75,7 +68,6 @@ export const modules: Record<string, Record<string, unknown>> = {
   "recovery": recovery,
   "runner": runner,
   "runs": runs,
-  "sandbox": sandbox,
   "secrets": secrets,
   "tools": tools,
   "web": web,

@@ -75,7 +75,6 @@ export async function importConvexExport(runtime: Runtime, path: string, options
               doc.finishedAt = now;
             }
             if (table === "approvals" && (doc.status === "pending" || doc.status === "reviewing")) { doc.status = "expired"; doc.decidedAt = now; }
-            if (table === "installation") doc.computeTarget = "local";
             if (table === "conversations") doc.pendingTurns = 0;
             store.insert(table, doc, { _id: doc._id, _creationTime: doc._creationTime });
             count++;

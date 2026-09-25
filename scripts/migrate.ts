@@ -58,6 +58,20 @@ async function main() {
       process.exit(1);
     }
     say(`  ${green("exported")} ${zip}`);
+
+    // Keys set with `convex env set` are not in an export; ones Perry uses come over as saved keys.
+    for (const name of ["COMPOSIO_API_KEY", "TELEGRAM_BOT_TOKEN"]) {
+      if (envValue(name)) continue;
+      const got = await runConvex(["env", "get", name]);
+      const value = got.code === 0 ? got.output.trim().split(/\r?\n/).at(-1)?.trim() : "";
+      if (!value || /not found|no such/i.test(value)) continue;
+      const saved = await fetch(`http://127.0.0.1:${PORT}/api/backend/admin`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-perry-key": key },
+        body: JSON.stringify({ path: "secrets:set", args: { name, value } }),
+      }).then((r) => r.ok, () => false);
+      if (saved) say(`  ${green("kept")} ${name}${dim(" from the deployment's settings")}`);
+    }
   }
 
   const response = await fetch(`http://127.0.0.1:${PORT}/api/backend/import`, {

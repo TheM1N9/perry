@@ -142,7 +142,10 @@ export class BackendClient {
           if (changed) sub.value = result.value;
           if (changed) this.notify(sub);
         } catch (error) {
-          sub.error = error instanceof Error ? error : new Error(String(error));
+          // The server unreachable (restarting, say) is not the query's error: what is shown stays,
+          // and the change stream fetches everything again once it reconnects.
+          if (!(error instanceof BackendError)) break;
+          sub.error = error;
           sub.loaded = true;
           this.notify(sub);
         }

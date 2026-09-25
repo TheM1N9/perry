@@ -1,10 +1,9 @@
 import { v } from "convex/values";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 
 /**
- * Tasks, goals, monitors and command receipts: the things that outlive a single
- * message.
+ * Tasks, goals and monitors: the things that outlive a single message.
  *
  * Chat is a bad place to keep state. Ask an agent what it is doing and it will
  * cheerfully reconstruct a plausible answer from context. These tables are the
@@ -307,45 +306,6 @@ export const setMonitorActive = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { active: args.active });
-    return null;
-  },
-});
-
-// --- Command receipts ----------------------------------------------------
-
-export const findReceipt = internalQuery({
-  args: { operationId: v.string() },
-  handler: async (ctx, args): Promise<Doc<"receipts"> | null> => {
-    return await ctx.db
-      .query("receipts")
-      .withIndex("by_operation", (q) => q.eq("operationId", args.operationId))
-      .unique();
-  },
-});
-
-export const startReceipt = internalMutation({
-  args: { operationId: v.string(), command: v.string() },
-  returns: v.id("receipts"),
-  handler: async (ctx, args): Promise<Id<"receipts">> => {
-    return await ctx.db.insert("receipts", {
-      operationId: args.operationId,
-      command: args.command.slice(0, 4000),
-      startedAt: Date.now(),
-    });
-  },
-});
-
-export const finishReceipt = internalMutation({
-  args: {
-    id: v.id("receipts"),
-    exitCode: v.optional(v.number()),
-    output: v.optional(v.string()),
-    truncated: v.optional(v.boolean()),
-    error: v.optional(v.string()),
-  },
-  returns: v.null(),
-  handler: async (ctx, { id, ...rest }) => {
-    await ctx.db.patch(id, { ...rest, finishedAt: Date.now() });
     return null;
   },
 });

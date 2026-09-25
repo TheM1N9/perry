@@ -33,13 +33,14 @@ export function ensureHome() {
   return PATHS;
 }
 
-/** How this machine's runner connects. Written by the runner and by `pnpm run connect -- --service`. */
+/** How this machine's runner connects. Written by Perry's server, the runner and `pnpm run connect`. */
 export type RunnerConfig = { url?: string; token?: string; dir?: string; name?: string; auto?: boolean };
 
 export function readRunnerConfig(): RunnerConfig {
-  if (!existsSync(PATHS.runnerConfig)) return {};
+  // Perry's home, not the project: nothing here belongs in the server build's file trace.
+  if (!existsSync(/*turbopackIgnore: true*/ PATHS.runnerConfig)) return {};
   try {
-    return JSON.parse(readFileSync(PATHS.runnerConfig, "utf8"));
+    return JSON.parse(readFileSync(/*turbopackIgnore: true*/ PATHS.runnerConfig, "utf8"));
   } catch {
     return {};
   }

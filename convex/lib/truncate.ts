@@ -55,20 +55,6 @@ export function truncateTail(text: string): TruncationResult {
   return truncateByDirection(text, "tail");
 }
 
-// Adapted from vercel/eve (Apache-2.0): packages/eve/src/execution/sandbox/bash.ts
-/**
- * Command output with its end kept and a header saying what was dropped, so
- * the model knows it is looking at the last part and not the whole.
- */
-export function truncateCommandOutput(text: string, stream: "stdout" | "stderr" = "stdout"): { output: string; truncated: boolean } {
-  const result = truncateTail(text);
-  if (!result.truncated) return { output: result.output, truncated: false };
-  return {
-    output: `[${stream} truncated: showing last ${result.outputLines} of ${result.totalLines} lines]\n${result.output}`,
-    truncated: true,
-  };
-}
-
 /** The two directions differ only in where iteration starts. */
 function truncateByDirection(text: string, direction: "head" | "tail"): TruncationResult {
   const rawLines = text.split("\n");

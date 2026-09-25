@@ -67,7 +67,6 @@ export async function startBackend() {
   if (box.__perry!.started) return;
   box.__perry!.started = true;
   await runtime.runMutation("installation:ensure", {}, { internal: true });
-  await runtime.runMutation("installation:setComputeTarget", { target: "local" }, { internal: true });
   await pairThisMachine(runtime).catch((error) => console.error(`[perry] could not connect this computer: ${String(error)}`));
   runtime.start();
   box.__perry!.stopTelegram = pollTelegram(runtime);

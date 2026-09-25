@@ -5,7 +5,6 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, mutation, query, type MutationCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
-import { FALLBACK_PROVIDER } from "./chatgpt";
 import { ABSOLUTE_PATH } from "./media";
 import { defaultAccess, type Onboarding } from "./installation";
 import { DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./persona";
@@ -34,8 +33,6 @@ export type ChatMessage = {
   text: string;
   createdAt: number;
   attachments: Array<{ url: string; fileName: string; contentType: string }>;
-  /** Written in Convex on the ChatGPT subscription, because the computer was offline. */
-  fallback?: boolean;
 };
 
 function assistantMedia(text: string): Array<{ url: string; fileName: string; contentType: string }> {
@@ -245,7 +242,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; fallback?: boolean; lastError?: string }> => {
+  ): Promise<{ model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string }> => {
     assertDashboardKey(args.key);
     const conversation = webChat(await ctx.db.get(args.id));
     const isRunning = (conversation.pendingTurns ?? 0) > 0;
@@ -266,7 +263,6 @@ export const getChat = query({
       isRunning,
       // The flush before /reset works quietly.
       streaming: running?.flush ? undefined : running?.partial,
-      fallback: running?.fallback,
       lastError: latestRun?.status === "error" ? latestRun.error : undefined,
     };
   },
@@ -320,7 +316,6 @@ export const getChatMessages = query({
           role: doc.message?.role ?? "assistant",
           text: (marker ? raw.slice(0, marker.index).trimEnd() : raw),
           createdAt: doc._creationTime,
-          ...(doc.provider === FALLBACK_PROVIDER ? { fallback: true } : {}),
           attachments: messageKey
             ? attachmentMap.get(messageKey) ?? []
             : recovered
@@ -990,8 +985,6 @@ export const checkMonitorsNow = action({
 // --- Compute -------------------------------------------------------------
 
 export type ComputeView = {
-  target: "sandbox" | "local";
-  sandboxConfigured: boolean;
   /** Approval requests go to Telegram only when the owner is there and has not turned it off. */
   telegramApprovals: { ownerOnTelegram: boolean; enabled: boolean };
   runners: Array<{
@@ -1003,16 +996,6 @@ export type ComputeView = {
     online: boolean;
     lastSeenAt?: number;
     revoked: boolean;
-  }>;
-  commands: Array<{
-    id: string;
-    kind: string;
-    command?: string;
-    path?: string;
-    status: string;
-    exitCode?: number;
-    error?: string;
-    createdAt: number;
   }>;
 };
 
@@ -1026,19 +1009,10 @@ export const getCompute = query({
       internal.runner.listRunners,
       {},
     );
-    const commands: Doc<"commands">[] = await ctx.runQuery(
-      internal.runner.recentCommands,
-      { limit: 20 },
-    );
-    const daytonaKey: string | null = await ctx.runQuery(internal.secrets.get, {
-      name: "DAYTONA_API_KEY",
-    });
 
     const cutoff = Date.now() - 90_000;
 
     return {
-      target: install?.computeTarget ?? "sandbox",
-      sandboxConfigured: Boolean(daytonaKey),
       telegramApprovals: {
         ownerOnTelegram: Boolean(install?.claimedAt) && install?.ownerChannel === "telegram",
         enabled: install?.telegramApprovals !== false,
@@ -1053,32 +1027,7 @@ export const getCompute = query({
         lastSeenAt: r.lastSeenAt,
         revoked: r.revoked,
       })),
-      commands: commands.map((c) => ({
-        id: c._id,
-        kind: c.kind,
-        command: c.command,
-        path: c.path,
-        status: c.status,
-        exitCode: c.exitCode,
-        error: c.error,
-        createdAt: c.createdAt,
-      })),
     };
-  },
-});
-
-export const setComputeTarget = mutation({
-  args: {
-    key: vKey,
-    target: v.union(v.literal("sandbox"), v.literal("local")),
-  },
-  returns: v.null(),
-  handler: async (ctx, args): Promise<null> => {
-    assertDashboardKey(args.key);
-    await ctx.runMutation(internal.installation.setComputeTarget, {
-      target: args.target,
-    });
-    return null;
   },
 });
 

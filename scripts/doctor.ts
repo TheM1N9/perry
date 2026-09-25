@@ -14,7 +14,7 @@ import { platform, release, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { sandboxMode } from "../runner/codex";
 import { HOME, readRunnerConfig } from "../runner/home";
-import { dim, green, INSTALL_HINTS, red, runCodex, yellow } from "./lib";
+import { dim, green, INSTALL_HINTS, red, run, runCodex, yellow } from "./lib";
 import { serviceState } from "./service";
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
@@ -41,6 +41,12 @@ const lastLine = (text: string) => text.trim().split(/\r?\n/).at(-1) ?? "";
 async function checkMachine() {
   note("machine", `${platform()} ${release()}`);
   ok("bun", process.versions.bun ?? process.version);
+  // Perry's server runs on Node, and keeps its data with Node's built-in SQLite (22.13 and later).
+  const node = await run("node", ["-p", "process.versions.node"]);
+  const [major = 0, minor = 0] = node.output.trim().split(".").map(Number);
+  if (node.code !== 0) bad("node", `not found on PATH. Perry's server needs Node.js 22.13 or newer`);
+  else if (major > 22 || (major === 22 && minor >= 13)) ok("node", node.output.trim());
+  else bad("node", `${node.output.trim()} is too old: Perry's server needs 22.13 or newer, for its built-in SQLite`);
 
   const codex = await runCodex(["--version"]);
   if (codex.code !== 0) {
