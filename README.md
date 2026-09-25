@@ -262,6 +262,28 @@ and tries again, twice at most. `TELEGRAM_API_BASE` (a Convex env var, unset
 normally) points the bot at a stand-in Bot API; `artifacts/telegram-delivery`
 uses it to test delivery without messaging anyone.
 
+## Landing page
+
+`site/` is Perry's public page, a Next.js app of its own (Tailwind CSS and
+Motion) with its own `package.json` and lockfile. Its demos are React
+components rather than screenshots: the hero's phone and terminal play one
+approved fix, and the chapters on control and schedule can be used. Its fonts
+(Inter Tight and JetBrains Mono, both OFL) are served from the site itself, so
+it loads nothing from anyone else's server.
+
+```bash
+cd site
+pnpm install
+pnpm dev          # http://localhost:3000
+```
+
+To host it on Vercel, import the repo and set the project's Root Directory to
+`site`; the Next.js preset does the rest. `bun artifacts/landing/run.ts`
+builds it, serves it with `next start` and checks it in headless Chrome (the
+hero's scene, every interactive part, reduced motion, contrast, overflow at
+four widths, no third-party requests), writing screenshots and `result.json`
+to `artifacts/landing/`.
+
 ## Stack
 
 | Layer | Choice |

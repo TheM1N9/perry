@@ -1,0 +1,182 @@
+{
+  "pass": true,
+  "at": "2026-09-25T21:50:02.727Z",
+  "performance": {
+    "lcpMs": 188,
+    "lcpElement": "DIV.whitespace-pre-wrap break-word",
+    "jsKb": 188
+  },
+  "checks": [
+    {
+      "name": "the body's font (Inter Tight) is loaded from the site",
+      "pass": true,
+      "detail": {
+        "sans": "interTight",
+        "mono": "jetbrains",
+        "loaded": [
+          "interTight",
+          "interTight Fallback",
+          "jetbrains",
+          "jetbrains Fallback"
+        ]
+      }
+    },
+    {
+      "name": "the terminal's font (JetBrains Mono) is loaded from the site",
+      "pass": true,
+      "detail": {
+        "sans": "interTight",
+        "mono": "jetbrains",
+        "loaded": [
+          "interTight",
+          "interTight Fallback",
+          "jetbrains",
+          "jetbrains Fallback"
+        ]
+      }
+    },
+    {
+      "name": "hero: the scene reaches Perry's approval request",
+      "pass": true
+    },
+    {
+      "name": "hero: approved on the phone, and the terminal runs it",
+      "pass": true
+    },
+    {
+      "name": "hero: the scene ends with Perry's reply",
+      "pass": true
+    },
+    {
+      "name": "hero: the scene starts over",
+      "pass": true
+    },
+    {
+      "name": "every in-page link has its target",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "after scrolling through, nothing in <main> is left invisible",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "text contrast meets AA (227 text nodes)",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "control: approve gives its outcome",
+      "pass": true,
+      "detail": "03 control\n\nAsks before it oversteps. As often as you like.\n\nYou decide how far Perry goes, per chat and per machine. Try it: flip the switches and answer the request.\n\nthis chat\n\nSupervised\nFull access\n\nCodex writes in its folder with the network off. Anything beyond that is asked.\n\nthis machine\n\nAsk\nReview\nTrust\n\nYou answer, in Telegram, the dashboard or the runner's terminal. The first answer wins, and no answer in ten minutes is a no.\n\nAlways allow saves a rule on that machine, for that exact command and folder. A decline is never remembered, and a hard deny list is refused outright.\n\nPerry\n\nbot\n\nlooks good, push the fix to main\n10:44\nPerry wants to run\ngit push origin main\nin ~/code/site · it needs the network\n✓ Approved by you\n10:44\nPushed to main. CI is running; I'll tell you if it fails.\n10:44\nAsk again"
+    },
+    {
+      "name": "control: after approve, it can be asked again",
+      "pass": true
+    },
+    {
+      "name": "control: decline gives its outcome",
+      "pass": true,
+      "detail": "03 control\n\nAsks before it oversteps. As often as you like.\n\nYou decide how far Perry goes, per chat and per machine. Try it: flip the switches and answer the request.\n\nthis chat\n\nSupervised\nFull access\n\nCodex writes in its folder with the network off. Anything beyond that is asked.\n\nthis machine\n\nAsk\nReview\nTrust\n\nYou answer, in Telegram, the dashboard or the runner's terminal. The first answer wins, and no answer in ten minutes is a no.\n\nAlways allow saves a rule on that machine, for that exact command and folder. A decline is never remembered, and a hard deny list is refused outright.\n\nPerry\n\nbot\n\nlooks good, push the fix to main\n10:44\nPerry wants to run\ngit push origin main\nin ~/code/site · it needs the network\nDeclined by you\n10:44\nOkay, I won't push. The commit is ready whenever you are.\n10:44\nAsk again"
+    },
+    {
+      "name": "control: after decline, it can be asked again",
+      "pass": true
+    },
+    {
+      "name": "control: always gives its outcome",
+      "pass": true,
+      "detail": "03 control\n\nAsks before it oversteps. As often as you like.\n\nYou decide how far Perry goes, per chat and per machine. Try it: flip the switches and answer the request.\n\nthis chat\n\nSupervised\nFull access\n\nCodex writes in its folder with the network off. Anything beyond that is asked.\n\nthis machine\n\nAsk\nReview\nTrust\n\nYou answer, in Telegram, the dashboard or the runner's terminal. The first answer wins, and no answer in ten minutes is a no.\n\nAlways allow saves a rule on that machine, for that exact command and folder. A decline is never remembered, and a hard deny list is refused outright.\n\nPerry\n\nbot\n\nlooks good, push the fix to main\n10:44\nPerry wants to run\ngit push origin main\nin ~/code/site · it needs the network\n✓ Approved, and saved as a rule for this command in this folder\n10:44\nPushed. Next time I'll push here without asking.\n10:44\nAsk again"
+    },
+    {
+      "name": "control: after always, it can be asked again",
+      "pass": true
+    },
+    {
+      "name": "control: Review shows the reviewer's verdicts, and asks about the push",
+      "pass": true
+    },
+    {
+      "name": "control: Trust runs the push under the machine's policy",
+      "pass": true
+    },
+    {
+      "name": "control: Full access runs without asking, goes amber and disables the policy",
+      "pass": true,
+      "detail": {
+        "ran": true,
+        "policyDisabled": true,
+        "amber": "rgb(240, 180, 76)"
+      }
+    },
+    {
+      "name": "schedule: no reminder yet at 13:00, and it has arrived by 15:00",
+      "pass": true,
+      "detail": {
+        "at13": "04 schedule\n\nShows up on time. Quiet otherwise.\n\nBriefs, reminders and check-ins on a schedule in your timezone, and silence when there's nothing worth saying. Drag the dial through a day.\n\n13:00\n\nin "
+      }
+    },
+    {
+      "name": "schedule: taking the dial pauses the day",
+      "pass": true
+    },
+    {
+      "name": "faq: an answer opens",
+      "pass": true
+    },
+    {
+      "name": "copy hands over the clone and setup commands",
+      "pass": true,
+      "detail": "git clone https://github.com/TheM1N9/me-bot.git perry && cd perry\npnpm install\npnpm run setup"
+    },
+    {
+      "name": "no horizontal overflow at 1440px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "no horizontal overflow at 1280px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "no horizontal overflow at 768px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "no horizontal overflow at 375px",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "name": "reduced motion: the hero's scene still plays once it is on screen",
+      "pass": true,
+      "detail": {
+        "before": 0,
+        "after": 3
+      }
+    },
+    {
+      "name": "reduced motion: nothing in <main> is left invisible",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "text contrast meets AA on a phone",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "every request stays on the page's own origin",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "no page errors or hydration mismatches",
+      "pass": true,
+      "detail": []
+    }
+  ]
+}
