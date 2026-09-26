@@ -1,0 +1,23 @@
+{
+  "ranAt": "2026-09-26T08:31:03.342Z",
+  "checks": {
+    "telegramNameBefore": true,
+    "onboardingNameAfter": true,
+    "avatarInitial": true,
+    "editReachesSidebar": true,
+    "headingFallback": true,
+    "telegramFallback": true,
+    "welcomeStartsFromName": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "before": "Computer offline\nT\nThe_M1N9\n0 memories",
+    "after": {
+      "footer": "Computer offline\nM\nMani\n0 memories",
+      "avatar": "M"
+    },
+    "welcomePrefill": "Mani",
+    "pageErrors": []
+  },
+  "passed": true
+}

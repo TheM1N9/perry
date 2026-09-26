@@ -58,7 +58,7 @@ export function Welcome() {
     const known = PERSONALITIES.find((item) => item.text === persona.personality);
     if (known) setPreset(known.id);
     else if (persona.personality) { setPreset("custom"); setCustom(persona.personality); }
-    setAnswers((current) => ({ ...current, call: status.ownerName ?? "" }));
+    setAnswers((current) => ({ ...current, call: status.displayName ?? "" }));
     setLoaded(true);
   }, [loaded, persona, status]);
   useEffect(() => { if (loaded) heading.current?.focus(); }, [step, loaded]);
