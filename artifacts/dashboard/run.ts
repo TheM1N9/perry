@@ -38,7 +38,9 @@ import { caller, seed } from "./seed";
 //      Forget must remove it after asking.
 //  11. Sending fails: a first message from a new chat must create the chat,
 //      move the address to it, show the message at once, queue its turn, and
-//      list it in the sidebar; "/" must offer the commands.
+//      list it in the sidebar; "/" must offer the commands. A message must
+//      never be left "Sending…" once a computer has taken it, and must survive
+//      a reload both while its reply is awaited and when no computer could take it.
 //  12. The theme doesn't follow or switch: the system's dark must apply, and a
 //      choice in Settings must stick in this browser.
 //  13. It breaks on a phone or a narrow window: nothing may overflow sideways
@@ -306,7 +308,7 @@ try {
   await p.type("Sam prefers window seats on flights.");
   await p.press("Enter");
   await p.waitFor(`[...document.querySelectorAll('[aria-label="Memories"] li')].some((li) => li.innerText.includes("window seats"))`, "the new memory to appear");
-  await p.click(`[...document.querySelectorAll('[aria-label="Memories"] li')].find((li) => li.innerText.includes("window seats")).querySelector("button")`);
+  await p.click(`[...[...document.querySelectorAll('[aria-label="Memories"] li')].find((li) => li.innerText.includes("window seats")).querySelectorAll("button")].find((b) => b.innerText.trim() === "Forget")`);
   await p.waitFor(byRole("button", "Forget"), "the confirmation");
   await p.click(`[...document.querySelectorAll("[role=alertdialog] button")].find((b) => b.innerText.trim() === "Forget")`);
   await p.waitFor(`![...document.querySelectorAll('[aria-label="Memories"] li')].some((li) => li.innerText.includes("window seats"))`, "the memory to go");
@@ -332,6 +334,38 @@ try {
   check("a first message makes the chat and queues its turn", made.title === "What should I pack for Lisbon in October?" && (made.isRunning || Boolean(made.lastError)), made);
   check("the sent message shows at once", await p.evaluate(`[...document.querySelectorAll("[data-role=user]")].some((el) => el.innerText.includes("pack for Lisbon"))`));
   await p.shot(join(OUT, "screens", "chat-sent-light-desktop.png"));
+  // With no computer to take it, the turn fails; the message stays in the chat, above the error, through a reload.
+  await p.waitFor(`document.body.innerText.includes("couldn't finish the last reply")`, "the failure to show", 30_000);
+  await p.go(`${BASE}/chat/${newId}`);
+  await p.waitFor(`document.querySelector("[data-role=assistant], [role=alert]")`, "the chat to load").catch(() => {});
+  await p.waitFor(`[...document.querySelectorAll("[data-role=user]")].some((el) => el.innerText.includes("pack for Lisbon"))`, "the message after a reload").catch(() => {});
+  const kept = await pub<{ page: Array<{ role: string; text: string; pending?: boolean }> }>("dashboard:getChatMessages", { id: newId, paginationOpts: { numItems: 5, cursor: null } });
+  check("a message no computer could take stays in the chat through a reload",
+    kept.page.some((message) => message.role === "user" && message.text.includes("pack for Lisbon") && !message.pending)
+      && await p.evaluate(`[...document.querySelectorAll("[data-role=user]")].some((el) => el.innerText.includes("pack for Lisbon"))`), kept);
+
+  // A computer that takes the turn and has not answered yet: the message is sent, not "Sending…", and a reload keeps it.
+  await call("codex:reportAccount", { token: runner.token, available: true, authMode: "chatgpt" }, false);
+  await call("runner:checkIn", { token: runner.token }, false);
+  await p.go(`${BASE}/chat`);
+  await p.waitFor(`document.querySelector("#composer")`, "the composer");
+  await p.click(`document.querySelector("#composer")`);
+  await p.type("Find me a quiet cafe near the hotel.");
+  await p.press("Enter");
+  await p.waitFor(`/^\\/chat\\/[^/]+$/.test(location.pathname)`, "the address to move to the queued chat");
+  const queuedId = await p.evaluate<string>(`location.pathname.split("/")[2]`);
+  await p.waitFor(`[...document.querySelectorAll("[data-role=user]")].some((el) => el.innerText.includes("quiet cafe"))`, "the queued message");
+  await sleep(1500);
+  const sendingWhileQueued = await p.evaluate<boolean>(`document.body.innerText.includes("Sending…")`);
+  const queuedChat = await pub<{ isRunning: boolean }>("dashboard:getChat", { id: queuedId });
+  check("a message a computer has taken is not left \"Sending…\"", queuedChat.isRunning && !sendingWhileQueued, { queuedChat, sendingWhileQueued });
+  await p.go(`${BASE}/chat/${queuedId}`);
+  await p.waitFor(`[...document.querySelectorAll("[data-role=user]")].some((el) => el.innerText.includes("quiet cafe"))`, "the queued message after a reload").catch(() => {});
+  const queued = await pub<{ page: Array<{ role: string; text: string; pending?: boolean }> }>("dashboard:getChatMessages", { id: queuedId, paginationOpts: { numItems: 5, cursor: null } });
+  check("a message waiting on its reply stays through a reload",
+    queued.page.filter((message) => message.text.includes("quiet cafe")).length === 1 && queued.page.some((message) => message.pending)
+      && await p.evaluate(`[...document.querySelectorAll("[data-role=user]")].some((el) => el.innerText.includes("quiet cafe")) && !document.body.innerText.includes("Sending…")`), queued);
+  await p.shot(join(OUT, "screens", "chat-queued-light-desktop.png"));
 
   // 12. Theme.
   await p.scheme("dark");

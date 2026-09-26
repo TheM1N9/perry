@@ -11,7 +11,7 @@ import { useCopy } from "../common";
 import { AttachmentList, type Attachment } from "./attachments";
 import { Markdown } from "./markdown";
 
-export type ChatMessage = { id: string; role: string; text: string; createdAt: number; attachments: Attachment[] };
+export type ChatMessage = { id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean };
 
 function Action({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
@@ -46,6 +46,8 @@ export function MessageRow({ message, assistant, latest, canRegenerate, canEdit,
   onBranch: () => void;
 }) {
   const mine = message.role === "user";
+  // Not in the history until its reply saves it, so there is nothing yet to edit or branch from.
+  const saved = !message.pending;
   const [editing, setEditing] = useState<string | null>(null);
 
   if (editing !== null) {
@@ -89,9 +91,9 @@ export function MessageRow({ message, assistant, latest, canRegenerate, canEdit,
           </time>
         )}
         <CopyAction text={message.text} />
-        {mine && canEdit && <Action label="Edit and resend" disabled={busy} onClick={() => setEditing(message.text)}><PencilIcon /></Action>}
-        {!mine && canRegenerate && <Action label="Write this reply again" disabled={busy} onClick={onRegenerate}><RefreshCwIcon /></Action>}
-        <Action label="Branch into a new chat" disabled={busy} onClick={onBranch}><GitBranchIcon /></Action>
+        {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={() => setEditing(message.text)}><PencilIcon /></Action>}
+        {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={onRegenerate}><RefreshCwIcon /></Action>}
+        {saved && <Action label="Branch into a new chat" disabled={busy} onClick={onBranch}><GitBranchIcon /></Action>}
         {!mine && (
           <time className="nums ml-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
             {timeOf(message.createdAt)}
@@ -102,15 +104,15 @@ export function MessageRow({ message, assistant, latest, canRegenerate, canEdit,
   );
 }
 
-/** A message you sent that the history doesn't show yet. */
-export function PendingRow({ text, attachments }: { text: string; attachments: Attachment[] }) {
+/** A message you sent, before the server lists it; "Sending…" until the server has taken it. */
+export function PendingRow({ text, attachments, sent }: { text: string; attachments: Attachment[]; sent: boolean }) {
   return (
     <div className="flex flex-col items-end" data-role="user" data-pending>
-      <div className="max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap opacity-70 [overflow-wrap:anywhere]">
+      <div className={cn("max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]", !sent && "opacity-70")}>
         {text}
         <AttachmentList attachments={attachments} align="end" />
       </div>
-      <span className="mt-1 text-xs text-muted-foreground">Sending…</span>
+      {!sent && <span className="mt-1 text-xs text-muted-foreground" role="status">Sending…</span>}
     </div>
   );
 }

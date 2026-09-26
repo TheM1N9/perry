@@ -8,6 +8,7 @@ import { COMPACTED } from "./lib/commands";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
+import { takeFromOutbox } from "./conversations";
 import { vAccess, vCodexModel, vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
 
@@ -222,7 +223,9 @@ export const enqueueTurn = internalMutation({
     if (isSteering(args.policy, running)) {
       // The running turn already carries recalled memory; a steer adds only the message.
       const { recalled: _recalled, recallDigest: _digest, flush: _flush, hidden: _hidden, ...steer } = message;
-      return await ctx.db.insert("codexSteers", { ...steer, turnId: running._id, runnerId: running.runnerId!, status: "pending" });
+      const id = await ctx.db.insert("codexSteers", { ...steer, turnId: running._id, runnerId: running.runnerId!, status: "pending" });
+      await takeFromOutbox(ctx, conversation, args.prompt);
+      return id;
     }
     const runnerId = await pickRunner(ctx, conversation);
     if (!runnerId) {
@@ -230,7 +233,9 @@ export const enqueueTurn = internalMutation({
         ? "The Codex runner for this chat is offline. Start Perry on its computer (perry start) to continue."
         : "Sign in to Codex in Settings and start Perry's runner (perry start) to chat.");
     }
-    return await ctx.db.insert("codexTurns", { ...message, runnerId, status: "queued" });
+    const id = await ctx.db.insert("codexTurns", { ...message, runnerId, status: "queued" });
+    await takeFromOutbox(ctx, await ctx.db.get(args.conversationId), args.prompt);
+    return id;
   },
 });
 
