@@ -35,7 +35,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { usePalette } from "./command-palette";
-import { PerryMark } from "./common";
+import { ChannelIcon, PerryMark } from "./common";
 import { StatusIndicator } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
 
@@ -203,6 +203,7 @@ function ChatRow({ chat, onRename, onDelete }: { chat: ChatSummary; onRename: ()
       <SidebarMenuButton render={<Link href={`/chat/${chat.id}`} />} isActive={active}
         className={cn(chat.unseen && !active && "font-semibold")}
         aria-current={active ? "page" : undefined}>
+        <ChannelIcon channel={chat.channel} />
         <span className={cn("pr-4", chat.naming && "shimmer")} aria-busy={chat.naming || undefined}>{chat.title}</span>
       </SidebarMenuButton>
       <StatusIndicator status={chat.status} unseen={chat.unseen && !active}
@@ -214,8 +215,11 @@ function ChatRow({ chat, onRename, onDelete }: { chat: ChatSummary; onRename: ()
         <DropdownMenuContent side="right" align="start" className="w-44">
           <DropdownMenuItem onClick={pin}>{chat.pinned ? <PinOffIcon /> : <PinIcon />}{chat.pinned ? "Unpin" : "Pin"}</DropdownMenuItem>
           <DropdownMenuItem onClick={onRename}><PencilIcon />Rename</DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onClick={onDelete}><Trash2Icon />Delete</DropdownMenuItem>
+          {/* A Telegram or WhatsApp chat goes on as long as the app is paired; its messages are already on the phone. */}
+          {chat.channel === "web" && <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={onDelete}><Trash2Icon />Delete</DropdownMenuItem>
+          </>}
         </DropdownMenuContent>
       </DropdownMenu>
     </SidebarMenuItem>

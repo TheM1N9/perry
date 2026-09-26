@@ -75,11 +75,46 @@ function webChat(conversation: Doc<"conversations"> | null) {
   return conversation;
 }
 
+/**
+ * Any of the owner's chats: a web chat, or their Telegram or WhatsApp chat,
+ * which the web app shows and writes in too. Deleting, branching and
+ * rewinding stay web-only (webChat): a messaging app's messages are already
+ * on the phone and cannot be taken back.
+ */
+function ownerChat(conversation: Doc<"conversations"> | null) {
+  if (!conversation) throw new Error("Chat not found.");
+  return conversation;
+}
+
+/** The channels the chat list shows. */
+const LISTED = ["web", "telegram", "whatsapp"] as const;
+const APP_NAME = { web: "Untitled chat", telegram: "Telegram", whatsapp: "WhatsApp" } as const;
+const titleOf = (chat: Doc<"conversations">) => chat.title ?? APP_NAME[chat.channel];
+
+/**
+ * Whether a reply is on its way. A web chat counts what it sent (pendingTurns);
+ * a messaging app's chat also runs turns sent from the phone, so its queued or
+ * running turn says.
+ */
+async function isBusy(ctx: QueryCtx, chat: Doc<"conversations">): Promise<boolean> {
+  if ((chat.pendingTurns ?? 0) > 0) return true;
+  if (chat.channel === WEB_CHANNEL) return false;
+  for (const status of ["running", "queued"] as const) {
+    const turn = await ctx.db.query("codexTurns")
+      .withIndex("by_conversation_status", (q) => q.eq("conversationId", chat._id).eq("status", status))
+      .first();
+    if (turn && turn.kind !== "compact" && !turn.flush) return true;
+  }
+  return false;
+}
+
 /** What a chat is doing, for the dot beside it: waiting on the owner comes first. */
 export type ChatStatus = "needs-approval" | "running" | "error" | "idle";
 
 export type ChatSummary = {
   id: Id<"conversations">;
+  /** Where the chat happens: the web app, or the owner's Telegram or WhatsApp. */
+  channel: "web" | "telegram" | "whatsapp";
   title: string;
   lastMessageAt: number;
   parentConversationId?: Id<"conversations">;
@@ -105,24 +140,25 @@ export const listChats = query({
   args: { key: vKey },
   handler: async (ctx, args): Promise<ChatSummary[]> => {
     assertDashboardKey(args.key);
-    const chats = await ctx.db.query("conversations")
-      .withIndex("by_channel_last", (q) => q.eq("channel", WEB_CHANNEL))
+    const chats = (await Promise.all(LISTED.map((channel) => ctx.db.query("conversations")
+      .withIndex("by_channel_last", (q) => q.eq("channel", channel))
       .order("desc")
-      .collect();
+      .collect()))).flat().sort((a, b) => b.lastMessageAt - a.lastMessageAt);
     const asking = new Set((await ctx.db.query("approvals")
       .withIndex("by_status", (q) => q.eq("status", "pending").gt("createdAt", Date.now() - APPROVAL_TTL_MS))
       .collect()).map((row) => row.conversationId));
     const jobs = new Map((await ctx.db.query("jobs").collect()).map((job) => [job._id, job]));
     const naming = await beingNamed(ctx);
     const summaries = await Promise.all(chats.map(async (chat): Promise<ChatSummary> => {
-      const running = (chat.pendingTurns ?? 0) > 0;
+      const running = await isBusy(ctx, chat);
       const latestRun = running || asking.has(chat._id) ? null : await ctx.db.query("runs")
         .withIndex("by_conversation", (q) => q.eq("conversationId", chat._id))
         .order("desc")
         .first();
       return {
         id: chat._id,
-        title: chat.title ?? "Untitled chat",
+        channel: chat.channel,
+        title: titleOf(chat),
         lastMessageAt: chat.lastMessageAt,
         parentConversationId: chat.parentConversationId,
         branchedFromMessageId: chat.branchedFromMessageId,
@@ -147,7 +183,7 @@ export const setChatPinned = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
-    webChat(await ctx.db.get(args.id));
+    ownerChat(await ctx.db.get(args.id));
     await ctx.db.patch(args.id, { pinnedAt: args.pinned ? Date.now() : undefined });
     return null;
   },
@@ -159,7 +195,7 @@ export const markChatSeen = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
-    const chat = webChat(await ctx.db.get(args.id));
+    const chat = ownerChat(await ctx.db.get(args.id));
     if ((chat.seenAt ?? 0) < chat.lastMessageAt) await ctx.db.patch(args.id, { seenAt: Date.now() });
     return null;
   },
@@ -186,7 +222,7 @@ export const renameChat = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
-    webChat(await ctx.db.get(args.id));
+    ownerChat(await ctx.db.get(args.id));
     const title = args.title.trim().slice(0, 100);
     if (!title) throw new Error("Enter a chat name.");
     await ctx.db.patch(args.id, { title });
@@ -306,16 +342,16 @@ export const searchChats = action({
     assertDashboardKey(args.key);
     const needle = args.search.trim().toLocaleLowerCase();
     if (!needle) return [];
-    const [chats, messages] = await Promise.all([
-      ctx.runQuery(internal.conversations.listWeb, {}),
-      searchMessages(ctx, { userId: "web:dashboard", text: args.search.trim(), limit: 100 }),
-    ]);
+    const chats: Doc<"conversations">[] = await ctx.runQuery(internal.conversations.listDashboard, {});
+    // Each channel's chats keep their messages under their own user id (agentStore.ts).
+    const users = [...new Set(chats.map((chat) => chat.channel === WEB_CHANNEL ? "web:dashboard" : `${chat.channel}:${chat.externalId}`))];
+    const messages = (await Promise.all(users.map((userId) => searchMessages(ctx, { userId, text: args.search.trim(), limit: 100 })))).flat();
     const snippets = new Map<string, string>(messages.map((message) => [message.threadId, message.text ?? ""]));
     return chats.filter((chat) =>
-      (chat.title ?? "").toLocaleLowerCase().includes(needle) || snippets.has(chat.threadId),
+      titleOf(chat).toLocaleLowerCase().includes(needle) || snippets.has(chat.threadId),
     ).slice(0, 30).map((chat) => ({
       id: chat._id,
-      title: chat.title ?? "Untitled chat",
+      title: titleOf(chat),
       snippet: snippets.get(chat.threadId)?.slice(0, 160) ?? "",
       lastMessageAt: chat.lastMessageAt,
     }));
@@ -327,10 +363,10 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string }> => {
     assertDashboardKey(args.key);
-    const conversation = webChat(await ctx.db.get(args.id));
-    const isRunning = (conversation.pendingTurns ?? 0) > 0;
+    const conversation = ownerChat(await ctx.db.get(args.id));
+    const isRunning = await isBusy(ctx, conversation);
     const latestRun = await ctx.db.query("runs")
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
       .order("desc")
@@ -341,10 +377,11 @@ export const getChat = query({
         .first()
       : null;
     return {
+      channel: conversation.channel,
       model: conversation.model,
       effort: conversation.effort,
       access: conversation.access ?? "supervised",
-      title: conversation.title ?? "Untitled chat",
+      title: titleOf(conversation),
       isRunning,
       // The flush before /reset works quietly.
       streaming: running?.flush ? undefined : running?.partial,
@@ -357,7 +394,7 @@ export const getChatMessages = query({
   args: { key: vKey, id: v.id("conversations"), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
-    const conversation = webChat(await ctx.db.get(args.id));
+    const conversation = ownerChat(await ctx.db.get(args.id));
     const page = await listMessages(ctx, {
       threadId: conversation.threadId,
       excludeToolMessages: true,
@@ -484,7 +521,7 @@ export const registerAttachment = mutation({
   returns: v.id("chatAttachments"),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
-    webChat(await ctx.db.get(args.conversationId));
+    ownerChat(await ctx.db.get(args.conversationId));
     if (!args.fileName.trim() || args.size <= 0 || args.size > 50 * 1024 * 1024) {
       throw new Error("Attachments must be between 1 byte and 50 MB.");
     }
@@ -525,7 +562,7 @@ export const sendChat = mutation({
     const text = args.text.trim();
     const attachmentIds = args.attachmentIds ?? [];
     if (text.length === 0 && attachmentIds.length === 0) return null;
-    const chat = webChat(await ctx.db.get(args.id));
+    const chat = ownerChat(await ctx.db.get(args.id));
     const messageKey = args.messageKey?.trim() || crypto.randomUUID();
     const attachments = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
     if (attachments.some((attachment) => !attachment || attachment.conversationId !== args.id || attachment.messageKey !== messageKey)) {
@@ -538,12 +575,14 @@ export const sendChat = mutation({
     const first = chat.title === "New chat";
     const title = first ? (text || "Attached files").slice(0, 80) : chat.title;
     if (first) await requestTitle(ctx, args.id, text, title!);
+    const web = chat.channel === WEB_CHANNEL;
     await ctx.db.patch(args.id, {
       lastMessageAt: Date.now(),
       // Writing in it, the owner has seen what is there; the reply is unseen until they look.
       seenAt: Date.now(),
       title,
-      pendingTurns: (chat.pendingTurns ?? 0) + 1,
+      // A messaging app's chat shows its turns as they run (isBusy), whichever side sent them.
+      ...(web ? { pendingTurns: (chat.pendingTurns ?? 0) + 1 } : {}),
       // Shown in the chat from now, until a turn or the history has it (conversations.takeFromOutbox).
       outbox: [...(chat.outbox ?? []).filter((entry) => entry.at > Date.now() - OUTBOX_TTL_MS), { text: prompt, at: Date.now() }],
       ...(args.model !== undefined ? { model: args.model.trim() || undefined } : {}),
@@ -552,12 +591,14 @@ export const sendChat = mutation({
     });
 
     // Sent while a reply is running, this joins that reply (see codex.enqueueTurn).
+    // Written in a Telegram or WhatsApp chat, it is that chat's turn, so the reply goes to the phone too.
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
-      channel: WEB_CHANNEL,
+      channel: chat.channel,
       externalId: chat.externalId,
       text: prompt,
       title: chat.title,
       attachmentIds,
+      ...(web ? {} : { fromWeb: true }),
     });
     return null;
   },
@@ -628,7 +669,7 @@ export const stopChat = mutation({
   returns: v.number(),
   handler: async (ctx, args): Promise<number> => {
     assertDashboardKey(args.key);
-    webChat(await ctx.db.get(args.id));
+    ownerChat(await ctx.db.get(args.id));
     return await ctx.runMutation(internal.codex.requestStop, { conversationId: args.id });
   },
 });
@@ -649,7 +690,7 @@ export const compactChat = mutation({
   returns: v.union(v.null(), v.id("codexTurns")),
   handler: async (ctx, args): Promise<Id<"codexTurns"> | null> => {
     assertDashboardKey(args.key);
-    webChat(await ctx.db.get(args.id));
+    ownerChat(await ctx.db.get(args.id));
     return await ctx.runMutation(internal.codex.requestCompact, { conversationId: args.id });
   },
 });
@@ -670,7 +711,7 @@ export const setChatModel = mutation({
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
-    webChat(await ctx.db.get(args.id));
+    ownerChat(await ctx.db.get(args.id));
     await ctx.db.patch(args.id, { model: args.model?.trim() || undefined });
     return null;
   },
@@ -682,7 +723,7 @@ export const setChatEffort = mutation({
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
-    webChat(await ctx.db.get(args.id));
+    ownerChat(await ctx.db.get(args.id));
     await ctx.db.patch(args.id, { effort: args.effort?.trim().toLowerCase() || undefined });
     return null;
   },
@@ -694,7 +735,7 @@ export const setChatAccess = mutation({
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
-    webChat(await ctx.db.get(args.id));
+    ownerChat(await ctx.db.get(args.id));
     await ctx.db.patch(args.id, { access: args.access });
     return null;
   },

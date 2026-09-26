@@ -26,7 +26,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApprovalCard } from "../approval-card";
 import { DeleteDialog, RenameDialog } from "../app-sidebar";
-import { PerryMark, TopBar } from "../common";
+import { APPS, ChannelIcon, PerryMark, TopBar } from "../common";
 import { StatusIndicator } from "../status-indicator";
 import type { Attachment } from "./attachments";
 import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
@@ -468,6 +468,8 @@ export function ChatScreen() {
   const loading = Boolean(selectedId) && (chat === undefined || messageStatus === "LoadingFirstPage");
   const missing = Boolean(selectedId) && chat === null;
   const title = summary?.title ?? (selectedId ? chat?.title ?? "" : "New chat");
+  // A Telegram or WhatsApp chat: written in here too, but what is on the phone cannot be taken back.
+  const app = chat && chat.channel !== "web" ? APPS[chat.channel] : null;
 
   return (
     <div className="flex h-dvh min-h-0 flex-col">
@@ -478,9 +480,10 @@ export function ChatScreen() {
           onRename={() => setRenaming(true)}
           onCopyId={() => void copyText(summary.id).then(() => toast.success("Session ID copied."), fail)}
           activityHref={`/activity?session=${summary.id}`}
-          onDelete={() => setRemoving(true)}
+          onDelete={summary.channel === "web" ? () => setRemoving(true) : undefined}
         />
       ) : !selectedId ? null : undefined}>
+        {chat && <ChannelIcon channel={chat.channel} />}
         <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer")} aria-busy={summary?.naming || undefined}>{title}</h1>
         {summary && <StatusIndicator status={summary.status} />}
         {parent && (
@@ -538,8 +541,9 @@ export function ChatScreen() {
                   message={message}
                   assistant={assistant}
                   latest={message.id === lastMessage?.id}
-                  canEdit={!waiting}
-                  canRegenerate={message.id === lastMessage?.id && !waiting}
+                  canEdit={!waiting && !app}
+                  canRegenerate={message.id === lastMessage?.id && !waiting && !app}
+                  canBranch={!app}
                   busy={busy}
                   onEdit={(text) => void rewind(message.id, text)}
                   onRegenerate={() => void rewind(message.id)}
@@ -557,7 +561,7 @@ export function ChatScreen() {
                     <p>{/runner|offline|computer/i.test(chat.lastError) ? "Your computer may be offline. Start Perry on it, then try again." : "Try again, or open Activity for the full run."}</p>
                     <p className="mt-1 font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
                   </AlertDescription>
-                  {lastUser && (
+                  {lastUser && !app && (
                     <AlertAction>
                       <Button size="sm" variant="outline" disabled={busy} onClick={() => void rewind(lastUser.id)}><RefreshCwIcon />Try again</Button>
                     </AlertAction>
@@ -615,7 +619,9 @@ export function ChatScreen() {
           <p className="mt-2 text-center text-xs text-muted-foreground">
             {access === "full"
               ? <span className="text-warning">Full access: {assistant} acts on this computer without asking. Every command still shows in Activity.</span>
-              : <>Type <kbd className="font-mono">/</kbd> for commands. Drop or paste files to attach them.</>}
+              : app
+                ? <>Your {app} chat. What you write here, and {assistant}&apos;s reply, also go to {app}.</>
+                : <>Type <kbd className="font-mono">/</kbd> for commands. Drop or paste files to attach them.</>}
           </p>
         </div>
       </div>
@@ -627,7 +633,7 @@ export function ChatScreen() {
 }
 
 function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete }: {
-  pinned: boolean; onPin: () => void; onRename: () => void; onCopyId: () => void; activityHref: string; onDelete: () => void;
+  pinned: boolean; onPin: () => void; onRename: () => void; onCopyId: () => void; activityHref: string; onDelete?: () => void;
 }) {
   const router = useRouter();
   return (
@@ -644,8 +650,10 @@ function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete }:
           <DropdownMenuItem onClick={onRename}><PencilIcon />Rename</DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push(activityHref)}><ActivityIcon />View activity</DropdownMenuItem>
           <DropdownMenuItem onClick={onCopyId}><CopyIcon />Copy session ID</DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onClick={onDelete}><Trash2Icon />Delete</DropdownMenuItem>
+          {onDelete && <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={onDelete}><Trash2Icon />Delete</DropdownMenuItem>
+          </>}
         </DropdownMenuContent>
       </DropdownMenu>
     </>

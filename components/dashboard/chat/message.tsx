@@ -34,12 +34,14 @@ function CopyAction({ text }: { text: string }) {
  * width of the column, unboxed, since that is what you read. The actions show
  * on hover and focus, and always on the newest reply.
  */
-export function MessageRow({ message, assistant, latest, canRegenerate, canEdit, busy, onEdit, onRegenerate, onBranch }: {
+export function MessageRow({ message, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, onEdit, onRegenerate, onBranch }: {
   message: ChatMessage;
   assistant: string;
   latest: boolean;
   canRegenerate: boolean;
   canEdit: boolean;
+  /** Off in a Telegram or WhatsApp chat, which only the web app's own chats branch from. */
+  canBranch?: boolean;
   busy: boolean;
   onEdit: (text: string) => void;
   onRegenerate: () => void;
@@ -93,7 +95,7 @@ export function MessageRow({ message, assistant, latest, canRegenerate, canEdit,
         <CopyAction text={message.text} />
         {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={() => setEditing(message.text)}><PencilIcon /></Action>}
         {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={onRegenerate}><RefreshCwIcon /></Action>}
-        {saved && <Action label="Branch into a new chat" disabled={busy} onClick={onBranch}><GitBranchIcon /></Action>}
+        {saved && canBranch && <Action label="Branch into a new chat" disabled={busy} onClick={onBranch}><GitBranchIcon /></Action>}
         {!mine && (
           <time className="nums ml-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
             {timeOf(message.createdAt)}
