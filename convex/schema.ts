@@ -414,6 +414,9 @@ export default defineSchema({
     origin: v.optional(vMemoryOrigin),
     /** When the owner last changed its text on the Memory page. */
     editedAt: v.optional(v.number()),
+    /** Its meaning as a vector, for search by meaning (lib/embed.ts): base64 float32, and the model that made it. */
+    vector: v.optional(v.string()),
+    vectorModel: v.optional(v.string()),
   })
     .index("by_created", ["createdAt"])
     .index("by_kind", ["kind", "createdAt"])
