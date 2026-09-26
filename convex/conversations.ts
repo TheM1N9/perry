@@ -1,8 +1,8 @@
 import { v } from "convex/values";
-import { components } from "./_generated/api";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { defaultAccess } from "./installation";
 import { vAccess, vChannel } from "./schema";
+import { deleteThread } from "./lib/agent";
 
 /**
  * Rewind a web chat for a regenerate or an edit: its Codex thread has seen the
@@ -244,7 +244,7 @@ export const clearThread = internalMutation({
     const chat = await ctx.db.get(args.id);
     if (!chat) return null;
     if (chat.threadId !== args.threadId) {
-      await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, { threadId: chat.threadId });
+      await deleteThread(ctx, chat.threadId);
     }
     await ctx.db.patch(args.id, {
       threadId: args.threadId,

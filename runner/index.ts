@@ -4,28 +4,30 @@
  *
  * How it connects, and why that shape:
  *
- *   This process dials out to your Convex deployment and holds a subscription.
- *   Convex pushes queued commands down the connection this process already
- *   opened. Nothing listens on a port here. There is no inbound firewall rule,
- *   no tunnel and no public address, so this machine cannot be found by anyone
- *   scanning the internet. That is the single most important line in this file.
+ *   This process dials out to Perry's server: calls are plain HTTP requests,
+ *   and a server-sent event stream says when a query it follows has changed,
+ *   so new Codex turns reach it over the connection it opened. Nothing listens
+ *   on a port here. There is no inbound firewall rule, no tunnel and no public
+ *   address, so this machine cannot be found by anyone scanning the internet.
+ *   That is the single most important line in this file.
  *
  * What protects you, in order of how much it actually matters:
  *
  *   1. This process. Close the terminal, or stop the service, and Assistant
  *      has no hands again.
- *   2. Approval. Every command waits for you, here, in the dashboard or on
- *      Telegram, unless a rule you saved with "Always allow" covers it or the
- *      runner's policy says otherwise: "review" lets a Codex reviewer clear
- *      routine actions first, "trust" (--auto) runs everything.
- *   3. The working directory. Commands run in one directory you chose, and
- *      file reads and writes cannot escape it.
+ *   2. Approval. Whatever Codex wants to do beyond its sandbox waits for you,
+ *      here, in the dashboard or on Telegram, unless a rule you saved with
+ *      "Always allow" covers it or the runner's policy says otherwise:
+ *      "review" lets a Codex reviewer clear routine actions first, "trust"
+ *      (--auto) runs everything.
+ *   3. Codex's sandbox. Codex works in the directory you chose, and may write
+ *      only there and in Perry's own folders (runner/codex.ts).
  *   4. A denylist of commands that are never worth running.
  *
- *   A chat the owner put on Full access gives up 2 and 3 for its turns: Codex
- *   runs without its sandbox and with approval policy "never", so its own
- *   commands never reach this process to be asked about or denied. They still
- *   show in the run's trace.
+ *   A chat the owner put on Full access gives up 2, 3 and 4 for its turns:
+ *   Codex runs without its sandbox and with approval policy "never", so its
+ *   own commands never reach this process to be asked about or denied. They
+ *   still show in the run's trace.
  *
  * Nothing here runs at boot or survives a reboot unless you ask for it with
  * `pnpm run service install` (scripts/service.ts). Without a terminal, as a
@@ -34,26 +36,23 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { readFile, writeFile, readdir, mkdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import { homedir, hostname, platform } from "node:os";
-import { dirname, extname, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { ConvexClient } from "convex/browser";
+import { BackendClient } from "../client/backend";
 import { getFunctionName, type FunctionArgs, type FunctionReference, type FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { runLabel } from "../convex/lib/commands";
-import { truncateCommandOutput, truncateHead } from "../convex/lib/truncate";
 import { ASSISTANT_MCP, CodexAppServer, TurnFailed, type GeneratedImage, type RpcMessage } from "./codex";
 import { isReviewThread, review } from "./review";
 import { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig, type RunnerConfig } from "./home";
-import { runShell } from "./shell";
 import { TurnTrace } from "./trace";
 
 const CONFIG_DIR = HOME;
 const CODEX_RESULTS = PATHS.codexResults;
 
-const MAX_FILE_BYTES = 256 * 1024;
 const CHECKIN_MS = 30_000;
 /** Matches APPROVAL_TTL_MS in convex/approvals.ts: an unanswered request is declined. */
 const APPROVAL_TIMEOUT_MS = 10 * 60_000;
@@ -127,19 +126,6 @@ function parseArgs(argv: string[]): Flags {
   return args;
 }
 
-// --- Safety --------------------------------------------------------------
-
-/** Keep every path inside the working directory. No .. escapes, no absolutes. */
-function confine(workdir: string, path?: string): string | null {
-  const target = resolve(workdir, path ?? ".");
-  const rel = relative(workdir, target);
-  if (rel.startsWith("..") || (rel !== "" && resolve(workdir, rel) !== target)) {
-    return null;
-  }
-  if (target !== workdir && !target.startsWith(workdir + sep)) return null;
-  return target;
-}
-
 // --- Main ----------------------------------------------------------------
 
 async function main() {
@@ -154,16 +140,19 @@ async function main() {
   }
   const stored = readRunnerConfig();
 
-  const url = flags.url ?? stored.url ?? process.env.PERRY_CONVEX_URL;
-  const token = flags.token ?? stored.token ?? process.env.PERRY_RUNNER_TOKEN;
+  let url = flags.url ?? stored.url ?? process.env.PERRY_SERVER_URL;
+  let token = flags.token ?? stored.token ?? process.env.PERRY_RUNNER_TOKEN;
 
+  // On the machine Perry is installed on, its server connects this runner as it starts (server/index.ts).
   if (!url || !token) {
-    console.error(
-      `\n${red("Not configured.")}\n\n` +
-        `  On the machine where you installed Assistant:  ${bold("pnpm run connect")}\n` +
-        `  On another machine:  ${bold("pnpm run connect -- --url <convex url> --token <token>")}\n`,
-    );
-    process.exit(1);
+    console.log(dim("  Waiting for Perry's server to connect this computer…"));
+    console.log(dim(`  On another machine: ${bold("pnpm run connect -- --url <server url> --token <token>")}`));
+    while (!url || !token) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      const fresh = readRunnerConfig();
+      url = fresh.url;
+      token = fresh.token;
+    }
   }
 
   ensureHome();
@@ -189,7 +178,7 @@ async function main() {
   // The policy can change from the dashboard at any time, so the terminal is always ready to ask.
   const rl = createInterface({ input: process.stdin, output: process.stdout });
 
-  const client = new ConvexClient(url);
+  const client = new BackendClient(url);
 
   const checkIn = async (policy?: Policy) => {
     try {
@@ -248,7 +237,7 @@ async function main() {
   const terminal = process.stdin.isTTY ? rl : null;
 
   type Request = {
-    kind: "command" | "file" | "write";
+    kind: "command" | "file";
     what: string;
     detail: string | null;
     cwd?: string;
@@ -422,36 +411,7 @@ async function main() {
     }
   };
 
-  /**
-   * While the owner lets turns be answered without this machine, Convex holds
-   * the ChatGPT access token Codex has now. It is pushed again when Codex has a
-   * different one, cleared when Codex is signed out, and refreshed first when
-   * Convex dropped the one pushed (ChatGPT refused it, or it expired).
-   */
-  let pushedToken: string | null | undefined;
-  const pushChatgptToken = async (fallback: boolean, holdsToken: boolean) => {
-    if (!fallback) {
-      pushedToken = undefined;
-      return;
-    }
-    try {
-      const app = await ensureCodex();
-      let current = await app.chatgptToken();
-      if (current && current.accessToken === pushedToken && !holdsToken) current = await app.chatgptToken(true);
-      if ((current?.accessToken ?? null) === pushedToken && (holdsToken || !current)) return;
-      await client.mutation(api.chatgpt.pushToken, { token, ...current });
-      pushedToken = current?.accessToken ?? null;
-    } catch (error) {
-      console.error(red(`  could not share the ChatGPT token: ${message(error)}`));
-    }
-  };
-
-  /** Check in, and share the ChatGPT token as the answer says. */
-  const checkInAndShare = async () => {
-    const result = await checkIn();
-    if (result) await pushChatgptToken(result.fallback, result.holdsToken);
-  };
-  if (first) await pushChatgptToken(first.fallback, first.holdsToken);
+  const checkInAndShare = async () => { await checkIn(); };
   await client.mutation(api.codex.recoverAuth, { token });
   await refreshCodexAccount();
   mkdirSync(CODEX_RESULTS, { recursive: true });
@@ -480,150 +440,23 @@ async function main() {
     }
   };
   await recoverCodexTurns(true);
+  // The server rewrites runner.json when it connects this computer anew (a first start on the local
+  // backend, say); a runner still holding the old address starts over, and perry run starts it again.
+  const configWatch = setInterval(() => {
+    const now = readRunnerConfig();
+    if (now.url && now.token && (now.url !== url || now.token !== token)) {
+      console.log(dim("  This computer's connection changed; restarting to use it."));
+      process.exit(0);
+    }
+  }, 5_000);
+  configWatch.unref?.();
+
   const heartbeat = setInterval(() => {
     void checkInAndShare();
     void refreshCodexAccount();
     void recoverCodexTurns(false).catch((error) => console.error(red(`  Codex delivery retry failed: ${message(error)}`)));
   }, CHECKIN_MS);
   console.log(green("  connected.\n"));
-
-  const busy = new Set<string>();
-
-  const handle = async (command: Doc<"commands">) => {
-    if (busy.has(command._id)) return;
-    busy.add(command._id);
-
-    try {
-      const claimed = await client.mutation(api.runner.claimCommand, {
-        token,
-        commandId: command._id,
-      });
-      if (!claimed) return;
-
-      const finish = (payload: { status: "done" | "error" | "denied"; output?: string; error?: string; exitCode?: number; truncated?: boolean }) =>
-        client.mutation(api.runner.finishCommand, {
-          token,
-          commandId: command._id,
-          ...payload,
-        });
-
-      // --- files ---
-      if (command.kind !== "exec") {
-        const target = confine(workdir, command.path);
-        if (!target) {
-          console.log(red(`  refused ${command.kind} ${command.path} (outside ${workdir})`));
-          await finish({
-            status: "denied",
-            error: `Path is outside ${workdir}.`,
-          });
-          return;
-        }
-
-        try {
-          if (command.kind === "read") {
-            const buffer = await readFile(target);
-            const { output: text, truncated } = truncateHead(
-              buffer.subarray(0, MAX_FILE_BYTES).toString("utf8"),
-            );
-            console.log(dim(`  read ${relative(workdir, target) || "."}`));
-            await finish({ status: "done", output: text, truncated, exitCode: 0 });
-          } else if (command.kind === "list") {
-            const entries = await readdir(target, { withFileTypes: true });
-            console.log(dim(`  list ${relative(workdir, target) || "."}`));
-            await finish({
-              status: "done",
-              exitCode: 0,
-              output: entries
-                .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
-                .join("\n"),
-            });
-          } else {
-            if (Buffer.byteLength(command.text ?? "", "utf8") > MAX_FILE_BYTES) {
-              await finish({ status: "error", error: "Over the 256 KB limit." });
-              return;
-            }
-            const approved = await approve({
-              kind: "write",
-              what: `write ${relative(workdir, target) || target}`,
-              detail: `${(command.text ?? "").slice(0, 400)}${(command.text ?? "").length > 400 ? "\n..." : ""}`,
-              paths: [target],
-              evidence: (command.text ?? "").slice(0, 6000),
-            });
-            if (!approved) {
-              await finish({ status: "denied", error: "Declined." });
-              return;
-            }
-            await mkdir(dirname(target), { recursive: true });
-            await writeFile(target, command.text ?? "", "utf8");
-            console.log(green(`  wrote ${relative(workdir, target)}`));
-            await finish({ status: "done", exitCode: 0, output: "written" });
-          }
-        } catch (error) {
-          console.log(red(`  ${command.kind} failed: ${message(error)}`));
-          await finish({ status: "error", error: message(error) });
-        }
-        return;
-      }
-
-      // --- shell ---
-      const shellCommand = command.command ?? "";
-      const reason = denied(shellCommand);
-      if (reason) {
-        console.log(red(`\n  refused: ${shellCommand}`));
-        console.log(red(`  reason: ${reason}\n`));
-        await finish({
-          status: "denied",
-          error: `Refused by the runner: ${reason}.`,
-        });
-        return;
-      }
-
-      const cwd = command.cwd ? confine(workdir, command.cwd) : workdir;
-      if (!cwd) {
-        await finish({ status: "denied", error: `cwd is outside ${workdir}.` });
-        return;
-      }
-
-      const approved = await approve({ kind: "command", what: shellCommand, detail: null, cwd });
-      if (!approved) {
-        console.log(yellow("  declined.\n"));
-        await finish({ status: "denied", error: "You declined it." });
-        return;
-      }
-
-      const started = Date.now();
-      const { exitCode, output, timedOut } = await runShell(shellCommand, cwd);
-      // The end of the output is where errors and results are.
-      const { output: text, truncated } = truncateCommandOutput(output);
-      const seconds = ((Date.now() - started) / 1000).toFixed(1);
-
-      console.log(
-        exitCode === 0
-          ? green(`  exit 0 in ${seconds}s`)
-          : red(`  exit ${timedOut ? "timeout" : exitCode} in ${seconds}s`),
-      );
-      if (text.trim()) {
-        console.log(dim(text.split("\n").slice(0, 8).map((l) => `    ${l}`).join("\n")));
-      }
-      console.log("");
-
-      await finish({
-        status: "done",
-        exitCode: exitCode ?? undefined,
-        output: timedOut ? `${text}\n[killed after 120s]` : text,
-        truncated,
-      });
-    } catch (error) {
-      console.error(red(`  runner error: ${message(error)}`));
-    } finally {
-      busy.delete(command._id);
-    }
-  };
-
-  // Convex pushes queued work down the connection this process opened.
-  watch(api.runner.queued, { token }, (commands) => {
-    for (const command of commands ?? []) void handle(command);
-  });
 
   const handleCodexAuth = async (request: { id: number; kind: "login" | "logout" }) => {
     const claimed = await client.mutation(api.codex.claimAuth, { token, id: request.id });
@@ -660,7 +493,7 @@ async function main() {
 
   const upload = async (turnId: Id<"codexTurns">, bytes: Buffer<ArrayBuffer>, contentType: string) => {
     const uploadUrl = await client.mutation(api.codex.mediaUploadUrl, { token, id: turnId });
-    const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": contentType }, body: bytes });
+    const response = await fetch(client.resolve(uploadUrl), { method: "POST", headers: { "Content-Type": contentType }, body: bytes });
     if (!response.ok) throw new Error(`upload failed (${response.status})`);
     const { storageId } = await response.json() as { storageId: Id<"_storage"> };
     return storageId;
@@ -712,7 +545,7 @@ async function main() {
   const localise = async (attachments: NonNullable<Doc<"codexTurns">["attachments"]> = []) => Promise.all(attachments.map(async (attachment) => {
     if (attachment.localPath || !attachment.url) return attachment;
     try {
-      const response = await fetch(attachment.url);
+      const response = await fetch(client.resolve(attachment.url));
       if (!response.ok) throw new Error(`download failed (${response.status})`);
       const extension = extname(attachment.fileName).toLowerCase().replace(/[^.a-z0-9]/g, "");
       const localPath = join(PATHS.uploads, `${randomUUID()}${extension}`);
@@ -814,7 +647,7 @@ async function main() {
                 model: job.requestedModel,
                 effort: job.requestedEffort,
                 access: job.access,
-                tools: job.mcpUrl ? { url: job.mcpUrl, token } : undefined,
+                tools: job.mcpUrl ? { url: client.resolve(job.mcpUrl), token } : undefined,
                 attachments: await localise(job.attachments),
                 onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
                 onText: (text) => {
@@ -895,7 +728,7 @@ async function main() {
     clearInterval(heartbeat);
     codex?.close();
     rl?.close();
-    await client.close();
+    client.close();
     console.log(dim("\n  runner stopped. Assistant has no hands here now.\n"));
     process.exit(0);
   };

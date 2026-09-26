@@ -1,6 +1,6 @@
 "use client";
 
-import { useConvex, useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "@/client/react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "@/convex/_generated/api";
 import { AboutYou } from "./components/AboutYou";

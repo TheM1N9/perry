@@ -2,16 +2,17 @@
 /**
  * `perry` — Perry's one command.
  *
- *   perry setup     set Perry up, or check it, and leave it running: your Convex
- *                   deployment and bot, this computer connected, the dashboard
- *                   built, both running in the background from login on, and
- *                   the dashboard opened, already unlocked
+ *   perry setup     set Perry up, or check it, and leave it running: your bot
+ *                   and Codex, the dashboard built, Perry running in the
+ *                   background from login on, and the dashboard opened,
+ *                   already unlocked
  *   perry start     start Perry in the background (installing the service if need be)
  *   perry stop      stop it
  *   perry status    whether it is running, and where the dashboard is
  *   perry logs [-f] what it has been saying
  *   perry open      open the dashboard, already unlocked
- *   perry update    pull the latest Perry, install, push the backend, rebuild, restart
+ *   perry update    pull the latest Perry, install, rebuild, restart
+ *   perry migrate   bring chats and memory over from Convex, where Perry used to keep them
  *   perry doctor    check this machine and the deployment
  *   perry pair      a new pairing code for Telegram
  *   perry run       run Perry in this terminal instead of the background
@@ -166,9 +167,8 @@ export function killTree(pid: number) {
 }
 
 async function runForeground() {
-  const config = readRunnerConfig();
-  if (!config.url || !config.token) {
-    say(`\n${red("This computer is not connected yet.")} Run ${bold("perry setup")} first.\n`);
+  if (!readEnvFile().DASHBOARD_KEY) {
+    say(`\n${red("Perry is not set up yet.")} Run ${bold("perry setup")} first.\n`);
     process.exit(1);
   }
   // The Windows service stops this process by the PID it notes here; the runner must not note its own.
@@ -184,7 +184,7 @@ async function runForeground() {
   const stamp = () => new Date().toISOString().slice(11, 19);
   const children: Managed[] = [
     { name: "runner", argv: [process.execPath, join(REPO, "runner", "index.ts")], env: childEnv, failures: 0, startedAt: 0 },
-    { name: "dashboard", argv: [nodePath(), NEXT_CLI, "start", "-p", String(PORT)], env: { ...childEnv, NODE_ENV: "production" }, failures: 0, startedAt: 0 },
+    { name: "dashboard", argv: [nodePath(), NEXT_CLI, "start", "-p", String(PORT)], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT) }, failures: 0, startedAt: 0 },
   ];
   let stopping = false;
 
@@ -436,13 +436,10 @@ async function status() {
 
 async function start(): Promise<boolean> {
   const { install, serviceState, serviceContext, servicePlan, runSteps } = await import("./service");
-  const url = readEnvFile().NEXT_PUBLIC_CONVEX_URL;
-  if (!url) {
+  if (!readEnvFile().DASHBOARD_KEY) {
     say(`\n${red("Perry is not set up yet.")} Run ${bold("perry setup")} first.\n`);
     return false;
   }
-  const config = readRunnerConfig();
-  if ((config.url !== url || !config.token) && !(await connect(url))) return false;
   if (!existsSync(BUILD_ID) && !build()) return false;
   const ctx = serviceContext();
   const state = serviceState(ctx);
@@ -463,65 +460,79 @@ async function stop() {
   say(`  ${green("stopped")}`);
 }
 
-/** Mint this computer's runner token, unless the one it has still works. */
-async function connect(url: string): Promise<boolean> {
-  const config = readRunnerConfig();
-  if (config.url === url && config.token) {
-    const { ConvexHttpClient } = await import("convex/browser");
-    const { api } = await import("../convex/_generated/api");
-    const works = await new ConvexHttpClient(url).mutation(api.runner.checkIn, { token: config.token, platform: process.platform, hostname: hostname() }).then(() => true, () => false);
-    if (works) {
-      say(`  ${green("connected")} ${config.name ?? hostname()}${dim(`, working in ${config.dir}`)}`);
-      const held = runnerHeldBy(config.token);
-      if (held) say(yellow(`  A runner is already running in a terminal (process ${held}). Stop it (Ctrl+C there); Perry now runs it in the background.`));
-      return true;
-    }
-  }
-  mkdirSync(WORKSPACE, { recursive: true });
-  const { runConvex } = await import("./lib");
-  const token = randomBytes(32).toString("base64url");
-  const created = await runConvex(["run", "runner:createToken", JSON.stringify({ name: hostname(), token })]);
-  if (created.code !== 0) {
-    say(red("  Could not connect this computer:"));
-    say(dim(created.output.split("\n").slice(-6).join("\n")));
-    return false;
-  }
-  await runConvex(["run", "installation:setComputeTarget", JSON.stringify({ target: "local" })]);
-  const { writeRunnerConfig } = await import("../runner/home");
-  const { auto: _legacy, ...kept } = config;
-  writeRunnerConfig({ ...kept, url, token, dir: config.dir && existsSync(config.dir) ? config.dir : WORKSPACE, name: hostname() });
-  say(`  ${green("connected")} ${hostname()}${dim(`, working in ${readRunnerConfig().dir}`)}`);
-  return true;
+/** Perry's backend as this machine's CLI calls it: the running server, with the dashboard key. */
+async function backend() {
+  const { BackendClient } = await import("../client/backend");
+  return new BackendClient(`http://127.0.0.1:${PORT}`, { adminKey: readEnvFile().DASHBOARD_KEY });
+}
+
+/** With a bot nobody has claimed, a code to claim it with, from the running server. */
+async function pairTelegram() {
+  const env = readEnvFile();
+  if (!env.TELEGRAM_BOT_TOKEN) return;
+  const client = await backend();
+  const status = await client.call<{ claimed: boolean }>("installation:status").catch(() => null);
+  if (!status || status.value.claimed) return;
+  const bot = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getMe`).then((r) => r.json(), () => null) as { result?: { username?: string } } | null;
+  const code = await client.call<{ code: string }>("installation:startPairing").then((result) => result.value.code, () => null);
+  if (!code) { say(yellow(`  Could not make a pairing code; ${bold("perry pair")} tries again.`)); return; }
+  say(`
+${bold("Claim it")}`);
+  say(`  Message ${bold(`@${bot?.result?.username ?? "your bot"}`)} on Telegram with:`);
+  say(`
+      ${bold(green(code))}
+`);
+  say(dim("  It expires in an hour. Whoever sends it first owns this Perry;"));
+  say(dim("  everyone else is ignored from then on."));
 }
 
 async function setup() {
   const configured = exec(bunScript("setup.ts", ["--from-perry"]));
   if (configured.code !== 0) process.exit(configured.code);
 
-  const url = readEnvFile().NEXT_PUBLIC_CONVEX_URL;
-  if (!url) {
-    say(red("\nNo Convex URL in .env.local; setup did not finish."));
-    process.exit(1);
-  }
-  say(`\n${bold("This computer")}`);
-  say(dim("  Perry thinks and acts through Codex here. Nothing listens on the internet:\n  the runner dials out to your deployment."));
-  if (!(await connect(url))) process.exit(1);
-
+  say(`
+${bold("This computer")}`);
+  say(dim(`  Your chats, memory and files stay on this computer, in ${HOME}. Nothing listens
+  on the internet for Perry: it asks Telegram for messages, and Codex runs here.`));
   if (!build()) process.exit(1);
 
-  say(`\n${bold("Running in the background")}`);
+  say(`
+${bold("Running in the background")}`);
   const { endServiceProcess } = await import("./service");
   if (process.platform === "win32") endServiceProcess();
   if (!(await start())) process.exit(1);
+  await pairTelegram();
 
-  say(`\n${bold("The perry command")}`);
+  // An install that kept its data on Convex brings it over once, now that Perry runs here.
+  if (readEnvFile().CONVEX_DEPLOYMENT) {
+    say(`
+${bold("Your data on Convex")}`);
+    say(dim("  Perry used to keep your chats and memory on Convex; it keeps them here now."));
+    const answer = process.stdin.isTTY ? (await ask("  Bring them over? [Y/n] ")).trim().toLowerCase() : "n";
+    if (answer === "" || answer === "y" || answer === "yes") exec(bunScript("migrate.ts"));
+    else say(dim(`  Skipped. ${bold("perry migrate")} brings them over whenever you like.`));
+  }
+
+  say(`
+${bold("The perry command")}`);
   link();
-  say(`\n${bold("Dashboard")}`);
+  say(`
+${bold("Dashboard")}`);
   await open();
   const { runCodex } = await import("./lib");
   const codex = await runCodex(["login", "status"]);
-  if (codex.code !== 0) say(yellow(`\n  Codex is not signed in yet, so Perry cannot answer: run ${bold("codex login")}, or sign in from the dashboard's Settings page.`));
-  say(dim(`\n  perry status | logs | stop | start | open | update | doctor\n`));
+  if (codex.code !== 0) say(yellow(`
+  Codex is not signed in yet, so Perry cannot answer: run ${bold("codex login")}, or sign in from the dashboard's Settings page.`));
+  say(dim(`
+  perry status | logs | stop | start | open | update | doctor
+`));
+}
+
+/** One question on this terminal. */
+async function ask(question: string): Promise<string> {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try { return await rl.question(question); } finally { rl.close(); }
 }
 
 async function update() {
@@ -534,14 +545,8 @@ async function update() {
     }
   }
   if (exec(tool("pnpm", ["install", "--frozen-lockfile"])).code !== 0) process.exit(1);
-  say(dim("  Pushing the backend to your Convex deployment…"));
-  const { runConvex } = await import("./lib");
-  const pushed = await runConvex(["dev", "--once"]);
-  if (pushed.code !== 0) {
-    say(red("  Could not push the backend:"));
-    say(dim(pushed.output.split("\n").slice(-8).join("\n")));
-    process.exit(1);
-  }
+  // The backend is part of the dashboard's server, so the new build is all there is to deploy;
+  // its database moves forward on its own when the server starts.
   // The running dashboard serves from the build, so it stops while a new one is made.
   const { serviceState } = await import("./service");
   const wasRunning = serviceState().running;
@@ -553,7 +558,7 @@ async function update() {
 }
 
 const HELP = `
-  ${bold("perry")} setup | start | stop | status | logs [-f] | open | update | doctor | pair | run | uninstall
+  ${bold("perry")} setup | start | stop | status | logs [-f] | open | update | migrate | doctor | pair | run | uninstall
 
   ${bold("setup")}      set Perry up (or check it), start it in the background, open the dashboard
   ${bold("start")}      start Perry in the background, from now on at every login
@@ -561,7 +566,8 @@ const HELP = `
   ${bold("status")}     whether it is running, and where
   ${bold("logs")}       what it has been saying; -f to follow
   ${bold("open")}       open the dashboard, already unlocked
-  ${bold("update")}     pull the latest Perry, install, push the backend, rebuild, restart
+  ${bold("update")}     pull the latest Perry, install, rebuild, restart
+  ${bold("migrate")}    bring chats and memory over from Convex, where Perry used to keep them
   ${bold("doctor")}     check this machine and your deployment
   ${bold("pair")}       a new code to claim Perry on Telegram
   ${bold("run")}        run Perry in this terminal instead of the background
@@ -580,6 +586,7 @@ async function main() {
     case "update": return update();
     case "doctor": return process.exit(exec(bunScript("doctor.ts", rest)).code);
     case "pair": return process.exit(exec(bunScript("pair.ts")).code);
+    case "migrate": return process.exit(exec(bunScript("migrate.ts", rest)).code);
     case "run": return runForeground();
     case "link": return process.exit(link() ? 0 : 1);
     case "uninstall": return process.exit((await uninstall(rest)) ? 0 : 1);

@@ -1,6 +1,6 @@
-import { createThread, listMessages } from "@convex-dev/agent";
+import { createThread, listMessages } from "./lib/agent";
 import { v } from "convex/values";
-import { components, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { INSTRUCTIONS } from "./assistant";
@@ -134,7 +134,7 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   }).catch((error) => { console.error(`Memory context unavailable: ${String(error)}`); return null; });
   let history: string | undefined;
   if (fresh) {
-    const page = await listMessages(ctx, components.agent, {
+    const page = await listMessages(ctx, {
       threadId: conversation.threadId,
       excludeToolMessages: true,
       paginationOpts: { cursor: null, numItems: 60 },
@@ -206,7 +206,7 @@ async function reset(ctx: ActionCtx, conversation: Doc<"conversations">): Promis
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access), error: message.slice(0, 1000) });
-    const threadId = await createThread(ctx, components.agent, { userId: userIdOf(conversation), title: conversation.title });
+    const threadId = await createThread(ctx, { userId: userIdOf(conversation), title: conversation.title });
     await ctx.runMutation(internal.conversations.clearThread, { id: conversation._id, threadId });
     return `Fresh start, but this chat was not summarised into memory first: ${message}`;
   } finally {
@@ -253,7 +253,7 @@ async function loadConversation(
     throw new Error("This chat was deleted.");
   }
 
-  const threadId = await createThread(ctx, components.agent, {
+  const threadId = await createThread(ctx, {
     userId: `${channel}:${externalId}`,
     title,
   });

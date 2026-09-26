@@ -572,7 +572,6 @@ details.disclosure.builtin-jobs > summary { display: flex; width: 100%; min-widt
 @media (hover: none) { .chat-turn-actions, .chat-turn-time { opacity: 1; } }
 .chat-turn-actions button { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 7px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-2); font-size: 12px; }
 .chat-turn-actions button:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
-.chat-fallback-note { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--text-3); font-size: 12px; }
 .chat-turn-error { margin: 0 0 24px 36px; }
 
 .chat-thinking { display: flex; gap: 4px; align-items: center; height: 26px; }

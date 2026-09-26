@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation } from "./_generated/server";
 import { vPolicy } from "./schema";
 
 /**
@@ -11,13 +11,12 @@ import { vPolicy } from "./schema";
  * minted, held in a file on that machine and sent with every call. One token
  * per machine, revocable from the dashboard.
  *
- * The runner opens the connection and keeps it. Convex pushes queued work down
- * the socket the runner already has open, so nothing has to listen on a port
- * and nothing has to be reachable from the internet. That is the whole reason
- * this design is safe to hand to someone who is not thinking about firewalls.
+ * The runner opens the connection and keeps it. Its work (Codex turns, see
+ * codex.ts) reaches it over the change stream it already has open, so nothing
+ * has to listen on a port and nothing has to be reachable from the internet.
+ * That is the whole reason this design is safe to hand to someone who is not
+ * thinking about firewalls.
  */
-
-const MAX_OUTPUT = 20_000;
 
 /** Constant time, so a token cannot be recovered a character at a time. */
 function sameToken(a: string, b: string): boolean {
@@ -53,9 +52,6 @@ export function policyOf(runner: Doc<"runners">): Policy {
 
 /**
  * Called once at startup, and then on a timer, so the dashboard can show it.
- * `fallback` says whether the owner lets turns be answered without this
- * machine, which is when the runner pushes its ChatGPT token (chatgpt.ts),
- * and `holdsToken` whether Convex still has the one it pushed.
  * A policy is sent only when the runner was started with --policy; otherwise
  * the one chosen in the dashboard stands. autoApprove is the older form of
  * the same setting.
@@ -69,8 +65,8 @@ export const checkIn = mutation({
     policy: v.optional(vPolicy),
     autoApprove: v.optional(v.boolean()),
   },
-  returns: v.object({ name: v.string(), policy: vPolicy, fallback: v.boolean(), holdsToken: v.boolean() }),
-  handler: async (ctx, args): Promise<{ name: string; policy: Policy; fallback: boolean; holdsToken: boolean }> => {
+  returns: v.object({ name: v.string(), policy: vPolicy }),
+  handler: async (ctx, args): Promise<{ name: string; policy: Policy }> => {
     const runner = await authenticate(ctx, args.token);
     const policy = args.policy
       ?? (args.autoApprove === undefined ? policyOf(runner) : args.autoApprove ? "trust" : "ask");
@@ -84,75 +80,7 @@ export const checkIn = mutation({
       lastSeenAt: Date.now(),
     });
 
-    const install = await ctx.db.query("installation").unique();
-    const held = await ctx.db.query("chatgptTokens").withIndex("by_runner", (q) => q.eq("runnerId", runner._id)).first();
-    return { name: runner.name, policy, fallback: install?.offlineFallback === true, holdsToken: held !== null };
-  },
-});
-
-/**
- * Work waiting for this machine. The runner subscribes to this, so Convex
- * pushes new commands down the connection the runner already opened.
- */
-export const queued = query({
-  args: { token: v.string() },
-  handler: async (ctx, args): Promise<Doc<"commands">[]> => {
-    const runner = await authenticate(ctx, args.token);
-    return await ctx.db
-      .query("commands")
-      .withIndex("by_runner_status", (q) =>
-        q.eq("runnerId", runner._id).eq("status", "queued"),
-      )
-      .take(5);
-  },
-});
-
-export const claimCommand = mutation({
-  args: { token: v.string(), commandId: v.string() },
-  returns: v.boolean(),
-  handler: async (ctx, args): Promise<boolean> => {
-    const runner = await authenticate(ctx, args.token);
-    const id = ctx.db.normalizeId("commands", args.commandId);
-    if (!id) return false;
-
-    const command = await ctx.db.get(id);
-    // Only the owning runner, and only if nobody else took it first.
-    if (!command || command.runnerId !== runner._id) return false;
-    if (command.status !== "queued") return false;
-
-    await ctx.db.patch(id, { status: "running", startedAt: Date.now() });
-    return true;
-  },
-});
-
-export const finishCommand = mutation({
-  args: {
-    token: v.string(),
-    commandId: v.string(),
-    status: v.union(v.literal("done"), v.literal("denied"), v.literal("error")),
-    exitCode: v.optional(v.number()),
-    output: v.optional(v.string()),
-    truncated: v.optional(v.boolean()),
-    error: v.optional(v.string()),
-  },
-  returns: v.null(),
-  handler: async (ctx, args): Promise<null> => {
-    const runner = await authenticate(ctx, args.token);
-    const id = ctx.db.normalizeId("commands", args.commandId);
-    if (!id) return null;
-
-    const command = await ctx.db.get(id);
-    if (!command || command.runnerId !== runner._id) return null;
-
-    await ctx.db.patch(id, {
-      status: args.status,
-      exitCode: args.exitCode,
-      output: args.output?.slice(0, MAX_OUTPUT),
-      truncated: args.truncated,
-      error: args.error?.slice(0, 2000),
-      finishedAt: Date.now(),
-    });
-    return null;
+    return { name: runner.name, policy };
   },
 });
 
@@ -217,78 +145,6 @@ export const revokeRunner = internalMutation({
     for (const chat of await ctx.db.query("conversations").collect()) {
       if (chat.codexRunnerId === id) await ctx.db.patch(chat._id, { codexRunnerId: undefined });
     }
-    // Its ChatGPT token goes with it.
-    for (const row of await ctx.db.query("chatgptTokens").withIndex("by_runner", (q) => q.eq("runnerId", id)).collect()) {
-      await ctx.db.delete(row._id);
-    }
     return null;
-  },
-});
-
-export const enqueue = internalMutation({
-  args: {
-    runnerId: v.id("runners"),
-    kind: v.union(
-      v.literal("exec"),
-      v.literal("read"),
-      v.literal("write"),
-      v.literal("list"),
-    ),
-    operationId: v.string(),
-    command: v.optional(v.string()),
-    path: v.optional(v.string()),
-    text: v.optional(v.string()),
-    cwd: v.optional(v.string()),
-  },
-  returns: v.id("commands"),
-  handler: async (ctx, args): Promise<Id<"commands">> => {
-    return await ctx.db.insert("commands", {
-      ...args,
-      status: "queued",
-      createdAt: Date.now(),
-    });
-  },
-});
-
-export const getCommand = internalQuery({
-  args: { commandId: v.id("commands") },
-  handler: async (ctx, args): Promise<Doc<"commands"> | null> => {
-    return await ctx.db.get(args.commandId);
-  },
-});
-
-export const abandonCommand = internalMutation({
-  args: { commandId: v.id("commands"), error: v.string() },
-  returns: v.null(),
-  handler: async (ctx, args): Promise<null> => {
-    const command = await ctx.db.get(args.commandId);
-    if (!command || command.status === "done") return null;
-    await ctx.db.patch(args.commandId, {
-      status: "error",
-      error: args.error,
-      finishedAt: Date.now(),
-    });
-    return null;
-  },
-});
-
-export const findByOperation = internalQuery({
-  args: { operationId: v.string() },
-  handler: async (ctx, args): Promise<Doc<"commands"> | null> => {
-    return await ctx.db
-      .query("commands")
-      .withIndex("by_operation", (q) => q.eq("operationId", args.operationId))
-      .first();
-  },
-});
-
-export const recentCommands = internalQuery({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, args): Promise<Doc<"commands">[]> => {
-    return await ctx.db
-      .query("commands")
-      .withIndex("by_created")
-      .order("desc")
-      .take(Math.min(args.limit ?? 25, 100));
   },
 });

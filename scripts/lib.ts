@@ -29,23 +29,18 @@ export function run(command: string, args: string[], { quiet = true, env }: { qu
 }
 
 /**
- * The Convex CLI, run by path through this same runtime rather than npx.
- * Windows refuses to spawn a .cmd without a shell, and a shell needs quoting,
- * and quoting secrets on a command line is how secrets get mangled.
+ * The Convex CLI, run by path through this same runtime rather than npx; only
+ * `perry migrate` needs it now, to export an install that still lives on
+ * Convex. Windows refuses to spawn a .cmd without a shell, and a shell needs
+ * quoting, and quoting secrets on a command line is how secrets get mangled.
  */
 const CONVEX_CLI = resolve(process.cwd(), "node_modules/convex/bin/main.js");
 
 /**
- * The environment the Convex CLI runs in.
- *
- * Perry's deployment has to be in Convex's cloud, where Telegram can reach it,
- * so the CLI is never allowed to make one that runs on this machine: without
- * CONVEX_ALLOW_ANONYMOUS=false a first run offers "Start without an account",
- * and with no terminal it picks that on its own.
- *
- * Which deployment to use comes from .env.local as it is now: Bun copied the
- * file into process.env when the script started, and the CLI would believe
- * that stale copy over the file, even after setup has replaced the deployment.
+ * The CLI reads which deployment from .env.local itself. Bun copied that file
+ * into process.env when the script started, and the CLI would believe the
+ * copy over the file, so it is left out; and the CLI never gets to offer to
+ * make a new deployment.
  */
 function convexEnv(): NodeJS.ProcessEnv {
   const { CONVEX_DEPLOYMENT: _deployment, CONVEX_URL: _url, NEXT_PUBLIC_CONVEX_URL: _publicUrl, ...rest } = process.env;
@@ -54,27 +49,6 @@ function convexEnv(): NodeJS.ProcessEnv {
 
 export function runConvex(args: string[], options?: { quiet?: boolean }): Promise<Ran> {
   return run(process.execPath, [CONVEX_CLI, ...args], { ...options, env: convexEnv() });
-}
-
-/**
- * Run the Convex CLI where you can answer it, showing what it says and calling
- * `onText` with each piece, so a caller can act on it (open a login link, say).
- */
-export function runConvexShown(args: string[], onText: (text: string) => void): Promise<Ran> {
-  return new Promise((resolvePromise) => {
-    const child = spawn(process.execPath, [CONVEX_CLI, ...args], { stdio: ["inherit", "pipe", "pipe"], env: convexEnv() });
-    let output = "";
-    const relay = (chunk: Buffer) => {
-      const text = chunk.toString("utf8");
-      output += text;
-      process.stdout.write(text);
-      onText(text);
-    };
-    child.stdout.on("data", relay);
-    child.stderr.on("data", relay);
-    child.on("error", (error) => resolvePromise({ code: null, output: error.message }));
-    child.on("close", (code) => resolvePromise({ code, output }));
-  });
 }
 
 /** Open a link in the default browser. False when there is none to open it in. */

@@ -87,29 +87,6 @@ export class TurnFailed extends Error {
 }
 export type CodexAttachment = { url?: string; localPath?: string; fileName: string; contentType?: string };
 export type CodexModel = { id: string; name: string; isDefault: boolean; efforts: string[]; defaultEffort?: string };
-export type ChatgptToken = { accessToken: string; accountId?: string; expiresAt: number };
-
-/** Refresh a token this close to expiry before handing it out, as eve does. */
-const TOKEN_REFRESH_WINDOW_MS = 5 * 60_000;
-
-// Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/models/openai/chatgpt/auth.ts
-/**
- * The account id and expiry are claims in the access token, a JWT. They are
- * read, not verified: ChatGPT verifies the token, this only needs to know
- * which account it is for and when to stop using it.
- */
-function tokenFromCodex(accessToken: string): ChatgptToken | null {
-  let claims: Record<string, any>;
-  try { claims = JSON.parse(Buffer.from(accessToken.split(".")[1] ?? "", "base64url").toString("utf8")); }
-  catch { return null; }
-  if (typeof claims?.exp !== "number") return null;
-  const auth = claims["https://api.openai.com/auth"];
-  const text = (value: unknown) => typeof value === "string" && value.trim() ? value : undefined;
-  const accountId = text(claims.chatgpt_account_id) ?? text(auth?.chatgpt_account_id)
-    ?? text(Array.isArray(claims.organizations) ? claims.organizations[0]?.id : undefined);
-  return { accessToken, accountId, expiresAt: claims.exp * 1000 };
-}
-
 /** A message as Codex input: its text, images inline, other files named by where they are. */
 function userInput(prompt: string, attachments: CodexAttachment[], recalled?: string): object[] {
   const text = { type: "text", text: prompt, text_elements: [] };
@@ -262,23 +239,6 @@ export class CodexAppServer extends EventEmitter {
       authMode: account?.type,
       planType: account?.type === "chatgpt" ? account.planType ?? undefined : undefined,
     };
-  }
-
-  // Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/models/openai/chatgpt/codex-app-server.ts
-  /**
-   * The ChatGPT access token Codex holds, for answering without this machine
-   * (convex/chatgpt.ts). Codex keeps the refresh token and refreshes the access
-   * token itself; one about to expire, or one ChatGPT refused, is refreshed
-   * first.
-   */
-  async chatgptToken(forceRefresh = false): Promise<ChatgptToken | null> {
-    const read = async (refreshToken: boolean) => {
-      const status = await this.request<{ authMethod?: string | null; authToken?: string | null }>("getAuthStatus", { includeToken: true, refreshToken });
-      return status.authMethod === "chatgpt" && status.authToken ? tokenFromCodex(status.authToken) : null;
-    };
-    const token = await read(forceRefresh);
-    if (!token || forceRefresh || token.expiresAt - TOKEN_REFRESH_WINDOW_MS > Date.now()) return token;
-    return await read(true);
   }
 
   /** The account's models, each with the reasoning efforts turn/start takes for it (a chat's thinking level). */

@@ -1,0 +1,884 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Perry — launch spot</title>
+<style>
+  @font-face { font-family: 'InterTight'; src: url(fonts/InterTight-var.woff2) format('woff2'); font-weight: 100 900; }
+  @font-face { font-family: 'JBMono'; src: url(fonts/JetBrainsMono-var.woff2) format('woff2'); font-weight: 100 800; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { display: grid; place-items: center; }
+  canvas { width: min(100vw, 177.78vh); height: min(56.25vw, 100vh); cursor: pointer; }
+  #hint { position: fixed; bottom: 16px; left: 0; right: 0; text-align: center; color: #888; font: 12px monospace; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<div id="hint">click to play · space to pause · ← → to scrub</div>
+<script>
+// ============================================================================
+//  PERRY — launch spot. 128 BPM, 18 bars, 33.75 s @ 60 fps.
+//  Styled with the site's system: white paper, ink type, teal accent,
+//  Telegram mockups over Perry's doodle wallpaper. No glows, no grids.
+// ============================================================================
+const W = 1920, H = 1080, FPS = 60, SUB = 4;
+const K = W / 1440, VW = 1440, VH = 810;
+const BT = 60 / 128, BAR = 4 * BT, DUR = 18 * BAR;
+window.FPS_ = FPS; window.DUR_ = DUR; window.SUB_ = SUB;
+
+const T = {
+  paper: '#ffffff', mist: '#f5f5f7', ink: '#1d1d1f', ink2: '#424245', ink3: '#6e6e73', hair: 'rgba(0,0,0,.09)',
+  teal: '#0c7a70', night: '#0a0c0f', nightTeal: '#5fd4c8', nightText: '#a1a1a6',
+  tgIn: '#ffffff', tgOut: '#effdde', tgMeta: '#687480', tgOutMeta: '#357d32', tgLink: '#2f89e0',
+  tgnHead: '#17212b', tgnIn: '#182533', tgnOut: '#2b5278', tgnMeta: '#8fa3b8',
+};
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const P = (t, a, b) => clamp((t - a) / (b - a));
+const TAU = Math.PI * 2;
+function bezier(x1, y1, x2, y2) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx, cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const sx = t => ((ax * t + bx) * t + cx) * t, sy = t => ((ay * t + by) * t + cy) * t, dx = t => (3 * ax * t + 2 * bx) * t + cx;
+  return x => { if (x <= 0) return 0; if (x >= 1) return 1; let t = x; for (let i = 0; i < 8; i++) { const d = sx(t) - x, dd = dx(t); if (Math.abs(d) < 1e-6 || !dd) break; t -= d / dd; } return sy(clamp(t)); };
+}
+// the site's own curves
+const EZ = { blur: bezier(.25, .46, .45, .94), rise: bezier(.165, .84, .44, 1), whip: bezier(.72, 0, .18, 1) };
+// motion's spring { stiffness: 420, damping: 32 }, the bubbles' pop
+const SPRING = (() => { const w = Math.sqrt(420), z = 32 / (2 * w), wd = w * Math.sqrt(1 - z * z);
+  return t => t <= 0 ? 0 : 1 - Math.exp(-z * w * t) * (Math.cos(wd * t) + z * w / wd * Math.sin(wd * t)); })();
+
+const view = document.getElementById('c'), out = view.getContext('2d');
+const mk = (w = W, h = H) => { const cv = document.createElement('canvas'); cv.width = Math.round(w); cv.height = Math.round(h); return cv; };
+const scratch = mk(), sctx = scratch.getContext('2d');
+const rr = (c, x, y, w, h, r) => { c.beginPath(); c.roundRect(x, y, w, h, r); };
+const circle = (c, x, y, r) => { c.beginPath(); c.arc(x, y, Math.max(0, r), 0, TAU); };
+const sans = (w, s) => `${w} ${s}px InterTight`, mono = (w, s) => `${w} ${s}px JBMono`;
+function text(c, s, x, y, font, col, o = {}) {
+  c.font = font; c.fillStyle = col; c.textAlign = o.align || 'left'; c.textBaseline = o.base || 'alphabetic';
+  c.letterSpacing = o.ls || '0px'; c.fillText(s, x, y); c.letterSpacing = '0px';
+}
+function tnum(c, s, x, y, font, col, o = {}) {
+  c.font = font; c.letterSpacing = '0px'; c.fillStyle = col; c.textBaseline = o.base || 'alphabetic';
+  const cell = Math.max(...'0123456789'.split('').map(d => c.measureText(d).width));
+  const adv = ch => (/\d/.test(ch) ? cell : c.measureText(ch).width), chars = [...s], total = chars.reduce((a, ch) => a + adv(ch), 0);
+  let cx = o.align === 'right' ? x - total : o.align === 'center' ? x - total / 2 : x;
+  for (const ch of chars) { const a = adv(ch); c.textAlign = /\d/.test(ch) ? 'center' : 'left'; c.fillText(ch, /\d/.test(ch) ? cx + a / 2 : cx, y); cx += a; }
+  c.textAlign = 'left';
+}
+function wrap(c, s, font, maxW, ls = '0px') {
+  c.font = font; c.letterSpacing = ls; const words = s.split(' '), lines = []; let line = '';
+  for (const w of words) { const test = line ? line + ' ' + w : w; if (c.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test; }
+  if (line) lines.push(line); c.letterSpacing = '0px'; return lines;
+}
+// headline words come into focus in turn (the site's BlurWords)
+function blurWords(c, lines, x, y0, size, lh, t, t0, o = {}) {
+  const font = sans(o.w || 600, size), ls = `${-(o.track ?? .04) * size}px`;
+  c.font = font; c.letterSpacing = ls; const sp = c.measureText(' ').width;
+  let i = 0;
+  lines.forEach((line, li) => {
+    c.font = font; c.letterSpacing = ls;
+    const words = line.split(' '), ws = words.map(w => c.measureText(w).width), tot = ws.reduce((a, b) => a + b, 0) + sp * (words.length - 1);
+    let cx = o.align === 'center' ? x - tot / 2 : x;
+    words.forEach((wd, k) => {
+      const p = EZ.blur(P(t, t0 + .1 + i * .06, t0 + .1 + i * .06 + .8));
+      if (p > 0) {
+        c.save(); c.globalAlpha *= p; if (p < .98) c.filter = `blur(${(1 - p) * 10 * K}px)`;
+        c.font = font; c.letterSpacing = ls; c.fillStyle = o.color || T.ink; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+        c.fillText(wd, cx, y0 + li * lh + (1 - p) * .18 * size); c.restore();
+      }
+      cx += ws[k] + sp; i++;
+    });
+  });
+  c.letterSpacing = '0px';
+}
+// rises into place once (the site's Reveal)
+function rise(c, t, t0, draw, dist = 20, d = .7) {
+  const p = EZ.rise(P(t, t0, t0 + d)); if (p <= 0) return;
+  c.save(); c.globalAlpha *= p; c.translate(0, (1 - p) * dist); draw(); c.restore();
+}
+
+// ============================================================================
+//  Telegram, day and night, over Perry's own doodle wallpaper
+// ============================================================================
+const PATTERN = new Image(); PATTERN.src = 'assets/tg-pattern.svg';
+const WALL = new Map();
+function wallpaper(theme, w, h) {
+  const key = `${theme}${w}x${h}`; if (WALL.has(key)) return WALL.get(key);
+  const cv = mk(w * K, h * K), g = cv.getContext('2d'); g.scale(K, K);
+  const tile = mk(168 * K, 168 * K), tg = tile.getContext('2d'); tg.drawImage(PATTERN, 0, 0, 168 * K, 168 * K);
+  if (theme === 'day') {
+    g.fillStyle = '#dbddbb'; g.fillRect(0, 0, w, h);
+    for (const [px, py, rx, ry, col] of [[.15, .2, .6, .5, '213,216,141'], [.85, .3, .6, .6, '136,184,132'], [.3, .9, .7, .6, '107,165,135']]) {
+      g.save(); g.translate(px * w, py * h); g.scale(rx * w, ry * h);
+      const gr = g.createRadialGradient(0, 0, 0, 0, 0, 1); gr.addColorStop(0, `rgba(${col},1)`); gr.addColorStop(.7, `rgba(${col},0)`);
+      g.fillStyle = gr; g.fillRect(-1, -1, 2, 2); g.restore();
+    }
+    tg.globalCompositeOperation = 'source-in'; tg.fillStyle = 'rgba(29,59,42,.16)'; tg.fillRect(0, 0, tile.width, tile.height);
+    g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = g.createPattern(tile, 'repeat'); g.fillRect(0, 0, cv.width, cv.height);
+  } else {
+    g.fillStyle = '#0c1013'; g.fillRect(0, 0, w, h);
+    const lay = mk(w * K, h * K), lg = lay.getContext('2d');
+    const a = 160 * Math.PI / 180, cx = lay.width / 2, cy = lay.height / 2, L = Math.hypot(lay.width, lay.height) / 2;
+    const gr = lg.createLinearGradient(cx - Math.sin(a) * L, cy + Math.cos(a) * L, cx + Math.sin(a) * L, cy - Math.cos(a) * L);
+    gr.addColorStop(0, '#2e7d6f'); gr.addColorStop(.45, '#2b5f86'); gr.addColorStop(.75, '#4b4f9a'); gr.addColorStop(1, '#2f7a74');
+    lg.fillStyle = gr; lg.fillRect(0, 0, lay.width, lay.height);
+    lg.globalCompositeOperation = 'destination-in'; lg.fillStyle = lg.createPattern(tile, 'repeat'); lg.fillRect(0, 0, lay.width, lay.height);
+    g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = .22; g.drawImage(lay, 0, 0);
+  }
+  WALL.set(key, cv); return cv;
+}
+// rich text runs: [text, mono?]
+function layoutRuns(c, runs, maxW) {
+  const toks = [];
+  for (const [s, m] of runs) for (const part of s.split(/(\s+)/)) if (part) { c.font = m ? mono(500, 13.5) : sans(400, 15); toks.push({ s: part, m: !!m, w: c.measureText(part).width, sp: /^\s+$/.test(part) }); }
+  const lines = [[]]; let lw = 0;
+  for (const tk of toks) {
+    if (!tk.sp && lw + tk.w > maxW && lines.at(-1).length) { while (lines.at(-1).length && lines.at(-1).at(-1).sp) lw -= lines.at(-1).pop().w; lines.push([]); lw = 0; }
+    if (tk.sp && !lines.at(-1).length) continue;
+    lines.at(-1).push(tk); lw += tk.w;
+  }
+  const widths = lines.map(l => l.reduce((a, t) => a + t.w, 0));
+  return { lines, width: Math.max(...widths) };
+}
+const LH = 15 * 1.36;
+function measureItem(c, it, colW) {
+  if (it.kind === 'bubble') {
+    const L = layoutRuns(c, it.runs, colW * .84 - 24);
+    c.font = sans(400, 11.5); const tw = c.measureText(it.time).width + (it.side === 'out' ? 20 : 0);
+    it._L = L; it.w = Math.max(L.width, tw) + 24; it.h = 7 + L.lines.length * LH + 19;
+  } else if (it.kind === 'typing') { it.w = 57; it.h = 31; }
+  else if (it.kind === 'pill') { c.font = sans(500, 12.5); it.w = c.measureText(it.text).width + 20; it.h = 22; }
+  else if (it.kind === 'keys') { it.w = colW * .84; it.h = 36; }
+  else if (it.kind === 'kbd') { it.w = colW; it.h = it.labels.length * 40 - 4; }
+}
+function drawBubble(c, it, x, y, theme) {
+  const out = it.side === 'out', night = theme === 'night';
+  c.save();
+  if (!night) { c.shadowColor = 'rgba(0,0,0,.13)'; c.shadowOffsetY = 1 * K; c.shadowBlur = 1 * K; }
+  c.fillStyle = out ? (night ? T.tgnOut : T.tgOut) : (night ? T.tgnIn : T.tgIn);
+  rr(c, x, y, it.w, it.h, out ? [17, 17, 5, 17] : [17, 17, 17, 5]); c.fill(); c.restore();
+  const col = night ? '#fff' : '#000';
+  it._L.lines.forEach((line, li) => {
+    let cx = x + 12;
+    for (const tk of line) { c.font = tk.m ? mono(500, 13.5) : sans(400, 15); c.fillStyle = col; c.textAlign = 'left'; c.textBaseline = 'alphabetic'; c.fillText(tk.s, cx, y + 7 + (li + 1) * LH - 5); cx += tk.w; }
+  });
+  const meta = out ? (night ? '#b4d0ea' : T.tgOutMeta) : (night ? T.tgnMeta : T.tgMeta);
+  c.font = sans(400, 11.5); c.fillStyle = meta; c.textAlign = 'right'; c.textBaseline = 'alphabetic';
+  const tx = x + it.w - 10 - (out ? 18 : 0); c.fillText(it.time, tx, y + it.h - 5);
+  if (out) {
+    c.strokeStyle = meta; c.lineWidth = 1.5; c.lineCap = 'round'; c.lineJoin = 'round';
+    c.save(); c.translate(tx + 2, y + it.h - 14); c.beginPath(); c.moveTo(1, 5.5); c.lineTo(3.8, 8.3); c.lineTo(9.5, 2.2); c.moveTo(6.5, 8.3); c.lineTo(12.5, 2.2); c.stroke(); c.restore();
+  }
+}
+function tap(c, x, y, t, t0) {
+  const d = t - t0; if (d < -.12 || d > .5) return;
+  if (d < .12) { c.fillStyle = `rgba(0,0,0,${.14 * (1 - Math.abs(d) / .12)})`; circle(c, x, y, 20); c.fill(); }
+  if (d > 0) { const p = d / .5; c.fillStyle = `rgba(255,255,255,${.35 * (1 - p)})`; circle(c, x, y, 10 + p * 34); c.fill(); }
+}
+const E2 = x => x * x * (3 - 2 * x);
+const keyGone = (it, k, t) => { const tp = it.taps.find(q => q.i === k); return tp ? E2(P(t, tp.t + .12, tp.t + .34)) : 0; };
+// bottom-anchored chat column; each item springs in and pushes the rest up
+function chatColumn(c, items, x, bottom, colW, t, theme) {
+  let y = bottom;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]; if (t < it.t0) continue;
+    if (it.h == null) measureItem(c, it, colW);
+    const s = it.t0 < 0 ? 1 : SPRING(t - it.t0), e = it.t1 != null ? P(t, it.t1, it.t1 + .15) : 0;
+    const pres = clamp(s) * (1 - e);
+    let h = it.h;
+    if (it.kind === 'kbd') h = it.labels.reduce((a, _, k) => a + 40 * (1 - keyGone(it, k, t)), 0) - 4;
+    y -= h * pres;
+    if (pres > .001) {
+      const out = it.side === 'out', left = it.kind === 'pill' ? x + (colW - it.w) / 2 : out ? x + colW - it.w : x;
+      c.save(); c.globalAlpha *= clamp(s * 1.4) * (1 - e);
+      const ox = it.kind === 'pill' ? left + it.w / 2 : out ? left + it.w : left, oy = y + h;
+      c.translate(ox, oy + (1 - clamp(s)) * 14); const sc = .96 + .04 * s; c.scale(sc, sc); c.translate(-ox, -oy);
+      drawItem(c, it, left, y, t, theme, colW);
+      c.restore();
+    }
+    y -= 6 * pres;
+  }
+}
+function drawItem(c, it, x, y, t, theme, colW) {
+  const night = theme === 'night';
+  if (it.kind === 'bubble') drawBubble(c, it, x, y, theme);
+  else if (it.kind === 'typing') {
+    c.save(); if (!night) { c.shadowColor = 'rgba(0,0,0,.13)'; c.shadowOffsetY = K; c.shadowBlur = K; }
+    c.fillStyle = night ? T.tgnIn : T.tgIn; rr(c, x, y, it.w, it.h, [17, 17, 17, 5]); c.fill(); c.restore();
+    for (let k = 0; k < 3; k++) { const ph = ((t - it.t0 - k * .16) % 1 + 1) % 1, b = Math.sin(ph * Math.PI);
+      c.fillStyle = night ? `rgba(255,255,255,${.25 + .45 * b})` : `rgba(0,0,0,${.25 + .45 * b})`; circle(c, x + 17.5 + k * 11, y + 15.5 - b * 2, 3.5); c.fill(); }
+  } else if (it.kind === 'pill') {
+    c.fillStyle = night ? 'rgba(0,0,0,.45)' : 'rgba(0,0,0,.5)'; rr(c, x, y, it.w, it.h, 11); c.fill();
+    text(c, it.text, x + it.w / 2, y + 15.5, sans(500, 12.5), night ? '#e8eef4' : '#fff', { align: 'center' });
+  } else if (it.kind === 'keys') {
+    const kw = (it.w - 4) / 2;
+    it.labels.forEach((lb, k) => {
+      const pr = it.press && it.press.i === k ? Math.sin(Math.PI * P(t, it.press.t - .05, it.press.t + .2)) : 0;
+      const kx = x + k * (kw + 4);
+      c.save(); c.translate(kx + kw / 2, y + 18); c.scale(1 - .05 * pr, 1 - .05 * pr); c.translate(-(kx + kw / 2), -(y + 18));
+      c.fillStyle = `rgba(0,0,0,${.5 + .15 * pr})`; rr(c, kx, y, kw, 36, 10); c.fill();
+      text(c, lb, kx + kw / 2, y + 23, sans(600, 14), '#fff', { align: 'center' }); c.restore();
+      if (it.press && it.press.i === k) tap(c, kx + kw * .55, y + 20, t, it.press.t);
+    });
+  } else if (it.kind === 'kbd') {
+    let ky = y;
+    it.labels.forEach((lb, k) => {
+      const g = keyGone(it, k, t); if (g >= 1) return;
+      const tp = it.taps.find(q => q.i === k), pr = tp ? Math.sin(Math.PI * P(t, tp.t - .05, tp.t + .15)) : 0;
+      c.save(); c.globalAlpha *= 1 - g; c.translate(x + colW / 2, ky + 18); c.scale(1 - .03 * pr, (1 - .03 * pr) * (1 - g)); c.translate(-(x + colW / 2), -(ky + 18));
+      c.fillStyle = `rgba(0,0,0,${.5 + .15 * pr})`; rr(c, x, ky, colW, 36, 10); c.fill();
+      text(c, lb, x + colW / 2, ky + 23, sans(600, 14.5), '#fff', { align: 'center' }); c.restore();
+      if (tp) tap(c, x + colW * .62, ky + 19, t, tp.t);
+      ky += 40 * (1 - g);
+    });
+  }
+}
+// Perry's mascot: the site's teal platypus in a fedora (site/components/mascot/Platypus.tsx),
+// drawn from the same paths in its 240 x 262 box. One ink outline, flat colour, one shadow tone.
+const PLAT = {
+  teal: '#26b5a9', tealDark: '#1b8e85', bill: '#f5a13a', billDark: '#d9822a', hat: '#4b3326', band: '#2a1c15', crease: '#6a4a37', line: '#123f3b',
+  tail: new Path2D('M160 208c34-10 64 2 66 18 2 17-26 24-62 14z'),
+  body: new Path2D('M58 152c0-46 28-70 62-70s62 24 62 70v50c0 30-26 42-62 42s-62-12-62-42z'),
+  shade: new Path2D('M150 92c20 12 32 32 32 60v50c0 30-26 42-62 42 34-6 44-30 44-60v-44c0-20-4-36-14-48z'),
+  armL: new Path2D('M62 164c-10 6-14 22-8 34 3 6 10 6 13 0'),
+  armR: new Path2D('M178 164c10 6 14 22 8 34-3 6-10 6-13 0'),
+  billShape: new Path2D('M70 148c0-12 24-17 50-17s50 5 50 17c0 15-22 21-50 21s-50-6-50-21z'),
+  billLine: new Path2D('M80 156c14 6 66 6 80 0'),
+  crown: new Path2D('M84 89c2-26 14-38 26-35 6 2 14 2 20 0 12-3 24 9 26 35z'),
+  crease: new Path2D('M100 62c6 2 34 2 40 0'),
+};
+// o: blink 0..1 (1 is shut), look [x, y] in -1..1, hatLift in box units
+function platypus(c, o = {}) {
+  const P_ = PLAT, lid = Math.max(.32, o.blink || 0), look = o.look || [0, 0], lift = o.hatLift || 0;
+  const ink = () => { c.strokeStyle = P_.line; c.lineWidth = 3.2; c.lineJoin = 'round'; c.lineCap = 'round'; c.stroke(); };
+  const inkPath = pth => { c.strokeStyle = P_.line; c.lineWidth = 3.2; c.lineJoin = 'round'; c.lineCap = 'round'; c.stroke(pth); };
+  c.save();
+  c.fillStyle = P_.billDark; c.fill(P_.tail); inkPath(P_.tail);
+  c.fillStyle = P_.teal; c.fill(P_.body);
+  c.save(); c.globalAlpha *= .55; c.fillStyle = P_.tealDark; c.fill(P_.shade); c.restore();
+  inkPath(P_.body);
+  c.fillStyle = P_.tealDark; c.fill(P_.armL); inkPath(P_.armL); c.fill(P_.armR); inkPath(P_.armR);
+  for (const fx of [94, 146]) { c.beginPath(); c.ellipse(fx, 246, 20, 8, 0, 0, TAU); c.fillStyle = P_.bill; c.fill(); ink(); }
+  for (const cx of [100, 140]) {
+    const eye = new Path2D(); eye.ellipse(cx, 116, 13, 15, 0, 0, TAU);
+    c.fillStyle = '#fff'; c.fill(eye); inkPath(eye);
+    c.fillStyle = '#101214'; circle(c, cx + look[0] * 4, 118 + look[1] * 4, 5.6); c.fill();
+    c.fillStyle = '#fff'; circle(c, cx + look[0] * 4 + 1.8, 116 + look[1] * 4, 1.6); c.fill();
+    // the lid: a little lowered is his usual unimpressed look; a blink brings it all the way down
+    c.save(); c.clip(eye); c.fillStyle = P_.tealDark; c.fillRect(cx - 15, 99, 30, 34 * lid);
+    c.strokeStyle = P_.line; c.lineWidth = 2.6; c.beginPath(); c.moveTo(cx - 15, 99 + 34 * lid); c.lineTo(cx + 15, 99 + 34 * lid); c.stroke(); c.restore();
+  }
+  c.fillStyle = P_.bill; c.fill(P_.billShape); inkPath(P_.billShape);
+  c.strokeStyle = P_.billDark; c.lineWidth = 2.6; c.lineCap = 'round'; c.stroke(P_.billLine);
+  c.fillStyle = P_.line; circle(c, 110, 141, 2.2); c.fill(); circle(c, 130, 141, 2.2); c.fill();
+  // the fedora, worn at an angle; it hops on the beat
+  c.save(); c.translate(120, 90 - lift); c.rotate((-7 - lift * .6) * Math.PI / 180); c.translate(-120, -90);
+  c.fillStyle = P_.hat; c.fill(P_.crown); inkPath(P_.crown);
+  c.fillStyle = P_.band; c.fillRect(85.5, 79, 69, 9);
+  c.beginPath(); c.ellipse(120, 89, 72, 11, 0, 0, TAU); c.fillStyle = P_.hat; c.fill(); ink();
+  c.strokeStyle = P_.crease; c.lineWidth = 2.4; c.lineCap = 'round'; c.stroke(P_.crease);
+  c.restore();
+  c.restore();
+}
+// The mascot centred on (x, y) with his body s wide. Options as before: bob, squash, blink, look, pulse (now a hat hop).
+function mascot(c, x, y, s, t = 0, o = {}) {
+  const k = s / 124, bob = o.bob ? Math.sin(t * 4.2) * s * .025 : 0, squash = o.squash || 0;
+  c.save(); c.translate(x, y + bob); c.scale(1 + squash * .12, 1 - squash * .12);
+  c.scale(k, k); c.translate(-120, -160);
+  platypus(c, { blink: o.blink, look: o.look, hatLift: (o.pulse || 0) * 7 });
+  c.restore();
+}
+const blinkAt = (t, every = 2.7, off = .6) => { const ph = ((t - off) % every + every) % every; return ph < .14 ? Math.sin(ph / .14 * Math.PI) : 0; };
+// Perry's avatar: his face in a soft teal disc, cropped like the site's PlatypusHead
+function avatar(c, x, y, r, t = 0) {
+  c.save(); circle(c, x, y, r); c.fillStyle = '#e3f4f2'; c.fill(); c.clip();
+  const k = (2 * r * .92) / 160; c.translate(x, y + 2 * r * .06); c.scale(k, k); c.translate(-120, -108);
+  platypus(c, { blink: blinkAt(t, 3.1, .4) });
+  c.restore();
+}
+function phone(c, x, y, w, h, o) {
+  const night = o.theme === 'night', ix = x + 10, iy = y + 10, iw = w - 20, ih = h - 20;
+  c.save(); c.shadowColor = 'rgba(0,0,0,.28)'; c.shadowBlur = 70 * K; c.shadowOffsetY = 36 * K;
+  c.fillStyle = '#1b1c1e'; rr(c, x, y, w, h, 52); c.fill(); c.restore();
+  c.strokeStyle = '#2c2d30'; c.lineWidth = 2; rr(c, x + 1, y + 1, w - 2, h - 2, 51); c.stroke();
+  c.save(); rr(c, ix, iy, iw, ih, 43); c.clip();
+  c.drawImage(wallpaper(o.theme, iw, ih), ix, iy, iw, ih);
+  const headH = 98, footH = 72;
+  chatColumn(c, o.items, ix + 10, iy + ih - footH - 12, iw - 20, o.t, o.theme);
+  // header
+  c.fillStyle = night ? 'rgba(23,33,43,.95)' : 'rgba(255,255,255,.95)'; c.fillRect(ix, iy, iw, headH);
+  const fg = night ? '#fff' : '#000', sub = night ? T.tgnMeta : T.tgMeta;
+  tnum(c, o.clock, ix + 32, iy + 31, sans(600, 15), fg);
+  c.fillStyle = '#000'; rr(c, ix + iw / 2 - 48, iy + 12, 96, 28, 14); c.fill();
+  c.fillStyle = fg; const bx = ix + iw - 32 - 46;
+  [[0, 7, 4], [4.5, 5, 6], [9, 2.5, 8.5], [13.5, 0, 11]].forEach(([dx, dy, hh]) => { rr(c, bx + dx, iy + 20 + dy, 3, hh, 1); c.fill(); });
+  c.strokeStyle = fg; c.globalAlpha = .4; c.lineWidth = 1; rr(c, bx + 21.5, iy + 19.5, 21, 11, 3.5); c.stroke(); c.globalAlpha = 1;
+  rr(c, bx + 23, iy + 21, 16, 8, 2); c.fill();
+  c.strokeStyle = T.tgLink; c.lineWidth = 2.2; c.lineCap = 'round'; c.lineJoin = 'round';
+  c.beginPath(); c.moveTo(ix + 24, iy + 60); c.lineTo(ix + 17.5, iy + 67); c.lineTo(ix + 24, iy + 74); c.stroke();
+  text(c, 'Perry', ix + iw / 2, iy + 67, sans(600, 16), fg, { align: 'center' });
+  const typing = o.status !== 'bot';
+  text(c, o.status, ix + iw / 2, iy + 84, sans(400, 12.5), typing ? T.tgLink : sub, { align: 'center' });
+  avatar(c, ix + iw - 34, iy + 70, 18, o.t);
+  c.fillStyle = night ? 'rgba(0,0,0,.4)' : 'rgba(0,0,0,.07)'; c.fillRect(ix, iy + headH - 1, iw, 1);
+  // composer
+  const fy = iy + ih - footH;
+  c.fillStyle = night ? 'rgba(23,33,43,.95)' : 'rgba(255,255,255,.95)'; c.fillRect(ix, fy, iw, footH);
+  c.strokeStyle = sub; c.lineWidth = 1.7;
+  c.save(); c.translate(ix + 12, fy + 10); c.beginPath(); c.moveTo(21, 11.5); c.lineTo(12.6, 19.9); c.arc(8.8, 16.1, 5.4, Math.PI / 4, Math.PI * 1.25); c.lineTo(13.5, 3.8); c.arc(16, 6.3, 3.6, -Math.PI * .75, Math.PI / 4); c.lineTo(9.1, 15.2); c.stroke(); c.restore();
+  c.fillStyle = night ? 'rgba(0,0,0,.2)' : '#fff'; rr(c, ix + 46, fy + 9, iw - 92, 32, 16); c.fill();
+  c.strokeStyle = night ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.1)'; c.lineWidth = 1; rr(c, ix + 46, fy + 9, iw - 92, 32, 16); c.stroke();
+  if (o.typed) {
+    c.save(); c.beginPath(); c.rect(ix + 56, fy + 9, iw - 112, 32); c.clip(); c.font = sans(400, 15);
+    const tw = c.measureText(o.typed).width, tx = Math.min(ix + 62, ix + iw - 58 - tw);
+    text(c, o.typed, tx, fy + 30, sans(400, 15), fg); if (o.caret) { c.fillStyle = T.tgLink; c.fillRect(tx + tw + 1.5, fy + 16, 1.6, 19); }
+    c.restore();
+    c.fillStyle = T.tgLink; circle(c, ix + iw - 26, fy + 25, 15); c.fill();
+    c.strokeStyle = '#fff'; c.lineWidth = 2.2; c.beginPath(); c.moveTo(ix + iw - 26, fy + 32); c.lineTo(ix + iw - 26, fy + 18); c.moveTo(ix + iw - 32, fy + 24); c.lineTo(ix + iw - 26, fy + 18); c.lineTo(ix + iw - 20, fy + 24); c.stroke();
+  } else {
+    text(c, 'Message', ix + 62, fy + 30, sans(400, 15), sub);
+    if (o.caret) { c.fillStyle = T.tgLink; c.fillRect(ix + 60, fy + 16, 1.6, 19); }
+    c.strokeStyle = sub; c.lineWidth = 1.7; rr(c, ix + iw - 30, fy + 13, 6, 11, 3); c.stroke();
+    c.beginPath(); c.arc(ix + iw - 27, fy + 21, 7, 0, Math.PI); c.moveTo(ix + iw - 27, fy + 28); c.lineTo(ix + iw - 27, fy + 31); c.stroke();
+  }
+  c.fillStyle = night ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,.8)'; rr(c, ix + iw / 2 - 64, iy + ih - 12, 128, 5, 3); c.fill();
+  c.restore();
+}
+
+const B = (side, s, time, t0, t1) => ({ kind: 'bubble', side, runs: typeof s === 'string' ? [[s]] : s, time, t0, t1 });
+const TY = (t0, t1) => ({ kind: 'typing', t0, t1 });
+const PILL = (s, t0) => ({ kind: 'pill', text: s, t0 });
+
+// ============================================================================
+//  design pieces
+// ============================================================================
+const bg = (c, col) => { c.fillStyle = col; c.fillRect(-20, -20, VW + 40, VH + 40); };
+function card(c, x, y, w, h, r = 22, o = {}) {
+  c.save(); c.shadowColor = `rgba(0,0,0,${o.sh ?? .09})`; c.shadowBlur = 44 * K; c.shadowOffsetY = 20 * K;
+  c.fillStyle = o.fill || '#fff'; rr(c, x, y, w, h, r); c.fill(); c.restore();
+  c.strokeStyle = o.stroke || T.hair; c.lineWidth = 1; rr(c, x + .5, y + .5, w - 1, h - 1, r); c.stroke();
+}
+// masked, word-by-word rise; optional exit upward
+function words(c, str, x, y, size, t, t0, o = {}) {
+  const font = sans(o.w || 600, size), ls = `${-(o.track ?? .04) * size}px`, st = o.st ?? .05;
+  c.font = font; c.letterSpacing = ls;
+  const ws = str.split(' '), sp = c.measureText(' ').width, wl = ws.map(w => c.measureText(w).width), tot = wl.reduce((a, b) => a + b, 0) + sp * (ws.length - 1);
+  let cx = o.align === 'center' ? x - tot / 2 : o.align === 'right' ? x - tot : x;
+  ws.forEach((w, i) => {
+    const p = EZ.rise(P(t, t0 + i * st, t0 + i * st + (o.d || .55)));
+    const q = o.out != null ? EZ.whip(P(t, o.out + i * st * .5, o.out + i * st * .5 + .25)) : 0;
+    if (p > 0 && q < 1) {
+      c.save(); c.beginPath(); c.rect(cx - size, y - size * 1.05, wl[i] + size * 2, size * 1.32); c.clip();
+      c.font = font; c.letterSpacing = ls; c.fillStyle = (o.colors && o.colors[i]) || o.color || T.ink; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+      c.fillText(w, cx, y + (1 - p) * size * 1.1 - q * size * 1.2); c.restore();
+    }
+    cx += wl[i] + sp;
+  });
+  c.letterSpacing = '0px'; return tot;
+}
+const springIn = (c, t, t0, ox, oy, draw) => {
+  if (t <= t0) return; const s = SPRING(t - t0);
+  c.save(); c.globalAlpha *= clamp(s * 1.4); c.translate(ox, oy + (1 - clamp(s)) * 16); c.scale(.94 + .06 * s, .94 + .06 * s); c.translate(-ox, -oy); draw(); c.restore();
+};
+function cursor(c, x, y, press = 0) {
+  c.save(); c.translate(x, y); c.scale(1 - press * .12, 1 - press * .12);
+  c.fillStyle = '#fff'; c.strokeStyle = T.ink; c.lineWidth = 1.6; c.lineJoin = 'round';
+  c.beginPath(); c.moveTo(0, 0); c.lineTo(0, 24); c.lineTo(6, 18); c.lineTo(10.5, 28); c.lineTo(15, 26); c.lineTo(10.5, 16); c.lineTo(18.5, 16); c.closePath(); c.fill(); c.stroke();
+  c.restore();
+}
+const beatK = x => x < 0 ? 0 : Math.exp(-(x % BT) * 10);
+
+// ============================================================================
+//  S0 — hook
+// ============================================================================
+function sHook(c, t, lt) {
+  bg(c, T.paper);
+  const y = 460;
+  if (lt < BT) words(c, 'You ask.', 720, y, 150, lt, 0, { align: 'center', out: BT - .08 });
+  else if (lt < 2 * BT) words(c, 'It answers.', 720, y, 150, lt, BT, { align: 'center', out: 2 * BT - .08 });
+  else {
+    const font = sans(600, 150), ls = '-6px';
+    c.font = font; c.letterSpacing = ls;
+    const a = 'Then it ', b = 'forgets.', aw = c.measureText(a).width, bw = c.measureText(b).width, x0 = 720 - (aw + bw) / 2;
+    words(c, 'Then it', x0, y, 150, lt, 2 * BT);
+    const pIn = EZ.rise(P(lt, 2.3 * BT, 2.3 * BT + .45));
+    let x = x0 + aw;
+    [...b].forEach((ch, i) => {
+      c.font = font; c.letterSpacing = ls; const cw = c.measureText(ch).width;
+      const d = E3(P(lt, 3.05 * BT + i * .035, 3.05 * BT + i * .035 + .5));
+      c.save(); c.beginPath(); c.rect(x - 40, y - 200, cw + 400, 260 + d * 400); if (d === 0) c.clip();
+      c.globalAlpha = pIn * (1 - d); c.fillStyle = d > 0 ? T.ink3 : T.ink; c.font = font; c.letterSpacing = ls; c.textBaseline = 'alphabetic';
+      c.translate(x + d * (60 + hash(i) * 120), y + (1 - pIn) * 160 - d * (40 + hash(i * 3) * 160)); c.rotate(d * (hash(i * 5) - .5) * .8);
+      if (d > .03) c.filter = `blur(${d * 6 * K}px)`; c.fillText(ch, 0, 0); c.restore();
+      x += cw;
+    });
+    c.letterSpacing = '0px';
+  }
+  rise(c, lt, .1, () => text(c, lt < 2 * BT ? 'new chat' : 'new chat (again)', 720, 560, sans(500, 17), T.ink3, { align: 'center' }), 8, .4);
+}
+const E3 = x => x * x * x;
+const hash = i => { const s = Math.sin(i * 12.9898 + 78.233) * 43758.5453; return s - Math.floor(s); };
+
+// ============================================================================
+//  S1 — logo
+// ============================================================================
+function sLogo(c, t, lt) {
+  bg(c, T.paper);
+  c.font = sans(600, 150); c.letterSpacing = '-6px'; const ww = c.measureText('Perry').width; c.letterSpacing = '0px';
+  const M = 150, total = M + 40 + ww, slide = EZ.whip(P(lt, .5, .9)), mx = lerp(720, 720 - total / 2 + M / 2, slide);
+  const land = lt > 0 ? Math.exp(-lt * 7) * Math.sin(lt * 22) : 0;
+  springIn(c, lt, 0, mx, 360, () => mascot(c, mx, 362, M, lt, { squash: land, blink: blinkAt(lt, 1.6, 1.1), pulse: beatK(lt) }));
+  if (slide > 0) words(c, 'Perry', mx + M / 2 + 40, 412, 150, lt, .6, { st: 0 });
+  rise(c, lt, .95, () => text(c, 'Perry, your personal AI assistant', 720, 530, sans(600, 21), T.teal, { align: 'center', ls: '-.2px' }), 10, .5);
+  words(c, 'The only AI assistant you need.', 720, 600, 40, lt, 1.05, { align: 'center', color: T.ink3, w: 500, track: .01, st: .035 });
+}
+
+// ============================================================================
+//  S2 — three promises, slot-machine
+// ============================================================================
+const PROMISES = ['Remembers you.', 'Acts for you.', 'Texts you first.'];
+function promiseIcon(c, i, x, y, t) {
+  c.save(); c.translate(x, y);
+  c.fillStyle = '#e3f4f2'; rr(c, -52, -52, 104, 104, 26); c.fill();
+  c.strokeStyle = T.teal; c.fillStyle = T.teal; c.lineWidth = 5.5; c.lineCap = 'round'; c.lineJoin = 'round';
+  if (i === 0) { for (let k = 0; k < 3; k++) { rr(c, -24 + k * 4, -22 + k * 13, 48 - k * 8, 8, 4); c.fill(); } }
+  else if (i === 1) { c.beginPath(); c.moveTo(-22, 2); c.lineTo(-6, 18); c.lineTo(24, -16); c.stroke(); }
+  else { c.rotate(Math.sin(t * 38) * .12 * beatK(t)); c.beginPath(); c.moveTo(-22, 14); c.lineTo(22, 14); c.moveTo(-17, 14); c.quadraticCurveTo(-17, -24, 0, -24); c.quadraticCurveTo(17, -24, 17, 14); c.stroke(); circle(c, 0, 22, 5); c.fill(); }
+  c.restore();
+}
+function sPromise(c, t, lt) {
+  bg(c, T.paper);
+  const f = [1, 2].reduce((a, k) => a + EZ.whip(P(lt, k * 1.33 * BT - .1, k * 1.33 * BT + .18)), 0);
+  const size = 116, ls = '-4.6px';
+  c.font = sans(600, size); c.letterSpacing = ls;
+  const maxW = Math.max(...PROMISES.map(s => c.measureText(s).width)), capH = c.measureText('H').actualBoundingBoxAscent;
+  c.letterSpacing = '0px';
+  const gap = 40, icon = 104, x0 = 720 - (icon + gap + maxW) / 2;   // one shared left edge for icon and text
+  PROMISES.forEach((s, i) => {
+    const d = i - f, a = clamp(1 - Math.abs(d) * .9); if (a <= 0) return;
+    c.save(); c.globalAlpha = a; c.translate(0, d * 190);
+    const sc = 1 - Math.abs(d) * .12; c.translate(720, 405); c.scale(sc, sc); c.translate(-720, -405);
+    promiseIcon(c, i, x0 + icon / 2, 405, lt);                         // icon centred on the cap height
+    text(c, s, x0 + icon + gap, 405 + capH / 2, sans(600, size), T.ink, { ls });
+    c.restore();
+  });
+}
+
+// ============================================================================
+//  S3 — the chat: ask once, it shows up Monday at 8  (2 bars)
+// ============================================================================
+const MSG = 'every weekday at 8, brief me on my calendar';
+const CHAT_ITEMS = [
+  B('out', MSG, '21:40', 1.75), TY(2.0, 2.7),
+  B('in', 'Done. Weekdays at 8:00: your calendar, straight to you.', '21:40', 2.7),
+  PILL('Scheduled · weekdays 08:00', 3.0),
+  PILL('Monday', 3.95),
+  B('in', 'Good morning. 3 meetings today, and your 2pm clashes with the dentist. Move it?', '08:00', 4.1),
+  { kind: 'keys', labels: ['Move to 4pm', 'Keep'], t0: 4.2, t1: 4.8, press: { i: 0, t: 4.7 } },
+  B('in', 'Moved to 4:00. Calendar updated.', '08:00', 4.95),
+];
+function sChat(c, t, lt) {
+  bg(c, T.paper);
+  if (lt < 3.45) {
+    rise(c, lt, .05, () => tnum(c, 'Sunday · 21:40', 154, 300, sans(600, 21), T.teal), 10, .5);
+    words(c, 'Ask once.', 150, 400, 110, lt, .1, { out: 3.3 });
+    if (lt < 3.3) rise(c, lt, .35, () => wrap(c, 'Say it the way you\'d say it to a person. Perry sets it up.', sans(400, 22), 460).forEach((l, k) => text(c, l, 154, 460 + k * 33, sans(400, 22), T.ink3)), 12);
+  } else {
+    const a = EZ.rise(P(lt, 3.45, 3.8));
+    c.save(); c.globalAlpha = a; c.translate(0, (1 - a) * 30);
+    text(c, 'Monday', 154, 250, sans(600, 21), T.teal);
+    const done = lt >= 3.9, flip = EZ.rise(P(lt, 3.9, 4.05));
+    c.save(); c.beginPath(); c.rect(140, 250, 560, 210); c.clip();
+    if (!done) text(c, '7:59', 146, 430, sans(600, 190), T.ink, { ls: '-8px' });
+    else { text(c, '7:59', 146, 430 - flip * 200, sans(600, 190), T.ink, { ls: '-8px' }); text(c, '8:00', 146, 630 - flip * 200, sans(600, 190), T.ink, { ls: '-8px' }); }
+    c.restore(); c.restore();
+    words(c, 'It shows up, and fixes things.', 154, 520, 30, lt, 4.3, { w: 500, color: T.ink3, track: .01, st: .03 });
+  }
+  const typing = CHAT_ITEMS.some(i => i.kind === 'typing' && lt >= i.t0 && lt < i.t1);
+  const typed = lt < 1.75 ? MSG.slice(0, Math.floor(clamp((lt - .6) * 45, 0, MSG.length))) : '';
+  const ph = EZ.rise(P(lt, 0, .5));
+  c.save(); c.globalAlpha = ph; c.translate(0, (1 - ph) * 80);
+  // true iPhone proportions: 71.6 × 147.6 mm
+  phone(c, 950, 58, 334, 690, { theme: 'day', clock: lt < 3.9 ? '21:40' : '08:00', status: typing ? 'typing…' : 'bot', items: CHAT_ITEMS, t: lt, typed, caret: lt > .4 && lt < 1.75 });
+  c.restore();
+}
+
+
+// ============================================================================
+//  S5 — connectors orbiting Perry
+// ============================================================================
+// the real marks (Simple Icons), in their brand colours
+const LOGOS = [{"n":"Gmail","hex":"#EA4335","d":"M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"},{"n":"Calendar","hex":"#4285F4","d":"M18.316 5.684H24v12.632h-5.684V5.684zM5.684 24h12.632v-5.684H5.684V24zM18.316 5.684V0H1.895A1.894 1.894 0 0 0 0 1.895v16.421h5.684V5.684h12.632zm-7.207 6.25v-.065c.272-.144.5-.349.687-.617s.279-.595.279-.982c0-.379-.099-.72-.3-1.025a2.05 2.05 0 0 0-.832-.714 2.703 2.703 0 0 0-1.197-.257c-.6 0-1.094.156-1.481.467-.386.311-.65.671-.793 1.078l1.085.452c.086-.249.224-.461.413-.633.189-.172.445-.257.767-.257.33 0 .602.088.816.264a.86.86 0 0 1 .322.703c0 .33-.12.589-.36.778-.24.19-.535.284-.886.284h-.567v1.085h.633c.407 0 .748.109 1.02.327.272.218.407.499.407.843 0 .336-.129.614-.387.832s-.565.327-.924.327c-.351 0-.651-.103-.897-.311-.248-.208-.422-.502-.521-.881l-1.096.452c.178.616.505 1.082.977 1.401.472.319.984.478 1.538.477a2.84 2.84 0 0 0 1.293-.291c.382-.193.684-.458.902-.794.218-.336.327-.72.327-1.149 0-.429-.115-.797-.344-1.105a2.067 2.067 0 0 0-.881-.689zm2.093-1.931l.602.913L15 10.045v5.744h1.187V8.446h-.827l-2.158 1.557zM22.105 0h-3.289v5.184H24V1.895A1.894 1.894 0 0 0 22.105 0zm-3.289 23.5l4.684-4.684h-4.684V23.5zM0 22.105C0 23.152.848 24 1.895 24h3.289v-5.184H0v3.289z"},{"n":"Drive","hex":"#4285F4","d":"M12.01 1.485c-2.082 0-3.754.02-3.743.047.01.02 1.708 3.001 3.774 6.62l3.76 6.574h3.76c2.081 0 3.753-.02 3.742-.047-.005-.02-1.708-3.001-3.775-6.62l-3.76-6.574zm-4.76 1.73a789.828 789.861 0 0 0-3.63 6.319L0 15.868l1.89 3.298 1.885 3.297 3.62-6.335 3.618-6.33-1.88-3.287C8.1 4.704 7.255 3.22 7.25 3.214zm2.259 12.653-.203.348c-.114.198-.96 1.672-1.88 3.287a423.93 423.948 0 0 1-1.698 2.97c-.01.026 3.24.042 7.222.042h7.244l1.796-3.157c.992-1.734 1.85-3.23 1.906-3.323l.104-.167h-7.249z"},{"n":"Sheets","hex":"#34A853","d":"M11.318 12.545H7.91v-1.909h3.41v1.91zM14.728 0v6h6l-6-6zm1.363 10.636h-3.41v1.91h3.41v-1.91zm0 3.273h-3.41v1.91h3.41v-1.91zM20.727 6.5v15.864c0 .904-.732 1.636-1.636 1.636H4.909a1.636 1.636 0 0 1-1.636-1.636V1.636C3.273.732 4.005 0 4.909 0h9.318v6.5h6.5zm-3.273 2.773H6.545v7.909h10.91v-7.91zm-6.136 4.636H7.91v1.91h3.41v-1.91z"},{"n":"Notion","hex":"#000000","d":"M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"},{"n":"GitHub","hex":"#181717","d":"M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"},{"n":"Linear","hex":"#5E6AD2","d":"M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.624 0 24 5.376 24 12.009c0 3.64-1.62 6.903-4.18 9.105L2.887 4.18ZM1.817 5.626l16.556 16.556c-.524.33-1.075.62-1.65.866L.951 7.277c.247-.575.537-1.126.866-1.65ZM.322 9.163l14.515 14.515c-.71.172-1.443.282-2.195.322L0 11.358a12 12 0 0 1 .322-2.195Zm-.17 4.862 9.823 9.824a12.02 12.02 0 0 1-9.824-9.824Z"},{"n":"Discord","hex":"#5865F2","d":"M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"}];
+const LOGO_PATHS = LOGOS.map(l => new Path2D(l.d));
+function sConnect(c, t, lt) {
+  bg(c, T.paper);
+  words(c, 'Acts on your accounts.', 720, 130, 64, lt, 0, { align: 'center', st: .04 });
+  const cx = 720, cy = 450, rot = lt * .45;
+  const pts = LOGOS.map((_, i) => { const a = i / 8 * TAU + rot - Math.PI / 2; return [cx + Math.cos(a) * 440, cy + Math.sin(a) * 205, Math.sin(a)]; });
+  LOGOS.forEach((_, i) => {
+    const s = clamp(SPRING(lt - .08 - i * .035)); if (s <= 0) return;
+    const [x, y] = pts[i];
+    c.strokeStyle = 'rgba(0,0,0,.14)'; c.lineWidth = 1.2; c.setLineDash([4, 6]); c.lineDashOffset = -lt * 40;
+    c.beginPath(); c.moveTo(cx, cy); c.lineTo(lerp(cx, x, s), lerp(cy, y, s)); c.stroke(); c.setLineDash([]);
+    const ph = ((lt - .35 - i * .06) % BT) / BT;
+    if (lt > .35 && ph >= 0) { c.fillStyle = T.teal; c.globalAlpha = 1 - ph; circle(c, lerp(cx, x, ph), lerp(cy, y, ph), 3.5); c.fill(); c.globalAlpha = 1; }
+  });
+  [...LOGOS.keys()].sort((a, b) => pts[a][2] - pts[b][2]).forEach(i => {
+    if (lt < .08 + i * .035) return;
+    const [x, y, z] = pts[i], sz = .88 + (z + 1) * .08;
+    springIn(c, lt, .08 + i * .035, x, y, () => {
+      c.save(); c.translate(x, y); c.scale(sz, sz);
+      card(c, -44, -44, 88, 88, 22, { sh: .07 });
+      c.translate(-19, -19); c.scale(38 / 24, 38 / 24); c.fillStyle = LOGOS[i].hex; c.fill(LOGO_PATHS[i]);
+      c.restore();
+      text(c, LOGOS[i].n, x, y + 66 * sz, sans(500, 15), T.ink3, { align: 'center' });
+    });
+  });
+  springIn(c, lt, 0, cx, cy, () => mascot(c, cx, cy + 6, 118, lt, { bob: true, pulse: beatK(lt), blink: blinkAt(lt, 1.4, .9) }));
+  rise(c, lt, .45, () => text(c, 'Composio holds the sign-ins for your accounts, so Perry never sees a password or token.', 720, 770, sans(400, 19), T.ink3, { align: 'center' }), 10);
+}
+
+
+// ============================================================================
+//  S6 — memory
+// ============================================================================
+function sMemory(c, t, lt) {
+  bg(c, T.mist);
+  words(c, 'Remembers', 150, 340, 104, lt, 0);
+  words(c, 'you.', 150, 446, 104, lt, .06, { color: T.teal });
+  rise(c, lt, .3, () => ['Profile, long-term memory and daily notes,', 'filed every night. Read, edit or wipe any of it.'].forEach((l, k) => text(c, l, 154, 510 + k * 31, sans(400, 21), T.ink3)), 10);
+  const e = EZ.rise(P(lt, 0, .45)), x = 760 + (1 - e) * 200;
+  c.save(); c.globalAlpha = e;
+  card(c, x, 70, 530, 150, 20);
+  text(c, 'Teach Perry something', x + 26, 106, sans(500, 15), T.ink3);
+  const msg = 'I take my coffee black.', n = Math.floor(clamp((lt - .25) * 40, 0, msg.length));
+  c.fillStyle = T.mist; rr(c, x + 26, 124, 360, 64, 14); c.fill();
+  text(c, msg.slice(0, n), x + 46, 164, sans(400, 22), T.ink);
+  if (n < msg.length || Math.floor(lt * 4) % 2) { c.font = sans(400, 22); c.fillStyle = T.teal; c.fillRect(x + 47 + c.measureText(msg.slice(0, n)).width, 140, 2, 30); }
+  const saved = lt > .9;
+  c.fillStyle = saved ? '#1f8a4c' : T.teal; rr(c, x + 400, 124, 104, 64, 32); c.fill();
+  text(c, saved ? 'Saved ✓' : 'Save', x + 452, 163, sans(600, 18), '#fff', { align: 'center' });
+  c.restore();
+  const L = [['Profile', ['Coffee: black', 'Prefers short replies', 'Works late']], ['Long-term', ['Shipping Perry v1 this month', 'Sam is the co-founder']], ['Daily notes', ['Mon — moved dentist to 4pm', 'Tue — drafted the launch post']]];
+  L.forEach(([name, items], i) => {
+    const p = EZ.rise(P(lt, 1.0 + i * .08, 1.45 + i * .08)); if (p <= 0) return;
+    const cy = 250 + i * 164, cx = 760 + (1 - p) * 160;
+    c.save(); c.globalAlpha = p;
+    card(c, cx, cy, 530, 146, 20);
+    text(c, name, cx + 26, cy + 38, sans(600, 16), T.teal);
+    items.forEach((it, k) => text(c, it, cx + 26, cy + 76 + k * 29, sans(i === 0 && k === 0 ? 500 : 400, 19), i === 0 && k === 0 ? T.ink : T.ink2));
+    if (i === 0) { const hl = P(lt, 1.15, 1.35) * (1 - P(lt, 1.7, 1.85)); c.fillStyle = `rgba(12,122,112,${.1 * hl})`; rr(c, cx + 16, cy + 55, 200, 30, 8); c.fill(); }
+    c.restore();
+  });
+}
+
+// ============================================================================
+//  S7 — your computer, with permission
+// ============================================================================
+function sComputer(c, t, lt) {
+  bg(c, T.paper);
+  words(c, 'Works on your machine.', 720, 120, 64, lt, 0, { align: 'center', st: .04 });
+  const e = EZ.rise(P(lt, 0, .45)), x = 110 - (1 - e) * 200, y = 180, w = 620, h = 460;
+  c.save(); c.globalAlpha = e;
+  c.save(); c.shadowColor = 'rgba(0,0,0,.25)'; c.shadowBlur = 50 * K; c.shadowOffsetY = 26 * K; c.fillStyle = '#1d1d1f'; rr(c, x, y, w, h, 20); c.fill(); c.restore();
+  ['#ff5f57', '#febc2e', '#28c840'].forEach((col, k) => { c.fillStyle = col; circle(c, x + 22 + k * 20, y + 22, 6); c.fill(); });
+  text(c, 'perry runner · ~/work', x + w / 2, y + 27, mono(400, 13), '#8e8e93', { align: 'center' });
+  c.fillStyle = 'rgba(255,255,255,.1)'; c.fillRect(x, y + 44, w, 1);
+  const LINES = [[.15, '$ organize ~/Downloads', '#fff'], [.3, '  scanning 142 files…', '#8e8e93'], [.45, '  ✓ sorted into 9 folders', T.nightTeal],
+    [.6, '$ summarize launch-notes.md', '#fff'], [.72, '  ✓ 6 bullets sent to Telegram', T.nightTeal], [.86, '$ rm -rf ./build-cache', '#fff'], [.92, '  waiting for your OK…', '#8e8e93']];
+  LINES.forEach(([t0, s, col], i) => {
+    if (lt < t0) return; const n = Math.floor(clamp((lt - t0) * 90, 0, s.length));
+    let tx = s.slice(0, n), cl = col; if (i === 6 && lt > 1.42) { tx = '  ✓ approved · removed 1.2 GB'; cl = T.nightTeal; }
+    text(c, tx, x + 28, y + 90 + i * 46, mono(400, 17), cl);
+  });
+  c.restore();
+  if (lt > .92) {
+    const ax = 790, ay = 250, aw = 540, ah = 320, ok = lt > 1.42;
+    springIn(c, lt, .92, ax + aw / 2, ay + ah / 2, () => {
+      card(c, ax, ay, aw, ah, 22);
+      text(c, ok ? 'Approved' : 'Needs your OK', ax + 30, ay + 44, sans(600, 16), ok ? '#1f8a4c' : '#b25e00');
+      text(c, 'Perry wants to run', ax + 30, ay + 90, sans(600, 28), T.ink, { ls: '-.6px' });
+      c.fillStyle = T.mist; rr(c, ax + 30, ay + 112, aw - 60, 60, 12); c.fill();
+      text(c, 'rm -rf ./build-cache', ax + 50, ay + 150, mono(500, 19), T.ink);
+      const bw = [150, 120, 170], lb = ['Approve', 'Deny', 'Always allow']; let bx = ax + 30;
+      lb.forEach((s, k) => {
+        if (k === 0) { c.fillStyle = ok ? '#1f8a4c' : T.teal; rr(c, bx, ay + 204, bw[k], 52, 26); c.fill(); text(c, ok ? '✓ Approved' : s, bx + bw[k] / 2, ay + 237, sans(600, 17), '#fff', { align: 'center' }); }
+        else { c.strokeStyle = 'rgba(0,0,0,.15)'; c.lineWidth = 1.2; rr(c, bx, ay + 204, bw[k], 52, 26); c.stroke(); text(c, s, bx + bw[k] / 2, ay + 237, sans(500, 17), T.ink2, { align: 'center' }); }
+        bx += bw[k] + 12;
+      });
+      text(c, 'Supervised · every command shows in Activity', ax + 30, ay + 292, sans(400, 15), T.ink3);
+    });
+    const cxp = lerp(1300, ax + 100, EZ.whip(P(lt, 1.05, 1.32))), cyp = lerp(760, ay + 232, EZ.whip(P(lt, 1.05, 1.32)));
+    cursor(c, cxp, cyp, Math.sin(Math.PI * P(lt, 1.36, 1.5)));
+  }
+  rise(c, lt, .4, () => text(c, 'Anything risky waits for your Approve.', 1060, 640, sans(400, 19), T.ink3, { align: 'center' }), 10);
+}
+
+// ============================================================================
+//  S8 — activity receipts
+// ============================================================================
+const TRACE = [['calendar.list_events', 212], ['gmail.search', 480], ['memory.read · profile', 18], ['shell · ls ~/Downloads', 36], ['calendar.update_event', 330], ['memory.write · daily', 22], ['telegram.send', 95]];
+function sActivity(c, t, lt) {
+  bg(c, T.mist);
+  words(c, 'Every step, on the record.', 720, 120, 64, lt, 0, { align: 'center', st: .04 });
+  const e = EZ.rise(P(lt, 0, .45)), x = 170, y = 180 + (1 - e) * 80, w = 1100, h = 540;
+  c.save(); c.globalAlpha = e;
+  card(c, x, y, w, h, 22);
+  text(c, 'Activity', x + 32, y + 48, sans(600, 21), T.ink);
+  text(c, 'run #1842 · "move my 2pm"', x + 128, y + 48, sans(400, 16), T.ink3);
+  const tok = Math.floor(12480 * EZ.rise(P(lt, .3, 1.5)));
+  tnum(c, `${tok.toLocaleString('en-US')} tokens · 1.19 s`, x + w - 32, y + 48, sans(400, 16), T.ink3, { align: 'right' });
+  c.fillStyle = T.hair; c.fillRect(x, y + 74, w, 1);
+  let acc = 0; const total = TRACE.reduce((a, r) => a + r[1], 0);
+  TRACE.forEach(([name, ms], i) => {
+    const t0 = .22 + i * .1, p = EZ.rise(P(lt, t0, t0 + .35));
+    const ry = y + 118 + i * 60;
+    if (p > 0) {
+      c.save(); c.globalAlpha *= p; c.translate((1 - p) * 30, 0);
+      c.fillStyle = T.ink3; circle(c, x + 40, ry - 5, 4); c.fill();
+      text(c, name, x + 60, ry, mono(400, 16), T.ink);
+      const gx = x + 470, gw = 460, s0 = gx + acc / total * gw, sw = Math.max(6, ms / total * gw) * EZ.rise(P(lt, t0 + .05, t0 + .4));
+      c.fillStyle = T.hair; rr(c, gx, ry - 11, gw, 10, 5); c.fill();
+      c.fillStyle = T.teal; rr(c, s0, ry - 11, sw, 10, 5); c.fill();
+      tnum(c, `${ms} ms`, x + w - 32, ry, sans(400, 16), T.ink3, { align: 'right' });
+      c.restore();
+    }
+    if (i < TRACE.length - 1) { c.fillStyle = 'rgba(0,0,0,.05)'; c.fillRect(x + 32, ry + 24, w - 64, 1); }
+    acc += ms;
+  });
+  c.restore();
+}
+
+// ============================================================================
+//  S9 — heartbeat: the one dark scene
+// ============================================================================
+function sHeart(c, t, lt) {
+  bg(c, T.night);
+  rise(c, lt, 0, () => tnum(c, '02:13', 720, 122, sans(600, 21), T.nightTeal, { align: 'center' }), 8, .4);
+  words(c, 'Quiet until it matters.', 720, 210, 72, lt, .02, { align: 'center', color: '#fff', st: .04 });
+  const base = 420;
+  c.strokeStyle = T.nightTeal; c.lineWidth = 3; c.lineJoin = 'round'; c.lineCap = 'round';
+  c.beginPath();
+  for (let x = 0; x <= VW; x += 4) {
+    const tt = lt - (VW - x) / 1050; let y = base; const ph = ((tt % BT) + BT) % BT;
+    if (tt > 0) { if (ph < .05) y -= Math.sin(ph / .05 * Math.PI) * 120; else if (ph < .09) y += Math.sin((ph - .05) / .04 * Math.PI) * 40; }
+    x === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
+  }
+  c.stroke();
+  c.fillStyle = T.nightTeal; circle(c, VW - 2, base, 5); c.fill();
+  if (lt > 1.1) {
+    const it = B('in', 'Your 6:40 flight moved to 7:25. I updated your calendar and let Sam know you\'ll be late.', '02:13', -1);
+    measureItem(c, it, 560);
+    const S = 1.65, bx = -it.w / 2 + 20, by = -it.h;
+    springIn(c, lt, 1.1, 720, 690, () => { c.save(); c.translate(720, 690); c.scale(S, S); drawBubble(c, it, bx, by, 'night'); avatar(c, bx - 26, -16, 16, lt); c.restore(); });
+  }
+}
+
+
+// ============================================================================
+//  S10 — private by design
+// ============================================================================
+function sPrivate(c, t, lt) {
+  bg(c, T.mist);
+  const lp = clamp(SPRING(lt - .55));
+  c.save(); c.translate(720, 290); c.scale(1.5, 1.5); c.strokeStyle = T.ink; c.fillStyle = T.ink; c.lineWidth = 6;
+  c.beginPath(); c.arc(0, -8 - (1 - lp) * 16, 20, Math.PI, 0); c.lineTo(20, 6); c.moveTo(-20, -8 - (1 - lp) * 16); c.lineTo(-20, 6); c.stroke();
+  rr(c, -30, 2, 60, 46, 10); c.fill(); c.fillStyle = T.mist; circle(c, 0, 22, 6); c.fill(); c.restore();
+  words(c, 'Self-hosted.', 720, 540, 150, lt, .05, { align: 'center' });
+}
+
+
+// ============================================================================
+//  S11 — feature montage (half-beat cuts)
+// ============================================================================
+const MONT = [['/model', 'switch models mid-chat'], ['/think', 'dial up the reasoning'], ['remind me in 20 min', 'one-time reminders'], ['watch this page', 'tells you when it changes'],
+  ['voice notes', 'talk to it on Telegram'], ['files & images', 'shared right in the chat'], ['offline mode', 'answers while your computer sleeps'], ['from now on, always…', 'teach it a skill']];
+const MONT_BG = [[T.paper, T.ink, T.ink3], [T.mist, T.ink, T.ink3], ['#1d1d1f', '#fff', '#a1a1a6'], [T.teal, '#fff', 'rgba(255,255,255,.75)']];
+function sMontage(c, t, lt) {
+  const hb = BT, i = Math.min(7, Math.floor(lt / hb)), u = (lt - i * hb) / hb, [bgc, fg, sub] = MONT_BG[i % 4];
+  bg(c, bgc);
+  const [big, small] = MONT[i], p = EZ.rise(clamp(u * 2.2));
+  c.save(); c.globalAlpha = p; c.translate(0, (1 - p) * 26);
+  text(c, big, 720, 420, sans(600, big.length > 12 ? 92 : 124), fg, { align: 'center', ls: big.length > 12 ? '-3.5px' : '-5px' });
+  text(c, small, 720, 492, sans(500, 26), sub, { align: 'center' });
+  c.restore();
+  for (let k = 0; k < 8; k++) { c.fillStyle = k <= i ? fg : (bgc === T.paper || bgc === T.mist ? 'rgba(0,0,0,.1)' : 'rgba(255,255,255,.2)'); rr(c, 720 - 8 * 20 + k * 40, 690, 30, 4, 2); c.fill(); }
+}
+
+// ============================================================================
+//  S12 — end card (2 bars)
+// ============================================================================
+function sEnd(c, t, lt) {
+  bg(c, T.mist);
+  const land = lt > .05 ? Math.exp(-(lt - .05) * 7) * Math.sin((lt - .05) * 22) : 0;
+  springIn(c, lt, 0, 720, 200, () => mascot(c, 720, 202, 116, lt, { bob: lt > 1, squash: land, pulse: beatK(lt) * (1 - P(lt, BAR, 2 * BAR)), blink: blinkAt(lt, 2.2, 1.4), look: [0, .15] }));
+  words(c, 'Perry', 720, 430, 150, lt, .15, { align: 'center', st: 0 });
+  words(c, 'Your personal AI. On your machine.', 720, 496, 30, lt, .5, { align: 'center', color: T.ink3, w: 500, track: .01, st: .03 });
+  springIn(c, lt, 1.1, 720, 570, () => { c.fillStyle = T.teal; rr(c, 654, 546, 132, 48, 24); c.fill(); text(c, 'Get Perry', 720, 576, sans(600, 17), '#fff', { align: 'center' }); });
+  rise(c, lt, 1.5, () => text(c, 'Telegram · web dashboard · terminal', 720, 650, sans(500, 18), T.ink3, { align: 'center' }), 8);
+  rise(c, lt, 1.75, () => text(c, 'github.com/TheM1N9/perry', 720, 684, sans(600, 18), T.teal, { align: 'center' }), 8);
+}
+
+
+// ============================================================================
+//  timeline: hard cuts on the bar lines
+// ============================================================================
+const SCENES = [[0, sHook], [1, sLogo], [2, sPromise], [3, sChat], [6, sConnect], [7, sMemory], [8, sComputer], [9, sActivity], [10, sHeart], [12, sPrivate], [13, sMontage], [15, sEnd]].map(([b, f]) => [b * BAR, f]);
+const sceneAt = t => { let i = SCENES.length - 1; while (i > 0 && t < SCENES[i][0]) i--; return i; };
+function drawScene(c, t) {
+  const i = sceneAt(t), [s0, f] = SCENES[i];
+  c.save(); c.setTransform(K, 0, 0, K, 0, 0); c.globalAlpha = 1; c.filter = 'none'; c.letterSpacing = '0px';
+  f(c, t, t - s0); c.restore();
+}
+function renderFrame(t, sub = SUB) {
+  if (sub <= 1) { drawScene(out, t); return; }
+  const shutter = .5 / FPS;
+  for (let s = 0; s < sub; s++) {
+    let ts = t + shutter * (s / sub - .5); if (sceneAt(ts) !== sceneAt(t)) ts = t;
+    drawScene(sctx, ts); out.globalAlpha = 1 / (s + 1); out.drawImage(scratch, 0, 0);
+  }
+  out.globalAlpha = 1;
+}
+
+// ============================================================================
+//  SCORE — 128 BPM, Am–F–C–G, sidechained; UI foley on the same clock
+// ============================================================================
+async function renderAudio() {
+  const SR = 48000, ac = new OfflineAudioContext(2, Math.ceil(SR * DUR), SR);
+  let seed = 3; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const mf = m => 440 * Math.pow(2, (m - 69) / 12);
+  const master = ac.createGain(); master.gain.value = .9; master.gain.setValueAtTime(.9, DUR - .7); master.gain.linearRampToValueAtTime(0, DUR);
+  const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = .003; comp.release.value = .12;
+  const trim = ac.createGain(); trim.gain.value = .62;
+  master.connect(comp).connect(trim).connect(ac.destination);
+  const ir = ac.createBuffer(2, SR * 2, SR); for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < d.length; i++) d[i] = (rnd() * 2 - 1) * Math.pow(1 - i / d.length, 3); }
+  const rev = ac.createConvolver(); rev.buffer = ir; const rg = ac.createGain(); rg.gain.value = .3; rev.connect(rg).connect(master);
+  const nb = ac.createBuffer(1, SR * 2, SR); { const d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = rnd() * 2 - 1; }
+  const music = ac.createGain(); music.connect(master);
+  const pump = ac.createGain(); pump.connect(music);
+  const env = (t, a, v, d, dest) => { const g = ac.createGain(); g.gain.value = 0; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + a); g.gain.exponentialRampToValueAtTime(.0001, t + a + d); g.connect(dest); return g; };
+  const osc = (type, f, t, dur) => { const o = ac.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, t); o.start(t); o.stop(t + dur + .05); return o; };
+  const send = (g, a) => { const s = ac.createGain(); s.gain.value = a; g.connect(s).connect(rev); };
+  const noise = (t, dur, type, f, v, { f2, q = .8, a = .001, dest = master, rv = 0 } = {}) => {
+    const s = ac.createBufferSource(); s.buffer = nb; s.loop = true; const fl = ac.createBiquadFilter(); fl.type = type; fl.Q.value = q;
+    fl.frequency.setValueAtTime(f, t); if (f2) fl.frequency.exponentialRampToValueAtTime(f2, t + a + dur);
+    const g = env(t, a, v, dur, dest); s.connect(fl).connect(g); if (rv) send(g, rv); s.start(t, rnd()); s.stop(t + a + dur + .1);
+  };
+  const swell = (t, dur, f1, f2, v) => {
+    const s = ac.createBufferSource(); s.buffer = nb; s.loop = true; const fl = ac.createBiquadFilter(); fl.type = 'bandpass'; fl.Q.value = 1.2;
+    fl.frequency.setValueAtTime(f1, t); fl.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    const g = ac.createGain(); g.gain.value = 0; g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + dur * .93); g.gain.linearRampToValueAtTime(0, t + dur);
+    s.connect(fl).connect(g).connect(master); send(g, .3); s.start(t); s.stop(t + dur + .02);
+  };
+  const kickS = (t, v = 1) => { const o = osc('sine', 160, t, .4); o.frequency.exponentialRampToValueAtTime(44, t + .12); o.connect(env(t, .002, v, .34, master)); noise(t, .012, 'highpass', 3000, v * .3);
+    pump.gain.setValueAtTime(.25, t); pump.gain.linearRampToValueAtTime(1, t + BT * .7); };
+  const clap = (t, v = .45) => { for (const o of [0, .01, .02]) noise(t + o, .02, 'bandpass', 1500, v * .6, { q: 1.3 }); noise(t + .03, .15, 'bandpass', 1400, v, { rv: .4 }); };
+  const hat = (t, v = .06) => noise(t, .035, 'highpass', 8500, v);
+  const bass = (t, m, dur, v = .32) => { const fl = ac.createBiquadFilter(); fl.type = 'lowpass'; fl.Q.value = 5; fl.frequency.setValueAtTime(1200, t); fl.frequency.exponentialRampToValueAtTime(180, t + dur);
+    const g = env(t, .006, v, dur, pump); fl.connect(g); osc('sawtooth', mf(m), t, dur).connect(fl); osc('sine', mf(m) / 2, t, dur).connect(g); };
+  const pluck = (t, m, v = .05) => { const fl = ac.createBiquadFilter(); fl.type = 'lowpass'; fl.Q.value = 2; fl.frequency.setValueAtTime(5200, t); fl.frequency.exponentialRampToValueAtTime(400, t + .2);
+    const g = env(t, .002, v, .24, pump); fl.connect(g); send(g, .3); for (const det of [-7, 7]) { const o = osc('sawtooth', mf(m), t, .3); o.detune.value = det; o.connect(fl); } };
+  const stab = (t, notes, v = .05, len = 1.2) => { for (const m of notes) { const fl = ac.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.setValueAtTime(4000, t); fl.frequency.exponentialRampToValueAtTime(500, t + len);
+    const g = env(t, .004, v, len, music); fl.connect(g); send(g, .6); for (const det of [-10, 0, 10]) { const o = osc('sawtooth', mf(m), t, len); o.detune.value = det; o.connect(fl); } } };
+  const pad = (t, dur, notes, v = .02) => { for (const m of notes) { const o = osc('triangle', mf(m), t, dur); const g = ac.createGain(); g.gain.value = 0; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + dur * .4); g.gain.linearRampToValueAtTime(0, t + dur); o.connect(g).connect(pump); send(g, .5); } };
+  const impact = (t, v = 1) => { kickS(t, v); const o = osc('sine', 60, t, 1.4); o.frequency.exponentialRampToValueAtTime(30, t + 1.2); o.connect(env(t, .005, .5 * v, 1.2, master)); noise(t, 1, 'lowpass', 2400, .28 * v, { f2: 160, rv: .6 }); };
+  const tick = (t, v = .06) => noise(t, .01, 'highpass', 3500 + rnd() * 2000, v);
+  const popS = (t, f = 700, v = .16) => { const o = osc('sine', f, t, .14); o.frequency.exponentialRampToValueAtTime(f * 1.7, t + .06); o.connect(env(t, .002, v, .1, master)); };
+  const whoosh = (t, v = .12, d = .22) => { noise(t, d, 'bandpass', 600, v, { f2: 5000, q: 1.2, a: d * .5 }); };
+  const recvS = (t, v = .1) => { for (const [o, f] of [[0, 1175], [.075, 1568]]) { const g = env(t + o, .002, v, .22, master); send(g, .25); osc('sine', f, t + o, .3).connect(g); } };
+  const sendS = t => { noise(t, .1, 'bandpass', 900, .08, { f2: 3200, q: 1.1, a: .03 }); osc('sine', 700, t + .05, .08).connect(env(t + .05, .002, .07, .07, master)); };
+  const click = (t, v = .25) => { noise(t, .012, 'bandpass', 2400, v, { q: 2 }); popS(t + .005, 1100, .08); };
+  const thud = (t, v = .7) => { kickS(t, v); noise(t, .08, 'lowpass', 900, .3); };
+
+  const at = (bar, beat = 0) => bar * BAR + beat * BT;
+  const CH = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]], RT = [33, 29, 36, 31];
+  // bar 0: the hook
+  thud(at(0), .8); thud(at(0, 1), .8); thud(at(0, 2), .9);
+  for (let s = 0; s < 8; s++) hat(at(0) + s * BT / 2, .03);
+  swell(at(0, 3.1), BT * .9, 5000, 300, .15); swell(at(0, 2.8), BT * 1.2, 300, 9000, .3);
+  // bar 1: the name
+  impact(at(1), 1); stab(at(1), [57, 64, 69, 72, 76], .045, 1.6); whoosh(at(1) - .05, .12);
+  for (let j = 1; j < 4; j++) kickS(at(1, j), .8);
+  // bars 2–11: the groove, from the promises through the night watch
+  for (let bar = 2; bar <= 11; bar++) {
+    const k = (bar - 2) % 4;
+    for (let j = 0; j < 4; j++) { kickS(at(bar, j), .95); if (j % 2) clap(at(bar, j)); hat(at(bar, j + .5), .07); hat(at(bar, j + .25), .025); hat(at(bar, j + .75), .025); }
+    for (let e = 0; e < 8; e++) bass(at(bar, e / 2), RT[k] + (e % 2 ? 12 : 0), BT * .45, e % 2 ? .22 : .3);
+    pad(at(bar), BAR, CH[k].map(n => n + 12), .018);
+    if (bar >= 3) for (let s = 0; s < 16; s++) pluck(at(bar) + s * BT / 4, CH[k][[0, 1, 2, 1, 0, 2, 1, 2][s % 8]] + 24, s % 4 ? .03 : .045);
+    if (![4, 5, 11].includes(bar)) whoosh(at(bar) - .1, .08);
+  }
+  // bar 12: breakdown under "Self-hosted."
+  kickS(at(12), .9); kickS(at(12, 2), .7); pad(at(12), BAR, [57, 64, 69, 72], .03);
+  swell(at(12, 1), BAR - BT, 300, 8000, .3);
+  // bars 13–14: the montage, one card per beat
+  for (let e = 0; e < 8; e++) { kickS(at(13, e), .8); const o = osc('square', 700 + e * 110, at(13, e), .06); o.frequency.exponentialRampToValueAtTime(1400 + e * 200, at(13, e) + .05); o.connect(env(at(13, e), .002, .04, .05, master)); hat(at(13, e + .5), .05); }
+  for (let s = 0; s < 16; s++) clap(at(14) + s * BT / 4, .06 + s * .018);
+  // bars 15–17: the end card, and time to read it
+  impact(at(15), 1.1); stab(at(15), [45, 57, 60, 64, 67, 71], .05, 3);
+  for (let j = 1; j < 8; j++) { kickS(at(15, j), j < 4 ? .7 : .45); hat(at(15, j + .5), .04); }
+  pad(at(15), 3 * BAR, [60, 64, 67, 71], .025);
+  // foley, locked to the picture
+  const c0 = at(3);
+  for (let k = 0; k < 43; k += 2) tick(c0 + .6 + k / 45, .045);
+  CHAT_ITEMS.forEach(it => { const t = c0 + it.t0; if (it.kind === 'bubble') it.side === 'out' ? sendS(t) : recvS(t); else if (it.kind === 'pill') popS(t, 1320, .05); else if (it.kind === 'keys') { popS(t, 990, .05); click(c0 + it.press.t); } });
+  swell(c0 + 3.3, .35, 6000, 800, .12);
+  for (let k = 0; k < 3; k++) tick(c0 + 3.9 + k * .03, .05);
+  popS(at(1) + .05, 520, .1);
+  for (let k = 0; k < 8; k++) popS(at(6) + .08 + k * .035, 500 + k * 70, .05);
+  for (let k = 0; k < 23; k += 2) tick(at(7) + .25 + k / 40);
+  popS(at(7) + .9, 950, .14); for (let k = 0; k < 3; k++) whoosh(at(7) + 1.0 + k * .08, .05, .15);
+  for (let k = 0; k < 7; k++) tick(at(8) + .15 + k * .13, .05);
+  popS(at(8) + .92, 520); click(at(8) + 1.38); popS(at(8) + 1.42, 1000, .12);
+  for (let k = 0; k < 7; k++) popS(at(9) + .22 + k * .1, 800 + k * 60, .05);
+  for (let j = 0; j < 8; j++) { const o = osc('sine', 1760, at(10, j), .08); o.connect(env(at(10, j), .002, .06, .07, master)); }
+  recvS(at(10) + 1.1, .1);
+  click(at(12) + .55, .3);
+  popS(at(15) + .05, 520, .1); popS(at(15) + 1.1, 700, .08);
+  return await ac.startRendering();
+}
+function wavBase64(buf) {
+  const n = buf.length, ch = buf.numberOfChannels, sr = buf.sampleRate;
+  const ab = new ArrayBuffer(44 + n * ch * 2), v = new DataView(ab);
+  const ws = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  ws(0, 'RIFF'); v.setUint32(4, 36 + n * ch * 2, true); ws(8, 'WAVE'); ws(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true); v.setUint32(24, sr, true);
+  v.setUint32(28, sr * ch * 2, true); v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true); ws(36, 'data'); v.setUint32(40, n * ch * 2, true);
+  const chans = [...Array(ch)].map((_, i) => buf.getChannelData(i));
+  for (let i = 0, o = 44; i < n; i++) for (let c = 0; c < ch; c++, o += 2) v.setInt16(o, clamp(chans[c][i], -1, 1) * 32767, true);
+  const bytes = new Uint8Array(ab); let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+// ============================================================================
+//  boot
+// ============================================================================
+window.ready = (async () => {
+  await Promise.all(['400 20px InterTight', '500 20px InterTight', '600 20px InterTight', '400 20px JBMono', '500 20px JBMono'].map(f => document.fonts.load(f)));
+  await (PATTERN.complete ? Promise.resolve() : new Promise(r => { PATTERN.onload = r; PATTERN.onerror = r; }));
+  window.renderFrame = renderFrame;
+  window.frameDataURL = (t, sub) => { renderFrame(t, sub); return view.toDataURL('image/png'); };
+  window.audioWav = async () => wavBase64(await renderAudio());
+  if (new URLSearchParams(location.search).has('render')) { document.getElementById('hint').remove(); return true; }
+  renderFrame(0, 1);
+  let actx, buffer, src, startAt = 0, offset = 0, playing = false;
+  const play = async () => {
+    if (!actx) { actx = new AudioContext(); buffer = await renderAudio(); }
+    src = actx.createBufferSource(); src.buffer = buffer; src.connect(actx.destination);
+    src.start(0, offset); startAt = actx.currentTime - offset; playing = true;
+    src.onended = () => { if (playing && actx.currentTime - startAt >= DUR - .05) { playing = false; offset = 0; } };
+  };
+  const pause = () => { if (!playing) return; offset = actx.currentTime - startAt; playing = false; src.onended = null; src.stop(); };
+  view.onclick = () => playing ? pause() : play();
+  addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+    if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') { pause(); offset = clamp(offset + (e.code === 'ArrowRight' ? 1 : -1) / FPS, 0, DUR); renderFrame(offset, 1); }
+  });
+  const loop = () => { if (playing) renderFrame(Math.min(DUR - 1e-3, actx.currentTime - startAt), 1); requestAnimationFrame(loop); };
+  loop();
+  return true;
+})();
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import { PROFILE_GROUPS, SECTIONS, linkClick, sectionPath, type SectionId } from "./Sidebar";
 import { Icon, Loading, Section, Status } from "./ui";

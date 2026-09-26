@@ -1,4 +1,4 @@
-import { ConvexClient } from "convex/browser";
+import { BackendClient } from "../client/backend";
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from "convex/server";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
@@ -8,7 +8,7 @@ import type { RunView } from "../convex/dashboard";
  * Talking to Perry from a terminal the way the dashboard does: web chats,
  * through the same public functions, with the dashboard key. `pnpm chat` and
  * `pnpm evals` share it, so both send and wait for a reply the same way.
- * Bun loads .env.local, which has the deployment URL and the key.
+ * Bun loads .env.local, which has the key; Perry must be running here.
  */
 
 export type ChatId = Id<"conversations">;
@@ -25,7 +25,7 @@ export type Turn = {
 };
 
 export class Perry {
-  readonly convex: ConvexClient;
+  readonly convex: BackendClient;
   private heartbeat?: ReturnType<typeof setInterval>;
 
   /**
@@ -34,14 +34,14 @@ export class Perry {
    * runner. That is how the short-lived test runner in the e2e checks is used.
    */
   constructor(readonly key: string, url: string, private readonly runnerToken?: string) {
-    this.convex = new ConvexClient(url);
+    this.convex = new BackendClient(url);
   }
 
   static fromEnv(runnerToken?: string): Perry {
-    const url = process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL;
+    const url = process.env.PERRY_SERVER_URL ?? `http://127.0.0.1:${process.env.PERRY_PORT ?? 3000}`;
     const key = process.env.DASHBOARD_KEY;
-    if (!url || !key) {
-      throw new Error("Set NEXT_PUBLIC_CONVEX_URL (or CONVEX_URL) and DASHBOARD_KEY, or run from the folder with .env.local.");
+    if (!key) {
+      throw new Error("Set DASHBOARD_KEY, or run from the folder with .env.local.");
     }
     return new Perry(key, url, runnerToken);
   }
@@ -115,7 +115,7 @@ export class Perry {
 
   async close(): Promise<void> {
     this.beat(false);
-    await this.convex.close();
+    this.convex.close();
   }
 
   /** Resolve with a query's value once `done` holds for it. */

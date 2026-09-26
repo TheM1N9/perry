@@ -71,17 +71,8 @@ export default defineSchema({
     pairingCode: v.optional(v.string()),
     pairingExpiresAt: v.optional(v.number()),
     claimedAt: v.optional(v.number()),
-    /** The Daytona sandbox this install works in, created on first use. */
-    sandboxId: v.optional(v.string()),
-    /** Where run_command goes: a throwaway cloud box, or the owner's machine. */
-    computeTarget: v.optional(v.union(v.literal("sandbox"), v.literal("local"))),
     /** The owner's IANA timezone, reported by the dashboard. Jobs run on it. */
     timezone: v.optional(v.string()),
-    /**
-     * Answer in Convex on the ChatGPT subscription when no runner can take a
-     * turn. Off unless the owner turns it on, since it needs chatgptTokens.
-     */
-    offlineFallback: v.optional(v.boolean()),
     /** False stops approval requests going to the owner on Telegram. Unset means on. */
     telegramApprovals: v.optional(v.boolean()),
     /** The access a new chat starts with. Unset means supervised. */
@@ -200,29 +191,13 @@ export default defineSchema({
     .index("by_active", ["active"]),
 
   /**
-   * Commands run in the sandbox, kept so a repeated operationId returns the
-   * first receipt instead of running twice. OpenMuse's idea: an interrupted
-   * command must never be silently retried.
-   */
-  receipts: defineTable({
-    operationId: v.string(),
-    command: v.string(),
-    exitCode: v.optional(v.number()),
-    output: v.optional(v.string()),
-    truncated: v.optional(v.boolean()),
-    error: v.optional(v.string()),
-    startedAt: v.number(),
-    finishedAt: v.optional(v.number()),
-  }).index("by_operation", ["operationId"]),
-
-  /**
    * A machine the owner has connected: their laptop, desktop or Mac.
    *
-   * The critical property is the direction of the connection. The runner dials
-   * out to Convex and holds a subscription; Convex never dials in. There is no
-   * listening port, no inbound firewall rule and no tunnel, so a Assistant install
-   * cannot be found by scanning the internet. OpenClaw's 135,000 exposed
-   * instances are the cost of getting this backwards.
+   * The runner dials out to Perry's server and holds an event stream; nothing
+   * dials in to the runner. The one on Perry's own computer is connected by the
+   * server as it starts; another machine reaches it over the owner's network
+   * (say Tailscale) with a token made for it. Nothing has to be reachable from
+   * the internet.
    */
   runners: defineTable({
     name: v.string(),
@@ -254,63 +229,11 @@ export default defineSchema({
   }).index("by_token", ["token"]),
 
   /**
-   * The ChatGPT access token each runner's Codex holds, with its account id
-   * and expiry, so a turn can be answered while that machine is offline (see
-   * chatgpt.ts). Runners push it only while offlineFallback is on. No public
-   * query reads this table, and a row is deleted when its token expires. Codex
-   * keeps the refresh token on the machine; it never comes here.
-   */
-  chatgptTokens: defineTable({
-    runnerId: v.id("runners"),
-    accessToken: v.string(),
-    accountId: v.optional(v.string()),
-    expiresAt: v.number(),
-    updatedAt: v.number(),
-  }).index("by_runner", ["runnerId"]),
-
-  /**
-   * One row per operation handed to a runner. The runner subscribes to the
-   * queued ones, does the work, and writes the result back here.
-   */
-  commands: defineTable({
-    runnerId: v.id("runners"),
-    kind: v.union(
-      v.literal("exec"),
-      v.literal("read"),
-      v.literal("write"),
-      v.literal("list"),
-    ),
-    operationId: v.string(),
-    command: v.optional(v.string()),
-    path: v.optional(v.string()),
-    text: v.optional(v.string()),
-    cwd: v.optional(v.string()),
-    status: v.union(
-      v.literal("queued"),
-      v.literal("running"),
-      v.literal("done"),
-      v.literal("denied"),
-      v.literal("error"),
-    ),
-    exitCode: v.optional(v.number()),
-    output: v.optional(v.string()),
-    truncated: v.optional(v.boolean()),
-    error: v.optional(v.string()),
-    createdAt: v.number(),
-    startedAt: v.optional(v.number()),
-    finishedAt: v.optional(v.number()),
-  })
-    .index("by_runner_status", ["runnerId", "status"])
-    .index("by_operation", ["operationId"])
-    .index("by_created", ["createdAt"]),
-
-  /**
    * Service keys, set from the dashboard instead of a terminal.
    *
-   * Convex environment variables can only be written by the CLI, which meant
-   * every key change was a trip to a shell. These rows take precedence over
-   * the matching environment variable, so an install configured the old way
-   * keeps working and the dashboard can override any of it.
+   * Keys in .env.local need a terminal and a restart to change. These rows take
+   * precedence over the matching variable there, so the dashboard can change
+   * any of them while one set in .env.local keeps working.
    *
    * DASHBOARD_KEY deliberately stays an environment variable: it is the thing
    * that guards this table, and a lockout should be recoverable from a
@@ -352,8 +275,8 @@ export default defineSchema({
     .index("by_channel_last", ["channel", "lastMessageAt"]),
 
   /**
-   * Files attached to a chat turn. The bytes live either in Convex storage or
-   * on the owner's machine at `localPath`, wherever the agent (or the upload
+   * Files attached to a chat turn. The bytes live either in the server's file
+   * storage (Telegram's files) or on the owner's machine at `localPath`, wherever the agent (or the upload
    * inbox) put them, and the Next.js server on that machine serves them from
    * there. See app/api/media.
    */
@@ -519,10 +442,8 @@ export default defineSchema({
 
   /** Subscription turns are queued for the owner's outbound local runner. */
   codexTurns: defineTable({
-    /** Unset on a fallback turn, which no runner takes. */
+    /** Unset only on turns from before Perry ran on this computer, answered without a runner. */
     runnerId: v.optional(v.id("runners")),
-    /** Answered in Convex on the ChatGPT subscription, because no runner could take it. */
-    fallback: v.optional(v.boolean()),
     conversationId: v.id("conversations"),
     runId: v.id("runs"),
     /** A turn that compacts the chat's Codex thread (/compact) rather than answering a message. */
@@ -608,4 +529,28 @@ export default defineSchema({
   })
     .index("by_turn_status", ["turnId", "status"])
     .index("by_status", ["status"]),
+
+  /**
+   * A chat's message history (the conversation's `threadId`). Each channel's
+   * chats share a userId ("web:dashboard", "telegram:<chat>"), which is what
+   * search_chats searches within. See agentStore.ts.
+   */
+  agentThreads: defineTable({
+    userId: v.optional(v.string()),
+    title: v.optional(v.string()),
+  }),
+
+  agentMessages: defineTable({
+    threadId: v.id("agentThreads"),
+    userId: v.optional(v.string()),
+    /** Position in the thread; later messages have higher numbers. */
+    order: v.number(),
+    message: v.object({ role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system"), v.literal("tool")), content: v.string() }),
+    text: v.string(),
+    /** Who wrote an assistant message when it was not Codex on the owner's computer. */
+    provider: v.optional(v.string()),
+    model: v.optional(v.string()),
+  })
+    .index("by_thread_order", ["threadId", "order"])
+    .searchIndex("search_text", { searchField: "text", filterFields: ["userId"] }),
 });

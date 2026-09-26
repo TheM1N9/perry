@@ -5,8 +5,9 @@ you, acts on your connected accounts, and works on your own machine. It thinks
 with your ChatGPT subscription, through the Codex CLI. Inspired by OpenClaw.
 
 One install, one owner. Anyone can run their own copy, and every copy is
-separate: its own deployment, its own bot, its own keys, its own memory. There
-is no shared server and nothing here phones home.
+separate: its own computer, its own bot, its own keys, its own memory. There
+is no server anywhere but yours, no account to make but Codex's, and nothing
+here phones home.
 
 One line installs it, on macOS or Linux:
 
@@ -22,16 +23,15 @@ iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
 
 It installs what is missing (Node.js, pnpm, [Bun](https://bun.sh) and the
 [Codex CLI](https://github.com/openai/codex)), puts Perry in `~/perry`, and runs
-`perry setup`: your own Convex deployment, a Telegram bot if you want one, this computer
-connected, Perry running in the background from every login on, and the
-dashboard opened, already unlocked. Then:
+`perry setup`: a Telegram bot if you want one, Codex signed in, Perry running in
+the background from every login on, and the dashboard opened, already unlocked. Then:
 
 ```bash
 perry status    # is it running, and where
 perry logs -f   # what it is saying
 perry open      # the dashboard, unlocked
 perry update    # the latest Perry, rebuilt and restarted
-perry stop | start | doctor | pair | uninstall
+perry stop | start | doctor | pair | migrate | uninstall
 ```
 
 In a clone, `pnpm install` then `pnpm perry setup` does the same. See
@@ -40,45 +40,48 @@ In a clone, `pnpm install` then `pnpm perry setup` does the same. See
 ## How it works
 
 ```
-Telegram ─┐
-          ├─> Convex (state, memory, scheduling, MCP tools) ─> runner on your machine ─> Codex
-Web chat ─┘                                                    (dials out, never listens)
+Telegram (polled) ─┐
+                   ├─> Perry's server: dashboard + backend ─> runner ─> Codex
+Web chat ──────────┘    SQLite in ~/.perry, on this computer
 ```
 
-- **Convex** is the brain's memory and plumbing: chats, messages, memory, tasks,
-  jobs, approvals and every run, as documents you can query. Telegram posts to
-  a Convex HTTP action that verifies the webhook secret; the web dashboard talks
-  to Convex directly.
-- **The runner** (started by `perry start`, with the dashboard) is a process on your machine. It dials out
-  to Convex and holds a subscription; nothing listens on a port, so the machine
-  cannot be found from the internet. It runs one process per token, in a
-  terminal or under the OS's own service manager (launchd, systemd or Task
-  Scheduler).
+- **Perry's server** is the dashboard's Next.js server, and Perry's backend runs
+  inside it (`server/`, started by `instrumentation.ts`): chats, messages,
+  memory, USER.md, tasks, jobs, approvals and every run, in one SQLite file,
+  `~/.perry/perry.sqlite`. The functions in `convex/` are written in Convex's
+  style and run on a small local runtime with its rules: transactional
+  mutations, a persisted scheduler, crons, and live queries that update the
+  dashboard as the data changes. It asks Telegram for new messages (long
+  polling), so nothing needs to be reachable from the internet.
+- **The runner** (started with the server by `perry start`) is the process
+  that drives Codex. The server connects it on its own; it talks to the server
+  over HTTP and a server-sent event stream. It runs under the OS's own service
+  manager (launchd, systemd or Task Scheduler), or in a terminal with `perry run`.
 - **Codex** does the thinking and the work. Each chat turn becomes a Codex turn
   on the runner, in a workspace folder you chose, with your model of choice.
   Codex has a shell and file access there under its sandbox (Seatbelt on
   macOS, bubblewrap on Linux, a restricted token on Windows), is told which OS
-  and shell it is on, and reaches Perry's own tools over MCP.
+  and shell it is on, and reaches Perry's own tools over MCP on the server.
 
 A turn: the message is stored, memory and recent history are gathered, the turn
 is queued for the runner, Codex writes the reply (streamed live to the web chat
 and into a single Telegram message), and the finished reply is saved.
 
-**When the computer is offline.** Off by default. Turn on "Answer without the
-computer when it's offline" in Settings and a turn no runner can take is
-answered in Convex instead (`convex/fallback.ts`), on the same ChatGPT
-subscription, through the Codex backend the CLI uses (the transport is adapted
-from [vercel/eve](https://github.com/vercel/eve)). It has Perry's own tools
-(memory, earlier chats, connected accounts, jobs, tasks, page reading) but no
-shell, files or `share_file`. The reply streams like any other, its run is
-marked `chatgpt fallback · <model>`, and the chat notes it was answered without
-your computer. For this, each runner shares the ChatGPT access token its Codex
-holds (read with the app-server's `getAuthStatus`; Codex keeps and uses the
-refresh token). **The risk:** that token sits in your Convex deployment until
-it expires, so anyone who can read the deployment's data could use your
-subscription until then. It is never returned by a dashboard query, and it is
-deleted when it expires, when its runner is revoked and when you turn the
-setting off.
+**Perry answers while your computer is on.** Asleep or off, nothing runs:
+Telegram keeps a bot's messages for a day and they are answered on waking,
+and scheduled jobs and page watches run then. For an assistant that is always
+there, run Perry on a machine that stays on (a Mac mini, a small home server).
+Another machine can still do the work too: `pnpm run connect -- --token-only`
+on Perry's computer, then `pnpm run connect -- --url … --token …` on the other
+(over Tailscale, say).
+
+### Moving from Convex
+
+Perry used to keep everything in a Convex deployment. After `perry update`,
+`perry setup` offers to bring it over, or run `perry migrate`: it exports the
+deployment (chats, messages, memory, USER.md, tasks, jobs and files) and
+imports it here, keeping every id. The Convex deployment is only read; delete
+it at dashboard.convex.dev when you no longer need it.
 
 ## What the assistant can do
 
@@ -157,7 +160,7 @@ spending) are to be confirmed in chat first.
 
 ## Memory
 
-Modelled on OpenClaw's workspace memory, in Convex:
+Modelled on OpenClaw's workspace memory, in SQLite on your computer:
 
 - **USER.md**: who you are, in your own Markdown: what to call you, your work,
   a typical day, the people who matter, how you like replies, what you want
@@ -246,9 +249,10 @@ gets a plain reply saying so. Codex cannot hear audio, so voice notes need a
 speech-to-text tool on the machine.
 
 On Telegram, what the agent shares or generates is uploaded by the runner to
-Convex storage and sent as a real file: photos, GIFs, videos, audio and voice
+Perry's server and sent as a real file: photos, GIFs, videos, audio and voice
 notes as themselves, anything else (or anything Telegram refuses in its own
-form) as a document, and past Telegram's 50 MB as a download link. A reply
+form) as a document; past Telegram's 50 MB it stays on your computer, and the
+reply says where. A reply
 short enough to be a caption rides on the first file; a longer one comes first.
 
 ## Channels
@@ -285,13 +289,12 @@ They need a runner started with `--auto`, since nobody is there to approve.
 To keep them off your own runner, start a short-lived one and pass its token:
 
 ```bash
-TOKEN=$(bun -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")
-RUNNER=$(pnpm exec convex run runner:createToken "{\"name\":\"evals\",\"token\":\"$TOKEN\"}" 2>/dev/null | tail -1 | tr -d '"\r')
+TOKEN=$(pnpm run -s connect -- --token-only --name evals | awk '/token/ {print $2}')
 mkdir -p /tmp/perry-evals-work
 # Its own PERRY_HOME, so your runner's saved settings are left alone.
-PERRY_HOME=/tmp/perry-evals bun runner/index.ts --url <your Convex URL> --token "$TOKEN" --dir /tmp/perry-evals-work --name evals --auto &
+PERRY_HOME=/tmp/perry-evals bun runner/index.ts --url http://127.0.0.1:3000 --token "$TOKEN" --dir /tmp/perry-evals-work --name evals --auto &
 pnpm evals --runner-token "$TOKEN"
-kill %1; pnpm exec convex run runner:revokeRunner "{\"runnerId\":\"$RUNNER\"}"
+kill %1   # then revoke "evals" on the dashboard's Computer page
 ```
 
 Results land in `artifacts/evals/<time>/`: `summary.json`, `results.jsonl` and
@@ -300,25 +303,48 @@ one file per eval with every turn.
 Telegram replies stream as plain text and land formatted: the Markdown becomes
 Telegram HTML (bold, italic, code, code blocks, links), sent as plain text if
 Telegram refuses it. When Telegram says to slow down, a call waits as asked
-and tries again, twice at most. `TELEGRAM_API_BASE` (a Convex env var, unset
+and tries again, twice at most. `TELEGRAM_API_BASE` (in `.env.local`, unset
 normally) points the bot at a stand-in Bot API; `artifacts/telegram-delivery`
 uses it to test delivery without messaging anyone.
+
+## Landing page
+
+`site/` is Perry's public page, a Next.js app of its own (Tailwind CSS and
+Motion) with its own `package.json` and lockfile. It tells one day with Perry,
+and its demos are React components rather than screenshots: the hero's chat
+answers what you tap, a Telegram phone follows the day as you scroll (the
+14:30 approval is yours to give), and a night scene closes it. Its fonts
+(Inter Tight and JetBrains Mono, both OFL) are served from the site itself, so
+it loads nothing from anyone else's server.
+
+```bash
+cd site
+pnpm install
+pnpm dev          # http://localhost:3000
+```
+
+To host it on Vercel, import the repo and set the project's Root Directory to
+`site`; the Next.js preset does the rest. `bun artifacts/landing/run.ts`
+builds it, serves it with `next start` and checks it in headless Chrome (the
+hero's chat, the day and its approval, the night scene, the mascot, reduced
+motion, contrast, overflow at four widths, no third-party requests), writing screenshots and `result.json`
+to `artifacts/landing/`.
 
 ## Stack
 
 | Layer | Choice |
 |---|---|
-| State, memory, scheduling, HTTP | [Convex](https://convex.dev) |
+| State, memory, scheduling, HTTP | SQLite (`node:sqlite`) in Perry's server, on a Convex-style runtime (`server/`) |
 | Thinking and doing | Codex CLI on your ChatGPT subscription, via its app-server protocol |
 | Your machine | The runner (`runner/`, Bun) |
 | Connected accounts | [Composio](https://composio.dev) |
 | Dashboard | Next.js |
 | Chat | Telegram, web |
 
-Packages in use: `convex`, `@convex-dev/agent` (threads and messages),
-`ai` with `@ai-sdk/openai` (answering without the computer),
-`@composio/core`, `cron-parser`, `react-markdown` with `remark-gfm` and
-`remark-breaks`, `turndown` and `undici` (reading pages) and `zod`. `@daytona/sdk` backs cloud-sandbox tools that Codex does not use; it has its own shell on your machine.
+Packages in use: `convex` (only its validators and types, which the backend
+functions are written with), `@composio/core`, `cron-parser`, `react-markdown`
+with `remark-gfm` and `remark-breaks`, `turndown` and `undici` (reading pages)
+and `zod`.
 
 ## Status
 
@@ -335,14 +361,14 @@ the agent.
 
 ## Handing Perry to someone else
 
-Send them the repo. `pnpm run setup` builds them a separate deployment with
-separate everything, and nothing routine requires editing code. Your data stays
-on your deployment and is never visible to theirs.
+Send them the repo. `perry setup` gives them their own Perry on their own
+computer, with separate everything, and nothing routine requires editing code.
+Your data stays on your computer and is never visible to theirs.
 
-What is not built: multiple people on one deployment. The dashboard key is a
+What is not built: multiple people on one Perry. The dashboard key is a
 bearer token for one owner, and memories are a single shared pool with no
 per-user scoping. Making Perry multi-tenant means replacing that key with
-Convex Auth and adding an owner id to `memories`, `conversations` and `runs`.
+real accounts and adding an owner id to `memories`, `conversations` and `runs`.
 Every public function already checks authorisation in the same place, so that
 change is contained, but it is a real change rather than a config switch.
 

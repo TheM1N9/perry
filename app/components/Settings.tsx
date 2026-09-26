@@ -1,11 +1,10 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "@/client/react";
 import { useState } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Access } from "@/convex/lib/commands";
 import { CodexAccount } from "./CodexAccount";
-import { OfflineAnswers } from "./OfflineAnswers";
 import { Icon, Loading, Section, Spinner, errorText, useToast } from "./ui";
 
 /** Settings for the single assistant, which runs on the owner's Codex subscription. */
@@ -13,7 +12,6 @@ export function Settings({ dashboardKey }: { dashboardKey: string }) {
   return (
     <>
       <CodexAccount dashboardKey={dashboardKey} />
-      <OfflineAnswers dashboardKey={dashboardKey} />
       <NewChatAccess dashboardKey={dashboardKey} />
       <Section title="How Perry works" description="Read only. These describe Perry's fixed behavior; nothing here can be changed.">
         <div className="section-pad" style={{ display: "grid", gap: 14 }}>
