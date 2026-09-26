@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, type QueryCtx } from "./_generated/server";
+import { timezoneOf } from "./jobs";
 import { vMemoryKind, vMemoryOrigin } from "./schema";
 
 /**
@@ -20,7 +21,7 @@ import { vMemoryKind, vMemoryOrigin } from "./schema";
  * on a 30-day half-life. A fact that changes is superseded rather than deleted.
  *
  * The agent never touches this directly; it goes through the tools in
- * tools.ts. Days are UTC.
+ * tools.ts. Days are the owner's, in their timezone.
  */
 
 type Kind = "profile" | "core" | "daily";
@@ -32,7 +33,9 @@ const BUDGET = { profile: 4_000, core: 8_000, daily: 4_000 } as const;
 const LABEL = { profile: "The owner profile", core: "Long-term memory" } as const;
 const DAY_MS = 86_400_000;
 
-export const day = (offset = 0) => new Date(Date.now() - offset * DAY_MS).toISOString().slice(0, 10);
+/** YYYY-MM-DD on the owner's calendar, `offset` days ago. */
+export const dayIn = (timezone: string, offset = 0) => new Date(Date.now() - offset * DAY_MS).toLocaleDateString("en-CA", { timeZone: timezone });
+const day = async (ctx: { db: QueryCtx["db"] }, offset = 0) => dayIn(await timezoneOf(ctx), offset);
 const kindOf = (memory: Memory): Kind => memory.kind ?? "core";
 
 function view(memory: Memory) {
@@ -112,7 +115,7 @@ export const add = internalMutation({
       source: args.source,
       createdAt: Date.now(),
       kind,
-      ...(kind === "daily" ? { day: day() } : {}),
+      ...(kind === "daily" ? { day: await day(ctx) } : {}),
       ...(args.origin ? { origin: args.origin } : {}),
     });
     let superseded = 0;
@@ -157,8 +160,9 @@ export const getMany = internalQuery({
 export const read = internalQuery({
   args: { kind: vMemoryKind, day: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const today = await day(ctx);
     const docs = args.kind === "daily"
-      ? (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", args.day ?? day())).take(200))
+      ? (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", args.day ?? today)).take(200))
           .filter((memory) => !memory.supersededBy)
       : await layer(ctx, args.kind);
     return docs.map(view);
@@ -194,7 +198,7 @@ export const bootstrap = internalQuery({
     return {
       profile: (await layer(ctx, "profile")).map(view),
       core: (await layer(ctx, "core")).map(view),
-      daily: [...await daily(day()), ...await daily(day(1))].map(view),
+      daily: [...await daily(await day(ctx)), ...await daily(await day(ctx, 1))].map(view),
     };
   },
 });
@@ -314,7 +318,7 @@ export const noteAlert = internalMutation({
       source: "alert",
       createdAt: Date.now(),
       kind: "daily",
-      day: day(),
+      day: await day(ctx),
       origin: "job",
     });
     return null;
