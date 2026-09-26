@@ -288,6 +288,13 @@ export default defineSchema({
     pinnedAt: v.optional(v.number()),
     /** When the owner last had this chat open; a reply after it is unseen. */
     seenAt: v.optional(v.number()),
+    /**
+     * Web messages sent and not yet in the chat's history: from sendChat until
+     * the turn is queued (codex.enqueueTurn), or kept in the history when it
+     * cannot be (brain.handleTurn). The history only gets them when the reply
+     * is saved, so without this a message vanishes on reload until then.
+     */
+    outbox: v.optional(v.array(v.object({ text: v.string(), at: v.number() }))),
   })
     .index("by_channel_external", ["channel", "externalId"])
     .index("by_channel_last", ["channel", "lastMessageAt"]),

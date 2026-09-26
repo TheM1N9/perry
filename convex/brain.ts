@@ -1,4 +1,4 @@
-import { createThread, listMessages } from "./lib/agent";
+import { createThread, listMessages, saveMessages } from "./lib/agent";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -405,6 +405,11 @@ export const handleTurn = internalAction({
         console.error(`turn failed: ${message}`);
         await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access), error: message.slice(0, 1000) });
         if (conversation.jobId) await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, error: message });
+        // The owner's message stays in the chat with the error under it, so it can be tried again; it never became a turn.
+        if (channel === "web" && !args.hidden && !conversation.jobId) {
+          await saveMessages(ctx, { threadId: conversation.threadId, userId: userIdOf(conversation), order: "next", messages: [{ role: "user", content: prompt }] })
+            .catch((saveError) => console.error(`could not keep the message: ${String(saveError)}`));
+        }
         if (channel !== "web") {
           await say(`That broke: ${message.slice(0, 300)}`)
             .catch((sendError) => console.error(`could not report failure: ${String(sendError)}`));
@@ -413,7 +418,7 @@ export const handleTurn = internalAction({
       return null;
     } finally {
       if (channel === "web" && !delegated) {
-        await ctx.runMutation(internal.conversations.finishWebTurn, { id: conversation._id });
+        await ctx.runMutation(internal.conversations.finishWebTurn, { id: conversation._id, prompt: args.text });
       }
     }
   },
