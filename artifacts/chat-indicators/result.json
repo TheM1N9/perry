@@ -1,0 +1,84 @@
+{
+  "ranAt": "2026-09-26T22:24:58.424Z",
+  "checks": {
+    "titledAtOnce": true,
+    "spinnerWhileWorking": true,
+    "namedShort": true,
+    "namedWithLuna": true,
+    "replyReadyWhenAway": true,
+    "readyClearsWhenOpened": true,
+    "doneWhenWatched": true,
+    "ownerNameKept": true,
+    "errorShown": true,
+    "nothingStuckNaming": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "models": [
+      "gpt-6-luna",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.5"
+    ],
+    "model": "gpt-6-luna",
+    "provisionalTitle": "What are three good day hikes near Lisbon? One line each.",
+    "whileWorking": {
+      "row": "running",
+      "rowLabel": "Working",
+      "rowTitle": "What are three good day hikes near Lisbon? One line each.",
+      "rowShimmer": true,
+      "header": "running",
+      "thinkingSpinner": true,
+      "streaming": false
+    },
+    "namingSeen": true,
+    "name": "Day Hikes Near Lisbon",
+    "runnerNamed": [
+      "\u001b[2m  named a chat \"Day Hikes Near Lisbon\" (gpt-6-luna)\u001b[0m"
+    ],
+    "afterReply": {
+      "row": "unseen",
+      "rowLabel": "Reply ready",
+      "rowTitle": "Day Hikes Near Lisbon",
+      "rowShimmer": false,
+      "header": null,
+      "thinkingSpinner": false,
+      "streaming": false
+    },
+    "watchedDone": {
+      "row": "done",
+      "rowLabel": "Done",
+      "rowTitle": "Name one fruit. Just the word.",
+      "rowShimmer": true,
+      "header": "done",
+      "thinkingSpinner": false,
+      "streaming": false
+    },
+    "watchedLater": {
+      "row": null,
+      "rowLabel": null,
+      "rowTitle": "Name a Fruit",
+      "rowShimmer": false,
+      "header": null,
+      "thinkingSpinner": false,
+      "streaming": false
+    },
+    "failed": {
+      "row": "error",
+      "rowLabel": "The last reply failed",
+      "rowTitle": "Check the weather",
+      "rowShimmer": false,
+      "header": "error",
+      "thinkingSpinner": false,
+      "streaming": false
+    },
+    "titles": [
+      "Check the weather",
+      "Sister's birthday",
+      "Name a Fruit",
+      "Day Hikes Near Lisbon"
+    ],
+    "pageErrors": []
+  },
+  "passed": true
+}

@@ -47,7 +47,9 @@ import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { runLabel } from "../convex/lib/commands";
 import { ASSISTANT_MCP, CodexAppServer, TurnFailed, type GeneratedImage, type RpcMessage } from "./codex";
-import { isReviewThread, review } from "./review";
+import { isQuickThread } from "./quick";
+import { review } from "./review";
+import { nameChat } from "./title";
 import { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig, type RunnerConfig } from "./home";
 import { TurnTrace } from "./trace";
 
@@ -345,9 +347,9 @@ async function main() {
       instance.on("serverRequest", (request: RpcMessage) => {
         void (async () => {
           const method = request.method ?? "";
-          if (isReviewThread(request.params?.threadId)) {
-            // The reviewer only answers; it never gets to act or ask.
-            instance.rejectRequest(request.id, "The reviewer cannot do this.");
+          if (isQuickThread(request.params?.threadId)) {
+            // The reviewer and chat names only answer; they never get to act or ask.
+            instance.rejectRequest(request.id, "This turn only answers.");
           } else if (method === "item/commandExecution/requestApproval") {
             const params = request.params ?? {};
             const command = params.command ?? "Codex command";
@@ -720,6 +722,30 @@ async function main() {
   watch(api.codex.pendingSteers, { token }, (steers) => {
     pendingSteers = steers ?? [];
     steerIfAsked();
+  });
+
+  // New web chats to name, beside whatever turn is running. A failure leaves
+  // the chat titled with its first message.
+  const naming = new Set<string>();
+  watch(api.titles.pending, { token }, (requests) => {
+    for (const request of requests ?? []) {
+      if (naming.has(request.id)) continue;
+      naming.add(request.id);
+      void (async () => {
+        if (!await client.mutation(api.titles.claim, { token, id: request.id })) return;
+        let title: string | undefined;
+        try {
+          const named = await nameChat(await ensureCodex(), request.text);
+          title = named.title;
+          console.log(dim(`  named a chat "${title}" (${named.model ?? "Codex default"})`));
+        } catch (error) {
+          console.log(yellow(`  could not name a chat: ${message(error)}`));
+        }
+        await client.mutation(api.titles.finish, { token, id: request.id, title });
+      })()
+        .catch((error) => console.error(red(`  Could not save a chat's name: ${message(error)}`)))
+        .finally(() => naming.delete(request.id));
+    }
   });
 
   const stop = async () => {

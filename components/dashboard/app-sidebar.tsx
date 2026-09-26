@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/sidebar";
 import { usePalette } from "./command-palette";
 import { PerryMark } from "./common";
-import { StatusDot } from "./status-dot";
+import { StatusIndicator } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
 
 /** How many chats show before "Show all", so a long history stays scannable. */
@@ -203,10 +203,10 @@ function ChatRow({ chat, onRename, onDelete }: { chat: ChatSummary; onRename: ()
       <SidebarMenuButton render={<Link href={`/chat/${chat.id}`} />} isActive={active}
         className={cn(chat.unseen && !active && "font-semibold")}
         aria-current={active ? "page" : undefined}>
-        <span>{chat.title}</span>
+        <span className={cn("pr-4", chat.naming && "shimmer")} aria-busy={chat.naming || undefined}>{chat.title}</span>
       </SidebarMenuButton>
-      <StatusDot status={chat.status} unseen={chat.unseen && !active}
-        className="pointer-events-none absolute top-1/2 right-8 -translate-y-1/2 transition-opacity md:right-2.5 md:group-focus-within/menu-item:opacity-0 md:group-hover/menu-item:opacity-0" />
+      <StatusIndicator status={chat.status} unseen={chat.unseen && !active}
+        className="pointer-events-none absolute top-1/2 right-8 -translate-y-1/2 transition-opacity md:right-1.5 md:group-focus-within/menu-item:opacity-0 md:group-hover/menu-item:opacity-0" />
       <DropdownMenu>
         <DropdownMenuTrigger render={<SidebarMenuAction showOnHover aria-label={`Options for ${chat.title}`} />}>
           <MoreHorizontalIcon />
@@ -228,7 +228,7 @@ export function RenameDialog({ chat, onClose }: { chat: { id: ChatSummary["id"];
   const [saving, setSaving] = useState(false);
   const renameChat = useMutation(api.dashboard.renameChat).withOptimisticUpdate((store, args) => {
     const list = store.getQuery(api.dashboard.listChats, { key: args.key });
-    if (list) store.setQuery(api.dashboard.listChats, { key: args.key }, list.map((item) => item.id === args.id ? { ...item, title: args.title.trim() } : item));
+    if (list) store.setQuery(api.dashboard.listChats, { key: args.key }, list.map((item) => item.id === args.id ? { ...item, title: args.title.trim(), naming: false } : item));
   });
   useEffect(() => { if (chat) setTitle(chat.title); }, [chat]);
 

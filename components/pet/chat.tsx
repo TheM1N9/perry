@@ -9,6 +9,7 @@ import { errorText } from "@/lib/format";
 import { useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/dashboard/chat/markdown";
+import { StatusIndicator } from "@/components/dashboard/status-indicator";
 import { describe } from "@/convex/lib/shortcuts";
 import { Listening, MicButton, type Voice } from "./voice";
 
@@ -129,10 +130,8 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
               <li key={item.id}>
                 <button type="button" onClick={() => { onChatId(item.id); setPicking(false); }}
                   className={cn("flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-muted", item.id === chatId && "bg-muted")}>
-                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                  {item.status === "running" && <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" aria-label="Working" />}
-                  {item.status === "needs-approval" && <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-label="Needs you" />}
-                  {item.unseen && item.status === "idle" && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label="New" />}
+                  <span className={cn("min-w-0 flex-1 truncate", item.naming && "shimmer")}>{item.title}</span>
+                  <StatusIndicator status={item.status} unseen={item.unseen && item.id !== chatId} />
                 </button>
               </li>
             ))}

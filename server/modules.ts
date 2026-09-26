@@ -37,6 +37,7 @@ import * as recovery from "../convex/recovery";
 import * as runner from "../convex/runner";
 import * as runs from "../convex/runs";
 import * as secrets from "../convex/secrets";
+import * as titles from "../convex/titles";
 import * as todos from "../convex/todos";
 import * as tools from "../convex/tools";
 import * as vault from "../convex/vault";
@@ -80,6 +81,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "runner": runner,
   "runs": runs,
   "secrets": secrets,
+  "titles": titles,
   "todos": todos,
   "tools": tools,
   "vault": vault,

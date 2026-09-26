@@ -678,6 +678,23 @@ export default defineSchema({
     .index("by_status", ["status"]),
 
   /**
+   * A web chat waiting for a name. Its first message titles it at once; any
+   * runner then asks a quick Codex model for a short name (runner/title.ts)
+   * and replaces that, unless the owner renamed the chat first. See titles.ts.
+   */
+  chatTitles: defineTable({
+    conversationId: v.id("conversations"),
+    /** The first message, which the name is made from. */
+    text: v.string(),
+    /** The title the chat was given when the message was sent; a different one means the owner renamed it. */
+    provisional: v.string(),
+    requestedAt: v.number(),
+    /** A runner is naming it; another may take it over once this is old. */
+    claimedAt: v.optional(v.number()),
+  })
+    .index("by_conversation", ["conversationId"]),
+
+  /**
    * A chat's message history (the conversation's `threadId`). Each channel's
    * chats share a userId ("web:dashboard", "telegram:<chat>"), which is what
    * search_chats searches within. See agentStore.ts.

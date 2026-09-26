@@ -17,6 +17,7 @@ import { APPROVAL_TTL_MS } from "./approvals";
 import { QUIET } from "./jobs";
 import type { VaultEntry } from "./vault";
 import { OUTBOX_TTL_MS } from "./conversations";
+import { beingNamed, cancelTitle, requestTitle } from "./titles";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -89,6 +90,8 @@ export type ChatSummary = {
   jobId?: Id<"jobs">;
   /** A reply came after the owner last had the chat open. */
   unseen: boolean;
+  /** A runner is naming it; its title is the first message until then (titles.ts). */
+  naming: boolean;
 };
 
 /** A reply after the owner last looked. A job's quiet NOTHING is not one; a chat never opened only counts for jobs. */
@@ -110,6 +113,7 @@ export const listChats = query({
       .withIndex("by_status", (q) => q.eq("status", "pending").gt("createdAt", Date.now() - APPROVAL_TTL_MS))
       .collect()).map((row) => row.conversationId));
     const jobs = new Map((await ctx.db.query("jobs").collect()).map((job) => [job._id, job]));
+    const naming = await beingNamed(ctx);
     const summaries = await Promise.all(chats.map(async (chat): Promise<ChatSummary> => {
       const running = (chat.pendingTurns ?? 0) > 0;
       const latestRun = running || asking.has(chat._id) ? null : await ctx.db.query("runs")
@@ -126,6 +130,7 @@ export const listChats = query({
         pinned: chat.pinnedAt !== undefined,
         jobId: chat.jobId,
         unseen: isUnseen(chat, chat.jobId ? jobs.get(chat.jobId) : undefined),
+        naming: naming.has(chat._id),
       };
     }));
     // Pinned first, most recently pinned on top; the rest stay newest first.
@@ -185,6 +190,7 @@ export const renameChat = mutation({
     const title = args.title.trim().slice(0, 100);
     if (!title) throw new Error("Enter a chat name.");
     await ctx.db.patch(args.id, { title });
+    await cancelTitle(ctx, args.id);
     return null;
   },
 });
@@ -218,6 +224,7 @@ export const deleteChat = mutation({
       await ctx.db.delete(attachment._id);
     }
     await ctx.runMutation(internal.codex.pruneOrphans, { conversationId: args.id });
+    await cancelTitle(ctx, args.id);
     await ctx.db.delete(args.id);
     await deleteThread(ctx, chat.threadId);
     return null;
@@ -527,9 +534,15 @@ export const sendChat = mutation({
     const prompt = attachmentIds.length > 0
       ? `${text}\n\n<!-- attachments: ${messageKey} -->`.trim()
       : text;
+    // The first message titles a new chat at once; a runner names it properly soon after.
+    const first = chat.title === "New chat";
+    const title = first ? (text || "Attached files").slice(0, 80) : chat.title;
+    if (first) await requestTitle(ctx, args.id, text, title!);
     await ctx.db.patch(args.id, {
       lastMessageAt: Date.now(),
-      title: chat.title === "New chat" ? (text || "Attached files").slice(0, 80) : chat.title,
+      // Writing in it, the owner has seen what is there; the reply is unseen until they look.
+      seenAt: Date.now(),
+      title,
       pendingTurns: (chat.pendingTurns ?? 0) + 1,
       // Shown in the chat from now, until a turn or the history has it (conversations.takeFromOutbox).
       outbox: [...(chat.outbox ?? []).filter((entry) => entry.at > Date.now() - OUTBOX_TTL_MS), { text: prompt, at: Date.now() }],
