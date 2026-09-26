@@ -269,6 +269,8 @@ export default defineSchema({
     pendingTurns: v.optional(v.number()),
     /** Digest of the recalled memory this chat's Codex thread last saw, so an unchanged block is not sent again. */
     recallDigest: v.optional(v.string()),
+    /** What the assistant sent here on its own (a job, an alert) since the owner last wrote; the next turn is told. */
+    unprompted: v.optional(v.array(v.object({ at: v.number(), text: v.string() }))),
     lastMessageAt: v.number(),
   })
     .index("by_channel_external", ["channel", "externalId"])

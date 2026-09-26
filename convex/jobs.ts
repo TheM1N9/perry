@@ -26,6 +26,10 @@ export const QUIET = "NOTHING";
 // Adapted from vercel/eve (Apache-2.0): packages/eve/src/shared/empty-delivery.ts
 export const CONDITIONAL_DELIVERY = `Conditional delivery\nOnly when this job makes delivery conditional and there is nothing new to report, reply with exactly ${QUIET} and no other text. This includes results already delivered or incorporated into an earlier run; do not send an acknowledgement of that redundancy. Do not use ${QUIET} to omit commentary from a result that still needs delivery. Never return an empty reply; use ${QUIET} to intentionally deliver nothing.`;
 
+/** How a job's reply names the open thread it asked about (jobs.finished). */
+const ASKED = "asked:";
+const ASKED_LINE = /^[ \t]*asked:[ \t]*(\S+)[ \t]*$/gim;
+
 type Builtin = "heartbeat" | "daily-summary" | "consolidate";
 
 /**
@@ -42,7 +46,7 @@ const BUILTINS: Array<{ builtin: Builtin; name: string; schedule: string; prompt
     prompt: [
       "This is your scheduled heartbeat, not a message from the owner.",
       "Look over what could need the owner's attention now: status_report for tasks, goals and page watches, today's and yesterday's notes in memory, and connected accounts where it helps (for example today's calendar).",
-      "Delivery is conditional: only if there is something they would want to know now, reply with a short message for them. Do not take actions that change anything.",
+      "Delivery is conditional: only if there is something they would want to know now, or a follow-up worth asking about a thread they left open, reply with a short message for them. Do not take actions that change anything.",
     ].join(" "),
   },
   {
@@ -53,6 +57,7 @@ const BUILTINS: Array<{ builtin: Builtin; name: string; schedule: string; prompt
       "This is your scheduled daily summary, not a message from the owner.",
       "Read today's conversations, listed below, with read_chat, and today's notes with read_memory.",
       "Then write down what is worth remembering with remember kind=daily: decisions made, commitments and deadlines, preferences the owner expressed, and threads left open. One self-contained note per item; skip what today's notes already say and anything trivial.",
+      "A thread left open is something the owner was going to do, hear back about or decide (a call, an interview, an offer): save each with tags [\"open\"], saying when it happens if they said. When today's conversations settle a thread an earlier open note holds, remember how it turned out as a daily note without the tag, superseding that note.",
       "Standing preferences and durable facts can also go straight to kind=profile or kind=core, superseding what they replace.",
       "USER.md is left to the nightly consolidation.",
       `This job never delivers anything to the owner: when done, deliver nothing by replying with exactly ${QUIET}.`,
@@ -89,11 +94,11 @@ async function timezoneOf(ctx: { db: QueryCtx["db"] }): Promise<string> {
 
 export const ownerTimezone = internalQuery({ args: {}, returns: v.string(), handler: (ctx) => timezoneOf(ctx) });
 
-/** The time as the owner reads it, with the UTC offset a one-time job's `at` needs. */
 /** The time on the owner's clock, like "02:13". */
 export const ownerClock = (timezone: string, at = Date.now()) =>
   new Date(at).toLocaleTimeString("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit" });
 
+/** The time as the owner reads it, with the UTC offset a one-time job's `at` needs. */
 export function ownerNow(timezone: string, at = Date.now()): string {
   const date = new Date(at);
   const offset = new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "longOffset" })
@@ -225,6 +230,16 @@ export const run = internalAction({
         ? `\n\nToday's conversations (chat id, channel, title):\n${chats.map((chat) => `- ${chat.id} (${chat.channel}) ${chat.title}`).join("\n")}`
         : `\n\nThere were no conversations today, so there is nothing to do: reply with exactly ${QUIET}.`;
     }
+    // The heartbeat and a briefing follow up on what the owner left open, the way a friend asks how it went.
+    if (job.builtin === "heartbeat" || (job.schedule && !job.builtin)) {
+      const threads: Array<{ id: string; day?: string; text: string }> = await ctx.runQuery(internal.memories.openThreads, {});
+      if (threads.length) {
+        context += `\n\nThreads the owner left open, from your notes:\n${threads.map((thread) => `- [${thread.day ?? "?"}] ${thread.text} (${thread.id})`).join("\n")}\n` +
+          "If the moment for one has passed and nothing since says how it went, ask about it: one short, warm question, the way a friend would (\"How did the dentist call go?\"), about one thread at most. " +
+          "Leave alone what has not happened yet, and anything they would rather not be asked about. " +
+          `When you ask, end your reply with a last line of exactly "${ASKED} <its id>", which is removed before they see it.`;
+      }
+    }
     // A recurring job of the owner's may be their briefing: it hears about what Perry alerted them to since
     // it last ran, so something important at night is in the morning brief as well.
     if (job.schedule && !job.builtin) {
@@ -251,12 +266,19 @@ export const finished = internalMutation({
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.id);
     if (!job) return null;
-    await ctx.db.patch(job._id, { lastResult: args.result?.slice(0, 500), lastError: args.error?.slice(0, 500) });
-    if (args.result && args.result.trim() !== QUIET) {
-      await ctx.scheduler.runAfter(0, internal.notify.toOwner, { text: `⏰ ${job.name}\n\n${args.result}` });
+    // A follow-up question names the thread it asks about; that thread is not asked about again.
+    for (const [, raw] of args.result?.matchAll(ASKED_LINE) ?? []) {
+      const id = ctx.db.normalizeId("memories", raw);
+      const thread = id ? await ctx.db.get(id) : null;
+      if (thread && !thread.tags.includes("asked")) await ctx.db.patch(thread._id, { tags: [...thread.tags, "asked"] });
+    }
+    const result = args.result?.replace(ASKED_LINE, "").trim() || undefined;
+    await ctx.db.patch(job._id, { lastResult: result?.slice(0, 500), lastError: args.error?.slice(0, 500) });
+    if (result && result !== QUIET) {
+      await ctx.scheduler.runAfter(0, internal.notify.toOwner, { text: `⏰ ${job.name}\n\n${result}` });
       // The heartbeat only speaks when something needs the owner: that is an alert, for the next brief too.
       if (job.builtin === "heartbeat") {
-        await ctx.runMutation(internal.memories.noteAlert, { text: args.result, at: ownerClock(await timezoneOf(ctx)) });
+        await ctx.runMutation(internal.memories.noteAlert, { text: result, at: ownerClock(await timezoneOf(ctx)) });
       }
     }
     return null;

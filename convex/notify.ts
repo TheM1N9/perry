@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
+import { loadConversation } from "./brain";
+import { saveMessages } from "./lib/agent";
 import { sendMessage } from "./lib/telegram";
 
 /**
@@ -31,6 +33,11 @@ export const toOwner = internalAction({
       });
       // Job results are the agent's Markdown; plain alerts read the same either way.
       await sendMessage(token, install.ownerExternalId, args.text, { markdown: true });
+      // It belongs to the owner's Telegram chat too: shown in its history, and told to the next turn there.
+      // Made here if the owner has not written since pairing.
+      const chat = await loadConversation(ctx, "telegram", install.ownerExternalId);
+      await saveMessages(ctx, { threadId: chat.threadId, messages: [{ role: "assistant", content: args.text }] });
+      await ctx.runMutation(internal.conversations.noteUnprompted, { id: chat._id, text: args.text });
       return true;
     } catch (error) {
       console.error(`could not notify owner: ${String(error)}`);

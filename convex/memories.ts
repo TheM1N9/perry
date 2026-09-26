@@ -253,7 +253,7 @@ export const context = internalAction({
     const section = (title: string, lines: string[]) => lines.length ? `## ${title}\n${lines.join("\n")}` : "";
     const standing = [
       section("Long-term memory", within(loaded.core, BUDGET.core, (m) => `- ${m.text} (${m.id})`, "read_memory kind=core")),
-      section("Notes from today and yesterday", within(loaded.daily, BUDGET.daily, (m) => `- [${m.day}] ${m.text} (${m.id})`, "read_memory kind=daily")),
+      section("Notes from today and yesterday", within(loaded.daily, BUDGET.daily, (m) => `- [${m.day}] ${m.text}${m.tags.map((tag) => ` #${tag}`).join("")} (${m.id})`, "read_memory kind=daily")),
     ].filter(Boolean).join("\n\n");
     const digest = await sha256(standing);
     const recalled = [
@@ -327,6 +327,24 @@ export const alertsSince = internalQuery({
   handler: async (ctx, args): Promise<string[]> => {
     const recent = await ctx.db.query("memories").withIndex("by_created", (q) => q.gt("createdAt", args.since)).take(500);
     return recent.filter((memory) => !memory.supersededBy && memory.tags.includes("alert")).map((memory) => memory.text).slice(-50);
+  },
+});
+
+/**
+ * Threads the owner left open (an interview, a call, a decision), which the
+ * daily summary keeps as daily notes tagged "open", from the last week. One
+ * already asked about carries "asked" as well and is left out; one that is
+ * settled has been superseded by its outcome.
+ */
+export const openThreads = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<Array<{ id: string; day?: string; text: string }>> => {
+    const recent = await ctx.db.query("memories").withIndex("by_created", (q) => q.gt("createdAt", Date.now() - 7 * 86_400_000)).order("desc").take(1000);
+    return recent
+      .filter((memory) => !memory.supersededBy && memory.tags.includes("open") && !memory.tags.includes("asked"))
+      .slice(0, 20)
+      .reverse()
+      .map((memory) => ({ id: memory._id, day: memory.day, text: memory.text }));
   },
 });
 

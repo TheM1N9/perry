@@ -85,6 +85,36 @@ export const getByExternalId = internalQuery({
 });
 
 /**
+ * The assistant wrote to this chat on its own (a job's result, an alert). The
+ * Codex thread behind the chat never saw it, so it is kept here for the next
+ * turn (brain.handleTurn): a reply like "fine, Tuesday" then has its question.
+ */
+export const noteUnprompted = internalMutation({
+  args: { id: v.id("conversations"), text: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const chat = await ctx.db.get(args.id);
+    if (!chat) return null;
+    const unprompted = [...(chat.unprompted ?? []), { at: Date.now(), text: args.text.slice(0, 2000) }].slice(-5);
+    await ctx.db.patch(args.id, { unprompted });
+    return null;
+  },
+});
+
+/** The next turn has been told what was sent; only what arrived after it stays. */
+export const clearUnprompted = internalMutation({
+  args: { id: v.id("conversations"), through: v.number() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const chat = await ctx.db.get(args.id);
+    if (!chat?.unprompted) return null;
+    const left = chat.unprompted.filter((message) => message.at > args.through);
+    await ctx.db.patch(args.id, { unprompted: left.length ? left : undefined });
+    return null;
+  },
+});
+
+/**
  * Create the conversation row for an already-created agent thread.
  *
  * Re-checks for an existing row first: two messages arriving at once would
