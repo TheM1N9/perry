@@ -335,7 +335,13 @@ export class Query implements AsyncIterable<Doc> {
 
   async collect(): Promise<Doc[]> { return [...this.run()]; }
   async take(n: number): Promise<Doc[]> { return [...this.run(n)]; }
-  async first(): Promise<Doc | null> { return this.run(1).next().value ?? null; }
+  async first(): Promise<Doc | null> {
+    // Closed once it has its row: an unfinished statement keeps a read snapshot open,
+    // which keeps the WAL from checkpointing and fails the next write once any other
+    // connection (a script, a test) has written.
+    const rows = this.run(1);
+    try { return rows.next().value ?? null; } finally { rows.return(undefined); }
+  }
   async unique(): Promise<Doc | null> {
     const found = [...this.run(2)];
     if (found.length > 1) throw new Error(`unique() found more than one document in "${this.table}".`);
