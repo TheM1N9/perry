@@ -28,7 +28,8 @@ export const CONDITIONAL_DELIVERY = `Conditional delivery\nOnly when this job ma
 
 /** How a job's reply names the open thread it asked about (jobs.finished). */
 const ASKED = "asked:";
-const ASKED_LINE = /^[ \t]*asked:[ \t]*(\S+)[ \t]*$/gim;
+/** At the end of a line, on its own or after the question: models put it either way. */
+const ASKED_LINE = /[ \t]*\basked:[ \t]*([a-z0-9]+)[ \t]*$/gim;
 
 type Builtin = "heartbeat" | "daily-summary" | "consolidate";
 
@@ -267,12 +268,18 @@ export const finished = internalMutation({
     const job = await ctx.db.get(args.id);
     if (!job) return null;
     // A follow-up question names the thread it asks about; that thread is not asked about again.
-    for (const [, raw] of args.result?.matchAll(ASKED_LINE) ?? []) {
+    // Only a real memory id counts, so ordinary words after "asked:" stay.
+    const asked: Id<"memories">[] = [];
+    const result = args.result?.replace(ASKED_LINE, (line, raw: string) => {
       const id = ctx.db.normalizeId("memories", raw);
-      const thread = id ? await ctx.db.get(id) : null;
+      if (!id) return line;
+      asked.push(id);
+      return "";
+    }).trim() || undefined;
+    for (const id of asked) {
+      const thread = await ctx.db.get(id);
       if (thread && !thread.tags.includes("asked")) await ctx.db.patch(thread._id, { tags: [...thread.tags, "asked"] });
     }
-    const result = args.result?.replace(ASKED_LINE, "").trim() || undefined;
     await ctx.db.patch(job._id, { lastResult: result?.slice(0, 500), lastError: args.error?.slice(0, 500) });
     if (result && result !== QUIET) {
       await ctx.scheduler.runAfter(0, internal.notify.toOwner, { text: `⏰ ${job.name}\n\n${result}` });

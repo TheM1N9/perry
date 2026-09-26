@@ -149,17 +149,18 @@ try {
   const builtin = async (name: string) => (await jobs()).find((job) => job.builtin === name)!;
 
   // --- What the owner has left open -------------------------------------------------
-  const dentist = await remember("The owner has a call with the dentist this morning at 09:30 about a possible filling.", ["open"]);
+  const dentist = await remember("The owner had a call with the dentist yesterday at 16:00 about a possible filling.", ["open"]);
   const interview = await remember("The owner has a job interview with Acme next Thursday at 10:00.", ["open"]);
   const flat = await remember("The owner is waiting to hear back about the flat on Elm Street.", ["open"]);
   const offer = await remember("The owner will decide about the Berlin offer by Friday.", ["open"]);
   await remember("The owner accepted the Berlin offer.", [], [offer]);
   const parcel = await remember("The owner is expecting a parcel from their sister.", ["open"]);
 
-  // 3 and 4, with a briefing that asks about the parcel.
+  // 3 and 4, with a briefing that asks about the parcel, naming it after the question as models do
+  // (the flat, below, is named on a line of its own).
   const brief = await call<{ id: string }>("jobs:create", { name: "Morning brief", schedule: "0 7 * * *", prompt: "Brief me on my day." });
   const sentBefore = Date.now();
-  await call("jobs:finished", { id: brief.id, result: `Good morning. Did your sister's parcel arrive?\nasked: ${parcel}` });
+  await call("jobs:finished", { id: brief.id, result: `Good morning. Did your sister's parcel arrive? asked: ${parcel}` });
   await until(() => toOwner(sentBefore).some((message) => message.text.includes("parcel")), "the brief on Telegram", 30);
   const briefMessage = toOwner(sentBefore).find((message) => message.text.includes("parcel"))!;
   const briefJob = (await jobs()).find((job) => job.id === brief.id)!;
