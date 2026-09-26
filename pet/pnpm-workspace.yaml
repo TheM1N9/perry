@@ -1,0 +1,15 @@
+# The pet's own install (`perry pet`, pnpm install --dir pet), apart from Perry's.
+# package.json pins the pnpm Perry itself uses; these hold for a newer one too.
+
+# Newer pnpm refuses packages younger than its minimumReleaseAge (a day), even
+# in a lockfile, and Electron takes any @types/node 24: pinned to one past it.
+overrides:
+  "@types/node": 24.13.6
+
+# None of these install scripts is needed: onnxruntime-node's fetches optional
+# GPU files, protobufjs's checks versions, and uiohook-napi ships builds for
+# every platform. Newer pnpm stops until each is allowed or declined.
+allowBuilds:
+  onnxruntime-node: false
+  protobufjs: false
+  uiohook-napi: false
