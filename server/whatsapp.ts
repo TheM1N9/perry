@@ -27,6 +27,15 @@ const AUTH_DIR = join(HOME, "whatsapp", "auth");
 const MEDIA_LIMIT = 20 * 1024 * 1024;
 /** No event for this long and the connection is presumed dead (OpenClaw's watchdog). */
 const QUIET_MS = 30 * 60_000;
+/**
+ * How long a QR or code keeps being refreshed with nobody using it. WhatsApp
+ * shows a QR for a minute, then new ones every 20 seconds, then closes the
+ * connection; like WhatsApp Web, this starts a new one at once each time,
+ * until the window runs out and the dashboard offers a new code instead.
+ */
+const LINK_WINDOW_MS = Number(process.env.PERRY_WHATSAPP_LINK_MINUTES ?? 10) * 60_000;
+/** WhatsApp asks for a restart right after a phone links (DisconnectReason.restartRequired). */
+const RESTART_REQUIRED = 515;
 /** A pause between messages, so a long reply does not arrive as a burst. */
 const PACE_MS = 900;
 /**
@@ -133,6 +142,8 @@ export function runWhatsApp(runtime: Runtime): () => void {
 
   let socket: Socket | null = null;
   let connected = false;
+  /** When the current QR or code was first shown, while nobody has linked yet. */
+  let linkingSince: number | null = null;
   /** How the owner linked: in their own chat, Perry's messages carry SELF_MARK. */
   let mode: "self" | "separate" = "separate";
   /** Ids of what Perry sent, so its own messages in the self-chat are not taken as the owner's. */
@@ -249,6 +260,7 @@ export function runWhatsApp(runtime: Runtime): () => void {
     while (!stop.signal.aborted) {
       const wanted = await link().catch(() => null);
       if (!wanted?.wanted) {
+        linkingSince = null;
         // Not linked, or unlinked from the dashboard: forget the device, then wait to be asked.
         if (socket) { await socket.logout().catch(() => {}); socket.end(); socket = null; connected = false; }
         if (existsSync(AUTH_DIR) && wanted && !wanted.wanted) rmSync(AUTH_DIR, { recursive: true, force: true });
@@ -257,17 +269,22 @@ export function runWhatsApp(runtime: Runtime): () => void {
       }
       mkdirSync(AUTH_DIR, { recursive: true });
       mode = wanted.mode;
-      let closed: (reason: "logged-out" | "dropped" | "unlinked") => void = () => {};
-      const ended = new Promise<"logged-out" | "dropped" | "unlinked">((resolve) => { closed = resolve; });
+      type Ending = "logged-out" | "dropped" | "unlinked" | "refresh" | "restart";
+      let closed: (reason: Ending) => void = () => {};
+      const ended = new Promise<Ending>((resolve) => { closed = resolve; });
       try {
         const d = await driver;
         const current = await d.connect({ authDir: AUTH_DIR });
         socket = current;
         let asked = false;
+        let opened = false;
+        let showing = false;
         lastEvent = Date.now();
         current.ev.on("connection.update", (update: { connection?: string; qr?: string; lastDisconnect?: { error?: unknown } }) => {
           lastEvent = Date.now();
           if (update.qr) {
+            showing = true;
+            linkingSince ??= Date.now();
             if (wanted.phone && !asked) {
               // Linking with a code typed on the phone instead of scanning.
               asked = true;
@@ -280,13 +297,17 @@ export function runWhatsApp(runtime: Runtime): () => void {
           }
           if (update.connection === "open") {
             connected = true;
+            opened = true;
+            linkingSince = null;
             failures = 0;
             console.log("[perry] WhatsApp: connected");
             void report("connected", { me: current.user?.id ?? "" }).then(() => flush());
           }
           if (update.connection === "close") {
             connected = false;
-            closed(d.loggedOut(update) ? "logged-out" : "dropped");
+            const code = (update.lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode;
+            // A QR or code that ran out, and the restart after linking, are not failures: WhatsApp expects a new connection at once.
+            closed(d.loggedOut(update) ? "logged-out" : code === RESTART_REQUIRED ? "restart" : !opened && showing ? "refresh" : "dropped");
           }
         });
         current.ev.on("messages.upsert", (event: { type: string; messages: Array<Record<string, any>> }) => {
@@ -318,6 +339,25 @@ export function runWhatsApp(runtime: Runtime): () => void {
         if (reason === "unlinked") continue;
         current.end();
         socket = null;
+        if (reason === "restart") {
+          // Just linked: finish on a new connection, as WhatsApp asks.
+          await report("starting");
+          await sleep(300, stop.signal);
+          continue;
+        }
+        if (reason === "refresh") {
+          if (linkingSince !== null && Date.now() - linkingSince > LINK_WINDOW_MS) {
+            // Nobody linked it in time: stop making codes, as WhatsApp Web does, until the owner asks again.
+            linkingSince = null;
+            rmSync(AUTH_DIR, { recursive: true, force: true });
+            await report("expired", { error: "The code ran out before it was used." });
+            await runtime.runMutation("whatsapp:stop", {}, internal).catch(() => {});
+            continue;
+          }
+          // The code on the dashboard stays until the next one replaces it, a moment from now.
+          await sleep(300, stop.signal);
+          continue;
+        }
         failures += 1;
         // Back off, 2 s up to 60 s, with jitter (OpenClaw's reconnect policy, without its give-up).
         const wait = Math.min(60_000, 2_000 * 1.8 ** Math.min(failures, 8)) * (0.75 + Math.random() * 0.5);

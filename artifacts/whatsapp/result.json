@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-26T09:51:11.097Z",
+  "ranAt": "2026-09-26T10:48:13.752Z",
   "checks": {
     "linkByCode": true,
     "linkByQr": true,
@@ -31,7 +31,7 @@
     },
     "approvalPrompt": "🔐 *DESKTOP-27SQLCP wants to run* · _WhatsApp · Mani_\n\n```Remove-Item -Recurse .\\dist```\n\n📁 `C:\\work\\site`\n\nReply *1* to approve, *2* to decline, *3* to always allow (this exact command in C:\\work\\site).",
     "report": "⏰ *Water*\n\nTime to drink *water*.\n\n```Glass  ml\n─────  ───\nOne    250```\n\n• sip slowly",
-    "voiceReply": "I can’t transcribe the voice note here because no speech-to-text tool is available.",
+    "voiceReply": "I can’t listen to the voice note here because no speech-to-text tool is available.",
     "selfReply": "🤖 pong",
     "pageErrors": [],
     "whatsappSent": [
@@ -61,7 +61,7 @@
       },
       {
         "jid": "919876543210@s.whatsapp.net",
-        "text": "I can’t transcribe the voice note here because no speech-to-text tool is available."
+        "text": "I can’t listen to the voice note here because no speech-to-text tool is available."
       },
       {
         "jid": "919876543210@s.whatsapp.net",
