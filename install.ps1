@@ -59,6 +59,10 @@
     return ([int]$v[0] -gt 22) -or ([int]$v[0] -eq 22 -and [int]$v[1] -ge 13)
   }
 
+  # Windows PowerShell reads what pnpm, Bun and Codex print in the old console code page, which garbles
+  # their box drawing and symbols. UTF-8 while this runs; your window's own setting comes back after.
+  $encoding = [Console]::OutputEncoding
+  [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
   try {
     Write-Host "`nInstalling Perry" -ForegroundColor White
 
@@ -96,13 +100,18 @@
       Ok 'packages installed'
       if ($env:PERRY_NO_SETUP -eq '1') {
         bun --cwd $dir (Join-Path $dir 'scripts\perry.ts') link; Check 'Linking perry'
-        Write-Host "`n  Installed. Run 'perry setup' in a new terminal to finish." -ForegroundColor Green
+        # Linking saved ~\.perry\bin to your PATH; this window gets it too, so perry works here now.
+        Refresh-Path
+        Write-Host "`n  Installed. Run 'perry setup' to finish." -ForegroundColor Green
       } else {
         bun --cwd $dir (Join-Path $dir 'scripts\perry.ts') setup; Check 'perry setup'
+        Refresh-Path
       }
     } finally { Pop-Location }
   } catch {
     Write-Host "`n  $($_.Exception.Message)" -ForegroundColor Red
     Write-Host '  Fix that, then run the installer again; it picks up where it stopped.' -ForegroundColor DarkGray
+  } finally {
+    [Console]::OutputEncoding = $encoding
   }
 }

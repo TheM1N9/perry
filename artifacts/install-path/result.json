@@ -1,0 +1,19 @@
+﻿{
+    "ranAt":  "2026-09-26T13:56:19.0454202+05:30",
+    "checks":  {
+                   "parses":  true,
+                   "perryMissingBefore":  true,
+                   "perryFoundAfter":  true,
+                   "perryIsTheLauncher":  true,
+                   "pathKeptInOrder":  true,
+                   "encodingRestored":  true,
+                   "installedMessage":  true
+               },
+    "perry":  "C:\\Users\\Pranav\\.perry\\bin\\perry.cmd",
+    "encoding":  "ibm850",
+    "added":  [
+                  "C:\\Users\\Pranav\\.perry\\bin",
+                  "C:\\Users\\Pranav\\AppData\\Local\\Microsoft\\WinGet\\Links"
+              ],
+    "passed":  true
+}
