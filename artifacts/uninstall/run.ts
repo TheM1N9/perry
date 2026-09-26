@@ -33,6 +33,12 @@ import { fileURLToPath } from "node:url";
 //      removing PERRY_HOME.
 //   7. The flags do not work without a terminal: --keep-files and
 //      --remove-files must each do their part with no questions.
+//   8. Removing loses data without saying so: Perry's data is its database in
+//      PERRY_HOME, so the menu must say option 2 deletes the chats and memory,
+//      and after it the database must be gone.
+//   9. It sends people to Convex that is not there, or forgets one that is:
+//      Convex is named only when .env.local still names a deployment (an
+//      install never moved off it), and then both before and after removing.
 
 const [outDir, branchArg, originArg] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/uninstall/run.ts <outDir> [branch] [origin]");
@@ -62,6 +68,7 @@ function world(): World {
   writeFileSync(join(home, "bin", "perry.cmd"), "@echo off\r\n");
   writeFileSync(join(home, "files", "made.txt"), "something Perry made");
   writeFileSync(join(home, "runner.json"), "{}");
+  writeFileSync(join(home, "perry.sqlite"), "all of Perry's data");
   const userHome = join(root, "user");
   mkdirSync(userHome);
   writeFileSync(join(userHome, ".bashrc"), `alias ll='ls -l'\n\nexport PATH="$PATH:${home}/bin"  # added by Perry\nexport EDITOR=vim\n`);
@@ -120,6 +127,9 @@ try {
     const ran = plain(w);
     notes.noChoice = clean(ran.output).split("\n").slice(-3);
     checks.noChoiceChangesNothing = ran.code !== 0 && intact(w) && /--keep-files/.test(ran.output) && !existsSync(w.log);
+    // 8. The menu says what option 2 deletes; with no Convex deployment named, Convex is not mentioned.
+    checks.menuSaysDataIsDeleted = /all of Perry's data/.test(clean(ran.output)) && /your chats, memory, USER\.md/.test(clean(ran.output));
+    checks.noConvexWithoutOne = !/convex/i.test(ran.output);
   }
 
   // 7. The flags.
@@ -132,7 +142,18 @@ try {
     const w = make();
     const ran = plain(w, ["--remove-files"]);
     notes.removeFilesFlag = clean(ran.output).split("\n").slice(-6);
-    checks.removeFilesFlag = ran.code === 0 && !existsSync(w.repo) && !existsSync(w.home);
+    checks.removeFilesFlag = ran.code === 0 && !existsSync(w.repo) && !existsSync(w.home) && !existsSync(join(w.home, "perry.sqlite"));
+    checks.noConvexAfterRemoving = !/convex/i.test(ran.output);
+  }
+
+  // 9. An install that still names a Convex deployment is told it is untouched, before and after.
+  {
+    const w = make();
+    writeFileSync(join(w.repo, ".env.local"), "DASHBOARD_KEY=x\nCONVEX_DEPLOYMENT=dev:e2e-123 # team: t, project: perry\n");
+    const ran = plain(w, ["--remove-files"]);
+    notes.convexInstall = clean(ran.output).split("\n").filter((line) => /Convex/.test(line));
+    checks.namesConvexWhenThere = /still has data on Convex \(dev:e2e-123\)/.test(clean(ran.output))
+      && /Its Convex deployment \(dev:e2e-123\) is still there/.test(clean(ran.output));
   }
 
   // 6. A checkout with work in it.

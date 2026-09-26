@@ -13,7 +13,7 @@
  *   perry open      open the dashboard, already unlocked
  *   perry update    pull the latest Perry, install, rebuild, restart
  *   perry migrate   bring chats and memory over from Convex, where Perry used to keep them
- *   perry doctor    check this machine and the deployment
+ *   perry doctor    check this machine and Perry's server
  *   perry pair      a new pairing code for Telegram
  *   perry run       run Perry in this terminal instead of the background
  *   perry uninstall stop Perry starting at login, keeping its files or removing them from this computer
@@ -333,24 +333,29 @@ function removeFolder(dir: string, what: string): boolean {
 /**
  * `perry uninstall`. The owner picks: keep Perry's files, so `perry start`
  * (from the checkout) brings it back as it was, or remove them from this
- * computer too. Neither touches the Convex deployment, where the chats and
- * memory are, nor the tools Perry uses (Node, pnpm, Bun, Codex).
+ * computer too, which deletes everything Perry knows: its database is in
+ * ~/.perry. Neither touches the tools Perry uses (Node, pnpm, Bun, Codex), nor
+ * a Convex deployment an install from before the local backend still has.
  */
 async function uninstall(args: string[]): Promise<boolean> {
   const home = HOME.replace(homedir(), "~");
   const repo = REPO.replace(homedir(), "~");
+  // Read before anything is deleted: an install never moved off Convex still has its data there.
+  const convex = readEnvFile().CONVEX_DEPLOYMENT?.replace(/\s+#.*$/, "");
   let choice = args.includes("--keep-files") ? "1" : args.includes("--remove-files") ? "2" : "";
 
   say(`\n${bold("Uninstall Perry")}`);
-  say(`\n  ${bold("1")}  Stop Perry, and keep its files`);
-  say(dim(`     It stops starting at login and the perry command goes. Perry itself (${repo}) and its`));
-  say(dim(`     data on this computer (${home}) stay, so it can be started again as it was.`));
-  say(`\n  ${bold("2")}  Remove Perry from this computer`);
+  say(`\n  ${bold("1")}  Stop Perry, and keep everything`);
+  say(dim(`     It stops starting at login and the perry command goes. Perry itself (${repo}) and all`));
+  say(dim(`     it knows (${home}) stay, so it can be started again as it was.`));
+  say(`\n  ${bold("2")}  Remove Perry from this computer, and everything it knows`);
   say(dim(`     The same, and deletes ${repo} (with .env.local, which holds your dashboard key) and`));
-  say(dim(`     ${home}: this computer's connection, files Perry made, files you attached in chat,`));
-  say(dim(`     its skills, logs and workspace, and any Node or npm packages installed just for Perry.`));
-  say(dim(`\n  Either way your Convex deployment, with your chats and memory, is not deleted, and`));
-  say(dim(`  Node, pnpm, Bun and Codex stay installed.`));
+  say(dim(`     ${home}, which is ${yellow("all of Perry's data")}: your chats, memory, USER.md, tasks and jobs,`));
+  say(dim(`     files Perry made, files you attached in chat, its skills, logs and workspace, and any`));
+  say(dim(`     Node or npm packages installed just for Perry. There is no other copy; to keep one,`));
+  say(dim(`     back up ${home} first.`));
+  say(dim(`\n  Either way Node, pnpm, Bun and Codex stay installed.`));
+  if (convex) say(dim(`  This install still has data on Convex (${convex}); neither choice touches it.`));
 
   if (!choice) {
     if (!process.stdin.isTTY) {
@@ -364,7 +369,7 @@ async function uninstall(args: string[]): Promise<boolean> {
         choice = (await rl.question(`\n  Choose 1 or 2 (Ctrl+C to cancel): `)).trim();
       }
       if (choice === "2") {
-        const sure = (await rl.question(`  This deletes ${repo} and ${home}. Type ${bold("remove")} to go ahead: `)).trim().toLowerCase();
+        const sure = (await rl.question(`  This deletes ${repo} and ${home}, with all your chats and memory, for good. Type ${bold("remove")} to go ahead: `)).trim().toLowerCase();
         if (sure !== "remove") {
           say(`\n  Nothing was changed.\n`);
           return false;
@@ -394,7 +399,7 @@ async function uninstall(args: string[]): Promise<boolean> {
   say(!removed ? `\n  ${yellow("Perry is mostly removed; see above for what is left.")}`
     : unsaved ? `\n  ${green("Perry is removed from this computer,")} except its checkout at ${REPO}, kept for your work in it.`
       : `\n  ${green("Perry is removed from this computer.")}`);
-  say(dim(`  Its Convex deployment is still there, with your chats and memory. Delete it at dashboard.convex.dev if you want it gone.`));
+  if (convex) say(dim(`  Its Convex deployment (${convex}) is still there. Delete it at dashboard.convex.dev if you want it gone.`));
   say(dim(`  Open a new terminal so it no longer has Perry on its PATH.\n`));
   return removed;
 }
@@ -568,7 +573,7 @@ const HELP = `
   ${bold("open")}       open the dashboard, already unlocked
   ${bold("update")}     pull the latest Perry, install, rebuild, restart
   ${bold("migrate")}    bring chats and memory over from Convex, where Perry used to keep them
-  ${bold("doctor")}     check this machine and your deployment
+  ${bold("doctor")}     check this machine and Perry's server
   ${bold("pair")}       a new code to claim Perry on Telegram
   ${bold("run")}        run Perry in this terminal instead of the background
   ${bold("uninstall")}  stop Perry; keep its files, or remove them from this computer

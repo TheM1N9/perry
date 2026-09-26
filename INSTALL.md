@@ -60,7 +60,7 @@ starts at every login and restarts either one if it crashes. From then on:
 | `perry doctor` | check this machine and your deployment |
 | `perry pair` | a new code to claim Perry on Telegram |
 | `perry run` | run it in this terminal instead, to watch it or to answer approvals there |
-| `perry uninstall` | stop it starting at login, then pick: keep its files (`~/perry`, `~/.perry`), or remove them from this computer too. Your Convex deployment, with your chats and memory, is kept either way. `--keep-files` or `--remove-files` answers without asking |
+| `perry uninstall` | stop it starting at login, then pick: keep everything (`~/perry`, and `~/.perry` with all Perry knows), or remove both from this computer, which deletes your chats and memory for good (back up `~/.perry` first to keep them). `--keep-files` or `--remove-files` answers without asking |
 
 The `perry` command is a small launcher in `~/.perry/bin`, added to your PATH,
 that runs the CLI from your checkout whatever folder you are in. Codex works in
