@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-26T17:07:40.513Z",
+  "ranAt": "2026-09-26T17:56:07.796Z",
   "realMouse": true,
   "voice": true,
   "checks": {
@@ -97,7 +97,7 @@
       "him": "217,130,42"
     },
     "timezone": "Asia/Calcutta",
-    "preview": "Chat | To-dos | Needs you | 23:05",
+    "preview": "Chat | To-dos | Needs you | 23:53",
     "dragged": {
       "before": {
         "x": 1516,
@@ -109,36 +109,36 @@
       }
     },
     "circlePixel": "222,54,54",
-    "dentistReply": "I’ll remind you to call the dentist at 1:30 AM on September 27.",
+    "dentistReply": "• Reminder set: call the dentist at 2:00 AM on September 27.",
     "dentist": {
       "title": "Call the dentist",
-      "due": "Sun Sep 27 2026 01:30:00 GMT+0530 (India Standard Time)",
+      "due": "Sun Sep 27 2026 02:00:00 GMT+0530 (India Standard Time)",
       "by": "assistant"
     },
-    "petChatAnswer": "You asked me to remind you to call the dentist at 1:30 AM.",
+    "petChatAnswer": "You asked me to remind you to call the dentist at 2:00 AM.",
     "micHeard": "Remind me to call Sam at 5pm tomorrow.",
-    "micSeconds": 0.9,
+    "micSeconds": 0.8,
     "modelDownloadShown": false,
     "hotkeyPrompt": "Remind me to call Sam at 5pm tomorrow.",
     "hotkeyTodo": {
-      "id": "re0g20gp3ptjz66k3ytgdn4nrh",
+      "id": "nr5nstk1rw17av8ezkkmz2yhrw",
       "title": "Call Sam",
       "dueAt": 1790508600000,
       "by": "assistant",
-      "createdAt": 1790442369451
+      "createdAt": 1790445272846
     },
-    "binsWhileAtComputer": 1790442334276,
+    "binsWhileAtComputer": 1790445232852,
     "binsReminder": {
       "text": "⏰ Take out the bins\ndue now",
       "buttons": [
-        "td:zxqn1vhdxwnbr9881x1z9vn73b:d",
-        "td:zxqn1vhdxwnbr9881x1z9vn73b:10",
-        "td:zxqn1vhdxwnbr9881x1z9vn73b:60",
-        "td:zxqn1vhdxwnbr9881x1z9vn73b:t"
+        "td:00mbtdr6dgdffnqq036yhq6pre:d",
+        "td:00mbtdr6dgdffnqq036yhq6pre:10",
+        "td:00mbtdr6dgdffnqq036yhq6pre:60",
+        "td:00mbtdr6dgdffnqq036yhq6pre:t"
       ]
     },
-    "tomorrowCard": "⏰ water the plants\npushed back to tomorrow at 22:33",
-    "doneReply": "Marked “Call the dentist” done.",
+    "tomorrowCard": "⏰ water the plants\npushed back to tomorrow at 23:21",
+    "doneReply": "• Marked “Call the dentist” done.",
     "otherAppHolds": "held",
     "pageErrors": [],
     "perryPetOff": "stopped  and no longer starts at login",
@@ -146,65 +146,72 @@
       "timezone": "Asia/Calcutta",
       "open": [
         {
-          "id": "re0g20gp3ptjz66k3ytgdn4nrh",
+          "id": "nr5nstk1rw17av8ezkkmz2yhrw",
           "title": "Call Sam",
           "dueAt": 1790508600000,
           "by": "assistant",
-          "createdAt": 1790442369451
+          "createdAt": 1790445272846
         },
         {
-          "id": "vsf2ddpk8853mee145rennvqv9",
-          "title": "Reply to Ana",
-          "dueAt": 1790523408866,
-          "by": "owner",
-          "createdAt": 1790442408866
-        },
-        {
-          "id": "5d6tj148jjdrc4mtj3071t77v8",
-          "title": "water the plants",
-          "dueAt": 1790528616834,
-          "by": "owner",
-          "createdAt": 1790442317111
-        },
-        {
-          "id": "701g820s817k7ky5wcar0st2ty",
+          "id": "2rpd0m85vf2frt47prrbm3phtw",
           "title": "Call Sam",
-          "dueAt": 1790529316970,
-          "by": "owner",
-          "createdAt": 1790442311869
+          "dueAt": 1790508600000,
+          "by": "assistant",
+          "createdAt": 1790445286637
         },
         {
-          "id": "1t9fespj2ep8tzry5msmz9wsxn",
-          "title": "Stretch",
-          "dueAt": 1790529431598,
+          "id": "ndbqjzqz6aqc3s3rbcy3mmzmpk",
+          "title": "Reply to Ana",
+          "dueAt": 1790526304677,
           "by": "owner",
-          "createdAt": 1790442311599
+          "createdAt": 1790445304678
+        },
+        {
+          "id": "a1x2n7mynjxkq6rjvxp70cp70a",
+          "title": "water the plants",
+          "dueAt": 1790531516218,
+          "by": "owner",
+          "createdAt": 1790445224792
+        },
+        {
+          "id": "2vjtbghma265vz7s6wjn34zksh",
+          "title": "Call Sam",
+          "dueAt": 1790532224638,
+          "by": "owner",
+          "createdAt": 1790445219754
+        },
+        {
+          "id": "fz0m72j78kc4v0hjnv5g2qf9kn",
+          "title": "Stretch",
+          "dueAt": 1790532339218,
+          "by": "owner",
+          "createdAt": 1790445219220
         }
       ],
       "doneToday": [
         {
-          "id": "hv8s91z14dq2n1c2pr6rn5sn1b",
+          "id": "es7r0gjd70gktvk051mh4mkbp8",
           "title": "Call the dentist",
-          "dueAt": 1790442337635,
-          "doneAt": 1790442406800,
+          "dueAt": 1790445237032,
+          "doneAt": 1790445302599,
           "by": "assistant",
-          "createdAt": 1790442331460
+          "createdAt": 1790445238703
         },
         {
-          "id": "zxqn1vhdxwnbr9881x1z9vn73b",
+          "id": "00mbtdr6dgdffnqq036yhq6pre",
           "title": "Take out the bins",
-          "dueAt": 1790442336293,
-          "doneAt": 1790442396612,
+          "dueAt": 1790445234881,
+          "doneAt": 1790445295978,
           "by": "owner",
-          "createdAt": 1790442394278
+          "createdAt": 1790445292854
         },
         {
-          "id": "zv4s3ah45ph1fzr5hc1m9ec9n3",
+          "id": "xnmv7ff2e4he3c69ahfpmbhygr",
           "title": "Pay rent",
-          "dueAt": 1790442191598,
-          "doneAt": 1790442313328,
+          "dueAt": 1790445099218,
+          "doneAt": 1790445221207,
           "by": "owner",
-          "createdAt": 1790442312973
+          "createdAt": 1790445220860
         }
       ],
       "streak": 1
@@ -216,7 +223,7 @@
       "buttons": []
     },
     {
-      "text": "I’ll remind you to call the dentist at 1:30 AM on September 27.",
+      "text": "• Reminder set: call the dentist at 2:00 AM on September 27.",
       "buttons": []
     },
     {
@@ -224,34 +231,34 @@
       "buttons": []
     },
     {
-      "text": "⏰ water the plants\npushed back to tomorrow at 22:33",
+      "text": "⏰ water the plants\npushed back to tomorrow at 23:21",
       "buttons": []
     },
     {
       "text": "⏰ Call the dentist\ndue now",
       "buttons": [
-        "td:hv8s91z14dq2n1c2pr6rn5sn1b:d",
-        "td:hv8s91z14dq2n1c2pr6rn5sn1b:10",
-        "td:hv8s91z14dq2n1c2pr6rn5sn1b:60",
-        "td:hv8s91z14dq2n1c2pr6rn5sn1b:t"
+        "td:es7r0gjd70gktvk051mh4mkbp8:d",
+        "td:es7r0gjd70gktvk051mh4mkbp8:10",
+        "td:es7r0gjd70gktvk051mh4mkbp8:60",
+        "td:es7r0gjd70gktvk051mh4mkbp8:t"
       ]
     },
     {
-      "text": "Marked “Call the dentist” done.",
+      "text": "• Marked “Call the dentist” done.",
       "buttons": []
     }
   ],
   "logTail": [
     "▲ Next.js 16.3.6",
-    "- Local:         http://localhost:50591",
-    "- Network:       http://100.77.196.105:50591",
-    "✓ Ready in 207ms",
-    "✓ Running next.config.ts took 49ms",
+    "- Local:         http://localhost:57425",
+    "- Network:       http://100.77.196.105:57425",
+    "✓ Ready in 173ms",
+    "✓ Running next.config.ts took 41ms",
     "[perry] connected this computer (DESKTOP-27SQLCP) to the local backend",
-    "[perry] backend ready: 291 functions, data in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-pet-LfkjVB",
+    "[perry] backend ready: 292 functions, data in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-pet-cd1PAi",
     "[perry] Telegram: polling for messages",
     "[perry] dashboard:setShortcut failed: Error: That is already the shortcut for Search and commands.",
-    "    at Object.handler (C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-3961593a\\.next\\server\\chunks\\_0e-meh1._.js:293:2390)",
+    "    at Object.handler (C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-3961593a\\.next\\server\\chunks\\_0e-meh1._.js:293:2631)",
     "    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
     "    at async C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-3961593a\\.next\\server\\chunks\\_0e-meh1._.js:346:27214",
     ""

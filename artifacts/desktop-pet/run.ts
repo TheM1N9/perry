@@ -531,7 +531,10 @@ try {
     await dispatch(pet!, "mouseReleased", body.x, body.y);
     await until(() => panelOpen(pet!), "his panel", 5);
   };
+  // His panel shuts when his window loses the focus (anything else on this screen can take it), so each step opens it again.
   const ask = async (words: string) => {
+    await openPanel();
+    await clickTab(pet!, "Chat");
     await pet!.evaluate(`document.querySelector('textarea[aria-label="Message Perry"]').focus()`);
     await pet!.send("Input.insertText", { text: words });
     await pressEnter(pet!);
@@ -543,6 +546,8 @@ try {
   const question = "What did I ask you to remind me about on Telegram today? Answer in one short line.";
   await ask(question);
   await answered(question);
+  await openPanel();
+  await clickTab(pet, "Chat");
   const petChatId = await pet.evaluate(`localStorage.getItem("perry.pet.chat")`) as string | null;
   await check("petChatKnowsTelegram", async () => /dentist/i.test(await pet!.evaluate(`document.querySelector('section[aria-label="Perry"]')?.innerText ?? ""`) as string), 20);
   notes.petChatAnswer = (await pet.evaluate(`[...document.querySelectorAll('section[aria-label="Perry"] .prose-chat')].pop()?.innerText ?? ""`) as string).trim();
@@ -847,7 +852,11 @@ try {
   stop(server);
   stub.close();
   const result = { ranAt: new Date().toISOString(), realMouse: REAL_MOUSE, voice: VOICE, checks, notes, telegram: telegram.sent.map(({ text, buttons }) => ({ text, buttons })), logTail: logs.server.split("\n").slice(-20) };
-  writeFileSync(join(outDir, "result.json"), JSON.stringify(result, null, 2));
+  // Windows can hold the file a moment (an editor, a scanner); a few tries, so a run is not lost at its last step.
+  for (let attempt = 1; ; attempt++) {
+    try { writeFileSync(join(outDir, "result.json"), JSON.stringify(result, null, 2)); break; }
+    catch (error) { if (attempt === 5) throw error; await sleep(1_000); }
+  }
   const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([name]) => name);
   console.log(failed.length ? `FAILED: ${failed.join(", ")}` : `all ${Object.keys(checks).length} checks passed`);
   await sleep(500);
