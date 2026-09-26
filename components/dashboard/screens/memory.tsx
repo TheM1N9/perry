@@ -72,7 +72,27 @@ function Memories() {
   }, [search]);
   const memories = useQuery(api.dashboard.listMemories, { key: dashboardKey, query: term, kind: filter === "all" ? undefined : filter });
   const deleteMemory = useMutation(api.dashboard.deleteMemory);
+  const editMemory = useMutation(api.dashboard.editMemory);
+  /** The memory being edited, its new words, and why a save was refused. */
+  const [editing, setEditing] = useState<{ id: string; text: string; error: string } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
   const filterLabel = KINDS.find((item) => item.kind === filter)?.label;
+
+  const saveEdit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editing || savingEdit) return;
+    setSavingEdit(true);
+    try {
+      // Refused (too long for its layer, say), the words stay in the box to be changed again.
+      const reason = await editMemory({ key: dashboardKey, id: editing.id, text: editing.text });
+      if (reason) setEditing({ ...editing, error: reason });
+      else { setEditing(null); toast.success("Saved. Perry uses the new words from the next message."); }
+    } catch (cause) {
+      setEditing({ ...editing, error: errorText(cause) });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -104,6 +124,24 @@ function Memories() {
           <List label="Memories">
             {memories.map((memory) => (
               <li key={memory.id} className="group/memory flex items-start gap-4 px-4 py-3.5">
+                {editing?.id === memory.id ? (
+                  <form className="min-w-0 flex-1" onSubmit={(event) => void saveEdit(event)}>
+                    <Field data-invalid={Boolean(editing.error) || undefined}>
+                      <FieldLabel htmlFor={`memory-edit-${memory.id}`} className="sr-only">Edit this memory</FieldLabel>
+                      <Textarea id={`memory-edit-${memory.id}`} rows={2} value={editing.text} autoFocus aria-invalid={Boolean(editing.error) || undefined} className="min-h-14 resize-none"
+                        onChange={(event) => setEditing({ ...editing, text: event.target.value, error: "" })}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") setEditing(null);
+                          if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
+                        }} />
+                      {editing.error && <FieldError>{editing.error}</FieldError>}
+                    </Field>
+                    <div className="mt-2 flex gap-2">
+                      <Button type="submit" size="sm" disabled={savingEdit || !editing.text.trim() || editing.text.trim() === memory.text}>{savingEdit && <Spinner />}Save</Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(null)} disabled={savingEdit}>Cancel</Button>
+                    </div>
+                  </form>
+                ) : <>
                 <div className="min-w-0 flex-1">
                   <p className="text-[15px] text-pretty [overflow-wrap:anywhere]">{memory.text}</p>
                   <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
@@ -112,12 +150,15 @@ function Memories() {
                     {memory.origin && <span>{ORIGINS[memory.origin]}</span>}
                     {memory.source === "dreaming" && <span title="Promoted from daily notes overnight">Promoted overnight</span>}
                     {memory.tags.length > 0 && <span>{memory.tags.map((tag) => `#${tag}`).join(" ")}</span>}
+                    {memory.editedAt && <span title={`Edited ${new Date(memory.editedAt).toLocaleString()}`}>Edited</span>}
                   </p>
                 </div>
+                <Button variant="ghost" size="sm" className="shrink-0 text-muted-foreground" onClick={() => setEditing({ id: memory.id, text: memory.text, error: "" })}>Edit</Button>
                 <ActionButton variant="ghost" size="sm" className="shrink-0 text-muted-foreground hover:text-destructive" action={() => deleteMemory({ key: dashboardKey, id: memory.id })} success="Forgotten."
                   confirm={{ title: "Forget this?", body: <>&ldquo;{memory.text.length > 160 ? `${memory.text.slice(0, 160)}…` : memory.text}&rdquo; is deleted, and Perry won&apos;t recall it again.</>, label: "Forget" }}>
                   Forget
                 </ActionButton>
+                </>}
               </li>
             ))}
           </List>

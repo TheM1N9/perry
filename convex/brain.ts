@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, type ActionCtx } from "./_generated/server";
 import { INSTRUCTIONS } from "./assistant";
-import { ownerNow, QUIET } from "./jobs";
+import { ownerClock, ownerNow, QUIET } from "./jobs";
 import {
   ACCESS_LABELS, chatModel, describeAccess, describeEfforts, describeModels, effortUnused, parseAccessCommand, parseModelCommand,
   parseThinkCommand, pickAccess, pickEffort, pickModel, runLabel, turnEffort, type ModelOption,
@@ -235,7 +235,7 @@ const userIdOf = (conversation: Doc<"conversations">) =>
  * Find the conversation for this chat, creating it and its agent thread on
  * first contact.
  */
-async function loadConversation(
+export async function loadConversation(
   ctx: ActionCtx,
   channel: Channel,
   externalId: string,
@@ -349,12 +349,22 @@ export const handleTurn = internalAction({
       });
       if (telegramToken) await sendTyping(telegramToken, args.externalId);
 
+      const turn = await prepareTurn(ctx, conversation, args.hidden ? "" : args.text);
+      // What the assistant sent here on its own since the owner last wrote: their message may answer it.
+      const sent = conversation.unprompted ?? [];
+      if (sent.length) {
+        const timezone: string = await ctx.runQuery(internal.jobs.ownerTimezone, {});
+        const block = "# Sent by you since their last message\n\nYou messaged the owner here on your own; what they write now may answer it.\n" +
+          sent.map((message) => `- [${ownerClock(timezone, message.at)}] ${message.text}`).join("\n");
+        turn.recalled = [block, turn.recalled].filter(Boolean).join("\n\n");
+      }
+
       try {
         await ctx.runMutation(internal.codex.enqueueTurn, {
           conversationId: conversation._id,
           runId,
           prompt,
-          ...await prepareTurn(ctx, conversation, args.hidden ? "" : args.text),
+          ...turn,
           ...settings,
           attachments,
           ...(args.hidden ? { hidden: true } : {}),
@@ -362,6 +372,7 @@ export const handleTurn = internalAction({
           policy: conversation.jobId ? "queue" : "steer",
         });
         delegated = true;
+        if (sent.length) await ctx.runMutation(internal.conversations.clearUnprompted, { id: conversation._id, through: sent[sent.length - 1].at });
       } catch (error) {
         // Usually no runner is online. Say so: a silent failure is worse than
         // an admitted one, because you keep waiting for a reply that never comes.

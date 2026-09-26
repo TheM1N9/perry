@@ -9,6 +9,7 @@ import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 import { describeError, UNSAFE_DESTINATION } from "./lib/errors";
 import { truncateHead } from "./lib/truncate";
+import { ownerClock } from "./jobs";
 
 /**
  * Reading public web pages.
@@ -476,6 +477,8 @@ export const checkMonitors = internalAction({
         await ctx.runAction(internal.notify.toOwner, {
           text: `${monitor.title}\n${observation}\n${monitor.url}`,
         });
+        const timezone: string = await ctx.runQuery(internal.jobs.ownerTimezone, {});
+        await ctx.runMutation(internal.memories.noteAlert, { text: `${monitor.title}: ${observation} (${monitor.url})`, at: ownerClock(timezone) });
       }
     }
 
