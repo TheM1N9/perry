@@ -173,7 +173,10 @@ export const authorize = internalMutation({
       const isOwner =
         install.ownerChannel === args.channel &&
         install.ownerExternalId === args.externalId;
-      return isOwner ? { outcome: "already-owner" } : { outcome: "not-owner" };
+      if (!isOwner) return { outcome: "not-owner" };
+      // Kept current, and corrected on installs that stored a Telegram @username here.
+      if (args.name && args.name !== install.ownerName) await ctx.db.patch(install._id, { ownerName: args.name });
+      return { outcome: "already-owner" };
     }
 
     // Unclaimed, or claimed on WhatsApp. Look for the pairing code anywhere in

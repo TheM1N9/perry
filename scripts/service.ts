@@ -318,17 +318,18 @@ export function serviceState(ctx = serviceContext()): ServiceState {
   };
 }
 
+/** Run a plan's commands, quietly: a dry run lists them, and a failure says which one and why. */
 export function runSteps(steps: Step[], dryRun: boolean): boolean {
   for (const step of steps) {
-    console.log(dim(`  $ ${step.argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(" ")}`));
-    if (dryRun) continue;
+    const shown = `$ ${step.argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(" ")}`;
+    if (dryRun) { console.log(dim(`  ${shown}`)); continue; }
     let result = exec(step.argv);
     for (let retry = 0; result.code !== 0 && retry < (step.retries ?? 0); retry++) {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
       result = exec(step.argv);
     }
     if (result.code !== 0 && !step.mayFail) {
-      console.error(red(`  failed (${result.code}): ${result.output}`));
+      console.error(red(`  failed (${result.code}): ${shown}\n  ${result.output}`));
       return false;
     }
   }
@@ -350,10 +351,10 @@ export function install({ dryRun = false } = {}): boolean {
   // Nothing to check for runner.json: on a new computer it does not exist yet. Perry's server writes it
   // the first time the service starts it (server/index.ts, pairThisMachine), and the runner waits for it.
   const plan = servicePlan(ctx);
-  console.log(`\n${bold(`Installing Perry as a ${plan.manager} service`)}${dryRun ? dim("  (dry run: nothing is written or run)") : ""}`);
+  if (dryRun) console.log(`\n${bold(`Installing Perry as a ${plan.manager} service`)}${dim("  (dry run: nothing is written or run)")}`);
   for (const file of plan.files) {
-    console.log(dim(`  write ${file.path}`));
     if (dryRun) {
+      console.log(dim(`  write ${file.path}`));
       console.log(file.content.split(/\r?\n/).map((line) => dim(`  | ${line}`)).join("\n"));
       continue;
     }
@@ -368,9 +369,7 @@ export function install({ dryRun = false } = {}): boolean {
   if (!runSteps(plan.install, dryRun)) return false;
   if (dryRun) return true;
 
-  console.log(green(`  installed.`) + dim(` It starts now and whenever you log in.`));
-  console.log(dim(`  Approve what Codex asks for in the dashboard; there is no terminal to ask in.`));
-  console.log(dim(`  perry status | logs | stop | start | uninstall`));
+  // Whoever started it says it is running; only what still needs doing is said here.
   if (ctx.platform === "linux") {
     const linger = exec(["loginctl", "show-user", userInfo().username, "-p", "Linger"]);
     if (/Linger=no/.test(linger.output)) {
@@ -378,22 +377,20 @@ export function install({ dryRun = false } = {}): boolean {
       console.log(`    loginctl enable-linger ${userInfo().username}`);
     }
   }
-  console.log("");
   return true;
 }
 
 export function uninstall({ dryRun = false } = {}): boolean {
   const ctx = serviceContext();
   const plan = servicePlan(ctx);
-  console.log(`\n${bold(`Removing the ${plan.manager} service`)}`);
+  if (dryRun) console.log(`\n${bold(`Removing the ${plan.manager} service`)}`);
   runSteps(plan.uninstall, dryRun);
   for (const file of plan.files) {
-    console.log(dim(`  remove ${file.path}`));
-    if (!dryRun) rmSync(file.path, { force: true });
+    if (dryRun) console.log(dim(`  remove ${file.path}`));
+    else rmSync(file.path, { force: true });
   }
   if (!dryRun && ctx.platform === "win32") endServiceProcess();
   if (!dryRun && ctx.platform === "linux") exec(["systemctl", "--user", "daemon-reload"]);
-  console.log(dim(`  Perry no longer starts on its own. Its settings in ${PATHS.runnerConfig} are kept.\n`));
   return true;
 }
 
@@ -427,8 +424,11 @@ async function main() {
   const ctx = serviceContext();
   const plan = servicePlan(ctx);
 
-  if (command === "install") process.exit(install({ dryRun }) ? 0 : 1);
-  if (command === "uninstall") process.exit(uninstall({ dryRun }) ? 0 : 1);
+  if (command === "install" || command === "uninstall") {
+    const ok = command === "install" ? install({ dryRun }) : uninstall({ dryRun });
+    if (ok && !dryRun) console.log(`  ${green(command === "install" ? "installed" : "removed")}${dim(command === "install" ? ": it starts now and at every login" : `: Perry no longer starts on its own; ${PATHS.runnerConfig} is kept`)}`);
+    process.exit(ok ? 0 : 1);
+  }
   if (command === "start" || command === "stop") {
     const ok = runSteps(plan[command], dryRun);
     if (command === "stop" && !dryRun && ctx.platform === "win32") endServiceProcess();

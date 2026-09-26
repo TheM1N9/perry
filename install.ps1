@@ -19,11 +19,22 @@
   $branch = if ($env:PERRY_BRANCH) { $env:PERRY_BRANCH } else { 'main' }
   $dir = if ($env:PERRY_DIR) { $env:PERRY_DIR } else { Join-Path $HOME 'perry' }
 
-  function Step($text) { Write-Host "`n$text" -ForegroundColor Cyan }
+  # One line per step that went well; a tool's own output only when it fails.
   function Ok($text) { Write-Host "  $text" -ForegroundColor Green }
-  function Found($text) { Write-Host "  $text" -ForegroundColor Green -NoNewline; Write-Host ' (already installed)' -ForegroundColor DarkGray }
-  function Added($text) { Write-Host "  $text" -ForegroundColor Green -NoNewline; Write-Host ' (installed for Perry)' -ForegroundColor DarkGray }
+  $tools = [System.Collections.Generic.List[string]]::new()
+  function Found($text) { $tools.Add($text) }
+  function Added($text) { $tools.Add("$text (new)") }
   function Has($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }
+  # Runs a step with its output held back, shown only if it fails. Stderr is output here, not an error:
+  # git and npm write their progress there.
+  function Quietly($what, [scriptblock]$work) {
+    $ErrorActionPreference = 'Continue'
+    Write-Host "  $what..." -NoNewline -ForegroundColor DarkGray
+    $out = & $work 2>&1 | ForEach-Object { "$_" } | Out-String
+    $code = $LASTEXITCODE
+    Write-Host "`r$(' ' * ($what.Length + 5))`r" -NoNewline
+    if ($code -ne 0) { Write-Host $out.Trim() -ForegroundColor DarkGray; throw "$what failed (exit $code)." }
+  }
   # This session's PATH, then the saved ones (a tool installed a moment ago, or since this window opened), then
   # where tools you already have usually live: nvm-windows, Volta, Scoop, npm's global folder, Bun and winget.
   # Appended in that order, so a tool already on your PATH always wins.
@@ -48,9 +59,7 @@
   function Check($what) { if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)." } }
   function Winget($id, $what) {
     if (-not (Has winget)) { throw "$what is not installed, and winget is not here to install it. Install $what, then run this again." }
-    Write-Host "  installing $what with winget"
-    winget install --id $id -e --source winget --accept-package-agreements --accept-source-agreements --silent | Out-Host
-    Check "Installing $what"
+    Quietly "installing $what" { winget install --id $id -e --source winget --accept-package-agreements --accept-source-agreements --silent }
     Refresh-Path
   }
   function NodeVersionOk {
@@ -65,8 +74,6 @@
   [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
   try {
     Write-Host "`nInstalling Perry" -ForegroundColor White
-
-    Step 'Tools'
     Refresh-Path
     if (Has git) { Found "git $((git --version) -replace 'git version ', '')" }
     else { Winget 'Git.Git' 'Git'; Added "git $((git --version) -replace 'git version ', '')" }
@@ -80,24 +87,24 @@
       Added "node $(node --version)"
     }
     if (Has pnpm) { Found "pnpm $(pnpm --version)" }
-    else { Write-Host '  installing pnpm'; npm install -g pnpm@10 | Out-Host; Check 'Installing pnpm'; Refresh-Path; Added "pnpm $(pnpm --version)" }
+    else { Quietly 'installing pnpm' { npm install -g pnpm@10 }; Refresh-Path; Added "pnpm $(pnpm --version)" }
     if (Has bun) { Found "bun $(bun --version)" }
-    else { Write-Host '  installing Bun'; powershell -NoProfile -ExecutionPolicy Bypass -Command "irm bun.sh/install.ps1 | iex" | Out-Host; Check 'Installing Bun'; Refresh-Path; Added "bun $(bun --version)" }
+    else { Quietly 'installing Bun' { powershell -NoProfile -ExecutionPolicy Bypass -Command "irm bun.sh/install.ps1 | iex" }; Refresh-Path; Added "bun $(bun --version)" }
     if (Has codex) { Found 'codex' }
-    else { Write-Host '  installing the Codex CLI'; npm install -g @openai/codex | Out-Host; Check 'Installing Codex'; Refresh-Path; Added 'codex' }
+    else { Quietly 'installing the Codex CLI' { npm install -g @openai/codex }; Refresh-Path; Added 'codex' }
+    Ok ($tools -join ', ')
 
-    Step "Perry, in $dir"
     if (Test-Path (Join-Path $dir '.git')) {
-      git -C $dir pull --ff-only | Out-Host; Check 'Updating Perry'
+      Quietly 'updating Perry' { git -C $dir pull --ff-only }
     } elseif ((Test-Path $dir) -and (Get-ChildItem -Force $dir | Select-Object -First 1)) {
       throw "$dir exists and is not a Perry checkout. Move it, or set PERRY_DIR to another folder."
     } else {
-      git clone --branch $branch $repo $dir | Out-Host; Check 'Downloading Perry'
+      Quietly 'downloading Perry' { git clone --branch $branch $repo $dir }
     }
     Push-Location $dir
     try {
-      pnpm install --frozen-lockfile | Out-Host; Check 'Installing packages'
-      Ok 'packages installed'
+      Quietly 'installing packages' { pnpm install --frozen-lockfile }
+      Ok "Perry in $dir"
       if ($env:PERRY_NO_SETUP -eq '1') {
         bun --cwd $dir (Join-Path $dir 'scripts\perry.ts') link; Check 'Linking perry'
         # Linking saved ~\.perry\bin to your PATH; this window gets it too, so perry works here now.

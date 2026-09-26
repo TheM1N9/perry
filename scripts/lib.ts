@@ -11,13 +11,47 @@ export const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
 
 export type Ran = { code: number | null; output: string };
 
+export type Spinner = { succeed(text: string): void; fail(text: string): void; stop(): void };
+
+/**
+ * An ora spinner for a step that makes you wait, settled as ✔ or ✖. Loaded
+ * when needed: a checkout pulled by hand has not installed ora yet, and
+ * `perry update`, which installs it, must still run there.
+ */
+export async function spinner(text: string): Promise<Spinner> {
+  const ora = await loadOra();
+  if (ora) {
+    // A prefix rather than ora's indent, which the line a step ends on does not keep.
+    const spin = ora({ text: dim(text), prefixText: " " });
+    // Without a terminal, as in the service's log, there is nothing to animate: only how the step ended is written.
+    return spin.isEnabled ? spin.start() : { succeed: (line) => spin.succeed(line), fail: (line) => spin.fail(line), stop: () => {} };
+  }
+  console.log(dim(`  ${text}`));
+  return { succeed: (line) => console.log(`  ${line}`), fail: (line) => console.log(`  ${line}`), stop: () => {} };
+}
+
+let oraModule: Promise<typeof import("ora").default | null> | undefined;
+const loadOra = () => (oraModule ??= import("ora").then((module) => module.default, () => null));
+
+/** A step that went well, as one line: the line a spinner ends on. */
+export async function done(text: string): Promise<void> {
+  const ora = await loadOra();
+  if (ora) ora({ prefixText: " " }).succeed(text);
+  else console.log(`  ${text}`);
+}
+
+/** The last lines of a command's output, which is where it says what went wrong. */
+export const tail = (output: string, lines = 15) => output.trim().split(/\r?\n/).filter((line) => line.trim()).slice(-lines).join("\n");
+
 /** Run a command. Quiet collects its output; otherwise it streams to this terminal. */
-export function run(command: string, args: string[], { quiet = true, env }: { quiet?: boolean; env?: NodeJS.ProcessEnv } = {}): Promise<Ran> {
+export function run(command: string, args: string[], { quiet = true, env, cwd }: { quiet?: boolean; env?: NodeJS.ProcessEnv; cwd?: string } = {}): Promise<Ran> {
   return new Promise((resolvePromise) => {
     const child = spawn(command, args, {
       stdio: quiet ? ["ignore", "pipe", "pipe"] : "inherit",
       shell: false,
       env: env ?? process.env,
+      cwd,
+      windowsHide: true,
     });
     let output = "";
     child.stdout?.on("data", (d) => (output += d));
