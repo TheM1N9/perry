@@ -13,10 +13,10 @@
  *   perry open      open the dashboard, already unlocked
  *   perry update    pull the latest Perry, install, rebuild, restart
  *   perry migrate   bring chats and memory over from Convex, where Perry used to keep them
- *   perry doctor    check this machine and the deployment
+ *   perry doctor    check this machine and Perry's server
  *   perry pair      a new pairing code for Telegram
  *   perry run       run Perry in this terminal instead of the background
- *   perry uninstall stop starting Perry at login; your settings and data stay
+ *   perry uninstall stop Perry starting at login, keeping its files or removing them from this computer
  *
  * The runner (Codex on this machine) and the dashboard (a production build of
  * the Next.js app, on PERRY_PORT, 3000 unless set) run together under `perry
@@ -278,6 +278,132 @@ function unlink() {
   rmSync(join(BIN_DIR, "perry.cmd"), { force: true });
 }
 
+/** Take out what put Perry on PATH: the installer's and link()'s lines in shell files, or the entry in the user's PATH on Windows. */
+function unlinkPath() {
+  if (process.platform === "win32") {
+    // Read and written raw, as link() does, so the rest of PATH is kept exactly as it was.
+    const ps = [
+      `$dir = '${BIN_DIR.replace(/'/g, "''")}'`,
+      `$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)`,
+      `$path = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)`,
+      `$kept = @($path -split ';' | Where-Object { $_ -and $_ -ne $dir })`,
+      `if ($kept.Count -ne @($path -split ';' | Where-Object { $_ }).Count) { $key.SetValue('Path', ($kept -join ';'), $key.GetValueKind('Path')) }`,
+      `$key.Close()`,
+      `[Environment]::SetEnvironmentVariable('PERRY_PATH_CHANGED', '1', 'User'); [Environment]::SetEnvironmentVariable('PERRY_PATH_CHANGED', $null, 'User')`,
+    ].join("; ");
+    const cleared = exec(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], { quiet: true });
+    if (cleared.code !== 0) say(yellow(`  Could not take ${BIN_DIR} off your PATH: ${cleared.output}`));
+    return;
+  }
+  for (const name of [".zshrc", ".bashrc", ".profile"]) {
+    const file = join(homedir(), name);
+    if (!existsSync(file)) continue;
+    const text = readFileSync(file, "utf8");
+    const kept = text.split("\n").filter((line) => !line.includes("# added by Perry"));
+    if (kept.length === text.split("\n").length) continue;
+    writeFileSync(file, kept.join("\n"));
+    say(dim(`  remove Perry's PATH line from ~/${name}`));
+  }
+}
+
+/** Changes or commits in the checkout that exist nowhere else, described; null when there are none. */
+function localWork(): string | null {
+  if (!existsSync(join(REPO, ".git"))) return null;
+  const changed = exec(tool("git", ["status", "--porcelain"]), { quiet: true });
+  if (changed.code === 0 && changed.output) return "changes that are not committed";
+  // No upstream (a branch never pushed) counts as unpushed too.
+  const ahead = exec(tool("git", ["rev-list", "--count", "@{upstream}..HEAD"]), { quiet: true });
+  if (ahead.code !== 0 || Number(ahead.output) > 0) return "commits that are not pushed";
+  return null;
+}
+
+/** Delete a folder, saying so; on Windows a file still open elsewhere can keep it, which is reported rather than fatal. */
+function removeFolder(dir: string, what: string): boolean {
+  if (!existsSync(dir)) return true;
+  say(dim(`  remove ${dir}  (${what})`));
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 400 });
+    return true;
+  } catch (error) {
+    say(yellow(`  Could not remove all of ${dir}: ${(error as Error).message}. Delete it yourself once nothing is using it.`));
+    return false;
+  }
+}
+
+/**
+ * `perry uninstall`. The owner picks: keep Perry's files, so `perry start`
+ * (from the checkout) brings it back as it was, or remove them from this
+ * computer too, which deletes everything Perry knows: its database is in
+ * ~/.perry. Neither touches the tools Perry uses (Node, pnpm, Bun, Codex), nor
+ * a Convex deployment an install from before the local backend still has.
+ */
+async function uninstall(args: string[]): Promise<boolean> {
+  const home = HOME.replace(homedir(), "~");
+  const repo = REPO.replace(homedir(), "~");
+  // Read before anything is deleted: an install never moved off Convex still has its data there.
+  const convex = readEnvFile().CONVEX_DEPLOYMENT?.replace(/\s+#.*$/, "");
+  let choice = args.includes("--keep-files") ? "1" : args.includes("--remove-files") ? "2" : "";
+
+  say(`\n${bold("Uninstall Perry")}`);
+  say(`\n  ${bold("1")}  Stop Perry, and keep everything`);
+  say(dim(`     It stops starting at login and the perry command goes. Perry itself (${repo}) and all`));
+  say(dim(`     it knows (${home}) stay, so it can be started again as it was.`));
+  say(`\n  ${bold("2")}  Remove Perry from this computer, and everything it knows`);
+  say(dim(`     The same, and deletes ${repo} (with .env.local, which holds your dashboard key) and`));
+  say(dim(`     ${home}, which is ${yellow("all of Perry's data")}: your chats, memory, USER.md, tasks and jobs,`));
+  say(dim(`     files Perry made, files you attached in chat, its skills, logs and workspace, and any`));
+  say(dim(`     Node or npm packages installed just for Perry. There is no other copy; to keep one,`));
+  say(dim(`     back up ${home} first.`));
+  say(dim(`\n  Either way Node, pnpm, Bun and Codex stay installed.`));
+  if (convex) say(dim(`  This install still has data on Convex (${convex}); neither choice touches it.`));
+
+  if (!choice) {
+    if (!process.stdin.isTTY) {
+      say(red(`\n  Choose one: perry uninstall --keep-files, or perry uninstall --remove-files.\n`));
+      return false;
+    }
+    const { createInterface } = await import("node:readline/promises");
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      while (choice !== "1" && choice !== "2") {
+        choice = (await rl.question(`\n  Choose 1 or 2 (Ctrl+C to cancel): `)).trim();
+      }
+      if (choice === "2") {
+        const sure = (await rl.question(`  This deletes ${repo} and ${home}, with all your chats and memory, for good. Type ${bold("remove")} to go ahead: `)).trim().toLowerCase();
+        if (sure !== "remove") {
+          say(`\n  Nothing was changed.\n`);
+          return false;
+        }
+      }
+    } finally {
+      rl.close();
+    }
+  }
+
+  const { uninstall: removeService } = await import("./service");
+  removeService();
+  unlink();
+  if (choice === "1") {
+    say(dim(`  Removed the perry command from ${BIN_DIR}. Perry itself is kept at ${REPO}, and its data in ${HOME}.`));
+    say(dim(`  To start it again: bun --cwd "${REPO}" scripts/perry.ts start\n`));
+    return true;
+  }
+
+  // A checkout with work in it (someone developing Perry) is never deleted: only what git already has elsewhere goes.
+  const unsaved = localWork();
+  if (unsaved) say(yellow(`  Keeping ${REPO}: it has ${unsaved}. Delete it yourself if you do not need it.`));
+  // Nothing may be working inside what is about to go (Windows will not delete a folder that is a process's cwd).
+  process.chdir(homedir());
+  unlinkPath();
+  const removed = [unsaved ? true : removeFolder(REPO, "Perry itself"), removeFolder(HOME, "its data on this computer")].every(Boolean);
+  say(!removed ? `\n  ${yellow("Perry is mostly removed; see above for what is left.")}`
+    : unsaved ? `\n  ${green("Perry is removed from this computer,")} except its checkout at ${REPO}, kept for your work in it.`
+      : `\n  ${green("Perry is removed from this computer.")}`);
+  if (convex) say(dim(`  Its Convex deployment (${convex}) is still there. Delete it at dashboard.convex.dev if you want it gone.`));
+  say(dim(`  Open a new terminal so it no longer has Perry on its PATH.\n`));
+  return removed;
+}
+
 // --- Opening the dashboard ----------------------------------------------------
 
 /** Open the dashboard with its key in the fragment, which the page stores and removes; a fragment is never sent to a server. */
@@ -447,10 +573,10 @@ const HELP = `
   ${bold("open")}       open the dashboard, already unlocked
   ${bold("update")}     pull the latest Perry, install, rebuild, restart
   ${bold("migrate")}    bring chats and memory over from Convex, where Perry used to keep them
-  ${bold("doctor")}     check this machine and your deployment
+  ${bold("doctor")}     check this machine and Perry's server
   ${bold("pair")}       a new code to claim Perry on Telegram
   ${bold("run")}        run Perry in this terminal instead of the background
-  ${bold("uninstall")}  stop starting Perry at login; settings and data stay
+  ${bold("uninstall")}  stop Perry; keep its files, or remove them from this computer
 `;
 
 async function main() {
@@ -468,13 +594,7 @@ async function main() {
     case "migrate": return process.exit(exec(bunScript("migrate.ts", rest)).code);
     case "run": return runForeground();
     case "link": return process.exit(link() ? 0 : 1);
-    case "uninstall": {
-      const { uninstall } = await import("./service");
-      uninstall();
-      unlink();
-      say(dim(`  Removed the perry command from ${BIN_DIR}. Your checkout at ${REPO} and your data in ${HOME} are kept.\n`));
-      return;
-    }
+    case "uninstall": return process.exit((await uninstall(rest)) ? 0 : 1);
     case "help": case "--help": case "-h": return say(HELP);
     default:
       say(`\n  ${red(`Unknown command: ${command}`)}`);
