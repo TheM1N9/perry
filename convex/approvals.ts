@@ -26,7 +26,7 @@ export const APPROVAL_TTL_MS = 10 * 60_000;
 
 const vKind = v.union(v.literal("command"), v.literal("file"), v.literal("write"));
 type Kind = "command" | "file" | "write";
-type Person = "terminal" | "dashboard" | "telegram" | "timeout";
+type Person = "terminal" | "dashboard" | "telegram" | "whatsapp" | "timeout";
 
 // --- Rules ---------------------------------------------------------------
 
@@ -180,6 +180,7 @@ export const request = mutation({
     }
     const id = await ctx.db.insert("approvals", { ...row, status: "pending" });
     await ctx.scheduler.runAfter(0, internal.approvals.promptOnTelegram, { id });
+    await ctx.scheduler.runAfter(0, internal.approvals.promptOnWhatsApp, { id });
     return { id, next: "ask" };
   },
 });
@@ -209,6 +210,7 @@ export const reviewed = mutation({
     }
     await ctx.db.patch(row._id, { status: "pending", review });
     await ctx.scheduler.runAfter(0, internal.approvals.promptOnTelegram, { id: row._id });
+    await ctx.scheduler.runAfter(0, internal.approvals.promptOnWhatsApp, { id: row._id });
     return false;
   },
 });
@@ -317,7 +319,7 @@ function promptHtml(row: View, outcome?: string): string {
   ].filter(Boolean).join("\n\n");
 }
 
-const WHERE = { terminal: " in the terminal", dashboard: " in the dashboard", telegram: " on Telegram" } as const;
+const WHERE = { terminal: " in the terminal", dashboard: " in the dashboard", telegram: " on Telegram", whatsapp: " on WhatsApp" } as const;
 
 function outcomeText(row: View): string {
   const where = row.decidedBy && row.decidedBy in WHERE ? WHERE[row.decidedBy as keyof typeof WHERE] : "";
@@ -420,6 +422,69 @@ export const answerFromTelegram = internalMutation({
     const choice = match[2];
     await settleRow(ctx, row, { approved: choice !== "n", by: "telegram", always: choice === "a" });
     return choice === "n" ? "Declined." : choice === "a" && row.alwaysAllow ? "Approved, and always allowed." : "Approved.";
+  },
+});
+
+/**
+ * Ask the owner on WhatsApp, where the request's conversation speaks there
+ * (channels.ts). WhatsApp has no buttons for an ordinary account, so the
+ * answer is a reply: 1, 2 or 3 (answerFromWhatsApp).
+ */
+export const promptOnWhatsApp = internalAction({
+  args: { id: v.id("approvals") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const row = await ctx.runQuery(internal.approvals.view, { id: args.id });
+    if (row?.status !== "pending") return null;
+    const target: Target | null = await ctx.runQuery(internal.channels.target, { conversationId: row.conversationId });
+    if (target?.channel !== "whatsapp") return null;
+    const fence = "```";
+    const ask = [
+      `🔐 **${row.runner} wants to ${ASK[row.kind]}**${row.chat ? ` · _${row.chat}_` : ""}`,
+      `${fence}\n${row.title.slice(0, 1500)}\n${fence}`,
+      row.cwd ? `📁 \`${row.cwd}\`` : null,
+      row.detail ? row.detail.slice(0, 800) : null,
+      row.review ? `_Reviewer: ${row.review.verdict}. ${row.review.reason}_` : null,
+      `Reply **1** to approve, **2** to decline${row.alwaysAllow ? `, **3** to always allow (${describeRule(row.alwaysAllow, row.cwd)})` : ""}.`,
+    ].filter(Boolean).join("\n\n");
+    if (await ctx.runMutation(internal.whatsapp.send, { to: target.externalId, text: ask })) {
+      await ctx.runMutation(internal.approvals.askedOnWhatsApp, { id: args.id, chatId: target.externalId });
+    }
+    return null;
+  },
+});
+
+export const askedOnWhatsApp = internalMutation({
+  args: { id: v.id("approvals"), chatId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (await ctx.db.get(args.id)) await ctx.db.patch(args.id, { whatsappChatId: args.chatId });
+    return null;
+  },
+});
+
+/**
+ * A reply in a WhatsApp chat where an approval is waiting: 1 (or yes) approves,
+ * 2 (or no) declines, 3 (or always) approves and saves the rule. Anything else
+ * is not an answer and goes to the assistant. Returns what to tell the owner.
+ */
+export const answerFromWhatsApp = internalMutation({
+  args: { chatId: v.string(), text: v.string() },
+  returns: v.union(v.string(), v.null()),
+  handler: async (ctx, args): Promise<string | null> => {
+    const word = args.text.trim().toLowerCase().replace(/[.!]+$/, "");
+    const choices: Record<string, "y" | "n" | "a"> = { "1": "y", yes: "y", y: "y", approve: "y", "2": "n", no: "n", n: "n", decline: "n", "3": "a", always: "a" };
+    const choice = choices[word];
+    if (!choice) return null;
+    const waiting = (await ctx.db.query("approvals").withIndex("by_status", (q) => q.eq("status", "pending")).order("desc").take(50))
+      .find((row) => row.whatsappChatId === args.chatId);
+    if (!waiting) return null;
+    if (!answerable(waiting)) {
+      await settleRow(ctx, waiting, { approved: false, by: "timeout" });
+      return "That request had expired, so it was declined.";
+    }
+    await settleRow(ctx, waiting, { approved: choice !== "n", by: "whatsapp", always: choice === "a" });
+    return choice === "n" ? "Declined." : choice === "a" && waiting.alwaysAllow ? "Approved, and always allowed from now on." : "Approved.";
   },
 });
 

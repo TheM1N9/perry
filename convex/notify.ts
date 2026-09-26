@@ -34,7 +34,9 @@ export const deliver = internalAction({
 
     try {
       let conversationId: Id<"conversations">;
-      if (target.channel === "telegram") {
+      if (target.channel === "web") {
+        conversationId = target.conversationId;
+      } else if (target.channel === "telegram") {
         // Only ever the owner's own chat.
         if (install.ownerChannel !== "telegram" || target.externalId !== install.ownerExternalId) return false;
         const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
@@ -43,7 +45,9 @@ export const deliver = internalAction({
         // Made here if the owner has not written since pairing.
         conversationId = target.conversationId ?? (await loadConversation(ctx, "telegram", target.externalId))._id;
       } else {
-        conversationId = target.conversationId;
+        // Queued for the connection (server/whatsapp.ts); it goes when WhatsApp is connected. Only ever the owner.
+        if (!(await ctx.runMutation(internal.whatsapp.send, { to: target.externalId, text: args.text }))) return false;
+        conversationId = target.conversationId ?? (await loadConversation(ctx, "whatsapp", target.externalId))._id;
       }
       // It belongs to that chat: shown in its history, and told to the next turn there.
       const chat = await ctx.runQuery(internal.conversations.getById, { id: conversationId });

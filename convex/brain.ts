@@ -21,7 +21,7 @@ import { vChannel, vTelegramMedia } from "./schema";
  * and may take as long as it needs to.
  */
 
-type Channel = "telegram" | "web";
+type Channel = "telegram" | "web" | "whatsapp";
 
 const HELP = `
 Your private assistant.
@@ -236,7 +236,7 @@ export const resetChat = internalAction({
 
 /** Whose messages a chat's agent thread holds. */
 const userIdOf = (conversation: Doc<"conversations">) =>
-  conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`;
+  conversation.channel === "web" ? "web:dashboard" : `${conversation.channel}:${conversation.externalId}`;
 
 /**
  * Find the conversation for this chat, creating it and its agent thread on
@@ -285,6 +285,8 @@ export const handleTurn = internalAction({
     attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
     /** Files sent on Telegram, downloaded here before the turn. */
     telegramMedia: v.optional(v.array(vTelegramMedia)),
+    /** Files that came with a WhatsApp message, already stored (whatsapp.receive). */
+    storedMedia: v.optional(v.array(v.object({ storageId: v.id("_storage"), fileName: v.string(), contentType: v.string(), size: v.number() }))),
     /** Not the owner's words (the greeting after the welcome page): only the reply is saved to the chat. */
     hidden: v.optional(v.boolean()),
     /** What the run is listed as in Activity, when the prompt itself is not the owner's. */
@@ -304,12 +306,16 @@ export const handleTurn = internalAction({
     const telegramToken = channel === "telegram"
       ? await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" })
       : null;
+    // A plain reply in a messaging app, outside a turn: a command's answer, or a failure.
+    const say = async (text: string) => {
+      if (channel === "telegram") await sendMessage(telegramToken, args.externalId, text);
+      else if (channel === "whatsapp") await ctx.runMutation(internal.whatsapp.send, { to: args.externalId, text });
+    };
 
     let delegated = false;
     try {
-      if (channel === "telegram" && args.text.startsWith("/") && !args.telegramMedia?.length) {
-        const reply = await runCommand(ctx, conversation, args.text);
-        await sendMessage(telegramToken, args.externalId, reply);
+      if (channel !== "web" && args.text.startsWith("/") && !args.telegramMedia?.length && !args.storedMedia?.length) {
+        await say(await runCommand(ctx, conversation, args.text));
         return null;
       }
 
@@ -340,12 +346,21 @@ export const handleTurn = internalAction({
         }
         if (attachmentIds.length) prompt = `${prompt}\n\n<!-- attachments: ${messageKey} -->`.trim();
         if (tooBig.length) {
-          await sendMessage(telegramToken, args.externalId,
+          await say(
             `${tooBig.join(", ")} ${tooBig.length === 1 ? "is" : "are"} too big for me: Telegram lets bots download files up to 20 MB. ` +
             "Send a smaller file, or put it somewhere I can reach, like a link.");
           // Nothing else came with it, so there is nothing to answer.
           if (!args.text && !attachmentIds.length) return null;
         }
+      }
+      if (args.storedMedia?.length) {
+        const messageKey = crypto.randomUUID();
+        for (const item of args.storedMedia) {
+          attachmentIds.push(await ctx.runMutation(internal.media.attachStored, { conversationId: conversation._id, messageKey, ...item }));
+        }
+        prompt = `${prompt}
+
+<!-- attachments: ${messageKey} -->`.trim();
       }
 
       const attachments = attachmentIds.length > 0
@@ -357,6 +372,7 @@ export const handleTurn = internalAction({
         prompt: args.label ?? args.text,
       });
       if (telegramToken) await sendTyping(telegramToken, args.externalId);
+      if (channel === "whatsapp") await ctx.runMutation(internal.whatsapp.typing, { to: args.externalId });
 
       const turn = await prepareTurn(ctx, conversation, args.hidden ? "" : args.text);
       // What the assistant sent here on its own since the owner last wrote: their message may answer it.
@@ -389,8 +405,8 @@ export const handleTurn = internalAction({
         console.error(`turn failed: ${message}`);
         await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access), error: message.slice(0, 1000) });
         if (conversation.jobId) await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, error: message });
-        if (telegramToken) {
-          await sendMessage(telegramToken, args.externalId, `That broke: ${message.slice(0, 300)}`)
+        if (channel !== "web") {
+          await say(`That broke: ${message.slice(0, 300)}`)
             .catch((sendError) => console.error(`could not report failure: ${String(sendError)}`));
         }
       }

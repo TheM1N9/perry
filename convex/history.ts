@@ -13,8 +13,8 @@ import { internalAction } from "./_generated/server";
 type Chat = Doc<"conversations">;
 const MARKER = /\n?<!-- attachments:[^>]+ -->\s*$/;
 
-const userIdOf = (chat: Chat) => chat.channel === "web" ? "web:dashboard" : `telegram:${chat.externalId}`;
-const titleOf = (chat: Chat) => chat.title ?? (chat.channel === "telegram" ? "Telegram chat" : "Untitled chat");
+const userIdOf = (chat: Chat) => chat.channel === "web" ? "web:dashboard" : `${chat.channel}:${chat.externalId}`;
+const titleOf = (chat: Chat) => chat.title ?? (chat.channel === "telegram" ? "Telegram chat" : chat.channel === "whatsapp" ? "WhatsApp chat" : "Untitled chat");
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 /** A short window of text around the first match, so a long message still shows why it matched. */

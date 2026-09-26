@@ -503,11 +503,12 @@ async function main() {
   // web chats serve them from there. Telegram needs the bytes, so for a
   // Telegram chat both are uploaded to Convex too. Past Telegram's 50 MB the
   // chat gets a download link instead, so the upload stops somewhere sensible.
-  const keepMedia = async (turnId: Id<"codexTurns">, channel: "web" | "telegram", images: GeneratedImage[] = []) => {
+  // The web and WhatsApp read generated files from this machine; Telegram needs them uploaded.
+  const keepMedia = async (turnId: Id<"codexTurns">, channel: "web" | "telegram" | "whatsapp", images: GeneratedImage[] = []) => {
     const media: NonNullable<CodexResult["media"]> = [];
     for (const image of images) {
       try {
-        if (channel === "web") {
+        if (channel !== "telegram") {
           let localPath = image.path;
           if (!localPath) {
             localPath = join(PATHS.files, "generated", `${randomUUID()}.png`);

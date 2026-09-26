@@ -863,13 +863,23 @@ export const markStep = internalMutation({
   },
 });
 
+/** A short note to a messaging chat, outside a reply: a command's outcome, or why something did not happen. */
+async function tell(ctx: ActionCtx, conversation: { channel: "web" | "telegram" | "whatsapp"; externalId: string }, text: string) {
+  if (conversation.channel === "telegram") {
+    const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
+    await sendMessage(token, conversation.externalId, text);
+  } else if (conversation.channel === "whatsapp") {
+    await ctx.runMutation(internal.whatsapp.send, { to: conversation.externalId, text });
+  }
+}
+
 export const finalizeTurn = internalAction({
   args: { id: v.id("codexTurns") },
   returns: v.null(),
   handler: async (ctx, args) => {
     const result: {
       job: { kind?: "compact"; prompt: string; response?: string; error?: string; status: string; model?: string; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
-      conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string; title?: string; jobId?: Id<"jobs"> } | null;
+      conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram" | "whatsapp"; externalId: string; title?: string; jobId?: Id<"jobs"> } | null;
       steers: string[];
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
@@ -879,7 +889,7 @@ export const finalizeTurn = internalAction({
     const reply = job.stopped ? `${job.response ?? ""}\n\n_Stopped._`.trim() : job.response;
     // Each step is recorded once done, so recovery can retry this safely (see recovery.ts).
     const done = (step: "reportedAt" | "savedAt" | "deliveredAt") => ctx.runMutation(internal.codex.markStep, { id: args.id, step });
-    const userId = conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`;
+    const userId = conversation.channel === "web" ? "web:dashboard" : `${conversation.channel}:${conversation.externalId}`;
     // The flush before /reset leaves nothing in the chat: finishing it, even
     // with an error, starts the chat afresh ("saved" here), and only a failure
     // is worth telling a Telegram chat about.
@@ -889,9 +899,8 @@ export const finalizeTurn = internalAction({
         await ctx.runMutation(internal.conversations.clearThread, { id: conversation._id, threadId });
         await done("savedAt");
       }
-      if (conversation.channel === "telegram" && job.error && !job.deliveredAt) {
-        const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
-        await sendMessage(token, conversation.externalId, `Fresh start, but this chat was not summarised into memory first: ${job.error}`)
+      if (conversation.channel !== "web" && job.error && !job.deliveredAt) {
+        await tell(ctx, conversation, `Fresh start, but this chat was not summarised into memory first: ${job.error}`)
           .catch((error) => console.error(`Could not report the flush: ${String(error)}`));
         await done("deliveredAt");
       }
@@ -901,9 +910,8 @@ export const finalizeTurn = internalAction({
     // A compaction leaves the chat as it was. The web chat watches it finish;
     // Telegram is told, like any command.
     if (job.kind === "compact") {
-      if (conversation.channel === "telegram" && !job.deliveredAt) {
-        const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
-        await sendMessage(token, conversation.externalId, job.error ? `Could not compact: ${job.error}` : COMPACTED)
+      if (conversation.channel !== "web" && !job.deliveredAt) {
+        await tell(ctx, conversation, job.error ? `Could not compact: ${job.error}` : COMPACTED)
           .catch((error) => console.error(`Could not report compaction: ${String(error)}`));
         await done("deliveredAt");
       }
@@ -954,6 +962,23 @@ export const finalizeTurn = internalAction({
       // Marked even when sending failed part-way, so a retry never sends a reply twice.
       await done("deliveredAt");
     }
+    // WhatsApp gets the finished reply, then its files, through the connection's outbox; it showed "typing…" meanwhile.
+    if (conversation.channel === "whatsapp" && !job.deliveredAt) {
+      const files: TurnFile[] = job.mediaKey
+        ? await ctx.runQuery(internal.codex.turnFiles, { conversationId: conversation._id, messageKey: job.mediaKey })
+        : [];
+      const answer = job.error
+        ? `${job.response ? `${job.response}\n\n` : ""}That broke: ${job.error}`
+        : reply || (files.length ? "" : "Codex did not reply.");
+      if (answer) await ctx.runMutation(internal.whatsapp.send, { to: conversation.externalId, text: answer });
+      for (const file of files) {
+        await ctx.runMutation(internal.whatsapp.sendFile, {
+          to: conversation.externalId, fileName: file.fileName, contentType: file.contentType,
+          ...(file.storageId ? { storageId: file.storageId } : {}), ...(file.localPath ? { localPath: file.localPath } : {}),
+        });
+      }
+      await done("deliveredAt");
+    }
     await ctx.runMutation(internal.codex.markFinalized, args);
     return null;
   },
@@ -995,7 +1020,7 @@ export const mcpAccess = internalQuery({
     if (!job || !conversation) return null;
     return {
       turnId: job._id,
-      userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
+      userId: conversation.channel === "web" ? "web:dashboard" : `${conversation.channel}:${conversation.externalId}`,
       threadId: conversation.threadId,
       fromJob: Boolean(conversation.jobId),
       conversationId: conversation._id,

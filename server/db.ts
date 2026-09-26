@@ -155,6 +155,18 @@ export class Store {
     return row?.tbl ?? null;
   }
 
+  /**
+   * The table an id argument names, for validation: a document's, or
+   * "_storage" for a stored file, whose id lives in _storage (runtime.ts), so
+   * v.id("_storage") holds for what ctx.storage.store returned.
+   */
+  idTable(id: unknown): string | null {
+    const table = this.tableOf(id);
+    if (table || typeof id !== "string" || !id) return table;
+    const file = this.sql.prepare("SELECT 1 AS found FROM _storage WHERE id = ?").get(id) as { found: number } | undefined;
+    return file ? "_storage" : null;
+  }
+
   private row(table: string, id: string): Doc | null {
     const row = this.sql.prepare(`SELECT _id, _creationTime, doc FROM ${docTable(table)} WHERE _id = ?`).get(id) as { _id: string; _creationTime: number; doc: string } | undefined;
     return row ? { _id: row._id, _creationTime: row._creationTime, ...JSON.parse(row.doc) } : null;

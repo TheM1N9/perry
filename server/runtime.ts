@@ -179,14 +179,14 @@ export class Runtime {
 
   private async inlineQuery(name: string, args: unknown, tx: Tx) {
     const def = this.def(name, "query");
-    validateArgs(args, def.args, (id) => this.store.tableOf(id));
+    validateArgs(args, def.args, (id) => this.store.idTable(id));
     return await def.handler(this.queryCtx(tx), args);
   }
 
   /** A mutation called from a mutation joins its transaction, and rolls back alone if it throws. */
   private async inlineMutation(name: string, args: unknown, tx: Tx) {
     const def = this.def(name, "mutation");
-    validateArgs(args, def.args, (id) => this.store.tableOf(id));
+    validateArgs(args, def.args, (id) => this.store.idTable(id));
     const savepoint = `sp${++this.savepoints}`;
     this.sql.exec(`SAVEPOINT ${savepoint}`);
     try {
@@ -208,7 +208,7 @@ export class Runtime {
     const def = this.def(name, "query");
     this.visible(def, options.internal, name);
     return this.exclusive(async () => {
-      validateArgs(args, def.args, (id) => this.store.tableOf(id));
+      validateArgs(args, def.args, (id) => this.store.idTable(id));
       const tx: Tx = { reads: new Set(), writes: new Set(), scheduled: false };
       const value = await def.handler(this.queryCtx(tx), args);
       return { value, reads: [...tx.reads] };
@@ -219,7 +219,7 @@ export class Runtime {
     const def = this.def(name, "mutation");
     this.visible(def, options.internal, name);
     return this.exclusive(async () => {
-      validateArgs(args, def.args, (id) => this.store.tableOf(id));
+      validateArgs(args, def.args, (id) => this.store.idTable(id));
       const tx: Tx = { reads: new Set(), writes: new Set(), scheduled: false };
       this.sql.exec("BEGIN IMMEDIATE");
       try {
@@ -239,7 +239,7 @@ export class Runtime {
   async runAction(name: string, args: unknown, options: { internal?: boolean } = {}): Promise<unknown> {
     const def = this.def(name, "action");
     this.visible(def, options.internal, name);
-    await this.exclusive(() => validateArgs(args, def.args, (id) => this.store.tableOf(id)));
+    await this.exclusive(() => validateArgs(args, def.args, (id) => this.store.idTable(id)));
     return await def.handler(this.actionCtx(), args);
   }
 

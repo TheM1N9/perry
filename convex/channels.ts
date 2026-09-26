@@ -6,33 +6,36 @@ import { internalQuery, type QueryCtx } from "./_generated/server";
  * Where the assistant speaks. One rule, as messaging-native assistants have it
  * (Instinct; OpenInstinct's channels): it answers in the conversation you are
  * in, and what it does in the background reports back to the conversation it
- * was set up in. Talking on the web, nothing reaches Telegram; talking on
- * Telegram, the answer and anything it needs from you are there.
+ * was set up in. Talking on the web, nothing reaches Telegram or WhatsApp;
+ * talking on one of them, the answer and anything it needs from you are there.
  *
  * What has no conversation of its own (the heartbeat, the built-in jobs, a job
- * or watch set up before this rule) goes to the owner's messaging channel, the
- * one they paired: Telegram now, WhatsApp when it comes. A web-only owner
- * reads it on the dashboard.
+ * or watch set up before this rule) goes to the owner's messaging channel: the
+ * app they paired, or with both, the one they chose. A web-only owner reads it
+ * on the dashboard.
  *
  * A channel is added here: a target kind, where replies to it go, and how it
  * is named to the assistant (describe).
  */
 
+export type Messenger = "telegram" | "whatsapp";
 export type Target =
-  | { channel: "telegram"; externalId: string; conversationId?: Id<"conversations"> }
+  | { channel: Messenger; externalId: string; conversationId?: Id<"conversations"> }
   | { channel: "web"; conversationId: Id<"conversations"> };
+
+const APP: Record<Messenger, string> = { telegram: "Telegram", whatsapp: "WhatsApp" };
 
 async function install(ctx: QueryCtx): Promise<Doc<"installation"> | null> {
   return await ctx.db.query("installation").first();
 }
 
-/** The owner's messaging channel: the one they paired, when there is one. */
+/** The owner's messaging channel: the one they paired, or with both, the one they chose (Telegram unless they said). */
 async function home(ctx: QueryCtx): Promise<Target | null> {
   const owner = await install(ctx);
-  if (owner?.claimedAt && owner.ownerChannel === "telegram" && owner.ownerExternalId) {
-    return { channel: "telegram", externalId: owner.ownerExternalId };
-  }
-  return null;
+  if (!owner?.claimedAt) return null;
+  const telegram: Target | null = owner.ownerChannel === "telegram" && owner.ownerExternalId ? { channel: "telegram", externalId: owner.ownerExternalId } : null;
+  const whatsapp: Target | null = owner.whatsappOwner ? { channel: "whatsapp", externalId: owner.whatsappOwner } : null;
+  return owner.homeChannel === "whatsapp" ? whatsapp ?? telegram : telegram ?? whatsapp;
 }
 
 /**
@@ -48,8 +51,8 @@ export async function targetOf(ctx: QueryCtx, conversationId?: Id<"conversations
     chat = job?.origin ? await ctx.db.get(job.origin) : null;
   }
   if (!chat) return await home(ctx);
-  if (chat.channel === "telegram") return { channel: "telegram", externalId: chat.externalId, conversationId: chat._id };
-  return { channel: "web", conversationId: chat._id };
+  if (chat.channel === "web") return { channel: "web", conversationId: chat._id };
+  return { channel: chat.channel, externalId: chat.externalId, conversationId: chat._id };
 }
 
 export const target = internalQuery({
@@ -57,7 +60,7 @@ export const target = internalQuery({
   handler: async (ctx, args): Promise<Target | null> => await targetOf(ctx, args.conversationId),
 });
 
-const TELEGRAM_STYLE = "Write for a phone: short paragraphs, a line starting with • for each point, no tables or headings, links bare on their own line.";
+const PHONE_STYLE = "Write for a phone: short paragraphs, a line starting with • for each point, no tables or headings, links bare on their own line.";
 
 /**
  * What the assistant is told about where it is, each turn: which channel this
@@ -70,17 +73,24 @@ export const describe = internalQuery({
   handler: async (ctx, args): Promise<string> => {
     const chat = await ctx.db.get(args.conversationId);
     if (!chat) return "";
-    const owner = await install(ctx);
-    const telegram = owner?.claimedAt && owner.ownerChannel === "telegram";
+    const away = await home(ctx);
+    const awayApp = away && away.channel !== "web" ? APP[away.channel] : null;
     const elsewhere = "Memory and USER.md are the same on every channel; each conversation keeps its own history, and search_chats and read_chat reach the others.";
     if (chat.jobId) {
       const to = await targetOf(ctx, chat._id);
-      const where = to?.channel === "telegram" ? "on Telegram" : to ? "in the web chat it was set up in" : "on the dashboard";
-      return `## Where you are\n\nThis is a scheduled job, not a conversation. What you reply is delivered to the owner ${where}, so it is the whole message they get.${to?.channel === "telegram" ? ` ${TELEGRAM_STYLE}` : ""} ${elsewhere}`;
+      const phone = to && to.channel !== "web";
+      const where = phone ? `on ${APP[to.channel as Messenger]}` : to ? "in the web chat it was set up in" : "on the dashboard";
+      return `## Where you are\n\nThis is a scheduled job, not a conversation. What you reply is delivered to the owner ${where}, so it is the whole message they get.${phone ? ` ${PHONE_STYLE}` : ""} ${elsewhere}`;
     }
-    if (chat.channel === "telegram") {
-      return `## Where you are\n\nThis conversation is the owner's private Telegram chat with you. Your reply is sent here as a Telegram message, and anything you need from them (an approval, a question) reaches them here. ${TELEGRAM_STYLE} They also use you on the web dashboard. Jobs and page watches you set up in this chat report back here. ${elsewhere}`;
+    if (chat.channel !== "web") {
+      const app = APP[chat.channel];
+      const selfChat = chat.channel === "whatsapp" && (await ctx.db.query("whatsappLink").first())?.mode === "self";
+      const which = selfChat ? ` (their own "Message yourself" chat, on the WhatsApp you are linked to)` : "";
+      return `## Where you are\n\nThis conversation is the owner's private ${app} chat with you${which}. Your reply is sent here as a ${app} message, and anything you need from them (an approval, a question) reaches them here. ${PHONE_STYLE} They also use you on the web dashboard. Jobs and page watches you set up in this chat report back here. ${elsewhere}`;
     }
-    return `## Where you are\n\nThis conversation is on the web dashboard. Your reply appears only here: nothing from this chat is sent to ${telegram ? "Telegram" : "any other app"}, and anything you need from the owner is asked here. ${telegram ? "They have also paired Telegram, where you reach them when they are away: your own background checks (the heartbeat) go there, while jobs and page watches set up in this chat report back to this chat. " : "They have not paired a messaging app, so everything you send them waits here. "}${elsewhere}`;
+    const reached = awayApp
+      ? `They have also paired ${awayApp}, where you reach them when they are away: your own background checks (the heartbeat) go there, while jobs and page watches set up in this chat report back to this chat. `
+      : "They have not paired a messaging app, so everything you send them waits here. ";
+    return `## Where you are\n\nThis conversation is on the web dashboard. Your reply appears only here: nothing from this chat is sent to ${awayApp ?? "any other app"}, and anything you need from the owner is asked here. ${reached}${elsewhere}`;
   },
 });

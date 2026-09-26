@@ -769,7 +769,7 @@ export const listActivitySessions = query({
   handler: async (ctx, args): Promise<Array<{
     id: Id<"conversations">;
     title: string;
-    channel: "telegram" | "web";
+    channel: "telegram" | "web" | "whatsapp";
   }>> => {
     assertDashboardKey(args.key);
     const conversations: Doc<"conversations">[] = await ctx.runQuery(internal.conversations.list, {});
@@ -790,6 +790,8 @@ export const getStatus = query({
     memories: number;
     conversations: Array<{ channel: string; lastMessageAt: number }>;
     claimed: boolean;
+    /** Telegram in particular; the install can be claimed on WhatsApp alone. */
+    telegramPaired: boolean;
     ownerName?: string;
     /** What to call the owner: USER.md's "Call them", else their Telegram name. */
     displayName?: string;
@@ -817,6 +819,7 @@ export const getStatus = query({
         lastMessageAt: c.lastMessageAt,
       })),
       claimed: install.claimed,
+      telegramPaired: install.claimed && install.ownerChannel === "telegram",
       ownerName: install.ownerName,
       displayName: callName(persona.user) ?? install.ownerName,
       pairingCode: install.pairingCode,
