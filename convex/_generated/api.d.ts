@@ -34,6 +34,7 @@ import type * as memories from "../memories.js";
 import type * as models from "../models.js";
 import type * as notify from "../notify.js";
 import type * as persona from "../persona.js";
+import type * as pet from "../pet.js";
 import type * as recovery from "../recovery.js";
 import type * as runner from "../runner.js";
 import type * as runs from "../runs.js";
@@ -79,6 +80,7 @@ declare const fullApi: ApiFromModules<{
   models: typeof models;
   notify: typeof notify;
   persona: typeof persona;
+  pet: typeof pet;
   recovery: typeof recovery;
   runner: typeof runner;
   runs: typeof runs;

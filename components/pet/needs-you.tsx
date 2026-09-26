@@ -8,6 +8,7 @@ import { ago } from "@/lib/format";
 import { useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { ApprovalCard } from "@/components/dashboard/approval-card";
+import { Empty } from "./empty";
 
 const LABEL: Record<InboxItem["kind"], string> = {
   question: "A plan needs your answer",
@@ -31,12 +32,12 @@ export function PetNeedsYou({ now, onChat, open }: {
   const live = (approvals ?? []).filter((item) => item.expiresAt > now);
 
   if (approvals === undefined || inbox === undefined) return <p className="px-3.5 py-3 text-[13px] text-muted-foreground">Loading…</p>;
-  if (!live.length && !inbox.length) return <p className="px-3.5 py-3 text-[13px] text-muted-foreground">You're all caught up.</p>;
+  if (!live.length && !inbox.length) return <Empty title="You’re all caught up">When Perry needs a yes from you, or a plan or schedule has news, it shows up here.</Empty>;
   return (
     <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-2.5 pb-2.5 [&_article_header]:px-3 [&_article>div]:px-3 [&_article_footer]:px-3 [&_article]:text-[13px]">
       {live.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
       {inbox.length > 0 && (
-        <ul className="divide-y overflow-hidden rounded-xl border" aria-label="Updates">
+        <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Updates">
           {inbox.map((item) => {
             const act = item.kind === "question" ? { label: "Answer", run: () => onChat(null, `About “${item.title}”: `) }
               : item.kind === "job-result" || (item.kind === "job-error" && item.chatId) ? { label: "Open", run: () => onChat(item.chatId!) }
@@ -48,10 +49,10 @@ export function PetNeedsYou({ now, onChat, open }: {
                 <p className="mt-0.5 text-[13.5px] font-medium">{item.title}</p>
                 <p className={cn("mt-0.5 line-clamp-3 text-[12.5px] text-pretty whitespace-pre-line", item.kind === "task-failed" || item.kind === "job-error" ? "text-destructive" : "text-foreground/80")}>{item.text}</p>
                 <div className="mt-1.5 flex gap-1">
-                  <button type="button" onClick={act.run} className="h-7 cursor-pointer rounded-full bg-muted px-3 text-[12.5px] font-medium hover:bg-accent">{act.label}</button>
+                  <button type="button" onClick={act.run} className="h-7 cursor-pointer rounded-lg border bg-background px-3 text-[12.5px] font-medium hover:bg-muted">{act.label}</button>
                   {item.kind !== "question" && (
                     <button type="button" onClick={() => void dismiss({ key, items: [{ kind: item.kind, id: item.id }] }).catch(() => {})}
-                      className="h-7 cursor-pointer rounded-full px-3 text-[12.5px] text-muted-foreground hover:bg-muted">Dismiss</button>
+                      className="h-7 cursor-pointer rounded-lg px-3 text-[12.5px] text-muted-foreground hover:bg-muted">Dismiss</button>
                   )}
                 </div>
               </li>

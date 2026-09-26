@@ -10,7 +10,7 @@
 
 import { BackendClient } from "../client/backend";
 
-const port = Number(process.env.PERRY_PORT ?? 3000);
+const port = Number(process.env.PERRY_PORT ?? 7377);
 const key = process.env.DASHBOARD_KEY;
 if (!key) {
   console.error("\nNo DASHBOARD_KEY in .env.local. Run perry setup first.\n");

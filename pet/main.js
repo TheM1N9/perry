@@ -15,8 +15,8 @@
  * --reload reloads its page (after `perry update`), anything else shows it.
  */
 
-import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, powerMonitor, screen, shell } from "electron";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, powerMonitor, screen, shell } from "electron";
+import { existsSync, mkdirSync, readFileSync, watchFile, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,7 +59,7 @@ function envFile() {
 }
 
 const env = envFile();
-const BASE = process.env.PERRY_URL ?? `http://127.0.0.1:${process.env.PERRY_PORT ?? env.PERRY_PORT ?? 3000}`;
+const BASE = process.env.PERRY_URL ?? `http://127.0.0.1:${process.env.PERRY_PORT ?? env.PERRY_PORT ?? 7377}`;
 const KEY = process.env.DASHBOARD_KEY ?? env.DASHBOARD_KEY ?? "";
 
 function readState() {
@@ -92,6 +92,9 @@ function startingPlace() {
 }
 
 if (process.platform === "linux") app.commandLine.appendSwitch("enable-transparent-visuals");
+// One pet per Perry: a Perry with its own PERRY_HOME (another checkout, or a test) keeps his lock (one of him at
+// a time) and his page's storage there, so its pet never answers for, or quits, the one in ~/.perry.
+if (process.env.PERRY_HOME) app.setPath("userData", join(HOME, "pet-window"));
 // For looking inside his page with DevTools, as the end-to-end check does (artifacts/desktop-pet).
 if (process.env.PERRY_PET_DEVTOOLS_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.PERRY_PET_DEVTOOLS_PORT);
 // A recording in place of the microphone, for the same check: it plays once, each time he listens.
@@ -195,9 +198,20 @@ if (!app.requestSingleInstanceLock({ argv })) {
   });
 
   app.whenReady().then(() => {
-    // One name for the system's notifications; on macOS no Dock icon, since he is not an app you switch to.
+    // One name for the system's notifications.
     if (process.platform === "win32") app.setAppUserModelId("Perry");
+    // On a Mac, no Dock icon or app switcher entry: he is a helper on the screen, not an app you switch to.
+    if (process.platform === "darwin") app.setActivationPolicy("accessory");
     app.dock?.hide();
+
+    // His theme, light, dark or the system's, from pet.json, where the dashboard saves it (Settings → Desktop pet).
+    // It is what his page sees as the system's, so it follows as soon as it changes, without a reload.
+    const applyTheme = () => {
+      const theme = readState().theme;
+      nativeTheme.themeSource = theme === "light" || theme === "dark" ? theme : "system";
+    };
+    applyTheme();
+    watchFile(STATE, { interval: 1000 }, applyTheme);
 
     win = new BrowserWindow({
       ...SIZE,
@@ -223,7 +237,8 @@ if (!app.requestSingleInstanceLock({ argv })) {
       },
     });
     win.setAlwaysOnTop(true, "floating");
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+    // skipTransformProcessType: otherwise macOS turns him back into a regular app for this, and his Dock icon comes back.
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false, skipTransformProcessType: true });
     // Clicks pass through until the page says the pointer is on him (pet:solid); forwarded, so it can tell.
     win.setIgnoreMouseEvents(true, { forward: !ghost });
 

@@ -105,7 +105,7 @@ async function main() {
   else bad("dashboard key", "DASHBOARD_KEY not set in .env.local. Run: perry setup");
 
   // Perry's server: the dashboard and the backend, one process.
-  const port = Number(env.PERRY_PORT ?? 3000);
+  const port = Number(env.PERRY_PORT ?? 7377);
   const health = await fetch(`http://127.0.0.1:${port}/api/backend/http/health`).then((r) => (r.ok ? r.json() : null), () => null);
   if (health?.ok) ok("perry server", `http://127.0.0.1:${port}`);
   else bad("perry server", "not answering. Run: perry start");

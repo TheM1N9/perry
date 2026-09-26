@@ -80,14 +80,14 @@ try {
     // 3. Connecting goes to Composio in this tab.
     await browser.send("Page.navigate", { url: `${base}/connectors` });
     await waitFor(`[...document.querySelectorAll("button")].some((b) => b.innerText.trim() === "Slack")`, "no Slack suggestion");
-    const targetsBefore = (await (await fetch("http://127.0.0.1:9333/json/list")).json() as Array<{ type: string }>).filter((t) => t.type === "page").length;
+    const targetsBefore = (await (await fetch(`http://127.0.0.1:${browser.port}/json/list`)).json() as Array<{ type: string }>).filter((t) => t.type === "page").length;
     await browser.evaluate(`[...document.querySelectorAll("button")].find((b) => b.innerText.trim() === "Slack").click(); true`);
     for (let i = 0; i < 100; i++) {
       await sleep(300);
       const href = await browser.evaluate(`location.href`).catch(() => "");
       if (String(href).startsWith("https://connect.composio.dev/") || String(href).includes("slack.com")) break;
     }
-    const targetsAfter = (await (await fetch("http://127.0.0.1:9333/json/list")).json() as Array<{ type: string }>).filter((t) => t.type === "page").length;
+    const targetsAfter = (await (await fetch(`http://127.0.0.1:${browser.port}/json/list`)).json() as Array<{ type: string }>).filter((t) => t.type === "page").length;
     const landed = String(await browser.evaluate(`location.href`));
     notes.connectLanded = landed.split("?")[0];
     checks.connectUsesSameTab = targetsAfter === targetsBefore && (landed.startsWith("https://connect.composio.dev/") || landed.includes("slack.com"));

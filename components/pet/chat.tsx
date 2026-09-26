@@ -10,6 +10,7 @@ import { useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/dashboard/chat/markdown";
 import { describe } from "@/convex/lib/shortcuts";
+import { Empty } from "./empty";
 import { Listening, MicButton, type Voice } from "./voice";
 
 /**
@@ -105,7 +106,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="relative flex items-center gap-1 px-2.5 pb-1.5">
+      <div className="relative flex items-center gap-0.5 border-b px-2.5 pb-1.5">
         <button type="button" onClick={() => setPicking((value) => !value)} aria-expanded={picking}
           className="flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-[13px] font-medium hover:bg-muted">
           <span className="truncate">{title}</span>
@@ -140,15 +141,22 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
         )}
       </div>
 
-      <div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 pb-2 [&_.prose-chat]:text-[13.5px] [&_.prose-chat]:leading-[1.6]" aria-live="polite">
-        {!chatId && (
-          <p className="pt-2 text-[13px] text-pretty text-muted-foreground">
-            Ask Perry anything, or tell him to do something. He has your memory and your other chats, and works on this computer.
-            {voice && hotkey && <> Or talk: hold <kbd className="rounded border bg-muted px-1 font-mono text-[11.5px]">{keys(hotkey)}</kbd> anywhere, speak, and let go.</>}
-          </p>
-        )}
+      <div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 pt-3 pb-2 [scrollbar-width:thin] [&_.prose-chat]:text-[13.5px] [&_.prose-chat]:leading-[1.6]" aria-live="polite">
+        {!chatId && (<div className="flex min-h-full flex-col justify-center pb-3">
+          <Empty title="What can I do for you?" awake className="pt-0">
+            {voice && hotkey ? <>Type, or hold <kbd className="rounded border bg-muted px-1 font-mono text-[11px]">{keys(hotkey)}</kbd> anywhere and talk.</> : "I know your chats and memory, and work on this computer."}
+          </Empty>
+          <div className="flex flex-wrap justify-center gap-1.5 px-2">
+            {SUGGESTIONS.map((text) => (
+              <button key={text} type="button" onClick={() => { onDraft(text); input.current?.focus(); }}
+                className="cursor-pointer rounded-full border bg-background px-3 py-1 text-[12.5px] text-foreground/85 transition-colors hover:border-primary/40 hover:bg-brand-soft">
+                {text}
+              </button>
+            ))}
+          </div>
+        </div>)}
         {messages.map((message) => message.role === "user" ? (
-          <p key={message.id} className={cn("ml-auto w-fit max-w-[85%] rounded-2xl bg-muted px-3 py-1.5 text-[13.5px] whitespace-pre-wrap [overflow-wrap:anywhere]", message.pending && "opacity-70")}>
+          <p key={message.id} className={cn("ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-muted px-3 py-1.5 text-[13.5px] whitespace-pre-wrap [overflow-wrap:anywhere]", message.pending && "opacity-70")}>
             {message.text}
           </p>
         ) : (
@@ -160,8 +168,8 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
         {chat?.lastError && !running && <p className="text-[12.5px] text-destructive">{chat.lastError}</p>}
       </div>
 
-      <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="border-t px-2.5 py-2">
-        <div className="flex items-end gap-1.5 rounded-xl border bg-background px-2.5 py-1.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
+      <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="px-3 pt-1 pb-3">
+        <div className="flex items-end gap-1.5 rounded-2xl border bg-card py-1.5 pr-1.5 pl-3 shadow-[0_1px_2px_rgb(0_0_0/0.05)] transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/15">
           {voice && voice.state !== "idle" ? (
             <div className="min-w-0 flex-1"><Listening voice={voice} onSend={onTalkSend} onCancel={onTalkCancel} /></div>
           ) : (<>
@@ -173,7 +181,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
             onKeyDown={onKey}
             aria-label="Message Perry"
             placeholder={running ? "Add to what he's doing…" : "Ask Perry, or tell him what to do"}
-            className="max-h-28 min-h-6 flex-1 resize-none bg-transparent py-0.5 text-[13.5px] outline-none [field-sizing:content] placeholder:text-muted-foreground/80"
+            className="max-h-28 min-h-7 flex-1 resize-none bg-transparent py-1 text-[13.5px] outline-none [field-sizing:content] placeholder:text-muted-foreground/80"
           />
           {voice && <MicButton onClick={onTalk} />}
           {running && !draft.trim() ? (
@@ -199,6 +207,9 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
     </div>
   );
 }
+
+/** What a new chat offers to start with; a click puts it in the box, to send or change. */
+const SUGGESTIONS = ["What’s on my list today?", "Remind me to stretch every day at 11", "What did we talk about yesterday?"];
 
 /** A hotkey as this computer's keyboard names it: "Ctrl+Shift+Space", "⇧⌘Space". */
 function keys(hotkey: string): string {

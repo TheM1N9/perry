@@ -18,7 +18,7 @@ import { HOME, ensureHome } from "../runner/home";
 import { bold, dim, green, red, runConvex, spinner, yellow } from "./lib";
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
-const PORT = Number(process.env.PERRY_PORT ?? 3000);
+const PORT = Number(process.env.PERRY_PORT ?? 7377);
 const CONVEX_KEYS = ["CONVEX_DEPLOYMENT", "CONVEX_URL", "NEXT_PUBLIC_CONVEX_URL", "CONVEX_SITE_URL", "TELEGRAM_WEBHOOK_SECRET"];
 
 const say = (text = "") => console.log(text);

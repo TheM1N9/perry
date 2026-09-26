@@ -20,7 +20,7 @@
  *   perry uninstall stop Perry starting at login, keeping its files or removing them from this computer
  *
  * The runner (Codex on this machine) and the dashboard (a production build of
- * the Next.js app, on PERRY_PORT, 3000 unless set) run together under `perry
+ * the Next.js app, on PERRY_PORT, 7377 unless set) run together under `perry
  * run`, which restarts either if it dies. The service installed at login runs
  * exactly that. The `perry` on PATH is a small launcher in ~/.perry/bin that
  * runs this file from its checkout, whatever folder you are in.
@@ -36,7 +36,7 @@ import { HOME, readRunnerConfig } from "../runner/home";
 import { bold, dim, done, green, red, run, spinner, tail, yellow } from "./lib";
 
 export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const PORT = Number(process.env.PERRY_PORT ?? 3000);
+export const PORT = Number(process.env.PERRY_PORT ?? 7377);
 const BIN_DIR = join(HOME, "bin");
 const WORKSPACE = join(HOME, "workspace");
 const NEXT_CLI = join(REPO, "node_modules", "next", "dist", "bin", "next");
@@ -70,7 +70,7 @@ const runIn = ([command, ...args]: string[]) => run(command, args, { cwd: REPO }
 
 const bunScript = (script: string, args: string[] = []) => [process.execPath, join(REPO, "scripts", script), ...args];
 
-function readEnvFile(): Record<string, string> {
+export function readEnvFile(): Record<string, string> {
   const file = join(REPO, ".env.local");
   const values: Record<string, string> = {};
   if (!existsSync(file)) return values;
@@ -123,7 +123,7 @@ export async function dashboardUp(): Promise<boolean> {
   }
 }
 
-async function waitFor(check: () => Promise<boolean>, seconds: number): Promise<boolean> {
+export async function waitFor(check: () => Promise<boolean>, seconds: number): Promise<boolean> {
   for (let i = 0; i < seconds; i++) {
     if (await check()) return true;
     await new Promise((r) => setTimeout(r, 1000));
@@ -193,7 +193,8 @@ async function runForeground() {
   const stamp = () => new Date().toISOString().slice(11, 19);
   const children: Managed[] = [
     { name: "runner", argv: [process.execPath, join(REPO, "runner", "index.ts")], env: childEnv, failures: 0, startedAt: 0 },
-    { name: "dashboard", argv: [nodePath(), NEXT_CLI, "start", "-p", String(PORT)], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT) }, failures: 0, startedAt: 0 },
+    // PERRY_BUN: the dashboard can start `perry pet` itself (Settings → Desktop pet), and Bun runs it.
+    { name: "dashboard", argv: [nodePath(), NEXT_CLI, "start", "-p", String(PORT)], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT), PERRY_BUN: process.execPath }, failures: 0, startedAt: 0 },
   ];
   let stopping = false;
 
@@ -392,7 +393,7 @@ async function uninstall(args: string[]): Promise<boolean> {
   const { uninstall: removeService } = await import("./service");
   removeService();
   const pet = await import("./pet");
-  if (pet.installed()) pet.off();
+  if (pet.installed()) await pet.off();
   unlink();
   if (choice === "1") {
     say(dim(`  Removed the perry command from ${BIN_DIR}. Perry itself is kept at ${REPO}, and its data in ${HOME}.`));
@@ -562,7 +563,7 @@ async function update() {
   if (!(await build())) process.exit(1);
   if (wasRunning && !(await start())) process.exit(1);
   // The desktop pet, when there is one, is its own install, and shows the page just rebuilt.
-  (await import("./pet")).refresh();
+  await (await import("./pet")).refresh();
   if (!wasRunning) say(dim(`  Perry was not running; ${bold("perry start")} starts it.`));
   say("");
 }

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access } from "@/convex/lib/commands";
+import type { PetTheme } from "@/convex/pet";
 import { ago, errorText, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ACCESS_ICONS } from "../chat/composer";
+import { PetControl } from "../pet-control";
 import { Shortcuts } from "../shortcuts";
 import { ActionButton, CommandLine, CopyButton, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
 
@@ -35,7 +37,7 @@ export function Settings() {
           <TabsTrigger value="telegram">Telegram</TabsTrigger>
           <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
         </TabsList>
-        <TabsContent value="general"><CodexAccount /><NewChatAccess /><Appearance /></TabsContent>
+        <TabsContent value="general"><CodexAccount /><NewChatAccess /><DesktopPet /><Appearance /></TabsContent>
         <TabsContent value="keys"><Keys /></TabsContent>
         <TabsContent value="shortcuts"><Shortcuts /></TabsContent>
         <TabsContent value="telegram"><Telegram /></TabsContent>
@@ -176,30 +178,60 @@ function NewChatAccess() {
   );
 }
 
+/** Perry on the desktop: the platypus, turned on or off here. */
+function DesktopPet() {
+  const { dashboardKey } = useSession();
+  const pet = useQuery(api.pet.status, { key: dashboardKey });
+  const setTheme = useAction(api.pet.setTheme);
+  // Shown as picked at once; the file is read back when the pet next checks in.
+  const [picked, setPicked] = useState<PetTheme | null>(null);
+  const theme = picked ?? pet?.theme;
+  return (
+    <Section title="Desktop pet" description="Perry as a platypus on your screen, with your chats, to-dos and what needs you a click away. Talk to him from anywhere with the Talk shortcut.">
+      <PetControl />
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <ThemeChoice<PetTheme> label="Pet theme" value={theme} onChange={(value) => {
+          setPicked(value);
+          void setTheme({ key: dashboardKey, theme: value }).catch((cause) => { setPicked(null); toast.error(errorText(cause)); });
+        }} />
+        <p className="text-sm text-muted-foreground">His light or dark look, kept in <code className="font-mono text-[0.9em]">pet.json</code>. He changes at once.</p>
+      </div>
+    </Section>
+  );
+}
+
 function Appearance() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const options = [
-    { value: "system", label: "System", icon: MonitorIcon },
-    { value: "light", label: "Light", icon: SunIcon },
-    { value: "dark", label: "Dark", icon: MoonIcon },
-  ];
   return (
     <Section title="Appearance" description="Follows your system unless you pick one. Remembered in this browser.">
-      <div role="radiogroup" aria-label="Theme" className="inline-flex rounded-lg border bg-muted/50 p-0.5">
-        {options.map((option) => {
-          const checked = mounted && (theme ?? "system") === option.value;
-          return (
-            <button key={option.value} type="button" role="radio" aria-checked={checked} onClick={() => setTheme(option.value)}
-              className={cn("flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
-                checked && "bg-background text-foreground shadow-sm")}>
-              <option.icon className="size-4" />{option.label}
-            </button>
-          );
-        })}
-      </div>
+      <ThemeChoice label="Theme" value={mounted ? (theme ?? "system") : undefined} onChange={setTheme} />
     </Section>
+  );
+}
+
+const THEMES = [
+  { value: "system", label: "System", icon: MonitorIcon },
+  { value: "light", label: "Light", icon: SunIcon },
+  { value: "dark", label: "Dark", icon: MoonIcon },
+] as const;
+
+/** System, Light or Dark; none checked while the value is not known yet. */
+function ThemeChoice<Value extends string>({ label, value, onChange }: { label: string; value: string | undefined; onChange: (value: Value) => void }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg border bg-muted/50 p-0.5">
+      {THEMES.map((option) => {
+        const checked = value === option.value;
+        return (
+          <button key={option.value} type="button" role="radio" aria-checked={checked} onClick={() => onChange(option.value as Value)}
+            className={cn("flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+              checked && "bg-background text-foreground shadow-sm")}>
+            <option.icon className="size-4" />{option.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

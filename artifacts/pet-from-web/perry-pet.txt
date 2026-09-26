@@ -1,0 +1,7 @@
+
+Perry on your desktop
+  Click him for your chats, to-dos and what needs you; drag him anywhere. Ctrl+Shift+Space talks to him.
+  He starts with your computer from now on; perry pet off stops that.
+
+  ✔ Electron ready
+  ✔ on your screen

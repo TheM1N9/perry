@@ -38,7 +38,7 @@ export class Perry {
   }
 
   static fromEnv(runnerToken?: string): Perry {
-    const url = process.env.PERRY_SERVER_URL ?? `http://127.0.0.1:${process.env.PERRY_PORT ?? 3000}`;
+    const url = process.env.PERRY_SERVER_URL ?? `http://127.0.0.1:${process.env.PERRY_PORT ?? 7377}`;
     const key = process.env.DASHBOARD_KEY;
     if (!key) {
       throw new Error("Set DASHBOARD_KEY, or run from the folder with .env.local.");
