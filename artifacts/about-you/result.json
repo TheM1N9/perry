@@ -1,0 +1,28 @@
+{
+  "ranAt": "2026-09-26T08:33:19.642Z",
+  "checks": {
+    "rendersMarkdown": true,
+    "editOpensMarkdown": true,
+    "escapeDiscards": true,
+    "doubleClickEdits": true,
+    "saveRendersAndRenames": true,
+    "historyRendered": true,
+    "emptyOffersWriting": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "rendered": {
+      "h1": "About Mani",
+      "h2": [
+        "Work",
+        "People who matter",
+        "How they like replies"
+      ],
+      "strong": "Call them:",
+      "li": 2,
+      "text": "Edit\nAbout Mani\nCall them: Mani\nTimezone: Asia/Calcutta\nWork\n\nDeveloper and content strategist\n\nPeople who matter\n\nmom, brother, girlfriend, friends\n\nHow they like replies\n\nShort and to the point; details only when asked.\n\nLast changed by you, now."
+    },
+    "pageErrors": []
+  },
+  "passed": true
+}
