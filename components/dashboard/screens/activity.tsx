@@ -56,7 +56,7 @@ export function Activity() {
   const tokens = visible.reduce((total, run) => total + (run.totalTokens ?? 0), 0);
   const filtered = Boolean(sessionId) || status !== "all";
   const clear = () => router.replace(pathname, { scroll: false });
-  const sessionItems = [{ value: "all", label: "Every chat" }, ...(sessions ?? []).map((session) => ({ value: session.id, label: `${session.title}${session.channel === "telegram" ? " · Telegram" : ""}` }))];
+  const sessionItems = [{ value: "all", label: "Every chat" }, ...(sessions ?? []).map((session) => ({ value: session.id, label: `${session.title}${session.channel === "telegram" ? " · Telegram" : session.channel === "whatsapp" ? " · WhatsApp" : ""}` }))];
 
   return (
     <Page title="Activity" description="Every run, with its tools, tokens, timing and errors. Newest first." wide>
@@ -119,6 +119,7 @@ function RunRow({ run }: { run: RunView }) {
             <span className="flex flex-wrap items-center gap-2">
               <span className="truncate font-medium">{run.chatTitle}</span>
               {run.channel === "telegram" && <StatusBadge>Telegram</StatusBadge>}
+              {run.channel === "whatsapp" && <StatusBadge>WhatsApp</StatusBadge>}
             </span>
             <span className="mt-0.5 block truncate text-sm text-muted-foreground">{run.prompt}</span>
             <span className="nums mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">

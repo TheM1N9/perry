@@ -25,6 +25,7 @@ import * as lib_errors from "../convex/lib/errors";
 import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
 import * as lib_truncate from "../convex/lib/truncate";
+import * as lib_whatsappFormat from "../convex/lib/whatsappFormat";
 import * as mcp from "../convex/mcp";
 import * as media from "../convex/media";
 import * as memories from "../convex/memories";
@@ -37,6 +38,7 @@ import * as runs from "../convex/runs";
 import * as secrets from "../convex/secrets";
 import * as tools from "../convex/tools";
 import * as web from "../convex/web";
+import * as whatsapp from "../convex/whatsapp";
 import * as work from "../convex/work";
 
 export const modules: Record<string, Record<string, unknown>> = {
@@ -63,6 +65,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/telegram": lib_telegram,
   "lib/telegramFormat": lib_telegramFormat,
   "lib/truncate": lib_truncate,
+  "lib/whatsappFormat": lib_whatsappFormat,
   "mcp": mcp,
   "media": media,
   "memories": memories,
@@ -75,5 +78,6 @@ export const modules: Record<string, Record<string, unknown>> = {
   "secrets": secrets,
   "tools": tools,
   "web": web,
+  "whatsapp": whatsapp,
   "work": work,
 };

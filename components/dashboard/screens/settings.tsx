@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { ExternalLinkIcon, MonitorIcon, MoonIcon, RefreshCwIcon, ShieldAlertIcon, ShieldCheckIcon, SunIcon } from "lucide-react";
+import { ExternalLinkIcon, MessageCircleIcon, MonitorIcon, MoonIcon, RefreshCwIcon, SendIcon, ShieldAlertIcon, ShieldCheckIcon, SmartphoneIcon, SunIcon, UserIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
@@ -13,11 +13,12 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActionButton, CommandLine, CopyButton, EmptyState, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
 
-const TABS = ["general", "keys", "telegram"] as const;
+const TABS = ["general", "keys", "telegram", "whatsapp"] as const;
 
 export function Settings() {
   const [tab, setTab] = useTab(TABS, "general");
@@ -28,10 +29,12 @@ export function Settings() {
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="keys">Keys</TabsTrigger>
           <TabsTrigger value="telegram">Telegram</TabsTrigger>
+          <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
         </TabsList>
         <TabsContent value="general"><CodexAccount /><NewChatAccess /><Appearance /></TabsContent>
         <TabsContent value="keys"><Keys /></TabsContent>
         <TabsContent value="telegram"><Telegram /></TabsContent>
+        <TabsContent value="whatsapp"><WhatsApp /></TabsContent>
       </Tabs>
     </Page>
   );
@@ -298,7 +301,7 @@ function Telegram() {
           <AlertDescription>Telegram is optional. To talk to Perry there, add a bot token under Keys first.</AlertDescription>
         </Alert>
       )}
-      {status.claimed ? (
+      {status.telegramPaired ? (
         <div className="flex flex-wrap items-start gap-4 rounded-xl border bg-card p-5">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2"><h2 className="font-semibold">Paired</h2><StatusBadge tone="success">Working for {status.ownerName ?? "you"}</StatusBadge></div>
@@ -334,6 +337,151 @@ function Telegram() {
             }}>Check the bot</ActionButton>
             {bot && <p role="status" className={cn("text-sm", bot.ok ? "text-success" : "text-destructive")}>{bot.text}</p>}
           </div>
+        </Section>
+      )}
+    </>
+  );
+}
+
+const WHATSAPP_MODES: Array<{ value: "separate" | "self"; title: string; body: string; icon: ReactNode; warning?: boolean }> = [
+  { value: "separate", title: "A separate number", body: "A spare SIM or eSIM just for Perry. You message it like a contact; a ban would only take that number.", icon: <SmartphoneIcon /> },
+  { value: "self", title: "My own number", body: "Perry links to your WhatsApp, and you talk in your “Message yourself” chat. A ban would take your own WhatsApp with it.", icon: <UserIcon />, warning: true },
+];
+
+/**
+ * WhatsApp, as a linked device (server/whatsapp.ts): choose a number, link it
+ * by QR or a code typed on the phone, and for a separate number, claim it
+ * from your own WhatsApp with the pairing code.
+ */
+function WhatsApp() {
+  const { dashboardKey } = useSession();
+  const state = useQuery(api.whatsapp.status, { key: dashboardKey });
+  const startLinking = useMutation(api.whatsapp.startLinking);
+  const unlink = useMutation(api.whatsapp.unlink);
+  const newCode = useMutation(api.whatsapp.newPairingCode);
+  const setHome = useMutation(api.whatsapp.setHomeChannel);
+  const [mode, setMode] = useState<"separate" | "self">("separate");
+  const [byCode, setByCode] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState("");
+
+  if (!state) return <ListSkeleton rows={2} />;
+  const linking = state.wanted && ["starting", "qr", "code"].includes(state.status);
+  const linked = state.wanted && (state.status === "connected" || state.status === "disconnected");
+  const link = async (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
+    try {
+      await startLinking({ key: dashboardKey, mode, ...(byCode ? { phone } : {}) });
+    } catch (cause) {
+      setError(errorText(cause));
+    }
+  };
+  const phoneOf = state.mode === "self" ? "your" : "Perry's";
+
+  return (
+    <>
+      <Alert className="mb-6">
+        <ShieldAlertIcon />
+        <AlertTitle>WhatsApp may ban the number</AlertTitle>
+        <AlertDescription>WhatsApp doesn&apos;t allow automating an account, so Perry links as a device, like WhatsApp Web. It only ever talks to you, which keeps the risk down, but a ban is possible.</AlertDescription>
+      </Alert>
+
+      {!state.wanted && (
+        <form onSubmit={(event) => void link(event)} className="space-y-4">
+          {state.status === "logged-out" && <Alert variant="destructive"><AlertTitle>Unlinked</AlertTitle><AlertDescription>{state.error ?? "WhatsApp was unlinked on the phone."} Link it again below.</AlertDescription></Alert>}
+          <ChoiceCards label="Which number Perry uses" value={mode} options={WHATSAPP_MODES} onChange={setMode} />
+          <div className="rounded-xl border bg-card p-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={byCode} onChange={(event) => setByCode(event.target.checked)} className="size-4 accent-primary" />
+              Link with a code typed on the phone instead of scanning a QR
+            </label>
+            {byCode && (
+              <Field className="mt-3 max-w-xs" data-invalid={Boolean(error) || undefined}>
+                <FieldLabel htmlFor="whatsapp-phone">{mode === "self" ? "Your" : "Perry's"} phone number</FieldLabel>
+                <Input id="whatsapp-phone" inputMode="tel" autoComplete="tel" placeholder="+91 98765 43210" value={phone} onChange={(event) => setPhone(event.target.value)} />
+              </Field>
+            )}
+            {error && <FieldError className="mt-2">{error}</FieldError>}
+          </div>
+          <Button type="submit">Link WhatsApp</Button>
+        </form>
+      )}
+
+      {linking && (
+        <div className="rounded-xl border bg-card p-5">
+          <div className="flex items-center gap-2"><h2 className="font-semibold">Link {state.mode === "self" ? "your WhatsApp" : "Perry's number"}</h2><StatusBadge tone="info">Waiting for the phone</StatusBadge></div>
+          {state.status === "qr" && state.qr && (
+            <div className="mt-4 flex flex-wrap items-start gap-6">
+              {/* eslint-disable-next-line @next/next/no-img-element -- a QR made on this computer */}
+              <img src={state.qr} alt="WhatsApp link QR code" width={220} height={220} className="rounded-lg bg-white p-2" />
+              <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
+                <li>On {phoneOf} phone, open WhatsApp.</li>
+                <li>Settings › Linked devices › Link a device.</li>
+                <li>Scan this code. It refreshes every few seconds until you do.</li>
+              </ol>
+            </div>
+          )}
+          {state.status === "code" && state.code && (
+            <div className="mt-4 space-y-3">
+              <span className="inline-block rounded-xl border bg-muted/40 px-4 py-2 font-mono text-3xl font-semibold tracking-[0.2em]" translate="no">{state.code}</span>
+              <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
+                <li>On {phoneOf} phone: WhatsApp › Settings › Linked devices › Link a device.</li>
+                <li>Tap &ldquo;Link with phone number instead&rdquo;, then type this code.</li>
+              </ol>
+            </div>
+          )}
+          {state.status === "starting" && <Waiting>Starting WhatsApp…</Waiting>}
+          {state.error && <p className="mt-3 text-sm text-destructive">{state.error}</p>}
+          <ActionButton className="mt-4" variant="outline" action={() => unlink({ key: dashboardKey })}>Cancel</ActionButton>
+        </div>
+      )}
+
+      {linked && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-start gap-4 rounded-xl border bg-card p-5">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-semibold">{state.mode === "self" ? "Your WhatsApp" : "Perry's number"}{state.number ? ` · ${state.number}` : ""}</h2>
+                {state.status === "connected"
+                  ? <StatusBadge tone={state.paired ? "success" : "warning"}>{state.paired ? "Linked" : "Linked, waiting for you"}</StatusBadge>
+                  : <StatusBadge tone="warning">Reconnecting</StatusBadge>}
+              </div>
+              <p className="mt-1 text-sm text-pretty text-muted-foreground">
+                {state.mode === "self"
+                  ? "Talk to Perry in your “Message yourself” chat. Its replies there start with \u{1F916}."
+                  : state.paired ? "Message this number from your WhatsApp. Anyone else gets no answer." : "Now claim it from your own WhatsApp with the code below."}
+              </p>
+              {state.status === "disconnected" && state.error && <p className="mt-1 text-sm text-muted-foreground">{state.error}</p>}
+            </div>
+            <ActionButton variant="outline" action={() => unlink({ key: dashboardKey })} success="Unlinked."
+              confirm={{ title: "Unlink WhatsApp?", body: "Perry logs out of WhatsApp and stops answering there. You can link it again any time.", label: "Unlink" }}>
+              Unlink
+            </ActionButton>
+          </div>
+          {state.mode === "separate" && !state.paired && (
+            <div className="rounded-xl border bg-card p-5">
+              <h3 className="font-medium">Send this from your own WhatsApp to {state.number ?? "Perry's number"}</h3>
+              {state.pairingCode ? (
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <span className="rounded-xl border bg-muted/40 px-4 py-2 font-mono text-3xl font-semibold tracking-[0.2em]" translate="no">{state.pairingCode}</span>
+                  <CopyButton value={state.pairingCode} label="Copy code" />
+                </div>
+              ) : <p className="mt-2 text-sm text-muted-foreground">That code expired.</p>}
+              <ActionButton className="mt-3" variant="outline" size="sm" action={() => newCode({ key: dashboardKey })}><RefreshCwIcon />New code</ActionButton>
+            </div>
+          )}
+        </div>
+      )}
+
+      {state.paired && state.telegramPaired && (
+        <Section title="When you're away" description="Replies always go where you wrote. Perry's own messages, like the heartbeat and alerts, go to one app.">
+          <ChoiceCards label="Where Perry reaches you" value={state.homeChannel}
+            options={[
+              { value: "telegram", title: "Telegram", body: "Background messages and approvals go to Telegram.", icon: <SendIcon /> },
+              { value: "whatsapp", title: "WhatsApp", body: "Background messages and approvals go to WhatsApp.", icon: <MessageCircleIcon /> },
+            ]}
+            onChange={(channel) => void setHome({ key: dashboardKey, channel }).then(() => toast.success(`Perry will reach you on ${channel === "telegram" ? "Telegram" : "WhatsApp"}.`), (cause) => toast.error(errorText(cause)))} />
         </Section>
       )}
     </>

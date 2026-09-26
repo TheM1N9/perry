@@ -26,6 +26,7 @@ import type * as lib_errors from "../lib/errors.js";
 import type * as lib_telegram from "../lib/telegram.js";
 import type * as lib_telegramFormat from "../lib/telegramFormat.js";
 import type * as lib_truncate from "../lib/truncate.js";
+import type * as lib_whatsappFormat from "../lib/whatsappFormat.js";
 import type * as mcp from "../mcp.js";
 import type * as media from "../media.js";
 import type * as memories from "../memories.js";
@@ -38,6 +39,7 @@ import type * as runs from "../runs.js";
 import type * as secrets from "../secrets.js";
 import type * as tools from "../tools.js";
 import type * as web from "../web.js";
+import type * as whatsapp from "../whatsapp.js";
 import type * as work from "../work.js";
 
 import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
@@ -66,6 +68,7 @@ declare const fullApi: ApiFromModules<{
   "lib/telegram": typeof lib_telegram;
   "lib/telegramFormat": typeof lib_telegramFormat;
   "lib/truncate": typeof lib_truncate;
+  "lib/whatsappFormat": typeof lib_whatsappFormat;
   mcp: typeof mcp;
   media: typeof media;
   memories: typeof memories;
@@ -78,6 +81,7 @@ declare const fullApi: ApiFromModules<{
   secrets: typeof secrets;
   tools: typeof tools;
   web: typeof web;
+  whatsapp: typeof whatsapp;
   work: typeof work;
 }>;
 

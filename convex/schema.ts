@@ -1,7 +1,9 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-export const vChannel = v.union(v.literal("telegram"), v.literal("web"));
+export const vChannel = v.union(v.literal("telegram"), v.literal("web"), v.literal("whatsapp"));
+/** The messaging apps the owner can pair; the web dashboard is always there. */
+export const vMessenger = v.union(v.literal("telegram"), v.literal("whatsapp"));
 /** A file the owner sent on Telegram, before it is downloaded. */
 export const vTelegramMedia = v.object({ fileId: v.string(), fileName: v.string(), contentType: v.string(), size: v.optional(v.number()) });
 export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.literal("daily"));
@@ -75,6 +77,10 @@ export default defineSchema({
     timezone: v.optional(v.string()),
     /** False stops approval requests going to the owner on Telegram. Unset means on. */
     telegramApprovals: v.optional(v.boolean()),
+    /** The owner on WhatsApp: their chat's JID, once linked and claimed (whatsapp.ts). */
+    whatsappOwner: v.optional(v.string()),
+    /** Where proactive messages go when both apps are paired. Unset: Telegram, then WhatsApp. */
+    homeChannel: v.optional(vMessenger),
     /** The access a new chat starts with. Unset means supervised. */
     defaultAccess: v.optional(vAccess),
     /**
@@ -417,6 +423,46 @@ export default defineSchema({
     checkedAt: v.number(),
   }).index("by_account", ["accountId"]),
 
+  /**
+   * The WhatsApp link, one row: which way the owner chose (their own number,
+   * talking in "Message yourself", or a separate number for Perry), and what
+   * the server's connection is doing, for the dashboard to show. See
+   * whatsapp.ts and server/whatsapp.ts.
+   */
+  whatsappLink: defineTable({
+    mode: v.union(v.literal("self"), v.literal("separate")),
+    /** The owner asked to be linked (or is); false once unlinked. */
+    wanted: v.boolean(),
+    /** Link with a code typed on the phone instead of a QR: the phone's number, digits only. */
+    phone: v.optional(v.string()),
+    status: v.union(v.literal("starting"), v.literal("qr"), v.literal("code"), v.literal("connected"), v.literal("disconnected"), v.literal("logged-out"), v.literal("off")),
+    /** A QR to scan, as a PNG data URL, or an 8-character code to type, while linking. */
+    qr: v.optional(v.string()),
+    code: v.optional(v.string()),
+    /** The linked account's own JID once connected. */
+    me: v.optional(v.string()),
+    error: v.optional(v.string()),
+    updatedAt: v.number(),
+  }),
+
+  /**
+   * What is waiting to go out on WhatsApp. The connection lives in the server
+   * process (server/whatsapp.ts), which sends these in order as they appear,
+   * so a reply written while it reconnects goes when it is back.
+   */
+  whatsappOutbox: defineTable({
+    to: v.string(),
+    kind: v.union(v.literal("text"), v.literal("typing"), v.literal("file")),
+    text: v.optional(v.string()),
+    /** A file to send: in Perry's storage, or on this machine. */
+    file: v.optional(v.object({ storageId: v.optional(v.string()), localPath: v.optional(v.string()), fileName: v.string(), contentType: v.string() })),
+    state: v.union(v.literal("pending"), v.literal("sent"), v.literal("failed")),
+    createdAt: v.number(),
+    sentAt: v.optional(v.number()),
+    attempts: v.number(),
+    error: v.optional(v.string()),
+  }).index("by_state", ["state", "createdAt"]),
+
   /** What a runner asked the owner before acting on their machine. See approvals.ts. */
   approvals: defineTable({
     runnerId: v.id("runners"),
@@ -436,7 +482,7 @@ export default defineSchema({
     /** "reviewing" while the runner's Codex reviewer looks at it; the owner is not asked yet. */
     status: v.union(v.literal("pending"), v.literal("approved"), v.literal("declined"), v.literal("expired"), v.literal("auto"), v.literal("reviewing")),
     decidedBy: v.optional(v.union(
-      v.literal("terminal"), v.literal("dashboard"), v.literal("timeout"), v.literal("telegram"),
+      v.literal("terminal"), v.literal("dashboard"), v.literal("timeout"), v.literal("telegram"), v.literal("whatsapp"),
       v.literal("rule"), v.literal("reviewer"), v.literal("trust"),
     )),
     /** The rule that allowed it, or the rule an "Always allow" answer created. */
@@ -451,6 +497,8 @@ export default defineSchema({
     /** The prompt sent to the owner on Telegram, edited to the outcome once settled. */
     telegramChatId: v.optional(v.string()),
     telegramMessageId: v.optional(v.number()),
+    /** The WhatsApp chat it was asked in, answered by replying 1, 2 or 3. */
+    whatsappChatId: v.optional(v.string()),
     createdAt: v.number(),
     decidedAt: v.optional(v.number()),
   }).index("by_status", ["status", "createdAt"]),

@@ -10,10 +10,11 @@ import { HOME, readRunnerConfig, writeRunnerConfig } from "../runner/home";
 import { modules } from "./modules";
 import { Runtime } from "./runtime";
 import { pollTelegram } from "./telegram";
+import { runWhatsApp } from "./whatsapp";
 
 /**
  * Perry's backend, inside the dashboard's server process: one SQLite file in
- * ~/.perry, the functions in convex/, their scheduler and crons, and Telegram.
+ * ~/.perry, the functions in convex/, their scheduler and crons, Telegram and WhatsApp.
  * This process is the only one that opens the database; the runner, the CLI
  * and the browser all go through /api/backend.
  */
@@ -22,7 +23,7 @@ export const PORT = Number(process.env.PERRY_PORT ?? process.env.PORT ?? 3000);
 /** This server as the runner on this machine reaches it. */
 export const LOCAL_URL = `http://127.0.0.1:${PORT}`;
 
-type Global = { __perry?: { runtime: Runtime; started: boolean; stopTelegram?: () => void } };
+type Global = { __perry?: { runtime: Runtime; started: boolean; stopTelegram?: () => void; stopWhatsApp?: () => void } };
 const box = globalThis as Global;
 
 export function backend(): Runtime {
@@ -70,5 +71,6 @@ export async function startBackend() {
   await pairThisMachine(runtime).catch((error) => console.error(`[perry] could not connect this computer: ${String(error)}`));
   runtime.start();
   box.__perry!.stopTelegram = pollTelegram(runtime);
+  box.__perry!.stopWhatsApp = runWhatsApp(runtime);
   console.log(`[perry] backend ready: ${runtime.functions().length} functions, data in ${HOME}`);
 }

@@ -83,12 +83,14 @@ export const status = internalQuery({
     if (!install) return { claimed: false, onboarding: "pending" };
 
     const claimed = Boolean(install.claimedAt);
+    // The code pairs whichever app is not paired yet, so it shows until both are.
+    const open = !(install.ownerChannel === "telegram" && install.ownerExternalId) || !install.whatsappOwner;
     return {
       claimed,
       ownerChannel: install.ownerChannel,
       ownerName: install.ownerName,
-      pairingCode: claimed ? undefined : install.pairingCode,
-      pairingExpiresAt: claimed ? undefined : install.pairingExpiresAt,
+      pairingCode: open ? install.pairingCode : undefined,
+      pairingExpiresAt: open ? install.pairingExpiresAt : undefined,
       onboarding: install.onboarding ?? (await neverUsed(ctx) ? "pending" : "offer"),
     };
   },
@@ -166,15 +168,16 @@ export const authorize = internalMutation({
     // first stranger through.
     if (!install) return { outcome: "needs-code" };
 
-    if (install.claimedAt) {
+    // Claimed through WhatsApp only: Telegram is not paired yet, and the pairing code pairs it.
+    if (install.claimedAt && install.ownerExternalId) {
       const isOwner =
         install.ownerChannel === args.channel &&
         install.ownerExternalId === args.externalId;
       return isOwner ? { outcome: "already-owner" } : { outcome: "not-owner" };
     }
 
-    // Unclaimed. Look for the pairing code anywhere in the message, so both
-    // "123456" and "/claim 123456" work.
+    // Unclaimed, or claimed on WhatsApp. Look for the pairing code anywhere in
+    // the message, so both "123456" and "/claim 123456" work.
     const supplied = args.text.match(/\b(\d{6})\b/)?.[1];
     if (!supplied) return { outcome: "needs-code" };
 
@@ -189,7 +192,7 @@ export const authorize = internalMutation({
       ownerChannel: args.channel,
       ownerExternalId: args.externalId,
       ownerName: args.name,
-      claimedAt: Date.now(),
+      claimedAt: install.claimedAt ?? Date.now(),
       pairingCode: undefined,
       pairingExpiresAt: undefined,
     });
@@ -242,7 +245,8 @@ export const unclaim = internalMutation({
       ownerChannel: undefined,
       ownerExternalId: undefined,
       ownerName: undefined,
-      claimedAt: undefined,
+      // Still claimed while the owner is known on WhatsApp.
+      claimedAt: install.whatsappOwner ? install.claimedAt : undefined,
     });
     return null;
   },

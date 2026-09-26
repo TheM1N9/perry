@@ -6,6 +6,8 @@ const config: NextConfig = {
   // at 127.0.0.1, and from other devices over Tailscale by its 100.x address or
   // its ts.net name.
   allowedDevOrigins: ["127.0.0.1", "100.*.*.*", "**.ts.net"],
+  // WhatsApp's client (server/whatsapp.ts) is loaded by Node as it ships, not bundled.
+  serverExternalPackages: ["baileys", "qrcode"],
   // Pages that moved when the dashboard was rebuilt; old links and bookmarks still land.
   async redirects() {
     return [

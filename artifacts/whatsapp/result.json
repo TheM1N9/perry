@@ -1,0 +1,73 @@
+{
+  "ranAt": "2026-09-26T09:51:11.097Z",
+  "checks": {
+    "linkByCode": true,
+    "linkByQr": true,
+    "showsNumberAndCode": true,
+    "strangerIgnored": true,
+    "claimedWithCode": true,
+    "typingThenReply": true,
+    "knowsItIsWhatsApp": true,
+    "whatsappFormatting": true,
+    "approvalOnWhatsApp": true,
+    "jobReportsFormatted": true,
+    "homeChannelChoice": true,
+    "voiceNoteAttached": true,
+    "loggedOutHandled": true,
+    "selfModeOnlyOwnChat": true,
+    "selfModeMarkedReply": true,
+    "selfModeNoEchoLoop": true,
+    "unlinkLogsOut": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "linked": {
+      "number": "+15550001111",
+      "pairingCode": true
+    },
+    "where": {
+      "reply": "You’re talking to me on *WhatsApp*.",
+      "typing": true
+    },
+    "approvalPrompt": "🔐 *DESKTOP-27SQLCP wants to run* · _WhatsApp · Mani_\n\n```Remove-Item -Recurse .\\dist```\n\n📁 `C:\\work\\site`\n\nReply *1* to approve, *2* to decline, *3* to always allow (this exact command in C:\\work\\site).",
+    "report": "⏰ *Water*\n\nTime to drink *water*.\n\n```Glass  ml\n─────  ───\nOne    250```\n\n• sip slowly",
+    "voiceReply": "I can’t transcribe the voice note here because no speech-to-text tool is available.",
+    "selfReply": "🤖 pong",
+    "pageErrors": [],
+    "whatsappSent": [
+      {
+        "jid": "919876543210@s.whatsapp.net",
+        "text": "Paired. I'm yours now, here on WhatsApp too.\n\nJust talk to me. /help lists the commands."
+      },
+      {
+        "jid": "919876543210@s.whatsapp.net",
+        "text": "You’re talking to me on *WhatsApp*."
+      },
+      {
+        "jid": "919876543210@s.whatsapp.net",
+        "text": "🔐 *DESKTOP-27SQLCP wants to run* · _WhatsApp · Mani_\n\n```Remove-Item -Recurse .\\dist```\n\n📁 `C:\\work\\site`\n\nReply *1* to approve, *2* to decline, *3* to always allow (this exact command in C:\\work\\site)."
+      },
+      {
+        "jid": "919876543210@s.whatsapp.net",
+        "text": "Approved."
+      },
+      {
+        "jid": "919876543210@s.whatsapp.net",
+        "text": "⏰ *Water*\n\nTime to drink *water*.\n\n```Glass  ml\n─────  ───\nOne    250```\n\n• sip slowly"
+      },
+      {
+        "jid": "919876543210@s.whatsapp.net",
+        "text": "⏰ *Heartbeat*\n\nYour 3pm moved to 4pm."
+      },
+      {
+        "jid": "919876543210@s.whatsapp.net",
+        "text": "I can’t transcribe the voice note here because no speech-to-text tool is available."
+      },
+      {
+        "jid": "919876543210@s.whatsapp.net",
+        "text": "🤖 pong"
+      }
+    ]
+  },
+  "passed": true
+}
