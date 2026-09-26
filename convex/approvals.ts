@@ -4,7 +4,9 @@ import { internalAction, internalMutation, internalQuery, mutation, query, type 
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
 import { answerCallback, editButtons, sendButtons, type Buttons } from "./lib/telegram";
+import { escapeHtml } from "./lib/telegramFormat";
 import { authenticate, policyOf } from "./runner";
+import type { Target } from "./channels";
 
 /**
  * Approvals for what a runner is asked to do on the owner's machine: a command
@@ -14,8 +16,9 @@ import { authenticate, policyOf } from "./runner";
  * here, and this decides in order: a rule the owner saved with "Always allow"
  * runs it; a runner trusted with policy "trust" runs it; with "review" the
  * runner's Codex reviewer looks first and clears what is routine; everything
- * else waits for the owner. The owner is asked in the runner's terminal, in
- * the dashboard and on Telegram at once, and whichever answers first wins. A
+ * else waits for the owner. The owner is asked in the runner's terminal and
+ * the dashboard, and on Telegram when the conversation it came from speaks
+ * there (channels.ts), and whichever answers first wins. A
  * request nobody answers expires, as declined, after APPROVAL_TTL_MS. Every
  * request is recorded, so there is a record of what ran and who allowed it.
  */
@@ -301,6 +304,19 @@ function promptText(row: View): string {
   ].filter(Boolean).join("\n\n");
 }
 
+/** The same prompt as Telegram HTML: what it wants in bold, the command as code, where in monospace. */
+function promptHtml(row: View, outcome?: string): string {
+  return [
+    `🔐 <b>${escapeHtml(row.runner)} wants to ${ASK[row.kind]}</b>${row.chat ? ` · <i>${escapeHtml(row.chat)}</i>` : ""}`,
+    `<pre>${escapeHtml(row.title.slice(0, 1500))}</pre>`,
+    row.cwd ? `📁 <code>${escapeHtml(row.cwd)}</code>` : null,
+    row.detail ? escapeHtml(row.detail.slice(0, 800)) : null,
+    row.review ? `<i>Reviewer: ${escapeHtml(row.review.verdict)}. ${escapeHtml(row.review.reason)}</i>` : null,
+    row.alwaysAllow && !outcome ? `<i>Always allow saves a rule for ${escapeHtml(describeRule(row.alwaysAllow, row.cwd))}.</i>` : null,
+    outcome ? `<b>${escapeHtml(outcome)}</b>` : null,
+  ].filter(Boolean).join("\n\n");
+}
+
 const WHERE = { terminal: " in the terminal", dashboard: " in the dashboard", telegram: " on Telegram" } as const;
 
 function outcomeText(row: View): string {
@@ -320,8 +336,10 @@ function buttonsFor(row: View): Buttons {
 }
 
 /**
- * Ask the owner on Telegram, under the same rule as notify.toOwner: only a
- * claimed install whose owner is on Telegram. The owner can turn this off.
+ * Ask the owner on Telegram, where the request's conversation speaks
+ * (channels.ts): its Telegram chat, or for a job the chat it was set up in or
+ * the messaging channel. A request from a web chat is asked there only, so
+ * talking on the web brings nothing to Telegram. The owner can turn this off.
  */
 export const promptOnTelegram = internalAction({
   args: { id: v.id("approvals") },
@@ -332,9 +350,11 @@ export const promptOnTelegram = internalAction({
     if (install.telegramApprovals === false) return null;
     const row = await ctx.runQuery(internal.approvals.view, { id: args.id });
     if (row?.status !== "pending") return null;
+    const target: Target | null = await ctx.runQuery(internal.channels.target, { conversationId: row.conversationId });
+    if (target?.channel !== "telegram" || target.externalId !== install.ownerExternalId) return null;
     try {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
-      const messageId = await sendButtons(token, install.ownerExternalId, promptText(row), buttonsFor(row));
+      const messageId = await sendButtons(token, install.ownerExternalId, promptText(row), buttonsFor(row), promptHtml(row));
       await ctx.runMutation(internal.approvals.promptSent, { id: args.id, chatId: install.ownerExternalId, messageId });
     } catch (error) {
       console.error(`could not ask on Telegram: ${String(error)}`);
@@ -365,7 +385,7 @@ export const showOutcomeOnTelegram = internalAction({
     if (!row?.telegramChatId || !row.telegramMessageId || row.status === "pending") return null;
     try {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
-      await editButtons(token, row.telegramChatId, row.telegramMessageId, `${promptText(row)}\n\n${outcomeText(row)}`);
+      await editButtons(token, row.telegramChatId, row.telegramMessageId, `${promptText(row)}\n\n${outcomeText(row)}`, [], promptHtml(row, outcomeText(row)));
     } catch (error) {
       console.error(`could not update the Telegram prompt: ${String(error)}`);
     }

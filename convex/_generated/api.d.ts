@@ -7,6 +7,7 @@ import type * as agentStore from "../agentStore.js";
 import type * as approvals from "../approvals.js";
 import type * as assistant from "../assistant.js";
 import type * as brain from "../brain.js";
+import type * as channels from "../channels.js";
 import type * as codex from "../codex.js";
 import type * as composio from "../composio.js";
 import type * as connectorAccounts from "../connectorAccounts.js";
@@ -46,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   approvals: typeof approvals;
   assistant: typeof assistant;
   brain: typeof brain;
+  channels: typeof channels;
   codex: typeof codex;
   composio: typeof composio;
   connectorAccounts: typeof connectorAccounts;

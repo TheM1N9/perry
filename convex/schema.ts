@@ -171,6 +171,8 @@ export default defineSchema({
    */
   monitors: defineTable({
     title: v.string(),
+    /** The chat it was set up in, where it reports (channels.ts). Unset: the owner's messaging channel. */
+    origin: v.optional(v.id("conversations")),
     url: v.string(),
     condition: v.union(
       v.literal("change"),
@@ -389,6 +391,8 @@ export default defineSchema({
     builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"))),
     /** The Codex model its runs use, picked on the Work page. Unset means the account's default. */
     model: v.optional(v.string()),
+    /** The chat it was set up in, where its results go (channels.ts). Unset: the owner's messaging channel. */
+    origin: v.optional(v.id("conversations")),
     nextRunAt: v.number(),
     lastRunAt: v.optional(v.number()),
     lastResult: v.optional(v.string()),

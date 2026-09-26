@@ -1,0 +1,67 @@
+{
+  "ranAt": "2026-09-26T09:11:47.708Z",
+  "checks": {
+    "knowsItIsOnWeb": true,
+    "knowsItIsOnTelegram": true,
+    "webApprovalStaysOnWeb": true,
+    "telegramApprovalOnTelegram": true,
+    "webJobReportsToWebChat": true,
+    "telegramJobReportsToTelegram": true,
+    "telegramMessageBuilt": true,
+    "heartbeatToTelegram": true,
+    "webWatchToWebChat": true,
+    "homeWatchToTelegram": true,
+    "webChatUnread": true,
+    "nextTurnKnows": true
+  },
+  "notes": {
+    "whereAmI": {
+      "web": "You’re talking to me in the web dashboard. Results from a scheduled job created here would reach you in this chat.",
+      "telegram": "You’re talking to me in Telegram. If I set up a scheduled job here, its results would reach you in this Telegram chat."
+    },
+    "telegramApproval": "🔐 <b>DESKTOP-27SQLCP wants to run</b> · <i>The_M1N9</i>\n\n<pre>Remove-Item -Recurse .\\dist</pre>\n\n📁 <code>C:\\work\\site</code>\n\n<i>Always allow saves a rule for this exact command in C:\\work\\site.</i>",
+    "jobReply": "Created **Stretch Break** for 30 minutes from now, at 09:41 UTC. It will remind you to stand up and stretch here in this chat.",
+    "webChatUnread": true,
+    "telegramReport": "⏰ <b>Water</b>\n\nTime to stand up and stretch.\n\n<pre>Stretch     Seconds\n──────────  ───────\nNeck rolls  30\nHamstrings  45</pre>\n\n• breathe out\n• hold still",
+    "recall": "I last reminded you to stand up and stretch, with a few suggested stretches.",
+    "telegram": [
+      {
+        "chat_id": "4242",
+        "html": false,
+        "buttons": false,
+        "text": "Paired. I'm yours now.\n\nTo tell me about yourself, open the dashboard's welcome page, or just tell me here.\n\nTry:\n  remember that I drink coffee black\n  what do you know about me\n  /help for the rest"
+      },
+      {
+        "chat_id": "4242",
+        "html": true,
+        "buttons": false,
+        "text": "You’re talking to me in Telegram. If I set up a scheduled job here, its results would reach you in this Telegram chat."
+      },
+      {
+        "chat_id": "4242",
+        "html": true,
+        "buttons": true,
+        "text": "🔐 <b>DESKTOP-27SQLCP wants to run</b> · <i>The_M1N9</i>\n\n<pre>Remove-Item -Recurse .\\dist</pre>\n\n📁 <code>C:\\work\\site</code>\n\n<i>Always allow saves a rule for this exact command in C:\\work\\site.</i>"
+      },
+      {
+        "chat_id": "4242",
+        "html": true,
+        "buttons": false,
+        "text": "⏰ <b>Water</b>\n\nTime to stand up and stretch.\n\n<pre>Stretch     Seconds\n──────────  ───────\nNeck rolls  30\nHamstrings  45</pre>\n\n• breathe out\n• hold still"
+      },
+      {
+        "chat_id": "4242",
+        "html": true,
+        "buttons": false,
+        "text": "⏰ <b>Heartbeat</b>\n\nYour 3pm moved to 4pm."
+      },
+      {
+        "chat_id": "4242",
+        "html": true,
+        "buttons": false,
+        "text": "👀 <b>Home watch</b>\n\nFound \"Example Domain\" on the page.\nhttps://example.com"
+      }
+    ]
+  },
+  "passed": true
+}

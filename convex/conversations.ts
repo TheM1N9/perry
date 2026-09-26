@@ -96,7 +96,8 @@ export const noteUnprompted = internalMutation({
     const chat = await ctx.db.get(args.id);
     if (!chat) return null;
     const unprompted = [...(chat.unprompted ?? []), { at: Date.now(), text: args.text.slice(0, 2000) }].slice(-5);
-    await ctx.db.patch(args.id, { unprompted });
+    // It is the newest thing in the chat, so the chat rises and shows as unread.
+    await ctx.db.patch(args.id, { unprompted, lastMessageAt: Date.now() });
     return null;
   },
 });
@@ -177,6 +178,11 @@ export const listWeb = internalQuery({
     .withIndex("by_channel_last", (q) => q.eq("channel", "web"))
     .order("desc")
     .collect(),
+});
+
+export const getById = internalQuery({
+  args: { id: v.id("conversations") },
+  handler: async (ctx, args) => await ctx.db.get(args.id),
 });
 
 export const getWebById = internalQuery({

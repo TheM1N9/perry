@@ -184,6 +184,8 @@ export const createMonitor = internalMutation({
     ),
     value: v.optional(v.string()),
     intervalMinutes: v.number(),
+    /** The chat it is set up in, where it reports. */
+    origin: v.optional(v.id("conversations")),
   },
   returns: v.id("monitors"),
   handler: async (ctx, args) => {
@@ -194,6 +196,7 @@ export const createMonitor = internalMutation({
       condition: args.condition,
       value: args.value,
       intervalMinutes: interval,
+      ...(args.origin ? { origin: args.origin } : {}),
       active: true,
       nextCheckAt: Date.now(),
       failures: 0,
