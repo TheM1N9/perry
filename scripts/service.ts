@@ -12,9 +12,9 @@
  *   Linux    a systemd user unit    ~/.config/systemd/user/perry-runner.service
  *   Windows  a Task Scheduler task  "Perry runner", at logon
  *
- * The service runs `bun scripts/perry.ts run` from this checkout with the
- * settings in ~/.perry/runner.json, so connect once first (`perry setup` does
- * it all). A service has no terminal, so approvals are answered in the
+ * The service runs `bun scripts/perry.ts run` from this checkout. Perry's
+ * server connects this computer the first time it starts, writing
+ * ~/.perry/runner.json. A service has no terminal, so approvals are answered in the
  * dashboard. The names still say "runner", so an older install is replaced in
  * place rather than left running beside the new one.
  *
@@ -26,7 +26,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { homedir, userInfo } from "node:os";
 import { dirname, join, posix, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HOME, PATHS, readRunnerConfig } from "../runner/home";
+import { HOME, PATHS } from "../runner/home";
 import { bold, dim, green, red, yellow } from "./lib";
 
 export const LABEL = "com.perry.runner";
@@ -347,11 +347,8 @@ export function endServiceProcess() {
 
 export function install({ dryRun = false } = {}): boolean {
   const ctx = serviceContext();
-  const config = readRunnerConfig();
-  if (!dryRun && (!config.url || !config.token)) {
-    console.error(`\n${red("This computer is not connected yet.")} Run ${bold("perry setup")} first.\n`);
-    return false;
-  }
+  // Nothing to check for runner.json: on a new computer it does not exist yet. Perry's server writes it
+  // the first time the service starts it (server/index.ts, pairThisMachine), and the runner waits for it.
   const plan = servicePlan(ctx);
   console.log(`\n${bold(`Installing Perry as a ${plan.manager} service`)}${dryRun ? dim("  (dry run: nothing is written or run)") : ""}`);
   for (const file of plan.files) {
