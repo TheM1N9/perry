@@ -3,6 +3,7 @@ import { z } from "zod";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { SearchResult } from "./composio";
+import { parseTarget } from "./lib/price";
 import type { VaultEntry } from "./vault";
 
 /**
@@ -122,7 +123,7 @@ const read_memory = createTool({
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .optional()
-      .describe("For kind=daily, the day as YYYY-MM-DD (UTC). Defaults to today."),
+      .describe("For kind=daily, the day as YYYY-MM-DD on the owner's calendar. Defaults to today."),
   }),
   execute: async (ctx, input): Promise<{ count: number; memories: ReturnType<typeof shape>[] }> => {
     const rows: MemoryRow[] = await ctx.runQuery(internal.memories.read, { kind: input.kind, day: input.day });
@@ -722,10 +723,12 @@ const check_watches = createTool({
 const watch_page = createTool({
   description:
     "Watch a public page on a schedule and tell the owner when it changes, " +
-    "when it starts containing some text, or when a dollar price drops below a " +
+    "when it starts containing some text, or when a price drops below a " +
     "number. Only set one the owner asked for, and keep the interval as long " +
     "as the question allows. The first check of a change watch records a " +
-    "baseline and says nothing.",
+    "baseline and says nothing. A contains or price watch speaks when its " +
+    "condition starts holding, and again once it has stopped and holds again " +
+    "(back in stock, back under the price).",
   inputSchema: z.object({
     title: z.string().min(1).max(160),
     url: z.string().url().max(4096),
@@ -734,18 +737,15 @@ const watch_page = createTool({
       .string()
       .max(300)
       .optional()
-      .describe("Text to look for, or the price to go below."),
+      .describe("Text to look for, or the price to go below, with its currency as the page writes it (\"₹25,000\", \"€199\", \"$49.99\"). A bare number matches a price in any currency."),
     intervalMinutes: z.number().int().min(5).max(10080).default(60),
   }),
   execute: async (ctx, input): Promise<{ monitorId?: string; error?: string }> => {
     if (input.condition !== "change" && !input.value?.trim()) {
       return { error: "That condition needs a value." };
     }
-    if (
-      input.condition === "price_below" &&
-      !Number.isFinite(Number(input.value))
-    ) {
-      return { error: "price_below needs a number." };
+    if (input.condition === "price_below" && !parseTarget(input.value ?? "")) {
+      return { error: "price_below needs a price, such as \"₹25,000\" or \"199\"." };
     }
 
     const monitorId: Id<"monitors"> = await ctx.runMutation(

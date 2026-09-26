@@ -8,6 +8,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
 import { describeError, UNSAFE_DESTINATION } from "./lib/errors";
+import { firstPrice, formatPrice, parseTarget } from "./lib/price";
 import { truncateHead } from "./lib/truncate";
 import { ownerClock } from "./jobs";
 
@@ -399,13 +400,6 @@ function fingerprint(text: string): string {
   return `${normalised.length}:${hash}`;
 }
 
-function firstPrice(text: string): number | null {
-  const match = text.match(/(?:US)?\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)/);
-  if (!match) return null;
-  const value = Number(match[1].replace(/,/g, ""));
-  return Number.isFinite(value) ? value : null;
-}
-
 /**
  * Check every monitor that is due. Called by the cron.
  *
@@ -435,6 +429,12 @@ export const checkMonitors = internalAction({
       const print = fingerprint(page.text);
       let fired = false;
       let observation = "No change.";
+      // A contains or price watch fires when its condition starts holding, and
+      // again only after it has stopped holding for a check: back in stock, or
+      // back under the price. Watches from before `met` count as holding if
+      // they had fired.
+      let met: boolean | undefined;
+      const metBefore = monitor.met ?? monitor.firedAt !== undefined;
 
       if (monitor.condition === "change") {
         if (!monitor.lastFingerprint) {
@@ -445,23 +445,31 @@ export const checkMonitors = internalAction({
         }
       } else if (monitor.condition === "contains") {
         const needle = (monitor.value ?? "").toLowerCase();
-        const present = needle.length > 0 && page.text.toLowerCase().includes(needle);
-        if (present && !monitor.firedAt) {
+        met = needle.length > 0 && page.text.toLowerCase().includes(needle);
+        if (met && !metBefore) {
           fired = true;
           observation = `Found "${monitor.value}" on the page.`;
+        } else if (met) {
+          observation = "Still there.";
         } else {
-          observation = present ? `Still there.` : `Not on the page.`;
+          observation = metBefore ? "Gone from the page; I'll say when it's back." : "Not on the page.";
         }
       } else if (monitor.condition === "price_below") {
-        const target = Number(monitor.value);
-        const found = firstPrice(page.text);
-        if (found === null) {
-          observation = "No price found on the page.";
-        } else if (Number.isFinite(target) && found < target) {
-          fired = true;
-          observation = `Price is $${found}, below $${target}.`;
+        const target = parseTarget(monitor.value ?? "");
+        const found = target ? firstPrice(page.text, target.currency) : null;
+        if (!target) {
+          observation = `"${monitor.value}" is not a price to compare with.`;
+        } else if (!found) {
+          observation = target.currency ? `No price in ${target.currency} found on the page.` : "No price found on the page.";
         } else {
-          observation = `Price is $${found}.`;
+          met = found.amount < target.amount;
+          const below = { amount: target.amount, currency: target.currency ?? found.currency };
+          if (met && !metBefore) {
+            fired = true;
+            observation = `Price is ${formatPrice(found)}, below ${formatPrice(below)}.`;
+          } else {
+            observation = met ? `Price is ${formatPrice(found)}, still below ${formatPrice(below)}.` : `Price is ${formatPrice(found)}.`;
+          }
         }
       }
 
@@ -471,6 +479,7 @@ export const checkMonitors = internalAction({
         observation,
         fired,
         failed: false,
+        ...(met !== undefined ? { met } : {}),
       });
 
       if (fired) {

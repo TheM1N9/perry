@@ -232,6 +232,7 @@ export const recordCheck = internalMutation({
     observation: v.optional(v.string()),
     fired: v.boolean(),
     failed: v.boolean(),
+    met: v.optional(v.boolean()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -241,6 +242,7 @@ export const recordCheck = internalMutation({
     const failures = args.failed ? monitor.failures + 1 : 0;
 
     await ctx.db.patch(args.id, {
+      ...(args.met !== undefined ? { met: args.met } : {}),
       lastFingerprint: args.fingerprint ?? monitor.lastFingerprint,
       lastObservation: args.observation ?? monitor.lastObservation,
       lastCheckedAt: Date.now(),

@@ -245,6 +245,8 @@ export default defineSchema({
     nextCheckAt: v.number(),
     lastObservation: v.optional(v.string()),
     firedAt: v.optional(v.number()),
+    /** Whether a contains or price watch's condition held at the last check, so it fires when it starts holding, not on every check. */
+    met: v.optional(v.boolean()),
     /** When the owner dismissed its last firing from Needs you. */
     seenAt: v.optional(v.number()),
     failures: v.number(),
