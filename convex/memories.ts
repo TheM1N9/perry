@@ -38,6 +38,8 @@ const DAY_MS = 86_400_000;
 const MIN_SIMILARITY = 0.25;
 /** Reciprocal rank fusion's constant: how much a first place outweighs a tenth. */
 const FUSION_K = 10;
+/** How much a place among the word matches counts against the same place among the meanings. */
+const WORD_WEIGHT = 0.8;
 
 /** YYYY-MM-DD on the owner's calendar, `offset` days ago. */
 export const dayIn = (timezone: string, offset = 0) => new Date(Date.now() - offset * DAY_MS).toLocaleDateString("en-CA", { timeZone: timezone });
@@ -200,9 +202,10 @@ export const recall = internalAction({
     for (const memory of fetched) known.set(memory.id, memory);
 
     const fused = new Map<string, number>();
-    const rank = (ids: string[]) => ids.forEach((id, place) => fused.set(id, (fused.get(id) ?? 0) + 1 / (FUSION_K + place)));
-    rank(hits.map((memory) => memory.id));
-    rank(close.map((item) => item.id).filter((id) => known.has(id)));
+    const rank = (ids: string[], weight: number) => ids.forEach((id, place) => fused.set(id, (fused.get(id) ?? 0) + weight / (FUSION_K + place)));
+    // A word match can be as thin as "I" or "my", so meaning wins a tie; both together win outright.
+    rank(hits.map((memory) => memory.id), close.length ? WORD_WEIGHT : 1);
+    rank(close.map((item) => item.id).filter((id) => known.has(id)), 1);
     return [...fused]
       .map(([id, fusion]) => {
         const memory = known.get(id)!;
