@@ -1,28 +1,19 @@
 "use client";
 
+import Link from "next/link";
 import { MonitorIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { ComputeView } from "@/convex/dashboard";
-import type { Policy } from "@/convex/runner";
 import { errorText, plural, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { ApprovalCard } from "../approval-card";
 import { ActionButton, CommandLine, EmptyState, List, ListSkeleton, Page, RelativeTime, Section, StatusBadge, type Tone } from "../common";
-
-/** A runner's approval policy, in the words the owner chooses by. */
-const POLICIES: Array<{ value: Policy; label: string; hint: string }> = [
-  { value: "ask", label: "Ask me every time", hint: "Every command and file change waits for you." },
-  { value: "review", label: "Review, then ask if risky", hint: "Codex checks each request; you're asked about the risky ones." },
-  { value: "trust", label: "Run without asking", hint: "It acts straight away. Everything still shows in Activity." },
-];
 
 /**
  * The computers Perry works on. Each one runs Codex for Perry's turns and asks
@@ -72,22 +63,7 @@ export function Computer() {
 function RunnerRow({ runner }: { runner: ComputeView["runners"][number] }) {
   const { dashboardKey } = useSession();
   const revoke = useMutation(api.dashboard.revokeRunner);
-  const setPolicy = useMutation(api.dashboard.setRunnerPolicy);
-  const [saving, setSaving] = useState(false);
   const state: { tone: Tone; label: string } = runner.revoked ? { tone: "danger", label: "Revoked" } : runner.online ? { tone: "success", label: "Online" } : { tone: "neutral", label: "Offline" };
-  const policy = POLICIES.find((item) => item.value === runner.policy)!;
-
-  const choose = async (next: Policy) => {
-    setSaving(true);
-    try {
-      await setPolicy({ key: dashboardKey, runnerId: runner.id, policy: next });
-      toast.success(`${runner.name}: ${POLICIES.find((item) => item.value === next)?.label}.`);
-    } catch (cause) {
-      toast.error(`Couldn't change how ${runner.name} asks: ${errorText(cause)}`);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   return (
     <li className={cn("flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-start", runner.revoked && "opacity-60")}>
@@ -104,22 +80,9 @@ function RunnerRow({ runner }: { runner: ComputeView["runners"][number] }) {
         </p>
         {!runner.revoked && !runner.online && <p className="mt-1 text-sm text-muted-foreground">Start it again with <code className="font-mono text-xs">perry start</code> on that computer.</p>}
         {!runner.revoked && (
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <span className="text-sm text-muted-foreground" id={`policy-${runner.id}`}>Before it acts</span>
-            <Select items={POLICIES.map(({ value, label }) => ({ value, label }))} value={runner.policy} onValueChange={(value) => { if (value) void choose(value as Policy); }} disabled={saving}>
-              <SelectTrigger aria-labelledby={`policy-${runner.id}`} size="sm" className={cn(runner.policy === "trust" && "text-warning")}>
-                {saving && <Spinner className="size-3" />}<SelectValue />
-              </SelectTrigger>
-              <SelectContent className="w-80" alignItemWithTrigger={false} align="start">
-                {POLICIES.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    <span className="grid"><span>{item.label}</span><span className="text-xs text-muted-foreground">{item.hint}</span></span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="text-xs text-muted-foreground max-sm:basis-full">{policy.hint}</span>
-          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Whether it asks before acting is set per chat: Ask, Auto or Full access, from the chat&apos;s composer or <Link href="/settings" className="underline underline-offset-2 hover:text-foreground">Settings</Link> for new chats.
+          </p>
         )}
       </div>
       {!runner.revoked && (

@@ -5,7 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
 import { answerCallback, editButtons, sendButtons, type Buttons } from "./lib/telegram";
 import { escapeHtml } from "./lib/telegramFormat";
-import { authenticate, policyOf } from "./runner";
+import { authenticate, policyOf, type Policy } from "./runner";
 import type { Target } from "./channels";
 
 /**
@@ -169,7 +169,11 @@ export const request = mutation({
       return { id, next: "run" };
     }
 
-    const policy = policyOf(runner);
+    // The chat's access decides (lib/commands.ts): Ask asks, Auto has Codex review first, Full access runs.
+    // Only a request from no chat, sent to the runner itself, follows the computer's own policy.
+    const chat = args.conversationId ? await ctx.db.get(args.conversationId) : null;
+    const access = chat ? chat.access ?? "supervised" : null;
+    const policy: Policy = access === "full" ? "trust" : access === "auto" ? "review" : access === "supervised" ? "ask" : policyOf(runner);
     if (policy === "trust") {
       const id = await ctx.db.insert("approvals", { ...row, status: "auto", decidedBy: "trust", decidedAt: now });
       return { id, next: "run" };
