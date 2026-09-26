@@ -27,3 +27,23 @@ jobs:
       - run: pnpm exec tsc --noEmit
       # On Windows the runner is disposable, so the smoke test also has Task Scheduler read the task it would install.
       - run: bun scripts/smoke.ts ${{ runner.os == 'Windows' && '--register' || '' }}
+
+  # The landing page in site/ is a separate Next.js app with its own lockfile.
+  site:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: site/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: site/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build

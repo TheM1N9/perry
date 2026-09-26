@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240" fill="none" stroke="#000" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Perry's own doodles for the chat wallpaper, drawn as a mask: fedora, magnifier, star, paper plane, key, clock, coffee, lock, envelope, moon, prompt, bill. -->
+  <g transform="rotate(-10 30 26)"><path d="M8 32q22-7 44 0"/><path d="M16 31c1-10 5-14 10-13 2 1 5 1 7 0 5-1 9 3 10 13"/><path d="M17 26h25"/></g>
+  <g transform="rotate(12 98 30)"><circle cx="95" cy="28" r="9"/><path d="m101.5 34.5 9 9"/></g>
+  <path d="m158 16 3.5 7.2 7.9 1.1-5.7 5.6 1.3 7.9-7-3.7-7 3.7 1.3-7.9-5.7-5.6 7.9-1.1z"/>
+  <g transform="rotate(-8 208 30)"><path d="m192 36 32-15-11 31-7-12z"/><path d="m206 40 7-8"/></g>
+  <g transform="rotate(20 38 100)"><circle cx="28" cy="100" r="6.5"/><path d="M34.5 100H58M51 100v6M56 100v5"/></g>
+  <g><circle cx="100" cy="96" r="11"/><path d="M100 89v7l5 3"/></g>
+  <g transform="rotate(-6 160 98)"><path d="M148 92h20v11a8 8 0 0 1-8 8h-4a8 8 0 0 1-8-8z"/><path d="M168 96h3a4 4 0 0 1 0 8h-3"/><path d="M154 86c0-3 3-3 3-6M161 86c0-3 3-3 3-6"/></g>
+  <g transform="rotate(10 210 102)"><rect x="201" y="100" width="18" height="14" rx="3"/><path d="M204.5 100v-4a5.5 5.5 0 0 1 11 0v4"/></g>
+  <g transform="rotate(-14 34 168)"><rect x="20" y="160" width="28" height="19" rx="3"/><path d="m21 162 13 10 13-10"/></g>
+  <path d="M104 156a13 13 0 1 0 11 19 10 10 0 0 1-11-19z"/>
+  <g transform="rotate(8 160 170)"><rect x="146" y="159" width="30" height="22" rx="4"/><path d="m152 166 5 4-5 4M160 175h8"/></g>
+  <g transform="rotate(-12 210 170)"><path d="M196 170c0-5 6-7 14-7s14 2 14 7-6 8-14 8-14-3-14-8z"/><path d="M207 167h.01M213 167h.01"/></g>
+  <circle cx="64" cy="58" r="1.6"/><circle cx="132" cy="62" r="1.6"/><circle cx="182" cy="62" r="1.6"/><circle cx="66" cy="136" r="1.6"/><circle cx="130" cy="132" r="1.6"/><circle cx="232" cy="136" r="1.6"/><circle cx="62" cy="212" r="1.6"/><circle cx="128" cy="216" r="1.6"/><circle cx="186" cy="214" r="1.6"/>
+  <path d="M70 205l6-6M73 199l-3 3M20 222q6-6 12 0t12 0"/>
+  <path d="m228 214 4 4m0-4-4 4"/>
+</svg>

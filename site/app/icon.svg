@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="44 40 152 152">
+  <defs>
+    <clipPath id="l"><ellipse cx="100" cy="116" rx="13" ry="15"/></clipPath>
+    <clipPath id="r"><ellipse cx="140" cy="116" rx="13" ry="15"/></clipPath>
+  </defs>
+  <rect x="44" y="40" width="152" height="152" rx="36" fill="#12302d"/>
+  <path d="M58 152c0-46 28-70 62-70s62 24 62 70v50H58z" fill="#26b5a9"/>
+  <ellipse cx="100" cy="116" rx="13" ry="15" fill="#fff"/>
+  <ellipse cx="140" cy="116" rx="13" ry="15" fill="#fff"/>
+  <circle cx="100" cy="119" r="5.6" fill="#101214"/>
+  <circle cx="140" cy="119" r="5.6" fill="#101214"/>
+  <rect x="85" y="99" width="30" height="11" fill="#1b8e85" clip-path="url(#l)"/>
+  <rect x="125" y="99" width="30" height="11" fill="#1b8e85" clip-path="url(#r)"/>
+  <path d="M70 148c0-12 24-17 50-17s50 5 50 17c0 15-22 21-50 21s-50-6-50-21z" fill="#f5a13a"/>
+  <g transform="rotate(-7 120 90)">
+    <ellipse cx="120" cy="89" rx="72" ry="11" fill="#4b3326"/>
+    <path d="M84 89c2-26 14-38 26-35 6 2 14 2 20 0 12-3 24 9 26 35z" fill="#4b3326"/>
+    <path d="M85 80h70v8H85z" fill="#2a1c15"/>
+  </g>
+</svg>
