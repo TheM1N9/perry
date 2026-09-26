@@ -4,6 +4,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation } from "@/client/react";
 import { api } from "@/convex/_generated/api";
+import { matches } from "@/convex/lib/shortcuts";
+import { useShortcuts } from "@/hooks/use-shortcuts";
 import { KEY_STORAGE, SessionContext, useSession, type Session } from "@/lib/session";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./app-sidebar";
@@ -69,21 +71,21 @@ function Unlocked({ children }: { children: ReactNode }) {
     void setTimezone({ key: dashboardKey, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
   }, [dashboardKey, setTimezone]);
 
+  // Search and New chat, on the keys chosen in Settings (⌘K and ⌘⇧O unless changed; ⌘N belongs to the browser).
+  const { shortcuts, mac } = useShortcuts();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const mod = event.metaKey || event.ctrlKey;
-      if (mod && !event.shiftKey && event.key.toLowerCase() === "k") {
+      if (matches(event, shortcuts.palette, mac)) {
         event.preventDefault();
         setPaletteOpen((open) => !open);
-      } else if (mod && event.shiftKey && event.key.toLowerCase() === "o") {
-        // ⌘⇧O, as in other chat apps; ⌘N belongs to the browser.
+      } else if (matches(event, shortcuts.newChat, mac)) {
         event.preventDefault();
         router.push("/chat");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [router]);
+  }, [router, shortcuts, mac]);
 
   const palette = useMemo(() => ({ open: () => setPaletteOpen(true) }), []);
 

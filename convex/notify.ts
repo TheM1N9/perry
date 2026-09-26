@@ -5,7 +5,7 @@ import { internalAction } from "./_generated/server";
 import { loadConversation } from "./brain";
 import type { Target } from "./channels";
 import { saveMessages } from "./lib/agent";
-import { sendMessage } from "./lib/telegram";
+import { sendButtons, sendMessage } from "./lib/telegram";
 
 /**
  * Assistant speaking first.
@@ -20,6 +20,8 @@ export const deliver = internalAction({
     text: v.string(),
     /** The conversation this came from: a job's chat, or the chat a job or watch was set up in. */
     origin: v.optional(v.id("conversations")),
+    /** Buttons under it on Telegram, as plain text; the other channels have none and get the text alone. */
+    buttons: v.optional(v.array(v.array(v.object({ text: v.string(), data: v.string() })))),
   },
   returns: v.boolean(),
   handler: async (ctx, args): Promise<boolean> => {
@@ -41,7 +43,8 @@ export const deliver = internalAction({
         if (install.ownerChannel !== "telegram" || target.externalId !== install.ownerExternalId) return false;
         const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
         // Job results are the agent's Markdown; plain alerts read the same either way.
-        await sendMessage(token, target.externalId, args.text, { markdown: true });
+        if (args.buttons) await sendButtons(token, target.externalId, args.text, args.buttons);
+        else await sendMessage(token, target.externalId, args.text, { markdown: true });
         // Made here if the owner has not written since pairing.
         conversationId = target.conversationId ?? (await loadConversation(ctx, "telegram", target.externalId))._id;
       } else {

@@ -369,11 +369,17 @@ export interface InboundCallback {
   callbackId: string;
   senderId: string;
   data: string;
+  /** The message the button was under, to rewrite once it is answered. */
+  chatId?: string;
+  messageId?: number;
 }
 
 function parseCallback(query: TelegramCallbackQuery): InboundCallback | null {
   if (query.from?.is_bot || !query.data) return null;
-  return { callbackId: query.id, senderId: String(query.from.id), data: query.data };
+  return {
+    callbackId: query.id, senderId: String(query.from.id), data: query.data,
+    ...(query.message ? { chatId: String(query.message.chat.id), messageId: query.message.message_id } : {}),
+  };
 }
 
 /** Photos come in several sizes; take the largest. Everything else is one file. */

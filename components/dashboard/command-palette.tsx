@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ActivityIcon, BookUserIcon, CableIcon, InboxIcon, KeyRoundIcon, ListChecksIcon, LockIcon, MessageSquareIcon,
+  ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, InboxIcon, KeyboardIcon, KeyRoundIcon, ListChecksIcon, LockIcon, MessageSquareIcon,
   MonitorIcon, MoonIcon, SettingsIcon, SquarePenIcon, SunIcon, TextSearchIcon,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useState } from "react";
@@ -11,6 +11,7 @@ import { useAction, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useSession } from "@/lib/session";
+import { useShortcuts } from "@/hooks/use-shortcuts";
 import {
   Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut,
 } from "@/components/ui/command";
@@ -21,6 +22,7 @@ export const usePalette = () => useContext(PaletteContext);
 
 const PAGES = [
   { href: "/inbox", label: "Needs you", icon: InboxIcon },
+  { href: "/todos", label: "To-dos", icon: CheckCircle2Icon },
   { href: "/work", label: "Work", icon: ListChecksIcon },
   { href: "/memory", label: "Memory", icon: BookUserIcon },
   { href: "/connectors", label: "Connectors", icon: CableIcon },
@@ -28,12 +30,13 @@ const PAGES = [
   { href: "/activity", label: "Activity", icon: ActivityIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
   { href: "/settings?tab=keys", label: "Keys", icon: KeyRoundIcon },
+  { href: "/settings?tab=shortcuts", label: "Keyboard shortcuts", icon: KeyboardIcon },
 ];
 
 type Found = { id: Id<"conversations">; title: string; snippet: string };
 
 /**
- * ⌘K: every chat by title, what was said in them, every page, and the few
+ * Search (⌘K unless changed in Settings): every chat by title, what was said in them, every page, and the few
  * things you do from anywhere. Titles filter as you type; message text is
  * searched on the server once you pause.
  */
@@ -41,6 +44,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const { dashboardKey, lock } = useSession();
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
+  const { label: shortcutLabel } = useShortcuts();
   const chats = useQuery(api.dashboard.listChats, open ? { key: dashboardKey } : "skip");
   const searchChats = useAction(api.dashboard.searchChats);
   const [search, setSearch] = useState("");
@@ -64,7 +68,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const matches = (...texts: string[]) => !needle || texts.some((text) => text.toLocaleLowerCase().includes(needle));
   const themeLabel = `Switch to ${resolvedTheme === "dark" ? "light" : "dark"} theme`;
   const actions = [
-    { id: "new", label: "New chat", icon: SquarePenIcon, shortcut: "⇧⌘O", run: () => router.push("/chat") },
+    { id: "new", label: "New chat", icon: SquarePenIcon, shortcut: shortcutLabel("newChat"), run: () => router.push("/chat") },
     { id: "theme", label: themeLabel, icon: resolvedTheme === "dark" ? SunIcon : MoonIcon, run: () => setTheme(resolvedTheme === "dark" ? "light" : "dark") },
     { id: "lock", label: "Lock dashboard", icon: LockIcon, run: lock },
   ].filter((action) => matches(action.label, action.id === "theme" ? "theme dark light" : ""));

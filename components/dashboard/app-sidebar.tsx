@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ActivityIcon, BookUserIcon, CableIcon, ChevronsUpDownIcon, InboxIcon, ListChecksIcon, LockIcon, MonitorIcon,
+  ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, ChevronsUpDownIcon, InboxIcon, ListChecksIcon, LockIcon, MonitorIcon,
   MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -14,6 +14,7 @@ import type { ChatSummary } from "@/convex/dashboard";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
 import { dayGroup, errorText } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useShortcuts } from "@/hooks/use-shortcuts";
 import { toast } from "sonner";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -41,16 +42,13 @@ import { useNeedsYouCount } from "./needs-you-count";
 /** How many chats show before "Show all", so a long history stays scannable. */
 const CHAT_PAGE = 25;
 
-const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
-
 export function AppSidebar() {
   const { dashboardKey } = useSession();
   const pathname = usePathname();
   const palette = usePalette();
   const { setOpenMobile } = useSidebar();
   const count = useNeedsYouCount();
-  const [mac, setMac] = useState(false);
-  useEffect(() => setMac(isMac()), []);
+  const { label } = useShortcuts();
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
   const assistant = status?.assistantName ?? "Perry";
 
@@ -79,7 +77,7 @@ export function AppSidebar() {
                   <span>New chat</span>
                 </SidebarMenuButton>
                 <SidebarMenuBadge className="opacity-0 transition-opacity max-md:hidden group-hover/menu-item:opacity-100">
-                  <Kbd className="h-5">{mac ? "⇧⌘O" : "Ctrl⇧O"}</Kbd>
+                  <Kbd className="h-5">{label("newChat")}</Kbd>
                 </SidebarMenuBadge>
               </SidebarMenuItem>
               <SidebarMenuItem>
@@ -87,7 +85,7 @@ export function AppSidebar() {
                   <SearchIcon />
                   <span>Search</span>
                 </SidebarMenuButton>
-                <SidebarMenuBadge className="max-md:hidden"><Kbd className="h-5">{mac ? "⌘K" : "Ctrl K"}</Kbd></SidebarMenuBadge>
+                <SidebarMenuBadge className="max-md:hidden"><Kbd className="h-5">{label("palette")}</Kbd></SidebarMenuBadge>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/inbox" />} isActive={pathname === "/inbox"} tooltip="Needs you">
@@ -99,6 +97,12 @@ export function AppSidebar() {
                     {count}
                   </SidebarMenuBadge>
                 )}
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/todos" />} isActive={pathname === "/todos"} tooltip="To-dos">
+                  <CheckCircle2Icon />
+                  <span>To-dos</span>
+                </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/work" />} isActive={pathname.startsWith("/work")} tooltip="Work">

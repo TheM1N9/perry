@@ -22,6 +22,7 @@ import * as lib_agent from "../convex/lib/agent";
 import * as lib_auth from "../convex/lib/auth";
 import * as lib_commands from "../convex/lib/commands";
 import * as lib_errors from "../convex/lib/errors";
+import * as lib_shortcuts from "../convex/lib/shortcuts";
 import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
 import * as lib_truncate from "../convex/lib/truncate";
@@ -36,6 +37,7 @@ import * as recovery from "../convex/recovery";
 import * as runner from "../convex/runner";
 import * as runs from "../convex/runs";
 import * as secrets from "../convex/secrets";
+import * as todos from "../convex/todos";
 import * as tools from "../convex/tools";
 import * as vault from "../convex/vault";
 import * as web from "../convex/web";
@@ -63,6 +65,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/auth": lib_auth,
   "lib/commands": lib_commands,
   "lib/errors": lib_errors,
+  "lib/shortcuts": lib_shortcuts,
   "lib/telegram": lib_telegram,
   "lib/telegramFormat": lib_telegramFormat,
   "lib/truncate": lib_truncate,
@@ -77,6 +80,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "runner": runner,
   "runs": runs,
   "secrets": secrets,
+  "todos": todos,
   "tools": tools,
   "vault": vault,
   "web": web,

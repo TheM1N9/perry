@@ -1,0 +1,259 @@
+{
+  "ranAt": "2026-09-26T17:07:40.513Z",
+  "realMouse": true,
+  "voice": true,
+  "checks": {
+    "petStarted": true,
+    "startsAtLogin": true,
+    "seeThrough": true,
+    "seeThroughOnScreen": true,
+    "backOnTop": true,
+    "headsUp": true,
+    "countdown": true,
+    "late": true,
+    "doneFromBubble": true,
+    "streak": true,
+    "cheers": true,
+    "countdownAgain": true,
+    "later": true,
+    "listOpens": true,
+    "previewShown": true,
+    "quickAdd": true,
+    "dragMoves": true,
+    "dragRemembered": true,
+    "draggingIsNotAClick": true,
+    "keptOnScreen": true,
+    "circleShowsWhileDragged": true,
+    "overCircleArms": true,
+    "circleRedOnScreen": true,
+    "droppedHides": true,
+    "hiddenWhereHeWas": true,
+    "perryPetBringsHimBack": true,
+    "backWhereHeWas": true,
+    "agentAddsTodo": true,
+    "agentMadeNoJob": true,
+    "petSaysPerryAdded": true,
+    "chatTabFirst": true,
+    "petChatKnowsTelegram": true,
+    "petChatIsADashboardChat": true,
+    "workingBubble": true,
+    "replyBubble": true,
+    "replyOpensChat": true,
+    "micListens": true,
+    "micToText": true,
+    "micDoesNotSend": true,
+    "hotkeyListens": true,
+    "hotkeySends": true,
+    "hotkeyDoesIt": true,
+    "holdListens": true,
+    "holdToTalkSends": true,
+    "escCancels": true,
+    "escSendsNothing": true,
+    "approvalBubble": true,
+    "approvalBadge": true,
+    "approvedFromPet": true,
+    "quietWhileAtComputer": true,
+    "nagsWhenAway": true,
+    "reminderHasButtons": true,
+    "doneOnTelegram": true,
+    "cardSettled": true,
+    "tapAnswered": true,
+    "tomorrowKeepsTime": true,
+    "doneInWords": true,
+    "endDayMovesToTomorrow": true,
+    "dashboardPage": true,
+    "dashboardMarksPerrys": true,
+    "shortcutsPage": true,
+    "petHotkeyShownWorking": true,
+    "letterRefused": true,
+    "shortcutSaved": true,
+    "sidebarShowsIt": true,
+    "oldKeysLetGo": true,
+    "newKeysWork": true,
+    "clashRefused": true,
+    "resetToDefault": true,
+    "petTakesNewHotkey": true,
+    "settingsSaysWorking": true,
+    "newHotkeyListens": true,
+    "takenReported": true,
+    "settingsSaysTaken": true,
+    "backToDefaultHotkey": true,
+    "noDashboardErrors": true,
+    "clickPassesThrough": true,
+    "realClickOpensList": true,
+    "clickOnHimStays": true,
+    "napsWhenNothingHappens": true,
+    "wakesWhenTouched": true,
+    "staysAwakeAfterwards": true,
+    "noPageErrors": true,
+    "petQuits": true,
+    "notAtLogin": true
+  },
+  "notes": {
+    "perryPet": "Perry on your desktop\n  started  in the bottom-right corner of your screen\n  Click him for your chats, to-dos and what needs you; drag him anywhere. Ctrl+Shift+Space talks to him.\n  He starts with your computer from now on; perry pet off stops that.",
+    "loginEntry": "Perry pet    REG_SZ    \"C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-3961593a\\pet\\node_modules\\.pnpm\\electron@44.4.5\\node_modules\\electron\\dist\\electron.exe\" \"C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-3961593a\\pet\"",
+    "desktopPixels": {
+      "empty": "236,240,244",
+      "him": "217,130,42"
+    },
+    "timezone": "Asia/Calcutta",
+    "preview": "Chat | To-dos | Needs you | 23:05",
+    "dragged": {
+      "before": {
+        "x": 1516,
+        "y": 412
+      },
+      "after": {
+        "x": 1276,
+        "y": 262
+      }
+    },
+    "circlePixel": "222,54,54",
+    "dentistReply": "I’ll remind you to call the dentist at 1:30 AM on September 27.",
+    "dentist": {
+      "title": "Call the dentist",
+      "due": "Sun Sep 27 2026 01:30:00 GMT+0530 (India Standard Time)",
+      "by": "assistant"
+    },
+    "petChatAnswer": "You asked me to remind you to call the dentist at 1:30 AM.",
+    "micHeard": "Remind me to call Sam at 5pm tomorrow.",
+    "micSeconds": 0.9,
+    "modelDownloadShown": false,
+    "hotkeyPrompt": "Remind me to call Sam at 5pm tomorrow.",
+    "hotkeyTodo": {
+      "id": "re0g20gp3ptjz66k3ytgdn4nrh",
+      "title": "Call Sam",
+      "dueAt": 1790508600000,
+      "by": "assistant",
+      "createdAt": 1790442369451
+    },
+    "binsWhileAtComputer": 1790442334276,
+    "binsReminder": {
+      "text": "⏰ Take out the bins\ndue now",
+      "buttons": [
+        "td:zxqn1vhdxwnbr9881x1z9vn73b:d",
+        "td:zxqn1vhdxwnbr9881x1z9vn73b:10",
+        "td:zxqn1vhdxwnbr9881x1z9vn73b:60",
+        "td:zxqn1vhdxwnbr9881x1z9vn73b:t"
+      ]
+    },
+    "tomorrowCard": "⏰ water the plants\npushed back to tomorrow at 22:33",
+    "doneReply": "Marked “Call the dentist” done.",
+    "otherAppHolds": "held",
+    "pageErrors": [],
+    "perryPetOff": "stopped  and no longer starts at login",
+    "board": {
+      "timezone": "Asia/Calcutta",
+      "open": [
+        {
+          "id": "re0g20gp3ptjz66k3ytgdn4nrh",
+          "title": "Call Sam",
+          "dueAt": 1790508600000,
+          "by": "assistant",
+          "createdAt": 1790442369451
+        },
+        {
+          "id": "vsf2ddpk8853mee145rennvqv9",
+          "title": "Reply to Ana",
+          "dueAt": 1790523408866,
+          "by": "owner",
+          "createdAt": 1790442408866
+        },
+        {
+          "id": "5d6tj148jjdrc4mtj3071t77v8",
+          "title": "water the plants",
+          "dueAt": 1790528616834,
+          "by": "owner",
+          "createdAt": 1790442317111
+        },
+        {
+          "id": "701g820s817k7ky5wcar0st2ty",
+          "title": "Call Sam",
+          "dueAt": 1790529316970,
+          "by": "owner",
+          "createdAt": 1790442311869
+        },
+        {
+          "id": "1t9fespj2ep8tzry5msmz9wsxn",
+          "title": "Stretch",
+          "dueAt": 1790529431598,
+          "by": "owner",
+          "createdAt": 1790442311599
+        }
+      ],
+      "doneToday": [
+        {
+          "id": "hv8s91z14dq2n1c2pr6rn5sn1b",
+          "title": "Call the dentist",
+          "dueAt": 1790442337635,
+          "doneAt": 1790442406800,
+          "by": "assistant",
+          "createdAt": 1790442331460
+        },
+        {
+          "id": "zxqn1vhdxwnbr9881x1z9vn73b",
+          "title": "Take out the bins",
+          "dueAt": 1790442336293,
+          "doneAt": 1790442396612,
+          "by": "owner",
+          "createdAt": 1790442394278
+        },
+        {
+          "id": "zv4s3ah45ph1fzr5hc1m9ec9n3",
+          "title": "Pay rent",
+          "dueAt": 1790442191598,
+          "doneAt": 1790442313328,
+          "by": "owner",
+          "createdAt": 1790442312973
+        }
+      ],
+      "streak": 1
+    }
+  },
+  "telegram": [
+    {
+      "text": "Paired. I'm yours now.\n\nTo tell me about yourself, open the dashboard's welcome page, or just tell me here.\n\nTry:\n  remember that I drink coffee black\n  what do you know about me\n  /help for the rest",
+      "buttons": []
+    },
+    {
+      "text": "I’ll remind you to call the dentist at 1:30 AM on September 27.",
+      "buttons": []
+    },
+    {
+      "text": "✅ Take out the bins",
+      "buttons": []
+    },
+    {
+      "text": "⏰ water the plants\npushed back to tomorrow at 22:33",
+      "buttons": []
+    },
+    {
+      "text": "⏰ Call the dentist\ndue now",
+      "buttons": [
+        "td:hv8s91z14dq2n1c2pr6rn5sn1b:d",
+        "td:hv8s91z14dq2n1c2pr6rn5sn1b:10",
+        "td:hv8s91z14dq2n1c2pr6rn5sn1b:60",
+        "td:hv8s91z14dq2n1c2pr6rn5sn1b:t"
+      ]
+    },
+    {
+      "text": "Marked “Call the dentist” done.",
+      "buttons": []
+    }
+  ],
+  "logTail": [
+    "▲ Next.js 16.3.6",
+    "- Local:         http://localhost:50591",
+    "- Network:       http://100.77.196.105:50591",
+    "✓ Ready in 207ms",
+    "✓ Running next.config.ts took 49ms",
+    "[perry] connected this computer (DESKTOP-27SQLCP) to the local backend",
+    "[perry] backend ready: 291 functions, data in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-pet-LfkjVB",
+    "[perry] Telegram: polling for messages",
+    "[perry] dashboard:setShortcut failed: Error: That is already the shortcut for Search and commands.",
+    "    at Object.handler (C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-3961593a\\.next\\server\\chunks\\_0e-meh1._.js:293:2390)",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
+    "    at async C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-3961593a\\.next\\server\\chunks\\_0e-meh1._.js:346:27214",
+    ""
+  ]
+}

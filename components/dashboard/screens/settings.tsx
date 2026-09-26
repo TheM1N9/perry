@@ -18,9 +18,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ACCESS_ICONS } from "../chat/composer";
+import { Shortcuts } from "../shortcuts";
 import { ActionButton, CommandLine, CopyButton, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
 
-const TABS = ["general", "keys", "telegram", "whatsapp"] as const;
+const TABS = ["general", "keys", "shortcuts", "telegram", "whatsapp"] as const;
 
 export function Settings() {
   const [tab, setTab] = useTab(TABS, "general");
@@ -30,11 +31,13 @@ export function Settings() {
         <TabsList variant="line" className="mb-6 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="keys">Keys</TabsTrigger>
+          <TabsTrigger value="shortcuts">Keyboard shortcuts</TabsTrigger>
           <TabsTrigger value="telegram">Telegram</TabsTrigger>
           <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
         </TabsList>
         <TabsContent value="general"><CodexAccount /><NewChatAccess /><Appearance /></TabsContent>
         <TabsContent value="keys"><Keys /></TabsContent>
+        <TabsContent value="shortcuts"><Shortcuts /></TabsContent>
         <TabsContent value="telegram"><Telegram /></TabsContent>
         <TabsContent value="whatsapp"><WhatsApp /></TabsContent>
       </Tabs>

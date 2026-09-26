@@ -15,6 +15,7 @@
  *   perry migrate   bring chats and memory over from Convex, where Perry used to keep them
  *   perry doctor    check this machine and Perry's server
  *   perry pair      a new pairing code for Telegram
+ *   perry pet       Perry on your desktop, with your to-dos (scripts/pet.ts)
  *   perry run       run Perry in this terminal instead of the background
  *   perry uninstall stop Perry starting at login, keeping its files or removing them from this computer
  *
@@ -46,7 +47,7 @@ const say = (text = "") => console.log(text);
 // --- Small helpers ---------------------------------------------------------
 
 /** Run a command in the checkout; streamed to this terminal unless quiet. */
-function exec(argv: string[], { quiet = false, env }: { quiet?: boolean; env?: NodeJS.ProcessEnv } = {}) {
+export function exec(argv: string[], { quiet = false, env }: { quiet?: boolean; env?: NodeJS.ProcessEnv } = {}) {
   const result = spawnSync(argv[0], argv.slice(1), {
     cwd: REPO,
     env: env ?? process.env,
@@ -58,7 +59,7 @@ function exec(argv: string[], { quiet = false, env }: { quiet?: boolean; env?: N
 }
 
 /** A tool installed as a .cmd on Windows (pnpm, git from some installers) only starts through cmd.exe. */
-function tool(name: string, args: string[]) {
+export function tool(name: string, args: string[]) {
   return process.platform === "win32"
     ? [process.env.COMSPEC || "cmd.exe", "/d", "/s", "/c", [name, ...args].join(" ")]
     : [name, ...args];
@@ -106,7 +107,7 @@ function sayWhere(label: string) {
   for (const url of networkUrls()) say(`  ${pad}  ${url}`);
 }
 
-async function dashboardUp(): Promise<boolean> {
+export async function dashboardUp(): Promise<boolean> {
   try {
     const response = await fetch(`http://127.0.0.1:${PORT}/`, { signal: AbortSignal.timeout(3000), redirect: "manual" });
     return response.status < 500;
@@ -150,7 +151,7 @@ function build(): boolean {
 }
 
 /** Node runs the dashboard; Next.js is not built for Bun's runtime. */
-function nodePath(): string {
+export function nodePath(): string {
   const found = process.platform === "win32" ? exec(["where", "node"], { quiet: true }) : exec(["which", "node"], { quiet: true });
   const first = found.code === 0 ? found.output.split(/\r?\n/)[0].trim() : "";
   return first || "node";
@@ -382,6 +383,8 @@ async function uninstall(args: string[]): Promise<boolean> {
 
   const { uninstall: removeService } = await import("./service");
   removeService();
+  const pet = await import("./pet");
+  if (pet.installed()) pet.off();
   unlink();
   if (choice === "1") {
     say(dim(`  Removed the perry command from ${BIN_DIR}. Perry itself is kept at ${REPO}, and its data in ${HOME}.`));
@@ -558,12 +561,14 @@ async function update() {
   if (wasRunning) await stop();
   if (!build()) process.exit(1);
   if (wasRunning && !(await start())) process.exit(1);
+  // The desktop pet, when there is one, is its own install, and shows the page just rebuilt.
+  (await import("./pet")).refresh();
   if (!wasRunning) say(dim(`  Perry was not running; ${bold("perry start")} starts it.`));
   say(`  ${green("up to date")}\n`);
 }
 
 const HELP = `
-  ${bold("perry")} setup | start | stop | status | logs [-f] | open | update | migrate | doctor | pair | run | uninstall
+  ${bold("perry")} setup | start | stop | status | logs [-f] | open | update | migrate | doctor | pair | pet | run | uninstall
 
   ${bold("setup")}      set Perry up (or check it), start it in the background, open the dashboard
   ${bold("start")}      start Perry in the background, from now on at every login
@@ -575,6 +580,7 @@ const HELP = `
   ${bold("migrate")}    bring chats and memory over from Convex, where Perry used to keep them
   ${bold("doctor")}     check this machine and Perry's server
   ${bold("pair")}       a new code to claim Perry on Telegram
+  ${bold("pet")}        Perry on your desktop, with your to-dos; ${bold("pet off")} to stop him
   ${bold("run")}        run Perry in this terminal instead of the background
   ${bold("uninstall")}  stop Perry; keep its files, or remove them from this computer
 `;
@@ -592,6 +598,7 @@ async function main() {
     case "doctor": return process.exit(exec(bunScript("doctor.ts", rest)).code);
     case "pair": return process.exit(exec(bunScript("pair.ts")).code);
     case "migrate": return process.exit(exec(bunScript("migrate.ts", rest)).code);
+    case "pet": return process.exit((await (await import("./pet")).pet(rest)) ? 0 : 1);
     case "run": return runForeground();
     case "link": return process.exit(link() ? 0 : 1);
     case "uninstall": return process.exit((await uninstall(rest)) ? 0 : 1);
