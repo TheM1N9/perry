@@ -43,6 +43,18 @@ export async function readPersona(ctx: QueryCtx): Promise<Persona> {
   };
 }
 
+/**
+ * What the owner asked to be called: the welcome page's "What should I call
+ * you?", which USER.md keeps as "**Call them:**" under "# About <name>".
+ * Read from USER.md itself, so an edit there (theirs or the assistant's) shows.
+ */
+export function callName(userMd: string): string | undefined {
+  const line = /^\s*[-*]\s*\*\*Call them:\*\*\s*(.+?)\s*$/im.exec(userMd)?.[1];
+  const heading = /^#\s+About\s+(.+?)\s*$/im.exec(userMd)?.[1];
+  const name = (line ?? (heading && !/^(the owner|you|me)$/i.test(heading) ? heading : undefined))?.replace(/[*_`]/g, "").trim();
+  return name ? name.slice(0, 40) : undefined;
+}
+
 export const current = internalQuery({
   args: {},
   handler: async (ctx): Promise<Persona> => await readPersona(ctx),

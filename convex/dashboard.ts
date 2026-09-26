@@ -7,7 +7,7 @@ import { action, mutation, query, type MutationCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { ABSOLUTE_PATH } from "./media";
 import { defaultAccess, type Onboarding } from "./installation";
-import { DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./persona";
+import { callName, DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./persona";
 import type { Access } from "./lib/commands";
 import { policyOf, type Policy } from "./runner";
 import { vAccess, vMemoryKind, vPolicy } from "./schema";
@@ -790,6 +790,8 @@ export const getStatus = query({
     conversations: Array<{ channel: string; lastMessageAt: number }>;
     claimed: boolean;
     ownerName?: string;
+    /** What to call the owner: USER.md's "Call them", else their Telegram name. */
+    displayName?: string;
     pairingCode?: string;
     pairingExpiresAt?: number;
     telegramConfigured: boolean;
@@ -801,6 +803,7 @@ export const getStatus = query({
     const memories: number = await ctx.runQuery(internal.memories.count, {});
     const conversations = await ctx.runQuery(internal.conversations.list, {});
     const install = await ctx.runQuery(internal.installation.status, {});
+    const persona = await readPersona(ctx);
     const telegramToken: string | null = await ctx.runQuery(
       internal.secrets.get,
       { name: "TELEGRAM_BOT_TOKEN" },
@@ -814,11 +817,12 @@ export const getStatus = query({
       })),
       claimed: install.claimed,
       ownerName: install.ownerName,
+      displayName: callName(persona.user) ?? install.ownerName,
       pairingCode: install.pairingCode,
       pairingExpiresAt: install.pairingExpiresAt,
       telegramConfigured: Boolean(telegramToken),
       onboarding: install.onboarding,
-      assistantName: (await readPersona(ctx)).name,
+      assistantName: persona.name,
     };
   },
 });

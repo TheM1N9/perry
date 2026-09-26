@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ChevronRightIcon, SearchIcon, XIcon } from "lucide-react";
+import { ChevronRightIcon, PencilIcon, SearchIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
@@ -21,6 +21,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Markdown } from "../chat/markdown";
 import { ActionButton, EmptyState, List, ListSkeleton, Page, RelativeTime, Section, StatusBadge, useTab } from "../common";
 
 const TABS = ["memories", "about"] as const;
@@ -234,6 +235,9 @@ function AboutYou() {
   const [name, setName] = useState<string | null>(null);
   const [personality, setPersonality] = useState<string | null>(null);
   const [saving, setSaving] = useState<"" | "user" | "identity">("");
+  /** USER.md reads as a document; Edit (or a double click) turns it into its Markdown. */
+  const [editingUser, setEditingUser] = useState(false);
+  const stopEditingUser = () => { setUserMd(null); setEditingUser(false); };
 
   // A draft follows the saved text until it is edited, so a change made elsewhere (by the assistant, or a restore) shows up.
   const savedUser = persona?.user ?? "";
@@ -252,7 +256,7 @@ function AboutYou() {
       const { changed } = what === "user"
         ? await saveUserMd({ key: dashboardKey, text: draftUser })
         : await saveIdentity({ key: dashboardKey, name: draftName, personality: draftPersonality });
-      if (what === "user") setUserMd(null); else { setName(null); setPersonality(null); }
+      if (what === "user") stopEditingUser(); else { setName(null); setPersonality(null); }
       toast.success(changed ? "Saved. It applies from the next reply." : "Nothing changed.");
     } catch (cause) {
       toast.error(errorText(cause));
@@ -291,18 +295,34 @@ function AboutYou() {
       </Section>
 
       <Section title="USER.md" description={`Who you are, in your words. ${persona.name} reads all of it before every reply, and keeps it current as you talk.`}>
-        <form className="rounded-xl border bg-card p-4" onSubmit={(event) => { event.preventDefault(); void save("user"); }}>
-          <Field>
-            <FieldLabel htmlFor="user-md" className="sr-only">USER.md</FieldLabel>
-            <Textarea id="user-md" value={draftUser} placeholder={"# About you\n\n## Work\n\n## A typical day\n\n…"} onChange={(event) => setUserMd(event.target.value)}
-              className="min-h-72 font-mono text-[13px] leading-relaxed" spellCheck />
-            {userHistory?.[0] && <FieldDescription>Last changed by {BY[userHistory[0].by].toLowerCase()}, <RelativeTime at={userHistory[0].createdAt} />.</FieldDescription>}
-          </Field>
-          <div className="mt-4 flex gap-2">
-            <Button type="submit" disabled={!userDirty || saving === "user"}>{saving === "user" && <Spinner />}Save</Button>
-            {userDirty && <Button type="button" variant="ghost" onClick={() => setUserMd(null)}>Discard changes</Button>}
-          </div>
-        </form>
+        {editingUser ? (
+          <form className="rounded-xl border bg-card p-4" onSubmit={(event) => { event.preventDefault(); void save("user"); }}>
+            <Field>
+              <FieldLabel htmlFor="user-md" className="sr-only">USER.md</FieldLabel>
+              <Textarea id="user-md" value={draftUser} autoFocus placeholder={"# About you\n\n## Work\n\n## A typical day\n\n…"} onChange={(event) => setUserMd(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") stopEditingUser();
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
+                }}
+                className="min-h-72 font-mono text-[13px] leading-relaxed" spellCheck />
+              <FieldDescription>Markdown. Ctrl+Enter saves, Esc cancels.</FieldDescription>
+            </Field>
+            <div className="mt-4 flex gap-2">
+              <Button type="submit" disabled={!userDirty || saving === "user"}>{saving === "user" && <Spinner />}Save</Button>
+              <Button type="button" variant="ghost" onClick={stopEditingUser}>Cancel</Button>
+            </div>
+          </form>
+        ) : savedUser.trim() ? (
+          <article aria-label="USER.md" className="group/doc relative rounded-xl border bg-card py-5 pr-24 pl-6" onDoubleClick={() => setEditingUser(true)}>
+            <Button variant="ghost" size="sm" className="absolute top-3 right-3 text-muted-foreground" onClick={() => setEditingUser(true)}><PencilIcon />Edit</Button>
+            <Markdown text={savedUser} />
+            {userHistory?.[0] && <p className="mt-5 border-t pt-3 text-xs text-muted-foreground">Last changed by {BY[userHistory[0].by].toLowerCase()}, <RelativeTime at={userHistory[0].createdAt} />.</p>}
+          </article>
+        ) : (
+          <EmptyState title="Nothing here yet" action={<Button variant="outline" size="sm" onClick={() => setEditingUser(true)}><PencilIcon />Write it</Button>}>
+            Your work, your day, the people who matter and how you like replies. {persona.name} fills it in as you talk, too.
+          </EmptyState>
+        )}
       </Section>
 
       <Section title="History" description="Every saved version, newest first. Restoring one keeps the version it replaces.">
@@ -319,7 +339,7 @@ function AboutYou() {
                   </CollapsibleTrigger>
                   <p className="mt-0.5 pl-5 text-xs text-muted-foreground">{BY[version.by]} · <RelativeTime at={version.createdAt} /></p>
                   <CollapsibleContent>
-                    <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-muted p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">{version.text}</pre>
+                    <div className="mt-2 max-h-80 overflow-auto rounded-lg bg-muted/60 px-4 py-3 text-sm"><Markdown text={version.text ?? ""} /></div>
                   </CollapsibleContent>
                 </Collapsible>
                 {index > 0 && restoreButton(version.id, "USER.md")}

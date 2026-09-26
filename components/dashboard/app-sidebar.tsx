@@ -329,7 +329,7 @@ function AccountMenu() {
   const { theme, setTheme } = useTheme();
   const { isMobile } = useSidebar();
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
-  const name = status?.ownerName ?? "You";
+  const name = status?.displayName ?? "You";
   const pairing = Boolean(status?.telegramConfigured && !status.claimed);
   const go = (href: string) => router.push(href);
 
