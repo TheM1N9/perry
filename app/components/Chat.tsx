@@ -1,6 +1,6 @@
 "use client";
 
-import { useAction, useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -94,7 +94,6 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
   const stopChat = useMutation(api.dashboard.stopChat);
   const resetChat = useAction(api.dashboard.resetChat);
   const compactChat = useMutation(api.dashboard.compactChat);
-  const generateUploadUrl = useMutation(api.dashboard.generateUploadUrl);
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
   const setChatModel = useMutation(api.dashboard.setChatModel).withOptimisticUpdate((store, args) => {
@@ -305,17 +304,11 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
     } catch (cause) { setError(errorText(cause)); return null; }
     finally { setBusy(false); }
   }
-  /** Keep the file on this machine through the local media server, or in Convex storage when that is turned off. */
-  async function store(file: File): Promise<{ localPath: string } | { storageId: Id<"_storage"> }> {
+  /** Keep the file on this machine, through the local media server. */
+  async function store(file: File): Promise<{ localPath: string }> {
     const local = await fetch("/api/media", { method: "POST", headers: { "x-file-name": encodeURIComponent(file.name) }, body: file });
     if (local.ok) return { localPath: (await local.json() as { path: string }).path };
-    if (local.status !== 501) throw new Error((await local.json().catch(() => null) as { error?: string } | null)?.error ?? `Could not save ${file.name}.`);
-    const uploadUrl = await generateUploadUrl({ key: dashboardKey });
-    const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
-    if (!response.ok) throw new Error(`Could not upload ${file.name}.`);
-    const body = await response.json() as { storageId?: Id<"_storage"> };
-    if (!body.storageId) throw new Error(`Could not store ${file.name}.`);
-    return { storageId: body.storageId };
+    throw new Error((await local.json().catch(() => null) as { error?: string } | null)?.error ?? `Could not save ${file.name}.`);
   }
   /** Add files from the picker, a paste or a drop, turning away what cannot be sent. */
   function addFiles(files: File[]) {
@@ -561,7 +554,6 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
                       <div className="chat-edit-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(null)}>Cancel</button><button type="submit" className="btn btn-primary btn-sm chat-edit-save" disabled={!editing.text.trim() || busy}>Save and resend</button></div>
                     </form>
                   : <div className="chat-bubble">{message.role === "user" ? message.text : <Markdown text={message.text} />}<AttachmentList attachments={message.attachments ?? []} /></div>}
-                {message.fallback && <div className="chat-fallback-note"><Icon name="computer" size={13} />Answered without your computer</div>}
                 {editing?.id !== message.id && <div className="chat-turn-foot">
                   {message.role === "user" && <time className="chat-turn-time" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>{timeOf(message.createdAt)}</time>}
                   <div className="chat-turn-actions">
@@ -576,7 +568,7 @@ export function Chat({ dashboardKey, onNavigate, onLock }: {
             </div>)}
             {shownPending.map((item, index) => <div key={index} className="chat-turn from-user pending"><div className="chat-turn-body"><div className="chat-bubble">{item.text}<AttachmentList attachments={item.attachments} /></div><div className="chat-turn-foot"><span className="chat-turn-time" style={{ opacity: 1 }}>Sending…</span></div></div></div>)}
             {waiting && <div className="chat-turn from-assistant pending" aria-live="polite" aria-busy="true"><div className="chat-avatar" aria-hidden="true">{assistant.charAt(0).toUpperCase()}</div>{chat?.streaming
-              ? <div className="chat-turn-body"><div className="chat-bubble chat-streaming"><Markdown text={chat.streaming} /></div>{chat.fallback && <div className="chat-fallback-note"><Icon name="computer" size={13} />Answering without your computer</div>}</div>
+              ? <div className="chat-turn-body"><div className="chat-bubble chat-streaming"><Markdown text={chat.streaming} /></div></div>
               : <div className="chat-thinking" role="status" aria-label={`${assistant} is thinking`}><i /><i /><i /></div>}</div>}
             {chat?.lastError && !chat.isRunning && <div className="chat-turn-error"><Notice tone="danger" title={`${assistant} couldn't finish the last reply`} details={chat.lastError}
               action={lastUser && <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void rewind(lastUser.id)}><Icon name="redo" size={13} />Try again</button>}>

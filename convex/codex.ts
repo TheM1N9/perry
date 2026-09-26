@@ -1,12 +1,11 @@
 import { v, type Infer } from "convex/values";
 import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx } from "./_generated/server";
-import { components, internal } from "./_generated/api";
-import { createThread, saveMessages } from "@convex-dev/agent";
+import { internal } from "./_generated/api";
+import { createThread, saveMessages } from "./lib/agent";
 import { CAPTION_LIMIT, UPLOAD_LIMIT, deleteMessage, editDraft, finishDraft, sendDraft, sendFile, sendMessage } from "./lib/telegram";
 import { assertDashboardKey } from "./lib/auth";
 import { COMPACTED } from "./lib/commands";
 import { authenticate } from "./runner";
-import { FALLBACK_PROVIDER, startFallback } from "./chatgpt";
 import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
 import { vAccess, vCodexModel, vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
@@ -170,8 +169,7 @@ async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">):
  */
 function isSteering(policy: "steer" | "queue" | undefined, running: Doc<"codexTurns"> | null): running is Doc<"codexTurns"> {
   return (policy ?? "queue") === "steer" && running !== null && !running.stopRequested && running.kind !== "compact"
-    // A reply written without the computer has no runner to hand the message to.
-    && !running.fallback && running.runnerId !== undefined;
+    && running.runnerId !== undefined;
 }
 
 /**
@@ -228,18 +226,9 @@ export const enqueueTurn = internalMutation({
     }
     const runnerId = await pickRunner(ctx, conversation);
     if (!runnerId) {
-      // No runner can take it; answer without the computer if the owner allows that.
-      const fallback = await startFallback(ctx, {
-        conversationId: args.conversationId, runId: args.runId, prompt: args.prompt, history: args.history,
-        instructions: args.instructions, recalled: args.recalled, flush: args.flush, hidden: args.hidden, requestedModel: args.model, attachments: args.attachments,
-      });
-      if ("id" in fallback) return fallback.id;
-      const offline = conversation.codexRunnerId
-        ? "The Codex runner for this chat is offline. Start it to continue"
-        : "Connect a ChatGPT account in Settings and start its runner to chat with Codex";
-      throw new Error(fallback.reason === "off"
-        ? `${offline}, or turn on answering without the computer in Settings.`
-        : `${offline}. Answering without the computer needs a ChatGPT token from a runner, and none is valid now.`);
+      throw new Error(conversation.codexRunnerId
+        ? "The Codex runner for this chat is offline. Start Perry on its computer (perry start) to continue."
+        : "Sign in to Codex in Settings and start Perry's runner (perry start) to chat.");
     }
     return await ctx.db.insert("codexTurns", { ...message, runnerId, status: "queued" });
   },
@@ -408,8 +397,8 @@ export const claimTurn = mutation({
       .first();
     if (running) return null;
     await ctx.db.patch(job._id, { status: "running", startedAt: Date.now() });
-    const site = process.env.CONVEX_SITE_URL;
-    return { ...job, codexThreadId: conversation.codexThreadId, channel: conversation.channel, mcpUrl: site ? `${site}/mcp` : undefined };
+    // Relative: the runner reaches the server at its own address for it, which may be over Tailscale.
+    return { ...job, codexThreadId: conversation.codexThreadId, channel: conversation.channel, mcpUrl: "/api/backend/http/mcp" };
   },
 });
 
@@ -710,59 +699,6 @@ export const finishTurn = mutation({
   },
 });
 
-// --- Fallback turns, answered in Convex without a runner (fallback.ts) ----
-
-const fallbackTurn = async (ctx: MutationCtx, id: Id<"codexTurns">) => {
-  const job = await ctx.db.get(id);
-  return job?.fallback && job.status === "running" ? job : null;
-};
-
-/** The reply so far. Returns true once the turn should stop: the owner asked, or it already ended. */
-export const streamFallback = internalMutation({
-  args: { id: v.id("codexTurns"), text: v.string() },
-  returns: v.boolean(),
-  handler: async (ctx, args) => {
-    const job = await fallbackTurn(ctx, args.id);
-    if (!job) return true;
-    await recordPartial(ctx, job, args.text);
-    return job.stopRequested === true;
-  },
-});
-
-/** Tool calls and usage, as traceTurn records them for a runner. Returns true once the turn should stop. */
-export const traceFallback = internalMutation({
-  args: { id: v.id("codexTurns"), ...vTrace.fields },
-  returns: v.boolean(),
-  handler: async (ctx, { id, ...trace }) => {
-    const job = await fallbackTurn(ctx, id);
-    if (!job) return true;
-    await recordTrace(ctx, job, trace);
-    return job.stopRequested === true;
-  },
-});
-
-export const finishFallback = internalMutation({
-  args: { id: v.id("codexTurns"), response: v.optional(v.string()), error: v.optional(v.string()), model: v.string(), stopped: v.optional(v.boolean()) },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const job = await fallbackTurn(ctx, args.id);
-    if (!job) return null;
-    await ctx.db.patch(job._id, {
-      status: args.error ? "error" : "done",
-      ...(args.stopped ? { stopped: true } : {}),
-      response: args.response?.slice(0, 100_000),
-      error: args.error?.slice(0, 2000),
-      model: args.model,
-      finishedAt: Date.now(),
-    });
-    // The chat's Codex thread never saw this exchange, so the next Codex turn
-    // starts a fresh one, seeded with the history as it now stands.
-    if (args.response) await ctx.db.patch(job.conversationId, { codexThreadId: undefined });
-    await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: job._id });
-    return null;
-  },
-});
-
 const vTurnFile = v.object({
   storageId: v.optional(v.id("_storage")),
   localPath: v.optional(v.string()),
@@ -809,7 +745,7 @@ export const sharedFiles = query({
  * Send a finished reply and its files to Telegram. A reply short enough to be
  * a caption rides on the first file and takes the place of the streamed draft;
  * a longer one goes first, as text, with the files after it. A file too big to
- * upload goes as a link, and one that never left the owner's machine is named.
+ * upload, or one that never left the owner's machine, is named with where it is.
  */
 async function deliverToTelegram(
   ctx: ActionCtx, token: string | null, chatId: string, text: string, draftId: number | undefined, files: TurnFile[],
@@ -820,8 +756,7 @@ async function deliverToTelegram(
       return;
     }
     if (file.size > UPLOAD_LIMIT) {
-      const url = await ctx.storage.getUrl(file.storageId);
-      await sendMessage(token, chatId, `${file.fileName} is too big to send on Telegram. Download it here: ${url}`);
+      await sendMessage(token, chatId, `${file.fileName} is too big to send on Telegram${file.localPath ? `; it is on your computer at ${file.localPath}` : ""}.`);
       return;
     }
     const blob = await ctx.storage.get(file.storageId);
@@ -933,7 +868,7 @@ export const finalizeTurn = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const result: {
-      job: { kind?: "compact"; prompt: string; response?: string; error?: string; status: string; model?: string; fallback?: boolean; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
+      job: { kind?: "compact"; prompt: string; response?: string; error?: string; status: string; model?: string; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
       conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram"; externalId: string; title?: string; jobId?: Id<"jobs"> } | null;
       steers: string[];
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
@@ -950,7 +885,7 @@ export const finalizeTurn = internalAction({
     // is worth telling a Telegram chat about.
     if (job.flush) {
       if (!job.savedAt) {
-        const threadId = await createThread(ctx, components.agent, { userId, title: conversation.title });
+        const threadId = await createThread(ctx, { userId, title: conversation.title });
         await ctx.runMutation(internal.conversations.clearThread, { id: conversation._id, threadId });
         await done("savedAt");
       }
@@ -991,7 +926,7 @@ export const finalizeTurn = internalAction({
     // A hidden prompt (the greeting after the welcome page) is not the owner's, so only what they sent is kept.
     const prompts = job.hidden ? steers : [job.prompt, ...steers];
     const answered = Boolean(reply || job.mediaKey);
-    if (!job.savedAt) await saveMessages(ctx, components.agent, {
+    if (!job.savedAt) await saveMessages(ctx, {
       threadId: conversation.threadId,
       userId,
       order: "next",
@@ -1001,8 +936,6 @@ export const finalizeTurn = internalAction({
           ? [{ role: "assistant" as const, content: `${reply ?? ""}${job.mediaKey ? `\n\n<!-- attachments: ${job.mediaKey} -->` : ""}`.trim() }]
           : []),
       ],
-      // A reply written without the computer says so in the web chat.
-      ...(job.fallback && answered ? { metadata: [...prompts.map(() => ({})), { provider: FALLBACK_PROVIDER, model: job.model }] } : {}),
     }).then(() => done("savedAt"));
     if (conversation.channel === "telegram" && !job.deliveredAt) {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
@@ -1013,9 +946,7 @@ export const finalizeTurn = internalAction({
         const answer = job.error
           ? `${job.response ? `${job.response}\n\n` : ""}That broke: ${job.error}`
           : reply || (files.length ? "" : "Codex did not reply.");
-        const text = job.fallback && answer ? `${answer}
-
-(Answered without your computer.)` : answer;
+        const text = answer;
         // A streamed reply lands in the message that showed it growing, unless a file carries it.
         await deliverToTelegram(ctx, token, conversation.externalId, text, job.telegramMessageId, files);
       }

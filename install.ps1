@@ -6,8 +6,8 @@
 # they are installed, and installs only what is missing. A Node older than
 # Perry needs is not upgraded behind your back: it says so and stops. Then it
 # gets Perry into ~\perry, installs its packages, and runs
-# `perry setup`, which sets up your own Convex deployment (and a Telegram bot, if you want one),
-# connects this computer, starts Perry in the background and opens the
+# `perry setup`, which sets up a Telegram bot if you want one and signs in to Codex,
+# keeps your data in ~\.perry, starts Perry in the background and opens the
 # dashboard. Safe to run again: it updates what is there.
 #
 # PERRY_DIR, PERRY_REPO and PERRY_BRANCH change where it goes and what it
@@ -56,7 +56,7 @@
   function NodeVersionOk {
     if (-not (Has node)) { return $false }
     $v = (node -p "process.versions.node") -split '\.'
-    return ([int]$v[0] -gt 20) -or ([int]$v[0] -eq 20 -and [int]$v[1] -ge 9)
+    return ([int]$v[0] -gt 22) -or ([int]$v[0] -eq 22 -and [int]$v[1] -ge 13)
   }
 
   try {
@@ -69,7 +69,7 @@
     if (NodeVersionOk) { Found "node $(node --version)" }
     elseif (Has node) {
       # Your Node is yours: Perry does not upgrade it behind your back.
-      throw "Perry needs Node.js 20.9 or newer, and this machine has $(node --version). Update it (winget upgrade OpenJS.NodeJS.LTS, or your version manager), then run this again."
+      throw "Perry needs Node.js 22.13 or newer, and this machine has $(node --version). Update it (winget upgrade OpenJS.NodeJS.LTS, or your version manager), then run this again."
     } else {
       Winget 'OpenJS.NodeJS.LTS' 'Node.js'
       if (-not (NodeVersionOk)) { throw 'Node.js did not install. Install Node.js 20.9 or newer, then run this again.' }

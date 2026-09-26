@@ -1,6 +1,6 @@
-import { listMessages } from "@convex-dev/agent";
+import { listMessages, searchMessages } from "./lib/agent";
 import { v } from "convex/values";
-import { components, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalAction } from "./_generated/server";
 
@@ -38,13 +38,7 @@ export const search = internalAction({
     const byThread = new Map(chats.map((chat) => [chat.threadId, chat]));
     const users = [...new Set(chats.map(userIdOf))];
     // Each channel's hits come back best match first; interleave them by rank.
-    const lists = await Promise.all(users.map((userId) => ctx.runAction(components.agent.messages.searchMessages, {
-      searchAllMessagesForUserId: userId,
-      text: query,
-      textSearch: true,
-      vectorSearch: false,
-      limit: 50,
-    })));
+    const lists = await Promise.all(users.map((userId) => searchMessages(ctx, { userId: userId, text: query, limit: 50 })));
     const hits = lists.flatMap((list) => list.map((hit, rank) => ({ hit, rank }))).sort((a, b) => a.rank - b.rank).map(({ hit }) => hit);
 
     const results = hits
@@ -69,7 +63,7 @@ export const read = internalAction({
     const chats: Chat[] = await ctx.runQuery(internal.conversations.list, {});
     const chat = chats.find((item) => item._id === args.chatId);
     if (!chat) return { messages: [], note: "No chat with that id. Ids come from search_chats." };
-    const page = await listMessages(ctx, components.agent, {
+    const page = await listMessages(ctx, {
       threadId: chat.threadId,
       excludeToolMessages: true,
       paginationOpts: { cursor: null, numItems: Math.min(Math.max(args.limit ?? 20, 1), 50) },

@@ -110,26 +110,6 @@ const RULES: Rule[] = [
     hint: RECONNECT_HINT,
   },
 
-  // --- The cloud sandbox (Daytona) -------------------------------------------
-  {
-    id: "sandbox-auth",
-    when: nameIs("DaytonaAuthenticationError", "DaytonaForbiddenError", "DaytonaAuthorizationError"),
-    message: "The cloud sandbox refused the Daytona key.",
-    hint: "Ask the owner to replace the Daytona key on the Keys page.",
-  },
-  {
-    id: "sandbox-command-timeout",
-    when: nameIs("DaytonaTimeoutError", "DaytonaProcessExecutionTimeoutError"),
-    message: "The command ran past its time limit in the cloud sandbox and was stopped.",
-    hint: "Run long work in the background with output to a file, then read the file, or split it into smaller commands.",
-  },
-  {
-    id: "sandbox-failed",
-    when: (link) => link.name?.startsWith("Daytona") === true,
-    message: (link) => `The cloud sandbox failed: ${link.message}`,
-    hint: "Check computer_status. The next command rebuilds the sandbox if it is gone; if it keeps failing, tell the owner.",
-  },
-
   // --- Convex ------------------------------------------------------------------
   {
     // Convex's own limits surface as prose: "Function execution timed out",

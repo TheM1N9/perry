@@ -2,16 +2,14 @@ import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import type { NextRequest } from "next/server";
-import { api } from "@/convex/_generated/api";
-import { convex, dashboardKey, LOCAL_MEDIA, MAX_BYTES, uploadDir } from "./store";
+import { dashboardKey, MAX_BYTES, query, uploadDir } from "./store";
 
 /** Keep an attached file on this machine. The chat registers its path afterwards. */
 export async function POST(request: NextRequest) {
-  if (!LOCAL_MEDIA) return Response.json({ error: "Local media is turned off." }, { status: 501 });
   const key = dashboardKey(request);
   if (!key) return Response.json({ error: "Unlock the dashboard first." }, { status: 401 });
   try {
-    await convex().query(api.media.canStoreLocally, { key });
+    await query("media:canStoreLocally", { key });
   } catch {
     return Response.json({ error: "Wrong dashboard key." }, { status: 403 });
   }

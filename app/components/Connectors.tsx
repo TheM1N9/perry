@@ -1,6 +1,6 @@
 "use client";
 
-import { useAction } from "convex/react";
+import { useAction } from "@/client/react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "@/convex/_generated/api";
 import { Command, Empty, Icon, Loading, Notice, Section, Spinner, Status, errorText, type Tone } from "./ui";

@@ -7,8 +7,8 @@
 # shell or a version manager keeps them, and installs only what is missing,
 # none of it needing root. A Node older than Perry needs is left alone: Perry
 # gets its own copy in ~/.perry/node. It gets Perry into ~/perry, installs its packages,
-# and runs `perry setup`, which sets up your own Convex deployment (and a Telegram
-# bot, if you want one), connects this computer, starts Perry in the background and opens the
+# and runs `perry setup`, which sets up a Telegram bot if you want one and signs in
+# to Codex, keeps your data in ~/.perry, starts Perry in the background and opens the
 # dashboard. Safe to run again: it updates what is there.
 #
 # PERRY_DIR, PERRY_REPO and PERRY_BRANCH change where it goes and what it
@@ -34,7 +34,7 @@ has() { command -v "$1" >/dev/null 2>&1; }
 # After everything already here, so a tool you have always wins over one this script adds.
 add_path() { case ":$PATH:" in *":$1:"*) ;; *) PATH="$PATH:$1" ;; esac; }
 
-NODE_OK_JS='const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>20||(a===20&&b>=9)?0:1)'
+NODE_OK_JS='const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)'
 node_ok() { has node && node -e "$NODE_OK_JS" 2>/dev/null; }
 
 # Tools you already have, where a version manager or your shell's startup files keep them rather than
@@ -121,10 +121,10 @@ elif [ -x "$LOCAL_NODE/bin/node" ] && "$LOCAL_NODE/bin/node" -e "$NODE_OK_JS" 2>
   found "node $(node --version), Perry's own"
 else
   # Perry's copy is Perry's alone: the Node you have, if any, stays the one your terminal runs.
-  has node && note "Your node $(node --version) is older than Perry needs (20.9); Perry gets its own copy and yours is left as it is."
+  has node && note "Your node $(node --version) is older than Perry needs (22.13, for its built-in SQLite); Perry gets its own copy and yours is left as it is."
   printf '  installing Node.js 22\n'; install_node
   export PATH="$LOCAL_NODE/bin:$PATH"
-  node_ok || fail "Perry needs Node.js 20.9 or newer."
+  node_ok || fail "Perry needs Node.js 22.13 or newer."
   added "node $(node --version)"
 fi
 

@@ -6,8 +6,8 @@ import { internalMutation, internalQuery } from "./_generated/server";
  *
  * Every key is read here rather than straight from `process.env`, and the
  * database wins over the environment. That single rule is what lets the
- * dashboard change a key without a terminal, while an install that was set up
- * with `pnpm exec convex env set` keeps working untouched.
+ * dashboard change a key without a terminal, while one set in .env.local keeps
+ * working untouched.
  *
  * Keys are write-and-forget: they go in, and nothing ever reads one back out
  * to a browser. The dashboard sees whether a key is set, where it came from,
@@ -17,9 +17,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 
 export const SECRET_NAMES = [
   "TELEGRAM_BOT_TOKEN",
-  "TELEGRAM_WEBHOOK_SECRET",
   "COMPOSIO_API_KEY",
-  "DAYTONA_API_KEY",
 ] as const;
 
 export type SecretName = (typeof SECRET_NAMES)[number];
@@ -31,19 +29,11 @@ export function isSecretName(value: string): value is SecretName {
 export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> = {
   TELEGRAM_BOT_TOKEN: {
     label: "Telegram bot token",
-    hint: "From @BotFather. Changing it points Perry at a different bot, so re-register the webhook afterwards.",
-  },
-  TELEGRAM_WEBHOOK_SECRET: {
-    label: "Telegram webhook secret",
-    hint: "Shared with Telegram so a stranger cannot post fake updates. Change it and re-register the webhook.",
+    hint: "From @BotFather. Perry starts listening to the new bot within a few seconds of saving it.",
   },
   COMPOSIO_API_KEY: {
     label: "Composio key",
     hint: "Gmail, Calendar, Notion and the rest. Without it no accounts can be connected.",
-  },
-  DAYTONA_API_KEY: {
-    label: "Daytona key",
-    hint: "The cloud sandbox. Not needed if Perry runs on your own machine instead.",
   },
 };
 

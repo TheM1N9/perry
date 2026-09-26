@@ -68,31 +68,31 @@ that runs the CLI from your checkout whatever folder you are in. Codex works in
 
 ## What the wizard does
 
-1. **Convex deployment.** Opens a browser once so you can log in to Convex,
-   then creates a project named `perry` in your account, in Convex's cloud
-   (where Telegram can reach it). If you belong to several Convex teams, it
-   asks which one; nothing else. This is your database and your backend. Free
-   tier is ample for one person. A deployment left over from choosing "Start
-   without an account" is replaced with a cloud one.
-2. **Telegram bot, optional.** To talk to Perry on Telegram as well as in the
+No account is needed but Codex's: Perry keeps everything on this computer, in
+`~/.perry`.
+
+1. **Telegram bot, optional.** To talk to Perry on Telegram as well as in the
    dashboard, message [@BotFather](https://t.me/BotFather), send `/newbot`,
    answer two questions, and paste the token back; the wizard checks it against
    Telegram before continuing. Press Enter to skip, and Perry is yours from the
    dashboard alone. A bot can be added later: save its token on the **Keys**
-   page, press **Register webhook**, then pair it from **Setup**. Without a bot,
-   job results and page-watch alerts stay in the dashboard (a job's results in
-   its own chat) rather than reaching you as messages.
-3. **Codex.** Perry thinks with your ChatGPT subscription, through the
+   page, then pair it from **Setup**. Without a bot, job results and page-watch
+   alerts stay in the dashboard (a job's results in its own chat) rather than
+   reaching you as messages.
+2. **Codex.** Perry thinks with your ChatGPT subscription, through the
    [Codex CLI](https://github.com/openai/codex) on your machine, so it signs
    you in now, before the first chat needs it: `codex login` in the browser,
    or a device code where there is no browser (a server, or over SSH). If
    you are already signed in, it says so and moves on. Setup stops if Codex
    is not installed. The dashboard's Settings page can sign in too.
-4. **Secrets and deploy.** Generates a webhook secret and a dashboard key,
-   writes them to a gitignored `.env.local`, sets them on your deployment,
-   pushes the code, and registers the webhook if there is a bot.
-5. **Pairing code.** With a bot, prints six digits. Without one there is
-   nothing to claim: the dashboard key is the owner's key.
+3. **Saving it.** Generates a dashboard key and writes it, with the bot token,
+   to a gitignored `.env.local`.
+
+Then `perry setup` builds the dashboard and starts Perry in the background. Its
+server makes the database, connects this computer's runner, and starts asking
+Telegram for messages; nothing needs to be reachable from the internet. With a
+bot, it prints six digits. Without one there is nothing to claim: the dashboard
+key is the owner's key.
 
 Send those six digits to your bot. Whoever sends them first owns that install,
 and from then on every other sender is ignored without a reply. Codes expire
@@ -106,54 +106,53 @@ remember that I drink coffee black
 what do you know about me
 ```
 
+### Coming from a Convex install
+
+Perry used to keep its data in a Convex deployment. On an install that still
+names one in `.env.local`, `perry setup` offers to bring it over, and
+`perry migrate` does it any time: it exports the deployment (chats, messages,
+memory, USER.md, tasks, jobs and files, with `npx convex export`) and imports
+it into `~/.perry`, keeping every id. `perry migrate --from <export.zip>`
+imports an export you already have. The deployment is only read; delete it at
+dashboard.convex.dev when you are happy.
+
 ## Changing keys later
 
 Everything except the dashboard key is editable on the **Keys** page: the bot
-token, the webhook secret, Composio and Daytona. No
-terminal, and changes apply on the next turn.
+token and Composio. No terminal, and changes apply on the next turn; a new bot
+token within a few seconds.
 
 Keys entered there are write-only. The page shows whether one is set, where it
 came from, and its last four characters, and never reads one back. A key saved
-there overrides the matching environment variable, and clearing it falls back
-to the environment variable if one exists.
+there overrides the one in `.env.local`, and clearing it falls back to that one
+if it exists.
 
-`DASHBOARD_KEY` stays a terminal-only environment variable on purpose. It is
-what guards that page, so it cannot be edited from behind it, and a lockout
-stays recoverable:
-
-```bash
-pnpm exec convex env set DASHBOARD_KEY "<new key>"
-```
+`DASHBOARD_KEY` stays in `.env.local` on purpose. It is what guards that page,
+so it cannot be edited from behind it, and a lockout stays recoverable: change
+it in `.env.local`, in Perry's folder, then `perry stop && perry start`.
 
 ## Connecting your machine
 
-Perry thinks and works through Codex on a machine you connect. On it:
+Perry thinks and works through Codex on your machine. The computer Perry is
+installed on is connected by its server as it starts; nothing to do. Open
+Settings in the dashboard to see the Codex account, or sign in there; the runner
+reports which Codex models your subscription offers. Perry answers while the
+computer is on: a message sent while the runner is not running fails with a
+clear error, and one sent on Telegram while the computer is off is answered when
+it wakes.
+
+Another machine can do the work too. On Perry's computer, then on the other one
+(which reaches Perry's server over your network, say by its Tailscale address):
 
 ```bash
-pnpm run connect   # mints a runner token and starts the runner
+pnpm run connect -- --token-only                                   # prints an address and a token
+pnpm run connect -- --url <address> --token <token> --dir <folder> --service
 ```
-
-Then open Settings in the dashboard and sign in to Codex with your ChatGPT
-account; the runner reports which Codex models your subscription offers. Keep
-the runner running (`pnpm run runner` after the first time): chats wait for it,
-and a message sent while it is offline fails with a clear error. Run one runner
-per token; a second one refuses to start.
-
-To be answered while the machine is off, turn on **Answer without the computer
-when it's offline** in Settings. A turn no runner can take is then answered in
-Convex on your ChatGPT subscription, with memory, chats, connected accounts,
-jobs and page reading but nothing from your machine. Settings shows whether a
-token is valid and until when. The risk: each runner shares the ChatGPT access
-token its Codex holds, and it stays in your Convex deployment until it expires,
-usable by anyone who can read that deployment's data. The refresh token never
-leaves the machine, and turning the setting off deletes every stored token.
 
 What Codex wants to do beyond its sandbox is asked in the runner's terminal, in
 the dashboard and, if you own Perry from Telegram, as a Telegram message with
-Approve, Decline and Always allow buttons. The buttons need the webhook to
-receive `callback_query` updates: an install whose webhook was set before this
-must set it again, with `pnpm run webhook:set` or the Keys page's re-register
-button. Turn Telegram prompts off on the Computer page.
+Approve, Decline and Always allow buttons. Turn Telegram prompts off on the
+Computer page.
 
 Each machine has a policy, set on the Computer page or when starting it:
 
@@ -174,8 +173,7 @@ requests fit the machine.
 To keep the runner going without a terminal, and start it whenever you log in:
 
 ```bash
-pnpm run connect -- --service   # connect, and install the runner as a service
-pnpm run service install        # or: install it for a runner already connected
+perry start                     # Perry's server and runner, from every login on
 pnpm run service status         # also: start, stop, logs [-f], uninstall
 ```
 
@@ -234,11 +232,14 @@ unsandboxed, though Codex still asks there before anything it judges risky.
 
 ## Perry's folder on your machine
 
-Setup and the runner create `~/.perry`, the way Claude Code has `~/.claude`
+Perry's server and the runner create `~/.perry`, the way Claude Code has `~/.claude`
 and Codex has `~/.codex`. Set `PERRY_HOME` to put it somewhere else.
 
 ```
 ~/.perry/
+  perry.sqlite     everything Perry knows: chats, memory, USER.md, tasks, jobs, runs
+  storage/         files that came from or go to Telegram
+  workspace/       where Codex works, unless you chose another folder
   runner.json      how this machine's runner connects
   uploads/         files you attach in chat
   files/           the agent's own folder for what it makes
@@ -254,10 +255,10 @@ Paths work as each OS writes them: `/Users/...` on macOS, `/home/...` on Linux,
 Chat media stays on your machine. Files you attach land in `uploads/`, the
 agent saves what it makes wherever it decides (usually `files/`), and the
 dashboard serves each file from where it is, only to someone holding the
-dashboard key. Telegram is the exception: it can only fetch images by URL, so
-images for Telegram chats go to Convex storage. If you host the dashboard
-somewhere other than this machine, set `PERRY_MEDIA=convex` so uploads go to
-Convex storage instead.
+dashboard key. Files sent to or from Telegram are kept in `storage/`.
+
+To keep Perry's data safe, back up `~/.perry` (stop Perry first, so the database
+is not copied mid-write). Moving to another computer is the same: copy it over.
 
 ## Dashboard
 
@@ -293,46 +294,40 @@ to anything else running on your machine.
 | `pnpm run doctor` | Checks every moving part and names the broken one. Changes nothing. |
 | `pnpm run doctor -- --machine` | Only this machine: Bun, Codex and its sign-in and sandbox, the runner, the service. |
 | `pnpm run service <command>` | The runner as a background service: `install`, `uninstall`, `start`, `stop`, `status`, `logs`. `--dry-run` shows what it would do. |
-| `pnpm run smoke` | The runner's parts on this OS, with no deployment or Codex. CI runs it on all three. |
+| `pnpm run smoke` | The runner's parts on this OS, with no server or Codex. CI runs it on all three. |
 | `pnpm run pair` | Fresh pairing code, for an expired one or a new chat. |
-| `pnpm run webhook:info` | What Telegram thinks, including delivery errors. |
-| `pnpm exec convex dev` | Watches `convex/`, pushes on save, streams logs. |
+| `perry migrate` | Bring chats, memory and files over from a Convex install. |
+| `pnpm run codegen` | After adding or removing a file in `convex/`: its types and the server's list of functions. |
 
 `pnpm run doctor` is the first thing to run when something seems wrong. It
 checks this machine (Bun, the Codex CLI, its sign-in and sandbox, the runner and
-its service), the local env file, the deployment, its environment variables,
-the HTTP endpoint, the bot token, the webhook registration and its delivery
-errors, and whether anyone has claimed the install.
+its service), the local env file, Perry's server and its database, the bot
+token and whether Telegram is being polled, and whether anyone has claimed the
+install.
 
 ## Giving Perry to someone else
 
-Send them the repo. They run `pnpm run setup`, which builds them a separate
-deployment with separate everything. Your memories, keys, and conversations
-stay on your deployment and are never visible to theirs.
+Send them the repo. `perry setup` gives them their own Perry on their own
+computer, with separate everything. Your memories, keys, and conversations stay
+on your computer and are never visible to theirs.
 
 What is not built is several people sharing one install. The dashboard key is a
 single bearer token and memories are one pool with no per-person scoping.
-Making that work means replacing the key with Convex Auth and adding an owner
+Making that work means replacing the key with real accounts and adding an owner
 id to three tables.
 
 ## Troubleshooting
 
 **Perry will not answer.** `pnpm run doctor`. If ownership is unclaimed, send the
-pairing code. If the webhook shows a delivery error, the secret on the
-deployment and the one in `.env.local` disagree, so re-run `pnpm run setup`.
+pairing code. If Perry's server is not answering, `perry start`, and
+`perry logs` says why it stopped.
 
 **"That broke: ..." in chat.** Perry reports failures instead of swallowing
-them. The full error is in the Convex dashboard logs and in the Activity tab.
+them. The full error is in `perry logs` and in the Activity tab.
 
-**"No runner" or "Connect a ChatGPT account" in chat.** Every reply comes from
-Codex on a connected machine, unless answering without the computer is on and a
-runner has shared a token that is still valid. Start the runner with
-`pnpm run runner` (or `pnpm run service start`) and check the Codex account on
-the Settings page.
+**"The Codex runner for this chat is offline" in chat.** Every reply comes from
+Codex on a connected machine. Start Perry with `perry start` (or the runner on
+the other machine) and check the Codex account on the Settings page.
 
 **Codex's commands all fail on Linux.** Its sandbox needs user namespaces; see
 "Codex's sandbox" above, and run `pnpm run doctor -- --machine`.
-
-**Moving to production.** `pnpm exec convex deploy` pushes to a separate production
-deployment with its own environment variables, so set them again there and
-re-run the webhook registration against the production `.convex.site` URL.
