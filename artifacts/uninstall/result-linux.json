@@ -1,9 +1,13 @@
 {
-  "ranAt": "2026-09-25T14:02:31.230Z",
+  "ranAt": "2026-09-26T00:58:33.197Z",
   "checks": {
     "noChoiceChangesNothing": true,
+    "menuSaysDataIsDeleted": true,
+    "noConvexWithoutOne": true,
     "keepFilesFlag": true,
     "removeFilesFlag": true,
+    "noConvexAfterRemoving": true,
+    "namesConvexWhenThere": true,
     "keepsCheckoutWithWork": true,
     "wrongAnswersAskedAgain": true,
     "keepRemovesServiceAndCommandOnly": true,
@@ -21,20 +25,24 @@
       ""
     ],
     "removeFilesFlag": [
+      "  remove /tmp/perry-uninstall-Uoi9w0/.perry  (its data on this computer)",
       "",
       "  Perry is removed from this computer.",
-      "  Its Convex deployment is still there, with your chats and memory. Delete it at dashboard.convex.dev if you want it gone.",
       "  Open a new terminal so it no longer has Perry on its PATH.",
       "",
       ""
     ],
+    "convexInstall": [
+      "  This install still has data on Convex (dev:e2e-123); neither choice touches it.",
+      "  Its Convex deployment (dev:e2e-123) is still there. Delete it at dashboard.convex.dev if you want it gone."
+    ],
     "dirtyCheckout": [
-      "  remove /tmp/perry-uninstall-TI9JXW/user/.config/systemd/user/perry-runner.service",
-      "  Keeping /tmp/perry-uninstall-TI9JXW/perry: it has changes that are not committed. Delete it yourself if you do not need it.",
+      "  remove /tmp/perry-uninstall-vSkA1C/user/.config/systemd/user/perry-runner.service",
+      "  Keeping /tmp/perry-uninstall-vSkA1C/perry: it has changes that are not committed. Delete it yourself if you do not need it.",
       "  remove Perry's PATH line from ~/.bashrc",
       "  remove Perry's PATH line from ~/.profile",
-      "  remove /tmp/perry-uninstall-TI9JXW/.perry  (its data on this computer)",
-      "  Perry is removed from this computer, except its checkout at /tmp/perry-uninstall-TI9JXW/perry, kept for your work in it."
+      "  remove /tmp/perry-uninstall-vSkA1C/.perry  (its data on this computer)",
+      "  Perry is removed from this computer, except its checkout at /tmp/perry-uninstall-vSkA1C/perry, kept for your work in it."
     ],
     "keep": {
       "code": 0,
@@ -54,8 +62,8 @@
       "bashrc": "alias ll='ls -l'\n\nexport EDITOR=vim\n",
       "profile": "umask 022\n\n",
       "tail": [
+        "",
         "  Perry is removed from this computer.",
-        "  Its Convex deployment is still there, with your chats and memory. Delete it at dashboard.convex.dev if you want it gone.",
         "  Open a new terminal so it no longer has Perry on its PATH.",
         "",
         ""
