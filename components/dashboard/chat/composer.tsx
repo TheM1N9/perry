@@ -1,13 +1,14 @@
 "use client";
 
-import { ArrowUpIcon, BrainIcon, CpuIcon, PaperclipIcon, ShieldAlertIcon, ShieldCheckIcon, SquareIcon, XIcon } from "lucide-react";
+import { ArrowUpIcon, BrainIcon, CpuIcon, PaperclipIcon, ShieldAlertIcon, ShieldCheckIcon, SparklesIcon, SquareIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
-import { ACCESS_LABELS, type Access, type ModelOption } from "@/convex/lib/commands";
+import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access, type ModelOption } from "@/convex/lib/commands";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { InfoTip } from "../common";
 import { PickedFiles } from "./attachments";
 
 export const MAX_FILES = 10;
@@ -19,10 +20,8 @@ export type Suggestion = { key: string; label: string; hint: string; apply: () =
 /** How the composer names a thinking level: Codex's own ids, capitalised. */
 export const levelName = (level: string) => level === "xhigh" ? "Extra high" : `${level[0]?.toUpperCase() ?? ""}${level.slice(1)}`;
 
-export const ACCESS_HINTS: Record<Access, string> = {
-  supervised: "Works in its sandbox, and asks you before anything beyond it",
-  full: "No sandbox: acts on this computer without asking",
-};
+/** Each access by its look: Ask shielded, Auto with the reviewer's sparkle, Full access as a warning. */
+export const ACCESS_ICONS: Record<Access, typeof ShieldCheckIcon> = { supervised: ShieldCheckIcon, auto: SparklesIcon, full: ShieldAlertIcon };
 
 type Pickers = {
   models: ModelOption[] | undefined;
@@ -165,7 +164,8 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
     { value: "default", label: modelInfo?.defaultEffort ? `Default (${levelName(modelInfo.defaultEffort)})` : "Default" },
     ...efforts.map((level) => ({ value: level, label: levelName(level) })),
   ];
-  const accessItems = (["supervised", "full"] as const).map((mode) => ({ value: mode, label: ACCESS_LABELS[mode] }));
+  const accessItems = ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode] }));
+  const AccessIcon = ACCESS_ICONS[access];
 
   return (
     <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
@@ -193,20 +193,23 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
           </SelectContent>
         </Select>
       )}
-      <Select items={accessItems} value={access} onValueChange={(value) => { if (value) onAccess(value as Access); }} disabled={accessDisabled}>
+      {/* Not modal, so the ⓘ tips, which open outside the menu, get the pointer. */}
+      <Select modal={false} items={accessItems} value={access} onValueChange={(value) => { if (value) onAccess(value as Access); }} disabled={accessDisabled}>
         <SelectTrigger aria-label="Access" className={cn(pill, access === "full" && "text-warning hover:text-warning")}>
-          {access === "full" ? <ShieldAlertIcon className="size-3.5" /> : <ShieldCheckIcon className="size-3.5" />}
+          <AccessIcon className="size-3.5" />
           <SelectValue />
         </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false} align="start" side="top" className="w-72">
-          {accessItems.map((item) => (
-            <SelectItem key={item.value} value={item.value}>
-              <span className="grid">
-                <span>{item.label}</span>
-                <span className="text-xs text-muted-foreground">{ACCESS_HINTS[item.value]}</span>
-              </span>
-            </SelectItem>
-          ))}
+        <SelectContent alignItemWithTrigger={false} align="start" side="top" className="w-52">
+          {accessItems.map((item) => {
+            const Icon = ACCESS_ICONS[item.value];
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                <Icon className={cn("size-3.5", item.value === "full" && "text-warning")} />
+                <span className="flex-1">{item.label}</span>
+                <InfoTip>{`${ACCESS_HINTS[item.value]} A change applies from your next message.`}</InfoTip>
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
     </div>

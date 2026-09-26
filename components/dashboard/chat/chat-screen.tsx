@@ -12,7 +12,7 @@ import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/re
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
-  ACCESS_LABELS, COMPACTED, chatModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
+  ACCESS_HINTS, ACCESS_LABELS, ACCESSES, COMPACTED, chatModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
   parseAccessCommand, parseModelCommand, parseThinkCommand, pickAccess, pickEffort, pickModel, type Access,
 } from "@/convex/lib/commands";
 import { copyText, errorText, useNow } from "@/lib/format";
@@ -28,7 +28,7 @@ import { DeleteDialog, RenameDialog } from "../app-sidebar";
 import { PerryMark, TopBar } from "../common";
 import { StatusDot } from "../status-dot";
 import type { Attachment } from "./attachments";
-import { ACCESS_HINTS, Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
+import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { MessageRow, PendingRow, ReplyInProgress } from "./message";
 
 type ChatId = Id<"conversations">;
@@ -48,7 +48,7 @@ const STARTERS = [
 const COMMANDS = [
   { command: "/model", hint: "List the models, or /model <name> to switch this chat" },
   { command: "/think", hint: "List the thinking levels, or /think <level>" },
-  { command: "/access", hint: "Supervised or Full access: whether it asks before acting" },
+  { command: "/access", hint: "Ask, Auto or Full access: whether it asks before acting" },
   { command: "/stop", hint: "Stop the reply being written" },
   { command: "/compact", hint: "Shrink what Codex carries of this chat; the messages stay" },
   { command: "/reset", hint: "Save this chat to memory, then start it afresh" },
@@ -294,7 +294,7 @@ export function ChatScreen() {
             ...efforts.map((level) => ({ value: level, label: levelName(level), hint: `${level}${level === effort ? " · current" : ""}` })),
           ], typedThink.level, "/think")
         : typedAccess && choosing
-          ? choices((["supervised", "full"] as const).map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
+          ? choices(ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
           : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
               key: item.command, label: item.command, hint: item.hint,
               apply: () => { setDraft(["/stop", "/compact", "/reset"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },

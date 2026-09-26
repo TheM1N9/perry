@@ -28,7 +28,7 @@ Your private assistant.
 
   /model    list the Codex models; /model <name> switches this chat
   /think    list the thinking levels; /think <level> sets this chat's
-  /access   supervised or full: whether Codex asks before acting
+  /access   ask, auto or full: whether it asks before acting
   /stop     stop the reply I am writing
   /compact  shrink what Codex carries of this chat, keep the chat
   /status   plumbing and recent errors

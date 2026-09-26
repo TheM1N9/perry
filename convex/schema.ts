@@ -36,11 +36,12 @@ export const vTurnAttachment = v.object({
 /** How a runner decides what needs the owner. See approvals.ts. */
 export const vPolicy = v.union(v.literal("ask"), v.literal("review"), v.literal("trust"));
 /**
- * How far a chat's Codex turns may reach. Supervised: Codex's workspace-write
- * sandbox, and anything beyond it asks through the runner's approvals. Full:
+ * How far a chat's Codex turns may reach (lib/commands.ts, Access). Supervised
+ * ("Ask"): Codex's workspace-write sandbox, and anything beyond it asks the
+ * owner. Auto: no sandbox, with a Codex reviewer checking each command. Full:
  * no sandbox, and Codex never asks.
  */
-export const vAccess = v.union(v.literal("supervised"), v.literal("full"));
+export const vAccess = v.union(v.literal("supervised"), v.literal("auto"), v.literal("full"));
 /** A Codex model as `model/list` reports it, with the reasoning efforts it takes. */
 export const vCodexModel = v.object({
   id: v.string(),

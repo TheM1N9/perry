@@ -30,8 +30,8 @@ export const WINDOWS_SANDBOX = process.platform === "win32"
  * danger-full-access for a machine that is already isolated, where Codex then
  * asks for almost nothing.
  *
- * That is the mode of a Supervised chat. A chat on Full access ignores it and
- * always runs danger-full-access with approval policy never (see runTurn).
+ * That is the mode of a chat on Ask. Auto and Full access run danger-full-access:
+ * Auto with every command reviewed first, Full access never asking (runTurn).
  */
 export const SANDBOX_MODES = ["read-only", "workspace-write", "danger-full-access"] as const;
 export type SandboxMode = (typeof SANDBOX_MODES)[number];
@@ -422,11 +422,13 @@ export class CodexAppServer extends EventEmitter {
     /** The reasoning effort, one the model takes. Unset leaves the thread's own. */
     effort?: string;
     /**
-     * Supervised: the sandbox (PERRY_CODEX_SANDBOX, workspace-write by default)
-     * and on-request approvals, which reach the owner through the runner. Full:
-     * no sandbox, and Codex never asks.
+     * Supervised ("Ask"): the sandbox (PERRY_CODEX_SANDBOX, workspace-write by
+     * default) and on-request approvals, which reach the owner through the
+     * runner. Auto: no sandbox, and every command that is not plainly
+     * read-only is asked about, which the runner has a reviewer answer
+     * (approvals.ts). Full: no sandbox, and Codex never asks.
      */
-    access?: "supervised" | "full";
+    access?: "supervised" | "auto" | "full";
     tools?: { url: string; token: string };
     attachments?: CodexAttachment[];
     onThread: (threadId: string) => Promise<unknown>;
@@ -448,12 +450,24 @@ export class CodexAppServer extends EventEmitter {
       ...(broken.length ? [`These skills failed to load, so they are not listed:\n${broken.map((line) => `- ${line}`).join("\n")}`] : []),
     ].join(" ") +
       `\n\nThis machine runs ${machine.os}, and your commands run in ${machine.shell}; write commands, paths and quoting for that, and open files or apps with ${machine.open}.`;
-    const fullInstructions = history
-      ? `${instructions}\n\n${home}\n\nEarlier chat history (context, not a new user request):\n${history}`
-      : `${instructions}\n\n${home}`;
     const full = access === "full";
-    const policy = full ? "never" : "on-request";
-    const sandbox: SandboxMode = full ? "danger-full-access" : sandboxMode();
+    // Auto has no sandbox either: the gate is the reviewer, which Codex's "untrusted" policy sends
+    // every command that is not plainly read-only to (approvals.ts, review.ts). A sandbox would
+    // only make commands fail quietly, since Codex does not reliably ask to leave it.
+    const auto = access === "auto";
+    const sandboxed = full ? "" : auto
+      ? "\n\nEach command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
+      // Sandboxed, Codex tends to give up when a command is blocked (no network, a folder outside
+      // the workspace) rather than ask; the owner's access setting is what should decide, so it asks.
+      : "\n\nYour commands run in a sandbox: no network, and writes only in the working folder and your own folders. " +
+        "A command that fails with a network, connection or permission error was blocked by the sandbox. When the task needs it, " +
+        "do not report the failure or work around it: run the same command again with sandbox_permissions \"require_escalated\" " +
+        "and a one-line justification, and the owner is asked. Ask this way only for what the task needs.";
+    const fullInstructions = history
+      ? `${instructions}\n\n${home}${sandboxed}\n\nEarlier chat history (context, not a new user request):\n${history}`
+      : `${instructions}\n\n${home}${sandboxed}`;
+    const policy = full ? "never" : auto ? "untrusted" : "on-request";
+    const sandbox: SandboxMode = full || auto ? "danger-full-access" : sandboxMode();
     // The deployment's own tools: memory, connected accounts, task tracking.
     const config = {
       ...(tools ? {

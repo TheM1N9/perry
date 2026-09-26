@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon, CopyIcon, EyeIcon, EyeOffIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, EyeIcon, EyeOffIcon, InfoIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -39,6 +39,22 @@ export function useCopy() {
     }, (cause) => toast.error(`Couldn't copy: ${errorText(cause)}`));
   }, []);
   return { copied, copy };
+}
+
+/**
+ * An ⓘ that explains a choice on hover or focus, so a menu can list just the
+ * names. Screen readers get the explanation with the name.
+ */
+export function InfoTip({ children, className }: { children: string; className?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span tabIndex={0} />} className={cn("inline-grid size-4 shrink-0 cursor-help place-items-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring", className)}
+        aria-label={children} onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+        <InfoIcon className="size-3.5" aria-hidden />
+      </TooltipTrigger>
+      <TooltipContent className="max-w-64 text-pretty">{children}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function CopyButton({ value, label = "Copy", className, size = "icon-sm" }: {

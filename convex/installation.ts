@@ -218,7 +218,7 @@ export const setTelegramApprovals = internalMutation({
  * it leaves existing chats as they are. Job chats never take it: a job runs
  * supervised unless its chat is set otherwise.
  */
-export async function defaultAccess(ctx: Parameters<typeof read>[0]): Promise<"supervised" | "full"> {
+export async function defaultAccess(ctx: Parameters<typeof read>[0]): Promise<"supervised" | "auto" | "full"> {
   return (await read(ctx))?.defaultAccess ?? "supervised";
 }
 
