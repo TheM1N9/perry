@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActionButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCount, attempt, useTab, type Tone } from "../common";
 
@@ -117,6 +118,8 @@ function Schedules() {
   const setEnabled = useMutation(api.jobs.setEnabled);
   const remove = useMutation(api.jobs.removeFromDashboard);
   const runNow = useMutation(api.jobs.runNow);
+  const setModel = useMutation(api.jobs.setModel);
+  const models = useQuery(api.models.options, { key: dashboardKey })?.codex;
   const now = useNow();
   const { ask, dialog } = useConfirm();
 
@@ -132,6 +135,13 @@ function Schedules() {
     const over = job.runAt !== undefined && !job.enabled && job.runAt <= now;
     const readable = job.schedule ? describeSchedule(job.schedule) : null;
     const tone: Tone = job.lastError ? "danger" : job.enabled ? "success" : "neutral";
+    // Unset runs on the account's default; a pick the account no longer offers falls back to it too.
+    const fallback = (models ?? []).find((item) => item.isDefault) ?? models?.[0];
+    const modelItems = [
+      { value: "default", label: fallback ? `Default (${fallback.name})` : "Codex default" },
+      ...(models ?? []).map((item) => ({ value: item.id, label: item.name })),
+      ...(job.model && models && !models.some((item) => item.id === job.model) ? [{ value: job.model, label: `${job.model} (not offered, uses default)` }] : []),
+    ];
     return (
       <Row key={job.id}>
         <div className="min-w-0 flex-1">
@@ -153,6 +163,11 @@ function Schedules() {
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {job.chatId && <Button variant="ghost" size="sm" render={<Link href={`/chat/${job.chatId}`} />}><MessageSquareIcon />Results</Button>}
+          <Select items={modelItems} value={job.model ?? "default"} disabled={!models?.length}
+            onValueChange={(value) => void attempt(() => setModel({ key: dashboardKey, id: job.id, model: !value || value === "default" ? undefined : value }), { success: "Model changed. It applies from the next run." })}>
+            <SelectTrigger size="sm" aria-label={`Model for ${job.name}`} className="max-w-44"><SelectValue /></SelectTrigger>
+            <SelectContent>{modelItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+          </Select>
           <ActionButton variant="outline" size="sm" action={() => runNow({ key: dashboardKey, id: job.id })} success={`Running “${job.name}” now.`}>
             <PlayIcon />Run now
           </ActionButton>

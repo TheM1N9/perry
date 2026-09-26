@@ -6,7 +6,7 @@ import { internalAction, type ActionCtx } from "./_generated/server";
 import { INSTRUCTIONS } from "./assistant";
 import { ownerClock, ownerNow, QUIET } from "./jobs";
 import {
-  ACCESS_LABELS, chatModel, describeAccess, describeEfforts, describeModels, effortUnused, parseAccessCommand, parseModelCommand,
+  ACCESS_LABELS, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, parseAccessCommand, parseModelCommand,
   parseThinkCommand, pickAccess, pickEffort, pickModel, runLabel, turnEffort, type ModelOption,
 } from "./lib/commands";
 import { DOWNLOAD_LIMIT, downloadFile, sendMessage, sendTyping } from "./lib/telegram";
@@ -88,7 +88,7 @@ async function runCommand(
       const effort = turnEffort(models, conversation.model, conversation.effort);
       const unused = model && effortUnused(model, conversation.effort) ? ` (${conversation.effort} is not one ${model.name} takes)` : "";
       const lines = [
-        `model     ${conversation.model ? `codex/${conversation.model}` : "codex default"}`,
+        `model     ${conversation.model && model?.id === conversation.model ? `codex/${conversation.model}` : `codex default${model ? ` (${model.id})` : ""}`}`,
         `thinking  ${conversation.effort && !unused ? conversation.effort : `default${effort ? ` (${effort})` : ""}${unused}`}`,
         `access    ${ACCESS_LABELS[conversation.access ?? "supervised"]}`,
         `memories  ${memoryCount}`,
@@ -159,12 +159,17 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
 /**
  * How the chat's turns run: its model, the thinking level that model takes
  * (a level it does not take falls back to its default), and its access.
+ *
+ * The model is always named. Left out, Codex falls back to the `model` in
+ * ~/.codex/config.toml, which the Codex app may have set to one this account
+ * cannot use; the account's own default is the one model/list marks.
  */
-async function turnSettings(ctx: ActionCtx, conversation: Doc<"conversations">) {
+async function turnSettings(ctx: ActionCtx, conversation: Doc<"conversations">, jobModel?: string) {
   const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
+  const model = currentModel(models, jobModel ?? conversation.model);
   return {
-    model: conversation.model,
-    effort: turnEffort(models, conversation.model, conversation.effort),
+    model,
+    effort: turnEffort(models, model, conversation.effort),
     access: conversation.access ?? "supervised" as const,
   };
 }
@@ -282,6 +287,8 @@ export const handleTurn = internalAction({
     hidden: v.optional(v.boolean()),
     /** What the run is listed as in Activity, when the prompt itself is not the owner's. */
     label: v.optional(v.string()),
+    /** A scheduled job's model, which its runs use whatever its chat has picked. */
+    model: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -342,7 +349,7 @@ export const handleTurn = internalAction({
       const attachments = attachmentIds.length > 0
         ? await ctx.runQuery(internal.media.forTurn, { conversationId: conversation._id, attachmentIds })
         : [];
-      const settings = await turnSettings(ctx, conversation);
+      const settings = await turnSettings(ctx, conversation, args.model);
       const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
         conversationId: conversation._id,
         prompt: args.label ?? args.text,
