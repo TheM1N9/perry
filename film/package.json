@@ -1,0 +1,14 @@
+{
+  "name": "perry-film",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "render": "node render.mjs --page perry.html --out perry.mp4",
+    "stills": "node render.mjs --page perry.html --stills",
+    "preview": "node render.mjs --page perry.html --serve"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.12.0"
+  }
+}

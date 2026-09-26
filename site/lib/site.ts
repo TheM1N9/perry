@@ -4,3 +4,4 @@ export const INSTALL_GUIDE = `${REPO}/blob/main/INSTALL.md`;
 export const SITE = process.env.VERCEL_PROJECT_PRODUCTION_URL
   ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
   : "http://localhost:3000";
+

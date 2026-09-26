@@ -20,3 +20,8 @@ next-env.d.ts
 # Written by artifacts/telegram-delivery on every run (big.bin is 51 MB)
 artifacts/telegram-delivery/files/
 artifacts/telegram-delivery/received/
+
+# The film's renders: film/ keeps the source; the finished video is copied to site/public/film/.
+film/*.mp4
+film/*.wav
+film/stills/

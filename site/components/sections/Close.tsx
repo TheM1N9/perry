@@ -28,8 +28,8 @@ export function Footer() {
           <p className="text-[14px] text-ink-3">Off the clock. Your data stays put.</p>
         </div>
         <nav aria-label="Footer" className="flex gap-6 text-[14px] text-ink-3">
-          <a href={INSTALL_GUIDE} className="hover:text-ink">Install guide</a>
-          <a href={REPO} className="hover:text-ink">GitHub</a>
+          <a href={INSTALL_GUIDE} target="_blank" rel="noopener noreferrer" className="hover:text-ink">Install guide</a>
+          <a href={REPO} target="_blank" rel="noopener noreferrer" className="hover:text-ink">GitHub</a>
         </nav>
       </div>
     </footer>

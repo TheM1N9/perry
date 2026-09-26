@@ -24,7 +24,7 @@ const jetbrains = localFont({
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
-  title: "Perry: the only AI assistant you need",
+  title: "Perry, the only AI assistant you need",
   description:
     "Perry lives in your Telegram, remembers you, and gets real work done on your computer.",
   openGraph: {

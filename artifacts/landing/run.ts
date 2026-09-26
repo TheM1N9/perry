@@ -13,8 +13,7 @@ import { sleep } from "../browser";
 //   footer says it never does: every request must be to the page's own origin.
 // - A self-hosted font is missing and the page falls back to system fonts: the
 //   body's and the mono font's first family must both be loaded.
-// - The hero's chat is a picture: tapping each suggestion must get Perry's
-//   answer, and a tapped suggestion must go away.
+// - The hero has no Perry: the mascot must be there, above the headline.
 // - The day doesn't follow the reader: as each moment is scrolled to, the
 //   pinned phone must show what happened at that time, its clock included.
 // - The approval is a picture: tapping Approve must get the branches deleted,
@@ -23,17 +22,26 @@ import { sleep } from "../browser";
 // - A section never appears because its reveal never fires: after scrolling
 //   the page through, no element in <main> may still be at opacity 0.
 // - The page only works with motion on: with reduced motion emulated, the
-//   chats must still answer and nothing may be left invisible.
+//   day's chat must still answer and nothing may be left invisible.
 // - The mascot is only a picture: poking him must get a line out of him, his
 //   eyes must follow the pointer, and the closing one must say hello when it
 //   scrolls into view.
 // - A wrong URL shows a bare error: the 404 page must be Perry's own.
-// - Copy copies the wrong thing: it must hand over the clone and setup commands.
+// - The film is a still: when public/film/perry.mp4 is there, it must play by
+//   itself (muted, as browsers require) once on screen, even with reduced
+//   motion, and play with sound and controls when asked.
+// - The nav stays a bar: once the page is scrolled it must become a pill, and
+//   it must hold only Perry and Get Perry.
+// - Copy copies the wrong thing: it must hand over the one-line installer for
+//   the system that's chosen (macOS and Linux, or Windows), and the run
+//   commands from the second card.
 // - A section lays out wider than the screen: no horizontal overflow at 1440,
 //   1280, 768 or 375px.
 // - Text is too faint: every visible text node must meet WCAG AA (4.5:1, 3:1
 //   for large text) against what is really behind it.
 // - An in-page link points nowhere: every href="#id" must have its target.
+// - An external link takes the reader away from the page: every one must open
+//   in a new tab, with rel="noopener".
 // - Anything throws, or React reports a hydration mismatch: no page errors.
 // Also recorded, not judged: the LCP time and the JavaScript the page loads.
 const outDir = resolve(process.argv[2] ?? "artifacts/landing");
@@ -213,13 +221,27 @@ const perf = await evaluate(`new Promise((done) => {
 })`);
 console.log(`     LCP ${perf.lcpMs} ms (${perf.lcpElement}), JavaScript ${perf.jsKb} kB`);
 
-// The hero: each suggestion gets Perry's answer.
+// The hero: Perry himself, above the headline.
 await shot("hero");
-for (const [i, words] of [[0, "Weekdays at 7:00"], [1, "before anything is deleted"], [2, "I'll nudge you"]] as const) {
-  await click(`[data-ask="${i}"]`);
-  check(`hero: tapping suggestion ${i + 1} gets Perry's answer`, await until(`document.querySelector("#top").innerText.includes(${JSON.stringify(words)})`, 3000));
+check("hero: the mascot stands above the headline", await evaluate(`(() => {
+  const perry = document.querySelector('#top button[aria-label^="Perry, the platypus"]');
+  const title = document.querySelector("#hero-title");
+  return !!perry && perry.getBoundingClientRect().bottom <= title.getBoundingClientRect().top;
+})()`));
+
+// The film, when there is one: silent while on screen, with sound when asked, and the hero's link goes to it.
+const FILM = `document.getElementById("perry-film")`;
+if (await evaluate(`!!${FILM}`)) {
+  await evaluate(`${FILM}.scrollIntoView({ block: "center", behavior: "instant" }); true`);
+  check("film: it plays silently once it's on screen", await until(`!${FILM}.paused && ${FILM}.muted && ${FILM}.currentTime > 0`, 6000),
+    await evaluate(`({ paused: ${FILM}.paused, muted: ${FILM}.muted, t: ${FILM}.currentTime, error: ${FILM}.error?.code ?? null })`));
+  await click(`#film button`);
+  check("film: Play with sound makes it audible, with controls", await until(`!${FILM}.paused && !${FILM}.muted && ${FILM}.controls`, 4000));
+  await evaluate(`${FILM}.pause(); true`);
 }
-check("hero: tapped suggestions go away", await evaluate(`document.querySelectorAll("[data-ask]").length === 0`));
+
+const sameTab = await evaluate(`[...document.querySelectorAll('a[href^="http"]')].filter((a) => a.target !== "_blank" || !a.rel.includes("noopener")).map((a) => a.href)`);
+check("every external link opens in a new tab", sameTab.length === 0, sameTab);
 
 const missing = await evaluate(`[...document.querySelectorAll('a[href^="#"]')].map((a) => a.getAttribute("href").slice(1)).filter((id) => !document.getElementById(id))`);
 check("every in-page link has its target", missing.length === 0, missing);
@@ -275,12 +297,35 @@ check("mascot: the closing one says hello when it comes into view", await evalua
   return false;
 })()`));
 
-// Copy.
+// Copy: the installer for the chosen system.
 await evaluate(`const write = navigator.clipboard.writeText.bind(navigator.clipboard); navigator.clipboard.writeText = (t) => { window.copied = t; return write(t); }; true`);
-await click(`[data-copy]`);
+for (const [os, command] of [
+  ["unix", "curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh"],
+  ["windows", "iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"],
+] as const) {
+  await click(`[data-os="${os}"]`);
+  await click(`[data-copy="install"]`);
+  await sleep(200);
+  const copied = await evaluate(`window.copied`);
+  check(`copy hands over the ${os === "unix" ? "macOS and Linux" : "Windows"} installer`, copied === command, copied);
+}
+await click(`[data-copy="run"]`);
 await sleep(200);
-const copied = await evaluate(`window.copied`);
-check("copy hands over the clone and setup commands", copied === "git clone https://github.com/TheM1N9/perry.git perry && cd perry\npnpm install && pnpm run setup", copied);
+const ran = await evaluate(`window.copied`);
+check("copy hands over the run commands", ran === "perry status\nperry open\nperry logs -f\nperry update", ran);
+
+// The nav: a bar at the top, a pill once scrolled, and only Perry and Get Perry either way.
+await evaluate(`scrollTo({ top: 0, behavior: "instant" }); true`);
+await sleep(400);
+const bar = await evaluate(`({ pill: document.querySelector("header").hasAttribute("data-pill"), links: [...document.querySelectorAll("header a")].map((a) => a.textContent.trim()) })`);
+check("nav: at the top it's a bar with only Perry and Get Perry", !bar.pill && bar.links.join("|") === "Perry|Get Perry", bar);
+await evaluate(`scrollTo({ top: 900, behavior: "instant" }); true`);
+await sleep(600);
+const pillNav = await evaluate(`(() => { const inner = document.querySelector("header > div"); const r = inner.getBoundingClientRect(); return { pill: document.querySelector("header").hasAttribute("data-pill"), width: Math.round(r.width), radius: getComputedStyle(inner).borderTopLeftRadius }; })()`);
+const barWidth = Math.min(1180, await evaluate(`document.documentElement.clientWidth`));
+check("nav: scrolled, it becomes a pill 85% as wide as the bar", pillNav.pill && Math.abs(pillNav.width / barWidth - 0.85) < 0.02 && parseFloat(pillNav.radius) > 20, { ...pillNav, barWidth });
+await shot("nav-pill");
+await evaluate(`scrollTo({ top: 0, behavior: "instant" }); true`);
 
 // Overflow at every width.
 for (const [width, height] of [[1440, 900], [1280, 800], [768, 1024], [375, 812]] as const) {
@@ -299,8 +344,10 @@ check("404: Perry's own page, with the mascot", await until(`document.body.inner
 await viewport(390, 844);
 await motion("reduce");
 await load();
-await click(`[data-ask="0"]`);
-check("reduced motion: the hero's chat still answers", await until(`document.querySelector("#top").innerText.includes("Weekdays at 7:00")`, 3000));
+if (await evaluate(`!!document.getElementById("perry-film")`)) {
+  await evaluate(`document.getElementById("perry-film").scrollIntoView({ block: "center", behavior: "instant" }); true`);
+  check("reduced motion: the film still plays by itself", await until(`!document.getElementById("perry-film").paused && document.getElementById("perry-film").currentTime > 0`, 6000));
+}
 await click(`[data-beat="14:30"] [data-answer="deny"]`);
 check("phone: the 14:30 card takes a Deny", await until(`document.querySelector('[data-beat="14:30"]').innerText.includes("Leaving them alone")`, 3000));
 await scrollThrough();

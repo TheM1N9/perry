@@ -23,7 +23,7 @@ export function Night() {
     <section id="night" aria-labelledby="night-title" className="bg-night text-white">
       <div ref={ref} className="mx-auto grid max-w-[1180px] items-center gap-16 px-6 py-28 md:py-36 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-20">
         <Reveal>
-          <p className="font-mono text-[15px] font-medium text-[#5fd4c8]">23:00</p>
+          <p className="text-[20px] font-semibold tabular-nums tracking-[-0.01em] text-[#5fd4c8]">23:00</p>
           <h2 id="night-title" className="mt-3 max-w-[13ch] text-[44px] font-[600] leading-[1.02] tracking-[-0.035em] md:text-[72px]">
             Off the clock. Still on watch.
           </h2>
@@ -32,7 +32,7 @@ export function Night() {
           </p>
         </Reveal>
         <div className="relative mx-auto">
-          <Phone theme="night" className="h-[560px] w-[340px]" clock={step >= 2 ? "02:13" : "23:00"}>
+          <Phone theme="night" className="w-[320px] md:w-[340px]" clock={step >= 2 ? "02:13" : "23:00"}>
             <AnimatePresence initial={false} mode="popLayout">
               <Pill key="today">Today</Pill>
               {step >= 1 ? <Pill key="notes">22:30 · today&apos;s notes filed</Pill> : null}

@@ -102,7 +102,7 @@ function Moment({ beat, index, onEnter, children }: { beat: Beat; index: number;
   }, [inView, index, onEnter]);
   return (
     <div ref={ref} data-beat={beat.at} className="flex flex-col justify-center py-14 lg:min-h-[82vh] lg:py-0">
-      <p className="font-mono text-[15px] font-medium text-teal">{beat.at}</p>
+      <p className="text-[20px] font-semibold tabular-nums tracking-[-0.01em] text-teal">{beat.at}</p>
       <h3 className="mt-3 max-w-[16ch] text-[34px] font-[600] leading-[1.06] tracking-[-0.03em] md:text-[46px]">{beat.title}</h3>
       <p className="mt-4 max-w-[34ch] text-[18px] leading-[1.5] text-ink-3 md:text-[19px]">{beat.line}</p>
       {children}
@@ -126,7 +126,7 @@ export function Day() {
   return (
     <section id="day" aria-labelledby="day-title" className="border-t border-hair bg-paper">
       <div className="mx-auto max-w-[1180px] px-6 pt-28 md:pt-36">
-        <p className="font-mono text-[14px] text-ink-3">A day with Perry</p>
+        <p className="text-[19px] font-semibold tracking-[-0.01em] text-ink-3">A day with Perry</p>
         <h2 id="day-title" className="mt-3 max-w-[18ch] text-[44px] font-[600] leading-[1.02] tracking-[-0.035em] md:text-[72px]">
           Here&apos;s your Tuesday. Handled.
         </h2>
@@ -149,7 +149,7 @@ export function Day() {
 
         <div className="hidden lg:block">
           <div className="sticky top-[10vh] py-[3vh]">
-            <Phone className="h-[min(760px,78vh)] w-[372px]" clock={BEATS[active].at} status={spoken < active ? "typing…" : "bot"}>
+            <Phone className="w-[min(360px,calc(82vh*0.4613))]" clock={BEATS[active].at} status={spoken < active ? "typing…" : "bot"}>
               <AnimatePresence initial={false} mode="popLayout">
                 <Pill key="day">Tuesday</Pill>
                 {shown.flatMap((beat, i) => [

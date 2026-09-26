@@ -1,9 +1,9 @@
 {
   "pass": true,
-  "at": "2026-09-25T22:51:40.494Z",
+  "at": "2026-09-26T00:45:49.519Z",
   "performance": {
-    "lcpMs": 148,
-    "lcpElement": "P.font-mono text-[14px] text-tea",
+    "lcpMs": 816,
+    "lcpElement": "P.absolute -right-32 top-1/2 hid",
     "jsKb": 189
   },
   "checks": [
@@ -34,20 +34,27 @@
       }
     },
     {
-      "name": "hero: tapping suggestion 1 gets Perry's answer",
+      "name": "hero: the mascot stands above the headline",
       "pass": true
     },
     {
-      "name": "hero: tapping suggestion 2 gets Perry's answer",
+      "name": "film: it plays silently once it's on screen",
+      "pass": true,
+      "detail": {
+        "paused": false,
+        "muted": true,
+        "t": 0.069796,
+        "error": null
+      }
+    },
+    {
+      "name": "film: Play with sound makes it audible, with controls",
       "pass": true
     },
     {
-      "name": "hero: tapping suggestion 3 gets Perry's answer",
-      "pass": true
-    },
-    {
-      "name": "hero: tapped suggestions go away",
-      "pass": true
+      "name": "every external link opens in a new tab",
+      "pass": true,
+      "detail": []
     },
     {
       "name": "every in-page link has its target",
@@ -84,7 +91,7 @@
       "detail": []
     },
     {
-      "name": "text contrast meets AA (123 text nodes)",
+      "name": "text contrast meets AA (117 text nodes)",
       "pass": true,
       "detail": []
     },
@@ -93,8 +100,8 @@
       "pass": true,
       "detail": {
         "centred": "100",
-        "right": "103.99890853935958",
-        "left": "96.00470312881357"
+        "right": "103.85374650545403",
+        "left": "96.13243842165954"
       }
     },
     {
@@ -106,9 +113,40 @@
       "pass": true
     },
     {
-      "name": "copy hands over the clone and setup commands",
+      "name": "copy hands over the macOS and Linux installer",
       "pass": true,
-      "detail": "git clone https://github.com/TheM1N9/perry.git perry && cd perry\npnpm install && pnpm run setup"
+      "detail": "curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh"
+    },
+    {
+      "name": "copy hands over the Windows installer",
+      "pass": true,
+      "detail": "iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"
+    },
+    {
+      "name": "copy hands over the run commands",
+      "pass": true,
+      "detail": "perry status\nperry open\nperry logs -f\nperry update"
+    },
+    {
+      "name": "nav: at the top it's a bar with only Perry and Get Perry",
+      "pass": true,
+      "detail": {
+        "pill": false,
+        "links": [
+          "Perry",
+          "Get Perry"
+        ]
+      }
+    },
+    {
+      "name": "nav: scrolled, it becomes a pill 85% as wide as the bar",
+      "pass": true,
+      "detail": {
+        "pill": true,
+        "width": 1003,
+        "radius": "3.35544e+07px",
+        "barWidth": 1180
+      }
     },
     {
       "name": "no horizontal overflow at 1440px",
@@ -135,7 +173,7 @@
       "pass": true
     },
     {
-      "name": "reduced motion: the hero's chat still answers",
+      "name": "reduced motion: the film still plays by itself",
       "pass": true
     },
     {

@@ -13,12 +13,12 @@ export function Phone({
   const sub = night ? "text-tgn-meta" : "text-[#687480]";
   return (
     <TgThemeContext.Provider value={theme}>
-      <div className={`relative rounded-[52px] bg-[#1b1c1e] p-[10px] shadow-[0_2px_0_1px_#2c2d30_inset,0_40px_80px_-30px_rgb(0_0_0/0.45)] ${className}`}>
-        <div className={`${night ? "tg-night" : "tg-day"} relative flex h-full flex-col overflow-hidden rounded-[43px]`}>
+      <div className={`relative aspect-[393/852] rounded-[60px] bg-[#1b1c1e] p-[10px] shadow-[0_2px_0_1px_#2c2d30_inset,0_40px_80px_-30px_rgb(0_0_0/0.45)] ${className}`}>
+        <div className={`${night ? "tg-night" : "tg-day"} relative flex h-full flex-col overflow-hidden rounded-[50px]`}>
           <div className={`flex shrink-0 flex-col ${chrome} backdrop-blur`}>
-            <div className="relative flex h-12 items-center justify-between px-8 pt-1 text-[15px] font-semibold">
+            <div className="relative flex h-[52px] items-center justify-between px-9 pt-1 text-[16px] font-semibold tracking-[-0.01em]">
               <span className="tabular-nums">{clock}</span>
-              <span aria-hidden className="absolute left-1/2 top-3 h-[28px] w-[96px] -translate-x-1/2 rounded-full bg-black" />
+              <span aria-hidden className="absolute left-1/2 top-[11px] h-[32px] w-[32%] -translate-x-1/2 rounded-full bg-black" />
               <span aria-hidden className="flex items-center gap-1.5">
                 <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor">
                   <rect x="0" y="7" width="3" height="4" rx="1" /><rect x="4.5" y="5" width="3" height="6" rx="1" />
