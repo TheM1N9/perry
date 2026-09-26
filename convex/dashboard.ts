@@ -11,6 +11,8 @@ import { DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./
 import type { Access } from "./lib/commands";
 import { policyOf, type Policy } from "./runner";
 import { vAccess, vMemoryKind, vPolicy } from "./schema";
+import { APPROVAL_TTL_MS } from "./approvals";
+import { QUIET } from "./jobs";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -64,21 +66,89 @@ function webChat(conversation: Doc<"conversations"> | null) {
   return conversation;
 }
 
+/** What a chat is doing, for the dot beside it: waiting on the owner comes first. */
+export type ChatStatus = "needs-approval" | "running" | "error" | "idle";
+
+export type ChatSummary = {
+  id: Id<"conversations">;
+  title: string;
+  lastMessageAt: number;
+  parentConversationId?: Id<"conversations">;
+  branchedFromMessageId?: string;
+  status: ChatStatus;
+  pinned: boolean;
+  /** Set on the chat where a scheduled job's results collect. */
+  jobId?: Id<"jobs">;
+  /** A reply came after the owner last had the chat open. */
+  unseen: boolean;
+};
+
+/** A reply after the owner last looked. A job's quiet NOTHING is not one; a chat never opened only counts for jobs. */
+function isUnseen(chat: Doc<"conversations">, job: Doc<"jobs"> | undefined | null): boolean {
+  if ((chat.pendingTurns ?? 0) > 0) return false;
+  if (chat.jobId) return Boolean(job?.lastResult && job.lastResult.trim() !== QUIET) && chat.lastMessageAt > (chat.seenAt ?? 0);
+  return chat.seenAt !== undefined && chat.lastMessageAt > chat.seenAt;
+}
+
 export const listChats = query({
   args: { key: vKey },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<ChatSummary[]> => {
     assertDashboardKey(args.key);
     const chats = await ctx.db.query("conversations")
       .withIndex("by_channel_last", (q) => q.eq("channel", WEB_CHANNEL))
       .order("desc")
       .collect();
-    return chats.map((chat) => ({
-      id: chat._id,
-      title: chat.title ?? "Untitled chat",
-      lastMessageAt: chat.lastMessageAt,
-      parentConversationId: chat.parentConversationId,
-      branchedFromMessageId: chat.branchedFromMessageId,
+    const asking = new Set((await ctx.db.query("approvals")
+      .withIndex("by_status", (q) => q.eq("status", "pending").gt("createdAt", Date.now() - APPROVAL_TTL_MS))
+      .collect()).map((row) => row.conversationId));
+    const jobs = new Map((await ctx.db.query("jobs").collect()).map((job) => [job._id, job]));
+    const summaries = await Promise.all(chats.map(async (chat): Promise<ChatSummary> => {
+      const running = (chat.pendingTurns ?? 0) > 0;
+      const latestRun = running || asking.has(chat._id) ? null : await ctx.db.query("runs")
+        .withIndex("by_conversation", (q) => q.eq("conversationId", chat._id))
+        .order("desc")
+        .first();
+      return {
+        id: chat._id,
+        title: chat.title ?? "Untitled chat",
+        lastMessageAt: chat.lastMessageAt,
+        parentConversationId: chat.parentConversationId,
+        branchedFromMessageId: chat.branchedFromMessageId,
+        status: asking.has(chat._id) ? "needs-approval" : running ? "running" : latestRun?.status === "error" ? "error" : "idle",
+        pinned: chat.pinnedAt !== undefined,
+        jobId: chat.jobId,
+        unseen: isUnseen(chat, chat.jobId ? jobs.get(chat.jobId) : undefined),
+      };
     }));
+    // Pinned first, most recently pinned on top; the rest stay newest first.
+    const pinnedAt = new Map(chats.map((chat) => [chat._id, chat.pinnedAt ?? 0]));
+    return [
+      ...summaries.filter((chat) => chat.pinned).sort((a, b) => pinnedAt.get(b.id)! - pinnedAt.get(a.id)!),
+      ...summaries.filter((chat) => !chat.pinned),
+    ];
+  },
+});
+
+export const setChatPinned = mutation({
+  args: { key: vKey, id: v.id("conversations"), pinned: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    webChat(await ctx.db.get(args.id));
+    await ctx.db.patch(args.id, { pinnedAt: args.pinned ? Date.now() : undefined });
+    return null;
+  },
+});
+
+/** The owner has the chat open: what is in it now is seen. */
+export const markChatSeen = mutation({
+  args: { key: vKey, id: v.id("conversations") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const chat = webChat(await ctx.db.get(args.id));
+    if ((chat.seenAt ?? 0) < chat.lastMessageAt) await ctx.db.patch(args.id, { seenAt: Date.now() });
+    return null;
   },
 });
 
@@ -990,6 +1060,83 @@ export const checkMonitorsNow = action({
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
     await ctx.runAction(internal.web.checkMonitors, {});
+    return null;
+  },
+});
+
+// --- Needs you -------------------------------------------------------------
+
+/**
+ * What is waiting on the owner, other than approvals (approvals.pending): a
+ * plan blocked on a question, work that failed, a scheduled job's news or
+ * error, and a watch that fired. Each stays until it is dealt with or dismissed.
+ */
+export type InboxItem =
+  | { kind: "question"; id: Id<"tasks">; title: string; text: string; at: number }
+  | { kind: "task-failed"; id: Id<"tasks">; title: string; text: string; at: number }
+  | { kind: "job-error"; id: Id<"jobs">; title: string; text: string; at: number; chatId?: Id<"conversations"> }
+  | { kind: "job-result"; id: Id<"jobs">; title: string; text: string; at: number; chatId: Id<"conversations"> }
+  | { kind: "watch"; id: Id<"monitors">; title: string; text: string; at: number; url: string };
+
+export const getInbox = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<InboxItem[]> => {
+    assertDashboardKey(args.key);
+    const items: InboxItem[] = [];
+    for (const task of await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "blocked")).collect()) {
+      if (task.question) items.push({ kind: "question", id: task._id, title: task.title, text: task.question, at: task.updatedAt });
+    }
+    for (const task of await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "failed")).collect()) {
+      if ((task.seenAt ?? 0) < task.updatedAt) items.push({ kind: "task-failed", id: task._id, title: task.title, text: task.error ?? "It stopped without saying why.", at: task.updatedAt });
+    }
+    for (const job of await ctx.db.query("jobs").collect()) {
+      const ranAt = job.lastRunAt ?? 0;
+      if (job.lastError && (job.seenAt ?? 0) < ranAt) {
+        items.push({ kind: "job-error", id: job._id, title: job.name, text: job.lastError, at: ranAt, chatId: job.conversationId });
+        continue;
+      }
+      const chat = job.conversationId ? await ctx.db.get(job.conversationId) : null;
+      if (chat && job.lastResult && isUnseen(chat, job)) {
+        items.push({ kind: "job-result", id: job._id, title: job.name, text: job.lastResult, at: chat.lastMessageAt, chatId: chat._id });
+      }
+    }
+    for (const monitor of await ctx.db.query("monitors").collect()) {
+      if (monitor.firedAt && (monitor.seenAt ?? 0) < monitor.firedAt) {
+        items.push({ kind: "watch", id: monitor._id, title: monitor.title, text: monitor.lastObservation ?? "Its condition was met.", at: monitor.firedAt, url: monitor.url });
+      }
+    }
+    return items.sort((a, b) => b.at - a.at);
+  },
+});
+
+/** Dismiss items from Needs you. A question is answered in chat, not dismissed. */
+export const dismissInbox = mutation({
+  args: {
+    key: vKey,
+    items: v.array(v.object({
+      kind: v.union(v.literal("task-failed"), v.literal("job-error"), v.literal("job-result"), v.literal("watch")),
+      id: v.string(),
+    })),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const now = Date.now();
+    for (const item of args.items) {
+      if (item.kind === "task-failed") {
+        const id = ctx.db.normalizeId("tasks", item.id);
+        if (id) await ctx.db.patch(id, { seenAt: now });
+      } else if (item.kind === "watch") {
+        const id = ctx.db.normalizeId("monitors", item.id);
+        if (id) await ctx.db.patch(id, { seenAt: now });
+      } else {
+        const id = ctx.db.normalizeId("jobs", item.id);
+        const job = id ? await ctx.db.get(id) : null;
+        if (!job) continue;
+        if (item.kind === "job-error") await ctx.db.patch(job._id, { seenAt: now });
+        else if (job.conversationId && await ctx.db.get(job.conversationId)) await ctx.db.patch(job.conversationId, { seenAt: now });
+      }
+    }
     return null;
   },
 });

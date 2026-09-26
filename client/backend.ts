@@ -226,6 +226,22 @@ export class BackendClient {
     })();
   }
 
+  /**
+   * Let go of the change stream while a page is hidden in the browser's
+   * back/forward cache, and pick it up again when it is shown. A cached page
+   * that kept its stream would hold one of the few connections a browser
+   * allows per host, and a handful of them stall every request after.
+   */
+  suspend() {
+    this.stream?.abort();
+    this.stream = null;
+  }
+
+  resume() {
+    if (this.closed || this.stream) return;
+    if ([...this.subscriptions.values()].some((sub) => sub.listeners.size > 0)) this.connect();
+  }
+
   close() {
     this.closed = true;
     this.stream?.abort();

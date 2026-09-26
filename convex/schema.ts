@@ -140,6 +140,8 @@ export default defineSchema({
     question: v.optional(v.string()),
     result: v.optional(v.string()),
     error: v.optional(v.string()),
+    /** When the owner dismissed its failure from Needs you. */
+    seenAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -184,6 +186,8 @@ export default defineSchema({
     nextCheckAt: v.number(),
     lastObservation: v.optional(v.string()),
     firedAt: v.optional(v.number()),
+    /** When the owner dismissed its last firing from Needs you. */
+    seenAt: v.optional(v.number()),
     failures: v.number(),
     createdAt: v.number(),
   })
@@ -272,6 +276,10 @@ export default defineSchema({
     /** What the assistant sent here on its own (a job, an alert) since the owner last wrote; the next turn is told. */
     unprompted: v.optional(v.array(v.object({ at: v.number(), text: v.string() }))),
     lastMessageAt: v.number(),
+    /** Pinned to the top of the dashboard's chat list, since then. */
+    pinnedAt: v.optional(v.number()),
+    /** When the owner last had this chat open; a reply after it is unseen. */
+    seenAt: v.optional(v.number()),
   })
     .index("by_channel_external", ["channel", "externalId"])
     .index("by_channel_last", ["channel", "lastMessageAt"]),
@@ -383,6 +391,8 @@ export default defineSchema({
     lastRunAt: v.optional(v.number()),
     lastResult: v.optional(v.string()),
     lastError: v.optional(v.string()),
+    /** When the owner dismissed its last error from Needs you. */
+    seenAt: v.optional(v.number()),
     conversationId: v.optional(v.id("conversations")),
     createdAt: v.number(),
   }),

@@ -6,9 +6,15 @@ const config: NextConfig = {
   // at 127.0.0.1, and from other devices over Tailscale by its 100.x address or
   // its ts.net name.
   allowedDevOrigins: ["127.0.0.1", "100.*.*.*", "**.ts.net"],
-  // The Work page was renamed Tasks; old links and bookmarks still land there.
+  // Pages that moved when the dashboard was rebuilt; old links and bookmarks still land.
   async redirects() {
-    return [{ source: "/work", destination: "/tasks", permanent: false }];
+    return [
+      { source: "/tasks", destination: "/work", permanent: false },
+      { source: "/about", destination: "/memory?tab=about", permanent: false },
+      { source: "/profile", destination: "/settings", permanent: false },
+      { source: "/keys", destination: "/settings?tab=keys", permanent: false },
+      { source: "/setup", destination: "/settings?tab=telegram", permanent: false },
+    ];
   },
 };
 

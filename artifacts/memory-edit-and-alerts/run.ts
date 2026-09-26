@@ -114,16 +114,16 @@ try {
   const { evaluate, send } = browser;
   const waitFor = (test: string, what: string, ms = 20_000) => evaluate(`new Promise((resolve, reject) => { const start = Date.now(); const tick = () => (${test}) ? resolve(true) : Date.now() - start > ${ms} ? reject(new Error(${JSON.stringify(what)})) : setTimeout(tick, 150); tick(); })`);
   const type = (selector: string, value: string) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
-  const row = `[...document.querySelectorAll(".item")].find((item) => item.innerText.includes("flat white") || item.querySelector("textarea"))`;
+  const row = `[...document.querySelectorAll("li")].find((item) => item.innerText.includes("flat white") || item.querySelector("textarea"))`;
 
   await send("Page.navigate", { url: `${BASE}/memory` });
   await waitFor(`!!(${row})`, "the memory on the Memory page");
   checks.editIsOffered = await evaluate(`[...(${row}).querySelectorAll("button")].some((b) => b.innerText.trim() === "Edit")`);
   await evaluate(`[...(${row}).querySelectorAll("button")].find((b) => b.innerText.trim() === "Edit").click(); true`);
-  await waitFor(`!!document.querySelector(".item textarea")`, "the edit box");
-  await type(".item textarea", "The owner's usual coffee is black, no sugar.");
-  await evaluate(`[...document.querySelectorAll(".item button")].find((b) => b.innerText.trim() === "Save").click(); true`);
-  await waitFor(`[...document.querySelectorAll(".item")].some((item) => item.innerText.includes("black, no sugar") && item.innerText.includes("Edited"))`, "the edited memory, marked Edited");
+  await waitFor(`!!document.querySelector("li textarea")`, "the edit box");
+  await type("li textarea", "The owner's usual coffee is black, no sugar.");
+  await evaluate(`[...document.querySelectorAll("li button")].find((b) => b.innerText.trim() === "Save").click(); true`);
+  await waitFor(`[...document.querySelectorAll("li")].some((item) => item.innerText.includes("black, no sugar") && item.innerText.includes("Edited"))`, "the edited memory, marked Edited");
   await send("Page.captureScreenshot", { format: "png" }).then((shot) => writeFileSync(join(outDir, "memory-edited.png"), Buffer.from(shot.data, "base64")));
   const after = (await memories("core")).find((memory) => memory.id === before.id);
   notes.edited = { before, after };

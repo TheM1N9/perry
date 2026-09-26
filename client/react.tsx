@@ -54,13 +54,15 @@ type OptimisticStore = ReturnType<BackendClient["optimisticStore"]>;
 
 export function useMutation<M extends Mutation>(mutation: M) {
   const client = useClient();
+  // `api.x.y` is a new reference on every access, so the name is what keeps this stable across renders.
+  const name = functionName(mutation);
   return useMemo(() => {
     const make = (optimistic?: (store: OptimisticStore, args: FunctionArgs<M>) => void) => {
       const run = async (args: FunctionArgs<M>): Promise<FunctionReturnType<M>> => {
         const overrides: Parameters<BackendClient["optimisticStore"]>[0] = [];
         if (optimistic) optimistic(client.optimisticStore(overrides), args);
         try {
-          return await client.mutation(mutation, args);
+          return await client.mutation(name as unknown as M, args);
         } finally {
           client.clearOverrides(overrides);
         }
@@ -70,14 +72,15 @@ export function useMutation<M extends Mutation>(mutation: M) {
       });
     };
     return make();
-  }, [client, mutation]);
+  }, [client, name]);
 }
 
 type Action = FunctionReference<"action", "public">;
 
 export function useAction<A extends Action>(action: A) {
   const client = useClient();
-  return useCallback((args: FunctionArgs<A>): Promise<FunctionReturnType<A>> => client.action(action, args), [client, action]);
+  const name = functionName(action);
+  return useCallback((args: FunctionArgs<A>): Promise<FunctionReturnType<A>> => client.action(name as unknown as A, args), [client, name]);
 }
 
 type Paginated = FunctionReference<"query", "public", { paginationOpts: { numItems: number; cursor: string | null } }, { page: unknown[]; isDone: boolean; continueCursor: string }>;
