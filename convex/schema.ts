@@ -36,11 +36,12 @@ export const vTurnAttachment = v.object({
 /** How a runner decides what needs the owner. See approvals.ts. */
 export const vPolicy = v.union(v.literal("ask"), v.literal("review"), v.literal("trust"));
 /**
- * How far a chat's Codex turns may reach. Supervised: Codex's workspace-write
- * sandbox, and anything beyond it asks through the runner's approvals. Full:
+ * How far a chat's Codex turns may reach (lib/commands.ts, Access). Supervised
+ * ("Ask"): Codex's workspace-write sandbox, and anything beyond it asks the
+ * owner. Auto: no sandbox, with a Codex reviewer checking each command. Full:
  * no sandbox, and Codex never asks.
  */
-export const vAccess = v.union(v.literal("supervised"), v.literal("full"));
+export const vAccess = v.union(v.literal("supervised"), v.literal("auto"), v.literal("full"));
 /** A Codex model as `model/list` reports it, with the reasoning efforts it takes. */
 export const vCodexModel = v.object({
   id: v.string(),
@@ -308,6 +309,13 @@ export default defineSchema({
     pinnedAt: v.optional(v.number()),
     /** When the owner last had this chat open; a reply after it is unseen. */
     seenAt: v.optional(v.number()),
+    /**
+     * Web messages sent and not yet in the chat's history: from sendChat until
+     * the turn is queued (codex.enqueueTurn), or kept in the history when it
+     * cannot be (brain.handleTurn). The history only gets them when the reply
+     * is saved, so without this a message vanishes on reload until then.
+     */
+    outbox: v.optional(v.array(v.object({ text: v.string(), at: v.number() }))),
   })
     .index("by_channel_external", ["channel", "externalId"])
     .index("by_channel_last", ["channel", "lastMessageAt"]),

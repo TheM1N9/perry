@@ -12,8 +12,20 @@ export type ModelOption = {
   defaultEffort?: string;
 };
 
-/** How far a chat's Codex turns may reach; see vAccess in schema.ts. */
-export type Access = "supervised" | "full";
+/**
+ * What a chat may do without asking, one setting per chat (Settings picks the
+ * one a new chat starts with):
+ *
+ *   supervised  "Ask": Codex works in its sandbox, and asks the owner before
+ *               anything beyond it.
+ *   auto        "Auto": no sandbox, but a Codex reviewer checks each command
+ *               first, runs the routine ones and asks the owner about the rest.
+ *   full        "Full access": no sandbox, and it never asks.
+ *
+ * A turn keeps the access it started with; a change applies from the next one.
+ */
+export type Access = "supervised" | "auto" | "full";
+export const ACCESSES: readonly Access[] = ["supervised", "auto", "full"];
 
 /** What /compact reports once Codex has summarised the chat's thread. */
 export const COMPACTED = "Compacted. Codex now works from a summary of this chat; the messages here are unchanged.";
@@ -72,7 +84,7 @@ export function pickModel(models: ModelOption[], name: string, effort?: string):
 
 /** A run's model as the Activity page shows it: "codex/<model> · <effort>", and "· full access" when it was. */
 export function runLabel(model?: string, effort?: string, access?: Access): string {
-  return [model ? `codex/${model}` : "codex subscription", effort, access === "full" ? "full access" : undefined]
+  return [model ? `codex/${model}` : "codex subscription", effort, access === "full" ? "full access" : access === "auto" ? "auto" : undefined]
     .filter(Boolean).join(" · ");
 }
 
@@ -148,7 +160,17 @@ export function pickEffort(
 
 // --- Access (/access) -----------------------------------------------------
 
-export const ACCESS_LABELS: Record<Access, string> = { supervised: "Supervised", full: "Full access" };
+export const ACCESS_LABELS: Record<Access, string> = { supervised: "Ask", auto: "Auto", full: "Full access" };
+
+/** One line each, for the ⓘ beside a choice and for /access. */
+export const ACCESS_HINTS: Record<Access, string> = {
+  supervised: "Works in its sandbox and asks you before anything beyond it.",
+  auto: "Codex checks each command before it runs: routine ones go ahead on their own, risky ones come to you.",
+  full: "No sandbox, and it never asks. It can change anything your account can.",
+};
+
+/** What /access and the settings call each: "ask" is supervised, and the old name still works. */
+const ACCESS_WORDS: Record<string, Access> = { ask: "supervised", supervised: "supervised", auto: "auto", full: "full" };
 
 /** "/access", "/access <mode>" (and "/access@botname" on Telegram). */
 export function parseAccessCommand(text: string): { mode?: string } | null {
@@ -159,26 +181,17 @@ export function parseAccessCommand(text: string): { mode?: string } | null {
 /** The reply to "/access": this chat's access, and what each means. */
 export function describeAccess(access: Access): string {
   return [
-    `This chat is ${access === "full" ? "on Full access" : "Supervised"}.`,
+    `This chat is on ${ACCESS_LABELS[access]}.`,
     "",
-    `${access === "supervised" ? "•" : " "} supervised  Codex works in its sandbox and asks you before anything beyond it`,
-    `${access === "full" ? "•" : " "} full        no sandbox, and Codex acts on this computer without asking`,
+    ...ACCESSES.map((mode) => `${mode === access ? "•" : " "} ${ACCESS_LABELS[mode].toLowerCase().replace(" access", "").padEnd(5)} ${ACCESS_HINTS[mode]}`),
     "",
-    "Switch with /access supervised or /access full.",
+    "Switch with /access ask, /access auto or /access full. It applies from your next message.",
   ].join("\n");
 }
 
 /** The reply to "/access <mode>"; "full access" and "full-access" count as full. */
 export function pickAccess(mode: string): { access?: Access; reply: string } {
-  const wanted = mode.trim().toLowerCase().replace(/[\s-]+access$/, "");
-  if (wanted === "supervised") {
-    return { access: "supervised", reply: "This chat is Supervised: Codex works in its sandbox and asks you before anything beyond it." };
-  }
-  if (wanted === "full") {
-    return {
-      access: "full",
-      reply: "This chat is on Full access: Codex runs without its sandbox and acts without asking. Every command still shows in the trace. /access supervised turns it back.",
-    };
-  }
-  return { reply: `No access called "${mode}". Use /access supervised or /access full.` };
+  const access = ACCESS_WORDS[mode.trim().toLowerCase().replace(/[\s-]+access$/, "")];
+  if (!access) return { reply: `No access called "${mode}". Use /access ask, /access auto or /access full.` };
+  return { access, reply: `This chat is on ${ACCESS_LABELS[access]}: ${ACCESS_HINTS[access]} It applies from your next message.` };
 }

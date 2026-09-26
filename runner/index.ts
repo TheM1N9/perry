@@ -15,11 +15,12 @@
  *
  *   1. This process. Close the terminal, or stop the service, and Assistant
  *      has no hands again.
- *   2. Approval. Whatever Codex wants to do beyond its sandbox waits for you,
- *      here, in the dashboard or on Telegram, unless a rule you saved with
- *      "Always allow" covers it or the runner's policy says otherwise:
- *      "review" lets a Codex reviewer clear routine actions first, "trust"
- *      (--auto) runs everything.
+ *   2. Approval. Whatever Codex wants to do beyond its sandbox is decided by
+ *      the chat's access (convex/approvals.ts): on Ask it waits for you, here,
+ *      in the dashboard or where you are talking; on Auto a Codex reviewer
+ *      clears routine actions first and asks you about the rest. A rule you
+ *      saved with "Always allow" runs it either way. A request from no chat
+ *      follows the runner's own policy (--policy ask|review|trust).
  *   3. Codex's sandbox. Codex works in the directory you chose, and may write
  *      only there and in Perry's own folders (runner/codex.ts).
  *   4. A denylist of commands that are never worth running.
@@ -196,17 +197,11 @@ async function main() {
   };
 
   // A --policy flag sets the policy once; after that the dashboard's choice stands.
-  const first = await checkIn(flags.policy);
-  const policy = first?.policy ?? flags.policy ?? "ask";
+  await checkIn(flags.policy);
   console.log(`\n${bold("Assistant runner")}`);
   console.log(dim(`  machine    ${name} (${platform()})`));
   console.log(dim(`  directory  ${workdir}`));
-  console.log(
-    policy === "trust"
-      ? yellow("  approval   trust: commands run without asking")
-      : dim(`  approval   ${policy === "review" ? "review: a Codex reviewer clears routine actions, the rest wait for you" : "ask: every command waits for you"}${process.stdin.isTTY ? "" : " in the dashboard and on Telegram"}`),
-  );
-  console.log(dim(`             change it on the dashboard's Computer page`));
+  console.log(dim("  access     set per chat: Ask, Auto or Full access, from the chat or Settings"));
   console.log(dim(`  connection outbound only, nothing is listening here`));
   console.log(dim(`\n  ${process.stdin.isTTY ? "Ctrl-C" : "`pnpm run service stop`"} takes Assistant's hands away.\n`));
 
@@ -629,6 +624,8 @@ async function main() {
           const label = runLabel(job.requestedModel, job.requestedEffort, job.access);
           if (job.access === "full" && job.kind !== "compact") {
             console.log(yellow("  full access: this turn runs without the sandbox, and Codex does not ask"));
+          } else if (job.access === "auto" && job.kind !== "compact") {
+            console.log(dim("  auto: each command is reviewed before it runs; risky ones wait for you"));
           }
           try {
             const app = await ensureCodex();

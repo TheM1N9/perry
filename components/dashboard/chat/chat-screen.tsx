@@ -12,7 +12,7 @@ import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/re
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
-  ACCESS_LABELS, COMPACTED, chatModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
+  ACCESS_HINTS, ACCESS_LABELS, ACCESSES, COMPACTED, chatModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
   parseAccessCommand, parseModelCommand, parseThinkCommand, pickAccess, pickEffort, pickModel, type Access,
 } from "@/convex/lib/commands";
 import { copyText, errorText, useNow } from "@/lib/format";
@@ -28,13 +28,16 @@ import { DeleteDialog, RenameDialog } from "../app-sidebar";
 import { PerryMark, TopBar } from "../common";
 import { StatusDot } from "../status-dot";
 import type { Attachment } from "./attachments";
-import { ACCESS_HINTS, Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
+import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { MessageRow, PendingRow, ReplyInProgress } from "./message";
 
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
-/** A message you sent that the history does not show yet: the one that started a reply, or one sent into it. */
-type Pending = { id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean };
+/**
+ * A message you sent, shown before the server has it: `sent` once sendChat
+ * returns, after which the server lists it as pending until its reply saves it.
+ */
+type Pending = { id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean; sent: boolean };
 
 const STARTERS = [
   "Plan my day",
@@ -45,7 +48,7 @@ const STARTERS = [
 const COMMANDS = [
   { command: "/model", hint: "List the models, or /model <name> to switch this chat" },
   { command: "/think", hint: "List the thinking levels, or /think <level>" },
-  { command: "/access", hint: "Supervised or Full access: whether it asks before acting" },
+  { command: "/access", hint: "Ask, Auto or Full access: whether it asks before acting" },
   { command: "/stop", hint: "Stop the reply being written" },
   { command: "/compact", hint: "Shrink what Codex carries of this chat; the messages stay" },
   { command: "/reset", hint: "Save this chat to memory, then start it afresh" },
@@ -165,7 +168,8 @@ export function ChatScreen() {
     if (selectedId && chat && !chat.isRunning) void markSeen({ key: dashboardKey, id: selectedId }).catch(() => {});
   }, [selectedId, Boolean(chat), chat?.isRunning, dashboardKey, markSeen]);
 
-  // A sent message stops being pending once the history has it, or once the reply it started or joined has come and gone.
+  // A message you sent stops being shown from here once the server lists it (as pending, or in the history),
+  // or once the reply it started or joined has come and gone.
   useEffect(() => {
     setPending((items) => {
       const next = items.filter((item) => item.id !== selectedId
@@ -290,7 +294,7 @@ export function ChatScreen() {
             ...efforts.map((level) => ({ value: level, label: levelName(level), hint: `${level}${level === effort ? " · current" : ""}` })),
           ], typedThink.level, "/think")
         : typedAccess && choosing
-          ? choices((["supervised", "full"] as const).map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
+          ? choices(ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
           : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
               key: item.command, label: item.command, hint: item.hint,
               apply: () => { setDraft(["/stop", "/compact", "/reset"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },
@@ -367,6 +371,8 @@ export function ChatScreen() {
       try {
         id = await createChat({ key: dashboardKey });
         setCreatedId(id);
+        // The chat has its own address from now, so a reload while it sends comes back to it.
+        router.replace(`/chat/${id}`);
       } catch (cause) {
         fail(cause);
         return;
@@ -391,7 +397,7 @@ export function ChatScreen() {
       sent = {
         id, text: message, attachments: uploaded,
         baselineCount: fresh ? 0 : messages.filter((item) => item.role === "user" && item.text === message).length,
-        seenRunning: !fresh && Boolean(chat?.isRunning),
+        seenRunning: !fresh && Boolean(chat?.isRunning), sent: false,
       };
       const entry = sent;
       setPending((items) => [...items, entry]);
@@ -400,11 +406,9 @@ export function ChatScreen() {
         key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, model,
         ...(fresh ? { effort: draftEffort ?? "", access: draftAccess } : {}),
       });
-      if (fresh) {
-        router.replace(`/chat/${id}`);
-        // Full access is chosen for a chat, never carried into the next new one.
-        setDraftAccess(undefined);
-      }
+      setPending((items) => items.map((item) => item === entry ? { ...item, sent: true } : item));
+      // Full access is chosen for a chat, never carried into the next new one.
+      if (fresh) setDraftAccess(undefined);
     } catch (cause) {
       setUploading(null);
       setPending((items) => items.filter((item) => item !== sent));
@@ -421,8 +425,11 @@ export function ChatScreen() {
     const shown = text ?? source?.text ?? "";
     setBusy(true); setError("");
     stick.current = true;
-    // The old copy of the message counts until it is removed, so it is part of the baseline.
-    const entry: Pending = { id: selectedId, text: shown, attachments: source?.attachments ?? [], baselineCount: messages.filter((message) => message.role === "user" && message.text === shown).length, seenRunning: false };
+    // The copy being replaced is removed before the new one is listed, so it is not part of the baseline.
+    const entry: Pending = {
+      id: selectedId, text: shown, attachments: source?.attachments ?? [], seenRunning: false, sent: true,
+      baselineCount: messages.filter((message) => message.role === "user" && message.text === shown).length - (source?.text === shown ? 1 : 0),
+    };
     try {
       setPending((items) => [...items, entry]);
       await rewindChat({ key: dashboardKey, id: selectedId, messageId, text });
@@ -449,8 +456,10 @@ export function ChatScreen() {
   }
 
   const stop = () => { if (selectedId) void stopChat({ key: dashboardKey, id: selectedId }).catch(fail); };
-  const lastUser = [...messages].reverse().find((message) => message.role === "user");
-  const lastMessage = messages.at(-1);
+  // Only what is in the history can be regenerated, edited or branched from.
+  const saved = messages.filter((message) => !message.pending);
+  const lastUser = [...saved].reverse().find((message) => message.role === "user");
+  const lastMessage = saved.at(-1);
   const loading = Boolean(selectedId) && (chat === undefined || messageStatus === "LoadingFirstPage");
   const missing = Boolean(selectedId) && chat === null;
   const title = summary?.title ?? (selectedId ? chat?.title ?? "" : "New chat");
@@ -532,7 +541,7 @@ export function ChatScreen() {
                   onBranch={() => void branch(message.id)}
                 />
               ))}
-              {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} />)}
+              {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} />)}
               {waiting && !here.length && <ReplyInProgress streaming={chat?.streaming} />}
               {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
               {chat?.lastError && !chat.isRunning && !waiting && (

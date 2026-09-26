@@ -6,7 +6,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
-import type { Access } from "@/convex/lib/commands";
+import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access } from "@/convex/lib/commands";
 import { ago, errorText, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -14,9 +14,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ActionButton, CommandLine, CopyButton, EmptyState, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
+import { ACCESS_ICONS } from "../chat/composer";
+import { ActionButton, CommandLine, CopyButton, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
 
 const TABS = ["general", "keys", "telegram", "whatsapp"] as const;
 
@@ -148,13 +150,25 @@ function NewChatAccess() {
     store.setQuery(api.dashboard.getDefaultAccess, { key: args.key }, args.access);
   });
   const choose = (access: Access) => void setDefault({ key: dashboardKey, access })
-    .then(() => toast.success(access === "full" ? "New chats start with Full access." : "New chats start supervised."), (cause) => toast.error(errorText(cause)));
+    .then(() => toast.success(`New chats start on ${ACCESS_LABELS[access]}.`), (cause) => toast.error(errorText(cause)));
+  const Icon = current ? ACCESS_ICONS[current] : ShieldCheckIcon;
   return (
-    <Section title="Access for new chats" description="What Perry may do without asking in chats you start from now on. Change any one chat from its composer, or with /access.">
-      <ChoiceCards label="Access for new chats" value={current} disabled={current === undefined} onChange={choose} options={[
-        { value: "supervised", title: "Supervised", icon: <ShieldCheckIcon />, body: "Works in its sandbox, and asks before anything beyond it. Your computer's policy and saved rules apply." },
-        { value: "full", title: "Full access", icon: <ShieldAlertIcon />, warning: true, body: "No sandbox, and it never asks. It can change or delete anything your account can. Every command still shows in Activity." },
-      ]} />
+    <Section title="Access for new chats" description="What Perry may do without asking in chats you start. Change any chat from its composer, or with /access.">
+      <Select modal={false} items={ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode] }))} value={current ?? null} onValueChange={(value) => { if (value) choose(value as Access); }} disabled={current === undefined}>
+        <SelectTrigger aria-label="Access for new chats" className={cn("w-56", current === "full" && "text-warning")}><Icon className="size-4" /><SelectValue /></SelectTrigger>
+        <SelectContent className="w-56">
+          {ACCESSES.map((mode) => {
+            const ItemIcon = ACCESS_ICONS[mode];
+            return (
+              <SelectItem key={mode} value={mode}>
+                <ItemIcon className={cn("size-4", mode === "full" && "text-warning")} />
+                <span className="flex-1">{ACCESS_LABELS[mode]}</span>
+                <InfoTip>{ACCESS_HINTS[mode]}</InfoTip>
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
     </Section>
   );
 }

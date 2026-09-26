@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { defaultAccess } from "./installation";
 import { vAccess, vChannel } from "./schema";
 import { deleteThread } from "./lib/agent";
@@ -160,13 +161,26 @@ export const touch = internalMutation({
   },
 });
 
+/** An outbox entry is only a stand-in; past this it is taken to be lost, and dropped. */
+export const OUTBOX_TTL_MS = 30 * 60_000;
+
+/** Take a sent message out of the chat's outbox, now that a turn or the history has it. */
+export async function takeFromOutbox(ctx: MutationCtx, chat: Doc<"conversations"> | null, text: string) {
+  if (!chat?.outbox?.length) return;
+  const at = chat.outbox.findIndex((entry) => entry.text === text);
+  const fresh = chat.outbox.filter((entry, index) => index !== at && entry.at > Date.now() - OUTBOX_TTL_MS);
+  if (fresh.length !== chat.outbox.length) await ctx.db.patch(chat._id, { outbox: fresh.length ? fresh : undefined });
+}
+
 export const finishWebTurn = internalMutation({
-  args: { id: v.id("conversations") },
+  /** The message the turn was for, when it never became a turn. */
+  args: { id: v.id("conversations"), prompt: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const chat = await ctx.db.get(args.id);
     if (chat?.channel === "web") {
       await ctx.db.patch(args.id, { pendingTurns: Math.max(0, (chat.pendingTurns ?? 0) - 1) });
+      if (args.prompt !== undefined) await takeFromOutbox(ctx, await ctx.db.get(args.id), args.prompt);
     }
     return null;
   },

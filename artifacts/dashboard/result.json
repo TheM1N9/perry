@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-26T01:50:33.260Z",
+  "ranAt": "2026-09-26T12:19:15.554Z",
   "platform": "win32",
   "passed": true,
   "checks": {
@@ -27,27 +27,30 @@
     "\"/\" offers the commands": true,
     "a first message makes the chat and queues its turn": true,
     "the sent message shows at once": true,
+    "a message no computer could take stays in the chat through a reload": true,
+    "a message a computer has taken is not left \"Sending…\"": true,
+    "a message waiting on its reply stays through a reload": true,
     "the system's dark theme applies": true,
     "a theme picked in Settings sticks": true,
     "nothing overflows at 1440, 1280, 768 or 375": true,
-    "text meets WCAG AA in light and dark (1454 text nodes)": true,
+    "text meets WCAG AA in light and dark (1541 text nodes)": true,
     "on a phone the sidebar opens as a sheet": true,
     "no uncaught errors or console errors": true
   },
   "failures": {},
   "notes": {
     "seeded": {
-      "pinnedChat": "jcsn6gzbnakx8j2p17jpw4vvtz",
-      "approvalChat": "87673ewr1mj47yxphx1ag522xz",
-      "approvalId": "rjs4zm9bjs9jxv1xk1jrfx259c",
-      "jobChat": "zj5xnf9e1kabwbkjvpvdtkm5ae",
-      "blockedTask": "ej6ypyz1m5er32er7ws2kw4azk",
-      "failedTask": "nn7fjv9pw2vw9dqbz7835fghaq",
-      "watch": "h17q2k40h9wkyfq96f4rbqkzn5",
+      "pinnedChat": "e2jwm7gprytq4fbas6vnhk9drv",
+      "approvalChat": "vfhcmyfzkaw2z70hh9rfgj1e0x",
+      "approvalId": "d9j4vv2vnsmt2vh3c3t02xvv3n",
+      "jobChat": "902fpxq723hdazdb7m5qr5tave",
+      "blockedTask": "fdncmemyd0mtfryqzvd6jc9rbx",
+      "failedTask": "jmycj371xy5c958myna2c28scj",
+      "watch": "dqgbsn18kdfbph3k6nhd268asj",
       "chats": [
-        "a21dhfxg49mmey4kg1k57zsap9",
-        "cpfdfgnkaes7w0wqq786zk9tcn",
-        "wqxagn5zkwqfcc2xybbjvn6ged"
+        "d0mmg0bkfmer46chg2864enfpe",
+        "rrj7vj38q4cptr9a4e4jej88e9",
+        "ghw4pvjhgc3kqhe7js845vmcyz"
       ]
     },
     "pageErrors": []

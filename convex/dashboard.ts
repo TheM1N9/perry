@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, mutation, query, type MutationCtx } from "./_generated/server";
+import { action, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { ABSOLUTE_PATH } from "./media";
 import { defaultAccess, type Onboarding } from "./installation";
@@ -15,6 +15,7 @@ import { vAccess, vMemoryKind, vPolicy } from "./schema";
 import { APPROVAL_TTL_MS } from "./approvals";
 import { QUIET } from "./jobs";
 import type { VaultEntry } from "./vault";
+import { OUTBOX_TTL_MS } from "./conversations";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -37,7 +38,11 @@ export type ChatMessage = {
   text: string;
   createdAt: number;
   attachments: Array<{ url: string; fileName: string; contentType: string }>;
+  /** Sent, and not yet in the history: the history only gets it with its reply. */
+  pending?: boolean;
 };
+
+const ATTACHMENTS_MARKER = /\n?<!-- attachments:([^>]+) -->\s*$/;
 
 function assistantMedia(text: string): Array<{ url: string; fileName: string; contentType: string }> {
   const found = new Set<string>();
@@ -369,9 +374,7 @@ export const getChatMessages = query({
     const codexTurns = await ctx.db.query("codexTurns")
       .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.id))
       .collect();
-    return {
-      ...page,
-      page: page.page.map((doc): ChatMessage => {
+    const history = page.page.map((doc): ChatMessage => {
         const raw = typeof doc.text === "string" ? doc.text : "";
         const marker = raw.match(/\n?<!-- attachments:([^>]+) -->\s*$/);
         const messageKey = marker?.[1]?.trim();
@@ -394,10 +397,60 @@ export const getChatMessages = query({
               ? attachmentMap.get(`codex-${recovered._id}`) ?? []
               : doc.message?.role === "assistant" ? assistantMedia(raw) : [],
         };
-      }).filter((message) => message.text.trim().length > 0 || message.attachments.length > 0),
-    };
+      }).filter((message) => message.text.trim().length > 0 || message.attachments.length > 0);
+    // The newest page also carries what was sent and is not in the history yet, from the same read, so
+    // a message never shows twice or blinks out between the outbox, its turn and the history.
+    const pending = args.paginationOpts.cursor === null ? inFlight(conversation, codexTurns, await steersOf(ctx, codexTurns)) : [];
+    const saved = history.filter((message) => message.role === "user");
+    const shown = pending.flatMap((entry, index): ChatMessage[] => {
+      // Saved a moment before its turn says so: the saved copy stands.
+      const copy = saved.findIndex((message) => message.text === entry.text && message.createdAt >= entry.at);
+      if (copy >= 0) { saved.splice(copy, 1); return []; }
+      const marker = entry.prompt.match(ATTACHMENTS_MARKER);
+      return [{
+        id: `pending-${entry.at}-${index}`,
+        role: "user",
+        text: entry.text,
+        createdAt: entry.at,
+        attachments: marker?.[1] ? attachmentMap.get(marker[1].trim()) ?? [] : [],
+        pending: true,
+      }];
+    });
+    return { ...page, page: [...shown.reverse(), ...history] };
   },
 });
+
+type InFlight = { prompt: string; text: string; at: number };
+
+/** The live turns' steers that joined them, and those still waiting to. */
+async function steersOf(ctx: QueryCtx, turns: Doc<"codexTurns">[]): Promise<Doc<"codexSteers">[]> {
+  const live = turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush);
+  const found: Doc<"codexSteers">[] = [];
+  for (const turn of live) {
+    for (const status of ["pending", "applied"] as const) {
+      found.push(...await ctx.db.query("codexSteers").withIndex("by_turn_status", (q) => q.eq("turnId", turn._id).eq("status", status)).collect());
+    }
+  }
+  return found;
+}
+
+/**
+ * The owner's messages not in the history yet, oldest first: in the outbox
+ * until a turn takes them, then the prompt of a turn (or a steer that joined
+ * it) until its reply is saved with it.
+ */
+function inFlight(conversation: Doc<"conversations">, turns: Doc<"codexTurns">[], steers: Doc<"codexSteers">[]): InFlight[] {
+  const entry = (prompt: string, at: number): InFlight => ({ prompt, at, text: prompt.replace(ATTACHMENTS_MARKER, "").trimEnd() });
+  const items: InFlight[] = [
+    ...(conversation.outbox ?? []).filter((item) => item.at > Date.now() - OUTBOX_TTL_MS).map((item) => entry(item.text, item.at)),
+    ...turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush && !turn.hidden
+      // A finished turn is saved a moment later; one left unsaved and unfinalized for long is not coming.
+      && (turn.status === "queued" || turn.status === "running" || (turn.finalizedAt === undefined && turn.createdAt > Date.now() - OUTBOX_TTL_MS)))
+      .map((turn) => entry(turn.prompt, turn.createdAt)),
+    ...steers.map((steer) => entry(steer.prompt, steer.createdAt)),
+  ];
+  return items.sort((a, b) => a.at - b.at);
+}
 
 export const generateUploadUrl = mutation({
   args: { key: vKey },
@@ -477,6 +530,8 @@ export const sendChat = mutation({
       lastMessageAt: Date.now(),
       title: chat.title === "New chat" ? (text || "Attached files").slice(0, 80) : chat.title,
       pendingTurns: (chat.pendingTurns ?? 0) + 1,
+      // Shown in the chat from now, until a turn or the history has it (conversations.takeFromOutbox).
+      outbox: [...(chat.outbox ?? []).filter((entry) => entry.at > Date.now() - OUTBOX_TTL_MS), { text: prompt, at: Date.now() }],
       ...(args.model !== undefined ? { model: args.model.trim() || undefined } : {}),
       ...(args.effort !== undefined ? { effort: args.effort.trim() || undefined } : {}),
       ...(args.access !== undefined ? { access: args.access } : {}),

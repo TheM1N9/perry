@@ -119,8 +119,14 @@ async function hideInChat(ctx: MutationCtx, conversationId: Id<"conversations">,
   const scrub = (text: string) => hide(text, [value]);
   let changed = 0;
 
-  // A web chat is named after its first message.
-  if (conversation.title?.includes(value)) { await ctx.db.patch(conversation._id, { title: scrub(conversation.title) }); changed++; }
+  // A web chat is named after its first message, and shows a sent one from its outbox until the history has it.
+  if (conversation.title?.includes(value) || conversation.outbox?.some((entry) => entry.text.includes(value))) {
+    await ctx.db.patch(conversation._id, {
+      ...(conversation.title ? { title: scrub(conversation.title) } : {}),
+      ...(conversation.outbox ? { outbox: conversation.outbox.map((entry) => ({ ...entry, text: scrub(entry.text) })) } : {}),
+    });
+    changed++;
+  }
 
   const threadId = ctx.db.normalizeId("agentThreads", conversation.threadId);
   if (threadId) {
