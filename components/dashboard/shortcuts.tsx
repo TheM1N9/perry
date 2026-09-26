@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { CheckIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -11,7 +12,7 @@ import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { useIsMac } from "@/hooks/use-shortcuts";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { CommandLine, List, ListSkeleton, Section } from "./common";
+import { List, ListSkeleton, Section } from "./common";
 
 /**
  * Settings → Keyboard shortcuts: each one, and the keys it is on. Click one
@@ -117,10 +118,9 @@ function ResetButton({ id }: { id: ShortcutId }) {
 function PetStatus({ pet, wanted, mac }: { pet: { running: boolean; hotkey?: string; error?: string }; wanted: string; mac: boolean }) {
   if (!pet.running) {
     return (
-      <div className="mt-2 space-y-1.5 text-sm text-muted-foreground">
-        <p>The desktop pet isn't running. Start him from a terminal on this computer:</p>
-        <CommandLine>perry pet</CommandLine>
-      </div>
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        The desktop pet isn't on. <Link href="/settings?tab=general" className="font-medium text-foreground underline-offset-2 hover:underline">Turn him on in General</Link>.
+      </p>
     );
   }
   if (pet.error) {

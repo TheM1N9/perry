@@ -33,6 +33,7 @@ import * as memories from "../convex/memories";
 import * as models from "../convex/models";
 import * as notify from "../convex/notify";
 import * as persona from "../convex/persona";
+import * as pet from "../convex/pet";
 import * as recovery from "../convex/recovery";
 import * as runner from "../convex/runner";
 import * as runs from "../convex/runs";
@@ -76,6 +77,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "models": models,
   "notify": notify,
   "persona": persona,
+  "pet": pet,
   "recovery": recovery,
   "runner": runner,
   "runs": runs,

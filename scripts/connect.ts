@@ -27,7 +27,7 @@ import { install } from "./service";
 
 const args = process.argv.slice(2);
 const option = (name: string) => { const at = args.indexOf(name); return at >= 0 ? args[at + 1] : undefined; };
-const port = Number(process.env.PERRY_PORT ?? 3000);
+const port = Number(process.env.PERRY_PORT ?? 7377);
 
 if (args.includes("--token-only")) {
   const key = process.env.DASHBOARD_KEY;

@@ -1,6 +1,6 @@
 "use client";
 
-import { XIcon } from "lucide-react";
+import { CheckIcon, ExternalLinkIcon, InboxIcon, ListTodoIcon, MessageCircleIcon, MoonIcon, XIcon } from "lucide-react";
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
@@ -14,6 +14,7 @@ import { countdown, dueLabel } from "@/lib/when";
 import { PlatypusArt } from "@/components/dashboard/platypus";
 import { QuickAdd, StreakBadge, TodoRows } from "@/components/todos/todos";
 import { PetChat, type PetChatId } from "./chat";
+import { Empty } from "./empty";
 import { PetNeedsYou } from "./needs-you";
 import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
 
@@ -393,7 +394,8 @@ function Pet() {
   }
   const asleep = !onDuty && now - lastBusy.current >= NAP_AFTER_MS;
   const panel = (
-    <Panel tab={tab} onTab={setTab} needs={needs} onClose={() => setOpen(false)}>
+    <Panel tab={tab} onTab={setTab} needs={needs} onClose={() => setOpen(false)} onOpenApp={() => openPath("/")}
+      status={petChat?.isRunning ? "Working on it…" : needs ? `${plural(needs, "thing")} waiting on you` : "Here when you need him"} busy={Boolean(petChat?.isRunning)}>
       {tab === "chat" ? (
         <PetChat chatId={chatId} onChatId={setChatId} draft={draft} onDraft={setDraft} open={openPath}
           voice={window.perryPet ? voice : undefined} hotkey={hotkey.hotkey} byHotkey={talkSends.current} sendSignal={sendSignal}
@@ -450,23 +452,24 @@ function Bubble({ title, detail, code, tone, onClose, onOpen, children }: {
       style={{ transformOrigin: "85% 100%" }}
       onClick={onOpen}
       className={cn(
-        "relative mr-6 w-max min-w-[168px] max-w-[300px] rounded-2xl border bg-card px-3.5 py-2.5 text-card-foreground shadow-[0_10px_30px_rgb(0_0_0/0.18)]",
-        "after:absolute after:right-9 after:top-full after:border-8 after:border-transparent after:border-t-card",
-        tone === "late" && "border-destructive/40",
-        tone === "ask" && "border-warning/50",
-        onOpen && "cursor-pointer hover:bg-muted/40",
+        "group/bubble relative mr-6 w-max min-w-[176px] max-w-[300px] rounded-2xl border bg-popover px-3.5 py-3 text-popover-foreground shadow-[0_12px_32px_-8px_rgb(0_0_0/0.35)]",
+        tone === "late" && "border-destructive/45",
+        tone === "ask" && "border-warning/55",
+        onOpen && "cursor-pointer",
       )}
     >
+      <span aria-hidden className={cn("absolute right-10 -bottom-[7px] size-3.5 rotate-45 rounded-br-[3px] border-r border-b bg-popover",
+        tone === "late" && "border-destructive/45", tone === "ask" && "border-warning/55")} />
       {onClose && (
         <button type="button" aria-label="Hide" onClick={(event) => { event.stopPropagation(); onClose(); }}
           className="absolute top-1.5 right-1.5 grid size-5 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-muted">
           <XIcon className="size-3" aria-hidden />
         </button>
       )}
-      <p className={cn("text-[14px] font-semibold leading-snug", onClose && "pr-4")}>{title}</p>
+      <p className={cn("text-[14px] font-semibold leading-snug tracking-[-0.005em]", onClose && "pr-5", onOpen && "group-hover/bubble:text-primary")}>{title}</p>
       {code && <pre className="mt-1.5 max-h-16 overflow-hidden rounded-md bg-muted px-2 py-1 font-mono text-[11.5px] whitespace-pre-wrap [overflow-wrap:anywhere]">{code.slice(0, 160)}</pre>}
       {detail && <p className={cn("mt-0.5 text-[12.5px] text-pretty nums", tone === "late" ? "font-medium text-destructive" : tone === "soon" ? "font-medium text-warning" : "text-muted-foreground")}>{detail}</p>}
-      {children && <div className="mt-2 flex gap-1.5">{children}</div>}
+      {children && <div className="mt-2.5 flex gap-1.5">{children}</div>}
     </motion.div>
   );
 }
@@ -477,8 +480,8 @@ function BubbleButton({ primary, onClick, children }: { primary?: boolean; onCli
       type="button"
       onClick={(event) => { event.stopPropagation(); onClick(); }}
       className={cn(
-        "h-7 cursor-pointer rounded-full px-3 text-[12.5px] font-medium transition-colors",
-        primary ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-muted text-foreground hover:bg-accent",
+        "h-7 cursor-pointer rounded-lg px-3 text-[12.5px] font-medium transition-colors",
+        primary ? "bg-primary text-primary-foreground hover:bg-primary/90" : "border bg-background text-foreground hover:bg-muted",
       )}
     >
       {children}
@@ -641,10 +644,13 @@ function Body({ mood, level = 0, asleep, cheer = 0, badge = 0, onClick, onTouch 
 }
 
 /** His panel: a small Perry, with your chats, your to-dos, and what is waiting on you. */
-function Panel({ tab, onTab, needs, onClose, children }: {
-  tab: Tab; onTab: (tab: Tab) => void; needs: number; onClose: () => void; children: ReactNode;
+function Panel({ tab, onTab, needs, status, busy, onClose, onOpenApp, children }: {
+  tab: Tab; onTab: (tab: Tab) => void; needs: number;
+  /** What he is up to, under his name. */
+  status: string; busy: boolean;
+  onClose: () => void; onOpenApp: () => void; children: ReactNode;
 }) {
-  const tabs: Array<[Tab, string]> = [["chat", "Chat"], ["todos", "To-dos"], ["needs", "Needs you"]];
+  const tabs: Array<[Tab, string, typeof MessageCircleIcon]> = [["chat", "Chat", MessageCircleIcon], ["todos", "To-dos", ListTodoIcon], ["needs", "Needs you", InboxIcon]];
   return (
     <motion.section
       key="panel"
@@ -655,24 +661,37 @@ function Panel({ tab, onTab, needs, onClose, children }: {
       exit={{ opacity: 0, y: 8, scale: 0.97 }}
       transition={{ type: "spring", stiffness: 420, damping: 30 }}
       style={{ transformOrigin: "85% 100%" }}
-      className="flex h-[470px] w-[372px] flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-[0_16px_40px_rgb(0_0_0/0.22)]"
+      className="flex h-[480px] w-[372px] flex-col overflow-hidden rounded-[20px] border bg-background text-foreground shadow-[0_24px_56px_-12px_rgb(0_0_0/0.4)]"
     >
-      <header className="flex items-center gap-1 px-2.5 pt-2.5 pb-2">
-        <div role="tablist" aria-label="Perry" className="flex gap-0.5 rounded-lg bg-muted p-0.5">
-          {tabs.map(([value, label]) => (
-            <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => onTab(value)}
-              className={cn("flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-colors",
-                tab === value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-              {label}
-              {value === "needs" && needs > 0 && <span className="rounded-full bg-warning px-1.5 text-[10.5px] font-bold text-background">{needs}</span>}
-            </button>
-          ))}
+      <header className="flex items-center gap-2.5 px-3.5 pt-3 pb-2.5">
+        <span className="relative shrink-0">
+          <PlatypusArt head className="size-9 rounded-full bg-brand-soft" />
+          <span className={cn("absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-background", busy ? "animate-pulse bg-primary" : "bg-success")} aria-hidden />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14.5px] leading-tight font-semibold tracking-[-0.01em]">Perry</p>
+          <p className="truncate text-[12px] leading-tight text-muted-foreground" aria-live="polite">{status}</p>
         </div>
-        <span className="flex-1" />
-        <button type="button" onClick={onClose} aria-label="Close" className="grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
+        <button type="button" onClick={onOpenApp} aria-label="Open Perry" title="Open Perry"
+          className="grid size-8 cursor-pointer place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
+          <ExternalLinkIcon className="size-4" aria-hidden />
+        </button>
+        <button type="button" onClick={onClose} aria-label="Close" title="Close"
+          className="grid size-8 cursor-pointer place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
           <XIcon className="size-4" aria-hidden />
         </button>
       </header>
+      <div role="tablist" aria-label="Perry" className="mx-3 mb-2.5 grid grid-cols-3 gap-0.5 rounded-xl bg-muted p-[3px]">
+        {tabs.map(([value, label, Icon]) => (
+          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => onTab(value)}
+            className={cn("flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-[9px] text-[12.5px] font-medium transition-colors",
+              tab === value ? "bg-background text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08),0_0_0_1px_var(--border)]" : "text-muted-foreground hover:text-foreground")}>
+            <Icon className="size-3.5" aria-hidden />
+            {label}
+            {value === "needs" && needs > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-warning px-1 text-[10.5px] font-bold text-background nums">{needs}</span>}
+          </button>
+        ))}
+      </div>
       {children}
     </motion.section>
   );
@@ -694,25 +713,34 @@ function PetTodos({ board, now, onDone, onAdded }: {
 
   return (
     <>
-      <div className="flex items-start gap-2 px-3.5">
-        <QuickAdd autoFocus onAdded={onAdded} className="min-w-0 flex-1" />
-        <div className="pt-2"><StreakBadge days={board?.streak ?? 0} /></div>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-1">
-        {board === undefined ? <p className="px-2 py-3 text-[13px] text-muted-foreground">Loading…</p>
-          : board.open.length === 0 ? <p className="px-2 py-3 text-[13px] text-muted-foreground">Nothing to do. Type something above, or tell Perry in a chat.</p>
-            : <TodoRows todos={board.open} now={now} compact onDone={onDone} />}
+      <QuickAdd autoFocus onAdded={onAdded} className="px-3" />
+      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1">
+        {board === undefined ? <p className="px-2.5 py-3 text-[13px] text-muted-foreground">Loading…</p>
+          : board.open.length === 0 ? (
+            <Empty title={board.doneToday.length ? "All done for now" : "Nothing on your list"}>
+              Type one above, like “stretch every day at 11”, or tell Perry in a chat.
+            </Empty>
+          ) : (<>
+            <div className="flex items-center gap-2 px-2.5 pt-1 pb-0.5">
+              <p className="flex-1 text-[11.5px] font-medium tracking-wide text-muted-foreground uppercase">
+                {leftToday ? `${leftToday} left today` : `${board.open.length} to do`}
+              </p>
+              <StreakBadge days={board.streak} />
+            </div>
+            <TodoRows todos={board.open} now={now} compact onDone={onDone} />
+          </>)}
         {board && board.doneToday.length > 0 && (
-          <div className="px-1.5 pt-1">
-            <button type="button" onClick={() => setShowDone((value) => !value)} className="cursor-pointer text-[12px] font-medium text-muted-foreground hover:text-foreground" aria-expanded={showDone}>
-              {board.doneToday.length} done today
+          <div className="px-1 pt-1.5">
+            <button type="button" onClick={() => setShowDone((value) => !value)} aria-expanded={showDone}
+              className="flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] font-medium text-muted-foreground hover:text-foreground">
+              <CheckIcon className="size-3.5 text-success" aria-hidden />{board.doneToday.length} done today
             </button>
             {showDone && <TodoRows todos={board.doneToday} now={now} compact />}
           </div>
         )}
       </div>
       {leftToday > 0 && (
-        <footer className="flex items-center gap-1.5 border-t px-3 py-2">
+        <footer className="flex h-11 items-center gap-1.5 border-t bg-muted/30 px-3">
           {ending ? (
             <>
               <BubbleButton primary onClick={() => { void endDay({ key, action: "move" }); setEnding(false); }}>Move {leftToday} to tomorrow</BubbleButton>
@@ -721,8 +749,9 @@ function PetTodos({ board, now, onDone, onAdded }: {
               <button type="button" onClick={() => setEnding(false)} className="cursor-pointer text-[12px] text-muted-foreground hover:text-foreground">Cancel</button>
             </>
           ) : (
-            <button type="button" onClick={() => setEnding(true)} className="cursor-pointer text-[12.5px] font-medium text-muted-foreground hover:text-foreground">
-              End the day · {leftToday} left
+            <button type="button" onClick={() => setEnding(true)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-1 text-[12.5px] font-medium text-muted-foreground hover:text-foreground">
+              <MoonIcon className="size-3.5" aria-hidden />End the day · {leftToday} left
             </button>
           )}
         </footer>

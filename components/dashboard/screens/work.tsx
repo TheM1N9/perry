@@ -8,6 +8,7 @@ import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import type { JobView } from "@/convex/jobs";
 import { ago, fullDate, plural, useNow } from "@/lib/format";
+import { describeSchedule } from "@/lib/when";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import {
@@ -24,27 +25,6 @@ import { ActionButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCou
 
 const TABS = ["schedules", "plans", "goals", "watches"] as const;
 type Tab = (typeof TABS)[number];
-
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-/** A plain-English reading of the common cron shapes; anything else is shown as written. */
-export function describeSchedule(schedule: string): string | null {
-  const parts = schedule.trim().split(/\s+/);
-  if (parts.length !== 5) return null;
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-  const clock = (h: string) => new Date(2000, 0, 1, Number(h), Number(minute)).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  const at = /^\d+$/.test(minute) && /^\d+$/.test(hour) ? clock(hour) : null;
-  if (/^\*\/\d+$/.test(minute) && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") return `Every ${minute.slice(2)} minutes`;
-  if (/^\d+$/.test(minute) && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") return `Every hour at :${minute.padStart(2, "0")}`;
-  if (/^\d+$/.test(minute) && /^\*\/\d+$/.test(hour) && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") return `Every ${hour.slice(2)} hours`;
-  if (/^\d+$/.test(minute) && /^\d+(,\d+)+$/.test(hour) && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") return `Daily at ${hour.split(",").map(clock).join(", ")}`;
-  if (!at || month !== "*") return null;
-  if (dayOfMonth === "*" && dayOfWeek === "*") return `Every day at ${at}`;
-  if (dayOfMonth === "*" && dayOfWeek === "1-5") return `Weekdays at ${at}`;
-  if (dayOfMonth === "*" && /^[0-6]$/.test(dayOfWeek)) return `Every ${DAYS[Number(dayOfWeek)]} at ${at}`;
-  if (/^\d+$/.test(dayOfMonth) && dayOfWeek === "*") return `Monthly on day ${dayOfMonth} at ${at}`;
-  return null;
-}
 
 /**
  * What runs without you: schedules, the plans Perry keeps as it works, your

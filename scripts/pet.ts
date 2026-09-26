@@ -20,33 +20,28 @@
  * for everyone; `perry update` updates it when it is there.
  */
 
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { bold, dim, green, red, yellow } from "./lib";
-import { PORT, REPO, dashboardUp, exec, nodePath, tool } from "./perry";
+import { bold, dim, done, red, run, spinner, tail, yellow, type Spinner } from "./lib";
+import { PORT, REPO, dashboardUp, exec, nodePath, readEnvFile, tool, waitFor } from "./perry";
 
 const PET = join(REPO, "pet");
-const LABEL = "com.perry.pet";
+/**
+ * What his start-at-login entry is called. A Perry with its own PERRY_HOME (a
+ * second checkout, a test) gets its own, so it never replaces another's.
+ */
+const OWN_HOME = process.env.PERRY_HOME ? `-${createHash("sha256").update(process.env.PERRY_HOME).digest("hex").slice(0, 8)}` : "";
+const LABEL = `com.perry.pet${OWN_HOME}`;
 const RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-const RUN_VALUE = "Perry pet";
+const RUN_VALUE = `Perry pet${OWN_HOME}`;
 /** Settings the pet started at login would not otherwise have. */
 const CARRIED_ENV = ["PERRY_HOME", "PERRY_PORT"];
 
 const say = (text = "") => console.log(text);
 export const installed = () => existsSync(join(PET, "node_modules", "electron"));
-
-/** Electron's own program, downloaded by its package the first time it is asked for. */
-function electron(): string | null {
-  const asked = spawnSync(nodePath(), ["-e", "process.stdout.write('\\n' + require('electron'))"], { cwd: PET, encoding: "utf8", windowsHide: true });
-  const path = asked.status === 0 ? asked.stdout.trim().split(/\r?\n/).pop()?.trim() : undefined;
-  if (!path || !existsSync(path)) {
-    say(red(`  Could not get Electron: ${`${asked.stderr ?? ""}`.trim().split(/\r?\n/).slice(-3).join(" ") || "no path"}`));
-    return null;
-  }
-  return path;
-}
 
 function carriedEnv(): Record<string, string> {
   const env: Record<string, string> = {};
@@ -61,7 +56,7 @@ const desktopWord = (s: string) => `"${s.replace(/(["`$\\])/g, "\\$1")}"`;
 function autostartFile(): string | null {
   if (process.platform === "darwin") return join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
   if (process.platform === "win32") return null;
-  return join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "autostart", "perry-pet.desktop");
+  return join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "autostart", `perry-pet${OWN_HOME}.desktop`);
 }
 
 /** Start the pet at login. It is not restarted if it quits: quitting from the tray means it. */
@@ -125,34 +120,90 @@ function launch(program: string, args: string[] = []) {
   spawn(program, [PET, ...args], { cwd: PET, env, detached: true, stdio: "ignore", windowsHide: false }).unref();
 }
 
+/**
+ * A step that makes you wait, with ora's spinner (lib.spinner). Started from
+ * the dashboard, whose server reads this command's output rather than a
+ * terminal, each step is also named on a line of its own, for it to show.
+ */
+async function step(text: string): Promise<Spinner> {
+  if (process.env.PERRY_PROGRESS === "1") say(`::step ${text}`);
+  return await spinner(text);
+}
+
+/** Electron's own program, downloaded by its package the first time it is asked for. */
+async function electron(): Promise<{ path?: string; error?: string }> {
+  const asked = await run(nodePath(), ["-e", "process.stdout.write('\\n' + require('electron'))"], { cwd: PET });
+  const path = asked.code === 0 ? asked.output.trim().split(/\r?\n/).pop()?.trim() : undefined;
+  if (!path || !existsSync(path)) return { error: tail(asked.output, 3) || "Electron's package gave no program." };
+  return { path };
+}
+
+/** pnpm, installing the pet's own packages (pet/package.json); a .cmd on Windows, so through cmd.exe there. */
+async function installPackages(): Promise<{ code: number | null; output: string }> {
+  const [command, ...args] = tool("pnpm", ["install", "--dir", "pet", "--frozen-lockfile"]);
+  return await run(command, args, { cwd: REPO });
+}
+
+/** Whether his page has checked in with Perry, which it does as it opens. */
+async function onScreen(): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${PORT}/api/backend/call`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "dashboard:getShortcuts", args: { key: process.env.DASHBOARD_KEY ?? readEnvFile().DASHBOARD_KEY ?? "" } }),
+    });
+    const body = await response.json() as { value?: { pet: { running: boolean } } };
+    return Boolean(body.value?.pet.running);
+  } catch {
+    return false;
+  }
+}
+
 async function on(): Promise<boolean> {
   say(`\n${bold("Perry on your desktop")}`);
   if (!installed()) {
-    say(dim("  Installing his window and his ears (Electron and ONNX Runtime, under 1 GB), once…"));
-    if (exec(tool("pnpm", ["install", "--dir", "pet", "--frozen-lockfile"]), { quiet: true }).code !== 0) {
-      say(red("  pnpm could not install it. Run: pnpm install --dir pet"));
+    const installing = await step("Installing his window and his ears (Electron and ONNX Runtime, under 1 GB), once…");
+    const result = await installPackages();
+    if (result.code !== 0) {
+      installing.fail(red("pnpm could not install him:"));
+      say(dim(tail(result.output)));
       return false;
     }
+    installing.succeed("installed");
   }
-  const program = electron();
-  if (!program) return false;
-  if (!(await dashboardUp())) say(yellow(`  Perry isn't running, so he'll wait for it: ${bold("perry start")}`));
-  const atLogin = startAtLogin(program);
-  launch(program);
-  say(`  ${green("started")}  in the bottom-right corner of your screen`);
+  // The first time, Electron's package downloads its program (about 100 MB); after that this is instant.
+  const getting = await step("Getting Electron ready…");
+  const program = await electron();
+  if (!program.path) {
+    getting.fail(red(`Could not get Electron: ${program.error}`));
+    return false;
+  }
+  getting.succeed("Electron ready");
+
+  const atLogin = startAtLogin(program.path);
+  const running = await dashboardUp();
+  const starting = await step("Starting him…");
+  launch(program.path);
+  if (!running) {
+    starting.succeed(yellow(`started; he'll show up once Perry is running: ${bold("perry start")}`));
+  } else if (await waitFor(onScreen, 45)) {
+    starting.succeed("on your screen");
+  } else {
+    starting.fail(yellow("started, but he hasn't shown up yet; his tray icon, or perry pet again, will say more"));
+  }
   say(dim(`  Click him for your chats, to-dos and what needs you; drag him anywhere. Ctrl+Shift+Space talks to him.`));
   if (atLogin) say(dim(`  He starts with your computer from now on; ${bold("perry pet off")} stops that.`));
   say("");
   return true;
 }
 
-export function off(): boolean {
+export async function off(): Promise<boolean> {
   stopStartingAtLogin();
   if (installed()) {
-    const program = electron();
-    if (program) launch(program, ["--quit"]);
+    const program = await electron();
+    if (program.path) launch(program.path, ["--quit"]);
   }
-  say(`  ${green("stopped")}  and no longer starts at login`);
+  await done("stopped, and no longer starts at login");
   return true;
 }
 
@@ -160,14 +211,16 @@ export function off(): boolean {
  * After `perry update`: the pet's own install brought up to date, and a
  * running pet told to load the new page. Nothing when it was never installed.
  */
-export function refresh() {
+export async function refresh() {
   if (!installed()) return;
-  if (exec(tool("pnpm", ["install", "--dir", "pet", "--frozen-lockfile"]), { quiet: true }).code !== 0) {
-    say(yellow("  Could not update the desktop pet: pnpm install --dir pet"));
+  const updating = await spinner("Updating the desktop pet…");
+  if ((await installPackages()).code !== 0) {
+    updating.fail(yellow("Could not update the desktop pet: pnpm install --dir pet"));
     return;
   }
-  const program = electron();
-  if (program) launch(program, ["--reload"]);
+  const program = await electron();
+  if (program.path) launch(program.path, ["--reload"]);
+  updating.succeed("desktop pet updated");
 }
 
 export async function pet(args: string[]): Promise<boolean> {

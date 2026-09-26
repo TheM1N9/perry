@@ -47,7 +47,7 @@ asks for what is missing.
 ## Running it
 
 `perry setup` leaves Perry running: the runner and the dashboard (a production
-build on port 3000; `PERRY_PORT` changes it) under one background service that
+build on port 7377; `PERRY_PORT` changes it) under one background service that
 starts at every login and restarts either one if it crashes. From then on:
 
 | | |
@@ -266,7 +266,7 @@ is not copied mid-write). Moving to another computer is the same: copy it over.
 pnpm run dev
 ```
 
-Open http://localhost:3000 and paste the dashboard key the wizard printed. It
+Open http://localhost:7377 and paste the dashboard key the wizard printed. It
 is also in `.env.local`.
 
 The chat workspace keeps separate web conversations. Use **New chat** to start

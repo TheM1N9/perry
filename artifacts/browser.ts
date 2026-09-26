@@ -1,26 +1,39 @@
 import { spawn } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /**
  * The headless Chrome the end-to-end checks drive, over the DevTools protocol.
  * Opens the dashboard at `base`, unlocks it with the dashboard key, and waits
- * for the chat to finish loading.
+ * for the chat to finish loading. Each Chrome has a DevTools port and a
+ * profile of its own, so checks run side by side (another checkout's, or
+ * another session's) never drive each other's pages.
  */
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type CdpMessage = { id?: number; method?: string; params?: any; result?: any; error?: { message: string } };
 
+/** A port nothing is listening on right now. */
+const freePort = () => new Promise<number>((resolve, reject) => {
+  const probe = createServer().once("error", reject).listen(0, "127.0.0.1", () => {
+    const { port } = probe.address() as { port: number };
+    probe.close(() => resolve(port));
+  });
+});
+
 export async function openChat(base: string, dashboardKey: string) {
+  const port = await freePort();
   const chrome = spawn("C:/Program Files/Google/Chrome/Application/chrome.exe", [
-    "--headless=new", "--remote-debugging-port=9333", `--user-data-dir=${join(tmpdir(), "perry-e2e-profile")}`,
+    "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "perry-e2e-profile-"))}`,
     "--window-size=1280,800", "--autoplay-policy=no-user-gesture-required", "about:blank",
   ], { stdio: "ignore" });
 
   let targets: Array<{ type: string; webSocketDebuggerUrl: string }> = [];
   for (let i = 0; i < 50 && !targets.some((target) => target.type === "page"); i++) {
-    try { targets = await (await fetch("http://127.0.0.1:9333/json/list")).json() as typeof targets; } catch {}
+    try { targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as typeof targets; } catch {}
     await sleep(200);
   }
   const page = targets.find((target) => target.type === "page");
@@ -69,6 +82,8 @@ export async function openChat(base: string, dashboardKey: string) {
     evaluate,
     send,
     errors,
+    /** Its DevTools port, for its list of pages. */
+    port,
     close: () => { ws.close(); chrome.kill(); },
   };
 }

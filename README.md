@@ -234,8 +234,13 @@ them too.
 Your own to-do list, on the dashboard's To-dos page: "remind me to call Sam at
 2" in any chat, or typed the way you would say it ("call Sam 2pm", "pay rent
 tonight", "stretch in 30 min"), with the time it read shown before it is added.
-A to-do with a time reminds you until you tick it off, and one that repeats
-makes its next when you do.
+A to-do with a time reminds you until you tick it off.
+
+To-dos can repeat: say so as you type one ("stretch every day at 11",
+"standup weekdays 9:30", "gym every monday 7am", "pay rent monthly on the
+1st"), or pick Daily, Weekdays, Weekly or Monthly from the repeat button on
+its row, which then says how it repeats. Ticked off, a repeating to-do makes
+its next, the next time it comes round.
 
 `perry pet` puts Perry himself on your screen, after
 [Petodo](https://www.petodoapp.com/petodo/): the platypus stands in a corner
@@ -282,9 +287,17 @@ tomorrow, or clears it.
 
 He is a small Electron window (`pet/`) showing the server's `/pet` page,
 installed apart from Perry so that nobody carries Electron who does not want
-him. `perry pet` installs it the first time (Electron and ONNX Runtime, under
-1 GB), starts him and has him start at login; `perry pet off` stops both, and
-`perry update` updates him.
+him. Turn him on from the dashboard (Settings → Desktop pet, or the To-dos
+page), or with `perry pet` on the computer Perry runs on: either installs him
+the first time (Electron and ONNX Runtime, under 1 GB), starts him and has him
+start at login. Turn off, or `perry pet off`, stops both, and `perry update`
+updates him. On a Mac he stays out of the Dock.
+
+He wears the dashboard's fonts and colours, light or dark. His theme is his
+own, since the dashboard's is each browser's: pick System, Light or Dark under
+Settings → Desktop pet. It is kept as `theme` in `~/.perry/pet.json`, his
+config file, beside where he stands; he changes as soon as it does, whether it
+is set there or edited by hand.
 
 ## Skills
 
@@ -351,7 +364,7 @@ To keep them off your own runner, start a short-lived one and pass its token:
 TOKEN=$(pnpm run -s connect -- --token-only --name evals | awk '/token/ {print $2}')
 mkdir -p /tmp/perry-evals-work
 # Its own PERRY_HOME, so your runner's saved settings are left alone.
-PERRY_HOME=/tmp/perry-evals bun runner/index.ts --url http://127.0.0.1:3000 --token "$TOKEN" --dir /tmp/perry-evals-work --name evals --auto &
+PERRY_HOME=/tmp/perry-evals bun runner/index.ts --url http://127.0.0.1:7377 --token "$TOKEN" --dir /tmp/perry-evals-work --name evals --auto &
 pnpm evals --runner-token "$TOKEN"
 kill %1   # then revoke "evals" on the dashboard's Computer page
 ```
@@ -379,7 +392,7 @@ it loads nothing from anyone else's server.
 ```bash
 cd site
 pnpm install
-pnpm dev          # http://localhost:3000
+pnpm dev          # http://localhost:7377
 ```
 
 To host it on Vercel, import the repo and set the project's Root Directory to

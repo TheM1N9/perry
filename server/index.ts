@@ -19,7 +19,7 @@ import { runWhatsApp } from "./whatsapp";
  * and the browser all go through /api/backend.
  */
 
-export const PORT = Number(process.env.PERRY_PORT ?? process.env.PORT ?? 3000);
+export const PORT = Number(process.env.PERRY_PORT ?? process.env.PORT ?? 7377);
 /** This server as the runner on this machine reaches it. */
 export const LOCAL_URL = `http://127.0.0.1:${PORT}`;
 

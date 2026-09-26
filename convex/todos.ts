@@ -273,11 +273,11 @@ export const board = query({
 });
 
 export const add = mutation({
-  args: { key: v.string(), title: v.string(), dueAt: v.optional(v.number()) },
+  args: { key: v.string(), title: v.string(), dueAt: v.optional(v.number()), repeat: v.optional(v.string()) },
   returns: v.id("todos"),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
-    return await insert(ctx, { title: args.title, dueAt: args.dueAt, by: "owner" });
+    return await insert(ctx, { title: args.title, dueAt: args.dueAt, repeat: args.repeat, by: "owner" });
   },
 });
 
@@ -318,6 +318,20 @@ export const edit = mutation({
     const todo = await mine(ctx, args.key, args.id);
     if (args.title !== undefined) await ctx.db.patch(todo._id, { title: cleanTitle(args.title), updatedAt: Date.now() });
     if (args.dueAt !== undefined) await reschedule(ctx, todo, args.dueAt ?? undefined);
+    return null;
+  },
+});
+
+/** Make it repeat on a cron schedule, or stop; one with no time yet starts at the schedule's next. */
+export const setRepeat = mutation({
+  args: { key: v.string(), id: v.id("todos"), repeat: v.union(v.string(), v.null()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const todo = await mine(ctx, args.key, args.id);
+    const timezone = await timezoneOf(ctx);
+    const repeat = checkRepeat(args.repeat ?? undefined, timezone);
+    await ctx.db.patch(todo._id, { repeat, updatedAt: Date.now() });
+    if (repeat && !todo.dueAt) await reschedule(ctx, todo, nextRun(repeat, timezone));
     return null;
   },
 });

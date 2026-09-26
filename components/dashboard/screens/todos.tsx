@@ -5,7 +5,8 @@ import { api } from "@/convex/_generated/api";
 import { useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { QuickAdd, StreakBadge, TodoRows } from "@/components/todos/todos";
-import { CommandLine, EmptyState, ListSkeleton, Page, Section } from "../common";
+import { EmptyState, ListSkeleton, Page, Section } from "../common";
+import { PetControl } from "../pet-control";
 
 /**
  * Your own to-do list, the one the desktop pet keeps on screen. What Perry
@@ -34,8 +35,8 @@ export function Todos() {
           <div className="rounded-xl border bg-card p-1.5"><TodoRows todos={board.doneToday} now={now} /></div>
         </Section>
       )}
-      <Section title="Perry on your desktop" description="A platypus that stands on your screen with this list, and speaks up as each thing comes due. Start him from a terminal on this computer:" className="mt-10">
-        <CommandLine>perry pet</CommandLine>
+      <Section title="Perry on your desktop" description="A platypus that stands on your screen with this list, and speaks up as each thing comes due." className="mt-10">
+        <PetControl />
       </Section>
     </Page>
   );

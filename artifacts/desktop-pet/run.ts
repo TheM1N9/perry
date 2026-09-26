@@ -1,4 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { EOL, tmpdir } from "node:os";
@@ -28,7 +29,8 @@ import { openChat, sleep } from "../browser";
 //   4. Done in his bubble does not tick it off, or the streak does not count it.
 //   5. Later does not push it back ten minutes.
 //   6. Typing "water the plants in 30 min" does not read the time: the preview
-//      must show it, and Enter must add it due in half an hour.
+//      must show it, and Enter must add it due in half an hour. "stretch
+//      every day at 11" must be kept as a daily repeat, and his row say so.
 //   7. Dragging him does not move the window, he forgets where he was put,
 //      or he can be dragged off the screen.
 //  7b. There is no way to put him away by dragging: while dragged, a circle
@@ -81,6 +83,8 @@ const KEY = "desktop-pet-e2e-key";
 const OWNER = "4242";
 const REAL_MOUSE = process.env.PERRY_E2E_DESKTOP === "1" && process.platform === "win32";
 const home = mkdtempSync(join(tmpdir(), "perry-pet-"));
+/** This Perry's pet's login entry: its own, named after its PERRY_HOME, never the owner's "Perry pet". */
+const LOGIN_ENTRY = `Perry pet-${createHash("sha256").update(home).digest("hex").slice(0, 8)}`;
 /** What the stand-in microphone says, in Windows' own voice; kept apart from the other runs' model downloads. */
 const SPOKEN = "Remind me to call Sam at five p.m. tomorrow.";
 const MODELS = join(tmpdir(), "perry-e2e-models");
@@ -356,7 +360,7 @@ try {
   pet = await attach();
   await check("petStarted", async () => (await pet!.evaluate(`Boolean(document.querySelector('button[aria-label^="Perry."]')) && !document.body.innerText.includes("locked out")`)) === true, 30);
   if (process.platform === "win32") {
-    const entry = spawnSync("reg", ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", "Perry pet"], { encoding: "utf8" }).stdout ?? "";
+    const entry = spawnSync("reg", ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", LOGIN_ENTRY], { encoding: "utf8" }).stdout ?? "";
     notes.loginEntry = entry.trim().split(/\r?\n/).pop()?.trim();
     checks.startsAtLogin = /electron\.exe" "[^"]*[\\/]pet"/i.test(entry);
   }
@@ -417,11 +421,18 @@ try {
   await pet.send("Input.insertText", { text: "water the plants in 30 min" });
   const typedAt = Date.now();
   await check("previewShown", async () => /“water the plants”/.test(await text(pet!)), 5);
-  notes.preview = (await text(pet)).split("\n").slice(0, 4).join(" | ");
+  notes.preview = await pet.evaluate(`document.querySelector('section[aria-label="Perry"] form')?.innerText ?? ""`);
   await photograph(pet, "list.png");
   await pet.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
   await pet.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
   await check("quickAdd", async () => { const plants = await find(/^water the plants$/); return Boolean(plants?.dueAt && Math.abs(plants.dueAt - (typedAt + minutes(30))) < 90_000); });
+  await pet.send("Input.insertText", { text: "stretch every day at 11" });
+  await check("repeatPreviewShown", async () => /Every day at 11:00/.test(await text(pet!)), 5);
+  await pet.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
+  await pet.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await check("repeatAddedInPet", async () => (await find(/^stretch$/))?.repeat === "0 11 * * *");
+  await check("repeatShownInPet", async () => /stretch\s*Daily/.test(await text(pet!)), 5);
+  notes.repeatInPet = (await board()).open.filter((todo) => /stretch/i.test(todo.title));
   await pet.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
 
   // 7. Dragged, he moves and remembers.
@@ -449,8 +460,9 @@ try {
   {
     // Whether his window is on screen, as Windows lists visible windows (his page says it is visible either way).
     const petShowing = () => (spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", [
-      "Add-Type -TypeDefinition 'using System; using System.Text; using System.Collections.Generic; using System.Runtime.InteropServices; public class W { delegate bool Enum(IntPtr h, IntPtr l); [DllImport(\"user32.dll\")] static extern bool EnumWindows(Enum f, IntPtr l); [DllImport(\"user32.dll\")] static extern bool IsWindowVisible(IntPtr h); [DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n); public static List<string> Visible() { var t = new List<string>(); EnumWindows((h, l) => { if (IsWindowVisible(h)) { var s = new StringBuilder(256); GetWindowText(h, s, 256); t.Add(s.ToString()); } return true; }, IntPtr.Zero); return t; } }'",
-      "[W]::Visible() | Where-Object { $_ -like 'Pet*Perry' }",
+      "Add-Type -TypeDefinition 'using System; using System.Text; using System.Collections.Generic; using System.Runtime.InteropServices; public class W { delegate bool Enum(IntPtr h, IntPtr l); [DllImport(\"user32.dll\")] static extern bool EnumWindows(Enum f, IntPtr l); [DllImport(\"user32.dll\")] static extern bool IsWindowVisible(IntPtr h); [DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n); [DllImport(\"user32.dll\")] static extern uint GetWindowThreadProcessId(IntPtr h, out int p); public static List<string> Visible(int[] pids) { var t = new List<string>(); EnumWindows((h, l) => { int p; GetWindowThreadProcessId(h, out p); if (IsWindowVisible(h) && Array.IndexOf(pids, p) >= 0) { var s = new StringBuilder(256); GetWindowText(h, s, 256); t.Add(s.ToString()); } return true; }, IntPtr.Zero); return t; } }'",
+      `$ours = @(Get-CimInstance Win32_Process -Filter "Name='electron.exe'" | Where-Object { $_.CommandLine -like '*${REPO.replace(/'/g, "''")}*' } | ForEach-Object { [int]$_.ProcessId })`,
+      "[W]::Visible($ours) | Where-Object { $_ -like 'Pet*Perry' }",
     ].join("; ")], { encoding: "utf8", windowsHide: true }).stdout ?? "").trim().length > 0;
     const place = await pet.evaluate(`(() => { const r = document.querySelector('button[aria-label^="Perry."]').getBoundingClientRect(); return { bx: r.x + r.width / 2, by: r.y + r.height / 2, sx: screenX, sy: screenY, aw: screen.availWidth, ah: screen.availHeight, al: screen.availLeft, at: screen.availTop, scale: devicePixelRatio }; })()`) as { bx: number; by: number; sx: number; sy: number; aw: number; ah: number; al: number; at: number; scale: number };
     const target = { x: place.al + place.aw / 2, y: place.at + place.ah - 8 - 110 };
@@ -510,7 +522,9 @@ try {
   const dentistAt = new Date(Date.now() + 3 * 3_600_000);
   dentistAt.setSeconds(0, 0);
   dentistAt.setMinutes(dentistAt.getMinutes() < 30 ? 0 : 30);
-  const said = `Remind me to call the dentist at ${dentistAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+  // Which day, said as a person would: past midnight, "at 6 AM" alone was taken for tomorrow's.
+  const day = dentistAt.toDateString() === new Date().toDateString() ? "today" : "tomorrow";
+  const said = `Remind me to call the dentist ${day} at ${dentistAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
   const askedAt = Date.now();
   ownerSays(said);
   await until(async () => (await call<Array<{ prompt: string; status: string }>>("dashboard:listRuns", { key: KEY }, "call")).some((run) => run.prompt === said && run.status !== "running"), "Perry's reply", 300);
@@ -718,7 +732,7 @@ try {
     await dashboard.send("Page.navigate", { url: `${BASE}/todos` });
     await check("dashboardPage", async () => {
       const page = await dashboard.evaluate(`document.querySelector("main")?.innerText ?? ""`) as string;
-      return page.includes("Reply to Ana") && page.includes("Done today") && page.includes("perry pet");
+      return page.includes("Reply to Ana") && page.includes("Done today") && /Perry on your desktop[\s\S]*(On your desktop|Turn on)/.test(page);
     }, 30);
     checks.dashboardMarksPerrys = await dashboard.evaluate(`Boolean(document.querySelector('[aria-label="Perry added this"]'))`) || false;
     const shot = await dashboard.send("Page.captureScreenshot", { format: "png" });
@@ -837,7 +851,7 @@ try {
   notes.perryPetOff = perry("pet", "off").trim();
   await check("petQuits", async () => !(await fetch(`http://127.0.0.1:${DEVTOOLS}/json/list`).then(() => true, () => false)), 15);
   if (process.platform === "win32") {
-    checks.notAtLogin = spawnSync("reg", ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", "Perry pet"], { encoding: "utf8" }).status !== 0;
+    checks.notAtLogin = spawnSync("reg", ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "/v", LOGIN_ENTRY], { encoding: "utf8" }).status !== 0;
   }
   notes.board = await board();
 } catch (error) {

@@ -193,6 +193,19 @@ export default defineSchema({
   }),
 
   /**
+   * One row: the pet being turned on or off from the dashboard (pet.ts), the
+   * step it is on, and how it ended.
+   */
+  petSetup: defineTable({
+    action: v.union(v.literal("on"), v.literal("off")),
+    state: v.union(v.literal("working"), v.literal("failed"), v.literal("done")),
+    step: v.optional(v.string()),
+    error: v.optional(v.string()),
+    startedAt: v.number(),
+    finishedAt: v.optional(v.number()),
+  }),
+
+  /**
    * An outcome the owner wants, with milestones. Slower moving than a task,
    * and a task can belong to one.
    */
