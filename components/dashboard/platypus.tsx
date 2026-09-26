@@ -29,13 +29,17 @@ const LINE = "#123f3b";
 /**
  * The drawing alone, for places that don't move: the image card, small
  * avatars. One ink outline of one weight, flat colour, one shadow tone.
+ *
+ * `hat={false}` is Perry off duty, as in the show: no fedora, just a
+ * platypus. Put back on, it drops onto his head from above and settles with
+ * a bounce; taken off, it is tossed up and away.
  */
 export function PlatypusArt({
-  look = { x: 0, y: 0 }, lid = 0.32, hatLift = 0, head = false, asleep = false, className = "",
-}: { look?: { x: number; y: number }; lid?: number; hatLift?: number; head?: boolean; asleep?: boolean; className?: string }) {
+  look = { x: 0, y: 0 }, lid = 0.32, hatLift = 0, head = false, asleep = false, hat = true, className = "",
+}: { look?: { x: number; y: number }; lid?: number; hatLift?: number; head?: boolean; asleep?: boolean; hat?: boolean; className?: string }) {
   const id = useId().replace(/:/g, "");
   const ink = { stroke: LINE, strokeWidth: 3.2, strokeLinejoin: "round" as const };
-  // Asleep, the fedora slides down over his eyes.
+  // Asleep in his hat, the fedora slides down over his eyes.
   const hatY = asleep ? 12 : -hatLift;
   const hatTilt = asleep ? -2 : -7 - hatLift * 0.6;
   return (
@@ -79,11 +83,13 @@ export function PlatypusArt({
       <path d="M80 156c14 6 66 6 80 0" stroke={BILL_DARK} strokeWidth="2.6" strokeLinecap="round" fill="none" />
       <circle cx="110" cy="141" r="2.2" fill={LINE} />
       <circle cx="130" cy="141" r="2.2" fill={LINE} />
-      {/* fedora, worn at an angle */}
+      {/* fedora, worn at an angle; off, it is up out of the picture */}
       <motion.g
         initial={false}
-        animate={{ y: hatY, rotate: hatTilt }}
-        transition={{ type: "spring", stiffness: 380, damping: 18 }}
+        animate={hat ? { y: hatY, rotate: hatTilt, opacity: 1 } : { y: -150, rotate: -70, opacity: 0 }}
+        transition={hat
+          ? { type: "spring", stiffness: 300, damping: 12, mass: 0.9, opacity: { duration: 0.12 } }
+          : { duration: 0.4, ease: [0.4, 0, 0.9, 0.6], opacity: { duration: 0.25, delay: 0.15 } }}
         style={{ transformOrigin: "120px 90px", transformBox: "view-box" }}
       >
         <path d="M84 89c2-26 14-38 26-35 6 2 14 2 20 0 12-3 24 9 26 35z" fill={HAT} {...ink} />
@@ -91,12 +97,28 @@ export function PlatypusArt({
         <ellipse cx="120" cy="89" rx="72" ry="11" fill={HAT} {...ink} />
         <path d="M100 62c6 2 34 2 40 0" stroke="#6a4a37" strokeWidth="2.4" strokeLinecap="round" fill="none" />
       </motion.g>
-      {asleep ? (
-        <text x="186" y="70" fontFamily="ui-sans-serif, system-ui" fontWeight="700" fontSize="22" fill={LINE}>
-          z<tspan dx="3" dy="-14" fontSize="16">z</tspan>
-        </text>
-      ) : null}
+      {asleep ? <Snore /> : null}
     </svg>
+  );
+}
+
+/**
+ * Z's rising from him one after another, drifting and fading, while he
+ * sleeps. Small and slow, they drift even where the system asks for less
+ * motion: without them he only looks switched off.
+ */
+function Snore() {
+  return (
+    <g fontFamily="ui-sans-serif, system-ui" fontWeight="800" fill={LINE}>
+      {[0, 1, 2].map((index) => (
+        <motion.text key={index} x="176" y="96" fontSize={16 + index * 5}
+          initial={{ opacity: 0, x: 0, y: 0 }}
+          animate={{ opacity: [0, 1, 1, 0], x: [0, 8, 16, 24], y: [0, -22, -44, -64] }}
+          transition={{ duration: 3, repeat: Infinity, delay: index, ease: "easeOut" }}>
+          z
+        </motion.text>
+      ))}
+    </g>
   );
 }
 

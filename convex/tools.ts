@@ -360,6 +360,63 @@ const delete_job = createTool({
   },
 });
 
+// --- The owner's to-dos ---------------------------------------------------
+
+type TodoRow = { id: string; title: string; due?: string; repeat?: string; done?: string; addedBy: string };
+
+const add_todo = createTool({
+  description:
+    "Add something to the owner's own to-do list: what they mean to do, shown by their desktop pet and on " +
+    "the dashboard. With at, they are reminded then (by the pet at the computer, or on their phone when " +
+    "away) until they tick it off. Use this for \"remind me to…\" and \"I need to…\"; use create_job only " +
+    "when you are to do something yourself at that time. Keep the title short, in their words.",
+  inputSchema: z.object({
+    title: z.string().min(1).max(200).describe("What to do, e.g. 'Call Sam'."),
+    at: at.optional().describe("When it is due and they are reminded: ISO 8601 with the owner's UTC offset. Omit for no particular time."),
+    repeat: schedule.optional().describe("For something that recurs: a cron expression in the owner's timezone. Ticking it off makes the next one."),
+  }),
+  execute: async (ctx, input): Promise<{ added?: TodoRow; error?: string }> => {
+    return await ctx.runMutation(internal.todos.addFromAgent, input);
+  },
+});
+
+const list_todos = createTool({
+  description:
+    "The owner's to-do list: what is still to do, with due times in their timezone, and how many days in a " +
+    "row they have ticked something off. includeDone adds what they finished in the last seven days.",
+  inputSchema: z.object({ includeDone: z.boolean().optional() }),
+  execute: async (ctx, input): Promise<{ open: TodoRow[]; doneThisWeek?: TodoRow[]; streakDays: number }> => {
+    return await ctx.runQuery(internal.todos.listForAgent, input);
+  },
+});
+
+const update_todo = createTool({
+  description:
+    "Change one of the owner's to-dos by id, from list_todos: tick it off (done), rename it, give it a new " +
+    "time (at, which restarts its reminders; \"later\" or \"tomorrow\" means a new at), take its time away " +
+    "(noTime), or make it repeat. A reminder you sent them names the to-do; when they answer it " +
+    "(\"done\", \"in an hour\"), this is how you act on it.",
+  inputSchema: z.object({
+    id: z.string().min(1),
+    title: z.string().min(1).max(200).optional(),
+    at: at.optional().describe("Its new due time: ISO 8601 with the owner's UTC offset."),
+    noTime: z.boolean().optional().describe("true takes its due time away."),
+    repeat: z.string().optional().describe("A cron expression in the owner's timezone to repeat on; an empty string stops it repeating."),
+    done: z.boolean().optional().describe("true ticks it off, false puts it back."),
+  }),
+  execute: async (ctx, input): Promise<{ updated?: TodoRow; next?: TodoRow; error?: string }> => {
+    return await ctx.runMutation(internal.todos.updateFromAgent, input);
+  },
+});
+
+const delete_todo = createTool({
+  description: "Remove one of the owner's to-dos by id, from list_todos, when they no longer mean to do it. To finish one, update_todo with done instead.",
+  inputSchema: z.object({ id: z.string().min(1) }),
+  execute: async (ctx, input): Promise<{ deleted: boolean }> => {
+    return { deleted: await ctx.runMutation(internal.todos.removeFromAgent, input) };
+  },
+});
+
 // --- The world -----------------------------------------------------------
 
 type PageResult = {
@@ -723,6 +780,10 @@ export const ALL_TOOLS = {
   update_job,
   delete_job,
   run_job,
+  add_todo,
+  list_todos,
+  update_todo,
+  delete_todo,
   read_page,
   list_connectors,
   find_action,

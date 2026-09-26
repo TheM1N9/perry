@@ -5,6 +5,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
+import { problemWith, resolve as resolveShortcuts, SHORTCUT_IDS, SHORTCUTS, type ShortcutId, type Shortcuts } from "./lib/shortcuts";
 import { ABSOLUTE_PATH } from "./media";
 import { defaultAccess, type Onboarding } from "./installation";
 import { callName, DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./persona";
@@ -720,6 +721,52 @@ export const setDefaultAccess = mutation({
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
     await ctx.runMutation(internal.installation.setDefaultAccess, { access: args.access });
+    return null;
+  },
+});
+
+// --- Keyboard shortcuts ----------------------------------------------------
+
+export type ShortcutsView = {
+  shortcuts: Shortcuts;
+  /** The desktop pet, as it last checked in: whether it is running, and its Talk hotkey's standing. */
+  pet: { running: boolean; hotkey?: string; error?: string };
+};
+
+export const getShortcuts = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<ShortcutsView> => {
+    assertDashboardKey(args.key);
+    const install = await ctx.db.query("installation").first();
+    const pet = await ctx.db.query("petPresence").first();
+    return {
+      shortcuts: resolveShortcuts(install?.shortcuts),
+      pet: { running: Boolean(pet && Date.now() - pet.seenAt < 150_000), hotkey: pet?.hotkey, error: pet?.hotkeyError },
+    };
+  },
+});
+
+/** Change a shortcut, or with null put it back to its default. Two shortcuts cannot share keys. */
+export const setShortcut = mutation({
+  args: { key: vKey, id: v.string(), accelerator: v.union(v.string(), v.null()) },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    if (!(SHORTCUT_IDS as string[]).includes(args.id)) throw new Error("There is no such shortcut.");
+    const install = await ctx.db.query("installation").first();
+    if (!install) throw new Error("Run pnpm run setup first.");
+    const saved = { ...install.shortcuts };
+    if (args.accelerator === null) delete saved[args.id];
+    else {
+      const problem = problemWith(args.accelerator);
+      if (problem) throw new Error(problem);
+      const current = resolveShortcuts(saved);
+      const clash = SHORTCUT_IDS.find((id) => id !== args.id && current[id] === args.accelerator);
+      if (clash) throw new Error(`That is already the shortcut for ${SHORTCUTS[clash].label}.`);
+      if (args.accelerator === SHORTCUTS[args.id as ShortcutId].default) delete saved[args.id];
+      else saved[args.id] = args.accelerator;
+    }
+    await ctx.db.patch(install._id, { shortcuts: saved });
     return null;
   },
 });

@@ -20,6 +20,9 @@ crons.interval(
 // Proactivity: scheduled jobs and the heartbeat. Each job decides if it is due.
 crons.interval("run due jobs", { minutes: 1 }, internal.jobs.tick, {});
 
+// The owner's to-dos: reminders on the phone for what comes due while they are away from the pet.
+crons.interval("remind of to-dos", { minutes: 1 }, internal.todos.tick, {});
+
 // Durable turns: retry unfinished finalizing, and release what an offline runner abandoned.
 crons.interval("recover turns", { minutes: 1 }, internal.recovery.sweep, {});
 

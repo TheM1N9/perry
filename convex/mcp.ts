@@ -24,6 +24,7 @@ export const CODEX_TOOLS: readonly ToolName[] = [
   "status_report", "start_task", "set_plan", "finish_task", "set_goal", "update_goal",
   "watch_page", "update_watch", "delete_watch", "check_watches",
   "create_job", "list_jobs", "update_job", "delete_job", "run_job",
+  "add_todo", "list_todos", "update_todo", "delete_todo",
 ];
 
 /**

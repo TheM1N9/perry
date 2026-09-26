@@ -1,0 +1,12 @@
+{
+  "name": "perry-pet",
+  "private": true,
+  "description": "Perry on the desktop: the window the platypus stands in. `perry pet` installs and starts it.",
+  "type": "module",
+  "main": "main.js",
+  "dependencies": {
+    "@huggingface/transformers": "4.3.0",
+    "electron": "44.4.5",
+    "uiohook-napi": "1.5.5"
+  }
+}

@@ -1,0 +1,732 @@
+"use client";
+
+import { XIcon } from "lucide-react";
+import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from "motion/react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import type { Board, TodoView } from "@/convex/todos";
+import { plural, useNow } from "@/lib/format";
+import { KEY_STORAGE, SessionContext, useDashboardKey } from "@/lib/session";
+import { cn } from "@/lib/utils";
+import { countdown, dueLabel } from "@/lib/when";
+import { PlatypusArt } from "@/components/dashboard/platypus";
+import { QuickAdd, StreakBadge, TodoRows } from "@/components/todos/todos";
+import { PetChat, type PetChatId } from "./chat";
+import { PetNeedsYou } from "./needs-you";
+import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
+
+/**
+ * Perry on the desktop: the platypus, standing in a corner of the screen on
+ * top of everything, and a small Perry a click away: your chats with him,
+ * with all he knows; your to-dos; and what is waiting on you, answered right
+ * there. He speaks up for what matters now: a computer waiting for your yes,
+ * a to-do coming due (at 15 and 10 minutes, then a countdown held for the
+ * last five until it is done or pushed back), a reply you have not read, a
+ * chat with something new. Talk to him with a hotkey from anywhere, or his
+ * mic button; what you say goes into his chat (voice.tsx, pet/voice.js).
+ * With nothing going on he naps, hat off. He tells the server when the owner
+ * is away, and the phone gets the reminders instead (convex/todos.ts).
+ *
+ * This page is what the pet's window shows (pet/main.js): a transparent,
+ * frameless window where only the platypus, his bubble and the list take
+ * clicks, and the rest passes through to whatever is underneath. In a plain
+ * browser it works too, without those.
+ */
+
+/** What the pet's window (pet/preload.cjs) lets this page do. */
+type Bridge = VoiceBridge & {
+  /** Whether the pointer is over something to click; elsewhere clicks pass through. */
+  solid: (on: boolean) => void;
+  /** Where the window's top-left corner goes, in screen points. */
+  moveTo: (x: number, y: number) => void;
+  /** A drag of him starts (with where his body's middle is in the window) and ends; dropped on the circle it shows, he hides. */
+  dragStart: (bodyX: number, bodyY: number) => void;
+  dragEnd: () => void;
+  onArmed: (listener: (armed: boolean) => void) => () => void;
+  /** Seconds since the last key or mouse input anywhere on this computer. */
+  idleSeconds: () => Promise<number>;
+  /** A page of the dashboard (a path), opened unlocked in the browser. */
+  openDashboard: (path?: string) => void;
+};
+
+declare global {
+  interface Window { perryPet?: Bridge }
+}
+
+/** Nothing going on for this long (nothing to say, his panel shut, no work, no listening), and he takes his hat off and naps. */
+const NAP_AFTER_MS = 30_000;
+/** Heads-ups before a to-do is due, once each; the last five minutes are a countdown held on screen. */
+const HEADS_UP_MIN = [15, 10];
+const HOLD_MIN = 5;
+const HEADS_UP_SHOWS_MS = 12_000;
+
+export function PetScreen() {
+  const [key, setKey] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    // The window's page is see-through; only what he draws shows.
+    for (const element of [document.documentElement, document.body]) element.style.background = "transparent";
+    document.documentElement.style.colorScheme = "normal";
+    // The pet's window opens with the key in the fragment, as `perry open` does; it is kept and taken out of the address.
+    const fromLink = new URLSearchParams(window.location.hash.slice(1)).get("key");
+    if (fromLink) {
+      window.localStorage.setItem(KEY_STORAGE, fromLink);
+      window.history.replaceState(window.history.state, "", window.location.pathname);
+    }
+    setKey(window.localStorage.getItem(KEY_STORAGE));
+    setReady(true);
+  }, []);
+
+  const session = useMemo(() => key ? { dashboardKey: key, lock: () => { window.localStorage.removeItem(KEY_STORAGE); setKey(null); } } : null, [key]);
+  useClickThrough();
+
+  if (!ready) return null;
+  if (!session) {
+    return (
+      <Stage bubble={<Bubble title="I'm locked out." detail="Start me with perry pet, and I'll have the key." />}>
+        <Body mood="idle" asleep={false} onClick={() => {}} />
+      </Stage>
+    );
+  }
+  return (
+    <SessionContext.Provider value={session}>
+      <Pet />
+    </SessionContext.Provider>
+  );
+}
+
+/**
+ * Only what is marked data-solid takes the pointer. The window hears the
+ * pointer everywhere (forwarded while it lets clicks through), so it can
+ * tell the shell each time it crosses onto or off something to click.
+ */
+function useClickThrough() {
+  useEffect(() => {
+    const bridge = window.perryPet;
+    if (!bridge) return;
+    let solid = false;
+    const move = (event: MouseEvent) => {
+      const over = Boolean((event.target as Element | null)?.closest?.("[data-solid]"));
+      if (over !== solid) bridge.solid((solid = over));
+    };
+    const leave = () => { if (solid) bridge.solid((solid = false)); };
+    window.addEventListener("mousemove", move);
+    document.addEventListener("mouseleave", leave);
+    return () => {
+      window.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseleave", leave);
+    };
+  }, []);
+}
+
+type Tab = "chat" | "todos" | "needs";
+type Said = { title: string; detail?: string; until: number; onOpen?: () => void };
+/** The chat the pet last had open, so he picks up where you left off. */
+const CHAT_STORAGE = "perry.pet.chat";
+const ASKS = { command: "run a command", file: "change files", write: "write a file" } as const;
+
+function Pet() {
+  const key = useDashboardKey();
+  const board = useQuery(api.todos.board, { key });
+  const approvals = useQuery(api.approvals.pending, { key });
+  const inbox = useQuery(api.dashboard.getInbox, { key });
+  const chats = useQuery(api.dashboard.listChats, { key });
+  const setDone = useMutation(api.todos.setDone);
+  const pushBack = useMutation(api.todos.pushBack);
+  const presence = useMutation(api.todos.presence);
+  const decide = useMutation(api.approvals.decide);
+  const setTimezone = useMutation(api.jobs.setTimezone);
+  const now = useNow(1000);
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>("chat");
+  const [chatId, setChatIdState] = useState<PetChatId>(null);
+  const [draft, setDraft] = useState("");
+  const petChat = useQuery(api.dashboard.getChat, chatId ? { key, id: chatId } : "skip");
+  // The newest of his chat's messages, for a reply to hold up when it comes.
+  const { results: newest } = usePaginatedQuery(api.dashboard.getChatMessages, chatId ? { key, id: chatId } : "skip", { initialNumItems: 2 });
+  const [said, setSaid] = useState<Said | null>(null);
+  const [reply, setReply] = useState<{ id: Id<"conversations">; since: number; streamed: string } | null>(null);
+  const [cheer, setCheer] = useState(0);
+  const lastBusy = useRef(Date.now());
+  const cheerSeen = useRef(0);
+  // Touched (a click, a drag), he wakes, and stays up a while after.
+  const [, setTouched] = useState(0);
+  const wake = useCallback(() => {
+    lastBusy.current = Date.now();
+    setTouched((count) => count + 1);
+  }, []);
+  const headsUp = useRef(new Map<string, number>());
+  const notified = useRef(new Set<string>());
+  const known = useRef<Set<string> | null>(null);
+  const unseen = useRef<Set<string> | null>(null);
+  const writing = useRef<{ since: number; text: string } | null>(null);
+  const voice = useVoice(typeof window === "undefined" ? undefined : window.perryPet);
+  // The Talk hotkey: the keys Settings has, taken up by his window, which says if another app has them.
+  const talkKeys = useQuery(api.dashboard.getShortcuts, { key })?.shortcuts.talk;
+  const [hotkey, setHotkey] = useState<HotkeyState>({ hotkey: null, error: null });
+  const hotkeyNow = useRef(hotkey);
+  hotkeyNow.current = hotkey;
+  const idleNow = useRef(0);
+  const [sendSignal, setSendSignal] = useState(0);
+  /** Whether what is being said goes as soon as it is written down (the hotkey), or into the box to edit (the mic button). */
+  const talkSends = useRef(false);
+  const busy = useRef(false);
+  busy.current = voice.state !== "idle";
+
+  const say = useCallback((title: string, detail?: string, ms = 3500, onOpen?: () => void) => setSaid({ title, detail, until: Date.now() + ms, onOpen }), []);
+  const setChatId = useCallback((id: PetChatId) => {
+    setChatIdState(id);
+    if (id) window.localStorage.setItem(CHAT_STORAGE, id);
+    else window.localStorage.removeItem(CHAT_STORAGE);
+  }, []);
+  useEffect(() => { setChatIdState(window.localStorage.getItem(CHAT_STORAGE) as PetChatId); }, []);
+  /** A page of the dashboard, in the browser, unlocked. */
+  const openPath = useCallback((path: string) => {
+    if (window.perryPet) window.perryPet.openDashboard(path);
+    else window.open(path, "_blank");
+  }, []);
+  /** A chat in his panel, maybe with something already typed. */
+  const openChat = useCallback((id: PetChatId, text?: string) => {
+    setChatId(id);
+    if (text !== undefined) setDraft(text);
+    setReply(null);
+    setTab("chat");
+    setOpen(true);
+  }, [setChatId]);
+  const reading = open && tab === "chat";
+
+  // Scheduled things run in the owner's timezone, which only this computer knows.
+  useEffect(() => {
+    void setTimezone({ key, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
+  }, [key, setTimezone]);
+
+  // How long the owner has been away, once a minute, for the server, which then sends reminders to the phone.
+  useEffect(() => {
+    const bridge = window.perryPet;
+    if (!bridge) return;
+    let lastReport = 0;
+    const check = async () => {
+      const seconds = await bridge.idleSeconds().catch(() => 0);
+      idleNow.current = seconds;
+      if (Date.now() - lastReport >= 60_000) {
+        lastReport = Date.now();
+        void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current) }).catch(() => {});
+      }
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 5_000);
+    return () => window.clearInterval(timer);
+  }, [key, presence]);
+
+  // Something Perry added from a chat is news: he says so.
+  useEffect(() => {
+    if (!board) return;
+    const ids = new Set(board.open.map((todo) => todo.id as string));
+    if (known.current) {
+      const added = board.open.filter((todo) => !known.current!.has(todo.id) && todo.by === "assistant");
+      if (added.length) say(added.length === 1 ? `Perry added “${added[0].title}”` : `Perry added ${added.length} to-dos`, added[0].dueAt ? dueLabel(added[0].dueAt) : undefined, 5000, () => { setTab("todos"); setOpen(true); });
+    }
+    known.current = ids;
+  }, [board, say]);
+
+  // Another chat with something new in it (a schedule's result, a reply you left for): he says where.
+  // His own chat's reply has its own bubble, below.
+  useEffect(() => {
+    if (!chats) return;
+    const current = new Set(chats.filter((chat) => chat.unseen).map((chat) => chat.id as string));
+    if (unseen.current) {
+      const fresh = chats.find((chat) => chat.unseen && !unseen.current!.has(chat.id) && chat.id !== chatId);
+      if (fresh) say(`New in ${fresh.title}`, undefined, 8000, () => openChat(fresh.id));
+    }
+    unseen.current = current;
+  }, [chats, say, openChat, chatId]);
+
+  // His own chat's reply, finished while you were not reading it: he holds it up until you do.
+  useEffect(() => {
+    if (!petChat || !chatId) return;
+    if (petChat.isRunning) {
+      writing.current = { since: writing.current?.since ?? Date.now(), text: petChat.streaming ?? writing.current?.text ?? "" };
+      return;
+    }
+    if (writing.current && !reading) setReply({ id: chatId, since: writing.current.since, streamed: writing.current.text });
+    writing.current = null;
+  }, [petChat, chatId, reading]);
+  useEffect(() => { if (reading) setReply(null); }, [reading]);
+
+  // At its time, a notification from the system as well, once, in case he is behind a full-screen window.
+  useEffect(() => {
+    if (!board || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    for (const todo of board.open) {
+      if (todo.dueAt === undefined || todo.dueAt > now || now - todo.dueAt > 10 * 60_000) continue;
+      const mark = `${todo.id}:${todo.dueAt}`;
+      if (notified.current.has(mark)) continue;
+      notified.current.add(mark);
+      new Notification(todo.title, { body: `Due ${dueLabel(todo.dueAt, now)}`, tag: mark, silent: false });
+    }
+  }, [board, now]);
+
+  // Talking: the mic button, or the hotkey from anywhere, which opens his chat already listening.
+  const { start: listen, stop: stopListening, cancel: cancelListening } = voice;
+  const talk = useCallback((sends: boolean) => {
+    talkSends.current = sends;
+    setTab("chat");
+    setOpen(true);
+    void listen();
+  }, [listen]);
+  const heard = useCallback(async () => {
+    const text = await stopListening();
+    window.perryPet?.voiceDone();
+    if (!text) return;
+    setDraft((previous) => (previous.trim() ? `${previous.trimEnd()} ${text}` : text));
+    if (talkSends.current) setSendSignal((count) => count + 1);
+  }, [stopListening]);
+  const stopTalking = useCallback(() => {
+    cancelListening();
+    window.perryPet?.voiceDone();
+  }, [cancelListening]);
+  useEffect(() => {
+    const bridge = window.perryPet;
+    if (!bridge) return;
+    return bridge.onVoice((type) => {
+      if (type === "start") talk(true);
+      else if (type === "stop") void heard();
+      else stopTalking();
+    });
+  }, [talk, heard, stopTalking]);
+  // New keys in Settings: he moves to them, and says at once how that went, for Settings to show.
+  useEffect(() => {
+    const bridge = window.perryPet;
+    if (!bridge || !talkKeys) return;
+    void bridge.setHotkey(talkKeys).then((result) => {
+      setHotkey(result);
+      void presence({ key, idleSeconds: idleNow.current, ...reported(result) }).catch(() => {});
+    }, () => {});
+  }, [talkKeys, key, presence]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (busy.current) stopTalking();
+      else setOpen(false);
+    };
+    // Clicking anywhere else closes the panel, as a menu does; what you were writing stays. Not while he listens.
+    const onBlur = () => { if (!busy.current) setOpen(false); };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onBlur);
+    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("blur", onBlur); };
+  }, [stopTalking]);
+
+  const done = (todo: TodoView) => {
+    void setDone({ key, id: todo.id, done: true }).catch(() => {});
+    setCheer((count) => count + 1);
+    const streak = (board?.streak ?? 0) || 1;
+    say("Done!", streak > 1 ? `${plural(streak, "day")} in a row` : undefined, 2500);
+  };
+
+  // What he has to say, most pressing first: a computer waiting on you, something late, the last minutes
+  // before something, a reply you have not read, what he is working on, a heads-up.
+  const asking = (approvals ?? []).filter((item) => item.expiresAt > now);
+  const needs = asking.length + (inbox?.length ?? 0);
+  const timed = (board?.open ?? []).filter((todo) => todo.dueAt !== undefined);
+  const late = timed.filter((todo) => todo.dueAt! <= now);
+  const next = timed.find((todo) => todo.dueAt! > now);
+  const working = Boolean(petChat?.isRunning) && !reading;
+  let bubble: ReactNode = null;
+  let urgent = false;
+  if (said && said.until > now) {
+    const onOpen = said.onOpen;
+    bubble = <Bubble title={said.title} detail={said.detail} onClose={() => setSaid(null)} onOpen={onOpen && (() => { setSaid(null); onOpen(); })} />;
+  } else if (asking.length) {
+    const ask = asking[asking.length - 1];
+    urgent = true;
+    bubble = (
+      <Bubble tone="ask" title={`${ask.runner} wants to ${ASKS[ask.kind]}`} code={ask.title} detail={asking.length > 1 ? `${asking.length - 1} more waiting` : undefined}>
+        <BubbleButton primary onClick={() => void decide({ key, id: ask.id, approved: true })}>Approve</BubbleButton>
+        <BubbleButton onClick={() => void decide({ key, id: ask.id, approved: false })}>Decline</BubbleButton>
+        <BubbleButton onClick={() => { setTab("needs"); setOpen(true); }}>More</BubbleButton>
+      </Bubble>
+    );
+  } else if (late.length) {
+    const todo = late[late.length - 1];
+    urgent = true;
+    bubble = (
+      <Bubble tone="late" title={todo.title} detail={`${countdown(now - todo.dueAt!)} late${late.length > 1 ? ` · ${late.length - 1} more` : ""}`}>
+        <BubbleButton primary onClick={() => done(todo)}>Done</BubbleButton>
+        <BubbleButton onClick={() => void pushBack({ key, id: todo.id, minutes: 10 })}>10 min</BubbleButton>
+        <BubbleButton onClick={() => void pushBack({ key, id: todo.id, minutes: 60 })}>1 hour</BubbleButton>
+      </Bubble>
+    );
+  } else if (next && next.dueAt! - now <= HOLD_MIN * 60_000) {
+    urgent = true;
+    bubble = (
+      <Bubble tone="soon" title={next.title} detail={`in ${countdown(next.dueAt! - now)}`}>
+        <BubbleButton primary onClick={() => done(next)}>Done</BubbleButton>
+        <BubbleButton onClick={() => void pushBack({ key, id: next.id, minutes: 10 })}>Later</BubbleButton>
+      </Bubble>
+    );
+  } else if (reply) {
+    // The saved reply once it is in; until then, what was streamed of it.
+    const saved = reply.id === chatId ? newest.find((message) => message.role === "assistant" && message.createdAt >= reply.since) : undefined;
+    bubble = <Bubble title="Perry" detail={excerpt(saved?.text || reply.streamed || "…")} onOpen={() => openChat(reply.id)} onClose={() => setReply(null)} />;
+  } else if (working) {
+    bubble = <Bubble title="On it…" detail={petChat?.streaming ? excerpt(petChat.streaming, true) : undefined} onOpen={() => openChat(chatId)} />;
+  } else if (next) {
+    const minutes = (next.dueAt! - now) / 60_000;
+    const step = [...HEADS_UP_MIN].reverse().find((mark) => minutes <= mark);
+    if (step !== undefined) {
+      const mark = `${next.id}:${next.dueAt}:${step}`;
+      if (!headsUp.current.has(mark)) headsUp.current.set(mark, now);
+      if (now - headsUp.current.get(mark)! < HEADS_UP_SHOWS_MS) {
+        bubble = <Bubble title={`Psst: ${next.title}`} detail={`in ${Math.ceil(minutes)} min`} onClose={() => headsUp.current.set(mark, 0)} />;
+      }
+    }
+  }
+
+  // Off duty, as in the show: with nothing going on he naps, hat off; anything at all and the fedora goes back on.
+  const onDuty = Boolean(bubble) || open || urgent || Boolean(petChat?.isRunning) || voice.state !== "idle" || cheer !== cheerSeen.current;
+  if (onDuty) {
+    lastBusy.current = now;
+    cheerSeen.current = cheer;
+  }
+  const asleep = !onDuty && now - lastBusy.current >= NAP_AFTER_MS;
+  const panel = (
+    <Panel tab={tab} onTab={setTab} needs={needs} onClose={() => setOpen(false)}>
+      {tab === "chat" ? (
+        <PetChat chatId={chatId} onChatId={setChatId} draft={draft} onDraft={setDraft} open={openPath}
+          voice={window.perryPet ? voice : undefined} hotkey={hotkey.hotkey} byHotkey={talkSends.current} sendSignal={sendSignal}
+          onTalk={() => talk(false)} onTalkSend={() => void heard()} onTalkCancel={stopTalking} />
+      )
+        : tab === "needs" ? <PetNeedsYou now={now} onChat={openChat} open={openPath} />
+          : <PetTodos board={board} now={now} onDone={done} onAdded={(title, dueAt) => say(`Got it: ${title}`, dueAt ? dueLabel(dueAt) : undefined, 2500)} />}
+    </Panel>
+  );
+  return (
+    <Stage bubble={open ? panel : bubble}>
+      <Body mood={voice.state === "listening" ? "listening" : urgent ? "urgent" : petChat?.isRunning || voice.state === "transcribing" ? "thinking" : "idle"}
+        level={voice.levels[voice.levels.length - 1]} asleep={asleep} cheer={cheer} badge={open ? 0 : needs} onTouch={wake}
+        onClick={() => setOpen((value) => !value)} />
+    </Stage>
+  );
+}
+
+/** The hotkey's standing, as presence reports it: the keys held, and why not the ones asked for. */
+const reported = (state: HotkeyState) => ({ ...(state.hotkey ? { hotkey: state.hotkey } : {}), ...(state.error ? { hotkeyError: state.error } : {}) });
+
+/** A line or two of a reply, for a bubble: its start, or while it is being written, its end. */
+function excerpt(text: string, end = false): string {
+  const plain = text.replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim();
+  if (plain.length <= 140) return plain;
+  return end ? `…${plain.slice(-140)}` : `${plain.slice(0, 140)}…`;
+}
+
+/** The window's contents: the panel or a bubble above, and him in the bottom corner. */
+function Stage({ bubble, children }: { bubble: ReactNode; children: ReactNode }) {
+  return (
+    <main className="fixed inset-0 flex select-none flex-col items-end justify-end gap-1 overflow-hidden p-3 pr-4">
+      <AnimatePresence mode="wait">{bubble}</AnimatePresence>
+      {children}
+    </main>
+  );
+}
+
+type Tone = "late" | "soon" | "ask";
+
+/** Something he says. With onOpen, a click on it opens what it is about. */
+function Bubble({ title, detail, code, tone, onClose, onOpen, children }: {
+  title: string; detail?: string; code?: string; tone?: Tone; onClose?: () => void; onOpen?: () => void; children?: ReactNode;
+}) {
+  return (
+    <motion.div
+      key={`${title}:${tone ?? ""}`}
+      data-solid
+      role="status"
+      initial={{ opacity: 0, y: 10, scale: 0.92 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 6, scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 420, damping: 28 }}
+      style={{ transformOrigin: "85% 100%" }}
+      onClick={onOpen}
+      className={cn(
+        "relative mr-6 w-max min-w-[168px] max-w-[300px] rounded-2xl border bg-card px-3.5 py-2.5 text-card-foreground shadow-[0_10px_30px_rgb(0_0_0/0.18)]",
+        "after:absolute after:right-9 after:top-full after:border-8 after:border-transparent after:border-t-card",
+        tone === "late" && "border-destructive/40",
+        tone === "ask" && "border-warning/50",
+        onOpen && "cursor-pointer hover:bg-muted/40",
+      )}
+    >
+      {onClose && (
+        <button type="button" aria-label="Hide" onClick={(event) => { event.stopPropagation(); onClose(); }}
+          className="absolute top-1.5 right-1.5 grid size-5 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-muted">
+          <XIcon className="size-3" aria-hidden />
+        </button>
+      )}
+      <p className={cn("text-[14px] font-semibold leading-snug", onClose && "pr-4")}>{title}</p>
+      {code && <pre className="mt-1.5 max-h-16 overflow-hidden rounded-md bg-muted px-2 py-1 font-mono text-[11.5px] whitespace-pre-wrap [overflow-wrap:anywhere]">{code.slice(0, 160)}</pre>}
+      {detail && <p className={cn("mt-0.5 text-[12.5px] text-pretty nums", tone === "late" ? "font-medium text-destructive" : tone === "soon" ? "font-medium text-warning" : "text-muted-foreground")}>{detail}</p>}
+      {children && <div className="mt-2 flex gap-1.5">{children}</div>}
+    </motion.div>
+  );
+}
+
+function BubbleButton({ primary, onClick, children }: { primary?: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => { event.stopPropagation(); onClick(); }}
+      className={cn(
+        "h-7 cursor-pointer rounded-full px-3 text-[12.5px] font-medium transition-colors",
+        primary ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-muted text-foreground hover:bg-accent",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * The platypus. Eyes on the pointer, a blink now and then, a bob; he fidgets
+ * when something needs you, looks up while he works on something, jumps and
+ * tips his hat when a thing is done. With nothing going on he is off duty, as
+ * in the show: hat off, eyes shut, dozing; needed, the fedora drops back on. A
+ * number on him is what is waiting in Needs you. A click opens his panel; a
+ * drag moves him, and dropped on the circle that shows at the bottom middle
+ * of the screen while he is dragged, he hides.
+ */
+function Body({ mood, level = 0, asleep, cheer = 0, badge = 0, onClick, onTouch }: {
+  mood: "idle" | "urgent" | "thinking" | "listening"; level?: number;
+  /** Off duty: hat off, napping. */
+  asleep: boolean;
+  cheer?: number; badge?: number; onClick: () => void;
+  /** Pressed on: he wakes. */
+  onTouch?: () => void;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const reduced = useReducedMotion();
+  const controls = useAnimationControls();
+  const [look, setLook] = useState({ x: 0, y: 0 });
+  const [blink, setBlink] = useState(false);
+  const [tip, setTip] = useState(false);
+  const drag = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
+  // Held over the circle that hides him, he looks down at it, worried.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => window.perryPet?.onArmed(setArmed), []);
+
+  useEffect(() => {
+    const move = (event: PointerEvent) => {
+      const box = ref.current?.getBoundingClientRect();
+      if (!box) return;
+      const dx = event.clientX - (box.left + box.width / 2);
+      const dy = event.clientY - (box.top + box.height * 0.45);
+      const d = Math.max(1, Math.hypot(dx, dy));
+      const reach = Math.min(1, d / 200);
+      setLook({ x: (dx / d) * reach, y: (dy / d) * reach });
+    };
+    window.addEventListener("pointermove", move);
+    return () => window.removeEventListener("pointermove", move);
+  }, []);
+
+  useEffect(() => {
+    if (asleep) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const next = () => {
+      timer = setTimeout(() => {
+        setBlink(true);
+        setTimeout(() => setBlink(false), 140);
+        next();
+      }, 2600 + Math.random() * 3200);
+    };
+    next();
+    return () => clearTimeout(timer);
+  }, [asleep]);
+
+  // Woken: the fedora drops back on, and he hops as it lands, a little squashed, then up. His own
+  // moves (this, the cheer, the hat) play even where the system asks for less motion; only the endless bob stops.
+  const wasAsleep = useRef(asleep);
+  useEffect(() => {
+    const woke = wasAsleep.current && !asleep;
+    wasAsleep.current = asleep;
+    if (!woke) return;
+    void controls.start({
+      y: [0, 0, -14, 0, -3, 0],
+      scaleY: [1, 0.9, 1.08, 0.95, 1.02, 1],
+      scaleX: [1, 1.08, 0.94, 1.04, 0.99, 1],
+      transition: { duration: 0.75, times: [0, 0.3, 0.5, 0.7, 0.85, 1], ease: "easeOut" },
+    });
+  }, [asleep, controls]);
+
+  // Done: a hop and a hat tip.
+  useEffect(() => {
+    if (!cheer) return;
+    setTip(true);
+    const timer = setTimeout(() => setTip(false), 700);
+    void controls.start({ y: [0, -26, 0, -8, 0], transition: { duration: 0.7, ease: "easeOut" } });
+    return () => clearTimeout(timer);
+  }, [cheer, controls]);
+
+  const down = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    onTouch?.();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = { x: event.screenX, y: event.screenY, left: window.screenX, top: window.screenY, moved: false };
+    // Letting go ends the drag wherever the pointer is, even if something took the capture from him on the way.
+    const release = () => { window.removeEventListener("pointerup", release, true); if (drag.current) up(); };
+    window.addEventListener("pointerup", release, true);
+  };
+  const move = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const start = drag.current;
+    if (!start) return;
+    const dx = event.screenX - start.x;
+    const dy = event.screenY - start.y;
+    if (!start.moved && Math.hypot(dx, dy) < 4) return;
+    if (!start.moved) {
+      const box = ref.current?.getBoundingClientRect();
+      if (box) window.perryPet?.dragStart(Math.round(box.left + box.width / 2), Math.round(box.top + box.height / 2));
+    }
+    start.moved = true;
+    window.perryPet?.moveTo(Math.round(start.left + dx), Math.round(start.top + dy));
+  };
+  const up = () => {
+    const start = drag.current;
+    drag.current = null;
+    if (start?.moved) window.perryPet?.dragEnd();
+    else if (start) onClick();
+  };
+
+  // Asleep, he breathes, even with less motion asked for; awake, the bob and fidgets stop then.
+  const bob = asleep ? { y: [0, 2, 0], scaleY: [1, 0.97, 1], transition: { duration: 4.5, repeat: Infinity, ease: "easeInOut" as const } }
+    : reduced ? undefined
+      : mood === "urgent" ? { rotate: [0, -5, 5, -3, 0, 0, 0], y: [0, -4, 0, 0, 0, 0, 0], transition: { duration: 2.4, repeat: Infinity } }
+        : mood === "thinking" ? { rotate: [0, 3, 0, -3, 0], transition: { duration: 2.8, repeat: Infinity, ease: "easeInOut" as const } }
+          : mood === "listening" ? { y: -2, scale: 1 + level * 0.06, transition: { duration: 0.08 } }
+          : { y: [0, -3, 0], transition: { duration: 3.2, repeat: Infinity, ease: "easeInOut" as const } };
+
+  return (
+    <motion.div animate={controls} className="relative shrink-0" style={{ transformOrigin: "50% 100%" }}>
+      {/* Over the circle that hides him, he shrinks into it, so it and what it says stay in sight. */}
+      <motion.div animate={{ scale: armed ? 0.5 : 1 }} transition={{ type: "spring", stiffness: 420, damping: 26 }}>
+      <motion.button
+        ref={ref}
+        type="button"
+        data-solid
+        data-state={asleep ? "asleep" : "awake"}
+        aria-label={`Perry. Click to open him${badge ? `; ${badge} waiting on you` : ""}; drag to move him.`}
+        onPointerDown={down}
+        onPointerMove={move}
+        onPointerUp={up}
+        onPointerCancel={() => { if (drag.current?.moved) window.perryPet?.dragEnd(); drag.current = null; }}
+        className="block w-[104px] cursor-pointer touch-none rounded-3xl outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+        animate={bob}
+        style={{ transformOrigin: "50% 100%" }}
+      >
+        <PlatypusArt
+          look={armed ? { x: 0, y: 1 } : mood === "thinking" ? { x: 0.5, y: -0.9 } : mood === "listening" ? { x: -0.2, y: 0.1 } : look}
+          lid={blink ? 1 : armed || mood === "urgent" || mood === "listening" ? 0.05 : 0.32}
+          hatLift={tip ? 16 : mood === "listening" ? 6 + level * 12 : 0}
+          asleep={asleep}
+          hat={!asleep}
+          className="pointer-events-none h-auto w-full drop-shadow-[0_8px_10px_rgb(0_0_0/0.22)]"
+        />
+      </motion.button>
+      </motion.div>
+      {badge > 0 && (
+        <span className="pointer-events-none absolute top-1 right-0 grid h-5 min-w-5 place-items-center rounded-full bg-warning px-1.5 text-[11px] font-bold text-background shadow" aria-hidden>
+          {badge}
+        </span>
+      )}
+    </motion.div>
+  );
+}
+
+/** His panel: a small Perry, with your chats, your to-dos, and what is waiting on you. */
+function Panel({ tab, onTab, needs, onClose, children }: {
+  tab: Tab; onTab: (tab: Tab) => void; needs: number; onClose: () => void; children: ReactNode;
+}) {
+  const tabs: Array<[Tab, string]> = [["chat", "Chat"], ["todos", "To-dos"], ["needs", "Needs you"]];
+  return (
+    <motion.section
+      key="panel"
+      data-solid
+      aria-label="Perry"
+      initial={{ opacity: 0, y: 12, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 8, scale: 0.97 }}
+      transition={{ type: "spring", stiffness: 420, damping: 30 }}
+      style={{ transformOrigin: "85% 100%" }}
+      className="flex h-[470px] w-[372px] flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-[0_16px_40px_rgb(0_0_0/0.22)]"
+    >
+      <header className="flex items-center gap-1 px-2.5 pt-2.5 pb-2">
+        <div role="tablist" aria-label="Perry" className="flex gap-0.5 rounded-lg bg-muted p-0.5">
+          {tabs.map(([value, label]) => (
+            <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => onTab(value)}
+              className={cn("flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-colors",
+                tab === value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+              {label}
+              {value === "needs" && needs > 0 && <span className="rounded-full bg-warning px-1.5 text-[10.5px] font-bold text-background">{needs}</span>}
+            </button>
+          ))}
+        </div>
+        <span className="flex-1" />
+        <button type="button" onClick={onClose} aria-label="Close" className="grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
+          <XIcon className="size-4" aria-hidden />
+        </button>
+      </header>
+      {children}
+    </motion.section>
+  );
+}
+
+function PetTodos({ board, now, onDone, onAdded }: {
+  board: Board | undefined;
+  now: number;
+  onDone: (todo: TodoView) => void;
+  onAdded: (title: string, dueAt?: number) => void;
+}) {
+  const key = useDashboardKey();
+  const endDay = useMutation(api.todos.endDay);
+  const [ending, setEnding] = useState(false);
+  const [showDone, setShowDone] = useState(false);
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  const leftToday = (board?.open ?? []).filter((todo) => todo.dueAt !== undefined && todo.dueAt < midnight.getTime()).length;
+
+  return (
+    <>
+      <div className="flex items-start gap-2 px-3.5">
+        <QuickAdd autoFocus onAdded={onAdded} className="min-w-0 flex-1" />
+        <div className="pt-2"><StreakBadge days={board?.streak ?? 0} /></div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-1">
+        {board === undefined ? <p className="px-2 py-3 text-[13px] text-muted-foreground">Loading…</p>
+          : board.open.length === 0 ? <p className="px-2 py-3 text-[13px] text-muted-foreground">Nothing to do. Type something above, or tell Perry in a chat.</p>
+            : <TodoRows todos={board.open} now={now} compact onDone={onDone} />}
+        {board && board.doneToday.length > 0 && (
+          <div className="px-1.5 pt-1">
+            <button type="button" onClick={() => setShowDone((value) => !value)} className="cursor-pointer text-[12px] font-medium text-muted-foreground hover:text-foreground" aria-expanded={showDone}>
+              {board.doneToday.length} done today
+            </button>
+            {showDone && <TodoRows todos={board.doneToday} now={now} compact />}
+          </div>
+        )}
+      </div>
+      {leftToday > 0 && (
+        <footer className="flex items-center gap-1.5 border-t px-3 py-2">
+          {ending ? (
+            <>
+              <BubbleButton primary onClick={() => { void endDay({ key, action: "move" }); setEnding(false); }}>Move {leftToday} to tomorrow</BubbleButton>
+              <BubbleButton onClick={() => { void endDay({ key, action: "clear" }); setEnding(false); }}>Clear</BubbleButton>
+              <span className="flex-1" />
+              <button type="button" onClick={() => setEnding(false)} className="cursor-pointer text-[12px] text-muted-foreground hover:text-foreground">Cancel</button>
+            </>
+          ) : (
+            <button type="button" onClick={() => setEnding(true)} className="cursor-pointer text-[12.5px] font-medium text-muted-foreground hover:text-foreground">
+              End the day · {leftToday} left
+            </button>
+          )}
+        </footer>
+      )}
+    </>
+  );
+}

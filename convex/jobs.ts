@@ -89,7 +89,7 @@ function upcoming(job: { schedule?: string; runAt?: number }, timezone: string):
   return job.runAt ?? nextRun(job.schedule!, timezone);
 }
 
-async function timezoneOf(ctx: { db: QueryCtx["db"] }): Promise<string> {
+export async function timezoneOf(ctx: { db: QueryCtx["db"] }): Promise<string> {
   return (await ctx.db.query("installation").first())?.timezone ?? "UTC";
 }
 

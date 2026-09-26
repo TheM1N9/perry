@@ -31,6 +31,7 @@ perry status    # is it running, and where
 perry logs -f   # what it is saying
 perry open      # the dashboard, unlocked
 perry update    # the latest Perry, rebuilt and restarted
+perry pet       # Perry on your desktop, with your to-dos (perry pet off to stop)
 perry stop | start | doctor | pair | migrate | uninstall
 ```
 
@@ -97,7 +98,8 @@ running:
 | `list_connectors` `find_action` `run_action` | Your connected accounts, through Composio |
 | `start_task` `set_plan` `finish_task` `status_report` `set_goal` `update_goal` | Work that outlives the message |
 | `watch_page` `update_watch` `delete_watch` `check_watches` `read_page` | Recurring page checks, and reading public pages |
-| `create_job` `list_jobs` `update_job` `delete_job` `run_job` | Scheduled prompts and one-time reminders in your timezone |
+| `add_todo` `list_todos` `update_todo` `delete_todo` | Your own to-do list, with reminders until each is done |
+| `create_job` `list_jobs` `update_job` `delete_job` `run_job` | Scheduled prompts and one-time runs in your timezone |
 | `share_file` | Show a file from your machine in the chat |
 
 Connected accounts are looked up at the moment of use, never baked in: link
@@ -223,9 +225,66 @@ whose prompt makes delivery conditional ("only tell me if…") stays silent when
 there is nothing new, by replying `NOTHING`. The built-in **heartbeat** looks
 over tasks, goals, watches and recent memory a few times a day and speaks only
 when something needs you. Ask the assistant for a job ("every weekday at 8,
-brief me on my calendar") or a reminder ("remind me in 20 minutes to call
-Sam") and it creates one; a one-time job pauses after it runs. It can rename,
-reschedule, pause or resume them too.
+brief me on my calendar", "at 5, check my flight") and it creates one; a
+one-time job pauses after it runs. It can rename, reschedule, pause or resume
+them too.
+
+## To-dos and Perry on your desktop
+
+Your own to-do list, on the dashboard's To-dos page: "remind me to call Sam at
+2" in any chat, or typed the way you would say it ("call Sam 2pm", "pay rent
+tonight", "stretch in 30 min"), with the time it read shown before it is added.
+A to-do with a time reminds you until you tick it off, and one that repeats
+makes its next when you do.
+
+`perry pet` puts Perry himself on your screen, after
+[Petodo](https://www.petodoapp.com/petodo/): the platypus stands in a corner
+on top of your windows, and a click opens a small Perry. **Chat** is one of
+your chats with him, the same as on the dashboard, with his memory and your
+other chats behind it; **To-dos** is the list; **Needs you** is what is
+waiting on you, answered there. Everywhere but on him, clicks go through to
+what is underneath. Drag him anywhere. To put him away, drag him onto the
+circle that shows at the bottom middle of the screen while you drag: he hides
+(the Talk hotkey, his tray icon or `perry pet` bring him back where he was).
+His tray icon also hides him, lets every click through, or quits him.
+
+He speaks up for what matters now: a computer waiting for your yes (with the
+command, and Approve right in his bubble), a to-do coming due (at 15 and 10
+minutes, then a countdown held for the last five until it is done or pushed
+back), a reply you have not read yet, and a chat with something new. He looks
+up while Perry works and cheers when you finish something. With nothing going
+on he is off duty, as in the show: hat off, eyes shut, napping. Needed, or
+just clicked, the fedora drops back onto his head.
+
+**Talk to him.** Hold Ctrl+Shift+Space (Cmd on a Mac) anywhere, say what you
+want, and let go; or tap it, speak, and tap again. He opens listening, and
+what you say goes to Perry, who does it. His mic button puts what you say in
+the box instead, to check before sending; Esc stops him listening. Speech
+becomes text on this computer, with Whisper (after
+[OpenWhispr](https://github.com/OpenWhispr/openwhispr)), run by
+transformers.js; its model (about 80 MB) downloads the first time you talk.
+`PERRY_VOICE_LANGUAGE` picks another language and `PERRY_VOICE_MODEL` a
+larger model. Holding to talk needs Accessibility permission on a Mac; tapping
+works without it.
+
+**Keyboard shortcuts.** Settings → Keyboard shortcuts (or the pet's tray icon)
+lists them: Talk to Perry, Search and commands (⌘K), and New chat (⌘⇧O).
+Click one and press the keys you want. The dashboard and the pet take them up
+at once, and Settings says whether the pet could have the Talk keys, since
+another app on the computer may already use them.
+
+While you are at the computer with him, reminders are his to give. Once you
+step away (no keyboard or mouse for a few minutes), or with no pet running,
+they go to your phone instead: on Telegram with Done, Push back and Tomorrow
+buttons, asking again at 10, 30 and 60 minutes; on WhatsApp you answer in
+words, and Perry acts on it. "End the day" moves what is left of today to
+tomorrow, or clears it.
+
+He is a small Electron window (`pet/`) showing the server's `/pet` page,
+installed apart from Perry so that nobody carries Electron who does not want
+him. `perry pet` installs it the first time (Electron and ONNX Runtime, under
+1 GB), starts him and has him start at login; `perry pet off` stops both, and
+`perry update` updates him.
 
 ## Skills
 
@@ -339,12 +398,13 @@ to `artifacts/landing/`.
 | Your machine | The runner (`runner/`, Bun) |
 | Connected accounts | [Composio](https://composio.dev) |
 | Dashboard | Next.js |
-| Chat | Telegram, web |
+| Chat | Telegram, WhatsApp, web |
+| Perry on your desktop | Electron (`pet/`), installed by `perry pet` |
 
 Packages in use: `convex` (only its validators and types, which the backend
 functions are written with), `@composio/core`, `cron-parser`, `react-markdown`
-with `remark-gfm` and `remark-breaks`, `turndown` and `undici` (reading pages)
-and `zod`.
+with `remark-gfm` and `remark-breaks`, `turndown` and `undici` (reading pages),
+`chrono-node` (reading a time from a to-do as typed) and `zod`.
 
 ## Status
 

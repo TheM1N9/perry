@@ -16,6 +16,15 @@ export const fromTelegram = internalAction({
   handler: async (ctx, args) => {
     const inbound = parseUpdate(args.update as TelegramUpdate);
     if (!inbound) return null;
+    // A tap on a to-do reminder's button: done, or pushed back. The mutation checks the tapper is the owner.
+    if ("callbackId" in inbound && inbound.data.startsWith("td:")) {
+      const answer: { note: string; card?: string } = await ctx.runMutation(internal.todos.answerFromTelegram, { senderId: inbound.senderId, data: inbound.data });
+      await ctx.scheduler.runAfter(0, internal.approvals.acknowledgeTap, { callbackId: inbound.callbackId, note: answer.note });
+      if (answer.card && inbound.chatId && inbound.messageId) {
+        await ctx.scheduler.runAfter(0, internal.todos.settleCard, { chatId: inbound.chatId, messageId: inbound.messageId, text: answer.card });
+      }
+      return null;
+    }
     // A tap on an approval button. The mutation checks the tapper is the owner.
     if ("callbackId" in inbound) {
       const note: string = await ctx.runMutation(internal.approvals.answerFromTelegram, { senderId: inbound.senderId, data: inbound.data });

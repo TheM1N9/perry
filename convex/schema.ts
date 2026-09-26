@@ -84,6 +84,8 @@ export default defineSchema({
     homeChannel: v.optional(vMessenger),
     /** The access a new chat starts with. Unset means supervised. */
     defaultAccess: v.optional(vAccess),
+    /** Keyboard shortcuts the owner changed, by id (lib/shortcuts.ts), as Electron accelerators. The rest are the defaults. */
+    shortcuts: v.optional(v.record(v.string(), v.string())),
     /**
      * Getting to know each other. A new install starts "pending" and opens on
      * the dashboard's welcome page; unset is an install from before, offered it
@@ -154,6 +156,41 @@ export default defineSchema({
   })
     .index("by_status", ["status"])
     .index("by_updated", ["updatedAt"]),
+
+  /**
+   * The owner's own to-do list: things they mean to do, where tasks are work
+   * Perry does. The desktop pet shows it and speaks up as each comes due; away
+   * from the computer, the reminder goes to their messaging app. See todos.ts.
+   */
+  todos: defineTable({
+    title: v.string(),
+    /** When it is due. Unset: some time, with no reminder. */
+    dueAt: v.optional(v.number()),
+    /** A cron schedule in the owner's timezone; ticking it off makes the next one. */
+    repeat: v.optional(v.string()),
+    doneAt: v.optional(v.number()),
+    by: v.union(v.literal("owner"), v.literal("assistant")),
+    /** Reminders sent to the owner's phone for this due time, and when the next one is. */
+    nagged: v.optional(v.number()),
+    nextNagAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_done", ["doneAt"])
+    .index("by_next_nag", ["nextNagAt"]),
+
+  /**
+   * One row: when the desktop pet last checked in, and when the owner last
+   * touched the computer it runs on. While they are at it, reminders are the
+   * pet's to give; otherwise they go to the phone.
+   */
+  petPresence: defineTable({
+    seenAt: v.number(),
+    activeAt: v.number(),
+    /** The Talk hotkey the pet holds, or why it could not take the one asked for (another app has it). */
+    hotkey: v.optional(v.string()),
+    hotkeyError: v.optional(v.string()),
+  }),
 
   /**
    * An outcome the owner wants, with milestones. Slower moving than a task,

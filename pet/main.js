@@ -1,0 +1,356 @@
+/**
+ * Perry on the desktop: a small window on top of everything that shows the
+ * pet page from Perry's own server (app/pet), where the platypus stands with
+ * the owner's to-do list. The window is transparent and lets clicks through,
+ * except where the page says there is something to click; it sits in a
+ * corner of the screen and goes where it is dragged; dragged onto the circle
+ * that appears at the bottom middle of the screen, he hides. A tray icon
+ * shows, hides, and quits it.
+ *
+ * `perry pet` installs Electron here (pnpm, in this folder), starts this, and
+ * has it start at login; `perry pet off` stops both. Everything the pet knows
+ * comes from the server, so this file keeps only where the window stands.
+ *
+ * Run again while running, it acts on the one already there: --quit quits it,
+ * --reload reloads its page (after `perry update`), anything else shows it.
+ */
+
+import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, powerMonitor, screen, shell } from "electron";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { DEFAULT_HOTKEY, hotkeys, transcribe, warmUp } from "./voice.js";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = join(HERE, "..");
+const HOME = process.env.PERRY_HOME ?? join(homedir(), ".perry");
+const STATE = join(HOME, "pet.json");
+/** Where the voice model is kept once downloaded. */
+const MODELS = process.env.PERRY_MODELS_DIR ?? join(HOME, "models");
+/** Room for the platypus in the bottom-right corner, and his bubble or panel above him. */
+const SIZE = { width: 404, height: 620 };
+/** The part of the window he stands in, which is kept on screen. */
+const BODY = { width: 150, height: 170 };
+/**
+ * Dragged onto this, he goes: a circle at the bottom middle of the screen,
+ * there only while he is being dragged. He is hidden, not quit, so the
+ * hotkey, his tray icon or `perry pet` bring him back, to where he was.
+ */
+const DISMISS = { size: 220, reach: 70 };
+const DISMISS_PAGE = `<!doctype html><html><head><title>Perry: drop here to hide</title></head><body style="margin:0;height:100vh;display:grid;place-items:center;background:transparent;font:600 12px system-ui,sans-serif">
+<div id="all" style="display:grid;justify-items:center;gap:10px;margin-top:34px;opacity:0;transition:opacity .12s">
+<div id="ring" style="width:110px;height:110px;border-radius:50%;display:grid;place-items:center;background:rgba(24,24,27,.82);color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.35);transition:transform .15s,background .15s">
+<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+<div id="label" style="padding:3px 9px;border-radius:99px;background:rgba(24,24,27,.82);color:#fff">Hide Perry</div></div>
+<script>window.shown=(on)=>{all.style.opacity=on?"1":"0";};window.arm=(on)=>{ring.style.transform=on?"scale(1.2)":"";ring.style.background=on?"rgba(220,38,38,.92)":"rgba(24,24,27,.82)";label.textContent=on?"Let go to hide him":"Hide Perry";}</script>
+</body></html>`;
+
+/** The checkout's .env.local, where the dashboard key and any PERRY_PORT live. */
+function envFile() {
+  const values = {};
+  const file = join(REPO, ".env.local");
+  if (!existsSync(file)) return values;
+  for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+    const eq = line.indexOf("=");
+    if (eq > 0 && !line.trimStart().startsWith("#")) values[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
+  }
+  return values;
+}
+
+const env = envFile();
+const BASE = process.env.PERRY_URL ?? `http://127.0.0.1:${process.env.PERRY_PORT ?? env.PERRY_PORT ?? 3000}`;
+const KEY = process.env.DASHBOARD_KEY ?? env.DASHBOARD_KEY ?? "";
+
+function readState() {
+  try { return JSON.parse(readFileSync(STATE, "utf8")); } catch { return {}; }
+}
+
+function saveState(patch) {
+  try {
+    mkdirSync(HOME, { recursive: true });
+    writeFileSync(STATE, JSON.stringify({ ...readState(), ...patch }, null, 2));
+  } catch (error) {
+    console.error(`could not save where the pet is: ${error}`);
+  }
+}
+
+/** Where the window may stand: anywhere, so long as he is on a screen. */
+function keepOnScreen(x, y) {
+  const area = screen.getDisplayNearestPoint({ x: x + SIZE.width - BODY.width / 2, y: y + SIZE.height - BODY.height / 2 }).workArea;
+  return {
+    x: Math.round(Math.min(Math.max(x, area.x - (SIZE.width - BODY.width)), area.x + area.width - SIZE.width)),
+    y: Math.round(Math.min(Math.max(y, area.y - (SIZE.height - BODY.height)), area.y + area.height - SIZE.height)),
+  };
+}
+
+function startingPlace() {
+  const saved = readState();
+  if (Number.isFinite(saved.x) && Number.isFinite(saved.y)) return keepOnScreen(saved.x, saved.y);
+  const area = screen.getPrimaryDisplay().workArea;
+  return { x: area.x + area.width - SIZE.width, y: area.y + area.height - SIZE.height };
+}
+
+if (process.platform === "linux") app.commandLine.appendSwitch("enable-transparent-visuals");
+// For looking inside his page with DevTools, as the end-to-end check does (artifacts/desktop-pet).
+if (process.env.PERRY_PET_DEVTOOLS_PORT) app.commandLine.appendSwitch("remote-debugging-port", process.env.PERRY_PET_DEVTOOLS_PORT);
+// A recording in place of the microphone, for the same check: it plays once, each time he listens.
+if (process.env.PERRY_PET_FAKE_MIC) {
+  app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+  app.commandLine.appendSwitch("use-file-for-fake-audio-capture", `${process.env.PERRY_PET_FAKE_MIC}%noloop`);
+}
+
+const argv = process.argv.slice(1);
+if (!app.requestSingleInstanceLock({ argv })) {
+  // The one already running was told (second-instance, below); this one has nothing to do.
+  app.quit();
+} else if (argv.includes("--quit") || argv.includes("--reload")) {
+  // Asked to act on a pet that was not running: there is nothing to quit or reload.
+  app.quit();
+} else {
+  let win = null;
+  let tray = null;
+  /** Ghost: every click goes through him, even on him. */
+  let ghost = Boolean(readState().ghost);
+  let saveTimer = null;
+  /** While he is dragged: the circle to drop him on, whether he is over it, where he came from, and where his body is in his window. */
+  let dismiss = null;
+  let dragging = false;
+  let armed = false;
+  let dragFrom = null;
+  let body = null;
+  /** Whether the owner wants him on screen; the tray's Hide says no. */
+  let wanted = true;
+  /**
+   * The hotkey that talks to him: the one last set (Settings → Keyboard
+   * shortcuts, kept in pet.json so it works before his page loads), or the
+   * default. `hotkeyError` says why he does not have the one asked for.
+   */
+  let voice = null;
+  let hotkeyError = null;
+  const voiceTo = (type) => {
+    // Talking to him brings him back if he was hidden, without taking the focus from what you are in.
+    if (type === "start" && win && !win.isVisible()) show();
+    win?.webContents.send("pet:voice", type);
+  };
+
+  const load = () => win?.loadURL(`${BASE}/pet#key=${encodeURIComponent(KEY)}`).catch(() => {});
+  /** A page of the dashboard in the owner's browser, unlocked as `perry open` does; only this server's own pages. */
+  const openDashboard = (path) => {
+    const page = typeof path === "string" && path.startsWith("/") && !path.startsWith("//") ? path : "/";
+    void shell.openExternal(`${BASE}${page}#key=${encodeURIComponent(KEY)}`);
+  };
+
+  const show = () => { wanted = true; if (win && !win.isVisible()) win.showInactive(); refreshMenu(); };
+  const hide = () => { wanted = false; win?.hide(); refreshMenu(); };
+
+  function dismissWindow() {
+    const area = screen.getPrimaryDisplay().workArea;
+    const target = new BrowserWindow({
+      x: Math.round(area.x + (area.width - DISMISS.size) / 2), y: area.y + area.height - DISMISS.size - 8,
+      width: DISMISS.size, height: DISMISS.size, frame: false, transparent: true, backgroundColor: "#00000000", hasShadow: false,
+      resizable: false, movable: false, focusable: false, skipTaskbar: true, alwaysOnTop: true, show: false,
+      // It must redraw the moment he is over it, though it was hidden a moment ago.
+      webPreferences: { sandbox: true, contextIsolation: true, backgroundThrottling: false },
+    });
+    target.setAlwaysOnTop(true, "floating");
+    target.setIgnoreMouseEvents(true);
+    target.webContents.once("did-finish-load", () => target.showInactive());
+    void target.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(DISMISS_PAGE)}`);
+    return target;
+  }
+
+  function refreshMenu() {
+    if (!tray) return;
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: "Perry", enabled: false },
+      wanted ? { label: "Hide", click: hide } : { label: "Show", click: show },
+      { label: "Let clicks through him", type: "checkbox", checked: ghost, click: (item) => {
+        ghost = item.checked;
+        saveState({ ghost });
+        win?.setIgnoreMouseEvents(true, { forward: !ghost });
+        refreshMenu();
+      } },
+      { type: "separator" },
+      voice?.current()
+        ? { label: `Talk to him (${voice.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})`, click: () => voiceTo("start") }
+        : { label: "Talk to him: his keys are taken by another app", enabled: false },
+      { label: "Keyboard shortcuts…", click: () => openDashboard("/settings?tab=shortcuts") },
+      { label: "Open Perry", click: () => openDashboard("/") },
+      { label: "Put him back in the corner", click: () => {
+        const area = screen.getPrimaryDisplay().workArea;
+        win?.setBounds({ x: area.x + area.width - SIZE.width, y: area.y + area.height - SIZE.height, ...SIZE });
+        saveState({ x: undefined, y: undefined });
+      } },
+      { type: "separator" },
+      { label: "Quit", click: () => app.quit() },
+    ]));
+  }
+
+  app.on("second-instance", (_event, _commandLine, _cwd, data) => {
+    const args = data?.argv ?? [];
+    if (args.includes("--quit")) app.quit();
+    else if (args.includes("--reload")) load();
+    else show();
+  });
+
+  app.whenReady().then(() => {
+    // One name for the system's notifications; on macOS no Dock icon, since he is not an app you switch to.
+    if (process.platform === "win32") app.setAppUserModelId("Perry");
+    app.dock?.hide();
+
+    win = new BrowserWindow({
+      ...SIZE,
+      ...startingPlace(),
+      title: "Perry",
+      frame: false,
+      transparent: true,
+      backgroundColor: "#00000000",
+      hasShadow: false,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      show: false,
+      webPreferences: {
+        preload: join(HERE, "preload.cjs"),
+        contextIsolation: true,
+        sandbox: true,
+        // He keeps counting down while nothing else is on screen.
+        backgroundThrottling: false,
+      },
+    });
+    win.setAlwaysOnTop(true, "floating");
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+    // Clicks pass through until the page says the pointer is on him (pet:solid); forwarded, so it can tell.
+    win.setIgnoreMouseEvents(true, { forward: !ghost });
+
+    // He appears once his page is there, without taking the focus from what the owner is doing.
+    win.webContents.on("did-finish-load", () => { if (wanted && !win.isVisible()) win.showInactive(); });
+    // Perry's server may not be up yet (at login) or may be restarting (an update): out of sight, try again until it is.
+    win.webContents.on("did-fail-load", (_event, _code, _description, _url, mainFrame) => {
+      if (!mainFrame) return;
+      win.hide();
+      setTimeout(load, 3000);
+    });
+    win.webContents.on("render-process-gone", () => setTimeout(load, 1000));
+    // The page stays the pet; any link opens in the browser.
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:/.test(url)) void shell.openExternal(url);
+      return { action: "deny" };
+    });
+    win.webContents.on("will-navigate", (event, url) => {
+      if (!url.startsWith(`${BASE}/pet`)) {
+        event.preventDefault();
+        if (/^https?:/.test(url)) void shell.openExternal(url);
+      }
+    });
+    // Other windows asking to be on top do not push him under for long.
+    setInterval(() => {
+      if (!win?.isVisible()) return;
+      win.setAlwaysOnTop(true, "floating");
+      win.moveTop();
+    }, 15_000);
+    // A screen unplugged may take him with it.
+    screen.on("display-removed", () => {
+      const [x, y] = win.getPosition();
+      win.setBounds({ ...keepOnScreen(x, y), ...SIZE });
+    });
+
+    ipcMain.on("pet:solid", (_event, on) => {
+      if (!ghost) win.setIgnoreMouseEvents(!on, { forward: true });
+    });
+    ipcMain.on("pet:move", (_event, x, y) => {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      // The size is set with the place each time: on a scaled screen, moving alone can grow a window a pixel at a time.
+      const place = keepOnScreen(x, y);
+      win.setBounds({ ...place, ...SIZE });
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => saveState(place), 500);
+      if (dragging && body) {
+        const [cx, cy] = [place.x + body.x, place.y + body.y];
+        const target = dismiss.getBounds();
+        const over = Math.hypot(cx - (target.x + target.width / 2), cy - (target.y + target.height / 2)) < DISMISS.reach;
+        if (over !== armed) {
+          armed = over;
+          void dismiss.webContents.executeJavaScript(`arm(${armed})`).catch(() => {});
+          win.webContents.send("pet:armed", armed);
+        }
+      }
+    });
+    // A drag starts: the circle appears at the bottom middle of his screen. It ends: over the circle, he goes.
+    ipcMain.on("pet:drag", (_event, phase, bodyX, bodyY) => {
+      if (phase === "start") {
+        dragFrom = win.getPosition();
+        body = { x: Number(bodyX) || SIZE.width - 68, y: Number(bodyY) || SIZE.height - 69 };
+        const area = screen.getDisplayNearestPoint({ x: dragFrom[0] + body.x, y: dragFrom[1] + body.y }).workArea;
+        dismiss.setBounds({ x: Math.round(area.x + (area.width - DISMISS.size) / 2), y: area.y + area.height - DISMISS.size - 8, width: DISMISS.size, height: DISMISS.size });
+        armed = false;
+        // Its window is always there, see-through; it fades in, above whatever else is on top, and he above it.
+        void dismiss.webContents.executeJavaScript("arm(false); shown(true)").catch(() => {});
+        dragging = true;
+        dismiss.moveTop();
+        win.moveTop();
+        return;
+      }
+      dragging = false;
+      void dismiss?.webContents.executeJavaScript("shown(false)").catch(() => {});
+      if (armed && dragFrom) {
+        armed = false;
+        win.webContents.send("pet:armed", false);
+        hide();
+        // Back to where he was, for when he is shown again.
+        clearTimeout(saveTimer);
+        const [x, y] = dragFrom;
+        win.setBounds({ x, y, ...SIZE });
+        saveState({ x, y });
+        if (Notification.isSupported()) {
+          const keys = voice?.current()?.replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl");
+          new Notification({ title: "Perry is out of sight", body: `${keys ? `Press ${keys}, or click` : "Click"} his icon in the tray, to bring him back.`, silent: true }).show();
+        }
+      }
+      dragFrom = null;
+    });
+    ipcMain.handle("pet:idle", () => powerMonitor.getSystemIdleTime());
+    // What was said, as text: the page records, this listens.
+    ipcMain.handle("pet:transcribe", async (_event, samples) => {
+      try {
+        const text = await transcribe(MODELS, samples, (progress) => win?.webContents.send("pet:voice-progress", progress));
+        return { text };
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    });
+    ipcMain.on("pet:voice-done", () => voice?.done());
+    voice = hotkeys(voiceTo);
+    const take = (accelerator) => {
+      const result = voice.change(accelerator);
+      hotkeyError = result.error ?? null;
+      if (result.hotkey) saveState({ hotkey: result.hotkey });
+      refreshMenu();
+      return { hotkey: voice.current(), error: hotkeyError };
+    };
+    // The page asks for the keys the dashboard has; he answers with the ones he holds, and why not, if not.
+    ipcMain.handle("pet:hotkey", () => ({ hotkey: voice.current(), error: hotkeyError }));
+    ipcMain.handle("pet:set-hotkey", (_event, accelerator) => typeof accelerator === "string" ? take(accelerator) : { hotkey: voice.current(), error: hotkeyError });
+    const saved = readState().hotkey ?? process.env.PERRY_PET_HOTKEY ?? DEFAULT_HOTKEY;
+    if (take(saved).error && saved !== DEFAULT_HOTKEY) take(DEFAULT_HOTKEY);
+    warmUp(MODELS);
+    ipcMain.on("pet:open", (_event, path) => openDashboard(path));
+
+    // icon.png is 16 points; Electron takes icon@2x.png beside it on a scaled screen.
+    // The circle that hides him, made now and always there, see-through, until he is dragged.
+    dismiss = dismissWindow();
+    tray = new Tray(nativeImage.createFromPath(join(HERE, "icon.png")));
+    tray.setToolTip("Perry");
+    tray.on("click", () => (wanted ? hide() : show()));
+    refreshMenu();
+
+    load();
+  });
+
+  // He lives in the tray: closing his window is not quitting.
+  app.on("window-all-closed", () => {});
+}
