@@ -49,6 +49,26 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
   });
   const addMemory = useMutation(api.dashboard.addMemory);
   const deleteMemory = useMutation(api.dashboard.deleteMemory);
+  const editMemory = useMutation(api.dashboard.editMemory);
+  /** The memory being edited, its new words, and why a save was refused. */
+  const [editing, setEditing] = useState<{ id: string; text: string; error: string } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const saveEdit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!editing || savingEdit) return;
+    setSavingEdit(true);
+    try {
+      // Refused (too long for its layer, say), the words stay in the box to be changed again.
+      const reason = await editMemory({ key: dashboardKey, id: editing.id, text: editing.text });
+      if (reason) setEditing({ ...editing, error: reason });
+      else { setEditing(null); toast({ tone: "success", text: "Saved. Perry uses the new words from the next message." }); }
+    } catch (cause) {
+      setEditing({ ...editing, error: errorText(cause) });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   const add = async (event: FormEvent) => {
     event.preventDefault();
@@ -119,7 +139,23 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
               : <Empty icon="memory" title="Nothing saved yet">Ask Perry to remember something in chat, or add it above.</Empty>)}
             {memories?.map((memory) => (
               <div className="item" key={memory.id}>
-                <div className="item-main">
+                {editing?.id === memory.id ? <form className="item-main" onSubmit={(event) => void saveEdit(event)}>
+                  <label htmlFor={`memory-edit-${memory.id}`} className="sr-only">Edit this memory</label>
+                  <textarea id={`memory-edit-${memory.id}`} className="textarea" rows={2} value={editing.text} autoFocus aria-invalid={Boolean(editing.error) || undefined}
+                    aria-describedby={editing.error ? `memory-edit-error-${memory.id}` : undefined}
+                    onChange={(e) => setEditing({ ...editing, text: e.target.value, error: "" })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") setEditing(null);
+                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); }
+                    }} />
+                  {editing.error && <p className="field-error" id={`memory-edit-error-${memory.id}`} role="alert">{editing.error}</p>}
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button type="submit" className="btn btn-primary btn-sm" disabled={savingEdit || editing.text.trim().length === 0 || editing.text.trim() === memory.text} aria-busy={savingEdit || undefined}>
+                      {savingEdit && <Spinner />}{savingEdit ? "Saving…" : "Save"}
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(null)} disabled={savingEdit}>Cancel</button>
+                  </div>
+                </form> : <div className="item-main">
                   <div style={{ fontSize: 13.5, overflowWrap: "anywhere" }}>{memory.text}</div>
                   <div className="item-meta">
                     <span className="tag">{KINDS.find((item) => item.kind === memory.kind)?.label ?? memory.kind}</span>
@@ -127,9 +163,11 @@ export function Memories({ dashboardKey }: { dashboardKey: string }) {
                     {memory.origin && <span>{ORIGINS[memory.origin]}</span>}
                     {memory.source === "dreaming" && <span title="Promoted from daily notes overnight">Promoted overnight</span>}
                     {memory.tags.length > 0 && <span>{memory.tags.map((tag) => `#${tag}`).join(" ")}</span>}
+                    {memory.editedAt && <span title={`Edited ${when(memory.editedAt)}`}>Edited</span>}
                   </div>
-                </div>
+                </div>}
                 <div className="item-side">
+                  {editing?.id !== memory.id && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing({ id: memory.id, text: memory.text, error: "" })}>Edit</button>}
                   <ActionButton variant="ghost" className="btn-danger-ghost" action={() => deleteMemory({ key: dashboardKey, id: memory.id })} success="Forgotten."
                     confirm={{ title: "Forget this memory?", body: <>“{memory.text.length > 160 ? `${memory.text.slice(0, 160)}…` : memory.text}” will be deleted, and Perry won&apos;t recall it again.</>, confirmLabel: "Forget" }}>Forget</ActionButton>
                 </div>

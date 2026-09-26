@@ -314,6 +314,8 @@ export default defineSchema({
     supersededBy: v.optional(v.id("memories")),
     /** Unset on memories from before provenance was recorded. */
     origin: v.optional(vMemoryOrigin),
+    /** When the owner last changed its text on the Memory page. */
+    editedAt: v.optional(v.number()),
   })
     .index("by_created", ["createdAt"])
     .index("by_kind", ["kind", "createdAt"])

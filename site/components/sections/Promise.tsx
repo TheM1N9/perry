@@ -2,7 +2,7 @@ import { Reveal } from "@/components/fx/Reveal";
 
 // What Perry isn't, each with the plain fact behind it.
 const NOT = [
-  { title: "No cloud.", body: "Perry runs on your computer. Your files stay on it, and nothing listens on a port." },
+  { title: "No cloud.", body: "Perry runs on your computer. Your files stay on it, and its dashboard opens only with your key." },
   { title: "No new subscription.", body: "It thinks with the ChatGPT plan you already pay for, through the Codex CLI." },
   { title: "No rogue moves.", body: "One owner per Perry, and anything risky waits for your Approve." },
 ];

@@ -589,6 +589,7 @@ export type MemoryView = {
   day?: string;
   origin?: "owner" | "tool" | "job";
   createdAt: number;
+  editedAt?: number;
 };
 
 export const listMemories = query({
@@ -619,6 +620,17 @@ export const addMemory = mutation({
       kind: args.kind,
       origin: "owner",
     });
+    return result.error ?? null;
+  },
+});
+
+/** Change a memory's words; returns why not, such as a full layer, or null once saved. */
+export const editMemory = mutation({
+  args: { key: vKey, id: v.string(), text: v.string() },
+  returns: v.union(v.null(), v.string()),
+  handler: async (ctx, args): Promise<string | null> => {
+    assertDashboardKey(args.key);
+    const result: { saved: boolean; error?: string } = await ctx.runMutation(internal.memories.edit, { id: args.id, text: args.text });
     return result.error ?? null;
   },
 });

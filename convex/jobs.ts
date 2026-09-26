@@ -90,6 +90,10 @@ async function timezoneOf(ctx: { db: QueryCtx["db"] }): Promise<string> {
 export const ownerTimezone = internalQuery({ args: {}, returns: v.string(), handler: (ctx) => timezoneOf(ctx) });
 
 /** The time as the owner reads it, with the UTC offset a one-time job's `at` needs. */
+/** The time on the owner's clock, like "02:13". */
+export const ownerClock = (timezone: string, at = Date.now()) =>
+  new Date(at).toLocaleTimeString("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit" });
+
 export function ownerNow(timezone: string, at = Date.now()): string {
   const date = new Date(at);
   const offset = new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "longOffset" })
@@ -155,7 +159,8 @@ export const tick = internalMutation({
       // A one-time job runs once and pauses, keeping its time for the record.
       const next = job.runAt ? { enabled: false } : { nextRunAt: nextRun(job.schedule!, timezone) };
       await ctx.db.patch(job._id, { lastRunAt: Date.now(), lastResult: undefined, lastError: undefined, ...next });
-      await ctx.scheduler.runAfter(0, internal.jobs.run, { id: job._id });
+      // When it last ran, so a briefing can gather what happened since.
+      await ctx.scheduler.runAfter(0, internal.jobs.run, { id: job._id, ...(job.lastRunAt ? { since: job.lastRunAt } : {}) });
     }
     return null;
   },
@@ -197,10 +202,11 @@ export const get = internalQuery({
 });
 
 export const run = internalAction({
-  args: { id: v.id("jobs") },
+  /** since: when the job last ran; alerts sent after it reach this run. */
+  args: { id: v.id("jobs"), since: v.optional(v.number()) },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const found: { job: Doc<"jobs">; timezone: string } | null = await ctx.runQuery(internal.jobs.get, args);
+    const found: { job: Doc<"jobs">; timezone: string } | null = await ctx.runQuery(internal.jobs.get, { id: args.id });
     if (!found) return null;
     const { job, timezone } = found;
     // A thread is only created when the job has no chat yet; chatFor ignores it otherwise.
@@ -218,6 +224,15 @@ export const run = internalAction({
       context = chats.length
         ? `\n\nToday's conversations (chat id, channel, title):\n${chats.map((chat) => `- ${chat.id} (${chat.channel}) ${chat.title}`).join("\n")}`
         : `\n\nThere were no conversations today, so there is nothing to do: reply with exactly ${QUIET}.`;
+    }
+    // A recurring job of the owner's may be their briefing: it hears about what Perry alerted them to since
+    // it last ran, so something important at night is in the morning brief as well.
+    if (job.schedule && !job.builtin) {
+      const alerts: string[] = await ctx.runQuery(internal.memories.alertsSince, { since: args.since ?? Date.now() - 86_400_000 });
+      if (alerts.length) {
+        context += `\n\nAlerts you sent the owner since this job last ran:\n${alerts.map((alert) => `- ${alert}`).join("\n")}\n` +
+          "If this job is a briefing or summary, mention the ones that still matter, briefly, as already sent; otherwise leave them out.";
+      }
     }
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
       channel: "web",
@@ -239,6 +254,10 @@ export const finished = internalMutation({
     await ctx.db.patch(job._id, { lastResult: args.result?.slice(0, 500), lastError: args.error?.slice(0, 500) });
     if (args.result && args.result.trim() !== QUIET) {
       await ctx.scheduler.runAfter(0, internal.notify.toOwner, { text: `⏰ ${job.name}\n\n${args.result}` });
+      // The heartbeat only speaks when something needs the owner: that is an alert, for the next brief too.
+      if (job.builtin === "heartbeat") {
+        await ctx.runMutation(internal.memories.noteAlert, { text: args.result, at: ownerClock(await timezoneOf(ctx)) });
+      }
     }
     return null;
   },

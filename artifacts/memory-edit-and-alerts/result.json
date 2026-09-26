@@ -1,0 +1,51 @@
+{
+  "ranAt": "2026-09-26T01:36:27.417Z",
+  "checks": {
+    "editIsOffered": true,
+    "editChangesWords": true,
+    "editKeepsTheRest": true,
+    "editRespectsBudget": true,
+    "emptyEditRefused": true,
+    "watchAlertIsNoted": true,
+    "heartbeatAlertIsNoted": true,
+    "briefIsToldBothAlerts": true,
+    "briefNotToldOlderAlerts": true,
+    "othersNotTold": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "edited": {
+      "before": {
+        "id": "trqwcewcp7hbsftfczrhhy0d95",
+        "text": "The owner's usual coffee is a flat white.",
+        "tags": [],
+        "source": "e2e",
+        "kind": "core",
+        "origin": "tool",
+        "createdAt": 1790386525383
+      },
+      "after": {
+        "id": "trqwcewcp7hbsftfczrhhy0d95",
+        "text": "The owner's usual coffee is black, no sugar.",
+        "tags": [],
+        "source": "e2e",
+        "kind": "core",
+        "origin": "owner",
+        "createdAt": 1790386525383,
+        "editedAt": 1790386531892
+      }
+    },
+    "refused": {
+      "tooLong": "This memory alone is longer than the 4,000-character budget for profile. Shorten it, then retry this save.",
+      "empty": "Write at least a few words, or forget it instead."
+    },
+    "alertNotes": [
+      "Alerted the owner at 07:06: Your 6:40 flight moved to 7:25.",
+      "Alerted the owner at 07:05: E2E watch: Found \"Example Domain\" on the page. (https://example.com)",
+      "Alerted the owner at 06:00: An old alert from before the last brief."
+    ],
+    "briefPrompt": "⏰ Morning brief (Saturday, 26 September 2026 at 07:06)\n\nBrief me on my day.\n\nAlerts you sent the owner since this job last ran:\n- Alerted the owner at 07:05: E2E watch: Found \"Example Domain\" on the page. (https://example.com)\n- Alerted the owner at 07:06: Your 6:40 flight moved to 7:25.\nIf this job is a briefing or summary, mention the ones that still matter, briefly, as already sent; otherwise leave them out.\n\nConditional delivery\nOnly when this job makes delivery conditional and there is nothing new to report, reply with exactly NOTHING and no other text. This includes results already delivered or incorporated into an earlier run; do not send an acknowledgement of that redundancy. Do not use NOTHING to omit commentary from a result that still needs delivery. Never return an empty reply; use NOTHING to intentionally deliver nothing.",
+    "pageErrors": []
+  },
+  "passed": true
+}

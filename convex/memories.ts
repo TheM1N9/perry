@@ -45,6 +45,7 @@ function view(memory: Memory) {
     day: memory.day,
     origin: memory.origin,
     createdAt: memory.createdAt,
+    editedAt: memory.editedAt,
   };
 }
 export type MemoryView = ReturnType<typeof view>;
@@ -267,6 +268,65 @@ export const context = internalAction({
       recalled: recalled ? `${RECALL_HEADER}\n\n${recalled}` : "",
       digest,
     };
+  },
+});
+
+/**
+ * The owner corrects a memory's words. It changes in place, keeping its kind,
+ * its day and when it was first remembered, and is the owner's from then on,
+ * whoever wrote it. A longer text must still fit its layer's budget.
+ */
+export const edit = internalMutation({
+  args: { id: v.string(), text: v.string() },
+  returns: v.object({ saved: v.boolean(), error: v.optional(v.string()) }),
+  handler: async (ctx, args) => {
+    const id = ctx.db.normalizeId("memories", args.id);
+    const memory = id ? await ctx.db.get(id) : null;
+    if (!id || !memory) return { saved: false, error: "That memory no longer exists." };
+    const text = args.text.trim();
+    if (text.length < 3) return { saved: false, error: "Write at least a few words, or forget it instead." };
+    if (text === memory.text) return { saved: false };
+    const kind = kindOf(memory);
+    if (kind !== "daily") {
+      const used = (await layer(ctx, kind)).filter((other) => other._id !== id).reduce((sum, other) => sum + cost(other.text), 0);
+      if (used + cost(text) > BUDGET[kind]) return { saved: false, error: overBudget(kind, used, cost(text)) };
+    }
+    await ctx.db.patch(id, { text, origin: "owner", editedAt: Date.now() });
+    return { saved: true };
+  },
+});
+
+/**
+ * Something Perry told the owner without being asked (a page watch firing, the
+ * heartbeat speaking up), kept as a daily note tagged "alert". Sending it at
+ * once is one half; the next briefing picks it up again, so an alert at 02:13
+ * is still in the 07:00 brief (jobs.run).
+ */
+export const noteAlert = internalMutation({
+  args: { text: v.string(), at: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const text = args.text.trim().replace(/\s+/g, " ").slice(0, 600);
+    if (!text) return null;
+    await ctx.db.insert("memories", {
+      text: `Alerted the owner at ${args.at}: ${text}`,
+      tags: ["alert"],
+      source: "alert",
+      createdAt: Date.now(),
+      kind: "daily",
+      day: day(),
+      origin: "job",
+    });
+    return null;
+  },
+});
+
+/** The alerts noted since a time, oldest first. */
+export const alertsSince = internalQuery({
+  args: { since: v.number() },
+  handler: async (ctx, args): Promise<string[]> => {
+    const recent = await ctx.db.query("memories").withIndex("by_created", (q) => q.gt("createdAt", args.since)).take(500);
+    return recent.filter((memory) => !memory.supersededBy && memory.tags.includes("alert")).map((memory) => memory.text).slice(-50);
   },
 });
 
