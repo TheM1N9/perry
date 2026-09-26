@@ -1,0 +1,15 @@
+﻿{
+    "ranAt":  "2026-09-26T18:44:46.7475404+05:30",
+    "checks":  {
+                   "installed":  true,
+                   "noToolOutputOnFirstRun":  true,
+                   "firstRunIsAFewLines":  true,
+                   "toolsOnOneLine":  true,
+                   "failureShowsItsOutput":  true,
+                   "secondRunNoNoisier":  true,
+                   "setupHasNoStepNumbers":  true,
+                   "setupSavedTheKey":  true,
+                   "setupIsAFewLines":  true
+               },
+    "passed":  true
+}

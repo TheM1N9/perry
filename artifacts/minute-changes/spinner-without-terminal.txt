@@ -1,0 +1,4 @@
+  - [2ma step that works[0m
+  [32m✔[39m done
+  - [2ma step that fails[0m
+  [31m✖[39m failed

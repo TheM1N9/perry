@@ -15,7 +15,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { HOME, ensureHome } from "../runner/home";
-import { bold, dim, green, red, runConvex, yellow } from "./lib";
+import { bold, dim, green, red, runConvex, spinner, yellow } from "./lib";
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
 const PORT = Number(process.env.PERRY_PORT ?? 3000);
@@ -49,15 +49,15 @@ async function main() {
     }
     ensureHome();
     zip = join(HOME, `convex-export-${new Date().toISOString().slice(0, 10)}.zip`);
-    say(dim(`  Exporting ${deployment} (chats, memory and files) to ${zip}…`));
+    const exporting = await spinner(`Exporting ${deployment} (chats, memory and files) to ${zip}…`);
     const exported = await runConvex(["export", "--include-file-storage", "--path", zip]);
     if (exported.code !== 0 || !existsSync(zip)) {
-      say(red("  The export failed:"));
+      exporting.fail(red("The export failed:"));
       say(dim(exported.output.split(/\r?\n/).filter((line) => line.trim()).slice(-6).join("\n")));
       say(dim(`  If it asks you to log in: ${bold("npx convex login")}, then run this again.\n`));
       process.exit(1);
     }
-    say(`  ${green("exported")} ${zip}`);
+    exporting.succeed(`${green("exported")} ${zip}`);
 
     // Keys set with `convex env set` are not in an export; ones Perry uses come over as saved keys.
     for (const name of ["COMPOSIO_API_KEY", "TELEGRAM_BOT_TOKEN"]) {

@@ -24,11 +24,18 @@ PERRY_HOME="${PERRY_HOME:-$HOME/.perry}"
 LOCAL_NODE="$PERRY_HOME/node"
 LOCAL_NPM="$PERRY_HOME/npm"
 
-step() { printf '\n\033[36m%s\033[0m\n' "$*"; }
+# One line per step that went well; a tool's own output only when it fails.
 ok() { printf '  \033[32m%s\033[0m\n' "$*"; }
-found() { printf '  \033[32m%s\033[0m \033[2m(already installed)\033[0m\n' "$*"; }
-added() { printf '  \033[32m%s\033[0m \033[2m(installed for Perry)\033[0m\n' "$*"; }
+TOOLS=""
+found() { TOOLS="${TOOLS:+$TOOLS, }$*"; }
+added() { found "$* (new)"; }
 note() { printf '  \033[2m%s\033[0m\n' "$*"; }
+# Runs a step with its output held back, shown only if it fails.
+quietly() {
+  what=$1; shift
+  printf '  \033[2m%s...\033[0m' "$what"
+  if out=$("$@" 2>&1); then printf '\r\033[K'; else printf '\r\033[K%s\n' "$out" | tail -n 20; return 1; fi
+}
 fail() { printf '\n  \033[31m%s\033[0m\n  \033[2mFix that, then run the installer again; it picks up where it stopped.\033[0m\n\n' "$*"; exit 1; }
 has() { command -v "$1" >/dev/null 2>&1; }
 # After everything already here, so a tool you have always wins over one this script adds.
@@ -103,7 +110,6 @@ remember_path() {
 }
 
 printf '\n\033[1mInstalling Perry\033[0m\n'
-step "Tools"
 find_existing
 # What an earlier run installed for Perry, again after everything you have.
 add_path "$LOCAL_NPM/bin"; add_path "$HOME/.bun/bin"; export PATH
@@ -147,18 +153,18 @@ else
   added "codex"
 fi
 remember_path
+ok "$TOOLS"
 
-step "Perry, in $DIR"
 if [ -d "$DIR/.git" ]; then
-  git -C "$DIR" pull --ff-only || fail "Updating Perry failed."
+  quietly "updating Perry" git -C "$DIR" pull --ff-only || fail "Updating Perry failed."
 elif [ -d "$DIR" ] && [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; then
   fail "$DIR exists and is not a Perry checkout. Move it, or set PERRY_DIR to another folder."
 else
-  git clone --branch "$BRANCH" "$REPO" "$DIR" || fail "Downloading Perry failed."
+  quietly "downloading Perry" git clone --branch "$BRANCH" "$REPO" "$DIR" || fail "Downloading Perry failed."
 fi
 cd "$DIR"
-pnpm install --frozen-lockfile || fail "Installing packages failed."
-ok "packages installed"
+quietly "installing packages" pnpm install --frozen-lockfile || fail "Installing packages failed."
+ok "Perry in $DIR"
 
 if [ "${PERRY_NO_SETUP:-}" = 1 ]; then
   bun --cwd "$DIR" "$DIR/scripts/perry.ts" link
