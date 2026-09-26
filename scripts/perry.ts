@@ -32,7 +32,7 @@ import { homedir, hostname, networkInterfaces } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HOME, readRunnerConfig } from "../runner/home";
-import { bold, dim, green, red, yellow } from "./lib";
+import { bold, dim, done, green, red, run, spinner, tail, yellow } from "./lib";
 
 export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const PORT = Number(process.env.PERRY_PORT ?? 3000);
@@ -64,6 +64,9 @@ function tool(name: string, args: string[]) {
     : [name, ...args];
 }
 
+/** A command in the checkout, in the background, so a spinner can turn meanwhile. */
+const runIn = ([command, ...args]: string[]) => run(command, args, { cwd: REPO });
+
 const bunScript = (script: string, args: string[] = []) => [process.execPath, join(REPO, "scripts", script), ...args];
 
 function readEnvFile(): Record<string, string> {
@@ -93,17 +96,21 @@ function networkUrls(): string[] {
       if (address.family !== "IPv4" || address.internal || address.address.startsWith("169.254.")) continue;
       const [a, b] = address.address.split(".").map(Number);
       const tailscale = a === 100 && b >= 64 && b <= 127;
-      urls.push(`${dashboardUrl(address.address)}${tailscale ? dim("  (Tailscale)") : ""}`);
+      urls.push(`${dashboardUrl(address.address)}${tailscale ? dim(" (Tailscale)") : ""}`);
     }
   }
   return urls;
 }
 
-/** Where the dashboard is, on this machine and on the network, one address per line. */
+/** Where the dashboard is: on this machine, then its other addresses on one line, for a phone or another computer. */
 function sayWhere(label: string) {
   say(`  ${label}  ${dashboardUrl()}`);
-  const pad = " ".repeat(label.replace(/\x1b\[[0-9;]*m/g, "").length);
-  for (const url of networkUrls()) say(`  ${pad}  ${url}`);
+  sayAlso(" ".repeat(label.replace(/\x1b\[[0-9;]*m/g, "").length + 2));
+}
+
+function sayAlso(indent: string) {
+  const others = networkUrls();
+  if (others.length) say(`  ${indent}${dim("also")} ${others.join(dim(", "))}`);
 }
 
 async function dashboardUp(): Promise<boolean> {
@@ -137,15 +144,16 @@ function runnerHeldBy(token: string): number | null {
 
 // --- The dashboard build ---------------------------------------------------
 
-function build(): boolean {
-  say(`\n${bold("Building the dashboard")}  ${dim("(a production build; a minute or so)")}`);
-  const built = exec([nodePath(), NEXT_CLI, "build"], { quiet: true });
+/** Run in the background, so the spinner turns while Next.js builds. */
+async function build(): Promise<boolean> {
+  const building = await spinner("Building the dashboard, a minute or so…");
+  const built = await run(nodePath(), [NEXT_CLI, "build"], { cwd: REPO });
   if (built.code !== 0) {
-    say(red("  The build failed:"));
-    say(dim(built.output.split(/\r?\n/).slice(-15).join("\n")));
+    building.fail(red("The dashboard build failed:"));
+    say(dim(tail(built.output)));
     return false;
   }
-  say(`  ${green("built")}`);
+  building.succeed("dashboard built");
   return true;
 }
 
@@ -179,7 +187,7 @@ async function runForeground() {
     mkdirSync(dirname(pidFile), { recursive: true });
     writeFileSync(pidFile, String(process.pid));
   }
-  if (!existsSync(BUILD_ID) && !build()) process.exit(1);
+  if (!existsSync(BUILD_ID) && !(await build())) process.exit(1);
 
   const stamp = () => new Date().toISOString().slice(11, 19);
   const children: Managed[] = [
@@ -269,7 +277,7 @@ function link(): boolean {
       if (!current.includes(BIN_DIR)) appendFileSync(file, `${current && !current.endsWith("\n") ? "\n" : ""}${line}\n`);
     }
   }
-  say(dim(`  Added ${BIN_DIR} to your PATH. Open a new terminal to use ${bold("perry")} anywhere.`));
+  say(dim(`  Open a new terminal to use the ${bold("perry")} command anywhere.`));
   return true;
 }
 
@@ -418,7 +426,7 @@ async function open(): Promise<boolean> {
     say(`  Open the dashboard and use this key: ${key}`);
     sayWhere("       ");
   } else {
-    say(`  ${green("opened")} ${dashboardUrl()}`);
+    await done("dashboard opened");
   }
   return true;
 }
@@ -445,24 +453,28 @@ async function start(): Promise<boolean> {
     say(`\n${red("Perry is not set up yet.")} Run ${bold("perry setup")} first.\n`);
     return false;
   }
-  if (!existsSync(BUILD_ID) && !build()) return false;
+  if (!existsSync(BUILD_ID) && !(await build())) return false;
   const ctx = serviceContext();
   const state = serviceState(ctx);
   const ok = state.installed ? state.running || runSteps(servicePlan(ctx).start, false) : install();
   if (!ok) return false;
-  say(dim("  Waiting for the dashboard…"));
+  const waiting = await spinner("Starting Perry…");
   const up = await waitFor(dashboardUp, 90);
-  if (up) sayWhere(green("running"));
-  else say(yellow(`  Started, but the dashboard is not answering yet. ${bold("perry logs")} says why.`));
-  return up;
+  if (!up) {
+    waiting.fail(yellow(`Started, but the dashboard is not answering yet. ${bold("perry logs")} says why.`));
+    return false;
+  }
+  waiting.succeed(`running at ${dashboardUrl()}${state.installed ? "" : dim(", and from every login on")}`);
+  sayAlso("  ");
+  return true;
 }
 
-async function stop() {
+async function stop({ quiet = false } = {}) {
   const { serviceContext, servicePlan, runSteps, endServiceProcess } = await import("./service");
   const ctx = serviceContext();
   runSteps(servicePlan(ctx).stop, false);
   if (ctx.platform === "win32") endServiceProcess();
-  say(`  ${green("stopped")}`);
+  if (!quiet) await done("stopped");
 }
 
 /** Perry's backend as this machine's CLI calls it: the running server, with the dashboard key. */
@@ -481,28 +493,15 @@ async function pairTelegram() {
   const bot = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getMe`).then((r) => r.json(), () => null) as { result?: { username?: string } } | null;
   const code = await client.call<{ code: string }>("installation:startPairing").then((result) => result.value.code, () => null);
   if (!code) { say(yellow(`  Could not make a pairing code; ${bold("perry pair")} tries again.`)); return; }
-  say(`
-${bold("Claim it")}`);
-  say(`  Message ${bold(`@${bot?.result?.username ?? "your bot"}`)} on Telegram with:`);
-  say(`
-      ${bold(green(code))}
-`);
-  say(dim("  It expires in an hour. Whoever sends it first owns this Perry;"));
-  say(dim("  everyone else is ignored from then on."));
+  say(`\n  To make Perry yours, send ${bold(`@${bot?.result?.username ?? "your bot"}`)} this code on Telegram ${dim("(it expires in an hour)")}:`);
+  say(`\n      ${bold(green(code))}\n`);
 }
 
 async function setup() {
   const configured = exec(bunScript("setup.ts", ["--from-perry"]));
   if (configured.code !== 0) process.exit(configured.code);
 
-  say(`
-${bold("This computer")}`);
-  say(dim(`  Your chats, memory and files stay on this computer, in ${HOME}. Nothing listens
-  on the internet for Perry: it asks Telegram for messages, and Codex runs here.`));
-  if (!build()) process.exit(1);
-
-  say(`
-${bold("Running in the background")}`);
+  if (!(await build())) process.exit(1);
   const { endServiceProcess } = await import("./service");
   if (process.platform === "win32") endServiceProcess();
   if (!(await start())) process.exit(1);
@@ -518,19 +517,10 @@ ${bold("Your data on Convex")}`);
     else say(dim(`  Skipped. ${bold("perry migrate")} brings them over whenever you like.`));
   }
 
-  say(`
-${bold("The perry command")}`);
+  // Codex not being signed in was said by setup.ts, where it was checked.
   link();
-  say(`
-${bold("Dashboard")}`);
   await open();
-  const { runCodex } = await import("./lib");
-  const codex = await runCodex(["login", "status"]);
-  if (codex.code !== 0) say(yellow(`
-  Codex is not signed in yet, so Perry cannot answer: run ${bold("codex login")}, or sign in from the dashboard's Settings page.`));
-  say(dim(`
-  perry status | logs | stop | start | open | update | doctor
-`));
+  say(dim(`  perry status | logs | stop | start | open | update | doctor\n`));
 }
 
 /** One question on this terminal. */
@@ -543,23 +533,33 @@ async function ask(question: string): Promise<string> {
 async function update() {
   say(`\n${bold("Updating Perry")}`);
   if (existsSync(join(REPO, ".git"))) {
-    const pulled = exec(tool("git", ["pull", "--ff-only"]));
+    const pulling = await spinner("Getting the latest Perry…");
+    const pulled = await runIn(tool("git", ["pull", "--ff-only"]));
     if (pulled.code !== 0) {
-      say(red("  git pull failed; commit or stash local changes, then try again."));
+      pulling.fail(red("git pull failed; commit or stash local changes, then try again."));
+      say(dim(tail(pulled.output, 6)));
       process.exit(1);
     }
+    pulling.succeed(/Already up to date/i.test(pulled.output) ? "already the latest" : "got the latest");
   }
-  if (exec(tool("pnpm", ["install", "--frozen-lockfile"])).code !== 0) process.exit(1);
+  const installing = await spinner("Installing packages…");
+  const installed = await runIn(tool("pnpm", ["install", "--frozen-lockfile"]));
+  if (installed.code !== 0) {
+    installing.fail(red("pnpm install failed:"));
+    say(dim(tail(installed.output)));
+    process.exit(1);
+  }
+  installing.succeed("packages installed");
   // The backend is part of the dashboard's server, so the new build is all there is to deploy;
   // its database moves forward on its own when the server starts.
   // The running dashboard serves from the build, so it stops while a new one is made.
   const { serviceState } = await import("./service");
   const wasRunning = serviceState().running;
-  if (wasRunning) await stop();
-  if (!build()) process.exit(1);
+  if (wasRunning) await stop({ quiet: true });
+  if (!(await build())) process.exit(1);
   if (wasRunning && !(await start())) process.exit(1);
   if (!wasRunning) say(dim(`  Perry was not running; ${bold("perry start")} starts it.`));
-  say(`  ${green("up to date")}\n`);
+  say("");
 }
 
 const HELP = `

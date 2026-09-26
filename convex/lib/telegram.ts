@@ -347,7 +347,7 @@ export interface TelegramMessage {
   video_note?: TelegramFile;
   document?: TelegramFile;
   chat: { id: number; type: string; title?: string; username?: string };
-  from?: { id: number; is_bot: boolean; first_name?: string; username?: string };
+  from?: { id: number; is_bot: boolean; first_name?: string; last_name?: string; username?: string };
 }
 
 /** A file attached to a Telegram message, fetched later with getFile. Size is as Telegram reports it, when it does. */
@@ -358,6 +358,8 @@ export interface InboundMessage {
   senderId: string;
   text: string;
   title?: string;
+  /** The sender's name as they set it on Telegram, not their @username. */
+  name?: string;
   media: InboundMedia[];
 }
 
@@ -423,6 +425,7 @@ export function parseUpdate(update: TelegramUpdate): InboundMessage | InboundCal
     senderId: String(message.from?.id ?? message.chat.id),
     text,
     title: message.chat.title ?? message.from?.username,
+    name: [message.from?.first_name, message.from?.last_name].filter(Boolean).join(" ") || undefined,
     media,
   };
 }

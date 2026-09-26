@@ -107,6 +107,7 @@ export function ChatScreen() {
   const setPinned = useMutation(api.dashboard.setChatPinned);
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
+  const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
   const setChatModel = useMutation(api.dashboard.setChatModel).withOptimisticUpdate((store, args) => {
     const current = store.getQuery(api.dashboard.getChat, { key: args.key, id: args.id });
     if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, model: args.model });
@@ -120,7 +121,10 @@ export function ChatScreen() {
     if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, access: args.access });
   });
 
-  /** What was picked for a chat not sent yet; unset is the model's default level and the default access. */
+  /**
+   * What was picked for a chat not sent yet. Unset carries over the last chat's model and level
+   * (and the default access); "" is the default model or level, picked on purpose.
+   */
   const [draftModel, setDraftModel] = useState<string>();
   const [draftEffort, setDraftEffort] = useState<string>();
   const [draftAccess, setDraftAccess] = useState<Access>();
@@ -230,11 +234,11 @@ export function ChatScreen() {
   };
 
   const models = modelOptions?.codex;
-  const model = (selectedId ? chat?.model : draftModel) ?? ((models ?? []).find((item) => item.isDefault) ?? models?.[0])?.id;
+  const model = (selectedId ? chat?.model : draftModel ?? lastPicks?.model) || ((models ?? []).find((item) => item.isDefault) ?? models?.[0])?.id;
   // The thinking levels are the model's own; a level it does not take is kept but unused.
   const modelInfo = chatModel(models ?? [], model);
   const efforts = modelInfo?.efforts ?? [];
-  const pickedEffort = selectedId ? chat?.effort : draftEffort;
+  const pickedEffort = (selectedId ? chat?.effort : draftEffort ?? lastPicks?.effort) || undefined;
   const effort = modelInfo && effortUnused(modelInfo, pickedEffort) ? undefined : pickedEffort;
   const access: Access = (selectedId ? chat?.access : draftAccess) ?? defaultAccess ?? "supervised";
   const fail = (cause: unknown) => setError(errorText(cause));
@@ -244,11 +248,11 @@ export function ChatScreen() {
     if (picked && pickedEffort && effortUnused(picked, pickedEffort)) {
       setNotice(`${picked.name} doesn't take the ${pickedEffort} thinking level, so it thinks at its default here.`);
     }
-    if (!selectedId) return setDraftModel(next || undefined);
+    if (!selectedId) return setDraftModel(next);
     void setChatModel({ key: dashboardKey, id: selectedId, model: next || undefined }).catch(fail);
   }
   function applyEffort(next: string | undefined) {
-    if (!selectedId) return setDraftEffort(next);
+    if (!selectedId) return setDraftEffort(next ?? "");
     void setChatEffort({ key: dashboardKey, id: selectedId, effort: next }).catch(fail);
   }
   function applyAccess(next: Access) {
@@ -404,7 +408,7 @@ export function ChatScreen() {
       // A new chat takes what was picked before it existed; an existing one already has its own.
       await sendChat({
         key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, model,
-        ...(fresh ? { effort: draftEffort ?? "", access: draftAccess } : {}),
+        ...(fresh ? { effort: pickedEffort ?? "", access: draftAccess } : {}),
       });
       setPending((items) => items.map((item) => item === entry ? { ...item, sent: true } : item));
       // Full access is chosen for a chat, never carried into the next new one.
@@ -501,7 +505,7 @@ export function ChatScreen() {
           {!selectedId ? (
             <div className="flex min-h-[calc(100dvh-16rem)] flex-col items-center justify-center py-12 text-center">
               <PerryMark className="size-14" />
-              <h2 className="mt-5 text-[28px] font-semibold tracking-[-0.025em] text-balance">{greeting(status?.ownerName)}</h2>
+              <h2 className="mt-5 text-[28px] font-semibold tracking-[-0.025em] text-balance">{greeting(status?.displayName)}</h2>
               <p className="mt-1.5 text-[15px] text-muted-foreground">What should {assistant} pick up?</p>
             </div>
           ) : (

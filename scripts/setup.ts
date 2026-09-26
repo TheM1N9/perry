@@ -14,8 +14,8 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
-import { ensureHome, HOME } from "../runner/home";
-import { bold, dim, green, INSTALL_HINTS, runCodex, yellow } from "./lib";
+import { ensureHome } from "../runner/home";
+import { bold, dim, done, INSTALL_HINTS, runCodex, spinner, yellow } from "./lib";
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
 
@@ -23,10 +23,6 @@ const rl = createInterface({ input: process.stdin, output: process.stdout });
 
 function say(text = "") {
   console.log(text);
-}
-
-function step(n: number, total: number, text: string) {
-  say(`\n${bold(`[${n}/${total}]`)} ${text}`);
 }
 
 function readEnvFile(): Record<string, string> {
@@ -54,25 +50,21 @@ function writeEnvFile(values: Record<string, string | undefined>) {
   writeFileSync(ENV_FILE, lines.join("\n") + "\n", "utf8");
 }
 
+/**
+ * Said in as few lines as it takes: one for each thing that went well, and
+ * more only where the owner has something to do or something went wrong.
+ */
 async function main() {
   say(bold("\nPerry setup"));
-  say(
-    dim(
-      "Your computer, your bot, your keys, your data.\n" +
-        "Perry can read and write your memory, and in Agent P mode it can act\n" +
-        "on whatever you connect. Only you will be able to talk to it.",
-    ),
-  );
-
-  const TOTAL = 3;
   const env = readEnvFile();
 
-  // --- 1. Telegram bot, optional ------------------------------------------
-  step(1, TOTAL, "Telegram bot (optional)");
+  // --- Telegram bot, optional ---------------------------------------------
 
   /** The bot's @username, or null when Telegram is skipped and Perry is used from the dashboard. */
   const checkToken = async (candidate: string): Promise<string | null> => {
+    const asking = await spinner("Checking the token with Telegram…");
     const probe = await fetch(`https://api.telegram.org/bot${candidate}/getMe`).then((r) => r.json(), () => null);
+    asking.stop();
     if (probe?.ok) return probe.result.username as string;
     say(yellow(`  Telegram rejected that token: ${probe?.description ?? "no response"}`));
     return null;
@@ -82,13 +74,10 @@ async function main() {
   if (token) {
     botName = await checkToken(token);
     if (!botName) process.exit(1);
-    say(dim("  already configured"));
   } else {
-    say(dim("  Talk to Perry from Telegram too, or only from the dashboard. For Telegram:"));
-    say(dim("  message @BotFather, send /newbot, answer two questions, and paste the"));
-    say(dim("  token it gives you (like 8123456789:AAH...). You can add one later on the Keys page."));
+    say(dim("  Telegram is optional. For a bot: message @BotFather, send /newbot, and paste its token."));
     for (let attempt = 0; attempt < 3 && !botName; attempt++) {
-      const answer = (await rl.question("\n  Bot token, or Enter to skip: ")).trim();
+      const answer = (await rl.question("  Bot token, or Enter to skip: ")).trim();
       if (!answer) break;
       if (!answer.includes(":")) { say(yellow("  That does not look like a bot token.")); continue; }
       botName = await checkToken(answer);
@@ -96,18 +85,18 @@ async function main() {
     }
     if (!botName) {
       token = undefined;
-      say(dim("  Skipped: Perry is yours from the dashboard. Add a bot on the Keys page whenever you like."));
+      say(dim("  No bot: talk to Perry from the dashboard. Add one on the Keys page any time."));
     }
   }
-  if (botName) say(`  ${green("bot")} @${botName}`);
+  if (botName) await done(`bot @${botName}`);
 
-  // --- 2. Codex -------------------------------------------------------------
-  step(2, TOTAL, "Codex");
+  // --- Codex ----------------------------------------------------------------
 
   // Every reply is a Codex turn on this machine, so a first chat needs Codex signed in before it starts.
-  say(dim("  Perry thinks with your ChatGPT subscription, through the Codex CLI on this machine."));
+  const checking = await spinner("Checking Codex…");
   const codex = await runCodex(["--version"]);
   if (codex.code !== 0) {
+    checking.stop();
     say(yellow(`  Codex is not installed here. Install it with: ${INSTALL_HINTS.codex}`));
     say(yellow("  Then run setup again."));
     process.exit(1);
@@ -119,6 +108,7 @@ async function main() {
     return ran.code === 0 && /Logged in/i.test(ran.output) ? ran.output.trim().split(/\r?\n/).at(-1) ?? "" : null;
   };
   let signedIn = await codexStatus();
+  checking.stop();
   if (!signedIn) {
     // No display to open a browser on (a server, or over SSH): Codex's device code, entered on any device.
     const headless = Boolean(process.env.SSH_CONNECTION || process.env.SSH_TTY) || (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY);
@@ -136,20 +126,18 @@ async function main() {
     rl.resume();
   }
   if (signedIn) {
-    say(`  ${green("codex")} ${version}${dim(`, ${signedIn.replace(/^Logged in/i, "signed in")}`)}`);
+    await done(`codex ${version}${dim(`, ${signedIn.replace(/^Logged in/i, "signed in")}`)}`);
   } else {
     say(yellow(`  Codex is not signed in, so Perry cannot answer yet. Run ${bold("codex login")}, or sign in from the dashboard's Settings page.`));
   }
 
-  // --- 3. Saving it -----------------------------------------------------------
-  step(3, TOTAL, "Saving it");
+  // --- Saving it, without a word unless it fails --------------------------------
 
   const dashboardKey = env.DASHBOARD_KEY || randomBytes(24).toString("base64url");
   // A Convex install's settings stay until `perry migrate` has brought its data over; these three are gone for good.
   const { TELEGRAM_WEBHOOK_SECRET: _webhook, NEXT_PUBLIC_CONVEX_URL: _url, CONVEX_SITE_URL: _site, ...kept } = env;
   writeEnvFile({ ...kept, TELEGRAM_BOT_TOKEN: token, DASHBOARD_KEY: dashboardKey });
-  say(`  ${green("wrote")} .env.local`);
-  say(`  ${green("home")} ${ensureHome() && HOME}${dim("  (your chats, memory and files live here)")}`);
+  ensureHome();
 
   rl.close();
   // `perry setup` goes on to start Perry, pair the bot and open the dashboard.

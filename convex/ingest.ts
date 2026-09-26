@@ -27,6 +27,7 @@ export const fromTelegram = internalAction({
       senderId: inbound.senderId,
       text: inbound.text,
       title: inbound.title,
+      name: inbound.name,
       media: inbound.media,
     });
     return null;
@@ -59,6 +60,7 @@ export const receive = internalMutation({
     senderId: v.string(),
     text: v.string(),
     title: v.optional(v.string()),
+    name: v.optional(v.string()),
     media: v.optional(v.array(vTelegramMedia)),
   },
   returns: v.null(),
@@ -68,7 +70,7 @@ export const receive = internalMutation({
       {
         channel: "telegram",
         externalId: args.chatId,
-        name: args.title,
+        name: args.name ?? args.title,
         text: args.text,
       },
     );

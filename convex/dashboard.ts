@@ -687,6 +687,25 @@ export const setChatAccess = mutation({
 });
 
 /** The access new chats start with, for Settings and the composer of a chat not yet sent. */
+/**
+ * A new chat starts on the model and thinking level of the chat written in
+ * last, so a pick carries over without a setting of its own. A scheduled job's
+ * chat has its own model, and is passed over.
+ */
+export const getLastPicks = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<{ model?: string; effort?: string }> => {
+    assertDashboardKey(args.key);
+    const recent = await ctx.db.query("conversations")
+      .withIndex("by_channel_last", (q) => q.eq("channel", WEB_CHANNEL))
+      .order("desc")
+      .take(20);
+    // A chat sent from the composer always has its model; the welcome chat and the like leave it unset.
+    const last = recent.find((chat) => !chat.jobId && chat.model);
+    return { model: last?.model, effort: last?.effort };
+  },
+});
+
 export const getDefaultAccess = query({
   args: { key: vKey },
   handler: async (ctx, args): Promise<Access> => {
