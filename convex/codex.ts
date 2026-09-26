@@ -8,6 +8,7 @@ import { COMPACTED } from "./lib/commands";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
+import { hide, savedValues } from "./vault";
 import { takeFromOutbox } from "./conversations";
 import { vAccess, vCodexModel, vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -546,12 +547,14 @@ async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infe
   const run = await ctx.db.get(job.runId);
   if (!run) return;
   const toolCalls = [...(run.toolCalls ?? [])];
+  // use_secret's answer, and a password typed into a sign-in form, are kept out of the trace.
+  const values = await savedValues(ctx);
   for (const span of trace.spans) {
     const row = {
       ...span,
       name: span.name.slice(0, 300),
-      input: span.input?.slice(0, SPAN_TEXT),
-      output: span.output?.slice(0, SPAN_TEXT),
+      input: span.input && hide(span.input, values).slice(0, SPAN_TEXT),
+      output: span.output && hide(span.output, values).slice(0, SPAN_TEXT),
     };
     const existing = await ctx.db.query("runSpans")
       .withIndex("by_run", (q) => q.eq("runId", run._id).eq("callId", span.callId))
@@ -806,7 +809,19 @@ export const getTurn = internalQuery({
     const steers = (await ctx.db.query("codexSteers")
       .withIndex("by_turn_status", (q) => q.eq("turnId", job._id).eq("status", "applied"))
       .collect()).sort((a, b) => (a.appliedAt ?? 0) - (b.appliedAt ?? 0));
-    return { job, conversation, steers: steers.map((steer) => steer.prompt) };
+    // A saved login typed into the chat, or read back into the reply, is not kept or delivered.
+    const values = await savedValues(ctx);
+    const clean = (text: string) => hide(text, values);
+    return {
+      job: {
+        ...job,
+        prompt: clean(job.prompt),
+        ...(job.response !== undefined ? { response: clean(job.response) } : {}),
+        ...(job.partial !== undefined ? { partial: clean(job.partial) } : {}),
+      },
+      conversation,
+      steers: steers.map((steer) => clean(steer.prompt)),
+    };
   },
 });
 

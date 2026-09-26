@@ -38,6 +38,7 @@ import type * as runner from "../runner.js";
 import type * as runs from "../runs.js";
 import type * as secrets from "../secrets.js";
 import type * as tools from "../tools.js";
+import type * as vault from "../vault.js";
 import type * as web from "../web.js";
 import type * as whatsapp from "../whatsapp.js";
 import type * as work from "../work.js";
@@ -80,6 +81,7 @@ declare const fullApi: ApiFromModules<{
   runs: typeof runs;
   secrets: typeof secrets;
   tools: typeof tools;
+  vault: typeof vault;
   web: typeof web;
   whatsapp: typeof whatsapp;
   work: typeof work;
