@@ -10,6 +10,9 @@ const describe = (content) => {
   return { other: Object.keys(content) };
 };
 
+const CODES = ["ABCD1234", "EFGH5678", "JKMN2345"];
+let codesGiven = 0;
+
 export default {
   async connect({ authDir }) {
     const listeners = new Map();
@@ -25,13 +28,16 @@ export default {
         return { key: { id, remoteJid: jid, fromMe: true } };
       },
       async sendPresenceUpdate(presence, jid) { await post("/presence", { presence, jid }); },
-      async requestPairingCode(phone) { await post("/code-requested", { phone }); return "ABCD1234"; },
+      // Each connection gets a code of its own, as WhatsApp gives.
+      async requestPairingCode(phone) { await post("/code-requested", { phone }); return CODES[codesGiven++ % CODES.length]; },
       async readMessages() {},
       async logout() { await post("/logout", {}); },
       end() { ended = true; },
     };
     await post("/connect", { authDir });
     void (async () => {
+      // A real socket emits only once it is set up, after its listeners are attached.
+      await new Promise((resolve) => setTimeout(resolve, 200));
       while (!ended) {
         const commands = await fetch(`${base}/next`).then((response) => response.json()).catch(() => null);
         if (!commands) { await new Promise((resolve) => setTimeout(resolve, 300)); continue; }

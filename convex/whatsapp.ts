@@ -23,7 +23,7 @@ import { chunkWhatsApp, toWhatsApp } from "./lib/whatsappFormat";
  */
 
 const vMode = v.union(v.literal("self"), v.literal("separate"));
-const vStatus = v.union(v.literal("starting"), v.literal("qr"), v.literal("code"), v.literal("connected"), v.literal("disconnected"), v.literal("logged-out"), v.literal("off"));
+const vStatus = v.union(v.literal("starting"), v.literal("qr"), v.literal("code"), v.literal("connected"), v.literal("disconnected"), v.literal("logged-out"), v.literal("expired"), v.literal("off"));
 
 async function linkRow(ctx: QueryCtx): Promise<Doc<"whatsappLink"> | null> {
   return await ctx.db.query("whatsappLink").first();
@@ -46,6 +46,8 @@ export type WhatsAppView = {
   /** The linked number, as +digits. */
   number?: string;
   error?: string;
+  /** When the connection last changed: a new QR or code, for "updated just now". */
+  updatedAt?: number;
   /** The owner has claimed it (separate) or linked their own (self). */
   paired: boolean;
   /** For a separate number not yet claimed: the code to send it from the owner's phone. */
@@ -73,6 +75,7 @@ export const status = query({
       code: link?.code,
       number: numberOf(link?.me),
       error: link?.error,
+      updatedAt: link?.updatedAt,
       paired,
       pairingCode: link?.mode === "separate" && link.status === "connected" && !paired && pairingLive ? owner!.pairingCode : undefined,
       homeChannel: owner?.homeChannel ?? (telegramPaired || !paired ? "telegram" : "whatsapp"),
@@ -90,7 +93,8 @@ export const startLinking = mutation({
     const phone = args.phone?.replace(/\D/g, "") || undefined;
     if (args.phone !== undefined && (!phone || phone.length < 8)) throw new Error("Enter the phone's number with its country code, like +91 98765 43210.");
     const link = await linkRow(ctx);
-    const next = { mode: args.mode, wanted: true, phone, status: "starting" as const, qr: undefined, code: undefined, error: undefined, updatedAt: Date.now() };
+    // A new link starts clean: the number shown is the one this link turns out to be.
+    const next = { mode: args.mode, wanted: true, phone, status: "starting" as const, qr: undefined, code: undefined, me: undefined, error: undefined, updatedAt: Date.now() };
     if (link) await ctx.db.patch(link._id, next);
     else await ctx.db.insert("whatsappLink", next);
     // A separate number is claimed with a code sent from the owner's phone, as on Telegram.
@@ -106,7 +110,7 @@ export const unlink = mutation({
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const link = await linkRow(ctx);
-    if (link) await ctx.db.patch(link._id, { wanted: false, status: "off", qr: undefined, code: undefined, error: undefined, updatedAt: Date.now() });
+    if (link) await ctx.db.patch(link._id, { wanted: false, status: "off", qr: undefined, code: undefined, me: undefined, error: undefined, updatedAt: Date.now() });
     const owner = await install(ctx);
     if (owner) await ctx.db.patch(owner._id, { whatsappOwner: undefined, ...(owner.homeChannel === "whatsapp" ? { homeChannel: undefined } : {}) });
     return null;

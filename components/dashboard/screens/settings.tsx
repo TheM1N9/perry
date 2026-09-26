@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Access } from "@/convex/lib/commands";
-import { errorText, useNow } from "@/lib/format";
+import { ago, errorText, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -360,14 +360,19 @@ function WhatsApp() {
   const unlink = useMutation(api.whatsapp.unlink);
   const newCode = useMutation(api.whatsapp.newPairingCode);
   const setHome = useMutation(api.whatsapp.setHomeChannel);
-  const [mode, setMode] = useState<"separate" | "self">("separate");
+  /** Picked here, else the way it was linked before, else a separate number. */
+  const [picked, setMode] = useState<"separate" | "self" | null>(null);
+  const now = useNow(1000);
   const [byCode, setByCode] = useState(false);
   const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
 
   if (!state) return <ListSkeleton rows={2} />;
-  const linking = state.wanted && ["starting", "qr", "code"].includes(state.status);
-  const linked = state.wanted && (state.status === "connected" || state.status === "disconnected");
+  const mode = picked ?? state.mode ?? "separate";
+  // Before anything is linked, a dropped connection is still linking: the QR or code comes back on its own.
+  const linking = state.wanted && (["starting", "qr", "code"].includes(state.status) || (state.status === "disconnected" && !state.number));
+  const linked = state.wanted && !linking && (state.status === "connected" || state.status === "disconnected");
+  const refreshed = state.updatedAt ? `Updated ${ago(state.updatedAt, now)}` : null;
   const link = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
@@ -389,6 +394,7 @@ function WhatsApp() {
 
       {!state.wanted && (
         <form onSubmit={(event) => void link(event)} className="space-y-4">
+          {state.status === "expired" && <Alert><AlertTitle>The code ran out</AlertTitle><AlertDescription>Nobody linked it in time, so Perry stopped making new ones. Get a new code when your phone is ready.</AlertDescription></Alert>}
           {state.status === "logged-out" && <Alert variant="destructive"><AlertTitle>Unlinked</AlertTitle><AlertDescription>{state.error ?? "WhatsApp was unlinked on the phone."} Link it again below.</AlertDescription></Alert>}
           <ChoiceCards label="Which number Perry uses" value={mode} options={WHATSAPP_MODES} onChange={setMode} />
           <div className="rounded-xl border bg-card p-4">
@@ -404,7 +410,7 @@ function WhatsApp() {
             )}
             {error && <FieldError className="mt-2">{error}</FieldError>}
           </div>
-          <Button type="submit">Link WhatsApp</Button>
+          <Button type="submit">{state.status === "expired" ? "Get a new code" : "Link WhatsApp"}</Button>
         </form>
       )}
 
@@ -418,8 +424,9 @@ function WhatsApp() {
               <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
                 <li>On {phoneOf} phone, open WhatsApp.</li>
                 <li>Settings › Linked devices › Link a device.</li>
-                <li>Scan this code. It refreshes every few seconds until you do.</li>
+                <li>Scan this code. It changes every 20 seconds or so, as on WhatsApp Web; scan the one showing.</li>
               </ol>
+              {refreshed && <p className="basis-full text-xs text-muted-foreground" role="status">{refreshed}</p>}
             </div>
           )}
           {state.status === "code" && state.code && (
@@ -429,6 +436,7 @@ function WhatsApp() {
                 <li>On {phoneOf} phone: WhatsApp › Settings › Linked devices › Link a device.</li>
                 <li>Tap &ldquo;Link with phone number instead&rdquo;, then type this code.</li>
               </ol>
+              <p className="text-xs text-muted-foreground" role="status">A new code comes every couple of minutes until you use one; type the one showing.{refreshed ? ` ${refreshed}.` : ""}</p>
             </div>
           )}
           {state.status === "starting" && <Waiting>Starting WhatsApp…</Waiting>}

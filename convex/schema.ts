@@ -435,7 +435,7 @@ export default defineSchema({
     wanted: v.boolean(),
     /** Link with a code typed on the phone instead of a QR: the phone's number, digits only. */
     phone: v.optional(v.string()),
-    status: v.union(v.literal("starting"), v.literal("qr"), v.literal("code"), v.literal("connected"), v.literal("disconnected"), v.literal("logged-out"), v.literal("off")),
+    status: v.union(v.literal("starting"), v.literal("qr"), v.literal("code"), v.literal("connected"), v.literal("disconnected"), v.literal("logged-out"), v.literal("expired"), v.literal("off")),
     /** A QR to scan, as a PNG data URL, or an 8-character code to type, while linking. */
     qr: v.optional(v.string()),
     code: v.optional(v.string()),
