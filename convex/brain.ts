@@ -148,8 +148,10 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   const now = `It is now ${ownerNow(await ctx.runQuery(internal.jobs.ownerTimezone, {}))}.`;
   // Who the assistant is opens the instructions; who the owner is (USER.md, whole) closes them.
   const persona: { identity: string; user: string } = await ctx.runQuery(internal.persona.forPrompt, {});
+  // Which channel this is, where the reply goes, and where what it sets up will report (channels.ts).
+  const where: string = await ctx.runQuery(internal.channels.describe, { conversationId: conversation._id });
   return {
-    instructions: [persona.identity, INSTRUCTIONS, now, memory?.instructions, persona.user].filter(Boolean).join("\n\n"),
+    instructions: [persona.identity, INSTRUCTIONS, now, where, memory?.instructions, persona.user].filter(Boolean).join("\n\n"),
     recalled: memory?.recalled || undefined,
     recallDigest: memory?.digest,
     history,

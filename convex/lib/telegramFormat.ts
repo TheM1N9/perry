@@ -3,7 +3,8 @@
  *
  * Only what Telegram can show is converted: bold, italic, strikethrough, inline
  * code, code blocks with their language, and links. Headings become bold.
- * Lists, quotes and tables stay as the text they already read well as.
+ * List markers become bullets and tables a lined-up monospace block, since
+ * Telegram shows neither; quotes stay as the text they already read well as.
  * Everything is escaped first, so a stray `<` or `&` in a reply is shown, not
  * parsed.
  */
@@ -26,10 +27,10 @@ function splitCodeFences(input: string): Segment[] {
   return segments;
 }
 
-const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+export const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 function codeToHtml(code: string): string {
-  if (!code.startsWith("```")) return `<code>${escape(code.slice(1, -1))}</code>`;
+  if (!code.startsWith("```")) return `<code>${escapeHtml(code.slice(1, -1))}</code>`;
   const body = code.slice(3, -3);
   const newline = body.indexOf("\n");
   const first = newline === -1 ? "" : body.slice(0, newline).trim();
@@ -37,8 +38,8 @@ function codeToHtml(code: string): string {
   const language = /^[\w#+.-]+$/.test(first) ? first : "";
   const content = (newline === -1 || (first && !language) ? body : body.slice(newline + 1)).replace(/\n$/, "");
   return language
-    ? `<pre><code class="language-${language}">${escape(content)}</code></pre>`
-    : `<pre>${escape(content)}</pre>`;
+    ? `<pre><code class="language-${language}">${escapeHtml(content)}</code></pre>`
+    : `<pre>${escapeHtml(content)}</pre>`;
 }
 
 /** Emphasis on text that is already escaped. Markers must hug their words, so `2 * 3 * 4` and snake_case stay as they are. */
@@ -57,16 +58,46 @@ function textToHtml(text: string): string {
   const keep = (html: string) => `${kept.push(html) - 1}`;
   const set = text
     .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_match, label: string, url: string) =>
-      keep(`<a href="${escape(url).replace(/"/g, "&quot;")}">${emphasis(escape(label))}</a>`))
-    .replace(/https?:\/\/[^\s<>()]+/g, (url) => keep(escape(url)));
-  const html = emphasis(escape(set)
-    .replace(/^#{1,6}[ \t]+(.+?)[ \t]*#*$/gm, (_match, title: string) => `<b>${title.replace(/\*\*|__/g, "")}</b>`));
+      keep(`<a href="${escapeHtml(url).replace(/"/g, "&quot;")}">${emphasis(escapeHtml(label))}</a>`))
+    .replace(/https?:\/\/[^\s<>()]+/g, (url) => keep(escapeHtml(url)));
+  const html = emphasis(escapeHtml(set)
+    .replace(/^#{1,6}[ \t]+(.+?)[ \t]*#*$/gm, (_match, title: string) => `<b>${title.replace(/\*\*|__/g, "")}</b>`)
+    // A list reads as bullets on a phone; a rule (---) and emphasis (*word*) are left alone.
+    .replace(/^([ \t]*)[-*+][ \t]+(?=\S)/gm, "$1• "));
   return html.replace(/(\d+)/g, (_match, index: string) => kept[Number(index)]);
+}
+
+/** A Markdown table's cells, or null for a line that is not a table row. */
+const cells = (line: string) => /^\s*\|.*\|\s*$/.test(line) ? line.trim().slice(1, -1).split("|").map((cell) => cell.trim().replace(/\*\*|__|`/g, "")) : null;
+const isDivider = (row: string[]) => row.every((cell) => /^:?-{2,}:?$/.test(cell));
+
+/**
+ * Telegram shows no tables, and raw pipes read badly on a phone: a table
+ * becomes a monospace block with its columns lined up, outside any code fence.
+ */
+export function tablesToBlocks(markdown: string): string {
+  const lines = markdown.split("\n");
+  const out: string[] = [];
+  let fenced = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*```/.test(lines[i])) fenced = !fenced;
+    const header = fenced ? null : cells(lines[i]);
+    const divider = header && i + 1 < lines.length ? cells(lines[i + 1]) : null;
+    if (!header || !divider || !isDivider(divider)) { out.push(lines[i]); continue; }
+    const rows = [header];
+    let j = i + 2;
+    for (let row = cells(lines[j] ?? ""); row; row = cells(lines[++j] ?? "")) rows.push(row);
+    const widths = header.map((_, column) => Math.max(...rows.map((row) => (row[column] ?? "").length)));
+    const line = (row: string[]) => widths.map((width, column) => (row[column] ?? "").padEnd(width)).join("  ").trimEnd();
+    out.push("```", line(header), widths.map((width) => "─".repeat(width)).join("  "), ...rows.slice(1).map(line), "```");
+    i = j - 1;
+  }
+  return out.join("\n");
 }
 
 /** Telegram HTML for one message's worth of Markdown. */
 export function toTelegramHtml(markdown: string): string {
-  return splitCodeFences(markdown)
+  return splitCodeFences(tablesToBlocks(markdown))
     .map((segment) => (segment.kind === "code" ? codeToHtml(segment.text) : textToHtml(segment.text)))
     .join("");
 }

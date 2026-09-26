@@ -118,7 +118,7 @@ export const handle = httpAction(async (ctx, request) => {
       }
       try {
         // fromJob marks what a scheduled job's turn saves to memory as the job's.
-        const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob } };
+        const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob, conversationId: access.conversationId } };
         const output = await bound.execute(parsed.data, { toolCallId: String(message.id), messages: [] });
         return reply(message.id, { content: [{ type: "text", text: JSON.stringify(withHint(output) ?? null) }] });
       } catch (error) {

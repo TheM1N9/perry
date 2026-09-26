@@ -985,7 +985,7 @@ export const pruneOrphans = internalMutation({
 /** Who may use the MCP endpoint: a runner, while it has a Codex turn running. */
 export const mcpAccess = internalQuery({
   args: { token: v.string() },
-  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean } | null> => {
+  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean; conversationId: Id<"conversations"> } | null> => {
     const runner = await authenticate(ctx, args.token).catch(() => null);
     if (!runner) return null;
     const job = await ctx.db.query("codexTurns")
@@ -998,6 +998,7 @@ export const mcpAccess = internalQuery({
       userId: conversation.channel === "web" ? "web:dashboard" : `telegram:${conversation.externalId}`,
       threadId: conversation.threadId,
       fromJob: Boolean(conversation.jobId),
+      conversationId: conversation._id,
     };
   },
 });

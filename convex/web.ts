@@ -474,8 +474,9 @@ export const checkMonitors = internalAction({
       });
 
       if (fired) {
-        await ctx.runAction(internal.notify.toOwner, {
-          text: `${monitor.title}\n${observation}\n${monitor.url}`,
+        await ctx.runAction(internal.notify.deliver, {
+          text: `👀 **${monitor.title}**\n\n${observation}\n${monitor.url}`,
+          ...(monitor.origin ? { origin: monitor.origin } : {}),
         });
         const timezone: string = await ctx.runQuery(internal.jobs.ownerTimezone, {});
         await ctx.runMutation(internal.memories.noteAlert, { text: `${monitor.title}: ${observation} (${monitor.url})`, at: ownerClock(timezone) });

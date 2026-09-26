@@ -229,7 +229,7 @@ const create_job = createTool({
     "Schedule a job: a prompt you will run later as a fresh turn, either on a " +
     "cron schedule (a weekday morning briefing, a Friday inbox sweep) or once " +
     "at a set time (a reminder). Give exactly one of schedule or at. Its reply " +
-    "goes to the owner; when the prompt makes delivery conditional (\"only tell " +
+    "goes to the owner in this conversation's channel (this Telegram chat, or this web chat); when the prompt makes delivery conditional (\"only tell " +
     "me if…\"), a run with nothing new delivers nothing. Write the prompt so it " +
     "stands on its own. Confirm the time with the owner before creating it.",
   inputSchema: z.object({
@@ -239,7 +239,7 @@ const create_job = createTool({
     prompt: z.string().min(10).describe("What to do on each run."),
   }),
   execute: async (ctx, input): Promise<{ id?: string; nextRun?: string; error?: string }> => {
-    return await ctx.runMutation(internal.jobs.create, input);
+    return await ctx.runMutation(internal.jobs.create, { ...input, ...(ctx.conversationId ? { origin: ctx.conversationId } : {}) });
   },
 });
 
@@ -640,6 +640,7 @@ const watch_page = createTool({
         condition: input.condition,
         value: input.value,
         intervalMinutes: input.intervalMinutes,
+        ...(ctx.conversationId ? { origin: ctx.conversationId } : {}),
       },
     );
     return { monitorId };

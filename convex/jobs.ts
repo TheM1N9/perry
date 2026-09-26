@@ -131,7 +131,7 @@ function timing(input: { schedule?: string; at?: string }, timezone: string): { 
   return { schedule: input.schedule.trim() };
 }
 
-async function insertJob(ctx: MutationCtx, job: { name: string; schedule?: string; runAt?: number; prompt: string; builtin?: Builtin }): Promise<Id<"jobs">> {
+async function insertJob(ctx: MutationCtx, job: { name: string; schedule?: string; runAt?: number; prompt: string; builtin?: Builtin; origin?: Id<"conversations"> }): Promise<Id<"jobs">> {
   const timezone = await timezoneOf(ctx);
   return await ctx.db.insert("jobs", {
     ...job,
@@ -283,7 +283,8 @@ export const finished = internalMutation({
     }
     await ctx.db.patch(job._id, { lastResult: result?.slice(0, 500), lastError: args.error?.slice(0, 500) });
     if (result && result !== QUIET) {
-      await ctx.scheduler.runAfter(0, internal.notify.toOwner, { text: `⏰ ${job.name}\n\n${result}` });
+      // Back to the chat it was set up in; the heartbeat and the others to the messaging channel (channels.ts).
+      await ctx.scheduler.runAfter(0, internal.notify.deliver, { text: `⏰ **${job.name}**\n\n${result}`, ...(job.origin ? { origin: job.origin } : {}) });
       // The heartbeat only speaks when something needs the owner: that is an alert, for the next brief too.
       if (job.builtin === "heartbeat") {
         await ctx.runMutation(internal.memories.noteAlert, { text: result, at: ownerClock(await timezoneOf(ctx)) });
@@ -333,13 +334,14 @@ export const list = internalQuery({
 });
 
 export const create = internalMutation({
-  args: { name: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()), prompt: v.string() },
+  /** origin: the chat it is set up in, where its results go. */
+  args: { name: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()), prompt: v.string(), origin: v.optional(v.id("conversations")) },
   returns: v.object({ id: v.optional(v.id("jobs")), nextRun: v.optional(v.string()), error: v.optional(v.string()) }),
   handler: async (ctx, args) => {
     const timezone = await timezoneOf(ctx);
     const when = timing(args, timezone);
     if ("error" in when) return { error: when.error };
-    const id = await insertJob(ctx, { name: args.name.trim().slice(0, 80), ...when, prompt: args.prompt.trim().slice(0, 4000) });
+    const id = await insertJob(ctx, { name: args.name.trim().slice(0, 80), ...when, prompt: args.prompt.trim().slice(0, 4000), ...(args.origin ? { origin: args.origin } : {}) });
     const job = (await ctx.db.get(id))!;
     return { id, nextRun: formatRun(job.nextRunAt, timezone) };
   },

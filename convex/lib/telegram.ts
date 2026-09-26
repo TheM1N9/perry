@@ -215,27 +215,30 @@ const keyboard = (buttons: Buttons) => ({
 });
 
 /** A message with buttons under it, such as an approval request. Returns its id, for editing later. */
-export async function sendButtons(token: string | null, chatId: string, text: string, buttons: Buttons): Promise<number> {
-  const result = await call(token, "sendMessage", {
+/** html: the same message as Telegram HTML, sent in its place; the plain text goes if Telegram cannot parse it. */
+export async function sendButtons(token: string | null, chatId: string, text: string, buttons: Buttons, html?: string): Promise<number> {
+  const result = await withHtml((useHtml) => call(token, "sendMessage", {
     chat_id: chatId,
-    text: chunkMessage(text.trim())[0],
+    text: useHtml && html ? html : chunkMessage(text.trim())[0],
+    ...(useHtml && html ? { parse_mode: "HTML" } : {}),
     reply_markup: keyboard(buttons),
     link_preview_options: { is_disabled: true },
-  }) as { message_id: number };
+  })) as { message_id: number };
   return result.message_id;
 }
 
 // Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/channels/telegram/api.ts
 /** Rewrite a message and replace its buttons; no buttons removes them. */
-export async function editButtons(token: string | null, chatId: string, messageId: number, text: string, buttons: Buttons = []): Promise<void> {
+export async function editButtons(token: string | null, chatId: string, messageId: number, text: string, buttons: Buttons = [], html?: string): Promise<void> {
   try {
-    await call(token, "editMessageText", {
+    await withHtml((useHtml) => call(token, "editMessageText", {
       chat_id: chatId,
       message_id: messageId,
-      text: chunkMessage(text.trim())[0],
+      text: useHtml && html ? html : chunkMessage(text.trim())[0],
+      ...(useHtml && html ? { parse_mode: "HTML" } : {}),
       reply_markup: keyboard(buttons),
       link_preview_options: { is_disabled: true },
-    });
+    }));
   } catch (error) {
     if (!String(error).includes("message is not modified")) throw error;
   }
