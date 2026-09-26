@@ -55,7 +55,7 @@ export function Setup() {
               </pre>
             </div>
             <p className="mt-5 text-[16px] text-ink-3">
-              Setup makes you your own bot and your own deployment, then prints six digits.{" "}
+              Setup makes you your own bot, keeps everything on your computer, then prints six digits.{" "}
               <a href={INSTALL_GUIDE} className="font-medium text-teal hover:underline">Read the install guide</a>
             </p>
           </Reveal>
