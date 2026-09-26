@@ -399,6 +399,20 @@ export default defineSchema({
     createdAt: v.number(),
   }),
 
+  /**
+   * Which account a Composio connection is signed in to (an email, a handle),
+   * asked of the service once through a read-only "who am I" action, since
+   * Composio does not keep it. See composio.accounts.
+   */
+  connectorAccounts: defineTable({
+    /** Composio's connected account id. */
+    accountId: v.string(),
+    toolkit: v.string(),
+    /** Unset when the service would not say; asked again after a day. */
+    identity: v.optional(v.string()),
+    checkedAt: v.number(),
+  }).index("by_account", ["accountId"]),
+
   /** What a runner asked the owner before acting on their machine. See approvals.ts. */
   approvals: defineTable({
     runnerId: v.id("runners"),

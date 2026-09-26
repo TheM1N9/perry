@@ -9,6 +9,7 @@ import { ABSOLUTE_PATH } from "./media";
 import { defaultAccess, type Onboarding } from "./installation";
 import { callName, DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./persona";
 import type { Access } from "./lib/commands";
+import type { CatalogApp, ConnectedAccount } from "./composio";
 import { policyOf, type Policy } from "./runner";
 import { vAccess, vMemoryKind, vPolicy } from "./schema";
 import { APPROVAL_TTL_MS } from "./approvals";
@@ -1248,6 +1249,32 @@ export const getConnectors = action({
   }> => {
     assertDashboardKey(args.key);
     return await ctx.runAction(internal.composio.connectors, {});
+  },
+});
+
+/** Each connection, with the account it is signed in to. */
+export const getConnectedAccounts = action({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<{ configured: boolean; accounts: ConnectedAccount[]; error?: string }> => {
+    assertDashboardKey(args.key);
+    return await ctx.runAction(internal.composio.accounts, {});
+  },
+});
+
+/** Every app that can be connected, for the Connectors page to search. */
+export const getCatalog = action({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<{ apps: CatalogApp[]; error?: string }> => {
+    assertDashboardKey(args.key);
+    return await ctx.runAction(internal.composio.catalog, {});
+  },
+});
+
+export const disconnectAccount = action({
+  args: { key: vKey, accountId: v.string() },
+  handler: async (ctx, args): Promise<{ error?: string }> => {
+    assertDashboardKey(args.key);
+    return await ctx.runAction(internal.composio.disconnect, { accountId: args.accountId });
   },
 });
 

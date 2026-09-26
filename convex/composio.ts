@@ -113,6 +113,164 @@ export const connectors = internalAction({
   },
 });
 
+export type CatalogApp = { slug: string; name: string; logo?: string; description?: string; category?: string };
+
+/** Composio's catalogue changes rarely and is read whole, so it is kept for a while between page loads. */
+let catalogCache: { at: number; apps: CatalogApp[] } | null = null;
+const CATALOG_TTL_MS = 6 * 60 * 60_000;
+
+/** A description's first sentence, short enough for one line under the name. */
+function blurb(description?: string): string | undefined {
+  const first = description?.split(/(?<=[.!?])\s/)[0]?.trim();
+  return first ? (first.length > 90 ? `${first.slice(0, 87).trimEnd()}…` : first) : undefined;
+}
+
+async function catalogOf(apiKey: string): Promise<CatalogApp[]> {
+  if (catalogCache && Date.now() - catalogCache.at < CATALOG_TTL_MS) return catalogCache.apps;
+  const toolkits = await client(apiKey).toolkits.get({ limit: 5000 } as never) as unknown as Array<{
+    slug: string; name: string; meta?: { logo?: string; description?: string; categories?: Array<{ name?: string }> };
+  }>;
+  const apps = toolkits.map((toolkit) => ({
+    slug: toolkit.slug,
+    name: toolkit.name,
+    logo: toolkit.meta?.logo,
+    description: blurb(toolkit.meta?.description),
+    category: toolkit.meta?.categories?.[0]?.name,
+  }));
+  catalogCache = { at: Date.now(), apps };
+  return apps;
+}
+
+/** Every app Composio can connect, with its logo and a line about it: the Connectors page's catalogue. */
+export const catalog = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ apps: CatalogApp[]; error?: string }> => {
+    const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
+    if (!apiKey) return { apps: [], error: "No Composio key yet. Add one on the Keys page." };
+    try {
+      return { apps: await catalogOf(apiKey) };
+    } catch (error) {
+      return { apps: [], error: message(error) };
+    }
+  },
+});
+
+/**
+ * A read-only "who am I" per service: Composio keeps no account name, so the
+ * service is asked, once per connection. Services not listed show when they
+ * were connected instead.
+ */
+const WHO_AM_I: Record<string, [action: string, args: Record<string, unknown>]> = {
+  gmail: ["GMAIL_GET_PROFILE", { user_id: "me" }],
+  googlecalendar: ["GOOGLECALENDAR_GET_CALENDAR_PROFILE", {}],
+  googledrive: ["GOOGLEDRIVE_GET_ABOUT", {}],
+  outlook: ["OUTLOOK_GET_PROFILE", {}],
+  github: ["GITHUB_GET_THE_AUTHENTICATED_USER", {}],
+  slack: ["SLACK_TEST_AUTH", {}],
+  notion: ["NOTION_GET_ABOUT_ME", {}],
+  linear: ["LINEAR_GET_CURRENT_USER", {}],
+  twitter: ["TWITTER_USER_LOOKUP_ME", {}],
+  youtube: ["YOUTUBE_LIST_CHANNELS", { part: "snippet", mine: true }],
+};
+/** The fields that name an account, best first: an address, then a handle, then a display name. */
+const IDENTITY_FIELDS = ["emailAddress", "email", "mail", "userPrincipalName", "login", "username", "screen_name", "handle", "user", "name", "title", "summary"];
+
+/** The best identity in a "who am I" reply, however deep the service put it. */
+export function identityOf(data: unknown): string | undefined {
+  const found: Record<string, string> = {};
+  const queue: Array<[unknown, number]> = [[data, 0]];
+  while (queue.length) {
+    const [value, depth] = queue.shift()!;
+    if (!value || typeof value !== "object" || depth > 4) continue;
+    for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof inner === "string" && inner.trim() && IDENTITY_FIELDS.includes(key) && !(key in found)) found[key] = inner.trim();
+      else if (inner && typeof inner === "object") queue.push([inner, depth + 1]);
+    }
+  }
+  const best = IDENTITY_FIELDS.find((key) => found[key]);
+  return best ? found[best].slice(0, 80) : undefined;
+}
+
+export type ConnectedAccount = {
+  id: string;
+  toolkit: string;
+  name: string;
+  logo?: string;
+  status: string;
+  createdAt?: string;
+  /** The account it is signed in to, when the service says. */
+  account?: string;
+};
+
+/**
+ * Every connection, one row per account: a service can be connected twice
+ * (two Google accounts), and an expired one is shown so it can be renewed.
+ */
+export const accounts = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ configured: boolean; accounts: ConnectedAccount[]; error?: string }> => {
+    const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
+    if (!apiKey) return { configured: false, accounts: [], error: "No Composio key yet. Add one on the Keys page." };
+    try {
+      const composio = client(apiKey);
+      const items: Array<{ id: string; status: string; createdAt?: string; alias?: string | null; toolkit: { slug: string } }> = [];
+      let cursor: string | undefined;
+      do {
+        const page = await composio.connectedAccounts.list({ userIds: [USER_ID], limit: 100, ...(cursor ? { cursor } : {}) } as never) as unknown as { items: typeof items; nextCursor?: string | null };
+        items.push(...page.items);
+        cursor = page.nextCursor ?? undefined;
+      } while (cursor);
+
+      const apps = await catalogOf(apiKey).catch(() => [] as CatalogApp[]);
+      const known: Record<string, { identity?: string; checkedAt: number }> = await ctx.runQuery(internal.connectorAccounts.identities, { accountIds: items.map((item) => item.id) });
+      // Ask each active account without a name yet (or whose service would not say, a day ago).
+      const ask = items.filter((item) => item.status === "ACTIVE" && WHO_AM_I[item.toolkit.slug]
+        && (!known[item.id] || (!known[item.id].identity && Date.now() - known[item.id].checkedAt > 86_400_000)));
+      await Promise.all(ask.map(async (item) => {
+        const [action, args] = WHO_AM_I[item.toolkit.slug];
+        const result = await composio.tools.execute(action, { userId: USER_ID, connectedAccountId: item.id, arguments: args, dangerouslySkipVersionCheck: true } as never)
+          .catch(() => null) as { successful?: boolean; data?: unknown } | null;
+        const identity = result?.successful ? identityOf(result.data) : undefined;
+        await ctx.runMutation(internal.connectorAccounts.remember, { accountId: item.id, toolkit: item.toolkit.slug, identity });
+        known[item.id] = { identity, checkedAt: Date.now() };
+      }));
+
+      return {
+        configured: true,
+        accounts: items.map((item) => {
+          const app = apps.find((entry) => entry.slug === item.toolkit.slug);
+          return {
+            id: item.id,
+            toolkit: item.toolkit.slug,
+            name: app?.name ?? item.toolkit.slug,
+            logo: app?.logo,
+            status: item.status,
+            createdAt: item.createdAt,
+            account: item.alias || known[item.id]?.identity,
+          };
+        }),
+      };
+    } catch (error) {
+      return { configured: true, accounts: [], error: message(error) };
+    }
+  },
+});
+
+/** Remove a connection at Composio: Perry can no longer act on that account. */
+export const disconnect = internalAction({
+  args: { accountId: v.string() },
+  handler: async (ctx, args): Promise<{ error?: string }> => {
+    try {
+      const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
+      await client(apiKey).connectedAccounts.delete(args.accountId);
+      await ctx.runMutation(internal.connectorAccounts.forget, { accountId: args.accountId });
+      return {};
+    } catch (error) {
+      return { error: message(error) };
+    }
+  },
+});
+
 /**
  * Start an OAuth flow for a toolkit and hand back the URL to open.
  *

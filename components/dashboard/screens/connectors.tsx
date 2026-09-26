@@ -1,35 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { PlusIcon, RefreshCwIcon, SearchIcon, TriangleAlertIcon } from "lucide-react";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { PlusIcon, RefreshCwIcon, SearchIcon, TriangleAlertIcon, XIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useAction } from "@/client/react";
 import { api } from "@/convex/_generated/api";
+import type { CatalogApp, ConnectedAccount } from "@/convex/composio";
 import { errorText } from "@/lib/format";
 import { useSession } from "@/lib/session";
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
-import { EmptyState, List, ListSkeleton, Page, Section, StatusBadge, type Tone } from "../common";
+import { ActionButton, EmptyState, List, ListSkeleton, Page, Section, StatusBadge, type Tone } from "../common";
 
-type Connector = { slug: string; name: string; connected: boolean; status?: string; needsAuth: boolean };
 type FoundAction = { slug: string; description?: string; toolkit?: string };
 
-/** The ones people want first. Anything else can be typed in. */
-const SUGGESTED = [
-  { slug: "googlecalendar", name: "Google Calendar" },
-  { slug: "gmail", name: "Gmail" },
-  { slug: "notion", name: "Notion" },
-  { slug: "github", name: "GitHub" },
-  { slug: "slack", name: "Slack" },
-  { slug: "linear", name: "Linear" },
-  { slug: "googledrive", name: "Google Drive" },
-  { slug: "googlesheets", name: "Google Sheets" },
-];
+/** The ones people reach for first, in this order; the rest are under All apps. */
+const POPULAR = ["gmail", "googlecalendar", "slack", "notion", "googledrive", "googlesheets", "github", "outlook", "linear", "googledocs"];
+/** All apps shows this many at a time; search finds the rest. */
+const PAGE = 40;
 
 function connectionStatus(status?: string): { tone: Tone; label: string } {
   const value = (status ?? "active").toLowerCase();
@@ -37,7 +29,43 @@ function connectionStatus(status?: string): { tone: Tone; label: string } {
   if (value === "initiated" || value === "initializing" || value === "pending") return { tone: "info", label: "Finishing sign-in" };
   if (value === "expired") return { tone: "warning", label: "Expired" };
   if (value === "failed" || value === "error") return { tone: "danger", label: "Failed" };
+  if (value === "inactive") return { tone: "neutral", label: "Paused" };
   return { tone: "neutral", label: value.charAt(0).toUpperCase() + value.slice(1) };
+}
+
+const addedOn = (at?: string) => at ? `Added ${new Date(at).toLocaleDateString(undefined, { dateStyle: "medium" })}` : "";
+
+/** An app's logo from Composio, or its initial when there is none or it will not load. */
+function AppLogo({ name, logo, className }: { name: string; logo?: string; className?: string }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <span className={cn("grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border bg-background", className)} aria-hidden>
+      {logo && !failed
+        // eslint-disable-next-line @next/next/no-img-element -- a remote logo per app, shown as is
+        ? <img src={logo} alt="" width={22} height={22} loading="lazy" referrerPolicy="no-referrer" className="size-[22px] object-contain" onError={() => setFailed(true)} />
+        : <span className="text-sm font-semibold uppercase">{name.charAt(0)}</span>}
+    </span>
+  );
+}
+
+/** One app in the catalogue: its logo, name and a line about it, and + to connect an account. */
+function AppRow({ app, connected, busy, onConnect }: { app: CatalogApp; connected: number; busy: string | null; onConnect: (slug: string) => void }) {
+  return (
+    <li className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-muted/50">
+      <AppLogo name={app.name} logo={app.logo} />
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-2 truncate text-[15px] font-medium">
+          {app.name}
+          {connected > 0 && <span className="text-xs font-normal text-success">{connected === 1 ? "Connected" : `${connected} connected`}</span>}
+        </p>
+        {app.description && <p className="truncate text-sm text-muted-foreground" title={app.description}>{app.description}</p>}
+      </div>
+      <Button variant="ghost" size="icon-sm" aria-label={connected ? `Connect another ${app.name} account` : `Connect ${app.name}`} title={connected ? "Connect another account" : "Connect"}
+        disabled={busy !== null} aria-busy={busy === app.slug || undefined} onClick={() => onConnect(app.slug)}>
+        {busy === app.slug ? <Spinner /> : <PlusIcon />}
+      </Button>
+    </li>
+  );
 }
 
 /**
@@ -46,26 +74,34 @@ function connectionStatus(status?: string): { tone: Tone; label: string } {
  */
 export function Connectors() {
   const { dashboardKey } = useSession();
-  const getConnectors = useAction(api.dashboard.getConnectors);
+  const getAccounts = useAction(api.dashboard.getConnectedAccounts);
+  const getCatalog = useAction(api.dashboard.getCatalog);
   const connectToolkit = useAction(api.dashboard.connectToolkit);
-  const [state, setState] = useState<{ configured: boolean; connectors: Connector[]; error?: string } | null>(null);
+  const disconnectAccount = useAction(api.dashboard.disconnectAccount);
+  const [state, setState] = useState<{ configured: boolean; accounts: ConnectedAccount[]; error?: string } | null>(null);
+  const [catalog, setCatalog] = useState<CatalogApp[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [custom, setCustom] = useState("");
+  const [search, setSearch] = useState("");
+  const [shown, setShown] = useState(PAGE);
   /** The toolkit Composio just sent you back from, read off the callback address. */
   const [returned, setReturned] = useState<{ slug: string; status: string | null } | null>(null);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      setState(await getConnectors({ key: dashboardKey }));
+      setState(await getAccounts({ key: dashboardKey }));
     } catch (cause) {
-      setState((current) => ({ configured: current?.configured ?? false, connectors: current?.connectors ?? [], error: errorText(cause) }));
+      setState((current) => ({ configured: current?.configured ?? false, accounts: current?.accounts ?? [], error: errorText(cause) }));
     } finally {
       setRefreshing(false);
     }
-  }, [dashboardKey, getConnectors]);
+  }, [dashboardKey, getAccounts]);
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    if (!state?.configured || catalog) return;
+    void getCatalog({ key: dashboardKey }).then((result) => setCatalog(result.apps), () => setCatalog([]));
+  }, [state?.configured, catalog, dashboardKey, getCatalog]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -76,9 +112,9 @@ export function Connectors() {
   }, []);
   useEffect(() => {
     if (!returned || !state) return;
-    const found = state.connectors.find((item) => item.slug === returned.slug && item.connected);
+    const found = state.accounts.find((item) => item.toolkit === returned.slug && item.status === "ACTIVE");
     const failed = returned.status !== null && returned.status.toLowerCase() !== "success";
-    if (found) toast.success(`${found.name} is connected. Perry can use it from the next message.`);
+    if (found) toast.success(`${found.name}${found.account ? ` (${found.account})` : ""} is connected. Perry can use it from the next message.`);
     else if (failed) toast.error(`Signing in to ${returned.slug} didn't finish. Try connecting it again.`);
     else toast.info(`${returned.slug} isn't showing as connected yet. Refresh in a moment.`);
     setReturned(null);
@@ -99,6 +135,13 @@ export function Connectors() {
     }
     setBusy(null);
   };
+
+  const term = search.trim().toLowerCase();
+  const matches = useCallback((text?: string) => Boolean(text?.toLowerCase().includes(term)), [term]);
+  const accounts = useMemo(() => (state?.accounts ?? []).filter((item) => !term || matches(item.name) || matches(item.account) || matches(item.toolkit)), [state, term, matches]);
+  const found = useMemo(() => (catalog ?? []).filter((app) => !term || matches(app.name) || matches(app.slug) || matches(app.category) || matches(app.description)), [catalog, term, matches]);
+  const connectedCount = (slug: string) => (state?.accounts ?? []).filter((item) => item.toolkit === slug && item.status === "ACTIVE").length;
+  useEffect(() => setShown(PAGE), [term]);
 
   const refreshButton = (
     <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={refreshing} aria-busy={refreshing || undefined}>
@@ -125,59 +168,83 @@ export function Connectors() {
     );
   }
 
-  const connected = state.connectors.filter((item) => item.connected);
-  const suggestions = SUGGESTED.filter((item) => !connected.some((found) => found.slug === item.slug));
+  const searchBox = (
+    <InputGroup className="h-9 w-full sm:w-72">
+      <InputGroupAddon><SearchIcon /></InputGroupAddon>
+      <InputGroupInput type="search" aria-label="Search apps" placeholder={catalog ? `Search ${Math.floor(catalog.length / 100) * 100}+ apps` : "Search apps"} value={search} autoComplete="off"
+        onChange={(event) => setSearch(event.target.value)} />
+      {search && <InputGroupAddon align="inline-end"><InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => setSearch("")}><XIcon /></InputGroupButton></InputGroupAddon>}
+    </InputGroup>
+  );
+  const popular = POPULAR.map((slug) => catalog?.find((app) => app.slug === slug)).filter((app): app is CatalogApp => Boolean(app));
+  const rest = term ? found : found.filter((app) => !POPULAR.includes(app.slug));
 
   return (
-    <Page title="Connectors" description="Accounts Perry can use for you. It checks what's connected each time it needs to act." actions={refreshButton}>
+    <Page wide title="Connectors" description="Let Perry work across the apps you already use. It checks what's connected each time it acts." actions={<div className="flex items-center gap-2">{searchBox}{refreshButton}</div>}>
       {state.error && <Alert variant="destructive" className="mb-6"><TriangleAlertIcon /><AlertTitle>Couldn&apos;t load every connection</AlertTitle><AlertDescription>{state.error}</AlertDescription></Alert>}
 
-      <Section title="Connected">
-        {connected.length === 0
-          ? <EmptyState title="No accounts connected">Pick one below. Sign-in happens on the provider&apos;s own page.</EmptyState>
-          : (
-            <List label="Connected accounts">
-              {connected.map((connector) => {
-                const status = connectionStatus(connector.status);
-                return (
-                  <li key={connector.slug} className="flex items-center gap-4 px-4 py-3">
-                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-sm font-semibold uppercase" aria-hidden>{connector.name.charAt(0)}</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{connector.name}</p>
-                      <p className="truncate font-mono text-xs text-muted-foreground">{connector.slug}</p>
-                    </div>
-                    <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-                    {status.tone !== "success" && (
-                      <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => void connect(connector.slug)}>{busy === connector.slug && <Spinner />}Reconnect</Button>
-                    )}
-                  </li>
-                );
-              })}
-            </List>
-          )}
+      <Section title="Connected" description="Each account Perry can act on. The sign-in stays with Composio.">
+        {state.accounts.length === 0
+          ? <EmptyState title="No accounts connected">Pick an app below. Sign-in happens on the provider&apos;s own page.</EmptyState>
+          : accounts.length === 0
+            ? <p className="text-sm text-muted-foreground" role="status">No connected account matches &ldquo;{search.trim()}&rdquo;.</p>
+            : (
+              <List label="Connected accounts">
+                {accounts.map((item) => {
+                  const status = connectionStatus(item.status);
+                  return (
+                    <li key={item.id} className="flex items-center gap-4 px-4 py-3">
+                      <AppLogo name={item.name} logo={item.logo} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium">{item.name}</p>
+                        <p className="truncate text-sm text-muted-foreground" title={item.account ? `Signed in as ${item.account}` : undefined}>
+                          {item.account ?? addedOn(item.createdAt)}
+                        </p>
+                      </div>
+                      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                      {status.tone !== "success" && (
+                        <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => void connect(item.toolkit)}>{busy === item.toolkit && <Spinner />}Reconnect</Button>
+                      )}
+                      <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive"
+                        action={async () => { const result = await disconnectAccount({ key: dashboardKey, accountId: item.id }); if (result.error) throw new Error(result.error); await refresh(); }}
+                        success={`${item.name} disconnected.`}
+                        confirm={{ title: `Disconnect ${item.name}?`, body: <>Perry can no longer use {item.account ? <strong>{item.account}</strong> : "this account"}. You can connect it again any time.</>, label: "Disconnect" }}>
+                        Disconnect
+                      </ActionButton>
+                    </li>
+                  );
+                })}
+              </List>
+            )}
       </Section>
 
-      <Section title="Add an account" description="You sign in on the provider's page, then come back here. The token stays with Composio.">
-        {suggestions.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {suggestions.map((item) => (
-              <Button key={item.slug} variant="outline" className="rounded-full" disabled={busy !== null} aria-busy={busy === item.slug || undefined} onClick={() => void connect(item.slug)}>
-                {busy === item.slug ? <Spinner /> : <PlusIcon />}{item.name}
-              </Button>
-            ))}
-          </div>
-        )}
-        <form className="mt-5 max-w-md" onSubmit={(event) => { event.preventDefault(); void connect(custom); }}>
-          <Field>
-            <FieldLabel htmlFor="custom-toolkit">Another service</FieldLabel>
-            <div className="flex gap-2">
-              <Input id="custom-toolkit" value={custom} placeholder="hubspot" autoComplete="off" spellCheck={false} className="font-mono" onChange={(event) => setCustom(event.target.value.replace(/\s+/g, ""))} />
-              <Button type="submit" disabled={!custom.trim() || busy !== null}>{busy === custom.trim().toLowerCase() && <Spinner />}Connect</Button>
-            </div>
-            <FieldDescription>Its name in Composio&apos;s catalog: lowercase, no spaces.</FieldDescription>
-          </Field>
-        </form>
-      </Section>
+      {catalog === null ? <ListSkeleton /> : (
+        <>
+          {!term && popular.length > 0 && (
+            <Section title="Popular">
+              <ul aria-label="Popular apps" className="grid gap-1 sm:grid-cols-2">
+                {popular.map((app) => <AppRow key={app.slug} app={app} connected={connectedCount(app.slug)} busy={busy} onConnect={(slug) => void connect(slug)} />)}
+              </ul>
+            </Section>
+          )}
+          <Section title={term ? `Apps matching “${search.trim()}”` : "All apps"} description={term ? `${rest.length} ${rest.length === 1 ? "app" : "apps"}` : undefined}>
+            {rest.length === 0
+              ? <EmptyState title="No app by that name" action={<Button variant="outline" size="sm" onClick={() => setSearch("")}>Clear search</Button>}>Try another word, like what it does: email, calendar, CRM.</EmptyState>
+              : (
+                <>
+                  <ul aria-label={term ? "Matching apps" : "All apps"} className="grid gap-1 sm:grid-cols-2">
+                    {rest.slice(0, shown).map((app) => <AppRow key={app.slug} app={app} connected={connectedCount(app.slug)} busy={busy} onConnect={(slug) => void connect(slug)} />)}
+                  </ul>
+                  {rest.length > shown && (
+                    <div className="mt-4 flex justify-center">
+                      <Button variant="outline" size="sm" onClick={() => setShown((count) => count + PAGE * 2)}>Show more ({rest.length - shown} left)</Button>
+                    </div>
+                  )}
+                </>
+              )}
+          </Section>
+        </>
+      )}
 
       <ActionLookup />
     </Page>

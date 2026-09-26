@@ -1,0 +1,70 @@
+{
+  "ranAt": "2026-09-26T08:47:43.008Z",
+  "checks": {
+    "showsEveryAccount": true,
+    "namesTheAccount": true,
+    "askedOnceThenKept": true,
+    "pageShowsEachAccount": true,
+    "pageShowsAddresses": true,
+    "expiredOffersReconnect": true,
+    "catalogueHasLogosAndPages": true,
+    "searchNarrows": true,
+    "searchSaysNothing": true,
+    "disconnectAsksAndCancelKeeps": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "composio": [
+      "whatsapp EXPIRED",
+      "higgsfield_mcp ACTIVE",
+      "higgsfield_mcp ACTIVE",
+      "youtube EXPIRED",
+      "gmail ACTIVE",
+      "googlecalendar ACTIVE",
+      "googlecalendar EXPIRED"
+    ],
+    "loads": {
+      "firstMs": 2619,
+      "secondMs": 323
+    },
+    "accounts": [
+      "WhatsApp | EXPIRED | -",
+      "Higgsfield MCP | ACTIVE | -",
+      "Higgsfield MCP | ACTIVE | -",
+      "YouTube | EXPIRED | -",
+      "Gmail | ACTIVE | you@example.com",
+      "Google Calendar | ACTIVE | you@example.com",
+      "Google Calendar | EXPIRED | -"
+    ],
+    "rows": [
+      "WhatsApp | Added 26 Sept 2026 | Expired | Reconnect | Disconnect",
+      "Higgsfield MCP | Added 24 Sept 2026 | Connected | Disconnect",
+      "Higgsfield MCP | Added 24 Sept 2026 | Connected | Disconnect",
+      "YouTube | Added 23 Sept 2026 | Expired | Reconnect | Disconnect",
+      "Gmail | you@example.com | Connected | Disconnect",
+      "Google Calendar | you@example.com | Connected | Disconnect",
+      "Google Calendar | Added 23 Sept 2026 | Expired | Reconnect | Disconnect"
+    ],
+    "popularLogos": "10/10",
+    "search": {
+      "narrowed": [
+        "Google Calendar",
+        "Google Calendar"
+      ],
+      "apps": [
+        "Google Calendar",
+        "Outlook",
+        "Cal",
+        "Google Super",
+        "CoinMarketCal",
+        "CalendarHero",
+        "Fellow.ai MCP",
+        "HighLevel MCP"
+      ],
+      "count": 8
+    },
+    "dialog": "Disconnect WhatsApp? | Perry can no longer use this account. You can connect it again any time. | Keep it | Disconnect",
+    "pageErrors": []
+  },
+  "passed": true
+}

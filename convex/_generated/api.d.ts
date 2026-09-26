@@ -9,6 +9,7 @@ import type * as assistant from "../assistant.js";
 import type * as brain from "../brain.js";
 import type * as codex from "../codex.js";
 import type * as composio from "../composio.js";
+import type * as connectorAccounts from "../connectorAccounts.js";
 import type * as conversations from "../conversations.js";
 import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   brain: typeof brain;
   codex: typeof codex;
   composio: typeof composio;
+  connectorAccounts: typeof connectorAccounts;
   conversations: typeof conversations;
   crons: typeof crons;
   dashboard: typeof dashboard;
