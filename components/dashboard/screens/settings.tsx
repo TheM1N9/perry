@@ -267,10 +267,108 @@ function Keys() {
           );
         })}
       </List>
+      <Logins />
       <Section title="Dashboard key" description="The key that guards this page can't be changed from behind it, which keeps a lockout recoverable. Change DASHBOARD_KEY in .env.local in Perry's folder, then restart Perry:">
         <CommandLine>perry stop && perry start</CommandLine>
       </Section>
     </>
+  );
+}
+
+const NO_LOGIN = { label: "", url: "", username: "", value: "" };
+
+/**
+ * The owner's logins and secrets, for Perry to sign in to websites with
+ * computer use. Sent in a chat, one lands here and leaves the chat. Like the
+ * keys above, a password goes in and is never shown again: changing one means
+ * saving it again under the same name and username.
+ */
+function Logins() {
+  const { dashboardKey } = useSession();
+  const logins = useQuery(api.dashboard.getVault, { key: dashboardKey });
+  const saveLogin = useMutation(api.dashboard.saveToVault);
+  const removeLogin = useMutation(api.dashboard.removeFromVault);
+  const now = useNow();
+  const [draft, setDraft] = useState(NO_LOGIN);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const edit = (field: keyof typeof NO_LOGIN, value: string) => { setDraft((current) => ({ ...current, [field]: value })); setError(""); };
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!draft.label.trim() || !draft.value.trim() || saving) return;
+    setSaving(true);
+    try {
+      await saveLogin({ key: dashboardKey, label: draft.label, url: draft.url || undefined, username: draft.username || undefined, value: draft.value });
+      setDraft(NO_LOGIN);
+      toast.success("Saved. Perry can sign in with it from the next message.");
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Section title="Logins and secrets" description="For Perry to sign in to websites with computer use. Send one in a chat and Perry moves it here, out of the chat. Passwords are never shown again.">
+      {logins === undefined ? <ListSkeleton /> : logins.length === 0 ? (
+        <EmptyState title="No logins saved">Add one below, or send it to Perry in a chat.</EmptyState>
+      ) : (
+        <List label="Logins and secrets">
+          {logins.map((login) => (
+            <li key={login.id} className="flex flex-wrap items-start justify-between gap-2 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{login.label}</p>
+                <p className="truncate text-sm text-muted-foreground">
+                  {[login.username, login.url].filter(Boolean).join(" · ") || "No username or site"}
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {login.by === "assistant" ? "Moved here from a chat" : "Added here"} {ago(login.updatedAt, now)}
+                  {login.lastUsedAt ? ` · last used ${ago(login.lastUsedAt, now)}` : " · not used yet"}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button variant="ghost" size="sm" onClick={() => { setDraft({ label: login.label, url: login.url ?? "", username: login.username ?? "", value: "" }); setError(""); document.getElementById("login-value")?.focus(); }}>
+                  Change
+                </Button>
+                <ActionButton variant="ghost" size="sm" className="text-destructive" action={() => removeLogin({ key: dashboardKey, id: login.id })} success={`${login.label} deleted.`}
+                  confirm={{ title: `Delete the ${login.label} login?`, body: "Perry can no longer sign in with it. This cannot be undone.", label: "Delete" }}>
+                  Delete
+                </ActionButton>
+              </div>
+            </li>
+          ))}
+        </List>
+      )}
+      <form onSubmit={(event) => void save(event)} className="mt-3 rounded-xl border bg-card p-4">
+        <Field data-invalid={Boolean(error) || undefined}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <FieldLabel htmlFor="login-label">Name</FieldLabel>
+              <Input id="login-label" value={draft.label} placeholder="Netflix" autoComplete="off" onChange={(event) => edit("label", event.target.value)} />
+            </div>
+            <div className="grid gap-1.5">
+              <FieldLabel htmlFor="login-url">Site</FieldLabel>
+              <Input id="login-url" value={draft.url} placeholder="https://www.netflix.com/login" autoComplete="off" spellCheck={false} onChange={(event) => edit("url", event.target.value)} />
+            </div>
+            <div className="grid gap-1.5">
+              <FieldLabel htmlFor="login-username">Username or email</FieldLabel>
+              <Input id="login-username" value={draft.username} autoComplete="off" spellCheck={false} onChange={(event) => edit("username", event.target.value)} />
+            </div>
+            <div className="grid gap-1.5">
+              <FieldLabel htmlFor="login-value">Password or secret</FieldLabel>
+              <SecretInput id="login-value" name="login-value" value={draft.value} placeholder="Never shown again" invalid={Boolean(error)} describedBy={error ? "login-error" : undefined}
+                onChange={(value) => edit("value", value)} />
+            </div>
+          </div>
+          {error && <FieldError id="login-error">{error}</FieldError>}
+        </Field>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <p className="min-w-0 flex-1 text-xs text-muted-foreground">The same name and username replaces a saved one.</p>
+          <Button type="submit" size="sm" disabled={!draft.label.trim() || !draft.value.trim() || saving}>{saving && <Spinner />}Save</Button>
+        </div>
+      </form>
+    </Section>
   );
 }
 

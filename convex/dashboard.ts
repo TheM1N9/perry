@@ -14,6 +14,7 @@ import { policyOf, type Policy } from "./runner";
 import { vAccess, vMemoryKind, vPolicy } from "./schema";
 import { APPROVAL_TTL_MS } from "./approvals";
 import { QUIET } from "./jobs";
+import type { VaultEntry } from "./vault";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -1362,6 +1363,36 @@ export const clearKey = mutation({
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
     await ctx.runMutation(internal.secrets.clear, { name: args.name });
+    return null;
+  },
+});
+
+/** The owner's saved logins and secrets, without their values. See vault.ts. */
+export const getVault = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<VaultEntry[]> => {
+    assertDashboardKey(args.key);
+    return await ctx.runQuery(internal.vault.list, {});
+  },
+});
+
+/** Add a login, or replace the one with the same name and username. */
+export const saveToVault = mutation({
+  args: { key: vKey, label: v.string(), url: v.optional(v.string()), username: v.optional(v.string()), value: v.string(), note: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, { key, ...entry }): Promise<null> => {
+    assertDashboardKey(key);
+    await ctx.runMutation(internal.vault.save, { ...entry, by: "owner" });
+    return null;
+  },
+});
+
+export const removeFromVault = mutation({
+  args: { key: vKey, id: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.vault.remove, { id: args.id });
     return null;
   },
 });

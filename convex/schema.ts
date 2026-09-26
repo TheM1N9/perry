@@ -258,6 +258,26 @@ export default defineSchema({
   }).index("by_name", ["name"]),
 
   /**
+   * The owner's own logins and secrets, for Perry to sign in to websites with
+   * computer use. Kept here rather than in memory, which loads into every turn:
+   * a value reaches a turn only when the agent asks for it with use_secret.
+   * See vault.ts.
+   */
+  vault: defineTable({
+    /** What it is for, as the owner would say it: "Netflix", "Wi-Fi". */
+    label: v.string(),
+    /** The site's address, so the agent enters it only there. */
+    url: v.optional(v.string()),
+    username: v.optional(v.string()),
+    value: v.string(),
+    note: v.optional(v.string()),
+    /** Who saved it: the owner on the Keys page, or the agent from a chat. */
+    by: v.union(v.literal("owner"), v.literal("assistant")),
+    updatedAt: v.number(),
+    lastUsedAt: v.optional(v.number()),
+  }),
+
+  /**
    * One row per chat Assistant talks in. Holds the durable mode and the id of the
    * Agent component thread that carries the message history.
    */

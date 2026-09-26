@@ -1,0 +1,107 @@
+{
+  "ranAt": "2026-09-26T12:28:23.809Z",
+  "checks": {
+    "addedFromKeysPage": true,
+    "passwordNeverSentToPage": true,
+    "sameNameReplaces": true,
+    "movedToKeys": true,
+    "goneFromChat": true,
+    "chatShowsWhereItWent": true,
+    "useLeavesNoTrace": true,
+    "saysItCouldNotSignIn": true,
+    "noBrowserErrors": true
+  },
+  "skipped": "Codex computer use had no browser on this computer (the Codex desktop app provides it), so signing in (6) and marking the login used (7) were not checked.",
+  "notes": {
+    "model": "gpt-6-luna",
+    "sharedReply": "Saved your GitHub login in Settings → Keys. The password was removed from this chat.",
+    "vaultAfterSharing": [
+      {
+        "id": "m97ab4dhqksydndyhh76gmx34j",
+        "label": "GitHub",
+        "url": "https://github.com/login",
+        "username": "octo-owner",
+        "by": "assistant",
+        "updatedAt": 1790425676457
+      },
+      {
+        "id": "548n25sn9ecmsftzezg26j3ftc",
+        "label": "test shop",
+        "url": "http://127.0.0.1:49979/login",
+        "username": "owner@example.com",
+        "by": "owner",
+        "updatedAt": 1790425668460
+      }
+    ],
+    "runsAfterSharing": [
+      {
+        "prompt": "My GitHub login is octo-owner and the password is [saved in Keys]. Keep it for when you need to sign in there.",
+        "toolCalls": [
+          "save_secret"
+        ]
+      }
+    ],
+    "signInReply": "I found your saved Test Shop login, but the browser isn’t available in this session, so I couldn’t sign in or check the latest order number. The login remains saved in Settings → Keys.",
+    "shopAttempts": [],
+    "signInRun": {
+      "id": "2xsnt8453n1zw68kjb1xmt2g0k",
+      "sessionId": "4qybw33bxn5042nnbxsskwax0g",
+      "threadId": "7361a2z3cmh1wy3xm5f6f6g0va",
+      "chatTitle": "My GitHub login is octo-owner and the password is [saved in Keys]. Keep it for w",
+      "channel": "web",
+      "prompt": "Sign in to Test Shop at http://127.0.0.1:49979/login with my saved login, and tell me what my latest order number is.",
+      "status": "ok",
+      "steps": 7,
+      "toolCalls": [
+        "list_secrets",
+        "use_secret",
+        "cua_repl.js",
+        "cua_repl.js"
+      ],
+      "model": "codex/gpt-6-luna · medium · full access",
+      "totalTokens": 256153,
+      "usage": {
+        "inputTokens": 255644,
+        "cachedInputTokens": 228608,
+        "outputTokens": 509,
+        "reasoningTokens": 114,
+        "totalTokens": 256153
+      },
+      "startedAt": 1790425680535,
+      "durationMs": 19212
+    },
+    "signInTrace": [
+      {
+        "name": "list_secrets",
+        "input": "{}",
+        "output": "[{\"type\":\"text\",\"text\":\"{\\\"count\\\":2,\\\"secrets\\\":[{\\\"id\\\":\\\"m97ab4dhqksydndyhh76gmx34j\\\",\\\"label\\\":\\\"GitHub\\\",\\\"url\\\":\\\"https://github.com/login\\\",\\\"username\\\":\\\"octo-owner\\\",\\\"by\\\":\\\"assistant\\\",\\\"updatedAt\\\":1790425676457},{\\\"id\\\":\\\"548n25sn9ecmsftzezg26j3ftc\\\",\\\"label\\\":\\\"test shop\\\",\\\"url\\\":\\\"http://127.0.0.1:49979/login\\\",\\\"username\\\":\\\"owner@example.com\\\",\\\"by\\\":\\\"owner\\\",\\\"updatedAt\\\":1790425668460}]}\"}]"
+      },
+      {
+        "name": "use_secret",
+        "input": "{\"id\":\"548n25sn9ecmsftzezg26j3ftc\"}",
+        "output": "[{\"type\":\"text\",\"text\":\"{\\\"id\\\":\\\"548n25sn9ecmsftzezg26j3ftc\\\",\\\"label\\\":\\\"test shop\\\",\\\"url\\\":\\\"http://127.0.0.1:49979/login\\\",\\\"username\\\":\\\"owner@example.com\\\",\\\"by\\\":\\\"owner\\\",\\\"updatedAt\\\":1790425668460,\\\"value\\\":\\\"[saved in Keys]\\\"}\"}]"
+      },
+      {
+        "name": "reasoning"
+      },
+      {
+        "name": "cua_repl.js",
+        "input": "{\"code\":\"let tab = await cua.createBrowserTab(\\\"iab\\\", \\\"http://127.0.0.1:49979/login\\\", {visible:true});\",\"title\":\"Open Test Shop\"}",
+        "output": "[{\"type\":\"text\",\"text\":\"Browser is not available: iab\"},{\"type\":\"text\",\"text\":\"## Computer Use\\n\\nControl native apps and browsers on the user’s computer by reading or operating UI. Prefer purpose-built connectors, APIs, or CLIs when available.\\n\\n- Use `cua_repl` (JavaScript) for all UI actions.\\n- Do not use other technologies besides `cua_repl` for computer interactions, unless specifically requested by the user (e.g. AppleScript, `osascript`, JXA, System Events, CGEvent synthesis).\\n- Prefer a dedicated plugin or skill when it can complete the task; use Computer Use for interactions that a"
+      },
+      {
+        "name": "cua_repl.js",
+        "input": "{\"code\":\"let s = await cua.getState(); nodeRepl.write(JSON.stringify(s));\",\"title\":\"Find available browser\"}",
+        "output": "[{\"type\":\"text\",\"text\":\"{\\\"apps\\\":[],\\\"browsers\\\":[]}\"},{\"type\":\"text\",\"text\":\"{\\\"apps\\\":[],\\\"browsers\\\":[]}\"}]"
+      },
+      {
+        "name": "reasoning"
+      },
+      {
+        "name": "reasoning"
+      }
+    ],
+    "skipped": "Codex computer use had no browser on this computer (the Codex desktop app provides it), so signing in (6) and marking the login used (7) were not checked."
+  },
+  "passed": true
+}
