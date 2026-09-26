@@ -439,6 +439,39 @@ export const setModel = mutation({
   },
 });
 
+/**
+ * A schedule made or changed on the Work page: a name, a prompt, and a cron
+ * schedule or a one-time time. The same checks as the agent's create_job and
+ * update_job, so either way makes the same job. One made here reports to the
+ * owner's messaging app, like the heartbeat.
+ */
+export const saveFromDashboard = mutation({
+  args: { key: v.string(), id: v.optional(v.id("jobs")), name: v.string(), prompt: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()) },
+  returns: v.id("jobs"),
+  handler: async (ctx, args): Promise<Id<"jobs">> => {
+    assertDashboardKey(args.key);
+    if (args.name.trim().length < 2) throw new Error("Give it a name of at least two letters.");
+    if (args.prompt.trim().length < 10) throw new Error("Say what Perry should do, in a sentence or so.");
+    const when = { schedule: args.schedule?.trim() || undefined, at: args.at?.trim() || undefined };
+    if (!args.id) {
+      const made: { id?: Id<"jobs">; error?: string } = await ctx.runMutation(internal.jobs.create, { name: args.name, prompt: args.prompt, ...when });
+      if (!made.id) throw new Error(made.error ?? "Could not save it.");
+      return made.id;
+    }
+    const job = await ctx.db.get(args.id);
+    if (!job) throw new Error("That schedule no longer exists.");
+    // Only a new time is a reschedule; saving the same one leaves a paused job paused.
+    const moved = job.builtin ? when.schedule !== job.schedule : when.schedule !== job.schedule || (when.at !== undefined && Date.parse(when.at) !== job.runAt);
+    const changed: { updated: boolean; error?: string } = await ctx.runMutation(internal.jobs.update, {
+      id: args.id,
+      ...(job.builtin ? {} : { name: args.name, prompt: args.prompt }),
+      ...(moved ? when : {}),
+    });
+    if (!changed.updated) throw new Error(changed.error ?? "Could not save it.");
+    return args.id;
+  },
+});
+
 export const removeFromDashboard = mutation({
   args: { key: v.string(), id: v.id("jobs") },
   returns: v.null(),

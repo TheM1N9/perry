@@ -18,6 +18,7 @@ import { QUIET } from "./jobs";
 import type { VaultEntry } from "./vault";
 import { OUTBOX_TTL_MS } from "./conversations";
 import { beingNamed, cancelTitle, requestTitle } from "./titles";
+import { watchProblem } from "./work";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -1220,6 +1221,52 @@ export const deleteMonitor = mutation({
     await ctx.runMutation(internal.work.deleteMonitor, {
       monitorId: args.monitorId,
     });
+    return null;
+  },
+});
+
+/** A goal made or changed on the Work page. */
+export const saveGoal = mutation({
+  args: {
+    key: vKey,
+    id: v.optional(v.id("goals")),
+    title: v.string(),
+    description: v.optional(v.string()),
+    status: v.optional(v.union(v.literal("active"), v.literal("paused"), v.literal("done"))),
+    milestones: v.array(v.object({ title: v.string(), done: v.boolean() })),
+  },
+  returns: v.id("goals"),
+  handler: async (ctx, args): Promise<Id<"goals">> => {
+    assertDashboardKey(args.key);
+    const { key: _key, ...goal } = args;
+    return await ctx.runMutation(internal.work.saveGoal, goal);
+  },
+});
+
+/** A page watch made or changed on the Work page, with the checks the agent's watch_page makes. One made here reports to the owner's messaging app. */
+export const saveMonitor = mutation({
+  args: {
+    key: vKey,
+    id: v.optional(v.id("monitors")),
+    title: v.string(),
+    url: v.string(),
+    condition: v.union(v.literal("change"), v.literal("contains"), v.literal("price_below")),
+    value: v.optional(v.string()),
+    intervalMinutes: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    const { key: _key, id, ...watch } = args;
+    const url = watch.url.trim();
+    if (id) {
+      await ctx.runMutation(internal.work.updateMonitor, { id, ...watch, url });
+      return null;
+    }
+    const value = watch.condition === "change" ? undefined : watch.value?.trim();
+    const problem = watchProblem({ url, condition: watch.condition, value });
+    if (problem) throw new Error(problem);
+    await ctx.runMutation(internal.work.createMonitor, { ...watch, url, value, title: watch.title.trim() || new URL(url).hostname });
     return null;
   },
 });

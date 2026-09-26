@@ -3,7 +3,7 @@ import { z } from "zod";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { SearchResult } from "./composio";
-import { parseTarget } from "./lib/price";
+import { watchProblem } from "./work";
 import type { VaultEntry } from "./vault";
 
 /**
@@ -741,12 +741,9 @@ const watch_page = createTool({
     intervalMinutes: z.number().int().min(5).max(10080).default(60),
   }),
   execute: async (ctx, input): Promise<{ monitorId?: string; error?: string }> => {
-    if (input.condition !== "change" && !input.value?.trim()) {
-      return { error: "That condition needs a value." };
-    }
-    if (input.condition === "price_below" && !parseTarget(input.value ?? "")) {
-      return { error: "price_below needs a price, such as \"₹25,000\" or \"199\"." };
-    }
+    // The same checks as the Work page's form.
+    const problem = watchProblem(input);
+    if (problem) return { error: problem };
 
     const monitorId: Id<"monitors"> = await ctx.runMutation(
       internal.work.createMonitor,
