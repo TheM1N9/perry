@@ -141,11 +141,14 @@ async function own(ctx: QueryCtx, raw: string): Promise<Doc<"todos"> | null> {
 
 // --- Reminders ------------------------------------------------------------
 
-/** Whether the owner is at the computer, as the pet last saw. */
-async function atComputer(ctx: QueryCtx, now = Date.now()): Promise<boolean> {
+/** Whether the owner is at the computer, as the pet last saw; "unknown" with no pet running. */
+export async function presenceOf(ctx: QueryCtx, now = Date.now()): Promise<"here" | "away" | "unknown"> {
   const presence = await ctx.db.query("petPresence").first();
-  return Boolean(presence && now - presence.seenAt < PET_GONE_MS && now - presence.activeAt < AWAY_MS);
+  if (!presence || now - presence.seenAt >= PET_GONE_MS) return "unknown";
+  return now - presence.activeAt < AWAY_MS ? "here" : "away";
 }
+
+const atComputer = async (ctx: QueryCtx, now = Date.now()) => (await presenceOf(ctx, now)) === "here";
 
 /** Every minute (crons.ts): chase what is due on the phone, unless the pet has the owner's attention. */
 export const tick = internalMutation({
