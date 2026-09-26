@@ -1,6 +1,6 @@
 "use client";
 
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import { Jobs } from "./Jobs";
 import { ActionButton, Empty, Icon, Loading, RelativeTime, Section, Status, useNow, ago, type Tone } from "./ui";

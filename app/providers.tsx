@@ -1,19 +1,13 @@
 "use client";
 
-import { ConvexProvider, ConvexReactClient } from "convex/react";
 import type { ReactNode } from "react";
+import { BackendClient } from "@/client/backend";
+import { BackendProvider } from "@/client/react";
 import { ToastProvider } from "./components/ui";
 
-const url = process.env.NEXT_PUBLIC_CONVEX_URL;
-
-if (!url) {
-  throw new Error(
-    "NEXT_PUBLIC_CONVEX_URL is not set. It is written to .env.local by `pnpm exec convex dev`.",
-  );
-}
-
-const convex = new ConvexReactClient(url);
+/** Perry's backend is this same server, under /api/backend. */
+const backend = new BackendClient();
 
 export function Providers({ children }: { children: ReactNode }) {
-  return <ConvexProvider client={convex}><ToastProvider>{children}</ToastProvider></ConvexProvider>;
+  return <BackendProvider client={backend}><ToastProvider>{children}</ToastProvider></BackendProvider>;
 }

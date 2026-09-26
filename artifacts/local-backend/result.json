@@ -1,0 +1,42 @@
+{
+  "ranAt": "2026-09-25T22:44:09.836Z",
+  "platform": "win32",
+  "checks": {
+    "backendStarts": true,
+    "runnerPairedByServer": true,
+    "runnerOnline": true,
+    "telegramPollingClaims": true,
+    "chatPageRenders": true,
+    "dashboardStaysLive": true,
+    "turnReachesCodex": true,
+    "turnReplies": false,
+    "noPageErrors": true,
+    "survivesRestart": true,
+    "importsConvexExport": true
+  },
+  "notes": {
+    "home": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-local-e2e-yYL1Rf",
+    "installAtStart": {
+      "claimed": false,
+      "onboarding": "pending"
+    },
+    "telegramSent": [
+      {
+        "chat_id": "4242",
+        "text": "Paired. I'm yours now.\n\nTo tell me about yourself, open the dashboard's welcome page, or just tell me here.\n\nTry:\n  remember that I drink coffee black\n  what do you know about me\n  /help for the rest"
+      }
+    ],
+    "turn": {
+      "reply": null,
+      "error": "You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 6:02 PM."
+    },
+    "pageErrors": [],
+    "imported": [
+      "Bringing Perry over from Convex",
+      "  imported 28 chats (28 histories, 150 messages), 5 memories, 0 files",
+      "  also 1 installation, 20 persona, 3 tasks, 2 goals, 0 monitors, 26 runners, 2 secrets, 1 chatAttachments, 80 runs, 16 runSpans, 3 jobs, 8 approvals, 0 approvalRules, 59 codexTurns",
+      "  Your Convex deployment is untouched. Delete it at dashboard.convex.dev when you no longer need it."
+    ]
+  },
+  "passed": false
+}

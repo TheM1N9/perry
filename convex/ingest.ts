@@ -1,12 +1,41 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalMutation } from "./_generated/server";
+import { internalAction, internalMutation } from "./_generated/server";
 import type { ClaimResult } from "./installation";
+import { parseUpdate, type TelegramUpdate } from "./lib/telegram";
 import { vTelegramMedia } from "./schema";
 
 /**
- * The front door for Telegram. Runs as a mutation so the HTTP action can return
- * 200 immediately; the actual turn is scheduled and runs on its own.
+ * One update from Telegram, as the server's long-polling loop fetched it
+ * (server/telegram.ts). Anything that is not a message from a person or a tap
+ * on an approval button is ignored.
+ */
+export const fromTelegram = internalAction({
+  args: { update: v.any() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const inbound = parseUpdate(args.update as TelegramUpdate);
+    if (!inbound) return null;
+    // A tap on an approval button. The mutation checks the tapper is the owner.
+    if ("callbackId" in inbound) {
+      const note: string = await ctx.runMutation(internal.approvals.answerFromTelegram, { senderId: inbound.senderId, data: inbound.data });
+      await ctx.scheduler.runAfter(0, internal.approvals.acknowledgeTap, { callbackId: inbound.callbackId, note });
+      return null;
+    }
+    await ctx.runMutation(internal.ingest.receive, {
+      chatId: inbound.chatId,
+      senderId: inbound.senderId,
+      text: inbound.text,
+      title: inbound.title,
+      media: inbound.media,
+    });
+    return null;
+  },
+});
+
+/**
+ * The front door for Telegram. Runs as a mutation so the poller can move on
+ * at once; the actual turn is scheduled and runs on its own.
  *
  * Authorisation happens here, once, before anything else. Assistant belongs to
  * exactly one person and that is decided by the pairing code, not by an

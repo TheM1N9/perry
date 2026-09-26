@@ -8,8 +8,6 @@
  *   - The runner does not load here (an import, a Node API, a path)  → `runner --help` exits 0
  *   - Perry's home cannot be made where PERRY_HOME points, with a space
  *     or non-ASCII in the path, or runner.json does not round-trip   → home
- *   - The OS shell is wrong or missing, loses the exit code, or
- *     mangles a cwd or file name with spaces or unicode              → shell
  *   - Codex is told the wrong OS or shell                            → machine
  *   - PERRY_CODEX_SANDBOX accepts a typo, or rejects a real mode     → sandbox
  *   - share_file or an upload rejects a POSIX or Windows absolute
@@ -29,7 +27,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { dim, green, red } from "./lib";
@@ -39,7 +37,7 @@ const scratch = mkdtempSync(join(tmpdir(), "perry-smoke-"));
 // Set before anything reads it: runner/home.ts fixes its paths on import.
 process.env.PERRY_HOME = join(scratch, "perry home ü");
 const { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig } = await import("../runner/home");
-const { describeMachine, runShell } = await import("../runner/shell");
+const { describeMachine } = await import("../runner/shell");
 const { sandboxMode } = await import("../runner/codex");
 const { ABSOLUTE_PATH, describePath } = await import("../convex/media");
 const { serviceContext, servicePlan, TASK } = await import("./service");
@@ -81,21 +79,6 @@ await check("home", () => {
   const back = readRunnerConfig();
   expect(back.name === "smoke ü" && back.dir === scratch, "runner.json did not round-trip");
   return HOME;
-});
-
-await check("shell", async () => {
-  const cwd = join(scratch, "work dir ü");
-  mkdirSync(cwd, { recursive: true });
-  const echo = await runShell("echo perry-smoke", cwd);
-  expect(echo.exitCode === 0 && echo.output.includes("perry-smoke"), `echo: ${JSON.stringify(echo)}`);
-  const failed = await runShell("exit 3", cwd);
-  expect(failed.exitCode === 3, `exit code ${failed.exitCode}, not 3`);
-  const write = await runShell(process.platform === "win32" ? `echo hi> "ü file.txt"` : `printf hi > "ü file.txt"`, cwd);
-  expect(write.exitCode === 0, `write: ${write.output}`);
-  const written = readdirSync(cwd);
-  expect(written.includes("ü file.txt"), `files: ${written.join(", ")}`);
-  expect(readFileSync(join(cwd, "ü file.txt"), "utf8").trim() === "hi", "the file does not hold what was written");
-  return process.platform === "win32" ? process.env.COMSPEC || "cmd.exe" : "/bin/sh";
 });
 
 await check("machine", () => {

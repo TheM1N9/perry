@@ -2,8 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { NextRequest } from "next/server";
-import { api } from "@/convex/_generated/api";
-import { convex, dashboardKey } from "../store";
+import { dashboardKey, query } from "../store";
 
 /**
  * Serve a local chat file from wherever it lives. Only attachments a chat
@@ -18,7 +17,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   let attachment: { localPath: string; fileName: string; contentType: string } | null;
   try {
-    attachment = await convex().query(api.media.localAttachment, { key, id });
+    attachment = await query("media:localAttachment", { key, id });
   } catch {
     return new Response("Wrong dashboard key.", { status: 403 });
   }

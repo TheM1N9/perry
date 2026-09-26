@@ -3,7 +3,7 @@ export const SECTIONS = [
   { id: "chat", label: "Chat", icon: "chat", description: "" },
   { id: "welcome", label: "Welcome", icon: "user", description: "" },
   { id: "tasks", label: "Tasks", icon: "work", description: "What Perry runs on a schedule, the plans it is working through, your goals, and the pages it watches." },
-  { id: "computer", label: "Computer", icon: "computer", description: "Where Perry runs commands, and the machines connected to it." },
+  { id: "computer", label: "Computer", icon: "computer", description: "The machines connected to Perry, what each asks you before it acts, and the rules you saved." },
   { id: "connectors", label: "Connectors", icon: "plug", description: "Accounts Perry can use on your behalf, with your permission." },
   { id: "about", label: "About you", icon: "user", description: "Your USER.md, and your assistant's name and personality. Both go into every chat." },
   { id: "memory", label: "Memory", icon: "memory", description: "What Perry has saved about you, and the place to correct it." },

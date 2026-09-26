@@ -1,4 +1,3 @@
-import { ConvexHttpClient } from "convex/browser";
 import type { NextRequest } from "next/server";
 import { ensureHome } from "@/runner/home";
 
@@ -9,13 +8,11 @@ import { ensureHome } from "@/runner/home";
  * Assistant's home (runner/home.ts), and this server serves it from there.
  * Files the owner attaches land in the home's uploads folder. The runner on
  * the same machine reads the same paths, so Codex opens attachments straight
- * from disk. Set PERRY_MEDIA=convex when the dashboard is hosted elsewhere;
- * uploads then go to Convex storage.
+ * from disk.
  */
 export function uploadDir(): string {
   return ensureHome().uploads;
 }
-export const LOCAL_MEDIA = process.env.PERRY_MEDIA !== "convex";
 export const MAX_BYTES = 50 * 1024 * 1024;
 
 /** Media requests carry the dashboard key in a path-scoped cookie, never in the URL. */
@@ -25,8 +22,8 @@ export function dashboardKey(request: NextRequest): string | null {
   return request.cookies.get(MEDIA_COOKIE)?.value || null;
 }
 
-export function convex(): ConvexHttpClient {
-  const url = process.env.NEXT_PUBLIC_CONVEX_URL;
-  if (!url) throw new Error("NEXT_PUBLIC_CONVEX_URL is not set.");
-  return new ConvexHttpClient(url);
+/** Call a public backend function, as the browser would, in this same process. */
+export async function query<T>(path: string, args: Record<string, unknown>): Promise<T> {
+  const { backend } = await import("@/server/index");
+  return (await backend().runQuery(path, args)).value as T;
 }
