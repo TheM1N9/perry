@@ -38,9 +38,10 @@ export function findModel(models: ModelOption[], name: string): { model?: ModelO
   return { model: matches.length === 1 ? matches[0] : undefined, matches };
 }
 
-/** The effective model: the chat's pick, else Codex's default. */
+/** The effective model: the chat's pick while the account still offers it, else Codex's default. */
 export function currentModel(models: ModelOption[], picked?: string): string | undefined {
-  return picked ?? (models.find((model) => model.isDefault) ?? models[0])?.id;
+  if (picked && (!models.length || models.some((model) => model.id === picked))) return picked;
+  return (models.find((model) => model.isDefault) ?? models[0])?.id;
 }
 
 /** The reply to "/model": every model, with the current one marked. */

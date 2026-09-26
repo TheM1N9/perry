@@ -387,6 +387,8 @@ export default defineSchema({
     prompt: v.string(),
     enabled: v.boolean(),
     builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"))),
+    /** The Codex model its runs use, picked on the Work page. Unset means the account's default. */
+    model: v.optional(v.string()),
     nextRunAt: v.number(),
     lastRunAt: v.optional(v.number()),
     lastResult: v.optional(v.string()),

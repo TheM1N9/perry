@@ -255,6 +255,7 @@ export const run = internalAction({
       externalId: chat.externalId,
       text: `⏰ ${job.name} (${now})\n\n${job.prompt}${context}\n\n${CONDITIONAL_DELIVERY}`,
       title: chat.title,
+      ...(job.model ? { model: job.model } : {}),
     });
     return null;
   },
@@ -302,6 +303,7 @@ export type JobView = {
   prompt: string;
   enabled: boolean;
   builtin?: string;
+  model?: string;
   nextRunAt: number;
   lastRunAt?: number;
   lastResult?: string;
@@ -317,6 +319,7 @@ const view = (job: Doc<"jobs">): JobView => ({
   prompt: job.prompt,
   enabled: job.enabled,
   builtin: job.builtin,
+  model: job.model,
   nextRunAt: job.nextRunAt,
   lastRunAt: job.lastRunAt,
   lastResult: job.lastResult,
@@ -418,6 +421,18 @@ export const setEnabled = mutation({
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     await ctx.runMutation(internal.jobs.update, { id: args.id, enabled: args.enabled });
+    return null;
+  },
+});
+
+/** Pick the model a job's runs use, the heartbeat's too. Unset means the account's default. */
+export const setModel = mutation({
+  args: { key: v.string(), id: v.id("jobs"), model: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    if (!(await ctx.db.get(args.id))) throw new Error("That job no longer exists.");
+    await ctx.db.patch(args.id, { model: args.model?.trim() || undefined });
     return null;
   },
 });

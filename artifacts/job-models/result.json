@@ -1,0 +1,41 @@
+{
+  "ranAt": "2026-09-26T07:54:19.039Z",
+  "checks": {
+    "noPickRunsOnAccountDefault": true,
+    "unofferedPickFallsBack": true,
+    "jobModelUsed": true,
+    "jobModelCleared": true,
+    "pickerShowsDefaultByName": true,
+    "pickingOnWorkPageSaves": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "models": [
+      "gpt-6-luna (default)",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.5"
+    ],
+    "noPick": {
+      "reply": "pong",
+      "model": "codex/gpt-6-luna · medium"
+    },
+    "unofferedPick": {
+      "reply": "ping",
+      "model": "codex/gpt-6-luna · medium"
+    },
+    "heartbeat": {
+      "onOther": {
+        "model": "codex/gpt-5.6-terra · medium",
+        "status": "ok"
+      },
+      "onDefault": {
+        "model": "codex/gpt-6-luna · medium",
+        "status": "ok"
+      }
+    },
+    "pickerShows": "Default (GPT-6-Luna)",
+    "pageErrors": []
+  },
+  "passed": true
+}
