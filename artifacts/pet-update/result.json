@@ -1,0 +1,58 @@
+{
+  "ranAt": "2026-09-27T15:39:19.805Z",
+  "checks": {
+    "tellsWhenPetChanged": true,
+    "reloadKeepsThePet": true,
+    "restartReplacesThePet": true,
+    "oldPetIsReplacedByTheNewCode": true,
+    "noPetStartsWhenNoneRan": true,
+    "ownersPetUntouched": true
+  },
+  "notes": {
+    "tellsWhenPetChanged": {
+      "sinceMain": "true",
+      "sinceHead": "false"
+    },
+    "perryPet": [
+      "  Click him for your chats, to-dos and what needs you; drag him anywhere. Ctrl+Shift+Space talks to him.",
+      "  He starts with your computer from now on; perry pet off stops that."
+    ],
+    "reloadKeepsThePet": {
+      "first": [
+        "83624"
+      ],
+      "now": [
+        "83624"
+      ]
+    },
+    "restartReplacesThePet": {
+      "first": [
+        "83624"
+      ],
+      "second": [
+        "29532"
+      ]
+    },
+    "oldPetIsReplacedByTheNewCode": {
+      "olds": [
+        "36984"
+      ],
+      "oldNow": [],
+      "newNow": [
+        "60512"
+      ]
+    },
+    "noPetStartsWhenNoneRan": {
+      "now": []
+    },
+    "ownersPetUntouched": {
+      "before": [
+        "47024"
+      ],
+      "after": [
+        "47024"
+      ]
+    }
+  },
+  "passed": true
+}
