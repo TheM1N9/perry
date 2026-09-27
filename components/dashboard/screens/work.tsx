@@ -25,7 +25,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActionButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCount, attempt, useTab, type Tone } from "../common";
-import { GoalDialog, ScheduleDialog, WatchDialog, type Editing } from "./work-forms";
+import { GoalDialog, ScheduleDialog, TaskDialog, WatchDialog, type Editing } from "./work-forms";
+import { Input } from "@/components/ui/input";
 
 const TABS = ["schedules", "plans", "goals", "watches"] as const;
 type Tab = (typeof TABS)[number];
@@ -52,7 +53,7 @@ export function Work() {
           <TabsTrigger value="watches"><TabCount count={work?.monitors.filter((monitor) => monitor.active).length}>Watches</TabCount></TabsTrigger>
         </TabsList>
         <TabsContent value="schedules"><Schedules /></TabsContent>
-        <TabsContent value="plans">{work ? <Plans tasks={work.tasks} /> : <ListSkeleton />}</TabsContent>
+        <TabsContent value="plans">{work ? <Plans tasks={work.tasks} goals={work.goals} /> : <ListSkeleton />}</TabsContent>
         <TabsContent value="goals">{work ? <Goals goals={work.goals} /> : <ListSkeleton />}</TabsContent>
         <TabsContent value="watches">{work ? <Watches monitors={work.monitors} /> : <ListSkeleton />}</TabsContent>
       </Tabs>
@@ -253,76 +254,111 @@ const TASK: Record<Doc<"tasks">["status"], { label: string; tone: Tone }> = {
   cancelled: { label: "Cancelled", tone: "neutral" },
 };
 
-function Plans({ tasks }: { tasks: Doc<"tasks">[] }) {
+function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] }) {
   const { dashboardKey } = useSession();
   const cancelTask = useMutation(api.dashboard.cancelTask);
+  const answerTask = useMutation(api.tasks.answerFromDashboard);
   const now = useNow();
-  if (!tasks.length) return <EmptyState title="No plans yet">Ask Perry for something that takes a few steps, and its plan shows up here as it works.</EmptyState>;
-  // What needs you, then what is working, then the rest, newest first within each.
+  const [adding, setAdding] = useState<Editing<never>>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  // What needs you, then what is working, then the line in order, then the rest newest first.
   const rank = { blocked: 0, running: 1, queued: 2, failed: 3, done: 4, cancelled: 5 } as const;
-  const sorted = [...tasks].sort((a, b) => rank[a.status] - rank[b.status] || b.updatedAt - a.updatedAt);
+  const sorted = [...tasks].sort((a, b) => rank[a.status] - rank[b.status] || (a.status === "queued" ? a.createdAt - b.createdAt : b.updatedAt - a.updatedAt));
+  // Queued tasks run oldest first, one at a time.
+  const line = tasks.filter((task) => task.status === "queued").sort((a, b) => a.createdAt - b.createdAt).map((task) => task._id);
+  const intro = (
+    <Intro action={<Button size="sm" onClick={() => setAdding({})}><PlusIcon />New task</Button>}>
+      Work Perry does by himself, one task at a time, in a chat of its own. Its plan shows here as it goes; a question comes to you.
+    </Intro>
+  );
+  if (!tasks.length) return (
+    <div className="space-y-4">
+      {intro}
+      <EmptyState title="No plans yet">Hand Perry a task here, or ask for something that takes a few steps in a chat, and its plan shows up here as it works.</EmptyState>
+      <TaskDialog open={adding !== null} goals={goals} onClose={() => setAdding(null)} />
+    </div>
+  );
   return (
-    <List label="Plans">
-      {sorted.map((task) => {
-        const done = task.plan.filter((step) => step.status === "done").length;
-        const live = task.status === "running" || task.status === "blocked";
-        return (
-          <Row key={task._id}>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-medium">{task.title}</h3>
-                <StatusBadge tone={TASK[task.status].tone} pulse={task.status === "running"}>{TASK[task.status].label}</StatusBadge>
+    <div className="space-y-4">
+      {intro}
+      <List label="Plans">
+        {sorted.map((task) => {
+          const done = task.plan.filter((step) => step.status === "done").length;
+          const live = task.status === "running" || task.status === "blocked";
+          return (
+            <Row key={task._id}>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-medium">{task.title}</h3>
+                  <StatusBadge tone={TASK[task.status].tone} pulse={task.status === "running"}>{TASK[task.status].label}</StatusBadge>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Updated {ago(task.updatedAt, now)}{task.plan.length > 0 && <span className="nums"> · {done} of {task.plan.length} steps</span>}
+                </p>
+                {task.plan.length > 0 && <Progress value={(done / task.plan.length) * 100} aria-label={`${task.title}: ${done} of ${task.plan.length} steps`} className="mt-3 max-w-md" />}
+                {task.status === "queued" && line.includes(task._id) && (
+                  <p className="mt-1 text-sm text-muted-foreground">{line.indexOf(task._id) === 0 ? "Next in line" : `${line.indexOf(task._id) + 1} in line`}</p>
+                )}
+                {task.question && (
+                  <div className="mt-3 rounded-lg bg-warning-soft px-3 py-2 text-sm text-pretty">
+                    <span className="font-medium text-warning">Needs you: </span>{task.question}
+                    {task.status === "blocked" && task.conversationId && (
+                      <form className="mt-2 flex gap-2" onSubmit={(event) => {
+                        event.preventDefault();
+                        const answer = answers[task._id]?.trim();
+                        if (answer) void attempt(() => answerTask({ key: dashboardKey, id: task._id, answer }), { success: "Answered. It carries on." }).then((ok) => { if (ok) setAnswers((all) => ({ ...all, [task._id]: "" })); });
+                      }}>
+                        <Input aria-label={`Answer for ${task.title}`} placeholder="Your answer" value={answers[task._id] ?? ""} className="h-8 bg-background"
+                          onChange={(event) => setAnswers((all) => ({ ...all, [task._id]: event.target.value }))} />
+                        <Button type="submit" size="sm" disabled={!answers[task._id]?.trim()}>Answer</Button>
+                      </form>
+                    )}
+                  </div>
+                )}
+                {task.plan.length > 0 && (
+                  <Collapsible defaultOpen={live} className="mt-3">
+                    <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+                      <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" />Steps
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <ol className="mt-2 space-y-1.5" aria-label="Plan">
+                        {task.plan.map((step, index) => (
+                          <li key={index} className="flex items-start gap-2.5 text-sm">
+                            <span aria-hidden className={cn("mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border",
+                              step.status === "done" && "border-primary bg-primary text-primary-foreground",
+                              step.status === "active" && "border-primary",
+                              step.status === "skipped" && "border-dashed")}>
+                              {step.status === "done" && <CheckIcon className="size-2.5" strokeWidth={3} />}
+                              {step.status === "active" && <span className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse" />}
+                            </span>
+                            <span className={cn(step.status === "skipped" && "text-muted-foreground line-through", step.status === "active" && "font-medium")}>
+                              {step.title}<span className="sr-only"> ({step.status})</span>
+                              {step.note && <span className="block text-muted-foreground">{step.note}</span>}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+                {task.result && <p className="mt-3 text-sm text-pretty whitespace-pre-line text-foreground/80">{task.result}</p>}
+                {task.error && <p className="mt-3 text-sm text-pretty text-destructive">{task.error}</p>}
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Updated {ago(task.updatedAt, now)}{task.plan.length > 0 && <span className="nums"> · {done} of {task.plan.length} steps</span>}
-              </p>
-              {task.plan.length > 0 && <Progress value={(done / task.plan.length) * 100} aria-label={`${task.title}: ${done} of ${task.plan.length} steps`} className="mt-3 max-w-md" />}
-              {task.question && (
-                <div className="mt-3 rounded-lg bg-warning-soft px-3 py-2 text-sm text-pretty">
-                  <span className="font-medium text-warning">Needs you: </span>{task.question}
+              {(live || task.conversationId) && (
+                <div className="flex shrink-0 items-center gap-1">
+                  {task.conversationId && <Button variant="ghost" size="sm" render={<Link href={`/chat/${task.conversationId}`} />}><MessageSquareIcon />Its chat</Button>}
+                  {live && <ActionButton variant="ghost" size="sm" className="text-destructive hover:text-destructive" action={() => cancelTask({ key: dashboardKey, taskId: task._id })} success="Plan cancelled."
+                    confirm={{ title: "Cancel this plan?", body: `Perry stops working on “${task.title}”. What it already did stays done.`, label: "Cancel plan" }}>
+                    Cancel
+                  </ActionButton>}
                 </div>
               )}
-              {task.plan.length > 0 && (
-                <Collapsible defaultOpen={live} className="mt-3">
-                  <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-                    <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" />Steps
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <ol className="mt-2 space-y-1.5" aria-label="Plan">
-                      {task.plan.map((step, index) => (
-                        <li key={index} className="flex items-start gap-2.5 text-sm">
-                          <span aria-hidden className={cn("mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border",
-                            step.status === "done" && "border-primary bg-primary text-primary-foreground",
-                            step.status === "active" && "border-primary",
-                            step.status === "skipped" && "border-dashed")}>
-                            {step.status === "done" && <CheckIcon className="size-2.5" strokeWidth={3} />}
-                            {step.status === "active" && <span className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse" />}
-                          </span>
-                          <span className={cn(step.status === "skipped" && "text-muted-foreground line-through", step.status === "active" && "font-medium")}>
-                            {step.title}<span className="sr-only"> ({step.status})</span>
-                            {step.note && <span className="block text-muted-foreground">{step.note}</span>}
-                          </span>
-                        </li>
-                      ))}
-                    </ol>
-                  </CollapsibleContent>
-                </Collapsible>
-              )}
-              {task.result && <p className="mt-3 text-sm text-pretty whitespace-pre-line text-foreground/80">{task.result}</p>}
-              {task.error && <p className="mt-3 text-sm text-pretty text-destructive">{task.error}</p>}
-            </div>
-            {live && (
-              <div className="shrink-0">
-                <ActionButton variant="ghost" size="sm" className="text-destructive hover:text-destructive" action={() => cancelTask({ key: dashboardKey, taskId: task._id })} success="Plan cancelled."
-                  confirm={{ title: "Cancel this plan?", body: `Perry stops working on “${task.title}”. What it already did stays done.`, label: "Cancel plan" }}>
-                  Cancel
-                </ActionButton>
-              </div>
-            )}
-          </Row>
-        );
-      })}
-    </List>
+            </Row>
+          );
+        })}
+      </List>
+      <TaskDialog open={adding !== null} goals={goals} onClose={() => setAdding(null)} />
+    </div>
   );
 }
 

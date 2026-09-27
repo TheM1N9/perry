@@ -102,6 +102,14 @@ export const getTask = internalQuery({
   },
 });
 
+export const getGoal = internalQuery({
+  args: { goalId: v.string() },
+  handler: async (ctx, args): Promise<Doc<"goals"> | null> => {
+    const id = ctx.db.normalizeId("goals", args.goalId);
+    return id ? await ctx.db.get(id) : null;
+  },
+});
+
 export const listTasks = internalQuery({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args): Promise<Doc<"tasks">[]> => {

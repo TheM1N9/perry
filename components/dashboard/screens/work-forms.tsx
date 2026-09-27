@@ -210,6 +210,37 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
   );
 }
 
+// --- Tasks -------------------------------------------------------------------
+
+/** A background task handed to Perry: what to call it, what to do, and the goal it serves. */
+export function TaskDialog({ open, goals, onClose }: { open: boolean; goals: Doc<"goals">[]; onClose: () => void }) {
+  const { dashboardKey } = useSession();
+  const queue = useMutation(api.tasks.queueFromDashboard);
+  const { saving, save } = useSave(onClose);
+  const [title, setTitle] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [goal, setGoal] = useState("none");
+  useEffect(() => { if (open) { setTitle(""); setPrompt(""); setGoal("none"); } }, [open]);
+  const items = [{ value: "none", label: "None" }, ...goals.filter((item) => item.status !== "done").map((item) => ({ value: item._id, label: item.title }))];
+  return (
+    <FormDialog open={open} onClose={onClose} saving={saving} title="New task"
+      description="Perry works on it by himself when nothing else is running, and tells you the result, or asks if he gets stuck."
+      onSave={() => void save(() => queue({ key: dashboardKey, title, prompt, ...(goal !== "none" ? { goalId: goal as Doc<"goals">["_id"] } : {}) }), "Queued. Perry starts when he is free.")}>
+      <Field>
+        <FieldLabel htmlFor="task-title">Task</FieldLabel>
+        <Input id="task-title" value={title} maxLength={160} placeholder="Compare three flats near work" autoFocus required onChange={(event) => setTitle(event.target.value)} />
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="task-prompt">What to do</FieldLabel>
+        <Textarea id="task-prompt" value={prompt} rows={5} maxLength={12000} placeholder="Find three 2-bedroom flats within 5 km of my office, under ₹40,000 a month, and put a comparison in a note in your files folder."
+          onChange={(event) => setPrompt(event.target.value)} />
+        <FieldDescription>Everything he needs to do it without asking: what, where the result goes, what counts as done.</FieldDescription>
+      </Field>
+      {items.length > 1 && <Choice id="task-goal" label="For a goal" value={goal} items={items} onChange={setGoal} />}
+    </FormDialog>
+  );
+}
+
 // --- Goals -------------------------------------------------------------------
 
 const GOAL_STATUS = [

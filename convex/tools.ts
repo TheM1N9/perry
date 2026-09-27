@@ -763,6 +763,41 @@ const start_task = createTool({
   },
 });
 
+/** A background task starts only once this turn ends (the runner takes one turn at a time): waiting for it here would wait for ever. */
+const NO_WAIT = "It starts after this reply and runs by itself; its result, or a question, comes back to this chat. Do not wait for it or check on it now: tell the owner it is under way and end your reply.";
+
+const queue_task = createTool({
+  description:
+    "Take on a piece of work to do by yourself in the background, apart from this chat: research, " +
+    "writing, sorting files, a comparison. It waits its turn (one task runs at a time), runs in a chat " +
+    "of its own, and its result, or a question if it gets stuck, comes back here. Use it when the owner " +
+    "asks for something that takes a while and they need not watch, or asks you to queue it. Returns the task id.",
+  inputSchema: z.object({
+    title: z.string().min(2).max(160).describe("A short name, e.g. 'Compare three flats near work'."),
+    prompt: z.string().min(10).max(12000).describe("Everything needed to do it without asking: what, where to put the result, what counts as done."),
+    goalId: z.string().optional().describe("The goal it serves, from status_report, if any."),
+  }),
+  execute: async (ctx, input): Promise<{ taskId?: string; note?: string; error?: string }> => {
+    const goal = input.goalId ? await ctx.runQuery(internal.work.getGoal, { goalId: input.goalId }) : null;
+    if (input.goalId && !goal) return { error: "No goal with that id; status_report lists them." };
+    const taskId: Id<"tasks"> = await ctx.runMutation(internal.tasks.queue, {
+      title: input.title, prompt: input.prompt, ...(goal ? { goalId: goal._id } : {}), ...(ctx.conversationId ? { origin: ctx.conversationId } : {}),
+    });
+    return { taskId, note: NO_WAIT };
+  },
+});
+
+const resume_task = createTool({
+  description:
+    "Give a background task stuck on a question (status blocked) the owner's answer, and put it back in the " +
+    "queue to carry on. Use it when the owner answers a task's question here. Task ids come from status_report.",
+  inputSchema: z.object({ taskId: z.string(), answer: z.string().min(1).max(4000).describe("The owner's answer, in their words.") }),
+  execute: async (ctx, input): Promise<{ resumed: boolean; note?: string; error?: string }> => {
+    const resumed: boolean = await ctx.runMutation(internal.tasks.resume, { id: input.taskId, answer: input.answer });
+    return resumed ? { resumed, note: NO_WAIT } : { resumed, error: "That task is not waiting for an answer; status_report shows each task's status." };
+  },
+});
+
 const set_plan = createTool({
   description:
     "Replace a task's plan with the current one. Send the whole list every " +
@@ -811,6 +846,7 @@ const finish_task = createTool({
       taskId: input.taskId,
     });
     if (!task) return { ok: false, error: "No task with that id." };
+    if (task.status === "cancelled" && input.outcome !== "cancelled") return { ok: false, error: "The owner cancelled this task; stop working on it." };
 
     await ctx.runMutation(internal.work.updateTask, {
       taskId: input.taskId,
@@ -967,6 +1003,8 @@ export const ALL_TOOLS = {
   run_action,
   status_report,
   start_task,
+  queue_task,
+  resume_task,
   set_plan,
   finish_task,
   set_goal,

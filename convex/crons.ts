@@ -29,6 +29,9 @@ crons.interval("embed memories", { minutes: 10 }, internal.memories.embedMissing
 // Perry's own messages that waited (quiet hours, the day's limit), once they may go (notify.ts).
 crons.interval("release held messages", { minutes: 1 }, internal.notify.releaseHeld, {});
 
+// Background tasks: start the next queued one when none is running (tasks.ts).
+crons.interval("start queued tasks", { minutes: 1 }, internal.tasks.tick, {});
+
 // Durable turns: retry unfinished finalizing, and release what an offline runner abandoned.
 crons.interval("recover turns", { minutes: 1 }, internal.recovery.sweep, {});
 
