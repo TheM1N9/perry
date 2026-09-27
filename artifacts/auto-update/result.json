@@ -1,0 +1,191 @@
+{
+  "ranAt": "2026-09-27T09:33:59.182Z",
+  "seconds": 309,
+  "checks": {
+    "checkoutCleanAfterBuild": true,
+    "upToDateOffersNothing": true,
+    "behindShowsCountAndTitle": true,
+    "ownersChangesBlockAndStay": true,
+    "noUpstreamHandled": true,
+    "unreachableRemoteHandled": true,
+    "handStartedSaysPerryStart": true,
+    "handStartedNeverRequests": true,
+    "checksSoonAfterStart": true,
+    "nightlyOffDoesNothing": true,
+    "nightlyWaitsWhileBusy": true,
+    "nightlyUpdates": true,
+    "newBuildRuns": true,
+    "supervisorSurvives": true,
+    "ownersFilesKept": true,
+    "upToDateAfterUpdate": true,
+    "clickWaitsWhileBusy": true,
+    "failedBuildGoesBack": true,
+    "failureSaysWhy": true,
+    "ownersFilesKeptAfterGoingBack": true,
+    "stillOffered": true,
+    "sidebarShowsUpdate": true,
+    "settingsShowUpdateAndFailure": true,
+    "petMentionsUpdate": true,
+    "noPageErrors": true,
+    "unpickedRequestReported": true,
+    "queuedReplyMakesItWait": true
+  },
+  "notes": {
+    "checkoutCleanAfterBuild": "",
+    "upToDateOffersNothing": {
+      "supervised": false,
+      "checkedAt": 1790501389880,
+      "behind": 0,
+      "auto": true,
+      "state": "idle"
+    },
+    "behindShowsCountAndTitle": {
+      "supervised": false,
+      "checkedAt": 1790501390541,
+      "behind": 1,
+      "latest": {
+        "sha": "bc72c23d8218672e549dbcffb9ef42fda3cc9ece",
+        "title": "Say hello from upstream"
+      },
+      "auto": true,
+      "state": "idle"
+    },
+    "ownersChangesBlockAndStay": "This copy of Perry has changes that aren't committed, so he won't update it himself. Commit or stash them first.",
+    "noUpstreamHandled": "This copy of Perry isn't following a branch, so there's nothing to update from.",
+    "unreachableRemoteHandled": "Couldn't check for updates: fatal: '<work>\\nowhere.git' does not appear to be a git repository",
+    "handStartedSaysPerryStart": {
+      "supervised": false,
+      "refused": "updates:update: Perry updates himself when he runs in the background. Start him with perry start, or update him with perry update."
+    },
+    "checksSoonAfterStart": {
+      "seconds": 60,
+      "view": {
+        "supervised": true,
+        "checkedAt": 1790501453151,
+        "behind": 1,
+        "latest": {
+          "sha": "bc72c23d8218672e549dbcffb9ef42fda3cc9ece",
+          "title": "Say hello from upstream"
+        },
+        "auto": true,
+        "state": "idle"
+      }
+    },
+    "nightZone": "Etc/GMT+5",
+    "nightlyWaitsWhileBusy": {
+      "approval": {
+        "id": "ww29tvq2qv3dwmdqwqa11amvmb",
+        "next": "ask"
+      },
+      "view": {
+        "supervised": true,
+        "checkedAt": 1790501453151,
+        "behind": 1,
+        "latest": {
+          "sha": "bc72c23d8218672e549dbcffb9ef42fda3cc9ece",
+          "title": "Say hello from upstream"
+        },
+        "auto": true,
+        "state": "idle"
+      }
+    },
+    "nightlyUpdates": {
+      "id": "1892e9db-cbea-4406-875f-0122aac16da6",
+      "by": "nightly",
+      "at": 1790501484033,
+      "ok": true,
+      "from": "eecaf24263439dc16bd3d87e437db4e5bb28b3c5",
+      "to": "bc72c23d8218672e549dbcffb9ef42fda3cc9ece",
+      "title": "Say hello from upstream",
+      "log": "updating Perry, as planned for the night\n1 new change, the newest \"Say hello from upstream\"; stopping the runner and the dashboard\nmoving to the latest\ninstalling packages\nupdated to bc72c23; perry run itself keeps its old code until Perry next starts"
+    },
+    "newBuildRuns": {
+      "before": "NEdMQVzWlWKfR1pSpj_-R",
+      "after": "L4Y2WR06KxOf0pke6nngG",
+      "first": "NEdMQVzWlWKfR1pSpj_-R"
+    },
+    "upToDateAfterUpdate": {
+      "supervised": true,
+      "checkedAt": 1790501485904,
+      "behind": 0,
+      "auto": true,
+      "state": "idle",
+      "last": {
+        "id": "1892e9db-cbea-4406-875f-0122aac16da6",
+        "by": "nightly",
+        "at": 1790501484033,
+        "ok": true,
+        "from": "eecaf24263439dc16bd3d87e437db4e5bb28b3c5",
+        "to": "bc72c23d8218672e549dbcffb9ef42fda3cc9ece",
+        "title": "Say hello from upstream",
+        "log": "updating Perry, as planned for the night\n1 new change, the newest \"Say hello from upstream\"; stopping the runner and the dashboard\nmoving to the latest\ninstalling packages\nupdated to bc72c23; perry run itself keeps its old code until Perry next starts"
+      }
+    },
+    "clickWaitsWhileBusy": {
+      "clicked": {
+        "waitingFor": "an approval"
+      },
+      "state": "waiting"
+    },
+    "failedBuildGoesBack": {
+      "last": {
+        "id": "982e3c9c-3b36-4581-a340-60c77bb3803b",
+        "by": "owner",
+        "at": 1790501496446,
+        "ok": false,
+        "from": "bc72c23d8218672e549dbcffb9ef42fda3cc9ece",
+        "to": "be13d9d2b297227b393a4c197ba8a891e622cbec",
+        "title": "Break the build on purpose",
+        "error": "The dashboard didn't build. Perry went back to the version he was on."
+      },
+      "head": "bc72c23d8218672e549dbcffb9ef42fda3cc9ece",
+      "buildBefore": "L4Y2WR06KxOf0pke6nngG",
+      "buildAfter": "L4Y2WR06KxOf0pke6nngG"
+    },
+    "failureSaysWhy": "The dashboard didn't build. Perry went back to the version he was on.",
+    "stillOffered": {
+      "supervised": true,
+      "checkedAt": 1790501498217,
+      "behind": 1,
+      "latest": {
+        "sha": "be13d9d2b297227b393a4c197ba8a891e622cbec",
+        "title": "Break the build on purpose"
+      },
+      "auto": true,
+      "state": "idle",
+      "last": {
+        "id": "982e3c9c-3b36-4581-a340-60c77bb3803b",
+        "by": "owner",
+        "at": 1790501496446,
+        "ok": false,
+        "from": "bc72c23d8218672e549dbcffb9ef42fda3cc9ece",
+        "to": "be13d9d2b297227b393a4c197ba8a891e622cbec",
+        "title": "Break the build on purpose",
+        "error": "The dashboard didn't build. Perry went back to the version he was on.",
+        "log": "updating Perry, as asked from the dashboard\n1 new change, the newest \"Break the build on purpose\"; stopping the runner and the dashboard\nmoving to the latest\ninstalling packages\nError: Expected ',', got '<'\n  1 | export default function Page( {\n> 2 |   return <div>not valid</div>;\n    |          ^\n  3 | }\n  4 |\nParsing ecmascript source code failed\nImport trace:\n  App Route:\n    ./app/broken-on-purpose/page.tsx\n    ./convex/pet.ts\n    ./server/modules.ts\n    ./server/index.ts\n    ./app/api/backend/http/[...path]/route.ts\n    at <unknown> (./app/broken-on-purpose/page.tsx:2:10)\nThe dashboard didn't build\ngoing back to bc72c23\ninstalling packages\nput the build Perry was running back"
+      }
+    },
+    "sidebarShowsUpdate": "Update available\n\n1 change · Break the build on purpose\n\nUpdate\nDESKTOP-27SQLCP\nY\nYou\n0 memories",
+    "settingsShowUpdateAndFailure": "Updates\n\nPerry looks for a new version once a day. Around 4:00 at night, your time, he updates himself if he isn't busy.\n\nUpdate available\n1 change\n\nThe newest: “Break the build on purpose”.\n\nUpdate\nUpdate on his own at night\n\nThe update just now didn't work. The dashboard didn't build. Perry went back to the version he was on.\n\nWhat it said",
+    "noPageErrors": [],
+    "unpickedRequestReported": "Nothing picked the update up. Restart Perry once (perry stop, then perry start), or update him with perry update.",
+    "queuedReplyMakesItWait": {
+      "queued": {
+        "waitingFor": "a reply"
+      },
+      "state": "waiting",
+      "busy": "a reply",
+      "accounts": [
+        {
+          "id": "7s5sf5nd6mhkfj5c2fjf86mk3e",
+          "name": "DESKTOP-27SQLCP",
+          "online": true,
+          "available": true,
+          "authMode": "chatgpt",
+          "updatedAt": 1790501605209
+        }
+      ]
+    }
+  },
+  "passed": true
+}

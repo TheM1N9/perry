@@ -80,6 +80,10 @@ perry doctor    # check that everything is set up right
 perry stop | start | uninstall
 ```
 
+Perry keeps himself up to date: when there is a new version, the dashboard and
+the pet say so, one click from updating, and at night (around 4:00 your time)
+he updates himself if he isn't busy. Settings → General turns that off.
+
 Chat from the dashboard, Telegram or WhatsApp. WhatsApp is linked from the
 dashboard's settings; it uses an unofficial connection, so a separate number
 is recommended.

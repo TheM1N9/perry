@@ -14,6 +14,8 @@ import { join } from "node:path";
  *   files/          the agent's own folder for what it makes, organised as it sees fit
  *   skills/         the agent's skills, one folder each with a SKILL.md, found by Codex
  *   logs/           the runner's output when it runs as a background service
+ *   update-request.json  an update the dashboard asked for, for `perry run` to do
+ *   update-result.json   how the last one went, for the dashboard to show
  *
  * PERRY_HOME moves the whole thing.
  */
@@ -26,6 +28,8 @@ export const PATHS = {
   files: join(HOME, "files"),
   skills: join(HOME, "skills"),
   logs: join(HOME, "logs"),
+  updateRequest: join(HOME, "update-request.json"),
+  updateResult: join(HOME, "update-result.json"),
 };
 
 export function ensureHome() {

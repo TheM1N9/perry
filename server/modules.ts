@@ -18,10 +18,14 @@ import * as http from "../convex/http";
 import * as ingest from "../convex/ingest";
 import * as installation from "../convex/installation";
 import * as jobs from "../convex/jobs";
+import * as lib_activity from "../convex/lib/activity";
 import * as lib_agent from "../convex/lib/agent";
 import * as lib_auth from "../convex/lib/auth";
+import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
+import * as lib_embed from "../convex/lib/embed";
 import * as lib_errors from "../convex/lib/errors";
+import * as lib_price from "../convex/lib/price";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
 import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
@@ -41,6 +45,7 @@ import * as secrets from "../convex/secrets";
 import * as titles from "../convex/titles";
 import * as todos from "../convex/todos";
 import * as tools from "../convex/tools";
+import * as updates from "../convex/updates";
 import * as vault from "../convex/vault";
 import * as web from "../convex/web";
 import * as whatsapp from "../convex/whatsapp";
@@ -63,10 +68,14 @@ export const modules: Record<string, Record<string, unknown>> = {
   "ingest": ingest,
   "installation": installation,
   "jobs": jobs,
+  "lib/activity": lib_activity,
   "lib/agent": lib_agent,
   "lib/auth": lib_auth,
+  "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
+  "lib/embed": lib_embed,
   "lib/errors": lib_errors,
+  "lib/price": lib_price,
   "lib/shortcuts": lib_shortcuts,
   "lib/telegram": lib_telegram,
   "lib/telegramFormat": lib_telegramFormat,
@@ -86,6 +95,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "titles": titles,
   "todos": todos,
   "tools": tools,
+  "updates": updates,
   "vault": vault,
   "web": web,
   "whatsapp": whatsapp,
