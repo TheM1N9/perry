@@ -1,0 +1,244 @@
+{
+  "ranAt": "2026-09-27T04:17:26.080Z",
+  "checks": {
+    "reviewerWindows": true,
+    "reviewerMacos": true,
+    "reviewerLinux": true,
+    "reviewerWsl": true,
+    "dailyNoteOnOwnersDay": true,
+    "modelLoadsInServer": true,
+    "meaningFindsVegetarian": true,
+    "meaningCrossesLanguages": true,
+    "wordsStillWork": true,
+    "unrelatedStayOut": true,
+    "editedMemoryFoundByNewMeaning": true,
+    "containsFiresFirstTime": true,
+    "containsQuietWhileThere": true,
+    "containsNoticesGone": true,
+    "containsFiresWhenBack": true,
+    "upgradeSendsNothing": true,
+    "rupeePriceFires": true,
+    "priceQuietWhileBelow": true,
+    "noCrossCurrency": true,
+    "lakhGroupingRead": true,
+    "formRefusesBadWatch": true,
+    "changedWatchStartsOver": true,
+    "awayApprovalOnPhone": true,
+    "tapSettlesIt": true,
+    "hereStaysOnComputer": true,
+    "noPetGoesToPhoneAfterWait": true,
+    "telegramApprovalAskedOnce": true,
+    "telegramChatListed": true,
+    "telegramChatOpens": true,
+    "webShowsItWhileWaiting": true,
+    "phoneSeesWhatWasWritten": true,
+    "replyReachesTelegram": true,
+    "replyInWebHistory": true,
+    "webOnlyActionsRefused": true,
+    "searchFindsTelegramChat": true,
+    "scheduleSavedLikeTheTool": true,
+    "badScheduleRefused": true,
+    "pausedStaysPausedNewTimeMoves": true,
+    "builtinKeepsItsName": true,
+    "oneTimeSaved": true,
+    "pageMarksTelegramChat": true,
+    "scheduleFormSaves": true,
+    "goalKeepsTicks": true,
+    "watchFormSaves": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "dailyNoteOnOwnersDay": {
+      "zone": "Pacific/Pago_Pago",
+      "utcDay": "2026-09-27",
+      "theirDay": "2026-09-26",
+      "filedAs": "2026-09-26"
+    },
+    "modelLoadMs": 961,
+    "modelLoadsInServer": {},
+    "meaningFindsVegetarian": [
+      "I'm vegetarian and don't eat eggs."
+    ],
+    "meaningCrossesLanguages": [
+      "मुझे सुबह जल्दी उठना पसंद है",
+      "I'm vegetarian and don't eat eggs."
+    ],
+    "wordsStillWork": [
+      "Car insurance renews in November."
+    ],
+    "unrelatedStayOut": [],
+    "editedMemoryFoundByNewMeaning": [
+      "My favourite colour is green.",
+      "मुझे सुबह जल्दी उठना पसंद है",
+      "I'm vegetarian and don't eat eggs."
+    ],
+    "containsFiresFirstTime": "Found \"In stock\" on the page.",
+    "containsNoticesGone": "Gone from the page; I'll say when it's back.",
+    "containsFiresWhenBack": {
+      "back": "Found \"In stock\" on the page.",
+      "alerts": 2
+    },
+    "upgradeSendsNothing": "Still there.",
+    "rupeePriceFires": "Price is ₹24,999, below ₹25,000.",
+    "priceQuietWhileBelow": "Price is ₹24,999, still below ₹25,000.",
+    "noCrossCurrency": "No price in INR found on the page.",
+    "lakhGroupingRead": "Price is ₹1,23,456, below ₹2,00,000.",
+    "formRefusesBadWatch": {
+      "badPrice": "dashboard:saveMonitor: The price should be a number, such as \"₹25,000\" or \"199\".",
+      "badUrl": "dashboard:saveMonitor: Give the page's full address, starting with https://."
+    },
+    "changedWatchStartsOver": "Baseline recorded.",
+    "awayApprovalOnPhone": "🔐 <b>DESKTOP-27SQLCP wants to run</b> · <i>New chat</i>\n\n<pre>Remove-Item -Recurse .\\away-cache</pre>\n\n📁 <code>C:\\work</code>\n\n<b>Approved on Telegram.</b>",
+    "tapSettlesIt": {
+      "_id": "evc5zxear172e8eb1j3k5wjme6",
+      "_creationTime": 1790482490944,
+      "runnerId": "js0nd7gm3344w12nfvmsvjt2s2",
+      "conversationId": "8fmqsm0dkrbqm2bhb370zzq752",
+      "kind": "command",
+      "title": "Remove-Item -Recurse .\\away-cache",
+      "cwd": "C:\\work",
+      "alwaysAllow": {
+        "command": "Remove-Item -Recurse .\\away-cache"
+      },
+      "createdAt": 1790482490944,
+      "status": "approved",
+      "telegramChatId": "4242",
+      "telegramMessageId": 6,
+      "decidedBy": "telegram",
+      "decidedAt": 1790482492292,
+      "runner": "DESKTOP-27SQLCP",
+      "chat": "New chat"
+    },
+    "noPetGoesToPhoneAfterWait": {
+      "waitedMs": 120262
+    },
+    "telegramChatListed": {
+      "id": "1rkneqspw6pz4vgd5edkxm25c9",
+      "channel": "telegram",
+      "title": "Telegram",
+      "lastMessageAt": 1790482616540,
+      "status": "needs-approval",
+      "pinned": false,
+      "unseen": false,
+      "naming": false
+    },
+    "phoneSeesWhatWasWritten": [
+      "💻 You, in the web app:\nWhat is 2 + 2? Reply with just the number.",
+      "4"
+    ],
+    "webOnlyActionsRefused": {
+      "noDelete": "dashboard:deleteChat: Chat not found.",
+      "noBranch": "dashboard:branchChat: Source chat was deleted."
+    },
+    "scheduleSavedLikeTheTool": {
+      "schedule": "30 7 * * 1-5",
+      "next": "2026-09-28T02:00:00.000Z"
+    },
+    "badScheduleRefused": {
+      "badCron": "jobs:saveFromDashboard: That schedule is not a valid cron expression: Validation error, cannot resolve alias \"eve\"",
+      "past": "jobs:saveFromDashboard: 27 Sept 2026, 08:47 (Asia/Kolkata) has already passed."
+    },
+    "pageMarksTelegramChat": {
+      "menu": [
+        "Pin",
+        "Rename",
+        "View activity",
+        "Copy session ID"
+      ]
+    },
+    "scheduleFormSaves": {
+      "id": "s6a8505eje6yghs83mfw0x3e47",
+      "name": "Evening wind-down",
+      "schedule": "0 8 * * *",
+      "prompt": "Tell me what is left on my to-do list for today.",
+      "enabled": true,
+      "nextRunAt": 1790562600000
+    },
+    "goalKeepsTicks": [
+      {
+        "title": "Run 5 km",
+        "done": true
+      },
+      {
+        "title": "Run 10 km",
+        "done": false
+      },
+      {
+        "title": "Sign up for the race",
+        "done": false
+      }
+    ],
+    "watchFormSaves": {
+      "_id": "42g46hjdjrp1rq5b6sxg5g3phf",
+      "_creationTime": 1790482644048,
+      "title": "Example page",
+      "url": "https://example.com/",
+      "condition": "change",
+      "intervalMinutes": 60,
+      "active": true,
+      "nextCheckAt": 1790482644048,
+      "failures": 0,
+      "createdAt": 1790482644048
+    },
+    "pageErrors": [],
+    "noPageErrors": [],
+    "telegram": [
+      {
+        "chat_id": "4242",
+        "buttons": 0,
+        "text": "Paired. I'm yours now.\n\nTo tell me about yourself, open the dashboard's welcome page, or just tell me here.\n\nTry:\n  remember that I drink coffee black\n  what do you know about me\n  /help for the rest"
+      },
+      {
+        "chat_id": "4242",
+        "buttons": 0,
+        "text": "👀 <b>Headphones in stock</b>\n\nFound \"In stock\" on the page.\nhttps://httpbin.org/base64/PGh0bWw%2BPGJvZHk%2BPGgxPkhlYWRwaG9uZXM8L2gxPjxwPkluIHN0b2NrPC9wPjxwPlByaWNlOiDigrkyNCw5OTk8L3A%2BPC9ib2R5PjwvaHRtbD4%3D"
+      },
+      {
+        "chat_id": "4242",
+        "buttons": 0,
+        "text": "👀 <b>Headphones in stock</b>\n\nFound \"In stock\" on the page.\nhttps://httpbin.org/base64/PGh0bWw%2BPGJvZHk%2BPGgxPkhlYWRwaG9uZXM8L2gxPjxwPkluIHN0b2NrPC9wPjxwPlByaWNlOiDigrkyNCw5OTk8L3A%2BPC9ib2R5PjwvaHRtbD4%3D"
+      },
+      {
+        "chat_id": "4242",
+        "buttons": 0,
+        "text": "👀 <b>Headphones under 25k</b>\n\nPrice is ₹24,999, below ₹25,000.\nhttps://httpbin.org/base64/PGh0bWw%2BPGJvZHk%2BPGgxPkhlYWRwaG9uZXM8L2gxPjxwPkluIHN0b2NrPC9wPjxwPlByaWNlOiDigrkyNCw5OTk8L3A%2BPC9ib2R5PjwvaHRtbD4%3D"
+      },
+      {
+        "chat_id": "4242",
+        "buttons": 0,
+        "text": "👀 <b>Laptop</b>\n\nPrice is ₹1,23,456, below ₹2,00,000.\nhttps://httpbin.org/base64/PGh0bWw%2BPGJvZHk%2BPGgxPkxhcHRvcDwvaDE%2BPHA%2BTm93IOKCuTEsMjMsNDU2IG9ubHk8L3A%2BPC9ib2R5PjwvaHRtbD4%3D"
+      },
+      {
+        "chat_id": "4242",
+        "buttons": 3,
+        "text": "🔐 <b>DESKTOP-27SQLCP wants to run</b> · <i>New chat</i>\n\n<pre>Remove-Item -Recurse .\\away-cache</pre>\n\n📁 <code>C:\\work</code>\n\n<b>Approved on Telegram.</b>"
+      },
+      {
+        "chat_id": "4242",
+        "buttons": 3,
+        "text": "🔐 <b>DESKTOP-27SQLCP wants to run</b> · <i>New chat</i>\n\n<pre>Remove-Item -Recurse .\\here-cache</pre>\n\n📁 <code>C:\\work</code>\n\n<i>Always allow saves a rule for this exact command in C:\\work.</i>"
+      },
+      {
+        "chat_id": "4242",
+        "buttons": 0,
+        "text": "ready"
+      },
+      {
+        "chat_id": "4242",
+        "buttons": 3,
+        "text": "🔐 <b>DESKTOP-27SQLCP wants to run</b>\n\n<pre>Remove-Item -Recurse .\\phone-cache</pre>\n\n📁 <code>C:\\work</code>\n\n<i>Always allow saves a rule for this exact command in C:\\work.</i>"
+      },
+      {
+        "chat_id": "4242",
+        "buttons": 0,
+        "text": "💻 You, in the web app:\nWhat is 2 + 2? Reply with just the number."
+      },
+      {
+        "chat_id": "4242",
+        "buttons": 0,
+        "text": "4"
+      }
+    ]
+  },
+  "passed": true
+}

@@ -6,7 +6,8 @@ import { assertDashboardKey } from "./lib/auth";
 import { answerCallback, editButtons, sendButtons, type Buttons } from "./lib/telegram";
 import { escapeHtml } from "./lib/telegramFormat";
 import { authenticate, policyOf, type Policy } from "./runner";
-import type { Target } from "./channels";
+import { targetOf, type Target } from "./channels";
+import { presenceOf } from "./todos";
 
 /**
  * Approvals for what a runner is asked to do on the owner's machine: a command
@@ -17,12 +18,16 @@ import type { Target } from "./channels";
  * runs it; a runner trusted with policy "trust" runs it; with "review" the
  * runner's Codex reviewer looks first and clears what is routine; everything
  * else waits for the owner. The owner is asked in the runner's terminal and
- * the dashboard, and on Telegram when the conversation it came from speaks
- * there (channels.ts), and whichever answers first wins. A
+ * the dashboard, and on Telegram or WhatsApp when the conversation it came
+ * from speaks there (channels.ts), and whichever answers first wins. One from a
+ * web chat or a job reporting to one goes to the owner's messaging app too
+ * once they are away from the computer (escalate). A
  * request nobody answers expires, as declined, after APPROVAL_TTL_MS. Every
  * request is recorded, so there is a record of what ran and who allowed it.
  */
 export const APPROVAL_TTL_MS = 10 * 60_000;
+/** With no pet to say whether the owner is at the computer, how long a web request waits before it goes to the phone too. */
+const ESCALATE_MS = 2 * 60_000;
 
 const vKind = v.union(v.literal("command"), v.literal("file"), v.literal("write"));
 type Kind = "command" | "file" | "write";
@@ -183,8 +188,7 @@ export const request = mutation({
       return { id, next: "review" };
     }
     const id = await ctx.db.insert("approvals", { ...row, status: "pending" });
-    await ctx.scheduler.runAfter(0, internal.approvals.promptOnTelegram, { id });
-    await ctx.scheduler.runAfter(0, internal.approvals.promptOnWhatsApp, { id });
+    await ask(ctx, id);
     return { id, next: "ask" };
   },
 });
@@ -213,8 +217,7 @@ export const reviewed = mutation({
       return true;
     }
     await ctx.db.patch(row._id, { status: "pending", review });
-    await ctx.scheduler.runAfter(0, internal.approvals.promptOnTelegram, { id: row._id });
-    await ctx.scheduler.runAfter(0, internal.approvals.promptOnWhatsApp, { id: row._id });
+    await ask(ctx, row._id);
     return false;
   },
 });
@@ -278,6 +281,43 @@ export const settle = mutation({
     // A timeout settles a request even at the very end of its life.
     if (row?.runnerId !== runner._id || row.status !== "pending") return null;
     await settleRow(ctx, row, { approved: args.approved, by: args.by, always: args.always });
+    return null;
+  },
+});
+
+// --- Asking the owner ---------------------------------------------------
+
+/** Ask where the request's conversation speaks, and see whether the owner is around to answer it there. */
+async function ask(ctx: MutationCtx, id: Id<"approvals">) {
+  await ctx.scheduler.runAfter(0, internal.approvals.promptOnTelegram, { id });
+  await ctx.scheduler.runAfter(0, internal.approvals.promptOnWhatsApp, { id });
+  await ctx.scheduler.runAfter(0, internal.approvals.escalate, { id });
+}
+
+/**
+ * A request from a web chat (or a job reporting to one) is asked there and on
+ * the pet. When the owner is away from the computer, it goes to their
+ * messaging app too, as a to-do reminder does: at once when the pet says they
+ * have stepped away, or, with no pet running to say, once it has waited
+ * ESCALATE_MS unanswered. While the pet sees them at the computer, it stays
+ * there. The first answer anywhere settles it.
+ */
+export const escalate = internalMutation({
+  args: { id: v.id("approvals"), late: v.optional(v.boolean()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (!row || !answerable(row) || row.telegramMessageId || row.whatsappChatId) return null;
+    if ((await targetOf(ctx, row.conversationId))?.channel !== "web") return null;
+    const phone = await targetOf(ctx);
+    if (!phone || phone.channel === "web") return null;
+    const presence = await presenceOf(ctx);
+    if (presence === "away" || (presence === "unknown" && args.late)) {
+      await ctx.scheduler.runAfter(0, phone.channel === "telegram" ? internal.approvals.promptOnTelegram : internal.approvals.promptOnWhatsApp, { id: row._id, home: true });
+      return null;
+    }
+    // Look again in a while, until it is answered or expires: the owner may walk away.
+    await ctx.scheduler.runAfter(args.late ? 60_000 : ESCALATE_MS, internal.approvals.escalate, { id: row._id, late: true });
     return null;
   },
 });
@@ -348,15 +388,15 @@ function buttonsFor(row: View): Buttons {
  * talking on the web brings nothing to Telegram. The owner can turn this off.
  */
 export const promptOnTelegram = internalAction({
-  args: { id: v.id("approvals") },
+  args: { id: v.id("approvals"), home: v.optional(v.boolean()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const install = await ctx.runQuery(internal.installation.get, {});
     if (!install?.claimedAt || !install.ownerExternalId || install.ownerChannel !== "telegram") return null;
     if (install.telegramApprovals === false) return null;
     const row = await ctx.runQuery(internal.approvals.view, { id: args.id });
-    if (row?.status !== "pending") return null;
-    const target: Target | null = await ctx.runQuery(internal.channels.target, { conversationId: row.conversationId });
+    if (row?.status !== "pending" || row.telegramMessageId) return null;
+    const target: Target | null = await ctx.runQuery(internal.channels.target, { conversationId: args.home ? undefined : row.conversationId });
     if (target?.channel !== "telegram" || target.externalId !== install.ownerExternalId) return null;
     try {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
@@ -435,12 +475,12 @@ export const answerFromTelegram = internalMutation({
  * answer is a reply: 1, 2 or 3 (answerFromWhatsApp).
  */
 export const promptOnWhatsApp = internalAction({
-  args: { id: v.id("approvals") },
+  args: { id: v.id("approvals"), home: v.optional(v.boolean()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const row = await ctx.runQuery(internal.approvals.view, { id: args.id });
-    if (row?.status !== "pending") return null;
-    const target: Target | null = await ctx.runQuery(internal.channels.target, { conversationId: row.conversationId });
+    if (row?.status !== "pending" || row.whatsappChatId) return null;
+    const target: Target | null = await ctx.runQuery(internal.channels.target, { conversationId: args.home ? undefined : row.conversationId });
     if (target?.channel !== "whatsapp") return null;
     const fence = "```";
     const ask = [

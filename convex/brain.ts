@@ -228,7 +228,7 @@ export const resetChat = internalAction({
   args: { id: v.id("conversations") },
   returns: v.string(),
   handler: async (ctx, args): Promise<string> => {
-    const conversation = await ctx.runQuery(internal.conversations.getWebById, { id: args.id });
+    const conversation = await ctx.runQuery(internal.conversations.getById, { id: args.id });
     if (!conversation) throw new Error("This chat was deleted.");
     return await reset(ctx, conversation);
   },
@@ -293,10 +293,14 @@ export const handleTurn = internalAction({
     label: v.optional(v.string()),
     /** A scheduled job's model, which its runs use whatever its chat has picked. */
     model: v.optional(v.string()),
+    /** Written in the web app in the owner's Telegram or WhatsApp chat: the web app shows it as its own, and the phone hears of it. */
+    fromWeb: v.optional(v.boolean()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     const channel = args.channel as Channel;
+    // What the web app keeps track of while it waits: its own chats, and what it sent into a messaging app's.
+    const web = channel === "web" || args.fromWeb === true;
     const conversation = await loadConversation(
       ctx,
       channel,
@@ -314,7 +318,7 @@ export const handleTurn = internalAction({
 
     let delegated = false;
     try {
-      if (channel !== "web" && args.text.startsWith("/") && !args.telegramMedia?.length && !args.storedMedia?.length) {
+      if (channel !== "web" && !args.fromWeb && args.text.startsWith("/") && !args.telegramMedia?.length && !args.storedMedia?.length) {
         await say(await runCommand(ctx, conversation, args.text));
         return null;
       }
@@ -371,6 +375,13 @@ export const handleTurn = internalAction({
         conversationId: conversation._id,
         prompt: args.label ?? args.text,
       });
+      // The phone shows the reply, so it shows what it answers too.
+      if (args.fromWeb && channel !== "web") {
+        const said = args.text.replace(/\n?<!-- attachments:[^>]+ -->\s*$/, "").trim();
+        const files = attachmentIds.length ? `${said ? "\n" : ""}(with ${attachmentIds.length === 1 ? "a file" : `${attachmentIds.length} files`})` : "";
+        await say(`💻 You, in the web app:\n${said.slice(0, 1500)}${files}`)
+          .catch((error) => console.error(`could not show the web message on the phone: ${String(error)}`));
+      }
       if (telegramToken) await sendTyping(telegramToken, args.externalId);
       if (channel === "whatsapp") await ctx.runMutation(internal.whatsapp.typing, { to: args.externalId });
 
@@ -406,7 +417,7 @@ export const handleTurn = internalAction({
         await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access), error: message.slice(0, 1000) });
         if (conversation.jobId) await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, error: message });
         // The owner's message stays in the chat with the error under it, so it can be tried again; it never became a turn.
-        if (channel === "web" && !args.hidden && !conversation.jobId) {
+        if (web && !args.hidden && !conversation.jobId) {
           await saveMessages(ctx, { threadId: conversation.threadId, userId: userIdOf(conversation), order: "next", messages: [{ role: "user", content: prompt }] })
             .catch((saveError) => console.error(`could not keep the message: ${String(saveError)}`));
         }
@@ -417,7 +428,7 @@ export const handleTurn = internalAction({
       }
       return null;
     } finally {
-      if (channel === "web" && !delegated) {
+      if (web && !delegated) {
         await ctx.runMutation(internal.conversations.finishWebTurn, { id: conversation._id, prompt: args.text });
       }
     }

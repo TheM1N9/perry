@@ -178,12 +178,19 @@ export const finishWebTurn = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const chat = await ctx.db.get(args.id);
-    if (chat?.channel === "web") {
-      await ctx.db.patch(args.id, { pendingTurns: Math.max(0, (chat.pendingTurns ?? 0) - 1) });
-      if (args.prompt !== undefined) await takeFromOutbox(ctx, await ctx.db.get(args.id), args.prompt);
-    }
+    // Only a web chat counts what it sent; a message the web app sent into a Telegram or WhatsApp chat has an outbox entry only.
+    if (chat?.channel === "web") await ctx.db.patch(args.id, { pendingTurns: Math.max(0, (chat.pendingTurns ?? 0) - 1) });
+    if (chat && args.prompt !== undefined) await takeFromOutbox(ctx, await ctx.db.get(args.id), args.prompt);
     return null;
   },
+});
+
+/** The chats the web app lists: its own, and the owner's Telegram and WhatsApp chats. Newest first. */
+export const listDashboard = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<Doc<"conversations">[]> => (await Promise.all((["web", "telegram", "whatsapp"] as const).map((channel) =>
+    ctx.db.query("conversations").withIndex("by_channel_last", (q) => q.eq("channel", channel)).order("desc").collect(),
+  ))).flat().sort((a, b) => b.lastMessageAt - a.lastMessageAt),
 });
 
 export const listWeb = internalQuery({

@@ -1,7 +1,9 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { internalAction, internalMutation, internalQuery, type QueryCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, type ActionCtx, type QueryCtx } from "./_generated/server";
+import { timezoneOf } from "./jobs";
+import { EMBED_MODEL, embed, embedderReady, packVector, similarity, unpackVector, warmUp } from "./lib/embed";
 import { vMemoryKind, vMemoryOrigin } from "./schema";
 
 /**
@@ -16,11 +18,12 @@ import { vMemoryKind, vMemoryOrigin } from "./schema";
  * data instead: a block ahead of the owner's message, never instructions (as
  * in vercel/eve). Profile and core each have a character budget, and a save
  * that would overflow one is refused rather than dropped from context later.
- * Everything older is reached through keyword search, with dated notes decaying
- * on a 30-day half-life. A fact that changes is superseded rather than deleted.
+ * Everything older is reached through search, by words and by meaning (a
+ * local sentence model, lib/embed.ts), with dated notes decaying on a 30-day
+ * half-life. A fact that changes is superseded rather than deleted.
  *
  * The agent never touches this directly; it goes through the tools in
- * tools.ts. Days are UTC.
+ * tools.ts. Days are the owner's, in their timezone.
  */
 
 type Kind = "profile" | "core" | "daily";
@@ -31,8 +34,16 @@ const HALF_LIFE_DAYS = 30;
 const BUDGET = { profile: 4_000, core: 8_000, daily: 4_000 } as const;
 const LABEL = { profile: "The owner profile", core: "Long-term memory" } as const;
 const DAY_MS = 86_400_000;
+/** Below this cosine, a memory is not about what was asked. */
+const MIN_SIMILARITY = 0.25;
+/** Reciprocal rank fusion's constant: how much a first place outweighs a tenth. */
+const FUSION_K = 10;
+/** How much a place among the word matches counts against the same place among the meanings. */
+const WORD_WEIGHT = 0.8;
 
-export const day = (offset = 0) => new Date(Date.now() - offset * DAY_MS).toISOString().slice(0, 10);
+/** YYYY-MM-DD on the owner's calendar, `offset` days ago. */
+export const dayIn = (timezone: string, offset = 0) => new Date(Date.now() - offset * DAY_MS).toLocaleDateString("en-CA", { timeZone: timezone });
+const day = async (ctx: { db: QueryCtx["db"] }, offset = 0) => dayIn(await timezoneOf(ctx), offset);
 const kindOf = (memory: Memory): Kind => memory.kind ?? "core";
 
 function view(memory: Memory) {
@@ -112,9 +123,10 @@ export const add = internalMutation({
       source: args.source,
       createdAt: Date.now(),
       kind,
-      ...(kind === "daily" ? { day: day() } : {}),
+      ...(kind === "daily" ? { day: await day(ctx) } : {}),
       ...(args.origin ? { origin: args.origin } : {}),
     });
+    await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
     let superseded = 0;
     for (const raw of args.supersedes ?? []) {
       const old = ctx.db.normalizeId("memories", raw);
@@ -157,8 +169,9 @@ export const getMany = internalQuery({
 export const read = internalQuery({
   args: { kind: vMemoryKind, day: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const today = await day(ctx);
     const docs = args.kind === "daily"
-      ? (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", args.day ?? day())).take(200))
+      ? (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", args.day ?? today)).take(200))
           .filter((memory) => !memory.supersededBy)
       : await layer(ctx, args.kind);
     return docs.map(view);
@@ -166,8 +179,10 @@ export const read = internalQuery({
 });
 
 /**
- * Recall: keyword search ranked by match order, with daily notes decaying on a
- * 30-day half-life so recent days win ties. An empty query returns the newest.
+ * Recall: memories that share words with the query, and memories that mean
+ * something close to it, fused by rank (reciprocal rank fusion), with daily
+ * notes decaying on a 30-day half-life so recent days win ties. Until the
+ * sentence model is ready, by words alone. An empty query returns the newest.
  */
 export const recall = internalAction({
   args: { query: v.string(), limit: v.optional(v.number()) },
@@ -176,13 +191,108 @@ export const recall = internalAction({
     const query = args.query.trim();
     const hits: MemoryView[] = await ctx.runQuery(internal.memories.search, { query, limit: query ? limit * 4 : limit });
     if (!query) return hits.map((memory) => ({ ...memory, score: 1 }));
-    return hits
-      .map((memory, rank) => {
+
+    const close = await byMeaning(ctx, query, limit * 4).catch((error) => {
+      console.error(`memory search by meaning failed, so by words only: ${String(error)}`);
+      return [];
+    });
+    const known = new Map<string, MemoryView>(hits.map((memory) => [memory.id, memory]));
+    const missing = close.map((item) => item.id).filter((id) => !known.has(id));
+    const fetched: MemoryView[] = missing.length ? await ctx.runQuery(internal.memories.getMany, { ids: missing }) : [];
+    for (const memory of fetched) known.set(memory.id, memory);
+
+    const fused = new Map<string, number>();
+    const rank = (ids: string[], weight: number) => ids.forEach((id, place) => fused.set(id, (fused.get(id) ?? 0) + weight / (FUSION_K + place)));
+    // A word match can be as thin as "I" or "my", so meaning wins a tie; both together win outright.
+    rank(hits.map((memory) => memory.id), close.length ? WORD_WEIGHT : 1);
+    rank(close.map((item) => item.id).filter((id) => known.has(id)), 1);
+    return [...fused]
+      .map(([id, fusion]) => {
+        const memory = known.get(id)!;
         const age = memory.kind === "daily" ? (Date.now() - memory.createdAt) / DAY_MS : 0;
-        return { ...memory, score: (1 - rank / hits.length) * 0.5 ** (age / HALF_LIFE_DAYS) };
+        return { ...memory, score: fusion * 0.5 ** (age / HALF_LIFE_DAYS) };
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
+  },
+});
+
+/** Memories whose meaning is close to the query's, closest first. Empty until the model is ready. */
+async function byMeaning(ctx: Pick<ActionCtx, "runQuery">, query: string, limit: number): Promise<Array<{ id: Memory["_id"]; similarity: number }>> {
+  if (!embedderReady()) {
+    warmUp();
+    return [];
+  }
+  const [wanted] = await embed([query]);
+  const rows: Array<{ id: Memory["_id"]; vector: string }> = await ctx.runQuery(internal.memories.vectors, {});
+  return rows
+    .map((row) => ({ id: row.id, similarity: similarity(wanted, unpackVector(row.vector)) }))
+    .filter((row) => row.similarity >= MIN_SIMILARITY)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit);
+}
+
+/** Every current memory's vector from the model in use. */
+export const vectors = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<Array<{ id: Memory["_id"]; vector: string }>> => {
+    const rows = await ctx.db.query("memories").withIndex("by_created").order("desc").take(5000);
+    return rows
+      .filter((memory) => !memory.supersededBy && memory.vector && memory.vectorModel === EMBED_MODEL)
+      .map((memory) => ({ id: memory._id, vector: memory.vector! }));
+  },
+});
+
+/** Memories with no vector from the model in use, oldest first. */
+export const unembedded = internalQuery({
+  args: { limit: v.number() },
+  handler: async (ctx, args): Promise<Array<{ id: Memory["_id"]; text: string }>> => {
+    const rows = await ctx.db.query("memories").withIndex("by_created").order("asc").take(5000);
+    return rows
+      .filter((memory) => !memory.supersededBy && memory.vectorModel !== EMBED_MODEL)
+      .slice(0, args.limit)
+      .map((memory) => ({ id: memory._id, text: memory.text }));
+  },
+});
+
+export const storeVectors = internalMutation({
+  args: { items: v.array(v.object({ id: v.id("memories"), text: v.string(), vector: v.string() })) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    for (const item of args.items) {
+      const memory = await ctx.db.get(item.id);
+      // Edited while its vector was being made: the next pass makes a new one.
+      if (memory?.text === item.text) await ctx.db.patch(item.id, { vector: item.vector, vectorModel: EMBED_MODEL });
+    }
+    return null;
+  },
+});
+
+/**
+ * Give every memory without one a vector: after each save and edit, and every
+ * few minutes (crons.ts), which also fills in memories from before search by
+ * meaning and tries again after a failed download. The first run downloads
+ * the model.
+ */
+export const embedMissing = internalAction({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    for (let batch = 0; batch < 50; batch++) {
+      const pending: Array<{ id: Memory["_id"]; text: string }> = await ctx.runQuery(internal.memories.unembedded, { limit: 32 });
+      if (pending.length === 0) return null;
+      let vectors: number[][];
+      try {
+        vectors = await embed(pending.map((item) => item.text));
+      } catch (error) {
+        console.error(`could not make memory vectors with ${EMBED_MODEL}, so search stays by words: ${String(error)}`);
+        return null;
+      }
+      await ctx.runMutation(internal.memories.storeVectors, {
+        items: pending.map((item, index) => ({ id: item.id, text: item.text, vector: packVector(vectors[index]) })),
+      });
+    }
+    return null;
   },
 });
 
@@ -194,7 +304,7 @@ export const bootstrap = internalQuery({
     return {
       profile: (await layer(ctx, "profile")).map(view),
       core: (await layer(ctx, "core")).map(view),
-      daily: [...await daily(day()), ...await daily(day(1))].map(view),
+      daily: [...await daily(await day(ctx)), ...await daily(await day(ctx, 1))].map(view),
     };
   },
 });
@@ -291,7 +401,8 @@ export const edit = internalMutation({
       const used = (await layer(ctx, kind)).filter((other) => other._id !== id).reduce((sum, other) => sum + cost(other.text), 0);
       if (used + cost(text) > BUDGET[kind]) return { saved: false, error: overBudget(kind, used, cost(text)) };
     }
-    await ctx.db.patch(id, { text, origin: "owner", editedAt: Date.now() });
+    await ctx.db.patch(id, { text, origin: "owner", editedAt: Date.now(), vector: undefined, vectorModel: undefined });
+    await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
     return { saved: true };
   },
 });
@@ -314,9 +425,10 @@ export const noteAlert = internalMutation({
       source: "alert",
       createdAt: Date.now(),
       kind: "daily",
-      day: day(),
+      day: await day(ctx),
       origin: "job",
     });
+    await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
     return null;
   },
 });

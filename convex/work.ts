@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
+import { parseTarget } from "./lib/price";
 
 /**
  * Tasks, goals and monitors: the things that outlive a single message.
@@ -164,6 +165,40 @@ export const updateGoal = internalMutation({
   },
 });
 
+/**
+ * A goal as the Work page writes it: new, or an existing one with its title,
+ * description, status and milestones replaced. A milestone keeps its tick
+ * when the form says so.
+ */
+export const saveGoal = internalMutation({
+  args: {
+    id: v.optional(v.id("goals")),
+    title: v.string(),
+    description: v.optional(v.string()),
+    status: v.optional(v.union(v.literal("active"), v.literal("paused"), v.literal("done"))),
+    milestones: v.array(v.object({ title: v.string(), done: v.boolean() })),
+  },
+  returns: v.id("goals"),
+  handler: async (ctx, args) => {
+    const title = args.title.trim().slice(0, 160);
+    if (!title) throw new Error("Give the goal a title.");
+    const fields = {
+      title,
+      description: args.description?.trim() || undefined,
+      milestones: args.milestones
+        .map((milestone) => ({ title: milestone.title.trim().slice(0, 200), done: milestone.done }))
+        .filter((milestone) => milestone.title)
+        .slice(0, 20),
+      updatedAt: Date.now(),
+    };
+    if (!args.id) return await ctx.db.insert("goals", { ...fields, status: args.status ?? "active", createdAt: Date.now() });
+    const goal = await ctx.db.get(args.id);
+    if (!goal) throw new Error("That goal no longer exists.");
+    await ctx.db.patch(goal._id, { ...fields, status: args.status ?? goal.status });
+    return goal._id;
+  },
+});
+
 export const listGoals = internalQuery({
   args: {},
   handler: async (ctx): Promise<Doc<"goals">[]> => {
@@ -172,6 +207,56 @@ export const listGoals = internalQuery({
 });
 
 // --- Monitors ------------------------------------------------------------
+
+type Condition = "change" | "contains" | "price_below";
+const vCondition = v.union(v.literal("change"), v.literal("contains"), v.literal("price_below"));
+
+/** What is wrong with a watch before it is saved, for the agent's tool and the Work page alike. Null when nothing is. */
+export function watchProblem(watch: { url: string; condition: Condition; value?: string }): string | null {
+  let url: URL | null = null;
+  try { url = new URL(watch.url); } catch {}
+  if (!url || (url.protocol !== "https:" && url.protocol !== "http:")) return "Give the page's full address, starting with https://.";
+  if (watch.condition !== "change" && !watch.value?.trim()) {
+    return watch.condition === "contains" ? "Say what text to look for." : "Say what price it should go below.";
+  }
+  if (watch.condition === "price_below" && !parseTarget(watch.value ?? "")) return "The price should be a number, such as \"₹25,000\" or \"199\".";
+  return null;
+}
+
+/**
+ * Change a watch from the Work page. A new page or condition starts over: a
+ * change watch records a fresh baseline, and a contains or price watch speaks
+ * the next time its condition holds.
+ */
+export const updateMonitor = internalMutation({
+  args: {
+    id: v.id("monitors"),
+    title: v.string(),
+    url: v.string(),
+    condition: vCondition,
+    value: v.optional(v.string()),
+    intervalMinutes: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const monitor = await ctx.db.get(args.id);
+    if (!monitor) throw new Error("That watch no longer exists.");
+    const value = args.condition === "change" ? undefined : args.value?.trim();
+    const problem = watchProblem({ ...args, value });
+    if (problem) throw new Error(problem);
+    const fresh = args.url !== monitor.url || args.condition !== monitor.condition || value !== monitor.value;
+    await ctx.db.patch(args.id, {
+      title: args.title.trim().slice(0, 160) || monitor.title,
+      url: args.url,
+      condition: args.condition,
+      value,
+      intervalMinutes: Math.min(Math.max(Math.floor(args.intervalMinutes), 5), 10080),
+      nextCheckAt: fresh ? Date.now() : monitor.nextCheckAt,
+      ...(fresh ? { lastFingerprint: undefined, met: undefined, failures: 0, active: true } : {}),
+    });
+    return null;
+  },
+});
 
 export const createMonitor = internalMutation({
   args: {
@@ -232,6 +317,7 @@ export const recordCheck = internalMutation({
     observation: v.optional(v.string()),
     fired: v.boolean(),
     failed: v.boolean(),
+    met: v.optional(v.boolean()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -241,6 +327,7 @@ export const recordCheck = internalMutation({
     const failures = args.failed ? monitor.failures + 1 : 0;
 
     await ctx.db.patch(args.id, {
+      ...(args.met !== undefined ? { met: args.met } : {}),
       lastFingerprint: args.fingerprint ?? monitor.lastFingerprint,
       lastObservation: args.observation ?? monitor.lastObservation,
       lastCheckedAt: Date.now(),

@@ -1,11 +1,16 @@
 "use client";
 
-import { CheckIcon, ExternalLinkIcon, InboxIcon, ListTodoIcon, MessageCircleIcon, MoonIcon, XIcon } from "lucide-react";
+import {
+  BookOpenIcon, BrainIcon, CheckIcon, ExternalLinkIcon, HourglassIcon, InboxIcon, ListTodoIcon, MessageCircleIcon, MoonIcon, NotebookPenIcon,
+  PaletteIcon, PencilIcon, SearchIcon, TerminalIcon, XIcon, type LucideIcon,
+} from "lucide-react";
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { Activity } from "@/convex/dashboard";
+import type { Pose } from "@/convex/lib/activity";
 import type { Board, TodoView } from "@/convex/todos";
 import { plural, useNow } from "@/lib/format";
 import { KEY_STORAGE, SessionContext, useDashboardKey } from "@/lib/session";
@@ -128,6 +133,10 @@ type Said = { title: string; detail?: string; until: number; onOpen?: () => void
 /** The chat the pet last had open, so he picks up where you left off. */
 const CHAT_STORAGE = "perry.pet.chat";
 const ASKS = { command: "run a command", file: "change files", write: "write a file" } as const;
+/** A step that has taken this long shows its time. */
+const STEP_TIMER_MS = 5_000;
+/** A step that finished between two reports is held up this long. */
+const STEP_HOLD_MS = 2_500;
 
 function Pet() {
   const key = useDashboardKey();
@@ -146,6 +155,9 @@ function Pet() {
   const [chatId, setChatIdState] = useState<PetChatId>(null);
   const [draft, setDraft] = useState("");
   const petChat = useQuery(api.dashboard.getChat, chatId ? { key, id: chatId } : "skip");
+  // What he is doing, step by step: in his chat, and anywhere else (a job, a message on the phone).
+  const activity = useQuery(api.dashboard.getActivity, chatId ? { key, id: chatId } : "skip");
+  const elsewhere = useQuery(api.dashboard.getActivity, { key });
   // The newest of his chat's messages, for a reply to hold up when it comes.
   const { results: newest } = usePaginatedQuery(api.dashboard.getChatMessages, chatId ? { key, id: chatId } : "skip", { initialNumItems: 2 });
   const [said, setSaid] = useState<Said | null>(null);
@@ -335,6 +347,14 @@ function Pet() {
   const late = timed.filter((todo) => todo.dueAt! <= now);
   const next = timed.find((todo) => todo.dueAt! > now);
   const working = Boolean(petChat?.isRunning) && !reading;
+  // The step he is on; between steps, the one that just finished, held up a moment, so a quick one is seen at all.
+  const stepOf = (of?: Activity | null) => !of?.running || !of.step ? undefined
+    : of.step.live || !of.recent || now - of.recent.endedAt > STEP_HOLD_MS ? of.step : of.recent;
+  const step = working ? stepOf(activity) : undefined;
+  const away = !petChat?.isRunning && elsewhere?.running && elsewhere.conversationId !== chatId ? elsewhere : undefined;
+  const awayStep = stepOf(away);
+  // How long the step has taken, once that is worth saying.
+  const took = (since?: number) => since !== undefined && now - since >= STEP_TIMER_MS ? countdown(now - since) : undefined;
   let bubble: ReactNode = null;
   let urgent = false;
   if (said && said.until > now) {
@@ -371,9 +391,15 @@ function Pet() {
   } else if (reply) {
     // The saved reply once it is in; until then, what was streamed of it.
     const saved = reply.id === chatId ? newest.find((message) => message.role === "assistant" && message.createdAt >= reply.since) : undefined;
-    bubble = <Bubble title="Perry" detail={excerpt(saved?.text || reply.streamed || "…")} onOpen={() => openChat(reply.id)} onClose={() => setReply(null)} />;
+    // Under the reply, what it took: "Ran 3 commands · read 2 pages".
+    const did = reply.id === chatId && activity && !activity.running ? activity.summary : "";
+    bubble = <Bubble title="Perry" detail={excerpt(saved?.text || reply.streamed || "…")} note={did || undefined} onOpen={() => openChat(reply.id)} onClose={() => setReply(null)} />;
   } else if (working) {
-    bubble = <Bubble title="On it…" detail={petChat?.streaming ? excerpt(petChat.streaming, true) : undefined} onOpen={() => openChat(chatId)} />;
+    const writing = step?.label === "Writing the reply" && petChat?.streaming;
+    bubble = <Bubble id="working" title={step?.label ?? "On it…"} detail={writing ? excerpt(petChat!.streaming!, true) : took(step?.since)} onOpen={() => openChat(chatId)} />;
+  } else if (away && awayStep) {
+    const where = [away.chat && `In ${away.chat}`, took(awayStep.since)].filter(Boolean).join(" · ");
+    bubble = <Bubble id="elsewhere" title={awayStep.label} detail={where || undefined} onOpen={() => openChat(away.conversationId)} />;
   } else if (next) {
     const minutes = (next.dueAt! - now) / 60_000;
     const step = [...HEADS_UP_MIN].reverse().find((mark) => minutes <= mark);
@@ -395,7 +421,7 @@ function Pet() {
   const asleep = !onDuty && now - lastBusy.current >= NAP_AFTER_MS;
   const panel = (
     <Panel tab={tab} onTab={setTab} needs={needs} onClose={() => setOpen(false)} onOpenApp={() => openPath("/")}
-      status={petChat?.isRunning ? "Working on it…" : needs ? `${plural(needs, "thing")} waiting on you` : "Here when you need him"} busy={Boolean(petChat?.isRunning)}>
+      status={petChat?.isRunning ? `${step?.label ?? "Working on it"}…` : needs ? `${plural(needs, "thing")} waiting on you` : "Here when you need him"} busy={Boolean(petChat?.isRunning)}>
       {tab === "chat" ? (
         <PetChat chatId={chatId} onChatId={setChatId} draft={draft} onDraft={setDraft} open={openPath}
           voice={window.perryPet ? voice : undefined} hotkey={hotkey.hotkey} byHotkey={talkSends.current} sendSignal={sendSignal}
@@ -409,6 +435,7 @@ function Pet() {
     <Stage bubble={open ? panel : bubble}>
       <Body mood={voice.state === "listening" ? "listening" : urgent ? "urgent" : petChat?.isRunning || voice.state === "transcribing" ? "thinking" : "idle"}
         level={voice.levels[voice.levels.length - 1]} asleep={asleep} cheer={cheer} badge={open ? 0 : needs} onTouch={wake}
+        pose={voice.state === "idle" ? (step ?? awayStep)?.pose : undefined}
         onClick={() => setOpen((value) => !value)} />
     </Stage>
   );
@@ -437,12 +464,17 @@ function Stage({ bubble, children }: { bubble: ReactNode; children: ReactNode })
 type Tone = "late" | "soon" | "ask";
 
 /** Something he says. With onOpen, a click on it opens what it is about. */
-function Bubble({ title, detail, code, tone, onClose, onOpen, children }: {
-  title: string; detail?: string; code?: string; tone?: Tone; onClose?: () => void; onOpen?: () => void; children?: ReactNode;
+function Bubble({ id, title, detail, note, code, tone, onClose, onOpen, children }: {
+  /** Keeps it the same bubble while its words change, as a step does. */
+  id?: string;
+  title: string; detail?: string;
+  /** A quiet last line, like what a reply took. */
+  note?: string;
+  code?: string; tone?: Tone; onClose?: () => void; onOpen?: () => void; children?: ReactNode;
 }) {
   return (
     <motion.div
-      key={`${title}:${tone ?? ""}`}
+      key={id ?? `${title}:${tone ?? ""}`}
       data-solid
       role="status"
       initial={{ opacity: 0, y: 10, scale: 0.92 }}
@@ -469,6 +501,7 @@ function Bubble({ title, detail, code, tone, onClose, onOpen, children }: {
       <p className={cn("text-[14px] font-semibold leading-snug tracking-[-0.005em]", onClose && "pr-5", onOpen && "group-hover/bubble:text-primary")}>{title}</p>
       {code && <pre className="mt-1.5 max-h-16 overflow-hidden rounded-md bg-muted px-2 py-1 font-mono text-[11.5px] whitespace-pre-wrap [overflow-wrap:anywhere]">{code.slice(0, 160)}</pre>}
       {detail && <p className={cn("mt-0.5 text-[12.5px] text-pretty nums", tone === "late" ? "font-medium text-destructive" : tone === "soon" ? "font-medium text-warning" : "text-muted-foreground")}>{detail}</p>}
+      {note && <p className="mt-1.5 text-[11.5px] text-muted-foreground/80">{note}</p>}
       {children && <div className="mt-2.5 flex gap-1.5">{children}</div>}
     </motion.div>
   );
@@ -498,8 +531,11 @@ function BubbleButton({ primary, onClick, children }: { primary?: boolean; onCli
  * drag moves him, and dropped on the circle that shows at the bottom middle
  * of the screen while he is dragged, he hides.
  */
-function Body({ mood, level = 0, asleep, cheer = 0, badge = 0, onClick, onTouch }: {
-  mood: "idle" | "urgent" | "thinking" | "listening"; level?: number;
+function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, onTouch }: {
+  mood: "idle" | "urgent" | "thinking" | "listening";
+  /** What he is doing, shown by the prop beside him. */
+  pose?: Pose;
+  level?: number;
   /** Off duty: hat off, napping. */
   asleep: boolean;
   cheer?: number; badge?: number; onClick: () => void;
@@ -634,12 +670,47 @@ function Body({ mood, level = 0, asleep, cheer = 0, badge = 0, onClick, onTouch 
         />
       </motion.button>
       </motion.div>
+      <AnimatePresence>
+        {pose && !asleep && <Prop key={pose} pose={pose} reduced={Boolean(reduced)} />}
+      </AnimatePresence>
       {badge > 0 && (
         <span className="pointer-events-none absolute top-1 right-0 grid h-5 min-w-5 place-items-center rounded-full bg-warning px-1.5 text-[11px] font-bold text-background shadow" aria-hidden>
           {badge}
         </span>
       )}
     </motion.div>
+  );
+}
+
+/** The prop for each kind of step, so what he is doing reads at a glance without the bubble. */
+const PROPS: Record<Pose, { icon: LucideIcon; label: string; move: "tilt" | "scan" | "pulse" | "scribble" }> = {
+  thinking: { icon: BrainIcon, label: "Thinking", move: "pulse" },
+  reading: { icon: BookOpenIcon, label: "Reading", move: "tilt" },
+  typing: { icon: PencilIcon, label: "Writing", move: "scribble" },
+  searching: { icon: SearchIcon, label: "Searching", move: "scan" },
+  running: { icon: TerminalIcon, label: "Working on the computer", move: "pulse" },
+  drawing: { icon: PaletteIcon, label: "Drawing", move: "scribble" },
+  remembering: { icon: NotebookPenIcon, label: "Checking his notes", move: "tilt" },
+  waiting: { icon: HourglassIcon, label: "Waiting for you", move: "tilt" },
+};
+
+/** Beside him, low on his left: a small round chip with the prop, moving the way the step does. */
+function Prop({ pose, reduced }: { pose: Pose; reduced: boolean }) {
+  const { icon: Icon, label, move } = PROPS[pose];
+  const loop = reduced ? undefined
+    : move === "scan" ? { x: [0, 5, -3, 0], transition: { duration: 1.6, repeat: Infinity, ease: "easeInOut" as const } }
+      : move === "scribble" ? { rotate: [0, -12, 8, -6, 0], transition: { duration: 0.9, repeat: Infinity } }
+        : move === "tilt" ? { rotate: [0, 6, 0, -6, 0], transition: { duration: 2.4, repeat: Infinity, ease: "easeInOut" as const } }
+          : { scale: [1, 1.12, 1], transition: { duration: 1.4, repeat: Infinity, ease: "easeInOut" as const } };
+  return (
+    <motion.span
+      role="img" aria-label={label} title={label} data-pose={pose}
+      initial={{ opacity: 0, scale: 0.4, y: 6 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.4 }}
+      transition={{ type: "spring", stiffness: 500, damping: 26 }}
+      className="pointer-events-none absolute bottom-6 -left-1 grid size-8 place-items-center rounded-full border bg-popover text-primary shadow-md"
+    >
+      <motion.span animate={loop} className="grid place-items-center"><Icon className="size-4" aria-hidden /></motion.span>
+    </motion.span>
   );
 }
 

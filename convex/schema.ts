@@ -245,6 +245,8 @@ export default defineSchema({
     nextCheckAt: v.number(),
     lastObservation: v.optional(v.string()),
     firedAt: v.optional(v.number()),
+    /** Whether a contains or price watch's condition held at the last check, so it fires when it starts holding, not on every check. */
+    met: v.optional(v.boolean()),
     /** When the owner dismissed its last firing from Needs you. */
     seenAt: v.optional(v.number()),
     failures: v.number(),
@@ -412,6 +414,9 @@ export default defineSchema({
     origin: v.optional(vMemoryOrigin),
     /** When the owner last changed its text on the Memory page. */
     editedAt: v.optional(v.number()),
+    /** Its meaning as a vector, for search by meaning (lib/embed.ts): base64 float32, and the model that made it. */
+    vector: v.optional(v.string()),
+    vectorModel: v.optional(v.string()),
   })
     .index("by_created", ["createdAt"])
     .index("by_kind", ["kind", "createdAt"])

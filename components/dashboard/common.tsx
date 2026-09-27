@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon, CopyIcon, EyeIcon, EyeOffIcon, InfoIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, EyeIcon, EyeOffIcon, InfoIcon, MessageCircleIcon, SendIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -25,6 +25,16 @@ export function PerryMark({ className }: { className?: string }) {
       <PlatypusArt head className="w-[92%] translate-y-[6%]" />
     </span>
   );
+}
+
+/** The owner's messaging apps, as a chat in the web app is marked. */
+export const APPS = { telegram: "Telegram", whatsapp: "WhatsApp" } as const;
+
+/** Which app a Telegram or WhatsApp chat is in; nothing for a web chat. */
+export function ChannelIcon({ channel, className }: { channel: "web" | "telegram" | "whatsapp"; className?: string }) {
+  if (channel === "web") return null;
+  const Icon = channel === "telegram" ? SendIcon : MessageCircleIcon;
+  return <Icon role="img" aria-label={APPS[channel]} className={cn("size-3.5 shrink-0 text-muted-foreground", className)} />;
 }
 
 /** Copy with a brief check, and a toast when the browser refuses. */

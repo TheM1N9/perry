@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PlayIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -22,6 +22,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActionButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCount, attempt, useTab, type Tone } from "../common";
+import { GoalDialog, ScheduleDialog, WatchDialog, type Editing } from "./work-forms";
 
 const TABS = ["schedules", "plans", "goals", "watches"] as const;
 type Tab = (typeof TABS)[number];
@@ -39,7 +40,7 @@ export function Work() {
   const active = work?.tasks.filter((task) => task.status === "running" || task.status === "blocked" || task.status === "queued").length;
 
   return (
-    <Page title="Work" description="What Perry does without you in the chat. Ask for any of it in a chat, and it shows up here." wide>
+    <Page title="Work" description="What Perry does without you in the chat. Set it up here, or ask for it in a chat." wide>
       <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)}>
         <TabsList variant="line" className="mb-5 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
           <TabsTrigger value="schedules"><TabCount count={jobs?.jobs.filter((job) => !job.builtin).length}>Schedules</TabCount></TabsTrigger>
@@ -53,6 +54,16 @@ export function Work() {
         <TabsContent value="watches">{work ? <Watches monitors={work.monitors} /> : <ListSkeleton />}</TabsContent>
       </Tabs>
     </Page>
+  );
+}
+
+/** A tab's explanation, with its New button beside it. */
+function Intro({ children, action }: { children: ReactNode; action: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <p className="max-w-2xl text-sm text-muted-foreground">{children}</p>
+      <div className="flex items-center gap-2">{action}</div>
+    </div>
   );
 }
 
@@ -102,6 +113,7 @@ function Schedules() {
   const models = useQuery(api.models.options, { key: dashboardKey })?.codex;
   const now = useNow();
   const { ask, dialog } = useConfirm();
+  const [editing, setEditing] = useState<Editing<JobView>>(null);
 
   if (data === undefined) return <ListSkeleton />;
   const when = (ms: number) => fullDate(ms, data.timezone);
@@ -152,6 +164,7 @@ function Schedules() {
             <PlayIcon />Run now
           </ActionButton>
           <RowMenu label={`More for ${job.name}`}>
+            <DropdownMenuItem onClick={() => setEditing({ item: job })}><PencilIcon />Change</DropdownMenuItem>
             {!over && (
               <DropdownMenuItem onClick={() => void attempt(() => setEnabled({ key: dashboardKey, id: job.id, enabled: !job.enabled }), { success: job.enabled ? "Paused." : "Resumed." })}>
                 {job.enabled ? <PauseIcon /> : <PlayIcon />}{job.enabled ? "Pause" : "Resume"}
@@ -161,7 +174,7 @@ function Schedules() {
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={() => ask({
-                  title: `Delete “${job.name}”?`, body: "It won't run again. To bring it back, ask Perry to set it up again.", label: "Delete",
+                  title: `Delete “${job.name}”?`, body: "It won't run again.", label: "Delete",
                   run: () => remove({ key: dashboardKey, id: job.id }), success: "Schedule deleted.",
                 })}><Trash2Icon />Delete</DropdownMenuItem>
               </>
@@ -174,11 +187,11 @@ function Schedules() {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">
+      <Intro action={<Button size="sm" onClick={() => setEditing({})}><PlusIcon />New schedule</Button>}>
         Prompts Perry runs on a schedule, like a morning briefing, or once, like a reminder. Times are in <span className="font-medium text-foreground">{data.timezone}</span>.
-      </p>
+      </Intro>
       {yours.length === 0
-        ? <EmptyState title="Nothing scheduled yet">Try asking in a chat: &ldquo;Every weekday at 8am, send me a summary of my calendar.&rdquo;</EmptyState>
+        ? <EmptyState title="Nothing scheduled yet">Make one here, or ask in a chat: &ldquo;Every weekday at 8am, send me a summary of my calendar.&rdquo;</EmptyState>
         : <List label="Your schedules">{yours.map(row)}</List>}
       {builtins.length > 0 && (
         <Collapsible>
@@ -192,6 +205,7 @@ function Schedules() {
         </Collapsible>
       )}
       {dialog}
+      <ScheduleDialog editing={editing} timezone={data.timezone} onClose={() => setEditing(null)} />
     </div>
   );
 }
@@ -279,43 +293,54 @@ function Plans({ tasks }: { tasks: Doc<"tasks">[] }) {
 }
 
 function Goals({ goals }: { goals: Doc<"goals">[] }) {
-  if (!goals.length) return <EmptyState title="No goals yet">Tell Perry about something you&apos;re working toward, and it tracks the milestones.</EmptyState>;
+  const [editing, setEditing] = useState<Editing<Doc<"goals">>>(null);
   const tone: Record<Doc<"goals">["status"], Tone> = { active: "info", paused: "neutral", done: "success" };
   return (
-    <List label="Goals">
-      {goals.map((goal) => {
-        const reached = goal.milestones.filter((milestone) => milestone.done).length;
-        return (
-          <Row key={goal._id}>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-medium">{goal.title}</h3>
-                <StatusBadge tone={tone[goal.status]}>{goal.status[0].toUpperCase() + goal.status.slice(1)}</StatusBadge>
-              </div>
-              {goal.description && <p className="mt-1 text-sm text-pretty text-muted-foreground">{goal.description}</p>}
-              {goal.milestones.length > 0 && (
-                <>
-                  <div className="mt-3 flex max-w-md items-center gap-3">
-                    <Progress value={(reached / goal.milestones.length) * 100} aria-label={`${goal.title}: ${reached} of ${goal.milestones.length} milestones`} className="flex-1" />
-                    <span className="nums text-xs text-muted-foreground">{reached}/{goal.milestones.length}</span>
+    <div className="space-y-4">
+      <Intro action={<Button size="sm" onClick={() => setEditing({})}><PlusIcon />New goal</Button>}>
+        Outcomes you&apos;re working toward, with milestones. Perry keeps them in mind in every chat.
+      </Intro>
+      {!goals.length ? <EmptyState title="No goals yet">Make one here, or tell Perry about something you&apos;re working toward.</EmptyState> : (
+        <List label="Goals">
+          {goals.map((goal) => {
+            const reached = goal.milestones.filter((milestone) => milestone.done).length;
+            return (
+              <Row key={goal._id}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-medium">{goal.title}</h3>
+                    <StatusBadge tone={tone[goal.status]}>{goal.status[0].toUpperCase() + goal.status.slice(1)}</StatusBadge>
                   </div>
-                  <ul className="mt-3 space-y-1.5" aria-label="Milestones">
-                    {goal.milestones.map((milestone, index) => (
-                      <li key={index} className="flex items-center gap-2.5 text-sm">
-                        <span aria-hidden className={cn("grid size-4 shrink-0 place-items-center rounded-full border", milestone.done && "border-primary bg-primary text-primary-foreground")}>
-                          {milestone.done && <CheckIcon className="size-2.5" strokeWidth={3} />}
-                        </span>
-                        <span className={cn(milestone.done && "text-muted-foreground")}>{milestone.title}<span className="sr-only"> ({milestone.done ? "done" : "not done"})</span></span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-          </Row>
-        );
-      })}
-    </List>
+                  {goal.description && <p className="mt-1 text-sm text-pretty text-muted-foreground">{goal.description}</p>}
+                  {goal.milestones.length > 0 && (
+                    <>
+                      <div className="mt-3 flex max-w-md items-center gap-3">
+                        <Progress value={(reached / goal.milestones.length) * 100} aria-label={`${goal.title}: ${reached} of ${goal.milestones.length} milestones`} className="flex-1" />
+                        <span className="nums text-xs text-muted-foreground">{reached}/{goal.milestones.length}</span>
+                      </div>
+                      <ul className="mt-3 space-y-1.5" aria-label="Milestones">
+                        {goal.milestones.map((milestone, index) => (
+                          <li key={index} className="flex items-center gap-2.5 text-sm">
+                            <span aria-hidden className={cn("grid size-4 shrink-0 place-items-center rounded-full border", milestone.done && "border-primary bg-primary text-primary-foreground")}>
+                              {milestone.done && <CheckIcon className="size-2.5" strokeWidth={3} />}
+                            </span>
+                            <span className={cn(milestone.done && "text-muted-foreground")}>{milestone.title}<span className="sr-only"> ({milestone.done ? "done" : "not done"})</span></span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
+                <div className="shrink-0">
+                  <Button variant="ghost" size="sm" onClick={() => setEditing({ item: goal })}><PencilIcon />Change</Button>
+                </div>
+              </Row>
+            );
+          })}
+        </List>
+      )}
+      <GoalDialog editing={editing} onClose={() => setEditing(null)} />
+    </div>
   );
 }
 
@@ -329,19 +354,22 @@ function Watches({ monitors }: { monitors: Doc<"monitors">[] }) {
   const checkNow = useAction(api.dashboard.checkMonitorsNow);
   const now = useNow();
   const { ask, dialog } = useConfirm();
+  const [editing, setEditing] = useState<Editing<Doc<"monitors">>>(null);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">Pages Perry checks on an interval. A new watch records a baseline first and stays quiet until its condition is met.</p>
+      <Intro action={<>
         {monitors.length > 0 && (
           <ActionButton variant="outline" size="sm" action={() => checkNow({ key: dashboardKey })} success="Checked every watch that was due.">
             <RefreshCwIcon />Check now
           </ActionButton>
         )}
-      </div>
+        <Button size="sm" onClick={() => setEditing({})}><PlusIcon />New watch</Button>
+      </>}>
+        Pages Perry checks on an interval. A new watch records a baseline first and stays quiet until its condition is met.
+      </Intro>
       {monitors.length === 0
-        ? <EmptyState title="Nothing watched">Ask Perry to watch a page, for example: &ldquo;Tell me when this is back in stock.&rdquo;</EmptyState>
+        ? <EmptyState title="Nothing watched">Watch one here, or ask Perry: &ldquo;Tell me when this is back in stock.&rdquo;</EmptyState>
         : (
           <List label="Watches">
             {monitors.map((monitor) => (
@@ -367,6 +395,8 @@ function Watches({ monitors }: { monitors: Doc<"monitors">[] }) {
                     {monitor.active ? <PauseIcon /> : <PlayIcon />}{monitor.active ? "Pause" : "Resume"}
                   </ActionButton>
                   <RowMenu label={`More for ${monitor.title}`}>
+                    <DropdownMenuItem onClick={() => setEditing({ item: monitor })}><PencilIcon />Change</DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem variant="destructive" onClick={() => ask({
                       title: `Stop watching “${monitor.title}”?`, body: "The watch and its history are deleted.", label: "Delete",
                       run: () => deleteMonitor({ key: dashboardKey, monitorId: monitor._id }), success: "Watch deleted.",
@@ -378,6 +408,7 @@ function Watches({ monitors }: { monitors: Doc<"monitors">[] }) {
           </List>
         )}
       {dialog}
+      <WatchDialog editing={editing} onClose={() => setEditing(null)} />
     </div>
   );
 }
