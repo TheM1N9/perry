@@ -763,6 +763,9 @@ const start_task = createTool({
   },
 });
 
+/** A background task starts only once this turn ends (the runner takes one turn at a time): waiting for it here would wait for ever. */
+const NO_WAIT = "It starts after this reply and runs by itself; its result, or a question, comes back to this chat. Do not wait for it or check on it now: tell the owner it is under way and end your reply.";
+
 const queue_task = createTool({
   description:
     "Take on a piece of work to do by yourself in the background, apart from this chat: research, " +
@@ -774,13 +777,13 @@ const queue_task = createTool({
     prompt: z.string().min(10).max(12000).describe("Everything needed to do it without asking: what, where to put the result, what counts as done."),
     goalId: z.string().optional().describe("The goal it serves, from status_report, if any."),
   }),
-  execute: async (ctx, input): Promise<{ taskId?: string; error?: string }> => {
+  execute: async (ctx, input): Promise<{ taskId?: string; note?: string; error?: string }> => {
     const goal = input.goalId ? await ctx.runQuery(internal.work.getGoal, { goalId: input.goalId }) : null;
     if (input.goalId && !goal) return { error: "No goal with that id; status_report lists them." };
     const taskId: Id<"tasks"> = await ctx.runMutation(internal.tasks.queue, {
       title: input.title, prompt: input.prompt, ...(goal ? { goalId: goal._id } : {}), ...(ctx.conversationId ? { origin: ctx.conversationId } : {}),
     });
-    return { taskId };
+    return { taskId, note: NO_WAIT };
   },
 });
 
@@ -789,9 +792,9 @@ const resume_task = createTool({
     "Give a background task stuck on a question (status blocked) the owner's answer, and put it back in the " +
     "queue to carry on. Use it when the owner answers a task's question here. Task ids come from status_report.",
   inputSchema: z.object({ taskId: z.string(), answer: z.string().min(1).max(4000).describe("The owner's answer, in their words.") }),
-  execute: async (ctx, input): Promise<{ resumed: boolean; error?: string }> => {
+  execute: async (ctx, input): Promise<{ resumed: boolean; note?: string; error?: string }> => {
     const resumed: boolean = await ctx.runMutation(internal.tasks.resume, { id: input.taskId, answer: input.answer });
-    return resumed ? { resumed } : { resumed, error: "That task is not waiting for an answer; status_report shows each task's status." };
+    return resumed ? { resumed, note: NO_WAIT } : { resumed, error: "That task is not waiting for an answer; status_report shows each task's status." };
   },
 });
 
