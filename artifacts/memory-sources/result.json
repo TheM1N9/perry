@@ -1,0 +1,65 @@
+{
+  "ranAt": "2026-09-27T05:56:30.364Z",
+  "checks": {
+    "replyShowsItsMemory": true,
+    "lineNotInReply": true,
+    "noMemoryNoneShown": true,
+    "oldFactChecked": true,
+    "phoneNeverSeesTheLine": true,
+    "pageShowsAndLinks": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "dinner": {
+      "id": "k95p9ncjxc8r4zb63nsv89kpxj",
+      "role": "assistant",
+      "text": "Make a chickpea and spinach curry with rice for dinner tonight.",
+      "createdAt": 1790488559808.001,
+      "memories": [
+        {
+          "id": "0j0qtdqknt4ms3p5gv5b3g87zp",
+          "text": "I'm vegetarian and don't eat eggs."
+        }
+      ],
+      "attachments": []
+    },
+    "replyShowsItsMemory": [
+      {
+        "id": "0j0qtdqknt4ms3p5gv5b3g87zp",
+        "text": "I'm vegetarian and don't eat eggs."
+      }
+    ],
+    "lineNotInReply": "Make a chickpea and spinach curry with rice for dinner tonight.",
+    "noMemoryNoneShown": {
+      "id": "vgbh3y5m2sn8j87e0xcdq0ez76",
+      "role": "assistant",
+      "text": "51",
+      "createdAt": 1790488564603.001,
+      "attachments": []
+    },
+    "bio": "I have an older note that you’re a product designer at Acme. Is that still accurate, and should I include Acme on your badge?",
+    "oldFactChecked": "I have an older note that you’re a product designer at Acme. Is that still accurate, and should I include Acme on your badge?",
+    "phoneNeverSeesTheLine": [
+      "Try a vegetable and chickpea curry with rice."
+    ],
+    "phoneSaved": {
+      "id": "955yaeh948nsj9dsfj9rgwt5ar",
+      "role": "assistant",
+      "text": "Try a vegetable and chickpea curry with rice.",
+      "createdAt": 1790488576354.001,
+      "attachments": []
+    },
+    "pageShowsAndLinks": {
+      "chip": {
+        "text": "From memory:I'm vegetarian and don't eat eggs.",
+        "href": "/memory?q=I'm%20vegetarian%20and%20don't%20eat%20eggs."
+      },
+      "found": {
+        "search": "I'm vegetarian and don't eat eggs.",
+        "shown": true
+      }
+    },
+    "noPageErrors": []
+  },
+  "passed": true
+}
