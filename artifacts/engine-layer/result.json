@@ -1,0 +1,234 @@
+{
+  "ranAt": "2026-09-27T10:14:05.821Z",
+  "model": "gpt-6-luna",
+  "checks": {
+    "legacyRunnerFieldsKept": true,
+    "settingsListsEngines": true,
+    "modelsTaggedWithEngine": true,
+    "replyStreams": true,
+    "replySaved": true,
+    "mcpRememberCallable": true,
+    "runLabelShape": true,
+    "modelAndEffortSent": true,
+    "resumeCursorRecorded": true,
+    "chatNamed": true,
+    "bridgeRoundTrips": true,
+    "steerApplied": true,
+    "stopInterrupts": true,
+    "oldChatResumesItsThread": true,
+    "compactWorks": true,
+    "reviewerRuns": true,
+    "approvalReachesDashboard": true,
+    "jobModelUsed": true,
+    "engineSwitchStartsFresh": true,
+    "messagingModelLists": true,
+    "oldRunnerStillWorks": true,
+    "noPageErrors": true,
+    "runnerLogClean": true
+  },
+  "notes": {
+    "codexStatus": {
+      "kind": "codex",
+      "label": "Codex",
+      "installed": true,
+      "version": "0.157.1",
+      "signedIn": true,
+      "auth": {
+        "type": "chatgpt",
+        "label": "ChatGPT",
+        "email": "owner@example.com",
+        "plan": "plus"
+      },
+      "updatedAt": 1790503961409
+    },
+    "legacyRunnerFieldsKept": {
+      "codexAuthMode": "chatgpt",
+      "codexModels": 7,
+      "engines": [
+        "codex"
+      ]
+    },
+    "settingsText": "Engines\n\nPerry thinks with a coding agent on your computer, signed in with your own subscription. The sign-in stays on that computer.\n\nDESKTOP-27SQLCP\nOnline\nCodex\nSigned in\n0.157.1\n\nChatGPT Plus · owner@example.com\n\nSign out",
+    "settingsListsEngines": "Engines\n\nPerry thinks with a coding agent on your computer, signed in with your own subscription. The sign-in stays on that computer.\n\nDESKTOP-27SQLCP\nOnline\nCodex\nSigned in\n0.157.1\n\nChatGPT Plus · owner@example.com\n\nSign out",
+    "modelsTaggedWithEngine": [
+      {
+        "kind": "codex",
+        "label": "Codex"
+      }
+    ],
+    "replyStreams": {
+      "snapshots": 2,
+      "lengths": [
+        48,
+        62
+      ]
+    },
+    "replySaved": "one\n\ntwo\n\nthree\n\nfour\n\nfive\n\nsix\n\nseven\n\neight\n\nnine\n\nten\n\neleven\n\ntwelve\n\nthirteen\n\nfourteen\n\nfifteen\n\nsixteen\n\nseventeen\n\neighteen\n\nnineteen\n\ntwenty",
+    "mcpRememberCallable": "Engine layer check e2e-mujnsj0m: the remember tool works.",
+    "runLabelShape": {
+      "run": "codex/gpt-6-luna · low · full access",
+      "expected": "codex/gpt-6-luna · low · full access"
+    },
+    "modelAndEffortSent": {
+      "turn": {
+        "engine": "codex",
+        "model": "gpt-6-luna",
+        "effort": "low"
+      },
+      "codexSession": {
+        "model": "gpt-6-luna",
+        "effort": "low"
+      }
+    },
+    "resumeCursorRecorded": {
+      "resume": {
+        "engine": "codex",
+        "cursor": "01a0e25a-615d-7c23-a080-c2d41b198aab",
+        "version": 1
+      },
+      "codexThreadId": "01a0e25a-615d-7c23-a080-c2d41b198aab"
+    },
+    "chatNamed": "Remember tool engine check",
+    "oldShapedChat": {
+      "engine": null,
+      "resume": null,
+      "codexThreadId": "01a0e25a-615d-7c23-a080-c2d41b198aab"
+    },
+    "bridgeRoundTrips": {
+      "answers": 3,
+      "tools": 36,
+      "call": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"id\\\":\\\"dpc3znvwbnv0sf9ae50mtt3fx8\\\",\\\"stored\\\":true,\\\"superseded\\\":0,\\\"note\\\":\\\"Stored.\\\"}\"}]}",
+      "stored": "Bridge check e2e-mujnsj0m: the stdio bridge reached Perry's tools."
+    },
+    "steerApplied": {
+      "status": "applied",
+      "engine": "codex"
+    },
+    "stopInterrupts": {
+      "status": "done",
+      "stopped": true,
+      "ranMs": 1191,
+      "reply": "_Stopped._"
+    },
+    "oldChatResumesItsThread": {
+      "history": false,
+      "threadBefore": "01a0e25a-615d-7c23-a080-c2d41b198aab",
+      "threadAfter": "01a0e25a-615d-7c23-a080-c2d41b198aab"
+    },
+    "compactWorks": {
+      "status": "done"
+    },
+    "reviewerRuns": {
+      "verdict": "caution",
+      "reason": "This forcibly and recursively deletes the C:\\perry-engine-layer-e2e-mujnsj0m folder, causing potentially irreversible data loss outside the working directory.",
+      "model": "gpt-6-luna"
+    },
+    "approvalReachesDashboard": {
+      "asked": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -NoProfile -Command \"Remove-Item -Recurse -Force C:\\\\pe",
+      "status": "declined",
+      "decidedBy": "dashboard"
+    },
+    "autoReply": "The command was blocked because execution approval was rejected.",
+    "jobModelUsed": {
+      "turnModel": "gpt-6-luna",
+      "run": "codex/gpt-6-luna · medium",
+      "result": "job-ok",
+      "job": {
+        "model": "gpt-6-luna",
+        "engine": "codex"
+      }
+    },
+    "engineSwitchStartsFresh": {
+      "engines": [
+        {
+          "kind": "codex",
+          "label": "Codex"
+        },
+        {
+          "kind": "claude",
+          "label": "Claude Code"
+        }
+      ],
+      "chat": {
+        "engine": "claude",
+        "model": "claude-e2e",
+        "resume": null,
+        "codexThreadId": null
+      },
+      "turn": {
+        "engine": "claude",
+        "resumeCursor": null,
+        "seededWithHistory": true,
+        "model": "claude-e2e"
+      }
+    },
+    "messagingModelLists": "Codex models:\n• gpt-6-astra, default\n  gpt-6-sol\n  gpt-6-luna\n  gpt-5.6-sol\n  gpt-5.6-terra\n  gpt-5.6-luna\n  gpt-5.5\n\nClaude Code models:\n  claude-e2e (Claude E2E), default\n\nSwitch with /model <name>. Another engine's model moves this chat to that engine, which picks up from the chat so far.",
+    "oldRunnerStillWorks": {
+      "doc": {
+        "engines": null,
+        "codexAuthMode": "chatgpt",
+        "codexModels": [
+          {
+            "id": "gpt-old-shape",
+            "name": "Old shape",
+            "isDefault": true
+          }
+        ]
+      },
+      "settings": [
+        {
+          "kind": "codex",
+          "label": "Codex",
+          "installed": true,
+          "signedIn": true,
+          "auth": {
+            "type": "chatgpt",
+            "label": "ChatGPT",
+            "plan": "plus"
+          },
+          "updatedAt": 1790504040686
+        }
+      ],
+      "models": [
+        "gpt-old-shape"
+      ],
+      "claimed": "codex"
+    },
+    "settingsAll": "Engines\n\nPerry thinks with a coding agent on your computer, signed in with your own subscription. The sign-in stays on that computer.\n\nRunner from before engines\nOnline\nCodex\nSigned in\n\nChatGPT Plus\n\nSign out\nSame computer, Claude\nOnline\nClaude Code\nSigned in\n0.0.0-e2e\n\nClaude\n\nSign out\nDESKTOP-27SQLCP\nOnline\nCodex\nSigned in\n0.157.1\n\nChatGPT Plus · owner@example.com\n\nSign out",
+    "noPageErrors": [],
+    "runnerLogClean": [],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-layer-hKSk7y\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[2m  named a chat \"Remember tool engine check\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn n0ghhyavr4wsdnv822rpbkxjkn\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[2m  steered the Codex turn with a new message\u001b[0m",
+      "\u001b[33m  stopping the Codex turn, as asked\u001b[0m",
+      "\u001b[2m  saved turn n9bywe9eyzxfna5dd1dt595943\u001b[0m",
+      "\u001b[2m  compacting a chat's Codex session\u001b[0m",
+      "\u001b[2m  saved turn 3cbzcmvqb83dxzqd2rz5ext63x\u001b[0m",
+      "\u001b[2m  auto: each command is reviewed before it runs; risky ones wait for you\u001b[0m",
+      "\u001b[2m  named a chat \"Run PowerShell removal command\" (gpt-6-luna)\u001b[0m",
+      "\u001b[33m",
+      "  reviewer: caution. This forcibly and recursively deletes the C:\\perry-engine-layer-e2e-mujnsj0m folder, causing potentially irreversible data loss outside the working directory.\u001b[0m",
+      "\u001b[1m  Assistant wants to run:\u001b[0m",
+      "    \u001b[36m\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -NoProfile -Command \"Remove-Item -Recurse -Force C:\\\\perry-engine-layer-e2e-mujnsj0m\"\u001b[0m",
+      "\u001b[2m    in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-layer-hKSk7y\\workspace\u001b[0m",
+      "\u001b[2m    approve or decline it in the dashboard or on Telegram\u001b[0m",
+      "\u001b[2m  declined in the dashboard or on Telegram.\u001b[0m",
+      "\u001b[2m  saved turn 7tq0dff763e8erp4fkrmdn27vn\u001b[0m",
+      "\u001b[2m  saved turn 0q4axgmgfsxdbm3x1k1pke775g\u001b[0m"
+    ]
+  },
+  "passed": true
+}
