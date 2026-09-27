@@ -1,0 +1,118 @@
+{
+  "ranAt": "2026-09-27T21:02:02.264Z",
+  "engine": "grok",
+  "agent": "fake (artifacts/engine-acp/fake-agent.ts --profile grok)",
+  "idleMs": 6000,
+  "checks": {
+    "busyReplyRunsOn": true,
+    "quietReplyStopped": true,
+    "chatAnswersAfterIt": true,
+    "takeLongerLetsQuietWorkFinish": true,
+    "quietWorkWithoutAskingIsStopped": true,
+    "approvalWaitIsNotQuiet": true,
+    "capStopsABusyReply": true,
+    "stopEndsAnEngineThatIgnoresIt": true,
+    "agentDoesNotWaitInTheReply": true
+  },
+  "notes": {
+    "busyReplyRunsOn": {
+      "status": "done",
+      "reply": "ep 24. step 25. step 26. step 27. step 28. step 29. step 30."
+    },
+    "quietReplyStopped": {
+      "status": "error",
+      "error": "It went quiet for more than 6 seconds, so it was stopped.",
+      "tookSeconds": 25
+    },
+    "chatAnswersAfterIt": "Fake grok reply to: Hello again after the hang. One two three four five six seven eight nine ten.",
+    "takeLongerLetsQuietWorkFinish": {
+      "status": "done",
+      "asked": "ok over HTTP",
+      "patienceUntil": 1790542856840
+    },
+    "quietWorkWithoutAskingIsStopped": {
+      "status": "error",
+      "error": "It went quiet for more than 6 seconds, so it was stopped."
+    },
+    "approvalWaitIsNotQuiet": {
+      "stillRunning": true,
+      "status": "done"
+    },
+    "capStopsABusyReply": {
+      "status": "error",
+      "error": "It ran for more than 8 seconds, so it was stopped."
+    },
+    "stopEndsAnEngineThatIgnoresIt": {
+      "status": "done",
+      "stopped": true,
+      "tookSeconds": 15
+    },
+    "agentDoesNotWaitInTheReply": {
+      "seconds": 31,
+      "jobs": [],
+      "reply": "I can wait for it, but no accounting app is connected yet, so I can’t receive the webhook. Connect the app and tell me which one it is; I’ll set up the completion trigger immediately.\n\nI saved this export as an open note for around 04:31 IST."
+    },
+    "runnerLines": [
+      "\u001b[33m  Grok Build was quiet for 6 seconds; stopping it\u001b[0m",
+      "\u001b[33m  Grok Build did not stop; ending it. The chat's session resumes with the next message.\u001b[0m",
+      "\u001b[33m  Grok Build was quiet for 6 seconds; stopping it\u001b[0m",
+      "\u001b[33m  Grok Build ran past 8 seconds; stopping it\u001b[0m",
+      "\u001b[33m  stopping the Grok Build turn, as asked\u001b[0m",
+      "\u001b[33m  Grok Build did not stop; ending it. The chat's session resumes with the next message.\u001b[0m"
+    ],
+    "runnerLog": [
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  named a chat \"SLOW count request\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn 21zg9ramry77m4cb12p6xqjn1y\u001b[0m",
+      "\u001b[33m  Grok Build was quiet for 6 seconds; stopping it\u001b[0m",
+      "\u001b[33m  Grok Build did not stop; ending it. The chat's session resumes with the next message.\u001b[0m",
+      "\u001b[2m  saved turn smkegyf1c7g40xtnka1x66t7th\u001b[0m",
+      "\u001b[2m  saved turn 6y7hcyjt73qnhjs2zfryhp3wbj\u001b[0m",
+      "\u001b[2m  saved turn yyp32h0e2fqpvew6rc33kcg1tb\u001b[0m",
+      "\u001b[33m  Grok Build was quiet for 6 seconds; stopping it\u001b[0m",
+      "\u001b[2m  saved turn ga4rk4458qezrprbbnpnhner1f\u001b[0m",
+      "\u001b[1m  Assistant wants to run:\u001b[0m",
+      "    \u001b[36mecho approved-after-a-wait\u001b[0m",
+      "\u001b[2m    in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-turn-watchdog-3o1uqn\\workspace\u001b[0m",
+      "\u001b[2m    The owner asked for it\u001b[0m",
+      "\u001b[2m    approve or decline it in the dashboard or on Telegram\u001b[0m",
+      "\u001b[2m  named a chat \"Approved after wait\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  approved in the dashboard or on Telegram.\u001b[0m",
+      "\u001b[2m  saved turn 8r3vhm61p572ameemnt5dq01zj\u001b[0m",
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-turn-watchdog-3o1uqn\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  named a chat \"Slow past the cap\" (gpt-6-luna)\u001b[0m",
+      "\u001b[33m  Grok Build ran past 8 seconds; stopping it\u001b[0m",
+      "\u001b[2m  saved turn py91fs23tp65wece3c93xdbhax\u001b[0m",
+      "\u001b[33m  stopping the Grok Build turn, as asked\u001b[0m",
+      "\u001b[33m  Grok Build did not stop; ending it. The chat's session resumes with the next message.\u001b[0m",
+      "\u001b[2m  saved turn 2hpsw5na73cjtbm1jg057fprge\u001b[0m",
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-turn-watchdog-3o1uqn\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  named a chat \"Wait for export completion\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn grhy7pwcpkszd7n397wdfd4xg4\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

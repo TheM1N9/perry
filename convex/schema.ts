@@ -851,6 +851,12 @@ export default defineSchema({
     mediaKey: v.optional(v.string()),
     /** The owner asked to stop this turn; the runner interrupts its engine. */
     stopRequested: v.optional(v.boolean()),
+    /**
+     * The agent asked for longer (take_longer, mcp.ts): until then the
+     * runner's watchdog lets the turn run on, however quiet or long.
+     */
+    patienceUntil: v.optional(v.number()),
+    patienceWhy: v.optional(v.string()),
     /** The turn ended because the owner stopped it. */
     stopped: v.optional(v.boolean()),
     /** Finalizing steps already done, so a retried finalize never repeats one. */

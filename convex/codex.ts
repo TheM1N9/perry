@@ -1,4 +1,5 @@
 import { v, type Infer } from "convex/values";
+import { TAKE_LONGER_MAX_MIN } from "./lib/turnLimits";
 import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { createThread, saveMessages } from "./lib/agent";
@@ -250,6 +251,31 @@ export const stopRequests = query({
       .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "running"))
       .take(20);
     return running.filter((job) => job.stopRequested).map((job) => job._id);
+  },
+});
+
+/** How long past its usual limits each of this runner's running turns may go, by turn: the agent asked (take_longer). */
+export const turnPatience = query({
+  args: { token: v.string() },
+  handler: async (ctx, args): Promise<Record<string, number>> => {
+    const runner = await authenticate(ctx, args.token);
+    const running = await ctx.db.query("codexTurns")
+      .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "running"))
+      .take(20);
+    return Object.fromEntries(running.filter((job) => job.patienceUntil).map((job) => [job._id, job.patienceUntil!]));
+  },
+});
+
+/** The agent's own turn needs longer than the runner usually allows: up to TAKE_LONGER_MAX_MIN from now, each time asked. */
+export const takeLonger = internalMutation({
+  args: { turnId: v.id("codexTurns"), minutes: v.number(), why: v.string() },
+  returns: v.object({ until: v.number() }),
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get(args.turnId);
+    if (!turn || turn.status !== "running") throw new Error("This turn is not running.");
+    const until = Math.max(turn.patienceUntil ?? 0, Date.now() + Math.min(Math.max(args.minutes, 1), TAKE_LONGER_MAX_MIN) * 60_000);
+    await ctx.db.patch(turn._id, { patienceUntil: until, patienceWhy: args.why.slice(0, 200) });
+    return { until };
   },
 });
 

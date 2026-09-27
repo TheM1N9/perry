@@ -18,6 +18,9 @@
  *
  * What a message makes it do (the last text block of the prompt):
  *   REMEMBER <text>  call Perry's `remember` tool through the MCP server it was given
+ *   LONGER <minutes> <seconds>  call Perry's `take_longer` for that many minutes, then say
+ *                    nothing for that many seconds, then reply
+ *   QUIET <seconds>  say nothing for that many seconds, then reply
  *   RUN <command>    an execute tool call, which asks permission unless always-approve
  *   SLOW             a long reply, 30 chunks 400 ms apart, that stops on session/cancel
  *   HANG             one chunk, then nothing, and session/cancel is ignored
@@ -148,12 +151,18 @@ function config(session: Saved): SessionConfigOption[] {
 
 /** Call Perry's `remember` through the MCP server this session was given: over HTTP, or by starting its stdio command. */
 async function remember(session: Saved, text: string): Promise<string> {
+  const answer = await callTool(session, "remember", { text, kind: "daily" });
+  return answer.startsWith("ok ") ? `remembered ${answer.slice(3)}` : answer;
+}
+
+/** One of Perry's tools, through the MCP server it was given: "ok over HTTP|stdio", or what went wrong. */
+async function callTool(session: Saved, name: string, args: Record<string, unknown>): Promise<string> {
   const server = session.mcpServers.find((item) => item.name === "assistant");
   if (!server) return "no Perry MCP server was given";
   const messages = [
     { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: `fake-${profile}`, version: "0" } } },
     { jsonrpc: "2.0", method: "notifications/initialized" },
-    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "remember", arguments: { text, kind: "daily" } } },
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: args } },
   ];
   if ("url" in server) {
     let answer = "";
@@ -166,8 +175,8 @@ async function remember(session: Saved, text: string): Promise<string> {
       answer = await response.text();
       if (!response.ok) return `http ${response.status}: ${answer.slice(0, 200)}`;
     }
-    log({ mcp: "http", url: server.url, answer: answer.slice(0, 300) });
-    return /isError"\s*:\s*true/.test(answer) ? `failed: ${answer.slice(0, 200)}` : "remembered over HTTP";
+    log({ mcp: "http", tool: name, url: server.url, answer: answer.slice(0, 300) });
+    return /isError"\s*:\s*true/.test(answer) ? `failed: ${answer.slice(0, 200)}` : "ok over HTTP";
   }
   if (!("command" in server)) return "unsupported MCP server";
   const child = spawn(server.command, server.args, { env: { ...process.env, ...Object.fromEntries(server.env.map((item) => [item.name, item.value])) }, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
@@ -176,8 +185,8 @@ async function remember(session: Saved, text: string): Promise<string> {
   for (const message of messages) child.stdin.write(`${JSON.stringify(message)}\n`);
   child.stdin.end();
   await new Promise((done) => child.on("close", done));
-  log({ mcp: "stdio", command: server.command, args: server.args, answer: out.slice(0, 300) });
-  return /isError"\s*:\s*true/.test(out) || !out.includes('"id":2') ? `failed: ${out.slice(0, 200)}` : "remembered over stdio";
+  log({ mcp: "stdio", tool: name, command: server.command, args: server.args, answer: out.slice(0, 300) });
+  return /isError"\s*:\s*true/.test(out) || !out.includes('"id":2') ? `failed: ${out.slice(0, 200)}` : "ok over stdio";
 }
 
 async function turn(client: AgentContext, session: Live, prompt: ContentBlock[], signal: AbortSignal): Promise<{ stopReason: "end_turn" | "cancelled" }> {
@@ -209,6 +218,23 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
 
   if (text === "/compact" || text === "/compress") {
     await stream(["Compacted ", "the conversation."], 50);
+    return done("end_turn");
+  }
+  if (text.startsWith("LONGER ") || text.startsWith("QUIET ")) {
+    // Work that is long and quiet on purpose: with LONGER, the time asked for first.
+    const [, first, second] = text.split(/\s+/);
+    const quietSeconds = Number(text.startsWith("LONGER ") ? second : first) || 10;
+    if (text.startsWith("LONGER ")) {
+      const asked = await callTool(session, "take_longer", { minutes: Number(first) || 1, why: "a long quiet step, for the test" });
+      log({ tookLonger: asked });
+      await say(`Asked for ${first} minutes (${asked}). `);
+    } else {
+      await say("Going quiet. ");
+    }
+    log({ quietFor: quietSeconds });
+    // Silent, and deaf to a cancel, as a render or an install with no output is.
+    await sleep(quietSeconds * 1000);
+    await stream([`Done after ${quietSeconds} quiet seconds.`], 10);
     return done("end_turn");
   }
   if (text.startsWith("HANG")) {

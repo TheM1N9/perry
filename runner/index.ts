@@ -62,6 +62,7 @@ import { review } from "./review";
 import { nameChat } from "./title";
 import { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig, type RunnerConfig } from "./home";
 import { TurnTrace } from "./trace";
+import { TURN_IDLE_MIN, TURN_MAX_MIN } from "../convex/lib/turnLimits";
 
 const CONFIG_DIR = HOME;
 /** Finished turns not yet delivered. The folder keeps its name from before engines, so none is lost on update. */
@@ -73,11 +74,17 @@ const APPROVAL_TIMEOUT_MS = 10 * 60_000;
 /** Shared files past this stay on the machine rather than go to Convex for Telegram. */
 const SHARED_UPLOAD_LIMIT = 200 * 1024 * 1024;
 /**
- * The turn watchdog: a turn still running after this is interrupted, and its
- * engine ended, process group and all, if it has not stopped KILL_GRACE_MS
- * later. PERRY_TURN_TIMEOUT_MS changes it.
+ * The turn watchdog, for a turn that is stuck rather than long: one quiet (no
+ * words, no step, no approval waiting) for TURN_IDLE_MS, or running past
+ * TURN_TIMEOUT_MS, is interrupted, and its engine ended, process group and
+ * all, if it has not stopped KILL_GRACE_MS later. The agent can ask for longer
+ * first (take_longer, convex/mcp.ts); both are in convex/lib/turnLimits.ts,
+ * and PERRY_TURN_IDLE_MS and PERRY_TURN_TIMEOUT_MS change them here.
  */
-const TURN_TIMEOUT_MS = Number(process.env.PERRY_TURN_TIMEOUT_MS) || 8 * 60_000;
+const TURN_IDLE_MS = Number(process.env.PERRY_TURN_IDLE_MS) || TURN_IDLE_MIN * 60_000;
+const TURN_TIMEOUT_MS = Number(process.env.PERRY_TURN_TIMEOUT_MS) || TURN_MAX_MIN * 60_000;
+/** How often the watchdog looks. */
+const WATCHDOG_TICK_MS = 5_000;
 /** A compaction waits on its own for up to ten minutes; this is past that. */
 const COMPACT_TIMEOUT_MS = 11 * 60_000;
 const KILL_GRACE_MS = 30_000;
@@ -295,28 +302,52 @@ async function main() {
     const ready = (engine?: Engine) => engine?.quickTurn && engine.capabilities.quickTurns && statuses.get(engine.kind)?.signedIn ? engine : undefined;
     return ready(preferred ? engines.get(preferred) : undefined) ?? [...engines.values()].find((engine) => ready(engine));
   };
+  /** Approvals being waited on now: a turn waiting for the owner is not stuck. */
+  let asking = 0;
+  /** Until when each running turn may go past its limits, by turn: the agent asked (take_longer). */
+  let patience: Record<string, number> = {};
   /**
-   * The turn watchdog. Past `limitMs` the turn is interrupted, and if it has
-   * not ended KILL_GRACE_MS later, or never started, its engine is ended,
-   * process group and all, which fails what it was doing.
+   * The turn watchdog. A turn quiet for `idleMs` (unset: never), or running
+   * past `maxMs`, is interrupted, and if it has not ended KILL_GRACE_MS later,
+   * or never started, its engine is ended, process group and all, which fails
+   * what it was doing. `active()` says it did something; while `patient()`
+   * is in the future, it runs on, and the idle time after it starts afresh.
    */
-  const watchdog = (engine: Engine, limitMs: number, handle: () => TurnHandle | undefined) => {
-    let expired = false;
+  const watchdog = (engine: Engine, { idleMs, maxMs }: { idleMs?: number; maxMs: number }, handle: () => TurnHandle | undefined, patient: () => number = () => 0) => {
+    const started = Date.now();
+    let lastActive = started;
+    let grantedUntil = 0;
+    let why: string | null = null;
     let kill: ReturnType<typeof setTimeout> | undefined;
-    const timer = setTimeout(() => {
-      expired = true;
+    const span = (ms: number) => ms >= 60_000 ? `${Math.round(ms / 60_000)} minutes` : `${Math.round(ms / 1000)} seconds`;
+    const stop = (reason: string, log: string) => {
+      why = reason;
       const running = handle();
-      console.log(yellow(`  ${engine.label} ran past ${Math.round(limitMs / 60_000)} minutes; stopping it`));
+      console.log(yellow(`  ${engine.label} ${log}; stopping it`));
       if (running) void engine.interrupt(running).catch(() => {});
       kill = setTimeout(() => {
         console.log(yellow(`  ${engine.label} did not stop; ending it`));
         engine.kill();
       }, running ? KILL_GRACE_MS : 0);
-    }, limitMs);
+    };
+    const timer = setInterval(() => {
+      if (why) return;
+      const now = Date.now();
+      const until = patient();
+      if (until > now || asking > 0) {
+        grantedUntil = Math.max(grantedUntil, until);
+        lastActive = now;
+        return;
+      }
+      if (idleMs && now - lastActive > idleMs) stop(`It went quiet for more than ${span(idleMs)}, so it was stopped.`, `was quiet for ${span(idleMs)}`);
+      // Past the time it asked for, it still has the usual quiet allowance before the cap.
+      else if (now > Math.max(started + maxMs, grantedUntil + (idleMs ?? 0))) stop(`It ran for more than ${span(grantedUntil ? now - started : maxMs)}, so it was stopped.`, `ran past ${span(maxMs)}`);
+    }, WATCHDOG_TICK_MS);
     return {
-      expired: () => expired,
-      why: `It ran for more than ${Math.round(limitMs / 60_000)} minutes, so it was stopped.`,
-      done: () => { clearTimeout(timer); clearTimeout(kill); },
+      active: () => { lastActive = Date.now(); },
+      expired: () => why !== null,
+      why: () => why ?? "",
+      done: () => { clearInterval(timer); clearTimeout(kill); },
     };
   };
 
@@ -629,11 +660,22 @@ async function main() {
   // The turn an engine is working on, and the turns the owner asked to stop.
   let current: { jobId: Id<"codexTurns">; engine: Engine; handle: TurnHandle } | null = null;
   let stopRequested = new Set<string>();
+  /** Turns the owner stopped, and those whose engine had to be ended for it. */
+  const stopping = new Set<string>();
+  const endedOnStop = new Set<string>();
   const interruptIfAsked = () => {
-    if (!current || !stopRequested.has(current.jobId)) return;
-    const { engine, handle } = current;
+    if (!current || !stopRequested.has(current.jobId) || stopping.has(current.jobId)) return;
+    const { engine, handle, jobId } = current;
+    stopping.add(jobId);
     console.log(yellow(`  stopping the ${engine.label} turn, as asked`));
     void engine.interrupt(handle).catch((error) => console.error(red(`  Could not stop the ${engine.label} turn: ${message(error)}`)));
+    // An engine too stuck to hear it is ended, as the watchdog does, and the turn counts as stopped.
+    setTimeout(() => {
+      if (current?.jobId !== jobId) return;
+      console.log(yellow(`  ${engine.label} did not stop; ending it`));
+      endedOnStop.add(jobId);
+      engine.kill();
+    }, KILL_GRACE_MS);
   };
   // Messages the owner sent while the turn runs, and those already handed to the engine.
   let pendingSteers: Array<{ _id: Id<"codexSteers">; turnId: Id<"codexTurns">; prompt: string; attachments?: Doc<"codexTurns">["attachments"] }> = [];
@@ -707,19 +749,21 @@ async function main() {
             if (job.kind === "compact") {
               if (!job.resumeCursor) throw new Error("This chat has no session to compact yet.");
               console.log(dim(`  compacting a chat's ${engine.label} session`));
-              dog = watchdog(engine, COMPACT_TIMEOUT_MS, () => undefined);
+              dog = watchdog(engine, { maxMs: COMPACT_TIMEOUT_MS }, () => undefined);
               await compact(engine, job.resumeCursor, job.access, job.requestedModel).finally(dog.done);
               result = { response: "Compacted.", compacted: true, model: runLabel(undefined, undefined, undefined, kind) };
             } else {
               const sink: TurnSink = {
                 onSession: (cursor, replaces) => client.mutation(api.codex.setResume, { token, id: job._id, cursor, ...(replaces ? { replaces } : {}) }),
                 onStarted: (handle) => {
+                  dog?.active();
                   current = { jobId: job._id, engine, handle };
                   void client.mutation(api.codex.setCodexTurn, { token, id: job._id, codexTurnId: handle.turnId }).catch(() => {});
                   interruptIfAsked();
                   steerIfAsked();
                 },
                 onEvent: (event) => {
+                  dog?.active();
                   if (event.type === "text") {
                     if (event.stream !== "assistant") return;
                     latest = event.text;
@@ -731,9 +775,12 @@ async function main() {
                     schedule();
                   }
                 },
-                onRequest: (request) => answer(request, job.conversationId, kind),
+                onRequest: (request) => {
+                  asking += 1;
+                  return answer(request, job.conversationId, kind).finally(() => { asking -= 1; dog?.active(); });
+                },
               };
-              dog = watchdog(engine, TURN_TIMEOUT_MS, () => current?.jobId === job._id ? current.handle : undefined);
+              dog = watchdog(engine, { idleMs: TURN_IDLE_MS, maxMs: TURN_TIMEOUT_MS }, () => current?.jobId === job._id ? current.handle : undefined, () => patience[job._id] ?? 0);
               const outcome: TurnResult = await engine.runTurn({
                 resumeCursor: job.resumeCursor,
                 instructions: job.instructions,
@@ -749,20 +796,23 @@ async function main() {
               }, sink).finally(dog.done);
               const media = await keepMedia(job._id, job.channel, outcome.images);
               // A late failure keeps what the turn had already produced.
-              const failed = outcome.state === "failed" || dog.expired();
+              const ended = endedOnStop.has(job._id);
+              const failed = (outcome.state === "failed" && !ended) || dog.expired();
               result = {
-                ...(failed ? { error: dog.expired() ? dog.why : outcome.error ?? `The ${engine.label} turn failed.` } : {}),
+                ...(failed ? { error: dog.expired() ? dog.why() : outcome.error ?? `The ${engine.label} turn failed.` } : {}),
                 ...(outcome.text || !failed ? { response: outcome.text } : {}),
-                ...(!failed && outcome.state !== "completed" ? { stopped: true } : {}),
+                ...(ended || (!failed && outcome.state !== "completed") ? { stopped: true } : {}),
                 ...(outcome.compacted ? { compacted: true } : {}),
                 model: label,
                 ...(media.length ? { media } : {}),
               };
             }
           } catch (error) {
-            result = { error: dog?.expired() ? dog.why : message(error), model: label };
+            result = endedOnStop.has(job._id) ? { stopped: true, model: label } : { error: dog?.expired() ? dog.why() : message(error), model: label };
           } finally {
             current = null;
+            stopping.delete(job._id);
+            endedOnStop.delete(job._id);
           }
           if (streamTimer) clearTimeout(streamTimer);
           // A steer still being answered must be recorded as applied or not
@@ -786,6 +836,9 @@ async function main() {
   watch(api.codex.queuedTurns, { token }, (jobs) => {
     turnQueue = jobs ?? [];
     void pumpTurns();
+  });
+  watch(api.codex.turnPatience, { token }, (until) => {
+    patience = until ?? {};
   });
   watch(api.codex.stopRequests, { token }, (ids) => {
     stopRequested = new Set(ids ?? []);

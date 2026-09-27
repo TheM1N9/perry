@@ -358,7 +358,7 @@ export class CodexEngine implements Engine {
       : `${instructions}\n\n${home}${sandboxed}`;
     const policy = full ? "never" : auto ? "untrusted" : "on-request";
     const sandbox: SandboxMode = full || auto ? "danger-full-access" : sandboxMode();
-    // The deployment's own tools: memory, connected accounts, task tracking. Codex takes them over HTTP.
+    // Perry's own tools (convex/mcp.ts): memory, connected accounts, the web, jobs, tasks and the rest. Codex takes them over HTTP.
     const config = {
       ...(tools ? {
         [`mcp_servers.${ASSISTANT_MCP}`]: {
