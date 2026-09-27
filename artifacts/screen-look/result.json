@@ -1,0 +1,75 @@
+{
+  "ranAt": "2026-09-27T09:10:49.993Z",
+  "checks": {
+    "petTakesTheLookKeys": true,
+    "hotkeyPictureWaitsInTheChat": true,
+    "previewSwitchesRemovesAndRetakes": true,
+    "pictureGoesWithTheMessage": true,
+    "perryReadsThePicture": true,
+    "previewGoneOnceSent": true,
+    "chatShowsThePicture": true,
+    "talkKeysStillReported": true,
+    "settingsListsLookAndItsStanding": true,
+    "noPageErrors": true,
+    "realPictureIsTheWindowInFront": true,
+    "realScreenPicture": true,
+    "realPetTakesTheLookKeys": true,
+    "ownersPetUntouched": true
+  },
+  "notes": {
+    "hotkeyPictureWaitsInTheChat": {
+      "text": "Windows PowerShell\n\nGoes with your next message.\n\nThis window\nWhole screen",
+      "pressed": [
+        "This window"
+      ]
+    },
+    "previewSwitchesRemovesAndRetakes": {
+      "switched": "Whole screen\n\nGoes with your next message.\n\nThis window\nWhole screen",
+      "removed": true
+    },
+    "pictureGoesWithTheMessage": {
+      "id": "ms85h9m8hpfcs08ycg3a13hbfr",
+      "role": "user",
+      "text": "What went wrong here, and what should I do? Two short lines.",
+      "createdAt": 1790500236583,
+      "attachments": [
+        {
+          "url": "/api/media/abq4ge18medddf39k7qejcway4",
+          "fileName": "screen-2026-09-27-09-10-28.png",
+          "contentType": "image/png"
+        }
+      ]
+    },
+    "perryReadsThePicture": "`npm install` failed because the drive ran out of space (`ENOSPC`).\nFree up disk space or move the project to a roomier drive, then rerun `npm install`.",
+    "chatShowsThePicture": {
+      "shown": true,
+      "served": 200
+    },
+    "talkKeysStillReported": "Talk to Perry\n\nAnywhere on this computer, with the desktop pet running: hold, speak and let go, or tap, speak and tap again.\n\nWorking in the desktop pet.\n\nCtrl\nShift\nSpace",
+    "settingsListsLookAndItsStanding": {
+      "working": "Show Perry the screen\n\nAnywhere on this computer, with the desktop pet running: a picture of the window you're in goes into his chat, for you to check and ask about.\n\nWorking in the desktop pet.\n\nCtrl\nAlt\nShift\nSpace",
+      "restart": "Show Perry the screen\n\nAnywhere on this computer, with the desktop pet running: a picture of the window you're in goes into his chat, for you to check and ask about.\n\nRestart the desktop pet for this one: Quit from his tray icon, then turn him on again.\n\nCtrl\nAlt\nShift\nSpace"
+    },
+    "noPageErrors": [],
+    "perryPet": [
+      "",
+      "  ✔ Electron ready",
+      "  ✔ on your screen"
+    ],
+    "realPictureIsTheWindowInFront": {
+      "steady": true,
+      "isTheFront": true,
+      "clickThrough": false
+    },
+    "realScreenPicture": {
+      "screenBytes": 671090
+    },
+    "realPetTakesTheLookKeys": {
+      "hotkey": "CommandOrControl+Alt+Shift+Space"
+    },
+    "perryPetOff": [
+      "✔ stopped, and no longer starts at login"
+    ]
+  },
+  "passed": true
+}
