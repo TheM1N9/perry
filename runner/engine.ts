@@ -76,7 +76,11 @@ export type EngineCapabilities = {
   compaction: { type: "native" } | { type: "slash-command"; command: string } | { type: "none" };
   /** It asks before acting (approval requests reach onRequest); without them, access is its own. */
   approvals: boolean;
-  /** The access levels it can honour, by OS. */
+  /**
+   * The access levels it can honour inside an OS sandbox, by OS. An OS left
+   * out has no sandbox (Claude Code on native Windows): there Supervised is
+   * honoured by approvals alone, and Auto and Full as usual.
+   */
   sandbox: Partial<Record<NodeJS.Platform, readonly Access[]>>;
   /** It takes images as input. */
   images: boolean;
