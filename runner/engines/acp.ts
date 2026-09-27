@@ -22,7 +22,7 @@ import { killTree, spawnEngine } from "./process";
 /**
  * Engines that speak the Agent Client Protocol (ACP, v1): a coding agent's own
  * CLI started as `<cli> acp` or the like, driven over stdio with the official
- * SDK (@agentclientprotocol/sdk). Grok Build, Cursor and Antigravity each
+ * SDK (@agentclientprotocol/sdk). Grok Build and Antigravity each
  * extend AcpEngine with how to start their agent, what their modes are called,
  * and their own status, sign-in and sign-out, which ACP does not cover without
  * starting a session.
@@ -73,7 +73,14 @@ function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
  * dropped and noted, rather than held without limit or allowed to end the
  * connection. Replays are dropped anyway, and a dropped answer times out.
  */
-export function cappedLines(input: Readable, maxBytes: number, onDrop: (bytes: number) => void): ReadableStream<Uint8Array> {
+export function cappedLines(input: Readable, maxBytes: number, onDrop: (bytes: number) => void, onText: (line: string) => void = () => {}): ReadableStream<Uint8Array> {
+  // A line that is not JSON (Antigravity prints its sign-in link on stdout) goes aside, not to the JSON-RPC parser.
+  const pass = (controller: ReadableStreamDefaultController<Uint8Array>, line: Buffer) => {
+    const first = line.find((byte) => byte !== 32 && byte !== 9 && byte !== 13 && byte !== 10);
+    if (first === undefined) return;
+    if (first === 123 || first === 91) controller.enqueue(new Uint8Array(line));
+    else onText(line.toString("utf8").trim());
+  };
   let parts: Buffer[] = [];
   let length = 0;
   let dropping = false;
@@ -99,7 +106,7 @@ export function cappedLines(input: Readable, maxBytes: number, onDrop: (bytes: n
           }
           if (newline === -1) continue;
           if (dropping) onDrop(dropped);
-          else controller.enqueue(new Uint8Array(Buffer.concat(parts, length)));
+          else pass(controller, Buffer.concat(parts, length));
           parts = [];
           length = 0;
           dropping = false;
@@ -107,7 +114,7 @@ export function cappedLines(input: Readable, maxBytes: number, onDrop: (bytes: n
         }
       });
       input.on("end", () => {
-        if (!dropping && length) controller.enqueue(new Uint8Array(Buffer.concat(parts, length)));
+        if (!dropping && length) pass(controller, Buffer.concat(parts, length));
         try { controller.close(); } catch {}
       });
       input.on("error", (error) => { try { controller.error(error); } catch {} });
@@ -115,8 +122,13 @@ export function cappedLines(input: Readable, maxBytes: number, onDrop: (bytes: n
   });
 }
 
-/** What starts the agent's ACP server. */
-export type AcpLaunch = { command: string; args: string[]; env?: Record<string, string> };
+/**
+ * What starts the agent's ACP server. `cwd` is where it starts (Antigravity
+ * runs from its own folder). `env` adds to the runner's environment, or with
+ * `fullEnv` is all of it, for an agent that must not see some of the owner's
+ * variables (Antigravity).
+ */
+export type AcpLaunch = { command: string; args: string[]; env?: Record<string, string>; cwd?: string; fullEnv?: boolean };
 
 /** How Perry's own tools (its MCP server) reach the agent's sessions. */
 export type ToolsVia =
@@ -149,6 +161,14 @@ export type AcpOptions = {
   maxLineBytes?: number;
   /** `_meta` for session/new, load and resume: an agent's own switches (Grok Build's yoloMode). */
   sessionMeta?: Record<string, unknown>;
+  /** How long `authenticate` may take: a sign-in in a browser takes minutes. */
+  authMs?: number;
+  /**
+   * For an agent that may answer end_turn before it has said anything and
+   * send the reply after (Antigravity): how long such a turn waits for it. 0
+   * ends the turn at end_turn, as ACP says.
+   */
+  lateReplyMs?: number;
 };
 
 /** A session the agent has loaded, as this process knows it. */
@@ -266,6 +286,12 @@ export abstract class AcpEngine implements Engine {
   protected readonly options: Required<AcpOptions>;
   private conn: Connection | null = null;
   private starting: Promise<Connection> | null = null;
+  /**
+   * Every agent process this engine started and has not seen exit. One still
+   * starting, or being closed, is not `conn`, and must not outlive the runner
+   * either.
+   */
+  private readonly children = new Set<ChildProcessWithoutNullStreams>();
   /** Models and efforts seen in a session's config options: what status() reports when the CLI cannot list them. */
   private learned: EngineModel[] | null = null;
 
@@ -279,6 +305,8 @@ export abstract class AcpEngine implements Engine {
       replayQuietMs: 500,
       replayMaxMs: 15_000,
       sessionMeta: {},
+      authMs: options.startupMs ?? 60_000,
+      lateReplyMs: 0,
       ...options,
       // The owner's settings win over the engine's own.
       idleMs: Number(process.env.PERRY_ACP_IDLE_MS) || options.idleMs || 5 * 60_000,
@@ -294,6 +322,14 @@ export abstract class AcpEngine implements Engine {
 
   /** Before a session starts in `cwd`: where an agent that ignores session/new's MCP servers reads them from. */
   protected async prepareSession(_cwd: string, _tools: PerryTools | undefined): Promise<void> {}
+
+  /** The auth methods to try, in order; an engine whose way in the owner picks says so here. */
+  protected authMethods(): string[] {
+    return this.options.authMethods;
+  }
+
+  /** A line the agent printed on stdout that is not JSON-RPC, such as a sign-in link. */
+  protected onText(_line: string): void {}
 
   /** Whether an error means the agent is not signed in. */
   protected isAuthError(error: unknown): boolean {
@@ -314,11 +350,16 @@ export abstract class AcpEngine implements Engine {
 
   private async start(): Promise<Connection> {
     const launch = await this.launch();
-    const child = spawnEngine(launch.command, launch.args, { ...process.env, ...launch.env });
+    const child = spawnEngine(launch.command, launch.args, launch.fullEnv ? launch.env as NodeJS.ProcessEnv : { ...process.env, ...launch.env }, launch.cwd);
+    this.children.add(child);
+    child.once("exit", () => this.children.delete(child));
+    child.once("error", () => this.children.delete(child));
     const state = { closed: false, stderr: "" };
     child.stderr.on("data", (chunk: Buffer) => { state.stderr = (state.stderr + chunk).slice(-4000); });
     const lines = cappedLines(child.stdout, this.options.maxLineBytes, (bytes) =>
-      this.warn(`${this.label} sent a message of ${Math.round(bytes / 1048576)} MB; it was skipped.`));
+      this.warn(`${this.label} sent a message of ${Math.round(bytes / 1048576)} MB; it was skipped.`),
+      (line) => { state.stderr = `${state.stderr}
+${line}`.slice(-4000); this.onText(line); });
     const stream = ndJsonStream(Writable.toWeb(child.stdin) as WritableStream<Uint8Array>, lines);
     const sessions = new Map<string, Session>();
     // Params pass through as sent: an agent a version ahead may add fields the SDK's schema does not know.
@@ -358,9 +399,9 @@ export abstract class AcpEngine implements Engine {
   /** Sign the connection in with the first of our methods the agent offers, as its CLI already is. */
   private async authenticate(conn: Connection) {
     const offered = new Set((conn.init.authMethods ?? []).map((method) => method.id));
-    const methodId = this.options.authMethods.find((id) => offered.has(id));
+    const methodId = this.authMethods().find((id) => offered.has(id));
     if (!methodId) return;
-    await within(conn.agent.request("authenticate", { methodId }), this.options.startupMs, `${this.label}'s sign-in`);
+    await within(conn.agent.request("authenticate", { methodId }), this.options.authMs, `${this.label}'s sign-in`);
   }
 
   /**
@@ -379,8 +420,16 @@ export abstract class AcpEngine implements Engine {
     force.unref?.();
   }
 
+  /**
+   * End every agent process now, each with its whole tree. The runner calls
+   * this as it exits, so there is no waiting for the agent to save and stop:
+   * a timer to end it later would never fire, and on Windows an agent that
+   * ignores its stdin closing (Antigravity's server) would be left running.
+   */
   kill(): void {
-    if (this.conn) this.close(this.conn);
+    if (this.conn) this.close(this.conn, false);
+    for (const child of this.children) killTree(child, "SIGKILL");
+    this.children.clear();
   }
 
   // --- Models learned from sessions -------------------------------------------
@@ -610,6 +659,7 @@ export abstract class AcpEngine implements Engine {
         // A steer queued behind a stopped reply would start next: it is stopped too.
         if ((turn.interrupted || turn.stalled) && turn.prompts.size && !conn.closed) void conn.agent.notify("session/cancel", { sessionId: session.id }).catch(() => {});
       }
+      if (this.options.lateReplyMs && last?.stopReason === "end_turn" && !turn.reply && !turn.tools.size) await this.lateReply(conn, turn);
     } finally {
       clearInterval(watchdog);
       this.endThought(turn);
@@ -635,6 +685,22 @@ export abstract class AcpEngine implements Engine {
     }
   }
 
+  /**
+   * An empty end_turn from an agent that sends its reply after it: the turn
+   * stays open until the reply has come and gone quiet for a few seconds, or
+   * nothing has come in `lateReplyMs`. A stop or the watchdog still ends it.
+   */
+  private async lateReply(conn: Connection, turn: Turn) {
+    const since = Date.now();
+    turn.lastActivity = since;
+    const quietMs = Math.min(5_000, this.options.lateReplyMs);
+    while (!conn.closed && !turn.interrupted && !turn.stalled) {
+      await new Promise((done) => setTimeout(done, 250));
+      const heard = turn.lastActivity > since;
+      if (Date.now() - turn.lastActivity >= (heard ? quietMs : this.options.lateReplyMs)) return;
+    }
+  }
+
   /** Send one prompt into the turn's session; the turn waits for it with the others. */
   private send(conn: Connection, session: Session, turn: Turn, prompt: ContentBlock[]) {
     const sent = conn.agent.request("session/prompt", { sessionId: session.id, prompt });
@@ -656,7 +722,8 @@ export abstract class AcpEngine implements Engine {
    * agent is ended and the session resumed on the next turn.
    */
   private checkIdle(conn: Connection, session: Session, turn: Turn) {
-    if (turn.stalled || turn.asking > 0 || Date.now() - turn.lastActivity < this.options.idleMs) return;
+    // A reply the owner stopped is already being ended: it stays "stopped", not "stopped responding".
+    if (turn.stalled || turn.interrupted || turn.asking > 0 || Date.now() - turn.lastActivity < this.options.idleMs) return;
     turn.stalled = true;
     this.warn(`${this.label} sent nothing for ${Math.round(this.options.idleMs / 1000)}s; stopping the reply.`);
     this.cancel(conn, session, turn);

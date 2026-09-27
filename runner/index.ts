@@ -255,7 +255,13 @@ async function main() {
 
   // --- Engines ---------------------------------------------------------------
 
-  const engines = createEngines({ warn: (line) => console.log(yellow(`  ${line}`)) });
+  const engines = createEngines({
+    warn: (line) => console.log(yellow(`  ${line}`)),
+    // A key from Settings → Keys an engine needs on this computer (Antigravity's Gemini API key).
+    secret: async (name) => name === "GEMINI_API_KEY" ? (await client.query(api.engines.secret, { token, name })) ?? undefined : undefined,
+  });
+  // However the runner ends (stopped, a crash, its console closed), the agents it started end with it.
+  process.on("exit", () => { for (const engine of engines.values()) engine.kill(); });
   /** What each engine's last probe found. */
   const statuses = new Map<EngineKind, EngineStatus>();
   const probeEngines = async () => {
@@ -495,7 +501,7 @@ async function main() {
   console.log(green("  connected.\n"));
 
   /** Sign an engine in or out, as asked in Settings, saying what the owner must do meanwhile. */
-  const handleAuth = async (request: { engine: EngineKind; id: number; kind: "login" | "logout" }) => {
+  const handleAuth = async (request: { engine: EngineKind; id: number; kind: "login" | "logout"; method?: string }) => {
     const claimed = await client.mutation(api.engines.claimAuth, { token, engine: request.engine, id: request.id });
     if (!claimed) return;
     const update = (payload: Omit<FunctionArgs<typeof api.engines.updateAuth>, "token" | "engine" | "id">) =>
@@ -506,7 +512,9 @@ async function main() {
       if (request.kind === "logout") {
         await engine.logout();
       } else {
-        const flow = await engine.login();
+        const flow = await engine.login(request.method);
+        // A sign-in can fail before it is awaited below (a bad download, say); unhandled, that would end the runner.
+        flow.done.catch(() => {});
         if (flow.interaction) await update({ status: "running", interaction: flow.interaction });
         await flow.done;
       }
@@ -827,6 +835,8 @@ async function main() {
 
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
+  // Its terminal or console window closed.
+  process.on("SIGHUP", stop);
 }
 
 /**

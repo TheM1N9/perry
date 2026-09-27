@@ -18,6 +18,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 export const SECRET_NAMES = [
   "TELEGRAM_BOT_TOKEN",
   "COMPOSIO_API_KEY",
+  "GEMINI_API_KEY",
 ] as const;
 
 export type SecretName = (typeof SECRET_NAMES)[number];
@@ -34,6 +35,10 @@ export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> 
   COMPOSIO_API_KEY: {
     label: "Composio key",
     hint: "Gmail, Calendar, Notion and the rest. Without it no accounts can be connected.",
+  },
+  GEMINI_API_KEY: {
+    label: "Gemini API key",
+    hint: "For Antigravity (Settings → General → Engines), from aistudio.google.com/apikey. Only Antigravity's server on your computer gets it.",
   },
 };
 

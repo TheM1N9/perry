@@ -104,13 +104,16 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
     ? `${engine.auth.label ?? "Signed in"}${plan}${engine.auth.email ? ` · ${engine.auth.email}` : ""}`
     : engine.auth.type ? `${engine.label} is using ${engine.auth.label ?? engine.auth.type}` : "Not signed in";
   const interaction = request?.status === "running" ? request.interaction : undefined;
-  const ask = (kind: "login" | "logout") => requestAuth({ key: dashboardKey, runnerId, engine: engine.kind, kind });
+  const ask = (kind: "login" | "logout", method?: string) => requestAuth({ key: dashboardKey, runnerId, engine: engine.kind, kind, ...(method ? { method } : {}) });
+  // Antigravity is experimental: a Gemini API key is the way in, and Google's own sign-in comes with Google's warning.
+  const experimental = engine.kind === "antigravity";
   return (
     <div className="py-3 first:pt-1 last:pb-0" aria-label={`${engine.label} on ${computer}`}>
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{engine.label}</span>
+            {experimental && <StatusBadge tone="warning">Experimental</StatusBadge>}
             <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
             {engine.version && <span className="text-xs text-muted-foreground">{engine.version}</span>}
           </div>
@@ -121,8 +124,21 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
           ? <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={Boolean(unavailable) || pending}
               action={() => ask("logout")}
               confirm={{ title: `Sign out of ${engine.label} on ${computer}?`, body: `Perry can't use ${engine.label} on this computer until you sign in again.`, label: "Sign out" }}>Sign out</ActionButton>
-          : <ActionButton size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login")}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>}
+          : experimental
+            ? (
+              <div className="flex flex-wrap gap-2">
+                <ActionButton size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login", "gemini-api-key")}>Use Gemini API key</ActionButton>
+                <ActionButton variant="outline" size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login", "oauth-personal")}
+                  confirm={{ title: "Sign in with Google? (Experimental)", body: <GoogleWarning />, label: "Sign in anyway" }}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>
+              </div>
+            )
+            : <ActionButton size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login")}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>}
       </div>
+      {experimental && !engine.signedIn && (
+        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+          Perry runs Google&apos;s own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved in the Keys tab. Signing in with Google also works, at your own risk: <GoogleWarning inline />
+        </p>
+      )}
       {engine.error && <p className="mt-2 text-sm text-destructive">{engine.error}</p>}
       {request?.status === "queued" && <Waiting>Waiting for the computer to pick this up…</Waiting>}
       {request?.status === "running" && request.kind === "logout" && <Waiting>Signing out…</Waiting>}
@@ -164,6 +180,23 @@ function LoginSteps({ engine, interaction }: { engine: string; interaction: Logi
       )}
       {interaction.type === "credentials" && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{interaction.message}</p>}
     </div>
+  );
+}
+
+/** Google's own words on third-party access to Antigravity, from its FAQ. */
+function GoogleWarning({ inline }: { inline?: boolean }) {
+  const quote = (
+    <>
+      Google&apos;s <a className="underline underline-offset-2" href="https://antigravity.google/docs/faq/" target="_blank" rel="noopener noreferrer">Antigravity FAQ</a> says
+      “Using third party software, tools, or services to access Antigravity is a violation of our Terms of Service … may be grounds for suspension or termination of your account.”
+    </>
+  );
+  if (inline) return quote;
+  return (
+    <span className="grid gap-2 text-pretty">
+      <span>{quote}</span>
+      <span>Perry runs only Google&apos;s official ACP server, signed in with your own Google account in a browser on that computer, and never sees or keeps the sign-in. Google may still treat it as third-party access. A Gemini API key is the safer way in.</span>
+    </span>
   );
 }
 
