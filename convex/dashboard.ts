@@ -14,7 +14,7 @@ import { engineOf, type EngineKind } from "./lib/engines";
 import type { CatalogApp, ConnectedAccount } from "./composio";
 import { policyOf, type Policy } from "./runner";
 import { vAccess, vEngine, vMemoryKind, vPolicy } from "./schema";
-import { pickPatch } from "./engines";
+import { defaultEngine, pickPatch } from "./engines";
 import { APPROVAL_TTL_MS } from "./approvals";
 import { QUIET } from "./jobs";
 import type { VaultEntry } from "./vault";
@@ -221,6 +221,7 @@ export const createChat = mutation({
       threadId,
       title: "New chat",
       access: await defaultAccess(ctx),
+      engine: await defaultEngine(ctx),
       lastMessageAt: Date.now(),
     });
   },
@@ -833,9 +834,10 @@ export const setChatAccess = mutation({
 
 /** The access new chats start with, for Settings and the composer of a chat not yet sent. */
 /**
- * A new chat starts on the model and thinking level of the chat written in
- * last, so a pick carries over without a setting of its own. A scheduled job's
- * chat has its own model, and is passed over.
+ * A new chat starts on the owner's default engine, with the model and
+ * thinking level of the chat on it written in last, so a pick carries over
+ * without a setting of its own; with none, the engine's default model. A
+ * scheduled job's chat has its own model, and is passed over.
  */
 export const getLastPicks = query({
   args: { key: vKey },
@@ -846,8 +848,9 @@ export const getLastPicks = query({
       .order("desc")
       .take(20);
     // A chat sent from the composer always has its model; the welcome chat and the like leave it unset.
-    const last = recent.find((chat) => !chat.jobId && chat.model);
-    return { engine: last ? engineOf(last) : undefined, model: last?.model, effort: last?.effort };
+    const engine = await defaultEngine(ctx);
+    const last = recent.find((chat) => !chat.jobId && chat.model && engineOf(chat) === engine);
+    return { engine, model: last?.model, effort: last?.effort };
   },
 });
 
@@ -1185,6 +1188,7 @@ async function startWelcomeChat(
     threadId,
     title: options.title,
     access: await defaultAccess(ctx),
+    engine: await defaultEngine(ctx),
     lastMessageAt: Date.now(),
     pendingTurns: 1,
   });

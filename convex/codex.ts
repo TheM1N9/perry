@@ -10,7 +10,7 @@ import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
 import { hide, savedValues } from "./vault";
 import { takeFromOutbox } from "./conversations";
-import { engineReady, isOnline, recordEngines, resumeOf, statusesOf } from "./engines";
+import { engineReady, isOnline, recordEngines, resumeOf, signedInEngines, statusesOf } from "./engines";
 import { vAccess, vCodexModel, vEngine, vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
 
@@ -194,12 +194,18 @@ export const enqueueTurn = internalMutation({
 /** Why no runner can take the chat's turn, and what to do about it. */
 async function noRunner(ctx: MutationCtx, conversation: Doc<"conversations">, engine: EngineKind): Promise<string> {
   const pinned = conversation.codexRunnerId ? await ctx.db.get(conversation.codexRunnerId) : null;
+  const label = ENGINE_LABELS[engine];
+  // The chat stays on its engine: it says what is missing rather than move to another one.
+  const nowhere = `${label} isn't signed in on any computer. Sign in to it in Settings, or pick another engine's model.`;
+  const { online } = await signedInEngines(ctx);
   if (pinned && isOnline(pinned)) {
-    return `${ENGINE_LABELS[engine]} isn't signed in on ${pinned.name}. Sign in to it in Settings, or pick a model from another engine.`;
+    return online.has(engine)
+      ? `${label} isn't signed in on ${pinned.name}. Sign in to it there in Settings, or pick another engine's model.`
+      : nowhere;
   }
-  return conversation.codexRunnerId
-    ? "The runner for this chat is offline. Start Perry on its computer (perry start) to continue."
-    : "Sign in to an engine in Settings and start Perry's runner (perry start) to chat.";
+  if (conversation.codexRunnerId) return "The runner for this chat is offline. Start Perry on its computer (perry start) to continue.";
+  const anyOnline = (await ctx.db.query("runners").order("desc").take(20)).some(isOnline);
+  return anyOnline ? nowhere : "Sign in to an engine in Settings and start Perry's runner (perry start) to chat.";
 }
 
 /**
@@ -236,8 +242,9 @@ export const queuedTurns = query({
   handler: async (ctx, args) => {
     const runner = await authenticate(ctx, args.token);
     return await ctx.db.query("codexTurns")
+      // Enough that one engine's backlog does not hide another engine's turn, which runs beside it.
       .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "queued"))
-      .order("asc").take(20);
+      .order("asc").take(100);
   },
 });
 
@@ -366,10 +373,17 @@ export const claimTurn = mutation({
     if (!job || job.runnerId !== runner._id || job.status !== "queued" || !engineReady(runner, engine)) return null;
     const conversation = await ctx.db.get(job.conversationId);
     if (!conversation) return null;
+    // A chat has one turn running at a time, and its turns run in the order they came: the
+    // runner runs engines side by side, so a later turn on another engine must not go first.
     const running = await ctx.db.query("codexTurns")
       .withIndex("by_conversation_status", (q) => q.eq("conversationId", job.conversationId).eq("status", "running"))
       .first();
     if (running) return null;
+    const queued = await ctx.db.query("codexTurns")
+      .withIndex("by_conversation_status", (q) => q.eq("conversationId", job.conversationId).eq("status", "queued"))
+      .collect();
+    // One whose engine was signed out here since cannot run, and holds nothing back.
+    if (queued.some((turn) => turn.runnerId === runner._id && turn._creationTime < job._creationTime && engineReady(runner, engineOf(turn)))) return null;
     await ctx.db.patch(job._id, { status: "running", startedAt: Date.now() });
     // The chat's session, when it is on this turn's engine; a chat moved to another engine since starts one.
     const resume = resumeOf(conversation);

@@ -7,10 +7,14 @@
  * Pure, with no server imports, so the browser bundle and the runner use it too.
  */
 
+/** In the order the default engine falls back through when the owner's pick isn't signed in (engines.defaultEngine). */
 export const ENGINES = ["codex", "claude", "grok", "cursor", "antigravity"] as const;
 export type EngineKind = (typeof ENGINES)[number];
 
-/** Chats, turns and jobs from before engines ran on Codex, and leave it unset. */
+/**
+ * Chats, turns and jobs from before engines ran on Codex, and leave it unset.
+ * Not the owner's default engine, which new chats are created with (engines.defaultEngine).
+ */
 export const DEFAULT_ENGINE: EngineKind = "codex";
 
 export const ENGINE_LABELS: Record<EngineKind, string> = {

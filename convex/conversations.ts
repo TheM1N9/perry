@@ -4,7 +4,8 @@ import type { Doc } from "./_generated/dataModel";
 import { defaultAccess } from "./installation";
 import { vAccess, vChannel, vEngine } from "./schema";
 import { deleteThread } from "./lib/agent";
-import { FORGET_SESSION, pickPatch } from "./engines";
+import { defaultEngine, FORGET_SESSION, pickPatch } from "./engines";
+import { engineOf } from "./lib/engines";
 
 /**
  * Rewind a web chat for a regenerate or an edit: its engine session has seen
@@ -150,6 +151,8 @@ export const create = internalMutation({
       threadId: args.threadId,
       title: args.title,
       access: await defaultAccess(ctx),
+      // A new Telegram or WhatsApp chat, or the web's first, starts on the owner's default engine.
+      engine: await defaultEngine(ctx),
       lastMessageAt: Date.now(),
     });
   },
@@ -243,6 +246,7 @@ export const createBranch = internalMutation({
       channel: "web",
       externalId: `session:${args.threadId}`,
       threadId: args.threadId,
+      engine: engineOf(parent),
       model: parent.model,
       effort: parent.effort,
       access: parent.access,

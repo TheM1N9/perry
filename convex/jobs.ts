@@ -8,6 +8,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { ABSOLUTE_PATH } from "./media";
 import { vEngine, vTrigger } from "./schema";
 import { engineOf, type EngineKind } from "./lib/engines";
+import { defaultEngine } from "./engines";
 
 /**
  * Proactivity: named jobs that run a prompt as a Codex turn, either on a cron
@@ -203,6 +204,7 @@ export const chatFor = internalMutation({
       threadId: args.threadId,
       title,
       jobId: job._id,
+      engine: job.model ? engineOf(job) : await defaultEngine(ctx),
       pendingTurns: 1,
       lastMessageAt: Date.now(),
     });
@@ -215,7 +217,8 @@ export const get = internalQuery({
   args: { id: v.id("jobs") },
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.id);
-    return job ? { job, timezone: await timezoneOf(ctx) } : null;
+    // A job with a model runs on its engine; one without, on the owner's default engine at the time it runs.
+    return job ? { job, timezone: await timezoneOf(ctx), engine: job.model ? engineOf(job) : await defaultEngine(ctx) } : null;
   },
 });
 
@@ -224,9 +227,9 @@ export const run = internalAction({
   args: { id: v.id("jobs"), since: v.optional(v.number()), event: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const found: { job: Doc<"jobs">; timezone: string } | null = await ctx.runQuery(internal.jobs.get, { id: args.id });
+    const found: { job: Doc<"jobs">; timezone: string; engine: EngineKind } | null = await ctx.runQuery(internal.jobs.get, { id: args.id });
     if (!found) return null;
-    const { job, timezone } = found;
+    const { job, timezone, engine } = found;
     // A thread is only created when the job has no chat yet; chatFor ignores it otherwise.
     const existing = job.conversationId
       ? await ctx.runQuery(internal.conversations.getWebById, { id: job.conversationId })
@@ -271,7 +274,8 @@ export const run = internalAction({
       externalId: chat.externalId,
       text: `${job.trigger ? "⚡" : "⏰"} ${job.name} (${now})\n\n${job.prompt}${context}\n\n${CONDITIONAL_DELIVERY}`,
       title: chat.title,
-      ...(job.model ? { model: job.model, engine: engineOf(job) } : {}),
+      ...(job.model ? { model: job.model } : {}),
+      engine,
     });
     return null;
   },

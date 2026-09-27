@@ -1,8 +1,8 @@
 import { v, type Infer } from "convex/values";
-import { mutation, query, type MutationCtx } from "./_generated/server";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
-import { ENGINE_LABELS, engineOf, type EngineKind, type LoginInteraction } from "./lib/engines";
+import { DEFAULT_ENGINE, ENGINE_LABELS, ENGINES, engineOf, type EngineKind, type LoginInteraction } from "./lib/engines";
 import { authenticate } from "./runner";
 import { vEngine, vEngineStatus, vLoginInteraction } from "./schema";
 
@@ -72,6 +72,68 @@ export async function recordEngines(ctx: MutationCtx, runner: Doc<"runners">, re
     } : {}),
   });
 }
+
+// --- The default engine -------------------------------------------------------
+
+/** Engines signed in on an online computer, and on any computer at all (one offline now included). */
+export async function signedInEngines(ctx: Pick<QueryCtx, "db">): Promise<{ online: Set<EngineKind>; anywhere: Set<EngineKind> }> {
+  const runners = (await ctx.db.query("runners").order("desc").take(20)).filter((runner) => !runner.revoked);
+  const online = new Set<EngineKind>();
+  const anywhere = new Set<EngineKind>();
+  for (const runner of runners) {
+    for (const status of statusesOf(runner)) {
+      if (!status.installed || !status.signedIn) continue;
+      anywhere.add(status.kind);
+      if (isOnline(runner)) online.add(status.kind);
+    }
+  }
+  return { online, anywhere };
+}
+
+/**
+ * The engine new chats, and jobs without a model, run on: the owner's pick
+ * (Settings, Engines) while it is signed in on an online computer; else the
+ * first that is, in ENGINES' order (Codex, Claude Code, Grok, Cursor,
+ * Antigravity); else one signed in on a computer that is offline now. With
+ * none signed in anywhere, the pick, or Codex. A chat keeps the engine it
+ * started on: changing the default, or an engine signing out, never moves it.
+ */
+export async function defaultEngine(ctx: Pick<QueryCtx, "db">): Promise<EngineKind> {
+  const picked = (await ctx.db.query("installation").first())?.defaultEngine;
+  const { online, anywhere } = await signedInEngines(ctx);
+  const order = picked ? [picked, ...ENGINES] : ENGINES;
+  return order.find((engine) => online.has(engine)) ?? order.find((engine) => anywhere.has(engine)) ?? picked ?? DEFAULT_ENGINE;
+}
+
+/** Settings' default engine: the pick, the engine it comes to, and those signed in to pick from. */
+export const getDefault = query({
+  args: { key: v.string() },
+  handler: async (ctx, args): Promise<{ picked?: EngineKind; engine: EngineKind; choices: Array<{ kind: EngineKind; label: string; online: boolean }> }> => {
+    assertDashboardKey(args.key);
+    const { online, anywhere } = await signedInEngines(ctx);
+    return {
+      picked: (await ctx.db.query("installation").first())?.defaultEngine,
+      engine: await defaultEngine(ctx),
+      choices: ENGINES.filter((engine) => anywhere.has(engine)).map((kind) => ({ kind, label: ENGINE_LABELS[kind], online: online.has(kind) })),
+    };
+  },
+});
+
+/** Pick the default engine, from those signed in on some computer. Chats already started keep theirs. */
+export const setDefault = mutation({
+  args: { key: v.string(), engine: vEngine },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const install = await ctx.db.query("installation").first();
+    if (!install) throw new Error("Run pnpm run setup first.");
+    if (!(await signedInEngines(ctx)).anywhere.has(args.engine)) {
+      throw new Error(`${ENGINE_LABELS[args.engine]} isn't signed in on any computer. Sign in to it first.`);
+    }
+    await ctx.db.patch(install._id, { defaultEngine: args.engine });
+    return null;
+  },
+});
 
 // --- A chat's engine session ------------------------------------------------
 
