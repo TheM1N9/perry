@@ -1,0 +1,228 @@
+{
+  "ranAt": "2026-09-27T14:23:07.017Z",
+  "engine": "cursor",
+  "agent": "fake (artifacts/engine-acp/fake-agent.ts --profile cursor)",
+  "codexModel": "gpt-6-luna",
+  "checks": {
+    "settingsListsAll": true,
+    "signInByCommand": true,
+    "modelsFromBoth": true,
+    "replyStreams": true,
+    "replySaved": true,
+    "modelSent": true,
+    "probesStartNothing": true,
+    "mcpThroughProjectFile": true,
+    "approvalDeclineReachesCursor": true,
+    "approvalAllowIsOnce": true,
+    "fullAccessAllowsOnce": true,
+    "stopCancels": true,
+    "steerQueuesAsNextTurn": true,
+    "compactSlashCommand": true,
+    "hungReplyWatchdog": true,
+    "resumeByLoad": true,
+    "switchCodexAndBack": true,
+    "signOut": true,
+    "userCursorUntouched": true,
+    "noPageErrors": true,
+    "runnerLogClean": true,
+    "agentsEndWithRunner": true
+  },
+  "notes": {
+    "settingsListsAll": {
+      "cursor": {
+        "kind": "cursor",
+        "label": "Cursor",
+        "installed": true,
+        "version": "2026.09.18-fake",
+        "signedIn": false,
+        "auth": {},
+        "message": "Run `agent login` on this computer to sign in with your Cursor account.",
+        "updatedAt": 1790518878563
+      },
+      "text": "Engines\n\nPerry thinks with a coding agent on your computer, signed in with your own subscription. The sign-in stays on that computer.\n\nDESKTOP-27SQLCP\nOnline\nCodex\nSigned in\n0.157.1\n\nChatGPT Plus · owner@example.com\n\nSign out\nGrok Build\nGrok Build unavailable\n\nNot signed in · Grok Build isn't installed or can't start on this computer.\n\nInstall Grok Build on this computer (npm install -g @xai-official/grok), then sign in here.\n\nSign in with Grok\n\n'grok' is not recognized as an internal or external command,\n\nCursor\nSigned out\n2026.09.18-fake\n\nNot signed in\n\nRun `agent login` on this computer to sign in with your Cursor account.\n\nSign in with Cursor"
+    },
+    "signInByCommand": {
+      "clicked": true,
+      "auth": {
+        "type": "cursor",
+        "label": "Cursor",
+        "email": "owner@example.com",
+        "plan": "pro"
+      },
+      "text": "Engines\n\nPerry thinks with a coding agent on your computer, signed in with your own subscription. The sign-in stays on that computer.\n\nDESKTOP-27SQLCP\nOnline\nCodex\nSigned in\n0.157.1\n\nChatGPT Plus · owner@example.com\n\nSign out\nGrok Build\nGrok Build unavailable\n\nNot signed in · Grok Build isn't instal"
+    },
+    "modelsFromBoth": {
+      "engines": [
+        {
+          "kind": "codex",
+          "label": "Codex"
+        },
+        {
+          "kind": "cursor",
+          "label": "Cursor"
+        }
+      ],
+      "cursor": [
+        {
+          "id": "cursor-fake-auto",
+          "name": "Auto",
+          "isDefault": true,
+          "engine": "cursor"
+        },
+        {
+          "id": "cursor-fake-sonnet",
+          "name": "Sonnet (fake)",
+          "isDefault": false,
+          "engine": "cursor"
+        }
+      ]
+    },
+    "replyStreams": {
+      "snapshots": 5
+    },
+    "replySaved": "Fake cursor reply to: Hello Cursor cursor-mujwo8n7. One two three four five six seven eight nine ten.",
+    "modelSent": {
+      "sets": [
+        "model=cursor-fake-sonnet"
+      ],
+      "run": "cursor/cursor-fake-sonnet"
+    },
+    "probesStartNothing": {
+      "starts": 1,
+      "launchedWith": [
+        "--approve-mcps",
+        "acp"
+      ]
+    },
+    "mcpThroughProjectFile": {
+      "memory": "Cursor check cursor-mujwo8n7: tools reach Cursor.",
+      "reply": "Saved it: remembered over stdio.",
+      "file": {
+        "mcpServers": {
+          "assistant": {
+            "command": "C:\\Users\\Pranav\\.bun\\bin\\bun.exe",
+            "args": [
+              "C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-a4a407777041add39\\runner\\mcp-bridge.ts"
+            ],
+            "env": {
+              "PERRY_MCP_URL": "http://127.0.0.1:56721/api/backend/http/mcp",
+              "PERRY_HOME": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-cursor-YRbQZl"
+            }
+          }
+        }
+      },
+      "tokenInFile": false,
+      "sessionNewServers": [],
+      "agentCwd": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-cursor-YRbQZl\\workspace",
+      "workspace": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-cursor-YRbQZl\\workspace"
+    },
+    "approvalDeclineReachesCursor": {
+      "title": "rm -rf ./build-cursor-mujwo8n7",
+      "outcome": {
+        "outcome": "selected",
+        "optionId": "reject-once"
+      }
+    },
+    "approvalAllowIsOnce": {
+      "outcome": {
+        "outcome": "selected",
+        "optionId": "allow-once"
+      }
+    },
+    "fullAccessAllowsOnce": {
+      "outcome": {
+        "outcome": "selected",
+        "optionId": "allow-once"
+      }
+    },
+    "stopCancels": {
+      "stopped": true,
+      "ranMs": 1666
+    },
+    "steerQueuesAsNextTurn": {
+      "steer": {
+        "status": "queued",
+        "error": "Cursor takes one message at a time"
+      },
+      "lastTurn": "Then mention pineapple cursor-mujwo8n7"
+    },
+    "compactSlashCommand": {
+      "status": "done"
+    },
+    "hungReplyWatchdog": {
+      "error": "Cursor stopped responding, so Perry stopped it. Send another message to carry on; the chat's session is kept.",
+      "oldAgentAlive": false
+    },
+    "resumeByLoad": {
+      "recall": "You said before: Hello Cursor cursor-mujwo8n7 | REMEMBER Cursor check cursor-mujwo8n7: tools reach Cursor. | RUN rm -rf ./build-cursor-mujwo8n7 | RUN echo allowed-cursor-mujwo8n7 | RUN echo full-curso"
+    },
+    "switchCodexAndBack": {
+      "codex": "switched-ok",
+      "cursor": "Fake cursor reply to: Back on Cursor cursor-mujwo8n7. One tw"
+    },
+    "signOut": true,
+    "userCursorUntouched": {
+      "path": "C:\\Users\\Pranav\\.cursor\\mcp.json",
+      "existed": false
+    },
+    "noPageErrors": [],
+    "runnerLogClean": [],
+    "agentsEndWithRunner": {
+      "agents": 2,
+      "stillRunning": []
+    },
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-cursor-YRbQZl\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn fwxnxxxxmb4sh6akhhfdh1kt7k\u001b[0m",
+      "\u001b[2m  saved turn 5n9nb91m4vvdc9j4qeqdktzkqm\u001b[0m",
+      "\u001b[1m  Assistant wants to run:\u001b[0m",
+      "    \u001b[36mrm -rf ./build-cursor-mujwo8n7\u001b[0m",
+      "\u001b[2m    in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-cursor-YRbQZl\\workspace\u001b[0m",
+      "\u001b[2m    The owner asked for it\u001b[0m",
+      "\u001b[2m    approve or decline it in the dashboard or on Telegram\u001b[0m",
+      "\u001b[2m  declined in the dashboard or on Telegram.\u001b[0m",
+      "\u001b[2m  saved turn 6x9xnbt3jkxkzzbek3ra0ytx67\u001b[0m",
+      "\u001b[1m  Assistant wants to run:\u001b[0m",
+      "    \u001b[36mecho allowed-cursor-mujwo8n7\u001b[0m",
+      "\u001b[2m    in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-cursor-YRbQZl\\workspace\u001b[0m",
+      "\u001b[2m    The owner asked for it\u001b[0m",
+      "\u001b[2m    approve or decline it in the dashboard or on Telegram\u001b[0m",
+      "\u001b[2m  approved in the dashboard or on Telegram.\u001b[0m",
+      "\u001b[2m  saved turn h6vm4zy07ywpfb6hj6v0z9a3kx\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Cursor does not ask\u001b[0m",
+      "\u001b[2m  saved turn nm02ymb76fd1kgdk778svs66cp\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Cursor does not ask\u001b[0m",
+      "\u001b[33m  stopping the Cursor turn, as asked\u001b[0m",
+      "\u001b[2m  saved turn ntvrpzbd9zxkj4tf74wyz8nj0v\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Cursor does not ask\u001b[0m",
+      "\u001b[33m  could not steer the Cursor turn, so the message waits its turn: Cursor takes one message at a time\u001b[0m",
+      "\u001b[2m  saved turn 84xcdg7gkzhd881jm3ezdjf484\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Cursor does not ask\u001b[0m",
+      "\u001b[2m  saved turn k32e026s77qmkjc45ykjhw4a64\u001b[0m",
+      "\u001b[2m  compacting a chat's Cursor session\u001b[0m",
+      "\u001b[2m  saved turn 6w9fxtba0vqw8w38vwsvfjgwpt\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Cursor does not ask\u001b[0m",
+      "\u001b[2m  named a chat \"Hello Cursor\" (gpt-6-luna)\u001b[0m",
+      "\u001b[33m  Cursor sent nothing for 8s; stopping the reply.\u001b[0m",
+      "\u001b[33m  Cursor did not stop; ending it. The chat's session resumes with the next message.\u001b[0m",
+      "\u001b[2m  saved turn nfb32fpwys9vwj0m823fjjfhww\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Cursor does not ask\u001b[0m",
+      "\u001b[2m  saved turn d13dvh6rv06yhex1851rncd2m2\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[2m  saved turn nse031s5tqjq46kh9g79rqr9yx\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Cursor does not ask\u001b[0m",
+      "\u001b[2m  saved turn cakehkf23n2ahg3sem7g7v8pcv\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}
