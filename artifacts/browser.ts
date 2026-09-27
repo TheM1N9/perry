@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,10 +9,32 @@ import { join } from "node:path";
  * Opens the dashboard at `base`, unlocks it with the dashboard key, and waits
  * for the chat to finish loading. Each Chrome has a DevTools port and a
  * profile of its own, so checks run side by side (another checkout's, or
- * another session's) never drive each other's pages.
+ * another session's) never drive each other's pages. Closing it ends Chrome
+ * and deletes its profile, which is 70 to 150 MB, so runs do not fill the disk.
  */
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Wait without an event loop, for cleanup that must finish before the process exits. */
+const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/** End Chrome and every process it started, then delete its profile once nothing holds its files. */
+function closeChrome(chrome: ChildProcess, profile: string) {
+  if (chrome.pid && chrome.exitCode === null) {
+    if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(chrome.pid), "/T", "/F"], { stdio: "ignore" });
+    else chrome.kill("SIGKILL");
+  }
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      rmSync(profile, { recursive: true, force: true });
+      return;
+    } catch {
+      // Chrome's helpers can hold a file for a moment after it exits.
+      pause(250);
+    }
+  }
+  console.error(`Could not delete the Chrome profile at ${profile}.`);
+}
 
 type CdpMessage = { id?: number; method?: string; params?: any; result?: any; error?: { message: string } };
 
@@ -26,10 +48,19 @@ const freePort = () => new Promise<number>((resolve, reject) => {
 
 export async function openChat(base: string, dashboardKey: string) {
   const port = await freePort();
+  const profile = mkdtempSync(join(tmpdir(), "perry-e2e-profile-"));
   const chrome = spawn("C:/Program Files/Google/Chrome/Application/chrome.exe", [
-    "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "perry-e2e-profile-"))}`,
+    "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     "--window-size=1280,800", "--autoplay-policy=no-user-gesture-required", "about:blank",
   ], { stdio: "ignore" });
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    closeChrome(chrome, profile);
+  };
+  // A check that throws or exits without closing still leaves no profile behind.
+  process.once("exit", close);
 
   let targets: Array<{ type: string; webSocketDebuggerUrl: string }> = [];
   for (let i = 0; i < 50 && !targets.some((target) => target.type === "page"); i++) {
@@ -84,6 +115,6 @@ export async function openChat(base: string, dashboardKey: string) {
     errors,
     /** Its DevTools port, for its list of pages. */
     port,
-    close: () => { ws.close(); chrome.kill(); },
+    close: () => { ws.close(); close(); },
   };
 }
