@@ -704,7 +704,7 @@ async function main() {
               result = { response: "Compacted.", compacted: true, model: runLabel(undefined, undefined, undefined, kind) };
             } else {
               const sink: TurnSink = {
-                onSession: (cursor) => client.mutation(api.codex.setResume, { token, id: job._id, cursor }),
+                onSession: (cursor, replaces) => client.mutation(api.codex.setResume, { token, id: job._id, cursor, ...(replaces ? { replaces } : {}) }),
                 onStarted: (handle) => {
                   current = { jobId: job._id, engine, handle };
                   void client.mutation(api.codex.setCodexTurn, { token, id: job._id, codexTurnId: handle.turnId }).catch(() => {});

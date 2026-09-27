@@ -388,7 +388,7 @@ export const claimTurn = mutation({
  * resume it. A chat moved to another engine since this turn was queued keeps
  * its own.
  */
-async function recordSession(ctx: MutationCtx, token: string, id: Id<"codexTurns">, cursor: string, version: number) {
+async function recordSession(ctx: MutationCtx, token: string, id: Id<"codexTurns">, cursor: string, version: number, replaces?: string) {
   const runner = await authenticate(ctx, token);
   const job = await ctx.db.get(id);
   if (!job || job.runnerId !== runner._id || job.status !== "running") return;
@@ -396,7 +396,8 @@ async function recordSession(ctx: MutationCtx, token: string, id: Id<"codexTurns
   const engine = engineOf(job);
   if (!conversation || engineOf(conversation) !== engine) return;
   const current = resumeOf(conversation);
-  if (current && current.cursor !== cursor) throw new Error(`Chat already has another ${ENGINE_LABELS[engine]} session.`);
+  // A new session may take over only from the one the chat has: an engine that lost it says which.
+  if (current && current.cursor !== cursor && current.cursor !== replaces) throw new Error(`Chat already has another ${ENGINE_LABELS[engine]} session.`);
   await ctx.db.patch(conversation._id, {
     resume: { engine, cursor, version },
     // Kept for Codex chats, so a runner or check from before engines still finds the thread.
@@ -405,10 +406,10 @@ async function recordSession(ctx: MutationCtx, token: string, id: Id<"codexTurns
 }
 
 export const setResume = mutation({
-  args: { token: v.string(), id: v.id("codexTurns"), cursor: v.string(), version: v.optional(v.number()) },
+  args: { token: v.string(), id: v.id("codexTurns"), cursor: v.string(), version: v.optional(v.number()), replaces: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await recordSession(ctx, args.token, args.id, args.cursor, args.version ?? 1);
+    await recordSession(ctx, args.token, args.id, args.cursor, args.version ?? 1, args.replaces);
     return null;
   },
 });
@@ -462,7 +463,8 @@ async function recordPartial(ctx: MutationCtx, job: Doc<"codexTurns">, text: str
   const edit = conversation?.channel === "telegram" && !job.flush && !job.telegramEditing
     && Date.now() - (job.telegramEditedAt ?? 0) >= TELEGRAM_EDIT_MS;
   await ctx.db.patch(job._id, {
-    partial: text.slice(0, 100_000),
+    // The memories line, even half written, is not the owner's to read (citedMemories).
+    partial: text.replace(/\n[ \t]*m(?:e(?:m(?:o(?:r(?:i(?:e(?:s(?::[^\n]*)?)?)?)?)?)?)?)?[ \t]*$/i, "").slice(0, 100_000),
     ...(edit ? { telegramEditing: true, telegramEditedAt: Date.now() } : {}),
   });
   if (edit) await ctx.scheduler.runAfter(0, internal.codex.streamToTelegram, { id: job._id });
@@ -688,11 +690,17 @@ export const finishTurn = mutation({
         createdAt: Date.now(),
       });
     }
+    // The memories the reply relied on, named on its last line: kept, and the line taken off.
+    const cited = citedMemories(args.response);
+    const named = cited.ids.map((raw) => ctx.db.normalizeId("memories", raw)).filter((id): id is Id<"memories"> => Boolean(id));
+    const memoryIds = [...new Set(named)];
+    const kept = (await Promise.all(memoryIds.map((id) => ctx.db.get(id)))).flatMap((memory) => memory ? [memory._id] : []);
     await ctx.db.patch(job._id, {
       mediaKey,
       status: args.error ? "error" : "done",
       ...(args.stopped ? { stopped: true } : {}),
-      response: args.response?.slice(0, 100_000),
+      ...(kept.length ? { memoryIds: kept } : {}),
+      response: cited.text?.slice(0, 100_000),
       error: args.error?.slice(0, 2000),
       model: args.model,
       finishedAt: Date.now(),
@@ -895,12 +903,21 @@ async function tell(ctx: ActionCtx, conversation: { channel: "web" | "telegram" 
   }
 }
 
+/** A reply's last line naming memories ("memories: a1b2, c3d4"), taken off; the ids it named. */
+const CITED = /\n?[ \t]*memories:[ \t]*([a-z0-9][a-z0-9, \t]*)\s*$/i;
+function citedMemories(response?: string): { text?: string; ids: string[] } {
+  if (response === undefined) return { ids: [] };
+  const match = CITED.exec(response);
+  if (!match) return { text: response, ids: [] };
+  return { text: response.slice(0, match.index).trimEnd(), ids: match[1].split(/[\s,]+/).filter(Boolean) };
+}
+
 export const finalizeTurn = internalAction({
   args: { id: v.id("codexTurns") },
   returns: v.null(),
   handler: async (ctx, args) => {
     const result: {
-      job: { kind?: "compact"; prompt: string; response?: string; error?: string; status: string; model?: string; finalizedAt?: number; mediaKey?: string; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
+      job: { kind?: "compact"; prompt: string; response?: string; error?: string; status: string; model?: string; finalizedAt?: number; mediaKey?: string; memoryIds?: Id<"memories">[]; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
       conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram" | "whatsapp"; externalId: string; title?: string; jobId?: Id<"jobs"> } | null;
       steers: string[];
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
@@ -963,7 +980,7 @@ export const finalizeTurn = internalAction({
       messages: [
         ...prompts.map((content) => ({ role: "user" as const, content })),
         ...(answered
-          ? [{ role: "assistant" as const, content: `${reply ?? ""}${job.mediaKey ? `\n\n<!-- attachments: ${job.mediaKey} -->` : ""}`.trim() }]
+          ? [{ role: "assistant" as const, content: `${reply ?? ""}${job.memoryIds?.length ? `\n\n<!-- memories: ${job.memoryIds.join(",")} -->` : ""}${job.mediaKey ? `\n\n<!-- attachments: ${job.mediaKey} -->` : ""}`.trim() }]
           : []),
       ],
     }).then(() => done("savedAt"));

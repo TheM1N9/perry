@@ -12,11 +12,12 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { Activity } from "@/convex/dashboard";
 import type { Pose } from "@/convex/lib/activity";
 import type { Board, TodoView } from "@/convex/todos";
-import { plural, useNow } from "@/lib/format";
+import { errorText, plural, useNow } from "@/lib/format";
 import { KEY_STORAGE, SessionContext, useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { countdown, dueLabel } from "@/lib/when";
 import { PlatypusArt } from "@/components/dashboard/platypus";
+import { updateReady, useUpdates } from "@/components/dashboard/updates";
 import { QuickAdd, StreakBadge, TodoRows } from "@/components/todos/todos";
 import { PetChat, type PetChatId } from "./chat";
 import { Empty } from "./empty";
@@ -67,6 +68,12 @@ const NAP_AFTER_MS = 30_000;
 const HEADS_UP_MIN = [15, 10];
 const HOLD_MIN = 5;
 const HEADS_UP_SHOWS_MS = 12_000;
+/** A new version of him is mentioned once, for this long, when he has nothing else to say. */
+const UPDATE_SHOWS_MS = 20_000;
+/** The newest change he last mentioned, so each new version is mentioned once. */
+const UPDATE_STORAGE = "perry.pet.update";
+/** How long a dashboard tab already open has to take a page he opens, before he opens a new tab. */
+const TAB_CLAIMS_MS = 1_500;
 
 export function PetScreen() {
   const [key, setKey] = useState<string | null>(null);
@@ -149,6 +156,7 @@ function Pet() {
   const presence = useMutation(api.todos.presence);
   const decide = useMutation(api.approvals.decide);
   const setTimezone = useMutation(api.jobs.setTimezone);
+  const { view: updates, update } = useUpdates();
   const now = useNow(1000);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("chat");
@@ -197,11 +205,25 @@ function Pet() {
     else window.localStorage.removeItem(CHAT_STORAGE);
   }, []);
   useEffect(() => { setChatIdState(window.localStorage.getItem(CHAT_STORAGE) as PetChatId); }, []);
-  /** A page of the dashboard, in the browser, unlocked. */
+  const askToOpen = useMutation(api.pet.askToOpen);
+  const claimOpen = useMutation(api.pet.claimOpen);
+  /**
+   * A page of the dashboard, in the browser, unlocked: in a dashboard tab
+   * already open, which takes it (components/dashboard/shell.tsx), or, when
+   * none does in a moment, a new one. He claims it himself to open it, so it
+   * is one or the other, never both.
+   */
   const openPath = useCallback((path: string) => {
-    if (window.perryPet) window.perryPet.openDashboard(path);
-    else window.open(path, "_blank");
-  }, []);
+    const openNew = () => {
+      if (window.perryPet) window.perryPet.openDashboard(path);
+      else window.open(path, "_blank");
+    };
+    void (async () => {
+      const request = await askToOpen({ key, path });
+      await new Promise((resolve) => window.setTimeout(resolve, TAB_CLAIMS_MS));
+      if (await claimOpen({ key, request })) openNew();
+    })().catch(openNew);
+  }, [key, askToOpen, claimOpen]);
   /** A chat in his panel, maybe with something already typed. */
   const openChat = useCallback((id: PetChatId, text?: string) => {
     setChatId(id);
@@ -212,6 +234,19 @@ function Pet() {
     setOpen(true);
   }, [setChatId]);
   const reading = open && tab === "chat";
+
+  // A new version of him: said once, for a little while, with the click that updates.
+  const [updateNews, setUpdateNews] = useState<number | null>(null);
+  useEffect(() => {
+    const sha = updates && updateReady(updates) ? updates.latest?.sha : undefined;
+    if (!sha || window.localStorage.getItem(UPDATE_STORAGE) === sha) return;
+    window.localStorage.setItem(UPDATE_STORAGE, sha);
+    setUpdateNews(Date.now() + UPDATE_SHOWS_MS);
+  }, [updates]);
+  const updateNow = useCallback(() => {
+    setUpdateNews(null);
+    void update().then((text) => say("See you in a few minutes", text, 6000), (cause) => say("I couldn't update", errorText(cause), 6000));
+  }, [update, say]);
 
   // Scheduled things run in the owner's timezone, which only this computer knows.
   useEffect(() => {
@@ -428,6 +463,14 @@ function Pet() {
       }
     }
   }
+  if (!bubble && updateNews && updateNews > now && updates && updateReady(updates)) {
+    bubble = (
+      <Bubble id="update" title="A new version of me is ready" detail={`${plural(updates.behind, "change")} · ${updates.latest?.title ?? ""}`} onClose={() => setUpdateNews(null)}>
+        <BubbleButton primary onClick={updateNow}>Update</BubbleButton>
+        <BubbleButton onClick={() => setUpdateNews(null)}>Later</BubbleButton>
+      </Bubble>
+    );
+  }
 
   // Off duty, as in the show: with nothing going on he naps, hat off; anything at all and the fedora goes back on.
   const onDuty = Boolean(bubble) || open || urgent || Boolean(petChat?.isRunning) || voice.state !== "idle" || cheer !== cheerSeen.current;
@@ -436,9 +479,19 @@ function Pet() {
     cheerSeen.current = cheer;
   }
   const asleep = !onDuty && now - lastBusy.current >= NAP_AFTER_MS;
+  // Under his name: what he is doing, what waits on you, or a new version of him, a click away.
+  const status: ReactNode = petChat?.isRunning ? `${step?.label ?? "Working on it"}…`
+    : needs ? `${plural(needs, "thing")} waiting on you`
+      : updates?.state === "updating" ? "Updating myself; back in a few minutes"
+        : updates?.state === "waiting" ? "Updating once I'm done"
+          : updateReady(updates) ? (
+            <>A new version is ready ·{" "}
+              <button type="button" onClick={updateNow} className="cursor-pointer font-medium text-primary hover:underline">Update</button>
+            </>
+          ) : "Here when you need him";
   const panel = (
     <Panel tab={tab} onTab={setTab} needs={needs} onClose={() => setOpen(false)} onOpenApp={() => openPath("/")}
-      status={petChat?.isRunning ? `${step?.label ?? "Working on it"}…` : needs ? `${plural(needs, "thing")} waiting on you` : "Here when you need him"} busy={Boolean(petChat?.isRunning)}>
+      status={status} busy={Boolean(petChat?.isRunning)}>
       {tab === "chat" ? (
         <PetChat chatId={chatId} onChatId={setChatId} draft={draft} onDraft={setDraft} open={openPath}
           voice={window.perryPet ? voice : undefined} hotkey={hotkey.hotkey} byHotkey={talkSends.current} sendSignal={sendSignal}
@@ -735,7 +788,7 @@ function Prop({ pose, reduced }: { pose: Pose; reduced: boolean }) {
 function Panel({ tab, onTab, needs, status, busy, onClose, onOpenApp, children }: {
   tab: Tab; onTab: (tab: Tab) => void; needs: number;
   /** What he is up to, under his name. */
-  status: string; busy: boolean;
+  status: ReactNode; busy: boolean;
   onClose: () => void; onOpenApp: () => void; children: ReactNode;
 }) {
   const tabs: Array<[Tab, string, typeof MessageCircleIcon]> = [["chat", "Chat", MessageCircleIcon], ["todos", "To-dos", ListTodoIcon], ["needs", "Needs you", InboxIcon]];

@@ -66,6 +66,11 @@ function Memories() {
   const { dashboardKey } = useSession();
   const [search, setSearch] = useState("");
   const [term, setTerm] = useState("");
+  // A link from a reply's "From memory" opens on that memory (?q=its words).
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) setSearch(q);
+  }, []);
   const [filter, setFilter] = useState<Kind | "all">("all");
   useEffect(() => {
     const timer = window.setTimeout(() => setTerm(search.trim()), 250);

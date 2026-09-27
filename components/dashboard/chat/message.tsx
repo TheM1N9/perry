@@ -1,6 +1,7 @@
 "use client";
 
-import { CheckIcon, CopyIcon, GitBranchIcon, PencilIcon, RefreshCwIcon } from "lucide-react";
+import { BrainIcon, CheckIcon, CopyIcon, GitBranchIcon, PencilIcon, RefreshCwIcon } from "lucide-react";
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { fullDate, timeOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -11,7 +12,7 @@ import { useCopy } from "../common";
 import { AttachmentList, type Attachment } from "./attachments";
 import { Markdown } from "./markdown";
 
-export type ChatMessage = { id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean };
+export type ChatMessage = { id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; memories?: Array<{ id: string; text: string }> };
 
 function Action({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
@@ -81,6 +82,7 @@ export function MessageRow({ message, assistant, latest, canRegenerate, canEdit,
         <div className="w-full min-w-0">
           <Markdown text={message.text} />
           <AttachmentList attachments={message.attachments} />
+          {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
         </div>
       )}
       <div className={cn(
@@ -102,6 +104,25 @@ export function MessageRow({ message, assistant, latest, canRegenerate, canEdit,
           </time>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * What a reply remembered: the memories it said it relied on, each a link to
+ * it on the Memory page, where a wrong one can be put right.
+ */
+function FromMemory({ memories }: { memories: Array<{ id: string; text: string }> }) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground" data-memories>
+      <BrainIcon className="size-3.5" aria-hidden />
+      <span>From memory:</span>
+      {memories.map((memory) => (
+        <Link key={memory.id} href={`/memory?q=${encodeURIComponent(memory.text.slice(0, 60))}`} title={memory.text}
+          className="max-w-64 truncate rounded-full border px-2 py-0.5 hover:bg-muted hover:text-foreground">
+          {memory.text}
+        </Link>
+      ))}
     </div>
   );
 }

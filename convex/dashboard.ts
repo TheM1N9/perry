@@ -46,7 +46,12 @@ export type ChatMessage = {
   attachments: Array<{ url: string; fileName: string; contentType: string }>;
   /** Sent, and not yet in the history: the history only gets it with its reply. */
   pending?: boolean;
+  /** The memories a reply said it relied on (codex.finishTurn). */
+  memories?: Array<{ id: string; text: string }>;
 };
+
+/** Where a saved reply keeps the memories it relied on. */
+const MEMORIES_MARKER = /\n?<!-- memories: ([^>]+) -->/;
 
 const ATTACHMENTS_MARKER = /\n?<!-- attachments:([^>]+) -->\s*$/;
 
@@ -487,8 +492,19 @@ export const getChatMessages = query({
     const codexTurns = await ctx.db.query("codexTurns")
       .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.id))
       .collect();
+    // The memories replies relied on, looked up once for the page.
+    const cited = new Map<string, { id: string; text: string }>();
+    for (const doc of page.page) {
+      const ids = (typeof doc.text === "string" ? MEMORIES_MARKER.exec(doc.text)?.[1] : undefined)?.split(",") ?? [];
+      for (const raw of ids) {
+        const id = ctx.db.normalizeId("memories", raw.trim());
+        const memory = id && !cited.has(id) ? await ctx.db.get(id) : null;
+        if (memory) cited.set(memory._id, { id: memory._id, text: memory.text });
+      }
+    }
     const history = page.page.map((doc): ChatMessage => {
         const raw = typeof doc.text === "string" ? doc.text : "";
+        const memories = (MEMORIES_MARKER.exec(raw)?.[1]?.split(",") ?? []).flatMap((id) => cited.get(id.trim()) ?? []);
         const marker = raw.match(/\n?<!-- attachments:([^>]+) -->\s*$/);
         const messageKey = marker?.[1]?.trim();
         const recovered = !messageKey && doc.message?.role === "assistant"
@@ -502,8 +518,9 @@ export const getChatMessages = query({
         return {
           id: doc._id,
           role: doc.message?.role ?? "assistant",
-          text: (marker ? raw.slice(0, marker.index).trimEnd() : raw),
+          text: (marker ? raw.slice(0, marker.index) : raw).replace(MEMORIES_MARKER, "").trimEnd(),
           createdAt: doc._creationTime,
+          ...(memories.length ? { memories } : {}),
           attachments: messageKey
             ? attachmentMap.get(messageKey) ?? []
             : recovered

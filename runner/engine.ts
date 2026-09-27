@@ -46,8 +46,10 @@
  *               engine made (Codex: its thread id), stored per chat with a
  *               version the engine owns. With no cursor the engine starts a
  *               session, seeds it with `history`, and reports the cursor with
- *               sink.onSession before the turn runs.
- *   Tools       Perry's own tools are an MCP server. `tools` offers it over
+ *               sink.onSession before the turn runs. A session the engine
+ *               can no longer resume may be replaced by a new one, reported
+ *               with sink.onSession(new, old).
+ *   Tools      Perry's own tools are an MCP server. `tools` offers it over
  *               HTTP (url and bearer header) and as a stdio command
  *               (runner/mcp-bridge.ts), for engines that ignore HTTP MCP.
  *   kill()      Ends the engine's processes, the whole group. The runner's
@@ -214,8 +216,12 @@ export type TurnInput = {
 };
 
 export type TurnSink = {
-  /** A new session started for the chat; its next turns resume it. Called before the turn runs. */
-  onSession(cursor: string): Promise<unknown>;
+  /**
+   * A new session started for the chat; its next turns resume it. Called
+   * before the turn runs. `replaces` is the chat's session it takes over from,
+   * when that one could no longer be resumed (an ACP agent that lost it).
+   */
+  onSession(cursor: string, replaces?: string): Promise<unknown>;
   /** The turn is running, with what interrupt() and steer() need. */
   onStarted?(handle: TurnHandle): void;
   onEvent?(event: TurnEvent): void;

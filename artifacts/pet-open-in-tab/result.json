@@ -1,0 +1,126 @@
+{
+  "ranAt": "2026-09-27T07:08:06.496Z",
+  "passed": true,
+  "checks": {
+    "noTabOpensNewTab": true,
+    "noReplayOnLaterTab": true,
+    "oneTabReused": true,
+    "movedWithinApp": true,
+    "noReplayOnReload": true,
+    "twoTabsOneMoves": true,
+    "visibleBeatsHidden": true,
+    "openPerryReusesTab": true,
+    "pathWithQueryKept": true,
+    "onlyOwnPaths": true,
+    "hiddenAloneStillTakes": true,
+    "firstClaimWins": true,
+    "keyRequired": true,
+    "pagesDidNotThrow": true
+  },
+  "notes": {
+    "noTabOpensNewTab": {
+      "newTabs": [
+        "/chat/c62tjcs5qrew5hb17qbygymxs6"
+      ],
+      "waitedMs": 1526
+    },
+    "earlyTabOpenedMsAfterClick": 3087,
+    "noReplayOnLaterTab": {
+      "afterFallback": "/todos",
+      "afterUntaken": "/todos"
+    },
+    "oneTabReused": {
+      "now": "/chat/c62tjcs5qrew5hb17qbygymxs6",
+      "newTabs": []
+    },
+    "movedWithinApp": {
+      "sameDocument": true
+    },
+    "noReplayOnReload": "/todos",
+    "twoTabsOneMoves": [
+      {
+        "first": "/chat/c62tjcs5qrew5hb17qbygymxs6",
+        "second": "/memory",
+        "newTabs": 0
+      },
+      {
+        "first": "/todos",
+        "second": "/chat/c62tjcs5qrew5hb17qbygymxs6",
+        "newTabs": 0
+      },
+      {
+        "first": "/todos",
+        "second": "/chat/c62tjcs5qrew5hb17qbygymxs6",
+        "newTabs": 0
+      }
+    ],
+    "visibleBeatsHidden": {
+      "visibility": {
+        "shown": "visible",
+        "hidden": "hidden"
+      },
+      "rounds": [
+        {
+          "shown": "/chat/c62tjcs5qrew5hb17qbygymxs6",
+          "hidden": "/memory",
+          "newTabs": 0
+        },
+        {
+          "shown": "/chat/c62tjcs5qrew5hb17qbygymxs6",
+          "hidden": "/memory",
+          "newTabs": 0
+        },
+        {
+          "shown": "/chat/c62tjcs5qrew5hb17qbygymxs6",
+          "hidden": "/memory",
+          "newTabs": 0
+        }
+      ]
+    },
+    "openPerryReusesTab": {
+      "pushed": [
+        "/"
+      ],
+      "hidden": "/memory",
+      "newTabs": []
+    },
+    "pathWithQueryKept": {
+      "now": "/settings?tab=shortcuts"
+    },
+    "onlyOwnPaths": {
+      "stored": [
+        "/",
+        "/",
+        "/",
+        "/",
+        "/"
+      ],
+      "origin": "http://127.0.0.1:52092",
+      "pushed": [
+        "/"
+      ]
+    },
+    "hiddenAloneStillTakes": {
+      "visibility": "hidden",
+      "hidden": "/chat/c62tjcs5qrew5hb17qbygymxs6",
+      "newTabs": []
+    },
+    "firstClaimWins": [
+      true,
+      false,
+      false,
+      false
+    ],
+    "keyRequired": [
+      true,
+      true,
+      true
+    ],
+    "pagesDidNotThrow": []
+  },
+  "serverLog": [
+    "[perry] pet:askToOpen failed: Error: Wrong dashboard key.",
+    "[perry] pet:openRequest failed: Error: Wrong dashboard key.",
+    "[perry] pet:claimOpen failed: Error: Wrong dashboard key."
+  ]
+}

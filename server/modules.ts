@@ -22,6 +22,7 @@ import * as jobs from "../convex/jobs";
 import * as lib_activity from "../convex/lib/activity";
 import * as lib_agent from "../convex/lib/agent";
 import * as lib_auth from "../convex/lib/auth";
+import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
 import * as lib_embed from "../convex/lib/embed";
 import * as lib_engines from "../convex/lib/engines";
@@ -46,6 +47,7 @@ import * as secrets from "../convex/secrets";
 import * as titles from "../convex/titles";
 import * as todos from "../convex/todos";
 import * as tools from "../convex/tools";
+import * as updates from "../convex/updates";
 import * as vault from "../convex/vault";
 import * as web from "../convex/web";
 import * as whatsapp from "../convex/whatsapp";
@@ -72,6 +74,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/activity": lib_activity,
   "lib/agent": lib_agent,
   "lib/auth": lib_auth,
+  "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
   "lib/embed": lib_embed,
   "lib/engines": lib_engines,
@@ -96,6 +99,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "titles": titles,
   "todos": todos,
   "tools": tools,
+  "updates": updates,
   "vault": vault,
   "web": web,
   "whatsapp": whatsapp,
