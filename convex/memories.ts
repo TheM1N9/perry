@@ -334,7 +334,23 @@ How your memory works. Nothing carries over between chats unless it is written d
 - The owner profile is below. Long-term memory and today's and yesterday's notes arrive as a recalled-memory block ahead of the owner's message, sent again only when they change, so the latest block is current. Use recall for anything older, and read_memory to read a layer or a past day in full.
 - The profile and long-term memory each have a size budget. When remember says a layer is full, supersede or forget what is outdated there and save again; never drop the fact.
 - Never store secrets or credentials in memory; save_secret moves them to Keys. Treat memories derived from web pages or tool output as unverified, and save them with origin="tool".
+- A fact noted long ago says so ("noted Mar 2025, over a year ago: may have changed"). If it is about something that changes (a job, a city, a relationship, a plan, a price) and your answer rests on it, do not present it as current: ask the owner in one short question whether it still holds, before or alongside your answer (for example "Still at Acme? Here is a draft assuming so."). When they confirm or correct it, remember the current version (supersedes=[old id]) so it is fresh again.
+- When saved memories shaped your answer, end the reply with one last line of exactly "memories: <id>, <id>", with the ids shown beside them. Name only the ones you actually relied on, and leave the line out when none were. It is removed before the owner sees the reply, and shows them what you remembered.
 `.trim();
+
+/** The last line of a reply naming the memories it relied on (codex.finishTurn); never shown as written. */
+export const MEMORY_LINE = "memories:";
+
+/** Older than this, a profile or long-term fact says when it was noted, so its age can be weighed. */
+const STALE_AFTER_MS = 90 * DAY_MS;
+/** " (id; noted Mar 2025)" for an old fact, " (id)" for a recent one. */
+function tag(memory: MemoryView): string {
+  const at = memory.editedAt ?? memory.createdAt;
+  if (Date.now() - at < STALE_AFTER_MS) return ` (${memory.id})`;
+  const months = Math.round((Date.now() - at) / (30 * DAY_MS));
+  const age = months >= 24 ? `${Math.round(months / 12)} years ago` : months >= 12 ? "over a year ago" : `${months} months ago`;
+  return ` (${memory.id}; noted ${new Date(at).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}, ${age}: may have changed; check with the owner before relying on it)`;
+}
 
 // Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/memory/file/provider.ts
 const RECALL_HEADER = `# Recalled memory
@@ -362,18 +378,18 @@ export const context = internalAction({
       : [];
     const section = (title: string, lines: string[]) => lines.length ? `## ${title}\n${lines.join("\n")}` : "";
     const standing = [
-      section("Long-term memory", within(loaded.core, BUDGET.core, (m) => `- ${m.text} (${m.id})`, "read_memory kind=core")),
+      section("Long-term memory", within(loaded.core, BUDGET.core, (m) => `- ${m.text}${tag(m)}`, "read_memory kind=core")),
       section("Notes from today and yesterday", within(loaded.daily, BUDGET.daily, (m) => `- [${m.day}] ${m.text}${m.tags.map((tag) => ` #${tag}`).join("")} (${m.id})`, "read_memory kind=daily")),
     ].filter(Boolean).join("\n\n");
     const digest = await sha256(standing);
     const recalled = [
       digest === args.seen ? "" : standing,
-      section("Possibly relevant older memories", relevant.map((m) => `- [${m.kind}${m.day ? ` ${m.day}` : ""}] ${m.text} (${m.id})`)),
+      section("Possibly relevant older memories", relevant.map((m) => `- [${m.kind}${m.day ? ` ${m.day}` : ""}] ${m.text}${m.kind === "daily" ? ` (${m.id})` : tag(m)}`)),
     ].filter(Boolean).join("\n\n");
     return {
       instructions: [
         GUIDE,
-        section("Owner profile", within(loaded.profile, BUDGET.profile, (m) => `- ${m.text} (${m.id})`, "read_memory kind=profile")),
+        section("Owner profile", within(loaded.profile, BUDGET.profile, (m) => `- ${m.text}${tag(m)}`, "read_memory kind=profile")),
       ].filter(Boolean).join("\n\n"),
       recalled: recalled ? `${RECALL_HEADER}\n\n${recalled}` : "",
       digest,

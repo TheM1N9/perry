@@ -758,6 +758,8 @@ export default defineSchema({
      * on it may not act outward without the owner's go-ahead (mcp.ts).
      */
     outsideAt: v.optional(v.number()),
+    /** The memories the reply said it relied on (its last line, taken off; memories.MEMORY_LINE). */
+    memoryIds: v.optional(v.array(v.id("memories"))),
     /** Attachment key for media the turn produced, such as generated images. */
     mediaKey: v.optional(v.string()),
     /** The owner asked to stop this turn; the runner interrupts its engine. */
