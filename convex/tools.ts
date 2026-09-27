@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { createTool } from "./lib/agent";
 import { z } from "zod";
 import { internal } from "./_generated/api";
@@ -284,11 +285,35 @@ const read_chat = createTool({
 const schedule = z.string().min(9).describe("For repeating work: a cron expression in the owner's timezone, minute hour day-of-month month day-of-week, e.g. '0 8 * * 1-5' for 8am on weekdays.");
 const at = z.iso.datetime({ offset: true }).describe("For a one-time run, such as a reminder: ISO 8601 with the owner's UTC offset, e.g. '2026-09-24T17:00:00+05:30'. Work out 'in two hours' or 'tomorrow at 5' from the current time.");
 
+/** What starts a job instead of a time: an app's event (from find_triggers) or a folder on this computer. */
+const trigger = z.object({
+  slug: z.string().optional().describe("An app event's slug from find_triggers, such as 'GMAIL_NEW_GMAIL_MESSAGE'."),
+  config: z.record(z.string(), z.unknown()).optional().describe("That event's settings, as find_triggers describes them (a label, a repository, how many minutes before)."),
+  folder: z.string().optional().describe("Instead of an app: the absolute path of a folder on this computer; each new file there starts a run."),
+}).describe("Run the job on an event instead of a time: give slug (and config) for an app's event, or folder.");
+
+const find_triggers = createTool({
+  description:
+    "List the events a connected app can send to start a job on: a new email, a pull request, " +
+    "a calendar event about to begin. Use it before create_job with a trigger, to get the event's " +
+    "slug and the settings it takes. The app must be connected (list_connectors).",
+  inputSchema: z.object({
+    toolkit: z.string().min(2).describe("The app, e.g. 'gmail', 'github', 'googlecalendar', 'slack'."),
+    query: z.string().optional().describe("Words to narrow them, e.g. 'new message' or 'pull request'."),
+  }),
+  execute: async (ctx, input): Promise<{ triggers: Array<{ slug: string; name: string; description: string; config: Record<string, unknown>; instructions?: string }>; error?: string }> => {
+    return await ctx.runAction(internal.composio.triggerTypes, input);
+  },
+});
+
 const create_job = createTool({
   description:
     "Schedule a job: a prompt you will run later as a fresh turn, either on a " +
-    "cron schedule (a weekday morning briefing, a Friday inbox sweep) or once " +
-    "at a set time (a reminder). Give exactly one of schedule or at. Its reply " +
+    "cron schedule (a weekday morning briefing, a Friday inbox sweep), once " +
+    "at a set time (a reminder), or on an event (a new email from someone, a " +
+    "pull request to review, a file landing in Downloads; find_triggers lists " +
+    "an app's events). Give exactly one of schedule, at or trigger. An event's " +
+    "details reach the run as data. Its reply " +
     "goes to the owner in this conversation's channel (this Telegram chat, or this web chat); when the prompt makes delivery conditional (\"only tell " +
     "me if…\"), a run with nothing new delivers nothing. Write the prompt so it " +
     "stands on its own. Confirm the time with the owner before creating it.",
@@ -296,12 +321,33 @@ const create_job = createTool({
     name: z.string().min(2).max(80).describe("Short name, e.g. 'Morning briefing'."),
     schedule: schedule.optional(),
     at: at.optional(),
-    prompt: z.string().min(10).describe("What to do on each run."),
+    trigger: trigger.optional(),
+    prompt: z.string().min(10).describe("What to do on each run. For an event, say what to do with it, and when to stay quiet (\"only tell me if it needs a reply\")."),
   }),
   execute: async (ctx, input): Promise<{ id?: string; nextRun?: string; error?: string }> => {
-    return await ctx.runMutation(internal.jobs.create, { ...input, ...(ctx.conversationId ? { origin: ctx.conversationId } : {}) });
+    const origin = ctx.conversationId ? { origin: ctx.conversationId } : {};
+    const { trigger: on, ...rest } = input;
+    if (!on) return await ctx.runMutation(internal.jobs.create, { ...rest, ...origin });
+    if (Boolean(on.slug) === Boolean(on.folder)) return { error: "A trigger is an app's event (slug) or a folder, one of them." };
+    if (on.folder) {
+      if (!/^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(on.folder)) return { error: "Give the folder's absolute path." };
+      if (!existsSync(on.folder)) return { error: `There is no folder at ${on.folder} on this computer.` };
+      return await ctx.runMutation(internal.jobs.create, { ...rest, ...origin, trigger: { kind: "folder", path: on.folder, label: `When a file lands in ${on.folder}` } });
+    }
+    const made: { instanceId?: string; name?: string; toolkit?: string; error?: string } = await ctx.runAction(internal.composio.createTrigger, { slug: on.slug!, config: on.config });
+    if (!made.instanceId) return { error: made.error ?? "Composio would not start that trigger." };
+    const result: { id?: string; nextRun?: string; error?: string } = await ctx.runMutation(internal.jobs.create, {
+      ...rest, ...origin,
+      trigger: { kind: "app", toolkit: made.toolkit ?? on.slug!.split("_")[0].toLowerCase(), slug: on.slug!, config: on.config, instanceId: made.instanceId, label: `When ${lowerFirst(made.name ?? on.slug!)}` },
+    });
+    // Nothing would ever use it.
+    if (!result.id) await ctx.runAction(internal.composio.deleteTrigger, { instanceId: made.instanceId });
+    return result;
   },
 });
+
+/** "New Gmail Message" as the end of "When …": "When new Gmail message". Names keep their capitals. */
+const lowerFirst = (name: string) => name.replace(/^([A-Z])(?=[a-z])/, (letter) => letter.toLowerCase());
 
 type JobRow = { id: string; name: string; schedule?: string; runAt?: number; enabled: boolean; builtin?: string; nextRunAt: number; lastRunAt?: number; lastResult?: string; lastError?: string };
 
@@ -773,6 +819,7 @@ export const ALL_TOOLS = {
   search_chats,
   read_chat,
   create_job,
+  find_triggers,
   list_jobs,
   update_job,
   delete_job,

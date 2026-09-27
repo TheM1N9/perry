@@ -10,6 +10,7 @@ import { HOME, readRunnerConfig, writeRunnerConfig } from "../runner/home";
 import { modules } from "./modules";
 import { Runtime } from "./runtime";
 import { pollTelegram } from "./telegram";
+import { runTriggers } from "./triggers";
 import { runWhatsApp } from "./whatsapp";
 
 /**
@@ -23,7 +24,7 @@ export const PORT = Number(process.env.PERRY_PORT ?? process.env.PORT ?? 7377);
 /** This server as the runner on this machine reaches it. */
 export const LOCAL_URL = `http://127.0.0.1:${PORT}`;
 
-type Global = { __perry?: { runtime: Runtime; started: boolean; stopTelegram?: () => void; stopWhatsApp?: () => void } };
+type Global = { __perry?: { runtime: Runtime; started: boolean; stopTelegram?: () => void; stopWhatsApp?: () => void; stopTriggers?: () => void } };
 const box = globalThis as Global;
 
 export function backend(): Runtime {
@@ -72,5 +73,6 @@ export async function startBackend() {
   runtime.start();
   box.__perry!.stopTelegram = pollTelegram(runtime);
   box.__perry!.stopWhatsApp = runWhatsApp(runtime);
+  box.__perry!.stopTriggers = runTriggers(runtime);
   console.log(`[perry] backend ready: ${runtime.functions().length} functions, data in ${HOME}`);
 }

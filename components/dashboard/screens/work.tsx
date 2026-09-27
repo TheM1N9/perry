@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon, ZapIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -142,10 +142,12 @@ function Schedules() {
             <StatusBadge tone={tone}>{job.lastError ? "Failed" : job.enabled ? "Active" : over ? "Done" : "Paused"}</StatusBadge>
           </div>
           <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
-            {job.runAt !== undefined
-              ? <span>Once, {when(job.runAt)}</span>
-              : <span title={job.schedule}>{readable ?? <code className="font-mono text-xs">{job.schedule}</code>}</span>}
-            {job.enabled && job.runAt === undefined && <span title={when(job.nextRunAt)}>Next {ago(job.nextRunAt, now)}</span>}
+            {job.trigger
+              ? <span className="inline-flex items-center gap-1"><ZapIcon className="size-3.5" aria-hidden />{job.trigger.label}</span>
+              : job.runAt !== undefined
+                ? <span>Once, {when(job.runAt)}</span>
+                : <span title={job.schedule}>{readable ?? <code className="font-mono text-xs">{job.schedule}</code>}</span>}
+            {job.enabled && job.runAt === undefined && !job.trigger && <span title={when(job.nextRunAt)}>Next {ago(job.nextRunAt, now)}</span>}
             <span title={job.lastRunAt ? when(job.lastRunAt) : undefined}>{job.lastRunAt ? `Last ran ${ago(job.lastRunAt, now)}` : "Hasn't run yet"}</span>
           </p>
           {job.lastError && <p className="mt-2 text-sm text-pretty text-destructive">{job.lastError}</p>}
@@ -188,7 +190,7 @@ function Schedules() {
   return (
     <div className="space-y-6">
       <Intro action={<Button size="sm" onClick={() => setEditing({})}><PlusIcon />New schedule</Button>}>
-        Prompts Perry runs on a schedule, like a morning briefing, or once, like a reminder. Times are in <span className="font-medium text-foreground">{data.timezone}</span>.
+        Prompts Perry runs on a schedule, like a morning briefing; once, like a reminder; or when something happens, like a new email or a file landing in a folder. Times are in <span className="font-medium text-foreground">{data.timezone}</span>.
       </Intro>
       {yours.length === 0
         ? <EmptyState title="Nothing scheduled yet">Make one here, or ask in a chat: &ldquo;Every weekday at 8am, send me a summary of my calendar.&rdquo;</EmptyState>

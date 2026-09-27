@@ -33,6 +33,24 @@ export const vTurnAttachment = v.object({
   fileName: v.string(),
   contentType: v.string(),
 });
+/**
+ * An event that starts a job (jobs.ts, server/triggers.ts): one Composio sends
+ * from a connected app (a new email, a pull request), by the trigger instance
+ * made for it; or a new file in a folder on this computer. `label` says it as
+ * the owner would: "When a new Gmail message arrives".
+ */
+export const vTrigger = v.union(
+  v.object({
+    kind: v.literal("app"),
+    toolkit: v.string(),
+    slug: v.string(),
+    config: v.optional(v.any()),
+    /** Composio's trigger instance, which its events name. */
+    instanceId: v.string(),
+    label: v.string(),
+  }),
+  v.object({ kind: v.literal("folder"), path: v.string(), label: v.string() }),
+);
 /** How a runner decides what needs the owner. See approvals.ts. */
 export const vPolicy = v.union(v.literal("ask"), v.literal("review"), v.literal("trust"));
 /**
@@ -475,6 +493,8 @@ export default defineSchema({
     schedule: v.optional(v.string()),
     /** When a one-time job runs. It runs once and is then paused. */
     runAt: v.optional(v.number()),
+    /** What starts it instead of a time: an event in a connected app, or a file landing in a folder (triggers.ts). */
+    trigger: v.optional(vTrigger),
     prompt: v.string(),
     enabled: v.boolean(),
     builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"))),

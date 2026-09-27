@@ -78,7 +78,7 @@ function Choice({ label, value, items, onChange, id }: { label: string; value: s
 
 // --- Schedules ---------------------------------------------------------------
 
-type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "once" | "custom";
+type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "once" | "custom" | "folder" | "event";
 const REPEATS: Array<{ value: Repeat; label: string }> = [
   { value: "daily", label: "Every day" },
   { value: "weekdays", label: "Every weekday" },
@@ -86,11 +86,12 @@ const REPEATS: Array<{ value: Repeat; label: string }> = [
   { value: "monthly", label: "Every month" },
   { value: "once", label: "Once" },
   { value: "custom", label: "Custom (cron)" },
+  { value: "folder", label: "When a file lands in a folder" },
 ];
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((label, index) => ({ value: String(index), label }));
 const MONTH_DAYS = Array.from({ length: 28 }, (_, index) => ({ value: String(index + 1), label: `Day ${index + 1}` }));
 
-type When = { repeat: Repeat; time: string; weekday: string; monthDay: string; cron: string; once: string };
+type When = { repeat: Repeat; time: string; weekday: string; monthDay: string; cron: string; once: string; folder: string };
 
 const pad = (n: number) => String(n).padStart(2, "0");
 /** A time as the datetime-local input shows it, on this browser's clock. */
@@ -98,8 +99,10 @@ const localInput = (ms: number) => { const d = new Date(ms); return `${d.getFull
 
 /** The form's reading of a job's time: one of the simple shapes when it is one, else its cron as written. */
 function readWhen(job?: JobView): When {
-  const base: When = { repeat: "daily", time: "08:00", weekday: "1", monthDay: "1", cron: job?.schedule ?? "", once: localInput(Date.now() + 3_600_000) };
+  const base: When = { repeat: "daily", time: "08:00", weekday: "1", monthDay: "1", cron: job?.schedule ?? "", once: localInput(Date.now() + 3_600_000), folder: "" };
   if (!job) return base;
+  // An app's event is set up by Perry in a chat, and kept as it is here.
+  if (job.trigger) return job.trigger.kind === "folder" ? { ...base, repeat: "folder", folder: job.trigger.path ?? "" } : { ...base, repeat: "event" };
   if (job.runAt !== undefined) return { ...base, repeat: "once", once: localInput(job.runAt) };
   const match = /^(\d{1,2}) (\d{1,2}) (\S+) \* (\S+)$/.exec(job.schedule?.trim() ?? "");
   if (!match) return { ...base, repeat: "custom" };
@@ -112,8 +115,10 @@ function readWhen(job?: JobView): When {
   return { ...base, repeat: "custom" };
 }
 
-/** What the server is sent: a cron schedule, or a one-time `at`. */
-function writeWhen(when: When): { schedule?: string; at?: string } {
+/** What the server is sent: a cron schedule, a one-time `at`, or a folder to watch. */
+function writeWhen(when: When): { schedule?: string; at?: string; folder?: string } {
+  if (when.repeat === "event") return {};
+  if (when.repeat === "folder") return { folder: when.folder.trim() };
   if (when.repeat === "once") return { at: when.once ? new Date(when.once).toISOString() : undefined };
   if (when.repeat === "custom") return { schedule: when.cron.trim() };
   const [hour, minute] = when.time.split(":").map(Number);
@@ -141,12 +146,19 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
   }, [editing]);
   const change = (patch: Partial<When>) => setWhen((current) => ({ ...current, ...patch }));
   // A built-in job's prompt comes from Perry's code; only when it runs is the owner's to change.
-  const repeats = builtin ? REPEATS.filter((item) => item.value !== "once") : REPEATS;
+  // A job an event starts keeps its kind of event; a folder can move to another folder.
+  const event = Boolean(job?.trigger);
+  const repeats = builtin ? REPEATS.filter((item) => item.value !== "once" && item.value !== "folder")
+    : job?.trigger?.kind === "folder" ? REPEATS.filter((item) => item.value === "folder")
+      : job?.trigger ? [{ value: "event" as const, label: job.trigger.label }]
+        : job ? REPEATS.filter((item) => item.value !== "folder") : REPEATS;
 
   return (
     <FormDialog open={editing !== null} onClose={onClose} saving={saving}
       title={job ? `Change “${job.name}”` : "New schedule"}
-      description={builtin ? "A built-in schedule keeps its own prompt; you can change when it runs." : `Perry runs the prompt as a fresh turn at these times, in ${timezone}, and sends you what it finds.`}
+      description={builtin ? "A built-in schedule keeps its own prompt; you can change when it runs."
+        : event ? "Perry runs the prompt each time the event happens, and sends you what it finds."
+          : `Perry runs the prompt as a fresh turn at these times, in ${timezone}, or when a file lands in a folder, and sends you what it finds.`}
       onSave={() => void save(() => saveJob({ key: dashboardKey, ...(job ? { id: job.id } : {}), name, prompt, ...writeWhen(when) }), job ? "Schedule saved." : "Schedule made.")}>
       {!builtin && (
         <>
@@ -176,6 +188,16 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
           <FieldLabel htmlFor="schedule-once">Date and time</FieldLabel>
           <Input id="schedule-once" type="datetime-local" value={when.once} required onChange={(event) => change({ once: event.target.value })} />
         </Field>
+      )}
+      {when.repeat === "folder" && (
+        <Field>
+          <FieldLabel htmlFor="schedule-folder">Folder</FieldLabel>
+          <Input id="schedule-folder" value={when.folder} className="font-mono" placeholder="C:\Users\you\Downloads" required onChange={(event) => change({ folder: event.target.value })} />
+          <FieldDescription>Its full path on this computer. Each new file there starts a run, with the file&apos;s path.</FieldDescription>
+        </Field>
+      )}
+      {when.repeat === "event" && job?.trigger && (
+        <FieldDescription>Perry set this up in a chat. To start it on something else, delete it and ask Perry for a new one.</FieldDescription>
       )}
       {when.repeat === "custom" && (
         <Field>
