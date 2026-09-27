@@ -234,6 +234,36 @@ in Settings) runs every turn with `danger-full-access` and approval policy
 machine, so with it set to `danger-full-access` even a Supervised chat runs
 unsandboxed, though Codex still asks there before anything it judges risky.
 
+### Claude Code
+
+Perry can also think with your Claude subscription, through the official
+[Claude Code](https://code.claude.com) installed on your computer. It runs on
+your own subscription, so its use counts against your plan's limits. Codex and
+Claude Code can both be signed in on the same computer: each chat runs on the
+engine of the model you pick for it, and the model pickers and `/model` list
+both.
+
+- **Signing in.** Perry never signs Claude Code in and never reads, copies or
+  stores its credentials. Install Claude Code, then run `claude auth login` in a
+  terminal on that computer; Settings shows what it says (for example "Claude
+  Max · you@example.com") and the command to run while it is signed out. Perry
+  doesn't sign it out either, since that would sign you out of Claude Code in
+  your terminal too: run `claude auth logout` for that.
+- **Models.** Claude Code's own list for your account, as its last session
+  gave it; until one has run, its aliases (`default`, `sonnet`, `opus`, `haiku`).
+  Chat names and the reviewer use `haiku` on a Claude chat
+  (`PERRY_CLAUDE_TITLE_MODEL`, `PERRY_CLAUDE_REVIEW_MODEL` pick another).
+- **Access.** Supervised uses Claude Code's default mode: anything that is not
+  read-only is asked, in the dashboard or the runner's terminal. On macOS, Linux
+  and WSL it runs in Claude Code's own sandbox, which lets sandboxed commands
+  run; native Windows has no such sandbox, so there Supervised relies on
+  approvals alone. Auto lets edits in the working folders go ahead and sends
+  every command to the reviewer. Full access runs Claude Code without asking.
+- Your own Claude Code settings, `CLAUDE.md` files, hooks and MCP servers apply
+  to Perry's Claude turns too, as they would in your terminal.
+  `PERRY_CLAUDE_MCP=stdio` hands Perry's tools to Claude Code through
+  `runner/mcp-bridge.ts` instead of over HTTP.
+
 ## Perry's folder on your machine
 
 Perry's server and the runner create `~/.perry`, the way Claude Code has `~/.claude`

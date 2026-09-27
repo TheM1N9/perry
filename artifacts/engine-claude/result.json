@@ -1,0 +1,340 @@
+{
+  "ranAt": "2026-09-27T14:20:03.726Z",
+  "models": {
+    "claude": "haiku",
+    "codex": "gpt-6-luna"
+  },
+  "checks": {
+    "statusReported": true,
+    "modelListSeeded": true,
+    "replyStreams": true,
+    "replySaved": true,
+    "mcpRememberCalled": true,
+    "fullAccessRunsWithoutAsking": true,
+    "runLabelShape": true,
+    "usageRecorded": true,
+    "resumeCursorRecorded": true,
+    "quickTurnNamesChat": true,
+    "resumeKeepsContext": true,
+    "modelListFromSession": true,
+    "steerJoinsTurn": true,
+    "stopInterrupts": true,
+    "compactWorks": true,
+    "supervisedApprovalReachesDashboard": true,
+    "declineStopsTool": true,
+    "autoReviewedByClaude": true,
+    "switchCodexClaudeCodex": true,
+    "bothEnginesListed": true,
+    "signedOutHandled": true,
+    "settingsShowsBoth": true,
+    "windowsNoSandboxDeclared": true,
+    "credentialsNeverRead": true,
+    "noPageErrors": true,
+    "runnerLogClean": true
+  },
+  "notes": {
+    "claudeStatus": {
+      "kind": "claude",
+      "label": "Claude Code",
+      "installed": true,
+      "version": "2.1.280",
+      "signedIn": true,
+      "auth": {
+        "type": "claude.ai",
+        "label": "Claude",
+        "email": "owner@example.com",
+        "plan": "max"
+      },
+      "message": "Runs on your own Claude subscription through the official Claude Code; its use counts against your plan's limits.",
+      "updatedAt": 1790518667888
+    },
+    "statusReported": {
+      "version": "2.1.280",
+      "cli": "2.1.280",
+      "auth": {
+        "type": "claude.ai",
+        "label": "Claude",
+        "email": "owner@example.com",
+        "plan": "max"
+      },
+      "message": "Runs on your own Claude subscription through the official Claude Code; its use counts against your plan's limits."
+    },
+    "modelListSeeded": {
+      "claude": [
+        "default",
+        "sonnet",
+        "opus",
+        "haiku",
+        "claude-sonnet-5",
+        "claude-haiku-4-5"
+      ],
+      "engines": [
+        {
+          "kind": "codex",
+          "label": "Codex"
+        },
+        {
+          "kind": "claude",
+          "label": "Claude Code"
+        }
+      ]
+    },
+    "replyStreams": {
+      "snapshots": 5,
+      "lengths": [
+        88,
+        99,
+        221,
+        368,
+        415
+      ]
+    },
+    "replySaved": "-three\nTwenty-four\nTwenty-five\nTwenty-six\nTwenty-seven\nTwenty-eight\nTwenty-nine\nThirty\nThirty-one\nThirty-two\nThirty-three\nThirty-four\nThirty-five\nThirty-six\nThirty-seven\nThirty-eight\nThirty-nine\nForty",
+    "mcpRememberCalled": {
+      "memory": "Claude engine check e2e-mujwjq3s",
+      "span": {
+        "name": "remember",
+        "status": "ok"
+      }
+    },
+    "fullAccessRunsWithoutAsking": {
+      "folder": true,
+      "approvals": 0,
+      "commands": [
+        "New-Item -ItemType Directory -Path \"C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-claude-t21OHD\\workspace\\perry-claude-full-e2e-mujwjq3s\" -Force | Out-Null; Write-Output \"Folder created successfully\" (ok)"
+      ]
+    },
+    "runLabelShape": {
+      "run": "claude/haiku · full access",
+      "status": "ok"
+    },
+    "usageRecorded": {
+      "inputTokens": 83453,
+      "cachedInputTokens": 70489,
+      "outputTokens": 812,
+      "reasoningTokens": 330,
+      "totalTokens": 84265
+    },
+    "resumeCursorRecorded": {
+      "engine": "claude",
+      "resume": {
+        "engine": "claude",
+        "cursor": "5923bbb9-3c10-48f5-8698-234a6ff1dad0",
+        "version": 1
+      },
+      "codexThreadId": null
+    },
+    "quickTurnNamesChat": {
+      "title": "Remembering my cat Pepper",
+      "log": "\u001b[2m  named a chat \"Remembering my cat Pepper\" (haiku)\u001b[0m"
+    },
+    "resumeKeepsContext": {
+      "reply": "Pepper",
+      "sameSession": true,
+      "historySent": false
+    },
+    "modelListFromSession": {
+      "reported": [
+        "default",
+        "opus[1m]",
+        "claude-fable-5-1[1m]",
+        "sonnet",
+        "haiku"
+      ],
+      "efforts": [
+        "default: low/medium/high/xhigh/max",
+        "opus[1m]: low/medium/high/xhigh/max",
+        "claude-fable-5-1[1m]: low/medium/high/xhigh/max",
+        "sonnet: low/medium/high/xhigh/max",
+        "haiku: -"
+      ]
+    },
+    "steerJoinsTurn": {
+      "status": "applied",
+      "reply": "Ping finished successfully — all 8 packets received with zero loss, pineapple.",
+      "turns": 3
+    },
+    "stopInterrupts": {
+      "pingRunning": true,
+      "status": "done",
+      "stopped": true,
+      "ranMs": 6006,
+      "reply": "_Stopped._"
+    },
+    "compactWorks": {
+      "status": "done",
+      "model": "haiku",
+      "sameSession": true
+    },
+    "supervisedApprovalReachesDashboard": {
+      "asked": "New-Item -ItemType Directory -Path \"C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-claude-t21OHD\\workspace\\perry-claude-ask-e2e-mujwjq3s\" -Force",
+      "status": "declined",
+      "decidedBy": "dashboard"
+    },
+    "declineStopsTool": {
+      "folder": false,
+      "span": {
+        "name": "New-Item -ItemType Directory -Path \"C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-claude-t21OHD\\workspace\\perry-claude-ask-e2e-mujwjq3s\" -Force",
+        "status": "declined"
+      },
+      "reply": "I wanted to create the folder \"perry-claude-ask-e2e-mujwjq3s\" in your workspace directory, but you declined the permission. If you'd like to allow it, let me know."
+    },
+    "autoReviewedByClaude": {
+      "folder": true,
+      "reply": "Created the folder successfully at that location.",
+      "verdict": "clear",
+      "reason": "Creating a temporary directory in the working directory's parent path is a routine operation with low impact; the path is within the temporary folder structure already established for this session.",
+      "model": "haiku",
+      "status": "auto",
+      "title": "New-Item -ItemType Directory -Path \"C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-claude-t21OHD\\outside-e2e-mujwjq3s\" -Force"
+    },
+    "switchCodexClaudeCodex": {
+      "replies": [
+        "noted",
+        "Waffles",
+        "Waffles"
+      ],
+      "runs": [
+        "codex/gpt-6-luna · medium · full access",
+        "claude/haiku · full access",
+        "codex/gpt-6-luna · medium · full access"
+      ],
+      "cursors": {
+        "codex": {
+          "engine": "codex",
+          "cursor": "01a0e33c-3a86-7332-8f12-82f4e7593039",
+          "version": 1
+        },
+        "claude": {
+          "engine": "claude",
+          "cursor": "12739edd-47d1-463e-908e-594f4324d57b",
+          "version": 1
+        },
+        "codexAgain": {
+          "engine": "codex",
+          "cursor": "01a0e33c-68ad-7993-be21-0fb357d7cea3",
+          "version": 1
+        }
+      },
+      "historySeeded": {
+        "claude": true,
+        "codex": true
+      }
+    },
+    "bothEnginesListed": "Codex models:\n• gpt-6-astra, default\n  gpt-6-sol\n  gpt-6-luna\n  gpt-5.6-sol\n  gpt-5.6-terra\n  gpt-5.6-luna\n  gpt-5.5\n\nClaude Code models:\n  default (Default (recommended)), default\n  opus[1m] (Opus (1M context))\n  claude-fable-5-1[1m] (Fable)\n  sonnet\n  haiku\n\nSwitch with /model <name>. Another engine's model moves this chat to that engine, which picks up from the chat so far.",
+    "settingsText": "Engines\n\nPerry thinks with a coding agent on your computer, signed in with your own subscription. The sign-in stays on that computer.\n\nSigned-out computer\nOnline\nCodex\nSigned out\n0.157.1\n\nNot signed in\n\nSign in with ChatGPT\nClaude Code\nSigned out\n2.1.280\n\nNot signed in\n\nRun “claude auth login” in a terminal on this computer to sign in.\n\nSign in with Claude\n\nFinish signing in\n\nRun this in a terminal on that computer, and follow what it says. This page updates by itself.\n\n$\nclaude auth login\nDESKTOP-27SQLCP\nOnline\nCodex\nSigned in\n0.157.1\n\nChatGPT Plus · owner@example.com\n\nSign out\nClaude Code\nSigned in\n2.1.280\n\nClaude Max · owner@example.com\n\nRuns on your own Claude subscription through the official Claude Code; its use counts against your plan's limits.\n\nSign out",
+    "signedOutHandled": {
+      "status": {
+        "signedIn": false,
+        "auth": {},
+        "message": "Run “claude auth login” in a terminal on this computer to sign in."
+      },
+      "row": "Claude Code\nSigned out\n2.1.280\n\nNot signed in\n\nRun “claude auth login” in a terminal on this computer to sign in.\n\nSign in with Claude\n\nFinish signing in\n\nRun this in a terminal on that computer, and follow what it says. This page updates by itself.\n\n$\nclaude auth login",
+      "logout": {
+        "kind": "logout",
+        "status": "error",
+        "error": "Perry doesn't sign Claude Code out, as that would sign you out of Claude Code in your terminal too. To sign it out, run “claude auth logout” on this computer"
+      },
+      "ownerStillSignedIn": true
+    },
+    "settingsShowsBoth": "Claude Code\nSigned in\n2.1.280\n\nClaude Max · owner@example.com\n\nRuns on your own Claude subscription through the official Claude Code; its use counts against your plan's limits.\n\nSign out",
+    "capabilities": {
+      "steer": "native",
+      "compaction": {
+        "type": "slash-command",
+        "command": "/compact"
+      },
+      "approvals": true,
+      "sandbox": {
+        "darwin": [
+          "supervised",
+          "auto",
+          "full"
+        ],
+        "linux": [
+          "supervised",
+          "auto",
+          "full"
+        ]
+      },
+      "images": true,
+      "modelSwitchInSession": true,
+      "usage": "partial",
+      "quickTurns": true
+    },
+    "windowsNoSandboxDeclared": {
+      "darwin": [
+        "supervised",
+        "auto",
+        "full"
+      ],
+      "linux": [
+        "supervised",
+        "auto",
+        "full"
+      ]
+    },
+    "credentialsNeverRead": {
+      "sourcesScanned": 189,
+      "offending": [],
+      "tablesScanned": 28,
+      "leakedTables": [],
+      "leakedLogs": []
+    },
+    "noPageErrors": [],
+    "runnerLogClean": [],
+    "runnerLog": [
+      "\u001b[2m  named a chat \"Remembering my cat Pepper\" (haiku)\u001b[0m",
+      "\u001b[2m  saved turn jky8630m4yqwxqzs1wq8cyenmh\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Claude Code does not ask\u001b[0m",
+      "\u001b[2m  saved turn 0x5r1c8b3trwwdn9y3xhvmvzj5\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Claude Code does not ask\u001b[0m",
+      "\u001b[2m  steered the Claude Code turn with a new message\u001b[0m",
+      "\u001b[2m  saved turn mmgwxf91dhx81w77vjsnfayndn\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Claude Code does not ask\u001b[0m",
+      "\u001b[33m  stopping the Claude Code turn, as asked\u001b[0m",
+      "\u001b[2m  saved turn 1p788eb4jhpmd4gzeah62jj2we\u001b[0m",
+      "\u001b[2m  compacting a chat's Claude Code session\u001b[0m",
+      "Warning: canUseTool will not be invoked for: WebSearch. Bare allowedTools entries auto-approve the whole tool before the callback is consulted. To gate every tool call, use a PreToolUse hook; or remove the bare names from allowedTools so they fall through to canUseTool. Allow rules from settings files can also shadow the callback but are not visible here.",
+      " code: \"CLAUDE_SDK_CAN_USE_TOOL_SHADOWED\"",
+      "      at cW (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:150:14283)",
+      "      at lA (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:150:21005)",
+      "      at lze (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:151:508)",
+      "      at runTurn (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\runner\\engines\\claude.ts:441:15)",
+      "      at async <anonymous> (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\runner\\index.ts:609:33)",
+      "\u001b[2m  saved turn 4r1n5ydrhjrj93pcgypj6h2ges\u001b[0m",
+      "Warning: canUseTool will not be invoked for: mcp__assistant, WebSearch. Bare allowedTools entries auto-approve the whole tool before the callback is consulted. To gate every tool call, use a PreToolUse hook; or remove the bare names from allowedTools so they fall through to canUseTool. Allow rules from settings files can also shadow the callback but are not visible here.",
+      " code: \"CLAUDE_SDK_CAN_USE_TOOL_SHADOWED\"",
+      "      at cW (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:150:14283)",
+      "      at lA (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:150:21005)",
+      "      at lze (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:151:508)",
+      "      at runTurn (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\runner\\engines\\claude.ts:441:15)",
+      "\u001b[2m  named a chat \"Create perry-claude-ask folder\" (haiku)\u001b[0m",
+      "\u001b[1m  Assistant wants to run:\u001b[0m",
+      "    \u001b[36mNew-Item -ItemType Directory -Path \"C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-claude-t21OHD\\workspace\\perry-claude-ask-e2e-mujwjq3s\" -Force\u001b[0m",
+      "\u001b[2m    in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-claude-t21OHD\\workspace\u001b[0m",
+      "\u001b[2m    Path: C:/Users/Pranav/AppData/Local/Temp/perry-engine-claude-t21OHD/workspace/perry-claude-ask-e2e-mujwjq3s\u001b[0m",
+      "\u001b[2m    approve or decline it in the dashboard or on Telegram\u001b[0m",
+      "\u001b[2m  declined in the dashboard or on Telegram.\u001b[0m",
+      "\u001b[2m  saved turn f792zgj2p96rpswv36w653c50w\u001b[0m",
+      "\u001b[2m  auto: each command is reviewed before it runs; risky ones wait for you\u001b[0m",
+      "Warning: canUseTool will not be invoked for: mcp__assistant, WebSearch. Bare allowedTools entries auto-approve the whole tool before the callback is consulted. To gate every tool call, use a PreToolUse hook; or remove the bare names from allowedTools so they fall through to canUseTool. Allow rules from settings files can also shadow the callback but are not visible here.",
+      " code: \"CLAUDE_SDK_CAN_USE_TOOL_SHADOWED\"",
+      "      at cW (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:150:14283)",
+      "      at lA (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:150:21005)",
+      "      at lze (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:151:508)",
+      "      at runTurn (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-abf0053bd010aace6\\runner\\engines\\claude.ts:441:15)",
+      "\u001b[2m  named a chat \"Create folder with New-Item\" (haiku)\u001b[0m",
+      "\u001b[36m  reviewed\u001b[0m New-Item -ItemType Directory -Path \"C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-claude-t21OHD\\outside-e2e-mujwjq3s\" -Force \u001b[2m(Creating a temporary directory in the working directory's parent path is a routine operation with low impact; the path is within the temporary folder structure already established for this session.)\u001b[0m",
+      "\u001b[2m  saved turn mk6ez9b06cxhkhepy9vth03pd7\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[2m  saved turn fna4ngwtfnbnbbg89napvheq5j\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Claude Code does not ask\u001b[0m",
+      "\u001b[2m  saved turn f903sx1hqafavvahnj62esjrsk\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[2m  named a chat \"Dog named Waffles\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn a1bmesfjd19vvammv32m38nyqk\u001b[0m"
+    ]
+  },
+  "passed": true
+}

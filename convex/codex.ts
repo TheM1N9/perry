@@ -335,6 +335,8 @@ export const requestCompact = internalMutation({
       kind: "compact",
       prompt: "/compact",
       instructions: "",
+      // An engine that compacts with a turn summarises on the chat's model, not its own default.
+      requestedModel: conversation.model,
       status: "queued",
       createdAt: Date.now(),
     });

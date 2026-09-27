@@ -601,13 +601,13 @@ async function main() {
     };
   };
 
-  /** Compact a chat's session the way its engine can. */
-  const compact = async (engine: Engine, cursor: string, access: Doc<"codexTurns">["access"]) => {
+  /** Compact a chat's session the way its engine can: a command it takes as a prompt runs on the chat's model. */
+  const compact = async (engine: Engine, cursor: string, access: Doc<"codexTurns">["access"], model?: string) => {
     const how = engine.capabilities.compaction;
     if (how.type === "native" && engine.compact) return await engine.compact(cursor, workdir);
     if (how.type === "slash-command") {
       const done = await engine.runTurn(
-        { resumeCursor: cursor, instructions: "", prompt: how.command, attachments: [], cwd: workdir, access: access ?? "supervised" },
+        { resumeCursor: cursor, instructions: "", prompt: how.command, attachments: [], cwd: workdir, model, access: access ?? "supervised" },
         { onSession: async () => {}, onRequest: async (request) => optionOf(request, "decline") },
       );
       if (done.state !== "completed") throw new Error(done.error ?? `${engine.label} did not compact.`);
@@ -700,7 +700,7 @@ async function main() {
               if (!job.resumeCursor) throw new Error("This chat has no session to compact yet.");
               console.log(dim(`  compacting a chat's ${engine.label} session`));
               dog = watchdog(engine, COMPACT_TIMEOUT_MS, () => undefined);
-              await compact(engine, job.resumeCursor, job.access).finally(dog.done);
+              await compact(engine, job.resumeCursor, job.access, job.requestedModel).finally(dog.done);
               result = { response: "Compacted.", compacted: true, model: runLabel(undefined, undefined, undefined, kind) };
             } else {
               const sink: TurnSink = {
@@ -788,14 +788,15 @@ async function main() {
     steerIfAsked();
   });
 
-  // New web chats to name, beside whatever turn is running. A failure leaves
-  // the chat titled with its first message; so does a computer with no engine
-  // that runs quick turns, which leaves the naming to one that has.
+  // New web chats to name, beside whatever turn is running, by the chat's own
+  // engine when it is signed in here. A failure leaves the chat titled with its
+  // first message; so does a computer with no engine that runs quick turns,
+  // which leaves the naming to one that has.
   const naming = new Set<string>();
   watch(api.titles.pending, { token }, (requests) => {
     for (const request of requests ?? []) {
       if (naming.has(request.id)) continue;
-      const namer = quickEngine();
+      const namer = quickEngine(request.engine);
       if (!namer) return;
       naming.add(request.id);
       void (async () => {
