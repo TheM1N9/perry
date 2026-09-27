@@ -19,6 +19,7 @@ import type { VaultEntry } from "./vault";
 import { OUTBOX_TTL_MS } from "./conversations";
 import { beingNamed, cancelTitle, requestTitle } from "./titles";
 import { watchProblem } from "./work";
+import { describeStep, STARTING, summarize, WAITING, WRITING, type Step } from "./lib/activity";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -387,6 +388,69 @@ export const getChat = query({
       // The flush before /reset works quietly.
       streaming: running?.flush ? undefined : running?.partial,
       lastError: latestRun?.status === "error" ? latestRun.error : undefined,
+    };
+  },
+});
+
+export type Activity = {
+  conversationId: Id<"conversations">;
+  /** The chat it is for, when that is not the one asked about. */
+  chat?: string;
+  running: boolean;
+  startedAt: number;
+  /** What it is doing now, while it runs. */
+  /** `live` when it is a step Codex is on, or an approval; otherwise it is only thinking or writing between steps. */
+  step?: Step & { since: number; live: boolean };
+  /**
+   * The step that finished last, and when. A quick step can start and finish
+   * between two reports from the runner, and is never seen running; the pet
+   * holds this up for a moment by its own clock instead.
+   */
+  recent?: Step & { since: number; endedAt: number };
+  /** What it did, once it is over: "Ran 3 commands · read 2 pages". */
+  summary: string;
+};
+
+/**
+ * What Perry is doing, for the desktop pet (lib/activity.ts): the latest turn
+ * of this chat, or with no chat given, whatever turn is running anywhere (a
+ * job, a Telegram message). Null when there is nothing to say.
+ */
+export const getActivity = query({
+  args: { key: vKey, id: v.optional(v.id("conversations")) },
+  handler: async (ctx, args): Promise<Activity | null> => {
+    assertDashboardKey(args.key);
+    const run = args.id
+      ? await ctx.db.query("runs").withIndex("by_conversation", (q) => q.eq("conversationId", args.id!)).order("desc").first()
+      : (await ctx.db.query("runs").withIndex("by_started").order("desc").take(20)).find((item) => item.status === "running") ?? null;
+    if (!run) return null;
+    const running = run.status === "running";
+    const spans = (await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).collect())
+      .sort((a, b) => a.startedAt - b.startedAt);
+    let step: Activity["step"];
+    let recent: Activity["recent"];
+    if (running) {
+      const asking = (await ctx.db.query("approvals")
+        .withIndex("by_status", (q) => q.eq("status", "pending").gt("createdAt", Date.now() - APPROVAL_TTL_MS))
+        .collect()).find((row) => row.conversationId === run.conversationId);
+      const live = [...spans].reverse().find((span) => span.status === "running");
+      const last = spans.at(-1);
+      const turn = await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", run.conversationId).eq("status", "running")).first();
+      const ended = last ? last.startedAt + (last.durationMs ?? 0) : run.startedAt;
+      if (asking) step = { ...WAITING, since: asking.createdAt, live: true };
+      else if (live) step = { ...describeStep(live), since: live.startedAt, live: true };
+      else step = { ...(turn?.partial ? WRITING : STARTING), since: ended, live: false };
+      if (last && last.status !== "running" && last.kind !== "reasoning") recent = { ...describeStep(last), since: last.startedAt, endedAt: ended };
+    }
+    const chat = args.id ? null : await ctx.db.get(run.conversationId);
+    return {
+      conversationId: run.conversationId,
+      ...(chat ? { chat: titleOf(chat) } : {}),
+      running,
+      startedAt: run.startedAt,
+      ...(step ? { step } : {}),
+      ...(recent ? { recent } : {}),
+      summary: running ? "" : summarize(spans),
     };
   },
 });

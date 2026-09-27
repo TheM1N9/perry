@@ -1,0 +1,177 @@
+{
+  "ranAt": "2026-09-27T04:30:06.912Z",
+  "checks": {
+    "phrasesReadWell": true,
+    "stepsShowNotOnIt": true,
+    "noRawNames": true,
+    "propMatchesStep": true,
+    "longStepShowsTime": true,
+    "summaryAfterReply": true,
+    "activityServerSide": true,
+    "jobStepShowsWithWhere": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "phrases": {
+      "wrapped": "Running git status",
+      "bash": "Running pnpm test",
+      "page": {
+        "label": "Reading example.com",
+        "pose": "reading"
+      },
+      "gmail": "Using Gmail",
+      "find": "Finding the way into Google Calendar",
+      "file": "Editing notes.md",
+      "files": "Editing 3 files",
+      "search": "Searching the web for “flights to Goa”",
+      "other": "Using github",
+      "summary": "Ran 2 commands · changed 2 files · read 1 page · used Gmail"
+    },
+    "seenInChat": [
+      {
+        "title": "",
+        "detail": "",
+        "note": "",
+        "pose": null
+      },
+      {
+        "title": "Thinking",
+        "detail": "",
+        "note": "",
+        "pose": "thinking"
+      },
+      {
+        "title": "Thinking it through",
+        "detail": "",
+        "note": "",
+        "pose": "thinking"
+      },
+      {
+        "title": "Writing the reply",
+        "detail": "I’ll read the page heading first, then run your exact command.",
+        "note": "",
+        "pose": "typing"
+      },
+      {
+        "title": "Thinking it through",
+        "detail": "",
+        "note": "",
+        "pose": "thinking"
+      },
+      {
+        "title": "Writing the reply",
+        "detail": "I’ll read the page heading first, then run your exact command.",
+        "note": "",
+        "pose": "typing"
+      },
+      {
+        "title": "Reading example.com",
+        "detail": "",
+        "note": "",
+        "pose": "reading"
+      },
+      {
+        "title": "Thinking it through",
+        "detail": "",
+        "note": "",
+        "pose": "thinking"
+      },
+      {
+        "title": "Writing the reply",
+        "detail": "I’ll read the page heading first, then run your exact command.",
+        "note": "",
+        "pose": "typing"
+      },
+      {
+        "title": "Running Start-Sleep -Seconds 8; Write-Output perry-…",
+        "detail": "",
+        "note": "",
+        "pose": "running"
+      },
+      {
+        "title": "Running Start-Sleep -Seconds 8; Write-Output perry-…",
+        "detail": "0:06",
+        "note": "",
+        "pose": "running"
+      },
+      {
+        "title": "Perry",
+        "detail": "Heading: “Example Domain”; command completed and output perry-steps.",
+        "note": "Ran 1 command · read 1 page",
+        "pose": "running"
+      },
+      {
+        "title": "Perry",
+        "detail": "Heading: “Example Domain”; command completed and output perry-steps.",
+        "note": "Ran 1 command · read 1 page",
+        "pose": null
+      }
+    ],
+    "noRawNames": [
+      "Thinking",
+      "Thinking it through",
+      "Writing the reply",
+      "Thinking it through",
+      "Writing the reply",
+      "Reading example.com",
+      "Thinking it through",
+      "Writing the reply",
+      "Running Start-Sleep -Seconds 8; Write-Output perry-…",
+      "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+    ],
+    "summaryAfterReply": {
+      "at": 1790483391256,
+      "title": "Perry",
+      "detail": "Heading: “Example Domain”; command completed and output perry-steps.",
+      "note": "Ran 1 command · read 1 page",
+      "pose": null
+    },
+    "activityServerSide": {
+      "conversationId": "dfz85zpw5qm61zs9bjvkp25gv3",
+      "running": false,
+      "startedAt": 1790483368263,
+      "summary": "Ran 1 command · read 1 page"
+    },
+    "jobStepShowsWithWhere": {
+      "at": 1790483397629,
+      "title": "Running Start-Sleep -Seconds 6; Write-Output from-a…",
+      "detail": "In ⏰ Disk check",
+      "note": "",
+      "pose": "running"
+    },
+    "seenForJob": [
+      {
+        "title": "Perry",
+        "detail": "Heading: “Example Domain”; command completed and output perry-steps.",
+        "pose": null
+      },
+      {
+        "title": "",
+        "detail": "",
+        "pose": "thinking"
+      },
+      {
+        "title": "Thinking",
+        "detail": "In ⏰ Disk check",
+        "pose": "thinking"
+      },
+      {
+        "title": "Writing the reply",
+        "detail": "In ⏰ Disk check",
+        "pose": "typing"
+      },
+      {
+        "title": "Running Start-Sleep -Seconds 6; Write-Output from-a…",
+        "detail": "In ⏰ Disk check",
+        "pose": "running"
+      },
+      {
+        "title": "Running Start-Sleep -Seconds 6; Write-Output from-a…",
+        "detail": "In ⏰ Disk check · 0:06",
+        "pose": "running"
+      }
+    ],
+    "noPageErrors": []
+  },
+  "passed": true
+}
