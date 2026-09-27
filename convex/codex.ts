@@ -151,15 +151,23 @@ export const reportAccount = mutation({
   },
 });
 
-/** The chat's runner, or the freshest online one for a chat that has none yet. */
+/**
+ * The chat's runner, or the freshest online one for a chat that has none yet.
+ * A chat stays on its computer, but that computer connected again under a new
+ * token (runner.json rewritten, so the server paired it afresh) is still it:
+ * the chat moves to the new runner, since its Codex threads are on that disk.
+ */
 async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">): Promise<Id<"runners"> | null> {
-  const runners = conversation.codexRunnerId
-    ? [await ctx.db.get(conversation.codexRunnerId)]
-    : await ctx.db.query("runners").order("desc").take(20);
-  const runner = runners.filter((item) => item && !item.revoked && item.codexAvailable && item.codexAuthMode === "chatgpt" && (item.lastSeenAt ?? 0) > Date.now() - 90_000)
-    .sort((a, b) => (b!.lastSeenAt ?? 0) - (a!.lastSeenAt ?? 0))[0];
+  const pinned = conversation.codexRunnerId ? await ctx.db.get(conversation.codexRunnerId) : null;
+  const online = (item: Doc<"runners">) =>
+    !item.revoked && !!item.codexAvailable && item.codexAuthMode === "chatgpt" && (item.lastSeenAt ?? 0) > Date.now() - 90_000;
+  if (pinned && online(pinned)) return pinned._id;
+  const sameComputer = (item: Doc<"runners">) => !!pinned?.hostname && item.hostname === pinned.hostname && item.platform === pinned.platform;
+  const runner = (await ctx.db.query("runners").order("desc").take(20))
+    .filter((item) => online(item) && (!conversation.codexRunnerId || sameComputer(item)))
+    .sort((a, b) => (b.lastSeenAt ?? 0) - (a.lastSeenAt ?? 0))[0];
   if (!runner) return null;
-  if (!conversation.codexRunnerId) await ctx.db.patch(conversation._id, { codexRunnerId: runner._id });
+  await ctx.db.patch(conversation._id, { codexRunnerId: runner._id });
   return runner._id;
 }
 

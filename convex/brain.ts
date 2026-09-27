@@ -418,8 +418,9 @@ export const handleTurn = internalAction({
         console.error(`turn failed: ${message}`);
         await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access), error: message.slice(0, 1000) });
         if (conversation.jobId) await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, error: message });
-        // The owner's message stays in the chat with the error under it, so it can be tried again; it never became a turn.
-        if (web && !args.hidden && !conversation.jobId) {
+        // The message stays in the chat with the error under it, as a turn would have saved it: the owner's
+        // (in any channel, so the dashboard shows what failed) and a job's prompt alike. It never became a turn.
+        if (!args.hidden) {
           await saveMessages(ctx, { threadId: conversation.threadId, userId: userIdOf(conversation), order: "next", messages: [{ role: "user", content: prompt }] })
             .catch((saveError) => console.error(`could not keep the message: ${String(saveError)}`));
         }

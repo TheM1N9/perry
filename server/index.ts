@@ -46,13 +46,19 @@ export function backend(): Runtime {
  * other; here it gets one without asking, as a process on the same machine and
  * user already could read everything in ~/.perry. A runner.json pointing
  * somewhere else (the old Convex deployment) is moved over, keeping its folder.
+ * One whose token this server knows is already this machine's runner, only at
+ * an old address (Perry's port moved from 3000): it keeps its token, so its
+ * chats stay with it.
  */
 async function pairThisMachine(runtime: Runtime) {
   const config = readRunnerConfig();
-  if (config.url === LOCAL_URL && config.token) {
+  if (config.token) {
     const known = await runtime.exclusive(() =>
       runtime.store.query("runners").withIndex("by_token", (q) => q.eq("token", config.token)).first());
-    if (known && !known.revoked) return;
+    if (known && !known.revoked) {
+      if (config.url !== LOCAL_URL) writeRunnerConfig({ ...config, url: LOCAL_URL });
+      return;
+    }
   }
   const token = randomBytes(32).toString("base64url");
   const name = config.name ?? hostname();
