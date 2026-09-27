@@ -635,6 +635,12 @@ export default defineSchema({
     access: v.optional(vAccess),
     /** Codex's own id for the turn, recorded when it starts; a steer must name it. */
     codexTurnId: v.optional(v.string()),
+    /**
+     * When the turn first read something from outside (a web page, an app's
+     * data, a web search), which may carry instructions of its own. From then
+     * on it may not act outward without the owner's go-ahead (mcp.ts).
+     */
+    outsideAt: v.optional(v.number()),
     /** Attachment key for media the turn produced, such as generated images. */
     mediaKey: v.optional(v.string()),
     /** The owner asked to stop this turn; the runner interrupts Codex. */
