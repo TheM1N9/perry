@@ -77,6 +77,8 @@ const STRIPPED = new Set(["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATIO
   "GOOGLE_GENAI_USE_VERTEXAI", "GCLOUD_PROJECT", "CLOUDSDK_CORE_PROJECT", "AGY_ACP_CCPA_PROJECT", "AGY_ACP_ENABLE_OAUTH", "GEMINI_HOME", "ELECTRON_RUN_AS_NODE"]);
 
 const MB = (bytes: number) => Math.round(bytes / 1048576);
+/** bsdtar, which reads zips: Windows' own (a GNU tar from Git earlier on PATH does not), and macOS's. */
+const TAR = platform() === "win32" ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe") : "tar";
 /** Empty a folder of Perry's own, as far as it can; a file still in use stays until next time. */
 const sweep = (dir: string) => { try { rmSync(dir, { recursive: true, force: true, maxRetries: 2 }); } catch {} };
 
@@ -202,7 +204,7 @@ export class AntigravityEngine extends AcpEngine {
         mkdirSync(partial, { recursive: true });
         const unzip = platform() === "linux"
           ? spawnSync("unzip", ["-q", "-o", zip, "-d", partial], { stdio: "pipe", windowsHide: true })
-          : spawnSync("tar", ["-xf", zip, "-C", partial], { stdio: "pipe", windowsHide: true });
+          : spawnSync(TAR, ["-xf", zip, "-C", partial], { stdio: "pipe", windowsHide: true });
         if (unzip.status !== 0) throw new Error(`Could not unpack Antigravity: ${String(unzip.stderr ?? unzip.error ?? "").trim().slice(0, 200)}`);
         if (!existsSync(join(partial, asset.cmd))) throw new Error(`Antigravity's download has no ${asset.cmd}.`);
         if (platform() !== "win32") chmodSync(join(partial, asset.cmd), 0o755);

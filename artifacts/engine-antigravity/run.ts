@@ -65,7 +65,7 @@ writeFileSync(join(payload, cmd), windows
 writeFileSync(join(payload, "localharness_external"), "fake harness");
 const zip = join(work, "agy-acp-server-fake.zip");
 const zipped = windows
-  ? spawnSync("tar", ["-a", "-c", "-f", zip, "-C", payload, cmd, "localharness_external"], { windowsHide: true })
+  ? spawnSync(join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe"), ["-a", "-c", "-f", zip, "-C", payload, cmd, "localharness_external"], { windowsHide: true })
   : spawnSync("zip", ["-q", "-j", zip, join(payload, cmd), join(payload, "localharness_external")]);
 if (zipped.status !== 0) throw new Error(`could not make the fake release: ${zipped.stderr}`);
 const bytes = readFileSync(zip);
@@ -131,8 +131,8 @@ try {
   check("nothingDownloadedAtStart", downloads === 0 && !existsSync(join(agyRoot, "server")) && log().length === 0 && (await agy())!.signedIn === false, { downloads, log: log().length });
   check("settingsExperimental", /Experimental/.test(row) && /Gemini API key/.test(row) && /Sign in with Google/.test(row) && /not turned on/i.test(row), row);
   // The Google sign-in button asks first, in Google's words.
-  const warned = await p.browser()!.evaluate(`(async () => { const row = document.querySelector('[aria-label="Antigravity on ${computer.name}"]'); const button = [...row.querySelectorAll('button')].find((b) => /Sign in with Google/.test(b.textContent)); button.click(); await new Promise((r) => setTimeout(r, 800)); const dialog = document.querySelector('[role="alertdialog"], [role="dialog"]'); const text = dialog?.innerText ?? ""; [...(dialog?.querySelectorAll('button') ?? [])].find((b) => /Cancel/.test(b.textContent))?.click(); return text; })()`) as string;
-  check("googleWarningQuotesFaq", /third party software, tools, or services to access Antigravity is a violation of our Terms of Service/.test(warned) && /suspension or termination of your account/.test(warned) && /antigravity\.google\/docs\/faq/.test(warned), warned);
+  const warned = await p.browser()!.evaluate(`(async () => { const row = document.querySelector('[aria-label="Antigravity on ${computer.name}"]'); const button = [...row.querySelectorAll('button')].find((b) => /Sign in with Google/.test(b.textContent)); button.click(); await new Promise((r) => setTimeout(r, 800)); const dialog = document.querySelector('[role="alertdialog"], [role="dialog"]'); const text = dialog?.innerText ?? ""; [...(dialog?.querySelectorAll('button') ?? [])].find((b) => /Keep it|Cancel/.test(b.textContent))?.click(); return text; })()`) as string;
+  check("googleWarningQuotesFaq", /third party software, tools, or services to access Antigravity is a violation of our Terms of Service/.test(warned) && /suspension or termination of your account/.test(warned) && /Antigravity FAQ/.test(warned), warned);
   await p.shot("settings-antigravity-warning.png").catch(() => {});
 
   // --- 3. Without a key ------------------------------------------------------------------------------------

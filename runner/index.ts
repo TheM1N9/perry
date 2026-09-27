@@ -511,6 +511,8 @@ async function main() {
         await engine.logout();
       } else {
         const flow = await engine.login(request.method);
+        // A sign-in can fail before it is awaited below (a bad download, say); unhandled, that would end the runner.
+        flow.done.catch(() => {});
         if (flow.interaction) await update({ status: "running", interaction: flow.interaction });
         await flow.done;
       }

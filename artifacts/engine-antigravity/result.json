@@ -1,0 +1,60 @@
+{
+  "ranAt": "2026-09-27T14:30:24.560Z",
+  "engine": "antigravity",
+  "agent": "fake (artifacts/engine-acp/fake-agent.ts --profile antigravity), from a fake release served by this test",
+  "codexModel": "gpt-6-luna",
+  "checks": {
+    "nothingDownloadedAtStart": true,
+    "settingsExperimental": true,
+    "googleWarningQuotesFaq": true,
+    "keyRequiredFirst": true,
+    "completed": false,
+    "agentsEndWithRunner": false,
+    "keyNeverLogged": true
+  },
+  "notes": {
+    "nothingDownloadedAtStart": {
+      "downloads": 0,
+      "log": 0
+    },
+    "settingsExperimental": "Antigravity\nExperimental\nSigned out\n\nNot signed in\n\nExperimental. Not turned on: turning it on downloads Google's own Antigravity ACP server (about 125 MB, about 1 GB unpacked) into Perry's folder.\n\nUse Gemini API key\nSign in with Google\n\nPerry runs Google's own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved in the Keys tab. Signing in with Google also works, at your own risk: Google's Antigravity FAQ says “Using third party software, tools, or services to access Antigravity is a violation of our Terms of Service … may be grounds for suspension or termination of your account.”",
+    "googleWarningQuotesFaq": "Sign in with Google? (Experimental)\n\nGoogle's Antigravity FAQ says “Using third party software, tools, or services to access Antigravity is a violation of our Terms of Service … may be grounds for suspension or termination of your account.”\nPerry runs only Google's official ACP server, signed in with your own Google account in a browser on that computer, and never sees or keeps the sign-in. Google may still treat it as third-party access. A Gemini API key is the safer way in.\n\nKeep it\nSign in anyway",
+    "keyRequiredFirst": {
+      "noKey": "",
+      "request": {
+        "kind": "login",
+        "status": "error",
+        "error": "Save your Gemini API key in Settings → Keys first (from aistudio.google.com/apikey), then try again"
+      }
+    },
+    "stoppedAt": "Error: timed out: the tampered download to be refused",
+    "agentsEndWithRunner": {
+      "agents": 0
+    },
+    "keyNeverLogged": true,
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-antigravity-wsL0lt\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "195 |           this.progress = `Downloading Google's Antigravity server: ${MB(bytes)} of ${MB(asset.size)} MB.`;",
+      "196 |         }",
+      "197 |         await new Promise<void>((done, fail) => file.end((error?: Error | null) => error ? fail(error) : done()));",
+      "198 |         const sha256 = hash.digest(\"hex\");",
+      "199 |         if (bytes !== asset.size || sha256 !== asset.sha256.toLowerCase()) {",
+      "200 |           throw new Error(`The download does not match the Antigravity ${release.version} Perry knows (${bytes} bytes, SHA-256 ${sha256.slice(0, 12)}…), so it was deleted and not run.`);",
+      "                          ^",
+      "error: The download does not match the Antigravity 9.9.9-fake Perry knows (556 bytes, SHA-256 0ec601570ca9…), so it was deleted and not run.",
+      "      at <anonymous> (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-a4a407777041add39\\runner\\engines\\antigravity.ts:200:21)",
+      "Bun v1.3.8 (Windows x64)"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": false
+}
