@@ -1,0 +1,36 @@
+{
+  "ranAt": "2026-09-27T06:47:18.182Z",
+  "passed": true,
+  "checks": {
+    "bothAnnounced": true,
+    "apartButCloseSaidTogether": true,
+    "ownReplyHeld": true,
+    "ownReplySurvivesOtherChat": true,
+    "heldReplyKeepsWords": true,
+    "pageDidNotThrow": true
+  },
+  "notes": {
+    "bothAnnounced": [
+      "New in 2 chats",
+      "beta: any news, alpha: what is on today"
+    ],
+    "apartButCloseSaidTogether": [
+      "New in 2 chats",
+      "beta: any news, alpha: what is on today"
+    ],
+    "ownReplyHeld": [
+      "Perry",
+      "Here is your own chat's reply, held for you."
+    ],
+    "ownReplySurvivesOtherChat": [
+      "Perry",
+      "Here is your own chat's reply, held for you."
+    ],
+    "heldReplyKeepsWords": [
+      "Perry",
+      "Here is your own chat's reply, held for you."
+    ],
+    "pageDidNotThrow": []
+  },
+  "serverLog": []
+}
