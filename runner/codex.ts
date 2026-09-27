@@ -1,9 +1,15 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { isAbsolute, relative } from "node:path";
 import { createInterface } from "node:readline";
+import type { GeneratedImage } from "./engine";
+import { killTree, spawnEngine } from "./engines/process";
 import { PATHS } from "./home";
-import { describeMachine } from "./shell";
+
+/**
+ * The client for Codex's app-server protocol, which runner/engines/codex.ts
+ * drives as Perry's Codex engine.
+ */
 
 /**
  * Codex's "elevated" Windows sandbox runs a setup check over every file its
@@ -31,7 +37,7 @@ export const WINDOWS_SANDBOX = process.platform === "win32"
  * asks for almost nothing.
  *
  * That is the mode of a chat on Ask. Auto and Full access run danger-full-access:
- * Auto with every command reviewed first, Full access never asking (runTurn).
+ * Auto with every command reviewed first, Full access never asking (engines/codex.ts).
  */
 export const SANDBOX_MODES = ["read-only", "workspace-write", "danger-full-access"] as const;
 export type SandboxMode = (typeof SANDBOX_MODES)[number];
@@ -45,7 +51,7 @@ export function sandboxMode(value = process.env.PERRY_CODEX_SANDBOX): SandboxMod
 }
 
 /** The per-turn policy for a mode, as the app-server's SandboxPolicy. */
-function sandboxPolicy(mode: SandboxMode, writableRoots: string[]) {
+export function sandboxPolicy(mode: SandboxMode, writableRoots: string[]) {
   if (mode === "read-only") return { type: "readOnly", networkAccess: false };
   if (mode === "danger-full-access") return { type: "dangerFullAccess" };
   return { type: "workspaceWrite", writableRoots, networkAccess: false };
@@ -66,16 +72,15 @@ type TurnEvent = { turn: { id: string; status: string; items?: TurnItem[]; error
 type LoginEvent = { loginId: string; success: boolean; error?: string };
 type TurnErrorEvent = { turnId: string; willRetry?: boolean; error?: { message?: string } };
 /** item/started carries startedAtMs, item/completed completedAtMs. */
-type ItemEvent = { threadId: string; turnId: string; item: TurnItem; startedAtMs?: number; completedAtMs?: number };
+export type ItemEvent = { threadId: string; turnId: string; item: TurnItem; startedAtMs?: number; completedAtMs?: number };
 /** TokenUsageBreakdown: cached input is part of input, reasoning part of output. */
 export type TokenUsage = {
   totalTokens: number; inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number;
   outputTokens: number; reasoningOutputTokens: number;
 };
 /** thread/tokenUsage/updated: the thread's running total, and the latest model response's share. */
-type TokenUsageEvent = { threadId: string; turnId: string; tokenUsage: { total: TokenUsage; last: TokenUsage } };
+export type TokenUsageEvent = { threadId: string; turnId: string; tokenUsage: { total: TokenUsage; last: TokenUsage } };
 
-export type GeneratedImage = { id: string; path?: string; base64?: string };
 /** `compacted`: Codex compacted the thread's context during the turn (a contextCompaction item). */
 export type TurnOutput = { text: string; images: GeneratedImage[]; interrupted?: boolean; compacted?: boolean };
 
@@ -88,7 +93,7 @@ export class TurnFailed extends Error {
 export type CodexAttachment = { url?: string; localPath?: string; fileName: string; contentType?: string };
 export type CodexModel = { id: string; name: string; isDefault: boolean; efforts: string[]; defaultEffort?: string };
 /** A message as Codex input: its text, images inline, other files named by where they are. */
-function userInput(prompt: string, attachments: CodexAttachment[], recalled?: string): object[] {
+export function userInput(prompt: string, attachments: CodexAttachment[], recalled?: string): object[] {
   const text = { type: "text", text: prompt, text_elements: [] };
   // Recalled memory goes first, as its own part of the owner's message.
   const input: object[] = recalled ? [{ type: "text", text: recalled, text_elements: [] }, text] : [text];
@@ -118,6 +123,8 @@ export class CodexAppServer extends EventEmitter {
   private fileChanges = new Map<string, FileChange[]>();
   private child?: ChildProcessWithoutNullStreams;
   closed = false;
+  /** The CLI's version, from the userAgent initialize answers with. */
+  version?: string;
 
   /** What a file-change item is about to change, for its approval request. */
   changesFor(itemId?: string): FileChange[] {
@@ -127,14 +134,9 @@ export class CodexAppServer extends EventEmitter {
   async start(): Promise<this> {
     // A mistyped escape hatch fails here, where the runner reports it, not mid-turn.
     sandboxMode();
-    const windows = process.platform === "win32";
     // Stdio is the default transport. Older Codex (0.106, for one) has no --stdio
     // flag and exits (2) on it, so it is left out rather than spelled out.
-    const child = spawn(
-      windows ? process.env.COMSPEC || "cmd.exe" : "codex",
-      windows ? ["/d", "/s", "/c", "codex app-server"] : ["app-server"],
-      { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
-    );
+    const child = spawnEngine("codex", ["app-server"]);
     this.child = child;
     createInterface({ input: child.stdout }).on("line", (line) => {
       let message: RpcMessage;
@@ -183,9 +185,10 @@ export class CodexAppServer extends EventEmitter {
     });
     child.on("error", (error) => this.fail(error));
     child.on("close", (code) => this.fail(new Error(`Codex app-server exited (${code}).`)));
-    await this.request("initialize", {
+    const initialized = await this.request<{ userAgent?: string }>("initialize", {
       clientInfo: { name: "perry", title: "Assistant", version: "0.1.0" },
     });
+    this.version = initialized?.userAgent?.match(/\/(\d+\.\d+\.\d+[\w.-]*)/)?.[1];
     this.notify("initialized", {});
     return this;
   }
@@ -231,13 +234,14 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  async account(): Promise<{ available: true; authMode?: string; planType?: string }> {
-    const result = await this.request<{ account?: { type?: string; planType?: string | null } | null }>("account/read", { refreshToken: false });
+  async account(): Promise<{ available: true; authMode?: string; planType?: string; email?: string }> {
+    const result = await this.request<{ account?: { type?: string; planType?: string | null; email?: string | null } | null }>("account/read", { refreshToken: false });
     const account = result.account;
     return {
       available: true,
       authMode: account?.type,
       planType: account?.type === "chatgpt" ? account.planType ?? undefined : undefined,
+      email: account?.type === "chatgpt" ? account.email ?? undefined : undefined,
     };
   }
 
@@ -292,6 +296,8 @@ export class CodexAppServer extends EventEmitter {
    * generated images; an interrupted one (stopped by the owner) resolves with
    * what it had produced so far. A failed turn rejects with a TurnFailed that
    * still carries its partial output, so a late failure does not lose it.
+   * A timeout of 0 waits for as long as it takes (the runner's watchdog keeps
+   * the time for chat turns).
    */
   waitForTurn(turnId: string, timeoutMs = 8 * 60_000): Promise<TurnOutput> {
     return new Promise((resolve, reject) => {
@@ -345,7 +351,7 @@ export class CodexAppServer extends EventEmitter {
         fail(event.error?.message || "Codex turn failed.");
       };
       const onClose = (error: Error) => fail(error.message);
-      const timer = setTimeout(() => fail("Codex turn timed out."), timeoutMs);
+      const timer = timeoutMs > 0 ? setTimeout(() => fail("Codex turn timed out."), timeoutMs) : undefined;
       this.on("turn/completed", finish);
       this.on("turn/error", onError);
       this.on("closed", onClose);
@@ -364,7 +370,7 @@ export class CodexAppServer extends EventEmitter {
    * so a skill written in one turn is listed in the next only after a re-scan.
    * Returns the skills of Perry's that failed to load, so the agent can say so.
    */
-  private async reloadSkills(cwd: string): Promise<string[]> {
+  async reloadSkills(cwd: string): Promise<string[]> {
     const result = await this.request<{ data?: Array<{ errors?: Array<{ path: string; message: string }> }> }>("skills/list", { cwds: [cwd], forceReload: true });
     const errors = (result.data ?? []).flatMap((entry) => entry.errors ?? [])
       .filter((error) => { const inside = relative(PATHS.skills, error.path); return !inside.startsWith("..") && !isAbsolute(inside); })
@@ -409,147 +415,8 @@ export class CodexAppServer extends EventEmitter {
       this.off("turn/started", onStarted);
     }
   }
-
-  async runTurn({ threadId, instructions, history, recalled, prompt, cwd, model, effort, access = "supervised", tools, attachments = [], onThread, onText, onStarted, onItem, onUsage }: {
-    threadId?: string;
-    instructions: string;
-    history?: string;
-    /** Memory recalled for this turn: data for Codex, sent ahead of the prompt rather than as instructions. */
-    recalled?: string;
-    prompt: string;
-    cwd: string;
-    model?: string;
-    /** The reasoning effort, one the model takes. Unset leaves the thread's own. */
-    effort?: string;
-    /**
-     * Supervised ("Ask"): the sandbox (PERRY_CODEX_SANDBOX, workspace-write by
-     * default) and on-request approvals, which reach the owner through the
-     * runner. Auto: no sandbox, and every command that is not plainly
-     * read-only is asked about, which the runner has a reviewer answer
-     * (approvals.ts). Full: no sandbox, and Codex never asks.
-     */
-    access?: "supervised" | "auto" | "full";
-    tools?: { url: string; token: string };
-    attachments?: CodexAttachment[];
-    onThread: (threadId: string) => Promise<unknown>;
-    /** The reply so far, as Codex writes it: the text of the message it is currently writing. */
-    onText?: (text: string) => void;
-    /** Called once Codex has started the turn, with what interrupt() needs. */
-    onStarted?: (turn: { threadId: string; turnId: string }) => void;
-    /** An item of this turn started or completed: a command, a file change, a tool call and so on. */
-    onItem?: (phase: "started" | "completed", item: TurnItem, atMs: number) => void;
-    /** One model response's tokens, once per response. */
-    onUsage?: (usage: TokenUsage) => void;
-  }): Promise<{ threadId: string; response: string; images: GeneratedImage[]; interrupted?: boolean; compacted?: boolean }> {
-    const broken = await this.reloadSkills(cwd).catch(() => []);
-    const machine = describeMachine();
-    // The owner's OS and shell, so commands, paths and "open it" requests fit this machine.
-    const home = [
-      `Your own folder for files you make is ${PATHS.files}. Organise it as you see fit, and use it unless the owner or the task calls for somewhere else.`,
-      `Your skills folder is ${PATHS.skills}.`,
-      ...(broken.length ? [`These skills failed to load, so they are not listed:\n${broken.map((line) => `- ${line}`).join("\n")}`] : []),
-    ].join(" ") +
-      `\n\nThis machine runs ${machine.os}, and your commands run in ${machine.shell}; write commands, paths and quoting for that, and open files or apps with ${machine.open}.`;
-    const full = access === "full";
-    // Auto has no sandbox either: the gate is the reviewer, which Codex's "untrusted" policy sends
-    // every command that is not plainly read-only to (approvals.ts, review.ts). A sandbox would
-    // only make commands fail quietly, since Codex does not reliably ask to leave it.
-    const auto = access === "auto";
-    const sandboxed = full ? "" : auto
-      ? "\n\nEach command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
-      // Sandboxed, Codex tends to give up when a command is blocked (no network, a folder outside
-      // the workspace) rather than ask; the owner's access setting is what should decide, so it asks.
-      : "\n\nYour commands run in a sandbox: no network, and writes only in the working folder and your own folders. " +
-        "A command that fails with a network, connection or permission error was blocked by the sandbox. When the task needs it, " +
-        "do not report the failure or work around it: run the same command again with sandbox_permissions \"require_escalated\" " +
-        "and a one-line justification, and the owner is asked. Ask this way only for what the task needs.";
-    const fullInstructions = history
-      ? `${instructions}\n\n${home}${sandboxed}\n\nEarlier chat history (context, not a new user request):\n${history}`
-      : `${instructions}\n\n${home}${sandboxed}`;
-    const policy = full ? "never" : auto ? "untrusted" : "on-request";
-    const sandbox: SandboxMode = full || auto ? "danger-full-access" : sandboxMode();
-    // The deployment's own tools: memory, connected accounts, task tracking.
-    const config = {
-      ...(tools ? {
-        [`mcp_servers.${ASSISTANT_MCP}`]: {
-          url: tools.url,
-          http_headers: { Authorization: `Bearer ${tools.token}` },
-          default_tools_approval_mode: "approve",
-          tool_timeout_sec: 120,
-        },
-      } : {}),
-      ...WINDOWS_SANDBOX,
-    };
-    const thread = threadId
-      ? await this.request<{ thread?: { id?: string } }>("thread/resume", { threadId, cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions }, 30_000)
-      : await this.request<{ thread?: { id?: string } }>("thread/start", { cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions, serviceName: "perry" }, 30_000);
-    const id = thread.thread?.id;
-    if (!id) throw new Error("Codex did not return a thread ID.");
-    if (!threadId) await onThread(id);
-    const input = userInput(prompt, attachments, recalled);
-    // Deltas can arrive before turn/start answers, so match them by thread.
-    const written = new Map<string, string>();
-    let latest = "";
-    const onDelta = (event: { threadId?: string; itemId?: string; delta?: string }) => {
-      if (event.threadId !== id || !event.itemId || !event.delta) return;
-      latest = (written.get(event.itemId) ?? "") + event.delta;
-      written.set(event.itemId, latest);
-      onText?.(latest);
-    };
-    // Items and usage carry the turn's id, which is known only once turn/start
-    // answers; anything of this thread that comes earlier waits until then.
-    let turnId: string | undefined;
-    const early: Array<() => void> = [];
-    const ofTurn = <T extends { threadId?: string; turnId?: string }>(handle: (event: T) => void) => {
-      const listener = (event: T) => {
-        if (event?.threadId !== id) return;
-        if (!turnId) early.push(() => listener(event));
-        else if (event.turnId === turnId) handle(event);
-      };
-      return listener;
-    };
-    const onItemStarted = ofTurn((event: ItemEvent) => onItem?.("started", event.item, event.startedAtMs ?? Date.now()));
-    const onItemCompleted = ofTurn((event: ItemEvent) => onItem?.("completed", event.item, event.completedAtMs ?? Date.now()));
-    const onTokens = ofTurn((event: TokenUsageEvent) => { if (event.tokenUsage?.last) onUsage?.(event.tokenUsage.last); });
-    this.on("item/agentMessage/delta", onDelta);
-    this.on("item/started", onItemStarted);
-    this.on("item/completed", onItemCompleted);
-    this.on("thread/tokenUsage/updated", onTokens);
-    try {
-    // turn/start's overrides hold "for this turn and subsequent turns", and
-    // thread/resume of a thread this app-server still has loaded just rejoins
-    // it, so every turn states its access and effort: a chat switched mid-way
-    // takes the new ones, and nothing lingers from an earlier turn.
-    const started = await this.request<{ turn?: { id?: string } }>("turn/start", {
-      threadId: id,
-      input,
-      ...(model ? { model } : {}),
-      ...(effort ? { effort } : {}),
-      cwd,
-      approvalPolicy: policy,
-      sandboxPolicy: sandboxPolicy(sandbox, [cwd, PATHS.files, PATHS.skills]),
-    }, 30_000);
-    if (!started.turn?.id) throw new Error("Codex did not start a turn.");
-    turnId = started.turn.id;
-    for (const replay of early.splice(0)) replay();
-    onStarted?.({ threadId: id, turnId: started.turn.id });
-    try {
-      const { text, images, interrupted, compacted } = await this.waitForTurn(started.turn.id);
-      // A stopped turn may not have finished its message; the streamed text is the best record of it.
-      return { threadId: id, response: text || (interrupted ? latest : ""), images, interrupted, compacted };
-    } catch (error) {
-      if (error instanceof TurnFailed && !error.partial.text) error.partial.text = latest;
-      throw error;
-    }
-    } finally {
-      this.off("item/agentMessage/delta", onDelta);
-      this.off("item/started", onItemStarted);
-      this.off("item/completed", onItemCompleted);
-      this.off("thread/tokenUsage/updated", onTokens);
-    }
-  }
-
-  close() {
-    this.child?.kill();
+  /** End the app-server and everything it started. */
+  close(signal?: NodeJS.Signals) {
+    if (this.child) killTree(this.child, signal);
   }
 }

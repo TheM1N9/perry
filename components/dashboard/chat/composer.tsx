@@ -2,10 +2,11 @@
 
 import { ArrowUpIcon, BrainIcon, CpuIcon, PaperclipIcon, ShieldAlertIcon, ShieldCheckIcon, SparklesIcon, SquareIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
-import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access, type ModelOption } from "@/convex/lib/commands";
+import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, enginesOf, modelKey, modelsOf, type Access, type ModelOption } from "@/convex/lib/commands";
+import { ENGINE_LABELS } from "@/convex/lib/engines";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { InfoTip } from "../common";
@@ -25,8 +26,9 @@ export const ACCESS_ICONS: Record<Access, typeof ShieldCheckIcon> = { supervised
 
 type Pickers = {
   models: ModelOption[] | undefined;
+  /** The chat's model as "<engine>/<id>" (lib/engines.ts, modelKey). */
   model?: string;
-  onModel: (id: string) => void;
+  onModel: (key: string) => void;
   modelInfo?: ModelOption;
   effort?: string;
   onEffort: (effort: string | undefined) => void;
@@ -156,10 +158,21 @@ export function Composer({
 
 const pill = "h-8 gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-popup-open:bg-muted dark:bg-transparent dark:hover:bg-muted [&>svg:last-child]:hidden sm:[&>svg:last-child]:block";
 
-/** Which model, how hard it thinks, and what it may do on your computer. Each applies from the next reply. */
+/**
+ * Which model, how hard it thinks, and what it may do on your computer. Each
+ * applies from the next reply. Models are grouped by engine once there is more
+ * than one; another engine's model moves the chat there.
+ */
 function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, access, onAccess, accessDisabled }: Pickers) {
   const efforts = modelInfo?.efforts ?? [];
-  const modelItems = (models ?? []).map((item) => ({ value: item.id, label: item.name }));
+  const keyOf = (item: ModelOption) => modelKey(item.engine ?? "codex", item.id);
+  const engines = enginesOf(models ?? []);
+  const modelItems = (models ?? []).map((item) => ({ value: keyOf(item), label: item.name }));
+  const modelItem = (item: ModelOption) => (
+    <SelectItem key={keyOf(item)} value={keyOf(item)}>
+      {item.name}{item.isDefault && <span className="text-muted-foreground"> · default</span>}
+    </SelectItem>
+  );
   const effortItems = [
     { value: "default", label: modelInfo?.defaultEffort ? `Default (${levelName(modelInfo.defaultEffort)})` : "Default" },
     ...efforts.map((level) => ({ value: level, label: levelName(level) })),
@@ -172,14 +185,17 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
       <Select items={modelItems} value={model ?? null} onValueChange={(value) => { if (value) onModel(value); }} disabled={!models?.length}>
         <SelectTrigger aria-label="Model" className={pill}>
           <CpuIcon className="size-3.5" />
-          <SelectValue placeholder={models === undefined ? "Loading…" : "Codex default"} />
+          <SelectValue placeholder={models === undefined ? "Loading…" : "Default model"} />
         </SelectTrigger>
         <SelectContent alignItemWithTrigger={false} align="start" side="top">
-          {(models ?? []).map((item) => (
-            <SelectItem key={item.id} value={item.id}>
-              {item.name}{item.isDefault && <span className="text-muted-foreground"> · default</span>}
-            </SelectItem>
-          ))}
+          {engines.length > 1
+            ? engines.map((engine) => (
+                <SelectGroup key={engine}>
+                  <SelectLabel>{ENGINE_LABELS[engine]}</SelectLabel>
+                  {modelsOf(models ?? [], engine).map(modelItem)}
+                </SelectGroup>
+              ))
+            : (models ?? []).map(modelItem)}
         </SelectContent>
       </Select>
       {efforts.length > 0 && (

@@ -1,132 +1,24 @@
 import { v, type Infer } from "convex/values";
 import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { createThread, saveMessages } from "./lib/agent";
 import { CAPTION_LIMIT, UPLOAD_LIMIT, deleteMessage, editDraft, finishDraft, sendDraft, sendFile, sendMessage } from "./lib/telegram";
-import { assertDashboardKey } from "./lib/auth";
-import { COMPACTED } from "./lib/commands";
+import { COMPACTED, runLabel } from "./lib/commands";
+import { ENGINE_LABELS, engineOf, type EngineKind } from "./lib/engines";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
 import { hide, savedValues } from "./vault";
 import { takeFromOutbox } from "./conversations";
-import { vAccess, vCodexModel, vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
+import { engineReady, isOnline, recordEngines, resumeOf, statusesOf } from "./engines";
+import { vAccess, vCodexModel, vEngine, vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
 
-/** Only device codes and account metadata cross Convex. Codex tokens never do. */
-export const accounts = query({
-  args: { key: v.string() },
-  handler: async (ctx, args) => {
-    assertDashboardKey(args.key);
-    const runners = await ctx.db.query("runners").order("desc").take(20);
-    const cutoff = Date.now() - 90_000;
-    return runners.filter((runner) => !runner.revoked).map((runner) => ({
-      id: runner._id,
-      name: runner.name,
-      online: (runner.lastSeenAt ?? 0) > cutoff,
-      available: runner.codexAvailable ?? false,
-      authMode: runner.codexAuthMode,
-      planType: runner.codexPlanType,
-      error: runner.codexError,
-      updatedAt: runner.codexUpdatedAt,
-      requestKind: runner.codexRequestKind,
-      requestStatus: runner.codexRequestStatus,
-      verificationUrl: runner.codexVerificationUrl,
-      userCode: runner.codexUserCode,
-      requestError: runner.codexRequestError,
-    }));
-  },
-});
+// --- For runners from before engines ------------------------------------------
+// A computer connected with `pnpm run connect` may run an older runner than
+// this server. These are the calls it makes, kept working on engines.ts.
 
-export const requestAuth = mutation({
-  args: {
-    key: v.string(),
-    runnerId: v.id("runners"),
-    kind: v.union(v.literal("login"), v.literal("logout")),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    assertDashboardKey(args.key);
-    const runner = await ctx.db.get(args.runnerId);
-    if (!runner || runner.revoked || (runner.lastSeenAt ?? 0) < Date.now() - 90_000) {
-      throw new Error("Start this runner before connecting Codex.");
-    }
-    if (!runner.codexAvailable) throw new Error(runner.codexError || "Codex CLI is unavailable on this machine.");
-    if (runner.codexRequestStatus === "queued" || runner.codexRequestStatus === "running") {
-      throw new Error("A Codex account request is already in progress.");
-    }
-    await ctx.db.patch(args.runnerId, {
-      codexRequestId: (runner.codexRequestId ?? 0) + 1,
-      codexRequestKind: args.kind,
-      codexRequestStatus: "queued",
-      codexVerificationUrl: undefined,
-      codexUserCode: undefined,
-      codexRequestError: undefined,
-    });
-    return null;
-  },
-});
-
-export const queuedAuth = query({
-  args: { token: v.string() },
-  handler: async (ctx, args) => {
-    const runner = await authenticate(ctx, args.token);
-    if (runner.codexRequestStatus !== "queued" || !runner.codexRequestKind) return null;
-    return { id: runner.codexRequestId!, kind: runner.codexRequestKind };
-  },
-});
-
-export const recoverAuth = mutation({
-  args: { token: v.string() },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const runner = await authenticate(ctx, args.token);
-    if (runner.codexRequestStatus === "running") {
-      await ctx.db.patch(runner._id, {
-        codexRequestStatus: "error",
-        codexVerificationUrl: undefined,
-        codexUserCode: undefined,
-        codexRequestError: "Runner restarted. Start sign-in again.",
-      });
-    }
-    return null;
-  },
-});
-
-export const claimAuth = mutation({
-  args: { token: v.string(), id: v.number() },
-  returns: v.boolean(),
-  handler: async (ctx, args) => {
-    const runner = await authenticate(ctx, args.token);
-    if (runner.codexRequestStatus !== "queued" || runner.codexRequestId !== args.id) return false;
-    await ctx.db.patch(runner._id, { codexRequestStatus: "running" });
-    return true;
-  },
-});
-
-export const updateAuth = mutation({
-  args: {
-    token: v.string(),
-    id: v.number(),
-    status: v.union(v.literal("running"), v.literal("done"), v.literal("error")),
-    verificationUrl: v.optional(v.string()),
-    userCode: v.optional(v.string()),
-    error: v.optional(v.string()),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const runner = await authenticate(ctx, args.token);
-    if (runner.codexRequestId !== args.id || runner.codexRequestStatus !== "running") return null;
-    await ctx.db.patch(runner._id, {
-      codexRequestStatus: args.status,
-      codexVerificationUrl: args.status === "running" ? args.verificationUrl : undefined,
-      codexUserCode: args.status === "running" ? args.userCode : undefined,
-      codexRequestError: args.error?.slice(0, 500),
-    });
-    return null;
-  },
-});
-
+/** Codex's account, as a runner from before engines reports it. */
 export const reportAccount = mutation({
   args: {
     token: v.string(),
@@ -139,28 +31,73 @@ export const reportAccount = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const runner = await authenticate(ctx, args.token);
-    await ctx.db.patch(runner._id, {
-      codexAvailable: args.available,
-      codexAuthMode: args.authMode,
-      codexPlanType: args.planType,
-      codexError: args.error?.slice(0, 500),
-      codexModels: args.models ?? runner.codexModels,
-      codexUpdatedAt: Date.now(),
+    const others = statusesOf(runner).filter((status) => status.kind !== "codex").map(({ updatedAt: _updatedAt, ...status }) => status);
+    await recordEngines(ctx, runner, [...others, {
+      kind: "codex",
+      installed: args.available,
+      signedIn: args.authMode === "chatgpt",
+      auth: { type: args.authMode, label: args.authMode === "chatgpt" ? "ChatGPT" : args.authMode, plan: args.planType },
+      models: args.models ?? [],
+      error: args.error,
+    }]);
+    return null;
+  },
+});
+
+export const queuedAuth = query({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token);
+    const request = runner.engineAuth?.codex;
+    return request?.status === "queued" ? { id: request.id, kind: request.kind } : null;
+  },
+});
+
+export const recoverAuth = mutation({
+  args: { token: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.runMutation(api.engines.recoverAuth, args);
+    return null;
+  },
+});
+
+export const claimAuth = mutation({
+  args: { token: v.string(), id: v.number() },
+  returns: v.boolean(),
+  handler: async (ctx, args): Promise<boolean> => await ctx.runMutation(api.engines.claimAuth, { ...args, engine: "codex" }),
+});
+
+export const updateAuth = mutation({
+  args: {
+    token: v.string(),
+    id: v.number(),
+    status: v.union(v.literal("running"), v.literal("done"), v.literal("error")),
+    verificationUrl: v.optional(v.string()),
+    userCode: v.optional(v.string()),
+    error: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, { verificationUrl, userCode, ...args }) => {
+    await ctx.runMutation(api.engines.updateAuth, {
+      ...args,
+      engine: "codex",
+      ...(verificationUrl && userCode ? { interaction: { type: "deviceCode" as const, verificationUrl, userCode } } : {}),
     });
     return null;
   },
 });
 
 /**
- * The chat's runner, or the freshest online one for a chat that has none yet.
- * A chat stays on its computer, but that computer connected again under a new
- * token (runner.json rewritten, so the server paired it afresh) is still it:
- * the chat moves to the new runner, since its Codex threads are on that disk.
+ * The chat's runner, or the freshest online one for a chat that has none yet,
+ * with the chat's engine signed in. A chat stays on its computer, but that
+ * computer connected again under a new token (runner.json rewritten, so the
+ * server paired it afresh) is still it: the chat moves to the new runner,
+ * since its engine sessions are on that disk.
  */
-async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">): Promise<Id<"runners"> | null> {
+async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">, engine: EngineKind): Promise<Id<"runners"> | null> {
   const pinned = conversation.codexRunnerId ? await ctx.db.get(conversation.codexRunnerId) : null;
-  const online = (item: Doc<"runners">) =>
-    !item.revoked && !!item.codexAvailable && item.codexAuthMode === "chatgpt" && (item.lastSeenAt ?? 0) > Date.now() - 90_000;
+  const online = (item: Doc<"runners">) => isOnline(item) && engineReady(item, engine);
   if (pinned && online(pinned)) return pinned._id;
   const sameComputer = (item: Doc<"runners">) => !!pinned?.hostname && item.hostname === pinned.hostname && item.platform === pinned.platform;
   const runner = (await ctx.db.query("runners").order("desc").take(20))
@@ -174,18 +111,20 @@ async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">):
 // Adapted from vercel/eve (Apache-2.0): packages/eve/src/execution/session/input-queue.ts
 /**
  * Whether a new message joins the running turn instead of waiting behind it:
- * only when it asks to steer, and only into a reply that is not being stopped
- * and is not a compaction, which Codex cannot steer.
+ * only when it asks to steer, and only into a reply that is not being stopped,
+ * is not a compaction, which cannot be steered, and runs on the same engine.
+ * The runner then steers as its engine can, or queues it (runner/engine.ts).
  */
-function isSteering(policy: "steer" | "queue" | undefined, running: Doc<"codexTurns"> | null): running is Doc<"codexTurns"> {
+function isSteering(policy: "steer" | "queue" | undefined, running: Doc<"codexTurns"> | null, engine: EngineKind): running is Doc<"codexTurns"> {
   return (policy ?? "queue") === "steer" && running !== null && !running.stopRequested && running.kind !== "compact"
-    && running.runnerId !== undefined;
+    && running.runnerId !== undefined && engineOf(running) === engine;
 }
 
 /**
- * Hand a message to Codex. With the "steer" policy, a message sent while the
- * chat's reply is running joins that reply (see codexSteers); otherwise, and
- * for "queue", it becomes a turn of its own behind whatever is running.
+ * Hand a message to the chat's engine. With the "steer" policy, a message sent
+ * while the chat's reply is running joins that reply (see codexSteers);
+ * otherwise, and for "queue", it becomes a turn of its own behind whatever is
+ * running.
  */
 export const enqueueTurn = internalMutation({
   args: {
@@ -199,8 +138,10 @@ export const enqueueTurn = internalMutation({
     flush: v.optional(v.boolean()),
     /** The prompt is not the owner's: only the reply is saved to the chat (see finalizeTurn). */
     hidden: v.optional(v.boolean()),
+    /** The chat's engine, which `model` is one of. Unset is Codex. */
+    engine: v.optional(vEngine),
     model: v.optional(v.string()),
-    /** The reasoning effort for turn/start, already checked against the model (commands.turnEffort). */
+    /** The reasoning effort for the turn, already checked against the model (commands.turnEffort). */
     effort: v.optional(v.string()),
     access: v.optional(vAccess),
     attachments: v.optional(v.array(vTurnAttachment)),
@@ -213,7 +154,9 @@ export const enqueueTurn = internalMutation({
     const running = await ctx.db.query("codexTurns")
       .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.conversationId).eq("status", "running"))
       .first();
+    const engine = args.engine ?? engineOf(conversation);
     const message = {
+      engine,
       conversationId: args.conversationId,
       runId: args.runId,
       prompt: args.prompt,
@@ -229,24 +172,31 @@ export const enqueueTurn = internalMutation({
       attachments: args.attachments,
       createdAt: Date.now(),
     };
-    if (isSteering(args.policy, running)) {
+    if (isSteering(args.policy, running, engine)) {
       // The running turn already carries recalled memory; a steer adds only the message.
       const { recalled: _recalled, recallDigest: _digest, flush: _flush, hidden: _hidden, ...steer } = message;
       const id = await ctx.db.insert("codexSteers", { ...steer, turnId: running._id, runnerId: running.runnerId!, status: "pending" });
       await takeFromOutbox(ctx, conversation, args.prompt);
       return id;
     }
-    const runnerId = await pickRunner(ctx, conversation);
-    if (!runnerId) {
-      throw new Error(conversation.codexRunnerId
-        ? "The Codex runner for this chat is offline. Start Perry on its computer (perry start) to continue."
-        : "Sign in to Codex in Settings and start Perry's runner (perry start) to chat.");
-    }
+    const runnerId = await pickRunner(ctx, conversation, engine);
+    if (!runnerId) throw new Error(await noRunner(ctx, conversation, engine));
     const id = await ctx.db.insert("codexTurns", { ...message, runnerId, status: "queued" });
     await takeFromOutbox(ctx, await ctx.db.get(args.conversationId), args.prompt);
     return id;
   },
 });
+
+/** Why no runner can take the chat's turn, and what to do about it. */
+async function noRunner(ctx: MutationCtx, conversation: Doc<"conversations">, engine: EngineKind): Promise<string> {
+  const pinned = conversation.codexRunnerId ? await ctx.db.get(conversation.codexRunnerId) : null;
+  if (pinned && isOnline(pinned)) {
+    return `${ENGINE_LABELS[engine]} isn't signed in on ${pinned.name}. Sign in to it in Settings, or pick a model from another engine.`;
+  }
+  return conversation.codexRunnerId
+    ? "The runner for this chat is offline. Start Perry on its computer (perry start) to continue."
+    : "Sign in to an engine in Settings and start Perry's runner (perry start) to chat.";
+}
 
 /**
  * A steer that could not join its turn becomes an ordinary turn of its own,
@@ -254,6 +204,7 @@ export const enqueueTurn = internalMutation({
  */
 export async function queueSteer(ctx: MutationCtx, steer: Doc<"codexSteers">, outcome: { error?: string; stopped?: boolean } = {}) {
   const queuedTurnId = await ctx.db.insert("codexTurns", {
+    engine: steer.engine,
     runnerId: steer.runnerId,
     conversationId: steer.conversationId,
     runId: steer.runId,
@@ -360,9 +311,9 @@ export const requestStop = internalMutation({
 });
 
 /**
- * /compact: ask Codex to summarise the chat's thread so it carries less
+ * /compact: ask the chat's engine to summarise its session so it carries less
  * context. It waits in the chat's queue like a turn, so it never runs while a
- * reply is being written. Null when the chat has no Codex thread yet.
+ * reply is being written. Null when the chat has no engine session yet.
  */
 export const requestCompact = internalMutation({
   args: { conversationId: v.id("conversations") },
@@ -370,12 +321,14 @@ export const requestCompact = internalMutation({
   handler: async (ctx, args) => {
     const conversation = await ctx.db.get(args.conversationId);
     if (!conversation) throw new Error("This chat was deleted.");
-    if (!conversation.codexThreadId) return null;
-    const runnerId = await pickRunner(ctx, conversation);
-    // Only a runner's Codex holds the thread; answering without the computer cannot compact it.
-    if (!runnerId) throw new Error("The Codex runner for this chat is offline. Start it to compact this chat.");
+    if (!resumeOf(conversation)) return null;
+    const engine = engineOf(conversation);
+    const runnerId = await pickRunner(ctx, conversation, engine);
+    // Only the runner's engine holds the session; answering without the computer cannot compact it.
+    if (!runnerId) throw new Error("The runner for this chat is offline. Start it to compact this chat.");
     const runId = await ctx.db.insert("runs", { conversationId: conversation._id, prompt: "/compact", status: "running", startedAt: Date.now() });
     return await ctx.db.insert("codexTurns", {
+      engine,
       runnerId,
       conversationId: conversation._id,
       runId,
@@ -403,7 +356,8 @@ export const claimTurn = mutation({
   handler: async (ctx, args) => {
     const runner = await authenticate(ctx, args.token);
     const job = await ctx.db.get(args.id);
-    if (!job || job.runnerId !== runner._id || job.status !== "queued" || runner.codexAuthMode !== "chatgpt") return null;
+    const engine = engineOf(job);
+    if (!job || job.runnerId !== runner._id || job.status !== "queued" || !engineReady(runner, engine)) return null;
     const conversation = await ctx.db.get(job.conversationId);
     if (!conversation) return null;
     const running = await ctx.db.query("codexTurns")
@@ -411,27 +365,63 @@ export const claimTurn = mutation({
       .first();
     if (running) return null;
     await ctx.db.patch(job._id, { status: "running", startedAt: Date.now() });
-    // Relative: the runner reaches the server at its own address for it, which may be over Tailscale.
-    return { ...job, codexThreadId: conversation.codexThreadId, channel: conversation.channel, mcpUrl: "/api/backend/http/mcp" };
+    // The chat's session, when it is on this turn's engine; a chat moved to another engine since starts one.
+    const resume = resumeOf(conversation);
+    const resumeCursor = resume?.engine === engine ? resume.cursor : undefined;
+    return {
+      ...job,
+      engine,
+      resumeCursor,
+      // What a runner from before engines resumes Codex with.
+      codexThreadId: engine === "codex" ? resumeCursor : undefined,
+      channel: conversation.channel,
+      // Relative: the runner reaches the server at its own address for it, which may be over Tailscale.
+      mcpUrl: "/api/backend/http/mcp",
+    };
   },
 });
 
-export const setThread = mutation({
-  args: { token: v.string(), id: v.id("codexTurns"), threadId: v.string() },
+/**
+ * The engine started a session for the chat (it had none): its next turns
+ * resume it. A chat moved to another engine since this turn was queued keeps
+ * its own.
+ */
+async function recordSession(ctx: MutationCtx, token: string, id: Id<"codexTurns">, cursor: string, version: number) {
+  const runner = await authenticate(ctx, token);
+  const job = await ctx.db.get(id);
+  if (!job || job.runnerId !== runner._id || job.status !== "running") return;
+  const conversation = await ctx.db.get(job.conversationId);
+  const engine = engineOf(job);
+  if (!conversation || engineOf(conversation) !== engine) return;
+  const current = resumeOf(conversation);
+  if (current && current.cursor !== cursor) throw new Error(`Chat already has another ${ENGINE_LABELS[engine]} session.`);
+  await ctx.db.patch(conversation._id, {
+    resume: { engine, cursor, version },
+    // Kept for Codex chats, so a runner or check from before engines still finds the thread.
+    ...(engine === "codex" ? { codexThreadId: cursor } : {}),
+  });
+}
+
+export const setResume = mutation({
+  args: { token: v.string(), id: v.id("codexTurns"), cursor: v.string(), version: v.optional(v.number()) },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const runner = await authenticate(ctx, args.token);
-    const job = await ctx.db.get(args.id);
-    if (!job || job.runnerId !== runner._id || job.status !== "running") return null;
-    const conversation = await ctx.db.get(job.conversationId);
-    if (!conversation) return null;
-    if (conversation.codexThreadId && conversation.codexThreadId !== args.threadId) throw new Error("Chat already has another Codex thread.");
-    await ctx.db.patch(conversation._id, { codexThreadId: args.threadId });
+    await recordSession(ctx, args.token, args.id, args.cursor, args.version ?? 1);
     return null;
   },
 });
 
-/** Codex has started the turn; its id is what a steer is checked against. */
+/** A Codex thread, as a runner from before engines reports it. */
+export const setThread = mutation({
+  args: { token: v.string(), id: v.id("codexTurns"), threadId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await recordSession(ctx, args.token, args.id, args.threadId, 1);
+    return null;
+  },
+});
+
+/** The engine has started the turn; its id is what a steer is checked against. */
 export const setCodexTurn = mutation({
   args: { token: v.string(), id: v.id("codexTurns"), codexTurnId: v.string() },
   returns: v.null(),
@@ -849,7 +839,7 @@ export const markFinalized = internalMutation({
     for (const runId of [job.runId, ...steers.map((steer) => steer.runId)]) {
       await ctx.db.patch(runId, {
         status: job.status === "done" ? "ok" : "error",
-        model: job.model ?? "codex subscription",
+        model: job.model ?? runLabel(undefined, undefined, undefined, engineOf(job)),
         error: job.error,
         finishedAt: Date.now(),
       });
@@ -983,7 +973,7 @@ export const finalizeTurn = internalAction({
       try {
         const answer = job.error
           ? `${job.response ? `${job.response}\n\n` : ""}That broke: ${job.error}`
-          : reply || (files.length ? "" : "Codex did not reply.");
+          : reply || (files.length ? "" : "No reply came back.");
         const text = answer;
         // A streamed reply lands in the message that showed it growing, unless a file carries it.
         await deliverToTelegram(ctx, token, conversation.externalId, text, job.telegramMessageId, files);
@@ -999,7 +989,7 @@ export const finalizeTurn = internalAction({
         : [];
       const answer = job.error
         ? `${job.response ? `${job.response}\n\n` : ""}That broke: ${job.error}`
-        : reply || (files.length ? "" : "Codex did not reply.");
+        : reply || (files.length ? "" : "No reply came back.");
       if (answer) await ctx.runMutation(internal.whatsapp.send, { to: conversation.externalId, text: answer });
       for (const file of files) {
         await ctx.runMutation(internal.whatsapp.sendFile, {

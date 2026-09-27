@@ -6,7 +6,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { ABSOLUTE_PATH } from "./media";
-import { vTrigger } from "./schema";
+import { vEngine, vTrigger } from "./schema";
+import { engineOf, type EngineKind } from "./lib/engines";
 
 /**
  * Proactivity: named jobs that run a prompt as a Codex turn, either on a cron
@@ -270,7 +271,7 @@ export const run = internalAction({
       externalId: chat.externalId,
       text: `${job.trigger ? "⚡" : "⏰"} ${job.name} (${now})\n\n${job.prompt}${context}\n\n${CONDITIONAL_DELIVERY}`,
       title: chat.title,
-      ...(job.model ? { model: job.model } : {}),
+      ...(job.model ? { model: job.model, engine: engineOf(job) } : {}),
     });
     return null;
   },
@@ -322,6 +323,7 @@ export type JobView = {
   enabled: boolean;
   builtin?: string;
   model?: string;
+  engine: EngineKind;
   nextRunAt: number;
   lastRunAt?: number;
   lastResult?: string;
@@ -339,6 +341,7 @@ const view = (job: Doc<"jobs">): JobView => ({
   enabled: job.enabled,
   builtin: job.builtin,
   model: job.model,
+  engine: engineOf(job),
   nextRunAt: job.nextRunAt,
   lastRunAt: job.lastRunAt,
   lastResult: job.lastResult,
@@ -456,14 +459,18 @@ export const setEnabled = mutation({
   },
 });
 
-/** Pick the model a job's runs use, the heartbeat's too. Unset means the account's default. */
+/**
+ * Pick the model a job's runs use, the heartbeat's too, and the engine it is
+ * one of. Unset means the chat's engine and its default.
+ */
 export const setModel = mutation({
-  args: { key: v.string(), id: v.id("jobs"), model: v.optional(v.string()) },
+  args: { key: v.string(), id: v.id("jobs"), model: v.optional(v.string()), engine: v.optional(vEngine) },
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     if (!(await ctx.db.get(args.id))) throw new Error("That job no longer exists.");
-    await ctx.db.patch(args.id, { model: args.model?.trim() || undefined });
+    const model = args.model?.trim() || undefined;
+    await ctx.db.patch(args.id, { model, engine: model ? args.engine : undefined });
     return null;
   },
 });

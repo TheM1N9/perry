@@ -6,7 +6,10 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import type { EngineView } from "@/convex/engines";
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access } from "@/convex/lib/commands";
+import { SIGN_IN_LABELS, type LoginInteraction } from "@/convex/lib/engines";
 import type { PetTheme } from "@/convex/pet";
 import { ago, errorText, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
@@ -38,7 +41,7 @@ export function Settings() {
           <TabsTrigger value="telegram">Telegram</TabsTrigger>
           <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
         </TabsList>
-        <TabsContent value="general"><CodexAccount /><NewChatAccess /><Manners /><DesktopPet /><Appearance /></TabsContent>
+        <TabsContent value="general"><Engines /><NewChatAccess /><Manners /><DesktopPet /><Appearance /></TabsContent>
         <TabsContent value="keys"><Keys /></TabsContent>
         <TabsContent value="shortcuts"><Shortcuts /></TabsContent>
         <TabsContent value="telegram"><Telegram /></TabsContent>
@@ -48,73 +51,118 @@ export function Settings() {
   );
 }
 
-/** Perry thinks with the owner's ChatGPT plan, through Codex on a connected computer. */
-function CodexAccount() {
+/**
+ * Perry thinks with a coding agent on a connected computer, signed in with the
+ * owner's own subscription: each computer's engines, and signing them in and out.
+ */
+function Engines() {
   const { dashboardKey } = useSession();
-  const accounts = useQuery(api.codex.accounts, { key: dashboardKey });
-  const requestAuth = useMutation(api.codex.requestAuth);
+  const computers = useQuery(api.engines.list, { key: dashboardKey });
 
   return (
-    <Section title="ChatGPT account" description="Perry thinks with your ChatGPT plan, through Codex on your computer. The sign-in stays on that computer.">
-      {accounts === undefined && <ListSkeleton rows={1} />}
-      {accounts?.length === 0 && (
+    <Section title="Engines" description="Perry thinks with a coding agent on your computer, signed in with your own subscription. The sign-in stays on that computer.">
+      {computers === undefined && <ListSkeleton rows={1} />}
+      {computers?.length === 0 && (
         <EmptyState title="No computer connected" action={<div className="w-[min(360px,80vw)]"><CommandLine>perry start</CommandLine></div>}>
-          Start Perry on the computer that will run Codex, then sign in here.
+          Start Perry on the computer that will do the work, then sign in to an engine here.
         </EmptyState>
       )}
-      {accounts && accounts.length > 0 && (
-        <List label="Codex accounts">
-          {accounts.map((account) => {
-            const pending = account.requestStatus === "queued" || account.requestStatus === "running";
-            const signedIn = account.authMode === "chatgpt";
-            const unavailable = !account.online ? "This computer is offline. Start Perry on it." : !account.available ? "Codex isn't installed or can't start on this computer." : null;
-            const state: { tone: Tone; label: string } = !account.online ? { tone: "neutral", label: "Offline" }
-              : !account.available ? { tone: "danger", label: "Codex unavailable" }
-              : signedIn ? { tone: "success", label: "Signed in" } : { tone: "warning", label: "Signed out" };
-            const plan = account.planType ? ` ${account.planType[0].toUpperCase()}${account.planType.slice(1)}` : "";
-            return (
-              <li key={account.id} className="px-4 py-4">
-                <div className="flex flex-wrap items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-medium">{account.name}</h3>
-                      <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
-                    </div>
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      {signedIn ? `ChatGPT${plan}` : account.authMode ? `Codex is using ${account.authMode}` : "Not signed in"}
-                      {unavailable && ` · ${unavailable}`}
-                    </p>
-                  </div>
-                  {signedIn
-                    ? <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={Boolean(unavailable) || pending}
-                        action={() => requestAuth({ key: dashboardKey, runnerId: account.id, kind: "logout" })}
-                        confirm={{ title: `Sign out of Codex on ${account.name}?`, body: "Perry can't answer through this computer until you sign in again.", label: "Sign out" }}>Sign out</ActionButton>
-                    : <ActionButton size="sm" disabled={Boolean(unavailable) || pending} action={() => requestAuth({ key: dashboardKey, runnerId: account.id, kind: "login" })}>Sign in with ChatGPT</ActionButton>}
-                </div>
-                {account.error && <p className="mt-2 text-sm text-destructive">{account.error}</p>}
-                {account.requestStatus === "queued" && <Waiting>Waiting for the computer to pick this up…</Waiting>}
-                {account.requestStatus === "running" && account.requestKind === "logout" && <Waiting>Signing out…</Waiting>}
-                {account.requestStatus === "running" && account.requestKind === "login" && !account.userCode && <Waiting>Starting sign-in…</Waiting>}
-                {account.requestStatus === "running" && account.userCode && account.verificationUrl && (
-                  <div className="mt-3 rounded-xl border bg-muted/40 p-4" role="status">
-                    <p className="text-sm font-medium">Finish signing in</p>
-                    <p className="mt-0.5 text-sm text-muted-foreground">Open the sign-in page, sign in to ChatGPT, and enter this code. This page updates by itself.</p>
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
-                      <span className="rounded-lg border bg-background px-3 py-1.5 font-mono text-2xl font-semibold tracking-[0.15em]" translate="no">{account.userCode}</span>
-                      <CopyButton value={account.userCode} label="Copy code" />
-                      <Button size="sm" render={<a href={account.verificationUrl} target="_blank" rel="noopener noreferrer" />}>Open sign-in page<ExternalLinkIcon /></Button>
-                    </div>
-                  </div>
-                )}
-                {account.requestStatus === "error" && account.requestError && (
-                  <p className="mt-2 text-sm text-pretty text-destructive">Sign-in didn&apos;t finish: {account.requestError}. Try again; each code works for a few minutes.</p>
-                )}
-              </li>
-            );
-          })}
+      {computers && computers.length > 0 && (
+        <List label="Engines">
+          {computers.map((computer) => (
+            <li key={computer.id} className="px-4 py-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-medium">{computer.name}</h3>
+                <StatusBadge tone={computer.online ? "success" : "neutral"}>{computer.online ? "Online" : "Offline"}</StatusBadge>
+              </div>
+              {!computer.online && <p className="mt-0.5 text-sm text-muted-foreground">This computer is offline. Start Perry on it.</p>}
+              {computer.online && computer.engines.length === 0 && <Waiting>Waiting for this computer to say which engines it has…</Waiting>}
+              <div className="mt-2 divide-y">
+                {computer.engines.map((engine) => <EngineRow key={engine.kind} runnerId={computer.id} computer={computer.name} online={computer.online} engine={engine} />)}
+              </div>
+            </li>
+          ))}
         </List>
       )}
     </Section>
+  );
+}
+
+/** One engine on one computer: whether it is there and signed in, and signing it in or out. */
+function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runners">; computer: string; online: boolean; engine: EngineView }) {
+  const { dashboardKey } = useSession();
+  const requestAuth = useMutation(api.engines.requestAuth);
+  const request = engine.request;
+  const pending = request?.status === "queued" || request?.status === "running";
+  const unavailable = !online ? "This computer is offline." : !engine.installed ? `${engine.label} isn't installed or can't start on this computer.` : null;
+  const state: { tone: Tone; label: string } = !online ? { tone: "neutral", label: "Offline" }
+    : !engine.installed ? { tone: "danger", label: `${engine.label} unavailable` }
+    : engine.signedIn ? { tone: "success", label: "Signed in" } : { tone: "warning", label: "Signed out" };
+  const plan = engine.auth.plan ? ` ${engine.auth.plan[0].toUpperCase()}${engine.auth.plan.slice(1)}` : "";
+  const account = engine.signedIn
+    ? `${engine.auth.label ?? "Signed in"}${plan}${engine.auth.email ? ` · ${engine.auth.email}` : ""}`
+    : engine.auth.type ? `${engine.label} is using ${engine.auth.label ?? engine.auth.type}` : "Not signed in";
+  const interaction = request?.status === "running" ? request.interaction : undefined;
+  const ask = (kind: "login" | "logout") => requestAuth({ key: dashboardKey, runnerId, engine: engine.kind, kind });
+  return (
+    <div className="py-3 first:pt-1 last:pb-0" aria-label={`${engine.label} on ${computer}`}>
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium">{engine.label}</span>
+            <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+            {engine.version && <span className="text-xs text-muted-foreground">{engine.version}</span>}
+          </div>
+          <p className="mt-0.5 text-sm text-muted-foreground">{account}{unavailable && ` · ${unavailable}`}</p>
+          {engine.message && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{engine.message}</p>}
+        </div>
+        {engine.signedIn
+          ? <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={Boolean(unavailable) || pending}
+              action={() => ask("logout")}
+              confirm={{ title: `Sign out of ${engine.label} on ${computer}?`, body: `Perry can't use ${engine.label} on this computer until you sign in again.`, label: "Sign out" }}>Sign out</ActionButton>
+          : <ActionButton size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login")}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>}
+      </div>
+      {engine.error && <p className="mt-2 text-sm text-destructive">{engine.error}</p>}
+      {request?.status === "queued" && <Waiting>Waiting for the computer to pick this up…</Waiting>}
+      {request?.status === "running" && request.kind === "logout" && <Waiting>Signing out…</Waiting>}
+      {request?.status === "running" && request.kind === "login" && !interaction && <Waiting>Starting sign-in…</Waiting>}
+      {interaction && <LoginSteps engine={engine.label} interaction={interaction} />}
+      {request?.status === "error" && request.error && (
+        <p className="mt-2 text-sm text-pretty text-destructive">Sign-in didn&apos;t finish: {request.error}. Try again; each code works for a few minutes.</p>
+      )}
+    </div>
+  );
+}
+
+/** What the owner does to finish signing in: a code to enter, a page to open, or a command to run on the computer. */
+function LoginSteps({ engine, interaction }: { engine: string; interaction: LoginInteraction }) {
+  return (
+    <div className="mt-3 rounded-xl border bg-muted/40 p-4" role="status">
+      <p className="text-sm font-medium">Finish signing in</p>
+      {interaction.type === "deviceCode" && (
+        <>
+          <p className="mt-0.5 text-sm text-muted-foreground">Open the sign-in page, sign in, and enter this code. This page updates by itself.</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <span className="rounded-lg border bg-background px-3 py-1.5 font-mono text-2xl font-semibold tracking-[0.15em]" translate="no">{interaction.userCode}</span>
+            <CopyButton value={interaction.userCode} label="Copy code" />
+            <Button size="sm" render={<a href={interaction.verificationUrl} target="_blank" rel="noopener noreferrer" />}>Open sign-in page<ExternalLinkIcon /></Button>
+          </div>
+        </>
+      )}
+      {interaction.type === "browser" && (
+        <>
+          <p className="mt-0.5 text-sm text-muted-foreground">Open the sign-in page and sign in to {engine}. This page updates by itself.</p>
+          <Button size="sm" className="mt-3" render={<a href={interaction.url} target="_blank" rel="noopener noreferrer" />}>Open sign-in page<ExternalLinkIcon /></Button>
+        </>
+      )}
+      {interaction.type === "terminal" && (
+        <>
+          <p className="mt-0.5 text-sm text-muted-foreground">Run this in a terminal on that computer, and follow what it says. This page updates by itself.</p>
+          <div className="mt-3 max-w-md"><CommandLine>{interaction.command}</CommandLine></div>
+        </>
+      )}
+      {interaction.type === "credentials" && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{interaction.message}</p>}
+    </div>
   );
 }
 
