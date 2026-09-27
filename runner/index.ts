@@ -52,7 +52,7 @@ import { getFunctionName, type FunctionArgs, type FunctionReference, type Functi
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { runLabel } from "../convex/lib/commands";
-import { ENGINE_LABELS } from "../convex/lib/engines";
+import { ENGINE_LABELS, engineOf } from "../convex/lib/engines";
 import {
   optionOf, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type PerryTools,
   type TurnHandle, type TurnResult, type TurnSink,
@@ -616,32 +616,56 @@ async function main() {
     throw new Error(`${engine.label} cannot compact a chat.`);
   };
 
-  let turnBusy = false;
+  /**
+   * A turn this runner has taken: being claimed, then running. Each keeps its
+   * own engine handle, steers and stop, so turns of different engines run at
+   * once without reaching into each other.
+   */
+  type Taken = {
+    jobId: Id<"codexTurns">;
+    conversationId: Id<"conversations">;
+    kind: EngineKind;
+    engine?: Engine;
+    /** Set while the engine runs it: what interrupt() and steer() need. */
+    handle?: TurnHandle;
+    /** Asked to stop, and interrupted. */
+    stopping?: boolean;
+    /** Messages the owner sent into it, handed to the engine or being handed. */
+    steered: Map<string, Promise<unknown>>;
+  };
+  type Claimed = NonNullable<FunctionReturnType<typeof api.codex.claimTurn>>;
+  const taken = new Map<string, Taken>();
   let turnQueue: Doc<"codexTurns">[] = [];
-  // The turn an engine is working on, and the turns the owner asked to stop.
-  let current: { jobId: Id<"codexTurns">; engine: Engine; handle: TurnHandle } | null = null;
+  /** Queued turns the server would not hand over yet (their chat is busy, say); tried again when the queue changes. */
+  let refused = new Set<string>();
+  // The turns the owner asked to stop.
   let stopRequested = new Set<string>();
   const interruptIfAsked = () => {
-    if (!current || !stopRequested.has(current.jobId)) return;
-    const { engine, handle } = current;
-    console.log(yellow(`  stopping the ${engine.label} turn, as asked`));
-    void engine.interrupt(handle).catch((error) => console.error(red(`  Could not stop the ${engine.label} turn: ${message(error)}`)));
+    for (const turn of taken.values()) {
+      const { engine, handle } = turn;
+      if (!engine || !handle || turn.stopping || !stopRequested.has(turn.jobId)) continue;
+      turn.stopping = true;
+      console.log(yellow(`  stopping the ${engine.label} turn, as asked`));
+      void engine.interrupt(handle).catch((error) => {
+        turn.stopping = false;
+        console.error(red(`  Could not stop the ${engine.label} turn: ${message(error)}`));
+      });
+    }
   };
-  // Messages the owner sent while the turn runs, and those already handed to the engine.
+  // Messages the owner sent while a turn runs, each for the turn it joins.
   let pendingSteers: Array<{ _id: Id<"codexSteers">; turnId: Id<"codexTurns">; prompt: string; attachments?: Doc<"codexTurns">["attachments"] }> = [];
-  const steered = new Map<string, Promise<unknown>>();
   /**
-   * Hand each new message for the running turn to its engine, then tell Convex
+   * Hand each new message for a running turn to its engine, then tell Convex
    * whether it took it. One it refused ("no active turn to steer", a turn id
    * mismatch), or an engine that takes one message at a time, is queued as a
    * turn of its own there.
    */
   const steerIfAsked = () => {
-    if (!current) return;
-    const { jobId, engine, handle } = current;
     for (const steer of pendingSteers) {
-      if (steer.turnId !== jobId || steered.has(steer._id)) continue;
-      steered.set(steer._id, (async () => {
+      const turn = taken.get(steer.turnId);
+      if (!turn?.engine || !turn.handle || turn.steered.has(steer._id)) continue;
+      const { engine, handle } = turn;
+      turn.steered.set(steer._id, (async () => {
         try {
           const mode = engine.capabilities.steer;
           if (!engine.steer || (mode !== "native" && mode !== "concurrent-prompt")) throw new Error(`${engine.label} takes one message at a time`);
@@ -655,129 +679,174 @@ async function main() {
       })().catch((error) => console.error(red(`  Could not report a steer: ${message(error)}`))));
     }
   };
-  const pumpTurns = async () => {
-    if (turnBusy) return;
-    turnBusy = true;
+
+  /** Run a claimed turn on its engine, and say how it went. */
+  const work = async (job: Claimed, turn: Taken): Promise<TurnRecord> => {
+    // The reply so far, and the trace of what the engine is doing, go to Convex
+    // about three times a second while the turn runs.
+    let latest = "";
+    let sent = "";
+    let streamTimer: ReturnType<typeof setTimeout> | null = null;
+    const trace = new TurnTrace();
+    const report = async () => {
+      const changes = trace.take();
+      if (!changes) return;
+      await client.mutation(api.codex.traceTurn, { token, id: job._id, ...changes }).catch(() => trace.retry(changes));
+    };
+    const flush = () => {
+      streamTimer = null;
+      void report();
+      if (latest === sent) return;
+      sent = latest;
+      void client.mutation(api.codex.streamTurn, { token, id: job._id, text: latest }).catch(() => {});
+    };
+    const schedule = () => { streamTimer ??= setTimeout(flush, 300); };
+    const kind = job.engine;
+    const engine = engines.get(kind);
+    turn.engine = engine;
+    // What the run records: the engine and model, the effort sent, and full access when it was.
+    const label = runLabel(job.requestedModel, job.requestedEffort, job.access, kind);
+    if (job.access === "full" && job.kind !== "compact") {
+      console.log(yellow(`  full access: this turn runs without the sandbox, and ${engine?.label ?? "the engine"} does not ask`));
+    } else if (job.access === "auto" && job.kind !== "compact") {
+      console.log(dim("  auto: each command is reviewed before it runs; risky ones wait for you"));
+    }
+    let result: TurnRecord;
+    let dog: ReturnType<typeof watchdog> | undefined;
     try {
-      while (turnQueue.length > 0) {
-        const next = turnQueue.shift()!;
-        const job = await client.mutation(api.codex.claimTurn, { token, id: next._id });
-        if (!job) continue;
-        let result = savedResult(job._id);
-        if (!result) {
-          // The reply so far, and the trace of what the engine is doing, go to Convex
-          // about three times a second while the turn runs.
-          let latest = "";
-          let sent = "";
-          let streamTimer: ReturnType<typeof setTimeout> | null = null;
-          const trace = new TurnTrace();
-          const report = async () => {
-            const changes = trace.take();
-            if (!changes) return;
-            await client.mutation(api.codex.traceTurn, { token, id: job._id, ...changes }).catch(() => trace.retry(changes));
-          };
-          const flush = () => {
-            streamTimer = null;
-            void report();
-            if (latest === sent) return;
-            sent = latest;
-            void client.mutation(api.codex.streamTurn, { token, id: job._id, text: latest }).catch(() => {});
-          };
-          const schedule = () => { streamTimer ??= setTimeout(flush, 300); };
-          const kind = job.engine;
-          const engine = engines.get(kind);
-          // What the run records: the engine and model, the effort sent, and full access when it was.
-          const label = runLabel(job.requestedModel, job.requestedEffort, job.access, kind);
-          if (job.access === "full" && job.kind !== "compact") {
-            console.log(yellow(`  full access: this turn runs without the sandbox, and ${engine?.label ?? "the engine"} does not ask`));
-          } else if (job.access === "auto" && job.kind !== "compact") {
-            console.log(dim("  auto: each command is reviewed before it runs; risky ones wait for you"));
-          }
-          let dog: ReturnType<typeof watchdog> | undefined;
-          try {
-            if (!engine) throw new Error(`${ENGINE_LABELS[kind]} is not on this computer's runner. Update Perry here, or pick another engine's model.`);
-            if (job.kind === "compact") {
-              if (!job.resumeCursor) throw new Error("This chat has no session to compact yet.");
-              console.log(dim(`  compacting a chat's ${engine.label} session`));
-              dog = watchdog(engine, COMPACT_TIMEOUT_MS, () => undefined);
-              await compact(engine, job.resumeCursor, job.access, job.requestedModel).finally(dog.done);
-              result = { response: "Compacted.", compacted: true, model: runLabel(undefined, undefined, undefined, kind) };
-            } else {
-              const sink: TurnSink = {
-                onSession: (cursor, replaces) => client.mutation(api.codex.setResume, { token, id: job._id, cursor, ...(replaces ? { replaces } : {}) }),
-                onStarted: (handle) => {
-                  current = { jobId: job._id, engine, handle };
-                  void client.mutation(api.codex.setCodexTurn, { token, id: job._id, codexTurnId: handle.turnId }).catch(() => {});
-                  interruptIfAsked();
-                  steerIfAsked();
-                },
-                onEvent: (event) => {
-                  if (event.type === "text") {
-                    if (event.stream !== "assistant") return;
-                    latest = event.text;
-                    schedule();
-                  } else if (event.type === "item") {
-                    if (trace.item(event.phase, event.item, event.atMs)) schedule();
-                  } else if (event.state !== "unavailable") {
-                    trace.addUsage(event.usage);
-                    schedule();
-                  }
-                },
-                onRequest: (request) => answer(request, job.conversationId, kind),
-              };
-              dog = watchdog(engine, TURN_TIMEOUT_MS, () => current?.jobId === job._id ? current.handle : undefined);
-              const outcome: TurnResult = await engine.runTurn({
-                resumeCursor: job.resumeCursor,
-                instructions: job.instructions,
-                history: job.history,
-                recalled: job.recalled,
-                prompt: job.prompt,
-                attachments: await localise(job.attachments),
-                cwd: workdir,
-                model: job.requestedModel,
-                effort: job.requestedEffort,
-                access: job.access ?? "supervised",
-                tools: toolsFor(job.mcpUrl),
-              }, sink).finally(dog.done);
-              const media = await keepMedia(job._id, job.channel, outcome.images);
-              // A late failure keeps what the turn had already produced.
-              const failed = outcome.state === "failed" || dog.expired();
-              result = {
-                ...(failed ? { error: dog.expired() ? dog.why : outcome.error ?? `The ${engine.label} turn failed.` } : {}),
-                ...(outcome.text || !failed ? { response: outcome.text } : {}),
-                ...(!failed && outcome.state !== "completed" ? { stopped: true } : {}),
-                ...(outcome.compacted ? { compacted: true } : {}),
-                model: label,
-                ...(media.length ? { media } : {}),
-              };
+      if (!engine) throw new Error(`${ENGINE_LABELS[kind]} is not on this computer's runner. Update Perry here, or pick another engine's model.`);
+      if (job.kind === "compact") {
+        if (!job.resumeCursor) throw new Error("This chat has no session to compact yet.");
+        console.log(dim(`  compacting a chat's ${engine.label} session`));
+        dog = watchdog(engine, COMPACT_TIMEOUT_MS, () => undefined);
+        await compact(engine, job.resumeCursor, job.access, job.requestedModel).finally(dog.done);
+        result = { response: "Compacted.", compacted: true, model: runLabel(undefined, undefined, undefined, kind) };
+      } else {
+        const sink: TurnSink = {
+          onSession: (cursor, replaces) => client.mutation(api.codex.setResume, { token, id: job._id, cursor, ...(replaces ? { replaces } : {}) }),
+          onStarted: (handle) => {
+            turn.handle = handle;
+            void client.mutation(api.codex.setCodexTurn, { token, id: job._id, codexTurnId: handle.turnId }).catch(() => {});
+            interruptIfAsked();
+            steerIfAsked();
+          },
+          onEvent: (event) => {
+            if (event.type === "text") {
+              if (event.stream !== "assistant") return;
+              latest = event.text;
+              schedule();
+            } else if (event.type === "item") {
+              if (trace.item(event.phase, event.item, event.atMs)) schedule();
+            } else if (event.state !== "unavailable") {
+              trace.addUsage(event.usage);
+              schedule();
             }
-          } catch (error) {
-            result = { error: dog?.expired() ? dog.why : message(error), model: label };
-          } finally {
-            current = null;
-          }
-          if (streamTimer) clearTimeout(streamTimer);
-          // A steer still being answered must be recorded as applied or not
-          // before finishTurn queues whatever the turn did not take.
-          await Promise.all(steered.values());
-          steered.clear();
-          saveResult(job._id, result);
-          // The trace's last report goes before the turn ends; Convex takes reports only while it runs.
-          trace.drain(Date.now());
-          await report();
-        }
-        await client.mutation(api.codex.finishTurn, { token, id: job._id, ...result });
-        turnQueue = await client.query(api.codex.queuedTurns, { token });
+          },
+          onRequest: (request) => answer(request, job.conversationId, kind),
+        };
+        dog = watchdog(engine, TURN_TIMEOUT_MS, () => turn.handle);
+        const outcome: TurnResult = await engine.runTurn({
+          resumeCursor: job.resumeCursor,
+          instructions: job.instructions,
+          history: job.history,
+          recalled: job.recalled,
+          prompt: job.prompt,
+          attachments: await localise(job.attachments),
+          cwd: workdir,
+          model: job.requestedModel,
+          effort: job.requestedEffort,
+          access: job.access ?? "supervised",
+          tools: toolsFor(job.mcpUrl),
+        }, sink).finally(dog.done);
+        const media = await keepMedia(job._id, job.channel, outcome.images);
+        // A late failure keeps what the turn had already produced.
+        const failed = outcome.state === "failed" || dog.expired();
+        result = {
+          ...(failed ? { error: dog.expired() ? dog.why : outcome.error ?? `The ${engine.label} turn failed.` } : {}),
+          ...(outcome.text || !failed ? { response: outcome.text } : {}),
+          ...(!failed && outcome.state !== "completed" ? { stopped: true } : {}),
+          ...(outcome.compacted ? { compacted: true } : {}),
+          model: label,
+          ...(media.length ? { media } : {}),
+        };
       }
     } catch (error) {
+      result = { error: dog?.expired() ? dog.why : message(error), model: label };
+    } finally {
+      // Stops and steers from now on find no turn to reach.
+      turn.handle = undefined;
+    }
+    if (streamTimer) clearTimeout(streamTimer);
+    // A steer still being answered must be recorded as applied or not
+    // before finishTurn queues whatever the turn did not take.
+    await Promise.all(turn.steered.values());
+    saveResult(job._id, result);
+    // The trace's last report goes before the turn ends; Convex takes reports only while it runs.
+    trace.drain(Date.now());
+    await report();
+    return result;
+  };
+
+  /** Claim a queued turn, run it unless it already ran, deliver it, and start whatever may start next. */
+  const take = async (next: Doc<"codexTurns">, turn: Taken) => {
+    let claimed = false;
+    try {
+      const job = await client.mutation(api.codex.claimTurn, { token, id: next._id });
+      if (!job) {
+        refused.add(next._id);
+        return;
+      }
+      claimed = true;
+      const result = savedResult(job._id) ?? await work(job, turn);
+      await client.mutation(api.codex.finishTurn, { token, id: job._id, ...result });
+    } catch (error) {
+      // Tried again when the queue changes; a result already saved is delivered by the heartbeat.
+      if (!claimed) refused.add(next._id);
       console.error(red(`  turn failed: ${message(error)}`));
     } finally {
-      turnBusy = false;
+      taken.delete(next._id);
+      if (claimed) {
+        try {
+          turnQueue = await client.query(api.codex.queuedTurns, { token });
+          refused = new Set();
+        } catch {}
+      }
+      pumpTurns();
+    }
+  };
+
+  /**
+   * Start what may start. Each engine has its own queue and runs one turn at a
+   * time (or its capabilities.concurrentTurns), beside the other engines, so
+   * a Claude reply never waits behind a Codex one. A chat's turns go in order
+   * and never two at once, so one that waits holds back the chat's later ones,
+   * whatever their engine.
+   */
+  const pumpTurns = () => {
+    const busy = new Map<EngineKind, number>();
+    const chats = new Set<string>();
+    for (const turn of taken.values()) {
+      busy.set(turn.kind, (busy.get(turn.kind) ?? 0) + 1);
+      chats.add(turn.conversationId);
+    }
+    for (const next of turnQueue) {
+      // One the server refused holds nothing back here; it keeps the chat's order itself (codex.claimTurn).
+      if (taken.has(next._id) || refused.has(next._id)) continue;
+      const kind = engineOf(next);
+      const limit = Math.max(1, engines.get(kind)?.capabilities.concurrentTurns ?? 1);
+      const free = !chats.has(next.conversationId) && (busy.get(kind) ?? 0) < limit;
+      chats.add(next.conversationId);
+      if (!free) continue;
+      busy.set(kind, (busy.get(kind) ?? 0) + 1);
+      const turn: Taken = { jobId: next._id, conversationId: next.conversationId, kind, steered: new Map() };
+      taken.set(next._id, turn);
+      void take(next, turn);
     }
   };
   watch(api.codex.queuedTurns, { token }, (jobs) => {
     turnQueue = jobs ?? [];
-    void pumpTurns();
+    refused = new Set();
+    pumpTurns();
   });
   watch(api.codex.stopRequests, { token }, (ids) => {
     stopRequested = new Set(ids ?? []);

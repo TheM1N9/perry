@@ -54,6 +54,11 @@
  *               (runner/mcp-bridge.ts), for engines that ignore HTTP MCP.
  *   kill()      Ends the engine's processes, the whole group. The runner's
  *               watchdog interrupts a turn that runs too long, then kills.
+ *   Together    Each engine has its own queue on the runner: a Claude turn
+ *               never waits behind a Codex turn in another chat. One engine
+ *               runs one turn at a time unless `concurrentTurns` says more,
+ *               and a chat never has two turns running, whatever the engine.
+ *               Quick turns run outside the queues.
  */
 
 import type { Access } from "../convex/lib/commands";
@@ -92,6 +97,12 @@ export type EngineCapabilities = {
   usage: "complete" | "partial" | "unavailable";
   /** It can run quick, tool-less side turns (the reviewer, chat names). */
   quickTurns: boolean;
+  /**
+   * How many of its turns, each in a different chat, may run at once. Unset
+   * is one: the runner gives each engine its own queue, so engines run beside
+   * each other, but one engine's turns wait for each other unless it says more.
+   */
+  concurrentTurns?: number;
 };
 
 /** A model an engine offers, with the reasoning efforts it takes. */
