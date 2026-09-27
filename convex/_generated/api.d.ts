@@ -23,6 +23,7 @@ import type * as jobs from "../jobs.js";
 import type * as lib_activity from "../lib/activity.js";
 import type * as lib_agent from "../lib/agent.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_browser from "../lib/browser.js";
 import type * as lib_checkout from "../lib/checkout.js";
 import type * as lib_commands from "../lib/commands.js";
 import type * as lib_embed from "../lib/embed.js";
@@ -80,6 +81,7 @@ declare const fullApi: ApiFromModules<{
   "lib/activity": typeof lib_activity;
   "lib/agent": typeof lib_agent;
   "lib/auth": typeof lib_auth;
+  "lib/browser": typeof lib_browser;
   "lib/checkout": typeof lib_checkout;
   "lib/commands": typeof lib_commands;
   "lib/embed": typeof lib_embed;
