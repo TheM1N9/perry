@@ -22,6 +22,7 @@ import * as jobs from "../convex/jobs";
 import * as lib_activity from "../convex/lib/activity";
 import * as lib_agent from "../convex/lib/agent";
 import * as lib_auth from "../convex/lib/auth";
+import * as lib_browser from "../convex/lib/browser";
 import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
 import * as lib_embed from "../convex/lib/embed";
@@ -44,6 +45,7 @@ import * as pet from "../convex/pet";
 import * as recovery from "../convex/recovery";
 import * as runner from "../convex/runner";
 import * as runs from "../convex/runs";
+import * as screen from "../convex/screen";
 import * as secrets from "../convex/secrets";
 import * as titles from "../convex/titles";
 import * as todos from "../convex/todos";
@@ -76,6 +78,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/activity": lib_activity,
   "lib/agent": lib_agent,
   "lib/auth": lib_auth,
+  "lib/browser": lib_browser,
   "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
   "lib/embed": lib_embed,
@@ -98,6 +101,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "recovery": recovery,
   "runner": runner,
   "runs": runs,
+  "screen": screen,
   "secrets": secrets,
   "titles": titles,
   "todos": todos,

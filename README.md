@@ -43,6 +43,10 @@ can run their own copy, and every copy is separate.
 - **Hold a hotkey and talk.** An optional desktop companion sits in a corner
   of your screen with your chats, to-dos and approvals, and takes voice input
   transcribed on your machine.
+- **"What's this error?"** Another hotkey shows the companion the window
+  you're in, so you can ask about it. You see the picture before it's sent.
+  Perry can also look for himself when a question is about your screen, and
+  the chat shows what he saw. You can turn that off in Settings.
 
 ## Install
 

@@ -287,6 +287,8 @@ function DesktopPet() {
   const { dashboardKey } = useSession();
   const pet = useQuery(api.pet.status, { key: dashboardKey });
   const setTheme = useAction(api.pet.setTheme);
+  const screenLook = useQuery(api.screen.getSetting, { key: dashboardKey });
+  const setScreenLook = useMutation(api.screen.setSetting);
   // Shown as picked at once; the file is read back when the pet next checks in.
   const [picked, setPicked] = useState<PetTheme | null>(null);
   const theme = picked ?? pet?.theme;
@@ -299,6 +301,16 @@ function DesktopPet() {
           void setTheme({ key: dashboardKey, theme: value }).catch((cause) => { setPicked(null); toast.error(errorText(cause)); });
         }} />
         <p className="text-sm text-muted-foreground">His light or dark look, kept in <code className="font-mono text-[0.9em]">pet.json</code>. He changes at once.</p>
+      </div>
+      <div className="mt-4 flex items-start gap-3">
+        <Switch id="screen-look" checked={screenLook ?? true} disabled={screenLook === undefined} className="mt-0.5"
+          onCheckedChange={(enabled) => void setScreenLook({ key: dashboardKey, enabled }).then(
+            () => toast.success(enabled ? "Perry can look at your screen when a question needs it." : "Perry sees the screen only when you show him."),
+            (cause) => toast.error(errorText(cause)))} />
+        <div className="text-sm">
+          <label htmlFor="screen-look" className="font-medium">Let Perry look at the screen when he needs to</label>
+          <p className="mt-0.5 text-pretty text-muted-foreground">In a chat, when your question is about something on screen. What he saw shows in the chat, and he says so on the pet. Never in scheduled jobs or background work.</p>
+        </div>
       </div>
     </Section>
   );

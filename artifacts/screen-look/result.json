@@ -1,0 +1,89 @@
+{
+  "ranAt": "2026-09-27T14:52:31.644Z",
+  "checks": {
+    "petTakesTheLookKeys": true,
+    "hotkeyPictureWaitsInTheChat": true,
+    "previewSwitchesRemovesAndRetakes": true,
+    "pictureGoesWithTheMessage": true,
+    "perryReadsThePicture": true,
+    "previewGoneOnceSent": true,
+    "chatShowsThePicture": true,
+    "perryLooksWhenNeeded": true,
+    "whatHeSawIsInTheChat": true,
+    "petSaysHeLooked": true,
+    "offMeansNoLooking": true,
+    "talkKeysStillReported": true,
+    "settingsListsLookAndItsStanding": true,
+    "noPageErrors": true,
+    "realPictureIsTheWindowInFront": true,
+    "realScreenPicture": true,
+    "realPetTakesTheLookKeys": true,
+    "ownersPetUntouched": true
+  },
+  "notes": {
+    "hotkeyPictureWaitsInTheChat": {
+      "text": "Windows PowerShell\n\nGoes with your next message.\n\nThis window\nWhole screen",
+      "pressed": [
+        "This window"
+      ]
+    },
+    "previewSwitchesRemovesAndRetakes": {
+      "switched": "Whole screen\n\nGoes with your next message.\n\nThis window\nWhole screen",
+      "removed": true
+    },
+    "pictureGoesWithTheMessage": {
+      "id": "wyrexsfd6hxsb40q7f94v12xpz",
+      "role": "user",
+      "text": "What went wrong here, and what should I do? Two short lines.",
+      "createdAt": 1790520677781,
+      "attachments": [
+        {
+          "url": "/api/media/xmmbkgt0qv1bj77ekxcs6z3rsz",
+          "fileName": "screen-2026-09-27-14-51-12.png",
+          "contentType": "image/png"
+        }
+      ]
+    },
+    "perryReadsThePicture": "`npm install` failed because the drive is out of free space (`ENOSPC: no space left on device`).  \nFree up disk space (especially npm cache/temp files), then run `npm install` again.",
+    "chatShowsThePicture": {
+      "shown": true,
+      "served": 200
+    },
+    "perryLooksWhenNeeded": "`npm install` failed with `ENOSPC: no space left on device` while writing files.",
+    "whatHeSawIsInTheChat": [
+      {
+        "url": "/api/media/emyy2346ds3f370b1ezzb38ss1",
+        "fileName": "cea10c2c-9731-42b5-8683-9e94b41c3a4c.png",
+        "contentType": "image/png"
+      }
+    ],
+    "offMeansNoLooking": "I can’t see it now—screen viewing is turned off. Please use the desktop pet’s Look hotkey and ask me again.",
+    "talkKeysStillReported": "Talk to Perry\n\nAnywhere on this computer, with the desktop pet running: hold, speak and let go, or tap, speak and tap again.\n\nWorking in the desktop pet.\n\nCtrl\nShift\nSpace",
+    "settingsListsLookAndItsStanding": {
+      "working": "Show Perry the screen\n\nAnywhere on this computer, with the desktop pet running: a picture of the window you're in goes into his chat, for you to check and ask about.\n\nWorking in the desktop pet.\n\nCtrl\nAlt\nShift\nSpace",
+      "restart": "Show Perry the screen\n\nAnywhere on this computer, with the desktop pet running: a picture of the window you're in goes into his chat, for you to check and ask about.\n\nRestart the desktop pet for this one: Quit from his tray icon, then turn him on again.\n\nCtrl\nAlt\nShift\nSpace"
+    },
+    "noPageErrors": [],
+    "perryPet": [
+      "",
+      "  ✔ Electron ready",
+      "  ✔ on your screen"
+    ],
+    "realPictureIsTheWindowInFront": {
+      "steady": true,
+      "frontListed": false,
+      "isTheFront": false,
+      "clickThrough": false
+    },
+    "realScreenPicture": {
+      "screenBytes": 754998
+    },
+    "realPetTakesTheLookKeys": {
+      "hotkey": "CommandOrControl+Alt+Shift+Space"
+    },
+    "perryPetOff": [
+      "✔ stopped, and no longer starts at login"
+    ]
+  },
+  "passed": true
+}

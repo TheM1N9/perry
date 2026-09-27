@@ -141,6 +141,8 @@ export default defineSchema({
     quietHours: v.optional(v.object({ start: v.string(), end: v.string() })),
     /** How many of Perry's own messages may reach the phone in a day; the rest wait for tomorrow. Unset: no limit. */
     dailyLimit: v.optional(v.number()),
+    /** False when the owner turned off Perry looking at the screen on his own (screen.ts). Unset: on. */
+    screenLook: v.optional(v.boolean()),
     /** When the owner last wrote to Perry anywhere, so what goes unanswered can be told apart. */
     ownerWroteAt: v.optional(v.number()),
     /** False stops Perry updating himself at night (updates.ts). Unset means on. */
@@ -255,12 +257,29 @@ export default defineSchema({
    * touched the computer it runs on. While they are at it, reminders are the
    * pet's to give; otherwise they go to the phone.
    */
+  /**
+   * Perry asking the desktop pet for a picture of the screen during a chat
+   * (screen.ts): asked, then done with where the pet saved it, or failed.
+   */
+  screenLooks: defineTable({
+    conversationId: v.id("conversations"),
+    which: v.union(v.literal("window"), v.literal("screen")),
+    why: v.string(),
+    status: v.union(v.literal("asked"), v.literal("done"), v.literal("failed")),
+    path: v.optional(v.string()),
+    name: v.optional(v.string()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_status", ["status", "createdAt"]),
+
   petPresence: defineTable({
     seenAt: v.number(),
     activeAt: v.number(),
     /** The Talk hotkey the pet holds, or why it could not take the one asked for (another app has it). */
     hotkey: v.optional(v.string()),
     hotkeyError: v.optional(v.string()),
+    /** The same for his other global shortcuts, by shortcut id (convex/lib/shortcuts.ts): Look. */
+    keys: v.optional(v.record(v.string(), v.object({ hotkey: v.optional(v.string()), error: v.optional(v.string()) }))),
   }),
 
   /**

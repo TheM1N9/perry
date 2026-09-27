@@ -29,4 +29,12 @@ contextBridge.exposeInMainWorld("perryPet", {
   },
   transcribe: (samples) => ipcRenderer.invoke("pet:transcribe", samples),
   voiceDone: () => ipcRenderer.send("pet:voice-done"),
+  // Showing him the screen: a picture of the window you are in and of the screen, from his chat's button or the Look hotkey; and which keys that is on.
+  look: () => ipcRenderer.invoke("pet:look"),
+  onLook: (listener) => {
+    const handler = (_event, shot) => listener(shot);
+    ipcRenderer.on("pet:look", handler);
+    return () => ipcRenderer.off("pet:look", handler);
+  },
+  setLookHotkey: (accelerator) => ipcRenderer.invoke("pet:set-look-hotkey", String(accelerator)),
 });

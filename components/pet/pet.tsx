@@ -19,7 +19,7 @@ import { countdown, dueLabel } from "@/lib/when";
 import { PlatypusArt } from "@/components/dashboard/platypus";
 import { updateReady, useUpdates } from "@/components/dashboard/updates";
 import { QuickAdd, StreakBadge, TodoRows } from "@/components/todos/todos";
-import { PetChat, type PetChatId } from "./chat";
+import { PetChat, keepPicture, type PetChatId, type Shot, type TakenShot } from "./chat";
 import { Empty } from "./empty";
 import { PetNeedsYou } from "./needs-you";
 import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
@@ -56,6 +56,10 @@ type Bridge = VoiceBridge & {
   idleSeconds: () => Promise<number>;
   /** A page of the dashboard (a path), opened unlocked in the browser. */
   openDashboard: (path?: string) => void;
+  /** Showing him the screen (pet/look.js): a picture now; one taken with the Look hotkey; which keys that is on. Absent in a pet window from before. */
+  look?: () => Promise<TakenShot>;
+  onLook?: (listener: (shot: TakenShot) => void) => () => void;
+  setLookHotkey?: (accelerator: string) => Promise<HotkeyState>;
 };
 
 declare global {
@@ -92,6 +96,10 @@ export function PetScreen() {
     setKey(window.localStorage.getItem(KEY_STORAGE));
     setReady(true);
   }, []);
+  // A picture of the screen is sent as a file, which the media server takes with the key in its cookie, as the dashboard sets it.
+  useEffect(() => {
+    if (key) document.cookie = `perry_media=${encodeURIComponent(key)}; Path=/api/media; SameSite=Strict; Max-Age=31536000`;
+  }, [key]);
 
   const session = useMemo(() => key ? { dashboardKey: key, lock: () => { window.localStorage.removeItem(KEY_STORAGE); setKey(null); } } : null, [key]);
   useClickThrough();
@@ -186,11 +194,18 @@ function Pet() {
   const news = useRef<{ ids: string[]; until: number } | null>(null);
   const writing = useRef<{ since: number; text: string } | null>(null);
   const voice = useVoice(typeof window === "undefined" ? undefined : window.perryPet);
-  // The Talk hotkey: the keys Settings has, taken up by his window, which says if another app has them.
-  const talkKeys = useQuery(api.dashboard.getShortcuts, { key })?.shortcuts.talk;
+  // The Talk and Look hotkeys: the keys Settings has, taken up by his window, which says if another app has them.
+  const shortcuts = useQuery(api.dashboard.getShortcuts, { key })?.shortcuts;
+  const talkKeys = shortcuts?.talk;
+  const lookKeys = shortcuts?.look;
   const [hotkey, setHotkey] = useState<HotkeyState>({ hotkey: null, error: null });
   const hotkeyNow = useRef(hotkey);
   hotkeyNow.current = hotkey;
+  const [lookKey, setLookKey] = useState<HotkeyState>({ hotkey: null, error: null });
+  const lookKeyNow = useRef(lookKey);
+  lookKeyNow.current = lookKey;
+  /** A picture of the screen waiting in his chat's box, to check before it goes with the question. */
+  const [shot, setShot] = useState<Shot | null>(null);
   const idleNow = useRef(0);
   const [sendSignal, setSendSignal] = useState(0);
   /** Whether what is being said goes as soon as it is written down (the hotkey), or into the box to edit (the mic button). */
@@ -263,7 +278,7 @@ function Pet() {
       idleNow.current = seconds;
       if (Date.now() - lastReport >= 60_000) {
         lastReport = Date.now();
-        void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current) }).catch(() => {});
+        void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current, lookKeyNow.current) }).catch(() => {});
       }
     };
     void check();
@@ -365,10 +380,60 @@ function Pet() {
     const bridge = window.perryPet;
     if (!bridge || !talkKeys) return;
     void bridge.setHotkey(talkKeys).then((result) => {
+      // At once, not at the next render: the Look keys' report carries these too.
+      hotkeyNow.current = result;
       setHotkey(result);
-      void presence({ key, idleSeconds: idleNow.current, ...reported(result) }).catch(() => {});
+      void presence({ key, idleSeconds: idleNow.current, ...reported(result, lookKeyNow.current) }).catch(() => {});
     }, () => {});
   }, [talkKeys, key, presence]);
+  // The same for the Look keys. A pet window from before Look has none, and says it needs a restart.
+  useEffect(() => {
+    const bridge = window.perryPet;
+    if (!bridge || !lookKeys) return;
+    const taking = bridge.setLookHotkey ? bridge.setLookHotkey(lookKeys) : Promise.resolve({ hotkey: null, error: "restart" });
+    void taking.then((result) => {
+      lookKeyNow.current = result;
+      setLookKey(result);
+      void presence({ key, idleSeconds: idleNow.current, ...reported(hotkeyNow.current, result) }).catch(() => {});
+    }, () => {});
+  }, [lookKeys, key, presence]);
+
+  // A picture of the screen: his chat opens with it in the box, ready for the question.
+  const showShot = useCallback((taken: TakenShot) => {
+    if (!taken.window && !taken.screen) return say("I couldn't see the screen", taken.error, 8000);
+    setShot({ ...taken, use: taken.window ? "window" : "screen" });
+    setTab("chat");
+    setOpen(true);
+  }, [say]);
+  useEffect(() => window.perryPet?.onLook?.(showShot), [showShot]);
+
+  // Perry asking to see the screen in a chat (convex/screen.ts): the picture is taken here, kept, and handed back.
+  const lookRequests = useQuery(api.screen.asked, window.perryPet ? { key } : "skip");
+  const fulfilLook = useMutation(api.screen.fulfil);
+  const looking = useRef(new Set<string>());
+  useEffect(() => {
+    for (const request of lookRequests ?? []) {
+      if (looking.current.has(request.id)) continue;
+      looking.current.add(request.id);
+      void (async () => {
+        try {
+          if (!window.perryPet?.look) throw new Error("This desktop pet is from before Perry could look at the screen; ask the owner to restart it (Quit from its tray icon, then turn it on again).");
+          const taken = await window.perryPet.look();
+          const picture = taken[request.which] ?? taken.screen ?? taken.window;
+          if (!picture) throw new Error(taken.error ?? "The desktop pet could not take the picture.");
+          const kept = await keepPicture(picture.image);
+          await fulfilLook({ key, id: request.id, path: kept.path, name: picture.name });
+          say("I looked at your screen", request.why, 6000);
+        } catch (error) {
+          await fulfilLook({ key, id: request.id, error: error instanceof Error ? error.message : String(error) }).catch(() => {});
+        }
+      })();
+    }
+  }, [lookRequests, key, fulfilLook, say]);
+  const lookNow = useCallback(async () => {
+    const taken = await window.perryPet?.look?.().catch((error: unknown) => ({ error: String(error) }));
+    if (taken) showShot(taken);
+  }, [showShot]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -495,7 +560,8 @@ function Pet() {
       {tab === "chat" ? (
         <PetChat chatId={chatId} onChatId={setChatId} draft={draft} onDraft={setDraft} open={openPath}
           voice={window.perryPet ? voice : undefined} hotkey={hotkey.hotkey} byHotkey={talkSends.current} sendSignal={sendSignal}
-          onTalk={() => talk(false)} onTalkSend={() => void heard()} onTalkCancel={stopTalking} />
+          onTalk={() => talk(false)} onTalkSend={() => void heard()} onTalkCancel={stopTalking}
+          shot={shot} onShot={setShot} onLook={window.perryPet?.look ? () => void lookNow() : undefined} lookKeys={lookKey.hotkey} />
       )
         : tab === "needs" ? <PetNeedsYou now={now} onChat={openChat} open={openPath} />
           : <PetTodos board={board} now={now} onDone={done} onAdded={(title, dueAt) => say(`Got it: ${title}`, dueAt ? dueLabel(dueAt) : undefined, 2500)} />}
@@ -511,8 +577,12 @@ function Pet() {
   );
 }
 
-/** The hotkey's standing, as presence reports it: the keys held, and why not the ones asked for. */
-const reported = (state: HotkeyState) => ({ ...(state.hotkey ? { hotkey: state.hotkey } : {}), ...(state.error ? { hotkeyError: state.error } : {}) });
+/** The hotkeys' standing, as presence reports it: the keys held, and why not the ones asked for. */
+const standing = (state: HotkeyState) => ({ ...(state.hotkey ? { hotkey: state.hotkey } : {}), ...(state.error ? { error: state.error } : {}) });
+const reported = (talk: HotkeyState, look: HotkeyState) => {
+  const { hotkey, error } = standing(talk);
+  return { ...(hotkey ? { hotkey } : {}), ...(error ? { hotkeyError: error } : {}), keys: { look: standing(look) } };
+};
 
 /** A line or two of a reply, for a bubble: its start, or while it is being written, its end. */
 function excerpt(text: string, end = false): string {
