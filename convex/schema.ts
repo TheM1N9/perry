@@ -230,6 +230,17 @@ export default defineSchema({
   }),
 
   /**
+   * One row: the page of the dashboard the pet last asked to open (pet.ts),
+   * for a dashboard tab already open to take, or the pet to open itself.
+   */
+  petOpen: defineTable({
+    request: v.string(),
+    path: v.string(),
+    at: v.number(),
+    claimedAt: v.optional(v.number()),
+  }),
+
+  /**
    * An outcome the owner wants, with milestones. Slower moving than a task,
    * and a task can belong to one.
    */
