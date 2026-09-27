@@ -145,6 +145,16 @@ export default defineSchema({
     ownerWroteAt: v.optional(v.number()),
     /** False stops Perry updating himself at night (updates.ts). Unset means on. */
     autoUpdate: v.optional(v.boolean()),
+    /** False when the owner turned off waking the computer for jobs and reminders (wake.ts). Unset: on. */
+    wake: v.optional(v.boolean()),
+    /** The wake timer the server last set, or why it could not, and whether it is keeping the computer awake (server/wake.ts). */
+    wakeState: v.optional(v.object({
+      at: v.optional(v.number()),
+      what: v.optional(v.string()),
+      error: v.optional(v.string()),
+      awake: v.optional(v.boolean()),
+      checkedAt: v.number(),
+    })),
     /** Keyboard shortcuts the owner changed, by id (lib/shortcuts.ts), as Electron accelerators. The rest are the defaults. */
     shortcuts: v.optional(v.record(v.string(), v.string())),
     /**

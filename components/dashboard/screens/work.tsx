@@ -22,6 +22,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActionButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCount, attempt, useTab, type Tone } from "../common";
 import { GoalDialog, ScheduleDialog, WatchDialog, type Editing } from "./work-forms";
@@ -197,6 +198,7 @@ function Schedules() {
       <Intro action={<Button size="sm" onClick={() => setEditing({})}><PlusIcon />New schedule</Button>}>
         Prompts Perry runs on a schedule, like a morning briefing; once, like a reminder; or when something happens, like a new email or a file landing in a folder. Times are in <span className="font-medium text-foreground">{data.timezone}</span>.
       </Intro>
+      <Wake timezone={data.timezone} />
       {yours.length === 0
         ? <EmptyState title="Nothing scheduled yet">Make one here, or ask in a chat: &ldquo;Every weekday at 8am, send me a summary of my calendar.&rdquo;</EmptyState>
         : <List label="Your schedules">{yours.map(row)}</List>}
@@ -213,6 +215,31 @@ function Schedules() {
       )}
       {dialog}
       <ScheduleDialog editing={editing} timezone={data.timezone} onClose={() => setEditing(null)} />
+    </div>
+  );
+}
+
+/** Waking the computer for what is due (convex/wake.ts, server/wake.ts): on or off, and the timer set, or why none is. */
+function Wake({ timezone }: { timezone: string }) {
+  const { dashboardKey } = useSession();
+  const wake = useQuery(api.wake.get, { key: dashboardKey });
+  const set = useMutation(api.wake.set);
+  const now = useNow();
+  if (!wake) return null;
+  const status = !wake.enabled ? "Off: what is due while it sleeps runs when it wakes."
+    : wake.error ? wake.error
+      : wake.at ? `Next: ${fullDate(wake.at - 60_000, timezone)}, a minute before ${wake.what ?? "the next job"} (${ago(wake.at, now)}).`
+        : "Nothing is due, so no wake is set.";
+  return (
+    <div className="flex items-start gap-3 rounded-xl border px-4 py-3">
+      <Switch id="wake-computer" checked={wake.enabled} className="mt-0.5"
+        onCheckedChange={(enabled) => void attempt(() => set({ key: dashboardKey, enabled }), { success: enabled ? "Perry wakes this computer for what is due." : "Perry no longer wakes this computer." })} />
+      <div className="min-w-0 text-sm">
+        <label htmlFor="wake-computer" className="font-medium">Wake this computer for them</label>
+        <p className={cn("mt-0.5 text-pretty", wake.enabled && wake.error ? "text-warning" : "text-muted-foreground")} aria-live="polite">
+          {status}{wake.enabled && wake.awake ? " Keeping it awake now, while Perry works." : ""}
+        </p>
+      </div>
     </div>
   );
 }

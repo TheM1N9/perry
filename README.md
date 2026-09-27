@@ -88,8 +88,11 @@ Chat from the dashboard, Telegram or WhatsApp. WhatsApp is linked from the
 dashboard's settings; it uses an unofficial connection, so a separate number
 is recommended.
 
-Perry answers while your computer is on. For an assistant that is always
-there, run it on a machine that stays on, like a Mac mini or a home server.
+Perry answers while your computer is on. On Windows it wakes a sleeping
+computer for scheduled jobs and reminders (Work → Schedules). macOS and Linux
+only let an administrator set wake times, so there they wait for the computer
+to wake. For an assistant that is always there, run it on a machine that
+stays on, like a Mac mini or a home server.
 
 ## You stay in control
 
