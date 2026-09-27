@@ -406,7 +406,7 @@ export class CodexEngine implements Engine {
     const onItemStarted = item("started");
     const onItemCompleted = item("completed");
     const onTokens = ofTurn((event: TokenUsageEvent) => {
-      if (event.tokenUsage?.last) sink.onEvent?.({ type: "usage", state: "complete", usage: usageOf(event.tokenUsage.last) });
+      if (event.tokenUsage?.last) sink.onEvent?.({ type: "usage", state: "complete", usage: usageOf(event.tokenUsage.last), ...(event.tokenUsage.modelContextWindow ? { contextWindow: event.tokenUsage.modelContextWindow } : {}) });
     });
     app.on("item/agentMessage/delta", onDelta);
     app.on("item/started", onItemStarted);

@@ -25,8 +25,11 @@ function snippet(text: string, needle: string, width = 240): string {
   return `${start > 0 ? "…" : ""}${clean.slice(start, start + width)}${start + width < clean.length ? "…" : ""}`;
 }
 
+/** Another chat does not see into a project chat: what is said there stays there (memories.ts). */
+const openTo = (chat: Chat, from?: string) => !chat.project || chat._id === from;
+
 export const search = internalAction({
-  args: { query: v.string(), limit: v.optional(v.number()) },
+  args: { query: v.string(), limit: v.optional(v.number()), from: v.optional(v.id("conversations")) },
   handler: async (ctx, args): Promise<{
     found: number;
     results: Array<{ chatId: string; chat: string; channel: string; role: string; date: string; snippet: string }>;
@@ -34,7 +37,7 @@ export const search = internalAction({
     const query = args.query.trim();
     const limit = Math.min(Math.max(args.limit ?? 10, 1), 30);
     if (!query) return { found: 0, results: [] };
-    const chats: Chat[] = await ctx.runQuery(internal.conversations.list, {});
+    const chats: Chat[] = (await ctx.runQuery(internal.conversations.list, {})).filter((chat: Chat) => openTo(chat, args.from));
     const byThread = new Map(chats.map((chat) => [chat.threadId, chat]));
     const users = [...new Set(chats.map(userIdOf))];
     // Each channel's hits come back best match first; interleave them by rank.
@@ -53,7 +56,7 @@ export const search = internalAction({
 });
 
 export const read = internalAction({
-  args: { chatId: v.string(), limit: v.optional(v.number()) },
+  args: { chatId: v.string(), limit: v.optional(v.number()), from: v.optional(v.id("conversations")) },
   handler: async (ctx, args): Promise<{
     chat?: string;
     channel?: string;
@@ -63,6 +66,7 @@ export const read = internalAction({
     const chats: Chat[] = await ctx.runQuery(internal.conversations.list, {});
     const chat = chats.find((item) => item._id === args.chatId);
     if (!chat) return { messages: [], note: "No chat with that id. Ids come from search_chats." };
+    if (!openTo(chat, args.from)) return { messages: [], note: "That is a project chat: what is said there stays there." };
     const page = await listMessages(ctx, {
       threadId: chat.threadId,
       excludeToolMessages: true,

@@ -79,7 +79,7 @@ export type TokenUsage = {
   outputTokens: number; reasoningOutputTokens: number;
 };
 /** thread/tokenUsage/updated: the thread's running total, and the latest model response's share. */
-export type TokenUsageEvent = { threadId: string; turnId: string; tokenUsage: { total: TokenUsage; last: TokenUsage } };
+export type TokenUsageEvent = { threadId: string; turnId: string; tokenUsage: { total: TokenUsage; last: TokenUsage; modelContextWindow?: number | null } };
 
 /** `compacted`: Codex compacted the thread's context during the turn (a contextCompaction item). */
 export type TurnOutput = { text: string; images: GeneratedImage[]; interrupted?: boolean; compacted?: boolean };

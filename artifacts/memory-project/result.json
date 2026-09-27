@@ -1,0 +1,46 @@
+{
+  "ranAt": "2026-09-27T14:34:23.897Z",
+  "checks": {
+    "projectMemoryStaysInProject": true,
+    "otherChatsDoNotKnow": true,
+    "everywhereIsSeenEverywhere": true,
+    "projectRemembers": true,
+    "dailySummaryLeavesProjectOut": true,
+    "runnerReportsContext": true,
+    "compactSavesFirst": true,
+    "checkpointLeavesNoTrace": true,
+    "fullThreadCheckpointsOnce": true,
+    "memoryPageSaysWhichChat": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "projectMemoryStaysInProject": [
+      {
+        "text": "The owner's favourite code editor is Helix."
+      },
+      {
+        "text": "The codename for this project is BLUEFIN.",
+        "chatId": "c6gd0ebpmsv097pq5h3yedcprf"
+      }
+    ],
+    "otherChatsDoNotKnow": "I don’t know. I checked your saved memory and searched your earlier chats, but found no project codename.",
+    "everywhereIsSeenEverywhere": "Helix",
+    "projectRemembers": "BLUEFIN",
+    "runnerReportsContext": 0.14578560371517027,
+    "compactSavesFirst": {
+      "tripRuns": [
+        "/compact",
+        "Memory checkpoint",
+        "I'm planning a trip "
+      ],
+      "kyoto": "The owner is planning a trip to Kyoto on 12 March with Ananya and intends to stay at Ryokan Sakura; the year and further arrangements are unspecified."
+    },
+    "fullThreadCheckpointsOnce": {
+      "afterFirst": 1,
+      "afterSecond": 1,
+      "party": "Ananya's birthday party is on 20 April 2027 at 7:00 PM at our place."
+    },
+    "noPageErrors": []
+  },
+  "passed": true
+}

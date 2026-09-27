@@ -70,7 +70,8 @@ export const setAccess = internalMutation({
 export const activeSince = internalQuery({
   args: { since: v.number() },
   handler: async (ctx, args) => (await ctx.db.query("conversations").collect())
-    .filter((chat) => chat.lastMessageAt >= args.since && !chat.jobId)
+    // A project chat keeps its own memory, so the day's summary into everyone's notes leaves it out.
+    .filter((chat) => chat.lastMessageAt >= args.since && !chat.jobId && !chat.project)
     .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
     .slice(0, 40)
     .map((chat) => ({ id: chat._id, title: chat.title ?? "Untitled chat", channel: chat.channel })),
@@ -154,6 +155,16 @@ export const create = internalMutation({
   },
 });
 
+
+/** A checkpoint is on its way because the thread filled up; not again until Codex has compacted it. */
+export const markCheckpointed = internalMutation({
+  args: { id: v.id("conversations") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (await ctx.db.get(args.id)) await ctx.db.patch(args.id, { checkpointedAt: Date.now() });
+    return null;
+  },
+});
 
 export const touch = internalMutation({
   args: { id: v.id("conversations") },

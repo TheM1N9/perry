@@ -160,7 +160,8 @@ export type TurnEvent =
   /** Text of one message as it is written: `text` is all of it so far. */
   | { type: "text"; stream: "assistant" | "reasoning"; itemId: string; delta: string; text: string }
   | { type: "item"; phase: "started" | "updated" | "completed"; item: EngineItem; atMs: number }
-  | { type: "usage"; state: "complete" | "partial"; usage: TokenUsage }
+  /** contextWindow: the model's, when the engine says, so how full the session is can be told (convex/brain.ts checkpoints). */
+  | { type: "usage"; state: "complete" | "partial"; usage: TokenUsage; contextWindow?: number }
   | { type: "usage"; state: "unavailable" };
 
 export type RequestType = "exec_command_approval" | "file_change_approval" | "permission_approval" | "tool_user_input";

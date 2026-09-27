@@ -116,8 +116,9 @@ async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">, 
  * The runner then steers as its engine can, or queues it (runner/engine.ts).
  */
 function isSteering(policy: "steer" | "queue" | undefined, running: Doc<"codexTurns"> | null, engine: EngineKind): running is Doc<"codexTurns"> {
+  // A memory checkpoint or the flush before /reset is not a reply the owner's words could join.
   return (policy ?? "queue") === "steer" && running !== null && !running.stopRequested && running.kind !== "compact"
-    && running.runnerId !== undefined && engineOf(running) === engine;
+    && !running.checkpoint && !running.flush && running.runnerId !== undefined && engineOf(running) === engine;
 }
 
 /**
@@ -136,6 +137,8 @@ export const enqueueTurn = internalMutation({
     recalled: v.optional(v.string()),
     recallDigest: v.optional(v.string()),
     flush: v.optional(v.boolean()),
+    /** A memory checkpoint (brain.checkpoint): quiet, and nothing is saved to the chat. */
+    checkpoint: v.optional(v.boolean()),
     /** The prompt is not the owner's: only the reply is saved to the chat (see finalizeTurn). */
     hidden: v.optional(v.boolean()),
     /** The chat's engine, which `model` is one of. Unset is Codex. */
@@ -165,6 +168,7 @@ export const enqueueTurn = internalMutation({
       recalled: args.recalled || undefined,
       recallDigest: args.recallDigest,
       ...(args.flush ? { flush: true } : {}),
+      ...(args.checkpoint ? { checkpoint: true } : {}),
       ...(args.hidden ? { hidden: true } : {}),
       requestedModel: args.model,
       requestedEffort: args.effort,
@@ -174,7 +178,7 @@ export const enqueueTurn = internalMutation({
     };
     if (isSteering(args.policy, running, engine)) {
       // The running turn already carries recalled memory; a steer adds only the message.
-      const { recalled: _recalled, recallDigest: _digest, flush: _flush, hidden: _hidden, ...steer } = message;
+      const { recalled: _recalled, recallDigest: _digest, flush: _flush, checkpoint: _checkpoint, hidden: _hidden, ...steer } = message;
       const id = await ctx.db.insert("codexSteers", { ...steer, turnId: running._id, runnerId: running.runnerId!, status: "pending" });
       await takeFromOutbox(ctx, conversation, args.prompt);
       return id;
@@ -531,6 +535,7 @@ const vTrace = v.object({
   })),
   usage: v.optional(vUsage),
   steps: v.optional(v.number()),
+  context: v.optional(v.object({ used: v.number(), window: v.number() })),
 });
 
 export const traceTurn = mutation({
@@ -569,6 +574,10 @@ async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infe
     if (span.kind !== "reasoning") toolCalls.push(toolName(span));
     // Codex's own web search reads pages too (mcp.ts, outwardAllowed).
     if (span.kind === "webSearch" && job.outsideAt === undefined) await ctx.db.patch(job._id, { outsideAt: Date.now() });
+  }
+  // How full the chat's Codex thread is, for a memory checkpoint before Codex compacts it (brain.checkpoint).
+  if (trace.context && trace.context.window > 0 && !job.checkpoint && !job.flush) {
+    await ctx.db.patch(job.conversationId, { contextFill: Math.min(1, trace.context.used / trace.context.window) });
   }
   await ctx.db.patch(run._id, {
     toolCalls,
@@ -708,7 +717,8 @@ export const finishTurn = mutation({
     // The chat's Codex thread has now seen this turn's recalled memory, unless
     // compaction summarised it away; either way the next turn knows what to send.
     if ((args.compacted || !args.error) && await ctx.db.get(job.conversationId)) {
-      await ctx.db.patch(job.conversationId, { recallDigest: args.compacted ? undefined : job.recallDigest });
+      // Compacted, the thread starts filling afresh, and the next time it is nearly full is worth a checkpoint again.
+      await ctx.db.patch(job.conversationId, { recallDigest: args.compacted ? undefined : job.recallDigest, ...(args.compacted ? { checkpointedAt: undefined, contextFill: undefined } : {}) });
     }
     // Messages the turn ended before taking are answered next, in the same transaction.
     for (const steer of await pendingSteersOf(ctx, job._id)) await queueSteer(ctx, steer, { error: "The reply finished before this message could join it." });
@@ -855,7 +865,8 @@ export const markFinalized = internalMutation({
       });
     }
     // A compaction is not a message: the chat was never marked busy for it.
-    const conversation = job.kind === "compact" ? null : await ctx.db.get(job.conversationId);
+    // A checkpoint is not a message either: the web chat never counted it as one it sent.
+    const conversation = job.kind === "compact" || job.checkpoint ? null : await ctx.db.get(job.conversationId);
     if (conversation) await ctx.db.patch(conversation._id, {
       lastMessageAt: Date.now(),
       pendingTurns: conversation.channel === "web" ? Math.max(0, (conversation.pendingTurns ?? 0) - 1 - steers.length) : conversation.pendingTurns,
@@ -917,7 +928,7 @@ export const finalizeTurn = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const result: {
-      job: { kind?: "compact"; prompt: string; response?: string; error?: string; status: string; model?: string; finalizedAt?: number; mediaKey?: string; memoryIds?: Id<"memories">[]; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
+      job: { kind?: "compact"; checkpoint?: boolean; prompt: string; response?: string; error?: string; status: string; model?: string; finalizedAt?: number; mediaKey?: string; memoryIds?: Id<"memories">[]; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
       conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram" | "whatsapp"; externalId: string; title?: string; jobId?: Id<"jobs"> } | null;
       steers: string[];
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
@@ -929,6 +940,11 @@ export const finalizeTurn = internalAction({
     // Each step is recorded once done, so recovery can retry this safely (see recovery.ts).
     const done = (step: "reportedAt" | "savedAt" | "deliveredAt") => ctx.runMutation(internal.codex.markStep, { id: args.id, step });
     const userId = conversation.channel === "web" ? "web:dashboard" : `${conversation.channel}:${conversation.externalId}`;
+    // A memory checkpoint leaves nothing in the chat, whatever came of it.
+    if (job.checkpoint) {
+      await ctx.runMutation(internal.codex.markFinalized, args);
+      return null;
+    }
     // The flush before /reset leaves nothing in the chat: finishing it, even
     // with an error, starts the chat afresh ("saved" here), and only a failure
     // is worth telling a Telegram chat about.
@@ -971,6 +987,8 @@ export const finalizeTurn = internalAction({
     // A failed turn keeps the owner's message; the error shows on the run and, on Telegram, as a reply.
     // Messages that joined the reply come after the one that started it, and before the reply.
     // A hidden prompt (the greeting after the welcome page) is not the owner's, so only what they sent is kept.
+    // Nearly full, the thread is about to be compacted by Codex: first, what matters goes to memory.
+    await ctx.scheduler.runAfter(0, internal.brain.checkpointIfFull, { id: conversation._id });
     const prompts = job.hidden ? steers : [job.prompt, ...steers];
     const answered = Boolean(reply || job.mediaKey);
     if (!job.savedAt) await saveMessages(ctx, {

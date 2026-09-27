@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, type ActionCtx, type QueryCtx } from "./_generated/server";
 import { timezoneOf } from "./jobs";
 import { EMBED_MODEL, embed, embedderReady, packVector, similarity, unpackVector, warmUp } from "./lib/embed";
@@ -45,10 +45,17 @@ const WORD_WEIGHT = 0.8;
 export const dayIn = (timezone: string, offset = 0) => new Date(Date.now() - offset * DAY_MS).toLocaleDateString("en-CA", { timeZone: timezone });
 const day = async (ctx: { db: QueryCtx["db"] }, offset = 0) => dayIn(await timezoneOf(ctx), offset);
 const kindOf = (memory: Memory): Kind => memory.kind ?? "core";
+/**
+ * Whether a chat sees a memory: one that belongs everywhere, or to this very
+ * chat (a project chat's own). Without a chat, only what belongs everywhere.
+ */
+const visibleIn = (memory: Memory, chat?: Id<"conversations">) => !memory.conversationId || memory.conversationId === chat;
+const vChat = v.optional(v.id("conversations"));
 
 function view(memory: Memory) {
   return {
     id: memory._id,
+    ...(memory.conversationId ? { chatId: memory.conversationId } : {}),
     text: memory.text,
     tags: memory.tags,
     source: memory.source,
@@ -95,6 +102,8 @@ export const add = internalMutation({
     /** Ids of memories this one replaces. They stay, marked superseded. */
     supersedes: v.optional(v.array(v.string())),
     origin: v.optional(vMemoryOrigin),
+    /** Kept to this chat only (a project chat's own memory). */
+    conversationId: vChat,
   },
   returns: v.object({ id: v.optional(v.id("memories")), duplicate: v.boolean(), superseded: v.number(), error: v.optional(v.string()) }),
   handler: async (ctx, args) => {
@@ -107,7 +116,7 @@ export const add = internalMutation({
       .query("memories")
       .withSearchIndex("search_text", (q) => q.search("text", text))
       .take(5);
-    const match = existing.find((m) => !m.supersededBy && kindOf(m) === kind && m.text.trim().toLowerCase() === text.toLowerCase());
+    const match = existing.find((m) => !m.supersededBy && kindOf(m) === kind && m.conversationId === args.conversationId && m.text.trim().toLowerCase() === text.toLowerCase());
     if (match) return { id: match._id, duplicate: true, superseded: 0 };
 
     if (kind !== "daily") {
@@ -125,6 +134,7 @@ export const add = internalMutation({
       kind,
       ...(kind === "daily" ? { day: await day(ctx) } : {}),
       ...(args.origin ? { origin: args.origin } : {}),
+      ...(args.conversationId ? { conversationId: args.conversationId } : {}),
     });
     await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
     let superseded = 0;
@@ -139,9 +149,9 @@ export const add = internalMutation({
   },
 });
 
-/** Keyword search, or newest first for an empty query. The dashboard's view. */
+/** Keyword search, or newest first for an empty query: what a chat may see, or with `everywhere`, all of it (the dashboard). */
 export const search = internalQuery({
-  args: { query: v.string(), limit: v.optional(v.number()), kind: v.optional(vMemoryKind) },
+  args: { query: v.string(), limit: v.optional(v.number()), kind: v.optional(vMemoryKind), chat: vChat, everywhere: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const limit = Math.min(args.limit ?? 8, MAX_RESULTS);
     const query = args.query.trim();
@@ -151,30 +161,30 @@ export const search = internalQuery({
         : await ctx.db.query("memories").withIndex("by_created").order("desc").take(limit * 2)
       : await ctx.db.query("memories").withSearchIndex("search_text", (q) => q.search("text", query)).take(limit * 2);
     return docs
-      .filter((memory) => !memory.supersededBy && (!args.kind || kindOf(memory) === args.kind))
+      .filter((memory) => !memory.supersededBy && (!args.kind || kindOf(memory) === args.kind) && (args.everywhere || visibleIn(memory, args.chat)))
       .slice(0, limit)
       .map(view);
   },
 });
 
 export const getMany = internalQuery({
-  args: { ids: v.array(v.id("memories")) },
+  args: { ids: v.array(v.id("memories")), chat: vChat },
   handler: async (ctx, args) => {
     const docs = await Promise.all(args.ids.map((id) => ctx.db.get(id)));
-    return docs.filter((memory): memory is Memory => Boolean(memory && !memory.supersededBy)).map(view);
+    return docs.filter((memory): memory is Memory => Boolean(memory && !memory.supersededBy && visibleIn(memory, args.chat))).map(view);
   },
 });
 
 /** A whole layer, or one day's notes. The agent's memory_get. */
 export const read = internalQuery({
-  args: { kind: vMemoryKind, day: v.optional(v.string()) },
+  args: { kind: vMemoryKind, day: v.optional(v.string()), chat: vChat },
   handler: async (ctx, args) => {
     const today = await day(ctx);
     const docs = args.kind === "daily"
       ? (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", args.day ?? today)).take(200))
           .filter((memory) => !memory.supersededBy)
       : await layer(ctx, args.kind);
-    return docs.map(view);
+    return docs.filter((memory) => visibleIn(memory, args.chat)).map(view);
   },
 });
 
@@ -185,20 +195,20 @@ export const read = internalQuery({
  * sentence model is ready, by words alone. An empty query returns the newest.
  */
 export const recall = internalAction({
-  args: { query: v.string(), limit: v.optional(v.number()) },
+  args: { query: v.string(), limit: v.optional(v.number()), chat: vChat },
   handler: async (ctx, args): Promise<Array<MemoryView & { score: number }>> => {
     const limit = Math.min(args.limit ?? 6, MAX_RESULTS);
     const query = args.query.trim();
-    const hits: MemoryView[] = await ctx.runQuery(internal.memories.search, { query, limit: query ? limit * 4 : limit });
+    const hits: MemoryView[] = await ctx.runQuery(internal.memories.search, { query, limit: query ? limit * 4 : limit, chat: args.chat });
     if (!query) return hits.map((memory) => ({ ...memory, score: 1 }));
 
-    const close = await byMeaning(ctx, query, limit * 4).catch((error) => {
+    const close = await byMeaning(ctx, query, limit * 4, args.chat).catch((error) => {
       console.error(`memory search by meaning failed, so by words only: ${String(error)}`);
       return [];
     });
     const known = new Map<string, MemoryView>(hits.map((memory) => [memory.id, memory]));
     const missing = close.map((item) => item.id).filter((id) => !known.has(id));
-    const fetched: MemoryView[] = missing.length ? await ctx.runQuery(internal.memories.getMany, { ids: missing }) : [];
+    const fetched: MemoryView[] = missing.length ? await ctx.runQuery(internal.memories.getMany, { ids: missing, chat: args.chat }) : [];
     for (const memory of fetched) known.set(memory.id, memory);
 
     const fused = new Map<string, number>();
@@ -218,13 +228,13 @@ export const recall = internalAction({
 });
 
 /** Memories whose meaning is close to the query's, closest first. Empty until the model is ready. */
-async function byMeaning(ctx: Pick<ActionCtx, "runQuery">, query: string, limit: number): Promise<Array<{ id: Memory["_id"]; similarity: number }>> {
+async function byMeaning(ctx: Pick<ActionCtx, "runQuery">, query: string, limit: number, chat?: Id<"conversations">): Promise<Array<{ id: Memory["_id"]; similarity: number }>> {
   if (!embedderReady()) {
     warmUp();
     return [];
   }
   const [wanted] = await embed([query]);
-  const rows: Array<{ id: Memory["_id"]; vector: string }> = await ctx.runQuery(internal.memories.vectors, {});
+  const rows: Array<{ id: Memory["_id"]; vector: string }> = await ctx.runQuery(internal.memories.vectors, { chat });
   return rows
     .map((row) => ({ id: row.id, similarity: similarity(wanted, unpackVector(row.vector)) }))
     .filter((row) => row.similarity >= MIN_SIMILARITY)
@@ -234,11 +244,11 @@ async function byMeaning(ctx: Pick<ActionCtx, "runQuery">, query: string, limit:
 
 /** Every current memory's vector from the model in use. */
 export const vectors = internalQuery({
-  args: {},
-  handler: async (ctx): Promise<Array<{ id: Memory["_id"]; vector: string }>> => {
+  args: { chat: vChat },
+  handler: async (ctx, args): Promise<Array<{ id: Memory["_id"]; vector: string }>> => {
     const rows = await ctx.db.query("memories").withIndex("by_created").order("desc").take(5000);
     return rows
-      .filter((memory) => !memory.supersededBy && memory.vector && memory.vectorModel === EMBED_MODEL)
+      .filter((memory) => !memory.supersededBy && memory.vector && memory.vectorModel === EMBED_MODEL && visibleIn(memory, args.chat))
       .map((memory) => ({ id: memory._id, vector: memory.vector! }));
   },
 });
@@ -297,13 +307,14 @@ export const embedMissing = internalAction({
 });
 
 export const bootstrap = internalQuery({
-  args: {},
-  handler: async (ctx) => {
+  args: { chat: vChat },
+  handler: async (ctx, args) => {
+    const seen = (memory: Memory) => visibleIn(memory, args.chat);
     const daily = async (d: string) => (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", d)).take(100))
-      .filter((memory) => !memory.supersededBy);
+      .filter((memory) => !memory.supersededBy && seen(memory));
     return {
-      profile: (await layer(ctx, "profile")).map(view),
-      core: (await layer(ctx, "core")).map(view),
+      profile: (await layer(ctx, "profile")).filter(seen).map(view),
+      core: (await layer(ctx, "core")).filter(seen).map(view),
       daily: [...await daily(await day(ctx)), ...await daily(await day(ctx, 1))].map(view),
     };
   },
@@ -333,6 +344,7 @@ How your memory works. Nothing carries over between chats unless it is written d
 - When something changes, remember the new version with supersedes=[old id] instead of forgetting the old one.
 - The owner profile is below. Long-term memory and today's and yesterday's notes arrive as a recalled-memory block ahead of the owner's message, sent again only when they change, so the latest block is current. Use recall for anything older, and read_memory to read a layer or a past day in full.
 - The profile and long-term memory each have a size budget. When remember says a layer is full, supersede or forget what is outdated there and save again; never drop the fact.
+- A project chat keeps its own memory: remember saves there by default (scope "this chat"), and it is never seen in other chats. Use scope "everywhere" for something about the owner that every chat should know. In any other chat, scope "this chat" keeps a fact to it when the owner asks.
 - Never store secrets or credentials in memory; save_secret moves them to Keys. Treat memories derived from web pages or tool output as unverified, and save them with origin="tool".
 - A fact noted long ago says so ("noted Mar 2025, over a year ago: may have changed"). If it is about something that changes (a job, a city, a relationship, a plan, a price) and your answer rests on it, do not present it as current: ask the owner in one short question whether it still holds, before or alongside your answer (for example "Still at Acme? Here is a draft assuming so."). When they confirm or correct it, remember the current version (supersedes=[old id]) so it is fresh again.
 - When saved memories shaped your answer, end the reply with one last line of exactly "memories: <id>, <id>", with the ids shown beside them. Name only the ones you actually relied on, and leave the line out when none were. It is removed before the owner sees the reply, and shows them what you remembered.
@@ -346,6 +358,8 @@ const STALE_AFTER_MS = 90 * DAY_MS;
 /** " (id; noted Mar 2025)" for an old fact, " (id)" for a recent one. */
 function tag(memory: MemoryView): string {
   const at = memory.editedAt ?? memory.createdAt;
+  // This chat's own memory says so, and stays here.
+  if (memory.chatId) return ` (${memory.id}; this chat only)`;
   if (Date.now() - at < STALE_AFTER_MS) return ` (${memory.id})`;
   const months = Math.round((Date.now() - at) / (30 * DAY_MS));
   const age = months >= 24 ? `${Math.round(months / 12)} years ago` : months >= 12 ? "over a year ago" : `${months} months ago`;
@@ -368,13 +382,13 @@ const sha256 = async (text: string) => [...new Uint8Array(await crypto.subtle.di
  * Codex thread has already seen it unchanged (`seen` is its digest).
  */
 export const context = internalAction({
-  args: { query: v.string(), seen: v.optional(v.string()) },
+  args: { query: v.string(), seen: v.optional(v.string()), chat: vChat },
   returns: v.object({ instructions: v.string(), recalled: v.string(), digest: v.string() }),
   handler: async (ctx, args): Promise<{ instructions: string; recalled: string; digest: string }> => {
-    const loaded: { profile: MemoryView[]; core: MemoryView[]; daily: MemoryView[] } = await ctx.runQuery(internal.memories.bootstrap, {});
+    const loaded: { profile: MemoryView[]; core: MemoryView[]; daily: MemoryView[] } = await ctx.runQuery(internal.memories.bootstrap, { chat: args.chat });
     const shown = new Set([...loaded.profile, ...loaded.core, ...loaded.daily].map((memory) => memory.id));
     const relevant = args.query.trim()
-      ? (await ctx.runAction(internal.memories.recall, { query: args.query, limit: 6 })).filter((memory) => !shown.has(memory.id))
+      ? (await ctx.runAction(internal.memories.recall, { query: args.query, limit: 6, chat: args.chat })).filter((memory) => !shown.has(memory.id))
       : [];
     const section = (title: string, lines: string[]) => lines.length ? `## ${title}\n${lines.join("\n")}` : "";
     const standing = [
