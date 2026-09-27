@@ -574,6 +574,9 @@ async function uninstall(args: string[]): Promise<boolean> {
   removeService();
   const pet = await import("./pet");
   if (pet.installed()) await pet.off();
+  // The computer no longer needs waking for Perry.
+  const wakeLeft = await (await import("../server/wake")).setWakeTimer(null);
+  if (wakeLeft) say(yellow(`  ${wakeLeft}`));
   unlink();
   if (choice === "1") {
     say(dim(`  Removed the perry command from ${BIN_DIR}. Perry itself is kept at ${REPO}, and its data in ${HOME}.`));

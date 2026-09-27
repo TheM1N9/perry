@@ -11,6 +11,7 @@ import { modules } from "./modules";
 import { Runtime } from "./runtime";
 import { pollTelegram } from "./telegram";
 import { runTriggers } from "./triggers";
+import { runWake } from "./wake";
 import { runWhatsApp } from "./whatsapp";
 
 /**
@@ -24,7 +25,7 @@ export const PORT = Number(process.env.PERRY_PORT ?? process.env.PORT ?? 7377);
 /** This server as the runner on this machine reaches it. */
 export const LOCAL_URL = `http://127.0.0.1:${PORT}`;
 
-type Global = { __perry?: { runtime: Runtime; started: boolean; stopTelegram?: () => void; stopWhatsApp?: () => void; stopTriggers?: () => void } };
+type Global = { __perry?: { runtime: Runtime; started: boolean; stopTelegram?: () => void; stopWhatsApp?: () => void; stopTriggers?: () => void; stopWake?: () => void } };
 const box = globalThis as Global;
 
 export function backend(): Runtime {
@@ -69,7 +70,7 @@ async function pairThisMachine(runtime: Runtime) {
   console.log(`[perry] connected this computer (${name}) to the local backend`);
 }
 
-/** Start the scheduler, crons and Telegram. Called once, from instrumentation.ts. */
+/** Start the scheduler, crons, Telegram, WhatsApp, event triggers and the wake timer. Called once, from instrumentation.ts. */
 export async function startBackend() {
   const runtime = backend();
   if (box.__perry!.started) return;
@@ -80,5 +81,6 @@ export async function startBackend() {
   box.__perry!.stopTelegram = pollTelegram(runtime);
   box.__perry!.stopWhatsApp = runWhatsApp(runtime);
   box.__perry!.stopTriggers = runTriggers(runtime);
+  box.__perry!.stopWake = runWake(runtime);
   console.log(`[perry] backend ready: ${runtime.functions().length} functions, data in ${HOME}`);
 }

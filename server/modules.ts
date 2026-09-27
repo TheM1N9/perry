@@ -29,6 +29,7 @@ import * as lib_engines from "../convex/lib/engines";
 import * as lib_errors from "../convex/lib/errors";
 import * as lib_price from "../convex/lib/price";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
+import * as lib_skills from "../convex/lib/skills";
 import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
 import * as lib_truncate from "../convex/lib/truncate";
@@ -49,6 +50,7 @@ import * as todos from "../convex/todos";
 import * as tools from "../convex/tools";
 import * as updates from "../convex/updates";
 import * as vault from "../convex/vault";
+import * as wake from "../convex/wake";
 import * as web from "../convex/web";
 import * as whatsapp from "../convex/whatsapp";
 import * as work from "../convex/work";
@@ -81,6 +83,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/errors": lib_errors,
   "lib/price": lib_price,
   "lib/shortcuts": lib_shortcuts,
+  "lib/skills": lib_skills,
   "lib/telegram": lib_telegram,
   "lib/telegramFormat": lib_telegramFormat,
   "lib/truncate": lib_truncate,
@@ -101,6 +104,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "tools": tools,
   "updates": updates,
   "vault": vault,
+  "wake": wake,
   "web": web,
   "whatsapp": whatsapp,
   "work": work,
