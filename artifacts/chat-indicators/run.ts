@@ -32,7 +32,7 @@ import { openChat, sleep } from "../browser";
 //   7. A name overwrites the owner's: a chat renamed right after its first
 //      message must keep the owner's name after the runner is done.
 //   8. A failed reply does not show: a chat whose last run failed (recorded
-//      with runs:finish) must show the red alert (data-status="error") in its
+//      with runs:finish) must show the red dot (data-status="error") in its
 //      row and header.
 //   9. Any of it throws in the page: no page errors.
 
@@ -150,19 +150,19 @@ try {
   await shot("working.png");
   notes.namingSeen = (await shown(away)).rowShimmer || (await chatOf(away))?.naming === true;
 
-  // Leave while it replies; its row gets the check when the reply lands.
+  // Leave while it replies; its row gets the green dot when the reply lands.
   await go("/chat");
   const named = await until(async () => { const chat = await chatOf(away); return chat && chat.title !== firstMessage && !chat.naming ? chat : null; }, "Luna to name the chat", 90);
   notes.name = named.title;
   notes.runnerNamed = logs.runner.split("\n").filter((line) => line.includes("named a chat") || line.includes("could not name")).map((line) => line.trim());
   checks.namedShort = words(named.title) >= 1 && words(named.title) <= 8 && named.title !== firstMessage;
   checks.namedWithLuna = logs.runner.includes(`named a chat "${named.title}" (gpt-6-luna)`);
-  const ready = await until(async () => { const seen = await shown(away); return seen.row === "unseen" ? seen : null; }, "the reply-ready check", 300);
+  const ready = await until(async () => { const seen = await shown(away); return seen.row === "unseen" ? seen : null; }, "the reply-ready dot", 300);
   notes.afterReply = ready;
   checks.replyReadyWhenAway = ready.row === "unseen" && ready.rowLabel === "Reply ready" && ready.rowTitle === named.title;
   await shot("reply-ready.png");
   await evaluate(`document.querySelector('[data-sidebar="menu"] a[href="/chat/${away}"]').click(); true`);
-  const opened = await until(async () => { const seen = await shown(away); return seen.row === null && !(await chatOf(away))?.unseen ? seen : null; }, "the check to clear once opened", 15).catch(() => null);
+  const opened = await until(async () => { const seen = await shown(away); return seen.row === null && !(await chatOf(away))?.unseen ? seen : null; }, "the dot to clear once opened", 15).catch(() => null);
   checks.readyClearsWhenOpened = Boolean(opened);
 
   // --- 6: a chat you watch reply ------------------------------------------------------
@@ -170,7 +170,7 @@ try {
   await go(`/chat/${watched}`);
   await sendInPage("Name one fruit. Just the word.");
   await until(async () => (await shown(watched)).header === "running", "the watched chat to start", 30, 100);
-  const done = await until(async () => { const seen = await shown(watched); return seen.header === "done" ? seen : null; }, "the done check", 300, 100);
+  const done = await until(async () => { const seen = await shown(watched); return seen.header === "done" ? seen : null; }, "the done dot", 300, 100);
   notes.watchedDone = done;
   await shot("done.png");
   await sleep(5_500);
@@ -195,7 +195,7 @@ try {
   await call("runs:finish", { id: run, status: "error", error: "Codex could not reach the model." });
   await until(async () => (await chatOf(failing))?.status === "error", "the chat to list as failed", 15);
   await go(`/chat/${failing}`);
-  const failed = await until(async () => { const seen = await shown(failing); return seen.row === "error" ? seen : null; }, "the failed alert", 15);
+  const failed = await until(async () => { const seen = await shown(failing); return seen.row === "error" ? seen : null; }, "the failed dot", 15);
   notes.failed = failed;
   checks.errorShown = failed.row === "error" && failed.header === "error";
   await shot("failed.png");

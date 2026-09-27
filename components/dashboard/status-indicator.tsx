@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CircleAlertIcon, CircleCheckIcon } from "lucide-react";
 import type { ChatStatus } from "@/convex/dashboard";
 import { cn } from "@/lib/utils";
 
-/** How long a chat that just finished shows its check, when its reply is already seen. */
+/** How long a chat that just finished shows its green dot, when its reply is already seen. */
 const DONE_MS = 4_000;
 
 /** True for a few seconds after the chat goes from working to finished. */
@@ -27,9 +26,9 @@ function useJustFinished(status: ChatStatus) {
 
 /**
  * What a chat is doing: a spinner while it works, a pulsing amber dot while
- * it waits on you, a red alert when the last reply failed, and a green check
- * once a reply is ready. The check stays until you read the reply, or for a
- * moment when you were already watching it land.
+ * it waits on you, a red dot when the last reply failed, and a green dot
+ * once a reply is ready. The green dot stays until you read the reply, or for
+ * a moment when you were already watching it land.
  */
 export function StatusIndicator({ status, unseen, className }: { status: ChatStatus; unseen?: boolean; className?: string }) {
   const done = useJustFinished(status);
@@ -52,7 +51,7 @@ export function StatusIndicator({ status, unseen, className }: { status: ChatSta
   if (status === "error") {
     return (
       <span role="img" aria-label="The last reply failed" title="The last reply failed" data-status="error" className={box}>
-        <CircleAlertIcon className="size-3.5 text-destructive" aria-hidden />
+        <span className="size-2 rounded-full bg-destructive" />
       </span>
     );
   }
@@ -61,7 +60,7 @@ export function StatusIndicator({ status, unseen, className }: { status: ChatSta
   return (
     <span role="img" aria-label={label} title={label} data-status={unseen ? "unseen" : "done"}
       className={cn(box, "animate-in fade-in zoom-in-50 duration-300 motion-reduce:animate-none")}>
-      <CircleCheckIcon className="size-3.5 text-success" aria-hidden />
+      <span className="size-2 rounded-full bg-success" />
     </span>
   );
 }

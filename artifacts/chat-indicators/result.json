@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-26T22:24:58.424Z",
+  "ranAt": "2026-09-27T04:08:13.465Z",
   "checks": {
     "titledAtOnce": true,
     "spinnerWhileWorking": true,
@@ -57,7 +57,7 @@
     "watchedLater": {
       "row": null,
       "rowLabel": null,
-      "rowTitle": "Name a Fruit",
+      "rowTitle": "Naming a Fruit",
       "rowShimmer": false,
       "header": null,
       "thinkingSpinner": false,
@@ -75,7 +75,7 @@
     "titles": [
       "Check the weather",
       "Sister's birthday",
-      "Name a Fruit",
+      "Naming a Fruit",
       "Day Hikes Near Lisbon"
     ],
     "pageErrors": []
