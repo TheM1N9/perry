@@ -32,7 +32,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileS
 import { homedir, hostname, networkInterfaces } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HOME, readRunnerConfig } from "../runner/home";
+import { HOME, readRunnerConfig, writeRunnerConfig } from "../runner/home";
 import { bold, dim, done, green, red, run, spinner, tail, yellow } from "./lib";
 
 export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -189,6 +189,13 @@ async function runForeground() {
     writeFileSync(pidFile, String(process.pid));
   }
   if (!existsSync(BUILD_ID) && !(await build())) process.exit(1);
+  // A runner.json from before Perry's port moved (3000) names this computer at the old one: the runner
+  // would start there, fail, and wait on the server to put it right (server/index.ts pairThisMachine).
+  const runnerConfig = readRunnerConfig();
+  const here = `http://127.0.0.1:${PORT}`;
+  if (runnerConfig.url && runnerConfig.url !== here && /^http:\/\/(127\.0\.0\.1|localhost):\d+\/?$/.test(runnerConfig.url)) {
+    writeRunnerConfig({ ...runnerConfig, url: here });
+  }
 
   const stamp = () => new Date().toISOString().slice(11, 19);
   const children: Managed[] = [

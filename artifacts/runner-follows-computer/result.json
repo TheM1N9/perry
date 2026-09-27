@@ -1,0 +1,37 @@
+{
+  "ranAt": "2026-09-27T06:44:45.765Z",
+  "passed": true,
+  "checks": {
+    "keepsTokenAfterPortMove": true,
+    "addressPutRight": true,
+    "staysOffOtherComputer": true,
+    "failedRunKeepsPrompt": true,
+    "followsSameComputer": true
+  },
+  "notes": {
+    "keepsTokenAfterPortMove": {
+      "runners": 1,
+      "sameToken": true
+    },
+    "addressPutRight": {
+      "url": "http://127.0.0.1:55306"
+    },
+    "staysOffOtherComputer": {
+      "error": "The Codex runner for this chat is offline. Start Perry on its computer (perry start) to continue.",
+      "otherTurns": 0
+    },
+    "failedRunKeepsPrompt": [
+      "user: ⏰ Stranded job (Sunday, 27 September 2026 at 06:43)\n\nReport ",
+      "user: ⏰ Stranded job (Sunday, 27 September 2026 at 06:44)\n\nReport "
+    ],
+    "followsSameComputer": {
+      "queuedOnNew": 1
+    }
+  },
+  "serverLog": [
+    "[perry] connected this computer (DESKTOP-27SQLCP) to the local backend",
+    "[perry] backend ready: 333 functions, data in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-follow-yVUJll",
+    "[perry] backend ready: 333 functions, data in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-follow-yVUJll",
+    "turn failed: The Codex runner for this chat is offline. Start Perry on its computer (perry start) to continue."
+  ]
+}
