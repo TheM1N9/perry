@@ -1,0 +1,232 @@
+{
+  "ranAt": "2026-09-27T14:37:51.661Z",
+  "model": "gpt-6-luna",
+  "checks": {
+    "fallbackPrefersCodex": true,
+    "settingsPickerSaves": true,
+    "pickersDefaultToDefaultEngine": true,
+    "newWebChatUsesDefault": true,
+    "messagingChatUsesDefault": true,
+    "statusShowsEngine": true,
+    "jobUsesDefault": true,
+    "heartbeatUsesDefault": true,
+    "otherEngineRunsBeside": true,
+    "steerAndStopHitTheirTurn": true,
+    "realClaudeRunsBesideCodex": true,
+    "oneTurnPerChat": true,
+    "codexTurnCompletes": true,
+    "streamsStayApart": true,
+    "quickTurnsBeside": true,
+    "tracesStayApart": true,
+    "unavailableDefaultFallsBack": true,
+    "unavailableChatEngineSaysSo": true,
+    "noPageErrors": true,
+    "runnerLogClean": true
+  },
+  "notes": {
+    "fallbackPrefersCodex": {
+      "engine": "codex",
+      "choices": [
+        {
+          "kind": "codex",
+          "label": "Codex",
+          "online": true
+        },
+        {
+          "kind": "claude",
+          "label": "Claude Code",
+          "online": true
+        },
+        {
+          "kind": "grok",
+          "label": "Grok Build",
+          "online": true
+        }
+      ]
+    },
+    "settingsPickerSaves": {
+      "picked": {
+        "picked": "grok",
+        "engine": "grok",
+        "choices": [
+          {
+            "kind": "codex",
+            "label": "Codex",
+            "online": true
+          },
+          {
+            "kind": "claude",
+            "label": "Claude Code",
+            "online": true
+          },
+          {
+            "kind": "grok",
+            "label": "Grok Build",
+            "online": true
+          }
+        ]
+      },
+      "pickerText": "Default engine\n\nNew chats, new Telegram and WhatsApp chats, and scheduled work without a model start on it. Chats keep the engine they started on.\n\nGrok Build"
+    },
+    "pickersDefaultToDefaultEngine": {
+      "defaultEngine": "grok",
+      "lastPicks": {
+        "engine": "grok"
+      },
+      "composerShowsDefault": true
+    },
+    "newWebChatUsesDefault": {
+      "chat": "grok",
+      "turn": {
+        "engine": "grok",
+        "model": "fake-small"
+      },
+      "reply": "FAKE grok/fake-small web-e2emujx73hs: one two three four"
+    },
+    "messagingChatUsesDefault": {
+      "engine": "grok"
+    },
+    "statusShowsEngine": "engine    Grok Build\nmodel     grok default (fake-small)\nthinking  default (low)\naccess    Full access\nmemories  0\nruns      0 recent",
+    "jobUsesDefault": {
+      "turn": {
+        "engine": "grok",
+        "model": "fake-small"
+      },
+      "result": "FAKE grok/fake-small job-e2emujx73hs: one two three four"
+    },
+    "heartbeatUsesDefault": {
+      "turn": {
+        "engine": "grok",
+        "model": "fake-small",
+        "status": "done"
+      }
+    },
+    "otherEngineRunsBeside": {
+      "waitedMs": 28,
+      "ranMs": 3154,
+      "codexStill": "running"
+    },
+    "steerAndStopHitTheirTurn": {
+      "steer": "applied",
+      "cRanMs": 1070,
+      "cReply": "FAKE grok/fake-small C-e2emujx73hs: one two three [steered: steer-C-e2emujx73hs] four\n\n_Stopped._",
+      "codex": {
+        "status": "running",
+        "stopRequested": false
+      }
+    },
+    "realClaudeRunsBesideCodex": {
+      "waitedMs": 59,
+      "ranMs": 6764,
+      "model": "haiku",
+      "codexStill": "running",
+      "reply": "Hello! What can I help with?"
+    },
+    "oneTurnPerChat": {
+      "heldBack": true,
+      "codex": {
+        "startedAt": 1790519771170,
+        "finishedAt": 1790519865449
+      },
+      "next": {
+        "engine": "grok",
+        "startedAt": 1790519865470
+      }
+    },
+    "codexTurnCompletes": {
+      "replies": [
+        "codex-done e2emujx73hs",
+        "FAKE grok/fake-small A2-e2emujx73hs: one two three four"
+      ]
+    },
+    "streamsStayApart": {
+      "snapshotsA": 2,
+      "codexSnapshotsA": [],
+      "snapshotsC": 2,
+      "lastC": "FAKE grok/fake-small C-e2emujx73hs: one two three [steered: steer-C-e2emujx73hs] four"
+    },
+    "quickTurnsBeside": {
+      "namedBeforeCodexFinishedMs": {
+        "B": 87478,
+        "C": 72131
+      },
+      "titles": {
+        "B": "Codex tag fake seconds",
+        "C": "Long one tag"
+      }
+    },
+    "tracesStayApart": {
+      "spansA": [
+        "reasoning",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.",
+        "reasoning",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.",
+        "reasoning",
+        "reasoning"
+      ],
+      "spansC": [
+        "fake step C-e2emujx73hs"
+      ]
+    },
+    "unavailableDefaultFallsBack": {
+      "fallen": {
+        "picked": "grok",
+        "engine": "codex",
+        "choices": [
+          {
+            "kind": "codex",
+            "label": "Codex",
+            "online": true
+          },
+          {
+            "kind": "claude",
+            "label": "Claude Code",
+            "online": true
+          }
+        ]
+      },
+      "newChat": "codex"
+    },
+    "unavailableChatEngineSaysSo": {
+      "engine": "grok",
+      "lastError": "Grok Build isn't signed in on any computer. Sign in to it in Settings, or pick another engine's model."
+    },
+    "settingsFallback": "Engines\n\nPerry thinks with a coding agent on your computer, signed in with your own subscription. The sign-in stays on that computer.\n\nDESKTOP-27SQLCP\nOnline\nCodex\nSigned in\n0.157.1\n\nChatGPT Plus · owner@example.com\n\nSign out\nGrok Build\nSigned out\n0.0.0-fake\n\nNot signed in\n\nSign in with Grok\nClaude Code\nSigned in\n2.1.280\n\nClaude Max · owner@example.com\n\nRuns on your own Claude subscription through the official Claude Code; its use counts against your plan's limits.\n\nSign out\n\nDefault engine\n\nNew chats, new Telegram and WhatsApp chats, and scheduled work without a model start on it. Chats keep the engine they started on.\n\nGrok Build isn't signed in on a computer that's online, so new chats use Codex for now.\n\nCodex",
+    "noPageErrors": [],
+    "runnerLogClean": [],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engines-together-OmvdH2\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Grok Build (fake) does not ask\u001b[0m",
+      "\u001b[2m  saved turn 6yh2ez9tvxtvs3jbc9msdaqc41\u001b[0m",
+      "\u001b[2m  saved turn wabekxna4wnvvrm35pkrxray1y\u001b[0m",
+      "\u001b[2m  saved turn j9ksr34tysdgq2pn46s8thn29b\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Claude Code does not ask\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Grok Build (fake) does not ask\u001b[0m",
+      "\u001b[2m  saved turn cn6c6dgvmzst1dsyssmg19pnkc\u001b[0m",
+      "\u001b[2m  named a chat \"Brief hello greeting\" (haiku)\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Grok Build (fake) does not ask\u001b[0m",
+      "\u001b[2m  steered the Grok Build (fake) turn with a new message\u001b[0m",
+      "\u001b[33m  stopping the Grok Build (fake) turn, as asked\u001b[0m",
+      "\u001b[2m  saved turn fckekdbw2vs6v1k57hsdg0qcq6\u001b[0m",
+      "\u001b[2m  named a chat \"Run PowerShell command\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  named a chat \"Codex tag fake seconds\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn a1nwwxx3j36ea7xthv08bfmwp1\u001b[0m",
+      "\u001b[2m  named a chat \"Hello tag:web-e2emujx73hs\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  named a chat \"Long one tag\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn h3d6mgzm9ygfpej2s9hjfws3br\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Grok Build (fake) does not ask\u001b[0m",
+      "\u001b[2m  saved turn jbjam7phqfsvk60rwfsg8m0sxt\u001b[0m"
+    ]
+  },
+  "passed": true
+}
