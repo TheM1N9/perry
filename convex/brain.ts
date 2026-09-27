@@ -307,6 +307,8 @@ export const handleTurn = internalAction({
       args.externalId,
       args.title,
     );
+    // The owner wrote: what Perry sent them on its own is not being ignored (notify.ts).
+    if (!conversation.jobId && !args.hidden) await ctx.runMutation(internal.installation.ownerWrote, {});
     const telegramToken = channel === "telegram"
       ? await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" })
       : null;

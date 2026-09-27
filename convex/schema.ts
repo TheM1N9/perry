@@ -102,6 +102,12 @@ export default defineSchema({
     homeChannel: v.optional(vMessenger),
     /** The access a new chat starts with. Unset means supervised. */
     defaultAccess: v.optional(vAccess),
+    /** When Perry's own messages wait instead of reaching the phone, as HH:MM in the owner's timezone (notify.ts). Unset: never. */
+    quietHours: v.optional(v.object({ start: v.string(), end: v.string() })),
+    /** How many of Perry's own messages may reach the phone in a day; the rest wait for tomorrow. Unset: no limit. */
+    dailyLimit: v.optional(v.number()),
+    /** When the owner last wrote to Perry anywhere, so what goes unanswered can be told apart. */
+    ownerWroteAt: v.optional(v.number()),
     /** Keyboard shortcuts the owner changed, by id (lib/shortcuts.ts), as Electron accelerators. The rest are the defaults. */
     shortcuts: v.optional(v.record(v.string(), v.string())),
     /**
@@ -547,6 +553,31 @@ export default defineSchema({
     error: v.optional(v.string()),
     updatedAt: v.number(),
   }),
+
+  /**
+   * What Perry said on his own (notify.ts): a job's result, a watch firing, a
+   * reminder, an offer to pause something ignored. Kept so the rules for
+   * unprompted messages can be kept: one that must wait (quiet hours, the
+   * day's limit) is here with no sentAt until it goes, grouped with the rest.
+   */
+  sent: defineTable({
+    from: v.union(v.literal("job"), v.literal("watch"), v.literal("reminder"), v.literal("offer"), v.literal("other")),
+    /** The job or watch it came from; an offer names what it offers to pause. */
+    fromId: v.optional(v.string()),
+    name: v.optional(v.string()),
+    text: v.string(),
+    /** Where it goes, as deliver was told: the chat it came from, or unset for the owner's messaging app. */
+    origin: v.optional(v.id("conversations")),
+    /** Where it went: a messaging app or a web chat. Only a messaging app is held back. */
+    channel: v.union(v.literal("web"), v.literal("telegram"), v.literal("whatsapp")),
+    buttons: v.optional(v.array(v.array(v.object({ text: v.string(), data: v.string() })))),
+    createdAt: v.number(),
+    sentAt: v.optional(v.number()),
+    /** Why it waited. */
+    heldFor: v.optional(v.union(v.literal("quiet"), v.literal("limit"))),
+  })
+    .index("by_sent", ["sentAt"])
+    .index("by_from", ["fromId", "createdAt"]),
 
   /**
    * What is waiting to go out on WhatsApp. The connection lives in the server

@@ -299,7 +299,7 @@ export const finished = internalMutation({
     await ctx.db.patch(job._id, { lastResult: result?.slice(0, 500), lastError: args.error?.slice(0, 500) });
     if (result && result !== QUIET) {
       // Back to the chat it was set up in; the heartbeat and the others to the messaging channel (channels.ts).
-      await ctx.scheduler.runAfter(0, internal.notify.deliver, { text: `⏰ **${job.name}**\n\n${result}`, ...(job.origin ? { origin: job.origin } : {}) });
+      await ctx.scheduler.runAfter(0, internal.notify.deliver, { text: `⏰ **${job.name}**\n\n${result}`, ...(job.origin ? { origin: job.origin } : {}), from: { kind: "job", id: job._id, name: job.name } });
       // The heartbeat only speaks when something needs the owner: that is an alert, for the next brief too.
       if (job.builtin === "heartbeat") {
         await ctx.runMutation(internal.memories.noteAlert, { text: result, at: ownerClock(await timezoneOf(ctx)) });

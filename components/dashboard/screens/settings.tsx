@@ -17,6 +17,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ACCESS_ICONS } from "../chat/composer";
 import { PetControl } from "../pet-control";
@@ -37,7 +38,7 @@ export function Settings() {
           <TabsTrigger value="telegram">Telegram</TabsTrigger>
           <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
         </TabsList>
-        <TabsContent value="general"><CodexAccount /><NewChatAccess /><DesktopPet /><Appearance /></TabsContent>
+        <TabsContent value="general"><CodexAccount /><NewChatAccess /><Manners /><DesktopPet /><Appearance /></TabsContent>
         <TabsContent value="keys"><Keys /></TabsContent>
         <TabsContent value="shortcuts"><Shortcuts /></TabsContent>
         <TabsContent value="telegram"><Telegram /></TabsContent>
@@ -174,6 +175,60 @@ function NewChatAccess() {
           })}
         </SelectContent>
       </Select>
+    </Section>
+  );
+}
+
+const LIMITS = [
+  { value: "none", label: "No limit" },
+  ...[3, 5, 8, 12].map((n) => ({ value: String(n), label: `${n} a day` })),
+];
+
+/**
+ * When Perry's own messages (schedules, watches, the heartbeat) may reach
+ * your phone. Due reminders always do, and web chats never buzz anything.
+ */
+function Manners() {
+  const { dashboardKey } = useSession();
+  const manners = useQuery(api.dashboard.getManners, { key: dashboardKey });
+  const save = useMutation(api.dashboard.setManners);
+  const [quiet, setQuiet] = useState({ on: false, start: "22:00", end: "07:00" });
+  useEffect(() => {
+    if (manners) setQuiet({ on: Boolean(manners.quietHours), start: manners.quietHours?.start ?? "22:00", end: manners.quietHours?.end ?? "07:00" });
+  }, [manners]);
+  const store = (next: { quietHours?: { start: string; end: string }; dailyLimit?: number }, success: string) =>
+    void save({ key: dashboardKey, ...next }).then(() => toast.success(success), (cause) => toast.error(errorText(cause)));
+  const limit = manners?.dailyLimit;
+  const hours = (on: boolean, start = quiet.start, end = quiet.end) => on ? { quietHours: { start, end } } : {};
+  return (
+    <Section title="Messages Perry sends on his own" description="Schedules, page watches and the heartbeat. What arrives in quiet hours or past the day's limit waits, and comes as one message when it may. Due reminders always go.">
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <Switch checked={quiet.on} disabled={!manners} aria-label="Quiet hours"
+              onCheckedChange={(on) => { setQuiet({ ...quiet, on }); store({ ...hours(on), dailyLimit: limit }, on ? `Quiet from ${quiet.start} to ${quiet.end}.` : "Quiet hours off."); }} />
+            Quiet hours
+          </label>
+          <span className="text-sm text-muted-foreground">from</span>
+          <Input type="time" aria-label="Quiet from" className="w-28" value={quiet.start} disabled={!quiet.on}
+            onChange={(event) => setQuiet({ ...quiet, start: event.target.value })}
+            onBlur={() => quiet.on && store({ ...hours(true), dailyLimit: limit }, `Quiet from ${quiet.start} to ${quiet.end}.`)} />
+          <span className="text-sm text-muted-foreground">to</span>
+          <Input type="time" aria-label="Quiet until" className="w-28" value={quiet.end} disabled={!quiet.on}
+            onChange={(event) => setQuiet({ ...quiet, end: event.target.value })}
+            onBlur={() => quiet.on && store({ ...hours(true), dailyLimit: limit }, `Quiet from ${quiet.start} to ${quiet.end}.`)} />
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm font-medium">At most</span>
+          <Select modal={false} items={LIMITS} value={limit ? String(limit) : "none"} disabled={!manners}
+            onValueChange={(value) => { if (!value) return; const n = value === "none" ? undefined : Number(value); store({ ...hours(quiet.on), dailyLimit: n }, n ? `At most ${n} a day.` : "No daily limit."); }}>
+            <SelectTrigger aria-label="Daily limit" className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>{LIMITS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+          </Select>
+          {manners && manners.waiting > 0 && <StatusBadge tone="info">{manners.waiting} waiting</StatusBadge>}
+        </div>
+        <p className="text-sm text-muted-foreground">When you let three messages from the same schedule or watch go unanswered, Perry asks once whether to pause it.</p>
+      </div>
     </Section>
   );
 }

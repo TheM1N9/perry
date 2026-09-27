@@ -826,6 +826,27 @@ export const getLastPicks = query({
   },
 });
 
+/** Quiet hours and the day's limit for Perry's own messages (notify.ts), and what is waiting because of them. */
+export const getManners = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<{ quietHours?: { start: string; end: string }; dailyLimit?: number; waiting: number }> => {
+    assertDashboardKey(args.key);
+    const install = await ctx.db.query("installation").first();
+    const waiting = (await ctx.db.query("sent").withIndex("by_sent", (q) => q.eq("sentAt", undefined)).collect()).length;
+    return { ...(install?.quietHours ? { quietHours: install.quietHours } : {}), ...(install?.dailyLimit ? { dailyLimit: install.dailyLimit } : {}), waiting };
+  },
+});
+
+export const setManners = mutation({
+  args: { key: vKey, quietHours: v.optional(v.object({ start: v.string(), end: v.string() })), dailyLimit: v.optional(v.number()) },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.installation.setManners, { quietHours: args.quietHours, dailyLimit: args.dailyLimit });
+    return null;
+  },
+});
+
 export const getDefaultAccess = query({
   args: { key: vKey },
   handler: async (ctx, args): Promise<Access> => {
