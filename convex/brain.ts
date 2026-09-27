@@ -9,7 +9,7 @@ import {
   ACCESS_LABELS, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, parseAccessCommand, parseModelCommand,
   parseThinkCommand, pickAccess, pickEffort, pickModel, runLabel, turnEffort, type ModelOption,
 } from "./lib/commands";
-import { engineOf, type EngineKind } from "./lib/engines";
+import { ENGINE_LABELS, engineOf, type EngineKind } from "./lib/engines";
 import { DOWNLOAD_LIMIT, downloadFile, sendMessage, sendTyping } from "./lib/telegram";
 import { resumeOf } from "./engines";
 import { vChannel, vEngine, vTelegramMedia } from "./schema";
@@ -90,7 +90,9 @@ async function runCommand(
       const model = chatModel(models, conversation.model, engine);
       const effort = turnEffort(models, conversation.model, conversation.effort, engine);
       const unused = model && effortUnused(model, conversation.effort) ? ` (${conversation.effort} is not one ${model.name} takes)` : "";
+      const signedIn = models.some((item) => (item.engine ?? "codex") === engine);
       const lines = [
+        `engine    ${ENGINE_LABELS[engine]}${signedIn ? "" : " (not signed in on any computer)"}`,
         `model     ${conversation.model && model?.id === conversation.model ? `${engine}/${conversation.model}` : `${engine} default${model ? ` (${model.id})` : ""}`}`,
         `thinking  ${conversation.effort && !unused ? conversation.effort : `default${effort ? ` (${effort})` : ""}${unused}`}`,
         `access    ${ACCESS_LABELS[conversation.access ?? "supervised"]}`,
@@ -164,7 +166,9 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
 /**
  * How the chat's turns run: its engine and model, the thinking level that
  * model takes (a level it does not take falls back to its default), and its
- * access. A scheduled job's model, with its engine, wins over the chat's.
+ * access. A scheduled job's engine wins over the chat's: its model's, or the
+ * owner's default engine for a job without one. The chat's own model counts
+ * only on its own engine.
  *
  * The model is always named. Left out, Codex falls back to the `model` in
  * ~/.codex/config.toml, which the Codex app may have set to one this account
@@ -172,8 +176,8 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
  */
 async function turnSettings(ctx: ActionCtx, conversation: Doc<"conversations">, job?: { model?: string; engine?: EngineKind }) {
   const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
-  const engine = job?.model ? engineOf(job) : engineOf(conversation);
-  const model = currentModel(models, job?.model ?? conversation.model, engine);
+  const engine = job?.model ? engineOf(job) : job?.engine ?? engineOf(conversation);
+  const model = currentModel(models, job?.model ?? (engine === engineOf(conversation) ? conversation.model : undefined), engine);
   return {
     engine,
     model,
@@ -309,7 +313,7 @@ export const handleTurn = internalAction({
     label: v.optional(v.string()),
     /** A scheduled job's model, which its runs use whatever its chat has picked. */
     model: v.optional(v.string()),
-    /** The engine the job's model is one of. Unset is Codex. */
+    /** A job's engine: its model's (unset there is Codex), or the default engine for a job without a model. */
     engine: v.optional(vEngine),
     /** Written in the web app in the owner's Telegram or WhatsApp chat: the web app shows it as its own, and the phone hears of it. */
     fromWeb: v.optional(v.boolean()),
@@ -390,7 +394,7 @@ export const handleTurn = internalAction({
       const attachments = attachmentIds.length > 0
         ? await ctx.runQuery(internal.media.forTurn, { conversationId: conversation._id, attachmentIds })
         : [];
-      const settings = await turnSettings(ctx, conversation, args.model ? { model: args.model, engine: args.engine } : undefined);
+      const settings = await turnSettings(ctx, conversation, args.model || args.engine ? { model: args.model, engine: args.engine } : undefined);
       conversation = await onEngine(ctx, conversation, settings);
       const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
         conversationId: conversation._id,

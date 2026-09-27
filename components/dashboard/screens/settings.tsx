@@ -9,7 +9,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { EngineView } from "@/convex/engines";
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access } from "@/convex/lib/commands";
-import { SIGN_IN_LABELS, type LoginInteraction } from "@/convex/lib/engines";
+import { ENGINE_LABELS, SIGN_IN_LABELS, type EngineKind, type LoginInteraction } from "@/convex/lib/engines";
 import type { PetTheme } from "@/convex/pet";
 import { ago, errorText, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
@@ -85,7 +85,48 @@ function Engines() {
           ))}
         </List>
       )}
+      <DefaultEngine />
     </Section>
+  );
+}
+
+/**
+ * The engine new chats start on, from those signed in on some computer. The
+ * server falls back to another signed-in engine while this one isn't
+ * (engines.defaultEngine); chats already started keep their own.
+ */
+function DefaultEngine() {
+  const { dashboardKey } = useSession();
+  const current = useQuery(api.engines.getDefault, { key: dashboardKey });
+  const setDefault = useMutation(api.engines.setDefault);
+  if (!current?.choices.length) return null;
+  const choose = (engine: EngineKind) => void setDefault({ key: dashboardKey, engine })
+    .then(() => toast.success(`New chats start on ${ENGINE_LABELS[engine]}.`), (cause) => toast.error(errorText(cause)));
+  const fellBack = current.picked && current.picked !== current.engine ? current.picked : undefined;
+  return (
+    <div className="mt-4 flex flex-wrap items-start gap-3" aria-label="Default engine">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">Default engine</p>
+        <p className="mt-0.5 text-sm text-pretty text-muted-foreground">New chats, new Telegram and WhatsApp chats, and scheduled work without a model start on it. Chats keep the engine they started on.</p>
+        {fellBack && (
+          <p className="mt-0.5 text-sm text-pretty text-warning">
+            {ENGINE_LABELS[fellBack]} isn&apos;t signed in on a computer that&apos;s online, so new chats use {ENGINE_LABELS[current.engine]} for now.
+          </p>
+        )}
+      </div>
+      <Select modal={false} items={current.choices.map((choice) => ({ value: choice.kind, label: choice.label }))} value={current.engine}
+        onValueChange={(value) => { if (value && value !== current.engine) choose(value as EngineKind); }}>
+        <SelectTrigger aria-label="Default engine" className="w-56"><SelectValue /></SelectTrigger>
+        <SelectContent className="w-56">
+          {current.choices.map((choice) => (
+            <SelectItem key={choice.kind} value={choice.kind}>
+              <span className="flex-1">{choice.label}</span>
+              {!choice.online && <span className="text-xs text-muted-foreground">offline</span>}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 

@@ -142,10 +142,11 @@ async function handle(text: string): Promise<void> {
   const modelCommand = parseModelCommand(text);
   if (modelCommand) {
     // Every engine's models; another engine's moves the chat there.
-    const { models } = await perry.convex.query(api.models.options, { key: perry.key });
+    const { models, defaultEngine } = await perry.convex.query(api.models.options, { key: perry.key });
     const chat = chatId ? await perry.getChat(chatId) : undefined;
     const picked = chat ? chat.model : draftModel;
-    const engine = chat ? chat.engine : draftEngine ?? "codex";
+    // A chat not started yet starts on the owner's default engine.
+    const engine = chat ? chat.engine : draftEngine ?? defaultEngine;
     if (!modelCommand.name) return console.log(dim(describeModels(models, picked, engine)));
     const choice = pickModel(models, modelCommand.name, undefined, engine);
     if (choice.model && chatId) await perry.setModel(chatId, choice.model.id, engineOf(choice.model));

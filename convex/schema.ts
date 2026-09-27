@@ -137,6 +137,11 @@ export default defineSchema({
     homeChannel: v.optional(vMessenger),
     /** The access a new chat starts with. Unset means supervised. */
     defaultAccess: v.optional(vAccess),
+    /**
+     * The engine new chats and jobs without a model use, picked in Settings.
+     * Unset, or not signed in anywhere, is the first that is (engines.defaultEngine).
+     */
+    defaultEngine: v.optional(vEngine),
     /** When Perry's own messages wait instead of reaching the phone, as HH:MM in the owner's timezone (notify.ts). Unset: never. */
     quietHours: v.optional(v.object({ start: v.string(), end: v.string() })),
     /** How many of Perry's own messages may reach the phone in a day; the rest wait for tomorrow. Unset: no limit. */

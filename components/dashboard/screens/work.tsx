@@ -113,7 +113,8 @@ function Schedules() {
   const remove = useMutation(api.jobs.removeFromDashboard);
   const runNow = useMutation(api.jobs.runNow);
   const setModel = useMutation(api.jobs.setModel);
-  const models = useQuery(api.models.options, { key: dashboardKey })?.models;
+  const options = useQuery(api.models.options, { key: dashboardKey });
+  const models = options?.models;
   const several = enginesOf(models ?? []).length > 1;
   const now = useNow();
   const { ask, dialog } = useConfirm();
@@ -131,12 +132,12 @@ function Schedules() {
     const over = job.runAt !== undefined && !job.enabled && job.runAt <= now;
     const readable = job.schedule ? describeSchedule(job.schedule) : null;
     const tone: Tone = job.lastError ? "danger" : job.enabled ? "success" : "neutral";
-    // Unset runs on the account's default; a pick the account no longer offers falls back to it too.
+    // Unset runs on the default engine's default model; a pick the account no longer offers falls back to it too.
     // Each model is "<engine>/<id>", named with its engine once there is more than one.
-    const fallback = modelsOf(models ?? [], "codex").find((item) => item.isDefault) ?? models?.[0];
+    const fallback = modelsOf(models ?? [], options?.defaultEngine ?? "codex").find((item) => item.isDefault) ?? models?.[0];
     const picked = job.model ? modelKey(job.engine, job.model) : undefined;
     const modelItems = [
-      { value: "default", label: fallback ? `Default (${fallback.name})` : "Default model" },
+      { value: "default", label: fallback ? `Default (${fallback.name}${several ? ` · ${ENGINE_LABELS[fallback.engine ?? "codex"]}` : ""})` : "Default model" },
       ...(models ?? []).map((item) => ({ value: modelKey(item.engine ?? "codex", item.id), label: several ? `${item.name} · ${ENGINE_LABELS[item.engine ?? "codex"]}` : item.name })),
       ...(picked && models && !models.some((item) => modelKey(item.engine ?? "codex", item.id) === picked) ? [{ value: picked, label: `${job.model} (not offered, uses default)` }] : []),
     ];

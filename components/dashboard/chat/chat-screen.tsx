@@ -237,8 +237,8 @@ export function ChatScreen() {
   };
 
   const models = modelOptions?.models;
-  // The chat's engine; a chat not sent yet takes the last chat's, like its model.
-  const engine: EngineKind = (selectedId ? chat?.engine : draftEngine ?? lastPicks?.engine) ?? "codex";
+  // The chat's engine; a chat not sent yet is on the default engine (getLastPicks), unless another engine's model is picked.
+  const engine: EngineKind = (selectedId ? chat?.engine : draftEngine ?? lastPicks?.engine) ?? modelOptions?.defaultEngine ?? "codex";
   const model = (selectedId ? chat?.model : draftModel ?? lastPicks?.model) || currentModel(models ?? [], undefined, engine);
   // The thinking levels are the model's own; a level it does not take is kept but unused.
   const modelInfo = chatModel(models ?? [], model, engine);

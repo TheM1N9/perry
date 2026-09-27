@@ -3,7 +3,7 @@ import { internalQuery, query, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { enginesOf, modelsOf, type ModelOption } from "./lib/commands";
 import { ENGINE_LABELS, ENGINES, type EngineKind } from "./lib/engines";
-import { statusesOf } from "./engines";
+import { defaultEngine, statusesOf } from "./engines";
 
 /**
  * The models a chat can use, each tagged with its engine. An engine's come
@@ -26,11 +26,13 @@ async function engineModels(ctx: QueryCtx): Promise<ModelOption[]> {
 /** For the composer's and the Work page's pickers, and their slash commands. */
 export const options = query({
   args: { key: v.string() },
-  handler: async (ctx, args): Promise<{ models: ModelOption[]; engines: Array<{ kind: EngineKind; label: string }>; codex: ModelOption[] }> => {
+  handler: async (ctx, args): Promise<{ models: ModelOption[]; engines: Array<{ kind: EngineKind; label: string }>; defaultEngine: EngineKind; codex: ModelOption[] }> => {
     assertDashboardKey(args.key);
     const models = await engineModels(ctx);
     return {
       models,
+      // Pickers with nothing picked show this engine's default model.
+      defaultEngine: await defaultEngine(ctx),
       engines: enginesOf(models).map((kind) => ({ kind, label: ENGINE_LABELS[kind] })),
       // Codex's alone, as scripts from before engines read them.
       codex: modelsOf(models, "codex"),
