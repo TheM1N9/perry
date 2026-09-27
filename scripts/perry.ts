@@ -405,7 +405,8 @@ async function selfUpdate({ pause, resume, note }: { pause: () => Promise<unknow
   // The desktop pet, when there is one, is its own install, and shows the page just rebuilt.
   await waitFor(dashboardUp, 120);
   try {
-    await (await import("./pet")).refresh();
+    const pet = await import("./pet");
+    await pet.refresh({ restart: pet.changedSince(from) });
   } catch (error) {
     note(`could not update the desktop pet: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -723,6 +724,8 @@ async function ask(question: string): Promise<string> {
 
 async function update() {
   say(`\n${bold("Updating Perry")}`);
+  // Where it was, to tell afterwards whether the desktop pet's own files changed.
+  const from = existsSync(join(REPO, ".git")) ? exec(tool("git", ["rev-parse", "HEAD"]), { quiet: true }).output?.trim() : undefined;
   if (existsSync(join(REPO, ".git"))) {
     const pulling = await spinner("Getting the latest Perry…");
     const pulled = await runIn(tool("git", ["pull", "--ff-only"]));
@@ -749,8 +752,9 @@ async function update() {
   if (wasRunning) await stop({ quiet: true, pet: false });
   if (!(await build())) process.exit(1);
   if (wasRunning && !(await start({ pet: false }))) process.exit(1);
-  // The desktop pet, when there is one, is its own install, and shows the page just rebuilt.
-  await (await import("./pet")).refresh();
+  // The desktop pet, when there is one, is its own install, and shows the page just rebuilt, or starts again on his new files.
+  const pet = await import("./pet");
+  await pet.refresh({ restart: pet.changedSince(from) });
   if (!wasRunning) say(dim(`  Perry was not running; ${bold("perry start")} starts it.`));
   say("");
 }

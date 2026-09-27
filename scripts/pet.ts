@@ -228,10 +228,22 @@ export async function resume() {
 }
 
 /**
- * After `perry update`: the pet's own install brought up to date, and a
- * running pet told to load the new page. Nothing when it was never installed.
+ * Whether an update from `from` to what is checked out now changed the pet's
+ * own files (his window, his hotkeys, Electron itself), which a running pet
+ * only picks up by starting again. True when it cannot tell.
  */
-export async function refresh() {
+export function changedSince(from: string | undefined): boolean {
+  if (!from) return true;
+  return exec(tool("git", ["diff", "--quiet", from, "HEAD", "--", "pet"]), { quiet: true }).code !== 0;
+}
+
+/**
+ * After `perry update`: the pet's own install brought up to date, and a
+ * running pet told to load the new page, or, when his own files changed
+ * (`restart`), started again on them. Nothing when it was never installed,
+ * and a pet that was not running is not started.
+ */
+export async function refresh({ restart = false }: { restart?: boolean } = {}) {
   if (!installed()) return;
   const updating = await spinner("Updating the desktop pet…");
   if ((await installPackages()).code !== 0) {
@@ -239,8 +251,9 @@ export async function refresh() {
     return;
   }
   const program = await electron();
-  if (program.path) launch(program.path, ["--reload"]);
-  updating.succeed("desktop pet updated");
+  // --quit is what every version of him obeys; --restart has the new one take his place (pet/main.js).
+  if (program.path) launch(program.path, restart ? ["--quit", "--restart"] : ["--reload"]);
+  updating.succeed(restart ? "desktop pet restarted on his new version" : "desktop pet updated");
 }
 
 export async function pet(args: string[]): Promise<boolean> {

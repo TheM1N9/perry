@@ -105,9 +105,23 @@ if (process.env.PERRY_PET_FAKE_MIC) {
 }
 
 const argv = process.argv.slice(1);
+/**
+ * --restart (with --quit, which every version of him obeys): a pet on new
+ * code takes over from the one running (`perry update` after his own files
+ * changed). The running one quits; this one starts again as --takeover until
+ * it gets his lock, a few seconds at most. With none running, nothing starts.
+ */
+const TAKEOVER_TRIES = 40;
+const takeover = Number(argv.find((arg) => arg.startsWith("--takeover="))?.split("=")[1] ?? 0);
+const startAgain = (n) => {
+  app.relaunch({ args: [...argv.filter((arg) => arg !== "--quit" && arg !== "--restart" && !arg.startsWith("--takeover=")), `--takeover=${n}`] });
+  app.exit(0);
+};
 if (!app.requestSingleInstanceLock({ argv })) {
-  // The one already running was told (second-instance, below); this one has nothing to do.
-  app.quit();
+  // The one already running was told (second-instance, below). Taking over from it, try again in a moment, once it has gone.
+  if (argv.includes("--restart")) setTimeout(() => startAgain(1), 500);
+  else if (takeover > 0 && takeover < TAKEOVER_TRIES) setTimeout(() => startAgain(takeover + 1), 250);
+  else app.quit();
 } else if (argv.includes("--quit") || argv.includes("--reload")) {
   // Asked to act on a pet that was not running: there is nothing to quit or reload.
   app.quit();
