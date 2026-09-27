@@ -258,7 +258,8 @@ export interface Engine {
   readonly label: string;
   readonly capabilities: EngineCapabilities;
   status(): Promise<EngineStatus>;
-  login(): Promise<LoginFlow>;
+  /** `method` is which way in, for an engine with more than one (Antigravity: "gemini-api-key" or "oauth-personal"). */
+  login(method?: string): Promise<LoginFlow>;
   logout(): Promise<void>;
   runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult>;
   /** For `steer` "native" and "concurrent-prompt". */

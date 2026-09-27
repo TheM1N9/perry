@@ -100,6 +100,8 @@ export const vEngineStatus = v.object({
 export const vEngineAuth = v.object({
   id: v.number(),
   kind: v.union(v.literal("login"), v.literal("logout")),
+  /** Which way in, for an engine that has more than one (Antigravity: gemini-api-key or oauth-personal). */
+  method: v.optional(v.string()),
   status: v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("error")),
   interaction: v.optional(vLoginInteraction),
   error: v.optional(v.string()),

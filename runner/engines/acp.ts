@@ -122,9 +122,13 @@ export function cappedLines(input: Readable, maxBytes: number, onDrop: (bytes: n
   });
 }
 
-/** What starts the agent's ACP server. */
-/** `cwd` is where the process starts, for an agent that reads its project settings from there (Cursor). */
-export type AcpLaunch = { command: string; args: string[]; env?: Record<string, string>; cwd?: string };
+/**
+ * What starts the agent's ACP server. `cwd` is where it starts, for an agent
+ * that reads its project settings from there (Cursor). `env` adds to the
+ * runner's environment, or with `fullEnv` is all of it, for an agent that must
+ * not see some of the owner's variables (Antigravity).
+ */
+export type AcpLaunch = { command: string; args: string[]; env?: Record<string, string>; cwd?: string; fullEnv?: boolean };
 
 /** How Perry's own tools (its MCP server) reach the agent's sessions. */
 export type ToolsVia =
@@ -157,6 +161,8 @@ export type AcpOptions = {
   maxLineBytes?: number;
   /** `_meta` for session/new, load and resume: an agent's own switches (Grok Build's yoloMode). */
   sessionMeta?: Record<string, unknown>;
+  /** How long `authenticate` may take: a sign-in in a browser takes minutes. */
+  authMs?: number;
 };
 
 /** A session the agent has loaded, as this process knows it. */
@@ -287,6 +293,7 @@ export abstract class AcpEngine implements Engine {
       replayQuietMs: 500,
       replayMaxMs: 15_000,
       sessionMeta: {},
+      authMs: options.startupMs ?? 60_000,
       ...options,
       // The owner's settings win over the engine's own.
       idleMs: Number(process.env.PERRY_ACP_IDLE_MS) || options.idleMs || 5 * 60_000,
@@ -302,6 +309,11 @@ export abstract class AcpEngine implements Engine {
 
   /** Before each turn, ahead of starting the agent: put Perry's tools where an agent that ignores session/new's MCP servers reads them. */
   protected async prepareSession(_cwd: string, _tools: PerryTools | undefined): Promise<void> {}
+
+  /** The auth methods to try, in order; an engine whose way in the owner picks says so here. */
+  protected authMethods(): string[] {
+    return this.options.authMethods;
+  }
 
   /** A line the agent printed on stdout that is not JSON-RPC, such as a sign-in link. */
   protected onText(_line: string): void {}
@@ -325,7 +337,7 @@ export abstract class AcpEngine implements Engine {
 
   private async start(cwd?: string): Promise<Connection> {
     const launch = await this.launch(cwd);
-    const child = spawnEngine(launch.command, launch.args, { ...process.env, ...launch.env }, launch.cwd);
+    const child = spawnEngine(launch.command, launch.args, launch.fullEnv ? launch.env as NodeJS.ProcessEnv : { ...process.env, ...launch.env }, launch.cwd);
     const state = { closed: false, stderr: "" };
     child.stderr.on("data", (chunk: Buffer) => { state.stderr = (state.stderr + chunk).slice(-4000); });
     const lines = cappedLines(child.stdout, this.options.maxLineBytes, (bytes) =>
@@ -370,9 +382,9 @@ export abstract class AcpEngine implements Engine {
   /** Sign the connection in with the first of our methods the agent offers, as its CLI already is. */
   private async authenticate(conn: Connection) {
     const offered = new Set((conn.init.authMethods ?? []).map((method) => method.id));
-    const methodId = this.options.authMethods.find((id) => offered.has(id));
+    const methodId = this.authMethods().find((id) => offered.has(id));
     if (!methodId) return;
-    await within(conn.agent.request("authenticate", { methodId }), this.options.startupMs, `${this.label}'s sign-in`);
+    await within(conn.agent.request("authenticate", { methodId }), this.options.authMs, `${this.label}'s sign-in`);
   }
 
   /**

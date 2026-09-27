@@ -1,4 +1,5 @@
 import { v, type Infer } from "convex/values";
+import { internal } from "./_generated/api";
 import { mutation, query, type MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
@@ -114,14 +115,27 @@ export const report = mutation({
   },
 });
 
+/**
+ * The key an engine needs from Settings → Keys, for this runner only: the
+ * Gemini API key Antigravity takes. It goes into that engine's environment
+ * on the computer and nowhere else.
+ */
+export const secret = query({
+  args: { token: v.string(), name: v.literal("GEMINI_API_KEY") },
+  handler: async (ctx, args): Promise<string | null> => {
+    await authenticate(ctx, args.token);
+    return await ctx.runQuery(internal.secrets.get, { name: args.name });
+  },
+});
+
 /** Sign-ins and sign-outs the owner asked of this runner, waiting for it. */
 export const queuedAuth = query({
   args: { token: v.string() },
-  handler: async (ctx, args): Promise<Array<{ engine: EngineKind; id: number; kind: "login" | "logout" }>> => {
+  handler: async (ctx, args): Promise<Array<{ engine: EngineKind; id: number; kind: "login" | "logout"; method?: string }>> => {
     const runner = await authenticate(ctx, args.token);
     return Object.entries(runner.engineAuth ?? {})
       .filter(([, request]) => request.status === "queued")
-      .map(([engine, request]) => ({ engine: engine as EngineKind, id: request.id, kind: request.kind }));
+      .map(([engine, request]) => ({ engine: engine as EngineKind, id: request.id, kind: request.kind, ...(request.method ? { method: request.method } : {}) }));
   },
 });
 
@@ -175,6 +189,7 @@ export const updateAuth = mutation({
         [args.engine]: {
           id: request.id,
           kind: request.kind,
+          ...(request.method ? { method: request.method } : {}),
           status: args.status,
           ...(args.status === "running" && args.interaction ? { interaction: args.interaction } : {}),
           ...(args.error ? { error: args.error.slice(0, 500) } : {}),
@@ -231,7 +246,7 @@ export const list = query({
 
 /** Sign an engine in or out on a computer. Its runner picks this up and says what to do next. */
 export const requestAuth = mutation({
-  args: { key: v.string(), runnerId: v.id("runners"), engine: vEngine, kind: v.union(v.literal("login"), v.literal("logout")) },
+  args: { key: v.string(), runnerId: v.id("runners"), engine: vEngine, kind: v.union(v.literal("login"), v.literal("logout")), method: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
@@ -243,7 +258,7 @@ export const requestAuth = mutation({
     const current = runner.engineAuth?.[args.engine];
     if (current?.status === "queued" || current?.status === "running") throw new Error(`A ${label} sign-in is already in progress.`);
     await ctx.db.patch(runner._id, {
-      engineAuth: { ...runner.engineAuth, [args.engine]: { id: (current?.id ?? 0) + 1, kind: args.kind, status: "queued" } },
+      engineAuth: { ...runner.engineAuth, [args.engine]: { id: (current?.id ?? 0) + 1, kind: args.kind, ...(args.method ? { method: args.method.slice(0, 40) } : {}), status: "queued" } },
     });
     return null;
   },
