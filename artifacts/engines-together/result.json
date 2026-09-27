@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-27T14:37:51.661Z",
+  "ranAt": "2026-09-27T14:41:42.930Z",
   "model": "gpt-6-luna",
   "checks": {
     "fallbackPrefersCodex": true,
@@ -81,7 +81,7 @@
         "engine": "grok",
         "model": "fake-small"
       },
-      "reply": "FAKE grok/fake-small web-e2emujx73hs: one two three four"
+      "reply": "FAKE grok/fake-small web-e2emujxcuti: one two three four"
     },
     "messagingChatUsesDefault": {
       "engine": "grok"
@@ -92,7 +92,7 @@
         "engine": "grok",
         "model": "fake-small"
       },
-      "result": "FAKE grok/fake-small job-e2emujx73hs: one two three four"
+      "result": "FAKE grok/fake-small job-e2emujxcuti: one two three four"
     },
     "heartbeatUsesDefault": {
       "turn": {
@@ -102,70 +102,69 @@
       }
     },
     "otherEngineRunsBeside": {
-      "waitedMs": 28,
-      "ranMs": 3154,
+      "waitedMs": 40,
+      "ranMs": 3229,
       "codexStill": "running"
     },
     "steerAndStopHitTheirTurn": {
       "steer": "applied",
-      "cRanMs": 1070,
-      "cReply": "FAKE grok/fake-small C-e2emujx73hs: one two three [steered: steer-C-e2emujx73hs] four\n\n_Stopped._",
+      "cRanMs": 1317,
+      "cReply": "FAKE grok/fake-small C-e2emujxcuti: one two three [steered: steer-C-e2emujxcuti] four five\n\n_Stopped._",
       "codex": {
         "status": "running",
         "stopRequested": false
       }
     },
     "realClaudeRunsBesideCodex": {
-      "waitedMs": 59,
-      "ranMs": 6764,
+      "waitedMs": 108,
+      "ranMs": 7406,
       "model": "haiku",
       "codexStill": "running",
-      "reply": "Hello! What can I help with?"
+      "reply": "Hi! How can I help you?"
     },
     "oneTurnPerChat": {
       "heldBack": true,
       "codex": {
-        "startedAt": 1790519771170,
-        "finishedAt": 1790519865449
+        "startedAt": 1790520041062,
+        "finishedAt": 1790520096241
       },
       "next": {
         "engine": "grok",
-        "startedAt": 1790519865470
+        "startedAt": 1790520096269
       }
     },
     "codexTurnCompletes": {
       "replies": [
-        "codex-done e2emujx73hs",
-        "FAKE grok/fake-small A2-e2emujx73hs: one two three four"
+        "codex-done e2emujxcuti",
+        "FAKE grok/fake-small A2-e2emujxcuti: one two three four"
       ]
     },
     "streamsStayApart": {
-      "snapshotsA": 2,
-      "codexSnapshotsA": [],
+      "snapshotsA": 3,
+      "codexSnapshotsA": [
+        "codex-done e2emujxcuti"
+      ],
       "snapshotsC": 2,
-      "lastC": "FAKE grok/fake-small C-e2emujx73hs: one two three [steered: steer-C-e2emujx73hs] four"
+      "lastC": "FAKE grok/fake-small C-e2emujxcuti: one two three [steered: steer-C-e2emujxcuti] four"
     },
     "quickTurnsBeside": {
       "namedBeforeCodexFinishedMs": {
-        "B": 87478,
-        "C": 72131
+        "B": 47283,
+        "C": 34300
       },
       "titles": {
-        "B": "Codex tag fake seconds",
-        "C": "Long one tag"
+        "B": "Codex tag and fake seconds",
+        "C": "Long One Tag"
       }
     },
     "tracesStayApart": {
       "spansA": [
         "reasoning",
         "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.",
-        "reasoning",
-        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.",
-        "reasoning",
         "reasoning"
       ],
       "spansC": [
-        "fake step C-e2emujx73hs"
+        "fake step C-e2emujxcuti"
       ]
     },
     "unavailableDefaultFallsBack": {
@@ -197,7 +196,7 @@
     "runnerLog": [
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
-      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engines-together-OmvdH2\\workspace\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engines-together-aEDICM\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -206,26 +205,26 @@
       "\u001b[32m  connected.",
       "\u001b[0m",
       "\u001b[33m  full access: this turn runs without the sandbox, and Grok Build (fake) does not ask\u001b[0m",
-      "\u001b[2m  saved turn 6yh2ez9tvxtvs3jbc9msdaqc41\u001b[0m",
-      "\u001b[2m  saved turn wabekxna4wnvvrm35pkrxray1y\u001b[0m",
-      "\u001b[2m  saved turn j9ksr34tysdgq2pn46s8thn29b\u001b[0m",
+      "\u001b[2m  saved turn w3vrrr1mphaaat435g1fnmf4xm\u001b[0m",
+      "\u001b[2m  saved turn bkbd2evmasnhnbbppgrzmczqn4\u001b[0m",
+      "\u001b[2m  saved turn azc4r4dye1p9dm1rpe7emzrsxf\u001b[0m",
       "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
       "\u001b[33m  full access: this turn runs without the sandbox, and Claude Code does not ask\u001b[0m",
       "\u001b[33m  full access: this turn runs without the sandbox, and Grok Build (fake) does not ask\u001b[0m",
-      "\u001b[2m  saved turn cn6c6dgvmzst1dsyssmg19pnkc\u001b[0m",
-      "\u001b[2m  named a chat \"Brief hello greeting\" (haiku)\u001b[0m",
+      "\u001b[2m  named a chat \"Hello\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn tnnxjy7axa8bhghtnbm650s6fh\u001b[0m",
       "\u001b[33m  full access: this turn runs without the sandbox, and Grok Build (fake) does not ask\u001b[0m",
+      "\u001b[2m  named a chat \"Say hello in five words\" (haiku)\u001b[0m",
       "\u001b[2m  steered the Grok Build (fake) turn with a new message\u001b[0m",
       "\u001b[33m  stopping the Grok Build (fake) turn, as asked\u001b[0m",
-      "\u001b[2m  saved turn fckekdbw2vs6v1k57hsdg0qcq6\u001b[0m",
-      "\u001b[2m  named a chat \"Run PowerShell command\" (gpt-6-luna)\u001b[0m",
-      "\u001b[2m  named a chat \"Codex tag fake seconds\" (gpt-6-luna)\u001b[0m",
-      "\u001b[2m  saved turn a1nwwxx3j36ea7xthv08bfmwp1\u001b[0m",
-      "\u001b[2m  named a chat \"Hello tag:web-e2emujx73hs\" (gpt-6-luna)\u001b[0m",
-      "\u001b[2m  named a chat \"Long one tag\" (gpt-6-luna)\u001b[0m",
-      "\u001b[2m  saved turn h3d6mgzm9ygfpej2s9hjfws3br\u001b[0m",
+      "\u001b[2m  saved turn tps7922agm5rgpb7txrvqary0q\u001b[0m",
+      "\u001b[2m  named a chat \"Codex tag and fake seconds\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn 1m59dv09tz96g9g6dm8grs4pv8\u001b[0m",
+      "\u001b[2m  named a chat \"Long One Tag\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  named a chat \"PowerShell command execution\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn h9fk7p4df7fqat918n5kwm2fmj\u001b[0m",
       "\u001b[33m  full access: this turn runs without the sandbox, and Grok Build (fake) does not ask\u001b[0m",
-      "\u001b[2m  saved turn jbjam7phqfsvk60rwfsg8m0sxt\u001b[0m"
+      "\u001b[2m  saved turn kq54nwk1yvrasg50f6cg3f5xax\u001b[0m"
     ]
   },
   "passed": true
