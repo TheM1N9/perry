@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-27T07:15:56.649Z",
+  "ranAt": "2026-09-27T14:26:38.913Z",
   "checks": {
     "timerForTheNextJob": true,
     "movesForASoonerReminder": true,
@@ -20,32 +20,32 @@
     },
     "timerForTheNextJob": {
       "job": "Heartbeat",
-      "due": "2026-09-27T07:30:00.000Z",
-      "timer": "2026-09-27T07:29:00.000Z",
+      "due": "2026-09-27T15:30:00.000Z",
+      "timer": "2026-09-27T15:29:00.000Z",
       "said": {
         "enabled": true,
-        "at": 1790494200000,
+        "at": 1790523000000,
         "what": "Heartbeat",
         "awake": false,
-        "checkedAt": 1790493320186
+        "checkedAt": 1790519161993
       }
     },
-    "movesForASoonerReminder": "2026-09-27T07:24:00.000Z",
+    "movesForASoonerReminder": "2026-09-27T14:45:00.000Z",
     "heldAwakeWhenMinutesAway": {
       "awake": true,
       "holders": 2
     },
-    "pageSaysWhenItWakes": "Wake this computer for them\n\nNext: 27 Sept 2026, 12:59, a minute before Heartbeat (in 14 min).",
+    "pageSaysWhenItWakes": "Wake this computer for them\n\nNext: 27 Sept 2026, 20:59, a minute before Heartbeat (in 1 hr).",
     "offTakesTheTimerAway": "Wake this computer for them\n\nOff: what is due while it sleeps runs when it wakes.",
     "onSetsItAgain": {
-      "timer": "2026-09-27T07:29:00.000Z",
-      "wanted": "2026-09-27T07:29:00.000Z",
+      "timer": "2026-09-27T15:29:00.000Z",
+      "wanted": "2026-09-27T15:29:00.000Z",
       "said": {
         "enabled": true,
-        "at": 1790494200000,
+        "at": 1790523000000,
         "what": "Heartbeat",
         "awake": false,
-        "checkedAt": 1790493349574
+        "checkedAt": 1790519191810
       }
     },
     "noPageErrors": []
