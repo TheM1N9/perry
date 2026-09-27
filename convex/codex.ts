@@ -565,6 +565,8 @@ async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infe
     }
     await ctx.db.insert("runSpans", { runId: run._id, ...row });
     if (span.kind !== "reasoning") toolCalls.push(toolName(span));
+    // Codex's own web search reads pages too (mcp.ts, outwardAllowed).
+    if (span.kind === "webSearch" && job.outsideAt === undefined) await ctx.db.patch(job._id, { outsideAt: Date.now() });
   }
   await ctx.db.patch(run._id, {
     toolCalls,
@@ -1028,6 +1030,32 @@ export const pruneOrphans = internalMutation({
 });
 
 /** Who may use the MCP endpoint: a runner, while it has a Codex turn running. */
+/** The turn read something from outside (mcp.ts): from now on, acting outward waits for the owner. */
+export const markOutside = internalMutation({
+  args: { turnId: v.id("codexTurns") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get(args.turnId);
+    if (turn && turn.outsideAt === undefined) await ctx.db.patch(turn._id, { outsideAt: Date.now() });
+    return null;
+  },
+});
+
+/**
+ * Whether this turn may act outward: it has read nothing from outside, or the
+ * owner has written since it did (a message that joined it, a steer). The
+ * owner's next message is a new turn, so their go-ahead always counts.
+ */
+export const outwardAllowed = internalQuery({
+  args: { turnId: v.id("codexTurns") },
+  handler: async (ctx, args): Promise<boolean> => {
+    const turn = await ctx.db.get(args.turnId);
+    if (!turn || turn.outsideAt === undefined) return true;
+    const steers = await ctx.db.query("codexSteers").withIndex("by_turn_status", (q) => q.eq("turnId", turn._id).eq("status", "applied")).collect();
+    return steers.some((steer) => (steer.appliedAt ?? 0) > turn.outsideAt!);
+  },
+});
+
 export const mcpAccess = internalQuery({
   args: { token: v.string() },
   handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean; conversationId: Id<"conversations"> } | null> => {
