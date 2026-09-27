@@ -26,13 +26,15 @@ export const deliver = internalAction({
   returns: v.boolean(),
   handler: async (ctx, args): Promise<boolean> => {
     const install = await ctx.runQuery(internal.installation.get, {});
-    if (!install?.claimedAt) {
-      console.warn("nothing to deliver: install is unclaimed");
-      return false;
-    }
     const target: Target | null = await ctx.runQuery(internal.channels.target, { conversationId: args.origin });
     // A web-only owner reads it on the dashboard, in the job's own chat.
     if (!target) return false;
+    // A web chat is behind the dashboard key already; only a messaging app needs an owner who claimed this
+    // install. (A web-only owner never claims it, and their reports into a web chat were being dropped.)
+    if (target.channel !== "web" && !install?.claimedAt) {
+      console.warn("nothing to deliver: install is unclaimed");
+      return false;
+    }
 
     try {
       let conversationId: Id<"conversations">;
@@ -40,7 +42,7 @@ export const deliver = internalAction({
         conversationId = target.conversationId;
       } else if (target.channel === "telegram") {
         // Only ever the owner's own chat.
-        if (install.ownerChannel !== "telegram" || target.externalId !== install.ownerExternalId) return false;
+        if (install?.ownerChannel !== "telegram" || target.externalId !== install.ownerExternalId) return false;
         const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
         // Job results are the agent's Markdown; plain alerts read the same either way.
         if (args.buttons) await sendButtons(token, target.externalId, args.text, args.buttons);

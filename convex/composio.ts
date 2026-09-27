@@ -406,3 +406,60 @@ export const execute = internalAction({
     }
   },
 });
+
+// --- Triggers: events that start jobs (jobs.ts, server/triggers.ts) ---------------
+
+export type TriggerOption = { slug: string; name: string; description: string; config: Record<string, unknown>; instructions?: string };
+
+/**
+ * The events a connected app can send, to start a job on: a new email, a new
+ * pull request, an event about to begin. `query` narrows them by words in the
+ * name or description.
+ */
+export const triggerTypes = internalAction({
+  args: { toolkit: v.string(), query: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<{ triggers: TriggerOption[]; error?: string }> => {
+    try {
+      const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
+      const listed = await client(apiKey).triggers.listTypes({ toolkits: [args.toolkit.toLowerCase()], limit: 50 });
+      const words = (args.query ?? "").toLowerCase().split(/\W+/).filter((word) => word.length > 2);
+      const triggers = listed.items
+        .map((item) => ({ slug: item.slug, name: item.name, description: item.description.slice(0, 300), config: item.config, ...(item.instructions ? { instructions: item.instructions.slice(0, 400) } : {}) }))
+        .filter((item) => !words.length || words.some((word) => `${item.name} ${item.description}`.toLowerCase().includes(word)));
+      return { triggers: triggers.slice(0, 12) };
+    } catch (error) {
+      return { triggers: [], error: message(error) };
+    }
+  },
+});
+
+/** Start a trigger on the owner's connected account; its events name the instance id returned. */
+export const createTrigger = internalAction({
+  args: { slug: v.string(), config: v.optional(v.any()) },
+  handler: async (ctx, args): Promise<{ instanceId?: string; name?: string; toolkit?: string; error?: string }> => {
+    try {
+      const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
+      const composio = client(apiKey);
+      const type = await composio.triggers.getType(args.slug);
+      const made = await composio.triggers.create(USER_ID, args.slug, { triggerConfig: (args.config ?? {}) as Record<string, unknown> });
+      return { instanceId: made.triggerId, name: type.name, toolkit: type.toolkit.slug };
+    } catch (error) {
+      return { error: message(error) };
+    }
+  },
+});
+
+/** Stop a trigger no job uses any more. Failing is only logged: Composio's events for it are ignored anyway. */
+export const deleteTrigger = internalAction({
+  args: { instanceId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    try {
+      const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
+      await client(apiKey).triggers.delete(args.instanceId);
+    } catch (error) {
+      console.error(`could not delete the Composio trigger ${args.instanceId}: ${message(error)}`);
+    }
+    return null;
+  },
+});
