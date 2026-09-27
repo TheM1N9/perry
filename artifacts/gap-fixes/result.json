@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-26T23:10:58.901Z",
+  "ranAt": "2026-09-27T04:17:26.080Z",
   "checks": {
     "reviewerWindows": true,
     "reviewerMacos": true,
@@ -49,12 +49,12 @@
   },
   "notes": {
     "dailyNoteOnOwnersDay": {
-      "zone": "Pacific/Kiritimati",
-      "utcDay": "2026-09-26",
-      "theirDay": "2026-09-27",
-      "filedAs": "2026-09-27"
+      "zone": "Pacific/Pago_Pago",
+      "utcDay": "2026-09-27",
+      "theirDay": "2026-09-26",
+      "filedAs": "2026-09-26"
     },
-    "modelLoadMs": 933,
+    "modelLoadMs": 961,
     "modelLoadsInServer": {},
     "meaningFindsVegetarian": [
       "I'm vegetarian and don't eat eggs."
@@ -90,36 +90,37 @@
     "changedWatchStartsOver": "Baseline recorded.",
     "awayApprovalOnPhone": "🔐 <b>DESKTOP-27SQLCP wants to run</b> · <i>New chat</i>\n\n<pre>Remove-Item -Recurse .\\away-cache</pre>\n\n📁 <code>C:\\work</code>\n\n<b>Approved on Telegram.</b>",
     "tapSettlesIt": {
-      "_id": "4q2n7pyattyz07gwa1tjkd65a4",
-      "_creationTime": 1790464103601,
-      "runnerId": "qg5nb2ak0wr1bvw41e167dgd0d",
-      "conversationId": "zr1n4md32r139av9c73mt6zp8c",
+      "_id": "evc5zxear172e8eb1j3k5wjme6",
+      "_creationTime": 1790482490944,
+      "runnerId": "js0nd7gm3344w12nfvmsvjt2s2",
+      "conversationId": "8fmqsm0dkrbqm2bhb370zzq752",
       "kind": "command",
       "title": "Remove-Item -Recurse .\\away-cache",
       "cwd": "C:\\work",
       "alwaysAllow": {
         "command": "Remove-Item -Recurse .\\away-cache"
       },
-      "createdAt": 1790464103601,
+      "createdAt": 1790482490944,
       "status": "approved",
       "telegramChatId": "4242",
       "telegramMessageId": 6,
       "decidedBy": "telegram",
-      "decidedAt": 1790464104803,
+      "decidedAt": 1790482492292,
       "runner": "DESKTOP-27SQLCP",
       "chat": "New chat"
     },
     "noPetGoesToPhoneAfterWait": {
-      "waitedMs": 120446
+      "waitedMs": 120262
     },
     "telegramChatListed": {
-      "id": "as29fmkm5hznggaa78dnpanrvh",
+      "id": "1rkneqspw6pz4vgd5edkxm25c9",
       "channel": "telegram",
       "title": "Telegram",
-      "lastMessageAt": 1790464229691,
+      "lastMessageAt": 1790482616540,
       "status": "needs-approval",
       "pinned": false,
-      "unseen": false
+      "unseen": false,
+      "naming": false
     },
     "phoneSeesWhatWasWritten": [
       "💻 You, in the web app:\nWhat is 2 + 2? Reply with just the number.",
@@ -135,7 +136,7 @@
     },
     "badScheduleRefused": {
       "badCron": "jobs:saveFromDashboard: That schedule is not a valid cron expression: Validation error, cannot resolve alias \"eve\"",
-      "past": "jobs:saveFromDashboard: 27 Sept 2026, 03:40 (Asia/Kolkata) has already passed."
+      "past": "jobs:saveFromDashboard: 27 Sept 2026, 08:47 (Asia/Kolkata) has already passed."
     },
     "pageMarksTelegramChat": {
       "menu": [
@@ -146,12 +147,12 @@
       ]
     },
     "scheduleFormSaves": {
-      "id": "e3gv01emf0wk1dc5690k75cjtn",
+      "id": "s6a8505eje6yghs83mfw0x3e47",
       "name": "Evening wind-down",
       "schedule": "0 8 * * *",
       "prompt": "Tell me what is left on my to-do list for today.",
       "enabled": true,
-      "nextRunAt": 1790476200000
+      "nextRunAt": 1790562600000
     },
     "goalKeepsTicks": [
       {
@@ -168,16 +169,16 @@
       }
     ],
     "watchFormSaves": {
-      "_id": "tbea2nhze65qdrjhbzevqg3ry3",
-      "_creationTime": 1790464256866,
+      "_id": "42g46hjdjrp1rq5b6sxg5g3phf",
+      "_creationTime": 1790482644048,
       "title": "Example page",
       "url": "https://example.com/",
       "condition": "change",
       "intervalMinutes": 60,
       "active": true,
-      "nextCheckAt": 1790464256866,
+      "nextCheckAt": 1790482644048,
       "failures": 0,
-      "createdAt": 1790464256866
+      "createdAt": 1790482644048
     },
     "pageErrors": [],
     "noPageErrors": [],
