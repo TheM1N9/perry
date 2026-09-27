@@ -192,7 +192,7 @@ try {
     return {
       pinned: document.querySelector('[aria-label="Pinned"]')?.innerText ?? "",
       waiting: Boolean(row("Clean up my downloads")?.querySelector('[aria-label="Waiting for your approval"]')),
-      unread: Boolean(row("⏰ Morning briefing")?.querySelector('[aria-label="New reply"]')),
+      unread: Boolean(row("⏰ Morning briefing")?.querySelector('[aria-label="Reply ready"]')),
       count: [...document.querySelectorAll("[data-sidebar=menu-item]")].find((li) => li.innerText.includes("Needs you"))?.querySelector("[data-sidebar=menu-badge]")?.innerText ?? "",
     };
   })()`);

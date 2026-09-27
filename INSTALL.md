@@ -164,6 +164,10 @@ With `review`, a quick Codex turn on your subscription looks at each request
 first and runs the routine ones; the rest are asked. `PERRY_REVIEW_MODEL`
 picks its model (by default the first model Codex lists as fast).
 
+New web chats are named the same way: the first message titles the chat at
+once, and a quick turn on `gpt-6-luna` (or the first Luna Codex lists) replaces
+it with a short name. `PERRY_TITLE_MODEL` picks another model.
+
 Codex is told which OS and shell it is on (PowerShell on Windows, your login
 shell such as zsh or bash elsewhere), so its commands, paths and "open this"
 requests fit the machine.

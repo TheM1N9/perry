@@ -127,5 +127,10 @@ export function ReplyInProgress({ streaming }: { streaming?: string }) {
       </div>
     );
   }
-  return <p className="shimmer text-[15px] font-medium" data-role="assistant" data-thinking>Thinking</p>;
+  return (
+    <p className="flex items-center gap-2 text-[15px] font-medium" data-role="assistant" data-thinking>
+      <span className="size-3.5 shrink-0 rounded-full border-2 border-primary/25 border-t-primary motion-safe:animate-spin motion-reduce:animate-pulse" aria-hidden />
+      <span className="shimmer">Thinking</span>
+    </p>
+  );
 }

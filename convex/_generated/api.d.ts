@@ -39,6 +39,7 @@ import type * as recovery from "../recovery.js";
 import type * as runner from "../runner.js";
 import type * as runs from "../runs.js";
 import type * as secrets from "../secrets.js";
+import type * as titles from "../titles.js";
 import type * as todos from "../todos.js";
 import type * as tools from "../tools.js";
 import type * as vault from "../vault.js";
@@ -85,6 +86,7 @@ declare const fullApi: ApiFromModules<{
   runner: typeof runner;
   runs: typeof runs;
   secrets: typeof secrets;
+  titles: typeof titles;
   todos: typeof todos;
   tools: typeof tools;
   vault: typeof vault;

@@ -16,6 +16,7 @@ import {
   parseAccessCommand, parseModelCommand, parseThinkCommand, pickAccess, pickEffort, pickModel, type Access,
 } from "@/convex/lib/commands";
 import { copyText, errorText, useNow } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ApprovalCard } from "../approval-card";
 import { DeleteDialog, RenameDialog } from "../app-sidebar";
 import { PerryMark, TopBar } from "../common";
-import { StatusDot } from "../status-dot";
+import { StatusIndicator } from "../status-indicator";
 import type { Attachment } from "./attachments";
 import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { MessageRow, PendingRow, ReplyInProgress } from "./message";
@@ -480,8 +481,8 @@ export function ChatScreen() {
           onDelete={() => setRemoving(true)}
         />
       ) : !selectedId ? null : undefined}>
-        <h1 className="min-w-0 truncate text-sm font-medium">{title}</h1>
-        {summary && <StatusDot status={summary.status} />}
+        <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer")} aria-busy={summary?.naming || undefined}>{title}</h1>
+        {summary && <StatusIndicator status={summary.status} />}
         {parent && (
           <Link href={`/chat/${parent.id}`} className="hidden min-w-0 items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground sm:flex">
             <GitBranchIcon className="size-3 shrink-0" />from {parent.title}

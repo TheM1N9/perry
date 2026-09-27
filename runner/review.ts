@@ -1,5 +1,5 @@
-import { WINDOWS_SANDBOX, type CodexAppServer } from "./codex";
-import { HOME } from "./home";
+import type { CodexAppServer } from "./codex";
+import { pickModel, quickTurn } from "./quick";
 
 /**
  * The automatic reviewer behind the "review" policy: before the owner is
@@ -62,85 +62,37 @@ const OUTPUT_SCHEMA = {
 };
 
 /**
- * Codex's tools, off for the reviewer: it judges the text it is given and
- * has no reason to run, read, browse or delegate anything.
- */
-const NO_TOOLS = Object.fromEntries([
-  "shell_tool", "unified_exec", "apps", "plugins", "multi_agent", "image_generation", "computer_use", "browser_use",
-].map((feature) => [`features.${feature}`, false]));
-
-/** Threads the reviewer started. Any request Codex makes from one is refused. */
-const reviewThreads = new Set<string>();
-export const isReviewThread = (threadId?: string) => Boolean(threadId && reviewThreads.has(threadId));
-
-type ListedModel = { model: string; description?: string; hidden?: boolean; isDefault?: boolean; supportedReasoningEfforts?: Array<{ reasoningEffort: string }> };
-const chosen = new WeakMap<CodexAppServer, Promise<{ model?: string; effort?: string }>>();
-
-/**
  * A fast model from what the subscription offers: the first listed as fast,
  * else the default. PERRY_REVIEW_MODEL picks one by id instead.
  */
-function reviewModel(app: CodexAppServer) {
-  let pick = chosen.get(app);
-  if (!pick) {
-    pick = (async () => {
-      const { data = [] } = await app.request<{ data?: ListedModel[] }>("model/list", { limit: 100 });
-      const listed = data.filter((model) => !model.hidden);
-      const wanted = process.env.PERRY_REVIEW_MODEL;
-      const model = (wanted ? data.find((item) => item.model === wanted) : undefined)
-        ?? listed.find((item) => /\bfast\b/i.test(item.description ?? ""))
-        ?? listed.find((item) => item.isDefault)
-        ?? listed[0];
-      const effort = model?.supportedReasoningEfforts?.some((option) => option.reasoningEffort === "low") ? "low" : undefined;
-      return { model: model?.model ?? wanted, effort };
-    })();
-    pick.catch(() => chosen.delete(app));
-    chosen.set(app, pick);
-  }
-  return pick;
-}
+const reviewModel = (app: CodexAppServer) => {
+  const wanted = process.env.PERRY_REVIEW_MODEL;
+  return pickModel(app, "review", (all, listed) => (wanted ? all.find((item) => item.model === wanted) : undefined)
+    ?? listed.find((item) => /\bfast\b/i.test(item.description ?? ""))
+    ?? listed.find((item) => item.isDefault)
+    ?? listed[0], wanted);
+};
 
 /** One ephemeral, read-only Codex turn with a structured answer. Never throws; failure is a verdict of "error". */
 export async function review(app: CodexAppServer, action: ReviewedAction): Promise<Verdict> {
   const started = Date.now();
-  const left = () => Math.max(1, REVIEW_TIMEOUT_MS - (Date.now() - started));
   let model: string | undefined;
-  let turn: { threadId: string; turnId: string } | undefined;
   try {
     const choice = await reviewModel(app);
     model = choice.model;
-    const thread = await app.request<{ thread?: { id?: string } }>("thread/start", {
-      cwd: HOME,
-      approvalPolicy: "never",
-      sandbox: "read-only",
-      ephemeral: true,
-      baseInstructions: INSTRUCTIONS,
-      config: { ...WINDOWS_SANDBOX, ...NO_TOOLS },
-      serviceName: "perry",
-    }, left());
-    const threadId = thread.thread?.id;
-    if (!threadId) throw new Error("Codex did not return a thread ID.");
-    reviewThreads.add(threadId);
     const { detail, ...rest } = action;
     const input = JSON.stringify({ ...rest, detail: detail?.slice(0, 8000) }, null, 2);
-    const begun = await app.request<{ turn?: { id?: string } }>("turn/start", {
-      threadId,
-      input: [{ type: "text", text: `Review this action:\n${input}` }],
-      ...(choice.model ? { model: choice.model } : {}),
-      ...(choice.effort ? { effort: choice.effort } : {}),
-      approvalPolicy: "never",
-      sandboxPolicy: { type: "readOnly", networkAccess: false },
+    const text = await quickTurn(app, {
+      instructions: INSTRUCTIONS,
+      text: `Review this action:\n${input}`,
+      choice,
       outputSchema: OUTPUT_SCHEMA,
-    }, left());
-    if (!begun.turn?.id) throw new Error("Codex did not start a review turn.");
-    turn = { threadId, turnId: begun.turn.id };
-    const { text } = await app.waitForTurn(begun.turn.id, left());
+      timeoutMs: REVIEW_TIMEOUT_MS - (Date.now() - started),
+    });
     const answer = JSON.parse(text) as { verdict?: string; reason?: string };
     if (answer.verdict !== "clear" && answer.verdict !== "caution") throw new Error(`The reviewer answered "${text.slice(0, 200)}".`);
     return { verdict: answer.verdict, reason: String(answer.reason ?? "").slice(0, 500) || answer.verdict, model, ms: Date.now() - started };
   } catch (error) {
-    // Stop a turn that ran out of time, so it does not keep using the subscription.
-    if (turn) void app.interrupt(turn.threadId, turn.turnId).catch(() => {});
     return { verdict: "error", reason: error instanceof Error ? error.message : String(error), model, ms: Date.now() - started };
   }
 }
