@@ -10,14 +10,19 @@
  *   PERRY_MCP_URL=<server>/api/backend/http/mcp PERRY_MCP_TOKEN=<runner token> bun runner/mcp-bridge.ts
  *
  * The endpoint serves a runner only while it has a turn running, as over HTTP.
+ *
+ * Without PERRY_MCP_TOKEN the token is read from this computer's runner.json
+ * (in PERRY_HOME), so a config file an agent reads the bridge from (Cursor's
+ * .cursor/mcp.json) never holds it.
  */
 
 import { createInterface } from "node:readline";
+import { readRunnerConfig } from "./home";
 
 const url = process.env.PERRY_MCP_URL;
-const token = process.env.PERRY_MCP_TOKEN;
+const token = process.env.PERRY_MCP_TOKEN || readRunnerConfig().token;
 if (!url || !token) {
-  console.error("mcp-bridge: PERRY_MCP_URL and PERRY_MCP_TOKEN must be set.");
+  console.error("mcp-bridge: PERRY_MCP_URL must be set, and PERRY_MCP_TOKEN or a runner.json in PERRY_HOME.");
   process.exit(2);
 }
 

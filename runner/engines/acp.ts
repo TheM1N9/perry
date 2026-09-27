@@ -73,7 +73,14 @@ function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
  * dropped and noted, rather than held without limit or allowed to end the
  * connection. Replays are dropped anyway, and a dropped answer times out.
  */
-export function cappedLines(input: Readable, maxBytes: number, onDrop: (bytes: number) => void): ReadableStream<Uint8Array> {
+export function cappedLines(input: Readable, maxBytes: number, onDrop: (bytes: number) => void, onText: (line: string) => void = () => {}): ReadableStream<Uint8Array> {
+  // A line that is not JSON (Antigravity prints its sign-in link on stdout) goes aside, not to the JSON-RPC parser.
+  const pass = (controller: ReadableStreamDefaultController<Uint8Array>, line: Buffer) => {
+    const first = line.find((byte) => byte !== 32 && byte !== 9 && byte !== 13 && byte !== 10);
+    if (first === undefined) return;
+    if (first === 123 || first === 91) controller.enqueue(new Uint8Array(line));
+    else onText(line.toString("utf8").trim());
+  };
   let parts: Buffer[] = [];
   let length = 0;
   let dropping = false;
@@ -99,7 +106,7 @@ export function cappedLines(input: Readable, maxBytes: number, onDrop: (bytes: n
           }
           if (newline === -1) continue;
           if (dropping) onDrop(dropped);
-          else controller.enqueue(new Uint8Array(Buffer.concat(parts, length)));
+          else pass(controller, Buffer.concat(parts, length));
           parts = [];
           length = 0;
           dropping = false;
@@ -107,7 +114,7 @@ export function cappedLines(input: Readable, maxBytes: number, onDrop: (bytes: n
         }
       });
       input.on("end", () => {
-        if (!dropping && length) controller.enqueue(new Uint8Array(Buffer.concat(parts, length)));
+        if (!dropping && length) pass(controller, Buffer.concat(parts, length));
         try { controller.close(); } catch {}
       });
       input.on("error", (error) => { try { controller.error(error); } catch {} });
@@ -116,7 +123,8 @@ export function cappedLines(input: Readable, maxBytes: number, onDrop: (bytes: n
 }
 
 /** What starts the agent's ACP server. */
-export type AcpLaunch = { command: string; args: string[]; env?: Record<string, string> };
+/** `cwd` is where the process starts, for an agent that reads its project settings from there (Cursor). */
+export type AcpLaunch = { command: string; args: string[]; env?: Record<string, string>; cwd?: string };
 
 /** How Perry's own tools (its MCP server) reach the agent's sessions. */
 export type ToolsVia =
@@ -287,13 +295,16 @@ export abstract class AcpEngine implements Engine {
   }
 
   /** The agent's ACP server command. It may prepare what the agent needs first (a download, a config file). */
-  protected abstract launch(): Promise<AcpLaunch> | AcpLaunch;
+  protected abstract launch(cwd?: string): Promise<AcpLaunch> | AcpLaunch;
   abstract status(): Promise<EngineStatus>;
   abstract login(): Promise<LoginFlow>;
   abstract logout(): Promise<void>;
 
-  /** Before a session starts in `cwd`: where an agent that ignores session/new's MCP servers reads them from. */
+  /** Before each turn, ahead of starting the agent: put Perry's tools where an agent that ignores session/new's MCP servers reads them. */
   protected async prepareSession(_cwd: string, _tools: PerryTools | undefined): Promise<void> {}
+
+  /** A line the agent printed on stdout that is not JSON-RPC, such as a sign-in link. */
+  protected onText(_line: string): void {}
 
   /** Whether an error means the agent is not signed in. */
   protected isAuthError(error: unknown): boolean {
@@ -303,22 +314,23 @@ export abstract class AcpEngine implements Engine {
   // --- The agent process ------------------------------------------------------
 
   /** The agent's process, started and initialized when first needed and again after it exits. */
-  protected ensure(): Promise<Connection> {
+  protected ensure(cwd?: string): Promise<Connection> {
     if (this.conn && !this.conn.closed) return Promise.resolve(this.conn);
-    this.starting ??= this.start().finally(() => { this.starting = null; });
+    this.starting ??= this.start(cwd).finally(() => { this.starting = null; });
     return this.starting;
   }
 
   /** Whether the agent is running now, for a status that must not start it. */
   protected get running(): boolean { return Boolean(this.conn && !this.conn.closed); }
 
-  private async start(): Promise<Connection> {
-    const launch = await this.launch();
-    const child = spawnEngine(launch.command, launch.args, { ...process.env, ...launch.env });
+  private async start(cwd?: string): Promise<Connection> {
+    const launch = await this.launch(cwd);
+    const child = spawnEngine(launch.command, launch.args, { ...process.env, ...launch.env }, launch.cwd);
     const state = { closed: false, stderr: "" };
     child.stderr.on("data", (chunk: Buffer) => { state.stderr = (state.stderr + chunk).slice(-4000); });
     const lines = cappedLines(child.stdout, this.options.maxLineBytes, (bytes) =>
-      this.warn(`${this.label} sent a message of ${Math.round(bytes / 1048576)} MB; it was skipped.`));
+      this.warn(`${this.label} sent a message of ${Math.round(bytes / 1048576)} MB; it was skipped.`),
+      (line) => { state.stderr = `${state.stderr}\n${line}`.slice(-4000); this.onText(line); });
     const stream = ndJsonStream(Writable.toWeb(child.stdin) as WritableStream<Uint8Array>, lines);
     const sessions = new Map<string, Session>();
     // Params pass through as sent: an agent a version ahead may add fields the SDK's schema does not know.
@@ -454,7 +466,6 @@ export abstract class AcpEngine implements Engine {
     const { resumeCursor: cursor, cwd, tools } = input;
     const loaded = cursor ? conn.sessions.get(cursor) : undefined;
     if (loaded) return loaded;
-    await this.prepareSession(cwd, tools);
     const mcpServers = this.mcpServers(conn, tools);
     const capabilities = conn.init.agentCapabilities;
     if (cursor) {
@@ -575,7 +586,8 @@ export abstract class AcpEngine implements Engine {
   }
 
   async runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult> {
-    const conn = await this.ensure().catch((error) => { throw this.explain(error); });
+    await this.prepareSession(input.cwd, input.tools);
+    const conn = await this.ensure(input.cwd).catch((error) => { throw this.explain(error); });
     let session: Session;
     try {
       session = await this.session(conn, input, sink);

@@ -85,7 +85,60 @@ async function cli(): Promise<boolean> {
     console.error("Logged out");
     return true;
   }
+  if (profile === "cursor" && words[0] === "about") {
+    log({ cli: "about", args: words });
+    const about = { cliVersion: "2026.09.18-fake", userEmail: signedIn() ? "owner@example.com" : null, subscriptionTier: signedIn() ? "pro" : null };
+    console.log(words.includes("json") ? JSON.stringify(about) : `CLI Version  ${about.cliVersion}\nUser Email  ${about.userEmail ?? "Not logged in"}`);
+    return true;
+  }
+  if (profile === "cursor" && words[0] === "models") {
+    log({ cli: "models" });
+    console.log(`Available models\n\n${MODELS.cursor[0]} - Auto (current)\n${MODELS.cursor[1]} - Sonnet (fake)`);
+    return true;
+  }
+  if (profile === "cursor" && words[0] === "mcp" && words[1] === "enable") {
+    log({ cli: "mcp enable", name: words[2], cwd: process.cwd() });
+    writeFileSync(join(HOME, `cursor-mcp-approved-${words[2]}`), process.cwd());
+    return true;
+  }
   return false;
+}
+
+/** What each agent says about itself, as their sources and docs describe it. */
+const PROFILES = {
+  grok: {
+    name: "fake-grok", resume: true, image: false, logout: false,
+    methods: () => signedIn() ? [{ id: "cached_token", name: "Cached login" }, { id: "grok.com", name: "Grok" }] : [{ id: "grok.com", name: "Grok" }],
+    modes: undefined,
+    permissions: { execute: ["always-allow", "allow-once", "reject-once", "reject-always"], mcp: ["always-allow", "allow-once", "reject-once"] },
+  },
+  cursor: {
+    name: "fake-cursor", resume: false, image: true, logout: false,
+    methods: () => [{ id: "cursor_login", name: "Cursor login" }],
+    modes: { currentModeId: "agent", availableModes: [{ id: "agent", name: "Agent" }, { id: "plan", name: "Plan" }, { id: "ask", name: "Ask" }] },
+    permissions: { execute: ["allow-always", "allow-once", "reject-once"], mcp: ["allow-always", "allow-once", "reject-once"] },
+  },
+  antigravity: {
+    name: "antigravity-acp", resume: true, image: true, logout: true,
+    methods: () => ["oauth-personal", "oauth-business", "gemini-api-key", "agent-platform"].map((id) => ({ id, name: id })),
+    modes: undefined,
+    permissions: { execute: ["opt_always_7", "opt_once_3", "opt_reject_9"], mcp: ["opt_always_7", "opt_once_3", "opt_reject_9"] },
+  },
+}[profile];
+const KINDS: Record<string, PermissionOption["kind"]> = { "always-allow": "allow_always", "allow-always": "allow_always", "allow-once": "allow_once", "reject-once": "reject_once", "reject-always": "reject_always", opt_always_7: "allow_always", opt_once_3: "allow_once", opt_reject_9: "reject_once" };
+const permissionOptions = (kind: "execute" | "mcp"): PermissionOption[] => PROFILES.permissions[kind].map((optionId) => ({ optionId, name: optionId, kind: KINDS[optionId] }));
+const allows = (optionId: string) => KINDS[optionId]?.startsWith("allow");
+/** The key the fake Gemini API accepts. */
+const GEMINI_KEY = "fake-gemini-key-0123";
+
+/** Cursor's MCP servers: the project's .cursor/mcp.json where it was started, once approved. */
+function cursorServers(): McpServer[] {
+  const file = join(process.cwd(), ".cursor", "mcp.json");
+  if (!existsSync(file)) return [];
+  const servers = (JSON.parse(readFileSync(file, "utf8")) as { mcpServers?: Record<string, { command: string; args?: string[]; env?: Record<string, string> }> }).mcpServers ?? {};
+  return Object.entries(servers)
+    .filter(([name]) => argv.includes("--approve-mcps") || existsSync(join(HOME, `cursor-mcp-approved-${name}`)))
+    .map(([name, server]) => ({ name, command: server.command, args: server.args ?? [], env: Object.entries(server.env ?? {}).map(([key, value]) => ({ name: key, value })) }));
 }
 
 // --- The ACP server -------------------------------------------------------------------------------
@@ -112,28 +165,15 @@ const alwaysApprove = argv.includes("--always-approve") || argv.includes("--yolo
 
 function config(session: Saved): SessionConfigOption[] {
   return [
+    ...(profile === "antigravity" ? [{ id: "mode", name: "Mode", category: "mode", type: "select" as const, currentValue: session.mode ?? "default", options: ["default", "auto_edit", "yolo"].map((value) => ({ value, name: value })) }] : []),
     { id: "model", name: "Model", category: "model", type: "select", currentValue: session.model, options: MODELS[profile].map((value) => ({ value, name: value })) },
     { id: "reasoning_effort", name: "Reasoning Effort", category: "thought_level", type: "select", currentValue: session.effort, options: EFFORTS.map((value) => ({ value, name: value })) },
   ];
 }
 
-const PERMISSION_OPTIONS: Record<"execute" | "mcp", PermissionOption[]> = {
-  execute: [
-    { optionId: "always-allow", name: "Always allow", kind: "allow_always" },
-    { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
-    { optionId: "reject-once", name: "Reject", kind: "reject_once" },
-    { optionId: "reject-always", name: "Always reject", kind: "reject_always" },
-  ],
-  mcp: [
-    { optionId: "always-allow", name: "Always allow", kind: "allow_always" },
-    { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
-    { optionId: "reject-once", name: "Reject", kind: "reject_once" },
-  ],
-};
-
 /** Call Perry's `remember` through the MCP server this session was given: over HTTP, or by starting its stdio command. */
 async function remember(session: Saved, text: string): Promise<string> {
-  const server = session.mcpServers.find((item) => item.name === "assistant");
+  const server = (profile === "cursor" ? cursorServers() : session.mcpServers).find((item) => item.name === "assistant");
   if (!server) return "no Perry MCP server was given";
   const messages = [
     { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: `fake-${profile}`, version: "0" } } },
@@ -215,12 +255,12 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     const id = `mcp-${Date.now()}`;
     await tool(id, { title: "remember", kind: "other", status: "pending", rawInput: { text: note } });
     await tool(id, { title: "assistant__remember", kind: "other", status: "pending", rawInput: { text: note } }, false);
-    if (!alwaysApprove) {
+    if (!alwaysApprove && session.mode !== "yolo") {
       const asked = await client.request("session/request_permission", {
-        sessionId: session.id, toolCall: { toolCallId: id, title: "assistant__remember", kind: "other", status: "pending", rawInput: { text: note } }, options: PERMISSION_OPTIONS.mcp,
+        sessionId: session.id, toolCall: { toolCallId: id, title: "assistant__remember", kind: "other", status: "pending", rawInput: { text: note } }, options: permissionOptions("mcp"),
       });
       log({ permission: "mcp", outcome: asked.outcome });
-      if (asked.outcome.outcome !== "selected" || !asked.outcome.optionId.startsWith("allow")) {
+      if (asked.outcome.outcome !== "selected" || !allows(asked.outcome.optionId)) {
         await tool(id, { status: "failed" }, false);
         await stream(["I was not allowed to use the remember tool."], 10);
         return done("end_turn");
@@ -236,16 +276,16 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     const id = `exec-${Date.now()}`;
     await tool(id, { title: "run_command", kind: "other", status: "pending", rawInput: { command } });
     await tool(id, { title: `Execute \`${command}\``, kind: "execute", status: "pending", rawInput: { variant: "Bash", command, description: "The owner asked for it" } }, false);
-    let allowed = alwaysApprove;
-    if (!alwaysApprove) {
+    let allowed = alwaysApprove || session.mode === "yolo";
+    if (!allowed) {
       const asked = await client.request("session/request_permission", {
         sessionId: session.id,
         toolCall: { toolCallId: id, title: `Execute \`${command}\``, kind: "execute", status: "pending", rawInput: { variant: "Bash", command, description: "The owner asked for it" } },
-        options: PERMISSION_OPTIONS.execute,
+        options: permissionOptions("execute"),
       });
       log({ permission: "execute", command, outcome: asked.outcome });
       if (asked.outcome.outcome === "cancelled") { await tool(id, { status: "failed" }, false); return done("cancelled"); }
-      allowed = asked.outcome.optionId === "allow-once" || asked.outcome.optionId === "always-allow";
+      allowed = allows(asked.outcome.optionId);
     }
     if (!allowed) {
       await tool(id, { status: "failed", content: [{ type: "content", content: { type: "text", text: "Rejected by the user." } }] }, false);
@@ -274,39 +314,66 @@ async function serve() {
   const connection = agent({ name: `fake-${profile}` })
     .onRequest("initialize", loose, ({ params }) => {
       log({ method: "initialize", params });
-      const methods = signedIn() ? [{ id: "cached_token", name: "Cached login" }, { id: "grok.com", name: "Grok" }] : [{ id: "grok.com", name: "Grok" }];
       return {
         protocolVersion: PROTOCOL_VERSION,
         agentCapabilities: {
           loadSession: true,
-          promptCapabilities: { embeddedContext: true },
-          mcpCapabilities: { http: true, sse: true },
-          sessionCapabilities: { resume: {}, list: {}, close: {} },
+          promptCapabilities: { embeddedContext: true, image: PROFILES.image },
+          mcpCapabilities: { http: profile !== "cursor", sse: profile !== "cursor" },
+          sessionCapabilities: PROFILES.resume ? { resume: {}, list: {}, close: {} } : {},
+          ...(PROFILES.logout ? { auth: { logout: {} } } : {}),
         },
-        authMethods: methods,
-        agentInfo: { name: `fake-${profile}`, version: "1.0.42-fake" },
-        _meta: { defaultAuthMethodId: signedIn() ? "cached_token" : null },
+        authMethods: PROFILES.methods(),
+        agentInfo: { name: PROFILES.name, version: profile === "antigravity" ? "1.2.1-fake" : "1.0.42-fake" },
+        ...(profile === "grok" ? { _meta: { defaultAuthMethodId: signedIn() ? "cached_token" : null } } : {}),
       };
     })
-    .onRequest("authenticate", loose<{ methodId: string }>, ({ params }) => {
-      log({ method: "authenticate", methodId: params.methodId });
-      if (params.methodId === "cached_token" && signedIn()) { authenticated = true; return {}; }
+    .onRequest("authenticate", loose<{ methodId: string }>, async ({ params }) => {
+      // Whether a key came, never the key.
+      log({ method: "authenticate", methodId: params.methodId, geminiKeyPresent: Boolean(process.env.GEMINI_API_KEY), env: { GEMINI_HOME: process.env.GEMINI_HOME, TEMP: process.env.TEMP ?? process.env.TMPDIR } });
+      if ((params.methodId === "cached_token" || params.methodId === "cursor_login") && signedIn()) { authenticated = true; return {}; }
+      if (params.methodId === "gemini-api-key") {
+        if (process.env.GEMINI_API_KEY !== GEMINI_KEY) throw new RequestError(-32602, "Invalid API key");
+        authenticated = true;
+        return {};
+      }
+      if (params.methodId === "oauth-personal") {
+        if (!signedIn()) {
+          // As Google's server does: the link on stdout, among the JSON-RPC lines.
+          process.stdout.write("Open the following link to authenticate the ACP server: https://accounts.google.com/o/oauth2/v2/auth?fake=1&redirect_uri=http://127.0.0.1:1/\n");
+          await sleep(Number(process.env.FAKE_ACP_LOGIN_MS) || 3000);
+          writeFileSync(SIGNED_IN, "yes");
+        }
+        authenticated = true;
+        return {};
+      }
       throw new RequestError(-32000, `Authentication failed: ${params.methodId} is not available here`);
     })
+    .onRequest("logout", loose, () => {
+      log({ method: "logout" });
+      rmSync(SIGNED_IN, { force: true });
+      authenticated = false;
+      return {};
+    })
     .onRequest("session/new", loose<{ cwd: string; mcpServers: McpServer[]; _meta?: Record<string, unknown> }>, ({ params }) => {
-      log({ method: "session/new", cwd: params.cwd, mcpServers: params.mcpServers, meta: params._meta });
+      // Cursor ignores these, and reads .cursor/mcp.json instead (cursorServers).
+      log({ method: "session/new", cwd: params.cwd, mcpServers: params.mcpServers, meta: params._meta, processCwd: process.cwd() });
       needAuth();
       const session: Live = { id: `fake-${profile}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`, cwd: params.cwd, model: MODELS[profile][0], effort: "medium", messages: [], mcpServers: params.mcpServers, queue: Promise.resolve() };
+      if (PROFILES.modes) session.mode = PROFILES.modes.currentModeId;
       sessions.set(session.id, session);
       save(session);
-      return { sessionId: session.id, configOptions: config(session) };
+      return { sessionId: session.id, configOptions: config(session), ...(PROFILES.modes ? { modes: PROFILES.modes } : {}) };
     })
     .onRequest("session/resume", loose<{ sessionId: string; cwd: string; mcpServers?: McpServer[] }>, ({ params }) => {
       log({ method: "session/resume", sessionId: params.sessionId, mcpServers: params.mcpServers });
       needAuth();
+      if (!PROFILES.resume) throw new RequestError(-32601, "Method not found");
       const session = restore(params.sessionId);
       if (!session) throw new RequestError(-32002, `Session not found: ${params.sessionId}`);
       if (params.mcpServers) session.mcpServers = params.mcpServers;
+      // Antigravity comes back on its default model after a cold resume.
+      if (profile === "antigravity") { session.model = MODELS.antigravity[0]; session.mode = "default"; }
       return { configOptions: config(session) };
     })
     .onRequest("session/load", loose<{ sessionId: string; cwd: string; mcpServers: McpServer[] }>, async ({ params, client }) => {
@@ -328,6 +395,7 @@ async function serve() {
       if (!session) throw new RequestError(-32002, "Session not found");
       if (params.configId === "model") session.model = params.value;
       else if (params.configId === "reasoning_effort") session.effort = params.value;
+      else if (params.configId === "mode" && profile === "antigravity") session.mode = params.value;
       else throw new RequestError(-32602, `unknown config option: ${params.configId}`);
       save(session);
       return { configOptions: config(session) };
@@ -353,8 +421,9 @@ async function serve() {
       return { ...result, _meta: { inputTokens: 1200, outputTokens: 80, totalTokens: 1280, cachedReadTokens: 1000, reasoningTokens: 20 } };
     })
     .onNotification("session/cancel", loose<{ sessionId: string }>, ({ params }) => {
-      log({ method: "session/cancel", sessionId: params.sessionId });
-      sessions.get(params.sessionId)?.running?.abort();
+      log({ method: "session/cancel", sessionId: params.sessionId, ignored: Boolean(process.env.FAKE_ACP_IGNORE_CANCEL) });
+      // Antigravity may not implement cancel: FAKE_ACP_IGNORE_CANCEL plays that.
+      if (!process.env.FAKE_ACP_IGNORE_CANCEL) sessions.get(params.sessionId)?.running?.abort();
     })
     .connect(stream);
   process.stdin.on("end", () => { log({ stdinClosed: true }); setTimeout(() => process.exit(0), 50); });

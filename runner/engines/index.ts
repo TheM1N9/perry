@@ -1,6 +1,7 @@
 import type { Engine, EngineKind } from "../engine";
 import { ClaudeEngine } from "./claude";
 import { CodexEngine } from "./codex";
+import { CursorEngine } from "./cursor";
 import { GrokEngine } from "./grok";
 
 /**
@@ -12,6 +13,7 @@ export function createEngines(options: { warn: (line: string) => void }): Map<En
     new CodexEngine(options.warn),
     new GrokEngine(options.warn),
     new ClaudeEngine(options.warn),
+    new CursorEngine(options.warn),
   ];
   return new Map(engines.map((engine) => [engine.kind, engine]));
 }

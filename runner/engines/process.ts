@@ -10,13 +10,13 @@ const cmdArg = (arg: string) => /[\s"&|<>^()%!]/.test(arg) ? `"${arg.replace(/"/
  * macOS and Linux it leads a process group of its own, which is ended
  * together. Either way it still exits when the runner's pipe to it closes.
  */
-export function spawnEngine(command: string, args: string[], env?: NodeJS.ProcessEnv): ChildProcessWithoutNullStreams {
+export function spawnEngine(command: string, args: string[], env?: NodeJS.ProcessEnv, cwd?: string): ChildProcessWithoutNullStreams {
   const windows = process.platform === "win32";
   return spawn(
     windows ? process.env.COMSPEC || "cmd.exe" : command,
     // As Node's own `shell: true` does it, so a path with spaces stays one argument.
     windows ? ["/d", "/s", "/c", `"${[command, ...args].map(cmdArg).join(" ")}"`] : args,
-    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, windowsVerbatimArguments: windows, detached: !windows, env: env ?? process.env },
+    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, windowsVerbatimArguments: windows, detached: !windows, env: env ?? process.env, ...(cwd ? { cwd } : {}) },
   );
 }
 
@@ -46,10 +46,10 @@ export function commandOf(variable: string, fallback: string): { command: string
 }
 
 /** Run a CLI to its end and keep what it printed; a probe, so it never waits long. */
-export function runCli(command: { command: string; args: string[] }, args: string[], timeoutMs = 20_000, env?: NodeJS.ProcessEnv): Promise<{ code: number | null; stdout: string; stderr: string }> {
+export function runCli(command: { command: string; args: string[] }, args: string[], timeoutMs = 20_000, env?: NodeJS.ProcessEnv, cwd?: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((done, fail) => {
     let child: ChildProcessWithoutNullStreams;
-    try { child = spawnEngine(command.command, [...command.args, ...args], env); } catch (error) { fail(error); return; }
+    try { child = spawnEngine(command.command, [...command.args, ...args], env, cwd); } catch (error) { fail(error); return; }
     let stdout = "";
     let stderr = "";
     child.stdin.end();
