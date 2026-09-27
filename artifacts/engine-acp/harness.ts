@@ -87,7 +87,7 @@ process.stdout.write(JSON.stringify(/^\\s*select/i.test(process.argv[2]) ? state
   const lastReply = async (id: string) => (await messagesOf(id)).filter((message) => message.role === "assistant").at(-1)?.text ?? "";
   const runsOf = (id: string) => call<Array<{ prompt: string; status: string; model?: string; startedAt: number }>>("dashboard:listRuns", { key: KEY, conversationId: id });
   const conversation = (id: string) => call<Row>("conversations:getById", { id });
-  type Computer = { id: string; name: string; online: boolean; engines: Array<{ kind: string; label: string; installed: boolean; signedIn: boolean; version?: string; message?: string; auth: { label?: string; plan?: string }; request?: { status: string; interaction?: Record<string, string> } }> };
+  type Computer = { id: string; name: string; online: boolean; engines: Array<{ kind: string; label: string; installed: boolean; signedIn: boolean; version?: string; message?: string; auth: { label?: string; plan?: string }; request?: { kind?: string; status: string; interaction?: Record<string, string> } }> };
   const computers = () => call<Computer[]>("engines:list", { key: KEY });
 
   /** Send a message and wait until the chat is idle again with a new reply; the snapshots of the streaming text are kept. */
