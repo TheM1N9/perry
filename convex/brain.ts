@@ -109,6 +109,8 @@ async function runCommand(
     case "/compact": {
       // finalizeTurn says when it is done. An offline runner is said, not thrown.
       try {
+        // What matters goes to memory first: compaction summarises the rest away.
+        await checkpoint(ctx, conversation);
         const compacting = await ctx.runMutation(internal.codex.requestCompact, { conversationId: conversation._id });
         return compacting ? "Compacting this chat…" : "Nothing to compact yet.";
       } catch (error) {
@@ -133,6 +135,7 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   const fresh = !resumeOf(conversation);
   const memory: { instructions: string; recalled: string; digest: string } | null = await ctx.runAction(internal.memories.context, {
     query,
+    chat: conversation._id,
     seen: fresh ? undefined : conversation.recallDigest,
   }).catch((error) => { console.error(`Memory context unavailable: ${String(error)}`); return null; });
   let history: string | undefined;
@@ -152,7 +155,8 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   // Who the assistant is opens the instructions; who the owner is (USER.md, whole) closes them.
   const persona: { identity: string; user: string } = await ctx.runQuery(internal.persona.forPrompt, {});
   // Which channel this is, where the reply goes, and where what it sets up will report (channels.ts).
-  const where: string = await ctx.runQuery(internal.channels.describe, { conversationId: conversation._id });
+  const where: string = await ctx.runQuery(internal.channels.describe, { conversationId: conversation._id })
+    + (conversation.project ? "\n\nThis is a project chat: what you remember here stays here (remember saves with scope \"this chat\" unless it belongs everywhere), and other chats cannot read it." : "");
   return {
     instructions: [persona.identity, INSTRUCTIONS, now, where, memory?.instructions, persona.user].filter(Boolean).join("\n\n"),
     recalled: memory?.recalled || undefined,
@@ -238,6 +242,75 @@ async function reset(ctx: ActionCtx, conversation: Doc<"conversations">): Promis
     }
   }
 }
+
+// Adapted from vercel/eve (Apache-2.0): packages/eve/src/harness/compaction-prompt.ts
+const CHECKPOINT = [
+  "This is a memory checkpoint, not a message from the owner. The earlier part of this conversation is about to be summarised to make room, and the chat goes on afterwards.",
+  "Save what a future you would need that is not saved yet, with remember kind=daily, one self-contained note per item:",
+  "- decisions made and work completed, stated as done so it is not repeated;",
+  "- important context, constraints and owner preferences;",
+  "- what remains to be done, with clear next steps;",
+  "- critical data needed to continue: exact names, dates, numbers, paths and identifiers.",
+  "Skip what memory already holds, anything trivial, and secrets. A standing preference or durable fact can go to kind=profile or kind=core instead, superseding what it replaces.",
+  `Do not continue the conversation, answer its questions, or invent facts. Do not message the owner: reply with exactly ${QUIET} when done.`,
+].join("\n");
+
+/** Fuller than this, the chat's Codex thread is near the point where Codex compacts it by itself. PERRY_CHECKPOINT_AT changes it. */
+const CHECKPOINT_AT = Number(process.env.PERRY_CHECKPOINT_AT) || 0.75;
+
+/**
+ * A memory checkpoint, like OpenClaw's flush before compaction: a quiet turn
+ * in this chat saves what is worth keeping, and leaves nothing in the chat
+ * (codex.finalizeTurn). Run before /compact, and before Codex compacts a long
+ * thread by itself (checkpointIfFull). Queued, so it waits for a reply that is
+ * running. False when there is nothing to save yet, or no runner.
+ */
+async function checkpoint(ctx: ActionCtx, conversation: Doc<"conversations">): Promise<boolean> {
+  if (!conversation.codexThreadId) return false;
+  const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, { conversationId: conversation._id, prompt: "Memory checkpoint" });
+  const settings = await turnSettings(ctx, conversation);
+  try {
+    await ctx.runMutation(internal.codex.enqueueTurn, {
+      conversationId: conversation._id,
+      runId,
+      prompt: CHECKPOINT,
+      ...await prepareTurn(ctx, conversation, ""),
+      ...settings,
+      checkpoint: true,
+      policy: "queue",
+    });
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access), error: message.slice(0, 1000) });
+    return false;
+  }
+}
+
+/** After a reply: a thread this full gets one checkpoint before Codex compacts it (cleared when it does). */
+export const checkpointIfFull = internalAction({
+  args: { id: v.id("conversations") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const conversation = await ctx.runQuery(internal.conversations.getById, { id: args.id });
+    if (!conversation || conversation.jobId || conversation.checkpointedAt || (conversation.contextFill ?? 0) < CHECKPOINT_AT) return null;
+    await ctx.runMutation(internal.conversations.markCheckpointed, { id: conversation._id });
+    await checkpoint(ctx, conversation);
+    return null;
+  },
+});
+
+/** The web chat's /compact: a checkpoint, then the compaction. The compaction's turn, or null with nothing to compact. */
+export const compactChat = internalAction({
+  args: { id: v.id("conversations") },
+  returns: v.union(v.null(), v.id("codexTurns")),
+  handler: async (ctx, args): Promise<Id<"codexTurns"> | null> => {
+    const conversation = await ctx.runQuery(internal.conversations.getById, { id: args.id });
+    if (!conversation) throw new Error("This chat was deleted.");
+    if (conversation.codexThreadId) await checkpoint(ctx, conversation);
+    return await ctx.runMutation(internal.codex.requestCompact, { conversationId: args.id });
+  },
+});
 
 /** The web chat's /reset. */
 export const resetChat = internalAction({

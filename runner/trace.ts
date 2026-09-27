@@ -13,6 +13,8 @@ export type TraceReport = {
   spans: Span[];
   usage?: NonNullable<Doc<"runs">["usage"]>;
   steps?: number;
+  /** How full the thread's context is: the latest response's input, and the model's window. */
+  context?: { used: number; window: number };
 };
 
 /** Span input and output are cut to this many bytes; convex/codex.ts keeps the same cap. */
@@ -78,6 +80,7 @@ export class TurnTrace {
   private usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 };
   private steps = 0;
   private usageDirty = false;
+  private context: { used: number; window: number } | undefined;
 
   /** Records an item's start, change or end. False when the trace does not keep that kind of item. */
   item(phase: "started" | "updated" | "completed", item: EngineItem, atMs: number): boolean {
@@ -98,7 +101,9 @@ export class TurnTrace {
   }
 
   /** One model response's tokens: every response is a step. */
-  addUsage(last: TokenUsage) {
+  addUsage(last: TokenUsage, contextWindow?: number) {
+    // The latest response read the whole thread so far: its input is how full the context is.
+    if (contextWindow) this.context = { used: last.inputTokens ?? 0, window: contextWindow };
     this.usage.inputTokens += last.inputTokens ?? 0;
     this.usage.cachedInputTokens += last.cachedInputTokens ?? 0;
     this.usage.outputTokens += last.outputTokens ?? 0;
@@ -128,7 +133,7 @@ export class TurnTrace {
     if (this.dirty.size === 0 && !this.usageDirty) return null;
     const report: TraceReport = {
       spans: [...this.dirty].map((id) => this.spans.get(id)!),
-      ...(this.usageDirty ? { usage: { ...this.usage }, steps: this.steps } : {}),
+      ...(this.usageDirty ? { usage: { ...this.usage }, steps: this.steps, ...(this.context ? { context: this.context } : {}) } : {}),
     };
     this.dirty.clear();
     this.usageDirty = false;

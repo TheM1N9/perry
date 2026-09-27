@@ -492,6 +492,12 @@ export default defineSchema({
     pinnedAt: v.optional(v.number()),
     /** When the owner last had this chat open; a reply after it is unseen. */
     seenAt: v.optional(v.number()),
+    /** How full its Codex thread's context was after its last turn, 0 to 1, as the runner reported. */
+    contextFill: v.optional(v.number()),
+    /** When memory was last checkpointed because the context filled up; cleared when Codex compacts it. */
+    checkpointedAt: v.optional(v.number()),
+    /** A project chat: what Perry remembers here stays here, out of every other chat (memories.conversationId). */
+    project: v.optional(v.boolean()),
     /**
      * Web messages sent and not yet in the chat's history: from sendChat until
      * the turn is queued (codex.enqueueTurn), or kept in the history when it
@@ -545,6 +551,8 @@ export default defineSchema({
     origin: v.optional(vMemoryOrigin),
     /** When the owner last changed its text on the Memory page. */
     editedAt: v.optional(v.number()),
+    /** The one chat it belongs to (a project chat's own memory), out of every other chat. Unset: everywhere. */
+    conversationId: v.optional(v.id("conversations")),
     /** Its meaning as a vector, for search by meaning (lib/embed.ts): base64 float32, and the model that made it. */
     vector: v.optional(v.string()),
     vectorModel: v.optional(v.string()),
@@ -787,6 +795,8 @@ export default defineSchema({
     recallDigest: v.optional(v.string()),
     /** A memory flush before /reset: nothing is shown or saved, and finishing it starts the chat afresh. */
     flush: v.optional(v.boolean()),
+    /** A memory checkpoint (brain.checkpoint): nothing is shown or saved, and the chat goes on. */
+    checkpoint: v.optional(v.boolean()),
     /** Its prompt is not the owner's (a greeting after the welcome page): only the reply is saved to the chat. */
     hidden: v.optional(v.boolean()),
     /** The engine's model id to run this turn with. Unset means the engine's default. */

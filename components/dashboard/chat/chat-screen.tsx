@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  ActivityIcon, ArrowDownIcon, CopyIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
+  ActivityIcon, ArrowDownIcon, CopyIcon, FolderLockIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
   SquarePenIcon, Trash2Icon, TriangleAlertIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -98,7 +98,7 @@ export function ChatScreen() {
   const createChat = useMutation(api.dashboard.createChat);
   const sendChat = useMutation(api.dashboard.sendChat);
   const stopChat = useMutation(api.dashboard.stopChat);
-  const compactChat = useMutation(api.dashboard.compactChat);
+  const compactChat = useAction(api.dashboard.compactChat);
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
   const markSeen = useMutation(api.dashboard.markChatSeen);
   const skipOnboarding = useMutation(api.dashboard.skipOnboarding);
@@ -107,6 +107,7 @@ export function ChatScreen() {
   const rewindChat = useAction(api.dashboard.rewindChat);
   const resetChat = useAction(api.dashboard.resetChat);
   const setPinned = useMutation(api.dashboard.setChatPinned);
+  const setProject = useMutation(api.dashboard.setChatProject);
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
@@ -496,10 +497,14 @@ export function ChatScreen() {
           onCopyId={() => void copyText(summary.id).then(() => toast.success("Session ID copied."), fail)}
           activityHref={`/activity?session=${summary.id}`}
           onDelete={summary.channel === "web" ? () => setRemoving(true) : undefined}
+          project={Boolean(chat?.project)}
+          onProject={() => void setProject({ key: dashboardKey, id: summary.id, project: !chat?.project })
+            .then(() => toast.success(chat?.project ? "Memories from here are shared again from now on." : "What Perry remembers here now stays in this chat."), fail)}
         />
       ) : !selectedId ? null : undefined}>
         {chat && <ChannelIcon channel={chat.channel} />}
         <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer")} aria-busy={summary?.naming || undefined}>{title}</h1>
+        {chat?.project && <span className="inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-muted-foreground" title="What Perry remembers here stays in this chat, and other chats cannot read it."><FolderLockIcon className="size-3" aria-hidden />Project</span>}
         {summary && <StatusIndicator status={summary.status} />}
         {parent && (
           <Link href={`/chat/${parent.id}`} className="hidden min-w-0 items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground sm:flex">
@@ -647,8 +652,10 @@ export function ChatScreen() {
   );
 }
 
-function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete }: {
+function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, project, onProject }: {
   pinned: boolean; onPin: () => void; onRename: () => void; onCopyId: () => void; activityHref: string; onDelete?: () => void;
+  /** A project chat keeps its memory to itself. */
+  project: boolean; onProject: () => void;
 }) {
   const router = useRouter();
   return (
@@ -663,6 +670,7 @@ function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete }:
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem onClick={onPin}>{pinned ? <PinOffIcon /> : <PinIcon />}{pinned ? "Unpin" : "Pin"}</DropdownMenuItem>
           <DropdownMenuItem onClick={onRename}><PencilIcon />Rename</DropdownMenuItem>
+          <DropdownMenuItem onClick={onProject}><FolderLockIcon />{project ? "Share memories again" : "Keep memories in this chat"}</DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push(activityHref)}><ActivityIcon />View activity</DropdownMenuItem>
           <DropdownMenuItem onClick={onCopyId}><CopyIcon />Copy session ID</DropdownMenuItem>
           {onDelete && <>

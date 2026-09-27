@@ -719,7 +719,7 @@ async function main() {
                   } else if (event.type === "item") {
                     if (trace.item(event.phase, event.item, event.atMs)) schedule();
                   } else if (event.state !== "unavailable") {
-                    trace.addUsage(event.usage);
+                    trace.addUsage(event.usage, event.contextWindow);
                     schedule();
                   }
                 },

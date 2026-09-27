@@ -57,6 +57,7 @@ const recall = createTool({
     const results: MemoryRow[] = await ctx.runAction(internal.memories.recall, {
       query: input.query,
       limit: input.limit,
+      ...(ctx.conversationId ? { chat: ctx.conversationId } : {}),
     });
 
     if (results.length === 0) {
@@ -87,6 +88,8 @@ const remember = createTool({
     origin: z.enum(["owner", "tool"]).optional()
       .describe("tool when this came from a web page, email, file or other tool output rather than from the owner. Defaults to owner."),
     tags: z.array(z.string()).optional(),
+    scope: z.enum(["everywhere", "this chat"]).optional()
+      .describe("\"this chat\" keeps it to this chat only, out of every other; a project chat's default. \"everywhere\" is every other chat's default."),
   }),
   execute: async (
     ctx,
@@ -94,6 +97,9 @@ const remember = createTool({
   ): Promise<{ id?: string; stored: boolean; superseded: number; note: string }> => {
     // What a scheduled job saves is the job's, whatever the call says; see mcp.ts.
     const fromJob = "fromJob" in ctx && ctx.fromJob === true;
+    // A project chat keeps what it learns to itself, unless told it belongs everywhere.
+    const chat: { project?: boolean } | null = ctx.conversationId ? await ctx.runQuery(internal.conversations.getById, { id: ctx.conversationId }) : null;
+    const scoped = ctx.conversationId && !fromJob && (input.scope ?? (chat?.project ? "this chat" : "everywhere")) === "this chat";
     const result: { id?: string; duplicate: boolean; superseded: number; error?: string } = await ctx.runMutation(
       internal.memories.add,
       {
@@ -103,6 +109,7 @@ const remember = createTool({
         kind: input.kind,
         supersedes: input.supersedes,
         origin: fromJob ? "job" : input.origin ?? "owner",
+        ...(scoped ? { conversationId: ctx.conversationId } : {}),
       },
     );
     return {
@@ -128,7 +135,7 @@ const read_memory = createTool({
       .describe("For kind=daily, the day as YYYY-MM-DD on the owner's calendar. Defaults to today."),
   }),
   execute: async (ctx, input): Promise<{ count: number; memories: ReturnType<typeof shape>[] }> => {
-    const rows: MemoryRow[] = await ctx.runQuery(internal.memories.read, { kind: input.kind, day: input.day });
+    const rows: MemoryRow[] = await ctx.runQuery(internal.memories.read, { kind: input.kind, day: input.day, ...(ctx.conversationId ? { chat: ctx.conversationId } : {}) });
     return { count: rows.length, memories: rows.map(shape) };
   },
 });
@@ -300,7 +307,7 @@ const search_chats = createTool({
     limit: z.number().int().min(1).max(30).optional(),
   }),
   execute: async (ctx, input): Promise<{ found: number; results: Array<{ chatId: string; chat: string; channel: string; role: string; date: string; snippet: string }> }> => {
-    return await ctx.runAction(internal.history.search, { query: input.query, limit: input.limit });
+    return await ctx.runAction(internal.history.search, { query: input.query, limit: input.limit, ...(ctx.conversationId ? { from: ctx.conversationId } : {}) });
   },
 });
 
@@ -313,7 +320,7 @@ const read_chat = createTool({
     limit: z.number().int().min(1).max(50).optional().describe("How many recent messages. Defaults to 20."),
   }),
   execute: async (ctx, input): Promise<{ chat?: string; channel?: string; messages: Array<{ role: string; date: string; text: string }>; note?: string }> => {
-    return await ctx.runAction(internal.history.read, { chatId: input.chatId, limit: input.limit });
+    return await ctx.runAction(internal.history.read, { chatId: input.chatId, limit: input.limit, ...(ctx.conversationId ? { from: ctx.conversationId } : {}) });
   },
 });
 

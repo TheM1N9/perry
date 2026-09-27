@@ -112,7 +112,7 @@ async function isBusy(ctx: QueryCtx, chat: Doc<"conversations">): Promise<boolea
     const turn = await ctx.db.query("codexTurns")
       .withIndex("by_conversation_status", (q) => q.eq("conversationId", chat._id).eq("status", status))
       .first();
-    if (turn && turn.kind !== "compact" && !turn.flush) return true;
+    if (turn && turn.kind !== "compact" && !turn.flush && !turn.checkpoint) return true;
   }
   return false;
 }
@@ -372,7 +372,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine: EngineKind; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine: EngineKind; project: boolean; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     const isRunning = await isBusy(ctx, conversation);
@@ -388,13 +388,14 @@ export const getChat = query({
     return {
       channel: conversation.channel,
       engine: engineOf(conversation),
+      project: Boolean(conversation.project),
       model: conversation.model,
       effort: conversation.effort,
       access: conversation.access ?? "supervised",
       title: titleOf(conversation),
       isRunning,
       // The flush before /reset works quietly.
-      streaming: running?.flush ? undefined : running?.partial,
+      streaming: running?.flush || running?.checkpoint ? undefined : running?.partial,
       lastError: latestRun?.status === "error" ? latestRun.error : undefined,
     };
   },
@@ -554,7 +555,7 @@ type InFlight = { prompt: string; text: string; at: number };
 
 /** The live turns' steers that joined them, and those still waiting to. */
 async function steersOf(ctx: QueryCtx, turns: Doc<"codexTurns">[]): Promise<Doc<"codexSteers">[]> {
-  const live = turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush);
+  const live = turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush && !turn.checkpoint);
   const found: Doc<"codexSteers">[] = [];
   for (const turn of live) {
     for (const status of ["pending", "applied"] as const) {
@@ -573,7 +574,7 @@ function inFlight(conversation: Doc<"conversations">, turns: Doc<"codexTurns">[]
   const entry = (prompt: string, at: number): InFlight => ({ prompt, at, text: prompt.replace(ATTACHMENTS_MARKER, "").trimEnd() });
   const items: InFlight[] = [
     ...(conversation.outbox ?? []).filter((item) => item.at > Date.now() - OUTBOX_TTL_MS).map((item) => entry(item.text, item.at)),
-    ...turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush && !turn.hidden
+    ...turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush && !turn.checkpoint && !turn.hidden
       // A finished turn is saved a moment later; one left unsaved and unfinalized for long is not coming.
       && (turn.status === "queued" || turn.status === "running" || (turn.finalizedAt === undefined && turn.createdAt > Date.now() - OUTBOX_TTL_MS)))
       .map((turn) => entry(turn.prompt, turn.createdAt)),
@@ -771,14 +772,13 @@ export const resetChat = action({
   },
 });
 
-/** /compact: summarise the chat's engine session. Null when there is nothing to compact yet. */
-export const compactChat = mutation({
+/** /compact: what matters goes to memory first (a checkpoint), then the chat's engine session is summarised. Null when there is nothing to compact yet. */
+export const compactChat = action({
   args: { key: vKey, id: v.id("conversations") },
   returns: v.union(v.null(), v.id("codexTurns")),
   handler: async (ctx, args): Promise<Id<"codexTurns"> | null> => {
     assertDashboardKey(args.key);
-    ownerChat(await ctx.db.get(args.id));
-    return await ctx.runMutation(internal.codex.requestCompact, { conversationId: args.id });
+    return await ctx.runAction(internal.brain.compactChat, { id: args.id });
   },
 });
 
@@ -872,6 +872,18 @@ export const setManners = mutation({
   },
 });
 
+/** A project chat: what Perry remembers there stays there, and other chats cannot read it. */
+export const setChatProject = mutation({
+  args: { key: vKey, id: v.id("conversations"), project: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    ownerChat(await ctx.db.get(args.id));
+    await ctx.db.patch(args.id, { project: args.project || undefined });
+    return null;
+  },
+});
+
 export const getDefaultAccess = query({
   args: { key: vKey },
   handler: async (ctx, args): Promise<Access> => {
@@ -948,17 +960,27 @@ export type MemoryView = {
   origin?: "owner" | "tool" | "job";
   createdAt: number;
   editedAt?: number;
+  /** A project chat's own memory: the chat it stays in, and its title. */
+  chatId?: string;
+  chat?: string;
 };
 
 export const listMemories = query({
   args: { key: vKey, query: v.optional(v.string()), kind: v.optional(vMemoryKind) },
   handler: async (ctx, args): Promise<MemoryView[]> => {
     assertDashboardKey(args.key);
-    return await ctx.runQuery(internal.memories.search, {
+    const found: MemoryView[] = await ctx.runQuery(internal.memories.search, {
       query: args.query ?? "",
       limit: 25,
       kind: args.kind,
+      everywhere: true,
     });
+    // A project chat's own memory says which chat it stays in.
+    return await Promise.all(found.map(async (memory) => {
+      if (!memory.chatId) return memory;
+      const chat = await ctx.db.get(memory.chatId as Id<"conversations">);
+      return { ...memory, chat: chat ? titleOf(chat) : "a deleted chat" };
+    }));
   },
 });
 

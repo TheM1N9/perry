@@ -152,6 +152,7 @@ function Memories() {
                   <p className="text-[15px] text-pretty [overflow-wrap:anywhere]">{memory.text}</p>
                   <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
                     <StatusBadge>{KINDS.find((item) => item.kind === memory.kind)?.label ?? memory.kind}</StatusBadge>
+                    {memory.chat && <span title="A project chat's own memory: no other chat sees it.">Only in {memory.chat}</span>}
                     <span>{when(memory.createdAt, memory.day)}</span>
                     {memory.origin && <span>{ORIGINS[memory.origin]}</span>}
                     {memory.source === "dreaming" && <span title="Promoted from daily notes overnight">Promoted overnight</span>}
