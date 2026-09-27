@@ -16,9 +16,10 @@ import { List, ListSkeleton, Section } from "./common";
 
 /**
  * Settings → Keyboard shortcuts: each one, and the keys it is on. Click one
- * and press the keys you want; Esc leaves it as it was. Talk to Perry is the
- * desktop pet's, and works anywhere on this computer; it says whether the pet
- * could take the keys, since another app may already have them.
+ * and press the keys you want; Esc leaves it as it was. Talk to Perry and Show
+ * Perry the screen are the desktop pet's, and work anywhere on this computer;
+ * each says whether the pet could take the keys, since another app may
+ * already have them.
  */
 export function Shortcuts() {
   const { dashboardKey } = useSession();
@@ -28,14 +29,14 @@ export function Shortcuts() {
 
   return (
     <Section title="Keyboard shortcuts" description="Click one and press the keys you want it on. Esc leaves it as it was.">
-      {data === undefined ? <ListSkeleton rows={3} /> : (
+      {data === undefined ? <ListSkeleton rows={4} /> : (
         <List label="Keyboard shortcuts">
           {SHORTCUT_IDS.map((id) => (
             <li key={id} className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-4">
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{SHORTCUTS[id].label}</p>
                 <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{SHORTCUTS[id].description}</p>
-                {SHORTCUTS[id].global && <PetStatus pet={data.pet} wanted={data.shortcuts[id]} mac={mac} />}
+                {SHORTCUTS[id].global && <PetStatus pet={{ running: data.pet.running, ...data.pet.keys[id] }} wanted={data.shortcuts[id]} mac={mac} />}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {data.shortcuts[id] !== SHORTCUTS[id].default && recording !== id && <ResetButton id={id} />}
@@ -114,7 +115,7 @@ function ResetButton({ id }: { id: ShortcutId }) {
   );
 }
 
-/** Whether the desktop pet has the Talk keys: working, taken by another app, catching up, or not running. */
+/** Whether the desktop pet has a shortcut's keys: working, taken by another app, catching up, or not running. */
 function PetStatus({ pet, wanted, mac }: { pet: { running: boolean; hotkey?: string; error?: string }; wanted: string; mac: boolean }) {
   if (!pet.running) {
     return (
@@ -128,7 +129,8 @@ function PetStatus({ pet, wanted, mac }: { pet: { running: boolean; hotkey?: str
     return (
       <p className="mt-1.5 flex items-start gap-1.5 text-sm text-pretty text-warning">
         <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
-        {pet.error === "taken" ? `Another app on this computer already uses ${describe(wanted, mac)}.` : `The desktop pet can't use ${describe(wanted, mac)}.`}{still} Pick other keys.
+        {pet.error === "restart" ? "Restart the desktop pet for this one: Quit from his tray icon, then turn him on again."
+          : <>{pet.error === "taken" ? `Another app on this computer already uses ${describe(wanted, mac)}.` : `The desktop pet can't use ${describe(wanted, mac)}.`}{still} Pick other keys.</>}
       </p>
     );
   }

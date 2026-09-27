@@ -906,8 +906,8 @@ export const setDefaultAccess = mutation({
 
 export type ShortcutsView = {
   shortcuts: Shortcuts;
-  /** The desktop pet, as it last checked in: whether it is running, and its Talk hotkey's standing. */
-  pet: { running: boolean; hotkey?: string; error?: string };
+  /** The desktop pet, as it last checked in: whether it is running, and each of its global shortcuts' standing, by id. */
+  pet: { running: boolean; keys: Partial<Record<string, { hotkey?: string; error?: string }>> };
 };
 
 export const getShortcuts = query({
@@ -918,7 +918,7 @@ export const getShortcuts = query({
     const pet = await ctx.db.query("petPresence").first();
     return {
       shortcuts: resolveShortcuts(install?.shortcuts),
-      pet: { running: Boolean(pet && Date.now() - pet.seenAt < 150_000), hotkey: pet?.hotkey, error: pet?.hotkeyError },
+      pet: { running: Boolean(pet && Date.now() - pet.seenAt < 150_000), keys: { talk: { hotkey: pet?.hotkey, error: pet?.hotkeyError }, ...pet?.keys } },
     };
   },
 });

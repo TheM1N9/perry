@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync, watchFile, writeFileSync } from "n
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { capture, lookKey } from "./look.js";
 import { DEFAULT_HOTKEY, hotkeys, transcribe, warmUp } from "./voice.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -131,10 +132,23 @@ if (!app.requestSingleInstanceLock({ argv })) {
    */
   let voice = null;
   let hotkeyError = null;
+  /** The hotkey that shows him the screen (look.js), and why he does not have the one asked for. */
+  let look = null;
+  let lookError = null;
   const voiceTo = (type) => {
     // Talking to him brings him back if he was hidden, without taking the focus from what you are in.
     if (type === "start" && win && !win.isVisible()) show();
     win?.webContents.send("pet:voice", type);
+  };
+
+  /** A picture of the window the owner is in and of the screen, into his chat to ask about; he comes up, ready for the question. */
+  const lookNow = async () => {
+    if (!win) return;
+    const [x, y] = win.getPosition();
+    const shot = await capture([win, dismiss], { x: x + SIZE.width - BODY.width / 2, y: y + SIZE.height - BODY.height / 2 }).catch((error) => ({ error: String(error) }));
+    show();
+    win.webContents.send("pet:look", shot);
+    win.focus();
   };
 
   const load = () => win?.loadURL(`${BASE}/pet#key=${encodeURIComponent(KEY)}`).catch(() => {});
@@ -178,6 +192,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
       voice?.current()
         ? { label: `Talk to him (${voice.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})`, click: () => voiceTo("start") }
         : { label: "Talk to him: his keys are taken by another app", enabled: false },
+      { label: `Show him the screen${look?.current() ? ` (${look.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})` : ""}`, click: () => void lookNow() },
       { label: "Keyboard shortcuts…", click: () => openDashboard("/settings?tab=shortcuts") },
       { label: "Open Perry", click: () => openDashboard("/") },
       { label: "Put him back in the corner", click: () => {
@@ -354,6 +369,20 @@ if (!app.requestSingleInstanceLock({ argv })) {
     if (take(saved).error && saved !== DEFAULT_HOTKEY) take(DEFAULT_HOTKEY);
     warmUp(MODELS);
     ipcMain.on("pet:open", (_event, path) => openDashboard(path));
+    // Looking at the screen: his chat's button asks for the picture; the Look hotkey sends it to the page.
+    ipcMain.handle("pet:look", async () => {
+      const [x, y] = win.getPosition();
+      return await capture([win, dismiss], { x: x + SIZE.width - BODY.width / 2, y: y + SIZE.height - BODY.height / 2 }).catch((error) => ({ error: String(error) }));
+    });
+    look = lookKey(() => void lookNow());
+    ipcMain.handle("pet:set-look-hotkey", (_event, accelerator) => {
+      if (typeof accelerator === "string") {
+        const result = look.change(accelerator);
+        lookError = result.error ?? null;
+        refreshMenu();
+      }
+      return { hotkey: look.current(), error: lookError };
+    });
 
     // icon.png is 16 points; Electron takes icon@2x.png beside it on a scaled screen.
     // The circle that hides him, made now and always there, see-through, until he is dragged.

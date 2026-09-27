@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpIcon, ChevronDownIcon, ExternalLinkIcon, PlusIcon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, ChevronDownIcon, ExternalLinkIcon, PlusIcon, ScanEyeIcon, SquareIcon, XIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -19,11 +19,20 @@ import { Listening, MicButton, type Voice } from "./voice";
  * shows, with the same memory and everything Perry knows. Pick another from
  * the list, start a new one, or open it in the dashboard for the rest (files,
  * models, branching).
+ *
+ * A picture of the screen (his Look hotkey, or the eye button) waits above the
+ * box, to check, switch between the window and the whole screen, or take
+ * away, and goes with the next message.
  */
 
 export type PetChatId = Id<"conversations"> | null;
+type Picture = { name: string; image: string };
+/** What his window took (pet/look.js): the window the owner was in, the whole screen, or why neither. */
+export type TakenShot = { window?: Picture; screen?: Picture; error?: string };
+/** A picture waiting to be sent, and which of the two goes. */
+export type Shot = TakenShot & { use: "window" | "screen" };
 
-export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey, byHotkey, sendSignal, onTalk, onTalkSend, onTalkCancel }: {
+export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey, byHotkey, sendSignal, onTalk, onTalkSend, onTalkCancel, shot, onShot, onLook, lookKeys }: {
   chatId: PetChatId;
   onChatId: (id: PetChatId) => void;
   draft: string;
@@ -39,6 +48,11 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   onTalk: () => void;
   onTalkSend: () => void;
   onTalkCancel: () => void;
+  shot: Shot | null;
+  onShot: (shot: Shot | null) => void;
+  /** Take a picture of the screen, where his window can (not in a plain browser). */
+  onLook?: () => void;
+  lookKeys?: string | null;
 }) {
   const key = useDashboardKey();
   const chats = useQuery(api.dashboard.listChats, { key });
@@ -49,6 +63,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   const sendChat = useMutation(api.dashboard.sendChat);
   const stopChat = useMutation(api.dashboard.stopChat);
   const markSeen = useMutation(api.dashboard.markChatSeen);
+  const registerAttachment = useMutation(api.dashboard.registerAttachment);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
@@ -69,21 +84,34 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   }, [chatId, messages.length, chat?.streaming, chat?.isRunning]);
   useEffect(() => { input.current?.focus(); }, [chatId]);
 
+  const picture = shot ? shot[shot.use] ?? null : null;
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending) return;
+    if ((!text && !picture) || sending) return;
     setSending(true);
     setError("");
     try {
       const id = chatId ?? await createChat({ key });
       if (!chatId) onChatId(id);
+      // The picture is kept on this computer as the dashboard keeps a file you attach, and goes with the message.
+      const messageKey = crypto.randomUUID();
+      const attachmentIds = picture ? [await attach(id, messageKey, picture)] : [];
       onDraft("");
-      await sendChat({ key, id, text });
+      onShot(null);
+      await sendChat({ key, id, text, ...(attachmentIds.length ? { attachmentIds, messageKey } : {}) });
     } catch (cause) {
       setError(errorText(cause));
     } finally {
       setSending(false);
     }
+  };
+  const attach = async (id: Id<"conversations">, messageKey: string, { image }: Picture) => {
+    const file = await (await fetch(image)).blob();
+    const fileName = `screen-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`;
+    const saved = await fetch("/api/media", { method: "POST", headers: { "x-file-name": fileName }, body: file });
+    const body = await saved.json().catch(() => null) as { path?: string; error?: string } | null;
+    if (!saved.ok || !body?.path) throw new Error(body?.error ?? "Could not keep the picture of the screen.");
+    return await registerAttachment({ key, conversationId: id, messageKey, localPath: body.path, fileName, contentType: "image/png", size: file.size });
   };
   // What was said with the hotkey goes as soon as it is written down.
   const sent = useRef(sendSignal);
@@ -155,9 +183,17 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
           </div>
         </div>)}
         {messages.map((message) => message.role === "user" ? (
-          <p key={message.id} className={cn("ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-muted px-3 py-1.5 text-[13.5px] whitespace-pre-wrap [overflow-wrap:anywhere]", message.pending && "opacity-70")}>
-            {message.text}
-          </p>
+          <div key={message.id} className="ml-auto flex w-fit max-w-[85%] flex-col items-end gap-1">
+            {message.attachments.filter((file) => file.contentType.startsWith("image/")).map((file) => (
+              // eslint-disable-next-line @next/next/no-img-element -- a local file served by /api/media, not a static asset
+              <img key={file.url} src={file.url} alt={file.fileName} className="max-h-32 rounded-xl border object-contain" />
+            ))}
+            {message.text && (
+              <p className={cn("w-fit rounded-2xl rounded-br-md bg-muted px-3 py-1.5 text-[13.5px] whitespace-pre-wrap [overflow-wrap:anywhere]", message.pending && "opacity-70")}>
+                {message.text}
+              </p>
+            )}
+          </div>
         ) : (
           <div key={message.id}><Markdown text={message.text} /></div>
         ))}
@@ -168,6 +204,30 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
       </div>
 
       <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="px-3 pt-1 pb-3">
+        {shot && picture && (
+          <div className="mb-1.5 flex items-start gap-2 rounded-xl border bg-card p-1.5" aria-label="Picture of the screen to send">
+            {/* eslint-disable-next-line @next/next/no-img-element -- a picture just taken, as a data URL */}
+            <img src={picture.image} alt={`Picture of ${picture.name}`} className="h-16 max-w-28 shrink-0 rounded-md border object-cover object-top" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12.5px] font-medium" title={picture.name}>{picture.name}</p>
+              <p className="text-[11.5px] text-muted-foreground">Goes with your next message.</p>
+              {shot.window && shot.screen && (
+                <div className="mt-1 flex gap-1" role="group" aria-label="Which picture">
+                  {(["window", "screen"] as const).map((use) => (
+                    <button key={use} type="button" aria-pressed={shot.use === use} onClick={() => onShot({ ...shot, use })}
+                      className={cn("cursor-pointer rounded-full border px-2 py-0.5 text-[11.5px]", shot.use === use ? "border-primary/50 bg-brand-soft text-foreground" : "text-muted-foreground hover:text-foreground")}>
+                      {use === "window" ? "This window" : "Whole screen"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button type="button" aria-label="Don't send the picture" title="Don't send it" onClick={() => onShot(null)}
+              className="grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
+              <XIcon className="size-3.5" aria-hidden />
+            </button>
+          </div>
+        )}
         <div className="flex items-end gap-1.5 rounded-2xl border bg-card py-1.5 pr-1.5 pl-3 shadow-[0_1px_2px_rgb(0_0_0/0.05)] transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/15">
           {voice && voice.state !== "idle" ? (
             <div className="min-w-0 flex-1"><Listening voice={voice} onSend={onTalkSend} onCancel={onTalkCancel} /></div>
@@ -179,17 +239,24 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
             onChange={(event) => { onDraft(event.target.value); setError(""); }}
             onKeyDown={onKey}
             aria-label="Message Perry"
-            placeholder={running ? "Add to what he's doing…" : "Ask Perry, or tell him what to do"}
+            placeholder={picture ? "Ask about it, or just send" : running ? "Add to what he's doing…" : "Ask Perry, or tell him what to do"}
             className="max-h-28 min-h-7 flex-1 resize-none bg-transparent py-1 text-[13.5px] outline-none [field-sizing:content] placeholder:text-muted-foreground/80"
           />
+          {onLook && (
+            <button type="button" onClick={onLook} aria-label="Show Perry the screen"
+              title={`Show him the window you're in${lookKeys ? ` (${keys(lookKeys)} from anywhere)` : ""}`}
+              className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground">
+              <ScanEyeIcon className="size-4" aria-hidden />
+            </button>
+          )}
           {voice && <MicButton onClick={onTalk} />}
-          {running && !draft.trim() ? (
+          {running && !draft.trim() && !picture ? (
             <button type="button" aria-label="Stop" title="Stop" onClick={() => chatId && void stopChat({ key, id: chatId })}
               className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-full bg-foreground text-background">
               <SquareIcon className="size-3 fill-current" aria-hidden />
             </button>
           ) : (
-            <button type="submit" aria-label="Send" disabled={!draft.trim() || sending}
+            <button type="submit" aria-label="Send" disabled={(!draft.trim() && !picture) || sending}
               className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-full bg-primary text-primary-foreground disabled:cursor-default disabled:opacity-40">
               <ArrowUpIcon className="size-4" aria-hidden />
             </button>

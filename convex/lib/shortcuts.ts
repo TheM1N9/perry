@@ -15,6 +15,12 @@ export const SHORTCUTS = {
     default: "CommandOrControl+Shift+Space",
     global: true,
   },
+  look: {
+    label: "Show Perry the screen",
+    description: "Anywhere on this computer, with the desktop pet running: a picture of the window you're in goes into his chat, for you to check and ask about.",
+    default: "CommandOrControl+Alt+Shift+Space",
+    global: true,
+  },
   palette: {
     label: "Search and commands",
     description: "On the dashboard: chats, pages and actions.",
