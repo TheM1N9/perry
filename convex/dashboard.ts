@@ -10,9 +10,11 @@ import { ABSOLUTE_PATH } from "./media";
 import { defaultAccess, type Onboarding } from "./installation";
 import { callName, DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./persona";
 import type { Access } from "./lib/commands";
+import { engineOf, type EngineKind } from "./lib/engines";
 import type { CatalogApp, ConnectedAccount } from "./composio";
 import { policyOf, type Policy } from "./runner";
-import { vAccess, vMemoryKind, vPolicy } from "./schema";
+import { vAccess, vEngine, vMemoryKind, vPolicy } from "./schema";
+import { pickPatch } from "./engines";
 import { APPROVAL_TTL_MS } from "./approvals";
 import { QUIET } from "./jobs";
 import type { VaultEntry } from "./vault";
@@ -365,7 +367,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine: EngineKind; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     const isRunning = await isBusy(ctx, conversation);
@@ -380,6 +382,7 @@ export const getChat = query({
       : null;
     return {
       channel: conversation.channel,
+      engine: engineOf(conversation),
       model: conversation.model,
       effort: conversation.effort,
       access: conversation.access ?? "supervised",
@@ -614,8 +617,10 @@ export const sendChat = mutation({
     text: v.string(),
     attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
     messageKey: v.optional(v.string()),
-    /** The Codex model picked in the composer. Unset keeps the chat's current one. */
+    /** The model picked in the composer. Unset keeps the chat's current one. */
     model: v.optional(v.string()),
+    /** The engine of that model; another than the chat's moves the chat there. Unset keeps the chat's. */
+    engine: v.optional(vEngine),
     /** Picked in the composer before the chat existed; "" is the model's default. Unset keeps the chat's. */
     effort: v.optional(v.string()),
     access: v.optional(vAccess),
@@ -650,7 +655,7 @@ export const sendChat = mutation({
       ...(web ? { pendingTurns: (chat.pendingTurns ?? 0) + 1 } : {}),
       // Shown in the chat from now, until a turn or the history has it (conversations.takeFromOutbox).
       outbox: [...(chat.outbox ?? []).filter((entry) => entry.at > Date.now() - OUTBOX_TTL_MS), { text: prompt, at: Date.now() }],
-      ...(args.model !== undefined ? { model: args.model.trim() || undefined } : {}),
+      ...(args.model !== undefined ? pickPatch(chat, args.model, args.engine) : {}),
       ...(args.effort !== undefined ? { effort: args.effort.trim() || undefined } : {}),
       ...(args.access !== undefined ? { access: args.access } : {}),
     });
@@ -749,7 +754,7 @@ export const resetChat = action({
   },
 });
 
-/** /compact: summarise the chat's Codex thread. Null when there is nothing to compact yet. */
+/** /compact: summarise the chat's engine session. Null when there is nothing to compact yet. */
 export const compactChat = mutation({
   args: { key: vKey, id: v.id("conversations") },
   returns: v.union(v.null(), v.id("codexTurns")),
@@ -770,14 +775,17 @@ export const getCompaction = query({
   },
 });
 
-/** Pick this chat's Codex model. Unset means the Codex default. */
+/**
+ * Pick this chat's model. Unset means its engine's default. Another engine's
+ * model moves the chat to that engine, which picks up from the chat so far.
+ */
 export const setChatModel = mutation({
-  args: { key: vKey, id: v.id("conversations"), model: v.optional(v.string()) },
+  args: { key: vKey, id: v.id("conversations"), model: v.optional(v.string()), engine: v.optional(vEngine) },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
-    ownerChat(await ctx.db.get(args.id));
-    await ctx.db.patch(args.id, { model: args.model?.trim() || undefined });
+    const chat = ownerChat(await ctx.db.get(args.id));
+    await ctx.db.patch(args.id, pickPatch(chat, args.model, args.engine));
     return null;
   },
 });
@@ -814,7 +822,7 @@ export const setChatAccess = mutation({
  */
 export const getLastPicks = query({
   args: { key: vKey },
-  handler: async (ctx, args): Promise<{ model?: string; effort?: string }> => {
+  handler: async (ctx, args): Promise<{ engine?: EngineKind; model?: string; effort?: string }> => {
     assertDashboardKey(args.key);
     const recent = await ctx.db.query("conversations")
       .withIndex("by_channel_last", (q) => q.eq("channel", WEB_CHANNEL))
@@ -822,7 +830,7 @@ export const getLastPicks = query({
       .take(20);
     // A chat sent from the composer always has its model; the welcome chat and the like leave it unset.
     const last = recent.find((chat) => !chat.jobId && chat.model);
-    return { model: last?.model, effort: last?.effort };
+    return { engine: last ? engineOf(last) : undefined, model: last?.model, effort: last?.effort };
   },
 });
 

@@ -13,15 +13,20 @@ import * as connectorAccounts from "../convex/connectorAccounts";
 import * as conversations from "../convex/conversations";
 import * as crons from "../convex/crons";
 import * as dashboard from "../convex/dashboard";
+import * as engines from "../convex/engines";
 import * as history from "../convex/history";
 import * as http from "../convex/http";
 import * as ingest from "../convex/ingest";
 import * as installation from "../convex/installation";
 import * as jobs from "../convex/jobs";
+import * as lib_activity from "../convex/lib/activity";
 import * as lib_agent from "../convex/lib/agent";
 import * as lib_auth from "../convex/lib/auth";
 import * as lib_commands from "../convex/lib/commands";
+import * as lib_embed from "../convex/lib/embed";
+import * as lib_engines from "../convex/lib/engines";
 import * as lib_errors from "../convex/lib/errors";
+import * as lib_price from "../convex/lib/price";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
 import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
@@ -58,15 +63,20 @@ export const modules: Record<string, Record<string, unknown>> = {
   "conversations": conversations,
   "crons": crons,
   "dashboard": dashboard,
+  "engines": engines,
   "history": history,
   "http": http,
   "ingest": ingest,
   "installation": installation,
   "jobs": jobs,
+  "lib/activity": lib_activity,
   "lib/agent": lib_agent,
   "lib/auth": lib_auth,
   "lib/commands": lib_commands,
+  "lib/embed": lib_embed,
+  "lib/engines": lib_engines,
   "lib/errors": lib_errors,
+  "lib/price": lib_price,
   "lib/shortcuts": lib_shortcuts,
   "lib/telegram": lib_telegram,
   "lib/telegramFormat": lib_telegramFormat,

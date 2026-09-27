@@ -9,13 +9,15 @@ import {
   ACCESS_LABELS, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, parseAccessCommand, parseModelCommand,
   parseThinkCommand, pickAccess, pickEffort, pickModel, runLabel, turnEffort, type ModelOption,
 } from "./lib/commands";
+import { engineOf, type EngineKind } from "./lib/engines";
 import { DOWNLOAD_LIMIT, downloadFile, sendMessage, sendTyping } from "./lib/telegram";
-import { vChannel, vTelegramMedia } from "./schema";
+import { resumeOf } from "./engines";
+import { vChannel, vEngine, vTelegramMedia } from "./schema";
 
 /**
  * One turn, end to end: resolve the conversation, gather what the assistant
- * should know, and hand the turn to Codex on the owner's runner. The reply
- * comes back through codex.finishTurn.
+ * should know, and hand the turn to the chat's engine on the owner's runner.
+ * The reply comes back through codex.finishTurn.
  *
  * Scheduled rather than called inline, so it sits off the Telegram request path
  * and may take as long as it needs to.
@@ -26,11 +28,11 @@ type Channel = "telegram" | "web" | "whatsapp";
 const HELP = `
 Your private assistant.
 
-  /model    list the Codex models; /model <name> switches this chat
+  /model    list the models; /model <name> switches this chat
   /think    list the thinking levels; /think <level> sets this chat's
   /access   ask, auto or full: whether it asks before acting
   /stop     stop the reply I am writing
-  /compact  shrink what Codex carries of this chat, keep the chat
+  /compact  shrink what I carry of this chat, keep the chat
   /status   plumbing and recent errors
   /reset    save this chat to memory, then start a fresh one
   /help     this
@@ -47,20 +49,21 @@ async function runCommand(
   const [raw] = text.trim().split(/\s+/);
   const command = raw.toLowerCase().replace(/@.*$/, ""); // strip /cmd@botname
 
+  const engine = engineOf(conversation);
   const modelCommand = parseModelCommand(text);
   if (modelCommand) {
     const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
-    if (!modelCommand.name) return describeModels(models, conversation.model);
-    const { model, reply } = pickModel(models, modelCommand.name, conversation.effort);
-    if (model) await ctx.runMutation(internal.conversations.setModel, { id: conversation._id, model: model.id });
+    if (!modelCommand.name) return describeModels(models, conversation.model, engine);
+    const { model, reply } = pickModel(models, modelCommand.name, conversation.effort, engine);
+    if (model) await ctx.runMutation(internal.conversations.setModel, { id: conversation._id, model: model.id, engine: engineOf(model) });
     return reply;
   }
 
   const thinkCommand = parseThinkCommand(text);
   if (thinkCommand) {
     const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
-    if (!thinkCommand.level) return describeEfforts(models, conversation.model, conversation.effort);
-    const picked = pickEffort(models, conversation.model, thinkCommand.level);
+    if (!thinkCommand.level) return describeEfforts(models, conversation.model, conversation.effort, engine);
+    const picked = pickEffort(models, conversation.model, thinkCommand.level, engine);
     if (picked.ok) await ctx.runMutation(internal.conversations.setEffort, { id: conversation._id, effort: picked.effort });
     return picked.reply;
   }
@@ -84,11 +87,11 @@ async function runCommand(
       });
       const memoryCount = await ctx.runQuery(internal.memories.count, {});
       const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
-      const model = chatModel(models, conversation.model);
-      const effort = turnEffort(models, conversation.model, conversation.effort);
+      const model = chatModel(models, conversation.model, engine);
+      const effort = turnEffort(models, conversation.model, conversation.effort, engine);
       const unused = model && effortUnused(model, conversation.effort) ? ` (${conversation.effort} is not one ${model.name} takes)` : "";
       const lines = [
-        `model     ${conversation.model && model?.id === conversation.model ? `codex/${conversation.model}` : `codex default${model ? ` (${model.id})` : ""}`}`,
+        `model     ${conversation.model && model?.id === conversation.model ? `${engine}/${conversation.model}` : `${engine} default${model ? ` (${model.id})` : ""}`}`,
         `thinking  ${conversation.effort && !unused ? conversation.effort : `default${effort ? ` (${effort})` : ""}${unused}`}`,
         `access    ${ACCESS_LABELS[conversation.access ?? "supervised"]}`,
         `memories  ${memoryCount}`,
@@ -122,12 +125,12 @@ async function runCommand(
 }
 
 /**
- * What Codex gets besides the prompt: the instructions with the memory guide
- * and owner profile, the memory recalled as data for this turn, and, for a
- * fresh Codex thread that has not seen this chat, its recent history.
+ * What the engine gets besides the prompt: the instructions with the memory
+ * guide and owner profile, the memory recalled as data for this turn, and, for
+ * a fresh engine session that has not seen this chat, its recent history.
  */
 async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, query: string) {
-  const fresh = !conversation.codexThreadId;
+  const fresh = !resumeOf(conversation);
   const memory: { instructions: string; recalled: string; digest: string } | null = await ctx.runAction(internal.memories.context, {
     query,
     seen: fresh ? undefined : conversation.recallDigest,
@@ -159,21 +162,34 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
 }
 
 /**
- * How the chat's turns run: its model, the thinking level that model takes
- * (a level it does not take falls back to its default), and its access.
+ * How the chat's turns run: its engine and model, the thinking level that
+ * model takes (a level it does not take falls back to its default), and its
+ * access. A scheduled job's model, with its engine, wins over the chat's.
  *
  * The model is always named. Left out, Codex falls back to the `model` in
  * ~/.codex/config.toml, which the Codex app may have set to one this account
  * cannot use; the account's own default is the one model/list marks.
  */
-async function turnSettings(ctx: ActionCtx, conversation: Doc<"conversations">, jobModel?: string) {
+async function turnSettings(ctx: ActionCtx, conversation: Doc<"conversations">, job?: { model?: string; engine?: EngineKind }) {
   const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
-  const model = currentModel(models, jobModel ?? conversation.model);
+  const engine = job?.model ? engineOf(job) : engineOf(conversation);
+  const model = currentModel(models, job?.model ?? conversation.model, engine);
   return {
+    engine,
     model,
-    effort: turnEffort(models, model, conversation.effort),
+    effort: turnEffort(models, model, conversation.effort, engine),
     access: conversation.access ?? "supervised" as const,
   };
+}
+
+/**
+ * A job whose model is on another engine than its chat moves the chat there,
+ * which starts afresh with the chat so far; the chat as it is then.
+ */
+async function onEngine(ctx: ActionCtx, conversation: Doc<"conversations">, settings: { engine: EngineKind; model?: string }): Promise<Doc<"conversations">> {
+  if (engineOf(conversation) === settings.engine) return conversation;
+  await ctx.runMutation(internal.conversations.setModel, { id: conversation._id, model: settings.model, engine: settings.engine });
+  return (await ctx.runQuery(internal.conversations.getById, { id: conversation._id })) ?? conversation;
 }
 
 // Adapted from vercel/eve (Apache-2.0): packages/eve/src/harness/compaction-prompt.ts
@@ -212,7 +228,7 @@ async function reset(ctx: ActionCtx, conversation: Doc<"conversations">): Promis
     return "Saving what is worth keeping from this chat to memory, then starting fresh.";
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access), error: message.slice(0, 1000) });
+    await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access, settings.engine), error: message.slice(0, 1000) });
     const threadId = await createThread(ctx, { userId: userIdOf(conversation), title: conversation.title });
     await ctx.runMutation(internal.conversations.clearThread, { id: conversation._id, threadId });
     return `Fresh start, but this chat was not summarised into memory first: ${message}`;
@@ -293,6 +309,8 @@ export const handleTurn = internalAction({
     label: v.optional(v.string()),
     /** A scheduled job's model, which its runs use whatever its chat has picked. */
     model: v.optional(v.string()),
+    /** The engine the job's model is one of. Unset is Codex. */
+    engine: v.optional(vEngine),
     /** Written in the web app in the owner's Telegram or WhatsApp chat: the web app shows it as its own, and the phone hears of it. */
     fromWeb: v.optional(v.boolean()),
   },
@@ -301,7 +319,7 @@ export const handleTurn = internalAction({
     const channel = args.channel as Channel;
     // What the web app keeps track of while it waits: its own chats, and what it sent into a messaging app's.
     const web = channel === "web" || args.fromWeb === true;
-    const conversation = await loadConversation(
+    let conversation = await loadConversation(
       ctx,
       channel,
       args.externalId,
@@ -372,7 +390,8 @@ export const handleTurn = internalAction({
       const attachments = attachmentIds.length > 0
         ? await ctx.runQuery(internal.media.forTurn, { conversationId: conversation._id, attachmentIds })
         : [];
-      const settings = await turnSettings(ctx, conversation, args.model);
+      const settings = await turnSettings(ctx, conversation, args.model ? { model: args.model, engine: args.engine } : undefined);
+      conversation = await onEngine(ctx, conversation, settings);
       const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
         conversationId: conversation._id,
         prompt: args.label ?? args.text,
@@ -416,7 +435,7 @@ export const handleTurn = internalAction({
         // an admitted one, because you keep waiting for a reply that never comes.
         const message = error instanceof Error ? error.message : String(error);
         console.error(`turn failed: ${message}`);
-        await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access), error: message.slice(0, 1000) });
+        await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access, settings.engine), error: message.slice(0, 1000) });
         if (conversation.jobId) await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, error: message });
         // The message stays in the chat with the error under it, as a turn would have saved it: the owner's
         // (in any channel, so the dashboard shows what failed) and a job's prompt alike. It never became a turn.

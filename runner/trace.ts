@@ -1,8 +1,8 @@
 import type { Doc } from "../convex/_generated/dataModel";
-import { ASSISTANT_MCP, type TokenUsage, type TurnItem } from "./codex";
+import type { EngineItem, ItemStatus, ItemType, TokenUsage } from "./engine";
 
 /**
- * A Codex turn's trace, as the runner reports it: one span per item Codex
+ * A turn's trace, as the runner reports it: one span per item the engine
  * works through, and the tokens its model responses used. Spans are buffered
  * here and sent with the reply's streaming flush, so a report carries only
  * what changed since the last one.
@@ -43,84 +43,32 @@ export function truncateTail(text: string, maxBytes = SPAN_BYTES): string {
   return TAIL_MARKER + decoder.decode(bytes.subarray(start));
 }
 
-const json = (value: unknown) => {
-  try { return value === undefined || value === null ? undefined : truncate(JSON.stringify(value)); }
-  catch { return undefined; }
-};
-
-/** Codex's item statuses: CommandExecutionStatus, PatchApplyStatus, McpToolCallStatus. */
-const STATUS: Record<string, Span["status"]> = { inProgress: "running", completed: "ok", failed: "error", declined: "declined" };
-
 /**
- * What a span records for each ThreadItem variant the trace keeps. Messages,
- * plans and the like are the reply itself and are left out.
+ * The span kind for each canonical item the trace keeps. Compaction, plans
+ * and the like are not steps the owner needs to see, and are left out.
  */
-function describe(item: TurnItem, phase: "started" | "completed"): Omit<Span, "callId" | "startedAt" | "durationMs"> | null {
-  const done: Span["status"] = phase === "started" ? "running" : "ok";
-  const status = (value: unknown) => STATUS[String(value)] ?? done;
-  switch (item.type) {
-    case "commandExecution":
-      return {
-        kind: "command",
-        name: item.command,
-        status: item.status === "completed" && typeof item.exitCode === "number" && item.exitCode !== 0 ? "error" : status(item.status),
-        input: truncate(`$ ${item.command}\ncwd: ${item.cwd}`),
-        output: phase === "started" ? undefined
-          : truncateTail(`${item.exitCode === null || item.exitCode === undefined ? "" : `exit ${item.exitCode}\n`}${item.aggregatedOutput ?? ""}`),
-      };
-    case "fileChange": {
-      const changes: Array<{ path: string; kind: { type: string; move_path?: string | null }; diff: string }> = item.changes ?? [];
-      return {
-        kind: "fileChange",
-        name: changes.map((change) => change.path).join(", ") || "file change",
-        status: status(item.status),
-        input: truncate(changes.map((change) => `${change.kind.move_path ? `move to ${change.kind.move_path}` : change.kind.type} ${change.path}`).join("\n")),
-        output: changes.some((change) => change.diff) ? truncate(changes.map((change) => change.diff).join("\n")) : undefined,
-      };
-    }
-    case "mcpToolCall":
-      return {
-        kind: "mcpToolCall",
-        name: item.server === ASSISTANT_MCP ? item.tool : `${item.server}.${item.tool}`,
-        status: status(item.status),
-        input: json(item.arguments),
-        output: item.error?.message ? truncate(item.error.message) : json(item.result?.content),
-      };
-    case "dynamicToolCall":
-      return {
-        kind: "dynamicToolCall",
-        name: item.namespace ? `${item.namespace}.${item.tool}` : item.tool,
-        status: item.success === false ? "error" : status(item.status),
-        input: json(item.arguments),
-        output: json(item.contentItems),
-      };
-    case "webSearch":
-      return {
-        kind: "webSearch",
-        name: item.query || item.action?.url || "web search",
-        status: done,
-        input: item.query ? truncate(item.query) : undefined,
-        output: json(item.action),
-      };
-    case "imageGeneration":
-      // `result` is the image itself, in base64; the path is enough.
-      return {
-        kind: "imageGeneration",
-        name: "image generation",
-        status: item.failure ? "error" : done,
-        input: item.revisedPrompt ? truncate(item.revisedPrompt) : undefined,
-        output: item.failure ? json(item.failure) : item.savedPath ? truncate(item.savedPath) : undefined,
-      };
-    case "reasoning":
-      return {
-        kind: "reasoning",
-        name: "reasoning",
-        status: done,
-        output: item.summary?.length ? truncate(item.summary.join("\n\n")) : undefined,
-      };
-    default:
-      return null;
-  }
+const KINDS: Partial<Record<ItemType, Span["kind"]>> = {
+  command_execution: "command",
+  file_change: "fileChange",
+  mcp_tool_call: "mcpToolCall",
+  dynamic_tool_call: "dynamicToolCall",
+  web_search: "webSearch",
+  image_generation: "imageGeneration",
+  reasoning: "reasoning",
+};
+const STATUS: Record<ItemStatus, Span["status"]> = { running: "running", completed: "ok", failed: "error", declined: "declined" };
+
+/** What a span records for an item: its name, and its input and output cut to size. A command's output keeps its end. */
+function describe(item: EngineItem): Omit<Span, "callId" | "startedAt" | "durationMs"> | null {
+  const kind = KINDS[item.type];
+  if (!kind) return null;
+  return {
+    kind,
+    name: item.title,
+    status: STATUS[item.status],
+    input: item.input === undefined ? undefined : truncate(item.input),
+    output: item.output === undefined ? undefined : item.type === "command_execution" ? truncateTail(item.output) : truncate(item.output),
+  };
 }
 
 export class TurnTrace {
@@ -131,12 +79,12 @@ export class TurnTrace {
   private steps = 0;
   private usageDirty = false;
 
-  /** Records an item's start or end. False when the trace does not keep that kind of item. */
-  item(phase: "started" | "completed", item: TurnItem, atMs: number): boolean {
-    const described = describe(item, phase);
+  /** Records an item's start, change or end. False when the trace does not keep that kind of item. */
+  item(phase: "started" | "updated" | "completed", item: EngineItem, atMs: number): boolean {
+    const described = describe(item);
     if (!described) return false;
     const known = this.spans.get(item.id);
-    const reported = typeof item.durationMs === "number" ? item.durationMs : undefined;
+    const reported = item.durationMs;
     // An item seen only at its end starts where its own duration says it did.
     const startedAt = known?.startedAt ?? (phase === "completed" ? atMs - (reported ?? 0) : atMs);
     this.spans.set(item.id, {
@@ -154,7 +102,7 @@ export class TurnTrace {
     this.usage.inputTokens += last.inputTokens ?? 0;
     this.usage.cachedInputTokens += last.cachedInputTokens ?? 0;
     this.usage.outputTokens += last.outputTokens ?? 0;
-    this.usage.reasoningTokens += last.reasoningOutputTokens ?? 0;
+    this.usage.reasoningTokens += last.reasoningTokens ?? 0;
     this.usage.totalTokens += last.totalTokens ?? 0;
     this.steps += 1;
     this.usageDirty = true;
