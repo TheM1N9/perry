@@ -175,6 +175,7 @@ function Pet() {
   const notified = useRef(new Set<string>());
   const known = useRef<Set<string> | null>(null);
   const unseen = useRef<Set<string> | null>(null);
+  const news = useRef<{ ids: string[]; until: number } | null>(null);
   const writing = useRef<{ since: number; text: string } | null>(null);
   const voice = useVoice(typeof window === "undefined" ? undefined : window.perryPet);
   // The Talk hotkey: the keys Settings has, taken up by his window, which says if another app has them.
@@ -205,7 +206,8 @@ function Pet() {
   const openChat = useCallback((id: PetChatId, text?: string) => {
     setChatId(id);
     if (text !== undefined) setDraft(text);
-    setReply(null);
+    // A reply from another chat stays held up until that chat is read.
+    setReply((held) => held && held.id === id ? null : held);
     setTab("chat");
     setOpen(true);
   }, [setChatId]);
@@ -245,14 +247,22 @@ function Pet() {
     known.current = ids;
   }, [board, say]);
 
-  // Another chat with something new in it (a schedule's result, a reply you left for): he says where.
+  // Other chats with something new in them (a schedule's result, a reply you left for): he says where.
+  // Several at once, or one while he is still saying another, are said together, so none is lost.
   // His own chat's reply has its own bubble, below.
   useEffect(() => {
     if (!chats) return;
     const current = new Set(chats.filter((chat) => chat.unseen).map((chat) => chat.id as string));
     if (unseen.current) {
-      const fresh = chats.find((chat) => chat.unseen && !unseen.current!.has(chat.id) && chat.id !== chatId);
-      if (fresh) say(`New in ${fresh.title}`, undefined, 8000, () => openChat(fresh.id));
+      const fresh = chats.filter((chat) => chat.unseen && !unseen.current!.has(chat.id) && chat.id !== chatId);
+      if (fresh.length) {
+        const saying = news.current && news.current.until > Date.now() ? news.current.ids : [];
+        const ids = [...fresh.map((chat) => chat.id as string), ...saying.filter((id) => current.has(id) && !fresh.some((chat) => chat.id === id))];
+        const titles = ids.map((id) => chats.find((chat) => chat.id === id)?.title ?? "a chat");
+        const first = fresh[0].id;
+        news.current = { ids, until: Date.now() + 8000 };
+        say(ids.length === 1 ? `New in ${titles[0]}` : `New in ${ids.length} chats`, ids.length > 1 ? titles.join(", ") : undefined, 8000, () => openChat(first));
+      }
     }
     unseen.current = current;
   }, [chats, say, openChat, chatId]);
@@ -267,7 +277,13 @@ function Pet() {
     if (writing.current && !reading) setReply({ id: chatId, since: writing.current.since, streamed: writing.current.text });
     writing.current = null;
   }, [petChat, chatId, reading]);
-  useEffect(() => { if (reading) setReply(null); }, [reading]);
+  useEffect(() => { if (reading) setReply((held) => held && held.id === chatId ? null : held); }, [reading, chatId]);
+  // The saved reply, kept with it: opening another chat first leaves it still held up, and still worded.
+  useEffect(() => {
+    if (!reply || reply.id !== chatId) return;
+    const saved = newest.find((message) => message.role === "assistant" && message.createdAt >= reply.since)?.text;
+    if (saved && saved !== reply.streamed) setReply({ ...reply, streamed: saved });
+  }, [reply, chatId, newest]);
 
   // At its time, a notification from the system as well, once, in case he is behind a full-screen window.
   useEffect(() => {
@@ -364,7 +380,8 @@ function Pet() {
     const ask = asking[asking.length - 1];
     urgent = true;
     bubble = (
-      <Bubble tone="ask" title={`${ask.runner} wants to ${ASKS[ask.kind]}`} code={ask.title} detail={asking.length > 1 ? `${asking.length - 1} more waiting` : undefined}>
+      <Bubble tone="ask" title={`${ask.runner} wants to ${ASKS[ask.kind]}`} code={ask.title}
+        detail={[ask.chat && `In ${ask.chat.title}`, asking.length > 1 && `${asking.length - 1} more waiting`].filter(Boolean).join(" · ") || undefined}>
         <BubbleButton primary onClick={() => void decide({ key, id: ask.id, approved: true })}>Approve</BubbleButton>
         <BubbleButton onClick={() => void decide({ key, id: ask.id, approved: false })}>Decline</BubbleButton>
         <BubbleButton onClick={() => { setTab("needs"); setOpen(true); }}>More</BubbleButton>
