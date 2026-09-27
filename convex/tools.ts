@@ -4,6 +4,7 @@ import { z } from "zod";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { SearchResult } from "./composio";
+import { installStaged, stageSkill, type Staged } from "./lib/skills";
 import { watchProblem } from "./work";
 import type { VaultEntry } from "./vault";
 
@@ -227,6 +228,42 @@ const update_user_md = createTool({
       by: fromJob ? "job" : "assistant",
     });
     return { saved: result.changed, note: result.changed ? "Saved." : "Unchanged: it already says that." };
+  },
+});
+
+const review_skill = createTool({
+  description:
+    "Fetch a skill someone else wrote (a folder with a SKILL.md: a GitHub folder or SKILL.md address, another " +
+    "address of a SKILL.md, or a folder on this computer) to look it over before it is installed. Returns its " +
+    "name, description and files, what it would run, reach and touch, and warning signs. It is not installed: " +
+    "tell the owner plainly what it does and what it can do on this computer (commands, sites, files), call out " +
+    "every warning, and ask whether to install it. Use this for every skill from elsewhere; never copy one into " +
+    "the skills folder yourself.",
+  inputSchema: z.object({ source: z.string().min(3).max(500).describe("The skill's address, or its folder on this computer.") }),
+  execute: async (_ctx, input): Promise<Staged | { error: string }> => {
+    try {
+      return await stageSkill(input.source);
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+});
+
+const install_skill = createTool({
+  description:
+    "Install a skill you looked over with review_skill, once the owner has said yes to it after hearing what it " +
+    "does. Pass its reviewId. Codex lists it from the next turn.",
+  inputSchema: z.object({
+    reviewId: z.string().describe("From review_skill."),
+    replace: z.boolean().optional().describe("Replace a skill of the same name; only if the owner said so."),
+  }),
+  execute: async (_ctx, input): Promise<{ installed: string; path: string } | { error: string }> => {
+    try {
+      const { name, path } = installStaged(input.reviewId, input.replace === true);
+      return { installed: name, path };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
   },
 });
 
@@ -815,6 +852,8 @@ export const ALL_TOOLS = {
   list_secrets,
   use_secret,
   update_user_md,
+  review_skill,
+  install_skill,
   update_identity,
   search_chats,
   read_chat,
