@@ -1,0 +1,260 @@
+[
+  {
+    "tool": "recall",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "remember",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "read_memory",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "forget",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": false
+  },
+  {
+    "tool": "save_secret",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "list_secrets",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "use_secret",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "update_user_md",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "review_skill",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "install_skill",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "update_identity",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "search_chats",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "read_chat",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "create_job",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "find_triggers",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": false
+  },
+  {
+    "tool": "list_jobs",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "update_job",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "delete_job",
+    "inInstructions": false,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "run_job",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "add_todo",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "list_todos",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "update_todo",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "delete_todo",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "read_page",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": false
+  },
+  {
+    "tool": "browser",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "list_connectors",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "find_action",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": "not reached: needs a connected app (a fresh Perry has none, and no Composio key)"
+  },
+  {
+    "tool": "run_action",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": "not reached: needs a connected app"
+  },
+  {
+    "tool": "status_report",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "start_task",
+    "inInstructions": false,
+    "namedByCodex": false,
+    "usedWhenAsked": false
+  },
+  {
+    "tool": "queue_task",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "resume_task",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": "not reached: needs a background task stuck on a question"
+  },
+  {
+    "tool": "set_plan",
+    "inInstructions": false,
+    "namedByCodex": false,
+    "usedWhenAsked": false
+  },
+  {
+    "tool": "finish_task",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": false
+  },
+  {
+    "tool": "set_goal",
+    "inInstructions": false,
+    "namedByCodex": false,
+    "usedWhenAsked": false
+  },
+  {
+    "tool": "update_goal",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": false
+  },
+  {
+    "tool": "watch_page",
+    "inInstructions": false,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "update_watch",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "delete_watch",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "check_watches",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "share_file",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  },
+  {
+    "tool": "take_longer",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": false
+  },
+  {
+    "tool": "look_at_screen",
+    "inInstructions": true,
+    "namedByCodex": false,
+    "usedWhenAsked": true
+  }
+]

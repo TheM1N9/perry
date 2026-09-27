@@ -370,6 +370,11 @@ export class CodexEngine implements Engine {
         },
       } : {}),
       ...WINDOWS_SANDBOX,
+      // The Codex desktop app's own browser works only inside that app. Where it is installed, Codex
+      // reaches for it instead of Perry's `browser`, finds no browser, and tells the owner there is none.
+      // Naming a plugin that is not installed does nothing. Its computer use for other apps stays.
+      "plugins.browser@openai-bundled.enabled": false,
+      "plugins.unified-computer-use@openai-bundled.enabled": false,
     };
     const thread = threadId
       ? await app.request<{ thread?: { id?: string } }>("thread/resume", { threadId, cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions }, 30_000)

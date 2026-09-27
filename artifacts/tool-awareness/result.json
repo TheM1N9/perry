@@ -1,0 +1,613 @@
+{
+  "ranAt": "2026-09-27T23:59:16.583Z",
+  "engine": "codex",
+  "model": "gpt-6-luna",
+  "served": 43,
+  "checks": {
+    "codexNamesEveryTool": true,
+    "claudeNamesEveryTool": true,
+    "uses:remember": true,
+    "uses:recall": true,
+    "uses:forget": true,
+    "uses:update_user_md": true,
+    "uses:update_identity": true,
+    "uses:save_secret": true,
+    "uses:list_secrets": true,
+    "uses:use_secret": true,
+    "uses:search_chats": true,
+    "uses:read_page": true,
+    "uses:browser": true,
+    "uses:browser_submit": true,
+    "uses:look_at_screen": true,
+    "uses:share_file": true,
+    "uses:list_connectors": true,
+    "uses:trigger": true,
+    "uses:add_todo": true,
+    "uses:add_todo_2": true,
+    "uses:list_todos": true,
+    "uses:update_todo": true,
+    "uses:delete_todo": true,
+    "uses:create_job": true,
+    "uses:list_jobs": true,
+    "uses:update_job": true,
+    "uses:run_job": true,
+    "uses:delete_job": true,
+    "uses:set_goal": true,
+    "uses:update_goal": true,
+    "uses:status_report": true,
+    "uses:watch_page": true,
+    "uses:check_watches": true,
+    "uses:update_watch": true,
+    "uses:delete_watch": true,
+    "uses:task_plan": false,
+    "uses:review_skill": true,
+    "uses:install_skill": true,
+    "uses:queue_task": true
+  },
+  "notes": {
+    "codexNamesEveryTool": {
+      "named": 43,
+      "of": 43,
+      "missing": [],
+      "reply": "mcp__assistant__add_todo\nmcp__assistant__browser\nmcp__assistant__check_watches\nmcp__assistant__create_job\nmcp__assistant__delete_job\nmcp__assistant__delete_todo\nmcp__assistant__delete_watch\nmcp__assistant__find_action\nmcp__assistant__find_triggers\nmcp__assistant__finish_task\nmcp__assistant__forget\nmcp__assistant__install_skill\nmcp__assistant__list_connectors\nmcp__assistant__list_jobs\nmcp__assistant__list_secrets\nmcp__assistant__list_todos\nmcp__assistant__look_at_screen\nmcp__assistant__queue_task\nmcp__assistant__read_chat\nmcp__assistant__read_memory\nmcp__assistant__read_page\nmcp__assistant__recall\nmcp__assistant__remember\nmcp__assistant__resume_task\nmcp__assistant__review_skill\nmcp__assistant__run_action\nmcp__assistant__run_job\nmcp__assistant__save_secret\nmcp__assistant__search_chats\nmcp__assistant__set_goal\nmcp__assistant__set_plan\nmcp__assistant__share_file\nmcp__assistant__start_task\nmcp__assistant__status_report\nmcp__assistant__take_longer\nmcp__assistant__update_goal\nmcp__assistant__update_identity\nmcp__assistant__update_job\nmcp__assistant__update_todo\nmcp__assistant__update_user_md\nmcp__assistant__update_watch\nmcp__assistant__use_secret\nmcp__assistant__watch_page"
+    },
+    "claudeNamesEveryTool": {
+      "model": "default",
+      "named": 43,
+      "of": 43,
+      "missing": [],
+      "reply": "mcp__assistant__add_todo\nmcp__assistant__browser\nmcp__assistant__check_watches\nmcp__assistant__create_job\nmcp__assistant__delete_job\nmcp__assistant__delete_todo\nmcp__assistant__delete_watch\nmcp__assistant__find_action\nmcp__assistant__find_triggers\nmcp__assistant__finish_task\nmcp__assistant__forget\nmcp__assistant__install_skill\nmcp__assistant__list_connectors\nmcp__assistant__list_jobs\nmcp__assistant__list_secrets\nmcp__assistant__list_todos\nmcp__assistant__look_at_screen\nmcp__assistant__queue_task\nmcp__assistant__read_chat\nmcp__assistant__read_memory\nmcp__assistant__read_page\nmcp__assistant__recall\nmcp__assistant__remember\nmcp__assistant__resume_task\nmcp__assistant__review_skill\nmcp__assistant__run_action\nmcp__assistant__run_job\nmcp__assistant__save_secret\nmcp__assistant__search_chats\nmcp__assistant__set_goal\nmcp__assistant__set_plan\nmcp__assistant__share_file\nmcp__assistant__start_task\nmcp__assistant__status_report\nmcp__assistant__take_longer\nmcp__assistant__update_goal\nmcp__assistant__update_identity\nmcp__assistant__update_job\nmcp__assistant__update_todo\nmcp__assistant__update_user_md\nmcp__assistant__update_watch\nmcp__assistant__use_secret\nmcp__assistant__watch_page"
+    },
+    "uses:remember": {
+      "said": "From now on, always spell things the British way in your replies.",
+      "expected": [
+        "remember"
+      ],
+      "called": [
+        "remember"
+      ],
+      "otherSteps": [],
+      "reply": "I’ve saved that preference and will use British spelling from now on."
+    },
+    "uses:recall": {
+      "said": "What do you remember about me and how I like things?",
+      "expected": [
+        [
+          "recall",
+          "read_memory"
+        ]
+      ],
+      "called": [
+        "recall"
+      ],
+      "otherSteps": [],
+      "reply": "I currently remember one standing preference:\n\n- Use British spelling in replies.\n\nI don’t have any other saved personal details about you yet."
+    },
+    "uses:forget": {
+      "said": "Please forget the British spelling rule entirely, I don't want it kept.",
+      "expected": [
+        "forget"
+      ],
+      "called": [
+        "forget"
+      ],
+      "otherSteps": [],
+      "reply": "The British spelling rule has been forgotten and removed."
+    },
+    "uses:update_user_md": {
+      "said": "Some news: I moved to Bangalore last month and I run my own startup now, Prostack Labs.",
+      "expected": [
+        "update_user_md"
+      ],
+      "called": [
+        "recall",
+        "read_memory",
+        "read_memory",
+        "update_user_md"
+      ],
+      "otherSteps": [
+        "command: \"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-C"
+      ],
+      "reply": "Updated your profile: you moved to Bangalore and now run Prostack Labs."
+    },
+    "uses:update_identity": {
+      "said": "I'd like to call you Jarvis from now on.",
+      "expected": [
+        "update_identity"
+      ],
+      "called": [
+        "update_identity"
+      ],
+      "otherSteps": [],
+      "reply": "Done — you can call me Jarvis from now on."
+    },
+    "uses:save_secret": {
+      "said": "Here's my OpenWeather API key so you can check the weather for me: 0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+      "expected": [
+        "save_secret"
+      ],
+      "called": [
+        "save_secret"
+      ],
+      "otherSteps": [],
+      "reply": "Saved the OpenWeather API key under **Settings → Keys**. I won’t repeat it here."
+    },
+    "uses:list_secrets": {
+      "said": "Which logins and keys do you have saved for me?",
+      "expected": [
+        "list_secrets"
+      ],
+      "called": [
+        "list_secrets"
+      ],
+      "otherSteps": [],
+      "reply": "You have one saved key:\n\n- **OpenWeather API** — for weather lookups\n\nNo saved website logins are listed."
+    },
+    "uses:use_secret": {
+      "said": "Use my OpenWeather key to tell me the weather in Bangalore right now.",
+      "expected": [
+        "use_secret"
+      ],
+      "called": [
+        "use_secret",
+        "browser"
+      ],
+      "otherSteps": [],
+      "reply": "OpenWeather rejected the saved key as invalid, so I couldn’t retrieve Bangalore’s weather. Please update the OpenWeather key in **Settings → Keys**, then I can try again."
+    },
+    "uses:search_chats": {
+      "said": "What budget did we settle on for my Kyoto trip?",
+      "expected": [
+        "search_chats",
+        "read_chat"
+      ],
+      "called": [
+        "recall",
+        "search_chats",
+        "read_chat"
+      ],
+      "otherSteps": [],
+      "reply": "We settled on keeping the whole Kyoto trip under ₹2.4 lakh for two adults, for roughly 6–7 nights. The target was ₹50,000–₹60,000 per person for flights, with one night at a Gion ryokan."
+    },
+    "uses:read_page": {
+      "said": "What does https://example.com say?",
+      "expected": [
+        "read_page"
+      ],
+      "called": [
+        "read_page"
+      ],
+      "otherSteps": [],
+      "reply": "**Example Domain**\n\nThis domain is for documentation examples and shouldn’t be used for operations. It links to more information at IANA."
+    },
+    "uses:browser": {
+      "said": "Go to https://httpbin.org/forms/post and order a medium pizza with bacon for Sam, then tell me what the page shows after you submit it.",
+      "expected": [
+        "browser"
+      ],
+      "called": [
+        "browser",
+        "browser",
+        "browser",
+        "browser",
+        "browser"
+      ],
+      "otherSteps": [],
+      "reply": "The form was filled for Sam with a medium pizza and bacon, but the browser’s submission confirmation was declined or timed out. It was not submitted, so there’s no result page to report."
+    },
+    "uses:browser_submit": {
+      "said": "Yes, submit it.",
+      "expected": [
+        "browser"
+      ],
+      "called": [
+        "browser",
+        "browser"
+      ],
+      "otherSteps": [],
+      "reply": "The submission was still declined by the browser confirmation, so the form wasn’t submitted."
+    },
+    "uses:look_at_screen": {
+      "said": "What's this error on my screen?",
+      "expected": [
+        "look_at_screen"
+      ],
+      "called": [
+        "look_at_screen"
+      ],
+      "otherSteps": [],
+      "reply": "I can’t see the screen because the desktop pet is currently off. Turn it on under **Settings → General**, or paste a screenshot here, and I’ll explain the error."
+    },
+    "uses:share_file": {
+      "said": "Write me a short haiku about the monsoon in a text file and show it to me here.",
+      "expected": [
+        "share_file"
+      ],
+      "called": [
+        "share_file"
+      ],
+      "otherSteps": [
+        "fileChange: C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-tool-awareness-KuPc3D\\workspace\\monsoon",
+        "command: \"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-C"
+      ],
+      "reply": "[monsoon_haiku.txt](C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-tool-awareness-KuPc3D\\workspace\\monsoon_haiku.txt)\n\nMonsoon drums softly  \nRain beads shimmer on green leaves  \nEarth drinks the gray sky"
+    },
+    "uses:list_connectors": {
+      "said": "Is there anything new in my Gmail from my bank?",
+      "expected": [
+        "list_connectors"
+      ],
+      "called": [
+        "list_connectors"
+      ],
+      "otherSteps": [],
+      "reply": "Your Gmail isn’t connected here, so I can’t check it yet. Add Gmail from the connected accounts/settings page, then ask me again and I’ll look for recent messages from your bank."
+    },
+    "uses:trigger": {
+      "said": "Whenever a new email from my bank arrives, tell me what it says.",
+      "expected": [
+        [
+          "list_connectors",
+          "find_triggers"
+        ]
+      ],
+      "called": [
+        "start_task",
+        "set_plan",
+        "list_connectors",
+        "find_triggers",
+        "set_plan",
+        "finish_task"
+      ],
+      "otherSteps": [],
+      "reply": "I can set this up, but no email account is connected yet. Connect Gmail or another email account in Settings, then tell me to try again."
+    },
+    "uses:add_todo": {
+      "said": "Remind me to call Sam at 5pm today.",
+      "expected": [
+        "add_todo"
+      ],
+      "called": [
+        "add_todo"
+      ],
+      "otherSteps": [],
+      "reply": "Reminder added: call Sam today at 5:00 PM IST."
+    },
+    "uses:add_todo_2": {
+      "said": "Add milk to my list.",
+      "expected": [
+        "add_todo"
+      ],
+      "called": [
+        "add_todo"
+      ],
+      "otherSteps": [],
+      "reply": "Added “Buy milk” to your list."
+    },
+    "uses:list_todos": {
+      "said": "What's on my list?",
+      "expected": [
+        "list_todos"
+      ],
+      "called": [
+        "list_todos"
+      ],
+      "otherSteps": [],
+      "reply": "You have two open to-dos:\n\n- Call Sam — due 28 September at 11:30\n- Buy milk"
+    },
+    "uses:update_todo": {
+      "said": "I called Sam, that one's done.",
+      "expected": [
+        "update_todo"
+      ],
+      "called": [
+        "update_todo"
+      ],
+      "otherSteps": [],
+      "reply": "“Call Sam” is marked done."
+    },
+    "uses:delete_todo": {
+      "said": "Take milk off the list, I don't need it after all.",
+      "expected": [
+        "delete_todo"
+      ],
+      "called": [
+        "delete_todo"
+      ],
+      "otherSteps": [],
+      "reply": "“Buy milk” has been removed from your list."
+    },
+    "uses:create_job": {
+      "said": "Every weekday at 8am, send me a short briefing of the top tech news.",
+      "expected": [
+        "create_job"
+      ],
+      "called": [
+        "start_task",
+        "set_plan",
+        "create_job",
+        "list_jobs",
+        "update_job",
+        "list_jobs",
+        "set_plan",
+        "finish_task"
+      ],
+      "otherSteps": [],
+      "reply": "Please confirm that 8:00 AM should use your Bangalore time (IST, UTC+05:30).\n[owner: Yes, go ahead.]\nScheduled and verified: every weekday at 8:00 AM Bangalore time (IST), you’ll receive a short briefing with 3–5 top tech news items and source links."
+    },
+    "uses:list_jobs": {
+      "said": "What's scheduled?",
+      "expected": [
+        [
+          "list_jobs",
+          "status_report"
+        ]
+      ],
+      "called": [
+        "list_jobs",
+        "status_report"
+      ],
+      "otherSteps": [],
+      "reply": "You have 4 active recurring schedules:\n\n- Weekday tech news briefing — weekdays at 8:00 AM IST\n- Heartbeat — daily at 2:30 PM, 6:30 PM, 10:30 PM, and 2:30 AM IST\n- Memory consolidation — daily at 8:30 AM IST\n- Daily summary — daily at 4:00 AM IST\n\nThere are no active goals or watches. One task is blocked because no email account is connected: bank-email notifications."
+    },
+    "uses:update_job": {
+      "said": "Move the tech briefing to 9am.",
+      "expected": [
+        "update_job"
+      ],
+      "called": [
+        "update_job",
+        "list_jobs"
+      ],
+      "otherSteps": [],
+      "reply": "Moved and verified: the weekday tech news briefing now runs at 9:00 AM IST, Monday through Friday."
+    },
+    "uses:run_job": {
+      "said": "Run the tech briefing now, I want it today.",
+      "expected": [
+        "run_job"
+      ],
+      "called": [
+        "run_job"
+      ],
+      "otherSteps": [],
+      "reply": "The tech briefing is running now. You’ll receive its results here when it finishes; the regular weekday schedule remains at 9:00 AM IST."
+    },
+    "uses:delete_job": {
+      "said": "Actually, delete the tech briefing altogether.",
+      "expected": [
+        "delete_job"
+      ],
+      "called": [
+        "delete_job",
+        "list_jobs"
+      ],
+      "otherSteps": [],
+      "reply": "Deleted the weekday tech news briefing. It’s no longer scheduled."
+    },
+    "uses:set_goal": {
+      "said": "I want to run a half marathon by December. Keep track of it with me: a first 10k, then 15k, then the race.",
+      "expected": [
+        "set_goal"
+      ],
+      "called": [
+        "start_task",
+        "set_plan",
+        "set_goal",
+        "set_plan",
+        "finish_task"
+      ],
+      "otherSteps": [],
+      "reply": "Your December 2026 half marathon goal is set and tracked:\n\n1. First 10K — active  \n2. First 15K  \n3. Half marathon race\n\nWhen you complete a milestone, tell me the distance and date, and I’ll update the tracker."
+    },
+    "uses:update_goal": {
+      "said": "I ran my first 10k this morning!",
+      "expected": [
+        "update_goal"
+      ],
+      "called": [
+        "update_goal",
+        "remember"
+      ],
+      "otherSteps": [],
+      "reply": "Amazing work! Your first 10K milestone is marked complete toward the half marathon goal, and I saved today’s result in your daily notes."
+    },
+    "uses:status_report": {
+      "said": "What are you working on for me at the moment?",
+      "expected": [
+        "status_report"
+      ],
+      "called": [
+        "status_report"
+      ],
+      "otherSteps": [],
+      "reply": "Right now:\n\n- No task is actively running.\n- Your half-marathon goal is active: first 10K complete; 15K and race remain.\n- The weekday tech briefing is set up for 8:00 AM IST, Monday–Friday.\n- Bank-email notifications are blocked until you connect an email account."
+    },
+    "uses:watch_page": {
+      "said": "Let me know when https://example.com changes.",
+      "expected": [
+        "watch_page"
+      ],
+      "called": [
+        "watch_page"
+      ],
+      "otherSteps": [],
+      "reply": "I’m watching https://example.com once a day and will let you know if it changes."
+    },
+    "uses:check_watches": {
+      "said": "Check that example.com watch now.",
+      "expected": [
+        "check_watches"
+      ],
+      "called": [
+        "status_report",
+        "check_watches"
+      ],
+      "otherSteps": [],
+      "reply": "The example.com watch was checked. It recorded a baseline and found no change to report."
+    },
+    "uses:update_watch": {
+      "said": "Pause the example.com watch for now.",
+      "expected": [
+        "update_watch"
+      ],
+      "called": [
+        "update_watch",
+        "status_report"
+      ],
+      "otherSteps": [],
+      "reply": "The example.com watch is now paused."
+    },
+    "uses:delete_watch": {
+      "said": "Actually, stop watching example.com altogether.",
+      "expected": [
+        "delete_watch"
+      ],
+      "called": [
+        "delete_watch",
+        "status_report"
+      ],
+      "otherSteps": [],
+      "reply": "The example.com watch has been deleted and is no longer being monitored."
+    },
+    "uses:task_plan": {
+      "said": "Plan my wife's birthday dinner end to end: find three restaurants in Indiranagar, Bangalore that take groups of 20, compare them on price and reviews, pick the best, and draft the invitation text.",
+      "expected": [
+        "start_task",
+        "set_plan"
+      ],
+      "called": [],
+      "otherSteps": [
+        "webSearch: best restaurants Indiranagar Bangalore private dining group 20 price reviews ...",
+        "webSearch: Toit Indiranagar group booking 20 price per person official",
+        "webSearch: Smoke House Deli Indiranagar group booking private events price",
+        "webSearch: The Fatty Bao Indiranagar group booking private events price",
+        "webSearch: Vesparo Pulse Indiranagar reviews price per person",
+        "webSearch: site:smokehousedeli.in Indiranagar private events group booking ..."
+      ],
+      "reply": "For a 20-person birthday dinner in Indiranagar, I’d shortlist these:\n\n| Restaurant | Group fit | Approx. cost | Review signal | Best for |\n|---|---|---:|---|---|\n| **Toit Indiranagar** | Officially handles group packages and may offer a private section; contact required for larger groups. [Toit group enquiries](https://toit.in/contact-us/), [private-event FAQ](https://toit.in/faq/) | ~₹900/person before taxes, based on ₹1,800 for two with alcohol. [Listing](https://www.zomato.com/id/bangalore/to",
+      "runs": [
+        {
+          "id": "v4fbnf02d4g7a6bpgq9wsz0t3z",
+          "startedAt": 1790553437816,
+          "since": 1790553437812,
+          "status": "ok",
+          "toolCalls": [
+            "web_search",
+            "web_search",
+            "web_search",
+            "web_search",
+            "web_search",
+            "web_search"
+          ],
+          "spans": [
+            "reasoning:reasoning",
+            "webSearch:best restaurants Indiranagar Bangalore private dining group 20 price reviews ...",
+            "reasoning:reasoning",
+            "webSearch:Toit Indiranagar group booking 20 price per person official",
+            "webSearch:Smoke House Deli Indiranagar group booking private events price",
+            "webSearch:The Fatty Bao Indiranagar group booking private events price",
+            "webSearch:Vesparo Pulse Indiranagar reviews price per person",
+            "reasoning:reasoning",
+            "webSearch:site:smokehousedeli.in Indiranagar private events group booking ...",
+            "reasoning:reasoning"
+          ]
+        }
+      ]
+    },
+    "uses:review_skill": {
+      "said": "Install this skill for me: https://github.com/anthropics/skills/tree/main/skills/pdf",
+      "expected": [
+        "review_skill"
+      ],
+      "called": [
+        "review_skill"
+      ],
+      "otherSteps": [
+        "command: \"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-C"
+      ],
+      "reply": "I reviewed the skill. It provides PDF utilities for reading, extracting text/tables, merging, splitting, rotating, creating, OCR, and filling forms. It includes local Python scripts and references Anthropic’s site.\n\nWarning: its files are under Anthropic’s proprietary license, which restricts copying, redistribution, and derivative works.\n\nWould you like me to install it?"
+    },
+    "uses:install_skill": {
+      "said": "Looks fine, yes, install it.",
+      "expected": [
+        "install_skill"
+      ],
+      "called": [
+        "install_skill"
+      ],
+      "otherSteps": [],
+      "reply": "Installed the `pdf` skill successfully. It will be available on your next turn."
+    },
+    "uses:queue_task": {
+      "said": "No rush on this one: in the background, write me a three-line comparison of Notion and Obsidian, and get back to me here when it's done.",
+      "expected": [
+        "queue_task"
+      ],
+      "called": [
+        "queue_task"
+      ],
+      "otherSteps": [],
+      "reply": "Queued. I’ll post the three-line comparison here when the background task finishes."
+    },
+    "neverUsed": [],
+    "declinedApprovals": [
+      "browser: Click “Submit order”",
+      "browser: Click “Submit order”"
+    ],
+    "runnerLog": [
+      "\u001b[2m  saved turn kaav1fdthxg4f51e5yet624h8x\u001b[0m",
+      "\u001b[2m  named a chat \"Kyoto trip budget\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn amz1vjbxnzy2993m29jca9wymk\u001b[0m",
+      "\u001b[2m  named a chat \"Example.com content\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn r42kmz1jvbpdka7k4t716840gz\u001b[0m",
+      "\u001b[2m  saved turn f8absjvb2w887vdjxabsnve5fa\u001b[0m",
+      "\u001b[2m  saved turn xebq7cheyhg2x0a2r6cstp3fj1\u001b[0m",
+      "\u001b[2m  named a chat \"Screen error\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn r901exyj3cj1cxqj3vjzj6q4yz\u001b[0m",
+      "\u001b[2m  named a chat \"Monsoon Haiku\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn btb81ab846asdg3tq2h1hjt7at\u001b[0m",
+      "\u001b[2m  named a chat \"Bank emails in Gmail\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn 3vbncd5qbae9214xpsyks7bmj8\u001b[0m",
+      "\u001b[2m  named a chat \"Summarize bank emails\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn jjqzkajaywp74e5vvxcfvw9stv\u001b[0m",
+      "\u001b[2m  named a chat \"Call Sam reminder\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn 0jfwt51yqrw5nhgbc4hpwv3pa5\u001b[0m",
+      "\u001b[2m  saved turn q6rkqcdhn7v1qpp54taagm5f9f\u001b[0m",
+      "\u001b[2m  named a chat \"What's on my list\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn d0jk3091ngd205gx0fmtckxvjm\u001b[0m",
+      "\u001b[2m  saved turn r5fyc5jw3941s1bwb8nhg6bj3q\u001b[0m",
+      "\u001b[2m  saved turn 5ww1pkha6k20twe8x778f2hgtt\u001b[0m",
+      "\u001b[2m  named a chat \"Weekday tech news briefing\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn arppcnm65szrxtjyd87n4ftrdc\u001b[0m",
+      "\u001b[2m  saved turn wqgph5tkymycn6tx2acfajbavq\u001b[0m",
+      "\u001b[2m  named a chat \"Schedule overview\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn knfx23wkxstd3gyzt714qzxnpg\u001b[0m",
+      "\u001b[2m  saved turn t94wtzvnzc1mpfpp8knsdm5xce\u001b[0m",
+      "\u001b[2m  saved turn eskrnhfp4zrf4dnn1eq26vmbs6\u001b[0m",
+      "\u001b[2m  saved turn b3jy6hwvgt50fvvtfgssfb5sz3\u001b[0m",
+      "\u001b[2m  saved turn q19xmx5wq347rve7nn3pt4t2q9\u001b[0m",
+      "\u001b[2m  named a chat \"Half marathon training plan\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn d9daqby2h5d1jpxt53fjdygh5s\u001b[0m",
+      "\u001b[2m  named a chat \"First 10K Run\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn w1pnk4z6gp8ypac6gjbvmtnn7c\u001b[0m",
+      "\u001b[2m  named a chat \"Current work status\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn 44ssd7yrqaa4gx0333nhjypjf0\u001b[0m",
+      "\u001b[2m  named a chat \"Monitor website changes\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn ks07gnzg5f9n3zbmmqqxaymmdw\u001b[0m",
+      "\u001b[2m  named a chat \"Check example.com now\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn tpyxw3rtt2zreeqg4jqepc43qr\u001b[0m",
+      "\u001b[2m  saved turn 4ce3636a7e63mf1txt1qt6extd\u001b[0m",
+      "\u001b[2m  saved turn jnb9f9vzgt6sajkawa4y5fq70a\u001b[0m",
+      "\u001b[2m  named a chat \"Plan wife's birthday dinner\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn xxmmpxa4anxgwyfd5wdbabve42\u001b[0m",
+      "\u001b[2m  named a chat \"Install PDF skill\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn f1zcazv8f73yzx44t3mvz2fk0t\u001b[0m",
+      "\u001b[2m  saved turn b9m8syf994fgmhhhz3tv1s766p\u001b[0m",
+      "\u001b[2m  named a chat \"Notion vs Obsidian comparison\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn pyz2evrgcfjdk092370zhkmqdc\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": false
+}

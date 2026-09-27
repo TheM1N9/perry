@@ -721,11 +721,13 @@ async function main() {
           let sent = "";
           let streamTimer: ReturnType<typeof setTimeout> | null = null;
           const trace = new TurnTrace();
-          const report = async () => {
+          // One report at a time: one still on its way when the turn ends would arrive after it, and be dropped.
+          let reporting = Promise.resolve();
+          const report = () => (reporting = reporting.then(async () => {
             const changes = trace.take();
             if (!changes) return;
             await client.mutation(api.codex.traceTurn, { token, id: job._id, ...changes }).catch(() => trace.retry(changes));
-          };
+          }));
           const flush = () => {
             streamTimer = null;
             void report();

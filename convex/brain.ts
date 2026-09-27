@@ -157,8 +157,13 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   // Which channel this is, where the reply goes, and where what it sets up will report (channels.ts).
   const where: string = await ctx.runQuery(internal.channels.describe, { conversationId: conversation._id })
     + (conversation.project ? "\n\nThis is a project chat: what you remember here stays here (remember saves with scope \"this chat\" unless it belongs everywhere), and other chats cannot read it." : "");
+  // A goal is slow, so "I ran my first 10k" often comes in a chat that never mentioned it: the active ones come with every turn.
+  const active = (await ctx.runQuery(internal.work.listGoals, {})).filter((goal) => goal.status === "active").slice(0, 10);
+  const goals = active.length
+    ? `The owner's active goals; when they reach a milestone, tick it off with update_goal:\n${active.map((goal) => `- ${goal.title} (id ${goal._id}): ${goal.milestones.map((step) => `[${step.done ? "x" : " "}] ${step.title}`).join(", ")}`).join("\n")}`
+    : "";
   return {
-    instructions: [persona.identity, INSTRUCTIONS, now, where, memory?.instructions, persona.user].filter(Boolean).join("\n\n"),
+    instructions: [persona.identity, INSTRUCTIONS, now, where, goals, memory?.instructions, persona.user].filter(Boolean).join("\n\n"),
     recalled: memory?.recalled || undefined,
     recallDigest: memory?.digest,
     history,
