@@ -76,6 +76,9 @@ export const describe = internalQuery({
     const away = await home(ctx);
     const awayApp = away && away.channel !== "web" ? APP[away.channel] : null;
     const elsewhere = "Memory and USER.md are the same on every channel; each conversation keeps its own history, and search_chats and read_chat reach the others.";
+    if (chat.taskId) {
+      return `## Where you are\n\nThis is the chat of a background task you are working on by yourself; the owner is not reading along. Report through the task tools (set_plan, finish_task): only what you finish with reaches them, where they asked for the task; a reply alone reaches no one. ${elsewhere}`;
+    }
     if (chat.jobId) {
       const to = await targetOf(ctx, chat._id);
       const phone = to && to.channel !== "web";

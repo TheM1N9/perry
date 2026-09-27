@@ -48,6 +48,7 @@ import type * as runner from "../runner.js";
 import type * as runs from "../runs.js";
 import type * as screen from "../screen.js";
 import type * as secrets from "../secrets.js";
+import type * as tasks from "../tasks.js";
 import type * as titles from "../titles.js";
 import type * as todos from "../todos.js";
 import type * as tools from "../tools.js";
@@ -106,6 +107,7 @@ declare const fullApi: ApiFromModules<{
   runs: typeof runs;
   screen: typeof screen;
   secrets: typeof secrets;
+  tasks: typeof tasks;
   titles: typeof titles;
   todos: typeof todos;
   tools: typeof tools;

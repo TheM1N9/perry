@@ -399,7 +399,7 @@ export const handleTurn = internalAction({
       args.title,
     );
     // The owner wrote: what Perry sent them on its own is not being ignored (notify.ts).
-    if (!conversation.jobId && !args.hidden) await ctx.runMutation(internal.installation.ownerWrote, {});
+    if (!conversation.jobId && !conversation.taskId && !args.hidden) await ctx.runMutation(internal.installation.ownerWrote, {});
     const telegramToken = channel === "telegram"
       ? await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" })
       : null;
@@ -499,7 +499,7 @@ export const handleTurn = internalAction({
           attachments,
           ...(args.hidden ? { hidden: true } : {}),
           // The owner's message joins a reply that is running; a job's prompt waits its turn.
-          policy: conversation.jobId ? "queue" : "steer",
+          policy: conversation.jobId || conversation.taskId ? "queue" : "steer",
         });
         delegated = true;
         if (sent.length) await ctx.runMutation(internal.conversations.clearUnprompted, { id: conversation._id, through: sent[sent.length - 1].at });
@@ -510,6 +510,7 @@ export const handleTurn = internalAction({
         console.error(`turn failed: ${message}`);
         await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access, settings.engine), error: message.slice(0, 1000) });
         if (conversation.jobId) await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, error: message });
+        if (conversation.taskId) await ctx.runMutation(internal.tasks.afterTurn, { id: conversation.taskId, error: message });
         // The message stays in the chat with the error under it, as a turn would have saved it: the owner's
         // (in any channel, so the dashboard shows what failed) and a job's prompt alike. It never became a turn.
         if (!args.hidden) {

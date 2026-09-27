@@ -205,6 +205,14 @@ export default defineSchema({
       v.literal("cancelled"),
     ),
     goalId: v.optional(v.id("goals")),
+    /** Where it was asked for: its question and result go back there (tasks.ts). Unset: the owner's messaging app. */
+    origin: v.optional(v.id("conversations")),
+    /** The chat a background task works in, a turn at a time. Unset for a task only tracked in a chat (start_task). */
+    conversationId: v.optional(v.id("conversations")),
+    /** Turns it has taken, against tasks.MAX_TURNS. */
+    turns: v.optional(v.number()),
+    /** The owner's answer to its question, for its next turn. */
+    answer: v.optional(v.string()),
     /** The agent's own checklist. Rewritten wholesale by `plan`. */
     plan: v.array(
       v.object({
@@ -499,6 +507,8 @@ export default defineSchema({
     title: v.optional(v.string()),
     /** Set on the chat where a scheduled job's results collect. */
     jobId: v.optional(v.id("jobs")),
+    /** Set on the chat a background task works in (tasks.ts). */
+    taskId: v.optional(v.id("tasks")),
     parentConversationId: v.optional(v.id("conversations")),
     branchedFromMessageId: v.optional(v.string()),
     pendingTurns: v.optional(v.number()),
