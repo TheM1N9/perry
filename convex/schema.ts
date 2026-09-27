@@ -718,7 +718,8 @@ export default defineSchema({
   approvals: defineTable({
     runnerId: v.id("runners"),
     conversationId: v.optional(v.id("conversations")),
-    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write")),
+    /** "browser": a step in Perry's own browser that buys, sends or posts (lib/browser.ts, tools.ts). */
+    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser")),
     title: v.string(),
     detail: v.optional(v.string()),
     cwd: v.optional(v.string()),

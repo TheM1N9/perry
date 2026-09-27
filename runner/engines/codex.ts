@@ -365,7 +365,8 @@ export class CodexEngine implements Engine {
           url: tools.http.url,
           http_headers: tools.http.headers,
           default_tools_approval_mode: "approve",
-          tool_timeout_sec: 120,
+          // Long enough for a browser step to wait for the owner's yes (approvals.APPROVAL_TTL_MS).
+          tool_timeout_sec: 660,
         },
       } : {}),
       ...WINDOWS_SANDBOX,

@@ -285,6 +285,48 @@ export const settle = mutation({
   },
 });
 
+// --- Perry's browser ---------------------------------------------------
+
+/**
+ * A step in Perry's own browser that buys, sends, posts or the like (tools.ts,
+ * browser). Asked like a command: where the chat speaks, on the pet, and on
+ * the phone when the owner is away; a chat with Full access goes ahead. The
+ * tool waits for the answer (decisionOf).
+ */
+export const askForBrowser = internalMutation({
+  args: { conversationId: v.optional(v.id("conversations")), title: v.string(), detail: v.optional(v.string()) },
+  returns: v.object({ id: v.id("approvals"), status: v.string() }),
+  handler: async (ctx, args) => {
+    const chat = args.conversationId ? await ctx.db.get(args.conversationId) : null;
+    const runnerId = chat?.codexRunnerId ?? (await ctx.db.query("runners").first())?._id;
+    if (!runnerId) throw new Error("No computer is connected to ask on.");
+    const now = Date.now();
+    const row = { runnerId, conversationId: args.conversationId, kind: "browser" as const, title: args.title.slice(0, 500), detail: args.detail?.slice(0, 1000), createdAt: now };
+    if (chat?.access === "full") {
+      const id = await ctx.db.insert("approvals", { ...row, status: "auto", decidedBy: "trust", decidedAt: now });
+      return { id, status: "auto" };
+    }
+    const id = await ctx.db.insert("approvals", { ...row, status: "pending" });
+    await ask(ctx, id);
+    return { id, status: "pending" };
+  },
+});
+
+/** Where a browser step's request stands; one nobody answered in time is settled as expired. */
+export const decisionOf = internalMutation({
+  args: { id: v.id("approvals") },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (!row) return "declined";
+    if (row.status === "pending" && row.createdAt < Date.now() - APPROVAL_TTL_MS) {
+      await settleRow(ctx, row, { approved: false, by: "timeout" });
+      return "expired";
+    }
+    return row.status;
+  },
+});
+
 // --- Asking the owner ---------------------------------------------------
 
 /** Ask where the request's conversation speaks, and see whether the owner is around to answer it there. */
@@ -324,7 +366,7 @@ export const escalate = internalMutation({
 
 // --- Telegram ------------------------------------------------------------
 
-const ASK = { command: "run", file: "change files", write: "write a file" } as const;
+const ASK = { command: "run", file: "change files", write: "write a file", browser: "do this in its browser" } as const;
 
 type View = Doc<"approvals"> & { runner: string; chat?: string };
 
@@ -553,7 +595,7 @@ type Review = NonNullable<Doc<"approvals">["review"]>;
 
 export type PendingApproval = {
   id: Id<"approvals">;
-  kind: Kind;
+  kind: Doc<"approvals">["kind"];
   title: string;
   detail?: string;
   cwd?: string;
@@ -610,7 +652,7 @@ export const decide = mutation({
 
 export type DecidedApproval = {
   id: Id<"approvals">;
-  kind: Kind;
+  kind: Doc<"approvals">["kind"];
   title: string;
   cwd?: string;
   runner: string;
