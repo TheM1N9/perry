@@ -19,7 +19,7 @@ import { countdown, dueLabel } from "@/lib/when";
 import { PlatypusArt } from "@/components/dashboard/platypus";
 import { updateReady, useUpdates } from "@/components/dashboard/updates";
 import { QuickAdd, StreakBadge, TodoRows } from "@/components/todos/todos";
-import { PetChat, type PetChatId, type Shot, type TakenShot } from "./chat";
+import { PetChat, keepPicture, type PetChatId, type Shot, type TakenShot } from "./chat";
 import { Empty } from "./empty";
 import { PetNeedsYou } from "./needs-you";
 import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
@@ -406,6 +406,30 @@ function Pet() {
     setOpen(true);
   }, [say]);
   useEffect(() => window.perryPet?.onLook?.(showShot), [showShot]);
+
+  // Perry asking to see the screen in a chat (convex/screen.ts): the picture is taken here, kept, and handed back.
+  const lookRequests = useQuery(api.screen.asked, window.perryPet ? { key } : "skip");
+  const fulfilLook = useMutation(api.screen.fulfil);
+  const looking = useRef(new Set<string>());
+  useEffect(() => {
+    for (const request of lookRequests ?? []) {
+      if (looking.current.has(request.id)) continue;
+      looking.current.add(request.id);
+      void (async () => {
+        try {
+          if (!window.perryPet?.look) throw new Error("This desktop pet is from before Perry could look at the screen; ask the owner to restart it (Quit from its tray icon, then turn it on again).");
+          const taken = await window.perryPet.look();
+          const picture = taken[request.which] ?? taken.screen ?? taken.window;
+          if (!picture) throw new Error(taken.error ?? "The desktop pet could not take the picture.");
+          const kept = await keepPicture(picture.image);
+          await fulfilLook({ key, id: request.id, path: kept.path, name: picture.name });
+          say("I looked at your screen", request.why, 6000);
+        } catch (error) {
+          await fulfilLook({ key, id: request.id, error: error instanceof Error ? error.message : String(error) }).catch(() => {});
+        }
+      })();
+    }
+  }, [lookRequests, key, fulfilLook, say]);
   const lookNow = useCallback(async () => {
     const taken = await window.perryPet?.look?.().catch((error: unknown) => ({ error: String(error) }));
     if (taken) showShot(taken);

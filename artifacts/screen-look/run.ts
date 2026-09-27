@@ -28,6 +28,11 @@ import { openChat, sleep } from "../browser";
 //      top of everything (the owner's own pet is one), or anything but the
 //      window in front; or it comes back empty.
 //   7. The test's pet touches the owner's own pet or its login entry.
+//   8. Asked about something on screen, Perry cannot look by himself: the
+//      tool never reaches the pet, the pet never answers, or the picture
+//      never reaches Codex. Or he looks without the owner being able to see
+//      what he saw (not in the chat, nothing on the pet).
+//   9. Turned off in Settings, he looks anyway.
 //
 // Pictures of the real screen hold whatever the owner has open, so none is
 // kept or described: only whether it is of the window in front (read here
@@ -204,6 +209,35 @@ try {
   const shown = await evaluate(`[...document.querySelectorAll("img")].some((img) => img.alt.startsWith("screen-") && img.complete && img.naturalWidth > 0)`);
   await shot("pet-sent.png");
   check("chatShowsThePicture", Boolean(shown) && served?.status === 200 && served.headers.get("content-type") === "image/png", { shown, served: served?.status });
+
+  // --- 8, 9. Perry looks by himself, in a chat, through the pet -----------------------------------------------
+  // The whole screen now holds the terminal with its error.
+  await evaluate(`window.__taken = { ...window.__taken, screen: { name: "Whole screen", image: window.__taken.window.image } }; true`);
+  const model = process.env.PERRY_E2E_MODEL;
+  const helpChat = await call<string>("dashboard:createChat", { key: KEY });
+  if (model) await call("dashboard:setChatModel", { key: KEY, id: helpChat, model });
+  const ask = async (text: string) => {
+    await call("dashboard:sendChat", { key: KEY, id: helpChat, text });
+    await until(async () => (await call<{ isRunning: boolean }>("dashboard:getChat", { key: KEY, id: helpChat })).isRunning, "the reply to start", 60).catch(() => {});
+    await idle(helpChat);
+    return (await messagesOf(helpChat)).find((message) => message.role === "assistant")?.text ?? "";
+  };
+  const callsBefore = await evaluate(`window.__look.calls`) as number;
+  // The owner is on the web chat, the pet's panel shut: his bubble says when he looks, for a few seconds.
+  await evaluate(`document.querySelector('button[aria-label="Close"]')?.click(); true`);
+  let bubbleSeen = false;
+  const watching = (async () => { for (let i = 0; i < 600 && !bubbleSeen; i++) { bubbleSeen = Boolean(await evaluate(`document.body.innerText.includes("I looked at your screen")`).catch(() => false)); if (bubbleSeen) await shot("pet-perry-looked.png"); else await sleep(500); } })();
+  const looked = await ask("Something just broke in my terminal. Can you look at my screen and tell me what the error is? One line.");
+  await Promise.race([watching, sleep(1_000)]);
+  const shared = (await messagesOf(helpChat)).filter((message) => message.role === "assistant").flatMap((message) => message.attachments);
+  check("perryLooksWhenNeeded", /ENOSPC|no space|disk (is )?full|out of (disk )?space/i.test(looked) && (await evaluate(`window.__look.calls`)) === callsBefore + 1, looked);
+  check("whatHeSawIsInTheChat", shared.some((file) => file.contentType === "image/png"), shared);
+  check("petSaysHeLooked", bubbleSeen);
+  await call("screen:setSetting", { key: KEY, enabled: false });
+  const offCalls = await evaluate(`window.__look.calls`) as number;
+  const refused = await ask("Look at my screen once more and tell me what you see now.");
+  check("offMeansNoLooking", (await evaluate(`window.__look.calls`)) === offCalls, refused);
+  await call("screen:setSetting", { key: KEY, enabled: true });
 
   // --- 5. Settings ------------------------------------------------------------------------------------------
   await until(async () => (await call<{ pet: { keys: Record<string, { hotkey?: string }> } }>("dashboard:getShortcuts", { key: KEY })).pet.keys.look?.hotkey === LOOK_KEYS, "the pet to report its Look keys", 20).catch(() => {});

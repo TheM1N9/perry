@@ -44,6 +44,7 @@ import * as pet from "../convex/pet";
 import * as recovery from "../convex/recovery";
 import * as runner from "../convex/runner";
 import * as runs from "../convex/runs";
+import * as screen from "../convex/screen";
 import * as secrets from "../convex/secrets";
 import * as titles from "../convex/titles";
 import * as todos from "../convex/todos";
@@ -98,6 +99,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "recovery": recovery,
   "runner": runner,
   "runs": runs,
+  "screen": screen,
   "secrets": secrets,
   "titles": titles,
   "todos": todos,

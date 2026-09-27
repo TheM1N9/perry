@@ -45,6 +45,8 @@ can run their own copy, and every copy is separate.
   transcribed on your machine.
 - **"What's this error?"** Another hotkey shows the companion the window
   you're in, so you can ask about it. You see the picture before it's sent.
+  Perry can also look for himself when a question is about your screen, and
+  the chat shows what he saw. You can turn that off in Settings.
 
 ## Install
 

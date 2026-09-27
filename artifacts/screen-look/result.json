@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-27T09:10:49.993Z",
+  "ranAt": "2026-09-27T10:40:15.324Z",
   "checks": {
     "petTakesTheLookKeys": true,
     "hotkeyPictureWaitsInTheChat": true,
@@ -8,6 +8,10 @@
     "perryReadsThePicture": true,
     "previewGoneOnceSent": true,
     "chatShowsThePicture": true,
+    "perryLooksWhenNeeded": true,
+    "whatHeSawIsInTheChat": true,
+    "petSaysHeLooked": true,
+    "offMeansNoLooking": true,
     "talkKeysStillReported": true,
     "settingsListsLookAndItsStanding": true,
     "noPageErrors": true,
@@ -28,23 +32,32 @@
       "removed": true
     },
     "pictureGoesWithTheMessage": {
-      "id": "ms85h9m8hpfcs08ycg3a13hbfr",
+      "id": "tkyrj72107zfbqx2768f29hm9z",
       "role": "user",
       "text": "What went wrong here, and what should I do? Two short lines.",
-      "createdAt": 1790500236583,
+      "createdAt": 1790505576291,
       "attachments": [
         {
-          "url": "/api/media/abq4ge18medddf39k7qejcway4",
-          "fileName": "screen-2026-09-27-09-10-28.png",
+          "url": "/api/media/gh760pe67jcnmcac1nscjv8kjy",
+          "fileName": "screen-2026-09-27-10-39-29.png",
           "contentType": "image/png"
         }
       ]
     },
-    "perryReadsThePicture": "`npm install` failed because the drive ran out of space (`ENOSPC`).\nFree up disk space or move the project to a roomier drive, then rerun `npm install`.",
+    "perryReadsThePicture": "`npm install` ran out of disk space while writing files (`ENOSPC: no space left on device`).  \nFree space on the drive (including npm cache/temp files), then rerun `npm install`.",
     "chatShowsThePicture": {
       "shown": true,
       "served": 200
     },
+    "perryLooksWhenNeeded": "`npm ERR! ENOSPC: no space left on device`",
+    "whatHeSawIsInTheChat": [
+      {
+        "url": "/api/media/ks11ztnzfyqzs8e6ex8jn5g50a",
+        "fileName": "f286a274-99de-46a5-b015-3d156d9394cc.png",
+        "contentType": "image/png"
+      }
+    ],
+    "offMeansNoLooking": "Screen viewing is turned off. Please use the desktop pet’s Look hotkey to show me the screen.",
     "talkKeysStillReported": "Talk to Perry\n\nAnywhere on this computer, with the desktop pet running: hold, speak and let go, or tap, speak and tap again.\n\nWorking in the desktop pet.\n\nCtrl\nShift\nSpace",
     "settingsListsLookAndItsStanding": {
       "working": "Show Perry the screen\n\nAnywhere on this computer, with the desktop pet running: a picture of the window you're in goes into his chat, for you to check and ask about.\n\nWorking in the desktop pet.\n\nCtrl\nAlt\nShift\nSpace",
@@ -62,7 +75,7 @@
       "clickThrough": false
     },
     "realScreenPicture": {
-      "screenBytes": 671090
+      "screenBytes": 690782
     },
     "realPetTakesTheLookKeys": {
       "hotkey": "CommandOrControl+Alt+Shift+Space"

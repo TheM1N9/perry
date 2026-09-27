@@ -45,6 +45,7 @@ import type * as pet from "../pet.js";
 import type * as recovery from "../recovery.js";
 import type * as runner from "../runner.js";
 import type * as runs from "../runs.js";
+import type * as screen from "../screen.js";
 import type * as secrets from "../secrets.js";
 import type * as titles from "../titles.js";
 import type * as todos from "../todos.js";
@@ -101,6 +102,7 @@ declare const fullApi: ApiFromModules<{
   recovery: typeof recovery;
   runner: typeof runner;
   runs: typeof runs;
+  screen: typeof screen;
   secrets: typeof secrets;
   titles: typeof titles;
   todos: typeof todos;

@@ -32,6 +32,16 @@ export type TakenShot = { window?: Picture; screen?: Picture; error?: string };
 /** A picture waiting to be sent, and which of the two goes. */
 export type Shot = TakenShot & { use: "window" | "screen" };
 
+/** Keep a picture of the screen on this computer, as the dashboard keeps a file you attach: where it is, and what it is called. */
+export async function keepPicture(image: string): Promise<{ path: string; fileName: string; size: number }> {
+  const file = await (await fetch(image)).blob();
+  const fileName = `screen-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`;
+  const saved = await fetch("/api/media", { method: "POST", headers: { "x-file-name": fileName }, body: file });
+  const body = await saved.json().catch(() => null) as { path?: string; error?: string } | null;
+  if (!saved.ok || !body?.path) throw new Error(body?.error ?? "Could not keep the picture of the screen.");
+  return { path: body.path, fileName, size: file.size };
+}
+
 export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey, byHotkey, sendSignal, onTalk, onTalkSend, onTalkCancel, shot, onShot, onLook, lookKeys }: {
   chatId: PetChatId;
   onChatId: (id: PetChatId) => void;
@@ -106,12 +116,8 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
     }
   };
   const attach = async (id: Id<"conversations">, messageKey: string, { image }: Picture) => {
-    const file = await (await fetch(image)).blob();
-    const fileName = `screen-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`;
-    const saved = await fetch("/api/media", { method: "POST", headers: { "x-file-name": fileName }, body: file });
-    const body = await saved.json().catch(() => null) as { path?: string; error?: string } | null;
-    if (!saved.ok || !body?.path) throw new Error(body?.error ?? "Could not keep the picture of the screen.");
-    return await registerAttachment({ key, conversationId: id, messageKey, localPath: body.path, fileName, contentType: "image/png", size: file.size });
+    const { path, fileName, size } = await keepPicture(image);
+    return await registerAttachment({ key, conversationId: id, messageKey, localPath: path, fileName, contentType: "image/png", size });
   };
   // What was said with the hotkey goes as soon as it is written down.
   const sent = useRef(sendSignal);
