@@ -6,29 +6,34 @@
  *
  *   This process dials out to Perry's server: calls are plain HTTP requests,
  *   and a server-sent event stream says when a query it follows has changed,
- *   so new Codex turns reach it over the connection it opened. Nothing listens
+ *   so new turns reach it over the connection it opened. Nothing listens
  *   on a port here. There is no inbound firewall rule, no tunnel and no public
  *   address, so this machine cannot be found by anyone scanning the internet.
  *   That is the single most important line in this file.
+ *
+ * The work itself is done by an engine: a coding agent on this machine,
+ * signed in with the owner's own subscription (runner/engine.ts; Codex is the
+ * first, runner/engines/codex.ts). This file knows engines only through that
+ * interface.
  *
  * What protects you, in order of how much it actually matters:
  *
  *   1. This process. Close the terminal, or stop the service, and Assistant
  *      has no hands again.
- *   2. Approval. Whatever Codex wants to do beyond its sandbox is decided by
- *      the chat's access (convex/approvals.ts): on Ask it waits for you, here,
- *      in the dashboard or where you are talking; on Auto a Codex reviewer
- *      clears routine actions first and asks you about the rest. A rule you
- *      saved with "Always allow" runs it either way. A request from no chat
- *      follows the runner's own policy (--policy ask|review|trust).
- *   3. Codex's sandbox. Codex works in the directory you chose, and may write
- *      only there and in Perry's own folders (runner/codex.ts).
+ *   2. Approval. Whatever the engine wants to do beyond its sandbox is
+ *      decided by the chat's access (convex/approvals.ts): on Ask it waits for
+ *      you, here, in the dashboard or where you are talking; on Auto a
+ *      reviewer clears routine actions first and asks you about the rest. A
+ *      rule you saved with "Always allow" runs it either way. A request from
+ *      no chat follows the runner's own policy (--policy ask|review|trust).
+ *   3. The engine's sandbox. Codex works in the directory you chose, and may
+ *      write only there and in Perry's own folders (runner/engines/codex.ts).
  *   4. A denylist of commands that are never worth running.
  *
  *   A chat the owner put on Full access gives up 2, 3 and 4 for its turns:
- *   Codex runs without its sandbox and with approval policy "never", so its
- *   own commands never reach this process to be asked about or denied. They
- *   still show in the run's trace.
+ *   the engine runs without its sandbox and never asks, so its own commands
+ *   never reach this process to be asked about or denied. They still show in
+ *   the run's trace.
  *
  * Nothing here runs at boot or survives a reboot unless you ask for it with
  * `pnpm run service install` (scripts/service.ts). Without a terminal, as a
@@ -38,29 +43,46 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
-import { homedir, hostname, platform } from "node:os";
+import { hostname, platform } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { fileURLToPath } from "node:url";
 import { BackendClient } from "../client/backend";
 import { getFunctionName, type FunctionArgs, type FunctionReference, type FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { runLabel } from "../convex/lib/commands";
-import { ASSISTANT_MCP, CodexAppServer, TurnFailed, type GeneratedImage, type RpcMessage } from "./codex";
-import { isQuickThread } from "./quick";
+import { ENGINE_LABELS } from "../convex/lib/engines";
+import {
+  optionOf, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type PerryTools,
+  type TurnHandle, type TurnResult, type TurnSink,
+} from "./engine";
+import { createEngines } from "./engines";
 import { review } from "./review";
 import { nameChat } from "./title";
 import { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig, type RunnerConfig } from "./home";
 import { TurnTrace } from "./trace";
 
 const CONFIG_DIR = HOME;
-const CODEX_RESULTS = PATHS.codexResults;
+/** Finished turns not yet delivered. The folder keeps its name from before engines, so none is lost on update. */
+const TURN_RESULTS = PATHS.codexResults;
 
 const CHECKIN_MS = 30_000;
 /** Matches APPROVAL_TTL_MS in convex/approvals.ts: an unanswered request is declined. */
 const APPROVAL_TIMEOUT_MS = 10 * 60_000;
 /** Shared files past this stay on the machine rather than go to Convex for Telegram. */
 const SHARED_UPLOAD_LIMIT = 200 * 1024 * 1024;
+/**
+ * The turn watchdog: a turn still running after this is interrupted, and its
+ * engine ended, process group and all, if it has not stopped KILL_GRACE_MS
+ * later. PERRY_TURN_TIMEOUT_MS changes it.
+ */
+const TURN_TIMEOUT_MS = Number(process.env.PERRY_TURN_TIMEOUT_MS) || 8 * 60_000;
+/** A compaction waits on its own for up to ten minutes; this is past that. */
+const COMPACT_TIMEOUT_MS = 11 * 60_000;
+const KILL_GRACE_MS = 30_000;
+/** Perry's tools over stdio, for engines that take MCP servers only as a command. */
+const MCP_BRIDGE = fileURLToPath(new URL("./mcp-bridge.ts", import.meta.url));
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -74,7 +96,7 @@ type Policy = "ask" | "review" | "trust";
 /** The policy lives on the runner's record in Convex; `auto` in runner.json is from before policies. */
 type Flags = RunnerConfig & { policy?: Policy; help?: boolean };
 const POLICIES: Policy[] = ["ask", "review", "trust"];
-type CodexResult = { response?: string; error?: string; stopped?: boolean; compacted?: boolean; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
+type TurnRecord = { response?: string; error?: string; stopped?: boolean; compacted?: boolean; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
 
 /**
  * Commands that are never a good idea from an agent, regardless of approval.
@@ -228,10 +250,71 @@ async function main() {
     subscribe();
   };
 
-  /** The chat whose Codex turn is running, so an approval can say which chat asked. */
-  let activeConversation: Id<"conversations"> | undefined;
   // Without a terminal, stdin may already be closed and would read as "no"; ask only the dashboard then.
   const terminal = process.stdin.isTTY ? rl : null;
+
+  // --- Engines ---------------------------------------------------------------
+
+  const engines = createEngines({ warn: (line) => console.log(yellow(`  ${line}`)) });
+  /** What each engine's last probe found. */
+  const statuses = new Map<EngineKind, EngineStatus>();
+  const probeEngines = async () => {
+    const found = await Promise.all([...engines.values()].map((engine) => engine.status()
+      .catch((error): EngineStatus => ({ kind: engine.kind, installed: false, signedIn: false, auth: {}, models: [], error: message(error) }))));
+    for (const status of found) statuses.set(status.kind, status);
+    await client.mutation(api.engines.report, { token, engines: found });
+  };
+  let probing: Promise<void> | null = null;
+  /**
+   * Report every engine's status. Probes never overlap: a heartbeat while one
+   * runs shares it, and `fresh` (after a sign-in) waits for it and probes again.
+   */
+  const refreshEngines = async (fresh = false): Promise<void> => {
+    while (probing) {
+      const running = probing;
+      if (!fresh) return running;
+      await running.catch(() => {});
+      fresh = false;
+    }
+    probing = probeEngines()
+      .catch((error) => console.error(red(`  could not report the engines: ${message(error)}`)))
+      .finally(() => { probing = null; });
+    return probing;
+  };
+  /**
+   * An engine for quick side turns (the reviewer, chat names): the preferred
+   * one when it runs them and is signed in, else any that is.
+   */
+  const quickEngine = (preferred?: EngineKind): Engine | undefined => {
+    const ready = (engine?: Engine) => engine?.quickTurn && engine.capabilities.quickTurns && statuses.get(engine.kind)?.signedIn ? engine : undefined;
+    return ready(preferred ? engines.get(preferred) : undefined) ?? [...engines.values()].find((engine) => ready(engine));
+  };
+  /**
+   * The turn watchdog. Past `limitMs` the turn is interrupted, and if it has
+   * not ended KILL_GRACE_MS later, or never started, its engine is ended,
+   * process group and all, which fails what it was doing.
+   */
+  const watchdog = (engine: Engine, limitMs: number, handle: () => TurnHandle | undefined) => {
+    let expired = false;
+    let kill: ReturnType<typeof setTimeout> | undefined;
+    const timer = setTimeout(() => {
+      expired = true;
+      const running = handle();
+      console.log(yellow(`  ${engine.label} ran past ${Math.round(limitMs / 60_000)} minutes; stopping it`));
+      if (running) void engine.interrupt(running).catch(() => {});
+      kill = setTimeout(() => {
+        console.log(yellow(`  ${engine.label} did not stop; ending it`));
+        engine.kill();
+      }, running ? KILL_GRACE_MS : 0);
+    }, limitMs);
+    return {
+      expired: () => expired,
+      why: `It ran for more than ${Math.round(limitMs / 60_000)} minutes, so it was stopped.`,
+      done: () => { clearTimeout(timer); clearTimeout(kill); },
+    };
+  };
+
+  // --- Approvals -------------------------------------------------------------
 
   type Request = {
     kind: "command" | "file";
@@ -239,7 +322,7 @@ async function main() {
     detail: string | null;
     cwd?: string;
     paths?: string[];
-    /** Codex's proposed command prefix, which "Always allow" may remember instead of the exact command. */
+    /** The engine's proposed command prefix, which "Always allow" may remember instead of the exact command. */
     amendment?: string[];
     /** More for the reviewer to judge by than is worth storing, such as a diff. */
     evidence?: string;
@@ -249,8 +332,9 @@ async function main() {
    * Whether something may run here. The hard deny list is checked before this
    * is called; Convex then applies the owner's saved rules and this runner's
    * policy, and says whether to run it, have the reviewer look, or ask.
+   * `conversationId` is the chat that asked, whose access decides.
    */
-  const approve = async (request: Request): Promise<boolean> => {
+  const approve = async (request: Request, conversationId?: Id<"conversations">, engine?: EngineKind): Promise<boolean> => {
     const { id, next } = await client.mutation(api.approvals.request, {
       token,
       kind: request.kind,
@@ -259,23 +343,22 @@ async function main() {
       cwd: request.cwd,
       paths: request.paths,
       amendment: request.amendment,
-      conversationId: activeConversation,
+      conversationId,
     });
     if (next === "run") {
       console.log(`${cyan("  allowed")} ${request.what}`);
       return true;
     }
     if (next === "review") {
-      const verdict = await ensureCodex()
-        .then((app) => review(app, {
-          kind: request.kind,
-          title: request.what,
-          cwd: request.cwd,
-          workdir,
-          paths: request.paths,
-          detail: [request.detail, request.evidence].filter(Boolean).join("\n\n") || undefined,
-        }))
-        .catch((error) => ({ verdict: "error" as const, reason: message(error), model: undefined, ms: 0 }));
+      // The chat's own engine reviews when it can; with none here that can, the owner is asked.
+      const verdict = await review(quickEngine(engine), {
+        kind: request.kind,
+        title: request.what,
+        cwd: request.cwd,
+        workdir,
+        paths: request.paths,
+        detail: [request.detail, request.evidence].filter(Boolean).join("\n\n") || undefined,
+      });
       const run = await client.mutation(api.approvals.reviewed, { token, id, ...verdict });
       if (run) {
         console.log(`${cyan("  reviewed")} ${request.what} ${dim(`(${verdict.reason})`)}`);
@@ -329,114 +412,70 @@ async function main() {
     });
   };
 
-  let codex: CodexAppServer | null = null;
-  let lastCodexAttempt = 0;
-  const ensureCodex = async () => {
-    if (codex && !codex.closed) return codex;
-    if (Date.now() - lastCodexAttempt < 30_000) {
-      throw new Error("Codex app-server is unavailable. Retrying shortly.");
+  /**
+   * An engine asks before acting. The deny list goes first, then approve():
+   * the answer is the id of the engine's own option to allow once or decline,
+   * never one that allows for the rest of the session.
+   */
+  const answer = async (request: EngineRequest, conversationId: Id<"conversations">, engine: EngineKind): Promise<string> => {
+    const { detail } = request;
+    if (request.type === "exec_command_approval") {
+      const command = detail.command ?? "command";
+      const approved = !denied(command) && await approve({
+        kind: "command",
+        what: command,
+        detail: detail.reason ?? null,
+        cwd: detail.cwd,
+        amendment: detail.proposedPrefix,
+      }, conversationId, engine);
+      return optionOf(request, approved ? "accept" : "decline");
     }
-    lastCodexAttempt = Date.now();
-    const instance = new CodexAppServer();
-    try {
-      await instance.start();
-      // Without them Codex still works, just without the agent's own skills.
-      await instance.useSkills().catch((error) => console.log(yellow(/unknown variant/.test(message(error))
-        ? "  Perry's skills are unavailable: this Codex is too old to load them. Update it: npm install -g @openai/codex"
-        : `  skills unavailable: ${message(error)}`)));
-      instance.on("serverRequest", (request: RpcMessage) => {
-        void (async () => {
-          const method = request.method ?? "";
-          if (isQuickThread(request.params?.threadId)) {
-            // The reviewer and chat names only answer; they never get to act or ask.
-            instance.rejectRequest(request.id, "This turn only answers.");
-          } else if (method === "item/commandExecution/requestApproval") {
-            const params = request.params ?? {};
-            const command = params.command ?? "Codex command";
-            const approved = !denied(command) && await approve({
-              kind: "command",
-              what: command,
-              detail: params.reason ?? null,
-              cwd: params.cwd ?? undefined,
-              amendment: params.proposedExecpolicyAmendment ?? undefined,
-            });
-            instance.respond(request.id, { decision: approved ? "accept" : "decline" });
-          } else if (method === "item/fileChange/requestApproval") {
-            const params = request.params ?? {};
-            const changes = instance.changesFor(params.itemId);
-            const paths = changes.map((change) => resolve(workdir, change.path));
-            const listed = changes.map((change, i) => `${change.kind?.type ?? "change"} ${paths[i]}`).join("\n");
-            const approved = await approve({
-              kind: "file",
-              what: paths.length === 1 ? `change ${paths[0]}` : paths.length ? `change ${paths.length} files` : "Codex file change",
-              detail: [params.reason, listed].filter(Boolean).join("\n") || null,
-              paths,
-              evidence: changes.map((change) => change.diff ?? "").join("\n").slice(0, 6000) || undefined,
-            });
-            instance.respond(request.id, { decision: approved ? "accept" : "decline" });
-          } else if (method === "mcpServer/elicitation/request" && request.params?.serverName === ASSISTANT_MCP) {
-            // Our own tools. Consequential actions are gated in chat, as on the gateway path.
-            instance.respond(request.id, { action: "accept", content: {}, _meta: null });
-          } else if (method === "item/permissions/requestApproval") {
-            instance.respond(request.id, { permissions: {} });
-          } else {
-            instance.rejectRequest(request.id, `Assistant does not support ${method}.`);
-          }
-        })().catch((error) => instance.rejectRequest(request.id, message(error)));
-      });
-      instance.on("closed", () => { if (codex === instance) codex = null; });
-      codex = instance;
-      return instance;
-    } catch (error) {
-      instance.close();
-      throw error;
+    if (request.type === "file_change_approval") {
+      const changes = detail.changes ?? [];
+      const paths = changes.map((change) => change.path);
+      const listed = changes.map((change) => `${change.kind ?? "change"} ${change.path}`).join("\n");
+      const approved = await approve({
+        kind: "file",
+        what: paths.length === 1 ? `change ${paths[0]}` : paths.length ? `change ${paths.length} files` : "file change",
+        detail: [detail.reason, listed].filter(Boolean).join("\n") || null,
+        paths,
+        evidence: changes.map((change) => change.diff ?? "").join("\n").slice(0, 6000) || undefined,
+      }, conversationId, engine);
+      return optionOf(request, approved ? "accept" : "decline");
     }
-  };
-
-  const refreshCodexAccount = async () => {
-    try {
-      const app = await ensureCodex();
-      const account = await app.account();
-      const models = account.authMode === "chatgpt" ? await app.models().catch(() => undefined) : undefined;
-      await client.mutation(api.codex.reportAccount, { token, ...account, models });
-    } catch (error) {
-      await client.mutation(api.codex.reportAccount, {
-        token,
-        available: false,
-        error: message(error),
-      });
-    }
+    // Wider permissions, and questions from other tools, have no place to be asked yet.
+    return optionOf(request, "decline");
   };
 
   const checkInAndShare = async () => { await checkIn(); };
-  await client.mutation(api.codex.recoverAuth, { token });
-  await refreshCodexAccount();
-  mkdirSync(CODEX_RESULTS, { recursive: true });
-  const resultPath = (id: string) => join(CODEX_RESULTS, `${id}.json`);
-  const savedResult = (id: string): CodexResult | null => {
+  await client.mutation(api.engines.recoverAuth, { token });
+  await refreshEngines();
+  mkdirSync(TURN_RESULTS, { recursive: true });
+  const resultPath = (id: string) => join(TURN_RESULTS, `${id}.json`);
+  const savedResult = (id: string): TurnRecord | null => {
     try { return JSON.parse(readFileSync(resultPath(id), "utf8")); }
     catch { return null; }
   };
-  const saveResult = (id: string, result: CodexResult) => {
+  const saveResult = (id: string, result: TurnRecord) => {
     const target = resultPath(id);
     const temporary = `${target}.tmp`;
     writeFileSync(temporary, JSON.stringify(result), { encoding: "utf8", mode: 0o600 });
     renameSync(temporary, target);
-    console.log(dim(`  saved Codex turn ${id}`));
+    console.log(dim(`  saved turn ${id}`));
   };
-  const recoverCodexTurns = async (markIncomplete: boolean) => {
+  const recoverTurns = async (markIncomplete: boolean) => {
     const running = await client.query(api.codex.runningTurns, { token });
     for (const job of running) {
       const result = savedResult(job._id);
       if (result || markIncomplete) {
         await client.mutation(api.codex.finishTurn, {
           token, id: job._id,
-          ...(result ?? { error: "Runner stopped during this Codex turn. Gateway fallback will handle it." }),
+          ...(result ?? { error: "Runner stopped during this turn. Gateway fallback will handle it." }),
         });
       }
     }
   };
-  await recoverCodexTurns(true);
+  await recoverTurns(true);
   // The server rewrites runner.json when it connects this computer anew (a first start on the local
   // backend, say); a runner still holding the old address starts over, and perry run starts it again.
   const configWatch = setInterval(() => {
@@ -450,42 +489,37 @@ async function main() {
 
   const heartbeat = setInterval(() => {
     void checkInAndShare();
-    void refreshCodexAccount();
-    void recoverCodexTurns(false).catch((error) => console.error(red(`  Codex delivery retry failed: ${message(error)}`)));
+    void refreshEngines();
+    void recoverTurns(false).catch((error) => console.error(red(`  turn delivery retry failed: ${message(error)}`)));
   }, CHECKIN_MS);
   console.log(green("  connected.\n"));
 
-  const handleCodexAuth = async (request: { id: number; kind: "login" | "logout" }) => {
-    const claimed = await client.mutation(api.codex.claimAuth, { token, id: request.id });
+  /** Sign an engine in or out, as asked in Settings, saying what the owner must do meanwhile. */
+  const handleAuth = async (request: { engine: EngineKind; id: number; kind: "login" | "logout" }) => {
+    const claimed = await client.mutation(api.engines.claimAuth, { token, engine: request.engine, id: request.id });
     if (!claimed) return;
-    const update = (payload: { status: "running" | "done" | "error"; verificationUrl?: string; userCode?: string; error?: string }) => client.mutation(api.codex.updateAuth, {
-      token, id: request.id, ...payload,
-    });
+    const update = (payload: Omit<FunctionArgs<typeof api.engines.updateAuth>, "token" | "engine" | "id">) =>
+      client.mutation(api.engines.updateAuth, { token, engine: request.engine, id: request.id, ...payload });
     try {
-      const app = await ensureCodex();
+      const engine = engines.get(request.engine);
+      if (!engine) throw new Error(`${ENGINE_LABELS[request.engine]} is not on this computer's runner yet. Update Perry here.`);
       if (request.kind === "logout") {
-        await app.request("account/logout", {});
+        await engine.logout();
       } else {
-        const account = await app.account();
-        if (account.authMode !== "chatgpt") {
-          const login = await app.request<{ type?: string; loginId?: string; verificationUrl?: string; userCode?: string }>("account/login/start", { type: "chatgptDeviceCode" });
-          if (login.type !== "chatgptDeviceCode" || !login.loginId || !login.verificationUrl || !login.userCode) {
-            throw new Error("Codex did not return a device code.");
-          }
-          await update({ status: "running", verificationUrl: login.verificationUrl, userCode: login.userCode });
-          await app.waitForLogin(login.loginId);
-        }
+        const flow = await engine.login();
+        if (flow.interaction) await update({ status: "running", interaction: flow.interaction });
+        await flow.done;
       }
-      await refreshCodexAccount();
+      await refreshEngines(true);
       await update({ status: "done" });
     } catch (error) {
       await update({ status: "error", error: message(error) });
-      await refreshCodexAccount();
+      await refreshEngines(true);
     }
   };
 
-  watch(api.codex.queuedAuth, { token }, (request) => {
-    if (request) void handleCodexAuth(request);
+  watch(api.engines.queuedAuth, { token }, (requests) => {
+    for (const request of requests ?? []) void handleAuth(request);
   });
 
   const upload = async (turnId: Id<"codexTurns">, bytes: Buffer<ArrayBuffer>, contentType: string) => {
@@ -502,7 +536,7 @@ async function main() {
   // chat gets a download link instead, so the upload stops somewhere sensible.
   // The web and WhatsApp read generated files from this machine; Telegram needs them uploaded.
   const keepMedia = async (turnId: Id<"codexTurns">, channel: "web" | "telegram" | "whatsapp", images: GeneratedImage[] = []) => {
-    const media: NonNullable<CodexResult["media"]> = [];
+    const media: NonNullable<TurnRecord["media"]> = [];
     for (const image of images) {
       try {
         if (channel !== "telegram") {
@@ -539,7 +573,7 @@ async function main() {
   };
 
   // Attachments stored in the cloud (a Telegram photo, say) are fetched into the
-  // uploads folder first, so Codex reads every attachment from this disk.
+  // uploads folder first, so the engine reads every attachment from this disk.
   const localise = async (attachments: NonNullable<Doc<"codexTurns">["attachments"]> = []) => Promise.all(attachments.map(async (attachment) => {
     if (attachment.localPath || !attachment.url) return attachment;
     try {
@@ -556,54 +590,82 @@ async function main() {
     }
   }));
 
-  let codexTurnBusy = false;
-  let codexQueue: Doc<"codexTurns">[] = [];
-  // The turn Codex is working on, and the turns the owner asked to stop.
-  let current: { jobId: Id<"codexTurns">; threadId: string; turnId: string } | null = null;
+  /** Perry's tools for a turn: over HTTP with this runner's token, or through the stdio bridge. */
+  const toolsFor = (mcpUrl?: string): PerryTools | undefined => {
+    if (!mcpUrl) return undefined;
+    const address = client.resolve(mcpUrl);
+    return {
+      name: "assistant",
+      http: { url: address, headers: { Authorization: `Bearer ${token}` } },
+      stdio: { command: process.execPath, args: [MCP_BRIDGE], env: { PERRY_MCP_URL: address, PERRY_MCP_TOKEN: token } },
+    };
+  };
+
+  /** Compact a chat's session the way its engine can. */
+  const compact = async (engine: Engine, cursor: string, access: Doc<"codexTurns">["access"]) => {
+    const how = engine.capabilities.compaction;
+    if (how.type === "native" && engine.compact) return await engine.compact(cursor, workdir);
+    if (how.type === "slash-command") {
+      const done = await engine.runTurn(
+        { resumeCursor: cursor, instructions: "", prompt: how.command, attachments: [], cwd: workdir, access: access ?? "supervised" },
+        { onSession: async () => {}, onRequest: async (request) => optionOf(request, "decline") },
+      );
+      if (done.state !== "completed") throw new Error(done.error ?? `${engine.label} did not compact.`);
+      return;
+    }
+    throw new Error(`${engine.label} cannot compact a chat.`);
+  };
+
+  let turnBusy = false;
+  let turnQueue: Doc<"codexTurns">[] = [];
+  // The turn an engine is working on, and the turns the owner asked to stop.
+  let current: { jobId: Id<"codexTurns">; engine: Engine; handle: TurnHandle } | null = null;
   let stopRequested = new Set<string>();
   const interruptIfAsked = () => {
-    if (!current || !stopRequested.has(current.jobId) || !codex) return;
-    console.log(yellow("  stopping the Codex turn, as asked"));
-    void codex.interrupt(current.threadId, current.turnId).catch((error) => console.error(red(`  Could not stop the Codex turn: ${message(error)}`)));
+    if (!current || !stopRequested.has(current.jobId)) return;
+    const { engine, handle } = current;
+    console.log(yellow(`  stopping the ${engine.label} turn, as asked`));
+    void engine.interrupt(handle).catch((error) => console.error(red(`  Could not stop the ${engine.label} turn: ${message(error)}`)));
   };
-  // Messages the owner sent while the turn runs, and those already handed to Codex.
+  // Messages the owner sent while the turn runs, and those already handed to the engine.
   let pendingSteers: Array<{ _id: Id<"codexSteers">; turnId: Id<"codexTurns">; prompt: string; attachments?: Doc<"codexTurns">["attachments"] }> = [];
   const steered = new Map<string, Promise<unknown>>();
   /**
-   * Hand each new message for the running turn to Codex with turn/steer, then
-   * tell Convex whether Codex took it. One it refused ("no active turn to
-   * steer", a turn id mismatch) is queued as a turn of its own there.
+   * Hand each new message for the running turn to its engine, then tell Convex
+   * whether it took it. One it refused ("no active turn to steer", a turn id
+   * mismatch), or an engine that takes one message at a time, is queued as a
+   * turn of its own there.
    */
   const steerIfAsked = () => {
-    if (!current || !codex) return;
-    const { jobId, threadId, turnId } = current;
-    const app = codex;
+    if (!current) return;
+    const { jobId, engine, handle } = current;
     for (const steer of pendingSteers) {
       if (steer.turnId !== jobId || steered.has(steer._id)) continue;
       steered.set(steer._id, (async () => {
         try {
-          await app.steer(threadId, turnId, steer.prompt, await localise(steer.attachments));
-          console.log(dim("  steered the Codex turn with a new message"));
+          const mode = engine.capabilities.steer;
+          if (!engine.steer || (mode !== "native" && mode !== "concurrent-prompt")) throw new Error(`${engine.label} takes one message at a time`);
+          await engine.steer(handle, { prompt: steer.prompt, attachments: await localise(steer.attachments) });
+          console.log(dim(`  steered the ${engine.label} turn with a new message`));
           await client.mutation(api.codex.ackSteer, { token, id: steer._id, applied: true });
         } catch (error) {
-          console.log(yellow(`  could not steer the Codex turn, so the message waits its turn: ${message(error)}`));
+          console.log(yellow(`  could not steer the ${engine.label} turn, so the message waits its turn: ${message(error)}`));
           await client.mutation(api.codex.ackSteer, { token, id: steer._id, applied: false, error: message(error) });
         }
       })().catch((error) => console.error(red(`  Could not report a steer: ${message(error)}`))));
     }
   };
-  const pumpCodex = async () => {
-    if (codexTurnBusy) return;
-    codexTurnBusy = true;
+  const pumpTurns = async () => {
+    if (turnBusy) return;
+    turnBusy = true;
     try {
-      while (codexQueue.length > 0) {
-        const next = codexQueue.shift()!;
+      while (turnQueue.length > 0) {
+        const next = turnQueue.shift()!;
         const job = await client.mutation(api.codex.claimTurn, { token, id: next._id });
         if (!job) continue;
-        activeConversation = job.conversationId;
         let result = savedResult(job._id);
         if (!result) {
-          // The reply so far, and the trace of what Codex is doing, go to Convex
+          // The reply so far, and the trace of what the engine is doing, go to Convex
           // about three times a second while the turn runs.
           let latest = "";
           let sent = "";
@@ -622,75 +684,77 @@ async function main() {
             void client.mutation(api.codex.streamTurn, { token, id: job._id, text: latest }).catch(() => {});
           };
           const schedule = () => { streamTimer ??= setTimeout(flush, 300); };
-          // What the run records: the model, the effort sent, and full access when it was.
-          const label = runLabel(job.requestedModel, job.requestedEffort, job.access);
+          const kind = job.engine;
+          const engine = engines.get(kind);
+          // What the run records: the engine and model, the effort sent, and full access when it was.
+          const label = runLabel(job.requestedModel, job.requestedEffort, job.access, kind);
           if (job.access === "full" && job.kind !== "compact") {
-            console.log(yellow("  full access: this turn runs without the sandbox, and Codex does not ask"));
+            console.log(yellow(`  full access: this turn runs without the sandbox, and ${engine?.label ?? "the engine"} does not ask`));
           } else if (job.access === "auto" && job.kind !== "compact") {
             console.log(dim("  auto: each command is reviewed before it runs; risky ones wait for you"));
           }
+          let dog: ReturnType<typeof watchdog> | undefined;
           try {
-            const app = await ensureCodex();
+            if (!engine) throw new Error(`${ENGINE_LABELS[kind]} is not on this computer's runner. Update Perry here, or pick another engine's model.`);
             if (job.kind === "compact") {
-              if (!job.codexThreadId) throw new Error("This chat has no Codex thread to compact yet.");
-              console.log(dim("  compacting a chat's Codex thread"));
-              await app.compact(job.codexThreadId, workdir);
-              result = { response: "Compacted.", compacted: true, model: "codex subscription" };
+              if (!job.resumeCursor) throw new Error("This chat has no session to compact yet.");
+              console.log(dim(`  compacting a chat's ${engine.label} session`));
+              dog = watchdog(engine, COMPACT_TIMEOUT_MS, () => undefined);
+              await compact(engine, job.resumeCursor, job.access).finally(dog.done);
+              result = { response: "Compacted.", compacted: true, model: runLabel(undefined, undefined, undefined, kind) };
             } else {
-              const completed = await app.runTurn({
-                threadId: job.codexThreadId,
+              const sink: TurnSink = {
+                onSession: (cursor, replaces) => client.mutation(api.codex.setResume, { token, id: job._id, cursor, ...(replaces ? { replaces } : {}) }),
+                onStarted: (handle) => {
+                  current = { jobId: job._id, engine, handle };
+                  void client.mutation(api.codex.setCodexTurn, { token, id: job._id, codexTurnId: handle.turnId }).catch(() => {});
+                  interruptIfAsked();
+                  steerIfAsked();
+                },
+                onEvent: (event) => {
+                  if (event.type === "text") {
+                    if (event.stream !== "assistant") return;
+                    latest = event.text;
+                    schedule();
+                  } else if (event.type === "item") {
+                    if (trace.item(event.phase, event.item, event.atMs)) schedule();
+                  } else if (event.state !== "unavailable") {
+                    trace.addUsage(event.usage);
+                    schedule();
+                  }
+                },
+                onRequest: (request) => answer(request, job.conversationId, kind),
+              };
+              dog = watchdog(engine, TURN_TIMEOUT_MS, () => current?.jobId === job._id ? current.handle : undefined);
+              const outcome: TurnResult = await engine.runTurn({
+                resumeCursor: job.resumeCursor,
                 instructions: job.instructions,
                 history: job.history,
                 recalled: job.recalled,
                 prompt: job.prompt,
+                attachments: await localise(job.attachments),
                 cwd: workdir,
                 model: job.requestedModel,
                 effort: job.requestedEffort,
-                access: job.access,
-                tools: job.mcpUrl ? { url: client.resolve(job.mcpUrl), token } : undefined,
-                attachments: await localise(job.attachments),
-                onThread: (threadId) => client.mutation(api.codex.setThread, { token, id: job._id, threadId }),
-                onText: (text) => {
-                  latest = text;
-                  schedule();
-                },
-                onStarted: (turn) => {
-                  current = { jobId: job._id, ...turn };
-                  void client.mutation(api.codex.setCodexTurn, { token, id: job._id, codexTurnId: turn.turnId }).catch(() => {});
-                  interruptIfAsked();
-                  steerIfAsked();
-                },
-                onItem: (phase, item, atMs) => {
-                  if (trace.item(phase, item, atMs)) schedule();
-                },
-                onUsage: (usage) => {
-                  trace.addUsage(usage);
-                  schedule();
-                },
-              });
-              const media = await keepMedia(job._id, job.channel, completed.images);
+                access: job.access ?? "supervised",
+                tools: toolsFor(job.mcpUrl),
+              }, sink).finally(dog.done);
+              const media = await keepMedia(job._id, job.channel, outcome.images);
+              // A late failure keeps what the turn had already produced.
+              const failed = outcome.state === "failed" || dog.expired();
               result = {
-                response: completed.response,
-                ...(completed.interrupted ? { stopped: true } : {}),
-                ...(completed.compacted ? { compacted: true } : {}),
+                ...(failed ? { error: dog.expired() ? dog.why : outcome.error ?? `The ${engine.label} turn failed.` } : {}),
+                ...(outcome.text || !failed ? { response: outcome.text } : {}),
+                ...(!failed && outcome.state !== "completed" ? { stopped: true } : {}),
+                ...(outcome.compacted ? { compacted: true } : {}),
                 model: label,
                 ...(media.length ? { media } : {}),
               };
             }
           } catch (error) {
-            // A late failure keeps what the turn had already produced.
-            const partial = error instanceof TurnFailed ? error.partial : null;
-            const media = await keepMedia(job._id, job.channel, partial?.images);
-            result = {
-              error: message(error),
-              ...(partial?.text ? { response: partial.text } : {}),
-              ...(partial?.compacted ? { compacted: true } : {}),
-              model: label,
-              ...(media.length ? { media } : {}),
-            };
+            result = { error: dog?.expired() ? dog.why : message(error), model: label };
           } finally {
             current = null;
-            activeConversation = undefined;
           }
           if (streamTimer) clearTimeout(streamTimer);
           // A steer still being answered must be recorded as applied or not
@@ -703,17 +767,17 @@ async function main() {
           await report();
         }
         await client.mutation(api.codex.finishTurn, { token, id: job._id, ...result });
-        codexQueue = await client.query(api.codex.queuedTurns, { token });
+        turnQueue = await client.query(api.codex.queuedTurns, { token });
       }
     } catch (error) {
-      console.error(red(`  Codex turn failed: ${message(error)}`));
+      console.error(red(`  turn failed: ${message(error)}`));
     } finally {
-      codexTurnBusy = false;
+      turnBusy = false;
     }
   };
   watch(api.codex.queuedTurns, { token }, (jobs) => {
-    codexQueue = jobs ?? [];
-    void pumpCodex();
+    turnQueue = jobs ?? [];
+    void pumpTurns();
   });
   watch(api.codex.stopRequests, { token }, (ids) => {
     stopRequested = new Set(ids ?? []);
@@ -725,19 +789,22 @@ async function main() {
   });
 
   // New web chats to name, beside whatever turn is running. A failure leaves
-  // the chat titled with its first message.
+  // the chat titled with its first message; so does a computer with no engine
+  // that runs quick turns, which leaves the naming to one that has.
   const naming = new Set<string>();
   watch(api.titles.pending, { token }, (requests) => {
     for (const request of requests ?? []) {
       if (naming.has(request.id)) continue;
+      const namer = quickEngine();
+      if (!namer) return;
       naming.add(request.id);
       void (async () => {
         if (!await client.mutation(api.titles.claim, { token, id: request.id })) return;
         let title: string | undefined;
         try {
-          const named = await nameChat(await ensureCodex(), request.text);
+          const named = await nameChat(namer, request.text);
           title = named.title;
-          console.log(dim(`  named a chat "${title}" (${named.model ?? "Codex default"})`));
+          console.log(dim(`  named a chat "${title}" (${named.model ?? `${namer.label} default`})`));
         } catch (error) {
           console.log(yellow(`  could not name a chat: ${message(error)}`));
         }
@@ -750,7 +817,7 @@ async function main() {
 
   const stop = async () => {
     clearInterval(heartbeat);
-    codex?.close();
+    for (const engine of engines.values()) engine.kill();
     rl?.close();
     client.close();
     console.log(dim("\n  runner stopped. Assistant has no hands here now.\n"));
@@ -762,9 +829,9 @@ async function main() {
 }
 
 /**
- * One process per runner token. Two would both claim that runner's Codex
- * turns, and Codex lets only one process write to a thread, so every other
- * turn in a chat would fail with "thread already has an active writer".
+ * One process per runner token. Two would both claim that runner's turns,
+ * and an engine lets only one process write to a session (Codex: "thread
+ * already has an active writer"), so every other turn in a chat would fail.
  */
 function holdLock(token: string) {
   mkdirSync(CONFIG_DIR, { recursive: true });

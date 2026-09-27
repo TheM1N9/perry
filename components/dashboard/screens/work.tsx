@@ -7,6 +7,8 @@ import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import type { JobView } from "@/convex/jobs";
+import { enginesOf, modelKey, modelsOf, parseModelKey } from "@/convex/lib/commands";
+import { ENGINE_LABELS } from "@/convex/lib/engines";
 import { ago, fullDate, plural, useNow } from "@/lib/format";
 import { describeSchedule } from "@/lib/when";
 import { useSession } from "@/lib/session";
@@ -110,7 +112,8 @@ function Schedules() {
   const remove = useMutation(api.jobs.removeFromDashboard);
   const runNow = useMutation(api.jobs.runNow);
   const setModel = useMutation(api.jobs.setModel);
-  const models = useQuery(api.models.options, { key: dashboardKey })?.codex;
+  const models = useQuery(api.models.options, { key: dashboardKey })?.models;
+  const several = enginesOf(models ?? []).length > 1;
   const now = useNow();
   const { ask, dialog } = useConfirm();
   const [editing, setEditing] = useState<Editing<JobView>>(null);
@@ -128,11 +131,13 @@ function Schedules() {
     const readable = job.schedule ? describeSchedule(job.schedule) : null;
     const tone: Tone = job.lastError ? "danger" : job.enabled ? "success" : "neutral";
     // Unset runs on the account's default; a pick the account no longer offers falls back to it too.
-    const fallback = (models ?? []).find((item) => item.isDefault) ?? models?.[0];
+    // Each model is "<engine>/<id>", named with its engine once there is more than one.
+    const fallback = modelsOf(models ?? [], "codex").find((item) => item.isDefault) ?? models?.[0];
+    const picked = job.model ? modelKey(job.engine, job.model) : undefined;
     const modelItems = [
-      { value: "default", label: fallback ? `Default (${fallback.name})` : "Codex default" },
-      ...(models ?? []).map((item) => ({ value: item.id, label: item.name })),
-      ...(job.model && models && !models.some((item) => item.id === job.model) ? [{ value: job.model, label: `${job.model} (not offered, uses default)` }] : []),
+      { value: "default", label: fallback ? `Default (${fallback.name})` : "Default model" },
+      ...(models ?? []).map((item) => ({ value: modelKey(item.engine ?? "codex", item.id), label: several ? `${item.name} · ${ENGINE_LABELS[item.engine ?? "codex"]}` : item.name })),
+      ...(picked && models && !models.some((item) => modelKey(item.engine ?? "codex", item.id) === picked) ? [{ value: picked, label: `${job.model} (not offered, uses default)` }] : []),
     ];
     return (
       <Row key={job.id}>
@@ -157,8 +162,8 @@ function Schedules() {
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {job.chatId && <Button variant="ghost" size="sm" render={<Link href={`/chat/${job.chatId}`} />}><MessageSquareIcon />Results</Button>}
-          <Select items={modelItems} value={job.model ?? "default"} disabled={!models?.length}
-            onValueChange={(value) => void attempt(() => setModel({ key: dashboardKey, id: job.id, model: !value || value === "default" ? undefined : value }), { success: "Model changed. It applies from the next run." })}>
+          <Select items={modelItems} value={picked ?? "default"} disabled={!models?.length}
+            onValueChange={(value) => void attempt(() => setModel({ key: dashboardKey, id: job.id, ...(!value || value === "default" ? {} : { model: parseModelKey(value).id, engine: parseModelKey(value).engine }) }), { success: "Model changed. It applies from the next run." })}>
             <SelectTrigger size="sm" aria-label={`Model for ${job.name}`} className="max-w-44"><SelectValue /></SelectTrigger>
             <SelectContent>{modelItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
           </Select>

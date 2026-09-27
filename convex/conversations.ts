@@ -2,13 +2,14 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { defaultAccess } from "./installation";
-import { vAccess, vChannel } from "./schema";
+import { vAccess, vChannel, vEngine } from "./schema";
 import { deleteThread } from "./lib/agent";
+import { FORGET_SESSION, pickPatch } from "./engines";
 
 /**
- * Rewind a web chat for a regenerate or an edit: its Codex thread has seen the
- * turns being replaced and cannot drop them, so the next turn starts a fresh
- * Codex thread seeded with the chat's remaining history.
+ * Rewind a web chat for a regenerate or an edit: its engine session has seen
+ * the turns being replaced and cannot drop them, so the next turn starts a
+ * fresh session seeded with the chat's remaining history.
  */
 export const rewind = internalMutation({
   args: { id: v.id("conversations") },
@@ -18,7 +19,7 @@ export const rewind = internalMutation({
     if (!chat) throw new Error("This chat was deleted.");
     if ((chat.pendingTurns ?? 0) > 0) throw new Error("Wait for the reply to finish, or stop it first.");
     await ctx.db.patch(args.id, {
-      codexThreadId: undefined,
+      ...FORGET_SESSION,
       pendingTurns: 1,
       lastMessageAt: Date.now(),
     });
@@ -33,12 +34,14 @@ export const attachmentIdsFor = internalQuery({
     .collect()).map((row) => row._id),
 });
 
-/** A chat's Codex model, set with /model. Unset means the Codex default. */
+/** A chat's model, set with /model. Unset means its engine's default; another engine's moves the chat there. */
 export const setModel = internalMutation({
-  args: { id: v.id("conversations"), model: v.optional(v.string()) },
+  args: { id: v.id("conversations"), model: v.optional(v.string()), engine: v.optional(vEngine) },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, { model: args.model });
+    const chat = await ctx.db.get(args.id);
+    if (!chat) return null;
+    await ctx.db.patch(args.id, pickPatch(chat, args.model, args.engine));
     return null;
   },
 });
@@ -290,7 +293,7 @@ export const beginReset = internalMutation({
 });
 
 /**
- * Start the chat afresh on a new agent thread and a new Codex thread, and
+ * Start the chat afresh on a new agent thread and a new engine session, and
  * delete the old messages. Memories survive on purpose: reset clears the
  * conversation, not what Assistant knows.
  */
@@ -305,7 +308,7 @@ export const clearThread = internalMutation({
     }
     await ctx.db.patch(args.id, {
       threadId: args.threadId,
-      codexThreadId: undefined,
+      ...FORGET_SESSION,
       recallDigest: undefined,
       lastMessageAt: Date.now(),
       ...(chat.channel === "web" && !chat.jobId ? { title: "New chat" } : {}),

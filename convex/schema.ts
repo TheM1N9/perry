@@ -18,7 +18,7 @@ export const vUsage = v.object({
   reasoningTokens: v.optional(v.number()),
   totalTokens: v.optional(v.number()),
 });
-/** The Codex items a run's trace records. See runSpans. */
+/** The engine items a run's trace records (runner/trace.ts maps each engine's canonical items to these). See runSpans. */
 export const vSpanKind = v.union(
   v.literal("command"), v.literal("fileChange"), v.literal("mcpToolCall"), v.literal("dynamicToolCall"),
   v.literal("webSearch"), v.literal("imageGeneration"), v.literal("reasoning"),
@@ -62,7 +62,7 @@ export const vPolicy = v.union(v.literal("ask"), v.literal("review"), v.literal(
 export const vAccess = v.union(v.literal("supervised"), v.literal("auto"), v.literal("full"));
 /** Who asked Perry to update himself: the owner, with a click, or the night (updates.ts). */
 export const vUpdateBy = v.union(v.literal("owner"), v.literal("nightly"));
-/** A Codex model as `model/list` reports it, with the reasoning efforts it takes. */
+/** A Codex model as `model/list` reports it, with the reasoning efforts it takes. Every engine reports its models this way. */
 export const vCodexModel = v.object({
   id: v.string(),
   name: v.string(),
@@ -70,6 +70,39 @@ export const vCodexModel = v.object({
   /** Unset when reported by a runner from before thinking levels. */
   efforts: v.optional(v.array(v.string())),
   defaultEffort: v.optional(v.string()),
+});
+/** The engine a chat, turn or job runs on (lib/engines.ts). Unset is Codex, as everything from before engines. */
+export const vEngine = v.union(v.literal("codex"), v.literal("claude"), v.literal("grok"), v.literal("cursor"), v.literal("antigravity"));
+/** What the owner does to finish signing an engine in (lib/engines.ts, LoginInteraction). */
+export const vLoginInteraction = v.union(
+  v.object({ type: v.literal("browser"), url: v.string() }),
+  v.object({ type: v.literal("deviceCode"), verificationUrl: v.string(), userCode: v.string() }),
+  v.object({ type: v.literal("terminal"), command: v.string() }),
+  v.object({ type: v.literal("credentials"), message: v.string() }),
+);
+/**
+ * One engine on a runner, as its side-effect-free probe found it
+ * (runner/engine.ts, EngineStatus). Only account metadata: the engine's
+ * credentials stay in its own CLI on that computer.
+ */
+export const vEngineStatus = v.object({
+  kind: vEngine,
+  installed: v.boolean(),
+  version: v.optional(v.string()),
+  signedIn: v.boolean(),
+  auth: v.object({ type: v.optional(v.string()), label: v.optional(v.string()), email: v.optional(v.string()), plan: v.optional(v.string()) }),
+  models: v.array(vCodexModel),
+  /** What to do next, such as "Run `grok login` on this computer". */
+  message: v.optional(v.string()),
+  error: v.optional(v.string()),
+});
+/** A sign-in or sign-out the owner asked for from Settings, until the runner has done it. */
+export const vEngineAuth = v.object({
+  id: v.number(),
+  kind: v.union(v.literal("login"), v.literal("logout")),
+  status: v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("error")),
+  interaction: v.optional(vLoginInteraction),
+  error: v.optional(v.string()),
 });
 
 /**
@@ -265,6 +298,17 @@ export default defineSchema({
   }),
 
   /**
+   * One row: the page of the dashboard the pet last asked to open (pet.ts),
+   * for a dashboard tab already open to take, or the pet to open itself.
+   */
+  petOpen: defineTable({
+    request: v.string(),
+    path: v.string(),
+    at: v.number(),
+    claimedAt: v.optional(v.number()),
+  }),
+
+  /**
    * An outcome the owner wants, with milestones. Slower moving than a task,
    * and a task can belong to one.
    */
@@ -335,7 +379,15 @@ export default defineSchema({
     policy: v.optional(vPolicy),
     lastSeenAt: v.optional(v.number()),
     revoked: v.boolean(),
-    /** Codex credentials stay in the CLI's local store on this runner. */
+    /** Each engine on this computer, as its runner last reported it (engines.ts). */
+    engines: v.optional(v.array(v.object({ ...vEngineStatus.fields, updatedAt: v.number() }))),
+    /** Sign-ins and sign-outs asked for from Settings, by engine. */
+    engineAuth: v.optional(v.record(v.string(), vEngineAuth)),
+    /**
+     * Codex's state from before engines. Still written from Codex's entry in
+     * `engines`, and read when a runner from before engines reports only these.
+     * Codex credentials stay in the CLI's local store on this runner.
+     */
     codexAvailable: v.optional(v.boolean()),
     codexAuthMode: v.optional(v.string()),
     codexPlanType: v.optional(v.string()),
@@ -397,9 +449,19 @@ export default defineSchema({
     channel: vChannel,
     externalId: v.string(), // telegram chat id, or a unique web session id
     threadId: v.string(),
+    /** The engine this chat's turns run on. Unset is Codex. Picking another engine's model changes it. */
+    engine: v.optional(vEngine),
+    /**
+     * Where the chat's engine session resumes: an opaque cursor its engine
+     * made (for Codex, the thread id), versioned by that engine. Unset, the
+     * next turn starts a session seeded with the chat's history.
+     */
+    resume: v.optional(v.object({ engine: vEngine, cursor: v.string(), version: v.number() })),
+    /** Codex's thread, from before `resume`; still written for Codex chats, and read when `resume` is unset. */
     codexThreadId: v.optional(v.string()),
+    /** The runner (computer) this chat's turns run on; its engine sessions are on that disk. */
     codexRunnerId: v.optional(v.id("runners")),
-    /** Codex model picked for this chat. Unset means the Codex default. */
+    /** The model picked for this chat, one of its engine's. Unset means the engine's default. */
     model: v.optional(v.string()),
     /** Reasoning effort picked for this chat (/think). Unset means the model's default. */
     effort: v.optional(v.string()),
@@ -539,8 +601,10 @@ export default defineSchema({
     prompt: v.string(),
     enabled: v.boolean(),
     builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"))),
-    /** The Codex model its runs use, picked on the Work page. Unset means the account's default. */
+    /** The model its runs use, picked on the Work page. Unset means the account's default. */
     model: v.optional(v.string()),
+    /** The engine `model` is one of. Unset is Codex. */
+    engine: v.optional(vEngine),
     /** The chat it was set up in, where its results go (channels.ts). Unset: the owner's messaging channel. */
     origin: v.optional(v.id("conversations")),
     nextRunAt: v.number(),
@@ -697,7 +761,9 @@ export default defineSchema({
     runnerId: v.optional(v.id("runners")),
     conversationId: v.id("conversations"),
     runId: v.id("runs"),
-    /** A turn that compacts the chat's Codex thread (/compact) rather than answering a message. */
+    /** The engine it runs on. Unset is Codex. The table keeps its name from before engines. */
+    engine: v.optional(vEngine),
+    /** A turn that compacts the chat's engine session (/compact) rather than answering a message. */
     kind: v.optional(v.literal("compact")),
     prompt: v.string(),
     history: v.optional(v.string()),
@@ -713,13 +779,13 @@ export default defineSchema({
     flush: v.optional(v.boolean()),
     /** Its prompt is not the owner's (a greeting after the welcome page): only the reply is saved to the chat. */
     hidden: v.optional(v.boolean()),
-    /** Codex model id to run this turn with. Unset means the Codex default. */
+    /** The engine's model id to run this turn with. Unset means the engine's default. */
     requestedModel: v.optional(v.string()),
-    /** Reasoning effort for turn/start. Unset leaves it to Codex, as before thinking levels. */
+    /** Reasoning effort for the turn. Unset leaves it to the engine, as before thinking levels. */
     requestedEffort: v.optional(v.string()),
     /** The chat's access when the turn was queued. Unset means supervised. */
     access: v.optional(vAccess),
-    /** Codex's own id for the turn, recorded when it starts; a steer must name it. */
+    /** The engine's own id for the turn, recorded when it starts; a steer must name it. */
     codexTurnId: v.optional(v.string()),
     /**
      * When the turn first read something from outside (a web page, an app's
@@ -729,7 +795,7 @@ export default defineSchema({
     outsideAt: v.optional(v.number()),
     /** Attachment key for media the turn produced, such as generated images. */
     mediaKey: v.optional(v.string()),
-    /** The owner asked to stop this turn; the runner interrupts Codex. */
+    /** The owner asked to stop this turn; the runner interrupts its engine. */
     stopRequested: v.optional(v.boolean()),
     /** The turn ended because the owner stopped it. */
     stopped: v.optional(v.boolean()),
@@ -766,6 +832,8 @@ export default defineSchema({
   codexSteers: defineTable({
     /** The running turn it joins. */
     turnId: v.id("codexTurns"),
+    /** The engine of that turn. Unset is Codex. */
+    engine: v.optional(vEngine),
     runnerId: v.id("runners"),
     conversationId: v.id("conversations"),
     runId: v.id("runs"),

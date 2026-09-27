@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useMutation } from "@/client/react";
+import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import { matches } from "@/convex/lib/shortcuts";
 import { useShortcuts } from "@/hooks/use-shortcuts";
@@ -12,6 +12,9 @@ import { AppSidebar } from "./app-sidebar";
 import { CommandPalette, PaletteContext } from "./command-palette";
 import { Gate } from "./gate";
 import { PageErrorBoundary } from "./page-error";
+
+/** How long a hidden tab waits before claiming a page the pet asked for, so a tab in view gets it first. */
+const HIDDEN_TAB_WAITS_MS = 400;
 
 /**
  * Every page but the gate: the key this browser keeps, the sidebar, and ⌘K.
@@ -86,6 +89,26 @@ function Unlocked({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [router, shortcuts, mac]);
+
+  // A page the desktop pet asked for (convex/pet.ts) opens here rather than in a new tab, in whichever open tab claims it first.
+  // One the owner can see claims at once; a hidden one waits a moment, so it only wins when no tab is in view.
+  const openRequest = useQuery(api.pet.openRequest, { key: dashboardKey });
+  const claimOpen = useMutation(api.pet.claimOpen);
+  const request = openRequest && !openRequest.claimed ? openRequest.request : null;
+  const requestPath = openRequest?.path;
+  useEffect(() => {
+    if (!request || !requestPath) return;
+    const timer = window.setTimeout(() => {
+      void claimOpen({ key: dashboardKey, request }).then((won) => {
+        if (!won) return;
+        router.push(requestPath);
+        // Browsers mostly ignore this; the tab changes either way, in front or not.
+        window.focus();
+      }).catch(() => {});
+    }, document.visibilityState === "visible" ? 0 : HIDDEN_TAB_WAITS_MS);
+    // Claimed by another tab meanwhile: this one stands down.
+    return () => window.clearTimeout(timer);
+  }, [request, requestPath, dashboardKey, claimOpen, router]);
 
   const palette = useMemo(() => ({ open: () => setPaletteOpen(true) }), []);
 

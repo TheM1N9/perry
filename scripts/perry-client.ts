@@ -3,6 +3,7 @@ import type { FunctionArgs, FunctionReference, FunctionReturnType } from "convex
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import type { RunView } from "../convex/dashboard";
+import type { EngineKind } from "../convex/lib/engines";
 
 /**
  * Talking to Perry from a terminal the way the dashboard does: web chats,
@@ -59,13 +60,13 @@ export class Perry {
    * stopped or failed. `onText` gets the reply so far while it is written.
    * Aborting stops waiting but leaves the reply running; `discard` ends it.
    */
-  async send(chatId: ChatId, text: string, options: { model?: string; onText?: (text: string) => void; signal?: AbortSignal } = {}): Promise<Turn> {
+  async send(chatId: ChatId, text: string, options: { model?: string; engine?: EngineKind; onText?: (text: string) => void; signal?: AbortSignal } = {}): Promise<Turn> {
     const { key } = this;
     const earlier = (await this.convex.query(api.dashboard.listRuns, { key, conversationId: chatId }))[0]?.id;
     const startedAt = Date.now();
     this.beat(true);
     try {
-      await this.convex.mutation(api.dashboard.sendChat, { key, id: chatId, text, model: options.model });
+      await this.convex.mutation(api.dashboard.sendChat, { key, id: chatId, text, model: options.model, engine: options.model ? options.engine : undefined });
       // The mutation has resolved, so this subscription already sees the turn as running.
       await this.until(api.dashboard.getChat, { key, id: chatId }, (chat) => {
         if (chat.isRunning && chat.streaming) options.onText?.(chat.streaming);
@@ -98,8 +99,9 @@ export class Perry {
     return this.convex.mutation(api.dashboard.stopChat, { key: this.key, id: chatId });
   }
 
-  setModel(chatId: ChatId, model?: string): Promise<null> {
-    return this.convex.mutation(api.dashboard.setChatModel, { key: this.key, id: chatId, model });
+  /** Another engine's model moves the chat to that engine. */
+  setModel(chatId: ChatId, model?: string, engine?: EngineKind): Promise<null> {
+    return this.convex.mutation(api.dashboard.setChatModel, { key: this.key, id: chatId, model, engine });
   }
 
   /** Delete a chat, stopping its reply first if one is still running. */

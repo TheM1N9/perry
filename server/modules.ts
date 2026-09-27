@@ -13,6 +13,7 @@ import * as connectorAccounts from "../convex/connectorAccounts";
 import * as conversations from "../convex/conversations";
 import * as crons from "../convex/crons";
 import * as dashboard from "../convex/dashboard";
+import * as engines from "../convex/engines";
 import * as history from "../convex/history";
 import * as http from "../convex/http";
 import * as ingest from "../convex/ingest";
@@ -24,6 +25,7 @@ import * as lib_auth from "../convex/lib/auth";
 import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
 import * as lib_embed from "../convex/lib/embed";
+import * as lib_engines from "../convex/lib/engines";
 import * as lib_errors from "../convex/lib/errors";
 import * as lib_price from "../convex/lib/price";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
@@ -63,6 +65,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "conversations": conversations,
   "crons": crons,
   "dashboard": dashboard,
+  "engines": engines,
   "history": history,
   "http": http,
   "ingest": ingest,
@@ -74,6 +77,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
   "lib/embed": lib_embed,
+  "lib/engines": lib_engines,
   "lib/errors": lib_errors,
   "lib/price": lib_price,
   "lib/shortcuts": lib_shortcuts,

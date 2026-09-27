@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { v } from "convex/values";
 import { HOME } from "../runner/home";
 import { internal } from "./_generated/api";
-import { action, internalMutation, query, type ActionCtx } from "./_generated/server";
+import { action, internalMutation, mutation, query, type ActionCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 
 /**
@@ -25,6 +25,8 @@ import { assertDashboardKey } from "./lib/auth";
 const PET_GONE_MS = 150_000;
 /** A setup this old that never said how it ended is taken to have died with the server. */
 const STALE_MS = 20 * 60_000;
+/** A page he asked to open that nobody took in this long is let go, so a tab opened later does not jump to it. */
+const OPEN_FRESH_MS = 5_000;
 
 export const PET_THEMES = ["system", "light", "dark"] as const;
 export type PetTheme = (typeof PET_THEMES)[number];
@@ -186,5 +188,50 @@ export const turnOff = action({
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     return await run(ctx, "off");
+  },
+});
+
+/**
+ * A page of the dashboard, opened from the pet in a tab already open when
+ * there is one. The pet asks here; every unlocked dashboard tab watches the
+ * latest ask (components/dashboard/shell.tsx), and the first to claim it goes
+ * there. The pet claims it too, a moment later: if it wins, no dashboard was
+ * open, and it opens a new tab as before.
+ */
+export const askToOpen = mutation({
+  args: { key: v.string(), path: v.string() },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    // A page of this app, never a link elsewhere (`//host`, `/\host`) or a script.
+    const path = /^\/(?![/\\])/.test(args.path) ? args.path.slice(0, 2000) : "/";
+    const row = { request: crypto.randomUUID(), path, at: Date.now(), claimedAt: undefined };
+    const existing = await ctx.db.query("petOpen").first();
+    if (existing) await ctx.db.patch(existing._id, row);
+    else await ctx.db.insert("petOpen", row);
+    return row.request;
+  },
+});
+
+/** The latest ask, for the dashboard's tabs to watch. */
+export const openRequest = query({
+  args: { key: v.string() },
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const row = await ctx.db.query("petOpen").first();
+    return row ? { request: row.request, path: row.path, claimed: row.claimedAt !== undefined } : null;
+  },
+});
+
+/** Take the ask: true for the first to claim it while it is fresh, false for everyone after. */
+export const claimOpen = mutation({
+  args: { key: v.string(), request: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const row = await ctx.db.query("petOpen").first();
+    if (!row || row.request !== args.request || row.claimedAt !== undefined || Date.now() - row.at > OPEN_FRESH_MS) return false;
+    await ctx.db.patch(row._id, { claimedAt: Date.now() });
+    return true;
   },
 });

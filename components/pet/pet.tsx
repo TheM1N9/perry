@@ -72,6 +72,8 @@ const HEADS_UP_SHOWS_MS = 12_000;
 const UPDATE_SHOWS_MS = 20_000;
 /** The newest change he last mentioned, so each new version is mentioned once. */
 const UPDATE_STORAGE = "perry.pet.update";
+/** How long a dashboard tab already open has to take a page he opens, before he opens a new tab. */
+const TAB_CLAIMS_MS = 1_500;
 
 export function PetScreen() {
   const [key, setKey] = useState<string | null>(null);
@@ -203,11 +205,25 @@ function Pet() {
     else window.localStorage.removeItem(CHAT_STORAGE);
   }, []);
   useEffect(() => { setChatIdState(window.localStorage.getItem(CHAT_STORAGE) as PetChatId); }, []);
-  /** A page of the dashboard, in the browser, unlocked. */
+  const askToOpen = useMutation(api.pet.askToOpen);
+  const claimOpen = useMutation(api.pet.claimOpen);
+  /**
+   * A page of the dashboard, in the browser, unlocked: in a dashboard tab
+   * already open, which takes it (components/dashboard/shell.tsx), or, when
+   * none does in a moment, a new one. He claims it himself to open it, so it
+   * is one or the other, never both.
+   */
   const openPath = useCallback((path: string) => {
-    if (window.perryPet) window.perryPet.openDashboard(path);
-    else window.open(path, "_blank");
-  }, []);
+    const openNew = () => {
+      if (window.perryPet) window.perryPet.openDashboard(path);
+      else window.open(path, "_blank");
+    };
+    void (async () => {
+      const request = await askToOpen({ key, path });
+      await new Promise((resolve) => window.setTimeout(resolve, TAB_CLAIMS_MS));
+      if (await claimOpen({ key, request })) openNew();
+    })().catch(openNew);
+  }, [key, askToOpen, claimOpen]);
   /** A chat in his panel, maybe with something already typed. */
   const openChat = useCallback((id: PetChatId, text?: string) => {
     setChatId(id);

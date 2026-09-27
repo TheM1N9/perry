@@ -12,9 +12,10 @@ import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/re
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
-  ACCESS_HINTS, ACCESS_LABELS, ACCESSES, COMPACTED, chatModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
-  parseAccessCommand, parseModelCommand, parseThinkCommand, pickAccess, pickEffort, pickModel, type Access,
+  ACCESS_HINTS, ACCESS_LABELS, ACCESSES, COMPACTED, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
+  modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, type Access,
 } from "@/convex/lib/commands";
+import { ENGINE_LABELS, type EngineKind } from "@/convex/lib/engines";
 import { copyText, errorText, useNow } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
@@ -51,7 +52,7 @@ const COMMANDS = [
   { command: "/think", hint: "List the thinking levels, or /think <level>" },
   { command: "/access", hint: "Ask, Auto or Full access: whether it asks before acting" },
   { command: "/stop", hint: "Stop the reply being written" },
-  { command: "/compact", hint: "Shrink what Codex carries of this chat; the messages stay" },
+  { command: "/compact", hint: "Shrink what Perry carries of this chat; the messages stay" },
   { command: "/reset", hint: "Save this chat to memory, then start it afresh" },
 ];
 
@@ -111,7 +112,7 @@ export function ChatScreen() {
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
   const setChatModel = useMutation(api.dashboard.setChatModel).withOptimisticUpdate((store, args) => {
     const current = store.getQuery(api.dashboard.getChat, { key: args.key, id: args.id });
-    if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, model: args.model });
+    if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, model: args.model, engine: args.engine ?? current.engine });
   });
   const setChatEffort = useMutation(api.dashboard.setChatEffort).withOptimisticUpdate((store, args) => {
     const current = store.getQuery(api.dashboard.getChat, { key: args.key, id: args.id });
@@ -127,6 +128,7 @@ export function ChatScreen() {
    * (and the default access); "" is the default model or level, picked on purpose.
    */
   const [draftModel, setDraftModel] = useState<string>();
+  const [draftEngine, setDraftEngine] = useState<EngineKind>();
   const [draftEffort, setDraftEffort] = useState<string>();
   const [draftAccess, setDraftAccess] = useState<Access>();
   const [draft, setDraft] = useState("");
@@ -198,7 +200,7 @@ export function ChatScreen() {
   }, [chat?.isRunning, selectedId]);
   useEffect(() => {
     if (!compactionStatus || compactionStatus.status === "queued" || compactionStatus.status === "running") return;
-    setNotice(compactionStatus.status === "done" ? COMPACTED : `Could not compact: ${compactionStatus.error ?? "Codex did not say why."}`);
+    setNotice(compactionStatus.status === "done" ? COMPACTED : `Could not compact: ${compactionStatus.error ?? "no reason was given."}`);
     setCompaction(null);
   }, [compactionStatus]);
 
@@ -234,23 +236,32 @@ export function ChatScreen() {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   };
 
-  const models = modelOptions?.codex;
-  const model = (selectedId ? chat?.model : draftModel ?? lastPicks?.model) || ((models ?? []).find((item) => item.isDefault) ?? models?.[0])?.id;
+  const models = modelOptions?.models;
+  // The chat's engine; a chat not sent yet takes the last chat's, like its model.
+  const engine: EngineKind = (selectedId ? chat?.engine : draftEngine ?? lastPicks?.engine) ?? "codex";
+  const model = (selectedId ? chat?.model : draftModel ?? lastPicks?.model) || currentModel(models ?? [], undefined, engine);
   // The thinking levels are the model's own; a level it does not take is kept but unused.
-  const modelInfo = chatModel(models ?? [], model);
+  const modelInfo = chatModel(models ?? [], model, engine);
   const efforts = modelInfo?.efforts ?? [];
   const pickedEffort = (selectedId ? chat?.effort : draftEffort ?? lastPicks?.effort) || undefined;
   const effort = modelInfo && effortUnused(modelInfo, pickedEffort) ? undefined : pickedEffort;
   const access: Access = (selectedId ? chat?.access : draftAccess) ?? defaultAccess ?? "supervised";
   const fail = (cause: unknown) => setError(errorText(cause));
 
-  function applyModel(next: string) {
-    const picked = models?.find((item) => item.id === next);
+  /** Pick a model by its "<engine>/<id>" key; another engine's moves the chat there. */
+  function applyModel(key: string) {
+    const next = parseModelKey(key);
+    const picked = models?.find((item) => (item.engine ?? "codex") === next.engine && item.id === next.id);
     if (picked && pickedEffort && effortUnused(picked, pickedEffort)) {
       setNotice(`${picked.name} doesn't take the ${pickedEffort} thinking level, so it thinks at its default here.`);
+    } else if (selectedId && next.engine !== engine) {
+      setNotice(`This chat moves to ${ENGINE_LABELS[next.engine]}, which picks up from the chat so far.`);
     }
-    if (!selectedId) return setDraftModel(next);
-    void setChatModel({ key: dashboardKey, id: selectedId, model: next || undefined }).catch(fail);
+    if (!selectedId) {
+      setDraftEngine(next.engine);
+      return setDraftModel(next.id);
+    }
+    void setChatModel({ key: dashboardKey, id: selectedId, model: next.id || undefined, engine: next.engine }).catch(fail);
   }
   function applyEffort(next: string | undefined) {
     if (!selectedId) return setDraftEffort(next ?? "");
@@ -289,10 +300,14 @@ export function ChatScreen() {
   const suggestions: Suggestion[] = !draft.startsWith("/")
     ? []
     : typedModel && choosing
-      ? (typedModel.name ? findModel(models ?? [], typedModel.name).matches : models ?? []).map((item) => ({
-          key: item.id, label: item.name, hint: `${item.id}${item.id === model ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
-          apply: () => void runCommand(`/model ${item.id}`),
-        }))
+      ? (typedModel.name ? findModel(models ?? [], typedModel.name, engine).matches : models ?? []).map((item) => {
+          const key = modelKey(item.engine ?? "codex", item.id);
+          const current = (item.engine ?? "codex") === engine && item.id === model;
+          return {
+            key, label: item.name, hint: `${key}${current ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
+            apply: () => void runCommand(`/model ${key}`),
+          };
+        })
       : typedThink && choosing
         ? choices([
             { value: "default", label: "Default", hint: `${modelInfo?.defaultEffort ?? "the model's own"}${effort ? "" : " · current"}` },
@@ -315,17 +330,17 @@ export function ChatScreen() {
     const trimmed = text.trim();
     const modelCommand = parseModelCommand(trimmed);
     if (modelCommand) {
-      if (!modelCommand.name) { setDraft(""); setNotice(describeModels(models ?? [], model)); return true; }
-      const picked = pickModel(models ?? [], modelCommand.name, pickedEffort);
+      if (!modelCommand.name) { setDraft(""); setNotice(describeModels(models ?? [], model, engine)); return true; }
+      const picked = pickModel(models ?? [], modelCommand.name, pickedEffort, engine);
       // A name that matched nothing, or several models, stays in the box to be fixed.
-      if (picked.model) { applyModel(picked.model.id); setDraft(""); }
+      if (picked.model) { applyModel(modelKey(picked.model.engine ?? "codex", picked.model.id)); setDraft(""); }
       setNotice(picked.reply);
       return true;
     }
     const thinkCommand = parseThinkCommand(trimmed);
     if (thinkCommand) {
-      if (!thinkCommand.level) { setDraft(""); setNotice(describeEfforts(models ?? [], model, pickedEffort)); return true; }
-      const picked = pickEffort(models ?? [], model, thinkCommand.level);
+      if (!thinkCommand.level) { setDraft(""); setNotice(describeEfforts(models ?? [], model, pickedEffort, engine)); return true; }
+      const picked = pickEffort(models ?? [], model, thinkCommand.level, engine);
       if (picked.ok) { applyEffort(picked.effort); setDraft(""); }
       setNotice(picked.reply);
       return true;
@@ -408,7 +423,7 @@ export function ChatScreen() {
       setPending((items) => [...items, entry]);
       // A new chat takes what was picked before it existed; an existing one already has its own.
       await sendChat({
-        key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, model,
+        key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, model, engine,
         ...(fresh ? { effort: pickedEffort ?? "", access: draftAccess } : {}),
       });
       setPending((items) => items.map((item) => item === entry ? { ...item, sent: true } : item));
@@ -599,7 +614,7 @@ export function ChatScreen() {
             suggestions={suggestions}
             completing={completing}
             pickers={{
-              models, model, onModel: applyModel, modelInfo, effort, onEffort: applyEffort, access, onAccess: applyAccess,
+              models, model: model ? modelKey(engine, model) : undefined, onModel: applyModel, modelInfo, effort, onEffort: applyEffort, access, onAccess: applyAccess,
               accessDisabled: selectedId ? chat === undefined : defaultAccess === undefined,
             }}
             above={<>

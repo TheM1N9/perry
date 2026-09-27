@@ -1,11 +1,11 @@
 import { release } from "node:os";
-import type { CodexAppServer } from "./codex";
-import { pickModel, quickTurn } from "./quick";
+import type { Engine } from "./engine";
 
 /**
  * The automatic reviewer behind the "review" policy: before the owner is
- * asked, a separate Codex turn on the owner's own subscription judges the one
- * action, and clears what is routine. It sees only the action, never the
+ * asked, a separate quick turn on the owner's own subscription (an engine's
+ * quickTurn) judges the one action, and clears what is routine. With no
+ * engine here that can, the owner is asked. It sees only the action, never the
  * conversation that led to it, so a prompt injection in a web page or a file
  * cannot argue its own case. Anything but a clear verdict, including an error
  * or a timeout, goes to the owner: the reviewer can only save a question,
@@ -104,33 +104,27 @@ const OUTPUT_SCHEMA = {
 };
 
 /**
- * A fast model from what the subscription offers: the first listed as fast,
- * else the default. PERRY_REVIEW_MODEL picks one by id instead.
+ * One quick, tool-less turn with a structured answer, on a fast model the
+ * engine picks (for Codex: PERRY_REVIEW_MODEL, else one listed as fast, else
+ * the default). Never throws; failure, or no engine that can review, is a
+ * verdict of "error", which asks the owner.
  */
-const reviewModel = (app: CodexAppServer) => {
-  const wanted = process.env.PERRY_REVIEW_MODEL;
-  return pickModel(app, "review", (all, listed) => (wanted ? all.find((item) => item.model === wanted) : undefined)
-    ?? listed.find((item) => /\bfast\b/i.test(item.description ?? ""))
-    ?? listed.find((item) => item.isDefault)
-    ?? listed[0], wanted);
-};
-
-/** One ephemeral, read-only Codex turn with a structured answer. Never throws; failure is a verdict of "error". */
-export async function review(app: CodexAppServer, action: ReviewedAction): Promise<Verdict> {
+export async function review(engine: Engine | undefined, action: ReviewedAction): Promise<Verdict> {
   const started = Date.now();
   let model: string | undefined;
   try {
-    const choice = await reviewModel(app);
-    model = choice.model;
+    if (!engine?.quickTurn) throw new Error("No engine on this computer can review actions, so you decide.");
     const { detail, ...rest } = action;
     const input = JSON.stringify({ ...rest, detail: detail?.slice(0, 8000) }, null, 2);
-    const text = await quickTurn(app, {
+    const answered = await engine.quickTurn({
+      purpose: "review",
       instructions: INSTRUCTIONS,
       text: `Review this action:\n${input}`,
-      choice,
       outputSchema: OUTPUT_SCHEMA,
       timeoutMs: REVIEW_TIMEOUT_MS - (Date.now() - started),
-    });
+    }).catch((error) => { model = (error as { model?: string }).model; throw error; });
+    model = answered.model;
+    const text = answered.text;
     const answer = JSON.parse(text) as { verdict?: string; reason?: string };
     if (answer.verdict !== "clear" && answer.verdict !== "caution") throw new Error(`The reviewer answered "${text.slice(0, 200)}".`);
     return { verdict: answer.verdict, reason: String(answer.reason ?? "").slice(0, 500) || answer.verdict, model, ms: Date.now() - started };

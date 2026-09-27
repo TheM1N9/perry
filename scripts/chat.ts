@@ -12,6 +12,7 @@ import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
 import { api } from "../convex/_generated/api";
 import { describeModels, parseModelCommand, pickModel } from "../convex/lib/commands";
+import { engineOf, type EngineKind } from "../convex/lib/engines";
 import { bold, dim, red, yellow } from "./lib";
 import { Perry, type ChatId } from "./perry-client";
 
@@ -73,8 +74,9 @@ try {
 }
 
 let chatId = flags.chat as ChatId | undefined;
-/** The model picked before the chat exists; it goes with the first message. */
+/** The model picked before the chat exists, and its engine; they go with the first message. */
 let draftModel: string | undefined;
+let draftEngine: EngineKind | undefined;
 /** The chat whose reply is being written, if one is. */
 let replying: ChatId | undefined;
 let interrupts = 0;
@@ -86,7 +88,7 @@ if (chatId) {
     console.error(red(`No web chat with id ${chatId}.`));
     process.exit(1);
   }
-  console.log(`\n${bold(chat.title)}${chat.model ? dim(` · ${chat.model}`) : ""}`);
+  console.log(`\n${bold(chat.title)}${chat.model ? dim(` · ${chat.engine}/${chat.model}`) : ""}`);
 } else {
   console.log(`\n${bold("Perry")} ${dim("· a new chat")}`);
 }
@@ -133,17 +135,21 @@ async function handle(text: string): Promise<void> {
   if (text === "/new") {
     chatId = undefined;
     draftModel = undefined;
+    draftEngine = undefined;
     console.log(dim("A new chat starts with your next message."));
     return;
   }
   const modelCommand = parseModelCommand(text);
   if (modelCommand) {
-    const { codex: models } = await perry.convex.query(api.models.options, { key: perry.key });
-    const picked = chatId ? (await perry.getChat(chatId)).model : draftModel;
-    if (!modelCommand.name) return console.log(dim(describeModels(models, picked)));
-    const choice = pickModel(models, modelCommand.name);
-    if (choice.model && chatId) await perry.setModel(chatId, choice.model.id);
-    else if (choice.model) draftModel = choice.model.id;
+    // Every engine's models; another engine's moves the chat there.
+    const { models } = await perry.convex.query(api.models.options, { key: perry.key });
+    const chat = chatId ? await perry.getChat(chatId) : undefined;
+    const picked = chat ? chat.model : draftModel;
+    const engine = chat ? chat.engine : draftEngine ?? "codex";
+    if (!modelCommand.name) return console.log(dim(describeModels(models, picked, engine)));
+    const choice = pickModel(models, modelCommand.name, undefined, engine);
+    if (choice.model && chatId) await perry.setModel(chatId, choice.model.id, engineOf(choice.model));
+    else if (choice.model) { draftModel = choice.model.id; draftEngine = engineOf(choice.model); }
     console.log(dim(choice.reply));
     return;
   }
@@ -157,7 +163,7 @@ async function handle(text: string): Promise<void> {
   // On its own line, so redrawing the reply never has to account for it.
   process.stdout.write(`${bold("perry")}\n`);
   try {
-    const turn = await perry.send(chatId, text, { model: fresh ? draftModel : undefined, onText: (partial) => live.update(partial) });
+    const turn = await perry.send(chatId, text, { model: fresh ? draftModel : undefined, engine: fresh ? draftEngine : undefined, onText: (partial) => live.update(partial) });
     live.update(turn.message);
     process.stdout.write("\n");
     if (turn.error) console.log(red(turn.error));
