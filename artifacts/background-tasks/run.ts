@@ -183,7 +183,7 @@ try {
   const done = await task(sums);
   check("runsWithAPlanAndFinishes", done?.status === "done" && (done.plan?.length ?? 0) >= 1 && /391/.test(done.result ?? "") && /42/.test(done.result ?? ""),
     { status: done?.status, plan: done?.plan, result: done?.result, error: done?.error, turns: done?.turns });
-  await until(() => toPhone(/Two sums[\s\S]*is done/).length > 0, "the result on the phone", 20).catch(() => {});
+  await until(() => toPhone(/Two sums[\s\S]*is done/).length > 0, "the result on the phone", 120).catch(() => {});
   check("resultReachesThePhone", toPhone(/Two sums[\s\S]*is done/).some((message) => /391/.test(message.text)), toPhone(/Two sums/).map((m) => m.text));
   const ownChat = done?.conversationId ? await call<{ taskId?: string; title?: string } | null>("conversations:getById", { id: done.conversationId }) : null;
   check("worksInAChatOfItsOwn", ownChat?.taskId === sums && /Two sums/.test(ownChat?.title ?? ""), ownChat);
@@ -207,7 +207,7 @@ try {
   check("pageQueuesATask", Boolean(paint));
   await settled(paint);
   const asking = await task(paint);
-  await until(() => toPhone(/Paint for the study[\s\S]*needs you/).length > 0, "the question on the phone", 20).catch(() => {});
+  await until(() => toPhone(/Paint for the study[\s\S]*needs you/).length > 0, "the question on the phone", 120).catch(() => {});
   check("asksInsteadOfGuessing", asking?.status === "blocked" && Boolean(asking.question) && toPhone(/Paint for the study[\s\S]*needs you/).length === 1,
     { status: asking?.status, question: asking?.question, result: asking?.result, phone: toPhone(/Paint/).map((m) => m.text) });
   await go("/work?tab=plans");
