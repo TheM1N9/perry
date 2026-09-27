@@ -139,7 +139,7 @@ type Tab = "chat" | "todos" | "needs";
 type Said = { title: string; detail?: string; until: number; onOpen?: () => void };
 /** The chat the pet last had open, so he picks up where you left off. */
 const CHAT_STORAGE = "perry.pet.chat";
-const ASKS = { command: "run a command", file: "change files", write: "write a file" } as const;
+const ASKS = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser" } as const;
 /** A step that has taken this long shows its time. */
 const STEP_TIMER_MS = 5_000;
 /** A step that finished between two reports is held up this long. */
