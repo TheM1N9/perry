@@ -386,7 +386,7 @@ export const claimTurn = mutation({
  * resume it. A chat moved to another engine since this turn was queued keeps
  * its own.
  */
-async function recordSession(ctx: MutationCtx, token: string, id: Id<"codexTurns">, cursor: string, version: number) {
+async function recordSession(ctx: MutationCtx, token: string, id: Id<"codexTurns">, cursor: string, version: number, replaces?: string) {
   const runner = await authenticate(ctx, token);
   const job = await ctx.db.get(id);
   if (!job || job.runnerId !== runner._id || job.status !== "running") return;
@@ -394,7 +394,8 @@ async function recordSession(ctx: MutationCtx, token: string, id: Id<"codexTurns
   const engine = engineOf(job);
   if (!conversation || engineOf(conversation) !== engine) return;
   const current = resumeOf(conversation);
-  if (current && current.cursor !== cursor) throw new Error(`Chat already has another ${ENGINE_LABELS[engine]} session.`);
+  // A new session may take over only from the one the chat has: an engine that lost it says which.
+  if (current && current.cursor !== cursor && current.cursor !== replaces) throw new Error(`Chat already has another ${ENGINE_LABELS[engine]} session.`);
   await ctx.db.patch(conversation._id, {
     resume: { engine, cursor, version },
     // Kept for Codex chats, so a runner or check from before engines still finds the thread.
@@ -403,10 +404,10 @@ async function recordSession(ctx: MutationCtx, token: string, id: Id<"codexTurns
 }
 
 export const setResume = mutation({
-  args: { token: v.string(), id: v.id("codexTurns"), cursor: v.string(), version: v.optional(v.number()) },
+  args: { token: v.string(), id: v.id("codexTurns"), cursor: v.string(), version: v.optional(v.number()), replaces: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await recordSession(ctx, args.token, args.id, args.cursor, args.version ?? 1);
+    await recordSession(ctx, args.token, args.id, args.cursor, args.version ?? 1, args.replaces);
     return null;
   },
 });
