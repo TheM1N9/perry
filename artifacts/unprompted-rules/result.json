@@ -1,0 +1,109 @@
+{
+  "ranAt": "2026-09-27T05:15:49.632Z",
+  "checks": {
+    "settingsRefuseNonsense": true,
+    "quietHoldsPhoneMessages": true,
+    "webChatNeverWaits": true,
+    "reminderGoesInQuietHours": true,
+    "quietEndReleasesAsOne": true,
+    "releasedOnlyOnce": true,
+    "limitHoldsTheRest": true,
+    "offersToPauseAfterThree": true,
+    "nextTurnKnowsTheOffer": true,
+    "writingCountsAsAnAnswer": true,
+    "settingsShowWhatIsSaved": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "settingsRefuseNonsense": {
+      "badClock": "dashboard:setManners: Quiet hours are two times, like 22:00 and 07:00.",
+      "badLimit": "dashboard:setManners: The daily limit is a whole number from 1 to 100."
+    },
+    "quietHoldsPhoneMessages": {
+      "sent": [],
+      "waiting": 2
+    },
+    "quietEndReleasesAsOne": [
+      "2 messages waited for your quiet hours to end:\n\n⏰ <b>Morning brief</b>\n\nThree meetings today; the first at 10.\n\n———\n\n⏰ <b>Price check</b>\n\nThe laptop is down to ₹58,000."
+    ],
+    "limitHoldsTheRest": {
+      "sent": [
+        "⏰ <b>One</b>\n\nFirst of the day's news.",
+        "⏰ <b>Two</b>\n\nSecond of the day's news."
+      ],
+      "waiting": 1
+    },
+    "offersToPauseAfterThree": [
+      "⏰ <b>Stock ticker</b>\n\nTicker update 1.",
+      "⏰ <b>Stock ticker</b>\n\nTicker update 2.",
+      "⏰ <b>Stock ticker</b>\n\nTicker update 3.",
+      "I've sent you 3 “Stock ticker” messages without hearing back",
+      "⏰ <b>Stock ticker</b>\n\nTicker update 4."
+    ],
+    "settingsShowWhatIsSaved": {
+      "quietFrom": "22:00",
+      "quietTo": "07:00",
+      "limit": "5 a day▼"
+    },
+    "noPageErrors": [],
+    "telegram": [
+      {
+        "buttons": 0,
+        "text": "Paired. I'm yours now.\n\nTo tell me about yourself, open the dashboard's welcome page, or just tell me here.\n\nTry:\n  remember that I drink coffee black\n  what do you know about me\n  /help for the rest"
+      },
+      {
+        "buttons": 4,
+        "text": "⏰ Take the medicine\ndue now"
+      },
+      {
+        "buttons": 0,
+        "text": "2 messages waited for your quiet hours to end:\n\n⏰ <b>Morning brief</b>\n\nThree meetings today; the first at 10.\n\n———\n\n⏰ <b>Price check</b>\n\nThe laptop is down to ₹58,000."
+      },
+      {
+        "buttons": 0,
+        "text": "⏰ <b>One</b>\n\nFirst of the day's news."
+      },
+      {
+        "buttons": 0,
+        "text": "⏰ <b>Two</b>\n\nSecond of the day's news."
+      },
+      {
+        "buttons": 0,
+        "text": "⏰ <b>Three</b>\n\nThird of the day's news."
+      },
+      {
+        "buttons": 0,
+        "text": "⏰ <b>Stock ticker</b>\n\nTicker update 1."
+      },
+      {
+        "buttons": 0,
+        "text": "⏰ <b>Stock ticker</b>\n\nTicker update 2."
+      },
+      {
+        "buttons": 0,
+        "text": "⏰ <b>Stock ticker</b>\n\nTicker update 3."
+      },
+      {
+        "buttons": 0,
+        "text": "I've sent you 3 “Stock ticker” messages without hearing back. Should I pause that schedule? Just say so, and I will; or tell me to keep it."
+      },
+      {
+        "buttons": 0,
+        "text": "⏰ <b>Stock ticker</b>\n\nTicker update 4."
+      },
+      {
+        "buttons": 0,
+        "text": "That broke: Sign in to Codex in Settings and start Perry's runner (perry start) to chat."
+      },
+      {
+        "buttons": 0,
+        "text": "⏰ <b>Stock ticker</b>\n\nTicker update 5."
+      },
+      {
+        "buttons": 0,
+        "text": "⏰ <b>Stock ticker</b>\n\nTicker update 6."
+      }
+    ]
+  },
+  "passed": true
+}

@@ -26,6 +26,9 @@ crons.interval("remind of to-dos", { minutes: 1 }, internal.todos.tick, {});
 // Search by meaning: vectors for memories that have none yet (memories.embedMissing).
 crons.interval("embed memories", { minutes: 10 }, internal.memories.embedMissing, {});
 
+// Perry's own messages that waited (quiet hours, the day's limit), once they may go (notify.ts).
+crons.interval("release held messages", { minutes: 1 }, internal.notify.releaseHeld, {});
+
 // Durable turns: retry unfinished finalizing, and release what an offline runner abandoned.
 crons.interval("recover turns", { minutes: 1 }, internal.recovery.sweep, {});
 

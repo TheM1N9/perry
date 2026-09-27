@@ -236,6 +236,33 @@ export const setDefaultAccess = internalMutation({
   },
 });
 
+/** The owner wrote to Perry, anywhere: what Perry sent before now is not being ignored (notify.ts). */
+export const ownerWrote = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const install = await read(ctx);
+    if (install) await ctx.db.patch(install._id, { ownerWroteAt: Date.now() });
+    return null;
+  },
+});
+
+/** Quiet hours and the day's limit for Perry's own messages, from Settings (notify.ts). Unset turns one off. */
+export const setManners = internalMutation({
+  args: { quietHours: v.optional(v.object({ start: v.string(), end: v.string() })), dailyLimit: v.optional(v.number()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const install = await read(ctx);
+    if (!install) throw new Error("Run pnpm run setup first.");
+    const clock = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (args.quietHours && (!clock.test(args.quietHours.start) || !clock.test(args.quietHours.end))) throw new Error("Quiet hours are two times, like 22:00 and 07:00.");
+    if (args.quietHours && args.quietHours.start === args.quietHours.end) throw new Error("Quiet hours need to start and end at different times.");
+    if (args.dailyLimit !== undefined && (!Number.isInteger(args.dailyLimit) || args.dailyLimit < 1 || args.dailyLimit > 100)) throw new Error("The daily limit is a whole number from 1 to 100.");
+    await ctx.db.patch(install._id, { quietHours: args.quietHours, dailyLimit: args.dailyLimit });
+    return null;
+  },
+});
+
 /** Hand Assistant to a different chat, or to a different person entirely. */
 export const unclaim = internalMutation({
   args: {},

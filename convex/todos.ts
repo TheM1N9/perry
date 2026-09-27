@@ -204,6 +204,8 @@ export const remind = internalAction({
     const target: Target | null = await ctx.runQuery(internal.channels.target, {});
     const hint = target?.channel === "whatsapp" ? "\n\nTell me when it's done, or when to ask again." : "";
     await ctx.runAction(internal.notify.deliver, {
+      // A reminder due now goes, quiet hours or not.
+      from: { kind: "reminder", id: found.todo._id, name: found.todo.title },
       text: `${reminderText(found.todo, found.timezone)}${hint}`,
       buttons: [
         [{ text: "✓ Done", data: `td:${id}:d` }],
