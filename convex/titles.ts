@@ -1,13 +1,15 @@
 import { v } from "convex/values";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
+import { engineOf, type EngineKind } from "./lib/engines";
 import { authenticate } from "./runner";
 
 /**
  * Naming web chats. A new chat is titled with its first message straight
  * away, so the sidebar never shows "New chat" for one that has started; a
- * runner then asks a quick Codex model (runner/title.ts) for a short name and
- * that replaces it. Any runner may do it, since naming needs no workspace.
+ * runner then asks a quick model (runner/title.ts) for a short name and that
+ * replaces it: the chat's own engine's when that runner has it signed in, else
+ * any engine's. Any runner may do it, since naming needs no workspace.
  */
 
 /** A claim older than this is taken to be from a runner that went away. */
@@ -37,17 +39,15 @@ export async function beingNamed(ctx: QueryCtx): Promise<Set<Id<"conversations">
   return new Set(rows.filter((row) => (row.claimedAt ?? 0) >= now - CLAIM_MS).map((row) => row.conversationId));
 }
 
-/** Chats waiting for a name, for any runner to take. */
+/** Chats waiting for a name, for any runner to take, with the engine each chat is on, which names it when it can. */
 export const pending = query({
   args: { token: v.string() },
-  handler: async (ctx, args): Promise<Array<{ id: Id<"chatTitles">; text: string }>> => {
+  handler: async (ctx, args): Promise<Array<{ id: Id<"chatTitles">; text: string; engine: EngineKind }>> => {
     await authenticate(ctx, args.token);
     const rows = await ctx.db.query("chatTitles").order("asc").take(50);
     const now = Date.now();
-    return rows
-      .filter((row) => row.requestedAt > now - REQUEST_TTL_MS && (row.claimedAt ?? 0) < now - CLAIM_MS)
-      .slice(0, 10)
-      .map((row) => ({ id: row._id, text: row.text }));
+    const waiting = rows.filter((row) => row.requestedAt > now - REQUEST_TTL_MS && (row.claimedAt ?? 0) < now - CLAIM_MS).slice(0, 10);
+    return await Promise.all(waiting.map(async (row) => ({ id: row._id, text: row.text, engine: engineOf(await ctx.db.get(row.conversationId)) })));
   },
 });
 
