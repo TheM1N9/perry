@@ -21,18 +21,20 @@
  *
  * The runner (Codex on this machine) and the dashboard (a production build of
  * the Next.js app, on PERRY_PORT, 7377 unless set) run together under `perry
- * run`, which restarts either if it dies. The service installed at login runs
+ * run`, which restarts either if it dies, and does the updates the dashboard
+ * asks for (selfUpdate). The service installed at login runs
  * exactly that. The `perry` on PATH is a small launcher in ~/.perry/bin that
  * runs this file from its checkout, whatever folder you are in.
  */
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, hostname, networkInterfaces } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HOME, readRunnerConfig, writeRunnerConfig } from "../runner/home";
+import { standing, type UpdateRequest, type UpdateResult } from "../convex/lib/checkout";
+import { HOME, PATHS, readRunnerConfig, writeRunnerConfig } from "../runner/home";
 import { bold, dim, done, green, red, run, spinner, tail, yellow } from "./lib";
 
 export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -145,13 +147,14 @@ function runnerHeldBy(token: string): number | null {
 
 // --- The dashboard build ---------------------------------------------------
 
-/** Run in the background, so the spinner turns while Next.js builds. */
-async function build(): Promise<boolean> {
+/** Run in the background, so the spinner turns while Next.js builds. What it said on failing also goes in `log`, when given. */
+async function build(log?: string[]): Promise<boolean> {
   const building = await spinner("Building the dashboard, a minute or so…");
   const built = await run(nodePath(), [NEXT_CLI, "build"], { cwd: REPO });
   if (built.code !== 0) {
     building.fail(red("The dashboard build failed:"));
     say(dim(tail(built.output)));
+    log?.push(tail(built.output));
     return false;
   }
   building.succeed("dashboard built");
@@ -167,7 +170,7 @@ export function nodePath(): string {
 
 // --- perry run: the runner and the dashboard, kept running ------------------
 
-type Managed = { name: string; argv: string[]; env: NodeJS.ProcessEnv; proc?: ChildProcess; failures: number; startedAt: number };
+type Managed = { name: string; argv: string[]; env: NodeJS.ProcessEnv; proc?: ChildProcess; failures: number; startedAt: number; retry?: ReturnType<typeof setTimeout> };
 
 /** End a process and everything it started; on Windows a plain kill leaves the children. */
 export function killTree(pid: number) {
@@ -201,9 +204,13 @@ async function runForeground() {
   const children: Managed[] = [
     { name: "runner", argv: [process.execPath, join(REPO, "runner", "index.ts")], env: childEnv, failures: 0, startedAt: 0 },
     // PERRY_BUN: the dashboard can start `perry pet` itself (Settings → Desktop pet), and Bun runs it.
-    { name: "dashboard", argv: [nodePath(), NEXT_CLI, "start", "-p", String(PORT)], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT), PERRY_BUN: process.execPath }, failures: 0, startedAt: 0 },
+    // PERRY_SUPERVISOR: this process, which does the updates the dashboard asks for (convex/updates.ts).
+    { name: "dashboard", argv: [nodePath(), NEXT_CLI, "start", "-p", String(PORT)], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT), PERRY_BUN: process.execPath, PERRY_SUPERVISOR: String(process.pid) }, failures: 0, startedAt: 0 },
   ];
   let stopping = false;
+  // Stopped for an update: not started again until it is done.
+  let paused = false;
+  let updating = false;
 
   const launch = (child: Managed) => {
     child.startedAt = Date.now();
@@ -214,14 +221,46 @@ async function runForeground() {
     proc.stderr?.on("data", (chunk: Buffer) => process.stdout.write(prefix(chunk)));
     proc.on("error", (error) => process.stdout.write(`${stamp()} [${child.name}] could not start: ${error.message}\n`));
     proc.on("exit", (code) => {
-      if (stopping) return;
+      if (stopping || paused) return;
       // One that ran a while and then died starts again at once; one that keeps dying backs off, to 5 minutes.
       child.failures = Date.now() - child.startedAt > 60_000 ? 0 : child.failures + 1;
       const wait = Math.min(300, 2 ** child.failures) * 1000;
       process.stdout.write(`${stamp()} [perry] ${child.name} exited (${code ?? "signal"}); starting it again in ${wait / 1000}s\n`);
-      setTimeout(() => { if (!stopping) launch(child); }, wait);
+      child.retry = setTimeout(() => { if (!stopping && !paused) launch(child); }, wait);
     });
   };
+
+  /** Both stopped, and gone: an update replaces files they have open. */
+  const pause = () => {
+    paused = true;
+    return Promise.all(children.map((child) => new Promise<void>((resolveEnded) => {
+      clearTimeout(child.retry);
+      const proc = child.proc;
+      if (!proc?.pid || proc.exitCode !== null || proc.signalCode !== null) return resolveEnded();
+      const timer = setTimeout(() => { try { process.kill(proc.pid!, "SIGKILL"); } catch {} resolveEnded(); }, 15_000);
+      proc.once("exit", () => { clearTimeout(timer); resolveEnded(); });
+      killTree(proc.pid);
+    })));
+  };
+  const resume = () => {
+    paused = false;
+    for (const child of children) {
+      child.failures = 0;
+      launch(child);
+    }
+  };
+  // An update the dashboard asked for, looked for every couple of seconds.
+  setInterval(() => {
+    if (updating || stopping || !existsSync(PATHS.updateRequest)) return;
+    updating = true;
+    const note = (line: string) => process.stdout.write(`${stamp()} [perry] ${line}\n`);
+    void selfUpdate({ pause, resume, note })
+      .catch((error) => note(`the update stopped: ${error instanceof Error ? error.message : String(error)}`))
+      .finally(() => {
+        updating = false;
+        if (paused && !stopping) resume();
+      });
+  }, 2_000);
 
   const stop = () => {
     if (stopping) return;
@@ -236,6 +275,140 @@ async function runForeground() {
 
   process.stdout.write(`${stamp()} [perry] starting the runner and the dashboard on ${dashboardUrl()}\n`);
   for (const child of children) launch(child);
+}
+
+// --- Updates Perry does on himself ---------------------------------------------
+
+/** A request this old, found as `perry run` starts, is from long ago: no surprise update now. */
+const REQUEST_TTL_MS = 10 * 60_000;
+
+/**
+ * An update the dashboard asked for (update-request.json, written by
+ * convex/updates.ts), done here rather than by the dashboard's server, which
+ * it stops. It is `perry update`, in steps: first, while Perry still runs,
+ * whether there is anything to do; then the runner and the dashboard stopped,
+ * the checkout moved forward to what was checked, packages installed, the
+ * dashboard built, and both started again; then the desktop pet. How it went
+ * is left in update-result.json before the dashboard starts, for it to show.
+ *
+ * If installing or building fails, the checkout goes back to the commit it was
+ * on (git reset --keep, which never touches changes of the owner's), with that
+ * commit's packages and the build it was running, set aside before the new one
+ * was made (built again only if that is gone): Perry comes back as he was, and
+ * the dashboard says what failed.
+ *
+ * This process's own code stays what it was until it next starts (the next
+ * login, or perry stop and perry start); the runner and the dashboard are new.
+ */
+async function selfUpdate({ pause, resume, note }: { pause: () => Promise<unknown>; resume: () => void; note: (line: string) => void }) {
+  let request: UpdateRequest | null = null;
+  try { request = JSON.parse(readFileSync(PATHS.updateRequest, "utf8")); } catch {}
+  // Taken now, so whatever happens it is not done twice.
+  rmSync(PATHS.updateRequest, { force: true });
+  if (!request?.id) return note("left an update request that could not be read");
+  const asked = request;
+  const log: string[] = [];
+  const say = (line: string) => { note(line); log.push(line); };
+  const record = (outcome: Omit<UpdateResult, "id" | "by" | "at" | "log">) => {
+    const result: UpdateResult = { id: asked.id, by: asked.by, at: Date.now(), ...outcome, log: tail(log.join("\n").replace(/\x1b\[[0-9;]*m/g, ""), 40) };
+    writeFileSync(PATHS.updateResult, `${JSON.stringify(result, null, 2)}\n`);
+  };
+  if (Date.now() - asked.at > REQUEST_TTL_MS) return record({ ok: false, error: "The update was asked for too long ago, so Perry left it. Ask again." });
+
+  say(asked.by === "nightly" ? "updating Perry, as planned for the night" : "updating Perry, as asked from the dashboard");
+  // Nothing stops for an update that cannot happen.
+  const before = await standing(REPO);
+  if (before.problem) {
+    say(before.problem);
+    return record({ ok: false, from: before.head, error: before.problem });
+  }
+  if (!before.behind || !before.head || !before.latest) {
+    say("already the latest");
+    return record({ ok: true, from: before.head, to: before.head });
+  }
+  const from = before.head;
+  const target = before.latest;
+  say(`${before.behind} new ${before.behind === 1 ? "change" : "changes"}, the newest "${target.title}"; stopping the runner and the dashboard`);
+
+  /** A step, its output kept for the record: null when it went well, else what failed. */
+  const step = async (what: string, argv: string[]): Promise<string | null> => {
+    say(what);
+    const ran = await runIn(argv);
+    if (ran.code === 0) return null;
+    log.push(tail(ran.output));
+    return `${what[0].toUpperCase()}${what.slice(1)} failed`;
+  };
+  const install = () => step("installing packages", tool("pnpm", ["install", "--frozen-lockfile"]));
+  const rebuild = async () => (await build(log)) ? null : "The dashboard didn't build";
+  // The build Perry runs now is set aside, not copied (a rename costs no disk), with its compiler
+  // cache left for the new build; a failed build is undone by putting it back rather than building again.
+  const running = join(REPO, ".next");
+  const kept = join(REPO, "node_modules", ".cache", "perry-previous-build");
+  const setAside = () => {
+    try {
+      rmSync(kept, { recursive: true, force: true });
+      if (!existsSync(join(running, "BUILD_ID"))) return false;
+      mkdirSync(dirname(kept), { recursive: true });
+      renameSync(running, kept);
+    } catch {
+      // Left where it is, the build is made over it, and going back builds again.
+      return false;
+    }
+    try {
+      if (existsSync(join(kept, "cache"))) {
+        mkdirSync(running, { recursive: true });
+        renameSync(join(kept, "cache"), join(running, "cache"));
+      }
+    } catch {}
+    return true;
+  };
+  const putBack = () => {
+    try {
+      rmSync(running, { recursive: true, force: true, maxRetries: 5, retryDelay: 400 });
+      renameSync(kept, running);
+      say("put the build Perry was running back");
+      return true;
+    } catch (error) {
+      say(`could not put the old build back: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  };
+
+  let outcome: Omit<UpdateResult, "id" | "by" | "at" | "log"> = { ok: false, from, to: target.sha, title: target.title };
+  await pause();
+  let asideNow = false;
+  try {
+    // To the commit that was checked, and only forward; it was fetched, so this needs no network.
+    const moved = await step("moving to the latest", tool("git", ["merge", "--ff-only", target.sha]));
+    const failed = moved ?? (await install()) ?? ((asideNow = setAside()), await rebuild());
+    if (moved) {
+      outcome.error = `${moved}. Nothing was changed.`;
+    } else if (failed) {
+      say(failed);
+      // The old code, its packages, and its build: the one set aside, or one made again if that is gone.
+      const back = (await step(`going back to ${from.slice(0, 7)}`, tool("git", ["reset", "--keep", from]))) ?? (await install())
+        ?? ((asideNow && putBack()) || existsSync(BUILD_ID) ? null : await rebuild());
+      outcome.error = back ? `${failed}, and going back failed too (${back}). Run perry update in Perry's folder.` : `${failed}. Perry went back to the version he was on.`;
+    } else {
+      rmSync(kept, { recursive: true, force: true });
+      outcome = { ...outcome, ok: true };
+      say(`updated to ${target.sha.slice(0, 7)}; perry run itself keeps its old code until Perry next starts`);
+    }
+  } catch (error) {
+    outcome.error = `The update stopped: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    // Before the dashboard starts, so the first thing it reads is how this went.
+    record(outcome);
+    resume();
+  }
+  if (!outcome.ok) return;
+  // The desktop pet, when there is one, is its own install, and shows the page just rebuilt.
+  await waitFor(dashboardUp, 120);
+  try {
+    await (await import("./pet")).refresh();
+  } catch (error) {
+    note(`could not update the desktop pet: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 // --- The launcher on PATH ----------------------------------------------------

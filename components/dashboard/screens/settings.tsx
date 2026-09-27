@@ -25,6 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ACCESS_ICONS } from "../chat/composer";
 import { PetControl } from "../pet-control";
 import { Shortcuts } from "../shortcuts";
+import { Updates } from "../updates";
 import { ActionButton, CommandLine, CopyButton, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
 
 const TABS = ["general", "keys", "shortcuts", "telegram", "whatsapp"] as const;
@@ -41,7 +42,7 @@ export function Settings() {
           <TabsTrigger value="telegram">Telegram</TabsTrigger>
           <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
         </TabsList>
-        <TabsContent value="general"><Engines /><NewChatAccess /><Manners /><DesktopPet /><Appearance /></TabsContent>
+        <TabsContent value="general"><Engines /><NewChatAccess /><Manners /><Updates /><DesktopPet /><Appearance /></TabsContent>
         <TabsContent value="keys"><Keys /></TabsContent>
         <TabsContent value="shortcuts"><Shortcuts /></TabsContent>
         <TabsContent value="telegram"><Telegram /></TabsContent>

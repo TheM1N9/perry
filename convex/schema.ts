@@ -60,6 +60,8 @@ export const vPolicy = v.union(v.literal("ask"), v.literal("review"), v.literal(
  * no sandbox, and Codex never asks.
  */
 export const vAccess = v.union(v.literal("supervised"), v.literal("auto"), v.literal("full"));
+/** Who asked Perry to update himself: the owner, with a click, or the night (updates.ts). */
+export const vUpdateBy = v.union(v.literal("owner"), v.literal("nightly"));
 /** A Codex model as `model/list` reports it, with the reasoning efforts it takes. Every engine reports its models this way. */
 export const vCodexModel = v.object({
   id: v.string(),
@@ -141,6 +143,8 @@ export default defineSchema({
     dailyLimit: v.optional(v.number()),
     /** When the owner last wrote to Perry anywhere, so what goes unanswered can be told apart. */
     ownerWroteAt: v.optional(v.number()),
+    /** False stops Perry updating himself at night (updates.ts). Unset means on. */
+    autoUpdate: v.optional(v.boolean()),
     /** Keyboard shortcuts the owner changed, by id (lib/shortcuts.ts), as Electron accelerators. The rest are the defaults. */
     shortcuts: v.optional(v.record(v.string(), v.string())),
     /**
@@ -260,6 +264,37 @@ export default defineSchema({
     error: v.optional(v.string()),
     startedAt: v.number(),
     finishedAt: v.optional(v.number()),
+  }),
+
+  /**
+   * One row: Perry keeping himself up to date (updates.ts). What the last
+   * check of his checkout found, an update asked for and not done yet, and
+   * how the last one went, as `perry run`, which does them, reported it.
+   */
+  updates: defineTable({
+    checkedAt: v.optional(v.number()),
+    head: v.optional(v.string()),
+    behind: v.optional(v.number()),
+    latest: v.optional(v.object({ sha: v.string(), title: v.string() })),
+    /** Why no update can be offered (changes of the owner's, no network, not a git checkout). */
+    problem: v.optional(v.string()),
+    /** The owner asked while Perry was busy: he updates once he isn't. */
+    wantedAt: v.optional(v.number()),
+    /** Handed to `perry run` (update-request.json), which stops the dashboard's server to do it. */
+    requested: v.optional(v.object({ id: v.string(), at: v.number(), by: vUpdateBy })),
+    /** The owner's day the night's update was last asked for, so it is asked once a night. */
+    nightOf: v.optional(v.string()),
+    last: v.optional(v.object({
+      id: v.string(),
+      by: vUpdateBy,
+      at: v.number(),
+      ok: v.boolean(),
+      from: v.optional(v.string()),
+      to: v.optional(v.string()),
+      title: v.optional(v.string()),
+      error: v.optional(v.string()),
+      log: v.optional(v.string()),
+    })),
   }),
 
   /**

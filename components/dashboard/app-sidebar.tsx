@@ -38,6 +38,7 @@ import { usePalette } from "./command-palette";
 import { ChannelIcon, PerryMark } from "./common";
 import { StatusIndicator } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
+import { UpdateNotice } from "./updates";
 
 /** How many chats show before "Show all", so a long history stays scannable. */
 const CHAT_PAGE = 25;
@@ -116,6 +117,7 @@ export function AppSidebar() {
         <ChatGroups />
       </SidebarContent>
       <SidebarFooter>
+        <UpdateNotice />
         <ComputerStatus />
         <AccountMenu />
       </SidebarFooter>
