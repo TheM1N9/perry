@@ -1,0 +1,220 @@
+{
+  "ranAt": "2026-09-27T19:42:52.289Z",
+  "engine": "antigravity",
+  "agent": "fake (artifacts/engine-acp/fake-agent.ts --profile antigravity), from a fake release served by this test",
+  "codexModel": "gpt-6-luna",
+  "checks": {
+    "nothingDownloadedAtStart": true,
+    "settingsExperimental": true,
+    "googleWarningQuotesFaq": true,
+    "keyRequiredFirst": true,
+    "tamperedDownloadRefused": true,
+    "downloadVerifiedAndUnpacked": true,
+    "keyGivenOnlyToServer": true,
+    "ownHomeAndTemp": true,
+    "enginesCoexist": true,
+    "replyStreamsAndSaves": true,
+    "askIsDefaultMode": true,
+    "earlyEndTurnWaitsForReply": true,
+    "mcpRemember": true,
+    "approvalOwnOptionIds": true,
+    "fullIsYolo": true,
+    "stopEndsServerIgnoringCancel": true,
+    "resumeOnModel": true,
+    "hungReplyWatchdog": true,
+    "switchCodexAndBack": true,
+    "googleSignInOwnFlow": true,
+    "signOut": true,
+    "noTempLeftovers": true,
+    "completed": true,
+    "noPageErrors": true,
+    "runnerLogClean": true,
+    "agentsEndWithRunner": true,
+    "keyNeverLogged": true
+  },
+  "notes": {
+    "nothingDownloadedAtStart": {
+      "downloads": 0,
+      "log": 0
+    },
+    "settingsExperimental": "Antigravity\nExperimental\nSigned out\n\nNot signed in\n\nExperimental. Not turned on: turning it on downloads Google's own Antigravity ACP server (about 125 MB, about 1 GB unpacked) into Perry's folder.\n\nUse Gemini API key\nSign in with Google\n\nPerry runs Google's own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved in the Keys tab. Signing in with Google also works, at your own risk: Google's Antigravity FAQ says “Using third party software, tools, or services to access Antigravity is a violation of our Terms of Service … may be grounds for suspension or termination of your account.”",
+    "googleWarningQuotesFaq": "Sign in with Google? (Experimental)\n\nGoogle's Antigravity FAQ says “Using third party software, tools, or services to access Antigravity is a violation of our Terms of Service … may be grounds for suspension or termination of your account.”\nPerry runs only Google's official ACP server, signed in with your own Google account in a browser on that computer, and never sees or keeps the sign-in. Google may still treat it as third-party access. A Gemini API key is the safer way in.\n\nKeep it\nSign in anyway",
+    "keyRequiredFirst": {
+      "noKey": "",
+      "request": {
+        "kind": "login",
+        "status": "error",
+        "error": "Save your Gemini API key in Settings → Keys first (from aistudio.google.com/apikey), then try again"
+      }
+    },
+    "tamperedDownloadRefused": {
+      "refused": {
+        "kind": "login",
+        "status": "error",
+        "error": "The download does not match the Antigravity 9.9.9-fake Perry knows (558 bytes, SHA-256 41383cff7dcc…), so it was deleted and not run."
+      },
+      "leftovers": {
+        "download": [],
+        "partial": []
+      }
+    },
+    "downloadVerifiedAndUnpacked": {
+      "on": {
+        "version": "9.9.9-fake",
+        "auth": {
+          "type": "gemini-api-key",
+          "label": "Gemini API key"
+        }
+      },
+      "leftovers": {
+        "download": [],
+        "partial": []
+      }
+    },
+    "keyGivenOnlyToServer": {
+      "auth": {
+        "at": 1790538068831,
+        "pid": 74464,
+        "profile": "antigravity",
+        "method": "authenticate",
+        "methodId": "gemini-api-key",
+        "geminiKeyPresent": true,
+        "env": {
+          "GEMINI_HOME": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-antigravity-GDc5fw\\engines\\antigravity\\home",
+          "TEMP": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-antigravity-GDc5fw\\engines\\antigravity\\tmp"
+        }
+      }
+    },
+    "ownHomeAndTemp": {
+      "env": {
+        "GEMINI_HOME": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-antigravity-GDc5fw\\engines\\antigravity\\home",
+        "TEMP": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-antigravity-GDc5fw\\engines\\antigravity\\tmp"
+      }
+    },
+    "enginesCoexist": {
+      "reported": [
+        "codex",
+        "grok",
+        "claude",
+        "antigravity"
+      ],
+      "pickerEngines": [
+        "codex",
+        "claude",
+        "grok",
+        "antigravity"
+      ]
+    },
+    "replyStreamsAndSaves": {
+      "snapshots": 5,
+      "reply": "Fake antigravity reply to: Hello Antigravity agy-muk82ikd. One two three four five six seven eight nine ten."
+    },
+    "askIsDefaultMode": {},
+    "earlyEndTurnWaitsForReply": {
+      "reply": "Late reply to: EARLY agy-muk82ikd. One two three.",
+      "status": "done"
+    },
+    "mcpRemember": "Saved it: remembered over HTTP.",
+    "approvalOwnOptionIds": {
+      "outcome": "selected",
+      "optionId": "opt_reject_9"
+    },
+    "fullIsYolo": "I ran `echo full-agy-muk82ikd`. It finished.",
+    "stopEndsServerIgnoringCancel": {
+      "stopped": true,
+      "tookMs": 18666,
+      "oldAlive": false
+    },
+    "resumeOnModel": {
+      "resumed": true,
+      "model": "gemini-fake-flash",
+      "mode": "default"
+    },
+    "hungReplyWatchdog": "Antigravity stopped responding, so Perry stopped it. Send another message to carry on; the chat's session is kept.",
+    "switchCodexAndBack": {
+      "codexEngine": "codex",
+      "codexReply": "switched-ok",
+      "codexOutOfQuota": false,
+      "back": "Fake antigravity reply to: Back on Antigravity agy-muk82ikd."
+    },
+    "googleRequest": {
+      "kind": "login",
+      "status": "done"
+    },
+    "googleSignInOwnFlow": {
+      "google": {
+        "at": 1790538149820,
+        "pid": 22504,
+        "profile": "antigravity",
+        "method": "authenticate",
+        "methodId": "oauth-personal",
+        "geminiKeyPresent": false,
+        "env": {
+          "GEMINI_HOME": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-antigravity-GDc5fw\\engines\\antigravity\\home",
+          "TEMP": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-antigravity-GDc5fw\\engines\\antigravity\\tmp"
+        }
+      },
+      "downloads": 2,
+      "reply": "Fake antigravity reply to: After Google agy-muk82ikd. One tw"
+    },
+    "signOut": true,
+    "noTempLeftovers": {
+      "starts": 4,
+      "tmpLeft": [],
+      "systemTemp": [],
+      "leftovers": {
+        "download": [],
+        "partial": []
+      }
+    },
+    "serverRunningAtStop": {
+      "pid": 66424,
+      "alive": true
+    },
+    "noPageErrors": [],
+    "runnerLogClean": [],
+    "agentsEndWithRunner": {
+      "agents": 5,
+      "stillRunning": []
+    },
+    "keyNeverLogged": true,
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-antigravity-GDc5fw\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn 0jbzqkjze8eash1p05bbngp2s9\u001b[0m",
+      "\u001b[2m  named a chat \"Hello Antigravity\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn ksgm6md2gyptn7x3fdcveva04q\u001b[0m",
+      "\u001b[2m  saved turn y77g6rhwrxswbesjcbrs9d8309\u001b[0m",
+      "\u001b[1m  Assistant wants to run:\u001b[0m",
+      "    \u001b[36mRemove-Item C:\\agy-agy-muk82ikd\u001b[0m",
+      "\u001b[2m    in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-antigravity-GDc5fw\\workspace\u001b[0m",
+      "\u001b[2m    The owner asked for it\u001b[0m",
+      "\u001b[2m    approve or decline it in the dashboard or on Telegram\u001b[0m",
+      "\u001b[2m  declined in the dashboard or on Telegram.\u001b[0m",
+      "\u001b[2m  saved turn fhs9f3jw6gmkzm1hvdpn2hesgb\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Antigravity does not ask\u001b[0m",
+      "\u001b[2m  saved turn k5xhzrsdgkevpaacms46kbbmq5\u001b[0m",
+      "\u001b[33m  stopping the Antigravity turn, as asked\u001b[0m",
+      "\u001b[33m  Antigravity did not stop; ending it. The chat's session resumes with the next message.\u001b[0m",
+      "\u001b[2m  saved turn pfmr919dxjf0q1ey8eekvtfpv9\u001b[0m",
+      "\u001b[2m  saved turn wkrnd7nmr7az5wehh7d5qs758r\u001b[0m",
+      "\u001b[33m  Antigravity sent nothing for 8s; stopping the reply.\u001b[0m",
+      "\u001b[33m  Antigravity did not stop; ending it. The chat's session resumes with the next message.\u001b[0m",
+      "\u001b[2m  saved turn yd6vb62ksqeytywb2ms6f41grx\u001b[0m",
+      "\u001b[2m  saved turn k9q85zvzhenhx0z69nn7tf11bk\u001b[0m",
+      "\u001b[2m  saved turn qw6n6h7sjxgt6qd659yzcm1pns\u001b[0m",
+      "\u001b[33m  Antigravity opened Google's sign-in page in a browser on this computer.\u001b[0m",
+      "\u001b[2m  saved turn hs1saypsnfkd42eeafx48sby0j\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}
