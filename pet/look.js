@@ -90,6 +90,8 @@ export async function capture(own, near) {
       : "Perry couldn't take a picture of the screen." };
   }
   return {
+    // Whether the window in front could be pictured at all: some cannot (Windows' own search panel, for one), and then the topmost other one is.
+    ...(facts ? { frontListed: windows.some((source) => handleOf(source) === facts.front) } : {}),
     ...(top ? { window: { id: top.id, name: top.name, image: top.thumbnail.toDataURL() } } : {}),
     ...(whole ? { screen: { name: screens.length > 1 ? whole.name : "Whole screen", image: whole.thumbnail.toDataURL() } } : {}),
   };

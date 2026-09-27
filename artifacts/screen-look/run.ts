@@ -263,13 +263,16 @@ try {
     try {
       await until(() => pet.evaluate(`Boolean(window.perryPet?.look)`), "his bridge", 30);
       const frontBefore = user32().front;
-      const real = await pet.evaluate(`window.perryPet.look()`) as { window?: { id: string; name: string; image: string }; screen?: { name: string; image: string }; error?: string };
+      const real = await pet.evaluate(`window.perryPet.look()`) as { window?: { id: string; name: string; image: string }; screen?: { name: string; image: string }; frontListed?: boolean; error?: string };
       const frontAfter = user32().front;
       const chosen = Number(real.window?.id.split(":")[1]);
       // The owner may switch windows meanwhile; then the check says so rather than failing.
       const steady = frontBefore === frontAfter;
-      check("realPictureIsTheWindowInFront", !steady || (real.window?.id === `window:${frontBefore}:0` && real.window.image.length > 5_000),
-        { error: real.error, steady, isTheFront: real.window?.id === `window:${frontBefore}:0`, clickThrough: Number.isFinite(chosen) ? user32(chosen).through : null });
+      // Some windows in front cannot be pictured (Windows' own search panel, for one); then the topmost other one that takes clicks is.
+      const isTheFront = real.window?.id === `window:${frontBefore}:0`;
+      const clickThrough = Number.isFinite(chosen) ? user32(chosen).through : null;
+      check("realPictureIsTheWindowInFront", !steady || (real.frontListed ? isTheFront : clickThrough === false) && (real.window?.image.length ?? 0) > 5_000,
+        { error: real.error, steady, frontListed: real.frontListed, isTheFront, clickThrough });
       check("realScreenPicture", Boolean(real.screen?.image.startsWith("data:image/png") && real.screen.image.length > 20_000), { screenBytes: real.screen?.image.length });
       await until(async () => { const look = (await call<{ pet: { keys: Record<string, { hotkey?: string; error?: string }> } }>("dashboard:getShortcuts", { key: KEY })).pet.keys.look; return look?.hotkey === LOOK_KEYS || look?.error === "taken"; }, "the real pet's Look keys", 90).catch(() => {});
       const look = (await call<{ pet: { keys: Record<string, { hotkey?: string; error?: string }> } }>("dashboard:getShortcuts", { key: KEY })).pet.keys.look;
