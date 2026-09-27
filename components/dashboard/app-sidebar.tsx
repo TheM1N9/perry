@@ -5,10 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, ChevronsUpDownIcon, InboxIcon, ListChecksIcon, LockIcon, MonitorIcon,
-  MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
+  MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@/client/react";
+import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { ChatSummary } from "@/convex/dashboard";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
@@ -39,6 +39,8 @@ import { ChannelIcon, PerryMark } from "./common";
 import { StatusIndicator } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
 import { UpdateNotice } from "./updates";
+import { PlatypusArt } from "./platypus";
+import { Spinner } from "@/components/ui/spinner";
 
 /** How many chats show before "Show all", so a long history stays scannable. */
 const CHAT_PAGE = 25;
@@ -118,6 +120,7 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter>
         <UpdateNotice />
+        <DesktopPet />
         <ComputerStatus />
         <AccountMenu />
       </SidebarFooter>
@@ -305,6 +308,59 @@ export function DeleteDialog({ chat, onClose }: { chat: { id: ChatSummary["id"];
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+/**
+ * The desktop pet, from anywhere in the dashboard: on or off on the computer
+ * Perry runs on, turned either way from his menu, which also leads to his
+ * settings. While he is being set up, the step it is on.
+ */
+function DesktopPet() {
+  const { dashboardKey } = useSession();
+  const router = useRouter();
+  const { isMobile } = useSidebar();
+  const pet = useQuery(api.pet.status, { key: dashboardKey });
+  const turnOn = useAction(api.pet.turnOn);
+  const turnOff = useAction(api.pet.turnOff);
+  // It runs as long as setup takes, minutes the first time; the item follows it in pet.status, not in this call.
+  const start = (which: typeof turnOn) => void which({ key: dashboardKey }).catch((cause) => toast.error(errorText(cause)));
+  const working = pet?.setup?.state === "working";
+  const failed = !working && pet?.setup?.state === "failed";
+  const state = pet === undefined ? "Checking…" : working ? (pet.setup?.step ?? (pet.setup?.action === "off" ? "Turning him off…" : "Getting him ready…"))
+    : pet.running ? "On your desktop" : failed ? "Couldn't start him" : "Not on your desktop";
+  return (
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<SidebarMenuButton className="data-popup-open:bg-sidebar-accent" tooltip={`Desktop pet · ${state}`} />}>
+            <PlatypusArt head asleep={!pet?.running && !working} hat={Boolean(pet?.running) || working} className="size-4 shrink-0" />
+            <span className="truncate">Desktop pet</span>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side={isMobile ? "top" : "right"} align="end" sideOffset={8} className="w-64">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="font-normal">
+                <span className="block text-sm font-medium text-foreground">{state}</span>
+                {pet && <span className="block text-xs text-pretty text-muted-foreground">
+                  {failed ? pet.setup?.error?.split("\n")[0] : pet.running ? `On ${pet.host}, and he starts with it.` : `He'd appear on ${pet.host}, the computer Perry runs on.`}
+                </span>}
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            {pet?.running
+              ? <DropdownMenuItem disabled={working} onClick={() => start(turnOff)}><PowerOffIcon />Turn him off</DropdownMenuItem>
+              : <DropdownMenuItem disabled={working || pet === undefined} onClick={() => start(turnOn)}><PowerIcon />{failed ? "Try again" : "Turn him on"}</DropdownMenuItem>}
+            <DropdownMenuItem onClick={() => router.push("/settings?tab=general")}><SettingsIcon />Pet settings</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {pet !== undefined && (
+          <SidebarMenuBadge>
+            {working ? <Spinner className="size-3" />
+              : <span className={cn("size-2 rounded-full", pet.running ? "bg-success" : failed ? "bg-destructive" : "bg-muted-foreground/40")} aria-label={pet.running ? "On" : failed ? "Failed" : "Off"} role="img" />}
+          </SidebarMenuBadge>
+        )}
+      </SidebarMenuItem>
+    </SidebarMenu>
   );
 }
 

@@ -1,10 +1,12 @@
 {
-  "ranAt": "2026-09-26T22:09:56.362Z",
+  "ranAt": "2026-09-27T19:59:56.937Z",
   "checks": {
     "offeredInSettings": true,
     "onFromWeb": true,
     "stepsShown": true,
     "petPageOpen": true,
+    "sidebarSaysOn": true,
+    "sidebarMenuOffersOff": true,
     "ownLoginEntry": true,
     "ownersEntryUntouched": true,
     "ownersPetUntouched": true,
@@ -28,7 +30,11 @@
     "ownEntryGone": true,
     "ownersEntryStillUntouched": true,
     "ownersPetStillRunning": true,
-    "offeredOnTodos": true,
+    "sidebarSaysOff": true,
+    "sidebarOffersOn": true,
+    "todosPageWithoutPetCard": true,
+    "onFromSidebar": true,
+    "offFromSidebar": true,
     "noPageErrors": true,
     "terminalSaysSteps": true,
     "terminalHasNoStepLines": true,
@@ -42,144 +48,207 @@
   "notes": {
     "ownersPetBefore": {
       "entry": "Perry pet    REG_SZ    \"C:\\Users\\Pranav\\perry\\pet\\node_modules\\.pnpm\\electron@44.4.5\\node_modules\\electron\\dist\\electron.exe\" \"C:\\Users\\Pranav\\perry\\pet\"",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     "stepsShown": [
       "Getting Electron ready…",
       "Starting him…"
     ],
-    "ownEntry": "Perry pet-686937ba    REG_SZ    \"C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-3961593a\\pet\\node_modules\\.pnpm\\electron@44.4.5\\node_modules\\electron\\dist\\electron.exe\" \"C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-3961593a\\pet\"",
+    "sidebarOnMenu": "On your desktop\nOn DESKTOP-27SQLCP, and he starts with it.\nTurn him off\nPet settings",
+    "ownEntry": "Perry pet-dcbcc556    REG_SZ    \"C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-99643f39\\pet\\node_modules\\.pnpm\\electron@44.4.5\\node_modules\\electron\\dist\\electron.exe\" \"C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-99643f39\\pet\"",
     "firstStretch": {
-      "id": "jjnwpvtz24m393crmwq73t621q",
-      "title": "Stretch",
-      "dueAt": 1790487000000,
-      "repeat": "0 11 * * *",
-      "by": "owner",
-      "createdAt": 1790460578535,
-      "due": "Sun Sep 27 2026 11:00:00 GMT+0530 (India Standard Time)"
-    },
-    "nextStretch": {
-      "id": "vhcccyz9edhff2e78p7seg895d",
+      "id": "cnz8qfnfq0g57gtysmdtswsccv",
       "title": "Stretch",
       "dueAt": 1790573400000,
-      "repeat": "0 11 * * 1-5",
+      "repeat": "0 11 * * *",
       "by": "owner",
-      "createdAt": 1790460581058,
+      "createdAt": 1790539176210,
       "due": "Mon Sep 28 2026 11:00:00 GMT+0530 (India Standard Time)"
     },
+    "nextStretch": {
+      "id": "pmz88jfw2ny774a3d7hzyn5ta3",
+      "title": "Stretch",
+      "dueAt": 1790659800000,
+      "repeat": "0 11 * * 1-5",
+      "by": "owner",
+      "createdAt": 1790539178972,
+      "due": "Tue Sep 29 2026 11:00:00 GMT+0530 (India Standard Time)"
+    },
+    "sidebarOffMenu": "Not on your desktop\nHe'd appear on DESKTOP-27SQLCP, the computer Perry runs on.\nTurn him on\nPet settings",
     "pageErrors": [],
     "failure": {
       "action": "on",
       "state": "failed",
-      "error": "Could not run perry: spawn C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-pet-web-VmTMFp\\no-bun-here.exe ENOENT",
-      "at": 1790460594349
+      "error": "Could not run perry: spawn C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-pet-web-IgL31R\\no-bun-here.exe ENOENT",
+      "at": 1790539194133
     }
   },
   "ownersPets": [
     {
-      "at": "2026-09-26T22:09:34.774Z",
+      "at": "2026-09-27T19:59:31.737Z",
       "step": "offeredInSettings",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:36.856Z",
+      "at": "2026-09-27T19:59:33.869Z",
       "step": "onFromWeb",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:38.118Z",
+      "at": "2026-09-27T19:59:34.383Z",
+      "step": "sidebarSaysOn",
+      "pets": [
+        "47024"
+      ]
+    },
+    {
+      "at": "2026-09-27T19:59:35.772Z",
       "step": "repeatPreviewed",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:38.541Z",
+      "at": "2026-09-27T19:59:36.225Z",
       "step": "repeatAdded",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:38.963Z",
+      "at": "2026-09-27T19:59:36.674Z",
       "step": "repeatShownOnRow",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:39.640Z",
+      "at": "2026-09-27T19:59:37.370Z",
       "step": "repeatMenuOpens",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:40.146Z",
+      "at": "2026-09-27T19:59:37.941Z",
       "step": "repeatChanged",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:40.588Z",
+      "at": "2026-09-27T19:59:38.452Z",
       "step": "repeatShowsWeekdays",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:41.064Z",
+      "at": "2026-09-27T19:59:38.986Z",
       "step": "repeatMadeAgain",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:41.869Z",
+      "at": "2026-09-27T19:59:39.855Z",
       "step": "repeatStopped",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:42.923Z",
+      "at": "2026-09-27T19:59:40.903Z",
       "step": "themeSaved",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:43.431Z",
+      "at": "2026-09-27T19:59:41.408Z",
       "step": "petGoesDark",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:45.003Z",
+      "at": "2026-09-27T19:59:42.937Z",
       "step": "petGoesLight",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:46.312Z",
+      "at": "2026-09-27T19:59:44.203Z",
       "step": "themeBackToSystem",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:47.339Z",
+      "at": "2026-09-27T19:59:45.234Z",
       "step": "offFromWeb",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:47.877Z",
+      "at": "2026-09-27T19:59:45.752Z",
       "step": "petQuits",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:49.586Z",
-      "step": "offeredOnTodos",
-      "pets": []
+      "at": "2026-09-27T19:59:46.955Z",
+      "step": "sidebarSaysOff",
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:52.582Z",
+      "at": "2026-09-27T19:59:48.989Z",
+      "step": "onFromSidebar",
+      "pets": [
+        "47024"
+      ]
+    },
+    {
+      "at": "2026-09-27T19:59:49.974Z",
+      "step": "offFromSidebar",
+      "pets": [
+        "47024"
+      ]
+    },
+    {
+      "at": "2026-09-27T19:59:52.319Z",
       "step": "terminalOff",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     },
     {
-      "at": "2026-09-26T22:09:54.644Z",
+      "at": "2026-09-27T19:59:54.461Z",
       "step": "failureOnPage",
-      "pets": []
+      "pets": [
+        "47024"
+      ]
     }
   ],
   "logTail": [
     "▲ Next.js 16.3.6",
-    "- Local:         http://localhost:55196",
-    "- Network:       http://100.77.196.105:55196",
-    "✓ Ready in 206ms",
-    "✓ Running next.config.ts took 48ms",
+    "- Local:         http://localhost:52266",
+    "- Network:       http://100.77.196.105:52266",
+    "✓ Ready in 188ms",
+    "✓ Running next.config.ts took 42ms",
     "[perry] connected this computer (DESKTOP-27SQLCP) to the local backend",
-    "[perry] backend ready: 300 functions, data in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-pet-web-VmTMFp",
+    "[perry] backend ready: 380 functions, data in C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-pet-web-IgL31R",
     ""
   ]
 }

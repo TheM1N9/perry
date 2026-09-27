@@ -152,6 +152,17 @@ try {
   const page = () => dashboard!.evaluate(`document.querySelector("main")?.innerText ?? ""`) as Promise<string>;
   const button = (label: string) => dashboard!.evaluate(`(() => { const b = [...document.querySelectorAll("main button")].find((b) => b.innerText.trim() === ${JSON.stringify(label)}); b?.click(); return Boolean(b); })()`) as Promise<boolean>;
   const shot = async (name: string) => writeFileSync(join(outDir, name), Buffer.from((await dashboard!.send("Page.captureScreenshot", { format: "png" })).data, "base64"));
+  /** The sidebar's Desktop pet item: its dot, and its menu's words once opened. */
+  // By its label: the button's own text also holds the title of his head's picture.
+  const sidebarItem = `[...document.querySelectorAll("span")].find((el) => el.textContent.trim() === "Desktop pet")?.closest("button, [role=button]")`;
+  const sidebarDot = () => dashboard!.evaluate(`${sidebarItem}?.closest("li")?.querySelector('[role=img]')?.getAttribute("aria-label") ?? null`) as Promise<string | null>;
+  const sidebarMenu = async () => {
+    await dashboard!.evaluate(`(() => { const b = ${sidebarItem}; b?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); b?.click(); return true; })()`);
+    await until(() => dashboard!.evaluate(`Boolean(document.querySelector('[role=menu]'))`), "the pet's menu", 10).catch(() => {});
+    return await dashboard!.evaluate(`document.querySelector('[role=menu]')?.innerText ?? ""`) as string;
+  };
+  const sidebarPick = (label: string) => dashboard!.evaluate(`(() => { const item = [...document.querySelectorAll('[role=menuitem]')].find((i) => i.innerText.trim() === ${JSON.stringify(label)}); item?.click(); return Boolean(item); })()`) as Promise<boolean>;
+  const closeMenu = () => dashboard!.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); true`);
 
   // 1. Offered, and not claimed to be on.
   await dashboard.send("Page.navigate", { url: `${BASE}/settings?tab=general` });
@@ -168,6 +179,13 @@ try {
   checks.stepsShown = steps.has("Starting him…");
   checks.petPageOpen = await petPage();
   await shot("settings-on.png");
+  // The sidebar says so too, from any page.
+  await check("sidebarSaysOn", async () => (await sidebarDot()) === "On", 20);
+  const onMenu = await sidebarMenu();
+  notes.sidebarOnMenu = onMenu;
+  checks.sidebarMenuOffersOff = /On your desktop/.test(onMenu) && /Turn him off/.test(onMenu) && /Pet settings/.test(onMenu);
+  await shot("sidebar-pet-on.png");
+  await closeMenu();
 
   // 3. His own login entry; the owner's own entry and pet as they were.
   notes.ownEntry = entry(ownEntry);
@@ -248,8 +266,18 @@ try {
   checks.ownEntryGone = entry(ownEntry) === null;
   checks.ownersEntryStillUntouched = entry("Perry pet") === before.entry;
   checks.ownersPetStillRunning = JSON.stringify(otherPets()) === JSON.stringify(before.pets);
+  // Off, the sidebar offers him, from any page (the To-dos page no longer does), and turns him on and off.
   await dashboard.send("Page.navigate", { url: `${BASE}/todos` });
-  await check("offeredOnTodos", async () => /Perry on your desktop[\s\S]*Not on your desktop[\s\S]*Turn on/.test(await page()), 30);
+  await check("sidebarSaysOff", async () => (await sidebarDot()) === "Off", 30);
+  const offMenu = await sidebarMenu();
+  notes.sidebarOffMenu = offMenu;
+  checks.sidebarOffersOn = /Not on your desktop/.test(offMenu) && /Turn him on/.test(offMenu);
+  checks.todosPageWithoutPetCard = !(await page()).includes("Perry on your desktop");
+  await sidebarPick("Turn him on");
+  await check("onFromSidebar", async () => (await sidebarDot()) === "On" && await petPage(), 120);
+  await sidebarMenu();
+  await sidebarPick("Turn him off");
+  await check("offFromSidebar", async () => (await sidebarDot()) === "Off" && !(await petPage()), 60);
   checks.noPageErrors = dashboard.errors.length === 0;
   notes.pageErrors = dashboard.errors;
 

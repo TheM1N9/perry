@@ -732,7 +732,7 @@ try {
     await dashboard.send("Page.navigate", { url: `${BASE}/todos` });
     await check("dashboardPage", async () => {
       const page = await dashboard.evaluate(`document.querySelector("main")?.innerText ?? ""`) as string;
-      return page.includes("Reply to Ana") && page.includes("Done today") && /Perry on your desktop[\s\S]*(On your desktop|Turn on)/.test(page);
+      return page.includes("Reply to Ana") && page.includes("Done today");
     }, 30);
     checks.dashboardMarksPerrys = await dashboard.evaluate(`Boolean(document.querySelector('[aria-label="Perry added this"]'))`) || false;
     const shot = await dashboard.send("Page.captureScreenshot", { format: "png" });
