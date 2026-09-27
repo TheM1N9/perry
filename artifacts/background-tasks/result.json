@@ -1,0 +1,153 @@
+{
+  "ranAt": "2026-09-27T08:15:00.886Z",
+  "checks": {
+    "oneRunsTheRestWait": true,
+    "pageShowsTheLine": true,
+    "stopsAfterMaxTurnsAndSays": true,
+    "runsWithAPlanAndFinishes": true,
+    "resultReachesThePhone": true,
+    "worksInAChatOfItsOwn": true,
+    "taskTurnsAreNotTheOwnerWriting": true,
+    "nextInLineStarts": true,
+    "pageQueuesATask": true,
+    "asksInsteadOfGuessing": true,
+    "pageAnswerResumesIt": true,
+    "pageLinksItsChat": true,
+    "chatQueuesATask": true,
+    "questionComesBackToTheChat": true,
+    "chatAnswerResumesIt": true,
+    "resultComesBackToTheChat": true,
+    "neverTwoAtOnce": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "oneRunsTheRestWait": {
+      "sums": "running",
+      "haiku": "queued",
+      "stuck": "queued"
+    },
+    "pageShowsTheLine": "Skip to content\nPerry\nNew chat\nCtrl+Shift+O\nSearch\nCtrl+K\nNeeds you\nTo-dos\nWork\nToday\n🧩 Two sums\nDESKTOP-27SQLCP\nM\nMani\n0 memories\nToggle Sidebar\nWork\n\nWhat Perry does without you in the chat. Set it up here, or ask for it in a chat.\n\nSchedules\nPlans\n3\nGoals\nWatches\n\nWork Perry does by himself, one task at a time, in a chat of its own. Its plan shows here as it goes; a question comes to you.\n\nNew task\nTwo sums\nWorking\n\nUpdated now\n\nIts chat\nCancel\nA haiku about rain\nQueued\n\nUpdated now\n\nNext in line\n\nOne that never ends\nQueued\n\nUpdated now\n\n2 in line\n\nSearch Perry\n\nChats, pages and actions",
+    "stopsAfterMaxTurnsAndSays": {
+      "status": "failed",
+      "error": "Stopped after 6 turns without finishing; its chat shows how far it got.",
+      "phone": [
+        "🧩 <b>One that never ends</b> could not be finished.\n\nStopped after 6 turns without finishing; its chat shows how far it got."
+      ]
+    },
+    "runsWithAPlanAndFinishes": {
+      "status": "done",
+      "plan": [
+        {
+          "title": "Calculate 17 × 23",
+          "status": "done"
+        },
+        {
+          "title": "Calculate √1764 and report both results",
+          "status": "done"
+        }
+      ],
+      "result": "Calculated 17 × 23 = 391 and √1764 = 42.",
+      "turns": 1
+    },
+    "resultReachesThePhone": [
+      "🧩 <b>Two sums</b> is done.\n\nCalculated 17 × 23 = 391 and √1764 = 42."
+    ],
+    "worksInAChatOfItsOwn": {
+      "_id": "6qfmzrvqr5k57jz1jpcnj8g6gq",
+      "_creationTime": 1790496744392.001,
+      "channel": "web",
+      "externalId": "session:geved01z6rbjvt2yn6gpf192fz",
+      "threadId": "geved01z6rbjvt2yn6gpf192fz",
+      "title": "🧩 Two sums",
+      "taskId": "ry42cg1jgt46yk7115nx7edzk7",
+      "lastMessageAt": 1790496775120,
+      "codexRunnerId": "dx0fzkt0f9zyp9v8ms8hza3erf",
+      "codexThreadId": "01a0e1ec-2929-7043-8066-b0c8c141c4af",
+      "recallDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pendingTurns": 0
+    },
+    "taskTurnsAreNotTheOwnerWriting": {
+      "wroteBefore": 0,
+      "wrote": 0
+    },
+    "nextInLineStarts": {
+      "status": "done",
+      "result": "Created this 5–7–5 haiku about Bengaluru monsoon rain:\n\nMonsoon drums softly\nRed roofs shine in silver rain\nBengaluru blooms"
+    },
+    "asksInsteadOfGuessing": {
+      "status": "blocked",
+      "question": "Which wall paint colour would you like for your study?",
+      "phone": [
+        "🧩 <b>Paint for the study</b> needs you:\n\nWhich wall paint colour would you like for your study?\n\nAnswer here, or on the Work page, and it carries on."
+      ]
+    },
+    "pageAnswerResumesIt": {
+      "status": "done",
+      "result": "Study wall paint: sage green. Coordinating accent colour: warm terracotta.",
+      "turns": 2
+    },
+    "chatQueuesATask": {
+      "title": "Choose Saturday dinner restaurant",
+      "status": "running"
+    },
+    "questionComesBackToTheChat": {
+      "status": "blocked",
+      "question": "Which restaurant should I choose for Saturday dinner, and what time should dinner be?"
+    },
+    "chatAnswerResumesIt": {
+      "status": "done",
+      "result": "Chosen restaurant: Toit in Indiranagar. Dinner time: Saturday at 8:00 PM."
+    },
+    "neverTwoAtOnce": {
+      "mostAtOnce": 1
+    },
+    "noPageErrors": [],
+    "taskChats": [
+      {
+        "title": "Choose Saturday dinner restaurant",
+        "turns": 2,
+        "messages": [
+          "user: 🧩 Background task: Choose Saturday dinner restaurant\n\nFind out which restaurant the owner wants for dinner on Saturday. You do not know the restaurant or dinner time yet, so immediately call finish_task with outcome='blocked' and summary containing a concise question asking the owner for both the restaurant and the dinner time on Saturday. When the owner answers, resume this task using the answer",
+          "assistant: I’m marking this task blocked until the owner provides the restaurant and Saturday dinner time.",
+          "user: 🧩 Choose Saturday dinner restaurant\n\nThe owner answered your question: \"Toit in Indiranagar, at 8pm.\"\n\nCarry on with the task.\n\nYou are working on this by yourself: the owner is not in this chat and does not read your replies. Keep its plan current with set_plan (task id 7tza9fkmp3w0n8ps9gsnae2jg0), and end by calling finish_task: done with the result (what you made and where), blocked with one c",
+          "assistant: The owner provided the restaurant and time, so I’m recording the choice and closing the task."
+        ]
+      },
+      {
+        "title": "Paint for the study",
+        "turns": 2,
+        "messages": [
+          "user: 🧩 Background task: Paint for the study\n\nChoose the wall paint colour for my study. You do not know which colour I like, and must not guess: first ask me with finish_task blocked, one short question. When I have answered, finish done, naming my colour and one accent colour that goes with it.\n\nYou are working on this by yourself: the owner is not in this chat and does not read your replies. Keep it",
+          "assistant: Codex completed without a text reply.",
+          "user: 🧩 Paint for the study\n\nThe owner answered your question: \"Sage green\"\n\nCarry on with the task.\n\nYou are working on this by yourself: the owner is not in this chat and does not read your replies. Keep its plan current with set_plan (task id b3fe430xn3ge1dk0c7sr60xv83), and end by calling finish_task: done with the result (what you made and where), blocked with one clear question only if you truly ",
+          "assistant: Codex completed without a text reply."
+        ]
+      },
+      {
+        "title": "A haiku about rain",
+        "turns": 1,
+        "messages": [
+          "user: 🧩 Background task: A haiku about rain\n\nWrite a haiku about monsoon rain in Bengaluru, and finish with the haiku as the result.\n\nYou are working on this by yourself: the owner is not in this chat and does not read your replies. Keep its plan current with set_plan (task id zk52vqvy9mpj3g4q3045dh7qze), and end by calling finish_task: done with the result (what you made and where), blocked with one c",
+          "assistant: Codex completed without a text reply."
+        ]
+      },
+      {
+        "title": "Two sums",
+        "turns": 1,
+        "messages": [
+          "user: 🧩 Background task: Two sums\n\nWork out 17 × 23, and the square root of 1764. Lay out a plan of two steps with set_plan first, then finish with both numbers as the result.\n\nYou are working on this by yourself: the owner is not in this chat and does not read your replies. Keep its plan current with set_plan (task id ry42cg1jgt46yk7115nx7edzk7), and end by calling finish_task: done with the result (w",
+          "assistant: Codex completed without a text reply."
+        ]
+      }
+    ],
+    "telegram": [
+      "Paired. I'm yours now.\n\nTo tell me about yourself, open the dashboard's welcome page, or just tell me here.\n\nTry:\n  remember that I drink coffee black\n  what do you know about me\n  /help for the rest",
+      "🧩 <b>One that never ends</b> could not be finished.\n\nStopped after 6 turns without finishing; its chat shows how far it got.",
+      "🧩 <b>Two sums</b> is done.\n\nCalculated 17 × 23 = 391 and √1764 = 42.",
+      "🧩 <b>A haiku about rain</b> is done.\n\nCreated this 5–7–5 haiku about Bengaluru monsoon rain:\n\nMonsoon drums softly\nRed roofs shine in silver rain\nBengaluru blooms",
+      "🧩 <b>Paint for the study</b> needs you:\n\nWhich wall paint colour would you like for your study?\n\nAnswer here, or on the Work page, and it carries on.",
+      "🧩 <b>Paint for the study</b> is done.\n\nStudy wall paint: sage green. Coordinating accent colour: warm terracotta."
+    ]
+  },
+  "passed": true
+}
