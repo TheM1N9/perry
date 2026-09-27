@@ -207,6 +207,26 @@ export async function off(): Promise<boolean> {
   return true;
 }
 
+/** Whether `perry pet` set him to start at login (and `perry pet off` has not undone it). */
+function startsAtLogin(): boolean {
+  if (process.platform === "win32") return exec(["reg", "query", RUN_KEY, "/v", RUN_VALUE], { quiet: true }).code === 0;
+  return existsSync(autostartFile()!);
+}
+
+/** `perry stop`: he goes with Perry, having nothing behind him. He still starts at login as before. */
+export async function quit() {
+  if (!installed()) return;
+  const program = await electron();
+  if (program.path) launch(program.path, ["--quit"]);
+}
+
+/** `perry start`: he starts with Perry, if he is one to start at login. Already running, he just shows. */
+export async function resume() {
+  if (!installed() || !startsAtLogin()) return;
+  const program = await electron();
+  if (program.path) launch(program.path);
+}
+
 /**
  * After `perry update`: the pet's own install brought up to date, and a
  * running pet told to load the new page. Nothing when it was never installed.

@@ -458,7 +458,7 @@ async function status() {
   say(dim(`  logs       ${servicePlan(ctx).logs ? "perry logs" : ctx.logFile}\n`));
 }
 
-async function start(): Promise<boolean> {
+async function start({ pet = true } = {}): Promise<boolean> {
   const { install, serviceState, serviceContext, servicePlan, runSteps } = await import("./service");
   if (!readEnvFile().DASHBOARD_KEY) {
     say(`\n${red("Perry is not set up yet.")} Run ${bold("perry setup")} first.\n`);
@@ -476,15 +476,19 @@ async function start(): Promise<boolean> {
     return false;
   }
   waiting.succeed(`running at ${dashboardUrl()}${state.installed ? "" : dim(", and from every login on")}`);
+  // The desktop pet starts with Perry (and stops with him), unless `perry pet off` sent him away.
+  if (pet) await (await import("./pet")).resume();
   sayAlso("  ");
   return true;
 }
 
-async function stop({ quiet = false } = {}) {
+/** `pet: false` leaves the desktop pet as it is: `perry update` restarts Perry under him and reloads his page. */
+async function stop({ quiet = false, pet = true } = {}) {
   const { serviceContext, servicePlan, runSteps, endServiceProcess } = await import("./service");
   const ctx = serviceContext();
   runSteps(servicePlan(ctx).stop, false);
   if (ctx.platform === "win32") endServiceProcess();
+  if (pet) await (await import("./pet")).quit();
   if (!quiet) await done("stopped");
 }
 
@@ -566,9 +570,9 @@ async function update() {
   // The running dashboard serves from the build, so it stops while a new one is made.
   const { serviceState } = await import("./service");
   const wasRunning = serviceState().running;
-  if (wasRunning) await stop({ quiet: true });
+  if (wasRunning) await stop({ quiet: true, pet: false });
   if (!(await build())) process.exit(1);
-  if (wasRunning && !(await start())) process.exit(1);
+  if (wasRunning && !(await start({ pet: false }))) process.exit(1);
   // The desktop pet, when there is one, is its own install, and shows the page just rebuilt.
   await (await import("./pet")).refresh();
   if (!wasRunning) say(dim(`  Perry was not running; ${bold("perry start")} starts it.`));
