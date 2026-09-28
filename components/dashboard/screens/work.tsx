@@ -268,7 +268,7 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
   const line = tasks.filter((task) => task.status === "queued").sort((a, b) => a.createdAt - b.createdAt).map((task) => task._id);
   const intro = (
     <Intro action={<Button size="sm" onClick={() => setAdding({})}><PlusIcon />New task</Button>}>
-      Work Perry does by himself, one task at a time, in a chat of its own. Its plan shows here as it goes; a question comes to you.
+      Work Perry does by himself, a few tasks at once, each in a chat of its own. Its plan shows here as it goes; a question comes to you.
     </Intro>
   );
   if (!tasks.length) return (

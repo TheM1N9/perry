@@ -7,11 +7,12 @@ import { assertDashboardKey } from "./lib/auth";
 
 /**
  * Background tasks (issue #102): work Perry takes on and carries out by
- * itself, one at a time, as Perplexity's Background Assistant, Claude Cowork
- * and Manus do with a to-do list.
+ * itself, as Perplexity's Background Assistant, Claude Cowork and Manus do
+ * with a to-do list.
  *
- * A task is queued (queue_task, or the Work page). When nothing else is
- * running, it runs in a chat of its own, a Codex turn at a time: it lays out
+ * A task is queued (queue_task, or the Work page). Up to RUNNING_TASKS run at
+ * once, beside the owner's chats and jobs (the runner runs several turns at
+ * once); the rest wait their turn. Each runs in a chat of its own, a turn at a time: it lays out
  * its plan (set_plan) and works, and ends with finish_task. A turn that ends
  * without finishing is followed by another, up to MAX_TURNS. Blocked on a
  * question, it asks the owner where the task was asked for (and their phone
@@ -22,6 +23,8 @@ import { assertDashboardKey } from "./lib/auth";
 
 /** Turns a task may take before it is stopped, so a task that never finishes cannot run forever. */
 const MAX_TURNS = 6;
+/** Tasks that run at once: the runner's other turns (runner/index.ts MAX_TURNS) stay free for chats and jobs. */
+const RUNNING_TASKS = 2;
 
 /** The owner's words and the task's, for a turn of it. */
 function promptFor(task: Doc<"tasks">): string {
@@ -59,8 +62,8 @@ export const queue = internalMutation({
 });
 
 /**
- * Start the oldest queued task when none is running: every minute (crons.ts),
- * and whenever one is queued or finishes.
+ * Start the oldest queued tasks while fewer than RUNNING_TASKS run: every
+ * minute (crons.ts), and whenever one is queued or finishes.
  */
 export const tick = internalMutation({
   args: {},
@@ -68,11 +71,12 @@ export const tick = internalMutation({
   handler: async (ctx) => {
     // A background task has turns from the moment it starts (its chat comes a moment later); a task opened by start_task in a chat is only tracked.
     const running = (await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "running")).collect()).filter((task) => task.turns);
-    if (running.length) return null;
-    const next = (await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "queued")).collect()).sort((a, b) => a.createdAt - b.createdAt)[0];
-    if (!next) return null;
-    await ctx.db.patch(next._id, { status: "running", turns: (next.turns ?? 0) + 1, question: undefined, updatedAt: Date.now() });
-    await ctx.scheduler.runAfter(0, internal.tasks.work, { id: next._id });
+    if (running.length >= RUNNING_TASKS) return null;
+    const queued = (await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "queued")).collect()).sort((a, b) => a.createdAt - b.createdAt);
+    for (const next of queued.slice(0, RUNNING_TASKS - running.length)) {
+      await ctx.db.patch(next._id, { status: "running", turns: (next.turns ?? 0) + 1, question: undefined, updatedAt: Date.now() });
+      await ctx.scheduler.runAfter(0, internal.tasks.work, { id: next._id });
+    }
     return null;
   },
 });

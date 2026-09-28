@@ -134,15 +134,26 @@ function withHint(output: unknown): unknown {
   return hint ? { ...record, hint } : output;
 }
 
+/** The thread and session Codex names in a tool call's metadata: which chat's turn the call is from. */
+function codexThreads(message: RpcMessage): string[] {
+  const meta = (message.params?._meta as Record<string, unknown> | undefined)?.["x-codex-turn-metadata"] as Record<string, unknown> | undefined;
+  return [meta?.thread_id, meta?.session_id].filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
 export const handle = httpAction(async (ctx, request) => {
   const token = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
-  const access = token ? await ctx.runQuery(internal.codex.mcpAccess, { token }) : null;
-  if (!access) return json({ error: "No Codex turn is running for this runner." }, 401);
-
-  let message: RpcMessage;
+  let message: RpcMessage | null = null;
   try { message = await request.json() as RpcMessage; }
-  catch { return fail(null, -32700, "Parse error"); }
+  catch {}
+  const chat = request.headers.get("x-perry-chat") ?? undefined;
+  const access = token ? await ctx.runQuery(internal.codex.mcpAccess, { token, threads: message ? codexThreads(message) : [], ...(chat ? { chat } : {}) }) : null;
+  if (!access) return json({ error: "No Codex turn is running for this runner." }, 401);
+  if (!message) return fail(null, -32700, "Parse error");
   if (message.id === undefined || message.id === null) return new Response(null, { status: 202 });
+  // Several chats' turns are running and this call does not say which it is from: acting on one could be acting on the wrong chat.
+  if (access.unknown && message.method === "tools/call") {
+    return fail(message.id, -32603, "Perry is running several chats at once and cannot tell which one this call is from. Try again.");
+  }
 
   const tools = CODEX_TOOLS;
   switch (message.method) {

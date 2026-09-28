@@ -1119,17 +1119,33 @@ export const outwardAllowed = internalQuery({
   },
 });
 
+/**
+ * Which of the runner's running turns a call to Perry's tools belongs to. The
+ * runner runs several chats' turns at once, so a call names its chat: Codex
+ * sends its thread (and, from a subagent, its session) in every tool call, and
+ * the other engines send the chat (X-Perry-Chat, runner/engine.ts toolsOfChat).
+ * With one turn running, every call is that turn's, as before. When several
+ * run and a call names none of them, it is `unknown`, and only what needs no
+ * chat (initialize, tools/list) may go ahead, on any of them.
+ */
 export const mcpAccess = internalQuery({
-  args: { token: v.string() },
-  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean; conversationId: Id<"conversations"> } | null> => {
+  args: { token: v.string(), threads: v.optional(v.array(v.string())), chat: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean; conversationId: Id<"conversations">; unknown?: true } | null> => {
     const runner = await authenticate(ctx, args.token).catch(() => null);
     if (!runner) return null;
-    const job = await ctx.db.query("codexTurns")
+    const running = await ctx.db.query("codexTurns")
       .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "running"))
-      .first();
-    const conversation = job && await ctx.db.get(job.conversationId);
-    if (!job || !conversation) return null;
+      .take(20);
+    const turns = (await Promise.all(running.map(async (job) => ({ job, conversation: await ctx.db.get(job.conversationId) }))))
+      .filter((turn): turn is { job: Doc<"codexTurns">; conversation: Doc<"conversations"> } => turn.conversation !== null);
+    const named = turns.find(({ conversation }) => args.threads?.includes(resumeOf(conversation)?.cursor ?? ""))
+      ?? turns.find(({ conversation }) => conversation._id === args.chat);
+    const only = turns.length === 1 ? turns[0] : undefined;
+    const turn = named ?? only ?? turns[0];
+    if (!turn) return null;
+    const { job, conversation } = turn;
     return {
+      ...(named || only ? {} : { unknown: true as const }),
       turnId: job._id,
       userId: conversation.channel === "web" ? "web:dashboard" : `${conversation.channel}:${conversation.externalId}`,
       threadId: conversation.threadId,

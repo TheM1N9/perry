@@ -13,6 +13,7 @@ import type {
   Engine, EngineAttachment, EngineCapabilities, EngineItem, EngineModel, EngineRequest, EngineStatus, ItemStatus, ItemType,
   LoginFlow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
 } from "../engine";
+import { toolsOfChat } from "../engine";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
 import { killTree } from "./process";
@@ -275,6 +276,8 @@ export class ClaudeEngine implements Engine {
     // Each turn's main loop; a subagent's tokens are not counted.
     usage: "partial",
     quickTurns: true,
+    // Each turn is a `claude` of its own.
+    concurrentTurns: true,
   };
 
   /** Running turns by session. */
@@ -438,6 +441,7 @@ export class ClaudeEngine implements Engine {
     const running: Running = { q: null as unknown as Query, inbox, turnId: randomUUID(), ending: false, interrupted: false, steers: [] };
     const handle: TurnHandle = { cursor, turnId: running.turnId };
     const perry = tools?.name;
+    const chatTools = tools && toolsOfChat(tools);
     const q = query({
       prompt: inbox,
       options: {
@@ -460,11 +464,11 @@ export class ClaudeEngine implements Engine {
         // Perry's own tools and web search run without asking, as they do on Codex.
         allowedTools: [...(perry ? [`mcp__${perry}`] : []), "WebSearch"],
         disallowedTools: DISALLOWED,
-        ...(tools ? {
+        ...(chatTools ? {
           mcpServers: {
-            [tools.name]: process.env.PERRY_CLAUDE_MCP === "stdio"
-              ? { type: "stdio", command: tools.stdio.command, args: tools.stdio.args, env: tools.stdio.env }
-              : { type: "http", url: tools.http.url, headers: tools.http.headers },
+            [chatTools.name]: process.env.PERRY_CLAUDE_MCP === "stdio"
+              ? { type: "stdio", command: chatTools.stdio.command, args: chatTools.stdio.args, env: chatTools.stdio.env }
+              : { type: "http", url: chatTools.http.url, headers: chatTools.http.headers },
           },
         } : {}),
         // Bypassing, Claude Code never asks, and the SDK warns that an answerer would go unused.
