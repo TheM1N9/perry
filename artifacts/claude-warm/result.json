@@ -1,0 +1,104 @@
+{
+  "ranAt": "2026-09-28T11:36:08.995Z",
+  "checks": {
+    "laterTurnsUseTheSameProcess": true,
+    "itRemembersTheFirstTurn": true,
+    "aMessageMidTurnJoinsIt": true,
+    "aStoppedTurnLeavesTheChatWorking": true,
+    "aChangedAccessStartsANewProcess": true,
+    "anIdleProcessIsClosed": true
+  },
+  "notes": {
+    "model": "default",
+    "laterTurnsUseTheSameProcess": {
+      "one": [
+        90504,
+        98988
+      ],
+      "two": [
+        98988
+      ],
+      "three": [
+        98988
+      ]
+    },
+    "itRemembersTheFirstTurn": {
+      "one": "NOTED",
+      "two": "7481",
+      "three": "OK"
+    },
+    "firstWordsMs": {
+      "first": 8936,
+      "second": 999
+    },
+    "finishedMs": {
+      "first": 9314,
+      "second": 1763,
+      "third": 1745
+    },
+    "aMessageMidTurnJoinsIt": {
+      "reply": "SLEPT BANANA",
+      "pids": [
+        98988
+      ]
+    },
+    "aStoppedTurnLeavesTheChatWorking": {
+      "stopped": true,
+      "reply": "AGAIN",
+      "pids": [
+        104092
+      ]
+    },
+    "aChangedAccessStartsANewProcess": {
+      "before": [
+        104092
+      ],
+      "after": [
+        104092,
+        104196
+      ],
+      "oldGone": true
+    },
+    "anIdleProcessIsClosed": {
+      "closedAfterMin": 0.75
+    },
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-claude-warm-a2gwBh\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Claude Code does not ask\u001b[0m",
+      "\u001b[2m  named a chat \"Automated test with number\" (haiku)\u001b[0m",
+      "\u001b[2m  saved turn 6v2bpfrq8nbqq9m863w8a5vb7r\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Claude Code does not ask\u001b[0m",
+      "\u001b[2m  saved turn kmtm016t0j3mxc548adcjt116x\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Claude Code does not ask\u001b[0m",
+      "\u001b[2m  saved turn psg758engg2fg27s7r4z86nbhz\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Claude Code does not ask\u001b[0m",
+      "\u001b[2m  steered the Claude Code turn with a new message\u001b[0m",
+      "\u001b[2m  saved turn 5g2ma8zb4zks6mt53xzt2tzdhn\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Claude Code does not ask\u001b[0m",
+      "\u001b[33m  stopping the Claude Code turn, as asked\u001b[0m",
+      "\u001b[2m  saved turn 0n69hd0x3a3q4nv6etpchd1365\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Claude Code does not ask\u001b[0m",
+      "\u001b[2m  saved turn nqtwcxh9rq3bjg131jqeakpa62\u001b[0m",
+      "\u001b[2m  auto: each command is reviewed before it runs; risky ones wait for you\u001b[0m",
+      "Warning: canUseTool will not be invoked for: mcp__assistant, WebSearch. Bare allowedTools entries auto-approve the whole tool before the callback is consulted. To gate every tool call, use a PreToolUse hook; or remove the bare names from allowedTools so they fall through to canUseTool. Allow rules from settings files can also shadow the callback but are not visible here.",
+      " code: \"CLAUDE_SDK_CAN_USE_TOOL_SHADOWED\"",
+      "      at cW (C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-7045aa2b\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:150:14283)",
+      "      at lA (C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-7045aa2b\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:150:21005)",
+      "      at lze (C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-7045aa2b\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:151:508)",
+      "      at start (C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-7045aa2b\\runner\\engines\\claude.ts:495:16)",
+      "      at runTurn (C:\\Users\\Pranav\\.t3\\worktrees\\me-bot\\t3code-7045aa2b\\runner\\engines\\claude.ts:551:24)",
+      "\u001b[2m  saved turn t2mpw52xxntxj7fr7rv099mxv3\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

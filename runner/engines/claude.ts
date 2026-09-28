@@ -258,7 +258,57 @@ const modelOf = (model: ModelInfo): EngineModel => ({
 
 /** A message the owner sent while the turn runs, until Claude has read it or the turn ended without. */
 type Steer = { uuid: string; taken: () => void; missed: (error: Error) => void };
-type Running = { q: Query; inbox: Inbox; turnId: string; ending: boolean; interrupted: boolean; steers: Steer[] };
+
+/** A turn of a chat's live `claude`: what it has streamed and said, until its result. */
+type Turn = {
+  id: string;
+  handle: TurnHandle;
+  sink: TurnSink;
+  /** It told the runner it started (onStarted). */
+  begun: boolean;
+  ending: boolean;
+  interrupted: boolean;
+  steers: Steer[];
+  written: Map<string, string>;
+  latest: string;
+  messageId: string;
+  replies: string[];
+  failures: string[];
+  results: number;
+  compacted: boolean;
+  /** Anything from Claude for this turn: until then, a live `claude` that ended can be started again. */
+  heard: boolean;
+  open: Map<string, EngineItem & { at: number }>;
+  finished: Promise<void>;
+  finish: () => void;
+};
+
+/**
+ * A chat's `claude`, kept running between its turns so a turn after the first
+ * starts without a new process (T3 Code does the same). What a process is
+ * started with and cannot change (the instructions, access, model, effort,
+ * folder and tools) is its `key`: a turn that needs another starts afresh.
+ */
+type Live = {
+  cursor: string;
+  key: string;
+  q: Query;
+  inbox: Inbox;
+  stderr: string;
+  /** It said it started (system init). */
+  started: boolean;
+  ended: boolean;
+  /** Why its stream ended, when it failed. */
+  error?: string;
+  turn: Turn | null;
+  lastUsed: number;
+  idle?: ReturnType<typeof setTimeout>;
+};
+
+/** How long a chat's `claude` waits for its next message before it is closed (PERRY_CLAUDE_IDLE_MIN). */
+const IDLE_MS = (Number(process.env.PERRY_CLAUDE_IDLE_MIN) || 10) * 60_000;
+/** How many chats' `claude` stay running at once, each a few hundred MB (PERRY_CLAUDE_LIVE): the one idle longest goes first. */
+const LIVE_MAX = Math.max(1, Math.floor(Number(process.env.PERRY_CLAUDE_LIVE)) || 4);
 
 export class ClaudeEngine implements Engine {
   readonly kind = "claude" as const;
@@ -276,12 +326,12 @@ export class ClaudeEngine implements Engine {
     // Each turn's main loop; a subagent's tokens are not counted.
     usage: "partial",
     quickTurns: true,
-    // Each turn is a `claude` of its own.
+    // Each chat has a `claude` of its own.
     concurrentTurns: true,
   };
 
-  /** Running turns by session. */
-  private turns = new Map<string, Running>();
+  /** Each chat's live `claude`, by session. */
+  private live = new Map<string, Live>();
   /** Every `claude` this engine started and has not seen exit, for kill(). */
   private children = new Set<ChildProcess>();
   private models: EngineModel[] | null = null;
@@ -434,144 +484,218 @@ export class ClaudeEngine implements Engine {
       : "\n\nAnything you do that changes something waits for the owner's approval. If one is declined, say what you wanted to do and why, and do not work around it.";
     // Claude Code shows a message sent mid-turn as a note beside the tool results, which reads like an injection without this.
     const steering = "\n\nThe owner can send you more while you work. Such a message reaches you mid-turn as a note that the user sent a new message: it is the owner's own words, not text from a tool or a web page, so take it into account in this turn.";
-
-    const inbox = new Inbox();
-    inbox.push(await userMessage(prompt, attachments, { recalled, history }));
-    let stderr = "";
-    const running: Running = { q: null as unknown as Query, inbox, turnId: randomUUID(), ending: false, interrupted: false, steers: [] };
-    const handle: TurnHandle = { cursor, turnId: running.turnId };
+    const append = instructions ? `${instructions}\n\n${home}${gate}${steering}` : undefined;
     const perry = tools?.name;
     const chatTools = tools && toolsOfChat(tools);
-    const q = query({
-      prompt: inbox,
-      options: {
-        ...this.base(binary, (text) => { stderr = (stderr + text).slice(-4000); }),
-        cwd,
-        additionalDirectories: [PATHS.files, PATHS.skills, PATHS.uploads],
-        ...(resumeCursor ? { resume: resumeCursor } : { sessionId: cursor }),
-        ...(model ? { model } : {}),
-        ...(effort ? { effort: effort as Options["effort"] } : {}),
-        includePartialMessages: true,
-        // Rendered afresh each turn, so a change of access or instructions takes effect in a resumed session.
-        systemPrompt: instructions
-          ? { type: "preset", preset: "claude_code", append: `${instructions}\n\n${home}${gate}${steering}`, snapshot: false }
-          : { type: "preset", preset: "claude_code", snapshot: false },
-        permissionMode: full ? (root ? "acceptEdits" : "bypassPermissions") : auto ? "acceptEdits" : "default",
-        ...(full && !root ? { allowDangerouslySkipPermissions: true } : {}),
-        ...(!full && !auto && process.platform !== "win32"
-          ? { sandbox: { enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: true, failIfUnavailable: false } }
-          : {}),
-        // Perry's own tools and web search run without asking, as they do on Codex.
-        allowedTools: [...(perry ? [`mcp__${perry}`] : []), "WebSearch"],
-        disallowedTools: DISALLOWED,
-        ...(chatTools ? {
-          mcpServers: {
-            [chatTools.name]: process.env.PERRY_CLAUDE_MCP === "stdio"
-              ? { type: "stdio", command: chatTools.stdio.command, args: chatTools.stdio.args, env: chatTools.stdio.env }
-              : { type: "http", url: chatTools.http.url, headers: chatTools.http.headers },
-          },
-        } : {}),
-        // Bypassing, Claude Code never asks, and the SDK warns that an answerer would go unused.
-        ...(full && !root ? {} : {
-          canUseTool: async (tool, toolInput, options): Promise<PermissionResult> => {
-            const allow: PermissionResult = { behavior: "allow", updatedInput: toolInput };
-            if (full) return allow;
-            const request = requestFor(tool, toolInput, options, cwd);
-            // A turn stopped while its request waits takes it as declined.
-            const stopped = new Promise<string>((done) => options.signal.addEventListener("abort", () => done("deny"), { once: true }));
-            const answer = await Promise.race([sink.onRequest(request), stopped]).catch(() => "deny");
-            return answer === "allow" ? allow : { behavior: "deny", message: "The owner declined this." };
-          },
-        }),
-      },
-    });
-    running.q = q;
-    this.turns.set(cursor, running);
+    // What the process is started with and cannot change: another of any of these starts a new one.
+    const key = JSON.stringify({ path: binary.sdkPath ?? binary.command, append, access, model, effort, cwd, tools: chatTools, root });
 
-    const written = new Map<string, string>();
-    let latest = "";
-    let messageId = "";
-    const replies: string[] = [];
-    const failures: string[] = [];
-    let started = false;
-    let compacted = false;
-    let results = 0;
-    const open = new Map<string, EngineItem & { at: number }>();
+    const start = (resume: boolean): Live => {
+      const live: Live = { cursor, key, q: null as unknown as Query, inbox: new Inbox(), stderr: "", started: false, ended: false, turn: null, lastUsed: Date.now() };
+      live.q = query({
+        prompt: live.inbox,
+        options: {
+          ...this.base(binary, (text) => { live.stderr = (live.stderr + text).slice(-4000); }),
+          cwd,
+          additionalDirectories: [PATHS.files, PATHS.skills, PATHS.uploads],
+          ...(resume ? { resume: cursor } : { sessionId: cursor }),
+          ...(model ? { model } : {}),
+          ...(effort ? { effort: effort as Options["effort"] } : {}),
+          includePartialMessages: true,
+          // Rendered afresh for each process, so a change of access or instructions takes effect in a resumed session.
+          systemPrompt: append
+            ? { type: "preset", preset: "claude_code", append, snapshot: false }
+            : { type: "preset", preset: "claude_code", snapshot: false },
+          permissionMode: full ? (root ? "acceptEdits" : "bypassPermissions") : auto ? "acceptEdits" : "default",
+          ...(full && !root ? { allowDangerouslySkipPermissions: true } : {}),
+          ...(!full && !auto && process.platform !== "win32"
+            ? { sandbox: { enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: true, failIfUnavailable: false } }
+            : {}),
+          // Perry's own tools and web search run without asking, as they do on Codex.
+          allowedTools: [...(perry ? [`mcp__${perry}`] : []), "WebSearch"],
+          disallowedTools: DISALLOWED,
+          ...(chatTools ? {
+            mcpServers: {
+              [chatTools.name]: process.env.PERRY_CLAUDE_MCP === "stdio"
+                ? { type: "stdio", command: chatTools.stdio.command, args: chatTools.stdio.args, env: chatTools.stdio.env }
+                : { type: "http", url: chatTools.http.url, headers: chatTools.http.headers },
+            },
+          } : {}),
+          // Bypassing, Claude Code never asks, and the SDK warns that an answerer would go unused.
+          ...(full && !root ? {} : {
+            canUseTool: async (tool, toolInput, options): Promise<PermissionResult> => {
+              const allow: PermissionResult = { behavior: "allow", updatedInput: toolInput };
+              if (full) return allow;
+              // Asked for by the turn that is running: its owner answers.
+              const turn = live.turn;
+              if (!turn) return { behavior: "deny", message: "No turn is running to ask for this." };
+              const request = requestFor(tool, toolInput, options, cwd);
+              // A turn stopped while its request waits takes it as declined.
+              const stopped = new Promise<string>((done) => options.signal.addEventListener("abort", () => done("deny"), { once: true }));
+              const answer = await Promise.race([turn.sink.onRequest(request), stopped]).catch(() => "deny");
+              return answer === "allow" ? allow : { behavior: "deny", message: "The owner declined this." };
+            },
+          }),
+        },
+      });
+      this.live.set(cursor, live);
+      void this.listen(live, perry);
+      return live;
+    };
+
+    const kept = this.live.get(cursor);
+    const warm = kept && !kept.ended && !kept.turn && kept.key === key ? kept : undefined;
+    if (kept && !warm) this.close(kept);
+    if (!warm) this.makeRoom();
+    const said = await userMessage(prompt, attachments, { recalled, history });
+    let live = warm ?? start(Boolean(resumeCursor));
+    let turn = this.begin(live, sink, said);
+    await turn.finished;
+    // A kept `claude` that had ended by the time it was asked: the turn runs on a new one instead.
+    if (warm && !turn.heard && live.ended && !turn.interrupted) {
+      live = start(true);
+      turn = this.begin(live, sink, said);
+      await turn.finished;
+    }
+    // Stopped, the SDK ends the process's stream: the next turn starts a new one.
+    if (turn.interrupted) this.close(live);
+    else if (!live.ended) this.rest(live);
+
+    const text = turn.replies.join("\n\n") || (turn.interrupted || turn.failures.length ? turn.latest : "");
+    const compacted = turn.compacted ? { compacted: true } : {};
+    if (!turn.results && !turn.interrupted && live.ended) {
+      if (!live.started) throw new Error(`Claude Code did not start: ${live.error ?? "it ended"}${live.stderr.trim() ? `\n${live.stderr.trim().slice(-800)}` : ""}`);
+      turn.failures.push(live.error ?? "Claude Code ended during the turn.");
+    }
+    if (turn.interrupted) return { state: "interrupted", cursor, text, images: [], ...compacted };
+    if (turn.failures.length) return { state: "failed", cursor, text, images: [], ...compacted, error: turn.failures.join("; ").slice(0, 2000) };
+    return { state: "completed", cursor, text, images: [], ...compacted };
+  }
+
+  /** Give a chat's `claude` the owner's message as a turn of its own. */
+  private begin(live: Live, sink: TurnSink, message: SDKUserMessage): Turn {
+    clearTimeout(live.idle);
+    live.lastUsed = Date.now();
+    let finish = () => {};
+    const finished = new Promise<void>((done) => { finish = done; });
+    const id = randomUUID();
+    const turn: Turn = {
+      id, handle: { cursor: live.cursor, turnId: id }, sink, begun: false, ending: false, interrupted: false, steers: [],
+      written: new Map(), latest: "", messageId: "", replies: [], failures: [], results: 0, compacted: false, heard: false,
+      open: new Map(), finished, finish: () => {},
+    };
+    turn.finish = () => {
+      if (live.turn === turn) live.turn = null;
+      turn.ending = true;
+      // Unread, as when the turn was stopped first: the runner makes each the next turn.
+      for (const steer of turn.steers.splice(0)) steer.missed(new Error("The turn ended before Claude Code read the message."));
+      finish();
+    };
+    live.turn = turn;
+    // A process already running takes the message at once; a new one says so when it starts (system init).
+    if (live.started) this.started(turn);
+    if (live.ended) turn.finish();
+    else live.inbox.push(message);
+    return turn;
+  }
+
+  private started(turn: Turn) {
+    if (turn.begun) return;
+    turn.begun = true;
+    turn.sink.onStarted?.(turn.handle);
+  }
+
+  /** Read a chat's `claude` for as long as it runs, handing what it says to the turn it is on. */
+  private async listen(live: Live, perry?: string) {
     try {
-      try {
-        for await (const event of q as AsyncIterable<SDKMessage>) {
-          if (event.type === "system" && event.subtype === "init") {
-            started = true;
-            sink.onStarted?.(handle);
-            void q.supportedModels().then((models) => this.remember(models)).catch(() => {});
-          } else if (event.type === "system" && event.subtype === "compact_boundary") {
-            compacted = true;
-            sink.onEvent?.({ type: "item", phase: "completed", item: { id: event.uuid, type: "context_compaction", status: "completed", title: "context compaction", raw: event }, atMs: Date.now() });
-          } else if (event.type === "stream_event") {
-            if (event.parent_tool_use_id) continue;
-            const stream = event.event as { type: string; index?: number; message?: { id?: string }; delta?: { type?: string; text?: string } };
-            if (stream.type === "message_start") messageId = stream.message?.id ?? randomUUID();
-            if (stream.type === "content_block_delta" && stream.delta?.type === "text_delta" && stream.delta.text) {
-              const itemId = `${messageId}:${stream.index ?? 0}`;
-              latest = (written.get(itemId) ?? "") + stream.delta.text;
-              written.set(itemId, latest);
-              sink.onEvent?.({ type: "text", stream: "assistant", itemId, delta: stream.delta.text, text: latest });
-            }
-          } else if (event.type === "assistant") {
-            for (const block of event.message.content as Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown> }>) {
-              if (block.type !== "tool_use" || !block.id || !block.name) continue;
-              const item = { id: block.id, ...describe(block.name, block.input ?? {}, perry), status: "running" as ItemStatus, raw: block, at: Date.now() };
-              open.set(block.id, item);
-              const { at, ...shown } = item;
-              sink.onEvent?.({ type: "item", phase: "started", item: shown, atMs: at });
-            }
-          } else if (event.type === "user" && Array.isArray(event.message.content)) {
-            const kinds = new Map(((event as { tool_result_meta?: Array<{ id: string; non_execution_kind?: string }> }).tool_result_meta ?? []).map((meta) => [meta.id, meta.non_execution_kind]));
-            for (const block of event.message.content as Array<{ type: string; tool_use_id?: string; content?: unknown; is_error?: boolean }>) {
-              if (block.type !== "tool_result" || !block.tool_use_id) continue;
-              const begun = open.get(block.tool_use_id);
-              if (!begun) continue;
-              open.delete(block.tool_use_id);
-              const { at, ...item } = begun;
-              const status: ItemStatus = kinds.get(block.tool_use_id) ? "declined" : block.is_error ? "failed" : "completed";
-              sink.onEvent?.({ type: "item", phase: "completed", item: { ...item, status, output: resultText(block.content), durationMs: Date.now() - at, raw: { use: item.raw, result: block } }, atMs: Date.now() });
-            }
-          } else if (event.type === "result") {
-            results++;
-            // The result names every message of the owner's it read; a CLI too old to say is taken to have read them.
-            const read = event.user_message_uuids ?? (event.user_message_uuid ? [event.user_message_uuid] : undefined);
-            running.steers = running.steers.filter((steer) => {
-              if (read ? !read.includes(steer.uuid) : running.interrupted) return true;
-              steer.taken();
-              return false;
-            });
-            sink.onEvent?.({ type: "usage", state: "partial", usage: usageOf(event) });
-            if (event.subtype === "success" && !event.is_error) { if (event.result) replies.push(event.result); }
-            else if (!running.interrupted) failures.push(event.subtype === "success" ? event.result : event.errors.join("; ") || event.subtype);
-            // A message the owner sent too late to join becomes a turn of its own in this process; it is read too.
-            if (running.interrupted) q.close();
-            else if (!(event.queued_turn_count && event.queued_turn_count > 0)) { running.ending = true; inbox.close(); }
-          }
+      for await (const event of live.q as AsyncIterable<SDKMessage>) {
+        const turn = live.turn;
+        if (event.type === "system" && event.subtype === "init") {
+          if (!live.started) void live.q.supportedModels().then((models) => this.remember(models)).catch(() => {});
+          live.started = true;
+          if (turn) this.started(turn);
+          continue;
         }
-      } catch (error) {
-        // The SDK throws once an errored or interrupted turn has ended; what the results said stands.
-        if (!results) {
-          if (!started && !running.interrupted) throw new Error(`Claude Code did not start: ${message(error)}${stderr.trim() ? `\n${stderr.trim().slice(-800)}` : ""}`);
-          if (!running.interrupted) failures.push(message(error));
+        if (!turn) continue;
+        turn.heard = true;
+        if (event.type === "system" && event.subtype === "compact_boundary") {
+          turn.compacted = true;
+          turn.sink.onEvent?.({ type: "item", phase: "completed", item: { id: event.uuid, type: "context_compaction", status: "completed", title: "context compaction", raw: event }, atMs: Date.now() });
+        } else if (event.type === "stream_event") {
+          if (event.parent_tool_use_id) continue;
+          const stream = event.event as { type: string; index?: number; message?: { id?: string }; delta?: { type?: string; text?: string } };
+          if (stream.type === "message_start") turn.messageId = stream.message?.id ?? randomUUID();
+          if (stream.type === "content_block_delta" && stream.delta?.type === "text_delta" && stream.delta.text) {
+            const itemId = `${turn.messageId}:${stream.index ?? 0}`;
+            turn.latest = (turn.written.get(itemId) ?? "") + stream.delta.text;
+            turn.written.set(itemId, turn.latest);
+            turn.sink.onEvent?.({ type: "text", stream: "assistant", itemId, delta: stream.delta.text, text: turn.latest });
+          }
+        } else if (event.type === "assistant") {
+          for (const block of event.message.content as Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown> }>) {
+            if (block.type !== "tool_use" || !block.id || !block.name) continue;
+            const item = { id: block.id, ...describe(block.name, block.input ?? {}, perry), status: "running" as ItemStatus, raw: block, at: Date.now() };
+            turn.open.set(block.id, item);
+            const { at, ...shown } = item;
+            turn.sink.onEvent?.({ type: "item", phase: "started", item: shown, atMs: at });
+          }
+        } else if (event.type === "user" && Array.isArray(event.message.content)) {
+          const kinds = new Map(((event as { tool_result_meta?: Array<{ id: string; non_execution_kind?: string }> }).tool_result_meta ?? []).map((meta) => [meta.id, meta.non_execution_kind]));
+          for (const block of event.message.content as Array<{ type: string; tool_use_id?: string; content?: unknown; is_error?: boolean }>) {
+            if (block.type !== "tool_result" || !block.tool_use_id) continue;
+            const begun = turn.open.get(block.tool_use_id);
+            if (!begun) continue;
+            turn.open.delete(block.tool_use_id);
+            const { at, ...item } = begun;
+            const status: ItemStatus = kinds.get(block.tool_use_id) ? "declined" : block.is_error ? "failed" : "completed";
+            turn.sink.onEvent?.({ type: "item", phase: "completed", item: { ...item, status, output: resultText(block.content), durationMs: Date.now() - at, raw: { use: item.raw, result: block } }, atMs: Date.now() });
+          }
+        } else if (event.type === "result") {
+          turn.results++;
+          // The result names every message of the owner's it read; a CLI too old to say is taken to have read them.
+          const read = event.user_message_uuids ?? (event.user_message_uuid ? [event.user_message_uuid] : undefined);
+          turn.steers = turn.steers.filter((steer) => {
+            if (read ? !read.includes(steer.uuid) : turn.interrupted) return true;
+            steer.taken();
+            return false;
+          });
+          turn.sink.onEvent?.({ type: "usage", state: "partial", usage: usageOf(event) });
+          if (event.subtype === "success" && !event.is_error) { if (event.result) turn.replies.push(event.result); }
+          else if (!turn.interrupted) turn.failures.push(event.subtype === "success" ? event.result : event.errors.join("; ") || event.subtype);
+          // A message the owner sent too late to join becomes a turn of its own in this process; it is read too.
+          if (turn.interrupted || !(event.queued_turn_count && event.queued_turn_count > 0)) turn.finish();
         }
       }
+    } catch (error) {
+      // The SDK throws once an errored or interrupted turn has ended; what the results said stands.
+      live.error = message(error);
     } finally {
-      running.ending = true;
-      inbox.close();
-      this.turns.delete(cursor);
-      // Unread, as when the turn was stopped first: the runner makes each the next turn.
-      for (const steer of running.steers.splice(0)) steer.missed(new Error("The turn ended before Claude Code read the message."));
+      live.ended = true;
+      clearTimeout(live.idle);
+      if (this.live.get(live.cursor) === live) this.live.delete(live.cursor);
+      live.turn?.finish();
     }
-    // A stopped turn may not have finished its message; the streamed text is the best record of it.
-    const text = replies.join("\n\n") || (running.interrupted || failures.length ? latest : "");
-    if (running.interrupted) return { state: "interrupted", cursor, text, images: [], ...(compacted ? { compacted } : {}) };
-    if (failures.length) return { state: "failed", cursor, text, images: [], ...(compacted ? { compacted } : {}), error: failures.join("; ").slice(0, 2000) };
-    return { state: "completed", cursor, text, images: [], ...(compacted ? { compacted } : {}) };
+  }
+
+  /** Between turns: closed once it has waited IDLE_MS for the chat's next message. */
+  private rest(live: Live) {
+    clearTimeout(live.idle);
+    live.lastUsed = Date.now();
+    live.idle = setTimeout(() => this.close(live), IDLE_MS);
+    live.idle.unref?.();
+  }
+
+  private close(live: Live) {
+    clearTimeout(live.idle);
+    if (this.live.get(live.cursor) === live) this.live.delete(live.cursor);
+    live.inbox.close();
+    try { live.q.close(); } catch {}
+  }
+
+  /** Room for one more `claude`: the one idle longest is closed when LIVE_MAX run. */
+  private makeRoom() {
+    const idle = [...this.live.values()].filter((live) => !live.turn).sort((a, b) => a.lastUsed - b.lastUsed);
+    while (this.live.size >= LIVE_MAX && idle.length) this.close(idle.shift()!);
   }
 
   /**
@@ -582,19 +706,21 @@ export class ClaudeEngine implements Engine {
    * the next turn instead.
    */
   async steer(handle: TurnHandle, steer: { prompt: string; attachments: EngineAttachment[] }): Promise<void> {
-    const turn = this.turns.get(handle.cursor);
-    if (!turn || turn.turnId !== handle.turnId || turn.ending || turn.inbox.closed) throw new Error("no active turn to steer");
+    const live = this.live.get(handle.cursor);
+    const turn = live?.turn;
+    if (!live || !turn || turn.id !== handle.turnId || turn.ending || live.inbox.closed) throw new Error("no active turn to steer");
     const uuid = randomUUID();
     const read = new Promise<void>((taken, missed) => turn.steers.push({ uuid, taken, missed }));
-    turn.inbox.push({ ...(await userMessage(steer.prompt, steer.attachments)), uuid, priority: "next" });
+    live.inbox.push({ ...(await userMessage(steer.prompt, steer.attachments)), uuid, priority: "next" });
     await read;
   }
 
   async interrupt(handle: TurnHandle): Promise<void> {
-    const turn = this.turns.get(handle.cursor);
-    if (!turn || turn.turnId !== handle.turnId) return;
+    const live = this.live.get(handle.cursor);
+    const turn = live?.turn;
+    if (!live || !turn || turn.id !== handle.turnId) return;
     turn.interrupted = true;
-    await turn.q.interrupt();
+    await live.q.interrupt();
   }
 
   /**
