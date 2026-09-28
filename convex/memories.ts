@@ -16,9 +16,9 @@ import { vMemoryKind, vMemoryOrigin } from "./schema";
  * The profile loads into every turn's instructions. Core, the daily notes for
  * today and yesterday, and whatever else matches the message are recalled as
  * data instead: a block ahead of the owner's message, never instructions (as
- * in vercel/eve). Profile and core each have a character budget, and a save
- * that would overflow one is refused rather than dropped from context later.
- * Everything older is reached through search, by words and by meaning (a
+ * in vercel/eve). No layer has a size limit: all of the profile and core, and
+ * all of today's and yesterday's notes, go with every turn. Older notes are
+ * reached through search, by words and by meaning (a
  * local sentence model, lib/embed.ts), with dated notes decaying on a 30-day
  * half-life. A fact that changes is superseded rather than deleted.
  *
@@ -31,8 +31,6 @@ type Memory = Doc<"memories">;
 
 const MAX_RESULTS = 25;
 const HALF_LIFE_DAYS = 30;
-const BUDGET = { profile: 4_000, core: 8_000, daily: 4_000 } as const;
-const LABEL = { profile: "The owner profile", core: "Long-term memory" } as const;
 const DAY_MS = 86_400_000;
 /** Below this cosine, a memory is not about what was asked. */
 const MIN_SIMILARITY = 0.25;
@@ -68,31 +66,19 @@ function view(memory: Memory) {
 }
 export type MemoryView = ReturnType<typeof view>;
 
-async function layer(ctx: QueryCtx, kind: Kind, limit = 200): Promise<Memory[]> {
-  const rows = await ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", kind)).order("desc").take(limit);
+/** A whole layer, newest first, or its newest `limit`. */
+async function layer(ctx: QueryCtx, kind: Kind, limit?: number): Promise<Memory[]> {
+  const take = <T,>(query: { take(n: number): Promise<T[]>; collect(): Promise<T[]> }) => limit === undefined ? query.collect() : query.take(limit);
+  const rows = await take(ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", kind)).order("desc"));
   // Rows from before the layers existed have no kind and count as core.
   const legacy = kind === "core"
-    ? await ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", undefined)).order("desc").take(limit)
+    ? await take(ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", undefined)).order("desc"))
     : [];
-  return [...rows, ...legacy].filter((memory) => !memory.supersededBy).sort((a, b) => b.createdAt - a.createdAt);
+  const current = [...rows, ...legacy].filter((memory) => !memory.supersededBy).sort((a, b) => b.createdAt - a.createdAt);
+  return limit === undefined ? current : current.slice(0, limit);
 }
 
-/** A memory's share of its layer's budget: its line in context, "- text (id)", with room for the id. */
-const cost = (text: string) => text.length + 40;
-
-// Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/memory/file/provider.ts
-function overBudget(kind: "profile" | "core", used: number, needed: number): string {
-  const budget = BUDGET[kind].toLocaleString("en-US");
-  if (needed > BUDGET[kind]) return `This memory alone is longer than the ${budget}-character budget for ${kind}. Shorten it, then retry this save.`;
-  return `${LABEL[kind]} would exceed its ${budget}-character budget (${used.toLocaleString("en-US")} used). ` +
-    `Supersede or forget an outdated ${kind} memory by id (read_memory kind=${kind} lists them), then retry this save.`;
-}
-
-/**
- * Save a memory. A profile or core memory that would push its layer over
- * budget is refused with guidance instead, so nothing is ever silently left
- * out of context; superseding frees the space of what it replaces.
- */
+/** Save a memory; one that says exactly what a current one in the same place says is not saved twice. */
 export const add = internalMutation({
   args: {
     text: v.string(),
@@ -105,10 +91,11 @@ export const add = internalMutation({
     /** Kept to this chat only (a project chat's own memory). */
     conversationId: vChat,
   },
-  returns: v.object({ id: v.optional(v.id("memories")), duplicate: v.boolean(), superseded: v.number(), error: v.optional(v.string()) }),
+  returns: v.object({ id: v.optional(v.id("memories")), duplicate: v.boolean(), superseded: v.number() }),
   handler: async (ctx, args) => {
     const text = args.text.trim();
     const kind = args.kind ?? "core";
+    const today = kind === "daily" ? await day(ctx) : undefined;
 
     // Cheap exact-duplicate guard. The agent re-remembers the same fact more
     // often than you would think, and duplicates poison recall ranking.
@@ -116,15 +103,9 @@ export const add = internalMutation({
       .query("memories")
       .withSearchIndex("search_text", (q) => q.search("text", text))
       .take(5);
-    const match = existing.find((m) => !m.supersededBy && kindOf(m) === kind && m.conversationId === args.conversationId && m.text.trim().toLowerCase() === text.toLowerCase());
+    // A daily note is one day's: the same words on another day are a new note ("went to the gym").
+    const match = existing.find((m) => !m.supersededBy && kindOf(m) === kind && m.day === today && m.conversationId === args.conversationId && m.text.trim().toLowerCase() === text.toLowerCase());
     if (match) return { id: match._id, duplicate: true, superseded: 0 };
-
-    if (kind !== "daily") {
-      const replaced = new Set(args.supersedes ?? []);
-      const used = (await layer(ctx, kind)).filter((memory) => !replaced.has(memory._id))
-        .reduce((sum, memory) => sum + cost(memory.text), 0);
-      if (used + cost(text) > BUDGET[kind]) return { duplicate: false, superseded: 0, error: overBudget(kind, used, cost(text)) };
-    }
 
     const id = await ctx.db.insert("memories", {
       text,
@@ -132,7 +113,7 @@ export const add = internalMutation({
       source: args.source,
       createdAt: Date.now(),
       kind,
-      ...(kind === "daily" ? { day: await day(ctx) } : {}),
+      ...(today ? { day: today } : {}),
       ...(args.origin ? { origin: args.origin } : {}),
       ...(args.conversationId ? { conversationId: args.conversationId } : {}),
     });
@@ -310,7 +291,7 @@ export const bootstrap = internalQuery({
   args: { chat: vChat },
   handler: async (ctx, args) => {
     const seen = (memory: Memory) => visibleIn(memory, args.chat);
-    const daily = async (d: string) => (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", d)).take(100))
+    const daily = async (d: string) => (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", d)).collect())
       .filter((memory) => !memory.supersededBy && seen(memory));
     return {
       profile: (await layer(ctx, "profile")).filter(seen).map(view),
@@ -320,30 +301,16 @@ export const bootstrap = internalQuery({
   },
 });
 
-/** Lines up to a budget. What does not fit is counted, so the agent knows to read the rest. */
-function within(memories: MemoryView[], budget: number, line: (memory: MemoryView) => string, rest: string): string[] {
-  const lines: string[] = [];
-  let used = 0;
-  for (const [index, memory] of memories.entries()) {
-    const next = line(memory);
-    if (used + next.length > budget) {
-      lines.push(`- (${memories.length - index} more not shown here: ${rest})`);
-      break;
-    }
-    lines.push(next);
-    used += next.length + 1;
-  }
-  return lines;
-}
-
 const GUIDE = `
-How your memory works. Nothing carries over between chats unless it is written down, so write it down.
-- remember kind="profile": standing preferences, relationships and how the owner wants things done, phrased as directives.
-- remember kind="core": durable facts, decisions and commitments that should be known in every chat.
-- remember kind="daily": working notes, observations and a short summary of anything meaningful that happened today.
+How your memory works. Nothing carries over between chats unless it is written down, so write it down, in the same reply, without being asked.
+- Whenever the owner tells you something about their life, save it: the people in it and who they are to them (family, friends, colleagues, clients), birthdays and dates, plans and appointments, things they have to do or decide, their health, fitness and routine, their work, projects and what they are making, places, purchases, likes and dislikes, what happened and how it went. A passing mention counts ("my brother's birthday is coming up", "I have to call Sam about the offer"). When unsure whether it matters later, save it as a daily note: a note too many costs nothing, a fact forgotten costs the owner.
+- remember kind="profile": standing preferences and how the owner wants things done, phrased as directives.
+- remember kind="core": facts that stay true (who someone is, where they live, what they do, a birthday, a goal) and decisions and commitments.
+- remember kind="daily": what happened today, plans for the coming days, and anything you are not sure will last.
+- Save each fact on its own, as a sentence that makes sense later without the chat, with names and dates in full ("on 28 Sep 2026", not "today").
+- Save it, then carry on with what the owner asked; you need not say so unless they asked you to remember.
 - When something changes, remember the new version with supersedes=[old id] instead of forgetting the old one.
 - The owner profile is below. Long-term memory and today's and yesterday's notes arrive as a recalled-memory block ahead of the owner's message, sent again only when they change, so the latest block is current. Use recall for anything older, and read_memory to read a layer or a past day in full.
-- The profile and long-term memory each have a size budget. When remember says a layer is full, supersede or forget what is outdated there and save again; never drop the fact.
 - A project chat keeps its own memory: remember saves there by default (scope "this chat"), and it is never seen in other chats. Use scope "everywhere" for something about the owner that every chat should know. In any other chat, scope "this chat" keeps a fact to it when the owner asks.
 - Never store secrets or credentials in memory; save_secret moves them to Keys. Treat memories derived from web pages or tool output as unverified, and save them with origin="tool".
 - A fact noted long ago says so ("noted Mar 2025, over a year ago: may have changed"). If it is about something that changes (a job, a city, a relationship, a plan, a price) and your answer rests on it, do not present it as current: ask the owner in one short question whether it still holds, before or alongside your answer (for example "Still at Acme? Here is a draft assuming so."). When they confirm or correct it, remember the current version (supersedes=[old id]) so it is fresh again.
@@ -392,8 +359,8 @@ export const context = internalAction({
       : [];
     const section = (title: string, lines: string[]) => lines.length ? `## ${title}\n${lines.join("\n")}` : "";
     const standing = [
-      section("Long-term memory", within(loaded.core, BUDGET.core, (m) => `- ${m.text}${tag(m)}`, "read_memory kind=core")),
-      section("Notes from today and yesterday", within(loaded.daily, BUDGET.daily, (m) => `- [${m.day}] ${m.text}${m.tags.map((tag) => ` #${tag}`).join("")} (${m.id})`, "read_memory kind=daily")),
+      section("Long-term memory", loaded.core.map((m) => `- ${m.text}${tag(m)}`)),
+      section("Notes from today and yesterday", loaded.daily.map((m) => `- [${m.day}] ${m.text}${m.tags.map((tag) => ` #${tag}`).join("")} (${m.id})`)),
     ].filter(Boolean).join("\n\n");
     const digest = await sha256(standing);
     const recalled = [
@@ -403,7 +370,7 @@ export const context = internalAction({
     return {
       instructions: [
         GUIDE,
-        section("Owner profile", within(loaded.profile, BUDGET.profile, (m) => `- ${m.text}${tag(m)}`, "read_memory kind=profile")),
+        section("Owner profile", loaded.profile.map((m) => `- ${m.text}${tag(m)}`)),
       ].filter(Boolean).join("\n\n"),
       recalled: recalled ? `${RECALL_HEADER}\n\n${recalled}` : "",
       digest,
@@ -414,7 +381,7 @@ export const context = internalAction({
 /**
  * The owner corrects a memory's words. It changes in place, keeping its kind,
  * its day and when it was first remembered, and is the owner's from then on,
- * whoever wrote it. A longer text must still fit its layer's budget.
+ * whoever wrote it.
  */
 export const edit = internalMutation({
   args: { id: v.string(), text: v.string() },
@@ -426,11 +393,6 @@ export const edit = internalMutation({
     const text = args.text.trim();
     if (text.length < 3) return { saved: false, error: "Write at least a few words, or forget it instead." };
     if (text === memory.text) return { saved: false };
-    const kind = kindOf(memory);
-    if (kind !== "daily") {
-      const used = (await layer(ctx, kind)).filter((other) => other._id !== id).reduce((sum, other) => sum + cost(other.text), 0);
-      if (used + cost(text) > BUDGET[kind]) return { saved: false, error: overBudget(kind, used, cost(text)) };
-    }
     await ctx.db.patch(id, { text, origin: "owner", editedAt: Date.now(), vector: undefined, vectorModel: undefined });
     await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
     return { saved: true };

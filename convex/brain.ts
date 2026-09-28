@@ -14,6 +14,9 @@ import { DOWNLOAD_LIMIT, downloadFile, sendMessage, sendTyping } from "./lib/tel
 import { resumeOf } from "./engines";
 import { vChannel, vEngine, vTelegramMedia } from "./schema";
 
+/** Perry's own reminder, sent with each message from the owner, ahead of it. */
+const REMEMBER_NOTE = "# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or routine, their work and the projects, pages or channels they run, what they made or how something went), save it with remember in this reply, even when they only ask a question about it. Then answer.";
+
 /**
  * One turn, end to end: resolve the conversation, gather what the assistant
  * should know, and hand the turn to the chat's engine on the owner's runner.
@@ -162,9 +165,12 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   const goals = active.length
     ? `The owner's active goals; when they reach a milestone, tick it off with update_goal:\n${active.map((goal) => `- ${goal.title} (id ${goal._id}): ${goal.milestones.map((step) => `[${step.done ? "x" : " "}] ${step.title}`).join(", ")}`).join("\n")}`
     : "";
+  // Told once at the start, an agent answers the question and lets the fact in it go ("I started swimming;
+  // any tips?"), so every message from the owner comes with the reminder.
+  const note = conversation.jobId || conversation.taskId ? "" : REMEMBER_NOTE;
   return {
     instructions: [persona.identity, INSTRUCTIONS, now, where, goals, memory?.instructions, persona.user].filter(Boolean).join("\n\n"),
-    recalled: memory?.recalled || undefined,
+    recalled: [memory?.recalled, note].filter(Boolean).join("\n\n") || undefined,
     recallDigest: memory?.digest,
     history,
   };

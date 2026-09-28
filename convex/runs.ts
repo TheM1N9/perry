@@ -2,6 +2,15 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { vUsage } from "./schema";
 
+/** When a chat's last run that ended well started, or null. */
+export const lastOk = internalQuery({
+  args: { conversationId: v.id("conversations") },
+  handler: async (ctx, args): Promise<number | null> => {
+    const runs = await ctx.db.query("runs").withIndex("by_conversation", (q) => q.eq("conversationId", args.conversationId)).order("desc").take(50);
+    return runs.find((run) => run.status === "ok")?.startedAt ?? null;
+  },
+});
+
 export const recent = internalQuery({
   args: { limit: v.optional(v.number()), conversationId: v.optional(v.id("conversations")) },
   handler: async (ctx, args) => {

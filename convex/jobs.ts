@@ -59,8 +59,8 @@ const BUILTINS: Array<{ builtin: Builtin; name: string; schedule: string; prompt
     schedule: "30 22 * * *",
     prompt: [
       "This is your scheduled daily summary, not a message from the owner.",
-      "Read today's conversations, listed below, with read_chat, and today's notes with read_memory.",
-      "Then write down what is worth remembering with remember kind=daily: decisions made, commitments and deadlines, preferences the owner expressed, and threads left open. One self-contained note per item; skip what today's notes already say and anything trivial.",
+      "Read the conversations listed below with read_chat, only what was said in them since the time given, and the notes of the days they cover with read_memory.",
+      "Then write down everything the owner told you about their life that is not in memory yet, with remember: the people they mentioned and who they are to them, dates and birthdays, plans and appointments, things they have to do or decide, their health, routine, work and projects, what they made or did, and how things went. What stays true goes to kind=core; what happened and plans go to kind=daily. One self-contained note per fact, with names and dates in full; skip only what memory already says and small talk (\"yo\", \"continue\").",
       "A thread left open is something the owner was going to do, hear back about or decide (a call, an interview, an offer): save each with tags [\"open\"], saying when it happens if they said. When today's conversations settle a thread an earlier open note holds, remember how it turned out as a daily note without the tag, superseding that note.",
       "Standing preferences and durable facts can also go straight to kind=profile or kind=core, superseding what they replace.",
       "USER.md is left to the nightly consolidation.",
@@ -75,8 +75,8 @@ const BUILTINS: Array<{ builtin: Builtin; name: string; schedule: string; prompt
       "This is your scheduled memory consolidation, not a message from the owner.",
       "Read the daily notes of the last seven days with read_memory (kind=daily and each day), and the owner profile and long-term memory.",
       "Promote only what proved durable: standing preferences and relationships to kind=profile, phrased as directives; lasting facts, decisions and commitments to kind=core. When a new memory replaces an older one, pass the old id in supersedes.",
-      "Both layers have a size budget and remember refuses a save that would exceed it. Keep them well under it: merge overlapping entries into one that supersedes them, and supersede what is outdated, so there is room for what matters.",
-      "Leave one-off chatter, finished tasks, anything already known, secrets, and anything that came from web pages, email or other tool output rather than from the owner.",
+      "Keep them tidy: merge entries that say the same thing into one that supersedes them, and supersede what is outdated.",
+      "Leave one-off chatter, anything already known, secrets, and anything that came from web pages, email or other tool output rather than from the owner.",
       "Then check USER.md, at the end of your instructions, against the week: if the owner said something lasting about who they are that it lacks or contradicts (their work, routine, people, how they like replies), save it with update_user_md, passing the whole document with only those changes. Keep the owner's own wording and headings, add only what they said themselves, and leave it alone when nothing changed.",
       `This job never delivers anything to the owner: when done, deliver nothing by replying with exactly ${QUIET}.`,
     ].join(" "),
@@ -235,13 +235,17 @@ export const run = internalAction({
     const chat = await ctx.runMutation(internal.jobs.chatFor, { id: job._id, threadId });
     if (!chat) return null;
     const now = new Date().toLocaleString("en-GB", { timeZone: timezone, dateStyle: "full", timeStyle: "short" });
-    // The daily summary needs to know which chats today had; nothing else does.
+    // The daily summary needs to know which chats to read; nothing else does. It reads back to where it last
+    // finished, so a night it failed (Perry offline, a usage limit) is covered the next time, up to a week.
     let context = "";
     if (job.builtin === "daily-summary") {
-      const chats: Array<{ id: string; title: string; channel: string }> = await ctx.runQuery(internal.conversations.activeSince, { since: Date.now() - 86_400_000 });
+      const lastOk: number | null = job.conversationId ? await ctx.runQuery(internal.runs.lastOk, { conversationId: job.conversationId }) : null;
+      const since = Math.max(Date.now() - 7 * 86_400_000, Math.min(Date.now() - 86_400_000, lastOk ?? 0));
+      const from = new Date(since).toLocaleString("en-GB", { timeZone: timezone, dateStyle: "full", timeStyle: "short" });
+      const chats: Array<{ id: string; title: string; channel: string }> = await ctx.runQuery(internal.conversations.activeSince, { since });
       context = chats.length
-        ? `\n\nToday's conversations (chat id, channel, title):\n${chats.map((chat) => `- ${chat.id} (${chat.channel}) ${chat.title}`).join("\n")}`
-        : `\n\nThere were no conversations today, so there is nothing to do: reply with exactly ${QUIET}.`;
+        ? `\n\nConversations since ${from} (chat id, channel, title):\n${chats.map((chat) => `- ${chat.id} (${chat.channel}) ${chat.title}`).join("\n")}`
+        : `\n\nThere were no conversations since ${from}, so there is nothing to do: reply with exactly ${QUIET}.`;
     }
     // The heartbeat and a briefing follow up on what the owner left open, the way a friend asks how it went.
     if (job.builtin === "heartbeat" || (job.schedule && !job.builtin)) {

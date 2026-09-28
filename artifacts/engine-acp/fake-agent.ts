@@ -196,7 +196,7 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
   const say = (chunk: string) => update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: chunk } });
   const earlier = session.messages.filter((message) => message.role === "user").map((message) => message.text);
   session.messages.push({ role: "user", text });
-  log({ prompt: text, blocks: prompt.map((block) => block.type), preamble: texts.length > 1 ? texts[0] : undefined, images: prompt.filter((block) => block.type === "image").length, model: session.model, effort: session.effort, mode: session.mode });
+  log({ prompt: text, blocks: prompt.map((block) => block.type), preamble: texts.length > 1 ? texts[0] : undefined, context: texts.slice(0, -1).join("\n\n") || undefined, images: prompt.filter((block) => block.type === "image").length, model: session.model, effort: session.effort, mode: session.mode });
   let reply = "";
   const stream = async (chunks: string[], gap: number) => {
     for (const chunk of chunks) {

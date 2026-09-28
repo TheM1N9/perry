@@ -1,0 +1,148 @@
+{
+  "ranAt": "2026-09-28T06:55:33.912Z",
+  "model": "gpt-6-luna",
+  "checks": {
+    "saved:brotherBirthday": true,
+    "saved:honestTalk": true,
+    "saved:gymBuddy": true,
+    "saved:bloodTest": false,
+    "saved:contentPage": true,
+    "saved:swimming": true,
+    "smallTalkNotSaved": true,
+    "savedPastTheOldLimits": true,
+    "allOfItIsSent": true,
+    "summaryReadsBackAWeek": true,
+    "summarySavesWhatNoOneDid": true
+  },
+  "notes": {
+    "saved:brotherBirthday": {
+      "said": "My brother Arjun's birthday is on 14 October and I still need to get him something. He's into F1 and coffee. Any gift ideas?",
+      "saved": [
+        "[core] Arjun is the owner's brother, and his birthday is on 14 October.",
+        "[core] Arjun, the owner's brother, is interested in Formula 1 and coffee."
+      ],
+      "reply": "Arjun’s birthday is 14 October, and I added “Get Arjun a birthday gift” to your to-do list.\n\nGood options:\n\n- **Official F1 team cap or hoodie** — choose his favourite team or driver; the official F1 store has current teamwear, accessories, and posters. [F1 Store](https://f1store.formula1.com/en/gif"
+    },
+    "saved:honestTalk": {
+      "said": "I have to talk to Priya about the funding round this week, we need to be honest with her about the numbers. Help me with an opening line?",
+      "saved": [
+        "[daily] On 28 September 2026, the owner needs to talk with Priya about the funding round this week and wants to be honest with her about the numbers."
+      ],
+      "reply": "“Priya, I want to be transparent about where the funding round stands, including the numbers that are encouraging and the ones that are under pressure.”"
+    },
+    "saved:gymBuddy": {
+      "said": "Datta is my gym buddy, we train on weekdays from 9:30 to 11. What should I eat before a morning workout?",
+      "saved": [
+        "[core] Datta is the owner's gym buddy, and they train together on weekdays from 9:30 to 11:00."
+      ],
+      "reply": "For your 9:30 workout, eat a light meal around 8:00–8:30:\n\n- Oats with banana and Greek yogurt  \n- 2 eggs with toast and fruit  \n- Yogurt with granola and berries  \n- Peanut-butter toast plus a banana  \n\nAim for carbohydrates plus 20–30 g protein. Keep fat and fiber modest so your stomach feels comf"
+    },
+    "saved:bloodTest": {
+      "said": "I took the advanced blood test from Nue Health today, the results come in three days. What do the usual markers mean?",
+      "saved": [],
+      "reply": "Nue says its Advanced panel includes 93 biomarkers and specifically highlights ApoB, lipoprotein(a), hs-CRP and insulin; the exact list may depend on your package. citeturn1search0\n\nHere’s what the usual groups mean:\n\n| Group | Common markers | What they broadly indicate |\n|---|---|---|\n| Blood c"
+    },
+    "saved:contentPage": {
+      "said": "Write me a three-line hook for an Instagram reel about AI video editing, for my page Hackonomics.",
+      "saved": [
+        "[core] Hackonomics is the owner's page about technology and economics."
+      ],
+      "reply": "Your videos are taking hours to edit?  \nAI can cut, caption, and polish them in seconds.  \nHere’s how Hackonomics puts your editing on autopilot."
+    },
+    "saved:swimming": {
+      "said": "I started swimming classes this week and the first one went well. Any tips for breathing?",
+      "saved": [
+        "[daily] On 28 September 2026, the owner started swimming classes this week, and their first class went well."
+      ],
+      "reply": "A few cues that help:\n\n- Exhale steadily underwater instead of holding your breath.\n- Turn your head with your body to inhale; keep one goggle underwater and avoid lifting your head.\n- Make the inhale quick, then return your face smoothly.\n- Practice holding the pool edge: face in, bubbles out, turn"
+    },
+    "smallTalkNotSaved": {
+      "saved": [],
+      "reply": "Yo! What’s up?"
+    },
+    "savedPastTheOldLimits": {
+      "refused": [],
+      "coreChars": 9883,
+      "profileChars": 4860
+    },
+    "allOfItIsSent": {
+      "sentChars": 33238,
+      "missing": []
+    },
+    "summaryReadsBackAWeek": {
+      "from": "Monday, 21 September 2026 at 06:54",
+      "listedTheOldChat": true,
+      "prompt": "qfxsvjjb6ge2j8d8q07kzq8ck (web) Casual greeting\n- p5ek5bn9ybf68p8xkvaggtywdy (web) Swimming breathing tips\n- 4p7y35hrd3k442mkp3r4wsr6tx (web) AI Video Editing Hook\n- bcdktkhgtsfpm512gv9pdx2jvq (web) Understanding blood test markers\n- 6cakamvtj901b8ydtajr0bktjg (web) Pre-workout breakfast ideas\n- 4hykczw4fp5k70x7cmej80fmdn (web) Funding round conversation\n- xmsdc1sz4q9k5k72h079fhya3s (web) Gift ideas for Arjun\n- 9372mhw92kmcwkpa6sdgmwx98g (web) Meera’s move to Pune\n\nConditional delivery\nOnly when this job makes delivery conditional and there is nothing new to report, reply with exactly NOTHING and no other text. This includes results already delivered or incorporated into an earlier run; do not send an acknowledgement of that redundancy. Do not use NOTHING to omit commentary from a result that still needs delivery. Never return an empty reply; use NOTHING to intentionally deliver nothing."
+    },
+    "summarySavesWhatNoOneDid": {
+      "status": "ok",
+      "toolCalls": [
+        "read_chat",
+        "read_chat",
+        "read_chat",
+        "read_chat",
+        "read_chat",
+        "read_chat",
+        "read_chat",
+        "read_chat",
+        "read_chat",
+        "remember",
+        "remember",
+        "remember",
+        "remember"
+      ],
+      "saved": [
+        "[daily] On 28 September 2026, the owner took an advanced blood test from Nue Health; results are expected around 1 October 2026.",
+        "[core] Meera is the owner's sister and is moving to Pune on 5 November 2026.",
+        "[profile] The owner has decided to stop drinking coffee after 4:00 PM.",
+        "[daily] On 28 September 2026, the owner still needed to choose a birthday gift for their brother Arjun, whose birthday is on 14 October."
+      ]
+    },
+    "memories": [
+      "[core/owner] Arjun is the owner's brother, and his birthday is on 14 October.",
+      "[core/owner] Arjun, the owner's brother, is interested in Formula 1 and coffee.",
+      "[daily/owner] On 28 September 2026, the owner needs to talk with Priya about the funding round this week and wants to be honest with her about the numbers.",
+      "[core/owner] Datta is the owner's gym buddy, and they train together on weekdays from 9:30 to 11:00.",
+      "[core/owner] Hackonomics is the owner's page about technology and economics.",
+      "[daily/owner] On 28 September 2026, the owner started swimming classes this week, and their first class went well.",
+      "[daily/job] On 28 September 2026, the owner took an advanced blood test from Nue Health; results are expected around 1 October 2026.",
+      "[core/job] Meera is the owner's sister and is moving to Pune on 5 November 2026.",
+      "[profile/job] The owner has decided to stop drinking coffee after 4:00 PM.",
+      "[daily/job] On 28 September 2026, the owner still needed to choose a birthday gift for their brother Arjun, whose birthday is on 14 October."
+    ],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-memory-capture-KdKglK\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  named a chat \"Gift ideas for Arjun\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn 7vp9p9y32ebgjn6qqb7efx3vzw\u001b[0m",
+      "\u001b[2m  saved turn th5w98yg63zy9crxeghsm0n6gr\u001b[0m",
+      "\u001b[2m  named a chat \"Funding round conversation\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  named a chat \"Pre-workout breakfast ideas\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn 4qy3spfkah4f35q6bmre6sc3k4\u001b[0m",
+      "\u001b[2m  named a chat \"Understanding blood test markers\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn p68rjctdh2d8jnzbr9acwk172e\u001b[0m",
+      "\u001b[2m  named a chat \"AI Video Editing Hook\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn 62z5xaecthntee12hk7zv9aran\u001b[0m",
+      "\u001b[2m  named a chat \"Swimming breathing tips\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn sgnm2t22jhayc3st1rt4e5y4s5\u001b[0m",
+      "\u001b[2m  named a chat \"Casual greeting\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn wyxk2mqcwbfn0t352z458kzb2j\u001b[0m",
+      "\u001b[2m  saved turn ytb189d1m9400aqjpgttmsreh4\u001b[0m",
+      "\u001b[2m  saved turn gqe8geywjd90vjtfhdahnxre02\u001b[0m",
+      "\u001b[2m  named a chat \"Meera’s move to Pune\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn 1abq745zgf2yq85p3jbv9sz0qr\u001b[0m",
+      "\u001b[2m  named a chat \"What You Know About Me\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn 8106zsqstsjytgmr9xg7vya2ta\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": false
+}

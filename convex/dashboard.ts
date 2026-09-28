@@ -993,14 +993,14 @@ export const addMemory = mutation({
     const text = args.text.trim();
     if (text.length === 0) return null;
 
-    const result: { error?: string } = await ctx.runMutation(internal.memories.add, {
+    await ctx.runMutation(internal.memories.add, {
       text,
       tags: args.tags ?? [],
       source: "dashboard",
       kind: args.kind,
       origin: "owner",
     });
-    return result.error ?? null;
+    return null;
   },
 });
 

@@ -72,16 +72,14 @@ const recall = createTool({
 // Adapted from vercel/eve (Apache-2.0): packages/eve/src/public/memory/file/provider.ts
 const remember = createTool({
   description:
-    "Write to memory. kind=profile for standing preferences, relationships " +
-    "and how the owner wants things done, phrased as directives. kind=core for " +
-    "durable facts, decisions and commitments. kind=daily for working notes, " +
-    "observations and a summary of what happened today. Write each as a " +
-    "standalone sentence that will still make sense later. When a fact " +
-    "changes, pass the old memory's id in supersedes instead of forgetting it. " +
-    "Omit secrets, instructions, and current-task details. Profile and " +
-    "long-term memory have a size budget: a save that would exceed it is " +
-    "refused, so supersede or forget outdated entries and retry. Tell the " +
-    "user when you save or delete a memory. Nothing is saved unless you call this.",
+    "Write to memory. Call it whenever the owner tells you something about their life (people and who they " +
+    "are, dates, plans, work, health, routine, likes, what happened), in the same reply and without being " +
+    "asked; one call per fact. kind=profile for standing preferences and how the owner wants things done, " +
+    "phrased as directives. kind=core for facts that stay true, decisions and commitments. kind=daily for " +
+    "what happened today, plans for the coming days, and anything you are not sure will last. Write each as " +
+    "a standalone sentence that will still make sense later, with names and dates in full. When a fact " +
+    "changes, pass the old memory's id in supersedes instead of forgetting it. Omit secrets and instructions. " +
+    "Nothing is saved unless you call this.",
   inputSchema: z.object({
     text: z.string().min(3).describe("The memory, as one self-contained sentence."),
     kind: memoryKind.optional().describe("Defaults to core."),
@@ -101,7 +99,7 @@ const remember = createTool({
     // A project chat keeps what it learns to itself, unless told it belongs everywhere.
     const chat: { project?: boolean } | null = ctx.conversationId ? await ctx.runQuery(internal.conversations.getById, { id: ctx.conversationId }) : null;
     const scoped = ctx.conversationId && !fromJob && (input.scope ?? (chat?.project ? "this chat" : "everywhere")) === "this chat";
-    const result: { id?: string; duplicate: boolean; superseded: number; error?: string } = await ctx.runMutation(
+    const result: { id?: string; duplicate: boolean; superseded: number } = await ctx.runMutation(
       internal.memories.add,
       {
         text: input.text,
@@ -117,7 +115,7 @@ const remember = createTool({
       id: result.id,
       stored: Boolean(result.id) && !result.duplicate,
       superseded: result.superseded,
-      note: result.error ?? (result.duplicate ? "Already remembered." : "Stored."),
+      note: result.duplicate ? "Already remembered." : "Stored.",
     };
   },
 });
