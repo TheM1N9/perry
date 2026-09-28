@@ -1,0 +1,391 @@
+{
+  "ranAt": "2026-09-28T09:06:26.095Z",
+  "turns": [
+    {
+      "chat": "A",
+      "prompt": "In four short sentences, explain why the sky is blue.",
+      "pendingMs": 6,
+      "firstWordsMs": 6252,
+      "finishedMs": 11262,
+      "queuedMs": 27,
+      "streamSteps": 8,
+      "gaps": [
+        {
+          "fromMs": 11256,
+          "toMs": 11262,
+          "showing": "nothing"
+        }
+      ],
+      "growth": [
+        {
+          "ms": 6252,
+          "chars": 1
+        },
+        {
+          "ms": 6572,
+          "chars": 39
+        },
+        {
+          "ms": 9133,
+          "chars": 55
+        },
+        {
+          "ms": 9625,
+          "chars": 123
+        },
+        {
+          "ms": 9784,
+          "chars": 183
+        },
+        {
+          "ms": 10283,
+          "chars": 196
+        },
+        {
+          "ms": 10608,
+          "chars": 336
+        },
+        {
+          "ms": 10982,
+          "chars": 383
+        }
+      ],
+      "reply": "Perry said\n\nSunlight contains all colors, but air molecules scatter shorter blue wavelengths more than longer red ones. This scattering sends blue light in many directions across the sky. The Sun looks yellowish because some blue light is scattered away from the direct path to our eyes. At sunrise and sunset, sunlight travels through more air, so much of the blue is scattered out and reds and oran",
+      "steps": []
+    },
+    {
+      "chat": "A",
+      "prompt": "Now in four short sentences, why sunsets are red.",
+      "pendingMs": 4,
+      "firstWordsMs": 2053,
+      "finishedMs": 3643,
+      "queuedMs": 16,
+      "streamSteps": 5,
+      "gaps": [
+        {
+          "fromMs": 3613,
+          "toMs": 3635,
+          "showing": "thinking"
+        },
+        {
+          "fromMs": 3635,
+          "toMs": 3643,
+          "showing": "nothing"
+        }
+      ],
+      "growth": [
+        {
+          "ms": 2053,
+          "chars": 3
+        },
+        {
+          "ms": 2359,
+          "chars": 75
+        },
+        {
+          "ms": 2744,
+          "chars": 113
+        },
+        {
+          "ms": 3083,
+          "chars": 158
+        },
+        {
+          "ms": 3406,
+          "chars": 232
+        }
+      ],
+      "reply": "Perry said\n\nSunlight passes through more atmosphere when the Sun is low on the horizon. Air scatters shorter blue wavelengths out of the direct path more strongly. Longer red and orange wavelengths continue toward your eyes. Dust and clouds can deepen the colors.\n\n14:33",
+      "steps": []
+    },
+    {
+      "chat": "A",
+      "prompt": "And in four short sentences, why clouds are white.",
+      "pendingMs": 4,
+      "firstWordsMs": 3814,
+      "finishedMs": 5266,
+      "queuedMs": 18,
+      "streamSteps": 4,
+      "gaps": [
+        {
+          "fromMs": 5240,
+          "toMs": 5260,
+          "showing": "thinking"
+        },
+        {
+          "fromMs": 5260,
+          "toMs": 5266,
+          "showing": "nothing"
+        }
+      ],
+      "growth": [
+        {
+          "ms": 3814,
+          "chars": 5
+        },
+        {
+          "ms": 4137,
+          "chars": 55
+        },
+        {
+          "ms": 4574,
+          "chars": 124
+        },
+        {
+          "ms": 4949,
+          "chars": 183
+        }
+      ],
+      "reply": "Perry said\n\nClouds are made of tiny water droplets and ice crystals. They scatter all colors of sunlight about equally. Those colors mix together in our eyes as white light. Thick clouds can look gray because less sunlight passes through them.\n\n14:33",
+      "steps": []
+    },
+    {
+      "chat": "A",
+      "prompt": "One more: in one sentence, why is grass green?",
+      "pendingMs": 5,
+      "firstWordsMs": 2030,
+      "finishedMs": 2740,
+      "queuedMs": 15,
+      "streamSteps": 3,
+      "gaps": [
+        {
+          "fromMs": 2734,
+          "toMs": 2740,
+          "showing": "nothing"
+        }
+      ],
+      "growth": [
+        {
+          "ms": 2030,
+          "chars": 5
+        },
+        {
+          "ms": 2336,
+          "chars": 83
+        },
+        {
+          "ms": 2697,
+          "chars": 113
+        }
+      ],
+      "reply": "Perry said\n\nGrass looks green because chlorophyll absorbs mostly red and blue light, reflecting more green light to our eyes.\n\n14:35",
+      "steps": []
+    },
+    {
+      "chat": "B",
+      "prompt": "In four short sentences, explain why the sea is salty.",
+      "pendingMs": 4,
+      "firstWordsMs": 9324,
+      "finishedMs": 10608,
+      "queuedMs": 17,
+      "streamSteps": 4,
+      "gaps": [
+        {
+          "fromMs": 10601,
+          "toMs": 10608,
+          "showing": "nothing"
+        }
+      ],
+      "growth": [
+        {
+          "ms": 9324,
+          "chars": 4
+        },
+        {
+          "ms": 9676,
+          "chars": 95
+        },
+        {
+          "ms": 9998,
+          "chars": 193
+        },
+        {
+          "ms": 10314,
+          "chars": 273
+        }
+      ],
+      "reply": "Perry said\n\nRain picks up tiny amounts of carbon dioxide, forming a weak acid that wears down rocks.\nRivers carry dissolved minerals and salts from those rocks into the ocean.\nUnderwater vents and volcanic activity add more dissolved salts.\nWater evaporates from the sea, but the salts remain, making seawater salty.\n\n14:36",
+      "steps": []
+    },
+    {
+      "chat": "C",
+      "prompt": "In four short sentences, explain why leaves change colour in autumn.",
+      "pendingMs": 4,
+      "firstWordsMs": 3143,
+      "finishedMs": 4279,
+      "queuedMs": 26,
+      "streamSteps": 4,
+      "gaps": [
+        {
+          "fromMs": 4270,
+          "toMs": 4279,
+          "showing": "nothing"
+        }
+      ],
+      "growth": [
+        {
+          "ms": 3143,
+          "chars": 6
+        },
+        {
+          "ms": 3444,
+          "chars": 110
+        },
+        {
+          "ms": 3809,
+          "chars": 198
+        },
+        {
+          "ms": 4122,
+          "chars": 275
+        }
+      ],
+      "reply": "Perry said\n\nLeaves change colour in autumn as daylight decreases and temperatures cool.\nTrees stop making chlorophyll, the pigment that makes leaves green.\nOther pigments, such as yellow and orange carotenoids, then become visible.\nSome leaves also produce red pigments before they fall.\n\n14:36",
+      "steps": []
+    }
+  ],
+  "checks": {
+    "resumedChatIsGivenTheTimeNow": true,
+    "chatBTookAThreadStartedAhead": true,
+    "chatCTookAThreadStartedAhead": true,
+    "A: \"In four short sentences, explain\" streamed": true,
+    "A: \"Now in four short sentences, why\" streamed": true,
+    "A: \"And in four short sentences, why\" streamed": true,
+    "A: \"One more: in one sentence, why i\" streamed": true,
+    "B: \"In four short sentences, explain\" streamed": true,
+    "C: \"In four short sentences, explain\" streamed": true,
+    "noVisibleGapBeforeFinished": true,
+    "newChatsAnswerTheirOwnQuestion": true
+  },
+  "notes": {
+    "resumedChatIsGivenTheTimeNow": {
+      "given": [
+        "14:33",
+        "14:33",
+        "14:33",
+        "14:33",
+        "14:33",
+        "14:33",
+        "14:35",
+        "14:35"
+      ],
+      "firstMessageAt": "14:33",
+      "lastMessageAt": "14:35",
+      "timezone": "Asia/Calcutta",
+      "thread": "01a0e740-eba7-7911-9abb-e26373d59ba2"
+    },
+    "chatBTookAThreadStartedAhead": {
+      "thread": "01a0e740-ec7b-72a1-ba00-14d764c85d8c",
+      "threadStartedMsBeforeSend": 168267
+    },
+    "chatCTookAThreadStartedAhead": {
+      "thread": "01a0e743-7e19-7e72-9457-3b75fd152dd7",
+      "threadStartedMsBeforeSend": 17668
+    },
+    "A: \"In four short sentences, explain\" streamed": {
+      "firstStreamMs": 6252,
+      "steps": 8
+    },
+    "A: \"Now in four short sentences, why\" streamed": {
+      "firstStreamMs": 2053,
+      "steps": 5
+    },
+    "A: \"And in four short sentences, why\" streamed": {
+      "firstStreamMs": 3814,
+      "steps": 4
+    },
+    "A: \"One more: in one sentence, why i\" streamed": {
+      "firstStreamMs": 2030,
+      "steps": 3
+    },
+    "B: \"In four short sentences, explain\" streamed": {
+      "firstStreamMs": 9324,
+      "steps": 4
+    },
+    "C: \"In four short sentences, explain\" streamed": {
+      "firstStreamMs": 3143,
+      "steps": 4
+    },
+    "noVisibleGapBeforeFinished": {
+      "visible": [],
+      "all": [
+        {
+          "fromMs": 11256,
+          "toMs": 11262,
+          "showing": "nothing"
+        },
+        {
+          "fromMs": 3613,
+          "toMs": 3635,
+          "showing": "thinking"
+        },
+        {
+          "fromMs": 3635,
+          "toMs": 3643,
+          "showing": "nothing"
+        },
+        {
+          "fromMs": 5240,
+          "toMs": 5260,
+          "showing": "thinking"
+        },
+        {
+          "fromMs": 5260,
+          "toMs": 5266,
+          "showing": "nothing"
+        },
+        {
+          "fromMs": 2734,
+          "toMs": 2740,
+          "showing": "nothing"
+        },
+        {
+          "fromMs": 10601,
+          "toMs": 10608,
+          "showing": "nothing"
+        },
+        {
+          "fromMs": 4270,
+          "toMs": 4279,
+          "showing": "nothing"
+        }
+      ]
+    },
+    "newChatsAnswerTheirOwnQuestion": {
+      "b": "Perry said\n\nRain picks up tiny amounts of carbon dioxide, forming a weak acid that wears down rocks.\nRivers carry dissolved minerals and salts from those rocks into the ocean.\nUnderwater vents and volcanic activity add more dissolved salts.\nWater evaporates from the sea, but the salts remain, making",
+      "c": "Perry said\n\nLeaves change colour in autumn as daylight decreases and temperatures cool.\nTrees stop making chlorophyll, the pigment that makes leaves green.\nOther pigments, such as yellow and orange carotenoids, then become visible.\nSome leaves also produce red pigments before they fall.\n\n14:36"
+    },
+    "pageErrors": [],
+    "model": "gpt-6-luna",
+    "firstWordsMs": {
+      "1 A: In four short sentences, explain why the": 6252,
+      "2 A: Now in four short sentences, why sunsets": 2053,
+      "3 A: And in four short sentences, why clouds ": 3814,
+      "4 A: One more: in one sentence, why is grass ": 2030,
+      "5 B: In four short sentences, explain why the": 9324,
+      "6 C: In four short sentences, explain why lea": 3143
+    },
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-chat-latency-G87tXM\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  named a chat \"Why the Sky Is Blue\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn 8y0tapanw2bcw8yssd0nr62att\u001b[0m",
+      "\u001b[2m  saved turn 73pkkz4qw4wy1gtc6fv4wx0xv3\u001b[0m",
+      "\u001b[2m  saved turn yagwb8yeewmgv8c7dcsbzgct0x\u001b[0m",
+      "\u001b[2m  saved turn jn8321je632mqmcqka9qt540q8\u001b[0m",
+      "\u001b[2m  saved turn yb6vn2j2ng4g7z5kg9g354dyfq\u001b[0m",
+      "\u001b[2m  named a chat \"Why the Sea Is Salty\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn t1xf5rb3rh2z2vkhqf76wk9zm5\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

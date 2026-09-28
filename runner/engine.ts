@@ -203,7 +203,7 @@ export type TurnInput = {
   instructions: string;
   /** The chat so far, for a session that has not seen it. */
   history?: string;
-  /** Memory recalled for this turn: data, sent ahead of the prompt rather than as instructions. */
+  /** What holds for this turn only (the time, active goals, recalled memory): sent ahead of the prompt rather than as instructions. */
   recalled?: string;
   prompt: string;
   attachments: EngineAttachment[];

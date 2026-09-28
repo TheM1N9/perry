@@ -1,0 +1,1803 @@
+{
+  "ranAt": "2026-09-28T07:41:26.868Z",
+  "turns": [
+    {
+      "chat": "A",
+      "prompt": "In four short sentences, explain why the sky is blue.",
+      "pendingMs": 6,
+      "firstWordsMs": 6483,
+      "finishedMs": 9150,
+      "queuedMs": 30,
+      "streamSteps": 7,
+      "gaps": [
+        {
+          "fromMs": 9119,
+          "toMs": 9143,
+          "showing": "thinking"
+        },
+        {
+          "fromMs": 9143,
+          "toMs": 9150,
+          "showing": "nothing"
+        }
+      ],
+      "growth": [
+        {
+          "ms": 6483,
+          "chars": 3
+        },
+        {
+          "ms": 6827,
+          "chars": 41
+        },
+        {
+          "ms": 7144,
+          "chars": 77
+        },
+        {
+          "ms": 7457,
+          "chars": 135
+        },
+        {
+          "ms": 7857,
+          "chars": 192
+        },
+        {
+          "ms": 8291,
+          "chars": 259
+        },
+        {
+          "ms": 8676,
+          "chars": 328
+        }
+      ],
+      "reply": "Perry said\n\nSunlight contains all colors, but Earth’s atmosphere scatters blue light more strongly than red light.\nThis scattering sends blue light across the sky in every direction.\nWe therefore see blue light coming from much of the sky.\nAt sunrise and sunset, sunlight travels farther through the atmosphere, making reds and oranges more visible.\n\n13:08",
+      "steps": [
+        {
+          "ms": 8,
+          "label": "server.handleTurn.start"
+        },
+        {
+          "ms": 10,
+          "label": "server.prepareTurn.start"
+        },
+        {
+          "ms": 10,
+          "label": "server.memory.start"
+        },
+        {
+          "ms": 180,
+          "label": "server.memory.end"
+        },
+        {
+          "ms": 181,
+          "label": "server.prepareTurn.end"
+        },
+        {
+          "ms": 182,
+          "label": "server.enqueue.start"
+        },
+        {
+          "ms": 200,
+          "label": "runner.queued.seen"
+        },
+        {
+          "ms": 233,
+          "label": "runner.claimed"
+        },
+        {
+          "ms": 233,
+          "label": "runner.runTurn.call"
+        },
+        {
+          "ms": 234,
+          "label": "codex.ensure.start"
+        },
+        {
+          "ms": 234,
+          "label": "codex.ensure.end"
+        },
+        {
+          "ms": 306,
+          "label": "app.thread/started"
+        },
+        {
+          "ms": 306,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-3f59-7952-9f64-2ab9ebe918dd\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 333,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-3f59-7952-9f64-2ab9ebe918dd\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 349,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f3-3f59-7952-9f64-2ab9ebe918dd\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}}"
+        },
+        {
+          "ms": 349,
+          "label": "app.turn/started"
+        },
+        {
+          "ms": 362,
+          "label": "codex.skills.end"
+        },
+        {
+          "ms": 575,
+          "label": "mcp.initialize"
+        },
+        {
+          "ms": 577,
+          "label": "codex.thread.end"
+        },
+        {
+          "ms": 578,
+          "label": "app.thread/started"
+        },
+        {
+          "ms": 578,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"name\":\"codex_apps\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 578,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"name\":\"assistant\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 578,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 584,
+          "label": "mcp.tools/list"
+        },
+        {
+          "ms": 595,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"name\":\"assistant\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 599,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 599,
+          "label": "codex.turnStart.end"
+        },
+        {
+          "ms": 633,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}}"
+        },
+        {
+          "ms": 633,
+          "label": "app.turn/started"
+        },
+        {
+          "ms": 682,
+          "label": "mcp.initialize"
+        },
+        {
+          "ms": 687,
+          "label": "mcp.tools/list"
+        },
+        {
+          "ms": 692,
+          "label": "app.thread/started"
+        },
+        {
+          "ms": 692,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-40cc-70b0-b34e-db6a5375178e\",\"name\":\"assistant\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 692,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-40cc-70b0-b34e-db6a5375178e\",\"name\":\"codex_apps\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 692,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-40cc-70b0-b34e-db6a5375178e\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 694,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-40cc-70b0-b34e-db6a5375178e\",\"name\":\"assistant\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 707,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-40cc-70b0-b34e-db6a5375178e\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 2990,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"name\":\"assistant\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 2990,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 2992,
+          "label": "app.item/started.userMessage"
+        },
+        {
+          "ms": 2992,
+          "label": "app.item/completed.userMessage"
+        },
+        {
+          "ms": 3638,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-40cc-70b0-b34e-db6a5375178e\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 3803,
+          "label": "app.item/started.userMessage"
+        },
+        {
+          "ms": 3814,
+          "label": "app.item/completed.userMessage"
+        },
+        {
+          "ms": 6213,
+          "label": "app.item/started.reasoning"
+        },
+        {
+          "ms": 6213,
+          "label": "codex.item.started.reasoning"
+        },
+        {
+          "ms": 6362,
+          "label": "app.item/completed.reasoning"
+        },
+        {
+          "ms": 6362,
+          "label": "codex.item.completed.reasoning"
+        },
+        {
+          "ms": 6370,
+          "label": "app.item/started.agentMessage"
+        },
+        {
+          "ms": 6462,
+          "label": "codex.firstDelta"
+        },
+        {
+          "ms": 6462,
+          "label": "runner.flush.send 3"
+        },
+        {
+          "ms": 6464,
+          "label": "server.streamTurn 3"
+        },
+        {
+          "ms": 6483,
+          "label": "runner.flush.done 3"
+        },
+        {
+          "ms": 6811,
+          "label": "runner.flush.send 41"
+        },
+        {
+          "ms": 6812,
+          "label": "server.streamTurn 41"
+        },
+        {
+          "ms": 6830,
+          "label": "runner.flush.done 41"
+        },
+        {
+          "ms": 7128,
+          "label": "runner.flush.send 77"
+        },
+        {
+          "ms": 7130,
+          "label": "server.streamTurn 77"
+        },
+        {
+          "ms": 7147,
+          "label": "runner.flush.done 77"
+        },
+        {
+          "ms": 7443,
+          "label": "runner.flush.send 137"
+        },
+        {
+          "ms": 7445,
+          "label": "server.streamTurn 137"
+        },
+        {
+          "ms": 7457,
+          "label": "runner.flush.done 137"
+        },
+        {
+          "ms": 7844,
+          "label": "runner.flush.send 196"
+        },
+        {
+          "ms": 7846,
+          "label": "server.streamTurn 196"
+        },
+        {
+          "ms": 7858,
+          "label": "runner.flush.done 196"
+        },
+        {
+          "ms": 8277,
+          "label": "runner.flush.send 265"
+        },
+        {
+          "ms": 8280,
+          "label": "server.streamTurn 265"
+        },
+        {
+          "ms": 8300,
+          "label": "runner.flush.done 265"
+        },
+        {
+          "ms": 8662,
+          "label": "runner.flush.send 334"
+        },
+        {
+          "ms": 8664,
+          "label": "server.streamTurn 334"
+        },
+        {
+          "ms": 8677,
+          "label": "runner.flush.done 334"
+        },
+        {
+          "ms": 9055,
+          "label": "app.item/completed.agentMessage"
+        },
+        {
+          "ms": 9082,
+          "label": "app.thread/tokenUsage/updated"
+        },
+        {
+          "ms": 9083,
+          "label": "app.account/rateLimits/updated"
+        },
+        {
+          "ms": 9100,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"status\":{\"type\":\"idle\"}}"
+        },
+        {
+          "ms": 9101,
+          "label": "app.turn/completed"
+        }
+      ]
+    },
+    {
+      "chat": "A",
+      "prompt": "Now in four short sentences, why sunsets are red.",
+      "pendingMs": 4,
+      "firstWordsMs": 1895,
+      "finishedMs": 3464,
+      "queuedMs": 21,
+      "streamSteps": 5,
+      "gaps": [
+        {
+          "fromMs": 3458,
+          "toMs": 3464,
+          "showing": "nothing"
+        }
+      ],
+      "growth": [
+        {
+          "ms": 1895,
+          "chars": 2
+        },
+        {
+          "ms": 2279,
+          "chars": 61
+        },
+        {
+          "ms": 2591,
+          "chars": 104
+        },
+        {
+          "ms": 2909,
+          "chars": 127
+        },
+        {
+          "ms": 3223,
+          "chars": 193
+        }
+      ],
+      "reply": "Perry said\n\nAt sunset, sunlight travels through more atmosphere.\nAir scatters away much of the blue and green light.\nThe remaining light is richer in red and orange wavelengths.\nDust and particles can make these colors appear even more vivid.\n\n13:08",
+      "steps": [
+        {
+          "ms": 8,
+          "label": "server.handleTurn.start"
+        },
+        {
+          "ms": 9,
+          "label": "server.prepareTurn.start"
+        },
+        {
+          "ms": 9,
+          "label": "server.memory.start"
+        },
+        {
+          "ms": 40,
+          "label": "server.memory.end"
+        },
+        {
+          "ms": 41,
+          "label": "server.prepareTurn.end"
+        },
+        {
+          "ms": 41,
+          "label": "server.enqueue.start"
+        },
+        {
+          "ms": 53,
+          "label": "runner.queued.seen"
+        },
+        {
+          "ms": 74,
+          "label": "runner.claimed"
+        },
+        {
+          "ms": 75,
+          "label": "runner.runTurn.call"
+        },
+        {
+          "ms": 75,
+          "label": "codex.ensure.start"
+        },
+        {
+          "ms": 75,
+          "label": "codex.ensure.end"
+        },
+        {
+          "ms": 83,
+          "label": "codex.skills.end"
+        },
+        {
+          "ms": 85,
+          "label": "app.deprecationNotice"
+        },
+        {
+          "ms": 92,
+          "label": "codex.thread.end"
+        },
+        {
+          "ms": 93,
+          "label": "app.thread/tokenUsage/updated"
+        },
+        {
+          "ms": 93,
+          "label": "app.thread/goal/cleared"
+        },
+        {
+          "ms": 115,
+          "label": "codex.turnStart.end"
+        },
+        {
+          "ms": 125,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}}"
+        },
+        {
+          "ms": 125,
+          "label": "app.turn/started"
+        },
+        {
+          "ms": 344,
+          "label": "app.item/started.userMessage"
+        },
+        {
+          "ms": 352,
+          "label": "app.item/completed.userMessage"
+        },
+        {
+          "ms": 1752,
+          "label": "app.item/started.agentMessage"
+        },
+        {
+          "ms": 1882,
+          "label": "app.item/started.agentMessage"
+        },
+        {
+          "ms": 1882,
+          "label": "codex.firstDelta"
+        },
+        {
+          "ms": 1882,
+          "label": "runner.flush.send 2"
+        },
+        {
+          "ms": 1883,
+          "label": "server.streamTurn 2"
+        },
+        {
+          "ms": 1895,
+          "label": "runner.flush.done 2"
+        },
+        {
+          "ms": 2071,
+          "label": "app.item/completed.agentMessage"
+        },
+        {
+          "ms": 2204,
+          "label": "app.thread/tokenUsage/updated"
+        },
+        {
+          "ms": 2204,
+          "label": "app.account/rateLimits/updated"
+        },
+        {
+          "ms": 2209,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f3-3f59-7952-9f64-2ab9ebe918dd\",\"status\":{\"type\":\"idle\"}}"
+        },
+        {
+          "ms": 2209,
+          "label": "app.turn/completed"
+        },
+        {
+          "ms": 2264,
+          "label": "runner.flush.send 63"
+        },
+        {
+          "ms": 2266,
+          "label": "server.streamTurn 63"
+        },
+        {
+          "ms": 2279,
+          "label": "runner.flush.done 63"
+        },
+        {
+          "ms": 2578,
+          "label": "runner.flush.send 109"
+        },
+        {
+          "ms": 2581,
+          "label": "server.streamTurn 109"
+        },
+        {
+          "ms": 2592,
+          "label": "runner.flush.done 109"
+        },
+        {
+          "ms": 2896,
+          "label": "runner.flush.send 131"
+        },
+        {
+          "ms": 2897,
+          "label": "server.streamTurn 131"
+        },
+        {
+          "ms": 2909,
+          "label": "runner.flush.done 131"
+        },
+        {
+          "ms": 3212,
+          "label": "runner.flush.send 199"
+        },
+        {
+          "ms": 3213,
+          "label": "server.streamTurn 199"
+        },
+        {
+          "ms": 3224,
+          "label": "runner.flush.done 199"
+        },
+        {
+          "ms": 3392,
+          "label": "app.item/completed.agentMessage"
+        },
+        {
+          "ms": 3416,
+          "label": "app.thread/tokenUsage/updated"
+        },
+        {
+          "ms": 3416,
+          "label": "app.account/rateLimits/updated"
+        },
+        {
+          "ms": 3431,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"status\":{\"type\":\"idle\"}}"
+        },
+        {
+          "ms": 3431,
+          "label": "app.turn/completed"
+        }
+      ]
+    },
+    {
+      "chat": "A",
+      "prompt": "And in four short sentences, why clouds are white.",
+      "pendingMs": 6,
+      "firstWordsMs": 2588,
+      "finishedMs": 4487,
+      "queuedMs": 15,
+      "streamSteps": 6,
+      "gaps": [
+        {
+          "fromMs": 4481,
+          "toMs": 4487,
+          "showing": "nothing"
+        }
+      ],
+      "growth": [
+        {
+          "ms": 2588,
+          "chars": 5
+        },
+        {
+          "ms": 2889,
+          "chars": 34
+        },
+        {
+          "ms": 3209,
+          "chars": 90
+        },
+        {
+          "ms": 3523,
+          "chars": 140
+        },
+        {
+          "ms": 3860,
+          "chars": 153
+        },
+        {
+          "ms": 4257,
+          "chars": 264
+        }
+      ],
+      "reply": "Perry said\n\nCloud droplets scatter all visible colors of sunlight nearly equally.\nThose colors combine in our eyes as white light.\nThick clouds can look gray because less sunlight passes through them.\nTheir brightness also depends on the Sun’s angle and the cloud’s thickness.\n\n13:08",
+      "steps": [
+        {
+          "ms": 3,
+          "label": "server.handleTurn.start"
+        },
+        {
+          "ms": 4,
+          "label": "server.prepareTurn.start"
+        },
+        {
+          "ms": 4,
+          "label": "server.memory.start"
+        },
+        {
+          "ms": 22,
+          "label": "server.memory.end"
+        },
+        {
+          "ms": 23,
+          "label": "server.prepareTurn.end"
+        },
+        {
+          "ms": 23,
+          "label": "server.enqueue.start"
+        },
+        {
+          "ms": 34,
+          "label": "runner.queued.seen"
+        },
+        {
+          "ms": 53,
+          "label": "runner.claimed"
+        },
+        {
+          "ms": 53,
+          "label": "runner.runTurn.call"
+        },
+        {
+          "ms": 53,
+          "label": "codex.ensure.start"
+        },
+        {
+          "ms": 53,
+          "label": "codex.ensure.end"
+        },
+        {
+          "ms": 63,
+          "label": "codex.skills.end"
+        },
+        {
+          "ms": 65,
+          "label": "app.deprecationNotice"
+        },
+        {
+          "ms": 75,
+          "label": "codex.thread.end"
+        },
+        {
+          "ms": 75,
+          "label": "app.thread/tokenUsage/updated"
+        },
+        {
+          "ms": 75,
+          "label": "app.thread/goal/cleared"
+        },
+        {
+          "ms": 98,
+          "label": "codex.turnStart.end"
+        },
+        {
+          "ms": 109,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}}"
+        },
+        {
+          "ms": 109,
+          "label": "app.turn/started"
+        },
+        {
+          "ms": 337,
+          "label": "app.item/started.userMessage"
+        },
+        {
+          "ms": 347,
+          "label": "app.item/completed.userMessage"
+        },
+        {
+          "ms": 2236,
+          "label": "app.item/started.reasoning"
+        },
+        {
+          "ms": 2236,
+          "label": "codex.item.started.reasoning"
+        },
+        {
+          "ms": 2565,
+          "label": "app.item/completed.reasoning"
+        },
+        {
+          "ms": 2565,
+          "label": "codex.item.completed.reasoning"
+        },
+        {
+          "ms": 2573,
+          "label": "app.item/started.agentMessage"
+        },
+        {
+          "ms": 2574,
+          "label": "codex.firstDelta"
+        },
+        {
+          "ms": 2574,
+          "label": "runner.flush.send 5"
+        },
+        {
+          "ms": 2575,
+          "label": "server.streamTurn 5"
+        },
+        {
+          "ms": 2589,
+          "label": "runner.flush.done 5"
+        },
+        {
+          "ms": 2875,
+          "label": "runner.flush.send 34"
+        },
+        {
+          "ms": 2877,
+          "label": "server.streamTurn 34"
+        },
+        {
+          "ms": 2889,
+          "label": "runner.flush.done 34"
+        },
+        {
+          "ms": 3192,
+          "label": "runner.flush.send 92"
+        },
+        {
+          "ms": 3194,
+          "label": "server.streamTurn 92"
+        },
+        {
+          "ms": 3211,
+          "label": "runner.flush.done 92"
+        },
+        {
+          "ms": 3508,
+          "label": "runner.flush.send 144"
+        },
+        {
+          "ms": 3509,
+          "label": "server.streamTurn 144"
+        },
+        {
+          "ms": 3524,
+          "label": "runner.flush.done 144"
+        },
+        {
+          "ms": 3839,
+          "label": "runner.flush.send 157"
+        },
+        {
+          "ms": 3844,
+          "label": "server.streamTurn 157"
+        },
+        {
+          "ms": 3863,
+          "label": "runner.flush.done 157"
+        },
+        {
+          "ms": 4243,
+          "label": "runner.flush.send 270"
+        },
+        {
+          "ms": 4244,
+          "label": "server.streamTurn 270"
+        },
+        {
+          "ms": 4258,
+          "label": "runner.flush.done 270"
+        },
+        {
+          "ms": 4397,
+          "label": "app.item/completed.agentMessage"
+        },
+        {
+          "ms": 4433,
+          "label": "app.thread/tokenUsage/updated"
+        },
+        {
+          "ms": 4434,
+          "label": "app.account/rateLimits/updated"
+        },
+        {
+          "ms": 4452,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"status\":{\"type\":\"idle\"}}"
+        },
+        {
+          "ms": 4452,
+          "label": "app.turn/completed"
+        }
+      ]
+    },
+    {
+      "chat": "A",
+      "prompt": "One more: in one sentence, why is grass green?",
+      "pendingMs": 5,
+      "firstWordsMs": 1922,
+      "finishedMs": 2469,
+      "queuedMs": 22,
+      "streamSteps": 2,
+      "gaps": [
+        {
+          "fromMs": 2434,
+          "toMs": 2462,
+          "showing": "thinking"
+        },
+        {
+          "fromMs": 2462,
+          "toMs": 2469,
+          "showing": "nothing"
+        }
+      ],
+      "growth": [
+        {
+          "ms": 1922,
+          "chars": 5
+        },
+        {
+          "ms": 2236,
+          "chars": 85
+        }
+      ],
+      "reply": "Perry said\n\nGrass is green because chlorophyll absorbs mostly red and blue light while reflecting green light.\n\n13:10",
+      "steps": [
+        {
+          "ms": 3,
+          "label": "server.handleTurn.start"
+        },
+        {
+          "ms": 4,
+          "label": "server.prepareTurn.start"
+        },
+        {
+          "ms": 4,
+          "label": "server.memory.start"
+        },
+        {
+          "ms": 25,
+          "label": "server.memory.end"
+        },
+        {
+          "ms": 26,
+          "label": "server.prepareTurn.end"
+        },
+        {
+          "ms": 26,
+          "label": "server.enqueue.start"
+        },
+        {
+          "ms": 43,
+          "label": "runner.queued.seen"
+        },
+        {
+          "ms": 67,
+          "label": "runner.claimed"
+        },
+        {
+          "ms": 67,
+          "label": "runner.runTurn.call"
+        },
+        {
+          "ms": 67,
+          "label": "codex.ensure.start"
+        },
+        {
+          "ms": 67,
+          "label": "codex.ensure.end"
+        },
+        {
+          "ms": 74,
+          "label": "codex.skills.end"
+        },
+        {
+          "ms": 76,
+          "label": "app.deprecationNotice"
+        },
+        {
+          "ms": 83,
+          "label": "codex.thread.end"
+        },
+        {
+          "ms": 83,
+          "label": "app.thread/tokenUsage/updated"
+        },
+        {
+          "ms": 83,
+          "label": "app.thread/goal/cleared"
+        },
+        {
+          "ms": 107,
+          "label": "codex.turnStart.end"
+        },
+        {
+          "ms": 118,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}}"
+        },
+        {
+          "ms": 118,
+          "label": "app.turn/started"
+        },
+        {
+          "ms": 344,
+          "label": "app.item/started.userMessage"
+        },
+        {
+          "ms": 353,
+          "label": "app.item/completed.userMessage"
+        },
+        {
+          "ms": 1909,
+          "label": "app.item/started.agentMessage"
+        },
+        {
+          "ms": 1909,
+          "label": "codex.firstDelta"
+        },
+        {
+          "ms": 1909,
+          "label": "runner.flush.send 5"
+        },
+        {
+          "ms": 1910,
+          "label": "server.streamTurn 5"
+        },
+        {
+          "ms": 1923,
+          "label": "runner.flush.done 5"
+        },
+        {
+          "ms": 2216,
+          "label": "runner.flush.send 85"
+        },
+        {
+          "ms": 2217,
+          "label": "server.streamTurn 85"
+        },
+        {
+          "ms": 2237,
+          "label": "runner.flush.done 85"
+        },
+        {
+          "ms": 2342,
+          "label": "app.item/completed.agentMessage"
+        },
+        {
+          "ms": 2398,
+          "label": "app.thread/tokenUsage/updated"
+        },
+        {
+          "ms": 2398,
+          "label": "app.account/rateLimits/updated"
+        },
+        {
+          "ms": 2414,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc\",\"status\":{\"type\":\"idle\"}}"
+        },
+        {
+          "ms": 2414,
+          "label": "app.turn/completed"
+        }
+      ]
+    },
+    {
+      "chat": "B",
+      "prompt": "In four short sentences, explain why the sea is salty.",
+      "pendingMs": 4,
+      "firstWordsMs": 2891,
+      "finishedMs": 4069,
+      "queuedMs": 26,
+      "streamSteps": 4,
+      "gaps": [
+        {
+          "fromMs": 4064,
+          "toMs": 4069,
+          "showing": "nothing"
+        }
+      ],
+      "growth": [
+        {
+          "ms": 2891,
+          "chars": 4
+        },
+        {
+          "ms": 3189,
+          "chars": 70
+        },
+        {
+          "ms": 3574,
+          "chars": 138
+        },
+        {
+          "ms": 3907,
+          "chars": 224
+        }
+      ],
+      "reply": "Perry said\n\nRain and rivers slowly dissolve minerals and salts from rocks on land.\nThese salts flow into the oceans.\nUnderwater volcanoes and seafloor vents add more minerals.\nWater evaporates, but the dissolved salt remains, making the sea salty.\n\n13:11",
+      "steps": [
+        {
+          "ms": 6,
+          "label": "server.handleTurn.start"
+        },
+        {
+          "ms": 7,
+          "label": "server.prepareTurn.start"
+        },
+        {
+          "ms": 7,
+          "label": "server.memory.start"
+        },
+        {
+          "ms": 35,
+          "label": "server.memory.end"
+        },
+        {
+          "ms": 36,
+          "label": "server.prepareTurn.end"
+        },
+        {
+          "ms": 36,
+          "label": "server.enqueue.start"
+        },
+        {
+          "ms": 52,
+          "label": "runner.queued.seen"
+        },
+        {
+          "ms": 84,
+          "label": "runner.claimed"
+        },
+        {
+          "ms": 84,
+          "label": "runner.runTurn.call"
+        },
+        {
+          "ms": 84,
+          "label": "codex.ensure.start"
+        },
+        {
+          "ms": 84,
+          "label": "codex.ensure.end"
+        },
+        {
+          "ms": 91,
+          "label": "codex.skills.end"
+        },
+        {
+          "ms": 92,
+          "label": "codex.thread.end"
+        },
+        {
+          "ms": 110,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-40cc-70b0-b34e-db6a5375178e\",\"name\":\"assistant\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 110,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-40cc-70b0-b34e-db6a5375178e\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 110,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f3-40cc-70b0-b34e-db6a5375178e\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 110,
+          "label": "codex.turnStart.end"
+        },
+        {
+          "ms": 124,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f3-40cc-70b0-b34e-db6a5375178e\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}}"
+        },
+        {
+          "ms": 124,
+          "label": "app.turn/started"
+        },
+        {
+          "ms": 152,
+          "label": "app.thread/started"
+        },
+        {
+          "ms": 152,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-c52a-7b40-85dc-f7f56f3099f7\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 156,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f5-c52a-7b40-85dc-f7f56f3099f7\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}}"
+        },
+        {
+          "ms": 156,
+          "label": "app.turn/started"
+        },
+        {
+          "ms": 177,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-c52a-7b40-85dc-f7f56f3099f7\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 203,
+          "label": "mcp.initialize"
+        },
+        {
+          "ms": 210,
+          "label": "mcp.tools/list"
+        },
+        {
+          "ms": 215,
+          "label": "app.thread/started"
+        },
+        {
+          "ms": 215,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"name\":\"codex_apps\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 215,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"name\":\"assistant\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 215,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 221,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"name\":\"assistant\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 230,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 835,
+          "label": "app.item/started.userMessage"
+        },
+        {
+          "ms": 842,
+          "label": "app.item/completed.userMessage"
+        },
+        {
+          "ms": 2553,
+          "label": "app.item/started.reasoning"
+        },
+        {
+          "ms": 2553,
+          "label": "codex.item.started.reasoning"
+        },
+        {
+          "ms": 2577,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 2638,
+          "label": "app.item/started.userMessage"
+        },
+        {
+          "ms": 2638,
+          "label": "app.item/completed.userMessage"
+        },
+        {
+          "ms": 2871,
+          "label": "app.item/completed.reasoning"
+        },
+        {
+          "ms": 2871,
+          "label": "codex.item.completed.reasoning"
+        },
+        {
+          "ms": 2879,
+          "label": "app.item/started.agentMessage"
+        },
+        {
+          "ms": 2879,
+          "label": "codex.firstDelta"
+        },
+        {
+          "ms": 2879,
+          "label": "runner.flush.send 4"
+        },
+        {
+          "ms": 2883,
+          "label": "server.streamTurn 4"
+        },
+        {
+          "ms": 2896,
+          "label": "runner.flush.done 4"
+        },
+        {
+          "ms": 3178,
+          "label": "runner.flush.send 73"
+        },
+        {
+          "ms": 3179,
+          "label": "server.streamTurn 73"
+        },
+        {
+          "ms": 3189,
+          "label": "runner.flush.done 73"
+        },
+        {
+          "ms": 3562,
+          "label": "runner.flush.send 142"
+        },
+        {
+          "ms": 3564,
+          "label": "server.streamTurn 142"
+        },
+        {
+          "ms": 3575,
+          "label": "runner.flush.done 142"
+        },
+        {
+          "ms": 3896,
+          "label": "runner.flush.send 230"
+        },
+        {
+          "ms": 3897,
+          "label": "server.streamTurn 230"
+        },
+        {
+          "ms": 3908,
+          "label": "runner.flush.done 230"
+        },
+        {
+          "ms": 3999,
+          "label": "app.item/completed.agentMessage"
+        },
+        {
+          "ms": 4023,
+          "label": "app.thread/tokenUsage/updated"
+        },
+        {
+          "ms": 4023,
+          "label": "app.account/rateLimits/updated"
+        },
+        {
+          "ms": 4039,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f3-40cc-70b0-b34e-db6a5375178e\",\"status\":{\"type\":\"idle\"}}"
+        },
+        {
+          "ms": 4039,
+          "label": "app.turn/completed"
+        }
+      ]
+    },
+    {
+      "chat": "C",
+      "prompt": "In four short sentences, explain why leaves change colour in autumn.",
+      "pendingMs": 4,
+      "firstWordsMs": 3644,
+      "finishedMs": 5205,
+      "queuedMs": 21,
+      "streamSteps": 5,
+      "gaps": [
+        {
+          "fromMs": 5177,
+          "toMs": 5198,
+          "showing": "thinking"
+        },
+        {
+          "fromMs": 5198,
+          "toMs": 5205,
+          "showing": "nothing"
+        }
+      ],
+      "growth": [
+        {
+          "ms": 3644,
+          "chars": 2
+        },
+        {
+          "ms": 3989,
+          "chars": 68
+        },
+        {
+          "ms": 4325,
+          "chars": 126
+        },
+        {
+          "ms": 4675,
+          "chars": 197
+        },
+        {
+          "ms": 4990,
+          "chars": 261
+        }
+      ],
+      "reply": "Perry said\n\nAs days shorten and temperatures drop, trees stop making chlorophyll.\nThe green chlorophyll fades, revealing yellow and orange pigments already in the leaves.\nSome trees also produce red and purple pigments.\nEventually, leaves detach and fall to conserve energy during winter.\n\n13:11",
+      "steps": [
+        {
+          "ms": 7,
+          "label": "server.handleTurn.start"
+        },
+        {
+          "ms": 8,
+          "label": "server.prepareTurn.start"
+        },
+        {
+          "ms": 8,
+          "label": "server.memory.start"
+        },
+        {
+          "ms": 38,
+          "label": "server.memory.end"
+        },
+        {
+          "ms": 39,
+          "label": "server.prepareTurn.end"
+        },
+        {
+          "ms": 39,
+          "label": "server.enqueue.start"
+        },
+        {
+          "ms": 56,
+          "label": "runner.queued.seen"
+        },
+        {
+          "ms": 71,
+          "label": "runner.claimed"
+        },
+        {
+          "ms": 72,
+          "label": "runner.runTurn.call"
+        },
+        {
+          "ms": 72,
+          "label": "codex.ensure.start"
+        },
+        {
+          "ms": 72,
+          "label": "codex.ensure.end"
+        },
+        {
+          "ms": 81,
+          "label": "codex.skills.end"
+        },
+        {
+          "ms": 81,
+          "label": "codex.thread.end"
+        },
+        {
+          "ms": 97,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 97,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 97,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"name\":\"assistant\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 97,
+          "label": "codex.turnStart.end"
+        },
+        {
+          "ms": 110,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}}"
+        },
+        {
+          "ms": 110,
+          "label": "app.turn/started"
+        },
+        {
+          "ms": 149,
+          "label": "app.thread/started"
+        },
+        {
+          "ms": 150,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0e7-7fc0-8cd5-bd2a2047336c\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 152,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f5-f0e7-7fc0-8cd5-bd2a2047336c\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}}"
+        },
+        {
+          "ms": 152,
+          "label": "app.turn/started"
+        },
+        {
+          "ms": 175,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0e7-7fc0-8cd5-bd2a2047336c\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 184,
+          "label": "mcp.initialize"
+        },
+        {
+          "ms": 188,
+          "label": "mcp.tools/list"
+        },
+        {
+          "ms": 194,
+          "label": "app.thread/started"
+        },
+        {
+          "ms": 194,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0fe-7603-af00-098c711d3da6\",\"name\":\"codex_apps\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 194,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0fe-7603-af00-098c711d3da6\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 194,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0fe-7603-af00-098c711d3da6\",\"name\":\"assistant\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 194,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0fe-7603-af00-098c711d3da6\",\"name\":\"assistant\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 208,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0fe-7603-af00-098c711d3da6\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 1103,
+          "label": "app.item/started.userMessage"
+        },
+        {
+          "ms": 1110,
+          "label": "app.item/completed.userMessage"
+        },
+        {
+          "ms": 2437,
+          "label": "app.item/started.userMessage"
+        },
+        {
+          "ms": 2437,
+          "label": "app.item/completed.userMessage"
+        },
+        {
+          "ms": 2558,
+          "label": "app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0fe-7603-af00-098c711d3da6\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}"
+        },
+        {
+          "ms": 3086,
+          "label": "app.item/started.reasoning"
+        },
+        {
+          "ms": 3086,
+          "label": "codex.item.started.reasoning"
+        },
+        {
+          "ms": 3129,
+          "label": "app.item/started.reasoning"
+        },
+        {
+          "ms": 3621,
+          "label": "app.item/completed.reasoning"
+        },
+        {
+          "ms": 3621,
+          "label": "codex.item.completed.reasoning"
+        },
+        {
+          "ms": 3630,
+          "label": "app.item/started.agentMessage"
+        },
+        {
+          "ms": 3630,
+          "label": "codex.firstDelta"
+        },
+        {
+          "ms": 3630,
+          "label": "runner.flush.send 2"
+        },
+        {
+          "ms": 3632,
+          "label": "server.streamTurn 2"
+        },
+        {
+          "ms": 3646,
+          "label": "runner.flush.done 2"
+        },
+        {
+          "ms": 3979,
+          "label": "runner.flush.send 68"
+        },
+        {
+          "ms": 3981,
+          "label": "server.streamTurn 68"
+        },
+        {
+          "ms": 3990,
+          "label": "runner.flush.done 68"
+        },
+        {
+          "ms": 4312,
+          "label": "runner.flush.send 128"
+        },
+        {
+          "ms": 4313,
+          "label": "server.streamTurn 128"
+        },
+        {
+          "ms": 4325,
+          "label": "runner.flush.done 128"
+        },
+        {
+          "ms": 4664,
+          "label": "runner.flush.send 201"
+        },
+        {
+          "ms": 4665,
+          "label": "server.streamTurn 201"
+        },
+        {
+          "ms": 4676,
+          "label": "runner.flush.done 201"
+        },
+        {
+          "ms": 4979,
+          "label": "runner.flush.send 267"
+        },
+        {
+          "ms": 4980,
+          "label": "server.streamTurn 267"
+        },
+        {
+          "ms": 4991,
+          "label": "runner.flush.done 267"
+        },
+        {
+          "ms": 5087,
+          "label": "app.item/completed.reasoning"
+        },
+        {
+          "ms": 5087,
+          "label": "app.item/started.agentMessage"
+        },
+        {
+          "ms": 5124,
+          "label": "app.item/completed.agentMessage"
+        },
+        {
+          "ms": 5149,
+          "label": "app.thread/tokenUsage/updated"
+        },
+        {
+          "ms": 5149,
+          "label": "app.account/rateLimits/updated"
+        },
+        {
+          "ms": 5165,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"status\":{\"type\":\"idle\"}}"
+        },
+        {
+          "ms": 5165,
+          "label": "app.turn/completed"
+        },
+        {
+          "ms": 5410,
+          "label": "app.item/completed.agentMessage"
+        },
+        {
+          "ms": 5438,
+          "label": "app.thread/tokenUsage/updated"
+        },
+        {
+          "ms": 5438,
+          "label": "app.account/rateLimits/updated"
+        },
+        {
+          "ms": 5442,
+          "label": "app.thread/status/changed {\"threadId\":\"01a0e6f5-c52a-7b40-85dc-f7f56f3099f7\",\"status\":{\"type\":\"idle\"}}"
+        },
+        {
+          "ms": 5442,
+          "label": "app.turn/completed"
+        }
+      ]
+    }
+  ],
+  "checks": {
+    "resumedChatIsGivenTheTimeNow": true,
+    "chatBTookAThreadStartedAhead": true,
+    "chatCTookAThreadStartedAhead": true,
+    "A: \"In four short sentences, explain\" streamed": true,
+    "A: \"Now in four short sentences, why\" streamed": true,
+    "A: \"And in four short sentences, why\" streamed": true,
+    "A: \"One more: in one sentence, why i\" streamed": true,
+    "B: \"In four short sentences, explain\" streamed": true,
+    "C: \"In four short sentences, explain\" streamed": true,
+    "noVisibleGapBeforeFinished": true,
+    "newChatsAnswerTheirOwnQuestion": true
+  },
+  "notes": {
+    "resumedChatIsGivenTheTimeNow": {
+      "given": [
+        "13:08",
+        "13:08",
+        "13:08",
+        "13:08",
+        "13:08",
+        "13:08",
+        "13:10",
+        "13:10"
+      ],
+      "firstMessageAt": "13:08",
+      "lastMessageAt": "13:10",
+      "timezone": "Asia/Calcutta",
+      "thread": "01a0e6f3-3fef-77f3-9a2b-02ae7e44bffc"
+    },
+    "chatBTookAThreadStartedAhead": {
+      "thread": "01a0e6f3-40cc-70b0-b34e-db6a5375178e",
+      "threadStartedMsBeforeSend": 164887
+    },
+    "chatCTookAThreadStartedAhead": {
+      "thread": "01a0e6f5-c54a-7631-83f0-945fbc3ce4e3",
+      "threadStartedMsBeforeSend": 11098
+    },
+    "A: \"In four short sentences, explain\" streamed": {
+      "firstStreamMs": 6483,
+      "steps": 7
+    },
+    "A: \"Now in four short sentences, why\" streamed": {
+      "firstStreamMs": 1895,
+      "steps": 5
+    },
+    "A: \"And in four short sentences, why\" streamed": {
+      "firstStreamMs": 2588,
+      "steps": 6
+    },
+    "A: \"One more: in one sentence, why i\" streamed": {
+      "firstStreamMs": 1922,
+      "steps": 2
+    },
+    "B: \"In four short sentences, explain\" streamed": {
+      "firstStreamMs": 2891,
+      "steps": 4
+    },
+    "C: \"In four short sentences, explain\" streamed": {
+      "firstStreamMs": 3644,
+      "steps": 5
+    },
+    "noVisibleGapBeforeFinished": {
+      "visible": [],
+      "all": [
+        {
+          "fromMs": 9119,
+          "toMs": 9143,
+          "showing": "thinking"
+        },
+        {
+          "fromMs": 9143,
+          "toMs": 9150,
+          "showing": "nothing"
+        },
+        {
+          "fromMs": 3458,
+          "toMs": 3464,
+          "showing": "nothing"
+        },
+        {
+          "fromMs": 4481,
+          "toMs": 4487,
+          "showing": "nothing"
+        },
+        {
+          "fromMs": 2434,
+          "toMs": 2462,
+          "showing": "thinking"
+        },
+        {
+          "fromMs": 2462,
+          "toMs": 2469,
+          "showing": "nothing"
+        },
+        {
+          "fromMs": 4064,
+          "toMs": 4069,
+          "showing": "nothing"
+        },
+        {
+          "fromMs": 5177,
+          "toMs": 5198,
+          "showing": "thinking"
+        },
+        {
+          "fromMs": 5198,
+          "toMs": 5205,
+          "showing": "nothing"
+        }
+      ]
+    },
+    "newChatsAnswerTheirOwnQuestion": {
+      "b": "Perry said\n\nRain and rivers slowly dissolve minerals and salts from rocks on land.\nThese salts flow into the oceans.\nUnderwater volcanoes and seafloor vents add more minerals.\nWater evaporates, but the dissolved salt remains, making the sea salty.\n\n13:11",
+      "c": "Perry said\n\nAs days shorten and temperatures drop, trees stop making chlorophyll.\nThe green chlorophyll fades, revealing yellow and orange pigments already in the leaves.\nSome trees also produce red and purple pigments.\nEventually, leaves detach and fall to conserve energy during winter.\n\n13:11"
+    },
+    "pageErrors": [],
+    "model": "gpt-6-luna",
+    "firstWordsMs": {
+      "1 A: In four short sentences, explain why the": 6483,
+      "2 A: Now in four short sentences, why sunsets": 1895,
+      "3 A: And in four short sentences, why clouds ": 2588,
+      "4 A: One more: in one sentence, why is grass ": 1922,
+      "5 B: In four short sentences, explain why the": 2891,
+      "6 C: In four short sentences, explain why lea": 3644
+    },
+    "runnerLog": [
+      "[timing] 1790581272837 codex.turnStart.end",
+      "[timing] 1790581272850 app.thread/status/changed {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}}",
+      "[timing] 1790581272850 app.turn/started",
+      "[timing] 1790581272889 app.thread/started",
+      "[timing] 1790581272890 app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0e7-7fc0-8cd5-bd2a2047336c\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}",
+      "[timing] 1790581272892 app.thread/status/changed {\"threadId\":\"01a0e6f5-f0e7-7fc0-8cd5-bd2a2047336c\",\"status\":{\"type\":\"active\",\"activeFlags\":[]}}",
+      "[timing] 1790581272892 app.turn/started",
+      "[timing] 1790581272915 app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0e7-7fc0-8cd5-bd2a2047336c\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}",
+      "[timing] 1790581272934 app.thread/started",
+      "[timing] 1790581272934 app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0fe-7603-af00-098c711d3da6\",\"name\":\"codex_apps\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}",
+      "[timing] 1790581272934 app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0fe-7603-af00-098c711d3da6\",\"name\":\"node_repl\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}",
+      "[timing] 1790581272934 app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0fe-7603-af00-098c711d3da6\",\"name\":\"assistant\",\"status\":\"starting\",\"error\":null,\"failureReason\":null}",
+      "[timing] 1790581272934 app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0fe-7603-af00-098c711d3da6\",\"name\":\"assistant\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}",
+      "[timing] 1790581272948 app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0fe-7603-af00-098c711d3da6\",\"name\":\"node_repl\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}",
+      "[timing] 1790581273843 app.item/started.userMessage",
+      "[timing] 1790581273850 app.item/completed.userMessage",
+      "[timing] 1790581275177 app.item/started.userMessage",
+      "[timing] 1790581275177 app.item/completed.userMessage",
+      "[timing] 1790581275298 app.mcpServer/startupStatus/updated {\"threadId\":\"01a0e6f5-f0fe-7603-af00-098c711d3da6\",\"name\":\"codex_apps\",\"status\":\"ready\",\"error\":null,\"failureReason\":null}",
+      "[timing] 1790581275826 app.item/started.reasoning",
+      "[timing] 1790581275826 codex.item.started.reasoning",
+      "[timing] 1790581275869 app.item/started.reasoning",
+      "[timing] 1790581276361 app.item/completed.reasoning",
+      "[timing] 1790581276361 codex.item.completed.reasoning",
+      "[timing] 1790581276370 app.item/started.agentMessage",
+      "[timing] 1790581276370 codex.firstDelta",
+      "[timing] 1790581276370 runner.flush.send 2",
+      "[timing] 1790581276386 runner.flush.done 2",
+      "[timing] 1790581276719 runner.flush.send 68",
+      "[timing] 1790581276730 runner.flush.done 68",
+      "[timing] 1790581277052 runner.flush.send 128",
+      "[timing] 1790581277065 runner.flush.done 128",
+      "[timing] 1790581277404 runner.flush.send 201",
+      "[timing] 1790581277416 runner.flush.done 201",
+      "[timing] 1790581277719 runner.flush.send 267",
+      "[timing] 1790581277731 runner.flush.done 267",
+      "[timing] 1790581277827 app.item/completed.reasoning",
+      "[timing] 1790581277827 app.item/started.agentMessage",
+      "[timing] 1790581277864 app.item/completed.agentMessage",
+      "[timing] 1790581277889 app.thread/tokenUsage/updated",
+      "[timing] 1790581277889 app.account/rateLimits/updated",
+      "[timing] 1790581277905 app.thread/status/changed {\"threadId\":\"01a0e6f5-c54a-7631-83f0-945fbc3ce4e3\",\"status\":{\"type\":\"idle\"}}",
+      "[timing] 1790581277905 app.turn/completed",
+      "\u001b[2m  saved turn msgq9xz492jea1wbz7msqsn0hz\u001b[0m",
+      "[timing] 1790581278150 app.item/completed.agentMessage",
+      "[timing] 1790581278178 app.thread/tokenUsage/updated",
+      "[timing] 1790581278178 app.account/rateLimits/updated",
+      "[timing] 1790581278182 app.thread/status/changed {\"threadId\":\"01a0e6f5-c52a-7b40-85dc-f7f56f3099f7\",\"status\":{\"type\":\"idle\"}}",
+      "[timing] 1790581278182 app.turn/completed",
+      "\u001b[2m  named a chat \"Why the Sea Is Salty\" (gpt-6-luna)\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

@@ -34,6 +34,7 @@ import * as lib_skills from "../convex/lib/skills";
 import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
 import * as lib_truncate from "../convex/lib/truncate";
+import * as lib_turnLimits from "../convex/lib/turnLimits";
 import * as lib_whatsappFormat from "../convex/lib/whatsappFormat";
 import * as mcp from "../convex/mcp";
 import * as media from "../convex/media";
@@ -91,6 +92,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/telegram": lib_telegram,
   "lib/telegramFormat": lib_telegramFormat,
   "lib/truncate": lib_truncate,
+  "lib/turnLimits": lib_turnLimits,
   "lib/whatsappFormat": lib_whatsappFormat,
   "mcp": mcp,
   "media": media,

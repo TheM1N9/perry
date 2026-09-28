@@ -1,6 +1,8 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { isAbsolute, relative } from "node:path";
+import { readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { isAbsolute, join, relative } from "node:path";
 import { createInterface } from "node:readline";
 import type { GeneratedImage } from "./engine";
 import { killTree, spawnEngine } from "./engines/process";
@@ -112,6 +114,29 @@ export function userInput(prompt: string, attachments: CodexAttachment[], recall
 /** One file in a fileChange item: add, delete or update, with its diff. */
 export type FileChange = { path: string; kind?: { type?: string }; diff?: string };
 
+/**
+ * Every SKILL.md in the folders Codex takes skills from (Perry's, the
+ * owner's own, and the working folder's), with when it last changed.
+ */
+function skillsSignature(cwd: string): string {
+  const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
+  const roots = [PATHS.skills, join(codexHome, "skills"), join(homedir(), ".agents", "skills"), join(cwd, ".codex", "skills"), join(cwd, ".agents", "skills")];
+  const found: string[] = [];
+  const walk = (dir: string, depth: number) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory() && depth < 4) walk(path, depth + 1);
+      else if (entry.name === "SKILL.md") {
+        try { const stat = statSync(path); found.push(`${path}:${stat.mtimeMs}:${stat.size}`); } catch {}
+      }
+    }
+  };
+  for (const root of roots) walk(root, 0);
+  return found.sort().join("\n");
+}
+
 /** A stdio client for the official Codex app-server protocol. */
 export class CodexAppServer extends EventEmitter {
   private nextId = 1;
@@ -121,6 +146,8 @@ export class CodexAppServer extends EventEmitter {
   private turnItems = new Map<string, TurnItem[]>();
   private tokenTotals = new Map<string, number>();
   private fileChanges = new Map<string, FileChange[]>();
+  /** Per working folder, what the skill folders held when Codex last scanned them, and what failed to load then. */
+  private skillScans = new Map<string, { signature: string; broken: string[] }>();
   private child?: ChildProcessWithoutNullStreams;
   closed = false;
   /** The CLI's version, from the userAgent initialize answers with. */
@@ -368,14 +395,21 @@ export class CodexAppServer extends EventEmitter {
   /**
    * Codex caches what its skill folders hold and does not watch extra roots,
    * so a skill written in one turn is listed in the next only after a re-scan.
+   * The scan takes a noticeable part of a second, so it runs only when a
+   * SKILL.md was added, removed or changed since the last one.
    * Returns the skills of Perry's that failed to load, so the agent can say so.
    */
   async reloadSkills(cwd: string): Promise<string[]> {
+    const signature = skillsSignature(cwd);
+    const scanned = this.skillScans.get(cwd);
+    if (scanned?.signature === signature) return scanned.broken;
     const result = await this.request<{ data?: Array<{ errors?: Array<{ path: string; message: string }> }> }>("skills/list", { cwds: [cwd], forceReload: true });
     const errors = (result.data ?? []).flatMap((entry) => entry.errors ?? [])
       .filter((error) => { const inside = relative(PATHS.skills, error.path); return !inside.startsWith("..") && !isAbsolute(inside); })
       .map((error) => `${error.path}: ${error.message}`);
-    return [...new Set(errors)];
+    const broken = [...new Set(errors)];
+    this.skillScans.set(cwd, { signature, broken });
+    return broken;
   }
 
   /** Ask Codex to stop a turn. It ends as interrupted, keeping what it produced. */
