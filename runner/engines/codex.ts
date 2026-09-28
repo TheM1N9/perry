@@ -9,6 +9,7 @@ import {
   type ItemStatus, type LoginFlow, type QuickTurn, type TokenUsage, type TurnHandle, type TurnInput, type TurnResult, type TurnSink,
 } from "../engine";
 import { HOME, PATHS } from "../home";
+import { forget, gave, givenTo, instructionsInFull, instructionsUpdate } from "../instructions";
 import { describeMachine } from "../shell";
 
 /**
@@ -362,9 +363,9 @@ export class CodexEngine implements Engine {
         "A command that fails with a network, connection or permission error was blocked by the sandbox. When the task needs it, " +
         "do not report the failure or work around it: run the same command again with sandbox_permissions \"require_escalated\" " +
         "and a one-line justification, and the owner is asked. Ask this way only for what the task needs.";
-    const fullInstructions = history
-      ? `${instructions}\n\n${home}${sandboxed}\n\nEarlier chat history (context, not a new user request):\n${history}`
-      : `${instructions}\n\n${home}${sandboxed}`;
+    // What the thread is to follow; a fresh one also gets the chat so far, once.
+    const current = `${instructions}\n\n## This computer\n\n${home}${sandboxed}`;
+    const fullInstructions = history ? `${current}\n\nEarlier chat history (context, not a new user request):\n${history}` : current;
     const policy = full ? "never" : auto ? "untrusted" : "on-request";
     const sandbox: SandboxMode = full || auto ? "danger-full-access" : sandboxMode();
     // Perry's own tools (convex/mcp.ts): memory, connected accounts, the web, jobs, tasks and the rest. Codex takes them over HTTP.
@@ -393,6 +394,8 @@ export class CodexEngine implements Engine {
     const id = thread.thread?.id;
     if (!id) throw new Error("Codex did not return a thread ID.");
     if (!threadId) await sink.onSession(id);
+    if (threadId) await this.updateInstructions(app, id, current);
+    else gave(id, current);
     // The next new chat is most likely started the same way (the same instructions, access and folder): have its thread ready.
     if (!threadId && !history) this.keepSpare(app, start);
     const turnInput = userInput(prompt, attachments, recalled);
@@ -453,10 +456,12 @@ export class CodexEngine implements Engine {
       try {
         // No timeout of its own: the runner's watchdog keeps the time.
         const { text, images, interrupted, compacted } = await app.waitForTurn(turnId, 0);
+        if (compacted) forget(id);
         // A stopped turn may not have finished its message; the streamed text is the best record of it.
         return { state: interrupted ? "interrupted" : "completed", cursor: id, text: text || (interrupted ? latest : ""), images, ...(compacted ? { compacted } : {}) };
       } catch (error) {
         if (!(error instanceof TurnFailed)) throw error;
+        if (error.partial.compacted) forget(id);
         return { state: "failed", cursor: id, text: error.partial.text || latest, images: error.partial.images, ...(error.partial.compacted ? { compacted: true } : {}), error: error.message };
       }
     } finally {
@@ -483,6 +488,7 @@ export class CodexEngine implements Engine {
 
   async compact(cursor: string, cwd: string): Promise<void> {
     await (await this.ensure()).compact(cursor, cwd);
+    forget(cursor);
   }
 
   /** One ephemeral, read-only Codex turn with no tools, on a model picked for its purpose. */
@@ -572,6 +578,26 @@ export class CodexEngine implements Engine {
     }
     const id = app.request<{ thread?: { id?: string } }>("thread/start", start, 30_000).then((thread) => thread.thread?.id ?? null, () => null);
     this.spares.set(key, { app, id });
+  }
+
+  /**
+   * A thread keeps the instructions it started with: Codex saves them in its
+   * history and ignores new ones on thread/resume, even from another
+   * app-server. So what changed since it was last told (the owner's profile,
+   * USER.md, the chat's access) goes into its history as a developer message
+   * of its own before the turn, where it stays. A thread from before Perry
+   * kept track is told all of its instructions, once.
+   */
+  private async updateInstructions(app: CodexAppServer, thread: string, current: string) {
+    const before = givenTo(thread);
+    const update = before === undefined ? instructionsInFull(current) : instructionsUpdate(before, current);
+    if (!update) return;
+    try {
+      await app.request("thread/inject_items", { threadId: thread, items: [{ type: "message", role: "developer", content: [{ type: "input_text", text: update }] }] }, 30_000);
+      gave(thread, current);
+    } catch (error) {
+      this.warn(`could not tell a Codex thread its instructions changed: ${message(error)}`);
+    }
   }
 
   kill(): void {

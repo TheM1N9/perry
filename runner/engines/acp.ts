@@ -17,6 +17,7 @@ import {
 } from "../engine";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
+import { instructionsUpdate } from "../instructions";
 import { killTree, spawnEngine } from "./process";
 
 /**
@@ -177,8 +178,8 @@ type Session = {
   cwd: string;
   modes?: SessionModeState | null;
   config: SessionConfigOption[];
-  /** Perry's instructions went into a prompt of this session in this process. */
-  instructed: boolean;
+  /** The instructions a prompt of this session last gave it, in this process; unset, it has had none. */
+  given?: string;
   /** A session/load is replaying it: its updates are dropped. The time of the last one. */
   replaying?: { lastAt: number };
   turn?: Turn;
@@ -489,7 +490,7 @@ ${line}`.slice(-4000); this.onText(line); });
   }
 
   private track(conn: Connection, id: string, cwd: string, response: { modes?: SessionModeState | null; configOptions?: SessionConfigOption[] | null }): Session {
-    const session: Session = { id, cwd, modes: response.modes, config: response.configOptions ?? [], instructed: false };
+    const session: Session = { id, cwd, modes: response.modes, config: response.configOptions ?? [] };
     conn.sessions.set(id, session);
     this.learn(session.config);
     return session;
@@ -535,7 +536,7 @@ ${line}`.slice(-4000); this.onText(line); });
 
   /** session/load, whose replay of the session is dropped; the prompt goes once it has been quiet a moment. */
   private async load(conn: Connection, id: string, cwd: string, mcpServers: McpServer[]): Promise<Session> {
-    const session: Session = { id, cwd, config: [], instructed: false, replaying: { lastAt: Date.now() } };
+    const session: Session = { id, cwd, config: [], replaying: { lastAt: Date.now() } };
     conn.sessions.set(id, session);
     try {
       // A long session takes a while to replay; the answer comes after it.
@@ -591,21 +592,37 @@ ${line}`.slice(-4000); this.onText(line); });
 
   // --- The prompt -------------------------------------------------------------
 
-  /** Perry's instructions, the machine it runs on, and the chat so far: the first prompt of a session in this process. */
-  private preamble(input: TurnInput): string {
+  /** Perry's instructions and the machine it runs on. */
+  private instructionsOf(input: TurnInput): string {
     const machine = describeMachine();
     const home = `Your own folder for files you make is ${PATHS.files}; use it unless the owner or the task calls for somewhere else. Your skills folder is ${PATHS.skills}.` +
       ` This machine runs ${machine.os}, and your commands run in ${machine.shell}; write commands, paths and quoting for that, and open files or apps with ${machine.open}.`;
     const access = input.access === "full" ? ""
       : input.access === "auto" ? "\n\nEach command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
       : "\n\nThe owner approves your commands and edits before they run. If one is declined, say what you wanted to do and why, and do not work around it.";
-    const history = input.history ? `\n\nEarlier chat history (context, not a new user request):\n${input.history}` : "";
-    return `<perry-instructions>\n${input.instructions}\n\n${home}${access}${history}\n</perry-instructions>`;
+    return `${input.instructions}\n\n## This computer\n\n${home}${access}`;
+  }
+
+  /**
+   * Ahead of the message: the instructions and the chat so far in a session's
+   * first prompt in this process, and after that, what changed in the
+   * instructions since the session was last given them (instructions.ts).
+   */
+  private instructionsFor(session: Session, input: TurnInput): string | null {
+    if (!input.instructions) return null;
+    const current = this.instructionsOf(input);
+    if (session.given === undefined) {
+      const history = input.history ? `\n\nEarlier chat history (context, not a new user request):\n${input.history}` : "";
+      return `<perry-instructions>\n${current}${history}\n</perry-instructions>`;
+    }
+    const update = instructionsUpdate(session.given, current);
+    return update && `<perry-instructions>\n${update}\n</perry-instructions>`;
   }
 
   private async blocks(conn: Connection, session: Session, input: TurnInput, prompt: string, attachments: EngineAttachment[]): Promise<ContentBlock[]> {
     const blocks: ContentBlock[] = [];
-    if (input.instructions && !session.instructed) blocks.push({ type: "text", text: this.preamble(input) });
+    const instructions = this.instructionsFor(session, input);
+    if (instructions) blocks.push({ type: "text", text: instructions });
     if (input.recalled) blocks.push({ type: "text", text: input.recalled });
     let text = prompt;
     const images = conn.init.agentCapabilities?.promptCapabilities?.image;
@@ -646,7 +663,7 @@ ${line}`.slice(-4000); this.onText(line); });
     let last: PromptResponse | undefined;
     try {
       this.send(conn, session, turn, blocks);
-      if (input.instructions) session.instructed = true;
+      if (input.instructions) session.given = this.instructionsOf(input);
       sink.onStarted?.({ cursor: session.id, turnId: turn.id });
       // A steer is a prompt of its own; the turn ends once every prompt in it has.
       while (turn.prompts.size) {
