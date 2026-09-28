@@ -1,0 +1,249 @@
+{
+  "ranAt": "2026-09-28T09:13:25.610Z",
+  "checks": {
+    "replyNotHeldUpByAnotherChat": true,
+    "stoppingOneLeavesTheOther": true,
+    "toolCallsReachTheirOwnChat": true,
+    "chatsT1andT2RanTogether": true,
+    "noToolCallRefusedAsUnknown": true,
+    "backgroundTasksRanTogether": true,
+    "aChatsTurnsNeverOverlap": true
+  },
+  "notes": {
+    "replyNotHeldUpByAnotherChat": {
+      "q": {
+        "status": "done",
+        "queuedMs": 14,
+        "ranMs": 23674,
+        "stopped": false,
+        "response": "PONG"
+      },
+      "lStillRunning": true
+    },
+    "stoppingOneLeavesTheOther": {
+      "l": {
+        "status": "done",
+        "queuedMs": 17,
+        "ranMs": 35858,
+        "stopped": true,
+        "response": ""
+      },
+      "r": {
+        "status": "done",
+        "queuedMs": 8,
+        "ranMs": 31437,
+        "stopped": false,
+        "response": "RESTED"
+      }
+    },
+    "steps": {
+      "T1": [
+        {
+          "kind": "reasoning",
+          "name": "reasoning",
+          "status": "ok",
+          "atMs": 9354,
+          "durationMs": 11659
+        },
+        {
+          "kind": "reasoning",
+          "name": "reasoning",
+          "status": "ok",
+          "atMs": 29318,
+          "durationMs": 2088
+        },
+        {
+          "kind": "reasoning",
+          "name": "reasoning",
+          "status": "ok",
+          "atMs": 41352,
+          "durationMs": 1703
+        },
+        {
+          "kind": "reasoning",
+          "name": "reasoning",
+          "status": "ok",
+          "atMs": 55599,
+          "durationMs": 605
+        },
+        {
+          "kind": "mcpToolCall",
+          "name": "take_longer",
+          "status": "ok",
+          "atMs": 57183,
+          "durationMs": 4
+        },
+        {
+          "kind": "reasoning",
+          "name": "reasoning",
+          "status": "ok",
+          "atMs": 70817,
+          "durationMs": 420
+        },
+        {
+          "kind": "command",
+          "name": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -NoProfile -Com",
+          "status": "ok",
+          "atMs": 73843,
+          "durationMs": 10053
+        },
+        {
+          "kind": "reasoning",
+          "name": "reasoning",
+          "status": "ok",
+          "atMs": 106356,
+          "durationMs": 371
+        }
+      ],
+      "T2": [
+        {
+          "kind": "reasoning",
+          "name": "reasoning",
+          "status": "ok",
+          "atMs": 4060,
+          "durationMs": 1071
+        },
+        {
+          "kind": "reasoning",
+          "name": "reasoning",
+          "status": "ok",
+          "atMs": 7485,
+          "durationMs": 681
+        },
+        {
+          "kind": "mcpToolCall",
+          "name": "take_longer",
+          "status": "ok",
+          "atMs": 8578,
+          "durationMs": 6
+        },
+        {
+          "kind": "reasoning",
+          "name": "reasoning",
+          "status": "ok",
+          "atMs": 10214,
+          "durationMs": 731
+        },
+        {
+          "kind": "command",
+          "name": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -NoProfile -Com",
+          "status": "ok",
+          "atMs": 11679,
+          "durationMs": 10071
+        },
+        {
+          "kind": "reasoning",
+          "name": "reasoning",
+          "status": "ok",
+          "atMs": 23310,
+          "durationMs": 217
+        }
+      ]
+    },
+    "toolCallsReachTheirOwnChat": {
+      "t1": {
+        "status": "done",
+        "queuedMs": 17,
+        "ranMs": 107830,
+        "stopped": false,
+        "response": "DONE",
+        "patienceWhy": "from T1"
+      },
+      "t2": {
+        "status": "done",
+        "queuedMs": 33,
+        "ranMs": 23787,
+        "stopped": false,
+        "response": "DONE",
+        "patienceWhy": "from T2"
+      }
+    },
+    "chatsT1andT2RanTogether": {
+      "t1": {
+        "status": "done",
+        "queuedMs": 17,
+        "ranMs": 107830,
+        "stopped": false,
+        "response": "DONE",
+        "patienceWhy": "from T1"
+      },
+      "t2": {
+        "status": "done",
+        "queuedMs": 33,
+        "ranMs": 23787,
+        "stopped": false,
+        "response": "DONE",
+        "patienceWhy": "from T2"
+      }
+    },
+    "noToolCallRefusedAsUnknown": [],
+    "backgroundTasksRanTogether": {
+      "a": {
+        "status": "done",
+        "result": "task A slept",
+        "turn": {
+          "status": "done",
+          "queuedMs": 42,
+          "ranMs": 42115,
+          "stopped": false,
+          "response": "Codex completed without a text reply."
+        }
+      },
+      "b": {
+        "status": "done",
+        "result": "task B slept",
+        "turn": {
+          "status": "done",
+          "queuedMs": 10,
+          "ranMs": 41576,
+          "stopped": false,
+          "response": "Codex completed without a text reply."
+        }
+      }
+    },
+    "aChatsTurnsNeverOverlap": [],
+    "replies": {
+      "L": "_Stopped._",
+      "Q": "PONG",
+      "R": "RESTED",
+      "T1": "DONE",
+      "T2": "DONE"
+    },
+    "model": "gpt-6-luna",
+    "mostTurnsAtOnce": 2,
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-parallel-turns-Z6W2Dc\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[2m  named a chat \"Automated shell command test\" (gpt-6-luna)\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[2m  named a chat \"Automated test\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn 8pfgvvbfz2kew8t9gxxwq887bb\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[2m  named a chat \"Automated sleep test\" (gpt-6-luna)\u001b[0m",
+      "\u001b[33m  stopping the Codex turn, as asked\u001b[0m",
+      "\u001b[2m  saved turn ksbwkfxtb4jch5jzmgk2xtf96a\u001b[0m",
+      "\u001b[2m  saved turn bbs8k0xvmhq8szqyh0h0qxnr44\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[2m  named a chat \"Automated tool test\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  named a chat \"Automated tool test\" (gpt-6-luna)\u001b[0m",
+      "\u001b[2m  saved turn zkb402dgrmyexfnm98bte8q5wc\u001b[0m",
+      "\u001b[2m  saved turn zgmbzt3dk0ggd0ag0q7szgr0m8\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[33m  full access: this turn runs without the sandbox, and Codex does not ask\u001b[0m",
+      "\u001b[2m  saved turn 2knx35qk84m0f7v5s1t87zxhah\u001b[0m",
+      "\u001b[2m  saved turn sjnq6e6h0fssrjxapazc167k3t\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}
