@@ -9,6 +9,9 @@
  *
  *   PERRY_MCP_URL=<server>/api/backend/http/mcp PERRY_MCP_TOKEN=<runner token> bun runner/mcp-bridge.ts
  *
+ * PERRY_MCP_CHAT names the chat the session is for, as the runner may run
+ * several chats' turns at once (runner/engine.ts toolsOfChat).
+ *
  * The endpoint serves a runner only while it has a turn running, as over HTTP.
  */
 
@@ -16,6 +19,7 @@ import { createInterface } from "node:readline";
 
 const url = process.env.PERRY_MCP_URL;
 const token = process.env.PERRY_MCP_TOKEN;
+const chat = process.env.PERRY_MCP_CHAT;
 if (!url || !token) {
   console.error("mcp-bridge: PERRY_MCP_URL and PERRY_MCP_TOKEN must be set.");
   process.exit(2);
@@ -39,6 +43,7 @@ async function relay(line: string) {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
         authorization: `Bearer ${token}`,
+        ...(chat ? { "x-perry-chat": chat } : {}),
         ...(session ? { "mcp-session-id": session } : {}),
       },
       body: line,

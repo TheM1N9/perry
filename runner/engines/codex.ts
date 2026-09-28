@@ -165,6 +165,8 @@ export class CodexEngine implements Engine {
     modelSwitchInSession: true,
     usage: "complete",
     quickTurns: true,
+    // One app-server runs any number of threads' turns.
+    concurrentTurns: true,
   };
 
   private app: CodexAppServer | null = null;

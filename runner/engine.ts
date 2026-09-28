@@ -92,6 +92,11 @@ export type EngineCapabilities = {
   usage: "complete" | "partial" | "unavailable";
   /** It can run quick, tool-less side turns (the reviewer, chat names). */
   quickTurns: boolean;
+  /**
+   * It runs turns of different chats side by side, and one stuck turn can be
+   * given up on while the others go on. Unset: one turn at a time.
+   */
+  concurrentTurns?: boolean;
 };
 
 /** A model an engine offers, with the reasoning efforts it takes. */
@@ -123,7 +128,23 @@ export type PerryTools = {
   name: string;
   http: { url: string; headers: Record<string, string> };
   stdio: { command: string; args: string[]; env: Record<string, string> };
+  /** The chat the turn is for: what its tool calls act on while other chats' turns run too. */
+  chat?: string;
 };
+
+/**
+ * Perry's tools for a session of one chat: its calls say which chat they are
+ * for, as the runner may be running several chats' turns at once. Codex needs
+ * none of it, as it names its thread in every call (convex/mcp.ts).
+ */
+export function toolsOfChat(tools: PerryTools): PerryTools {
+  if (!tools.chat) return tools;
+  return {
+    ...tools,
+    http: { ...tools.http, headers: { ...tools.http.headers, "X-Perry-Chat": tools.chat } },
+    stdio: { ...tools.stdio, env: { ...tools.stdio.env, PERRY_MCP_CHAT: tools.chat } },
+  };
+}
 
 /** A file the owner attached: on this disk, or at a URL. */
 export type EngineAttachment = { url?: string; localPath?: string; fileName: string; contentType?: string };

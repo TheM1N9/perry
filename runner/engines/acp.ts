@@ -13,7 +13,7 @@ import {
 import {
   type Access, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineKind, type EngineModel,
   type EngineRequest, type EngineStatus, type ItemStatus, type ItemType, type LoginFlow, type PerryTools, type RequestOption,
-  type TokenUsage, type TurnHandle, type TurnInput, type TurnResult, type TurnSink, type TurnState,
+  type TokenUsage, type TurnHandle, type TurnInput, type TurnResult, type TurnSink, type TurnState, toolsOfChat,
 } from "../engine";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
@@ -479,7 +479,8 @@ ${line}`.slice(-4000); this.onText(line); });
     return Object.keys(this.options.sessionMeta).length ? { _meta: this.options.sessionMeta } : {};
   }
 
-  private mcpServers(conn: Connection, tools?: PerryTools): McpServer[] {
+  private mcpServers(conn: Connection, perry?: PerryTools): McpServer[] {
+    const tools = perry && toolsOfChat(perry);
     if (!tools || this.options.toolsVia === "none") return [];
     if (this.options.toolsVia === "auto" && conn.init.agentCapabilities?.mcpCapabilities?.http) {
       return [{ type: "http", name: tools.name, url: tools.http.url, headers: Object.entries(tools.http.headers).map(([name, value]) => ({ name, value })) }];
