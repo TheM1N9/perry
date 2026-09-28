@@ -35,6 +35,7 @@ import type * as lib_skills from "../lib/skills.js";
 import type * as lib_telegram from "../lib/telegram.js";
 import type * as lib_telegramFormat from "../lib/telegramFormat.js";
 import type * as lib_truncate from "../lib/truncate.js";
+import type * as lib_turnLimits from "../lib/turnLimits.js";
 import type * as lib_whatsappFormat from "../lib/whatsappFormat.js";
 import type * as mcp from "../mcp.js";
 import type * as media from "../media.js";
@@ -94,6 +95,7 @@ declare const fullApi: ApiFromModules<{
   "lib/telegram": typeof lib_telegram;
   "lib/telegramFormat": typeof lib_telegramFormat;
   "lib/truncate": typeof lib_truncate;
+  "lib/turnLimits": typeof lib_turnLimits;
   "lib/whatsappFormat": typeof lib_whatsappFormat;
   mcp: typeof mcp;
   media: typeof media;

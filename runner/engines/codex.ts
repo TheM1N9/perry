@@ -147,6 +147,11 @@ const usageOf = (last: CodexUsage): TokenUsage => ({
   totalTokens: last.totalTokens ?? 0,
 });
 
+/** A thread started before any chat asked for it; its id, or null if it failed to start. */
+type Spare = { app: CodexAppServer; id: Promise<string | null> };
+/** How many spare threads are kept: one per distinct way of starting a chat (a web chat, a job's, a phone's). */
+const SPARES = 2;
+
 export class CodexEngine implements Engine {
   readonly kind = "codex" as const;
   readonly label = "Codex";
@@ -171,6 +176,8 @@ export class CodexEngine implements Engine {
   private quickThreads = new Set<string>();
   /** A quick-turn model per app-server and purpose, picked once. */
   private picks = new WeakMap<CodexAppServer, Map<string, Promise<ModelChoice>>>();
+  /** Threads started ahead of a new chat's first message, by what they were started with (takeSpare). */
+  private spares = new Map<string, Spare>();
 
   /** `warn` says what the owner should know, such as skills that could not load. */
   constructor(private readonly warn: (line: string) => void = () => {}) {}
@@ -376,12 +383,16 @@ export class CodexEngine implements Engine {
       "plugins.browser@openai-bundled.enabled": false,
       "plugins.unified-computer-use@openai-bundled.enabled": false,
     };
+    const start = { cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions, serviceName: "perry" };
+    const spare = threadId ? null : await this.takeSpare(app, start);
     const thread = threadId
       ? await app.request<{ thread?: { id?: string } }>("thread/resume", { threadId, cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions }, 30_000)
-      : await app.request<{ thread?: { id?: string } }>("thread/start", { cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions, serviceName: "perry" }, 30_000);
+      : spare ? { thread: { id: spare } } : await app.request<{ thread?: { id?: string } }>("thread/start", start, 30_000);
     const id = thread.thread?.id;
     if (!id) throw new Error("Codex did not return a thread ID.");
     if (!threadId) await sink.onSession(id);
+    // The next new chat is most likely started the same way (the same instructions, access and folder): have its thread ready.
+    if (!threadId && !history) this.keepSpare(app, start);
     const turnInput = userInput(prompt, attachments, recalled);
     // Deltas can arrive before turn/start answers, so match them by thread.
     const written = new Map<string, string>();
@@ -529,6 +540,36 @@ export class CodexEngine implements Engine {
       picks.set(purpose, choice);
     }
     return choice;
+  }
+
+  /**
+   * A new Codex thread spends two seconds or more getting ready (its MCP
+   * servers, its tools, its environment) before it takes the first message,
+   * and does that in the background once started. So a thread is started
+   * ahead of the next new chat, with what the last new chat was started with,
+   * and taken when a new chat's first message matches it exactly. A thread
+   * keeps the instructions it started with (convex/brain.ts prepareTurn keeps
+   * what changes per turn out of them), and one with no turns is never saved,
+   * so a spare that is not taken leaves nothing behind.
+   */
+  private async takeSpare(app: CodexAppServer, start: object): Promise<string | null> {
+    const key = JSON.stringify(start);
+    const spare = this.spares.get(key);
+    if (!spare) return null;
+    this.spares.delete(key);
+    if (spare.app !== app || app.closed) return null;
+    return await spare.id;
+  }
+
+  private keepSpare(app: CodexAppServer, start: object) {
+    const key = JSON.stringify(start);
+    if (this.spares.has(key)) return;
+    for (const [old, spare] of [...this.spares].slice(0, Math.max(0, this.spares.size - SPARES + 1))) {
+      this.spares.delete(old);
+      if (spare.app === app && !app.closed) void spare.id.then((id) => id && app.request("thread/unsubscribe", { threadId: id })).catch(() => {});
+    }
+    const id = app.request<{ thread?: { id?: string } }>("thread/start", start, 30_000).then((thread) => thread.thread?.id ?? null, () => null);
+    this.spares.set(key, { app, id });
   }
 
   kill(): void {

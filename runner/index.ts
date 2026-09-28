@@ -716,7 +716,7 @@ async function main() {
         let result = savedResult(job._id);
         if (!result) {
           // The reply so far, and the trace of what the engine is doing, go to Convex
-          // about three times a second while the turn runs.
+          // about three times a second while the turn runs; the first words go at once.
           let latest = "";
           let sent = "";
           let streamTimer: ReturnType<typeof setTimeout> | null = null;
@@ -735,7 +735,10 @@ async function main() {
             sent = latest;
             void client.mutation(api.codex.streamTurn, { token, id: job._id, text: latest }).catch(() => {});
           };
-          const schedule = () => { streamTimer ??= setTimeout(flush, 300); };
+          const schedule = () => {
+            if (sent || !latest) streamTimer ??= setTimeout(flush, 300);
+            else { if (streamTimer) clearTimeout(streamTimer); flush(); }
+          };
           const kind = job.engine;
           const engine = engines.get(kind);
           // What the run records: the engine and model, the effort sent, and full access when it was.

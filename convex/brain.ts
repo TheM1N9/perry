@@ -133,6 +133,12 @@ async function runCommand(
  * What the engine gets besides the prompt: the instructions with the memory
  * guide and owner profile, the memory recalled as data for this turn, and, for
  * a fresh engine session that has not seen this chat, its recent history.
+ *
+ * What changes from turn to turn (the time, the active goals) goes with the
+ * message, not in the instructions: a Codex thread keeps the instructions it
+ * started with while its app-server has it loaded, and a new chat's
+ * instructions are then the same as the last one's, so the runner can have its
+ * thread started before the owner sends (runner/engines/codex.ts).
  */
 async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, query: string) {
   const fresh = !resumeOf(conversation);
@@ -169,8 +175,8 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   // any tips?"), so every message from the owner comes with the reminder.
   const note = conversation.jobId || conversation.taskId ? "" : REMEMBER_NOTE;
   return {
-    instructions: [persona.identity, INSTRUCTIONS, now, where, goals, memory?.instructions, persona.user].filter(Boolean).join("\n\n"),
-    recalled: [memory?.recalled, note].filter(Boolean).join("\n\n") || undefined,
+    instructions: [persona.identity, INSTRUCTIONS, where, memory?.instructions, persona.user].filter(Boolean).join("\n\n"),
+    recalled: [`# Right now\n\n${now}`, goals, memory?.recalled, note].filter(Boolean).join("\n\n"),
     recallDigest: memory?.digest,
     history,
   };
