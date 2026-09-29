@@ -558,7 +558,22 @@ ${line}`.slice(-4000); this.onText(line); });
 
   /** The mode for the chat's access, its model and effort: each set only when it differs from the session's. */
   private async configure(conn: Connection, session: Session, input: TurnInput) {
-    const wanted = this.options.modes[input.access];
+    await this.setMode(conn, session, input.access);
+    const model = this.option(session.config, "model");
+    if (input.model && input.model !== DEFAULT_MODEL && model?.type === "select") {
+      if (this.values(model).some((item) => item.value === input.model)) await this.setOption(conn, session, model, input.model);
+      else this.warn(`${this.label} does not offer the model ${input.model}; keeping ${model.currentValue}.`);
+    }
+    // The model can change which efforts there are, so this is looked up after it.
+    const effort = this.option(session.config, "thought_level");
+    if (input.effort && effort?.type === "select" && this.values(effort).some((item) => item.value === input.effort)) {
+      await this.setOption(conn, session, effort, input.effort);
+    }
+  }
+
+  /** The session's mode for an access. ACP lets it change at any time, a prompt running or not. */
+  private async setMode(conn: Connection, session: Session, access: Access) {
+    const wanted = this.options.modes[access];
     const modeOption = this.option(session.config, "mode");
     if (session.modes?.availableModes.length) {
       const mode = wanted.find((id) => session.modes!.availableModes.some((item) => item.id === id));
@@ -569,16 +584,6 @@ ${line}`.slice(-4000); this.onText(line); });
     } else if (modeOption?.type === "select") {
       const mode = wanted.find((id) => this.values(modeOption).some((item) => item.value === id));
       if (mode) await this.setOption(conn, session, modeOption, mode);
-    }
-    const model = this.option(session.config, "model");
-    if (input.model && input.model !== DEFAULT_MODEL && model?.type === "select") {
-      if (this.values(model).some((item) => item.value === input.model)) await this.setOption(conn, session, model, input.model);
-      else this.warn(`${this.label} does not offer the model ${input.model}; keeping ${model.currentValue}.`);
-    }
-    // The model can change which efforts there are, so this is looked up after it.
-    const effort = this.option(session.config, "thought_level");
-    if (input.effort && effort?.type === "select" && this.values(effort).some((item) => item.value === input.effort)) {
-      await this.setOption(conn, session, effort, input.effort);
     }
   }
 
@@ -740,6 +745,16 @@ ${line}`.slice(-4000); this.onText(line); });
       this.close(conn);
     }, this.options.cancelGraceMs);
     force.unref?.();
+  }
+
+  /** The chat's access changed mid-turn: requests are answered by it from now on (onPermission), and the session's mode follows. */
+  async setAccess(handle: TurnHandle, access: Access): Promise<void> {
+    const conn = this.conn;
+    const session = conn?.sessions.get(handle.cursor);
+    const turn = session?.turn;
+    if (!conn || !session || !turn || turn.id !== handle.turnId || turn.access === access) return;
+    turn.access = access;
+    await this.setMode(conn, session, access);
   }
 
   async interrupt(handle: TurnHandle): Promise<void> {

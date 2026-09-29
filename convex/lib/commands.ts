@@ -33,7 +33,9 @@ export const enginesOf = (models: ModelOption[]) => ENGINES.filter((engine) => m
  *               first, runs the routine ones and asks the owner about the rest.
  *   full        "Full access": no sandbox, and it never asks.
  *
- * A turn keeps the access it started with; a change applies from the next one.
+ * A change applies at once, to a turn already running too: its engine is
+ * told (runner/engine.ts, setAccess), and each approval is decided by the
+ * chat's access when it is asked (convex/approvals.ts).
  */
 export type Access = "supervised" | "auto" | "full";
 export const ACCESSES: readonly Access[] = ["supervised", "auto", "full"];
@@ -215,7 +217,7 @@ export function describeAccess(access: Access): string {
     "",
     ...ACCESSES.map((mode) => `${mode === access ? "•" : " "} ${ACCESS_LABELS[mode].toLowerCase().replace(" access", "").padEnd(5)} ${ACCESS_HINTS[mode]}`),
     "",
-    "Switch with /access ask, /access auto or /access full. It applies from your next message.",
+    "Switch with /access ask, /access auto or /access full. It applies at once, to a reply already running too.",
   ].join("\n");
 }
 
@@ -223,5 +225,5 @@ export function describeAccess(access: Access): string {
 export function pickAccess(mode: string): { access?: Access; reply: string } {
   const access = ACCESS_WORDS[mode.trim().toLowerCase().replace(/[\s-]+access$/, "")];
   if (!access) return { reply: `No access called "${mode}". Use /access ask, /access auto or /access full.` };
-  return { access, reply: `This chat is on ${ACCESS_LABELS[access]}: ${ACCESS_HINTS[access]} It applies from your next message.` };
+  return { access, reply: `This chat is on ${ACCESS_LABELS[access]}: ${ACCESS_HINTS[access]} It applies at once, to a reply already running too.` };
 }

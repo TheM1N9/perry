@@ -26,14 +26,17 @@
  *      reviewer clears routine actions first and asks you about the rest. A
  *      rule you saved with "Always allow" runs it either way. A request from
  *      no chat follows the runner's own policy (--policy ask|review|trust).
+ *      The access is the chat's at the moment of asking: one changed while a
+ *      turn runs applies to that turn, and its engine is told (setAccess).
  *   3. The engine's sandbox. Codex works in the directory you chose, and may
  *      write only there and in Perry's own folders (runner/engines/codex.ts).
  *   4. A denylist of commands that are never worth running.
  *
- *   A chat the owner put on Full access gives up 2, 3 and 4 for its turns:
- *   the engine runs without its sandbox and never asks, so its own commands
- *   never reach this process to be asked about or denied. They still show in
- *   the run's trace.
+ *   A chat the owner put on Full access gives up 2 and 3 for its turns: the
+ *   engine runs without its sandbox, and nothing waits for you. They still
+ *   show in the run's trace. Codex still asks this process about each command,
+ *   answered at once, so the chat can be put back on Ask or Auto mid-turn;
+ *   Claude Code and ACP agents are switched back instead.
  *
  * Nothing here runs at boot or survives a reboot unless you ask for it with
  * `pnpm run service install` (scripts/service.ts). Without a terminal, as a
@@ -51,10 +54,10 @@ import { BackendClient } from "../client/backend";
 import { getFunctionName, type FunctionArgs, type FunctionReference, type FunctionReturnType } from "convex/server";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
-import { runLabel } from "../convex/lib/commands";
+import { ACCESS_LABELS, runLabel } from "../convex/lib/commands";
 import { ENGINE_LABELS } from "../convex/lib/engines";
 import {
-  optionOf, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type PerryTools,
+  optionOf, type Access, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type PerryTools,
   type TurnHandle, type TurnResult, type TurnSink,
 } from "./engine";
 import { createEngines } from "./engines";
@@ -440,7 +443,8 @@ async function main() {
       };
       const timer = setTimeout(() => settle(false, "timeout"), APPROVAL_TIMEOUT_MS);
       unsubscribe = client.onUpdate(api.approvals.decision, { token, id }, (status) => {
-        if (status === "approved" || status === "declined") settle(status === "approved", "elsewhere");
+        // "auto": the chat was put on Full access while this waited.
+        if (status === "approved" || status === "auto" || status === "declined") settle(status !== "declined", "elsewhere");
       }, (error) => console.error(red(`  could not follow the dashboard's answer: ${message(error)}`)));
       terminal?.question(`  ${bold("run it?")} [y/N/a = always] `, { signal: abort.signal })
         .then((answer) => {
@@ -674,6 +678,8 @@ async function main() {
     handle?: TurnHandle;
     /** Approvals being waited on: a turn waiting for the owner is not stuck. */
     asking: number;
+    /** The access the engine was last given for the turn. */
+    access?: Access;
     /** Stop waiting for the turn, which its engine may still be running. */
     abandon?: () => void;
   };
@@ -708,6 +714,21 @@ async function main() {
         endedOnStop.add(jobId);
         endTurn(jobId);
       }, KILL_GRACE_MS);
+    }
+  };
+  /**
+   * The owner changed a running turn's access: tell its engine, which acts on
+   * it from the turn's next step. Approvals follow the new access regardless.
+   */
+  let accessNow: Record<string, Access> = {};
+  const applyAccess = () => {
+    for (const turn of active.values()) {
+      const wanted = accessNow[turn.jobId];
+      const { engine, handle } = turn;
+      if (!wanted || wanted === turn.access || !engine || !handle) continue;
+      turn.access = wanted;
+      console.log(dim(`  this chat is on ${ACCESS_LABELS[wanted]} now; the ${engine.label} turn follows it from its next step`));
+      void engine.setAccess?.(handle, wanted).catch((error) => console.error(red(`  Could not change the ${engine.label} turn's access: ${message(error)}`)));
     }
   };
   // Messages the owner sent while a turn runs, and those already handed to its engine, by steer.
@@ -772,7 +793,7 @@ async function main() {
       // What the run records: the engine and model, the effort sent, and full access when it was.
       const label = runLabel(job.requestedModel, job.requestedEffort, job.access, kind);
       if (job.access === "full" && job.kind !== "compact") {
-        console.log(yellow(`  full access: this turn runs without the sandbox, and ${engine?.label ?? "the engine"} does not ask`));
+        console.log(yellow(`  full access: this turn runs without the sandbox, and nothing waits for you`));
       } else if (job.access === "auto" && job.kind !== "compact") {
         console.log(dim("  auto: each command is reviewed before it runs; risky ones wait for you"));
       }
@@ -803,6 +824,7 @@ async function main() {
               void client.mutation(api.codex.setCodexTurn, { token, id: job._id, codexTurnId: handle.turnId }).catch(() => {});
               interruptIfAsked();
               steerIfAsked();
+              applyAccess();
             },
             onEvent: (event) => {
               dog?.active();
@@ -901,7 +923,7 @@ async function main() {
           const job = await client.mutation(api.codex.claimTurn, { token, id: next._id })
             .catch((error) => { console.error(red(`  could not claim a turn: ${message(error)}`)); return null; });
           if (!job) continue;
-          const turn: Active = { jobId: job._id, conversationId: job.conversationId, engine: engines.get(job.engine), asking: 0 };
+          const turn: Active = { jobId: job._id, conversationId: job.conversationId, engine: engines.get(job.engine), asking: 0, access: job.access ?? "supervised" };
           active.set(job._id, turn);
           void runJob(job, turn)
             .catch((error) => console.error(red(`  turn failed: ${message(error)}`)))
@@ -926,6 +948,10 @@ async function main() {
   watch(api.codex.stopRequests, { token }, (ids) => {
     stopRequested = new Set(ids ?? []);
     interruptIfAsked();
+  });
+  watch(api.codex.turnAccess, { token }, (access) => {
+    accessNow = access ?? {};
+    applyAccess();
   });
   watch(api.codex.pendingSteers, { token }, (steers) => {
     pendingSteers = steers ?? [];

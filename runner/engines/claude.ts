@@ -5,12 +5,12 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, extname, join, resolve } from "node:path";
 import {
-  query, type ModelInfo, type Options, type PermissionResult, type Query, type SDKMessage, type SDKResultMessage,
+  query, type ModelInfo, type Options, type PermissionMode, type PermissionResult, type Query, type SDKMessage, type SDKResultMessage,
   type SDKUserMessage, type SpawnOptions, type SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk";
 import { ACCESSES } from "../../convex/lib/commands";
 import type {
-  Engine, EngineAttachment, EngineCapabilities, EngineItem, EngineModel, EngineRequest, EngineStatus, ItemStatus, ItemType,
+  Access, Engine, EngineAttachment, EngineCapabilities, EngineItem, EngineModel, EngineRequest, EngineStatus, ItemStatus, ItemType,
   LoginFlow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
 } from "../engine";
 import { toolsOfChat } from "../engine";
@@ -258,7 +258,15 @@ const modelOf = (model: ModelInfo): EngineModel => ({
 
 /** A message the owner sent while the turn runs, until Claude has read it or the turn ended without. */
 type Steer = { uuid: string; taken: () => void; missed: (error: Error) => void };
-type Running = { q: Query; inbox: Inbox; turnId: string; ending: boolean; interrupted: boolean; steers: Steer[] };
+/** `access` is the chat's now: the owner can change it while the turn runs (setAccess). */
+type Running = { q: Query; inbox: Inbox; turnId: string; ending: boolean; interrupted: boolean; steers: Steer[]; access: Access };
+
+/**
+ * Claude Code's permission mode for an access. Full is not bypassPermissions,
+ * which could not be taken back mid-turn and never consults canUseTool: it
+ * accepts edits, and canUseTool allows the rest without asking.
+ */
+const modeOf = (access: Access): PermissionMode => access === "supervised" ? "default" : "acceptEdits";
 
 export class ClaudeEngine implements Engine {
   readonly kind = "claude" as const;
@@ -423,12 +431,11 @@ export class ClaudeEngine implements Engine {
      * inside Claude Code's sandbox, which lets sandboxed commands run and asks
      * about the rest. Auto: edits in the working folders go ahead, and every
      * command goes to the runner, whose reviewer clears the routine ones.
-     * Full: Claude Code never asks (bypassPermissions); as root, where Claude
-     * Code refuses that, every request is allowed here instead.
+     * Full: edits go ahead too, and every other request is allowed here
+     * without asking. A change mid-turn switches the mode (setAccess).
      */
     const full = access === "full";
     const auto = access === "auto";
-    const root = process.getuid?.() === 0;
     const gate = full ? ""
       : auto ? "\n\nEach command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
       : "\n\nAnything you do that changes something waits for the owner's approval. If one is declined, say what you wanted to do and why, and do not work around it.";
@@ -438,7 +445,7 @@ export class ClaudeEngine implements Engine {
     const inbox = new Inbox();
     inbox.push(await userMessage(prompt, attachments, { recalled, history }));
     let stderr = "";
-    const running: Running = { q: null as unknown as Query, inbox, turnId: randomUUID(), ending: false, interrupted: false, steers: [] };
+    const running: Running = { q: null as unknown as Query, inbox, turnId: randomUUID(), ending: false, interrupted: false, steers: [], access };
     const handle: TurnHandle = { cursor, turnId: running.turnId };
     const perry = tools?.name;
     const chatTools = tools && toolsOfChat(tools);
@@ -456,8 +463,7 @@ export class ClaudeEngine implements Engine {
         systemPrompt: instructions
           ? { type: "preset", preset: "claude_code", append: `${instructions}\n\n${home}${gate}${steering}`, snapshot: false }
           : { type: "preset", preset: "claude_code", snapshot: false },
-        permissionMode: full ? (root ? "acceptEdits" : "bypassPermissions") : auto ? "acceptEdits" : "default",
-        ...(full && !root ? { allowDangerouslySkipPermissions: true } : {}),
+        permissionMode: modeOf(access),
         ...(!full && !auto && process.platform !== "win32"
           ? { sandbox: { enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: true, failIfUnavailable: false } }
           : {}),
@@ -471,18 +477,15 @@ export class ClaudeEngine implements Engine {
               : { type: "http", url: chatTools.http.url, headers: chatTools.http.headers },
           },
         } : {}),
-        // Bypassing, Claude Code never asks, and the SDK warns that an answerer would go unused.
-        ...(full && !root ? {} : {
-          canUseTool: async (tool, toolInput, options): Promise<PermissionResult> => {
-            const allow: PermissionResult = { behavior: "allow", updatedInput: toolInput };
-            if (full) return allow;
-            const request = requestFor(tool, toolInput, options, cwd);
-            // A turn stopped while its request waits takes it as declined.
-            const stopped = new Promise<string>((done) => options.signal.addEventListener("abort", () => done("deny"), { once: true }));
-            const answer = await Promise.race([sink.onRequest(request), stopped]).catch(() => "deny");
-            return answer === "allow" ? allow : { behavior: "deny", message: "The owner declined this." };
-          },
-        }),
+        canUseTool: async (tool, toolInput, options): Promise<PermissionResult> => {
+          const allow: PermissionResult = { behavior: "allow", updatedInput: toolInput };
+          if (running.access === "full") return allow;
+          const request = requestFor(tool, toolInput, options, cwd);
+          // A turn stopped while its request waits takes it as declined.
+          const stopped = new Promise<string>((done) => options.signal.addEventListener("abort", () => done("deny"), { once: true }));
+          const answer = await Promise.race([sink.onRequest(request), stopped]).catch(() => "deny");
+          return answer === "allow" ? allow : { behavior: "deny", message: "The owner declined this." };
+        },
       },
     });
     running.q = q;
@@ -588,6 +591,15 @@ export class ClaudeEngine implements Engine {
     const read = new Promise<void>((taken, missed) => turn.steers.push({ uuid, taken, missed }));
     turn.inbox.push({ ...(await userMessage(steer.prompt, steer.attachments)), uuid, priority: "next" });
     await read;
+  }
+
+  /** The chat's access changed mid-turn: Claude Code switches mode at its next step, and canUseTool answers by the new one. */
+  async setAccess(handle: TurnHandle, access: Access): Promise<void> {
+    const turn = this.turns.get(handle.cursor);
+    if (!turn || turn.turnId !== handle.turnId || turn.access === access) return;
+    const before = modeOf(turn.access);
+    turn.access = access;
+    if (modeOf(access) !== before) await turn.q.setPermissionMode(modeOf(access));
   }
 
   async interrupt(handle: TurnHandle): Promise<void> {

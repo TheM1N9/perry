@@ -20,7 +20,10 @@
  *      runTurn. Codex's mapping is in engines/codex.ts; in T3 Code's words,
  *      supervised is approval-required, auto is auto-accept-edits with every
  *      command reviewed, full is full-access. List the ones it can honour on
- *      each OS in `capabilities.sandbox`.
+ *      each OS in `capabilities.sandbox`. The owner can change a chat's
+ *      access while its turn runs: take the change in setAccess(), or have
+ *      the turn ask about everything it would do beyond its sandbox, since
+ *      the runner answers each request by the chat's access at that moment.
  *
  * The contract
  *
@@ -285,6 +288,12 @@ export interface Engine {
   runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult>;
   /** For `steer` "native" and "concurrent-prompt". */
   steer?(handle: TurnHandle, message: { prompt: string; attachments: EngineAttachment[] }): Promise<void>;
+  /**
+   * The chat's access changed while the turn runs: act on it from the turn's
+   * next step. Without it, the access the turn started with holds, except
+   * that every request reaching onRequest is answered by the new one.
+   */
+  setAccess?(handle: TurnHandle, access: Access): Promise<void>;
   /** Stop a turn; it ends as interrupted, keeping what it produced. */
   interrupt(handle: TurnHandle): Promise<void>;
   /** For `compaction` "native": summarise the session so it carries less. */

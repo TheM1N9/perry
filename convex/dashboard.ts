@@ -15,7 +15,7 @@ import type { CatalogApp, ConnectedAccount } from "./composio";
 import { policyOf, type Policy } from "./runner";
 import { vAccess, vEngine, vMemoryKind, vPolicy } from "./schema";
 import { pickPatch } from "./engines";
-import { APPROVAL_TTL_MS } from "./approvals";
+import { APPROVAL_TTL_MS, accessChanged } from "./approvals";
 import { QUIET } from "./jobs";
 import type { VaultEntry } from "./vault";
 import { OUTBOX_TTL_MS } from "./conversations";
@@ -819,7 +819,7 @@ export const setChatEffort = mutation({
   },
 });
 
-/** Supervised or Full access for this chat, from its next turn. */
+/** Ask, Auto or Full access for this chat, at once: a reply already running follows it too. */
 export const setChatAccess = mutation({
   args: { key: vKey, id: v.id("conversations"), access: vAccess },
   returns: v.null(),
@@ -827,6 +827,7 @@ export const setChatAccess = mutation({
     assertDashboardKey(args.key);
     ownerChat(await ctx.db.get(args.id));
     await ctx.db.patch(args.id, { access: args.access });
+    await accessChanged(ctx, args.id, args.access);
     return null;
   },
 });

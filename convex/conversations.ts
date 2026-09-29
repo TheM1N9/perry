@@ -5,6 +5,7 @@ import { defaultAccess } from "./installation";
 import { vAccess, vChannel, vEngine } from "./schema";
 import { deleteThread } from "./lib/agent";
 import { FORGET_SESSION, pickPatch } from "./engines";
+import { accessChanged } from "./approvals";
 
 /**
  * Rewind a web chat for a regenerate or an edit: its engine session has seen
@@ -56,12 +57,13 @@ export const setEffort = internalMutation({
   },
 });
 
-/** A chat's access, set with /access. It applies from the chat's next turn. */
+/** A chat's access, set with /access. It applies at once, to a reply already running too. */
 export const setAccess = internalMutation({
   args: { id: v.id("conversations"), access: vAccess },
   returns: v.null(),
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { access: args.access });
+    await accessChanged(ctx, args.id, args.access);
     return null;
   },
 });
