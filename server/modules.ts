@@ -42,6 +42,7 @@ import * as media from "../convex/media";
 import * as memories from "../convex/memories";
 import * as models from "../convex/models";
 import * as notify from "../convex/notify";
+import * as people from "../convex/people";
 import * as persona from "../convex/persona";
 import * as pet from "../convex/pet";
 import * as recovery from "../convex/recovery";
@@ -101,6 +102,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "memories": memories,
   "models": models,
   "notify": notify,
+  "people": people,
   "persona": persona,
   "pet": pet,
   "recovery": recovery,
