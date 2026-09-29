@@ -1,0 +1,31 @@
+{
+  "ranAt": "2026-09-29T15:25:58.785Z",
+  "quietMs": 6000,
+  "checks": {
+    "aliveAndQuietStaysConnected": true,
+    "silentIsReconnected": true,
+    "sendsAfterReconnect": true
+  },
+  "notes": {
+    "aliveAndQuietStaysConnected": {
+      "seconds": 18,
+      "connects": 0,
+      "reconnects": 0
+    },
+    "silentIsReconnected": {
+      "secondsToReconnect": 10,
+      "reconnects": 1
+    },
+    "sendsAfterReconnect": {
+      "sent": [
+        "919876543210@s.whatsapp.net: Paired. I'm yours now, here on WhatsApp too.\n\nJust talk to me. /help lists the c"
+      ]
+    },
+    "serverLog": [
+      "[perry] WhatsApp: connected",
+      "[perry] WhatsApp: quiet for too long; reconnecting",
+      "[perry] WhatsApp: connected"
+    ]
+  },
+  "passed": true
+}

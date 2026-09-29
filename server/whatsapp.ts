@@ -25,8 +25,13 @@ import type { Runtime } from "./runtime";
 
 const AUTH_DIR = join(HOME, "whatsapp", "auth");
 const MEDIA_LIMIT = 20 * 1024 * 1024;
-/** No event for this long and the connection is presumed dead (OpenClaw's watchdog). */
-const QUIET_MS = 30 * 60_000;
+/**
+ * Nothing at all from WhatsApp's servers for this long and the connection is
+ * presumed dead (OpenClaw's watchdog). Baileys pings every 30 seconds and every
+ * answer counts, so this fires only on a socket that has gone silent without
+ * closing, never on an account where nobody happens to write for a while.
+ */
+const QUIET_MS = Number(process.env.PERRY_WHATSAPP_QUIET_MS ?? 30 * 60_000);
 /**
  * How long a QR or code keeps being refreshed with nobody using it. WhatsApp
  * shows a QR for a minute, then new ones every 20 seconds, then closes the
@@ -48,6 +53,8 @@ export const SELF_MARK = "🤖 ";
 /** The slice of a Baileys socket this uses, so a test can stand in for WhatsApp (PERRY_WHATSAPP_DRIVER). */
 export type Socket = {
   ev: { on(event: string, listener: (data: any) => void): void };
+  /** The WebSocket underneath, which emits "frame" for everything WhatsApp's servers send, the keep-alive answers included. */
+  ws?: { on(event: string, listener: (...args: any[]) => void): unknown };
   user?: { id: string; lid?: string; name?: string };
   sendMessage(jid: string, content: object): Promise<unknown>;
   sendPresenceUpdate(presence: "composing" | "paused" | "available", jid?: string): Promise<void>;
@@ -280,6 +287,8 @@ export function runWhatsApp(runtime: Runtime): () => void {
         let opened = false;
         let showing = false;
         lastEvent = Date.now();
+        // Any frame is a sign of life: only messages counted before, so a quiet account reconnected every half hour.
+        current.ws?.on("frame", () => { lastEvent = Date.now(); });
         current.ev.on("connection.update", (update: { connection?: string; qr?: string; lastDisconnect?: { error?: unknown } }) => {
           lastEvent = Date.now();
           if (update.qr) {
