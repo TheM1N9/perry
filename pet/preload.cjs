@@ -12,6 +12,13 @@ contextBridge.exposeInMainWorld("perryPet", {
     ipcRenderer.on("pet:armed", handler);
     return () => ipcRenderer.off("pet:armed", handler);
   },
+  // Where he stands in his window, now and each time that changes: how far up and left of its bottom-right corner, and whether his bubble opens below him.
+  onPlace: (listener) => {
+    const handler = (_event, place) => listener(place);
+    ipcRenderer.on("pet:place", handler);
+    void ipcRenderer.invoke("pet:place").then(listener, () => {});
+    return () => ipcRenderer.off("pet:place", handler);
+  },
   idleSeconds: () => ipcRenderer.invoke("pet:idle"),
   openDashboard: (path) => ipcRenderer.send("pet:open", typeof path === "string" ? path : "/"),
   // Talking to him: the hotkey, which keys it is on and moving it; its start, stop and cancel; what the page recorded, as text; how the model's first download goes.
