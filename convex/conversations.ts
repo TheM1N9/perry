@@ -70,8 +70,9 @@ export const setAccess = internalMutation({
 export const activeSince = internalQuery({
   args: { since: v.number() },
   handler: async (ctx, args) => (await ctx.db.query("conversations").collect())
-    // A project chat keeps its own memory, so the day's summary into everyone's notes leaves it out.
-    .filter((chat) => chat.lastMessageAt >= args.since && !chat.jobId && !chat.project)
+    // A project chat keeps its own memory, so the day's summary into everyone's notes leaves it out; and a chat with
+    // someone else is theirs, not the owner's life, and what they say must never become the owner's memory.
+    .filter((chat) => chat.lastMessageAt >= args.since && !chat.jobId && !chat.project && !chat.contactId)
     .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
     .slice(0, 40)
     .map((chat) => ({ id: chat._id, title: chat.title ?? "Untitled chat", channel: chat.channel })),
@@ -133,6 +134,8 @@ export const create = internalMutation({
     externalId: v.string(),
     threadId: v.string(),
     title: v.optional(v.string()),
+    /** A chat with someone other than the owner (contacts.ts): sealed off, and never the owner's. */
+    contactId: v.optional(v.id("contacts")),
   },
   returns: v.id("conversations"),
   handler: async (ctx, args) => {
@@ -142,7 +145,10 @@ export const create = internalMutation({
         q.eq("channel", args.channel).eq("externalId", args.externalId),
       )
       .unique();
-    if (existing) return existing._id;
+    if (existing) {
+      if (args.contactId && !existing.contactId) await ctx.db.patch(existing._id, { contactId: args.contactId });
+      return existing._id;
+    }
 
     return await ctx.db.insert("conversations", {
       channel: args.channel,
@@ -151,6 +157,7 @@ export const create = internalMutation({
       title: args.title,
       access: await defaultAccess(ctx),
       lastMessageAt: Date.now(),
+      ...(args.contactId ? { contactId: args.contactId } : {}),
     });
   },
 });

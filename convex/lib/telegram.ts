@@ -72,6 +72,11 @@ type ApiResponse = {
   parameters?: { retry_after?: number };
 };
 
+/** The bot itself: its id and @username. */
+export async function getMe(token: string | null): Promise<{ id: number; username?: string }> {
+  return await call(token, "getMe", {}) as { id: number; username?: string };
+}
+
 async function call(
   token: string | null,
   method: string,
@@ -348,6 +353,10 @@ export interface TelegramMessage {
   document?: TelegramFile;
   chat: { id: number; type: string; title?: string; username?: string };
   from?: { id: number; is_bot: boolean; first_name?: string; last_name?: string; username?: string };
+  /** The message this one replies to: in a group, a reply to the bot is for it. */
+  reply_to_message?: { from?: { id: number } };
+  entities?: Array<{ type: string; offset: number; length: number }>;
+  caption_entities?: Array<{ type: string; offset: number; length: number }>;
 }
 
 /** A file attached to a Telegram message, fetched later with getFile. Size is as Telegram reports it, when it does. */
@@ -361,6 +370,14 @@ export interface InboundMessage {
   /** The sender's name as they set it on Telegram, not their @username. */
   name?: string;
   media: InboundMedia[];
+  /** "private", "group", "supergroup" or "channel". */
+  chatType?: string;
+  /** The sender's @username, without the @. */
+  username?: string;
+  /** Who wrote the message this one replies to. */
+  replyToId?: string;
+  /** The @mentions in it, lowercased, without the @. */
+  mentions?: string[];
 }
 
 /**
@@ -426,6 +443,10 @@ export function parseUpdate(update: TelegramUpdate): InboundMessage | InboundCal
   const media = mediaOf(message);
   if (text.length === 0 && media.length === 0) return null;
 
+  const raw = message.text ?? message.caption ?? "";
+  const mentions = (message.entities ?? message.caption_entities ?? [])
+    .filter((entity) => entity.type === "mention")
+    .map((entity) => raw.slice(entity.offset + 1, entity.offset + entity.length).toLowerCase());
   return {
     chatId: String(message.chat.id),
     senderId: String(message.from?.id ?? message.chat.id),
@@ -433,5 +454,9 @@ export function parseUpdate(update: TelegramUpdate): InboundMessage | InboundCal
     title: message.chat.title ?? message.from?.username,
     name: [message.from?.first_name, message.from?.last_name].filter(Boolean).join(" ") || undefined,
     media,
+    chatType: message.chat.type,
+    ...(message.from?.username ? { username: message.from.username } : {}),
+    ...(message.reply_to_message?.from ? { replyToId: String(message.reply_to_message.from.id) } : {}),
+    ...(mentions.length ? { mentions } : {}),
   };
 }

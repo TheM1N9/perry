@@ -27,6 +27,8 @@ export const PATHS = {
   codexResults: join(HOME, "codex-results"),
   uploads: join(HOME, "uploads"),
   files: join(HOME, "files"),
+  /** An empty folder a chat with someone else runs in: nothing of the owner's is in it. */
+  guest: join(HOME, "guest"),
   skills: join(HOME, "skills"),
   logs: join(HOME, "logs"),
   claudeModels: join(HOME, "claude-models.json"),

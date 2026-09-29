@@ -331,9 +331,9 @@ export class CodexEngine implements Engine {
   }
 
   async runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult> {
-    const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments } = input;
+    const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments, guest } = input;
     const app = await this.ensure();
-    const broken = await app.reloadSkills(cwd).catch(() => []);
+    const broken = guest ? [] : await app.reloadSkills(cwd).catch(() => []);
     const machine = describeMachine();
     // The owner's OS and shell, so commands, paths and "open it" requests fit this machine.
     const home = [
@@ -362,11 +362,13 @@ export class CodexEngine implements Engine {
         "A command that fails with a network, connection or permission error was blocked by the sandbox. When the task needs it, " +
         "do not report the failure or work around it: run the same command again with sandbox_permissions \"require_escalated\" " +
         "and a one-line justification, and the owner is asked. Ask this way only for what the task needs.";
+    // A chat with someone else is told nothing of this machine, and has nothing to run on it.
+    const place = guest ? "\n\nYou have no shell, files or computer in this chat: only your own tools and web search." : `\n\n${home}${sandboxed}`;
     const fullInstructions = history
-      ? `${instructions}\n\n${home}${sandboxed}\n\nEarlier chat history (context, not a new user request):\n${history}`
-      : `${instructions}\n\n${home}${sandboxed}`;
-    const policy = full ? "never" : auto ? "untrusted" : "on-request";
-    const sandbox: SandboxMode = full || auto ? "danger-full-access" : sandboxMode();
+      ? `${instructions}${place}\n\nEarlier chat history (context, not a new user request):\n${history}`
+      : `${instructions}${place}`;
+    const policy = guest ? "never" : full ? "never" : auto ? "untrusted" : "on-request";
+    const sandbox: SandboxMode = guest ? "read-only" : full || auto ? "danger-full-access" : sandboxMode();
     // Perry's own tools (convex/mcp.ts): memory, connected accounts, the web, jobs, tasks and the rest. Codex takes them over HTTP.
     const config = {
       ...(tools ? {
@@ -384,6 +386,8 @@ export class CodexEngine implements Engine {
       // Naming a plugin that is not installed does nothing. Its computer use for other apps stays.
       "plugins.browser@openai-bundled.enabled": false,
       "plugins.unified-computer-use@openai-bundled.enabled": false,
+      // A chat with someone else: no shell, apps, plugins, images or computer, and no AGENTS.md from anywhere.
+      ...(guest ? { ...NO_TOOLS, "tools.view_image": false, project_doc_max_bytes: 0 } : {}),
     };
     const start = { cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions, serviceName: "perry" };
     const spare = threadId ? null : await this.takeSpare(app, start);
@@ -444,7 +448,7 @@ export class CodexEngine implements Engine {
         ...(effort ? { effort } : {}),
         cwd,
         approvalPolicy: policy,
-        sandboxPolicy: sandboxPolicy(sandbox, [cwd, PATHS.files, PATHS.skills]),
+        sandboxPolicy: sandboxPolicy(sandbox, guest ? [cwd] : [cwd, PATHS.files, PATHS.skills]),
       }, 30_000);
       if (!started.turn?.id) throw new Error("Codex did not start a turn.");
       turnId = started.turn.id;

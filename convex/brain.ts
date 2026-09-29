@@ -147,18 +147,7 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
     chat: conversation._id,
     seen: fresh ? undefined : conversation.recallDigest,
   }).catch((error) => { console.error(`Memory context unavailable: ${String(error)}`); return null; });
-  let history: string | undefined;
-  if (fresh) {
-    const page = await listMessages(ctx, {
-      threadId: conversation.threadId,
-      excludeToolMessages: true,
-      paginationOpts: { cursor: null, numItems: 60 },
-    });
-    const lines = page.page.reverse()
-      .filter((item) => item.message?.role === "user" || item.message?.role === "assistant")
-      .map((item) => `${item.message?.role}: ${item.text ?? ""}`);
-    history = lines.join("\n\n").slice(-24_000) || undefined;
-  }
+  const history = fresh ? await historyOf(ctx, conversation) : undefined;
   // Codex knows the date but not the time, and "remind me in an hour" needs both.
   const now = `It is now ${ownerNow(await ctx.runQuery(internal.jobs.ownerTimezone, {}))}.`;
   // Who the assistant is opens the instructions; who the owner is (USER.md, whole) closes them.
@@ -180,6 +169,46 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
     recallDigest: memory?.digest,
     history,
   };
+}
+
+/**
+ * A turn in a chat with someone else: Codex, whose runner can take away its
+ * shell, files and computer for the turn (runner/engines/codex.ts), on the
+ * chat's model or the account's default; asking about nothing.
+ */
+async function guestSettings(ctx: ActionCtx, conversation: Doc<"conversations">) {
+  const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
+  const model = currentModel(models, engineOf(conversation) === "codex" ? conversation.model : undefined, "codex");
+  return { engine: "codex" as EngineKind, model, effort: turnEffort(models, model, conversation.effort, "codex"), access: "supervised" as const };
+}
+
+/**
+ * All a chat with someone else is given (contacts.guestPrompt): who Perry is,
+ * who it is talking with, the rules, and what the owner lets it share with
+ * them; what it remembers from this chat, and a group's lead-up. Nothing of
+ * the owner's memory, USER.md, goals or other chats.
+ */
+async function guestTurn(ctx: ActionCtx, conversation: Doc<"conversations">, contactId: Id<"contacts">, context?: string) {
+  const prompt: { instructions: string; brief: string; memory: string; now: string; reminder: string } = await ctx.runQuery(internal.contacts.guestPrompt, { contactId, conversationId: conversation._id });
+  return {
+    instructions: prompt.instructions,
+    recalled: [`# Right now\n\n${prompt.now}`, prompt.brief, prompt.memory, context, prompt.reminder].filter(Boolean).join("\n\n"),
+    recallDigest: undefined,
+    history: resumeOf(conversation) ? undefined : await historyOf(ctx, conversation),
+  };
+}
+
+/** A fresh engine session's view of the chat so far: its last messages, as lines. */
+async function historyOf(ctx: ActionCtx, conversation: Doc<"conversations">): Promise<string | undefined> {
+  const page = await listMessages(ctx, {
+    threadId: conversation.threadId,
+    excludeToolMessages: true,
+    paginationOpts: { cursor: null, numItems: 60 },
+  });
+  const lines = page.page.reverse()
+    .filter((item) => item.message?.role === "user" || item.message?.role === "assistant")
+    .map((item) => `${item.message?.role}: ${item.text ?? ""}`);
+  return lines.join("\n\n").slice(-24_000) || undefined;
 }
 
 /**
@@ -310,7 +339,8 @@ export const checkpointIfFull = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const conversation = await ctx.runQuery(internal.conversations.getById, { id: args.id });
-    if (!conversation || conversation.jobId || conversation.checkpointedAt || (conversation.contextFill ?? 0) < CHECKPOINT_AT) return null;
+    // A chat with someone else keeps no memory of the owner's kind to write down (contacts.ts).
+    if (!conversation || conversation.jobId || conversation.contactId || conversation.checkpointedAt || (conversation.contextFill ?? 0) < CHECKPOINT_AT) return null;
     await ctx.runMutation(internal.conversations.markCheckpointed, { id: conversation._id });
     await checkpoint(ctx, conversation);
     return null;
@@ -353,6 +383,8 @@ export async function loadConversation(
   channel: Channel,
   externalId: string,
   title?: string,
+  /** A chat with someone other than the owner (contacts.ts). */
+  contactId?: Id<"contacts">,
 ): Promise<Doc<"conversations">> {
   const find = () =>
     ctx.runQuery(internal.conversations.getByExternalId, {
@@ -361,7 +393,12 @@ export async function loadConversation(
     });
 
   const existing = await find();
-  if (existing) return existing;
+  if (existing && (!contactId || existing.contactId === contactId)) return existing;
+  // Someone else's chat is never one the owner already has; an old row for it is marked theirs.
+  if (existing) {
+    await ctx.runMutation(internal.conversations.create, { channel, externalId, threadId: existing.threadId, contactId });
+    return (await find())!;
+  }
   if (channel === "web" && externalId !== "dashboard") {
     throw new Error("This chat was deleted.");
   }
@@ -375,6 +412,7 @@ export async function loadConversation(
     externalId,
     threadId,
     title,
+    ...(contactId ? { contactId } : {}),
   });
 
   const created = await find();
@@ -403,6 +441,10 @@ export const handleTurn = internalAction({
     engine: v.optional(vEngine),
     /** Written in the web app in the owner's Telegram or WhatsApp chat: the web app shows it as its own, and the phone hears of it. */
     fromWeb: v.optional(v.boolean()),
+    /** From someone other than the owner (contacts.ts), already allowed: a sealed turn in their chat. */
+    guest: v.optional(v.id("contacts")),
+    /** What led up to it in a group, sent with the message. */
+    guestContext: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -414,9 +456,16 @@ export const handleTurn = internalAction({
       channel,
       args.externalId,
       args.title,
+      args.guest,
     );
+    const guest = args.guest ?? conversation.contactId;
+    // Someone else's chat takes only their messages, as contacts.ts passes them on: never the owner's commands or web app.
+    if (conversation.contactId && !args.guest) {
+      console.warn(`[perry] a message for ${conversation.title ?? "a chat with someone else"} that did not come from them was dropped`);
+      return null;
+    }
     // The owner wrote: what Perry sent them on its own is not being ignored (notify.ts).
-    if (!conversation.jobId && !conversation.taskId && !args.hidden) await ctx.runMutation(internal.installation.ownerWrote, {});
+    if (!guest && !conversation.jobId && !conversation.taskId && !args.hidden) await ctx.runMutation(internal.installation.ownerWrote, {});
     const telegramToken = channel === "telegram"
       ? await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" })
       : null;
@@ -428,7 +477,7 @@ export const handleTurn = internalAction({
 
     let delegated = false;
     try {
-      if (channel !== "web" && !args.fromWeb && args.text.startsWith("/") && !args.telegramMedia?.length && !args.storedMedia?.length) {
+      if (!guest && channel !== "web" && !args.fromWeb && args.text.startsWith("/") && !args.telegramMedia?.length && !args.storedMedia?.length) {
         await say(await runCommand(ctx, conversation, args.text));
         return null;
       }
@@ -480,7 +529,7 @@ export const handleTurn = internalAction({
       const attachments = attachmentIds.length > 0
         ? await ctx.runQuery(internal.media.forTurn, { conversationId: conversation._id, attachmentIds })
         : [];
-      const settings = await turnSettings(ctx, conversation, args.model ? { model: args.model, engine: args.engine } : undefined);
+      const settings = guest ? await guestSettings(ctx, conversation) : await turnSettings(ctx, conversation, args.model ? { model: args.model, engine: args.engine } : undefined);
       conversation = await onEngine(ctx, conversation, settings);
       const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
         conversationId: conversation._id,
@@ -496,9 +545,9 @@ export const handleTurn = internalAction({
       if (telegramToken) await sendTyping(telegramToken, args.externalId);
       if (channel === "whatsapp") await ctx.runMutation(internal.whatsapp.typing, { to: args.externalId });
 
-      const turn = await prepareTurn(ctx, conversation, args.hidden ? "" : args.text);
+      const turn = guest ? await guestTurn(ctx, conversation, guest, args.guestContext) : await prepareTurn(ctx, conversation, args.hidden ? "" : args.text);
       // What the assistant sent here on its own since the owner last wrote: their message may answer it.
-      const sent = conversation.unprompted ?? [];
+      const sent = guest ? [] : conversation.unprompted ?? [];
       if (sent.length) {
         const timezone: string = await ctx.runQuery(internal.jobs.ownerTimezone, {});
         const block = "# Sent by you since their last message\n\nYou messaged the owner here on your own; what they write now may answer it.\n" +
@@ -515,6 +564,7 @@ export const handleTurn = internalAction({
           ...settings,
           attachments,
           ...(args.hidden ? { hidden: true } : {}),
+          ...(guest ? { guest: true } : {}),
           // The owner's message joins a reply that is running; a job's prompt waits its turn.
           policy: conversation.jobId || conversation.taskId ? "queue" : "steer",
         });
@@ -534,7 +584,8 @@ export const handleTurn = internalAction({
           await saveMessages(ctx, { threadId: conversation.threadId, userId: userIdOf(conversation), order: "next", messages: [{ role: "user", content: prompt }] })
             .catch((saveError) => console.error(`could not keep the message: ${String(saveError)}`));
         }
-        if (channel !== "web") {
+        // Someone else never hears why: what broke is the owner's business, and the dashboard shows it.
+        if (channel !== "web" && !guest) {
           await say(`That broke: ${message.slice(0, 300)}`)
             .catch((sendError) => console.error(`could not report failure: ${String(sendError)}`));
         }

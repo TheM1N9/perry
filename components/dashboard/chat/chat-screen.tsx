@@ -603,6 +603,15 @@ export function ChatScreen() {
         )}
         <div className="mx-auto w-full max-w-3xl">
           <p className="sr-only" role="status" aria-live="polite">{waiting ? `${assistant} is replying` : ""}</p>
+          {chat?.contact ? (
+            <div className="rounded-xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">{assistant}&apos;s chat with {chat.contact.name}{chat.contact.group ? " (a group)" : ""}</p>
+              <p className="mt-1 text-pretty">
+                You can read it, but not write in it: what you write would reach them. To have {assistant} tell them something, ask in your own chat.
+                {" "}What {assistant} may share with them is under <Link href="/settings?tab=people" className="underline underline-offset-2 hover:text-foreground">Settings → People</Link>.
+              </p>
+            </div>
+          ) : (<>
           <Composer
             ref={composer}
             assistant={assistant}
@@ -643,6 +652,7 @@ export function ChatScreen() {
                 ? <>Your {app} chat. What you write here, and {assistant}&apos;s reply, also go to {app}.</>
                 : <>Type <kbd className="font-mono">/</kbd> for commands. Drop or paste files to attach them.</>}
           </p>
+          </>)}
         </div>
       </div>
 

@@ -235,6 +235,11 @@ export type TurnInput = {
   effort?: string;
   access: Access;
   tools?: PerryTools;
+  /**
+   * A chat with someone other than the owner (convex/contacts.ts): the engine gets no shell, files,
+   * images or computer, only Perry's guest tools and web search, in an empty folder.
+   */
+  guest?: boolean;
 };
 
 export type TurnSink = {

@@ -631,8 +631,11 @@ async function main() {
     }
   }));
 
+  /** Where a chat with someone else runs: an empty folder, so nothing of the owner's is at hand. */
+  const guestDir = () => { mkdirSync(PATHS.guest, { recursive: true }); return PATHS.guest; };
+
   /** Perry's tools for a turn: over HTTP with this runner's token, or through the stdio bridge. */
-  const toolsFor = (mcpUrl: string | undefined, chat: string): PerryTools | undefined => {
+  const toolsFor =(mcpUrl: string | undefined, chat: string): PerryTools | undefined => {
     if (!mcpUrl) return undefined;
     const address = client.resolve(mcpUrl);
     return {
@@ -834,11 +837,12 @@ async function main() {
             recalled: job.recalled,
             prompt: job.prompt,
             attachments: await localise(job.attachments),
-            cwd: workdir,
+            cwd: job.guest ? guestDir() : workdir,
             model: job.requestedModel,
             effort: job.requestedEffort,
             access: job.access ?? "supervised",
             tools: toolsFor(job.mcpUrl, job.conversationId),
+            ...(job.guest ? { guest: true } : {}),
           }, sink)).catch((error) => {
             // What it wrote before it was given up on is kept, as for a failed turn.
             if (!dog?.expired() && !endedOnStop.has(job._id)) throw error;

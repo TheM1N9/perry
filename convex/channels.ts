@@ -50,7 +50,8 @@ export async function targetOf(ctx: QueryCtx, conversationId?: Id<"conversations
     const job: Doc<"jobs"> | null = await ctx.db.get(chat.jobId);
     chat = job?.origin ? await ctx.db.get(job.origin) : null;
   }
-  if (!chat) return await home(ctx);
+  // A chat with someone else is never where the owner is asked or told anything: that goes to the owner.
+  if (!chat || chat.contactId) return await home(ctx);
   if (chat.channel === "web") return { channel: "web", conversationId: chat._id };
   return { channel: chat.channel, externalId: chat.externalId, conversationId: chat._id };
 }
