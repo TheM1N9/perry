@@ -159,9 +159,10 @@ export function Composer({
 const pill = "h-8 gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-popup-open:bg-muted dark:bg-transparent dark:hover:bg-muted [&>svg:last-child]:hidden sm:[&>svg:last-child]:block";
 
 /**
- * Which model, how hard it thinks, and what it may do on your computer. Each
- * applies from the next reply. Models are grouped by engine once there is more
- * than one; another engine's model moves the chat there.
+ * Which model, how hard it thinks, and what it may do on your computer. The
+ * model and effort apply from the next reply, the access at once. Models are
+ * grouped by engine once there is more than one; another engine's model moves
+ * the chat there.
  */
 function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, access, onAccess, accessDisabled }: Pickers) {
   const efforts = modelInfo?.efforts ?? [];
@@ -222,7 +223,7 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
               <SelectItem key={item.value} value={item.value}>
                 <Icon className={cn("size-3.5", item.value === "full" && "text-warning")} />
                 <span className="flex-1">{item.label}</span>
-                <InfoTip>{`${ACCESS_HINTS[item.value]} A change applies from your next message.`}</InfoTip>
+                <InfoTip>{`${ACCESS_HINTS[item.value]} A change applies at once, to a reply already running too.`}</InfoTip>
               </SelectItem>
             );
           })}

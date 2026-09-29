@@ -213,7 +213,14 @@ export const reviewed = mutation({
     const row = await ctx.db.get(args.id);
     if (row?.runnerId !== runner._id || row.status !== "reviewing") return false;
     const review = { verdict: args.verdict, reason: args.reason.slice(0, 1000), model: args.model, ms: args.ms };
-    if (args.verdict === "clear") {
+    // The owner may have changed the chat's access while the reviewer looked: Full access runs it, Ask asks.
+    const chat = row.conversationId ? await ctx.db.get(row.conversationId) : null;
+    const access = chat ? chat.access ?? "supervised" : "auto";
+    if (access === "full") {
+      await ctx.db.patch(row._id, { status: "auto", decidedBy: "trust", decidedAt: Date.now(), review });
+      return true;
+    }
+    if (args.verdict === "clear" && access === "auto") {
       await ctx.db.patch(row._id, { status: "auto", decidedBy: "reviewer", decidedAt: Date.now(), review });
       return true;
     }
@@ -265,6 +272,23 @@ async function settleRow(ctx: MutationCtx, row: Doc<"approvals">, answer: { appr
     await ctx.scheduler.runAfter(0, internal.contacts.decided, { contactId: row.contactId, kind: row.kind, approved: answer.approved && answer.by !== "timeout", ...(answer.by === "timeout" ? { expired: true } : {}) });
   }
   if (row.telegramMessageId) await ctx.scheduler.runAfter(0, internal.approvals.showOutcomeOnTelegram, { id: row._id });
+}
+
+/**
+ * A chat's access changed. Put on Full access, what it is still waiting on
+ * the owner for runs now, as it would have had it been asked after; the
+ * prompts on the phone are edited to say so. Ask and Auto leave the owner
+ * asked: waiting on them is the strictest there is.
+ */
+export async function accessChanged(ctx: MutationCtx, conversationId: Id<"conversations">, access: Doc<"conversations">["access"]) {
+  if (access !== "full") return;
+  const pending = await ctx.db.query("approvals").withIndex("by_status", (q) => q.eq("status", "pending")).take(200);
+  const now = Date.now();
+  for (const row of pending) {
+    if (row.conversationId !== conversationId) continue;
+    await ctx.db.patch(row._id, { status: "auto", decidedBy: "trust", decidedAt: now });
+    if (row.telegramMessageId) await ctx.scheduler.runAfter(0, internal.approvals.showOutcomeOnTelegram, { id: row._id });
+  }
 }
 
 const answerable = (row: Doc<"approvals">) =>
@@ -441,6 +465,7 @@ function outcomeText(row: View): string {
   if (row.status === "approved") return `Approved${where}${row.ruleId ? ", and always allowed from now on" : ""}.`;
   if (row.status === "declined") return `Declined${where}.`;
   if (row.status === "expired") return "Nobody answered in time, so it was declined.";
+  if (row.status === "auto" && row.decidedBy === "trust") return "Allowed: the chat is on Full access now.";
   return "Answered.";
 }
 

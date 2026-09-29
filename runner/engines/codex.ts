@@ -347,7 +347,10 @@ export class CodexEngine implements Engine {
      * default) and on-request approvals, which reach the owner through the
      * runner. Auto: no sandbox, and every command that is not plainly
      * read-only is asked about, which the runner has a reviewer answer
-     * (approvals.ts). Full: no sandbox, and Codex never asks.
+     * (approvals.ts). Full: the same, answered yes at once. Codex cannot
+     * change a running turn's policy, so Full still asks: the runner answers
+     * by the chat's access at that moment, and a chat put back on Ask or Auto
+     * mid-turn is asked or reviewed from its next command.
      */
     const full = access === "full";
     // Auto has no sandbox either: the gate is the reviewer, which Codex's "untrusted" policy sends
@@ -367,7 +370,7 @@ export class CodexEngine implements Engine {
     const fullInstructions = history
       ? `${instructions}${place}\n\nEarlier chat history (context, not a new user request):\n${history}`
       : `${instructions}${place}`;
-    const policy = guest ? "never" : full ? "never" : auto ? "untrusted" : "on-request";
+    const policy = guest ? "never" : full || auto ? "untrusted" : "on-request";
     const sandbox: SandboxMode = guest ? "read-only" : full || auto ? "danger-full-access" : sandboxMode();
     // Perry's own tools (convex/mcp.ts): memory, connected accounts, the web, jobs, tasks and the rest. Codex takes them over HTTP.
     const config = {

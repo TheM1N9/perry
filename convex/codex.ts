@@ -4,7 +4,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query, type 
 import { api, internal } from "./_generated/api";
 import { createThread, saveMessages } from "./lib/agent";
 import { CAPTION_LIMIT, UPLOAD_LIMIT, deleteMessage, editDraft, finishDraft, sendDraft, sendFile, sendMessage } from "./lib/telegram";
-import { COMPACTED, runLabel } from "./lib/commands";
+import { COMPACTED, runLabel, type Access } from "./lib/commands";
 import { ENGINE_LABELS, engineOf, type EngineKind } from "./lib/engines";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH } from "./media";
@@ -269,6 +269,23 @@ export const turnPatience = query({
   },
 });
 
+/**
+ * The access each of this runner's running turns' chats is on now, by turn.
+ * The owner can change it while a turn runs; the runner hands the change to
+ * the turn's engine (Engine.setAccess), and approvals already read it live.
+ */
+export const turnAccess = query({
+  args: { token: v.string() },
+  handler: async (ctx, args): Promise<Record<string, Access>> => {
+    const runner = await authenticate(ctx, args.token);
+    const running = await ctx.db.query("codexTurns")
+      .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "running"))
+      .take(20);
+    const entries = await Promise.all(running.map(async (job) => [job._id, (await ctx.db.get(job.conversationId))?.access ?? "supervised"] as const));
+    return Object.fromEntries(entries);
+  },
+});
+
 /** The agent's own turn needs longer than the runner usually allows: up to TAKE_LONGER_MAX_MIN from now, each time asked. */
 export const takeLonger = internalMutation({
   args: { turnId: v.id("codexTurns"), minutes: v.number(), why: v.string() },
@@ -407,6 +424,8 @@ export const claimTurn = mutation({
       ...job,
       engine,
       resumeCursor,
+      // The chat's access now, not when the turn was queued: the owner may have changed it since.
+      access: conversation.access ?? "supervised",
       // What a runner from before engines resumes Codex with.
       codexThreadId: engine === "codex" ? resumeCursor : undefined,
       channel: conversation.channel,
