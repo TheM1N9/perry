@@ -16,6 +16,7 @@ import {
   modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, type Access,
 } from "@/convex/lib/commands";
 import { ENGINE_LABELS, type EngineKind } from "@/convex/lib/engines";
+import { limitWarning } from "@/convex/lib/usage";
 import { copyText, errorText, useNow } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
@@ -111,6 +112,9 @@ export function ChatScreen() {
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
+  const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
+  // The heads-up about the engine's limit the owner closed, until it changes.
+  const [limitSeen, setLimitSeen] = useState("");
   const setChatModel = useMutation(api.dashboard.setChatModel).withOptimisticUpdate((store, args) => {
     const current = store.getQuery(api.dashboard.getChat, { key: args.key, id: args.id });
     if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, model: args.model, engine: args.engine ?? current.engine });
@@ -247,6 +251,10 @@ export function ChatScreen() {
   const pickedEffort = (selectedId ? chat?.effort : draftEffort ?? lastPicks?.effort) || undefined;
   const effort = modelInfo && effortUnused(modelInfo, pickedEffort) ? undefined : pickedEffort;
   const access: Access = (selectedId ? chat?.access : draftAccess) ?? defaultAccess ?? "supervised";
+  // The chat's engine near or at its plan's limit, said before a reply fails for it.
+  const engineUsage = planLimits?.engines.find((item) => item.kind === engine)?.usage;
+  const limit = chat?.contact ? null : limitWarning(engine, engineUsage, now);
+  const limitMark = limit ? `${engine}:${limit.level}:${limit.title}` : "";
   const fail = (cause: unknown) => setError(errorText(cause));
 
   /** Pick a model by its "<engine>/<id>" key; another engine's moves the chat there. */
@@ -634,6 +642,12 @@ export function ChatScreen() {
             above={<>
               {error && <ComposerNote tone="error" onDismiss={() => setError("")}>{error}</ComposerNote>}
               {notice && <ComposerNote tone="info" onDismiss={() => setNotice("")}>{notice}</ComposerNote>}
+              {limit && limitSeen !== limitMark && (
+                <ComposerNote tone={limit.level === "out" ? "error" : "warning"} onDismiss={() => setLimitSeen(limitMark)}>
+                  <span className="font-medium">{limit.title}.</span> {limit.detail}{" "}
+                  <Link href="/settings?tab=usage" className="underline underline-offset-2">See usage</Link>
+                </ComposerNote>
+              )}
               {!selectedId && !draft && files.length === 0 && (
                 <div className="mb-3 flex flex-wrap justify-center gap-2">
                   {STARTERS.map((text) => (

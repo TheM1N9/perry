@@ -83,6 +83,14 @@ export type TokenUsage = {
 /** thread/tokenUsage/updated: the thread's running total, and the latest model response's share. */
 export type TokenUsageEvent = { threadId: string; turnId: string; tokenUsage: { total: TokenUsage; last: TokenUsage; modelContextWindow?: number | null } };
 
+/** RateLimitWindow: resetsAt is in seconds. */
+export type RateLimitWindow = { usedPercent: number; windowDurationMins?: number | null; resetsAt?: number | null };
+/** RateLimitSnapshot: one bucket of the plan's limits ("codex", or a model's own), its 5-hour (primary) and weekly (secondary) windows. */
+export type RateLimitSnapshot = {
+  limitId?: string | null; limitName?: string | null; normalModelSlug?: string | null;
+  primary?: RateLimitWindow | null; secondary?: RateLimitWindow | null; planType?: string | null;
+};
+
 /** `compacted`: Codex compacted the thread's context during the turn (a contextCompaction item). */
 export type TurnOutput = { text: string; images: GeneratedImage[]; interrupted?: boolean; compacted?: boolean };
 
@@ -152,6 +160,9 @@ export class CodexAppServer extends EventEmitter {
   closed = false;
   /** The CLI's version, from the userAgent initialize answers with. */
   version?: string;
+  /** The plan's limits by bucket, from the last read and the updates Codex sent since; and when they last changed. */
+  readonly rateLimits = new Map<string, RateLimitSnapshot>();
+  rateLimitsAt = 0;
 
   /** What a file-change item is about to change, for its approval request. */
   changesFor(itemId?: string): FileChange[] {
@@ -196,6 +207,14 @@ export class CodexAppServer extends EventEmitter {
         }
         if (message.method === "turn/completed" && params.turn?.id) {
           this.completedTurns.set(params.turn.id, params as TurnEvent);
+        }
+        // A rolling update is sparse: what it leaves out keeps its last value.
+        if (message.method === "account/rateLimits/updated" && params.rateLimits) {
+          const update = params.rateLimits as RateLimitSnapshot;
+          const id = update.limitId ?? "codex";
+          const kept = this.rateLimits.get(id) ?? {};
+          this.rateLimits.set(id, { ...kept, ...Object.fromEntries(Object.entries(update).filter(([, value]) => value !== null && value !== undefined)) });
+          this.rateLimitsAt = Date.now();
         }
         // Codex can report a thread's usage again without a new model response,
         // such as when rate limits change. Only a changed total is new usage.
@@ -270,6 +289,21 @@ export class CodexAppServer extends EventEmitter {
       planType: account?.type === "chatgpt" ? account.planType ?? undefined : undefined,
       email: account?.type === "chatgpt" ? account.email ?? undefined : undefined,
     };
+  }
+
+  /**
+   * Read the plan's limits afresh. It spends nothing; the details of limit
+   * resets the owner could buy are skipped, as for Codex's own background reads.
+   */
+  async readRateLimits(): Promise<void> {
+    const result = await this.request<{ rateLimits?: RateLimitSnapshot; rateLimitsByLimitId?: Record<string, RateLimitSnapshot | undefined> | null }>(
+      "account/rateLimits/read", { excludeResetCreditDetails: true });
+    const buckets = result.rateLimitsByLimitId
+      ? Object.entries(result.rateLimitsByLimitId).flatMap(([id, bucket]) => bucket ? [[id, bucket] as const] : [])
+      : result.rateLimits ? [[result.rateLimits.limitId ?? "codex", result.rateLimits] as const] : [];
+    this.rateLimits.clear();
+    for (const [id, bucket] of buckets) this.rateLimits.set(id, bucket);
+    this.rateLimitsAt = Date.now();
   }
 
   /** The account's models, each with the reasoning efforts turn/start takes for it (a chat's thinking level). */

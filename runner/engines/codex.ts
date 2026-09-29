@@ -2,12 +2,14 @@ import { resolve } from "node:path";
 import { ACCESSES } from "../../convex/lib/commands";
 import {
   ASSISTANT_MCP, CodexAppServer, TurnFailed, WINDOWS_SANDBOX, sandboxMode, sandboxPolicy, userInput,
-  type ItemEvent, type RpcMessage, type SandboxMode, type TokenUsage as CodexUsage, type TokenUsageEvent, type TurnItem,
+  type ItemEvent, type RateLimitSnapshot, type RpcMessage, type SandboxMode, type TokenUsage as CodexUsage, type TokenUsageEvent, type TurnItem,
 } from "../codex";
 import {
   optionOf, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineRequest, type EngineStatus,
-  type ItemStatus, type LoginFlow, type QuickTurn, type TokenUsage, type TurnHandle, type TurnInput, type TurnResult, type TurnSink,
+  type ItemStatus, type LoginFlow, type PlanLimits, type PlanWindow, type QuickTurn, type TokenUsage, type TurnHandle, type TurnInput,
+  type TurnResult, type TurnSink,
 } from "../engine";
+import { windowLabel } from "../../convex/lib/usage";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
 
@@ -147,6 +149,30 @@ const usageOf = (last: CodexUsage): TokenUsage => ({
   totalTokens: last.totalTokens ?? 0,
 });
 
+/**
+ * The plan's limits as Perry's: each bucket's 5-hour (primary) and weekly
+ * (secondary) windows. The "codex" bucket is the plan's own; another is a
+ * model's, and says which.
+ */
+export function limitsOf(buckets: Map<string, RateLimitSnapshot>, at: number): PlanLimits {
+  const windows: PlanWindow[] = [];
+  for (const [id, bucket] of buckets) {
+    const own = id === "codex" ? "" : ` (${bucket.limitName || bucket.normalModelSlug || id})`;
+    for (const [which, window] of [["primary", bucket.primary], ["secondary", bucket.secondary]] as const) {
+      if (!window) continue;
+      windows.push({
+        id: `${id}:${which}`,
+        label: `${windowLabel(window.windowDurationMins)}${own}`,
+        usedPercent: Math.max(0, Math.min(100, window.usedPercent)),
+        ...(window.resetsAt ? { resetsAt: window.resetsAt * 1000 } : {}),
+        ...(window.windowDurationMins ? { minutes: window.windowDurationMins } : {}),
+      });
+    }
+  }
+  const plan = buckets.get("codex")?.planType ?? [...buckets.values()].find((bucket) => bucket.planType)?.planType;
+  return { windows, ...(plan ? { plan } : {}), at };
+}
+
 /** A thread started before any chat asked for it; its id, or null if it failed to start. */
 type Spare = { app: CodexAppServer; id: Promise<string | null> };
 /** How many spare threads are kept: one per distinct way of starting a chat (a web chat, a job's, a phone's). */
@@ -248,6 +274,20 @@ export class CodexEngine implements Engine {
 
   async logout(): Promise<void> {
     await (await this.ensure()).request("account/logout", {});
+  }
+
+  /**
+   * The ChatGPT plan's limits. Codex sends updates of them as its turns run,
+   * which keep the last read fresh; past a minute without one they are read
+   * again. An API key has no plan limits.
+   */
+  async limits(): Promise<PlanLimits | null> {
+    const app = await this.ensure();
+    if (Date.now() - app.rateLimitsAt > 60_000) {
+      if ((await app.account()).authMode !== "chatgpt") return null;
+      await app.readRateLimits();
+    }
+    return limitsOf(app.rateLimits, app.rateLimitsAt);
   }
 
   /**

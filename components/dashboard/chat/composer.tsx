@@ -233,12 +233,12 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
   );
 }
 
-/** A dismissible line above the composer: a command's answer, or why something failed. */
-export function ComposerNote({ tone, children, onDismiss }: { tone: "info" | "error"; children: ReactNode; onDismiss: () => void }) {
+/** A dismissible line above the composer: a command's answer, why something failed, or a heads-up (an engine near its limit). */
+export function ComposerNote({ tone, children, onDismiss }: { tone: "info" | "warning" | "error"; children: ReactNode; onDismiss: () => void }) {
   return (
     <div role={tone === "error" ? "alert" : "status"}
       className={cn("mb-2 flex items-start gap-2 rounded-2xl border px-4 py-2.5 text-sm",
-        tone === "error" ? "border-destructive/30 bg-destructive/5 text-destructive" : "bg-muted/60")}>
+        tone === "error" ? "border-destructive/30 bg-destructive/5 text-destructive" : tone === "warning" ? "border-warning/40 bg-warning-soft text-warning" : "bg-muted/60")}>
       <div className={cn("min-w-0 flex-1 leading-relaxed whitespace-pre-wrap", tone === "info" && "font-mono text-[12.5px]")}>{children}</div>
       <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss} className="-mr-1 shrink-0"><XIcon /></Button>
     </div>

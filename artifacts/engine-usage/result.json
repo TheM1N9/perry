@@ -1,0 +1,178 @@
+{
+  "ranAt": "2026-09-29T21:31:37.295Z",
+  "codexModel": "gpt-6-luna",
+  "grok": "fake (artifacts/engine-acp/fake-agent.ts --profile grok)",
+  "checks": {
+    "codexLimitsRead": true,
+    "codexResetsAhead": true,
+    "claudeLimitsRead": true,
+    "claudeReadSavesNoSession": true,
+    "tokensCountedToEngineAndChat": true,
+    "limitHitRecorded": true,
+    "usedEnginesKnown": true,
+    "chatWarnsOnHit": true,
+    "petWarns": true,
+    "hitClearsAfterReply": true,
+    "chatNoteGoneWithRoom": true,
+    "chatWarnsBeforeSending": true,
+    "codexRealTurn": true,
+    "chatWarnsRunningLow": true,
+    "passedResetNotFull": true,
+    "usageShowsCodexWindows": true,
+    "usageSaysWhoReportsNothing": true,
+    "usageShowsPerrysShare": true,
+    "dashboardDidNotThrow": true
+  },
+  "notes": {
+    "codexDirect": {
+      "primary": {
+        "usedPercent": 60,
+        "windowDurationMins": 300,
+        "resetsAt": 1790731532
+      },
+      "secondary": {
+        "usedPercent": 100,
+        "windowDurationMins": 10080,
+        "resetsAt": 1791063062
+      },
+      "planType": "plus",
+      "ordinaryUsageAllowed": false
+    },
+    "codexStored": {
+      "windows": [
+        {
+          "id": "codex:primary",
+          "label": "5-hour",
+          "usedPercent": 60,
+          "resetsAt": 1790731532000,
+          "minutes": 300
+        },
+        {
+          "id": "codex:secondary",
+          "label": "Weekly",
+          "usedPercent": 100,
+          "resetsAt": 1791063062000,
+          "minutes": 10080
+        }
+      ],
+      "plan": "plus",
+      "at": 1790717462550
+    },
+    "claudeSignedIn": true,
+    "claudeStored": {
+      "windows": [
+        {
+          "id": "five_hour",
+          "label": "5-hour",
+          "usedPercent": 94,
+          "resetsAt": 1790731199578,
+          "minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "label": "Weekly",
+          "usedPercent": 19,
+          "resetsAt": 1790848799578,
+          "minutes": 10080
+        },
+        {
+          "id": "model:Fable",
+          "label": "Weekly (Fable)",
+          "usedPercent": 0,
+          "resetsAt": 1790848800000,
+          "minutes": 10080
+        }
+      ],
+      "plan": "max",
+      "at": 1790717462698
+    },
+    "claudeReadSavesNoSession": "C:\\Users\\Pranav\\.claude\\projects\\C--Users-Pranav-AppData-Local-Temp-perry-engine-usage-b3OHlk",
+    "grokShare": {
+      "reply": "Fake grok reply to: hello from the usage check. One two three four five six seve",
+      "run": {
+        "inputTokens": 1200,
+        "cachedInputTokens": 1000,
+        "outputTokens": 80,
+        "reasoningTokens": 20,
+        "totalTokens": 1280
+      },
+      "share": {
+        "tokens": 1280,
+        "turns": 1
+      },
+      "item": {
+        "id": "hyhhrpd2srj1bkf365xvr2kqrv",
+        "title": "Usage check on Grok",
+        "kind": "chat",
+        "channel": "web",
+        "engines": [
+          "grok"
+        ],
+        "tokens": 1280,
+        "turns": 1,
+        "lastAt": 1790717464339
+      }
+    },
+    "grokHit": {
+      "lastError": "You've hit the rate limit for your plan. Upgrade your account or try again later.",
+      "hit": {
+        "at": 1790717467321,
+        "message": "You've hit the rate limit for your plan. Upgrade your account or try again later."
+      }
+    },
+    "usedEnginesKnown": [
+      "grok"
+    ],
+    "grokNote": "Grok Build hit its plan's limit. Grok Build said: “You've hit the rate limit for your plan. Upgrade your account or try again later.” Until then, replies on it fail: pick another engine's model to keep going. See usage",
+    "petSaid": {
+      "said": [
+        "Grok Build hit its plan's limit",
+        "Grok Build said: “You've hit the rate limit for your plan. Upgrade your account or try again later.” Until then, replies on it fail: pick another engine's model to keep going."
+      ],
+      "used": [
+        "grok"
+      ]
+    },
+    "codexBefore": {
+      "fullest": 100,
+      "note": "Codex's weekly limit is used up. It resets Sun 4 Oct, 3:01. Until then, replies on it fail: pick another engine's model to keep going. See usage"
+    },
+    "codexTurn": {
+      "lastError": "You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Oct 4th, 2026 3:01 AM.",
+      "run": {
+        "status": "error",
+        "model": "codex/gpt-6-luna · medium"
+      }
+    },
+    "codexHit": {
+      "at": 1790717488168,
+      "message": "You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Oct 4th, 2026 3:01 AM."
+    },
+    "lowNote": "Claude Code is running low. 85% of the 5-hour limit is used; it resets at 4:31. See usage",
+    "usageTab": {
+      "plans": "Your plans\n\nHow much of each engine's plan is used, counting all your use of it, and when each limit starts again. Perry warns in the chat and on the pet from 80%.\n\nCodex\nPlus\nUsed up\nRead now\n5-hour\n60% used · 40% left · resets at 6:55\nx\n\nPerry in this window: nothing yet\n\nWeekly\n100% used · 0% left · resets Sun 4 Oct, 3:01\nx\n\nPerry in this window: nothing yet\n\nCodex refused a reply for your plan's limit at 3:01: “You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Oct 4th, 2026 3:01 AM.”\n\nCodex reports your ChatGPT plan's limits: how much of the 5-hour and weekly windows is used, and when each resets. It counts all your Codex use, not only Perry's.\n\nClaude Code\nMax\nRunning low\nRead now\n5-hour\n85% used · 15% left · resets at 4:31\nx\n\nPerry in this window: nothing yet\n\nWeekly\n0% used · 100% left · reset since\nx\n\nPerry in this window: nothing yet\n\nClaude Code reports your Claude plan's limits: the 5-hour window, the weekly one and any per-model weekly limit. It counts all your Claude use. Tokens a subagent uses are not in Perry's share.\n\nGrok Build\n\nGrok Build doesn't say how much of your plan is used or left. Perry shows the tokens its replies used, and says so here when Grok refuses a reply for your plan's limit.\n\nPerry this week: 2.6k tokens over 2 replies.\n\nAntigravity\nNot signed in\n\nAntigravity reports neither your plan's limits nor the tokens its replies use. Perry counts its replies, and says so here when it refuses one for a limit.",
+      "share": "Perry's share this week\n\nTokens Perry's chats, schedules and background tasks used in the last 7 days, as each engine reported them reply by reply.\n\nGrok Build\n\n2.6k\n\ntokens over 2 replies\n\nUsage check on Grok\n\nChat · Grok Build · last now\n\n2.6k tokens\n\n2 replies"
+    },
+    "dashboardDidNotThrow": [],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-engine-usage-b3OHlk\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn zxycpdb2sqsbs9bmtmeg7979em\u001b[0m",
+      "\u001b[2m  saved turn 4j7sd9yx2wypy2yt3mh6rb3gpc\u001b[0m",
+      "\u001b[33m  Grok Build refused the turn for your plan's limit\u001b[0m",
+      "\u001b[2m  saved turn 9pyb6y335zt151tkvk5zjg3ayq\u001b[0m",
+      "\u001b[2m  saved turn z11y73q07s9vd0hqp6kh12n2ng\u001b[0m",
+      "\u001b[33m  Codex refused the turn for your plan's limit\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

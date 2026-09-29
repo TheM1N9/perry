@@ -36,6 +36,7 @@ import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
 import * as lib_truncate from "../convex/lib/truncate";
 import * as lib_turnLimits from "../convex/lib/turnLimits";
+import * as lib_usage from "../convex/lib/usage";
 import * as lib_whatsappFormat from "../convex/lib/whatsappFormat";
 import * as mcp from "../convex/mcp";
 import * as media from "../convex/media";
@@ -54,6 +55,7 @@ import * as titles from "../convex/titles";
 import * as todos from "../convex/todos";
 import * as tools from "../convex/tools";
 import * as updates from "../convex/updates";
+import * as usage from "../convex/usage";
 import * as vault from "../convex/vault";
 import * as wake from "../convex/wake";
 import * as web from "../convex/web";
@@ -95,6 +97,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/telegramFormat": lib_telegramFormat,
   "lib/truncate": lib_truncate,
   "lib/turnLimits": lib_turnLimits,
+  "lib/usage": lib_usage,
   "lib/whatsappFormat": lib_whatsappFormat,
   "mcp": mcp,
   "media": media,
@@ -113,6 +116,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "todos": todos,
   "tools": tools,
   "updates": updates,
+  "usage": usage,
   "vault": vault,
   "wake": wake,
   "web": web,
