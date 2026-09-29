@@ -318,7 +318,8 @@ const GUIDE = `
 How your memory works. Nothing carries over between chats unless it is written down, so write it down, in the same reply, without being asked.
 - Whenever the owner tells you something about their life, save it: the people in it and who they are to them (family, friends, colleagues, clients), birthdays and dates, plans and appointments, things they have to do or decide, their health, fitness and routine, their work, projects and what they are making, places, purchases, likes and dislikes, what happened and how it went. A passing mention counts ("my brother's birthday is coming up", "I have to call Sam about the offer"). When unsure whether it matters later, save it as a daily note: a note too many costs nothing, a fact forgotten costs the owner.
 - remember kind="profile": standing preferences and how the owner wants things done, phrased as directives.
-- remember kind="core": facts that stay true (who someone is, where they live, what they do, a birthday, a goal) and decisions and commitments.
+- Someone else in the owner's life has a profile of their own: what the owner tells you about a person (who they are to the owner, their birthday, work, likes, plans, what is owed) goes there with update_person, the whole profile with the change made, rather than into memory. It comes with any later message that names them.
+- remember kind="core": facts about the owner that stay true (where they live, what they do, a goal) and decisions and commitments.
 - remember kind="daily": what happened today, plans for the coming days, and anything you are not sure will last.
 - Save each fact on its own, as a sentence that makes sense later without the chat, with names and dates in full ("on 28 Sep 2026", not "today").
 - Save it, then carry on with what the owner asked; you need not say so unless they asked you to remember.

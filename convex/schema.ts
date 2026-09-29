@@ -489,6 +489,22 @@ export default defineSchema({
    * (contacts.ts), and the ones it knows of: WhatsApp's address book and groups, and whoever wrote.
    * Nobody is talked to until the owner allows them, once.
    */
+  /**
+   * The people in the owner's life, as the owner tells Perry about them (people.ts): a profile each,
+   * kept by Perry from the owner's chats (update_person), and sent with the owner's messages that name
+   * them. Never in a chat with anyone else. One may be someone Perry talks with (contactId).
+   */
+  people: defineTable({
+    name: v.string(),
+    /** Other names the owner uses for them ("my brother", "Arjun Rao"). */
+    aliases: v.optional(v.array(v.string())),
+    /** What the owner has told Perry about them, as one document. */
+    about: v.string(),
+    contactId: v.optional(v.id("contacts")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_contact", ["contactId"]),
+
   contacts: defineTable({
     channel: v.union(v.literal("telegram"), v.literal("whatsapp")),
     /** The chat: a WhatsApp jid (person or group) or a Telegram chat id. */
@@ -504,6 +520,11 @@ export default defineSchema({
     status: v.union(v.literal("known"), v.literal("pending"), v.literal("allowed"), v.literal("blocked")),
     /** What the owner lets Perry know and share with them, in the owner's words. Nothing else of the owner's is. */
     brief: v.optional(v.string()),
+    /**
+     * Who they are, as they told Perry in their own chat (their USER.md): kept by Perry there
+     * (update_profile), sent only to chats with them. Never the owner's word, and never in the owner's prompt.
+     */
+    profile: v.optional(v.string()),
     /** Messages that came while the owner was asked, answered once they allow it. */
     waiting: v.optional(v.array(v.object({ text: v.string(), from: v.string(), at: v.number() }))),
     /** When a chat with them last passed something on to the owner (tell_owner), for a limit per hour. */

@@ -577,26 +577,39 @@ function Logins() {
 const PEOPLE_STATUS = { allowed: { label: "Talks with Perry", tone: "success" }, pending: { label: "Waiting for you", tone: "warning" }, blocked: { label: "Blocked", tone: "neutral" }, known: { label: "Not yet", tone: "neutral" } } as const;
 
 /**
- * Who Perry talks with besides the owner, on WhatsApp and Telegram
- * (convex/contacts.ts): allowed once, by the owner, then both ways. Each chat
- * is sealed off from everything of the owner's; its brief is all Perry knows
- * of the owner there.
+ * The people in the owner's life (convex/people.ts, contacts.ts). Everyone
+ * Perry talks with besides the owner, allowed once by the owner, then both
+ * ways; and everyone the owner has told Perry about. Each has a profile with
+ * two sides kept apart: what the owner told Perry about them, used only in the
+ * owner's chats; and what they told Perry themselves, used only in their own.
+ * The brief is the one thing of the owner's that reaches them.
  */
 function People() {
   const { dashboardKey } = useSession();
-  const people = useQuery(api.contacts.listForDashboard, { key: dashboardKey });
+  const contacts = useQuery(api.contacts.listForDashboard, { key: dashboardKey });
+  const known = useQuery(api.people.listForDashboard, { key: dashboardKey });
   const set = useMutation(api.contacts.setForDashboard);
+  const setAbout = useMutation(api.people.setAbout);
+  const removePerson = useMutation(api.people.remove);
   const now = useNow();
-  const [editing, setEditing] = useState<{ id: Id<"contacts">; brief: string } | null>(null);
+  type Draft = { contactId?: Id<"contacts">; personId?: Id<"people">; about: string; profile: string; brief: string };
+  const [editing, setEditing] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
+  const aboutOf = (contactId: Id<"contacts">) => known?.find((person) => person.contactId === contactId);
+  const others = known?.filter((person) => !person.contactId || !contacts?.some((contact) => contact.id === person.contactId)) ?? [];
 
-  const saveBrief = async () => {
+  const save = async () => {
     if (!editing || saving) return;
     setSaving(true);
     try {
-      await set({ key: dashboardKey, id: editing.id, brief: editing.brief });
+      if (editing.contactId) {
+        await set({ key: dashboardKey, id: editing.contactId, brief: editing.brief, profile: editing.profile });
+        await setAbout({ key: dashboardKey, contactId: editing.contactId, about: editing.about });
+      } else if (editing.personId) {
+        await setAbout({ key: dashboardKey, id: editing.personId, about: editing.about });
+      }
       setEditing(null);
-      toast.success("Saved. Perry uses it from their next message.");
+      toast.success("Saved. Perry uses it from the next message.");
     } catch (cause) {
       toast.error(errorText(cause));
     } finally {
@@ -604,52 +617,103 @@ function People() {
     }
   };
 
+  const editor = (name: string, withContact: boolean) => editing && (
+    <div className="mt-3 grid gap-3">
+      <div className="grid gap-1.5">
+        <FieldLabel>What you&apos;ve told Perry about {name}</FieldLabel>
+        <Textarea value={editing.about} rows={4} placeholder={`"${name} is my gym buddy. Birthday 14 October."`} onChange={(event) => setEditing({ ...editing, about: event.target.value })} />
+        <p className="text-xs text-muted-foreground">Only in your own chats, when you mention them. Never shown to them or anyone else.</p>
+      </div>
+      {withContact && (<>
+        <div className="grid gap-1.5">
+          <FieldLabel>What {name} has told Perry</FieldLabel>
+          <Textarea value={editing.profile} rows={4} placeholder="Nothing yet." onChange={(event) => setEditing({ ...editing, profile: event.target.value })} />
+          <p className="text-xs text-muted-foreground">Kept by Perry from their own chat, and used only there.</p>
+        </div>
+        <div className="grid gap-1.5">
+          <FieldLabel>What Perry may share with {name}</FieldLabel>
+          <Textarea value={editing.brief} rows={3} placeholder={`"He can know my gym times."`} onChange={(event) => setEditing({ ...editing, brief: event.target.value })} />
+          <p className="text-xs text-muted-foreground">The only thing of yours Perry knows in a chat with them.</p>
+        </div>
+      </>)}
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>Cancel</Button>
+        <Button size="sm" disabled={saving} onClick={() => void save()}>{saving && <Spinner />}Save</Button>
+      </div>
+    </div>
+  );
+
   return (
-    <Section title="People" description="Who Perry talks with for you on WhatsApp and Telegram. You are asked the first time: when someone new writes to Perry, and before Perry first writes to someone. Each has a chat of their own that knows nothing of yours but their brief.">
-      {people === undefined ? <ListSkeleton /> : people.length === 0 ? (
-        <EmptyState title="Nobody yet">Ask Perry to message someone (&ldquo;tell Datta I&apos;m running late&rdquo;), or share Perry&apos;s WhatsApp or Telegram with someone.</EmptyState>
-      ) : (
-        <List label="People">
-          {people.map((person) => (
-            <li key={person.id} className="px-4 py-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-sm font-medium">{person.name}</p>
-                    <StatusBadge tone={PEOPLE_STATUS[person.status].tone}>{PEOPLE_STATUS[person.status].label}</StatusBadge>
+    <Section title="People" description="The people in your life, as Perry knows them. You are asked the first time Perry talks with anyone: when someone new writes to it, and before it first writes to someone. Each profile has two sides kept apart: what you told Perry, used only in your chats, and what they told Perry, used only in theirs.">
+      {contacts === undefined || known === undefined ? <ListSkeleton /> : contacts.length === 0 && others.length === 0 ? (
+        <EmptyState title="Nobody yet">Tell Perry about someone (&ldquo;Datta is my gym buddy&rdquo;), ask it to message someone, or share Perry&apos;s WhatsApp or Telegram.</EmptyState>
+      ) : (<>
+        {contacts.length > 0 && (
+          <List label="People Perry talks with">
+            {contacts.map((person) => {
+              const about = aboutOf(person.id);
+              const open = editing?.contactId === person.id;
+              return (
+                <li key={person.id} className="px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-medium">{person.name}</p>
+                        <StatusBadge tone={PEOPLE_STATUS[person.status].tone}>{PEOPLE_STATUS[person.status].label}</StatusBadge>
+                      </div>
+                      <p className="truncate text-sm text-muted-foreground">
+                        {[person.kind === "group" ? "Group" : person.handle, person.channel === "whatsapp" ? "WhatsApp" : "Telegram"].filter(Boolean).join(" · ")} · {ago(person.updatedAt, now)}
+                      </p>
+                      {!open && (
+                        <div className="mt-1 grid gap-0.5 text-sm text-pretty text-muted-foreground">
+                          {about && <p className="line-clamp-2">You told Perry: <span className="text-foreground">{about.about}</span></p>}
+                          {person.profile && <p className="line-clamp-2">They told Perry: <span className="text-foreground">{person.profile}</span></p>}
+                          <p className="line-clamp-2">{person.brief ? <>Perry may share: <span className="text-foreground">{person.brief}</span></> : "Perry shares nothing about you with them."}</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {person.chatId && <Button variant="ghost" size="sm" render={<Link href={`/chat/${person.chatId}`} />}>Open chat</Button>}
+                      {!open && <Button variant="ghost" size="sm" onClick={() => setEditing({ contactId: person.id, about: about?.about ?? "", profile: person.profile ?? "", brief: person.brief ?? "" })}>Profile</Button>}
+                      {person.status === "blocked"
+                        ? <ActionButton variant="ghost" size="sm" action={() => set({ key: dashboardKey, id: person.id, status: "allowed" })} success={`Perry talks with ${person.name} again.`}>Allow</ActionButton>
+                        : <ActionButton variant="ghost" size="sm" className="text-destructive" action={() => set({ key: dashboardKey, id: person.id, status: "blocked" })} success={`${person.name} is blocked.`}
+                            confirm={{ title: `Block ${person.name}?`, body: "Perry stops answering them and will not write to them. You can allow them again here.", label: "Block" }}>Block</ActionButton>}
+                    </div>
                   </div>
-                  <p className="truncate text-sm text-muted-foreground">
-                    {[person.kind === "group" ? "Group" : person.handle, person.channel === "whatsapp" ? "WhatsApp" : "Telegram"].filter(Boolean).join(" · ")} · {ago(person.updatedAt, now)}
-                  </p>
-                  {editing?.id !== person.id && (
-                    <p className="mt-1 text-sm text-pretty text-muted-foreground">
-                      {person.brief ? <>Perry may share: <span className="text-foreground">{person.brief}</span></> : "Perry shares nothing about you with them."}
-                    </p>
-                  )}
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {person.chatId && <Button variant="ghost" size="sm" render={<Link href={`/chat/${person.chatId}`} />}>Open chat</Button>}
-                  {editing?.id !== person.id && <Button variant="ghost" size="sm" onClick={() => setEditing({ id: person.id, brief: person.brief ?? "" })}>Brief</Button>}
-                  {person.status === "blocked"
-                    ? <ActionButton variant="ghost" size="sm" action={() => set({ key: dashboardKey, id: person.id, status: "allowed" })} success={`Perry talks with ${person.name} again.`}>Allow</ActionButton>
-                    : <ActionButton variant="ghost" size="sm" className="text-destructive" action={() => set({ key: dashboardKey, id: person.id, status: "blocked" })} success={`${person.name} is blocked.`}
-                        confirm={{ title: `Block ${person.name}?`, body: "Perry stops answering them and will not write to them. You can allow them again here.", label: "Block" }}>Block</ActionButton>}
-                </div>
-              </div>
-              {editing?.id === person.id && (
-                <div className="mt-2 grid gap-2">
-                  <Textarea value={editing.brief} rows={3} placeholder={`What Perry may know and share with ${person.name}. "He can know my gym times."`}
-                    onChange={(event) => setEditing({ id: person.id, brief: event.target.value })} />
-                  <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>Cancel</Button>
-                    <Button size="sm" disabled={saving} onClick={() => void saveBrief()}>{saving && <Spinner />}Save</Button>
-                  </div>
-                </div>
-              )}
-            </li>
-          ))}
-        </List>
-      )}
+                  {open && editor(person.name, true)}
+                </li>
+              );
+            })}
+          </List>
+        )}
+        {others.length > 0 && (
+          <div className="mt-4">
+            <h3 className="mb-2 text-sm font-medium">Others you&apos;ve told Perry about</h3>
+            <List label="Others you've told Perry about">
+              {others.map((person) => {
+                const open = editing?.personId === person.id;
+                return (
+                  <li key={person.id} className="px-4 py-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{person.name}{person.aliases?.length ? <span className="font-normal text-muted-foreground"> · {person.aliases.join(", ")}</span> : null}</p>
+                        {!open && <p className="mt-0.5 line-clamp-2 text-sm text-pretty text-muted-foreground">{person.about}</p>}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {!open && <Button variant="ghost" size="sm" onClick={() => setEditing({ personId: person.id, about: person.about, profile: "", brief: "" })}>Profile</Button>}
+                        <ActionButton variant="ghost" size="sm" className="text-destructive" action={() => removePerson({ key: dashboardKey, id: person.id })} success={`${person.name}'s profile deleted.`}
+                          confirm={{ title: `Delete ${person.name}'s profile?`, body: "Perry forgets what you told it about them. This cannot be undone.", label: "Delete" }}>Delete</ActionButton>
+                      </div>
+                    </div>
+                    {open && editor(person.name, false)}
+                  </li>
+                );
+              })}
+            </List>
+          </div>
+        )}
+      </>)}
     </Section>
   );
 }

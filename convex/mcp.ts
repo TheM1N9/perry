@@ -29,6 +29,7 @@ export const CODEX_TOOLS: readonly ToolName[] = [
   "create_job", "find_triggers", "list_jobs", "update_job", "delete_job", "run_job",
   "add_todo", "list_todos", "update_todo", "delete_todo",
   "find_contact", "send_message", "update_contact",
+  "update_person", "read_person",
 ];
 
 /**
@@ -37,7 +38,7 @@ export const CODEX_TOOLS: readonly ToolName[] = [
  * a way to pass things on to the owner. No computer, files, keys, accounts,
  * web tools or other chats, so nothing there can reach anything of the owner's.
  */
-export const GUEST_TOOLS: readonly ToolName[] = ["remember", "recall", "read_memory", "forget", "tell_owner"];
+export const GUEST_TOOLS: readonly ToolName[] = ["remember", "recall", "read_memory", "forget", "update_profile", "tell_owner"];
 
 /**
  * Only Codex runs on the machine where its files are, so only Codex can show
@@ -259,7 +260,9 @@ export const handle = httpAction(async (ctx, request) => {
         const output = await bound.execute(parsed.data, { toolCallId: String(message.id), messages: [] });
         // A chat with someone else, read from the owner's own, is what they wrote: outside, like a web page.
         const theirs = name === "read_chat" && await ctx.runQuery(internal.contacts.isTheirs, { chatId: String((parsed.data as { chatId?: string }).chatId ?? "") });
-        if (READS_OUTSIDE.has(name) || theirs) {
+        // What someone said about themselves is their word too.
+        const saidByThem = name === "read_person" && Boolean(output && typeof output === "object" && "theySaid" in output);
+        if (READS_OUTSIDE.has(name) || theirs || saidByThem) {
           await ctx.runMutation(internal.codex.markOutside, { turnId: access.turnId });
           return reply(message.id, { content: [{ type: "text", text: JSON.stringify({ untrusted: UNTRUSTED, result: withHint(output) ?? null }) }] });
         }

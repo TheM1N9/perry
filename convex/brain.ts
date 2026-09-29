@@ -15,7 +15,7 @@ import { resumeOf } from "./engines";
 import { vChannel, vEngine, vTelegramMedia } from "./schema";
 
 /** Perry's own reminder, sent with each message from the owner, ahead of it. */
-const REMEMBER_NOTE = "# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or routine, their work and the projects, pages or channels they run, what they made or how something went), save it with remember in this reply, even when they only ask a question about it. Then answer.";
+const REMEMBER_NOTE = "# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or routine, their work and the projects, pages or channels they run, what they made or how something went), save it in this reply, even when they only ask a question about it: about someone else, in that person's profile with update_person; anything else with remember. Then answer.";
 
 /**
  * One turn, end to end: resolve the conversation, gather what the assistant
@@ -160,12 +160,14 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   const goals = active.length
     ? `The owner's active goals; when they reach a milestone, tick it off with update_goal:\n${active.map((goal) => `- ${goal.title} (id ${goal._id}): ${goal.milestones.map((step) => `[${step.done ? "x" : " "}] ${step.title}`).join(", ")}`).join("\n")}`
     : "";
+  // Who the owner's message is about: the profiles of the people it names (people.ts).
+  const people: string = await ctx.runQuery(internal.people.forMessage, { text: query });
   // Told once at the start, an agent answers the question and lets the fact in it go ("I started swimming;
   // any tips?"), so every message from the owner comes with the reminder.
   const note = conversation.jobId || conversation.taskId ? "" : REMEMBER_NOTE;
   return {
     instructions: [persona.identity, INSTRUCTIONS, where, memory?.instructions, persona.user].filter(Boolean).join("\n\n"),
-    recalled: [`# Right now\n\n${now}`, goals, memory?.recalled, note].filter(Boolean).join("\n\n"),
+    recalled: [`# Right now\n\n${now}`, goals, people, memory?.recalled, note].filter(Boolean).join("\n\n"),
     recallDigest: memory?.digest,
     history,
   };
@@ -189,10 +191,10 @@ async function guestSettings(ctx: ActionCtx, conversation: Doc<"conversations">)
  * the owner's memory, USER.md, goals or other chats.
  */
 async function guestTurn(ctx: ActionCtx, conversation: Doc<"conversations">, contactId: Id<"contacts">, context?: string) {
-  const prompt: { instructions: string; brief: string; memory: string; now: string; reminder: string } = await ctx.runQuery(internal.contacts.guestPrompt, { contactId, conversationId: conversation._id });
+  const prompt: { instructions: string; brief: string; profile: string; memory: string; now: string; reminder: string } = await ctx.runQuery(internal.contacts.guestPrompt, { contactId, conversationId: conversation._id });
   return {
     instructions: prompt.instructions,
-    recalled: [`# Right now\n\n${prompt.now}`, prompt.brief, prompt.memory, context, prompt.reminder].filter(Boolean).join("\n\n"),
+    recalled: [`# Right now\n\n${prompt.now}`, prompt.profile, prompt.brief, prompt.memory, context, prompt.reminder].filter(Boolean).join("\n\n"),
     recallDigest: undefined,
     history: resumeOf(conversation) ? undefined : await historyOf(ctx, conversation),
   };
