@@ -19,8 +19,11 @@ export default {
     const emit = (event, data) => (listeners.get(event) ?? []).forEach((listener) => listener(data));
     let ended = false;
     let count = 0;
+    const frames = [];
     const socket = {
       ev: { on(event, listener) { if (!listeners.has(event)) listeners.set(event, []); listeners.get(event).push(listener); } },
+      // As Baileys' socket.ws: a "frame" for each thing WhatsApp's servers send, keep-alive answers included.
+      ws: { on(event, listener) { if (event === "frame") frames.push(listener); } },
       user: undefined,
       async sendMessage(jid, content) {
         const id = `OUT${Date.now()}${++count}`;
@@ -44,6 +47,7 @@ export default {
         for (const command of commands) {
           if (ended) break;
           if (command.user) socket.user = command.user;
+          if (command.frame) frames.forEach((listener) => listener({}));
           if (command.event) emit(command.event, command.data);
         }
       }
