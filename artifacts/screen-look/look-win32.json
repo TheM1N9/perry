@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-29T21:21:33.881Z",
+  "ranAt": "2026-09-29T21:27:08.344Z",
   "platform": "win32 x64",
   "checks": {
     "settingsReachIt": true,
@@ -14,42 +14,42 @@
     "electron": "<repo>\\pet\\node_modules\\.pnpm\\electron@44.4.5\\node_modules\\electron\\dist\\electron.exe",
     "launched": {
       "report": {
-        "pid": 104604,
-        "ppid": 60280,
+        "pid": 78840,
+        "ppid": 64484,
         "execPath": "<repo>\\pet\\node_modules\\.pnpm\\electron@44.4.5\\node_modules\\electron\\dist\\electron.exe",
         "macApp": "Electron",
         "env": {
           "PERRY_HOME": "<home>",
-          "PERRY_PORT": "51538"
+          "PERRY_PORT": "65150"
         },
         "front": {
           "front": 657984,
           "through": []
         },
-        "frontMs": 404,
+        "frontMs": 1238,
         "first": {
-          "ms": 3708,
+          "ms": 4458,
           "frontListed": true,
           "window": {
             "id": "window:657984:0",
-            "bytes": 599408,
+            "bytes": 465821,
             "isTheStandIn": false
           },
           "screen": {
-            "bytes": 593699
+            "bytes": 441254
           },
           "standInOpacityAfter": 1
         },
         "again": {
-          "ms": 3689,
+          "ms": 4314,
           "frontListed": true,
           "window": {
-            "id": "window:133066:0",
-            "bytes": 411812,
+            "id": "window:657984:0",
+            "bytes": 465821,
             "isTheStandIn": false
           },
           "screen": {
-            "bytes": 594527
+            "bytes": 438206
           },
           "standInOpacityAfter": 1
         },
@@ -59,55 +59,55 @@
     },
     "settingsReachIt": {
       "PERRY_HOME": "<home>",
-      "PERRY_PORT": "51538"
+      "PERRY_PORT": "65150"
     },
     "windowsPictureIsTheWindowInFront": {
-      "steady": false,
+      "steady": true,
       "rounds": [
         {
           "ok": true,
           "isTheFront": true,
           "frontListed": true,
           "clickThrough": false,
-          "windowBytes": 599408
+          "windowBytes": 465821
         },
         {
-          "ok": false,
-          "isTheFront": false,
+          "ok": true,
+          "isTheFront": true,
           "frontListed": true,
           "clickThrough": false,
-          "windowBytes": 411812
+          "windowBytes": 465821
         }
       ]
     },
     "windowsScreenPicture": [
-      593699,
-      594527
+      441254,
+      438206
     ],
     "windowsFrontLookup": {
       "front": true,
-      "ms": 404
+      "ms": 1238
     },
     "realPetTakesThePicture": {
       "forPerry": {
         "frontListed": true,
         "window": {
-          "id": "window:133066:0",
-          "bytes": 546458
+          "id": "window:657984:0",
+          "bytes": 622622
         },
-        "screen": 379398
+        "screen": 600550
       },
       "forOwner": {
         "frontListed": true,
         "window": {
-          "id": "window:133066:0",
-          "bytes": 547330
+          "id": "window:657984:0",
+          "bytes": 622622
         },
-        "screen": 375850
+        "screen": 600278
       }
     },
     "ownersPetUntouched": {
-      "before": 1
+      "before": 3
     }
   },
   "passed": true
