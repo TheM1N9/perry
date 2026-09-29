@@ -258,7 +258,9 @@ export const handle = httpAction(async (ctx, request) => {
         const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob, conversationId: access.conversationId } };
         const output = await bound.execute(parsed.data, { toolCallId: String(message.id), messages: [] });
         // A chat with someone else, read from the owner's own, is what they wrote: outside, like a web page.
-        const theirs = name === "read_chat" && await ctx.runQuery(internal.contacts.isTheirs, { chatId: String((parsed.data as { chatId?: string }).chatId ?? "") });
+        const theirs = (name === "read_chat" && await ctx.runQuery(internal.contacts.isTheirs, { chatId: String((parsed.data as { chatId?: string }).chatId ?? "") }))
+          // What someone told Perry about themselves is their word too.
+          || (name === "recall" && Boolean((output as { theySaid?: unknown[] } | null)?.theySaid?.length));
         if (READS_OUTSIDE.has(name) || theirs) {
           await ctx.runMutation(internal.codex.markOutside, { turnId: access.turnId });
           return reply(message.id, { content: [{ type: "text", text: JSON.stringify({ untrusted: UNTRUSTED, result: withHint(output) ?? null }) }] });

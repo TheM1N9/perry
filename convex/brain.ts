@@ -15,7 +15,7 @@ import { resumeOf } from "./engines";
 import { vChannel, vEngine, vTelegramMedia } from "./schema";
 
 /** Perry's own reminder, sent with each message from the owner, ahead of it. */
-const REMEMBER_NOTE = "# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or routine, their work and the projects, pages or channels they run, what they made or how something went), save it with remember in this reply, even when they only ask a question about it. Then answer.";
+const REMEMBER_NOTE = "# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or routine, their work and the projects, pages or channels they run, what they made or how something went), save it with remember in this reply, even when they only ask a question about it, naming in about anyone else it is about. Then answer.";
 
 /**
  * One turn, end to end: resolve the conversation, gather what the assistant
