@@ -11,6 +11,7 @@ import type * as channels from "../channels.js";
 import type * as codex from "../codex.js";
 import type * as composio from "../composio.js";
 import type * as connectorAccounts from "../connectorAccounts.js";
+import type * as contacts from "../contacts.js";
 import type * as conversations from "../conversations.js";
 import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
@@ -71,6 +72,7 @@ declare const fullApi: ApiFromModules<{
   codex: typeof codex;
   composio: typeof composio;
   connectorAccounts: typeof connectorAccounts;
+  contacts: typeof contacts;
   conversations: typeof conversations;
   crons: typeof crons;
   dashboard: typeof dashboard;

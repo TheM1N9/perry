@@ -484,6 +484,38 @@ export default defineSchema({
    * One row per chat Assistant talks in. Holds the durable mode and the id of the
    * Agent component thread that carries the message history.
    */
+  /**
+   * The people and groups Perry may talk with besides the owner, on Telegram and WhatsApp
+   * (contacts.ts), and the ones it knows of: WhatsApp's address book and groups, and whoever wrote.
+   * Nobody is talked to until the owner allows them, once.
+   */
+  contacts: defineTable({
+    channel: v.union(v.literal("telegram"), v.literal("whatsapp")),
+    /** The chat: a WhatsApp jid (person or group) or a Telegram chat id. */
+    externalId: v.string(),
+    kind: v.union(v.literal("person"), v.literal("group")),
+    name: v.string(),
+    /** How they are told apart, whatever name they give: a phone number, or a Telegram @username and id. */
+    handle: v.optional(v.string()),
+    /**
+     * known: in the address book, never talked with. pending: asked the owner. allowed: Perry talks
+     * with them. blocked: the owner said no; nothing they send reaches Perry.
+     */
+    status: v.union(v.literal("known"), v.literal("pending"), v.literal("allowed"), v.literal("blocked")),
+    /** What the owner lets Perry know and share with them, in the owner's words. Nothing else of the owner's is. */
+    brief: v.optional(v.string()),
+    /** Messages that came while the owner was asked, answered once they allow it. */
+    waiting: v.optional(v.array(v.object({ text: v.string(), from: v.string(), at: v.number() }))),
+    /** When a chat with them last passed something on to the owner (tell_owner), for a limit per hour. */
+    told: v.optional(v.array(v.number())),
+    /** A group's latest messages, for context when Perry is mentioned there. */
+    recent: v.optional(v.array(v.object({ text: v.string(), from: v.string(), at: v.number() }))),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_channel_external", ["channel", "externalId"])
+    .index("by_status", ["status", "updatedAt"]),
+
   conversations: defineTable({
     channel: vChannel,
     externalId: v.string(), // telegram chat id, or a unique web session id
@@ -529,6 +561,11 @@ export default defineSchema({
     checkpointedAt: v.optional(v.number()),
     /** A project chat: what Perry remembers here stays here, out of every other chat (memories.conversationId). */
     project: v.optional(v.boolean()),
+    /**
+     * A chat with someone other than the owner (a person or a group, contacts.ts): sealed off from
+     * everything of the owner's, with its own memory and no computer, keys or accounts.
+     */
+    contactId: v.optional(v.id("contacts")),
     /**
      * Web messages sent and not yet in the chat's history: from sendChat until
      * the turn is queued (codex.enqueueTurn), or kept in the history when it
@@ -749,8 +786,14 @@ export default defineSchema({
   approvals: defineTable({
     runnerId: v.id("runners"),
     conversationId: v.optional(v.id("conversations")),
-    /** "browser": a step in Perry's own browser that buys, sends or posts (lib/browser.ts, tools.ts). */
-    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser")),
+    /**
+     * "browser": a step in Perry's own browser that buys, sends or posts (lib/browser.ts, tools.ts).
+     * "contact": someone new wrote to Perry, or added it to a group; "message": Perry wants to write to
+     * someone for the first time (contacts.ts). Allowing either lets Perry talk with them from then on.
+     */
+    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message")),
+    /** For "contact" and "message": who. */
+    contactId: v.optional(v.id("contacts")),
     title: v.string(),
     detail: v.optional(v.string()),
     cwd: v.optional(v.string()),
@@ -831,6 +874,8 @@ export default defineSchema({
     checkpoint: v.optional(v.boolean()),
     /** Its prompt is not the owner's (a greeting after the welcome page): only the reply is saved to the chat. */
     hidden: v.optional(v.boolean()),
+    /** In a chat with someone other than the owner: the runner gives the engine no shell, files or computer, only Perry's guest tools. */
+    guest: v.optional(v.boolean()),
     /** The engine's model id to run this turn with. Unset means the engine's default. */
     requestedModel: v.optional(v.string()),
     /** Reasoning effort for the turn. Unset leaves it to the engine, as before thinking levels. */

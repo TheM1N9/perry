@@ -31,6 +31,8 @@ export default {
       // Each connection gets a code of its own, as WhatsApp gives.
       async requestPairingCode(phone) { await post("/code-requested", { phone }); return CODES[codesGiven++ % CODES.length]; },
       async readMessages() {},
+      // A group's name, as WhatsApp answers groupMetadata.
+      async groupMetadata(jid) { return { subject: `Group ${jid.split("@")[0].slice(-4)}` }; },
       async logout() { await post("/logout", {}); },
       end() { ended = true; },
     };

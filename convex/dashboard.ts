@@ -372,9 +372,11 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine: EngineKind; project: boolean; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine: EngineKind; project: boolean; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean } }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
+    // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
+    const contact = conversation.contactId ? await ctx.db.get(conversation.contactId) : null;
     const isRunning = await isBusy(ctx, conversation);
     const latestRun = await ctx.db.query("runs")
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
@@ -397,6 +399,7 @@ export const getChat = query({
       // The flush before /reset works quietly.
       streaming: running?.flush || running?.checkpoint ? undefined : running?.partial,
       lastError: latestRun?.status === "error" ? latestRun.error : undefined,
+      ...(contact ? { contact: { name: contact.name, group: contact.kind === "group" } } : {}),
     };
   },
 });
@@ -651,6 +654,8 @@ export const sendChat = mutation({
     const attachmentIds = args.attachmentIds ?? [];
     if (text.length === 0 && attachmentIds.length === 0) return null;
     const chat = ownerChat(await ctx.db.get(args.id));
+    // What is written here would reach them as Perry's; the owner tells Perry what to say in their own chat.
+    if (chat.contactId) throw new Error("This is Perry's chat with someone else. To have Perry tell them something, ask in your own chat.");
     const messageKey = args.messageKey?.trim() || crypto.randomUUID();
     const attachments = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
     if (attachments.some((attachment) => !attachment || attachment.conversationId !== args.id || attachment.messageKey !== messageKey)) {
