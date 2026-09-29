@@ -26,6 +26,7 @@ import * as lib_auth from "../convex/lib/auth";
 import * as lib_browser from "../convex/lib/browser";
 import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
+import * as lib_devices from "../convex/lib/devices";
 import * as lib_embed from "../convex/lib/embed";
 import * as lib_engines from "../convex/lib/engines";
 import * as lib_errors from "../convex/lib/errors";
@@ -85,6 +86,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/browser": lib_browser,
   "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
+  "lib/devices": lib_devices,
   "lib/embed": lib_embed,
   "lib/engines": lib_engines,
   "lib/errors": lib_errors,

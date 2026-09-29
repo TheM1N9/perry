@@ -5,6 +5,7 @@ import {
   PaletteIcon, PencilIcon, SearchIcon, TerminalIcon, XIcon, type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from "motion/react";
+import { catchError, type ErrorInfo } from "next/error";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -105,19 +106,47 @@ export function PetScreen() {
   useClickThrough();
 
   if (!ready) return null;
-  if (!session) {
-    return (
-      <Stage bubble={<Bubble title="I'm locked out." detail="Start me with perry pet, and I'll have the key." />}>
-        <Body mood="idle" asleep={false} onClick={() => {}} />
-      </Stage>
-    );
-  }
+  if (!session) return <LockedOut />;
   return (
     <SessionContext.Provider value={session}>
-      <Pet />
+      <PetErrorBoundary>
+        <Pet />
+      </PetErrorBoundary>
     </SessionContext.Provider>
   );
 }
+
+function LockedOut({ detail = "Start me with perry pet on Perry's computer, or pair me from its Settings → Desktop pet, and I'll have the key." }: { detail?: string }) {
+  return (
+    <Stage bubble={<Bubble title="I'm locked out." detail={detail} />}>
+      <Body mood="idle" asleep={false} onClick={() => {}} />
+    </Stage>
+  );
+}
+
+/**
+ * A query that fails throws while he renders. His key refused (the dashboard
+ * key changed, or this computer was removed from Perry's Settings): he says
+ * so, and stays out of the way. Anything else, he says what, and tries again
+ * in a moment.
+ */
+function PetErrorFallback(_props: object, { error, reset }: ErrorInfo) {
+  const message = errorText(error);
+  const locked = /dashboard key|DASHBOARD_KEY|removed from Perry|cannot call/i.test(message);
+  useEffect(() => {
+    if (locked) return;
+    const timer = window.setTimeout(reset, 15_000);
+    return () => window.clearTimeout(timer);
+  }, [locked, reset]);
+  if (locked) return <LockedOut detail={/removed from Perry/.test(message) ? message : undefined} />;
+  return (
+    <Stage bubble={<Bubble title="Something went wrong" detail={message.slice(0, 200)} />}>
+      <Body mood="idle" asleep={false} onClick={reset} />
+    </Stage>
+  );
+}
+
+const PetErrorBoundary = catchError(PetErrorFallback);
 
 /**
  * Only what is marked data-solid takes the pointer. The window hears the
@@ -269,6 +298,9 @@ function Pet() {
   }, [key, setTimezone]);
 
   // How long the owner has been away, once a minute, for the server, which then sends reminders to the phone.
+  // Refused (this computer removed from Perry's Settings, or the key changed), he is locked out from then on.
+  const [refused, setRefused] = useState<string | null>(null);
+  if (refused) throw new Error(refused);
   useEffect(() => {
     const bridge = window.perryPet;
     if (!bridge) return;
@@ -278,7 +310,9 @@ function Pet() {
       idleNow.current = seconds;
       if (Date.now() - lastReport >= 60_000) {
         lastReport = Date.now();
-        void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current, lookKeyNow.current) }).catch(() => {});
+        void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current, lookKeyNow.current) }).catch((error: unknown) => {
+          if (/dashboard key|removed from Perry/i.test(errorText(error))) setRefused(errorText(error));
+        });
       }
     };
     void check();

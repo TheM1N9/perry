@@ -30,10 +30,11 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, hostname, networkInterfaces } from "node:os";
+import { homedir, hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { standing, type UpdateRequest, type UpdateResult } from "../convex/lib/checkout";
+import { reachableAddresses } from "../convex/lib/devices";
 import { HOME, PATHS, readRunnerConfig, writeRunnerConfig } from "../runner/home";
 import { bold, dim, done, green, red, run, spinner, tail, yellow } from "./lib";
 
@@ -83,26 +84,28 @@ export function readEnvFile(): Record<string, string> {
   return values;
 }
 
+/**
+ * Where the dashboard listens. By default on every address this computer
+ * has, as Next.js does, so a phone, and another computer's runner or desktop
+ * pet, can reach it over the local network or Tailscale, each with its own
+ * key. PERRY_HOST (in .env.local, or the environment) narrows it:
+ * 127.0.0.1 for this computer alone. Perry's own runner and pet reach it at
+ * 127.0.0.1, so that, or 0.0.0.0, are the two that make sense.
+ */
+const HOST = process.env.PERRY_HOST ?? readEnvFile().PERRY_HOST;
+const loopbackOnly = () => /^(127\.0\.0\.1|localhost|::1)$/.test(HOST ?? "");
+
 const dashboardUrl = (host = "localhost") => `http://${host}:${PORT}`;
 
 /**
  * The dashboard on this machine's other addresses, for opening it from a phone
- * or another computer: its LAN addresses, and its Tailscale one (100.64.0.0/10)
- * marked as such. The dashboard listens on all of them.
+ * or another computer: its Tailscale one (100.64.0.0/10) marked as such, and
+ * its LAN addresses. The dashboard listens on all of them, unless PERRY_HOST
+ * has it listen on this computer alone.
  */
 function networkUrls(): string[] {
-  const urls: string[] = [];
-  for (const [name, addresses] of Object.entries(networkInterfaces())) {
-    // Adapters only this machine can reach: Hyper-V and WSL, Docker, VirtualBox, VMware, and bridges.
-    if (/^(vEthernet|docker|br-|veth|virbr|vboxnet|VirtualBox|VMware)/i.test(name)) continue;
-    for (const address of addresses ?? []) {
-      if (address.family !== "IPv4" || address.internal || address.address.startsWith("169.254.")) continue;
-      const [a, b] = address.address.split(".").map(Number);
-      const tailscale = a === 100 && b >= 64 && b <= 127;
-      urls.push(`${dashboardUrl(address.address)}${tailscale ? dim(" (Tailscale)") : ""}`);
-    }
-  }
-  return urls;
+  if (loopbackOnly()) return [];
+  return reachableAddresses().map(({ address, tailscale }) => `${dashboardUrl(address)}${tailscale ? dim(" (Tailscale)") : ""}`);
 }
 
 /** Where the dashboard is: on this machine, then its other addresses on one line, for a phone or another computer. */
@@ -205,7 +208,7 @@ async function runForeground() {
     { name: "runner", argv: [process.execPath, join(REPO, "runner", "index.ts")], env: childEnv, failures: 0, startedAt: 0 },
     // PERRY_BUN: the dashboard can start `perry pet` itself (Settings → Desktop pet), and Bun runs it.
     // PERRY_SUPERVISOR: this process, which does the updates the dashboard asks for (convex/updates.ts).
-    { name: "dashboard", argv: [nodePath(), NEXT_CLI, "start", "-p", String(PORT)], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT), PERRY_BUN: process.execPath, PERRY_SUPERVISOR: String(process.pid) }, failures: 0, startedAt: 0 },
+    { name: "dashboard", argv: [nodePath(), NEXT_CLI, "start", "-p", String(PORT), ...(HOST ? ["-H", HOST] : [])], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT), PERRY_BUN: process.execPath, PERRY_SUPERVISOR: String(process.pid) }, failures: 0, startedAt: 0 },
   ];
   let stopping = false;
   // Stopped for an update: not started again until it is done.

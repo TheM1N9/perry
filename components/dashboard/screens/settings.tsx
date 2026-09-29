@@ -26,6 +26,7 @@ import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ACCESS_ICONS } from "../chat/composer";
 import { PetControl } from "../pet-control";
+import { PetDevices } from "../pet-devices";
 import { Shortcuts } from "../shortcuts";
 import { Updates } from "../updates";
 import { ActionButton, CommandLine, CopyButton, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
@@ -337,7 +338,7 @@ function DesktopPet() {
           setPicked(value);
           void setTheme({ key: dashboardKey, theme: value }).catch((cause) => { setPicked(null); toast.error(errorText(cause)); });
         }} />
-        <p className="text-sm text-muted-foreground">His light or dark look, kept in <code className="font-mono text-[0.9em]">pet.json</code>. He changes at once.</p>
+        <p className="text-sm text-muted-foreground">His light or dark look on this computer, kept in <code className="font-mono text-[0.9em]">pet.json</code>. He changes at once; on your other computers he follows their system&apos;s.</p>
       </div>
       <div className="mt-4 flex items-start gap-3">
         <Switch id="screen-look" checked={screenLook ?? true} disabled={screenLook === undefined} className="mt-0.5"
@@ -349,6 +350,7 @@ function DesktopPet() {
           <p className="mt-0.5 text-pretty text-muted-foreground">In a chat, when your question is about something on screen. What he saw shows in the chat, and he says so on the pet. Never in scheduled jobs or background work.</p>
         </div>
       </div>
+      <PetDevices />
     </Section>
   );
 }
