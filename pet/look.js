@@ -51,15 +51,17 @@ function run(argv) {
 
 /**
  * The app macOS asks about and lists under Screen Recording: the .app his
- * window runs in, Electron's own (pet/node_modules/electron). It keeps its
- * name and its signature from one version to the next, so what the owner
- * allowed stays allowed after `perry update`.
+ * window runs in, Electron's own (pet/node_modules/electron). Electron's
+ * downloads are signed ad hoc, so macOS knows this build by its hash: what
+ * the owner allowed stays allowed while Electron stays the same, through
+ * `perry update` and reinstalls, but a new version of Electron is a new app
+ * to it, still listed, and switched on, under the same name.
  */
 export const MAC_APP = process.execPath.match(/([^/]+)\.app\/Contents\/MacOS\//)?.[1] ?? "Electron";
 /** System Settings, open where the owner allows it. */
 export const SCREEN_RECORDING_SETTINGS = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
 /** What the owner (and Perry, when he asked to look) is told while macOS does not let him see the screen. */
-const NOT_ALLOWED = `Perry can't see the screen yet: macOS has to allow it. In System Settings → Privacy & Security → Screen & System Audio Recording (Screen Recording before macOS 15), turn on “${MAC_APP}”, the app the desktop pet runs in. Then restart the pet: Restart, in his tray icon's menu. If macOS offers to Quit & Reopen, choose Later: that would open ${MAC_APP} without him.`;
+const NOT_ALLOWED = `Perry can't see the screen yet: macOS has to allow “${MAC_APP}”, the app the desktop pet runs in. Turn it on in System Settings → Privacy & Security → Screen & System Audio Recording (Screen Recording before macOS 15); if it is on already (a Perry update brought a new ${MAC_APP}), remove it with −, then look again and allow it. Then restart the pet: Restart, in his tray icon's menu (not macOS's Quit & Reopen, which would open ${MAC_APP} without him).`;
 
 /**
  * Which window is in front, asked as the picture is taken: `ask` answers.

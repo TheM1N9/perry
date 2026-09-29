@@ -33,6 +33,12 @@ jobs:
         run: pnpm install --dir pet --frozen-lockfile
       - if: runner.os == 'macOS'
         run: bun artifacts/screen-look/look.ts "$RUNNER_TEMP/screen-look"
+      - if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: screen-look-macos
+          path: ${{ runner.temp }}/screen-look
+          if-no-files-found: ignore
 
   # The landing page in site/ is a separate Next.js app with its own lockfile.
   site:

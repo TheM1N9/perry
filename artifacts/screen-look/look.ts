@@ -20,9 +20,11 @@ import { fileURLToPath } from "node:url";
 //   2. The message names the wrong app (the pet's package name, or the
 //      terminal): it must be the .app Electron runs from, and that app must
 //      be Electron's own, com.github.Electron.
-//   3. What the owner allowed is lost at the next Electron update: Electron's
-//      designated requirement must name its identifier and team only, not a
-//      version or a hash of this build.
+//   3. What the owner allowed is lost at the next Electron update, and the
+//      owner is not told what to do about it: while Electron's designated
+//      requirement is a hash of this build (its downloads are signed ad hoc;
+//      the first CI run found so), the message must say what to do when it
+//      is on already.
 //   4. Started by `perry pet`, the pet is the terminal's for macOS, not its
 //      own app: it must be started through `open` (its parent is launchd),
 //      and where sudo is allowed, `launchctl procinfo` must name Electron as
@@ -36,7 +38,9 @@ import { fileURLToPath } from "node:url";
 //      everything) or empty, or his window stays see-through: on Windows it
 //      must be the one in front as user32 says, apart from Perry (or, when
 //      that one cannot be pictured, one that does not let clicks through),
-//      and the screen more than 20 KB. Asked twice, the same answer.
+//      and the screen more than 20 KB; on a Mac that allows it (CI's, for
+//      what its agent starts directly), the app put in front. Asked twice,
+//      the same answer.
 //   8. The real pet (pet/main.js, started by the same launch against a
 //      stand-in /pet page) does not hand his page what look.js says, for
 //      Perry's tool or for the owner's button; or on a Mac, after macOS has
@@ -126,8 +130,9 @@ try {
     const id = text(["defaults", "read", join(bundle, "Contents", "Info"), "CFBundleIdentifier"]);
     const requirement = text(["codesign", "-d", "-r-", bundle]);
     check("macAppIsElectronsOwn", bundle.endsWith("/Electron.app") && id === "com.github.Electron", { bundle: bundle.replace(REPO, "<repo>"), id });
-    // What TCC keeps with a permission: an identifier and a team hold across versions; a cdhash would not.
-    check("permissionOutlivesUpdates", /identifier "com\.github\.Electron"/.test(requirement) && /subject\.OU/.test(requirement) && !/cdhash/.test(requirement), requirement);
+    // What macOS keeps with a permission: an identifier and a team hold across versions; a hash (cdhash) holds for this build only.
+    notes.designatedRequirement = requirement.split("\n")[0];
+    notes.permissionHoldsForThisBuildOnly = /cdhash/.test(requirement);
     if (process.env.CI) {
       // A throwaway machine: an app of its own in front, to know which the lookup must name.
       spawnSync("open", ["-a", "Calculator"]);
@@ -156,11 +161,18 @@ try {
       check("macSaysWhatToAllow", rounds.every((round) => !round.threw && round.needs === "screen-recording" && round.ms < 5_000
         && round.error?.includes(`“${report.macApp}”`) && round.error.includes("Privacy & Security") && round.error.includes("Screen Recording") && /restart/i.test(round.error)), rounds);
       check("macNamesTheAppItRunsIn", report.macApp === "Electron" && report.execPath.includes("Electron.app/Contents/MacOS/"), report.macApp);
+      check("saysWhatToDoAfterAnElectronUpdate", !notes.permissionHoldsForThisBuildOnly || Boolean(report.first?.error?.includes("on already") && report.first.error.includes("remove it with −")));
     }
     notes.screenAccess = report.screenAccess;
     // The way it was started before this fix, from this terminal: who macOS held responsible then.
     const direct = await probe(program.path, "directly, as before");
-    notes.directlyAsBefore = { ppid: direct.report?.ppid, responsible: direct.responsible, screenAccess: direct.report?.screenAccess, first: direct.report?.first && { needs: direct.report.first.needs, window: Boolean(direct.report.first.window), screen: direct.report.first.screen?.bytes } };
+    notes.directlyAsBefore = { ppid: direct.report?.ppid, responsible: direct.responsible, screenAccess: direct.report?.screenAccess, front: direct.report?.front, rounds: [direct.report?.first, direct.report?.again] };
+    // On CI the machine's own agent may hold Screen Recording, and then so does what it starts directly: the
+    // picture itself, on a real Mac, must be of the app put in front (Calculator), with the whole screen.
+    if (process.env.CI && direct.report?.screenAccess === "granted") {
+      check("macPictureWhenAllowed", [direct.report.first, direct.report.again].every((round) => round && !round.threw && !round.error && round.frontListed === true
+        && round.window?.name === "Calculator" && !round.window.isTheStandIn && round.window.bytes > 3_000 && (round.screen?.bytes ?? 0) > 20_000 && round.standInOpacityAfter === 1), notes.directlyAsBefore);
+    }
   }
 
   if (windows) {
