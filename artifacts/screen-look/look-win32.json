@@ -1,0 +1,114 @@
+{
+  "ranAt": "2026-09-29T21:21:33.881Z",
+  "platform": "win32 x64",
+  "checks": {
+    "settingsReachIt": true,
+    "windowsPictureIsTheWindowInFront": true,
+    "windowsScreenPicture": true,
+    "windowsFrontLookup": true,
+    "hisWindowNeverInThePicture": true,
+    "realPetTakesThePicture": true,
+    "ownersPetUntouched": true
+  },
+  "notes": {
+    "electron": "<repo>\\pet\\node_modules\\.pnpm\\electron@44.4.5\\node_modules\\electron\\dist\\electron.exe",
+    "launched": {
+      "report": {
+        "pid": 104604,
+        "ppid": 60280,
+        "execPath": "<repo>\\pet\\node_modules\\.pnpm\\electron@44.4.5\\node_modules\\electron\\dist\\electron.exe",
+        "macApp": "Electron",
+        "env": {
+          "PERRY_HOME": "<home>",
+          "PERRY_PORT": "51538"
+        },
+        "front": {
+          "front": 657984,
+          "through": []
+        },
+        "frontMs": 404,
+        "first": {
+          "ms": 3708,
+          "frontListed": true,
+          "window": {
+            "id": "window:657984:0",
+            "bytes": 599408,
+            "isTheStandIn": false
+          },
+          "screen": {
+            "bytes": 593699
+          },
+          "standInOpacityAfter": 1
+        },
+        "again": {
+          "ms": 3689,
+          "frontListed": true,
+          "window": {
+            "id": "window:133066:0",
+            "bytes": 411812,
+            "isTheStandIn": false
+          },
+          "screen": {
+            "bytes": 594527
+          },
+          "standInOpacityAfter": 1
+        },
+        "done": true
+      },
+      "responsible": null
+    },
+    "settingsReachIt": {
+      "PERRY_HOME": "<home>",
+      "PERRY_PORT": "51538"
+    },
+    "windowsPictureIsTheWindowInFront": {
+      "steady": false,
+      "rounds": [
+        {
+          "ok": true,
+          "isTheFront": true,
+          "frontListed": true,
+          "clickThrough": false,
+          "windowBytes": 599408
+        },
+        {
+          "ok": false,
+          "isTheFront": false,
+          "frontListed": true,
+          "clickThrough": false,
+          "windowBytes": 411812
+        }
+      ]
+    },
+    "windowsScreenPicture": [
+      593699,
+      594527
+    ],
+    "windowsFrontLookup": {
+      "front": true,
+      "ms": 404
+    },
+    "realPetTakesThePicture": {
+      "forPerry": {
+        "frontListed": true,
+        "window": {
+          "id": "window:133066:0",
+          "bytes": 546458
+        },
+        "screen": 379398
+      },
+      "forOwner": {
+        "frontListed": true,
+        "window": {
+          "id": "window:133066:0",
+          "bytes": 547330
+        },
+        "screen": 375850
+      }
+    },
+    "ownersPetUntouched": {
+      "before": 1
+    }
+  },
+  "passed": true
+}
