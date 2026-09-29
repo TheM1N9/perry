@@ -1,0 +1,163 @@
+{
+  "ranAt": "2026-09-29T21:27:54.473Z",
+  "model": "gpt-6-luna",
+  "checks": {
+    "pageListsEverySkill": true,
+    "pageSaysWhereEachCameFrom": true,
+    "pageFlagsOneThatCannotLoad": true,
+    "openShowsSkillMd": true,
+    "addressOpensSkill": true,
+    "removeDeletesOnlyThatSkill": true,
+    "dollarListsSkills": true,
+    "enterFinishesTheName": true,
+    "sentMessageMarksTheSkill": true,
+    "codexGetsTheSkillItem": true,
+    "codexPutsSkillMdBeforeTheModel": true,
+    "otherEnginesAreToldWhichSkillMd": true,
+    "removedSkillReachesNoEngine": true,
+    "telegramMessageUsesTheSkill": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "pageListsEverySkill": [
+      "broken-skill",
+      "e2e-codeword",
+      "trip-planner",
+      "weekly-review"
+    ],
+    "pageSaysWhereEachCameFrom": [
+      {
+        "name": "broken-skill",
+        "text": "broken-skill\nNot loaded\nIts SKILL.md names no skill (lowercase letters, digits and hyphens), so the engines pass it over.\nWritten by Perry · Added 30 Sept 2026\nRemove"
+      },
+      {
+        "name": "e2e-codeword",
+        "text": "e2e-codeword\nAnswers with the end-to-end code word.\nWritten by Perry · Added 30 Sept 2026\nRemove"
+      },
+      {
+        "name": "trip-planner",
+        "text": "trip-planner\nPlans a trip day by day, with trains before flights.\nImported from C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-skills-page-OaBbCQ\\downloads\\trip-planner · Added 30 Sept 2026\nRemove"
+      },
+      {
+        "name": "weekly-review",
+        "text": "weekly-review\nWrites the owner's weekly review the way they like it.\nWritten by Perry · Added 30 Sept 2026\nRemove"
+      }
+    ],
+    "pageFlagsOneThatCannotLoad": "broken-skill\nNot loaded\nIts SKILL.md names no skill (lowercase letters, digits and hyphens), so the engines pass it over.\nWritten by Perry · Added 30 Sept 2026\nRemove",
+    "openShowsSkillMd": {
+      "url": "?skill=trip-planner",
+      "text": "From\nImported from C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-skills-page-OaBbCQ\\downloads\\trip-planner\nAdded\n30 Sept 2026\nFile\nC:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-skills-page-OaBbCQ\\skills\\trip-planner\\SKILL.md\n\nSKILL.md\n\nyaml\nname: trip-planner\ndescription: Plans a trip day by day, with trains before flights.\n\nSteps\nAsk for the dates.\nPrefer trains under six hours.",
+      "yaml": "name: trip-planner\ndescription: Plans a trip day by day, with trains before flights.\n"
+    },
+    "addressOpensSkill": "From\nWritten by Perry in a chat, or put in his skills folder by hand.\nAdded\n30 Sept 2026\nFile\nC:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-skills-page-OaBbCQ\\skills\\weekly-review\\SKILL.md\n\nSKILL.md\n\nyaml\nname: weekly-review\ndescription: Writes the owner's weekly review the way they like it.\n\n\nStart with what shipped, then what slipped. See references/format.md.\n\nAlso in its folder\n\nreferences/format.m",
+    "removeDeletesOnlyThatSkill": {
+      "asked": "Remove weekly-review?\n\nIts folder is deleted from this computer, and Perry stops using it from the next message. Perry wrote it, so it cannot be got back unless you have a copy.\n\nKeep it\nRemove",
+      "refused": [
+        "..: Error: skills:remove: That is not a skill's folder.",
+        "../skills: Error: skills:remove: That is not a skill's folder.",
+        ".perry-source.json: Error: skills:remove: That is not a skill's folder.",
+        "not-a-skill: Error: skills:remove: There is no skill in not-a-skill any more."
+      ],
+      "left": [
+        "broken-skill",
+        "e2e-codeword",
+        "not-a-skill",
+        "trip-planner"
+      ]
+    },
+    "dollarListsSkills": {
+      "all": {
+        "label": "Skills",
+        "items": [
+          "$e2e-codeword",
+          "$trip-planner"
+        ]
+      },
+      "narrowed": {
+        "label": "Skills",
+        "items": [
+          "$e2e-codeword"
+        ]
+      }
+    },
+    "enterFinishesTheName": {
+      "finished": "Please $e2e-codeword ",
+      "sentEarly": 0
+    },
+    "sentMessageMarksTheSkill": {
+      "mentions": [
+        "e2e-codeword"
+      ],
+      "text": "You said\nPlease $e2e-codeword and tell me the code word. It costs $5.\n2:57",
+      "href": "/skills?skill=e2e-codeword"
+    },
+    "codexGetsTheSkillItem": {
+      "thread": "01a0ef10-dad3-77f1-bda1-97e9191897e5",
+      "skillItems": [
+        {
+          "type": "skill",
+          "name": "e2e-codeword",
+          "path": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-skills-page-OaBbCQ\\skills\\e2e-codeword\\SKILL.md"
+        }
+      ],
+      "text": [
+        "# Right now\n\nIt is now Wednesday, 30 September 2026 at 02:57 in Asia/Calcutta (UTC+05:30).\n\n# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a perso",
+        "Please $e2e-codeword and tell me the code word. It costs $5."
+      ]
+    },
+    "codexPutsSkillMdBeforeTheModel": {
+      "injected": [
+        "<skill>\n<name>e2e-codeword</name>\n<path>C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-skills-page-OaBbCQ\\skills\\e2e-codeword\\SKILL.md</path>\n---\nname: e2e-codeword\ndescription: Answers with the end-to-end code word.\n---\n\n# The code word\n\nWhen this skill is used, reply with exactly: PERRY-SKILL-MUN6SUQJ\n\n</skill>"
+      ]
+    },
+    "codexTurn": {
+      "model": "gpt-6-luna",
+      "status": "error",
+      "error": "You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Oct 4th, 2026 3:01 AM."
+    },
+    "otherEnginesAreToldWhichSkillMd": "Use $trip-planner for Goa, and $weekly-review after.\n\nThe owner named a skill for this message. Before anything else, read its SKILL.md and follow it:\n- $trip-planner: C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-skills-page-OaBbCQ\\skills\\trip-planner\\SKILL.md",
+    "removedSkillReachesNoEngine": "Use $trip-planner for Goa, and $weekly-review after.\n\nThe owner named a skill for this message. Before anything else, read its SKILL.md and follow it:\n- $trip-planner: C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-skills-page-OaBbCQ\\skills\\trip-planner\\SKILL.md",
+    "telegramMessageUsesTheSkill": {
+      "skillItems": [
+        {
+          "type": "skill",
+          "name": "e2e-codeword",
+          "path": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-skills-page-OaBbCQ\\skills\\e2e-codeword\\SKILL.md"
+        }
+      ],
+      "injected": 1,
+      "telegramSaid": [
+        "That broke: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Oct 4th, 2026 3:01 AM"
+      ]
+    },
+    "noPageErrors": [],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  C:\\Users\\Pranav\\AppData\\Local\\Temp\\perry-skills-page-OaBbCQ\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  using $e2e-codeword\u001b[0m",
+      "\u001b[33m  could not name a chat: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Oct 4th, 2026 3:01 AM.\u001b[0m",
+      "\u001b[2m  saved turn kpnxbzfpefq9s71p8afehve6y2\u001b[0m",
+      "\u001b[2m  using $trip-planner\u001b[0m",
+      "\u001b[33m  could not name a chat: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Oct 4th, 2026 3:01 AM.\u001b[0m",
+      "\u001b[2m  saved turn hq7bjqn39gbrh4aga4ret00ktp\u001b[0m",
+      "\u001b[2m  using $e2e-codeword\u001b[0m",
+      "\u001b[2m  saved turn hxpjp2vs042t4d724bwd2ycqw0\u001b[0m"
+    ],
+    "serverErrors": [
+      "[perry] skills:remove failed: Error: That is not a skill's folder.",
+      "[perry] skills:remove failed: Error: That is not a skill's folder.",
+      "[perry] skills:remove failed: Error: That is not a skill's folder.",
+      "[perry] skills:remove failed: Error: There is no skill in not-a-skill any more."
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

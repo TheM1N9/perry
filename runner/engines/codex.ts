@@ -6,7 +6,7 @@ import {
 } from "../codex";
 import {
   optionOf, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineRequest, type EngineStatus,
-  type ItemStatus, type LoginFlow, type QuickTurn, type TokenUsage, type TurnHandle, type TurnInput, type TurnResult, type TurnSink,
+  type ItemStatus, type LoginFlow, type NamedSkill, type QuickTurn, type TokenUsage, type TurnHandle, type TurnInput, type TurnResult, type TurnSink,
 } from "../engine";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
@@ -167,6 +167,8 @@ export class CodexEngine implements Engine {
     quickTurns: true,
     // One app-server runs any number of threads' turns.
     concurrentTurns: true,
+    // A skill named in a message goes as a `skill` item of its input.
+    skills: true,
   };
 
   private app: CodexAppServer | null = null;
@@ -331,7 +333,7 @@ export class CodexEngine implements Engine {
   }
 
   async runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult> {
-    const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments, guest } = input;
+    const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments, guest, skills } = input;
     const app = await this.ensure();
     const broken = guest ? [] : await app.reloadSkills(cwd).catch(() => []);
     const machine = describeMachine();
@@ -402,7 +404,7 @@ export class CodexEngine implements Engine {
     if (!threadId) await sink.onSession(id);
     // The next new chat is most likely started the same way (the same instructions, access and folder): have its thread ready.
     if (!threadId && !history) this.keepSpare(app, start);
-    const turnInput = userInput(prompt, attachments, recalled);
+    const turnInput = userInput(prompt, attachments, recalled, skills);
     // Deltas can arrive before turn/start answers, so match them by thread.
     const written = new Map<string, string>();
     let latest = "";
@@ -480,8 +482,8 @@ export class CodexEngine implements Engine {
    * Fails with "no active turn to steer" once the turn has ended, and when the
    * turn is no longer the active one.
    */
-  async steer(handle: TurnHandle, steer: { prompt: string; attachments: EngineAttachment[] }): Promise<void> {
-    await (await this.ensure()).steer(handle.cursor, handle.turnId, steer.prompt, steer.attachments);
+  async steer(handle: TurnHandle, steer: { prompt: string; attachments: EngineAttachment[]; skills?: NamedSkill[] }): Promise<void> {
+    await (await this.ensure()).steer(handle.cursor, handle.turnId, steer.prompt, steer.attachments, steer.skills);
   }
 
   async interrupt(handle: TurnHandle): Promise<void> {
