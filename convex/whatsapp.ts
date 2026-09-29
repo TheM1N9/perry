@@ -4,6 +4,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { chunkWhatsApp, toWhatsApp } from "./lib/whatsappFormat";
+import { callsBy, whatsappHandle } from "./contacts";
+import { readPersona } from "./persona";
 
 /**
  * WhatsApp, as a linked device (Baileys, the WhatsApp Web protocol), the way
@@ -191,15 +193,27 @@ export const stop = internalMutation({
 // --- The outbox --------------------------------------------------------------
 
 /**
- * Queue a message for the owner's WhatsApp chat: Markdown turned into
- * WhatsApp's formatting and split to its length. Only ever the owner.
+ * Who a message may go to: the owner, or someone the owner allowed Perry to
+ * talk with (contacts.ts). Nobody else, ever. Their jid, or null.
+ */
+async function recipient(ctx: QueryCtx, to: string): Promise<string | null> {
+  const owner = await install(ctx);
+  const jid = bareJid(to);
+  if (owner?.whatsappOwner && jid === owner.whatsappOwner) return jid;
+  const contact = await ctx.db.query("contacts").withIndex("by_channel_external", (q) => q.eq("channel", "whatsapp").eq("externalId", jid)).unique();
+  return contact?.status === "allowed" ? jid : null;
+}
+
+/**
+ * Queue a message for a WhatsApp chat: Markdown turned into WhatsApp's
+ * formatting and split to its length. Only the owner, or someone they allowed.
  */
 export async function queueText(ctx: MutationCtx, to: string, markdown: string): Promise<boolean> {
-  const owner = await install(ctx);
-  if (!owner?.whatsappOwner || bareJid(to) !== owner.whatsappOwner) return false;
+  const jid = await recipient(ctx, to);
+  if (!jid) return false;
   const now = Date.now();
   for (const [index, text] of chunkWhatsApp(toWhatsApp(markdown)).entries()) {
-    await ctx.db.insert("whatsappOutbox", { to: owner.whatsappOwner, kind: "text", text, state: "pending", createdAt: now + index, attempts: 0 });
+    await ctx.db.insert("whatsappOutbox", { to: jid, kind: "text", text, state: "pending", createdAt: now + index, attempts: 0 });
   }
   return true;
 }
@@ -210,7 +224,7 @@ export const send = internalMutation({
   handler: async (ctx, args) => await queueText(ctx, args.to, args.text),
 });
 
-/** A file for the owner: a picture, video or voice note shows as one, anything else as a document. */
+/** A file for the owner: a picture, video or voice note shows as one, anything else as a document. Only ever the owner's. */
 export const sendFile = internalMutation({
   args: { to: v.string(), storageId: v.optional(v.string()), localPath: v.optional(v.string()), fileName: v.string(), contentType: v.string() },
   returns: v.boolean(),
@@ -228,10 +242,8 @@ export const typing = internalMutation({
   args: { to: v.string() },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const owner = await install(ctx);
-    if (owner?.whatsappOwner && bareJid(args.to) === owner.whatsappOwner) {
-      await ctx.db.insert("whatsappOutbox", { to: owner.whatsappOwner, kind: "typing", state: "pending", createdAt: Date.now(), attempts: 0 });
-    }
+    const jid = await recipient(ctx, args.to);
+    if (jid) await ctx.db.insert("whatsappOutbox", { to: jid, kind: "typing", state: "pending", createdAt: Date.now(), attempts: 0 });
     return null;
   },
 });
@@ -287,6 +299,55 @@ export const authorize = internalMutation({
 
 const vIncomingMedia = v.object({ base64: v.string(), fileName: v.string(), contentType: v.string() });
 
+export const ownerClaimed = internalQuery({
+  args: {},
+  returns: v.boolean(),
+  handler: async (ctx) => Boolean((await install(ctx))?.whatsappOwner && (await linkRow(ctx))?.wanted),
+});
+
+/** How Perry is called by name: its own, as a word ("Perry, …", "hey perry"). */
+export const nameOf = internalQuery({ args: {}, returns: v.string(), handler: async (ctx) => (await readPersona(ctx)).name });
+
+/**
+ * A message in a chat that is not the owner's own with Perry (server/whatsapp.ts):
+ * a group, or, linked as the owner, anyone else's chat with them. Whether it
+ * is for Perry: in a group on Perry's own number, a mention or a reply to it,
+ * or its name; linked as the owner, only its name, since the chat is the
+ * owner's. contacts.ts does the rest.
+ */
+export const receiveOther = internalAction({
+  args: {
+    chatId: v.string(), group: v.boolean(), groupName: v.optional(v.string()),
+    from: v.string(), fromName: v.optional(v.string()), fromOwner: v.boolean(),
+    mentionsLinked: v.boolean(), repliesToLinked: v.boolean(), text: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const state: { mode?: string; owner?: string; claimed: boolean } = await ctx.runQuery(internal.whatsapp.otherState, {});
+    if (!state.claimed) return null;
+    const name: string = await ctx.runQuery(internal.whatsapp.nameOf, {});
+    const self = state.mode === "self";
+    const owner = args.fromOwner || (Boolean(state.owner) && bareJid(args.from) === state.owner);
+    const addressed = callsBy(name, args.text) || (!self && args.group && (args.mentionsLinked || args.repliesToLinked));
+    await ctx.runAction(internal.contacts.inbound, {
+      channel: "whatsapp", chatId: bareJid(args.chatId), kind: args.group ? "group" : "person",
+      ...(args.groupName ? { chatName: args.groupName } : {}),
+      from: { handle: whatsappHandle(args.from), ...(args.fromName ? { name: args.fromName } : {}), ...(owner ? { owner: true } : {}) },
+      text: args.text, addressed,
+    });
+    return null;
+  },
+});
+
+export const otherState = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<{ mode?: string; owner?: string; claimed: boolean }> => {
+    const link = await linkRow(ctx);
+    const owner = await install(ctx);
+    return { mode: link?.mode, owner: owner?.whatsappOwner, claimed: Boolean(owner?.whatsappOwner && link?.wanted) };
+  },
+});
+
 /**
  * A message from WhatsApp, as server/whatsapp.ts received it: the owner's, or
  * a claim; an answer to an approval waiting in this chat; or a turn.
@@ -296,6 +357,17 @@ export const receive = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => {
     const who: "owner" | "claimed" | "ignore" = await ctx.runMutation(internal.whatsapp.authorize, { chatId: args.chatId, text: args.text });
+    if (who === "ignore") {
+      // Someone other than the owner, writing to Perry's own number: contacts.ts decides whether Perry answers.
+      if (await ctx.runQuery(internal.whatsapp.ownerClaimed, {})) {
+        await ctx.runAction(internal.contacts.inbound, {
+          channel: "whatsapp", chatId: bareJid(args.chatId), kind: "person",
+          from: { handle: whatsappHandle(args.chatId), ...(args.name ? { name: args.name } : {}) },
+          text: args.media?.length && !args.text ? "(sent a file, which you cannot open here)" : args.text, addressed: true,
+        });
+      }
+      return null;
+    }
     if (who !== "owner") return null;
     const chatId = bareJid(args.chatId);
     // "1", "2" or "3" (or yes, no, always) answers an approval asked in this chat.

@@ -48,6 +48,16 @@ const kindOf = (memory: Memory): Kind => memory.kind ?? "core";
  * chat (a project chat's own). Without a chat, only what belongs everywhere.
  */
 const visibleIn = (memory: Memory, chat?: Id<"conversations">) => !memory.conversationId || memory.conversationId === chat;
+/**
+ * What a chat may see of memory. A chat with someone other than the owner
+ * (contacts.ts) sees only what was saved in it: nothing of the owner's, and
+ * nothing of anyone else's.
+ */
+async function seenFrom(ctx: { db: QueryCtx["db"] }, chat?: Id<"conversations">): Promise<(memory: Memory) => boolean> {
+  const conversation = chat ? await ctx.db.get(chat) : null;
+  if (conversation?.contactId) return (memory) => memory.conversationId === chat;
+  return (memory) => visibleIn(memory, chat);
+}
 const vChat = v.optional(v.id("conversations"));
 
 function view(memory: Memory) {
@@ -136,13 +146,14 @@ export const search = internalQuery({
   handler: async (ctx, args) => {
     const limit = Math.min(args.limit ?? 8, MAX_RESULTS);
     const query = args.query.trim();
+    const seen = await seenFrom(ctx, args.chat);
     const docs = query.length === 0
       ? args.kind
         ? await layer(ctx, args.kind, limit)
         : await ctx.db.query("memories").withIndex("by_created").order("desc").take(limit * 2)
       : await ctx.db.query("memories").withSearchIndex("search_text", (q) => q.search("text", query)).take(limit * 2);
     return docs
-      .filter((memory) => !memory.supersededBy && (!args.kind || kindOf(memory) === args.kind) && (args.everywhere || visibleIn(memory, args.chat)))
+      .filter((memory) => !memory.supersededBy && (!args.kind || kindOf(memory) === args.kind) && (args.everywhere || seen(memory)))
       .slice(0, limit)
       .map(view);
   },
@@ -152,7 +163,8 @@ export const getMany = internalQuery({
   args: { ids: v.array(v.id("memories")), chat: vChat },
   handler: async (ctx, args) => {
     const docs = await Promise.all(args.ids.map((id) => ctx.db.get(id)));
-    return docs.filter((memory): memory is Memory => Boolean(memory && !memory.supersededBy && visibleIn(memory, args.chat))).map(view);
+    const seen = await seenFrom(ctx, args.chat);
+    return docs.filter((memory): memory is Memory => Boolean(memory && !memory.supersededBy && seen(memory))).map(view);
   },
 });
 
@@ -165,7 +177,7 @@ export const read = internalQuery({
       ? (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", args.day ?? today)).take(200))
           .filter((memory) => !memory.supersededBy)
       : await layer(ctx, args.kind);
-    return docs.filter((memory) => visibleIn(memory, args.chat)).map(view);
+    return docs.filter(await seenFrom(ctx, args.chat)).map(view);
   },
 });
 
@@ -228,8 +240,9 @@ export const vectors = internalQuery({
   args: { chat: vChat },
   handler: async (ctx, args): Promise<Array<{ id: Memory["_id"]; vector: string }>> => {
     const rows = await ctx.db.query("memories").withIndex("by_created").order("desc").take(5000);
+    const seen = await seenFrom(ctx, args.chat);
     return rows
-      .filter((memory) => !memory.supersededBy && memory.vector && memory.vectorModel === EMBED_MODEL && visibleIn(memory, args.chat))
+      .filter((memory) => !memory.supersededBy && memory.vector && memory.vectorModel === EMBED_MODEL && seen(memory))
       .map((memory) => ({ id: memory._id, vector: memory.vector! }));
   },
 });
@@ -290,7 +303,7 @@ export const embedMissing = internalAction({
 export const bootstrap = internalQuery({
   args: { chat: vChat },
   handler: async (ctx, args) => {
-    const seen = (memory: Memory) => visibleIn(memory, args.chat);
+    const seen = await seenFrom(ctx, args.chat);
     const daily = async (d: string) => (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", d)).collect())
       .filter((memory) => !memory.supersededBy && seen(memory));
     return {
@@ -453,11 +466,13 @@ export const openThreads = internalQuery({
 });
 
 export const removeMany = internalMutation({
-  args: { ids: v.array(v.string()) },
+  /** From a chat: only what that chat may see can go (seenFrom). */
+  args: { ids: v.array(v.string()), chat: vChat },
   returns: v.object({ deleted: v.number(), missing: v.array(v.string()) }),
   handler: async (ctx, args) => {
     let deleted = 0;
     const missing: string[] = [];
+    const seen = args.chat ? await seenFrom(ctx, args.chat) : () => true;
 
     for (const raw of args.ids) {
       const id = ctx.db.normalizeId("memories", raw);
@@ -466,7 +481,7 @@ export const removeMany = internalMutation({
         continue;
       }
       const doc = await ctx.db.get(id);
-      if (!doc) {
+      if (!doc || !seen(doc)) {
         missing.push(raw);
         continue;
       }

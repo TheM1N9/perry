@@ -19,14 +19,26 @@ import type { Runtime } from "./runtime";
  * sent from here, in order and unhurried.
  *
  * WhatsApp does not allow automating an account and may ban the number; the
- * owner chose to take that on. Talking only to the owner, never first to a
- * stranger and never in bursts, is what keeps the risk down.
+ * owner chose to take that on. Never in bursts, never first to a stranger
+ * without the owner's yes, keeps the risk down.
+ *
+ * Other people (convex/contacts.ts): what they write, in a direct chat or a
+ * group, goes to whatsapp.receiveOther with who wrote it and whether Perry was
+ * mentioned; Perry answers only whom the owner allowed. Linked as the owner,
+ * everyone else's chats are the owner's, so there Perry speaks only when
+ * called by name. WhatsApp's address book and groups are passed on too, so
+ * "message Datta" finds Datta.
  */
 
 const AUTH_DIR = join(HOME, "whatsapp", "auth");
 const MEDIA_LIMIT = 20 * 1024 * 1024;
-/** No event for this long and the connection is presumed dead (OpenClaw's watchdog). */
-const QUIET_MS = 30 * 60_000;
+/**
+ * Nothing at all from WhatsApp's servers for this long and the connection is
+ * presumed dead (OpenClaw's watchdog). Baileys pings every 30 seconds and every
+ * answer counts, so this fires only on a socket that has gone silent without
+ * closing, never on an account where nobody happens to write for a while.
+ */
+const QUIET_MS = Number(process.env.PERRY_WHATSAPP_QUIET_MS ?? 30 * 60_000);
 /**
  * How long a QR or code keeps being refreshed with nobody using it. WhatsApp
  * shows a QR for a minute, then new ones every 20 seconds, then closes the
@@ -48,11 +60,17 @@ export const SELF_MARK = "🤖 ";
 /** The slice of a Baileys socket this uses, so a test can stand in for WhatsApp (PERRY_WHATSAPP_DRIVER). */
 export type Socket = {
   ev: { on(event: string, listener: (data: any) => void): void };
+  /** The WebSocket underneath, which emits "frame" for everything WhatsApp's servers send, the keep-alive answers included. */
+  ws?: { on(event: string, listener: (...args: any[]) => void): unknown };
   user?: { id: string; lid?: string; name?: string };
   sendMessage(jid: string, content: object): Promise<unknown>;
   sendPresenceUpdate(presence: "composing" | "paused" | "available", jid?: string): Promise<void>;
   requestPairingCode(phone: string): Promise<string>;
   readMessages?(keys: object[]): Promise<void>;
+  /** A group's name and members. */
+  groupMetadata?(jid: string): Promise<{ subject?: string }>;
+  /** Every group this account is in. */
+  groupFetchAllParticipating?(): Promise<Record<string, { id: string; subject?: string }>>;
   logout(): Promise<void>;
   end(error?: Error): void;
 };
@@ -172,7 +190,9 @@ export function runWhatsApp(runtime: Runtime): () => void {
             if (row.kind === "typing") {
               await socket.sendPresenceUpdate("composing", row.to);
             } else if (row.kind === "text" && row.text) {
-              const text = mode === "self" ? `${SELF_MARK}${row.text}` : row.text;
+              // Only in the owner's own chat, where it tells Perry's messages from theirs; to anyone else it writes as it is.
+              const own = [bare(socket.user?.id), bare(socket.user?.lid)].filter(Boolean);
+              const text = mode === "self" && own.includes(bare(row.to)) ? `${SELF_MARK}${row.text}` : row.text;
               const sent = await socket.sendMessage(row.to, { text }) as { key?: { id?: string } } | undefined;
               if (sent?.key?.id) sentIds.add(sent.key.id);
               await socket.sendPresenceUpdate("paused", row.to).catch(() => {});
@@ -208,20 +228,65 @@ export function runWhatsApp(runtime: Runtime): () => void {
   const onChange = (tables: string[]) => { if (tables.includes("whatsappOutbox")) void flush(); };
   runtime.events.on("change", onChange);
 
+  /** Group names, asked of WhatsApp once each. */
+  const groupNames = new Map<string, string>();
+  async function groupName(jid: string): Promise<string | undefined> {
+    if (!groupNames.has(jid) && socket?.groupMetadata) {
+      const subject = await socket.groupMetadata(jid).then((meta) => meta.subject, () => undefined);
+      if (subject) groupNames.set(jid, subject);
+    }
+    return groupNames.get(jid);
+  }
+
+  /**
+   * A message in a chat that is not the owner's own with Perry: someone else's
+   * direct message (linked as the owner), or a group. Who wrote it, and whether
+   * it was for Perry, go with it; contacts.ts decides the rest.
+   */
+  async function handleOther(message: Record<string, any>, mode: "self" | "separate", remote: string, mine: string[]) {
+    const key = message.key ?? {};
+    const group = remote.endsWith("@g.us");
+    // In a group, WhatsApp's own echo of what Perry wrote as its own number is not news.
+    if (mode === "separate" && key.fromMe) return;
+    const inner = message.message?.ephemeralMessage?.message ?? message.message ?? {};
+    const context = inner.extendedTextMessage?.contextInfo ?? inner.imageMessage?.contextInfo ?? inner.videoMessage?.contextInfo ?? {};
+    const mentioned = ((context.mentionedJid ?? []) as string[]).map(bare);
+    const quoted = bare(context.participant);
+    const text = textOf(message.message) || (mediaOf(message.message) ? "(sent a file, which you cannot open here)" : "");
+    if (!text) return;
+    // Who wrote it: the owner, linked as them and writing from their phone; else the sender, by number when WhatsApp gives it.
+    const sender = key.fromMe ? bare(socket?.user?.id) : bare(group ? key.participantAlt ?? key.participant : key.remoteJidAlt ?? remote);
+    await runtime.runAction("whatsapp:receiveOther", {
+      chatId: bare(group ? remote : remote.endsWith("@lid") && key.remoteJidAlt ? key.remoteJidAlt : remote),
+      group,
+      ...(group ? { groupName: await groupName(remote) } : {}),
+      from: sender,
+      ...(message.pushName && !key.fromMe ? { fromName: String(message.pushName) } : {}),
+      fromOwner: Boolean(key.fromMe),
+      mentionsLinked: mentioned.some((jid) => mine.includes(jid)),
+      repliesToLinked: Boolean(quoted) && mine.includes(quoted),
+      text,
+    }, internal).catch((error) => console.error(`[perry] WhatsApp message failed: ${error instanceof Error ? error.message : String(error)}`));
+  }
+
   async function handle(message: Record<string, any>, mode: "self" | "separate") {
     const key = message.key ?? {};
     const id = key.id as string | undefined;
     const remote = key.remoteJid as string | undefined;
     if (!id || !remote || seen.has(id) || sentIds.has(id)) return;
     remember(seen, id);
-    // Groups, broadcasts and status updates are never Perry's to answer.
-    if (remote.endsWith("@g.us") || remote.endsWith("@broadcast") || remote === "status@broadcast" || remote.endsWith("@newsletter")) return;
+    // Broadcasts, status updates and channels are never Perry's to answer.
+    if (remote.endsWith("@broadcast") || remote === "status@broadcast" || remote.endsWith("@newsletter")) return;
     const me = socket?.user;
     const mine = [bare(me?.id), bare(me?.lid)].filter(Boolean);
+    if (remote.endsWith("@g.us") || (mode === "self" && !mine.includes(bare(remote)))) {
+      await handleOther(message, mode, remote, mine);
+      return;
+    }
     let chatId: string;
     if (mode === "self") {
-      // Only the owner's "Message yourself" chat, and only what they typed there.
-      if (!key.fromMe || !mine.includes(bare(remote))) return;
+      // The owner's "Message yourself" chat, and only what they typed there.
+      if (!key.fromMe) return;
       if (textOf(message.message).startsWith(SELF_MARK.trim())) return;
       chatId = bare(me?.id);
     } else {
@@ -280,6 +345,8 @@ export function runWhatsApp(runtime: Runtime): () => void {
         let opened = false;
         let showing = false;
         lastEvent = Date.now();
+        // Any frame is a sign of life: only messages counted before, so a quiet account reconnected every half hour.
+        current.ws?.on("frame", () => { lastEvent = Date.now(); });
         current.ev.on("connection.update", (update: { connection?: string; qr?: string; lastDisconnect?: { error?: unknown } }) => {
           lastEvent = Date.now();
           if (update.qr) {
@@ -301,6 +368,10 @@ export function runWhatsApp(runtime: Runtime): () => void {
             linkingSince = null;
             failures = 0;
             console.log("[perry] WhatsApp: connected");
+            void current.groupFetchAllParticipating?.().then((groups) => {
+              for (const group of Object.values(groups)) if (group.subject) groupNames.set(group.id, group.subject);
+              learn(Object.values(groups).map((group) => ({ externalId: group.id, kind: "group" as const, name: group.subject })));
+            }).catch(() => {});
             void report("connected", { me: current.user?.id ?? "" }).then(() => flush());
           }
           if (update.connection === "close") {
@@ -310,6 +381,19 @@ export function runWhatsApp(runtime: Runtime): () => void {
             closed(d.loggedOut(update) ? "logged-out" : code === RESTART_REQUIRED ? "restart" : !opened && showing ? "refresh" : "dropped");
           }
         });
+        // WhatsApp's address book and groups, so a contact can be found by name (contacts.learn).
+        const learn = (items: Array<{ externalId: string; kind: "person" | "group"; name?: string; handle?: string }>) => {
+          if (items.length) void runtime.runMutation("contacts:learn", { items: items.map((item) => ({ channel: "whatsapp", ...item })) }, internal).catch(() => {});
+        };
+        const people = (list: Array<{ id?: string; name?: string; notify?: string; verifiedName?: string; phoneNumber?: string }>) => learn(list
+          .filter((contact) => contact.id && (contact.id.endsWith("@s.whatsapp.net") || contact.id.endsWith("@lid")))
+          .map((contact) => {
+            const phone = contact.id!.endsWith("@s.whatsapp.net") ? contact.id! : contact.phoneNumber ?? contact.id!;
+            const digits = bare(phone).split("@")[0];
+            return { externalId: bare(phone), kind: "person" as const, name: contact.name ?? contact.notify ?? contact.verifiedName, ...(/^\d+$/.test(digits) ? { handle: `+${digits}` } : {}) };
+          }));
+        current.ev.on("contacts.upsert", (list: never[]) => people(list));
+        current.ev.on("messaging-history.set", (history: { contacts?: never[] }) => people(history.contacts ?? []));
         current.ev.on("messages.upsert", (event: { type: string; messages: Array<Record<string, any>> }) => {
           lastEvent = Date.now();
           // "append" is history caught up after a reconnect: read, not answered (as OpenClaw does).

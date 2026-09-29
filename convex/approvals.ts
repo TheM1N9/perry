@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
 import { answerCallback, editButtons, sendButtons, type Buttons } from "./lib/telegram";
@@ -8,6 +8,7 @@ import { escapeHtml } from "./lib/telegramFormat";
 import { authenticate, policyOf, type Policy } from "./runner";
 import { targetOf, type Target } from "./channels";
 import { presenceOf } from "./todos";
+import { readPersona } from "./persona";
 
 /**
  * Approvals for what a runner is asked to do on the owner's machine: a command
@@ -266,6 +267,10 @@ async function settleRow(ctx: MutationCtx, row: Doc<"approvals">, answer: { appr
     decidedAt: now,
     ...(ruleId ? { ruleId } : {}),
   });
+  // Someone Perry may now talk with, or not (contacts.ts).
+  if ((row.kind === "contact" || row.kind === "message") && row.contactId) {
+    await ctx.scheduler.runAfter(0, internal.contacts.decided, { contactId: row.contactId, kind: row.kind, approved: answer.approved && answer.by !== "timeout", ...(answer.by === "timeout" ? { expired: true } : {}) });
+  }
   if (row.telegramMessageId) await ctx.scheduler.runAfter(0, internal.approvals.showOutcomeOnTelegram, { id: row._id });
 }
 
@@ -351,6 +356,28 @@ export const decisionOf = internalMutation({
   },
 });
 
+// --- Other people ----------------------------------------------------------
+
+/**
+ * Someone new wrote to Perry ("contact"), or Perry wants to write to someone
+ * it has not talked with ("message"): asked like a command, where the owner
+ * is (never in the chat with that person), and answered once for good
+ * (contacts.decided). No computer is involved, but a request belongs to a
+ * runner, so it is the one there is; with none, nothing can be asked, and
+ * this returns null.
+ */
+export async function askAboutContact(ctx: MutationCtx, args: { kind: "contact" | "message"; contactId: Id<"contacts">; title: string; detail?: string; conversationId?: Id<"conversations"> }): Promise<Id<"approvals"> | null> {
+  const runnerId = (await ctx.db.query("runners").first())?._id;
+  if (!runnerId) return null;
+  const id = await ctx.db.insert("approvals", {
+    runnerId, kind: args.kind, contactId: args.contactId, title: args.title.slice(0, 900), detail: args.detail?.slice(0, 1000),
+    ...(args.conversationId ? { conversationId: args.conversationId } : {}),
+    status: "pending", createdAt: Date.now(),
+  });
+  await ask(ctx, id);
+  return id;
+}
+
 // --- Asking the owner ---------------------------------------------------
 
 /** Ask where the request's conversation speaks, and see whether the owner is around to answer it there. */
@@ -390,7 +417,10 @@ export const escalate = internalMutation({
 
 // --- Telegram ------------------------------------------------------------
 
-const ASK = { command: "run", file: "change files", write: "write a file", browser: "do this in its browser" } as const;
+const ASK = { command: "run", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone" } as const;
+/** Who is asking: the computer for what runs on it, Perry itself for talking with people. */
+const asker = async (ctx: QueryCtx, row: Doc<"approvals">) =>
+  row.kind === "contact" || row.kind === "message" ? (await readPersona(ctx)).name : (await ctx.db.get(row.runnerId))?.name;
 
 type View = Doc<"approvals"> & { runner: string; chat?: string };
 
@@ -399,9 +429,8 @@ export const view = internalQuery({
   handler: async (ctx, args): Promise<View | null> => {
     const row = await ctx.db.get(args.id);
     if (!row) return null;
-    const runner = await ctx.db.get(row.runnerId);
     const chat = row.conversationId ? await ctx.db.get(row.conversationId) : null;
-    return { ...row, runner: runner?.name ?? "A runner", chat: chat?.title };
+    return { ...row, runner: (await asker(ctx, row)) ?? "A runner", chat: chat?.title };
   },
 });
 
@@ -643,7 +672,7 @@ export const pending = query({
       .order("desc")
       .take(20);
     return await Promise.all(rows.map(async (row) => {
-      const runner = await ctx.db.get(row.runnerId);
+      const runner = await asker(ctx, row);
       const chat = row.conversationId ? await ctx.db.get(row.conversationId) : null;
       return {
         id: row._id,
@@ -651,7 +680,7 @@ export const pending = query({
         title: row.title,
         detail: row.detail,
         cwd: row.cwd,
-        runner: runner?.name ?? "a runner",
+        runner: runner ?? "a runner",
         chat: chat ? { id: chat._id, title: chat.title ?? "Untitled chat" } : undefined,
         review: row.review,
         alwaysAllow: row.alwaysAllow ? describeRule(row.alwaysAllow, row.cwd) : undefined,
