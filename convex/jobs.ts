@@ -34,6 +34,40 @@ const ASKED = "asked:";
 /** At the end of a line, on its own or after the question: models put it either way. */
 const ASKED_LINE = /[ \t]*\basked:[ \t]*([a-z0-9]+)[ \t]*$/gim;
 
+/** A thread the owner left open (memories.openThreads), and a to-do as it stands (todos.forFollowUps). */
+type Thread = { id: string; day?: string; text: string; todo?: string };
+/** waiting: due later than now, or done, so there is nothing to ask about it yet, or any more. */
+type TodoState = { title: string; state: string; waiting: boolean };
+
+/** Short words that say nothing of what a plan is about. */
+const FILLER = new Set(["the", "and", "for", "with", "about", "from", "into", "onto", "owner", "plan", "plans", "planned", "will", "need", "needs", "some", "more", "get", "got", "his", "her", "their", "them", "they", "this", "that", "today", "tomorrow", "tonight", "around"]);
+const wordsOf = (text: string) => (text.toLowerCase().match(/\p{L}{3,}/gu) ?? []).filter((word) => !FILLER.has(word));
+/**
+ * How surely a note is about a to-do: how many words of the to-do's that carry meaning it has, or 0
+ * when it lacks one of them, give or take an ending ("restocking" for "restock").
+ */
+function about(note: string, title: string): number {
+  const said = wordsOf(note);
+  const wanted = wordsOf(title);
+  return wanted.every((word) => said.some((other) => other.startsWith(word.slice(0, 5)) || word.startsWith(other.slice(0, 5)))) ? wanted.length : 0;
+}
+
+/**
+ * What the to-do list says of a thread: its own to-do, for one linked to it
+ * (openThreads leaves out one still to come or done), or else a to-do it looks
+ * to be about, so an old note the owner has since moved is weighed by the move.
+ * skip: it is surely about to-dos that are all due later or done (two words of
+ * a title or more, so a "Gym" to-do does not hide every note about the gym),
+ * and the heartbeat is not given it to ask about.
+ */
+function onTheList(thread: Thread, todos: TodoState[]): { says: string; skip: boolean } {
+  if (thread.todo) return { says: ` (its to-do: ${thread.todo})`, skip: false };
+  const same = todos.map((todo) => ({ todo, words: about(thread.text, todo.title) })).filter((match) => match.words > 0);
+  const skip = same.length > 0 && same.every((match) => match.todo.waiting && match.words >= 2);
+  const says = same.length ? ` (looks like the to-do ${same.slice(0, 2).map(({ todo }) => `"${todo.title}": ${todo.state}`).join("; or ")})` : "";
+  return { says, skip };
+}
+
 type Builtin = "heartbeat" | "daily-summary" | "consolidate";
 
 /**
@@ -61,7 +95,7 @@ const BUILTINS: Array<{ builtin: Builtin; name: string; schedule: string; prompt
       "This is your scheduled daily summary, not a message from the owner.",
       "Read the conversations listed below with read_chat, only what was said in them since the time given, and the notes of the days they cover with read_memory.",
       "Then write down everything the owner told you about their life that is not in memory yet, with remember: the people they mentioned and who they are to them, dates and birthdays, plans and appointments, things they have to do or decide, their health, routine, work and projects, what they made or did, and how things went. What stays true goes to kind=core; what happened and plans go to kind=daily. One self-contained note per fact, with names and dates in full; skip only what memory already says and small talk (\"yo\", \"continue\").",
-      "A thread left open is something the owner was going to do, hear back about or decide (a call, an interview, an offer): save each with tags [\"open\"], saying when it happens if they said. When today's conversations settle a thread an earlier open note holds, remember how it turned out as a daily note without the tag, superseding that note.",
+      "A thread left open is something the owner was going to do, hear back about or decide (a call, an interview, an offer): save each with tags [\"open\"], saying when it happens if they said, and when it is also on the to-do list (list_todos), with that to-do's id as todoId, so the note follows the to-do as it moves or is done. When today's conversations settle a thread an earlier open note holds, remember how it turned out as a daily note without the tag, superseding that note.",
       "Standing preferences and durable facts can also go straight to kind=profile or kind=core, superseding what they replace.",
       "USER.md is left to the nightly consolidation.",
       `This job never delivers anything to the owner: when done, deliver nothing by replying with exactly ${QUIET}.`,
@@ -249,12 +283,20 @@ export const run = internalAction({
     }
     // The heartbeat and a briefing follow up on what the owner left open, the way a friend asks how it went.
     if (job.builtin === "heartbeat" || (job.schedule && !job.builtin)) {
-      const threads: Array<{ id: string; day?: string; text: string }> = await ctx.runQuery(internal.memories.openThreads, {});
+      // A note can be older than the owner's latest word on it: the to-do list is kept as they move and tick things off.
+      const todos: TodoState[] = await ctx.runQuery(internal.todos.forFollowUps, {});
+      const left: Thread[] = await ctx.runQuery(internal.memories.openThreads, {});
+      const threads = left.map((thread) => ({ thread, list: onTheList(thread, todos) })).filter(({ list }) => !list.skip);
       if (threads.length) {
-        context += `\n\nThreads the owner left open, from your notes:\n${threads.map((thread) => `- [${thread.day ?? "?"}] ${thread.text} (${thread.id})`).join("\n")}\n` +
+        context += `\n\nThreads the owner left open, from your notes:\n${threads.map(({ thread, list }) => `- [${thread.day ?? "?"}] ${thread.text} (${thread.id})${list.says}`).join("\n")}\n` +
           "If the moment for one has passed and nothing since says how it went, ask about it: one short, warm question, the way a friend would (\"How did the dentist call go?\"), about one thread at most. " +
           "Leave alone what has not happened yet, and anything they would rather not be asked about. " +
           `When you ask, end your reply with a last line of exactly "${ASKED} <its id>", which is removed before they see it.`;
+      }
+      if (todos.length) {
+        context += `\n\nThe owner's to-do list as it stands now. It changes as they move and tick things off, so it is their latest word on any plan on it, and a note in memory can be out of date:\n${todos.map((todo) => `- ${todo.title}: ${todo.state}`).join("\n")}\n` +
+          "When a thread or a note is about something on this list, go by the to-do, whatever time the note gave: one due later than now has not happened yet, and one that is done is settled, so do not ask about either. " +
+          "The to-do list reminds them of each to-do when it is due; do not remind them of to-dos here.";
       }
     }
     // A recurring job of the owner's may be their briefing: it hears about what Perry alerted them to since

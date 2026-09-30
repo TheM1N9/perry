@@ -1,0 +1,7 @@
+{
+  "name": "perry-look-probe",
+  "private": true,
+  "description": "The pet's own picture-taking (pet/look.js) in real Electron, for artifacts/screen-look/look.ts.",
+  "type": "module",
+  "main": "main.js"
+}
