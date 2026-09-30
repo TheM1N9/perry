@@ -9,6 +9,7 @@ import {
   type SDKUserMessage, type SpawnOptions, type SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk";
 import { ACCESSES } from "../../convex/lib/commands";
+import { updateOf } from "../../convex/lib/engines";
 import type {
   Access, Engine, EngineAttachment, EngineCapabilities, EngineItem, EngineModel, EngineRequest, EngineStatus, ItemStatus, ItemType,
   LoginFlow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
@@ -16,6 +17,7 @@ import type {
 import { toolsOfChat } from "../engine";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
+import { updateCommand } from "../versions";
 import { killTree } from "./process";
 
 /**
@@ -350,7 +352,9 @@ export class ClaudeEngine implements Engine {
     }
     try {
       const path = binary.sdkPath ?? binary.prefix.at(-1) ?? binary.command;
-      if (this.version?.path !== path || Date.now() - this.version.at > VERSION_TTL_MS) {
+      // One too old for Perry is asked again at every look, so its update is seen at once.
+      const tooOld = updateOf({ kind: "claude", version: this.version?.value })?.need === "required";
+      if (this.version?.path !== path || tooOld || Date.now() - this.version.at > VERSION_TTL_MS) {
         const { stdout } = await run(binary, ["--version"]);
         this.version = { path, value: stdout.trim().split(/\s+/)[0] || undefined, at: Date.now() };
       }
@@ -361,6 +365,7 @@ export class ClaudeEngine implements Engine {
         kind: "claude",
         installed: true,
         version: this.version.value,
+        update: updateCommand("claude", path),
         signedIn,
         // Signed out, it says "none"; that is no account.
         auth: signedIn ? {
@@ -375,7 +380,7 @@ export class ClaudeEngine implements Engine {
           : "Runs through the official Claude Code, on the account it is signed in with.",
       };
     } catch (error) {
-      return { kind: "claude", installed: true, version: this.version?.value, signedIn: false, auth: {}, models: [], error: message(error) };
+      return { kind: "claude", installed: true, version: this.version?.value, signedIn: false, auth: {}, models: [], error: message(error), update: updateCommand("claude", binary.sdkPath ?? binary.prefix.at(-1) ?? binary.command) };
     }
   }
 

@@ -95,6 +95,10 @@ export const vEngineStatus = v.object({
   /** What to do next, such as "Run `grok login` on this computer". */
   message: v.optional(v.string()),
   error: v.optional(v.string()),
+  /** The newest release of the engine's CLI, as that computer last looked it up. */
+  latest: v.optional(v.string()),
+  /** The command that updates the CLI there, for the way it was installed. */
+  update: v.optional(v.string()),
 });
 /** A sign-in or sign-out the owner asked for from Settings, until the runner has done it. */
 export const vEngineAuth = v.object({
