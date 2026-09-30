@@ -625,6 +625,11 @@ export default defineSchema({
     editedAt: v.optional(v.number()),
     /** The one chat it belongs to (a project chat's own memory), out of every other chat. Unset: everywhere. */
     conversationId: v.optional(v.id("conversations")),
+    /**
+     * Who it is about, besides the owner: names, as the owner calls them ("Datta", "Arjun"). What
+     * Settings → People shows for each person. Where it may be seen is still conversationId's to say.
+     */
+    about: v.optional(v.array(v.string())),
     /** Its meaning as a vector, for search by meaning (lib/embed.ts): base64 float32, and the model that made it. */
     vector: v.optional(v.string()),
     vectorModel: v.optional(v.string()),
