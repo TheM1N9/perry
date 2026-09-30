@@ -10,7 +10,7 @@ import { useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/components/dashboard/chat/markdown";
 import { StatusIndicator } from "@/components/dashboard/status-indicator";
-import { describe } from "@/convex/lib/shortcuts";
+import { describe, holdProblem } from "@/convex/lib/shortcuts";
 import { Empty } from "./empty";
 import { Listening, MicButton, type Voice } from "./voice";
 
@@ -42,7 +42,7 @@ export async function keepPicture(image: string): Promise<{ path: string; fileNa
   return { path: body.path, fileName, size: file.size };
 }
 
-export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey, byHotkey, sendSignal, onTalk, onTalkSend, onTalkCancel, shot, onShot, onLook, lookKeys }: {
+export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey, hold, byHotkey, sendSignal, onTalk, onTalkSend, onTalkCancel, shot, onShot, onLook, lookKeys }: {
   chatId: PetChatId;
   onChatId: (id: PetChatId) => void;
   draft: string;
@@ -51,6 +51,8 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   /** Talking to him, where his window can hear (not in a plain browser). */
   voice?: Voice;
   hotkey?: string | null;
+  /** Why the hotkey can only be tapped, where holding it does not work (pet/voice.js). */
+  hold?: string | null;
   /** Whether he is listening because of the hotkey, which is let go of to send, or the mic button. */
   byHotkey: boolean;
   /** Bumped when what was said is to go at once, as the hotkey sends it. */
@@ -177,7 +179,10 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
       <div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 pt-3 pb-2 [scrollbar-width:thin] [&_.prose-chat]:text-[13.5px] [&_.prose-chat]:leading-[1.6]" aria-live="polite">
         {!chatId && (<div className="flex min-h-full flex-col justify-center pb-3">
           <Empty title="What can I do for you?" awake className="pt-0">
-            {voice && hotkey ? <>Type, or hold <kbd className="rounded border bg-muted px-1 font-mono text-[11px]">{keys(hotkey)}</kbd> anywhere and talk.</> : "I know your chats and memory, and work on this computer."}
+            {voice && hotkey ? (holdProblem(hold)
+              ? <>Type, or tap <kbd className="rounded border bg-muted px-1 font-mono text-[11px]">{keys(hotkey)}</kbd> anywhere, talk, and tap it again.</>
+              : <>Type, or hold <kbd className="rounded border bg-muted px-1 font-mono text-[11px]">{keys(hotkey)}</kbd> anywhere and talk.</>)
+              : "I know your chats and memory, and work on this computer."}
           </Empty>
           <div className="flex flex-wrap justify-center gap-1.5 px-2">
             {SUGGESTIONS.map((text) => (
@@ -271,7 +276,9 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
         </div>
         {voice?.state === "listening" && (
           <p className="mt-1 px-1 text-[11.5px] text-muted-foreground">
-            {byHotkey && hotkey ? `Listening. Let go of ${keys(hotkey)}, or press it again, to send; Esc to stop.` : "Listening. Send when you're done, and it goes into the box to check; Esc to stop."}
+            {!byHotkey || !hotkey ? "Listening. Send when you're done, and it goes into the box to check; Esc to stop."
+              : holdProblem(hold) ? `Listening. Press ${keys(hotkey)} again to send; Esc to stop. ${holdProblem(hold)}`
+                : `Listening. Let go of ${keys(hotkey)}, or press it again, to send; Esc to stop.`}
           </p>
         )}
         {(error || voice?.error) && <p className="mt-1 px-1 text-[12px] text-destructive">{error || voice?.error}</p>}
