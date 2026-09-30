@@ -122,6 +122,9 @@ export type EngineStatus = {
   /** What the owner should do next, such as "Run `grok login` on this computer". */
   message?: string;
   error?: string;
+  /** The newest release of its CLI, as last looked up, and the command that updates it here (runner/versions.ts adds both). */
+  latest?: string;
+  update?: string;
 };
 
 export type LoginFlow = {

@@ -55,7 +55,7 @@ import { getFunctionName, type FunctionArgs, type FunctionReference, type Functi
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { ACCESS_LABELS, runLabel } from "../convex/lib/commands";
-import { ENGINE_LABELS } from "../convex/lib/engines";
+import { ENGINE_LABELS, refusal, updateOf } from "../convex/lib/engines";
 import { skillsNamedIn } from "../convex/lib/skills";
 import {
   optionOf, skillNote, type Access, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type NamedSkill, type PerryTools,
@@ -66,6 +66,7 @@ import { review } from "./review";
 import { nameChat } from "./title";
 import { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig, type RunnerConfig } from "./home";
 import { TurnTrace } from "./trace";
+import { withVersions } from "./versions";
 import { TURN_IDLE_MIN, TURN_MAX_MIN } from "../convex/lib/turnLimits";
 
 const CONFIG_DIR = HOME;
@@ -277,9 +278,23 @@ async function main() {
   const statuses = new Map<EngineKind, EngineStatus>();
   const probeEngines = async () => {
     const found = await Promise.all([...engines.values()].map((engine) => engine.status()
-      .catch((error): EngineStatus => ({ kind: engine.kind, installed: false, signedIn: false, auth: {}, models: [], error: message(error) }))));
-    for (const status of found) statuses.set(status.kind, status);
+      .catch((error): EngineStatus => ({ kind: engine.kind, installed: false, signedIn: false, auth: {}, models: [], error: message(error) }))
+      // With the newest release known and the command that updates it; never waiting to look it up.
+      .then(withVersions)));
+    for (const status of found) {
+      // Said here once, when an engine is found too old for Perry; Settings says it until it is updated.
+      const update = updateOf(status);
+      const before = statuses.get(status.kind);
+      if (update?.need === "required" && (!before || updateOf(before)?.need !== "required")) console.log(yellow(`  ${refusal(ENGINE_LABELS[status.kind], update)}`));
+      statuses.set(status.kind, status);
+    }
     await client.mutation(api.engines.report, { token, engines: found });
+  };
+  /** An engine older than Perry works with, as its last probe found: it takes no turns until it is updated. */
+  const tooOld = (kind: EngineKind) => {
+    const status = statuses.get(kind);
+    const update = status && updateOf(status);
+    return update?.need === "required" ? update : undefined;
   };
   let probing: Promise<void> | null = null;
   /**
@@ -303,7 +318,7 @@ async function main() {
    * one when it runs them and is signed in, else any that is.
    */
   const quickEngine = (preferred?: EngineKind): Engine | undefined => {
-    const ready = (engine?: Engine) => engine?.quickTurn && engine.capabilities.quickTurns && statuses.get(engine.kind)?.signedIn ? engine : undefined;
+    const ready = (engine?: Engine) => engine?.quickTurn && engine.capabilities.quickTurns && statuses.get(engine.kind)?.signedIn && !tooOld(engine.kind) ? engine : undefined;
     return ready(preferred ? engines.get(preferred) : undefined) ?? [...engines.values()].find((engine) => ready(engine));
   };
   /** Until when each running turn may go past its limits, by turn: the agent asked (take_longer). */
@@ -828,6 +843,9 @@ async function main() {
       let dog: ReturnType<typeof watchdog> | undefined;
       try {
         if (!engine) throw new Error(`${ENGINE_LABELS[kind]} is not on this computer's runner. Update Perry here, or pick another engine's model.`);
+        // Refused before it starts, rather than failing half-way in ways an old CLI would.
+        const update = tooOld(kind);
+        if (update) throw new Error(refusal(engine.label, update));
         if (job.kind === "compact") {
           if (!job.resumeCursor) throw new Error("This chat has no session to compact yet.");
           console.log(dim(`  compacting a chat's ${engine.label} session`));
