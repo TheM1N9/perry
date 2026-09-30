@@ -136,6 +136,8 @@ export type ChatSummary = {
   unseen: boolean;
   /** A runner is naming it; its title is the first message until then (titles.ts). */
   naming: boolean;
+  /** The project it is in, whose folder the sidebar shows it in (projects.ts). */
+  projectId?: Id<"projects">;
 };
 
 /** A reply after the owner last looked. A job's quiet NOTHING is not one; a chat never opened only counts for jobs. */
@@ -176,6 +178,7 @@ export const listChats = query({
         jobId: chat.jobId,
         unseen: isUnseen(chat, chat.jobId ? jobs.get(chat.jobId) : undefined),
         naming: naming.has(chat._id),
+        ...(chat.projectId ? { projectId: chat.projectId } : {}),
       };
     }));
     // Pinned first, most recently pinned on top; the rest stay newest first.
@@ -211,9 +214,11 @@ export const markChatSeen = mutation({
 });
 
 export const createChat = mutation({
-  args: { key: vKey },
+  /** projectId: started inside a project, the chat is in it from its first message. */
+  args: { key: vKey, projectId: v.optional(v.id("projects")) },
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
+    if (args.projectId && !await ctx.db.get(args.projectId)) throw new Error("This project was deleted.");
     const threadId = await createThread(ctx, { userId: "web:dashboard", title: "New chat" });
     return await ctx.db.insert("conversations", {
       channel: WEB_CHANNEL,
@@ -222,6 +227,7 @@ export const createChat = mutation({
       title: "New chat",
       access: await defaultAccess(ctx),
       lastMessageAt: Date.now(),
+      ...(args.projectId ? { projectId: args.projectId } : {}),
     });
   },
 });
@@ -372,7 +378,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine: EngineKind; project: boolean; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean } }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine: EngineKind; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean } }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
@@ -387,10 +393,11 @@ export const getChat = query({
         .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.id).eq("status", "running"))
         .first()
       : null;
+    const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
     return {
       channel: conversation.channel,
       engine: engineOf(conversation),
-      project: Boolean(conversation.project),
+      ...(project ? { project: { id: project._id, name: project.name } } : {}),
       model: conversation.model,
       effort: conversation.effort,
       access: conversation.access ?? "supervised",
@@ -878,18 +885,6 @@ export const setManners = mutation({
   },
 });
 
-/** A project chat: what Perry remembers there stays there, and other chats cannot read it. */
-export const setChatProject = mutation({
-  args: { key: vKey, id: v.id("conversations"), project: v.boolean() },
-  returns: v.null(),
-  handler: async (ctx, args): Promise<null> => {
-    assertDashboardKey(args.key);
-    ownerChat(await ctx.db.get(args.id));
-    await ctx.db.patch(args.id, { project: args.project || undefined });
-    return null;
-  },
-});
-
 export const getDefaultAccess = query({
   args: { key: vKey },
   handler: async (ctx, args): Promise<Access> => {
@@ -969,9 +964,12 @@ export type MemoryView = {
   origin?: "owner" | "tool" | "job";
   createdAt: number;
   editedAt?: number;
-  /** A project chat's own memory: the chat it stays in, and its title. */
+  /** Kept to one chat: that chat, and its title. */
   chatId?: string;
   chat?: string;
+  /** Kept to a project: that project, and its name. */
+  projectId?: string;
+  project?: string;
 };
 
 export const listMemories = query({
@@ -984,8 +982,12 @@ export const listMemories = query({
       kind: args.kind,
       everywhere: true,
     });
-    // A project chat's own memory says which chat it stays in.
+    // A memory kept to one chat or one project says which.
     return await Promise.all(found.map(async (memory) => {
+      if (memory.projectId) {
+        const project = await ctx.db.get(memory.projectId as Id<"projects">);
+        return { ...memory, project: project?.name ?? "a deleted project" };
+      }
       if (!memory.chatId) return memory;
       const chat = await ctx.db.get(memory.chatId as Id<"conversations">);
       return { ...memory, chat: chat ? titleOf(chat) : "a deleted chat" };

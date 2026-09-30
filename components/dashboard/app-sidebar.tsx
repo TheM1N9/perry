@@ -40,6 +40,7 @@ import { StatusIndicator } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
 import { UpdateNotice } from "./updates";
 import { PlatypusArt } from "./platypus";
+import { MoveToProject, NewProjectDialog, ProjectFolders } from "./projects";
 import { Spinner } from "@/components/ui/spinner";
 
 /** How many chats show before "Show all", so a long history stays scannable. */
@@ -131,10 +132,17 @@ export function AppSidebar() {
 
 function ChatGroups() {
   const { dashboardKey } = useSession();
-  const chats = useQuery(api.dashboard.listChats, { key: dashboardKey });
+  const all = useQuery(api.dashboard.listChats, { key: dashboardKey });
   const [showAll, setShowAll] = useState(false);
   const [renaming, setRenaming] = useState<ChatSummary | null>(null);
   const [removing, setRemoving] = useState<ChatSummary | null>(null);
+  /** A project being made, and the chat that moves into it, if any. */
+  const [creating, setCreating] = useState<{ chat?: ChatSummary["id"] } | null>(null);
+  const row = (chat: ChatSummary) => (
+    <ChatRow key={chat.id} chat={chat} onRename={() => setRenaming(chat)} onDelete={() => setRemoving(chat)} onNewProject={() => setCreating({ chat: chat.id })} />
+  );
+  // A project's chats are in its folder, not in the list.
+  const chats = useMemo(() => all?.filter((chat) => !chat.projectId), [all]);
 
   const groups = useMemo(() => {
     if (!chats) return [];
@@ -162,20 +170,19 @@ function ChatGroups() {
       </SidebarGroup>
     );
   }
-  if (!chats.length) {
-    return (
-      <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-        <p className="px-2 py-1 text-sm text-muted-foreground">Your chats will show up here.</p>
-      </SidebarGroup>
-    );
-  }
   return (
     <>
+      <ProjectFolders chats={all} row={row} onNewProject={() => setCreating({})} />
+      {!chats.length && (
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          <p className="px-2 py-1 text-sm text-muted-foreground">Your chats will show up here.</p>
+        </SidebarGroup>
+      )}
       {groups.map((group) => (
         <SidebarGroup key={group.label} className="py-1 group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
           <SidebarMenu aria-label={group.label}>
-            {group.chats.map((chat) => <ChatRow key={chat.id} chat={chat} onRename={() => setRenaming(chat)} onDelete={() => setRemoving(chat)} />)}
+            {group.chats.map(row)}
           </SidebarMenu>
         </SidebarGroup>
       ))}
@@ -188,11 +195,12 @@ function ChatGroups() {
       )}
       <RenameDialog chat={renaming} onClose={() => setRenaming(null)} />
       <DeleteDialog chat={removing} onClose={() => setRemoving(null)} />
+      <NewProjectDialog open={creating !== null} chat={creating?.chat} onClose={() => setCreating(null)} />
     </>
   );
 }
 
-function ChatRow({ chat, onRename, onDelete }: { chat: ChatSummary; onRename: () => void; onDelete: () => void }) {
+function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary; onRename: () => void; onDelete: () => void; onNewProject: () => void }) {
   const { dashboardKey } = useSession();
   const pathname = usePathname();
   const active = pathname === `/chat/${chat.id}`;
@@ -222,6 +230,7 @@ function ChatRow({ chat, onRename, onDelete }: { chat: ChatSummary; onRename: ()
           <DropdownMenuItem onClick={onRename}><PencilIcon />Rename</DropdownMenuItem>
           {/* A Telegram or WhatsApp chat goes on as long as the app is paired; its messages are already on the phone. */}
           {chat.channel === "web" && <>
+            <MoveToProject chat={chat} onNewProject={onNewProject} />
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={onDelete}><Trash2Icon />Delete</DropdownMenuItem>
           </>}

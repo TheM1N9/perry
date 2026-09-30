@@ -18,6 +18,7 @@
  *
  * What a message makes it do (the last text block of the prompt):
  *   REMEMBER <text>  call Perry's `remember` tool through the MCP server it was given
+ *   TOOL <name> <json>  call any of Perry's tools with those arguments, and log what it answered
  *   LONGER <minutes> <seconds>  call Perry's `take_longer` for that many minutes, then say
  *                    nothing for that many seconds, then reply
  *   QUIET <seconds>  say nothing for that many seconds, then reply
@@ -156,8 +157,8 @@ async function remember(session: Saved, text: string): Promise<string> {
   return answer.startsWith("ok ") ? `remembered ${answer.slice(3)}` : answer;
 }
 
-/** One of Perry's tools, through the MCP server it was given: "ok over HTTP|stdio", or what went wrong. */
-async function callTool(session: Saved, name: string, args: Record<string, unknown>): Promise<string> {
+/** One of Perry's tools, through the MCP server it was given: "ok over HTTP|stdio", or what went wrong. With `whole`, the log keeps all of its answer. */
+async function callTool(session: Saved, name: string, args: Record<string, unknown>, whole = false): Promise<string> {
   const server = session.mcpServers.find((item) => item.name === "assistant");
   if (!server) return "no Perry MCP server was given";
   const messages = [
@@ -176,7 +177,7 @@ async function callTool(session: Saved, name: string, args: Record<string, unkno
       answer = await response.text();
       if (!response.ok) return `http ${response.status}: ${answer.slice(0, 200)}`;
     }
-    log({ mcp: "http", tool: name, url: server.url, answer: answer.slice(0, 300) });
+    log({ mcp: "http", tool: name, url: server.url, answer: whole ? answer : answer.slice(0, 300), ...(whole ? { args } : {}) });
     return /isError"\s*:\s*true/.test(answer) ? `failed: ${answer.slice(0, 200)}` : "ok over HTTP";
   }
   if (!("command" in server)) return "unsupported MCP server";
@@ -286,6 +287,13 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     const result = await remember(session, note);
     await tool(id, { status: result.startsWith("remembered") ? "completed" : "failed", content: [{ type: "content", content: { type: "text", text: result } }] }, false);
     await stream([`Saved it: ${result}.`], 10);
+    return done("end_turn");
+  }
+  if (text.startsWith("TOOL ")) {
+    // What the tool answered goes to the log, not the reply, so the chat's history does not repeat it.
+    const [, name, ...rest] = text.split(" ");
+    const outcome = await callTool(session, name, rest.length ? JSON.parse(rest.join(" ")) : {}, true);
+    await stream([`Called ${name}: ${outcome}.`], 10);
     return done("end_turn");
   }
   if (text.startsWith("RUN ")) {

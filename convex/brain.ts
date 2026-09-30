@@ -12,6 +12,8 @@ import {
 import { engineOf, type EngineKind } from "./lib/engines";
 import { DOWNLOAD_LIMIT, downloadFile, sendMessage, sendTyping } from "./lib/telegram";
 import { resumeOf } from "./engines";
+import { sha256 } from "./memories";
+import { LEFT_PROJECT } from "./projects";
 import { vChannel, vEngine, vTelegramMedia } from "./schema";
 
 /** Perry's own reminder, sent with each message from the owner, ahead of it. */
@@ -153,8 +155,13 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   // Who the assistant is opens the instructions; who the owner is (USER.md, whole) closes them.
   const persona: { identity: string; user: string } = await ctx.runQuery(internal.persona.forPrompt, {});
   // Which channel this is, where the reply goes, and where what it sets up will report (channels.ts).
-  const where: string = await ctx.runQuery(internal.channels.describe, { conversationId: conversation._id })
-    + (conversation.project ? "\n\nThis is a project chat: what you remember here stays here (remember saves with scope \"this chat\" unless it belongs everywhere), and other chats cannot read it." : "");
+  const where: string = await ctx.runQuery(internal.channels.describe, { conversationId: conversation._id });
+  // The project's instructions and its other chats go with the message, like memory, and again whenever they
+  // change: the session keeps the instructions it started with, and an edit must reach a chat already going.
+  const project: string | null = await ctx.runQuery(internal.projects.forTurn, { conversationId: conversation._id });
+  const projectDigest = project ? await sha256(project) : undefined;
+  const told = fresh ? undefined : conversation.projectDigest;
+  const aboutProject = projectDigest === told ? "" : project ?? LEFT_PROJECT;
   // A goal is slow, so "I ran my first 10k" often comes in a chat that never mentioned it: the active ones come with every turn.
   const active = (await ctx.runQuery(internal.work.listGoals, {})).filter((goal) => goal.status === "active").slice(0, 10);
   const goals = active.length
@@ -165,8 +172,9 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   const note = conversation.jobId || conversation.taskId ? "" : REMEMBER_NOTE;
   return {
     instructions: [persona.identity, INSTRUCTIONS, where, memory?.instructions, persona.user].filter(Boolean).join("\n\n"),
-    recalled: [`# Right now\n\n${now}`, goals, memory?.recalled, note].filter(Boolean).join("\n\n"),
+    recalled: [`# Right now\n\n${now}`, goals, aboutProject, memory?.recalled, note].filter(Boolean).join("\n\n"),
     recallDigest: memory?.digest,
+    projectDigest,
     history,
   };
 }
