@@ -1,0 +1,90 @@
+{
+  "ranAt": "2026-09-30T23:29:13.970Z",
+  "checks": {
+    "stepsShowNotThinking": true,
+    "noRawNames": true,
+    "stepInView": true,
+    "noWritingLineUnderWords": true,
+    "nothingLingers": true,
+    "replyLands": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "engine": "claude",
+    "seen": [
+      {
+        "t": 0,
+        "thinking": null,
+        "streaming": null,
+        "steps": [],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 313,
+        "thinking": "Thinking",
+        "streaming": null,
+        "steps": [
+          "Thinking"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 6154,
+        "thinking": "Using ToolSearch",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 7867,
+        "thinking": "Reading example.com",
+        "streaming": null,
+        "steps": [
+          "Reading example.com"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 9920,
+        "thinking": "Running Start-Sleep -Seconds 8; Write-Output perry-…",
+        "streaming": null,
+        "steps": [
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 20593,
+        "thinking": null,
+        "streaming": null,
+        "steps": [],
+        "inView": true,
+        "replies": 1
+      }
+    ],
+    "stepsShowNotThinking": [
+      "Thinking",
+      "Using ToolSearch",
+      "Reading example.com",
+      "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+    ],
+    "nothingLingers": {
+      "at": 1790810943523,
+      "thinking": null,
+      "streaming": null,
+      "steps": [],
+      "inView": true,
+      "replies": 1
+    },
+    "wordsStreamed": false,
+    "noPageErrors": []
+  },
+  "passed": true
+}

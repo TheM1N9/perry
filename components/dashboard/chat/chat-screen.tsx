@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { shownStep } from "@/convex/lib/activity";
 import {
   ACCESS_HINTS, ACCESS_LABELS, ACCESSES, COMPACTED, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
   modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, typingSkill, type Access,
@@ -222,6 +223,9 @@ export function ChatScreen() {
 
   const shownPending = pending.filter((item) => item.id === selectedId);
   const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
+  // What Perry is doing while the reply is on its way, step by step, as the pet shows it.
+  const activity = useQuery(api.dashboard.getActivity, selectedId && waiting ? { key: dashboardKey, id: selectedId } : "skip");
+  const step = shownStep(activity, now);
 
   // Scrolling: a chat opens at its newest message; after that, new content only scrolls into view for a reader already at the bottom.
   const scroller = useRef<HTMLDivElement>(null);
@@ -245,7 +249,7 @@ export function ChatScreen() {
     } else if (stick.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, here.length]);
+  }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, step?.label, here.length]);
   const jumpToLatest = () => {
     stick.current = true;
     setAtBottom(true);
@@ -621,7 +625,7 @@ export function ChatScreen() {
                 />
               ))}
               {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
-              {waiting && !here.length && <ReplyInProgress streaming={chat?.streaming} />}
+              {waiting && !here.length && <ReplyInProgress streaming={chat?.streaming} step={step?.label} />}
               {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
               {chat?.lastError && !chat.isRunning && !waiting && (
                 <Alert variant="destructive">
