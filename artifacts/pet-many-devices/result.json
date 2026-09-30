@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-30T04:25:10.453Z",
+  "ranAt": "2026-09-30T05:22:53.904Z",
   "checks": {
     "reachableOnNetwork": true,
     "noKeyRefused": true,
@@ -45,6 +45,8 @@
     "notCountedAfterRemoval": true,
     "petBLockedOut": true,
     "petAStillWorks": true,
+    "noRealPointerOnPets": true,
+    "pageCallsOnlyWhatItsKeyMay": true,
     "noDashboardErrors": true,
     "loopbackOnlyNotOnNetwork": true,
     "loopbackOnlySaid": true,
@@ -73,13 +75,14 @@
       }
     },
     "linesShown": [
-      "$env:PERRY_PET='http://192.168.0.8:54104 839A-YSJS'; iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex",
-      "curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | PERRY_PET='http://192.168.0.8:54104 839A-YSJS' sh"
+      "$env:PERRY_PET='http://192.168.0.8:53334 GWBV-GQDX'; iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex",
+      "curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | PERRY_PET='http://192.168.0.8:53334 GWBV-GQDX' sh"
     ],
     "configB": {
-      "server": "http://192.168.0.8:54104",
-      "token": "pet_B8EP…"
+      "server": "http://192.168.0.8:53334",
+      "token": "pet_B353…"
     },
+    "petBGhost": true,
     "petBKey": "its own",
     "scope": {
       "board": {
@@ -118,24 +121,40 @@
       "status": "done",
       "inUploads": true
     },
+    "realPointer": {
+      "a": {
+        "count": 0,
+        "samePage": true
+      },
+      "b": {
+        "count": 0,
+        "samePage": true
+      }
+    },
+    "refusedToPetB": [
+      "dashboard:getKeys",
+      "pet:devices",
+      "pet:pair",
+      "pet:status"
+    ],
     "dashboardErrors": [],
     "off": "Stopped, and no longer starts at login. Remove this computer in Perry's Settings → Desktop pet to take its key away too."
   },
   "serverLogTail": [
-    "✓ Running next.config.ts took 53ms",
-    "[perry] connected this computer (DESKTOP-27SQLCP) to the local backend",
-    "[perry] backend ready: 414 functions, data in W:\\perry-tests\\pet-many-devices\\run\\perry-many-a-R11FKa",
-    "[perry] todos:board failed: Error: Wrong dashboard key.",
-    "    at C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-a9f5004c258ce727b\\.next\\server\\chunks\\_1gpwfkx._.js:285:10182",
-    "    at Object.handler (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-a9f5004c258ce727b\\.next\\server\\chunks\\_13v62zs._.js:15:467)",
-    "    at C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-a9f5004c258ce727b\\.next\\server\\chunks\\_13v62zs._.js:177:23740",
+    "    at C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-a9f5004c258ce727b\\.next\\server\\chunks\\_0cp_0sc._.js:291:10198",
+    "    at Object.handler (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-a9f5004c258ce727b\\.next\\server\\chunks\\_13v62zs._.js:36:467)",
+    "    at C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-a9f5004c258ce727b\\.next\\server\\chunks\\_13v62zs._.js:178:23774",
     "    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
+    "[perry] refused the desktop pet on Laptop (test): it cannot call dashboard:getKeys",
+    "[perry] refused the desktop pet on Laptop (test): it cannot call pet:devices",
+    "[perry] refused the desktop pet on Laptop (test): it cannot call pet:pair",
+    "[perry] refused the desktop pet on Laptop (test): it cannot call pet:status",
     "▲ Next.js 16.3.6",
-    "- Local:         http://127.0.0.1:54104",
-    "- Network:       http://127.0.0.1:54104",
-    "✓ Ready in 224ms",
-    "✓ Running next.config.ts took 49ms",
-    "[perry] backend ready: 414 functions, data in W:\\perry-tests\\pet-many-devices\\run\\perry-many-a-R11FKa",
+    "- Local:         http://127.0.0.1:53334",
+    "- Network:       http://127.0.0.1:53334",
+    "✓ Ready in 216ms",
+    "✓ Running next.config.ts took 57ms",
+    "[perry] backend ready: 421 functions, data in W:\\perry-tests\\pet-many-devices\\run\\perry-many-a-uxHv9p",
     ""
   ]
 }
