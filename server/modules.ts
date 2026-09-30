@@ -10,6 +10,7 @@ import * as channels from "../convex/channels";
 import * as codex from "../convex/codex";
 import * as composio from "../convex/composio";
 import * as connectorAccounts from "../convex/connectorAccounts";
+import * as contacts from "../convex/contacts";
 import * as conversations from "../convex/conversations";
 import * as crons from "../convex/crons";
 import * as dashboard from "../convex/dashboard";
@@ -68,6 +69,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "codex": codex,
   "composio": composio,
   "connectorAccounts": connectorAccounts,
+  "contacts": contacts,
   "conversations": conversations,
   "crons": crons,
   "dashboard": dashboard,

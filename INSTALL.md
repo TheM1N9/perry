@@ -228,9 +228,11 @@ on macOS and Linux to show the sandbox works.
 
 All of this is for **Supervised** chats, the default. A chat set to **Full
 access** (in its composer, with `/access full`, or by the default for new chats
-in Settings) runs every turn with `danger-full-access` and approval policy
-`never` whatever `PERRY_CODEX_SANDBOX` says: no sandbox, and Codex never asks.
-`PERRY_CODEX_SANDBOX` still sets the sandbox of every Supervised chat on that
+in Settings) runs every turn with `danger-full-access` whatever
+`PERRY_CODEX_SANDBOX` says: no sandbox, and nothing waits for you. Codex still
+sends each command to the runner, which lets it through at once, so that a
+chat put back on Ask or Auto while a reply runs is asked or reviewed from its
+next command. `PERRY_CODEX_SANDBOX` still sets the sandbox of every Supervised chat on that
 machine, so with it set to `danger-full-access` even a Supervised chat runs
 unsandboxed, though Codex still asks there before anything it judges risky.
 
@@ -258,7 +260,9 @@ both.
   and WSL it runs in Claude Code's own sandbox, which lets sandboxed commands
   run; native Windows has no such sandbox, so there Supervised relies on
   approvals alone. Auto lets edits in the working folders go ahead and sends
-  every command to the reviewer. Full access runs Claude Code without asking.
+  every command to the reviewer. Full access lets edits go ahead and allows
+  everything else without asking. A change of access while a reply runs
+  switches Claude Code's mode from its next step.
 - Your own Claude Code settings, `CLAUDE.md` files, hooks and MCP servers apply
   to Perry's Claude turns too, as they would in your terminal.
   `PERRY_CLAUDE_MCP=stdio` hands Perry's tools to Claude Code through

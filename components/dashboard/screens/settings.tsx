@@ -21,6 +21,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ACCESS_ICONS } from "../chat/composer";
 import { PetControl } from "../pet-control";
@@ -28,7 +30,7 @@ import { Shortcuts } from "../shortcuts";
 import { Updates } from "../updates";
 import { ActionButton, CommandLine, CopyButton, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
 
-const TABS = ["general", "keys", "shortcuts", "telegram", "whatsapp"] as const;
+const TABS = ["general", "keys", "people", "shortcuts", "telegram", "whatsapp"] as const;
 
 export function Settings() {
   const [tab, setTab] = useTab(TABS, "general");
@@ -38,12 +40,14 @@ export function Settings() {
         <TabsList variant="line" className="mb-6 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="keys">Keys</TabsTrigger>
+          <TabsTrigger value="people">People</TabsTrigger>
           <TabsTrigger value="shortcuts">Keyboard shortcuts</TabsTrigger>
           <TabsTrigger value="telegram">Telegram</TabsTrigger>
           <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
         </TabsList>
         <TabsContent value="general"><Engines /><NewChatAccess /><Manners /><Updates /><DesktopPet /><Appearance /></TabsContent>
         <TabsContent value="keys"><Keys /></TabsContent>
+        <TabsContent value="people"><People /></TabsContent>
         <TabsContent value="shortcuts"><Shortcuts /></TabsContent>
         <TabsContent value="telegram"><Telegram /></TabsContent>
         <TabsContent value="whatsapp"><WhatsApp /></TabsContent>
@@ -566,6 +570,122 @@ function Logins() {
           <Button type="submit" size="sm" disabled={!draft.label.trim() || !draft.value.trim() || saving}>{saving && <Spinner />}Save</Button>
         </div>
       </form>
+    </Section>
+  );
+}
+
+/** What Perry remembers about one person: from the owner's chats, and from theirs, each forgettable. */
+function Remembered({ items }: { items?: Array<{ id: Id<"memories">; text: string; from: "you" | "them" }> }) {
+  const { dashboardKey } = useSession();
+  const forget = useMutation(api.dashboard.deleteMemory);
+  if (!items?.length) return null;
+  return (
+    <ul className="mt-2 grid gap-1 border-l pl-3">
+      {items.map((item) => (
+        <li key={item.id} className="group flex items-start justify-between gap-2 text-sm">
+          <p className="min-w-0 text-pretty">
+            <span className="text-foreground">{item.text}</span>
+            <span className="ml-1.5 text-xs text-muted-foreground">{item.from === "you" ? "from your chats" : "from their chat"}</span>
+          </p>
+          <ActionButton variant="ghost" size="sm" className="h-6 shrink-0 px-2 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            action={() => forget({ key: dashboardKey, id: item.id })} success="Forgotten.">Forget</ActionButton>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const PEOPLE_STATUS = { allowed: { label: "Talks with Perry", tone: "success" }, pending: { label: "Waiting for you", tone: "warning" }, blocked: { label: "Blocked", tone: "neutral" }, known: { label: "Not yet", tone: "neutral" } } as const;
+
+/**
+ * Who Perry talks with besides the owner, on WhatsApp and Telegram
+ * (convex/contacts.ts): allowed once, by the owner, then both ways. Each chat
+ * is sealed off from everything of the owner's; its brief is all Perry knows
+ * of the owner there.
+ */
+function People() {
+  const { dashboardKey } = useSession();
+  const people = useQuery(api.contacts.listForDashboard, { key: dashboardKey });
+  const remembered = useQuery(api.contacts.memoriesForDashboard, { key: dashboardKey });
+  const set = useMutation(api.contacts.setForDashboard);
+  const now = useNow();
+  const [editing, setEditing] = useState<{ id: Id<"contacts">; brief: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const saveBrief = async () => {
+    if (!editing || saving) return;
+    setSaving(true);
+    try {
+      await set({ key: dashboardKey, id: editing.id, brief: editing.brief });
+      setEditing(null);
+      toast.success("Saved. Perry uses it from their next message.");
+    } catch (cause) {
+      toast.error(errorText(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Section title="People" description="The people in your life, and what Perry remembers about them: from your chats, used only in yours, and from theirs, used only in theirs. You are asked the first time Perry talks with anyone: when someone new writes to it, and before it first writes to someone.">
+      {people === undefined ? <ListSkeleton /> : people.length === 0 && !remembered?.others.length ? (
+        <EmptyState title="Nobody yet">Ask Perry to message someone (&ldquo;tell Datta I&apos;m running late&rdquo;), or share Perry&apos;s WhatsApp or Telegram with someone.</EmptyState>
+      ) : (
+        <List label="People">
+          {people.map((person) => (
+            <li key={person.id} className="px-4 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-medium">{person.name}</p>
+                    <StatusBadge tone={PEOPLE_STATUS[person.status].tone}>{PEOPLE_STATUS[person.status].label}</StatusBadge>
+                  </div>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {[person.kind === "group" ? "Group" : person.handle, person.channel === "whatsapp" ? "WhatsApp" : "Telegram"].filter(Boolean).join(" · ")} · {ago(person.updatedAt, now)}
+                  </p>
+                  {editing?.id !== person.id && (
+                    <p className="mt-1 text-sm text-pretty text-muted-foreground">
+                      {person.brief ? <>Perry may share: <span className="text-foreground">{person.brief}</span></> : "Perry shares nothing about you with them."}
+                    </p>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {person.chatId && <Button variant="ghost" size="sm" render={<Link href={`/chat/${person.chatId}`} />}>Open chat</Button>}
+                  {editing?.id !== person.id && <Button variant="ghost" size="sm" onClick={() => setEditing({ id: person.id, brief: person.brief ?? "" })}>Brief</Button>}
+                  {person.status === "blocked"
+                    ? <ActionButton variant="ghost" size="sm" action={() => set({ key: dashboardKey, id: person.id, status: "allowed" })} success={`Perry talks with ${person.name} again.`}>Allow</ActionButton>
+                    : <ActionButton variant="ghost" size="sm" className="text-destructive" action={() => set({ key: dashboardKey, id: person.id, status: "blocked" })} success={`${person.name} is blocked.`}
+                        confirm={{ title: `Block ${person.name}?`, body: "Perry stops answering them and will not write to them. You can allow them again here.", label: "Block" }}>Block</ActionButton>}
+                </div>
+              </div>
+              <Remembered items={remembered?.byContact[person.id]} />
+              {editing?.id === person.id && (
+                <div className="mt-2 grid gap-2">
+                  <Textarea value={editing.brief} rows={3} placeholder={`What Perry may know and share with ${person.name}. "He can know my gym times."`}
+                    onChange={(event) => setEditing({ id: person.id, brief: event.target.value })} />
+                  <div className="flex justify-end gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>Cancel</Button>
+                    <Button size="sm" disabled={saving} onClick={() => void saveBrief()}>{saving && <Spinner />}Save</Button>
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </List>
+      )}
+      {remembered && remembered.others.length > 0 && (
+        <div className="mt-4">
+          <h3 className="mb-2 text-sm font-medium">Others you&apos;ve told Perry about</h3>
+          <List label="Others you've told Perry about">
+            {remembered.others.map((person) => (
+              <li key={person.name} className="px-4 py-3">
+                <p className="text-sm font-medium">{person.name}</p>
+                <Remembered items={person.memories} />
+              </li>
+            ))}
+          </List>
+        </div>
+      )}
     </Section>
   );
 }

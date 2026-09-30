@@ -332,9 +332,9 @@ export class CodexEngine implements Engine {
   }
 
   async runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult> {
-    const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments } = input;
+    const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments, guest } = input;
     const app = await this.ensure();
-    const broken = await app.reloadSkills(cwd).catch(() => []);
+    const broken = guest ? [] : await app.reloadSkills(cwd).catch(() => []);
     const machine = describeMachine();
     // The owner's OS and shell, so commands, paths and "open it" requests fit this machine.
     const home = [
@@ -348,7 +348,10 @@ export class CodexEngine implements Engine {
      * default) and on-request approvals, which reach the owner through the
      * runner. Auto: no sandbox, and every command that is not plainly
      * read-only is asked about, which the runner has a reviewer answer
-     * (approvals.ts). Full: no sandbox, and Codex never asks.
+     * (approvals.ts). Full: the same, answered yes at once. Codex cannot
+     * change a running turn's policy, so Full still asks: the runner answers
+     * by the chat's access at that moment, and a chat put back on Ask or Auto
+     * mid-turn is asked or reviewed from its next command.
      */
     const full = access === "full";
     // Auto has no sandbox either: the gate is the reviewer, which Codex's "untrusted" policy sends
@@ -364,10 +367,12 @@ export class CodexEngine implements Engine {
         "do not report the failure or work around it: run the same command again with sandbox_permissions \"require_escalated\" " +
         "and a one-line justification, and the owner is asked. Ask this way only for what the task needs.";
     // What the thread is to follow; a fresh one also gets the chat so far, once.
-    const current = `${instructions}\n\n## This computer\n\n${home}${sandboxed}`;
+    // A chat with someone else is told nothing of this machine, and has nothing to run on it.
+    const place = guest ? "## This chat\n\nYou have no shell, files or computer in this chat: only your own tools and web search." : `## This computer\n\n${home}${sandboxed}`;
+    const current = `${instructions}\n\n${place}`;
     const fullInstructions = history ? `${current}\n\nEarlier chat history (context, not a new user request):\n${history}` : current;
-    const policy = full ? "never" : auto ? "untrusted" : "on-request";
-    const sandbox: SandboxMode = full || auto ? "danger-full-access" : sandboxMode();
+    const policy = guest ? "never" : full || auto ? "untrusted" : "on-request";
+    const sandbox: SandboxMode = guest ? "read-only" : full || auto ? "danger-full-access" : sandboxMode();
     // Perry's own tools (convex/mcp.ts): memory, connected accounts, the web, jobs, tasks and the rest. Codex takes them over HTTP.
     const config = {
       ...(tools ? {
@@ -385,6 +390,8 @@ export class CodexEngine implements Engine {
       // Naming a plugin that is not installed does nothing. Its computer use for other apps stays.
       "plugins.browser@openai-bundled.enabled": false,
       "plugins.unified-computer-use@openai-bundled.enabled": false,
+      // A chat with someone else: no shell, apps, plugins, images or computer, and no AGENTS.md from anywhere.
+      ...(guest ? { ...NO_TOOLS, "tools.view_image": false, project_doc_max_bytes: 0 } : {}),
     };
     const start = { cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions, serviceName: "perry" };
     const spare = threadId ? null : await this.takeSpare(app, start);
@@ -447,7 +454,7 @@ export class CodexEngine implements Engine {
         ...(effort ? { effort } : {}),
         cwd,
         approvalPolicy: policy,
-        sandboxPolicy: sandboxPolicy(sandbox, [cwd, PATHS.files, PATHS.skills]),
+        sandboxPolicy: sandboxPolicy(sandbox, guest ? [cwd] : [cwd, PATHS.files, PATHS.skills]),
       }, 30_000);
       if (!started.turn?.id) throw new Error("Codex did not start a turn.");
       turnId = started.turn.id;

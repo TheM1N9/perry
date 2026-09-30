@@ -4,7 +4,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query, type 
 import { api, internal } from "./_generated/api";
 import { createThread, saveMessages } from "./lib/agent";
 import { CAPTION_LIMIT, UPLOAD_LIMIT, deleteMessage, editDraft, finishDraft, sendDraft, sendFile, sendMessage } from "./lib/telegram";
-import { COMPACTED, runLabel } from "./lib/commands";
+import { COMPACTED, runLabel, type Access } from "./lib/commands";
 import { ENGINE_LABELS, engineOf, type EngineKind } from "./lib/engines";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH } from "./media";
@@ -142,6 +142,8 @@ export const enqueueTurn = internalMutation({
     checkpoint: v.optional(v.boolean()),
     /** The prompt is not the owner's: only the reply is saved to the chat (see finalizeTurn). */
     hidden: v.optional(v.boolean()),
+    /** A chat with someone other than the owner: the runner gives the engine no shell, files or computer. */
+    guest: v.optional(v.boolean()),
     /** The chat's engine, which `model` is one of. Unset is Codex. */
     engine: v.optional(vEngine),
     model: v.optional(v.string()),
@@ -171,6 +173,7 @@ export const enqueueTurn = internalMutation({
       ...(args.flush ? { flush: true } : {}),
       ...(args.checkpoint ? { checkpoint: true } : {}),
       ...(args.hidden ? { hidden: true } : {}),
+      ...(args.guest ? { guest: true } : {}),
       requestedModel: args.model,
       requestedEffort: args.effort,
       access: args.access,
@@ -179,7 +182,7 @@ export const enqueueTurn = internalMutation({
     };
     if (isSteering(args.policy, running, engine)) {
       // The running turn already carries recalled memory; a steer adds only the message.
-      const { recalled: _recalled, recallDigest: _digest, flush: _flush, checkpoint: _checkpoint, hidden: _hidden, ...steer } = message;
+      const { recalled: _recalled, recallDigest: _digest, flush: _flush, checkpoint: _checkpoint, hidden: _hidden, guest: _guest, ...steer } = message;
       const id = await ctx.db.insert("codexSteers", { ...steer, turnId: running._id, runnerId: running.runnerId!, status: "pending" });
       await takeFromOutbox(ctx, conversation, args.prompt);
       return id;
@@ -263,6 +266,23 @@ export const turnPatience = query({
       .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "running"))
       .take(20);
     return Object.fromEntries(running.filter((job) => job.patienceUntil).map((job) => [job._id, job.patienceUntil!]));
+  },
+});
+
+/**
+ * The access each of this runner's running turns' chats is on now, by turn.
+ * The owner can change it while a turn runs; the runner hands the change to
+ * the turn's engine (Engine.setAccess), and approvals already read it live.
+ */
+export const turnAccess = query({
+  args: { token: v.string() },
+  handler: async (ctx, args): Promise<Record<string, Access>> => {
+    const runner = await authenticate(ctx, args.token);
+    const running = await ctx.db.query("codexTurns")
+      .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "running"))
+      .take(20);
+    const entries = await Promise.all(running.map(async (job) => [job._id, (await ctx.db.get(job.conversationId))?.access ?? "supervised"] as const));
+    return Object.fromEntries(entries);
   },
 });
 
@@ -404,6 +424,8 @@ export const claimTurn = mutation({
       ...job,
       engine,
       resumeCursor,
+      // The chat's access now, not when the turn was queued: the owner may have changed it since.
+      access: conversation.access ?? "supervised",
       // What a runner from before engines resumes Codex with.
       codexThreadId: engine === "codex" ? resumeCursor : undefined,
       channel: conversation.channel,
@@ -955,7 +977,7 @@ export const finalizeTurn = internalAction({
   handler: async (ctx, args) => {
     const result: {
       job: { kind?: "compact"; checkpoint?: boolean; prompt: string; response?: string; error?: string; status: string; model?: string; finalizedAt?: number; mediaKey?: string; memoryIds?: Id<"memories">[]; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
-      conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram" | "whatsapp"; externalId: string; title?: string; jobId?: Id<"jobs">; taskId?: Id<"tasks"> } | null;
+      conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram" | "whatsapp"; externalId: string; title?: string; jobId?: Id<"jobs">; taskId?: Id<"tasks">; contactId?: Id<"contacts"> } | null;
       steers: string[];
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
     if (!result || result.job.finalizedAt || !result.conversation) return null;
@@ -1028,7 +1050,20 @@ export const finalizeTurn = internalAction({
           : []),
       ],
     }).then(() => done("savedAt"));
-    if (conversation.channel === "telegram" && !job.deliveredAt) {
+    // Someone else hears only what Perry said: never what broke, never "No reply came back", and nothing at all when
+    // Perry chose to stay quiet (a group message that was not for it).
+    const guest = Boolean(conversation.contactId);
+    const guestAnswer = (job.error ? job.response ?? "" : reply ?? "").trim();
+    if (conversation.channel === "telegram" && !job.deliveredAt && guest) {
+      const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
+      if (guestAnswer) await deliverToTelegram(ctx, token, conversation.externalId, guestAnswer, job.telegramMessageId, []).catch((error) => console.error(`Could not deliver a reply: ${String(error)}`));
+      await done("deliveredAt");
+    }
+    if (conversation.channel === "whatsapp" && !job.deliveredAt && guest) {
+      if (guestAnswer) await ctx.runMutation(internal.whatsapp.send, { to: conversation.externalId, text: guestAnswer });
+      await done("deliveredAt");
+    }
+    if (conversation.channel === "telegram" && !job.deliveredAt && !guest) {
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
       const files: TurnFile[] = job.mediaKey
         ? await ctx.runQuery(internal.codex.turnFiles, { conversationId: conversation._id, messageKey: job.mediaKey })
@@ -1046,7 +1081,7 @@ export const finalizeTurn = internalAction({
       await done("deliveredAt");
     }
     // WhatsApp gets the finished reply, then its files, through the connection's outbox; it showed "typing…" meanwhile.
-    if (conversation.channel === "whatsapp" && !job.deliveredAt) {
+    if (conversation.channel === "whatsapp" && !job.deliveredAt && !guest) {
       const files: TurnFile[] = job.mediaKey
         ? await ctx.runQuery(internal.codex.turnFiles, { conversationId: conversation._id, messageKey: job.mediaKey })
         : [];
@@ -1130,7 +1165,7 @@ export const outwardAllowed = internalQuery({
  */
 export const mcpAccess = internalQuery({
   args: { token: v.string(), threads: v.optional(v.array(v.string())), chat: v.optional(v.string()) },
-  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean; conversationId: Id<"conversations">; unknown?: true } | null> => {
+  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean; conversationId: Id<"conversations">; guest: boolean; unknown?: true } | null> => {
     const runner = await authenticate(ctx, args.token).catch(() => null);
     if (!runner) return null;
     const running = await ctx.db.query("codexTurns")
@@ -1151,6 +1186,9 @@ export const mcpAccess = internalQuery({
       threadId: conversation.threadId,
       fromJob: Boolean(conversation.jobId),
       conversationId: conversation._id,
+      // A chat with someone else gets only the guest tools (mcp.ts); when it cannot be told which chat is asking and
+      // one of those is running, so does the caller, rather than risk handing it the owner's.
+      guest: Boolean(conversation.contactId) || (!named && !only && turns.some((item) => item.conversation.contactId)),
     };
   },
 });

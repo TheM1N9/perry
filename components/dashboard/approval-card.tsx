@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FolderIcon, GlobeIcon, ShieldAlertIcon, TerminalIcon, FilePenIcon } from "lucide-react";
+import { FolderIcon, GlobeIcon, MessageCircleIcon, ShieldAlertIcon, TerminalIcon, FilePenIcon, UserPlusIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useMutation } from "@/client/react";
@@ -13,8 +13,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
-const KIND = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser" } as const;
-const ICON = { command: TerminalIcon, file: FilePenIcon, write: FilePenIcon, browser: GlobeIcon } as const;
+const KIND = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone" } as const;
+const ICON = { command: TerminalIcon, file: FilePenIcon, write: FilePenIcon, browser: GlobeIcon, contact: UserPlusIcon, message: MessageCircleIcon } as const;
 
 function remaining(ms: number) {
   const seconds = Math.max(0, Math.round(ms / 1000));
