@@ -1,54 +1,137 @@
 {
-  "ranAt": "2026-09-26T08:47:43.008Z",
+  "ranAt": "2026-09-30T23:21:14.552Z",
   "checks": {
-    "showsEveryAccount": true,
     "namesTheAccount": true,
     "askedOnceThenKept": true,
-    "pageShowsEachAccount": true,
+    "showsEveryAccount": true,
+    "everyConnectionAccountedFor": true,
+    "oneCardPerApp": true,
+    "oneRowPerAddress": true,
     "pageShowsAddresses": true,
     "expiredOffersReconnect": true,
+    "attentionFirstThenByName": true,
+    "everyCardAddsAnother": true,
     "catalogueHasLogosAndPages": true,
-    "searchNarrows": true,
+    "searchNarrowsApps": true,
+    "searchMatchesAddress": true,
     "searchSaysNothing": true,
     "disconnectAsksAndCancelKeeps": true,
     "noPageErrors": true
   },
   "notes": {
-    "composio": [
-      "whatsapp EXPIRED",
-      "higgsfield_mcp ACTIVE",
-      "higgsfield_mcp ACTIVE",
-      "youtube EXPIRED",
-      "gmail ACTIVE",
-      "googlecalendar ACTIVE",
-      "googlecalendar EXPIRED"
-    ],
+    "mode": "real account",
     "loads": {
-      "firstMs": 2619,
-      "secondMs": 323
+      "firstMs": 3061,
+      "secondMs": 447
     },
-    "accounts": [
-      "WhatsApp | EXPIRED | -",
-      "Higgsfield MCP | ACTIVE | -",
-      "Higgsfield MCP | ACTIVE | -",
-      "YouTube | EXPIRED | -",
-      "Gmail | ACTIVE | you@example.com",
-      "Google Calendar | ACTIVE | you@example.com",
-      "Google Calendar | EXPIRED | -"
+    "composio": [
+      "instagram ACTIVE",
+      "googlesuper ACTIVE",
+      "googlecalendar ACTIVE",
+      "googlesuper ACTIVE",
+      "googlesheets ACTIVE",
+      "youtube ACTIVE",
+      "instagram ACTIVE",
+      "github ACTIVE",
+      "googledrive ACTIVE",
+      "higgsfield_mcp ACTIVE",
+      "slack ACTIVE",
+      "gmail ACTIVE",
+      "googlecalendar ACTIVE"
     ],
-    "rows": [
-      "WhatsApp | Added 26 Sept 2026 | Expired | Reconnect | Disconnect",
-      "Higgsfield MCP | Added 24 Sept 2026 | Connected | Disconnect",
-      "Higgsfield MCP | Added 24 Sept 2026 | Connected | Disconnect",
-      "YouTube | Added 23 Sept 2026 | Expired | Reconnect | Disconnect",
-      "Gmail | you@example.com | Connected | Disconnect",
-      "Google Calendar | you@example.com | Connected | Disconnect",
-      "Google Calendar | Added 23 Sept 2026 | Expired | Reconnect | Disconnect"
+    "accounts": [
+      "Instagram | ACTIVE | -",
+      "Google Super | ACTIVE | -",
+      "Google Calendar | ACTIVE | account1@example.com",
+      "Google Super | ACTIVE | -",
+      "Google Sheets | ACTIVE | -",
+      "YouTube | ACTIVE | M1n9",
+      "Instagram | ACTIVE | -",
+      "GitHub | ACTIVE | TheM1N9",
+      "Google Drive | ACTIVE | account2@example.com",
+      "Higgsfield MCP | ACTIVE | -",
+      "Slack | ACTIVE | manikanta",
+      "Gmail | ACTIVE | account2@example.com",
+      "Google Calendar | ACTIVE | account2@example.com"
+    ],
+    "cards": [
+      {
+        "name": "GitHub",
+        "summary": "1 account",
+        "rows": [
+          "TheM1N9 | Connected | Disconnect"
+        ]
+      },
+      {
+        "name": "Gmail",
+        "summary": "1 account",
+        "rows": [
+          "account2@example.com | Connected | Disconnect"
+        ]
+      },
+      {
+        "name": "Google Calendar",
+        "summary": "2 accounts",
+        "rows": [
+          "account1@example.com | Connected | Disconnect",
+          "account2@example.com | Connected | Disconnect"
+        ]
+      },
+      {
+        "name": "Google Drive",
+        "summary": "1 account",
+        "rows": [
+          "account2@example.com | Connected | Disconnect"
+        ]
+      },
+      {
+        "name": "Google Sheets",
+        "summary": "1 account",
+        "rows": [
+          "Added 30 Sept 2026 | Connected | Disconnect"
+        ]
+      },
+      {
+        "name": "Google Super",
+        "summary": "2 accounts",
+        "rows": [
+          "Added 30 Sept 2026, 23:30 | Connected | Disconnect",
+          "Added 30 Sept 2026, 23:54 | Connected | Disconnect"
+        ]
+      },
+      {
+        "name": "Higgsfield MCP",
+        "summary": "1 account",
+        "rows": [
+          "Added 27 Sept 2026 | Connected | Disconnect"
+        ]
+      },
+      {
+        "name": "Instagram",
+        "summary": "2 accounts",
+        "rows": [
+          "Added 1 Oct 2026 | Connected | Disconnect",
+          "Added 30 Sept 2026 | Connected | Disconnect"
+        ]
+      },
+      {
+        "name": "Slack",
+        "summary": "1 account",
+        "rows": [
+          "manikanta | Connected | Disconnect"
+        ]
+      },
+      {
+        "name": "YouTube",
+        "summary": "1 account",
+        "rows": [
+          "M1n9 | Connected | Disconnect"
+        ]
+      }
     ],
     "popularLogos": "10/10",
     "search": {
       "narrowed": [
-        "Google Calendar",
         "Google Calendar"
       ],
       "apps": [
@@ -63,7 +146,12 @@
       ],
       "count": 8
     },
-    "dialog": "Disconnect WhatsApp? | Perry can no longer use this account. You can connect it again any time. | Keep it | Disconnect",
+    "searchAddress": [
+      "Gmail: that address",
+      "Google Calendar: that address",
+      "Google Drive: that address"
+    ],
+    "dialog": "Disconnect GitHub? | Perry can no longer use TheM1N9. You can connect it again any time. | Keep it | Disconnect",
     "pageErrors": []
   },
   "passed": true
