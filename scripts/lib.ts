@@ -95,15 +95,18 @@ export function openUrl(url: string): Promise<boolean> {
 }
 
 /**
- * The Codex CLI on PATH. On Windows an npm install is a .cmd, which only a
- * shell can start, so it goes through cmd.exe there, as the runner does; the
- * arguments are this repo's own, never user text.
+ * A CLI on PATH, such as an engine's. On Windows an npm install is a .cmd,
+ * which only a shell can start, so it goes through cmd.exe there, as the
+ * runner does; the arguments are this repo's own, never user text.
  */
-export function runCodex(args: string[], options?: { quiet?: boolean }): Promise<Ran> {
+export function runOnPath(command: string, args: string[], options?: { quiet?: boolean }): Promise<Ran> {
   return process.platform === "win32"
-    ? run(process.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", ["codex", ...args].join(" ")], options)
-    : run("codex", args, options);
+    ? run(process.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", [command, ...args].join(" ")], options)
+    : run(command, args, options);
 }
+
+/** The Codex CLI on PATH. */
+export const runCodex = (args: string[], options?: { quiet?: boolean }): Promise<Ran> => runOnPath("codex", args, options);
 
 /** How to install what Perry needs on this OS, from each tool's own install docs. */
 export const INSTALL_HINTS = {

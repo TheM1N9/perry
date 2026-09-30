@@ -5,16 +5,20 @@
  * Reports only. It changes nothing, so it is safe to run when you are not sure
  * what state an install is in.
  *
- * `pnpm run doctor -- --machine` checks only this machine (Bun, Codex, the
- * runner and its service), for a second machine with no .env.local.
+ * `pnpm run doctor -- --machine` checks only this machine (Bun, the engines'
+ * CLIs, the runner and its service), for a second machine with no .env.local.
+ * An engine's CLI older than Perry works with fails, and one behind its newest
+ * release warns, with the command that updates it.
  */
 
 import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { platform, release, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { updateOf, versionIn } from "../convex/lib/engines";
 import { sandboxMode } from "../runner/codex";
 import { HOME, readRunnerConfig } from "../runner/home";
-import { dim, green, INSTALL_HINTS, red, run, runCodex, yellow } from "./lib";
+import { latestVersionNow, updateCommand } from "../runner/versions";
+import { dim, green, INSTALL_HINTS, red, run, runCodex, runOnPath, yellow } from "./lib";
 import { serviceState } from "./service";
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
@@ -48,11 +52,26 @@ async function checkMachine() {
   else if (major > 22 || (major === 22 && minor >= 13)) ok("node", node.output.trim());
   else bad("node", `${node.output.trim()} is too old: Perry's server needs 22.13 or newer, for its built-in SQLite`);
 
+  // Each engine's newest release, looked up at once while the rest is checked; offline, what was found last.
+  const latest = { codex: latestVersionNow("codex"), claude: latestVersionNow("claude"), grok: latestVersionNow("grok") };
+  /**
+   * An engine's CLI against the versions Perry knows: one older than Perry
+   * works with fails, one behind the newest release warns, each with the
+   * command that updates it on this computer.
+   */
+  const checkVersion = async (kind: keyof typeof latest, label: string, printed: string) => {
+    const version = versionIn(printed);
+    const update = version ? updateOf({ kind, version, latest: await latest[kind], update: updateCommand(kind) }) : undefined;
+    if (update?.need === "required") bad(label, `${version} is too old for Perry, which needs ${update.minimum} or newer. Update it: ${update.command}`);
+    else if (update?.need === "available") warn(label, `${version}; ${update.latest} is out. Update it: ${update.command}`);
+    else ok(label, version ?? printed);
+  };
+
   const codex = await runCodex(["--version"]);
   if (codex.code !== 0) {
     bad("codex", `not found on PATH. Install it: ${INSTALL_HINTS.codex}`);
   } else {
-    ok("codex", lastLine(codex.output));
+    await checkVersion("codex", "codex", lastLine(codex.output));
     const login = await runCodex(["login", "status"]);
     if (login.code === 0) ok("codex sign-in", lastLine(login.output));
     else warn("codex sign-in", "not signed in. Connect the runner, then sign in on the dashboard's Settings page");
@@ -63,12 +82,19 @@ async function checkMachine() {
       const sandboxed = await runCodex(["sandbox", "-P", ":workspace", "-C", probe, "--", "/bin/sh", "-c", "echo ok > probe.txt"]);
       const how = process.platform === "darwin" ? "Seatbelt" : "bubblewrap";
       if (sandboxed.code === 0 && existsSync(join(probe, "probe.txt"))) ok("codex sandbox", `workspace-write works (${how})`);
-      // Codex 0.106, for one, has no -P; Perry still runs on it, without its skills.
+      // Codex 0.106, for one, has no -P; it is also too old for Perry, which is said above.
       else if (/unexpected argument/.test(sandboxed.output)) warn("codex sandbox", `this Codex is too old to check. Update it: ${INSTALL_HINTS.codex}`);
       else warn("codex sandbox", `a sandboxed command failed: ${lastLine(sandboxed.output)}. See INSTALL.md, "Codex's sandbox"`);
       rmSync(probe, { recursive: true, force: true });
     }
   }
+  // The other engines are optional, and checked only where they are installed.
+  for (const [kind, label] of [["claude", "claude code"], ["grok", "grok build"]] as const) {
+    const ran = await runOnPath(kind, ["--version"]);
+    if (ran.code === 0 && versionIn(ran.output)) await checkVersion(kind, label, lastLine(ran.output));
+    else note(label, "not installed (optional)");
+  }
+
   try {
     const mode = sandboxMode();
     if (mode !== "workspace-write") warn("PERRY_CODEX_SANDBOX", `Codex runs ${mode}`);
