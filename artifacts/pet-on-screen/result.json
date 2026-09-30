@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-29T21:29:20.680Z",
+  "ranAt": "2026-09-30T05:11:37.632Z",
   "passed": true,
   "checks": {
     "shortReplyGoesByItself": true,
@@ -75,7 +75,8 @@
     "stillShownAfterDrag": true,
     "requestStaysUp": true,
     "lateTodoStaysUp": true,
-    "pageDidNotThrow": true
+    "pageDidNotThrow": true,
+    "realPointerKeptOut": true
   },
   "notes": {
     "screen": {
@@ -86,35 +87,40 @@
     },
     "shortReplyGoesByItself": {
       "heldUp": true,
-      "lasted": 9171,
+      "lasted": 9176,
       "afterLetGo": 0,
       "due": 8660
     },
     "shortReplyNotTooSoon": {
       "heldUp": true,
-      "lasted": 9171,
+      "lasted": 9176,
       "afterLetGo": 0,
       "due": 8660
     },
     "longReplyStaysLonger": {
       "heldUp": true,
-      "lasted": 16899,
+      "lasted": 16882,
       "afterLetGo": 0,
       "due": 16460
     },
+    "holdWindow": {
+      "from": 1790744960585,
+      "to": 1790744993949,
+      "goneAt": null
+    },
     "pointerHoldsReply": {
       "heldUp": true,
-      "lasted": 49873,
-      "afterLetGo": 16027
+      "lasted": 50327,
+      "afterLetGo": 16038
     },
     "letGoReplyGoes": {
       "heldUp": true,
-      "lasted": 49873,
-      "afterLetGo": 16027,
+      "lasted": 50327,
+      "afterLetGo": 16038,
       "due": 16460
     },
     "approval": {
-      "id": "b62cdfctathfr9b3g0gxr45s3b",
+      "id": "w0a5frvy4a9vbzqbnwbe0pqnm9",
       "next": "ask"
     },
     "spots": {
@@ -122,7 +128,8 @@
         "spot": {
           "x": 660,
           "y": 156,
-          "hotkey": "CommandOrControl+Alt+Shift+F11"
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
         },
         "asked": {
           "x": 660,
@@ -175,7 +182,8 @@
         "spot": {
           "x": -254,
           "y": -450,
-          "hotkey": "CommandOrControl+Alt+Shift+F11"
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
         },
         "asked": {
           "x": -254,
@@ -227,7 +235,8 @@
         "spot": {
           "x": 1516,
           "y": -450,
-          "hotkey": "CommandOrControl+Alt+Shift+F11"
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
         },
         "asked": {
           "x": 1516,
@@ -279,7 +288,8 @@
         "spot": {
           "x": 760,
           "y": -300,
-          "hotkey": "CommandOrControl+Alt+Shift+F11"
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
         },
         "asked": {
           "x": 760,
@@ -331,7 +341,8 @@
         "spot": {
           "x": -254,
           "y": 156,
-          "hotkey": "CommandOrControl+Alt+Shift+F11"
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
         },
         "asked": {
           "x": -254,
@@ -383,7 +394,8 @@
         "spot": {
           "x": -130,
           "y": 156,
-          "hotkey": "CommandOrControl+Alt+Shift+F11"
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
         },
         "asked": {
           "x": -130,
@@ -434,7 +446,8 @@
         "spot": {
           "x": -254,
           "y": 412,
-          "hotkey": "CommandOrControl+Alt+Shift+F11"
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
         },
         "asked": {
           "x": -254,
@@ -487,12 +500,14 @@
       "from": {
         "x": -254,
         "y": -450,
-        "hotkey": "CommandOrControl+Alt+Shift+F11"
+        "hotkey": "CommandOrControl+Alt+Shift+F11",
+        "ghost": true
       },
       "dropped": {
         "x": 46,
         "y": -210,
-        "hotkey": "CommandOrControl+Alt+Shift+F11"
+        "hotkey": "CommandOrControl+Alt+Shift+F11",
+        "ghost": true
       },
       "body": {
         "left": 330,
@@ -505,6 +520,10 @@
         "bottom": 398
       }
     },
+    "dragWindow": [
+      1790745032401,
+      1790745034697
+    ],
     "overTheCircleArms": {
       "shrunk": "matrix(0.5, 0, 0, 0.5, 0, 0)",
       "grown": "none"
@@ -515,15 +534,19 @@
     ],
     "lateTodoStaysUp": [
       "Call the landlord",
-      "2:22 late"
+      "2:23 late"
     ],
-    "pageDidNotThrow": []
+    "pageDidNotThrow": [],
+    "realPointerKeptOut": {
+      "events": 0,
+      "first": []
+    }
   },
   "serverErrors": [],
   "petLog": [
     "\r",
     "\r",
-    "DevTools listening on ws://127.0.0.1:62639/devtools/browser/88de3ade-4984-4b4a-bdea-e4042c0c24bd\r",
+    "DevTools listening on ws://127.0.0.1:56860/devtools/browser/6ff7579a-a1b0-430e-9a16-472ee28bed7b\r",
     ""
   ]
 }

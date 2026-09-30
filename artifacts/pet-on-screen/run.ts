@@ -42,6 +42,9 @@ import { openChat, sleep } from "../browser";
 //  11. What waits on the owner times out too: a computer's request and a late
 //      to-do must stay up for longer than any reply's time.
 //  12. The page throws.
+//  13. The check itself is thrown by the owner using the computer: the real
+//      mouse must never reach this pet's page (each pointer event it gets is
+//      kept, and none may be at a point this script did not send).
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/pet-on-screen/run.ts <outDir>");
@@ -57,7 +60,9 @@ const home = mkdtempSync(join(tmpdir(), "perry-pet-on-screen-"));
 // Hotkeys no one else would have, so this pet never takes the owner's; and a first spot away from the bottom-right corner.
 const TALK = "CommandOrControl+Alt+Shift+F11";
 const LOOK = "CommandOrControl+Alt+Shift+F12";
-writeFileSync(join(home, "pet.json"), JSON.stringify({ x: 200, y: 120, hotkey: TALK }));
+// Ghost ("Let clicks through him"): his window takes nothing from the real mouse, only this script's DevTools events. Otherwise
+// the owner's pointer, or his window moving under it, reaches the page, ends a hover and lets go of a drag mid-check.
+writeFileSync(join(home, "pet.json"), JSON.stringify({ x: 200, y: 120, hotkey: TALK, ghost: true }));
 const checks: Record<string, boolean> = {};
 const notes: Record<string, unknown> = {};
 const check = (name: string, ok: boolean, note?: unknown) => {
@@ -185,9 +190,17 @@ try {
   };
   const spot = () => JSON.parse(readFileSync(join(home, "pet.json"), "utf8")) as { x: number; y: number };
   const moveTo = async (x: number, y: number) => { await t.evaluate(`window.perryPet.moveTo(${x}, ${y}); true`); await sleep(900); };
+  // Every pointer event his page gets, where on the screen: any at a point this script never sent is the real mouse.
+  await t.evaluate(`window.__pointer = []; for (const type of ["pointermove", "pointerdown", "pointerup", "pointerleave", "pointercancel", "lostpointercapture"]) window.addEventListener(type, (e) => { if (window.__pointer.length < 5000) window.__pointer.push([type, e.screenX, e.screenY, e.buttons, Date.now()]); }, true); true`);
+  const sent: Array<[number, number]> = [];
+  const stray = async () => {
+    const got = await t.evaluate(`window.__pointer`) as Array<[string, number, number, number, number]>;
+    return got.filter(([, x, y]) => !sent.some(([sx, sy]) => Math.abs(sx - x) <= 1 && Math.abs(sy - y) <= 1));
+  };
   /** Mouse events on his page, at screen points; captured by him once pressed, as a real drag is. */
   const mouse = async (type: string, x: number, y: number, pressed = false) => {
     const [wx, wy] = await t.evaluate(`[window.screenX, window.screenY]`) as [number, number];
+    sent.push([Math.round(x), Math.round(y)]);
     await t.send("Input.dispatchMouseEvent", { type, x: x - wx, y: y - wy, button: type === "mouseMoved" && !pressed ? "none" : "left", buttons: pressed || type === "mousePressed" ? 1 : 0, clickCount: type === "mouseMoved" ? 0 : 1 });
   };
   const bodyMiddle = async () => { const { body } = await look(); return { x: (body.left + body.right) / 2, y: (body.top + body.bottom) / 2 }; };
@@ -219,7 +232,13 @@ try {
     if (hold) {
       const { bubble } = await look();
       await mouse("mouseMoved", (bubble!.left + bubble!.right) / 2, (bubble!.top + bubble!.bottom) / 2);
-      await sleep(hold);
+      const holdFrom = Date.now();
+      let goneAt: number | null = null;
+      while (Date.now() - holdFrom < hold) {
+        if (goneAt === null && !(await replyUp())) goneAt = Date.now();
+        await sleep(500);
+      }
+      notes.holdWindow = { from: holdFrom, to: Date.now(), goneAt };
       const heldUp = await replyUp();
       await pointerAway();
       const letGo = Date.now();
@@ -319,6 +338,7 @@ try {
   const start = await bodyMiddle();
   const circle = { x: Math.round(screen.left + (width - 220) / 2) + 110, y: screen.bottom - 220 - 8 + 110 };
   await mouse("mouseMoved", start.x, start.y);
+  const dragFrom = Date.now();
   await mouse("mousePressed", start.x, start.y);
   await mouse("mouseMoved", start.x + 10, start.y + 10, true);
   await sleep(200);
@@ -330,6 +350,7 @@ try {
   await sleep(700);
   const grown = await t.evaluate(`getComputedStyle(document.querySelector('button[aria-label^="Perry."]').parentElement).transform`) as string;
   await mouse("mouseReleased", circle.x - 400, circle.y - 300);
+  notes.dragWindow = [dragFrom, Date.now()];
   await sleep(900);
   const scaleOf = (transform: string) => transform.startsWith("matrix(") ? Number(transform.slice(7).split(",")[0]) : 1;
   check("overTheCircleArms", near(scaleOf(shrunk), 0.5, 0.05) && near(scaleOf(grown), 1, 0.05), { shrunk, grown });
@@ -348,6 +369,8 @@ try {
   await shot("late-stays.png");
 
   check("pageDidNotThrow", t.errors.length === 0, t.errors.slice(0, 5));
+  const strays = await stray();
+  check("realPointerKeptOut", strays.length === 0, { events: strays.length, first: strays.slice(0, 20) });
   clearInterval(heartbeat);
 
   // A map of the screen for each spot, with his window drawn where it was, for a person to look over.
