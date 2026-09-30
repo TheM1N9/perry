@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, InboxIcon, KeyboardIcon, KeyRoundIcon, ListChecksIcon, LockIcon, MessageSquareIcon,
-  MonitorIcon, MoonIcon, SettingsIcon, SquarePenIcon, SunIcon, TextSearchIcon,
+  MonitorIcon, MoonIcon, PuzzleIcon, SettingsIcon, SquarePenIcon, SunIcon, TextSearchIcon,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useState } from "react";
 import { useAction, useQuery } from "@/client/react";
@@ -25,6 +25,7 @@ const PAGES = [
   { href: "/todos", label: "To-dos", icon: CheckCircle2Icon },
   { href: "/work", label: "Work", icon: ListChecksIcon },
   { href: "/memory", label: "Memory", icon: BookUserIcon },
+  { href: "/skills", label: "Skills", icon: PuzzleIcon },
   { href: "/connectors", label: "Connectors", icon: CableIcon },
   { href: "/computer", label: "Computer", icon: MonitorIcon },
   { href: "/activity", label: "Activity", icon: ActivityIcon },

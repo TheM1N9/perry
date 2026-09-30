@@ -3,14 +3,15 @@ import { internal } from "./_generated/api";
 import { mutation, query, type MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
-import { ENGINE_LABELS, engineOf, type EngineKind, type LoginInteraction } from "./lib/engines";
+import { ENGINE_LABELS, engineOf, refusal, updateOf, type EngineKind, type EngineUpdate, type LoginInteraction } from "./lib/engines";
 import { authenticate } from "./runner";
 import { vEngine, vEngineStatus, vLoginInteraction } from "./schema";
 
 /**
  * The engines on each connected computer, as the runner reports them, and
  * signing them in and out from Settings. A chat's turns go to a runner whose
- * engine for that chat is installed and signed in (codex.ts, pickRunner).
+ * engine for that chat is installed, signed in and not older than Perry works
+ * with (codex.ts, pickRunner; the versions are in lib/engines.ts).
  *
  * Only account metadata and what the owner must do to sign in (a code, a page,
  * a command) cross this server. An engine's tokens never leave its own CLI.
@@ -45,6 +46,16 @@ export function statusesOf(runner: Doc<"runners">): Reported[] {
 export const engineReady = (runner: Doc<"runners">, engine: EngineKind) =>
   statusesOf(runner).some((status) => status.kind === engine && status.installed && status.signedIn);
 
+/** The engine's CLI on this runner is older than Perry works with, and how to update it: it is given no new turns. */
+export function tooOld(runner: Doc<"runners">, engine: EngineKind): EngineUpdate | undefined {
+  const status = statusesOf(runner).find((item) => item.kind === engine);
+  const update = status && updateOf(status);
+  return update?.need === "required" ? update : undefined;
+}
+
+/** Ready, and recent enough for Perry: a new turn may go to this runner's engine. */
+export const engineUsable = (runner: Doc<"runners">, engine: EngineKind) => engineReady(runner, engine) && !tooOld(runner, engine);
+
 /**
  * Keep what the runner found. A model list that came back empty while signed
  * in (a listing that failed for a moment) keeps the one from before.
@@ -56,6 +67,8 @@ export async function recordEngines(ctx: MutationCtx, runner: Doc<"runners">, re
     ...status,
     message: status.message?.slice(0, 500),
     error: status.error?.slice(0, 500),
+    latest: status.latest?.slice(0, 50),
+    update: status.update?.slice(0, 300),
     models: status.models.length ? status.models : before.find((item) => item.kind === status.kind)?.models ?? [],
     updatedAt: now,
   }));
@@ -211,6 +224,8 @@ export type EngineView = {
   auth: EngineStatus["auth"];
   message?: string;
   error?: string;
+  /** Its CLI should be updated: it is older than Perry works with, or a newer release is out. */
+  update?: EngineUpdate;
   updatedAt: number;
   request?: { kind: "login" | "logout"; status: "queued" | "running" | "done" | "error"; interaction?: LoginInteraction; error?: string };
 };
@@ -227,7 +242,9 @@ export const list = query({
       online: isOnline(runner),
       engines: statusesOf(runner).map((status) => {
         const request = runner.engineAuth?.[status.kind];
+        const update = updateOf(status);
         return {
+          ...(update ? { update } : {}),
           kind: status.kind,
           label: ENGINE_LABELS[status.kind],
           installed: status.installed,
@@ -254,6 +271,9 @@ export const requestAuth = mutation({
     const label = ENGINE_LABELS[args.engine];
     if (!runner || !isOnline(runner)) throw new Error(`Start Perry on this computer before connecting ${label}.`);
     const status = statusesOf(runner).find((item) => item.kind === args.engine);
+    // An engine too old for Perry is updated first: signing it in would lead nowhere.
+    const old = tooOld(runner, args.engine);
+    if (old && args.kind === "login") throw new Error(refusal(label, old, runner.name));
     if (!status?.installed) throw new Error(status?.error || status?.message || `${label} isn't installed on this computer.`);
     const current = runner.engineAuth?.[args.engine];
     if (current?.status === "queued" || current?.status === "running") throw new Error(`A ${label} sign-in is already in progress.`);

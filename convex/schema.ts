@@ -95,6 +95,10 @@ export const vEngineStatus = v.object({
   /** What to do next, such as "Run `grok login` on this computer". */
   message: v.optional(v.string()),
   error: v.optional(v.string()),
+  /** The newest release of the engine's CLI, as that computer last looked it up. */
+  latest: v.optional(v.string()),
+  /** The command that updates the CLI there, for the way it was installed. */
+  update: v.optional(v.string()),
 });
 /** An engine's plan limits, as it reports them (lib/usage.ts, PlanLimits). */
 export const vPlanLimits = v.object({
@@ -637,6 +641,16 @@ export default defineSchema({
     editedAt: v.optional(v.number()),
     /** The one chat it belongs to (a project chat's own memory), out of every other chat. Unset: everywhere. */
     conversationId: v.optional(v.id("conversations")),
+    /**
+     * Who it is about, besides the owner: names, as the owner calls them ("Datta", "Arjun"). What
+     * Settings → People shows for each person. Where it may be seen is still conversationId's to say.
+     */
+    about: v.optional(v.array(v.string())),
+    /**
+     * The to-do this note is the plan behind ("restock chicken on 29 Sep"). When the to-do moves, is ticked
+     * off, put back or deleted, the note is superseded by one that says so (memories.followTodo).
+     */
+    todoId: v.optional(v.id("todos")),
     /** Its meaning as a vector, for search by meaning (lib/embed.ts): base64 float32, and the model that made it. */
     vector: v.optional(v.string()),
     vectorModel: v.optional(v.string()),
@@ -644,6 +658,7 @@ export default defineSchema({
     .index("by_created", ["createdAt"])
     .index("by_kind", ["kind", "createdAt"])
     .index("by_day", ["day", "createdAt"])
+    .index("by_todo", ["todoId"])
     .searchIndex("search_text", { searchField: "text" }),
 
   /**

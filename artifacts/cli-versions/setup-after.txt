@@ -1,0 +1,13 @@
+
+Perry setup
+  Telegram is optional. For a bot: message @BotFather, send /newbot, and paste its token.
+  Bot token, or Enter to skip:   No bot: talk to Perry from the dashboard. Add one on the Keys page any time.
+  Codex 0.159.1 is out. To update: npm install -g @openai/codex@latest
+  ✔ codex 0.150.0, signed in using ChatGPT
+
+Next
+  pnpm perry start  runs Perry in the background
+  dashboard key: 1La5DfCp_v-Zupb_ysEZiApa9nxT9f2g
+
+  (also saved in .env.local; `pnpm perry doctor` checks everything)
+

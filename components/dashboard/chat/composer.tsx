@@ -16,7 +16,8 @@ export const MAX_FILES = 10;
 export const MAX_BYTES = 50 * 1024 * 1024;
 const ACCEPT = "image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json";
 
-export type Suggestion = { key: string; label: string; hint: string; apply: () => void };
+/** `typed`: already typed out in full, so Enter sends the message rather than picking it. */
+export type Suggestion = { key: string; label: string; hint: string; apply: () => void; typed?: boolean };
 
 /** How the composer names a thinking level: Codex's own ids, capitalised. */
 export const levelName = (level: string) => level === "xhigh" ? "Extra high" : `${level[0]?.toUpperCase() ?? ""}${level.slice(1)}`;
@@ -38,13 +39,15 @@ type Pickers = {
 };
 
 export function Composer({
-  ref, assistant, draft, onDraftChange, onSubmit, onStop, waiting, busy, uploading, files, onAddFiles, onRemoveFile,
-  suggestions, completing, pickers, above,
+  ref, assistant, draft, onDraftChange, onCaret, onSubmit, onStop, waiting, busy, uploading, files, onAddFiles, onRemoveFile,
+  suggestions, suggesting = "Commands", completing, pickers, above,
 }: {
   ref?: Ref<HTMLTextAreaElement>;
   assistant: string;
   draft: string;
   onDraftChange: (draft: string) => void;
+  /** Where the caret is, as it moves: a $name is completed where it is typed. */
+  onCaret?: (position: number) => void;
   onSubmit: () => void;
   onStop?: () => void;
   waiting: boolean;
@@ -54,8 +57,10 @@ export function Composer({
   onAddFiles: (files: File[]) => void;
   onRemoveFile: (file: File) => void;
   suggestions: Suggestion[];
-  /** What Enter finishes instead of sending: a half-typed command name, or a half-typed choice ("/think hi"). */
-  completing: "command" | "choice" | null;
+  /** What the suggestions are, for screen readers: commands, or skills. */
+  suggesting?: string;
+  /** What Enter finishes instead of sending: a half-typed command name, a half-typed choice ("/think hi"), or a half-typed $skill. */
+  completing: "command" | "choice" | "skill" | null;
   pickers: Pickers;
   above?: ReactNode;
 }) {
@@ -65,7 +70,8 @@ export function Composer({
   const [dismissed, setDismissed] = useState(false);
   const [dragging, setDragging] = useState(false);
   useEffect(() => { setHighlight(0); setArrowed(false); }, [draft]);
-  useEffect(() => { if (!draft.startsWith("/")) setDismissed(false); }, [draft]);
+  // Escape hides the list until there is nothing to suggest: a command or $name finished, or taken back.
+  useEffect(() => { if (!suggestions.length) setDismissed(false); }, [suggestions.length]);
 
   const shown = dismissed ? [] : suggestions;
   const index = Math.min(highlight, Math.max(0, shown.length - 1));
@@ -76,7 +82,7 @@ export function Composer({
     <div className="relative">
       {above}
       {shown.length > 0 && (
-        <div role="listbox" id="chat-commands" aria-label="Commands"
+        <div role="listbox" id="chat-commands" aria-label={suggesting}
           className="absolute inset-x-0 bottom-full z-10 mb-2 max-h-72 overflow-y-auto rounded-xl border bg-popover p-1 shadow-lg">
           {shown.map((item, position) => (
             <button type="button" key={item.key} id={`chat-command-${position}`} role="option" aria-selected={position === index} tabIndex={-1}
@@ -111,7 +117,8 @@ export function Composer({
           aria-autocomplete="list"
           aria-activedescendant={shown.length ? `chat-command-${index}` : undefined}
           className="block max-h-[40vh] min-h-[52px] w-full resize-none bg-transparent px-5 pt-4 pb-1 text-base leading-relaxed outline-none sm:text-[15px] field-sizing-content placeholder:text-muted-foreground"
-          onChange={(event) => onDraftChange(event.target.value)}
+          onChange={(event) => { onDraftChange(event.target.value); onCaret?.(event.target.selectionStart); }}
+          onSelect={(event) => onCaret?.(event.currentTarget.selectionStart)}
           onPaste={(event) => { const pasted = Array.from(event.clipboardData.files); if (pasted.length) { event.preventDefault(); onAddFiles(pasted); } }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing) return;
@@ -120,8 +127,9 @@ export function Composer({
               if (event.key === "ArrowUp") { event.preventDefault(); setArrowed(true); setHighlight((index - 1 + shown.length) % shown.length); return; }
               if (event.key === "Tab") { event.preventDefault(); shown[index].apply(); return; }
               if (event.key === "Escape") { event.preventDefault(); setDismissed(true); return; }
-              // Enter takes a suggestion you arrowed to, or finishes a half-typed command; anything typed out in full runs as typed.
-              if (event.key === "Enter" && !event.shiftKey && (arrowed || completing === "choice" || (completing === "command" && shown[index].label.trim() !== draft.trim()))) {
+              // Enter takes a suggestion you arrowed to, or finishes a half-typed command or $name; anything typed out in full runs as typed.
+              if (event.key === "Enter" && !event.shiftKey && (arrowed || completing === "choice" || (completing === "command" && shown[index].label.trim() !== draft.trim())
+                || (completing === "skill" && !shown[index].typed))) {
                 event.preventDefault(); shown[index].apply(); return;
               }
             }

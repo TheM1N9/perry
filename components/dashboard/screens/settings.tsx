@@ -9,7 +9,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { EngineView } from "@/convex/engines";
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access } from "@/convex/lib/commands";
-import { SIGN_IN_LABELS, type LoginInteraction } from "@/convex/lib/engines";
+import { SIGN_IN_LABELS, type EngineUpdate, type LoginInteraction } from "@/convex/lib/engines";
 import type { PetTheme } from "@/convex/pet";
 import { ago, errorText, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
@@ -103,6 +103,8 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
   const request = engine.request;
   const pending = request?.status === "queued" || request?.status === "running";
   const unavailable = !online ? "This computer is offline." : !engine.installed ? `${engine.label} isn't installed or can't start on this computer.` : null;
+  // Too old for Perry: it is updated before it is signed in.
+  const outdated = engine.update?.need === "required";
   const state: { tone: Tone; label: string } = !online ? { tone: "neutral", label: "Offline" }
     : !engine.installed ? { tone: "danger", label: `${engine.label} unavailable` }
     : engine.signedIn ? { tone: "success", label: "Signed in" } : { tone: "warning", label: "Signed out" };
@@ -122,6 +124,9 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
             <span className="text-sm font-medium">{engine.label}</span>
             {experimental && <StatusBadge tone="warning">Experimental</StatusBadge>}
             <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+            {online && engine.update && (
+              <StatusBadge tone={engine.update.need === "required" ? "danger" : "info"}>{engine.update.need === "required" ? "Update required" : "Update available"}</StatusBadge>
+            )}
             {engine.version && <span className="text-xs text-muted-foreground">{engine.version}</span>}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">{account}{unavailable && ` · ${unavailable}`}</p>
@@ -134,18 +139,19 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
           : experimental
             ? (
               <div className="flex flex-wrap gap-2">
-                <ActionButton size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login", "gemini-api-key")}>Use Gemini API key</ActionButton>
-                <ActionButton variant="outline" size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login", "oauth-personal")}
+                <ActionButton size="sm" disabled={Boolean(unavailable) || pending || outdated} action={() => ask("login", "gemini-api-key")}>Use Gemini API key</ActionButton>
+                <ActionButton variant="outline" size="sm" disabled={Boolean(unavailable) || pending || outdated} action={() => ask("login", "oauth-personal")}
                   confirm={{ title: "Sign in with Google? (Experimental)", body: <GoogleWarning />, label: "Sign in anyway" }}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>
               </div>
             )
-            : <ActionButton size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login")}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>}
+            : <ActionButton size="sm" disabled={Boolean(unavailable) || pending || outdated} action={() => ask("login")}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>}
       </div>
       {experimental && !engine.signedIn && (
         <p className="mt-2 text-sm text-pretty text-muted-foreground">
           Perry runs Google&apos;s own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved in the Keys tab. Signing in with Google also works, at your own risk: <GoogleWarning inline />
         </p>
       )}
+      {online && engine.update && <UpdateSteps engine={engine.label} computer={computer} update={engine.update} />}
       {engine.error && <p className="mt-2 text-sm text-destructive">{engine.error}</p>}
       {request?.status === "queued" && <Waiting>Waiting for the computer to pick this up…</Waiting>}
       {request?.status === "running" && request.kind === "logout" && <Waiting>Signing out…</Waiting>}
@@ -154,6 +160,26 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
       {request?.status === "error" && request.error && (request.kind === "logout"
         ? <p className="mt-2 text-sm text-pretty text-destructive">Sign-out didn&apos;t finish: {request.error}.</p>
         : <p className="mt-2 text-sm text-pretty text-destructive">Sign-in didn&apos;t finish: {request.error}. Try again; each code works for a few minutes.</p>)}
+    </div>
+  );
+}
+
+/**
+ * An engine whose CLI should be updated, and the command that does it on that
+ * computer. Too old for Perry, it takes no new replies until it is; otherwise
+ * it is only a newer release. Perry notices the update by itself.
+ */
+function UpdateSteps({ engine, computer, update }: { engine: string; computer: string; update: EngineUpdate }) {
+  const required = update.need === "required";
+  return (
+    <div className={cn("mt-3 rounded-xl border p-4", required ? "border-destructive/30 bg-destructive/5" : "bg-muted/40")} role={required ? "alert" : "status"}>
+      <p className="text-sm font-medium">{required ? `Update ${engine} to keep using it` : `${engine} ${update.latest} is out`}</p>
+      <p className="mt-0.5 text-sm text-pretty text-muted-foreground">
+        {required
+          ? `${computer} has ${engine} ${update.version}, older than Perry works with (${update.minimum} or newer). Until it's updated, Perry won't start replies with it. Run this on ${computer}:`
+          : `${computer} has ${update.version}. To update, run this on ${computer}:`}
+      </p>
+      <div className="mt-3 max-w-md"><CommandLine>{update.command}</CommandLine></div>
     </div>
   );
 }
@@ -577,6 +603,27 @@ function Logins() {
   );
 }
 
+/** What Perry remembers about one person: from the owner's chats, and from theirs, each forgettable. */
+function Remembered({ items }: { items?: Array<{ id: Id<"memories">; text: string; from: "you" | "them" }> }) {
+  const { dashboardKey } = useSession();
+  const forget = useMutation(api.dashboard.deleteMemory);
+  if (!items?.length) return null;
+  return (
+    <ul className="mt-2 grid gap-1 border-l pl-3">
+      {items.map((item) => (
+        <li key={item.id} className="group flex items-start justify-between gap-2 text-sm">
+          <p className="min-w-0 text-pretty">
+            <span className="text-foreground">{item.text}</span>
+            <span className="ml-1.5 text-xs text-muted-foreground">{item.from === "you" ? "from your chats" : "from their chat"}</span>
+          </p>
+          <ActionButton variant="ghost" size="sm" className="h-6 shrink-0 px-2 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            action={() => forget({ key: dashboardKey, id: item.id })} success="Forgotten.">Forget</ActionButton>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 const PEOPLE_STATUS = { allowed: { label: "Talks with Perry", tone: "success" }, pending: { label: "Waiting for you", tone: "warning" }, blocked: { label: "Blocked", tone: "neutral" }, known: { label: "Not yet", tone: "neutral" } } as const;
 
 /**
@@ -588,6 +635,7 @@ const PEOPLE_STATUS = { allowed: { label: "Talks with Perry", tone: "success" },
 function People() {
   const { dashboardKey } = useSession();
   const people = useQuery(api.contacts.listForDashboard, { key: dashboardKey });
+  const remembered = useQuery(api.contacts.memoriesForDashboard, { key: dashboardKey });
   const set = useMutation(api.contacts.setForDashboard);
   const now = useNow();
   const [editing, setEditing] = useState<{ id: Id<"contacts">; brief: string } | null>(null);
@@ -608,8 +656,8 @@ function People() {
   };
 
   return (
-    <Section title="People" description="Who Perry talks with for you on WhatsApp and Telegram. You are asked the first time: when someone new writes to Perry, and before Perry first writes to someone. Each has a chat of their own that knows nothing of yours but their brief.">
-      {people === undefined ? <ListSkeleton /> : people.length === 0 ? (
+    <Section title="People" description="The people in your life, and what Perry remembers about them: from your chats, used only in yours, and from theirs, used only in theirs. You are asked the first time Perry talks with anyone: when someone new writes to it, and before it first writes to someone.">
+      {people === undefined ? <ListSkeleton /> : people.length === 0 && !remembered?.others.length ? (
         <EmptyState title="Nobody yet">Ask Perry to message someone (&ldquo;tell Datta I&apos;m running late&rdquo;), or share Perry&apos;s WhatsApp or Telegram with someone.</EmptyState>
       ) : (
         <List label="People">
@@ -639,6 +687,7 @@ function People() {
                         confirm={{ title: `Block ${person.name}?`, body: "Perry stops answering them and will not write to them. You can allow them again here.", label: "Block" }}>Block</ActionButton>}
                 </div>
               </div>
+              <Remembered items={remembered?.byContact[person.id]} />
               {editing?.id === person.id && (
                 <div className="mt-2 grid gap-2">
                   <Textarea value={editing.brief} rows={3} placeholder={`What Perry may know and share with ${person.name}. "He can know my gym times."`}
@@ -652,6 +701,19 @@ function People() {
             </li>
           ))}
         </List>
+      )}
+      {remembered && remembered.others.length > 0 && (
+        <div className="mt-4">
+          <h3 className="mb-2 text-sm font-medium">Others you&apos;ve told Perry about</h3>
+          <List label="Others you've told Perry about">
+            {remembered.others.map((person) => (
+              <li key={person.name} className="px-4 py-3">
+                <p className="text-sm font-medium">{person.name}</p>
+                <Remembered items={person.memories} />
+              </li>
+            ))}
+          </List>
+        </div>
       )}
     </Section>
   );

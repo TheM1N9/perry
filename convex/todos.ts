@@ -6,6 +6,7 @@ import { targetOf, type Target } from "./channels";
 import { nextRun, ownerClock, timezoneOf } from "./jobs";
 import { assertDashboardKey } from "./lib/auth";
 import { editButtons } from "./lib/telegram";
+import { followTodo, linkNotes, notesOf, onClock } from "./memories";
 
 /**
  * The owner's to-do list, after Petodo: things they mean to do, each with a
@@ -118,20 +119,37 @@ async function insert(ctx: MutationCtx, todo: { title: string; dueAt?: number; r
   });
 }
 
+// Each change below is followed by the notes that are the plan behind the to-do (memories.followTodo),
+// whether it came from Perry, the dashboard, the pet or a button on a reminder.
+
 /** Tick it off; one that repeats makes its next, at the schedule's next time after this one. */
 async function complete(ctx: MutationCtx, todo: Doc<"todos">): Promise<Id<"todos"> | null> {
   if (todo.doneAt) return null;
   const now = Date.now();
   await ctx.db.patch(todo._id, { doneAt: now, nextNagAt: undefined, updatedAt: now });
+  await followTodo(ctx, { ...todo, doneAt: now }, "done");
   if (!todo.repeat) return null;
   const timezone = await timezoneOf(ctx);
   const dueAt = nextRun(todo.repeat, timezone, Math.max(todo.dueAt ?? now, now));
   return await ctx.db.insert("todos", { title: todo.title, dueAt, nextNagAt: dueAt, repeat: todo.repeat, by: todo.by, createdAt: now, updatedAt: now });
 }
 
+/** Undone, it is as it was; a repeat's next one, already made, stays. */
+async function reopen(ctx: MutationCtx, todo: Doc<"todos">) {
+  if (!todo.doneAt) return;
+  await ctx.db.patch(todo._id, { doneAt: undefined, nextNagAt: todo.dueAt && todo.dueAt > Date.now() ? todo.dueAt : undefined, updatedAt: Date.now() });
+  await followTodo(ctx, { ...todo, doneAt: undefined }, "undone");
+}
+
 /** A new time starts its reminders afresh; none leaves it untimed. */
 async function reschedule(ctx: MutationCtx, todo: Doc<"todos">, dueAt: number | undefined) {
   await ctx.db.patch(todo._id, { dueAt, nextNagAt: todo.doneAt ? undefined : dueAt, nagged: undefined, updatedAt: Date.now() });
+  if (dueAt !== todo.dueAt) await followTodo(ctx, { ...todo, dueAt }, "moved");
+}
+
+async function drop(ctx: MutationCtx, todo: Doc<"todos">) {
+  await followTodo(ctx, todo, "dropped");
+  await ctx.db.delete(todo._id);
 }
 
 async function own(ctx: QueryCtx, raw: string): Promise<Doc<"todos"> | null> {
@@ -299,8 +317,7 @@ export const setDone = mutation({
   handler: async (ctx, args) => {
     const todo = await mine(ctx, args.key, args.id);
     if (args.done) await complete(ctx, todo);
-    // Undone, it is as it was; a repeat's next one, already made, stays.
-    else if (todo.doneAt) await ctx.db.patch(todo._id, { doneAt: undefined, nextNagAt: todo.dueAt && todo.dueAt > Date.now() ? todo.dueAt : undefined, updatedAt: Date.now() });
+    else await reopen(ctx, todo);
     return null;
   },
 });
@@ -346,7 +363,7 @@ export const remove = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const todo = await mine(ctx, args.key, args.id);
-    await ctx.db.delete(todo._id);
+    await drop(ctx, todo);
     return null;
   },
 });
@@ -366,7 +383,7 @@ export const endDay = mutation({
     const left = (await open(ctx)).filter((todo) => todo.dueAt !== undefined && todo.dueAt < midnight);
     for (const todo of left) {
       if (args.action === "clear") {
-        await ctx.db.delete(todo._id);
+        await drop(ctx, todo);
         continue;
       }
       await reschedule(ctx, todo, tomorrowsTime(todo.dueAt!, timezone));
@@ -420,12 +437,21 @@ function parseAt(at: string): number {
   return dueAt;
 }
 
+/** What the agent hears of the notes behind a to-do, so it does not write the change down a second time. */
+async function linkedFor(ctx: QueryCtx, id: Id<"todos">): Promise<{ linkedNotes?: string[]; note?: string }> {
+  const notes = await notesOf(ctx, id);
+  return notes.length
+    ? { linkedNotes: notes.map((note) => note._id), note: "These notes in memory are the plan behind it and follow it: they already say what changed, so do not remember the change again." }
+    : {};
+}
+
 export const addFromAgent = internalMutation({
-  args: { title: v.string(), at: v.optional(v.string()), repeat: v.optional(v.string()) },
-  handler: async (ctx, args): Promise<{ added?: AgentTodo; error?: string }> => {
+  args: { title: v.string(), at: v.optional(v.string()), repeat: v.optional(v.string()), noteIds: v.optional(v.array(v.string())) },
+  handler: async (ctx, args): Promise<{ added?: AgentTodo; linkedNotes?: string[]; note?: string; error?: string }> => {
     try {
       const id = await insert(ctx, { title: args.title, dueAt: args.at ? parseAt(args.at) : undefined, repeat: args.repeat, by: "assistant" });
-      return { added: forAgent((await ctx.db.get(id))!, await timezoneOf(ctx)) };
+      await linkNotes(ctx, id, args.noteIds ?? []);
+      return { added: forAgent((await ctx.db.get(id))!, await timezoneOf(ctx)), ...await linkedFor(ctx, id) };
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }
@@ -455,20 +481,23 @@ export const updateFromAgent = internalMutation({
     noTime: v.optional(v.boolean()),
     repeat: v.optional(v.string()),
     done: v.optional(v.boolean()),
+    /** Notes in memory that are the plan behind it, linked first so they follow this very change. */
+    noteIds: v.optional(v.array(v.string())),
   },
-  handler: async (ctx, args): Promise<{ updated?: AgentTodo; next?: AgentTodo; error?: string }> => {
+  handler: async (ctx, args): Promise<{ updated?: AgentTodo; next?: AgentTodo; linkedNotes?: string[]; note?: string; error?: string }> => {
     const todo = await own(ctx, args.id);
     if (!todo) return { error: "There is no to-do with that id; list_todos shows them." };
     const timezone = await timezoneOf(ctx);
     try {
+      await linkNotes(ctx, todo._id, args.noteIds ?? []);
       if (args.title) await ctx.db.patch(todo._id, { title: cleanTitle(args.title), updatedAt: Date.now() });
       if (args.repeat !== undefined) await ctx.db.patch(todo._id, { repeat: checkRepeat(args.repeat, timezone), updatedAt: Date.now() });
       if (args.at || args.noTime) await reschedule(ctx, (await ctx.db.get(todo._id))!, args.at ? parseAt(args.at) : undefined);
       let next: Id<"todos"> | null = null;
       if (args.done === true) next = await complete(ctx, (await ctx.db.get(todo._id))!);
-      if (args.done === false) await ctx.db.patch(todo._id, { doneAt: undefined, updatedAt: Date.now() });
+      if (args.done === false) await reopen(ctx, (await ctx.db.get(todo._id))!);
       const nextTodo = next ? await ctx.db.get(next) : null;
-      return { updated: forAgent((await ctx.db.get(todo._id))!, timezone), ...(nextTodo ? { next: forAgent(nextTodo, timezone) } : {}) };
+      return { updated: forAgent((await ctx.db.get(todo._id))!, timezone), ...(nextTodo ? { next: forAgent(nextTodo, timezone) } : {}), ...await linkedFor(ctx, todo._id) };
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }
@@ -481,7 +510,32 @@ export const removeFromAgent = internalMutation({
   handler: async (ctx, args) => {
     const todo = await own(ctx, args.id);
     if (!todo) return false;
-    await ctx.db.delete(todo._id);
+    await drop(ctx, todo);
     return true;
+  },
+});
+
+// --- The heartbeat (jobs.run) -------------------------------------------------
+
+/**
+ * The to-do list as it stands, for a heartbeat or briefing weighing what the
+ * owner left open: what is still to do, and what was ticked off in the last
+ * three days, in words on the owner's clock. waiting: due later, or done,
+ * so a thread about it has nothing to ask yet, or any more.
+ */
+export const forFollowUps = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<Array<{ title: string; state: string; waiting: boolean }>> => {
+    const timezone = await timezoneOf(ctx);
+    const now = Date.now();
+    const done = await ctx.db.query("todos").withIndex("by_done", (q) => q.gt("doneAt", now - 3 * 86_400_000)).order("desc").take(20);
+    return [
+      ...(await open(ctx)).slice(0, 40).map((todo) => ({
+        title: todo.title,
+        state: !todo.dueAt ? "no set time" : todo.dueAt > now ? `due ${onClock(todo.dueAt, timezone)}, still to come` : `was due ${onClock(todo.dueAt, timezone)}, not ticked off`,
+        waiting: (todo.dueAt ?? 0) > now,
+      })),
+      ...done.map((todo) => ({ title: todo.title, state: `done, ticked off ${onClock(todo.doneAt!, timezone)}`, waiting: true })),
+    ];
   },
 });

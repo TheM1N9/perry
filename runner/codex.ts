@@ -4,7 +4,7 @@ import { readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { createInterface } from "node:readline";
-import type { GeneratedImage } from "./engine";
+import type { GeneratedImage, NamedSkill } from "./engine";
 import { killTree, spawnEngine } from "./engines/process";
 import { PATHS } from "./home";
 
@@ -102,8 +102,13 @@ export class TurnFailed extends Error {
 }
 export type CodexAttachment = { url?: string; localPath?: string; fileName: string; contentType?: string };
 export type CodexModel = { id: string; name: string; isDefault: boolean; efforts: string[]; defaultEffort?: string };
-/** A message as Codex input: its text, images inline, other files named by where they are. */
-export function userInput(prompt: string, attachments: CodexAttachment[], recalled?: string): object[] {
+/**
+ * A message as Codex input: its text, images inline, other files named by
+ * where they are, and each skill it names as a `skill` item, which has Codex
+ * put that SKILL.md in front of the model with the message. (Codex also finds
+ * a "$name" in the text on its own, and uses a skill named both ways once.)
+ */
+export function userInput(prompt: string, attachments: CodexAttachment[], recalled?: string, skills: NamedSkill[] = []): object[] {
   const text = { type: "text", text: prompt, text_elements: [] };
   // Recalled memory goes first, as its own part of the owner's message.
   const input: object[] = recalled ? [{ type: "text", text: recalled, text_elements: [] }, text] : [text];
@@ -116,6 +121,7 @@ export function userInput(prompt: string, attachments: CodexAttachment[], recall
       text.text += `\nAttached file: ${attachment.fileName} (${path ?? attachment.url})`;
     }
   }
+  for (const skill of skills) input.push({ type: "skill", name: skill.name, path: skill.path });
   return input;
 }
 
@@ -456,8 +462,8 @@ export class CodexAppServer extends EventEmitter {
    * carries on in the same turn. Fails with "no active turn to steer" once the
    * turn has ended, and when expectedTurnId is no longer the active turn.
    */
-  steer(threadId: string, turnId: string, prompt: string, attachments: CodexAttachment[] = []): Promise<unknown> {
-    return this.request("turn/steer", { threadId, expectedTurnId: turnId, input: userInput(prompt, attachments) }, 30_000);
+  steer(threadId: string, turnId: string, prompt: string, attachments: CodexAttachment[] = [], skills: NamedSkill[] = []): Promise<unknown> {
+    return this.request("turn/steer", { threadId, expectedTurnId: turnId, input: userInput(prompt, attachments, undefined, skills) }, 30_000);
   }
 
   /**

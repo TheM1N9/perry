@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, ChevronsUpDownIcon, InboxIcon, ListChecksIcon, LockIcon, MonitorIcon,
-  MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
+  MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, PuzzleIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
@@ -421,6 +421,7 @@ function AccountMenu() {
             </DropdownMenuGroup>
             <DropdownMenuGroup>
               <DropdownMenuItem onClick={() => go("/memory")}><BookUserIcon />Memory</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => go("/skills")}><PuzzleIcon />Skills</DropdownMenuItem>
               <DropdownMenuItem onClick={() => go("/connectors")}><CableIcon />Connectors</DropdownMenuItem>
               <DropdownMenuItem onClick={() => go("/activity")}><ActivityIcon />Activity</DropdownMenuItem>
               <DropdownMenuItem onClick={() => go("/computer")}><MonitorIcon />Computer</DropdownMenuItem>
