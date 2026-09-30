@@ -28,9 +28,10 @@ import { ACCESS_ICONS } from "../chat/composer";
 import { PetControl } from "../pet-control";
 import { Shortcuts } from "../shortcuts";
 import { Updates } from "../updates";
+import { Usage } from "./usage";
 import { ActionButton, CommandLine, CopyButton, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
 
-const TABS = ["general", "keys", "people", "shortcuts", "telegram", "whatsapp"] as const;
+const TABS = ["general", "usage", "keys", "people", "shortcuts", "telegram", "whatsapp"] as const;
 
 export function Settings() {
   const [tab, setTab] = useTab(TABS, "general");
@@ -39,6 +40,7 @@ export function Settings() {
       <Tabs value={tab} onValueChange={(value) => setTab(value as (typeof TABS)[number])}>
         <TabsList variant="line" className="mb-6 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
           <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="usage">Usage</TabsTrigger>
           <TabsTrigger value="keys">Keys</TabsTrigger>
           <TabsTrigger value="people">People</TabsTrigger>
           <TabsTrigger value="shortcuts">Keyboard shortcuts</TabsTrigger>
@@ -46,6 +48,7 @@ export function Settings() {
           <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
         </TabsList>
         <TabsContent value="general"><Engines /><NewChatAccess /><Manners /><Updates /><DesktopPet /><Appearance /></TabsContent>
+        <TabsContent value="usage"><Usage /></TabsContent>
         <TabsContent value="keys"><Keys /></TabsContent>
         <TabsContent value="people"><People /></TabsContent>
         <TabsContent value="shortcuts"><Shortcuts /></TabsContent>

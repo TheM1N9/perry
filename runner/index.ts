@@ -68,6 +68,7 @@ import { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig, type Runn
 import { TurnTrace } from "./trace";
 import { withVersions } from "./versions";
 import { TURN_IDLE_MIN, TURN_MAX_MIN } from "../convex/lib/turnLimits";
+import { LIMIT_HIT, LIMITS_EVERY_MS } from "../convex/lib/usage";
 
 const CONFIG_DIR = HOME;
 /** Finished turns not yet delivered. The folder keeps its name from before engines, so none is lost on update. */
@@ -313,6 +314,39 @@ async function main() {
       .finally(() => { probing = null; });
     return probing;
   };
+  /** When each engine's plan limits were last read, those being read, and reads waiting their minute. */
+  const limitsRead = new Map<EngineKind, number>();
+  const readingLimits = new Set<EngineKind>();
+  const limitsLater = new Map<EngineKind, ReturnType<typeof setTimeout>>();
+  /**
+   * Read how much of an engine's plan is used and report it (convex/usage.ts):
+   * every LIMITS_EVERY_MS while it is signed in, or now (`fresh`), for an
+   * engine that can say. None of the plan is spent reading it.
+   */
+  const readLimits = async (engine: Engine, fresh = false) => {
+    if (!engine.limits || !statuses.get(engine.kind)?.signedIn || readingLimits.has(engine.kind)) return;
+    if (!fresh && Date.now() - (limitsRead.get(engine.kind) ?? 0) < LIMITS_EVERY_MS) return;
+    readingLimits.add(engine.kind);
+    limitsRead.set(engine.kind, Date.now());
+    try {
+      const limits = await engine.limits();
+      if (limits) await client.mutation(api.usage.report, { token, engine: engine.kind, limits });
+    } catch (error) {
+      console.log(dim(`  could not read ${engine.label}'s plan limits: ${message(error)}`));
+    } finally {
+      readingLimits.delete(engine.kind);
+    }
+  };
+  /** After a turn, its engine's limits are read again: at once, or when a minute has passed since the last read. */
+  const readLimitsSoon = (engine: Engine) => {
+    if (!engine.limits || limitsLater.has(engine.kind)) return;
+    const wait = Math.max(0, (limitsRead.get(engine.kind) ?? 0) + 60_000 - Date.now());
+    limitsLater.set(engine.kind, setTimeout(() => {
+      limitsLater.delete(engine.kind);
+      void readLimits(engine, true);
+    }, wait));
+  };
+  const readAllLimits = () => { for (const engine of engines.values()) void readLimits(engine); };
   /**
    * An engine for quick side turns (the reviewer, chat names): the preferred
    * one when it runs them and is signed in, else any that is.
@@ -509,6 +543,7 @@ async function main() {
   const checkInAndShare = async () => { await checkIn(); };
   await client.mutation(api.engines.recoverAuth, { token });
   await refreshEngines();
+  readAllLimits();
   mkdirSync(TURN_RESULTS, { recursive: true });
   const resultPath = (id: string) => join(TURN_RESULTS, `${id}.json`);
   const savedResult = (id: string): TurnRecord | null => {
@@ -548,7 +583,7 @@ async function main() {
 
   const heartbeat = setInterval(() => {
     void checkInAndShare();
-    void refreshEngines();
+    void refreshEngines().then(readAllLimits);
     void recoverTurns(false).catch((error) => console.error(red(`  turn delivery retry failed: ${message(error)}`)));
   }, CHECKIN_MS);
   console.log(green("  connected.\n"));
@@ -932,6 +967,13 @@ async function main() {
       await Promise.all(steers.map(([, steer]) => steer.done));
       for (const [id] of steers) steered.delete(id);
       saveResult(job._id, result);
+      // Where the engine's plan stands after the turn: a limit it refused the turn for, or, as it went through, none.
+      if (engine && job.kind !== "compact") {
+        const hit = result.error && LIMIT_HIT.test(result.error) ? { at: Date.now(), message: result.error } : result.error || result.stopped ? undefined : null;
+        if (hit !== undefined) void client.mutation(api.usage.report, { token, engine: kind, hit }).catch(() => {});
+        if (hit) console.log(yellow(`  ${engine.label} refused the turn for your plan's limit`));
+        readLimitsSoon(engine);
+      }
       // The trace's last report goes before the turn ends; Convex takes reports only while it runs.
       trace.drain(Date.now());
       await report();

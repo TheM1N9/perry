@@ -55,14 +55,21 @@
  *   Tools      Perry's own tools are an MCP server. `tools` offers it over
  *               HTTP (url and bearer header) and as a stdio command
  *               (runner/mcp-bridge.ts), for engines that ignore HTTP MCP.
+ *   limits()    Optional. How much of the owner's plan is used and when each
+ *               of its windows resets, as the vendor says (Codex's
+ *               account/rateLimits/read, Claude Code's /usage data), without
+ *               spending any of it. The runner reads it every few minutes
+ *               and after the engine's turns; an engine without it only
+ *               ever shows the limits it hits (convex/lib/usage.ts).
  *   kill()      Ends the engine's processes, the whole group. The runner's
  *               watchdog interrupts a turn that runs too long, then kills.
  */
 
 import type { Access } from "../convex/lib/commands";
 import type { EngineKind, LoginInteraction } from "../convex/lib/engines";
+import type { PlanLimits, PlanWindow } from "../convex/lib/usage";
 
-export type { Access, EngineKind, LoginInteraction };
+export type { Access, EngineKind, LoginInteraction, PlanLimits, PlanWindow };
 
 /** How a message the owner sends while a turn runs reaches it. */
 export type SteerMode =
@@ -325,6 +332,8 @@ export interface Engine {
   compact?(cursor: string, cwd: string): Promise<void>;
   /** For `quickTurns`. Throws on failure or when out of time; the error may carry the `model` it tried. */
   quickTurn?(turn: QuickTurn): Promise<{ text: string; model?: string }>;
+  /** The plan's limits, read without spending any of them; null when this sign-in has none (an API key). */
+  limits?(): Promise<PlanLimits | null>;
   /** End its processes, the whole group. Whatever runs fails; the next call starts it again. */
   kill(): void;
 }
