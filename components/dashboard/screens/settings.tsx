@@ -576,6 +576,27 @@ function Logins() {
   );
 }
 
+/** What Perry remembers about one person: from the owner's chats, and from theirs, each forgettable. */
+function Remembered({ items }: { items?: Array<{ id: Id<"memories">; text: string; from: "you" | "them" }> }) {
+  const { dashboardKey } = useSession();
+  const forget = useMutation(api.dashboard.deleteMemory);
+  if (!items?.length) return null;
+  return (
+    <ul className="mt-2 grid gap-1 border-l pl-3">
+      {items.map((item) => (
+        <li key={item.id} className="group flex items-start justify-between gap-2 text-sm">
+          <p className="min-w-0 text-pretty">
+            <span className="text-foreground">{item.text}</span>
+            <span className="ml-1.5 text-xs text-muted-foreground">{item.from === "you" ? "from your chats" : "from their chat"}</span>
+          </p>
+          <ActionButton variant="ghost" size="sm" className="h-6 shrink-0 px-2 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            action={() => forget({ key: dashboardKey, id: item.id })} success="Forgotten.">Forget</ActionButton>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 const PEOPLE_STATUS = { allowed: { label: "Talks with Perry", tone: "success" }, pending: { label: "Waiting for you", tone: "warning" }, blocked: { label: "Blocked", tone: "neutral" }, known: { label: "Not yet", tone: "neutral" } } as const;
 
 /**
@@ -587,6 +608,7 @@ const PEOPLE_STATUS = { allowed: { label: "Talks with Perry", tone: "success" },
 function People() {
   const { dashboardKey } = useSession();
   const people = useQuery(api.contacts.listForDashboard, { key: dashboardKey });
+  const remembered = useQuery(api.contacts.memoriesForDashboard, { key: dashboardKey });
   const set = useMutation(api.contacts.setForDashboard);
   const now = useNow();
   const [editing, setEditing] = useState<{ id: Id<"contacts">; brief: string } | null>(null);
@@ -607,8 +629,8 @@ function People() {
   };
 
   return (
-    <Section title="People" description="Who Perry talks with for you on WhatsApp and Telegram. You are asked the first time: when someone new writes to Perry, and before Perry first writes to someone. Each has a chat of their own that knows nothing of yours but their brief.">
-      {people === undefined ? <ListSkeleton /> : people.length === 0 ? (
+    <Section title="People" description="The people in your life, and what Perry remembers about them: from your chats, used only in yours, and from theirs, used only in theirs. You are asked the first time Perry talks with anyone: when someone new writes to it, and before it first writes to someone.">
+      {people === undefined ? <ListSkeleton /> : people.length === 0 && !remembered?.others.length ? (
         <EmptyState title="Nobody yet">Ask Perry to message someone (&ldquo;tell Datta I&apos;m running late&rdquo;), or share Perry&apos;s WhatsApp or Telegram with someone.</EmptyState>
       ) : (
         <List label="People">
@@ -638,6 +660,7 @@ function People() {
                         confirm={{ title: `Block ${person.name}?`, body: "Perry stops answering them and will not write to them. You can allow them again here.", label: "Block" }}>Block</ActionButton>}
                 </div>
               </div>
+              <Remembered items={remembered?.byContact[person.id]} />
               {editing?.id === person.id && (
                 <div className="mt-2 grid gap-2">
                   <Textarea value={editing.brief} rows={3} placeholder={`What Perry may know and share with ${person.name}. "He can know my gym times."`}
@@ -651,6 +674,19 @@ function People() {
             </li>
           ))}
         </List>
+      )}
+      {remembered && remembered.others.length > 0 && (
+        <div className="mt-4">
+          <h3 className="mb-2 text-sm font-medium">Others you&apos;ve told Perry about</h3>
+          <List label="Others you've told Perry about">
+            {remembered.others.map((person) => (
+              <li key={person.name} className="px-4 py-3">
+                <p className="text-sm font-medium">{person.name}</p>
+                <Remembered items={person.memories} />
+              </li>
+            ))}
+          </List>
+        </div>
       )}
     </Section>
   );
