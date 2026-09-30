@@ -91,7 +91,8 @@ type Ran = { state: string; text: string; pid?: number; asked: string[]; handle?
 const INSTRUCTIONS = "You are Perry, the owner's assistant (stand-in instructions one).";
 /** One turn on a chat, answering the owner's requests with `answer`, and `during` once it has started. */
 async function turn(chat: Chat, prompt: string, access: "supervised" | "auto" | "full", options: { answer?: string; during?: (handle: { cursor: string; turnId: string }, asked: string[]) => Promise<void> } = {}): Promise<Ran> {
-  const since = Date.now();
+  // A little early: the stand-in's clock may tick coarser than this one.
+  const since = Date.now() - 50;
   const asked: string[] = [];
   let handle: Ran["handle"];
   let during: Promise<void> | undefined;
@@ -163,7 +164,7 @@ try {
   const autoAgain = await turn(a, "SAY AGAIN", "auto");
   check("aChangeBetweenTurnsSwitchesTheKeptProcess", toAuto.text === "Write:mode Write:mode Bash:allow" && toAuto.asked.join() === "Bash" && toAuto.pid === one.pid
     && controlsOf(one.pid, toAuto.since, "set_permission_mode").map((entry) => entry.mode).join() === "acceptEdits" && noted(toAuto) && !noted(autoAgain) && autoAgain.pid === one.pid,
-    { askedOwner: toAuto.asked, reply: toAuto.text, note: toAuto.blocks.find((block) => block.startsWith("The owner changed")), laterNote: noted(autoAgain) });
+    { askedOwner: toAuto.asked, reply: toAuto.text, pids: [toAuto.pid, autoAgain.pid], switched: controlsOf(one.pid, toAuto.since, "set_permission_mode").map((entry) => entry.mode), note: toAuto.blocks.find((block) => block.startsWith("The owner changed")), laterNote: noted(autoAgain) });
   check("accessNeverRestartedIt", startsOf(a.cursor!).length === 1, { starts: startsOf(a.cursor!).length });
 
   // 7. Another model: a new process, resuming the session.
