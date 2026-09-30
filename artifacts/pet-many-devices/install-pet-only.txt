@@ -1,0 +1,11 @@
+
+Installing Perry's desktop pet
+  git 2.47.0.windows.2, node v25.8.2, pnpm 10.33.0
+  downloading the pet...                          picking out his folder...                             installing his window and his ears (Electron and ONNX Runtime, under 1 GB)...                                                                                 the pet in W:\perry-tests\pet-many-devices\run\perry-many-pet-rSRWcz\perry-pet
+
+  Pairing with Perry at http://192.168.0.8:54104…
+  Paired, as Laptop (test). Perry lists this computer in Settings → Desktop pet, where it can be removed.
+Downloading Electron binary...
+  He is on this screen now, and starts with this computer from now on.
+  To stop him: node W:\perry-tests\pet-many-devices\run\perry-many-pet-rSRWcz\perry-pet\pet\connect.js off
+

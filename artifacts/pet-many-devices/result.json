@@ -1,0 +1,141 @@
+{
+  "ranAt": "2026-09-30T04:25:10.453Z",
+  "checks": {
+    "reachableOnNetwork": true,
+    "noKeyRefused": true,
+    "madeUpPetKeyRefused": true,
+    "codeWithNoneOpenRefused": true,
+    "petAPageOpen": true,
+    "petAChecksIn": true,
+    "petAUsesDashboardKey": true,
+    "addComputerOffered": true,
+    "codeShown": true,
+    "codeLooksRight": true,
+    "lineHasAddressAndCode": true,
+    "wrongCodeRefused": true,
+    "openAfterOneWrong": true,
+    "installerPaired": true,
+    "installerNeedsNoBunOrCodex": true,
+    "onlyThePetFolder": true,
+    "keptInItsOwnPetJson": true,
+    "itsOwnLoginEntry": true,
+    "ownersEntryUntouched": true,
+    "codeWorksOnce": true,
+    "petBPageOpen": true,
+    "petBUsesItsOwnKey": true,
+    "petBShowsHim": true,
+    "bothListedAndRunning": true,
+    "keyOpensHisPage": true,
+    "keyDoesNotOpenTheRest": true,
+    "mediaWithItsKey": true,
+    "hereAtA": true,
+    "hereAtBWithAIdle": true,
+    "awayOnlyWhenBothIdle": true,
+    "awaySaidInSettings": true,
+    "youAreHereInSettings": true,
+    "lookAsksB": true,
+    "lookDoneByB": true,
+    "bSaysItLooked": true,
+    "lookAsksA": true,
+    "lookDoneByA": true,
+    "aSaysItLooked": true,
+    "guessingClosesTheCode": true,
+    "removedFromList": true,
+    "keyStopsAtOnce": true,
+    "notCountedAfterRemoval": true,
+    "petBLockedOut": true,
+    "petAStillWorks": true,
+    "noDashboardErrors": true,
+    "loopbackOnlyNotOnNetwork": true,
+    "loopbackOnlySaid": true,
+    "addComputerDisabled": true,
+    "petBQuits": true,
+    "itsLoginEntryGone": true,
+    "ownersEntryUntouchedAtEnd": true,
+    "ownersPetUntouched": true,
+    "neverTheOwnersHome": true
+  },
+  "notes": {
+    "branch": "t3code/pet-many-devices",
+    "lanAddress": "192.168.0.8",
+    "ownersBefore": {
+      "entry": "present",
+      "pets": 1
+    },
+    "unpaired": {
+      "noKey": "Wrong dashboard key.",
+      "madeUp": {
+        "status": 403,
+        "error": "This computer's desktop pet was removed from Perry. Pair it again from Settings → Desktop pet on Perry's computer."
+      },
+      "noCode": {
+        "error": "That pairing code is wrong, already used, or expired. Make a new one in Perry's Settings → Desktop pet."
+      }
+    },
+    "linesShown": [
+      "$env:PERRY_PET='http://192.168.0.8:54104 839A-YSJS'; iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex",
+      "curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | PERRY_PET='http://192.168.0.8:54104 839A-YSJS' sh"
+    ],
+    "configB": {
+      "server": "http://192.168.0.8:54104",
+      "token": "pet_B8EP…"
+    },
+    "petBKey": "its own",
+    "scope": {
+      "board": {
+        "status": 200
+      },
+      "keys": {
+        "status": 403,
+        "error": "A desktop pet on another computer cannot call dashboard:getKeys."
+      },
+      "devices": {
+        "status": 403,
+        "error": "A desktop pet on another computer cannot call pet:devices."
+      },
+      "pair": {
+        "status": 403,
+        "error": "A desktop pet on another computer cannot call pet:pair."
+      },
+      "status": {
+        "status": 403,
+        "error": "A desktop pet on another computer cannot call pet:status."
+      },
+      "attachElsewhere": {
+        "status": 403,
+        "error": "A desktop pet on another computer attaches only the pictures it sent."
+      },
+      "admin": {
+        "status": 403,
+        "error": "Wrong or missing dashboard key."
+      }
+    },
+    "lookTries": {
+      "atB": 1,
+      "atA": 1
+    },
+    "lookB": {
+      "status": "done",
+      "inUploads": true
+    },
+    "dashboardErrors": [],
+    "off": "Stopped, and no longer starts at login. Remove this computer in Perry's Settings → Desktop pet to take its key away too."
+  },
+  "serverLogTail": [
+    "✓ Running next.config.ts took 53ms",
+    "[perry] connected this computer (DESKTOP-27SQLCP) to the local backend",
+    "[perry] backend ready: 414 functions, data in W:\\perry-tests\\pet-many-devices\\run\\perry-many-a-R11FKa",
+    "[perry] todos:board failed: Error: Wrong dashboard key.",
+    "    at C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-a9f5004c258ce727b\\.next\\server\\chunks\\_1gpwfkx._.js:285:10182",
+    "    at Object.handler (C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-a9f5004c258ce727b\\.next\\server\\chunks\\_13v62zs._.js:15:467)",
+    "    at C:\\Users\\Pranav\\Desktop\\Developer\\me-bot\\.claude\\worktrees\\agent-a9f5004c258ce727b\\.next\\server\\chunks\\_13v62zs._.js:177:23740",
+    "    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
+    "▲ Next.js 16.3.6",
+    "- Local:         http://127.0.0.1:54104",
+    "- Network:       http://127.0.0.1:54104",
+    "✓ Ready in 224ms",
+    "✓ Running next.config.ts took 49ms",
+    "[perry] backend ready: 414 functions, data in W:\\perry-tests\\pet-many-devices\\run\\perry-many-a-R11FKa",
+    ""
+  ]
+}
