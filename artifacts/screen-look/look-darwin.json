@@ -1,0 +1,197 @@
+{
+  "ranAt": "2026-09-29T21:28:46.695Z",
+  "platform": "darwin arm64",
+  "checks": {
+    "macAppIsElectronsOwn": true,
+    "settingsReachIt": true,
+    "startedAsItsOwnApp": true,
+    "frontWindowOnMac": true,
+    "macSaysWhatToAllow": true,
+    "macNamesTheAppItRunsIn": true,
+    "saysWhatToDoAfterAnElectronUpdate": true,
+    "macPictureWhenAllowed": true,
+    "hisWindowNeverInThePicture": true,
+    "realPetSaysWhatToAllow": true,
+    "ownerIsTakenToSettings": true,
+    "ownersPetUntouched": true
+  },
+  "notes": {
+    "electron": "<repo>/pet/node_modules/.pnpm/electron@44.4.5/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
+    "macAppIsElectronsOwn": {
+      "bundle": "<repo>/pet/node_modules/.pnpm/electron@44.4.5/node_modules/electron/dist/Electron.app",
+      "id": "com.github.Electron"
+    },
+    "designatedRequirement": "# designated => cdhash H\"098949f2901f57e20ce76ea6a1b17234c0bfd1db\"",
+    "permissionHoldsForThisBuildOnly": true,
+    "launched": {
+      "report": {
+        "pid": 2974,
+        "ppid": 1,
+        "execPath": "<repo>/pet/node_modules/.pnpm/electron@44.4.5/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
+        "macApp": "Electron",
+        "env": {
+          "PERRY_HOME": "<home>",
+          "PERRY_PORT": "49191"
+        },
+        "screenAccess": "denied",
+        "front": {
+          "front": 33,
+          "app": "Calculator",
+          "order": [
+            33
+          ]
+        },
+        "frontMs": 522,
+        "first": {
+          "ms": 6,
+          "error": "Perry can't see the screen yet: macOS has to allow “Electron”, the app the desktop pet runs in. Turn it on in System Settings → Privacy & Security → Screen & System Audio Recording (Screen Recording before macOS 15); if it is on already (a Perry update brought a new Electron), remove it with −, then look again and allow it. Then restart the pet: Restart, in his tray icon's menu (not macOS's Quit & Reopen, which would open Electron without him).",
+          "needs": "screen-recording",
+          "standInOpacityAfter": 1
+        },
+        "again": {
+          "ms": 0,
+          "error": "Perry can't see the screen yet: macOS has to allow “Electron”, the app the desktop pet runs in. Turn it on in System Settings → Privacy & Security → Screen & System Audio Recording (Screen Recording before macOS 15); if it is on already (a Perry update brought a new Electron), remove it with −, then look again and allow it. Then restart the pet: Restart, in his tray icon's menu (not macOS's Quit & Reopen, which would open Electron without him).",
+          "needs": "screen-recording",
+          "standInOpacityAfter": 1
+        },
+        "done": true
+      },
+      "responsible": "<repo>/pet/node_modules/.pnpm/electron@44.4.5/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
+    },
+    "settingsReachIt": {
+      "PERRY_HOME": "<home>",
+      "PERRY_PORT": "49191"
+    },
+    "startedAsItsOwnApp": {
+      "ppid": 1,
+      "responsible": "<repo>/pet/node_modules/.pnpm/electron@44.4.5/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
+    },
+    "frontWindowOnMac": {
+      "front": 33,
+      "app": "Calculator",
+      "order": 1,
+      "ms": 522
+    },
+    "macSaysWhatToAllow": [
+      {
+        "ms": 6,
+        "error": "Perry can't see the screen yet: macOS has to allow “Electron”, the app the desktop pet runs in. Turn it on in System Settings → Privacy & Security → Screen & System Audio Recording (Screen Recording before macOS 15); if it is on already (a Perry update brought a new Electron), remove it with −, then look again and allow it. Then restart the pet: Restart, in his tray icon's menu (not macOS's Quit & Reopen, which would open Electron without him).",
+        "needs": "screen-recording",
+        "standInOpacityAfter": 1
+      },
+      {
+        "ms": 0,
+        "error": "Perry can't see the screen yet: macOS has to allow “Electron”, the app the desktop pet runs in. Turn it on in System Settings → Privacy & Security → Screen & System Audio Recording (Screen Recording before macOS 15); if it is on already (a Perry update brought a new Electron), remove it with −, then look again and allow it. Then restart the pet: Restart, in his tray icon's menu (not macOS's Quit & Reopen, which would open Electron without him).",
+        "needs": "screen-recording",
+        "standInOpacityAfter": 1
+      }
+    ],
+    "macNamesTheAppItRunsIn": "Electron",
+    "screenAccess": "denied",
+    "directlyAsBefore": {
+      "ppid": 2815,
+      "responsible": "/opt/hca/hosted-compute-agent",
+      "screenAccess": "granted",
+      "front": {
+        "front": 33,
+        "app": "Calculator",
+        "order": [
+          35,
+          33
+        ]
+      },
+      "rounds": [
+        {
+          "ms": 1021,
+          "frontListed": true,
+          "window": {
+            "id": "window:33:0",
+            "bytes": 89540,
+            "isTheStandIn": false,
+            "name": "Calculator"
+          },
+          "screen": {
+            "bytes": 101033
+          },
+          "standInOpacityAfter": 1
+        },
+        {
+          "ms": 553,
+          "frontListed": true,
+          "window": {
+            "id": "window:33:0",
+            "bytes": 89543,
+            "isTheStandIn": false,
+            "name": "Calculator"
+          },
+          "screen": {
+            "bytes": 101096
+          },
+          "standInOpacityAfter": 1
+        }
+      ]
+    },
+    "macPictureWhenAllowed": {
+      "ppid": 2815,
+      "responsible": "/opt/hca/hosted-compute-agent",
+      "screenAccess": "granted",
+      "front": {
+        "front": 33,
+        "app": "Calculator",
+        "order": [
+          35,
+          33
+        ]
+      },
+      "rounds": [
+        {
+          "ms": 1021,
+          "frontListed": true,
+          "window": {
+            "id": "window:33:0",
+            "bytes": 89540,
+            "isTheStandIn": false,
+            "name": "Calculator"
+          },
+          "screen": {
+            "bytes": 101033
+          },
+          "standInOpacityAfter": 1
+        },
+        {
+          "ms": 553,
+          "frontListed": true,
+          "window": {
+            "id": "window:33:0",
+            "bytes": 89543,
+            "isTheStandIn": false,
+            "name": "Calculator"
+          },
+          "screen": {
+            "bytes": 101096
+          },
+          "standInOpacityAfter": 1
+        }
+      ]
+    },
+    "realPetSaysWhatToAllow": {
+      "forPerry": {
+        "error": "Perry can't see the screen yet: macOS has to allow “Electron”, the app the desktop pet runs in. Turn it on in System Settings → Privacy & Security → Screen & System Audio Recording (Screen Recording before macOS 15); if it is on already (a Perry update brought a new Electron), remove it with −, then look again and allow it. Then restart the pet: Restart, in his tray icon's menu (not macOS's Quit & Reopen, which would open Electron without him).",
+        "needs": "screen-recording"
+      },
+      "forOwner": {
+        "error": "Perry can't see the screen yet: macOS has to allow “Electron”, the app the desktop pet runs in. Turn it on in System Settings → Privacy & Security → Screen & System Audio Recording (Screen Recording before macOS 15); if it is on already (a Perry update brought a new Electron), remove it with −, then look again and allow it. Then restart the pet: Restart, in his tray icon's menu (not macOS's Quit & Reopen, which would open Electron without him).",
+        "needs": "screen-recording"
+      },
+      "asked": true
+    },
+    "ownerIsTakenToSettings": {
+      "before": "",
+      "now": "3102"
+    },
+    "ownersPetUntouched": {
+      "before": 0
+    }
+  },
+  "passed": true
+}

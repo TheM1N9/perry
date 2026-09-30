@@ -56,8 +56,8 @@ type Bridge = VoiceBridge & {
   idleSeconds: () => Promise<number>;
   /** A page of the dashboard (a path), opened unlocked in the browser. */
   openDashboard: (path?: string) => void;
-  /** Showing him the screen (pet/look.js): a picture now; one taken with the Look hotkey; which keys that is on. Absent in a pet window from before. */
-  look?: () => Promise<TakenShot>;
+  /** Showing him the screen (pet/look.js): a picture now, for the owner (`byOwner`) or for Perry; one taken with the Look hotkey; which keys that is on. Absent in a pet window from before. */
+  look?: (byOwner?: boolean) => Promise<TakenShot>;
   onLook?: (listener: (shot: TakenShot) => void) => () => void;
   setLookHotkey?: (accelerator: string) => Promise<HotkeyState>;
 };
@@ -400,7 +400,8 @@ function Pet() {
 
   // A picture of the screen: his chat opens with it in the box, ready for the question.
   const showShot = useCallback((taken: TakenShot) => {
-    if (!taken.window && !taken.screen) return say("I couldn't see the screen", taken.error, 8000);
+    // What to allow on a Mac, and where, takes a while to read: it stays up longer.
+    if (!taken.window && !taken.screen) return say("I couldn't see the screen", taken.error, taken.needs ? 30_000 : 8000);
     setShot({ ...taken, use: taken.window ? "window" : "screen" });
     setTab("chat");
     setOpen(true);
@@ -420,6 +421,8 @@ function Pet() {
           if (!window.perryPet?.look) throw new Error("This desktop pet is from before Perry could look at the screen; ask the owner to restart it (Quit from its tray icon, then turn it on again).");
           const taken = await window.perryPet.look();
           const picture = taken[request.which] ?? taken.screen ?? taken.window;
+          // Perry is told, and says so in the chat; the owner may be looking at him instead, so he says it too.
+          if (!picture && taken.needs) say("I couldn't see the screen", taken.error, 30_000);
           if (!picture) throw new Error(taken.error ?? "The desktop pet could not take the picture.");
           const kept = await keepPicture(picture.image);
           await fulfilLook({ key, id: request.id, path: kept.path, name: picture.name });
@@ -431,7 +434,7 @@ function Pet() {
     }
   }, [lookRequests, key, fulfilLook, say]);
   const lookNow = useCallback(async () => {
-    const taken = await window.perryPet?.look?.().catch((error: unknown) => ({ error: String(error) }));
+    const taken = await window.perryPet?.look?.(true).catch((error: unknown) => ({ error: String(error) }));
     if (taken) showShot(taken);
   }, [showShot]);
 
