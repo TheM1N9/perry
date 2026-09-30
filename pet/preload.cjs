@@ -36,8 +36,8 @@ contextBridge.exposeInMainWorld("perryPet", {
   },
   transcribe: (samples) => ipcRenderer.invoke("pet:transcribe", samples),
   voiceDone: () => ipcRenderer.send("pet:voice-done"),
-  // Showing him the screen: a picture of the window you are in and of the screen, from his chat's button or the Look hotkey; and which keys that is on.
-  look: () => ipcRenderer.invoke("pet:look"),
+  // Showing him the screen: a picture of the window you are in and of the screen, from his chat's button (byOwner) or for Perry, or from the Look hotkey; and which keys that is on.
+  look: (byOwner) => ipcRenderer.invoke("pet:look", byOwner === true),
   onLook: (listener) => {
     const handler = (_event, shot) => listener(shot);
     ipcRenderer.on("pet:look", handler);
