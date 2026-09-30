@@ -56,8 +56,9 @@ import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { ACCESS_LABELS, runLabel } from "../convex/lib/commands";
 import { ENGINE_LABELS, refusal, updateOf } from "../convex/lib/engines";
+import { skillsNamedIn } from "../convex/lib/skills";
 import {
-  optionOf, type Access, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type PerryTools,
+  optionOf, skillNote, type Access, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type NamedSkill, type PerryTools,
   type TurnHandle, type TurnResult, type TurnSink,
 } from "./engine";
 import { createEngines } from "./engines";
@@ -653,6 +654,19 @@ async function main() {
   /** Where a chat with someone else runs: an empty folder, so nothing of the owner's is at hand. */
   const guestDir = () => { mkdirSync(PATHS.guest, { recursive: true }); return PATHS.guest; };
 
+  /**
+   * The skills a message of the owner's names ("$weekly-review", from the web
+   * app, Telegram or WhatsApp alike), for its engine: as input of their own
+   * where it takes them, else named after the message with where each
+   * SKILL.md is. Someone else's message names none of the owner's skills.
+   */
+  const withSkills = (engine: Engine, prompt: string, guest?: boolean): { prompt: string; skills?: NamedSkill[] } => {
+    const skills = guest ? [] : skillsNamedIn(prompt);
+    if (!skills.length) return { prompt };
+    console.log(dim(`  using ${skills.map((skill) => `$${skill.name}`).join(", ")}`));
+    return engine.capabilities.skills ? { prompt, skills } : { prompt: `${prompt}\n\n${skillNote(skills)}` };
+  };
+
   /** Perry's tools for a turn: over HTTP with this runner's token, or through the stdio bridge. */
   const toolsFor =(mcpUrl: string | undefined, chat: string): PerryTools | undefined => {
     if (!mcpUrl) return undefined;
@@ -700,6 +714,8 @@ async function main() {
     access?: Access;
     /** Stop waiting for the turn, which its engine may still be running. */
     abandon?: () => void;
+    /** A chat with someone else, whose messages name none of the owner's skills. */
+    guest?: boolean;
   };
   const active = new Map<string, Active>();
   let turnQueue: Doc<"codexTurns">[] = [];
@@ -767,7 +783,7 @@ async function main() {
         try {
           const mode = engine.capabilities.steer;
           if (!engine.steer || (mode !== "native" && mode !== "concurrent-prompt")) throw new Error(`${engine.label} takes one message at a time`);
-          await engine.steer(handle, { prompt: steer.prompt, attachments: await localise(steer.attachments) });
+          await engine.steer(handle, { ...withSkills(engine, steer.prompt, turn.guest), attachments: await localise(steer.attachments) });
           console.log(dim(`  steered the ${engine.label} turn with a new message`));
           await client.mutation(api.codex.ackSteer, { token, id: steer._id, applied: true });
         } catch (error) {
@@ -875,7 +891,7 @@ async function main() {
             instructions: job.instructions,
             history: job.history,
             recalled: job.recalled,
-            prompt: job.prompt,
+            ...withSkills(engine, job.prompt, job.guest),
             attachments: await localise(job.attachments),
             cwd: job.guest ? guestDir() : workdir,
             model: job.requestedModel,
@@ -945,7 +961,7 @@ async function main() {
           const job = await client.mutation(api.codex.claimTurn, { token, id: next._id })
             .catch((error) => { console.error(red(`  could not claim a turn: ${message(error)}`)); return null; });
           if (!job) continue;
-          const turn: Active = { jobId: job._id, conversationId: job.conversationId, engine: engines.get(job.engine), asking: 0, access: job.access ?? "supervised" };
+          const turn: Active = { jobId: job._id, conversationId: job.conversationId, engine: engines.get(job.engine), asking: 0, access: job.access ?? "supervised", ...(job.guest ? { guest: true } : {}) };
           active.set(job._id, turn);
           void runJob(job, turn)
             .catch((error) => console.error(red(`  turn failed: ${message(error)}`)))
