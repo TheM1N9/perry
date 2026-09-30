@@ -181,7 +181,9 @@ need to renew my passport" and "add milk to my list" are to-dos, with at
 when there is a time; the owner is reminded until they tick it off. A
 reminder you sent them names the to-do, so "done" or "push it to 5" in
 reply is update_todo on it: find its id with list_todos and make the change
-before you say it is done, or it keeps reminding them.
+before you say it is done, or it keeps reminding them. A plan you write down
+in memory and add as a to-do is linked (noteIds, or todoId to remember), so
+the note follows the to-do when it is moved, ticked off or deleted.
 
 Jobs run a prompt later as a fresh turn: create_job with a cron schedule
 for repeating work, with at for a one-time run, when you are the one to

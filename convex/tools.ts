@@ -99,6 +99,8 @@ const remember = createTool({
       .describe("Who it is about, besides the owner: their names as the owner calls them (\"Datta\"). The owner sees each person's memories under Settings → People."),
     scope: z.enum(["everywhere", "this chat"]).optional()
       .describe("\"this chat\" keeps it to this chat only, out of every other; a project chat's default. \"everywhere\" is every other chat's default."),
+    todoId: z.string().optional()
+      .describe("For a plan that is also on the to-do list: the to-do's id, from add_todo or list_todos. The note then follows the to-do: when it is moved, ticked off or deleted, the note is updated to say so."),
   }),
   execute: async (
     ctx,
@@ -111,7 +113,7 @@ const remember = createTool({
     // A chat with someone else keeps what it learns to itself, always, and none of it is the owner's word.
     const sealed = Boolean(chat?.contactId);
     const scoped = sealed || (ctx.conversationId && !fromJob && (input.scope ?? (chat?.project ? "this chat" : "everywhere")) === "this chat");
-    const result: { id?: string; duplicate: boolean; superseded: number } = await ctx.runMutation(
+    const result: { id?: string; duplicate: boolean; superseded: number; linked?: boolean } = await ctx.runMutation(
       internal.memories.add,
       {
         text: input.text,
@@ -122,13 +124,16 @@ const remember = createTool({
         origin: fromJob ? "job" : sealed ? "tool" : input.origin ?? "owner",
         ...(scoped ? { conversationId: ctx.conversationId } : {}),
         ...(input.about?.length ? { about: input.about } : {}),
+        // The owner's to-dos are no business of a chat with someone else.
+        ...(input.todoId && !sealed ? { todoId: input.todoId } : {}),
       },
     );
+    const unlinked = result.linked === false ? " There is no to-do with that id, so it is not linked; list_todos shows them." : "";
     return {
       id: result.id,
       stored: Boolean(result.id) && !result.duplicate,
       superseded: result.superseded,
-      note: result.duplicate ? "Already remembered." : "Stored.",
+      note: `${result.duplicate ? "Already remembered." : "Stored."}${unlinked}`,
     };
   },
 });
@@ -556,19 +561,26 @@ const delete_job = createTool({
 // --- The owner's to-dos ---------------------------------------------------
 
 type TodoRow = { id: string; title: string; due?: string; repeat?: string; done?: string; addedBy: string };
+/** The notes in memory that follow a to-do, and what that means for the agent (todos.linkedFor). */
+type LinkedNotes = { linkedNotes?: string[]; note?: string };
+
+const noteIds = z.array(z.string()).optional()
+  .describe("Ids of notes in memory about the same plan (such as an #open note saying when): they follow the to-do from then on, updated when it is moved, ticked off or deleted.");
 
 const add_todo = createTool({
   description:
     "Add something to the owner's own to-do list: what they mean to do, shown by their desktop pet and on " +
     "the dashboard. With at, they are reminded then (by the pet at the computer, or on their phone when " +
     "away) until they tick it off. Use this for \"remind me to…\" and \"I need to…\"; use create_job only " +
-    "when you are to do something yourself at that time. Keep the title short, in their words.",
+    "when you are to do something yourself at that time. Keep the title short, in their words. When you " +
+    "saved the plan in memory too, pass that note's id in noteIds.",
   inputSchema: z.object({
     title: z.string().min(1).max(200).describe("What to do, e.g. 'Call Sam'."),
     at: at.optional().describe("When it is due and they are reminded: ISO 8601 with the owner's UTC offset. Omit for no particular time."),
     repeat: schedule.optional().describe("For something that recurs: a cron expression in the owner's timezone. Ticking it off makes the next one."),
+    noteIds,
   }),
-  execute: async (ctx, input): Promise<{ added?: TodoRow; error?: string }> => {
+  execute: async (ctx, input): Promise<{ added?: TodoRow; error?: string } & LinkedNotes> => {
     return await ctx.runMutation(internal.todos.addFromAgent, input);
   },
 });
@@ -588,7 +600,8 @@ const update_todo = createTool({
     "Change one of the owner's to-dos by id, from list_todos: tick it off (done), rename it, give it a new " +
     "time (at, which restarts its reminders; \"later\" or \"tomorrow\" means a new at), take its time away " +
     "(noTime), or make it repeat. A reminder you sent them names the to-do; when they answer it " +
-    "(\"done\", \"in an hour\"), this is how you act on it.",
+    "(\"done\", \"in an hour\"), this is how you act on it. Notes in memory linked to it follow the change " +
+    "by themselves; one about the same plan that is not linked yet (it says the old time) goes in noteIds.",
   inputSchema: z.object({
     id: z.string().min(1),
     title: z.string().min(1).max(200).optional(),
@@ -596,14 +609,15 @@ const update_todo = createTool({
     noTime: z.boolean().optional().describe("true takes its due time away."),
     repeat: z.string().optional().describe("A cron expression in the owner's timezone to repeat on; an empty string stops it repeating."),
     done: z.boolean().optional().describe("true ticks it off, false puts it back."),
+    noteIds,
   }),
-  execute: async (ctx, input): Promise<{ updated?: TodoRow; next?: TodoRow; error?: string }> => {
+  execute: async (ctx, input): Promise<{ updated?: TodoRow; next?: TodoRow; error?: string } & LinkedNotes> => {
     return await ctx.runMutation(internal.todos.updateFromAgent, input);
   },
 });
 
 const delete_todo = createTool({
-  description: "Remove one of the owner's to-dos by id, from list_todos, when they no longer mean to do it. To finish one, update_todo with done instead.",
+  description: "Remove one of the owner's to-dos by id, from list_todos, when they no longer mean to do it; notes in memory linked to it are updated to say it was dropped. To finish one, update_todo with done instead.",
   inputSchema: z.object({ id: z.string().min(1) }),
   execute: async (ctx, input): Promise<{ deleted: boolean }> => {
     return { deleted: await ctx.runMutation(internal.todos.removeFromAgent, input) };
