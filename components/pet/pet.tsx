@@ -10,8 +10,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { Activity } from "@/convex/dashboard";
-import type { Pose } from "@/convex/lib/activity";
+import { shownStep, type Pose } from "@/convex/lib/activity";
 import { limitWarning } from "@/convex/lib/usage";
 import type { Board, TodoView } from "@/convex/todos";
 import { errorText, plural, useNow } from "@/lib/format";
@@ -191,8 +190,6 @@ const CHAT_STORAGE = "perry.pet.chat";
 const ASKS = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone" } as const;
 /** A step that has taken this long shows its time. */
 const STEP_TIMER_MS = 5_000;
-/** A step that finished between two reports is held up this long. */
-const STEP_HOLD_MS = 2_500;
 
 function Pet() {
   const key = useDashboardKey();
@@ -556,12 +553,9 @@ function Pet() {
   const late = timed.filter((todo) => todo.dueAt! <= now);
   const next = timed.find((todo) => todo.dueAt! > now);
   const working = Boolean(petChat?.isRunning) && !reading;
-  // The step he is on; between steps, the one that just finished, held up a moment, so a quick one is seen at all.
-  const stepOf = (of?: Activity | null) => !of?.running || !of.step ? undefined
-    : of.step.live || !of.recent || now - of.recent.endedAt > STEP_HOLD_MS ? of.step : of.recent;
-  const step = working ? stepOf(activity) : undefined;
+  const step = working ? shownStep(activity, now) : undefined;
   const away = !petChat?.isRunning && elsewhere?.running && elsewhere.conversationId !== chatId ? elsewhere : undefined;
-  const awayStep = stepOf(away);
+  const awayStep = shownStep(away, now);
   // How long the step has taken, once that is worth saying.
   const took = (since?: number) => since !== undefined && now - since >= STEP_TIMER_MS ? countdown(now - since) : undefined;
   let bubble: ReactNode = null;

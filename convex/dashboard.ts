@@ -431,7 +431,8 @@ export type Activity = {
 };
 
 /**
- * What Perry is doing, for the desktop pet (lib/activity.ts): the latest turn
+ * What Perry is doing, for the desktop pet and the web chat while a reply is on
+ * its way (lib/activity.ts): the latest turn
  * of this chat, or with no chat given, whatever turn is running anywhere (a
  * job, a Telegram message). Null when there is nothing to say.
  */

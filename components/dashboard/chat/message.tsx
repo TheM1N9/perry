@@ -3,6 +3,7 @@
 import { BrainIcon, CheckIcon, CopyIcon, GitBranchIcon, PencilIcon, PuzzleIcon, RefreshCwIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
+import { STARTING, WRITING } from "@/convex/lib/activity";
 import { SKILL_MENTION } from "@/convex/lib/commands";
 import { fullDate, timeOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -166,20 +167,32 @@ export function PendingRow({ text, attachments, sent, skills }: { text: string; 
   );
 }
 
-/** The reply being written: what has streamed so far, or a shimmer while it thinks. */
-export function ReplyInProgress({ streaming }: { streaming?: string }) {
+/**
+ * The reply being written: what has streamed so far, and what Perry is doing
+ * (dashboard.getActivity: "Running git status", "Editing notes.md"), with a
+ * shimmer until the first words.
+ */
+export function ReplyInProgress({ streaming, step }: { streaming?: string; step?: string }) {
   if (streaming) {
+    // Once words have come, a step is worth a line only when it is something besides writing them.
+    const doing = step && step !== WRITING.label ? step : undefined;
     return (
       <div className="min-w-0" data-role="assistant" data-streaming>
         <Markdown text={streaming} />
-        <span className="mt-1 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle motion-reduce:animate-none" aria-hidden />
+        {doing
+          ? <Doing label={doing} className="mt-2 text-sm text-muted-foreground" />
+          : <span className="mt-1 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle motion-reduce:animate-none" aria-hidden />}
       </div>
     );
   }
+  return <Doing label={step ?? STARTING.label} className="text-[15px] font-medium" data-role="assistant" data-thinking />;
+}
+
+function Doing({ label, className, ...data }: { label: string; className?: string } & Record<`data-${string}`, unknown>) {
   return (
-    <p className="flex items-center gap-2 text-[15px] font-medium" data-role="assistant" data-thinking>
+    <p className={cn("flex min-w-0 items-center gap-2", className)} data-step={label} {...data}>
       <span className="size-3.5 shrink-0 rounded-full border-2 border-primary/25 border-t-primary motion-safe:animate-spin motion-reduce:animate-pulse" aria-hidden />
-      <span className="shimmer">Thinking</span>
+      <span className="shimmer truncate">{label}</span>
     </p>
   );
 }

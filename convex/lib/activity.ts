@@ -108,6 +108,21 @@ export const WAITING: Step = { label: "Waiting for you to approve", pose: "waiti
 export const WRITING: Step = { label: "Writing the reply", pose: "typing" };
 export const STARTING: Step = { label: "Thinking", pose: "thinking" };
 
+/** A step that finished between two reports is held up this long. */
+const STEP_HOLD_MS = 2_500;
+
+type Shown = { running: boolean; step?: Step & { since: number; live: boolean }; recent?: Step & { since: number; endedAt: number } };
+
+/**
+ * The step to show for a turn (dashboard.getActivity): the one it is on, or
+ * between steps the one that just finished, held up a moment so a quick one
+ * is seen at all. Nothing once the turn is over.
+ */
+export function shownStep(of: Shown | null | undefined, now: number) {
+  return !of?.running || !of.step ? undefined
+    : of.step.live || !of.recent || now - of.recent.endedAt > STEP_HOLD_MS ? of.step : of.recent;
+}
+
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** What a finished turn did, for under its reply: "Ran 3 commands · read 2 pages". Empty when it only answered. */
