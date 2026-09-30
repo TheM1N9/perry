@@ -377,18 +377,19 @@ export const endDay = mutation({
 
 /**
  * The pet checks in every minute, saying how long since the owner last
- * touched the computer, and whether its Talk hotkey (and its others, `keys`) are its own.
+ * touched the computer, whether its Talk hotkey (and its others, `keys`) are its own,
+ * and why holding the Talk keys does not work, where it does not.
  */
 export const presence = mutation({
   args: {
-    key: v.string(), idleSeconds: v.number(), hotkey: v.optional(v.string()), hotkeyError: v.optional(v.string()),
+    key: v.string(), idleSeconds: v.number(), hotkey: v.optional(v.string()), hotkeyError: v.optional(v.string()), hotkeyHold: v.optional(v.string()),
     keys: v.optional(v.record(v.string(), v.object({ hotkey: v.optional(v.string()), error: v.optional(v.string()) }))),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const now = Date.now();
-    const row = { seenAt: now, activeAt: now - Math.max(0, args.idleSeconds) * 1000, hotkey: args.hotkey, hotkeyError: args.hotkeyError, keys: args.keys };
+    const row = { seenAt: now, activeAt: now - Math.max(0, args.idleSeconds) * 1000, hotkey: args.hotkey, hotkeyError: args.hotkeyError, hotkeyHold: args.hotkeyHold, keys: args.keys };
     const existing = await ctx.db.query("petPresence").first();
     if (existing) await ctx.db.patch(existing._id, row);
     else await ctx.db.insert("petPresence", row);

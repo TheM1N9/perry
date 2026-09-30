@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
-import { SHORTCUT_IDS, SHORTCUTS, describe, fromEvent, keysOf, problemWith, type ShortcutId } from "@/convex/lib/shortcuts";
+import { SHORTCUT_IDS, SHORTCUTS, describe, fromEvent, holdProblem, keysOf, problemWith, type ShortcutId } from "@/convex/lib/shortcuts";
 import { errorText } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -115,8 +115,8 @@ function ResetButton({ id }: { id: ShortcutId }) {
   );
 }
 
-/** Whether the desktop pet has a shortcut's keys: working, taken by another app, catching up, or not running. */
-function PetStatus({ pet, wanted, mac }: { pet: { running: boolean; hotkey?: string; error?: string }; wanted: string; mac: boolean }) {
+/** Whether the desktop pet has a shortcut's keys: working (for Talk, maybe only by tapping), taken by another app, catching up, or not running. */
+function PetStatus({ pet, wanted, mac }: { pet: { running: boolean; hotkey?: string; error?: string; hold?: string }; wanted: string; mac: boolean }) {
   if (!pet.running) {
     return (
       <p className="mt-1.5 text-sm text-muted-foreground">
@@ -135,6 +135,15 @@ function PetStatus({ pet, wanted, mac }: { pet: { running: boolean; hotkey?: str
     );
   }
   if (pet.hotkey !== wanted) return <p className="mt-1.5 text-sm text-muted-foreground">The desktop pet is changing over…</p>;
+  const tapOnly = holdProblem(pet.hold);
+  if (tapOnly) {
+    return (
+      <p className="mt-1.5 flex items-start gap-1.5 text-sm text-pretty text-warning">
+        <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
+        Working in the desktop pet, by tapping: tap, speak, and tap again. {tapOnly}
+      </p>
+    );
+  }
   return (
     <p className="mt-1.5 flex items-center gap-1.5 text-sm text-success">
       <CheckIcon className="size-4 shrink-0" />Working in the desktop pet.
