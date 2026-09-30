@@ -3,12 +3,14 @@ import { ACCESSES } from "../../convex/lib/commands";
 import { updateOf, versionIn } from "../../convex/lib/engines";
 import {
   ASSISTANT_MCP, CodexAppServer, TurnFailed, WINDOWS_SANDBOX, sandboxMode, sandboxPolicy, userInput,
-  type ItemEvent, type RpcMessage, type SandboxMode, type TokenUsage as CodexUsage, type TokenUsageEvent, type TurnItem,
+  type ItemEvent, type RateLimitSnapshot, type RpcMessage, type SandboxMode, type TokenUsage as CodexUsage, type TokenUsageEvent, type TurnItem,
 } from "../codex";
 import {
   optionOf, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineRequest, type EngineStatus,
-  type ItemStatus, type LoginFlow, type QuickTurn, type TokenUsage, type TurnHandle, type TurnInput, type TurnResult, type TurnSink,
+  type ItemStatus, type LoginFlow, type NamedSkill, type PlanLimits, type PlanWindow, type QuickTurn, type TokenUsage, type TurnHandle,
+  type TurnInput, type TurnResult, type TurnSink,
 } from "../engine";
+import { windowLabel } from "../../convex/lib/usage";
 import { HOME, PATHS } from "../home";
 import { forget, gave, givenTo, instructionsInFull, instructionsUpdate } from "../instructions";
 import { describeMachine } from "../shell";
@@ -150,6 +152,30 @@ const usageOf = (last: CodexUsage): TokenUsage => ({
   totalTokens: last.totalTokens ?? 0,
 });
 
+/**
+ * The plan's limits as Perry's: each bucket's 5-hour (primary) and weekly
+ * (secondary) windows. The "codex" bucket is the plan's own; another is a
+ * model's, and says which.
+ */
+export function limitsOf(buckets: Map<string, RateLimitSnapshot>, at: number): PlanLimits {
+  const windows: PlanWindow[] = [];
+  for (const [id, bucket] of buckets) {
+    const own = id === "codex" ? "" : ` (${bucket.limitName || bucket.normalModelSlug || id})`;
+    for (const [which, window] of [["primary", bucket.primary], ["secondary", bucket.secondary]] as const) {
+      if (!window) continue;
+      windows.push({
+        id: `${id}:${which}`,
+        label: `${windowLabel(window.windowDurationMins)}${own}`,
+        usedPercent: Math.max(0, Math.min(100, window.usedPercent)),
+        ...(window.resetsAt ? { resetsAt: window.resetsAt * 1000 } : {}),
+        ...(window.windowDurationMins ? { minutes: window.windowDurationMins } : {}),
+      });
+    }
+  }
+  const plan = buckets.get("codex")?.planType ?? [...buckets.values()].find((bucket) => bucket.planType)?.planType;
+  return { windows, ...(plan ? { plan } : {}), at };
+}
+
 /** A thread started before any chat asked for it; its id, or null if it failed to start. */
 type Spare = { app: CodexAppServer; id: Promise<string | null> };
 /** How many spare threads are kept: one per distinct way of starting a chat (a web chat, a job's, a phone's). */
@@ -170,6 +196,8 @@ export class CodexEngine implements Engine {
     quickTurns: true,
     // One app-server runs any number of threads' turns.
     concurrentTurns: true,
+    // A skill named in a message goes as a `skill` item of its input.
+    skills: true,
   };
 
   private app: CodexAppServer | null = null;
@@ -283,6 +311,20 @@ export class CodexEngine implements Engine {
   }
 
   /**
+   * The ChatGPT plan's limits. Codex sends updates of them as its turns run,
+   * which keep the last read fresh; past a minute without one they are read
+   * again. An API key has no plan limits.
+   */
+  async limits(): Promise<PlanLimits | null> {
+    const app = await this.ensure();
+    if (Date.now() - app.rateLimitsAt > 60_000) {
+      if ((await app.account()).authMode !== "chatgpt") return null;
+      await app.readRateLimits();
+    }
+    return limitsOf(app.rateLimits, app.rateLimitsAt);
+  }
+
+  /**
    * A request from Codex, as one the runner answers: a command or file change
    * to approve, a permission grant, or a question from an MCP server. Perry's
    * own tools are answered here, and quick turns are never allowed to ask.
@@ -363,7 +405,7 @@ export class CodexEngine implements Engine {
   }
 
   async runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult> {
-    const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments, guest } = input;
+    const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments, guest, skills } = input;
     const app = await this.ensure();
     const broken = guest ? [] : await app.reloadSkills(cwd).catch(() => []);
     const machine = describeMachine();
@@ -439,7 +481,7 @@ export class CodexEngine implements Engine {
     // What changed that could not go into the thread's history on its own goes ahead of the message instead.
     const turnInput = [
       ...(untold ? [{ type: "text", text: `<perry-instructions>\n${untold}\n</perry-instructions>`, text_elements: [] }] : []),
-      ...userInput(prompt, attachments, recalled),
+      ...userInput(prompt, attachments, recalled, skills),
     ];
     // Deltas can arrive before turn/start answers, so match them by thread.
     const written = new Map<string, string>();
@@ -522,8 +564,8 @@ export class CodexEngine implements Engine {
    * Fails with "no active turn to steer" once the turn has ended, and when the
    * turn is no longer the active one.
    */
-  async steer(handle: TurnHandle, steer: { prompt: string; attachments: EngineAttachment[] }): Promise<void> {
-    await (await this.ensure()).steer(handle.cursor, handle.turnId, steer.prompt, steer.attachments);
+  async steer(handle: TurnHandle, steer: { prompt: string; attachments: EngineAttachment[]; skills?: NamedSkill[] }): Promise<void> {
+    await (await this.ensure()).steer(handle.cursor, handle.turnId, steer.prompt, steer.attachments, steer.skills);
   }
 
   async interrupt(handle: TurnHandle): Promise<void> {

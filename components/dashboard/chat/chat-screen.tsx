@@ -13,9 +13,10 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
   ACCESS_HINTS, ACCESS_LABELS, ACCESSES, COMPACTED, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
-  modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, type Access,
+  modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, typingSkill, type Access,
 } from "@/convex/lib/commands";
 import { ENGINE_LABELS, type EngineKind } from "@/convex/lib/engines";
+import { limitWarning } from "@/convex/lib/usage";
 import { copyText, errorText, useNow } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
@@ -28,6 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ApprovalCard } from "../approval-card";
 import { DeleteDialog, RenameDialog } from "../app-sidebar";
 import { APPS, ChannelIcon, PerryMark, TopBar } from "../common";
+import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
 import type { Attachment } from "./attachments";
 import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
@@ -111,6 +113,9 @@ export function ChatScreen() {
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
+  const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
+  // The heads-up about the engine's limit the owner closed, until it changes.
+  const [limitSeen, setLimitSeen] = useState("");
   const setChatModel = useMutation(api.dashboard.setChatModel).withOptimisticUpdate((store, args) => {
     const current = store.getQuery(api.dashboard.getChat, { key: args.key, id: args.id });
     if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, model: args.model, engine: args.engine ?? current.engine });
@@ -133,6 +138,10 @@ export function ChatScreen() {
   const [draftEffort, setDraftEffort] = useState<string>();
   const [draftAccess, setDraftAccess] = useState<Access>();
   const [draft, setDraft] = useState("");
+  /** Where the caret is in the draft; unset puts it at the end. */
+  const [caret, setCaret] = useState<number>();
+  const { skills, refresh: refreshSkills } = useSkills();
+  const skillNames = useMemo(() => new Set((skills ?? []).filter((skill) => !skill.problem).map((skill) => skill.name)), [skills]);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState<Pending[]>([]);
@@ -247,6 +256,10 @@ export function ChatScreen() {
   const pickedEffort = (selectedId ? chat?.effort : draftEffort ?? lastPicks?.effort) || undefined;
   const effort = modelInfo && effortUnused(modelInfo, pickedEffort) ? undefined : pickedEffort;
   const access: Access = (selectedId ? chat?.access : draftAccess) ?? defaultAccess ?? "supervised";
+  // The chat's engine near or at its plan's limit, said before a reply fails for it.
+  const engineUsage = planLimits?.engines.find((item) => item.kind === engine)?.usage;
+  const limit = chat?.contact ? null : limitWarning(engine, engineUsage, now);
+  const limitMark = limit ? `${engine}:${limit.level}:${limit.title}` : "";
   const fail = (cause: unknown) => setError(errorText(cause));
 
   /** Pick a model by its "<engine>/<id>" key; another engine's moves the chat there. */
@@ -298,8 +311,29 @@ export function ChatScreen() {
     options.filter((option) => !typed || option.value.startsWith(typed)).map((option) => ({
       key: option.value, label: option.label, hint: option.hint, apply: () => void runCommand(`${command} ${option.value}`),
     }));
+  // Skills: a $ starts one's name where the caret is, and picking one puts "$name " there.
+  const mention = draft.startsWith("/") ? null : typingSkill(draft.slice(0, Math.min(caret ?? draft.length, draft.length)));
+  const mentioning = mention !== null;
+  // A skill Perry wrote a moment ago is listed too.
+  useEffect(() => { if (mentioning) void refreshSkills(); }, [mentioning, refreshSkills]);
+  function pickSkill(name: string) {
+    if (!mention) return;
+    const end = mention.start + 1 + mention.typed.length;
+    // The rest of a name the caret was inside is replaced too.
+    const after = draft.slice(end).replace(/^[a-z0-9-]*/, "");
+    const inserted = `$${name}${after.startsWith(" ") ? "" : " "}`;
+    const position = mention.start + inserted.length + (after.startsWith(" ") ? 1 : 0);
+    setDraft(draft.slice(0, mention.start) + inserted + after);
+    setCaret(position);
+    window.setTimeout(() => { composer.current?.focus(); composer.current?.setSelectionRange(position, position); }, 0);
+  }
+  const skillSuggestions: Suggestion[] = !mention ? [] : (skills ?? [])
+    .filter((skill) => !skill.problem && skill.name.includes(mention.typed))
+    .sort((a, b) => Number(b.name.startsWith(mention.typed)) - Number(a.name.startsWith(mention.typed)))
+    .map((skill) => ({ key: skill.folder, label: `$${skill.name}`, hint: skill.description, typed: skill.name === mention.typed, apply: () => pickSkill(skill.name) }));
+
   const suggestions: Suggestion[] = !draft.startsWith("/")
-    ? []
+    ? skillSuggestions
     : typedModel && choosing
       ? (typedModel.name ? findModel(models ?? [], typedModel.name, engine).matches : models ?? []).map((item) => {
           const key = modelKey(item.engine ?? "codex", item.id);
@@ -320,11 +354,13 @@ export function ChatScreen() {
               key: item.command, label: item.command, hint: item.hint,
               apply: () => { setDraft(["/stop", "/compact", "/reset"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },
             }));
-  const completing = draft.startsWith("/") && !choosing
-    ? "command" as const
-    : choosing && !typedModel && suggestions.length > 0 && !suggestions.some((item) => item.key === (typedThink?.level ?? typedAccess?.mode))
-      ? "choice" as const
-      : null;
+  const completing = skillSuggestions.length
+    ? "skill" as const
+    : draft.startsWith("/") && !choosing
+      ? "command" as const
+      : choosing && !typedModel && suggestions.length > 0 && !suggestions.some((item) => item.key === (typedThink?.level ?? typedAccess?.mode))
+        ? "choice" as const
+        : null;
 
   /** Commands never become messages: they change this chat, then say what they did. */
   async function runCommand(text: string): Promise<boolean> {
@@ -565,12 +601,13 @@ export function ChatScreen() {
                   canRegenerate={message.id === lastMessage?.id && !waiting && !app}
                   canBranch={!app}
                   busy={busy}
+                  skills={skillNames}
                   onEdit={(text) => void rewind(message.id, text)}
                   onRegenerate={() => void rewind(message.id)}
                   onBranch={() => void branch(message.id)}
                 />
               ))}
-              {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} />)}
+              {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
               {waiting && !here.length && <ReplyInProgress streaming={chat?.streaming} />}
               {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
               {chat?.lastError && !chat.isRunning && !waiting && (
@@ -618,6 +655,7 @@ export function ChatScreen() {
             assistant={assistant}
             draft={draft}
             onDraftChange={setDraft}
+            onCaret={setCaret}
             onSubmit={() => void submit()}
             onStop={selectedId ? stop : undefined}
             waiting={waiting}
@@ -627,6 +665,7 @@ export function ChatScreen() {
             onAddFiles={addFiles}
             onRemoveFile={(file) => setFiles((items) => items.filter((item) => item !== file))}
             suggestions={suggestions}
+            suggesting={mention ? "Skills" : "Commands"}
             completing={completing}
             pickers={{
               models, model: model ? modelKey(engine, model) : undefined, onModel: applyModel, modelInfo, effort, onEffort: applyEffort, access, onAccess: applyAccess,
@@ -635,6 +674,12 @@ export function ChatScreen() {
             above={<>
               {error && <ComposerNote tone="error" onDismiss={() => setError("")}>{error}</ComposerNote>}
               {notice && <ComposerNote tone="info" onDismiss={() => setNotice("")}>{notice}</ComposerNote>}
+              {limit && limitSeen !== limitMark && (
+                <ComposerNote tone={limit.level === "out" ? "error" : "warning"} onDismiss={() => setLimitSeen(limitMark)}>
+                  <span className="font-medium">{limit.title}.</span> {limit.detail}{" "}
+                  <Link href="/settings?tab=usage" className="underline underline-offset-2">See usage</Link>
+                </ComposerNote>
+              )}
               {!selectedId && !draft && files.length === 0 && (
                 <div className="mb-3 flex flex-wrap justify-center gap-2">
                   {STARTERS.map((text) => (
@@ -651,7 +696,7 @@ export function ChatScreen() {
               ? <span className="text-warning">Full access: {assistant} acts on this computer without asking. Every command still shows in Activity.</span>
               : app
                 ? <>Your {app} chat. What you write here, and {assistant}&apos;s reply, also go to {app}.</>
-                : <>Type <kbd className="font-mono">/</kbd> for commands. Drop or paste files to attach them.</>}
+                : <>Type <kbd className="font-mono">/</kbd> for commands, <kbd className="font-mono">$</kbd> for skills. Drop or paste files to attach them.</>}
           </p>
           </>)}
         </div>
