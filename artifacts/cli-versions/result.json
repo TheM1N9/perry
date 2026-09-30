@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-30T04:22:10.620Z",
+  "ranAt": "2026-09-30T04:27:31.441Z",
   "latest": {
     "@openai/codex": "0.159.1",
     "@anthropic-ai/claude-code": "2.1.285",
@@ -30,7 +30,7 @@
   },
   "notes": {
     "offlineStillRefusesTooOld": {
-      "reportedMs": 1517,
+      "reportedMs": 2583,
       "codex": {
         "need": "required",
         "version": "0.120.0",
@@ -48,15 +48,15 @@
     "offlineLookUpRecorded": {
       "cache": {
         "codex": {
-          "at": 1790742016327,
+          "at": 1790742338805,
           "found": false
         },
         "claude": {
-          "at": 1790742016502,
+          "at": 1790742339193,
           "found": false
         },
         "grok": {
-          "at": 1790742016834,
+          "at": 1790742339463,
           "found": false
         }
       },
@@ -67,8 +67,8 @@
       "turnsQueued": 0
     },
     "hangingRegistryHoldsNothingUp": {
-      "hangReportMs": 1927,
-      "replyMs": 2860,
+      "hangReportMs": 1235,
+      "replyMs": 2783,
       "hungLookUps": 3,
       "reply": "Fake grok reply to: Hello Grok while npm hangs. One two three four five six seve"
     },
@@ -98,17 +98,17 @@
       "cache": {
         "codex": {
           "latest": "0.159.1",
-          "at": 1790742031023,
+          "at": 1790742351641,
           "found": true
         },
         "claude": {
           "latest": "2.1.285",
-          "at": 1790742031268,
+          "at": 1790742351823,
           "found": true
         },
         "grok": {
           "latest": "1.0.44",
-          "at": 1790742031606,
+          "at": 1790742352160,
           "found": true
         }
       },
@@ -144,7 +144,7 @@
       "  Then run setup again."
     ],
     "updateNoticed": {
-      "noticedMs": 11098,
+      "noticedMs": 12902,
       "codex": {
         "need": "available",
         "version": "0.150.0",
@@ -173,7 +173,7 @@
       "",
       "Next",
       "  pnpm perry start  runs Perry in the background",
-      "  dashboard key: bKWiPfAeptd3-rh7yz_ceRHinYfvJSfQ",
+      "  dashboard key: 1La5DfCp_v-Zupb_ysEZiApa9nxT9f2g",
       "",
       "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
     ],
@@ -192,7 +192,7 @@
     "runnerLog": [
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\perry-tests\\cli-versions\\perry-cli-versions-dGk2nu\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\cli-versions\\perry-cli-versions-U4OImx\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -204,7 +204,7 @@
       "\u001b[0m",
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\perry-tests\\cli-versions\\perry-cli-versions-dGk2nu\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\cli-versions\\perry-cli-versions-U4OImx\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -214,10 +214,10 @@
       "\u001b[33m  Claude Code 2.1.100 is too old for Perry, which needs 2.1.111 or newer. Update it: claude update\u001b[0m",
       "\u001b[32m  connected.",
       "\u001b[0m",
-      "\u001b[2m  saved turn 08waqj6ha5nevsvfrmjjevb9ht\u001b[0m",
+      "\u001b[2m  saved turn z29575gcq3qa4m252354czqphm\u001b[0m",
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\perry-tests\\cli-versions\\perry-cli-versions-dGk2nu\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\cli-versions\\perry-cli-versions-U4OImx\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -227,7 +227,7 @@
       "\u001b[33m  Claude Code 2.1.100 is too old for Perry, which needs 2.1.111 or newer. Update it: claude update\u001b[0m",
       "\u001b[32m  connected.",
       "\u001b[0m",
-      "\u001b[2m  saved turn nhx7myd0xd1bfzwjvr3by6q36r\u001b[0m"
+      "\u001b[2m  saved turn 3jgvkvt1e20nwq1aq42brae9pb\u001b[0m"
     ],
     "tempHomeRemoved": true
   },

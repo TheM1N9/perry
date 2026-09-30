@@ -6,7 +6,7 @@ warn  codex  0.150.0; 0.159.1 is out. Update it: npm install -g @openai/codex@la
 ok    codex sign-in  Logged in using ChatGPT
 ok    claude code  2.1.285
 warn  grok build  1.0.42-fake; 1.0.44 is out. Update it: grok update
-ok    runner  DESKTOP-27SQLCP, working in W:\perry-tests\cli-versions\perry-cli-versions-dGk2nu\workspace
+ok    runner  DESKTOP-27SQLCP, working in W:\perry-tests\cli-versions\perry-cli-versions-U4OImx\workspace
 warn  background service  installed, not running. Run: pnpm run service start
 
 Perry looks healthy.

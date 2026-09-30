@@ -7,7 +7,7 @@ Perry setup
 
 Next
   pnpm perry start  runs Perry in the background
-  dashboard key: bKWiPfAeptd3-rh7yz_ceRHinYfvJSfQ
+  dashboard key: 1La5DfCp_v-Zupb_ysEZiApa9nxT9f2g
 
   (also saved in .env.local; `pnpm perry doctor` checks everything)
 

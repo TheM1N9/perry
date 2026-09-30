@@ -6,7 +6,7 @@ fail  codex  0.120.0 is too old for Perry, which needs 0.136.0 or newer. Update 
 ok    codex sign-in  Logged in using ChatGPT
 fail  claude code  2.1.100 is too old for Perry, which needs 2.1.111 or newer. Update it: claude update
 warn  grok build  1.0.42-fake; 1.0.44 is out. Update it: grok update
-ok    runner  DESKTOP-27SQLCP, working in W:\perry-tests\cli-versions\perry-cli-versions-dGk2nu\workspace
+ok    runner  DESKTOP-27SQLCP, working in W:\perry-tests\cli-versions\perry-cli-versions-U4OImx\workspace
 warn  background service  installed, not running. Run: pnpm run service start
 
 2 problems above.
