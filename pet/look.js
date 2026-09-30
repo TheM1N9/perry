@@ -4,17 +4,24 @@
  * this error?", "reply to this"). Taken only when they ask, with his Look
  * hotkey or the button in his chat, and shown to them before anything is sent.
  *
- * Which window: on Windows, the one in front (from user32, through
- * PowerShell), which is the one they were in when they pressed the hotkey.
- * Otherwise, and when the one in front is his own (they clicked his button),
- * the topmost window that is not his and does not let clicks through, as an
- * overlay does; Electron's desktopCapturer lists windows front to back. On a
- * Mac it needs Screen Recording permission; without it, the pictures come
- * back empty.
+ * Which window: the one in front, which is the one they were in when they
+ * pressed the hotkey. On Windows that comes from user32, through PowerShell;
+ * on a Mac from AppKit and the window list (the app in front, and its window
+ * nearest the top), through osascript. When the one in front is his own (they
+ * clicked his button), the topmost window that is not his: on a Mac the next
+ * in that same list, front to back; elsewhere the first in desktopCapturer's
+ * list (also front to back) that does not let clicks through, as an overlay
+ * does.
+ *
+ * On a Mac, macOS must allow the app his window runs in (Electron, from
+ * pet/node_modules) to record the screen. Until it does, Electron's
+ * desktopCapturer fails outright ("Failed to get sources."); the first time,
+ * that same call is what has macOS ask the owner. An app is allowed as it
+ * starts, so he must start again once they have said yes.
  */
 
 import { spawn } from "node:child_process";
-import { desktopCapturer, globalShortcut, screen } from "electron";
+import { desktopCapturer, globalShortcut, screen, systemPreferences } from "electron";
 
 /** The longest side of a picture, in pixels: sharp enough to read, small enough to send. */
 const LONGEST = 2560;
@@ -22,47 +29,104 @@ const USER32 = `Add-Type -TypeDefinition 'using System; using System.Runtime.Int
 /** GetWindowLong's extended styles, and the one a window that lets clicks through has. */
 const GWL_EXSTYLE = -20;
 const WS_EX_TRANSPARENT = 0x20;
+/**
+ * On a Mac, the app in front and the ordinary windows on screen (layer 0: not
+ * the menu bar, the Dock or anything floating, as he does), front to back,
+ * leaving out his own (argv[0], his process). Neither needs any permission;
+ * only windows' titles would. JavaScript for osascript, which prints what
+ * run returns.
+ */
+const APPKIT = `ObjC.import("AppKit");
+ObjC.import("CoreGraphics");
+function run(argv) {
+  const own = Number(argv[0]);
+  const app = $.NSWorkspace.sharedWorkspace.frontmostApplication;
+  const pid = app.isNil() ? 0 : app.processIdentifier;
+  // kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, and every window (kCGNullWindowID).
+  const listed = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo(1 | 16, 0))) || [];
+  const windows = listed.filter((w) => w.kCGWindowLayer === 0 && w.kCGWindowOwnerPID !== own);
+  const front = windows.find((w) => w.kCGWindowOwnerPID === pid);
+  return JSON.stringify({ front: front ? front.kCGWindowNumber : null, app: front ? front.kCGWindowOwnerName : null, order: windows.map((w) => w.kCGWindowNumber) });
+}`;
 
 /**
- * On Windows, which window is in front, and which of some windows let clicks
- * through. PowerShell starts (and compiles its user32 calls) while the
- * picture is taken, then `ask` answers; null elsewhere, or when it fails.
+ * The app macOS asks about and lists under Screen Recording: the .app his
+ * window runs in, Electron's own (pet/node_modules/electron). Electron's
+ * downloads are signed ad hoc, so macOS knows this build by its hash: what
+ * the owner allowed stays allowed while Electron stays the same, through
+ * `perry update` and reinstalls, but a new version of Electron is a new app
+ * to it, still listed, and switched on, under the same name.
  */
-function user32() {
+export const MAC_APP = process.execPath.match(/([^/]+)\.app\/Contents\/MacOS\//)?.[1] ?? "Electron";
+/** System Settings, open where the owner allows it. */
+export const SCREEN_RECORDING_SETTINGS = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
+/** What the owner (and Perry, when he asked to look) is told while macOS does not let him see the screen. */
+const NOT_ALLOWED = `Perry can't see the screen yet: macOS has to allow “${MAC_APP}”, the app the desktop pet runs in. Turn it on in System Settings → Privacy & Security → Screen & System Audio Recording (Screen Recording before macOS 15); if it is on already (a Perry update brought a new ${MAC_APP}), remove it with −, then look again and allow it. Then restart the pet: Restart, in his tray icon's menu (not macOS's Quit & Reopen, which would open ${MAC_APP} without him).`;
+
+/**
+ * Which window is in front, asked as the picture is taken: `ask` answers.
+ * On Windows, PowerShell starts (and compiles its user32 calls) meanwhile,
+ * and also says which of some windows let clicks through; `ask` takes their
+ * handles, and answers { front, through }. On a Mac osascript answers at
+ * once, before his own window can come to the front: { front, app, order }.
+ * Null elsewhere, or when it fails.
+ */
+export function inFront() {
+  if (process.platform === "darwin") return appKit();
   if (process.platform !== "win32") return { ask: async () => null };
   const shell = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "-"], { windowsHide: true, stdio: ["pipe", "pipe", "ignore"] });
-  let out = "";
-  shell.stdout.on("data", (chunk) => { out += chunk; });
+  const answer = answerOf(shell);
   shell.stdin.on("error", () => {});
-  const ended = new Promise((resolve) => { shell.on("close", resolve); shell.on("error", resolve); });
   shell.stdin.write(USER32);
   return {
-    /** `windows` are window handles; the answer is { front, through } in handles. */
     ask: async (windows) => {
       const list = windows.filter(Number.isFinite).join(",");
       shell.stdin.end(`$t = @(@(${list}) | Where-Object { ([PerryLook]::GetWindowLong([IntPtr][long]$_, ${GWL_EXSTYLE}) -band ${WS_EX_TRANSPARENT}) -ne 0 }); ConvertTo-Json -Compress @{ front = [PerryLook]::GetForegroundWindow().ToInt64(); through = @($t) }\n`);
-      const timer = setTimeout(() => shell.kill(), 5_000);
-      await ended;
-      clearTimeout(timer);
-      try {
-        return JSON.parse(out.split(/\r?\n/).find((line) => line.trim().startsWith("{")) ?? "null");
-      } catch {
-        return null;
-      }
+      return await answer();
     },
   };
 }
 
-/** A window's handle, from desktopCapturer's id for it ("window:<handle>:0"). */
+function appKit() {
+  const script = spawn("osascript", ["-l", "JavaScript", "-e", APPKIT, String(process.pid)], { stdio: ["ignore", "pipe", "ignore"] });
+  return { ask: answerOf(script) };
+}
+
+/** What a helper prints, as the JSON line in it, once it ends: given five seconds from when it is asked for, then null. */
+function answerOf(child) {
+  let out = "";
+  child.stdout.on("data", (chunk) => { out += chunk; });
+  const ended = new Promise((resolve) => { child.on("close", resolve); child.on("error", resolve); });
+  return async () => {
+    const timer = setTimeout(() => child.kill(), 5_000);
+    await ended;
+    clearTimeout(timer);
+    try {
+      return JSON.parse(out.split(/\r?\n/).find((line) => line.trim().startsWith("{")) ?? "null");
+    } catch {
+      return null;
+    }
+  };
+}
+
+/** A window's handle (its CGWindowID on a Mac), from desktopCapturer's id for it ("window:<handle>:0"). */
 const handleOf = (source) => Number(source.id.split(":")[1]);
 
 /**
  * The window the owner was in (none when there is none to see) and the screen
  * nearest `near`, as PNG data URLs. Perry's own windows (`own`) are never in
  * the picture: left out of the windows, and see-through for the screen.
+ *
+ * On a Mac that has not allowed it, only { error, needs: "screen-recording" }:
+ * the first time, macOS has asked the owner by then.
  */
 export async function capture(own, near) {
-  const asking = user32();
+  if (process.platform === "darwin" && systemPreferences.getMediaAccessStatus("screen") !== "granted") {
+    // Asking for the pictures is what has macOS ask, the first time; after that it only fails, at once.
+    await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } }).catch(() => {});
+    return { error: NOT_ALLOWED, needs: "screen-recording" };
+  }
+  const asking = inFront();
   const display = screen.getDisplayNearestPoint(near);
   const width = display.size.width * display.scaleFactor;
   const height = display.size.height * display.scaleFactor;
@@ -75,24 +139,27 @@ export async function capture(own, near) {
   try {
     await new Promise((resolve) => setTimeout(resolve, 150));
     sources = await desktopCapturer.getSources({ types: ["window", "screen"], thumbnailSize: { width: Math.round(width * scale), height: Math.round(height * scale) } });
+  } catch (error) {
+    return { error: `Perry couldn't take a picture of the screen (${error instanceof Error ? error.message : String(error)})` };
   } finally {
     for (const win of hidden) if (!win.isDestroyed()) win.setOpacity(1);
   }
-  const windows = sources.filter((source) => source.id.startsWith("window:") && !mine.has(source.id) && source.name && !source.thumbnail.isEmpty());
-  const facts = await asking.ask(windows.map(handleOf));
-  const top = windows.find((source) => handleOf(source) === facts?.front)
-    ?? windows.find((source) => !facts?.through?.includes(handleOf(source)));
+  const windows = sources.filter((source) => source.id.startsWith("window:") && !mine.has(source.id) && !source.thumbnail.isEmpty());
+  const named = windows.filter((source) => source.name);
+  const facts = await asking.ask(named.map(handleOf));
+  const byHandle = (handle) => named.find((source) => handleOf(source) === handle);
+  // A Mac window in front may have no title (the window list names its app); elsewhere one without is not a window to show.
+  const front = windows.find((source) => handleOf(source) === facts?.front && (source.name || facts.app));
+  const top = front
+    ?? facts?.order?.map(byHandle).find(Boolean)
+    ?? named.find((source) => !facts?.through?.includes(handleOf(source)));
   const screens = sources.filter((source) => source.id.startsWith("screen:") && !source.thumbnail.isEmpty());
   const whole = screens.find((source) => source.display_id === String(display.id)) ?? screens[0];
-  if (!top && !whole) {
-    return { error: process.platform === "darwin"
-      ? "Perry can't see the screen yet. Allow him in System Settings → Privacy & Security → Screen Recording, then try again."
-      : "Perry couldn't take a picture of the screen." };
-  }
+  if (!top && !whole) return { error: "Perry couldn't take a picture of the screen." };
   return {
     // Whether the window in front could be pictured at all: some cannot (Windows' own search panel, for one), and then the topmost other one is.
-    ...(facts ? { frontListed: windows.some((source) => handleOf(source) === facts.front) } : {}),
-    ...(top ? { window: { id: top.id, name: top.name, image: top.thumbnail.toDataURL() } } : {}),
+    ...(facts ? { frontListed: Boolean(front) } : {}),
+    ...(top ? { window: { id: top.id, name: top.name || facts?.app || "Window", image: top.thumbnail.toDataURL() } } : {}),
     ...(whole ? { screen: { name: screens.length > 1 ? whole.name : "Whole screen", image: whole.thumbnail.toDataURL() } } : {}),
   };
 }

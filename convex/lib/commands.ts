@@ -227,3 +227,23 @@ export function pickAccess(mode: string): { access?: Access; reply: string } {
   if (!access) return { reply: `No access called "${mode}". Use /access ask, /access auto or /access full.` };
   return { access, reply: `This chat is on ${ACCESS_LABELS[access]}: ${ACCESS_HINTS[access]} It applies at once, to a reply already running too.` };
 }
+
+// --- Skills ($name) -------------------------------------------------------
+
+/**
+ * "$weekly-review" in a message names a skill, as in Codex: a skill's name
+ * (lowercase letters, digits and hyphens) after a $ that does not follow a
+ * word, so "US$5" and "$$" name none. A name no skill has is left as text.
+ */
+export const SKILL_MENTION = /(?<![\w$])\$([a-z0-9][a-z0-9-]{0,63})/g;
+
+/** The skill names a message mentions, once each, in order. */
+export function skillMentions(text: string): string[] {
+  return [...new Set([...text.matchAll(SKILL_MENTION)].map((match) => match[1]))];
+}
+
+/** The $name being typed at the end of `before` (the text up to the caret), for the composer to complete. */
+export function typingSkill(before: string): { start: number; typed: string } | null {
+  const match = before.match(/(?:^|[^\w$])\$([a-z0-9-]*)$/);
+  return match ? { start: before.length - match[1].length - 1, typed: match[1] } : null;
+}

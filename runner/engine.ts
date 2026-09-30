@@ -55,14 +55,21 @@
  *   Tools      Perry's own tools are an MCP server. `tools` offers it over
  *               HTTP (url and bearer header) and as a stdio command
  *               (runner/mcp-bridge.ts), for engines that ignore HTTP MCP.
+ *   limits()    Optional. How much of the owner's plan is used and when each
+ *               of its windows resets, as the vendor says (Codex's
+ *               account/rateLimits/read, Claude Code's /usage data), without
+ *               spending any of it. The runner reads it every few minutes
+ *               and after the engine's turns; an engine without it only
+ *               ever shows the limits it hits (convex/lib/usage.ts).
  *   kill()      Ends the engine's processes, the whole group. The runner's
  *               watchdog interrupts a turn that runs too long, then kills.
  */
 
 import type { Access } from "../convex/lib/commands";
 import type { EngineKind, LoginInteraction } from "../convex/lib/engines";
+import type { PlanLimits, PlanWindow } from "../convex/lib/usage";
 
-export type { Access, EngineKind, LoginInteraction };
+export type { Access, EngineKind, LoginInteraction, PlanLimits, PlanWindow };
 
 /** How a message the owner sends while a turn runs reaches it. */
 export type SteerMode =
@@ -100,6 +107,12 @@ export type EngineCapabilities = {
    * given up on while the others go on. Unset: one turn at a time.
    */
   concurrentTurns?: boolean;
+  /**
+   * It takes the skills the owner names in a message ("$name") as input of
+   * their own (Codex's `skill` items), in TurnInput.skills. Unset: the runner
+   * names each skill's SKILL.md in the message instead (skillNote).
+   */
+  skills?: boolean;
 };
 
 /** A model an engine offers, with the reasoning efforts it takes. */
@@ -116,6 +129,9 @@ export type EngineStatus = {
   /** What the owner should do next, such as "Run `grok login` on this computer". */
   message?: string;
   error?: string;
+  /** The newest release of its CLI, as last looked up, and the command that updates it here (runner/versions.ts adds both). */
+  latest?: string;
+  update?: string;
 };
 
 export type LoginFlow = {
@@ -221,6 +237,15 @@ export function optionOf(request: EngineRequest, kind: "accept" | "decline"): st
 /** Where a running turn is, for interrupting and steering it. */
 export type TurnHandle = { cursor: string; turnId: string };
 
+/** A skill the owner named in a message, "$name", and the SKILL.md in Perry's skills folder it stands for. */
+export type NamedSkill = { name: string; path: string };
+
+/** For an engine without `capabilities.skills`: what goes after the message, so it reads the skills named. */
+export function skillNote(skills: NamedSkill[]): string {
+  const list = skills.map((skill) => `- $${skill.name}: ${skill.path}`).join("\n");
+  return `The owner named ${skills.length === 1 ? "a skill" : "skills"} for this message. Before anything else, read ${skills.length === 1 ? "its SKILL.md" : "each SKILL.md"} and follow it:\n${list}`;
+}
+
 export type TurnInput = {
   /** The chat's session; unset starts one. */
   resumeCursor?: string;
@@ -243,6 +268,8 @@ export type TurnInput = {
    * images or computer, only Perry's guest tools and web search, in an empty folder.
    */
   guest?: boolean;
+  /** The skills the message names, for an engine with `capabilities.skills`. */
+  skills?: NamedSkill[];
 };
 
 export type TurnSink = {
@@ -292,7 +319,7 @@ export interface Engine {
   logout(): Promise<void>;
   runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult>;
   /** For `steer` "native" and "concurrent-prompt". */
-  steer?(handle: TurnHandle, message: { prompt: string; attachments: EngineAttachment[] }): Promise<void>;
+  steer?(handle: TurnHandle, message: { prompt: string; attachments: EngineAttachment[]; skills?: NamedSkill[] }): Promise<void>;
   /**
    * The chat's access changed while the turn runs: act on it from the turn's
    * next step. Without it, the access the turn started with holds, except
@@ -305,6 +332,8 @@ export interface Engine {
   compact?(cursor: string, cwd: string): Promise<void>;
   /** For `quickTurns`. Throws on failure or when out of time; the error may carry the `model` it tried. */
   quickTurn?(turn: QuickTurn): Promise<{ text: string; model?: string }>;
+  /** The plan's limits, read without spending any of them; null when this sign-in has none (an API key). */
+  limits?(): Promise<PlanLimits | null>;
   /** End its processes, the whole group. Whatever runs fails; the next call starts it again. */
   kill(): void;
 }

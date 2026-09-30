@@ -912,8 +912,11 @@ export const setDefaultAccess = mutation({
 
 export type ShortcutsView = {
   shortcuts: Shortcuts;
-  /** The desktop pet, as it last checked in: whether it is running, and each of its global shortcuts' standing, by id. */
-  pet: { running: boolean; keys: Partial<Record<string, { hotkey?: string; error?: string }>> };
+  /**
+   * The desktop pet, as it last checked in: whether it is running, and each of its global shortcuts' standing, by id;
+   * for Talk, why its keys can only be tapped (`hold`), where holding them does not work.
+   */
+  pet: { running: boolean; keys: Partial<Record<string, { hotkey?: string; error?: string; hold?: string }>> };
 };
 
 export const getShortcuts = query({
@@ -926,7 +929,7 @@ export const getShortcuts = query({
     const pet = pets.find((row) => !row.device && Date.now() - row.seenAt < 150_000) ?? pets[0];
     return {
       shortcuts: resolveShortcuts(install?.shortcuts),
-      pet: { running: Boolean(pet && Date.now() - pet.seenAt < 150_000), keys: { talk: { hotkey: pet?.hotkey, error: pet?.hotkeyError }, ...pet?.keys } },
+      pet: { running: Boolean(pet && Date.now() - pet.seenAt < 150_000), keys: { talk: { hotkey: pet?.hotkey, error: pet?.hotkeyError, hold: pet?.hotkeyHold }, ...pet?.keys } },
     };
   },
 });

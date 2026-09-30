@@ -9,7 +9,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { EngineView } from "@/convex/engines";
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access } from "@/convex/lib/commands";
-import { SIGN_IN_LABELS, type LoginInteraction } from "@/convex/lib/engines";
+import { SIGN_IN_LABELS, type EngineUpdate, type LoginInteraction } from "@/convex/lib/engines";
 import type { PetTheme } from "@/convex/pet";
 import { ago, errorText, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
@@ -29,9 +29,10 @@ import { PetControl } from "../pet-control";
 import { PetDevices } from "../pet-devices";
 import { Shortcuts } from "../shortcuts";
 import { Updates } from "../updates";
+import { Usage } from "./usage";
 import { ActionButton, CommandLine, CopyButton, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
 
-const TABS = ["general", "keys", "people", "shortcuts", "telegram", "whatsapp"] as const;
+const TABS = ["general", "usage", "keys", "people", "shortcuts", "telegram", "whatsapp"] as const;
 
 export function Settings() {
   const [tab, setTab] = useTab(TABS, "general");
@@ -40,6 +41,7 @@ export function Settings() {
       <Tabs value={tab} onValueChange={(value) => setTab(value as (typeof TABS)[number])}>
         <TabsList variant="line" className="mb-6 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
           <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="usage">Usage</TabsTrigger>
           <TabsTrigger value="keys">Keys</TabsTrigger>
           <TabsTrigger value="people">People</TabsTrigger>
           <TabsTrigger value="shortcuts">Keyboard shortcuts</TabsTrigger>
@@ -47,6 +49,7 @@ export function Settings() {
           <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
         </TabsList>
         <TabsContent value="general"><Engines /><NewChatAccess /><Manners /><Updates /><DesktopPet /><Appearance /></TabsContent>
+        <TabsContent value="usage"><Usage /></TabsContent>
         <TabsContent value="keys"><Keys /></TabsContent>
         <TabsContent value="people"><People /></TabsContent>
         <TabsContent value="shortcuts"><Shortcuts /></TabsContent>
@@ -101,6 +104,8 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
   const request = engine.request;
   const pending = request?.status === "queued" || request?.status === "running";
   const unavailable = !online ? "This computer is offline." : !engine.installed ? `${engine.label} isn't installed or can't start on this computer.` : null;
+  // Too old for Perry: it is updated before it is signed in.
+  const outdated = engine.update?.need === "required";
   const state: { tone: Tone; label: string } = !online ? { tone: "neutral", label: "Offline" }
     : !engine.installed ? { tone: "danger", label: `${engine.label} unavailable` }
     : engine.signedIn ? { tone: "success", label: "Signed in" } : { tone: "warning", label: "Signed out" };
@@ -120,6 +125,9 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
             <span className="text-sm font-medium">{engine.label}</span>
             {experimental && <StatusBadge tone="warning">Experimental</StatusBadge>}
             <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+            {online && engine.update && (
+              <StatusBadge tone={engine.update.need === "required" ? "danger" : "info"}>{engine.update.need === "required" ? "Update required" : "Update available"}</StatusBadge>
+            )}
             {engine.version && <span className="text-xs text-muted-foreground">{engine.version}</span>}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">{account}{unavailable && ` · ${unavailable}`}</p>
@@ -132,18 +140,19 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
           : experimental
             ? (
               <div className="flex flex-wrap gap-2">
-                <ActionButton size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login", "gemini-api-key")}>Use Gemini API key</ActionButton>
-                <ActionButton variant="outline" size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login", "oauth-personal")}
+                <ActionButton size="sm" disabled={Boolean(unavailable) || pending || outdated} action={() => ask("login", "gemini-api-key")}>Use Gemini API key</ActionButton>
+                <ActionButton variant="outline" size="sm" disabled={Boolean(unavailable) || pending || outdated} action={() => ask("login", "oauth-personal")}
                   confirm={{ title: "Sign in with Google? (Experimental)", body: <GoogleWarning />, label: "Sign in anyway" }}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>
               </div>
             )
-            : <ActionButton size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login")}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>}
+            : <ActionButton size="sm" disabled={Boolean(unavailable) || pending || outdated} action={() => ask("login")}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>}
       </div>
       {experimental && !engine.signedIn && (
         <p className="mt-2 text-sm text-pretty text-muted-foreground">
           Perry runs Google&apos;s own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved in the Keys tab. Signing in with Google also works, at your own risk: <GoogleWarning inline />
         </p>
       )}
+      {online && engine.update && <UpdateSteps engine={engine.label} computer={computer} update={engine.update} />}
       {engine.error && <p className="mt-2 text-sm text-destructive">{engine.error}</p>}
       {request?.status === "queued" && <Waiting>Waiting for the computer to pick this up…</Waiting>}
       {request?.status === "running" && request.kind === "logout" && <Waiting>Signing out…</Waiting>}
@@ -152,6 +161,26 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
       {request?.status === "error" && request.error && (request.kind === "logout"
         ? <p className="mt-2 text-sm text-pretty text-destructive">Sign-out didn&apos;t finish: {request.error}.</p>
         : <p className="mt-2 text-sm text-pretty text-destructive">Sign-in didn&apos;t finish: {request.error}. Try again; each code works for a few minutes.</p>)}
+    </div>
+  );
+}
+
+/**
+ * An engine whose CLI should be updated, and the command that does it on that
+ * computer. Too old for Perry, it takes no new replies until it is; otherwise
+ * it is only a newer release. Perry notices the update by itself.
+ */
+function UpdateSteps({ engine, computer, update }: { engine: string; computer: string; update: EngineUpdate }) {
+  const required = update.need === "required";
+  return (
+    <div className={cn("mt-3 rounded-xl border p-4", required ? "border-destructive/30 bg-destructive/5" : "bg-muted/40")} role={required ? "alert" : "status"}>
+      <p className="text-sm font-medium">{required ? `Update ${engine} to keep using it` : `${engine} ${update.latest} is out`}</p>
+      <p className="mt-0.5 text-sm text-pretty text-muted-foreground">
+        {required
+          ? `${computer} has ${engine} ${update.version}, older than Perry works with (${update.minimum} or newer). Until it's updated, Perry won't start replies with it. Run this on ${computer}:`
+          : `${computer} has ${update.version}. To update, run this on ${computer}:`}
+      </p>
+      <div className="mt-3 max-w-md"><CommandLine>{update.command}</CommandLine></div>
     </div>
   );
 }

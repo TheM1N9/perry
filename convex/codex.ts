@@ -5,13 +5,13 @@ import { api, internal } from "./_generated/api";
 import { createThread, saveMessages } from "./lib/agent";
 import { CAPTION_LIMIT, UPLOAD_LIMIT, deleteMessage, editDraft, finishDraft, sendDraft, sendFile, sendMessage } from "./lib/telegram";
 import { COMPACTED, runLabel, type Access } from "./lib/commands";
-import { ENGINE_LABELS, engineOf, type EngineKind } from "./lib/engines";
+import { ENGINE_LABELS, engineOf, refusal, type EngineKind } from "./lib/engines";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
 import { hide, savedValues } from "./vault";
 import { takeFromOutbox } from "./conversations";
-import { engineReady, isOnline, recordEngines, resumeOf, statusesOf } from "./engines";
+import { engineReady, engineUsable, isOnline, recordEngines, resumeOf, statusesOf, tooOld } from "./engines";
 import { vAccess, vCodexModel, vEngine, vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
 
@@ -98,7 +98,7 @@ export const updateAuth = mutation({
  */
 async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">, engine: EngineKind): Promise<Id<"runners"> | null> {
   const pinned = conversation.codexRunnerId ? await ctx.db.get(conversation.codexRunnerId) : null;
-  const online = (item: Doc<"runners">) => isOnline(item) && engineReady(item, engine);
+  const online = (item: Doc<"runners">) => isOnline(item) && engineUsable(item, engine);
   if (pinned && online(pinned)) return pinned._id;
   const sameComputer = (item: Doc<"runners">) => !!pinned?.hostname && item.hostname === pinned.hostname && item.platform === pinned.platform;
   const runner = (await ctx.db.query("runners").order("desc").take(20))
@@ -198,8 +198,17 @@ export const enqueueTurn = internalMutation({
 /** Why no runner can take the chat's turn, and what to do about it. */
 async function noRunner(ctx: MutationCtx, conversation: Doc<"conversations">, engine: EngineKind): Promise<string> {
   const pinned = conversation.codexRunnerId ? await ctx.db.get(conversation.codexRunnerId) : null;
+  // An engine too old for Perry says so, with the command that updates it, whether or not it is signed in.
+  const old = (runner: Doc<"runners">) => {
+    const update = tooOld(runner, engine);
+    return update && refusal(ENGINE_LABELS[engine], update, runner.name);
+  };
   if (pinned && isOnline(pinned)) {
-    return `${ENGINE_LABELS[engine]} isn't signed in on ${pinned.name}. Sign in to it in Settings, or pick a model from another engine.`;
+    return old(pinned) ?? `${ENGINE_LABELS[engine]} isn't signed in on ${pinned.name}. Sign in to it in Settings, or pick a model from another engine.`;
+  }
+  if (!conversation.codexRunnerId) {
+    const outdated = (await ctx.db.query("runners").order("desc").take(20)).filter(isOnline).map(old).find(Boolean);
+    if (outdated) return outdated;
   }
   return conversation.codexRunnerId
     ? "The runner for this chat is offline. Start Perry on its computer (perry start) to continue."
@@ -375,7 +384,7 @@ export const requestCompact = internalMutation({
     const engine = engineOf(conversation);
     const runnerId = await pickRunner(ctx, conversation, engine);
     // Only the runner's engine holds the session; answering without the computer cannot compact it.
-    if (!runnerId) throw new Error("The runner for this chat is offline. Start it to compact this chat.");
+    if (!runnerId) throw new Error(await noRunner(ctx, conversation, engine));
     const runId = await ctx.db.insert("runs", { conversationId: conversation._id, prompt: "/compact", status: "running", startedAt: Date.now() });
     return await ctx.db.insert("codexTurns", {
       engine,
