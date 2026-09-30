@@ -125,6 +125,17 @@ export function describe(accelerator: string, mac: boolean): string {
   return keysOf(accelerator, mac).join(mac ? "" : "+");
 }
 
+/**
+ * Why the Talk keys can only be tapped, as the desktop pet reports it
+ * (pet/voice.js, hold()): holding needs his window to hear the keys come up.
+ * Null while holding works, or from a pet that does not say.
+ */
+export function holdProblem(hold: string | null | undefined): string | null {
+  if (hold === "access") return "Holding them needs Accessibility for Perry: in System Settings → Privacy & Security → Accessibility, turn on Electron (his window).";
+  if (hold) return "Holding them doesn't work on this computer: his window can't hear keys come up here.";
+  return null;
+}
+
 /** The shortcuts in force: the owner's, where set, over the defaults. */
 export function resolve(saved: Partial<Record<string, string>> | undefined): Shortcuts {
   return Object.fromEntries(SHORTCUT_IDS.map((id) => [id, saved?.[id] ?? SHORTCUTS[id].default])) as Shortcuts;

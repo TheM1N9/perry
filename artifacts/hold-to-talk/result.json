@@ -1,0 +1,78 @@
+{
+  "ranAt": "2026-09-30T04:27:43.487Z",
+  "spoken": "Remind me to water the plants at six.",
+  "checks": {
+    "hookStartsInThePetsElectron": true,
+    "petHoldsTheTestKeysAndCanHold": true,
+    "holdListens": true,
+    "stillListeningWhileRepeating": true,
+    "lateRepeatDoesNotStartAgain": true,
+    "holdSends": true,
+    "holdSendsWhatWasSaid": true,
+    "shortcutFirstListens": true,
+    "modifiersFirstThenKeySends": true,
+    "tapListens": true,
+    "tapKeepsListening": true,
+    "secondTapSends": true,
+    "escStops": true,
+    "escSendsNothing": true,
+    "afterEscAPressListens": true,
+    "unheardPressListens": true,
+    "unheardRepeatsKeepListening": true,
+    "unheardSecondPressSends": true,
+    "heldAgainWhileWritingListens": true,
+    "bothAreSent": true,
+    "notLeftListening": true,
+    "releasedBeforeTheMicOpensDoesNotListenOn": true,
+    "andTheNextPressStartsAgain": true,
+    "noPageErrors": true,
+    "settingsSaysWorking": true,
+    "petReportsTapOnly": true,
+    "settingsSaysTapOnly": true,
+    "tapOnlyListens": true,
+    "petSaysTapOnly": true,
+    "tapOnlySends": true,
+    "noPageErrorsTapOnly": true,
+    "ownersPetUntouched": true
+  },
+  "notes": {
+    "hookStartsInThePetsElectron": {
+      "exit": 0,
+      "electron": "node_modules/electron/dist/electron.exe"
+    },
+    "petHoldsTheTestKeysAndCanHold": {
+      "hotkey": "CommandOrControl+Alt+Shift+F7"
+    },
+    "holdSends": "Remind me toward the plant said 6.",
+    "bothAreSent": [
+      "Remind me to water the plant said 6.",
+      "Remind me to water the plant said 6."
+    ],
+    "pageErrors": [],
+    "settingsSaysWorking": "Talk to Perry\n\nAnywhere on this computer, with the desktop pet running: hold, speak and let go, or tap, speak and tap again.\n\nWorking in the desktop pet.\n\nReset\nCtrl\nAlt\nShift\nF7",
+    "petReportsTapOnly": {
+      "hotkey": "CommandOrControl+Alt+Shift+F7",
+      "hold": "off"
+    },
+    "settingsSaysTapOnly": "Talk to Perry\n\nAnywhere on this computer, with the desktop pet running: hold, speak and let go, or tap, speak and tap again.\n\nWorking in the desktop pet, by tapping: tap, speak, and tap again. Holding them doesn't work on this computer: his window can't hear keys come up here.\n\nReset\nCtrl\nAlt\nShift\nF7",
+    "petSaysTapOnly": "Listening. Press Ctrl+Alt+Shift+F7 again to send; Esc to stop. Holding them doesn't work on this computer: his window can't hear keys come up here.",
+    "said": [
+      "Remind me toward the plant said 6.",
+      "Remind me to water the plant said 6.",
+      "Remind me to water the plant said 6.",
+      "Remind me to water the plant said 6.",
+      "Remind me to water the plant said 6.",
+      "Remind me to water the plant said 6.",
+      "Remind me to water the plant said 6."
+    ],
+    "ownersPetUntouched": {
+      "before": [
+        "10800"
+      ],
+      "after": [
+        "10800"
+      ]
+    }
+  },
+  "passed": true
+}

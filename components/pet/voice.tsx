@@ -11,7 +11,12 @@ import { cn } from "@/lib/utils";
  */
 
 type Transcribed = { text?: string; error?: string };
-export type HotkeyState = { hotkey: string | null; error: string | null };
+/**
+ * The Talk hotkey's keys, why not the ones asked for, and why only tapping
+ * them works where holding does not (convex/lib/shortcuts.ts, holdProblem).
+ * A pet window from before holding was reported says nothing of it.
+ */
+export type HotkeyState = { hotkey: string | null; error: string | null; hold?: string | null };
 type Progress = { file: string; loaded: number; total: number };
 
 /** What the pet's window adds for talking (pet/preload.cjs). Absent in a plain browser. */
@@ -33,21 +38,34 @@ export type Voice = {
   /** How far the voice model's first download has got, 0 to 1, while it downloads. */
   downloading: number | null;
   error: string;
-  start: () => Promise<void>;
-  /** Stop listening and return what was said ("" for nothing). */
+  /** Start listening; whether he is, once the microphone is open. */
+  start: () => Promise<boolean>;
+  /** Stop listening and return what was said ("" for nothing), once the microphone is open if it is still opening. */
   stop: () => Promise<string>;
   cancel: () => void;
 };
 
 const BARS = 28;
 const SAMPLE_RATE = 16_000;
+/** One time of listening: the microphone, what it recorded, and the waveform's meter. */
+type Live = { stream: MediaStream; recorder: MediaRecorder; chunks: Blob[]; context: AudioContext; timer: number };
 
 export function useVoice(bridge: VoiceBridge | undefined): Voice {
   const [state, setState] = useState<VoiceState>("idle");
   const [levels, setLevels] = useState<number[]>(() => Array(BARS).fill(0));
   const [downloading, setDownloading] = useState<number | null>(null);
   const [error, setError] = useState("");
-  const live = useRef<{ stream: MediaStream; recorder: MediaRecorder; chunks: Blob[]; context: AudioContext; timer: number } | null>(null);
+  const live = useRef<Live | null>(null);
+  /**
+   * The microphone while it opens, which can take a second (a Bluetooth
+   * headset changing over): a stop that comes meanwhile waits for it, and a
+   * cancel closes it as soon as it is open.
+   */
+  const opening = useRef<Promise<boolean> | null>(null);
+  const cancelled = useRef(false);
+  /** What is being written down: the last thing said can be, while he already listens to the next. */
+  const writing = useRef(0);
+  const settle = useCallback(() => setState(live.current ? "listening" : writing.current ? "transcribing" : "idle"), []);
 
   // The first time, the model downloads (a few files); its progress is all of them together.
   useEffect(() => {
@@ -61,58 +79,82 @@ export function useVoice(bridge: VoiceBridge | undefined): Voice {
     });
   }, [bridge]);
 
-  const release = useCallback(() => {
-    const current = live.current;
-    live.current = null;
-    if (!current) return;
+  const close = useCallback((current: Live) => {
     window.clearInterval(current.timer);
     for (const track of current.stream.getTracks()) track.stop();
     void current.context.close().catch(() => {});
     setLevels(Array(BARS).fill(0));
   }, []);
+  const release = useCallback(() => {
+    const current = live.current;
+    live.current = null;
+    if (current) close(current);
+  }, [close]);
 
-  const start = useCallback(async () => {
-    if (live.current) return;
-    setError("");
-    try {
-      // As OpenWhispr does: the browser's echo and noise filters blur words, and Whisper copes with a room better than they do.
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-      const recorder = new MediaRecorder(stream);
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-      recorder.start(250);
-      // The waveform: how loud, every 80 ms.
-      const context = new AudioContext();
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 512;
-      context.createMediaStreamSource(stream).connect(analyser);
-      const wave = new Uint8Array(analyser.fftSize);
-      const timer = window.setInterval(() => {
-        analyser.getByteTimeDomainData(wave);
-        let sum = 0;
-        for (const value of wave) sum += ((value - 128) / 128) ** 2;
-        const level = Math.min(1, Math.sqrt(sum / wave.length) * 4);
-        setLevels((previous) => [...previous.slice(1), level]);
-      }, 80);
-      live.current = { stream, recorder, chunks, context, timer };
-      setState("listening");
-    } catch (cause) {
-      setError(cause instanceof DOMException && cause.name === "NotAllowedError"
-        ? "He can't hear you: allow the microphone for Perry in your system's privacy settings."
-        : `He can't hear you: ${cause instanceof Error ? cause.message : String(cause)}`);
-      setState("idle");
+  const start = useCallback((): Promise<boolean> => {
+    if (live.current) return Promise.resolve(true);
+    if (opening.current) {
+      // Cancelled while it opened, and asked for again: it is wanted after all.
+      cancelled.current = false;
+      return opening.current;
     }
-  }, []);
+    cancelled.current = false;
+    setError("");
+    const open = (async () => {
+      try {
+        // As OpenWhispr does: the browser's echo and noise filters blur words, and Whisper copes with a room better than they do.
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+        if (cancelled.current) {
+          for (const track of stream.getTracks()) track.stop();
+          return false;
+        }
+        const recorder = new MediaRecorder(stream);
+        const chunks: Blob[] = [];
+        recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+        recorder.start(250);
+        // The waveform: how loud, every 80 ms.
+        const context = new AudioContext();
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 512;
+        context.createMediaStreamSource(stream).connect(analyser);
+        const wave = new Uint8Array(analyser.fftSize);
+        const timer = window.setInterval(() => {
+          analyser.getByteTimeDomainData(wave);
+          let sum = 0;
+          for (const value of wave) sum += ((value - 128) / 128) ** 2;
+          const level = Math.min(1, Math.sqrt(sum / wave.length) * 4);
+          setLevels((previous) => [...previous.slice(1), level]);
+        }, 80);
+        live.current = { stream, recorder, chunks, context, timer };
+        return true;
+      } catch (cause) {
+        setError(cause instanceof DOMException && cause.name === "NotAllowedError"
+          ? "He can't hear you: allow the microphone for Perry in your system's privacy settings."
+          : `He can't hear you: ${cause instanceof Error ? cause.message : String(cause)}`);
+        return false;
+      }
+    })();
+    opening.current = open;
+    void open.then(() => {
+      if (opening.current === open) opening.current = null;
+      settle();
+    });
+    return open;
+  }, [settle]);
 
   const stop = useCallback(async (): Promise<string> => {
+    await opening.current;
     const current = live.current;
     if (!current || !bridge) return "";
-    const stopped = new Promise<void>((done) => { current.recorder.onstop = () => done(); });
-    current.recorder.stop();
-    await stopped;
-    release();
-    setState("transcribing");
+    // Let go of at once: the next press can start him listening again while this is written down.
+    live.current = null;
+    writing.current += 1;
+    settle();
     try {
+      const stopped = new Promise<void>((done) => { current.recorder.onstop = () => done(); });
+      current.recorder.stop();
+      await stopped;
+      close(current);
       // Whisper hears 16 kHz mono; decoding at that rate resamples it.
       const decoder = new AudioContext({ sampleRate: SAMPLE_RATE });
       const audio = await decoder.decodeAudioData(await new Blob(current.chunks, { type: current.recorder.mimeType }).arrayBuffer());
@@ -123,21 +165,24 @@ export function useVoice(bridge: VoiceBridge | undefined): Voice {
       if (samples.length < SAMPLE_RATE / 3) return "";
       const result = await bridge.transcribe(samples);
       if (result.error) setError(`He couldn't make that out: ${result.error}`);
+      else if (!result.text) setError("He didn't catch any words that time.");
       return result.text ?? "";
     } catch (cause) {
       setError(`He couldn't make that out: ${cause instanceof Error ? cause.message : String(cause)}`);
       return "";
     } finally {
+      writing.current -= 1;
       setDownloading(null);
-      setState("idle");
+      settle();
     }
-  }, [bridge, release]);
+  }, [bridge, close, settle]);
 
   const cancel = useCallback(() => {
+    if (opening.current) cancelled.current = true;
     live.current?.recorder.stop();
     release();
-    setState("idle");
-  }, [release]);
+    settle();
+  }, [release, settle]);
 
   useEffect(() => release, [release]);
   return { state, levels, downloading, error, start, stop, cancel };

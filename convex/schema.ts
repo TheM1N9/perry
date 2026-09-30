@@ -306,6 +306,8 @@ export default defineSchema({
     /** The Talk hotkey the pet holds, or why it could not take the one asked for (another app has it). */
     hotkey: v.optional(v.string()),
     hotkeyError: v.optional(v.string()),
+    /** Why the Talk keys can only be tapped, where holding them does not work (convex/lib/shortcuts.ts, holdProblem). */
+    hotkeyHold: v.optional(v.string()),
     /** The same for his other global shortcuts, by shortcut id (convex/lib/shortcuts.ts): Look. */
     keys: v.optional(v.record(v.string(), v.object({ hotkey: v.optional(v.string()), error: v.optional(v.string()) }))),
   }),

@@ -220,7 +220,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
       } },
       { type: "separator" },
       voice?.current()
-        ? { label: `Talk to him (${voice.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})`, click: () => voiceTo("start") }
+        ? { label: `Talk to him (${voice.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})`, click: () => voice.start() }
         : { label: "Talk to him: his keys are taken by another app", enabled: false },
       { label: `Show him the screen${look?.current() ? ` (${look.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})` : ""}`, click: () => void lookNow() },
       { label: "Keyboard shortcuts…", click: () => openDashboard("/settings?tab=shortcuts") },
@@ -392,11 +392,12 @@ if (!app.requestSingleInstanceLock({ argv })) {
       hotkeyError = result.error ?? null;
       if (result.hotkey) saveState({ hotkey: result.hotkey });
       refreshMenu();
-      return { hotkey: voice.current(), error: hotkeyError };
+      return standing();
     };
-    // The page asks for the keys the dashboard has; he answers with the ones he holds, and why not, if not.
-    ipcMain.handle("pet:hotkey", () => ({ hotkey: voice.current(), error: hotkeyError }));
-    ipcMain.handle("pet:set-hotkey", (_event, accelerator) => typeof accelerator === "string" ? take(accelerator) : { hotkey: voice.current(), error: hotkeyError });
+    // The page asks for the keys the dashboard has; he answers with the ones he holds, and why not, if not; and why only tapping works, if so.
+    const standing = () => ({ hotkey: voice.current(), error: hotkeyError, hold: voice.hold() });
+    ipcMain.handle("pet:hotkey", standing);
+    ipcMain.handle("pet:set-hotkey", (_event, accelerator) => typeof accelerator === "string" ? take(accelerator) : standing());
     const saved = readState().hotkey ?? process.env.PERRY_PET_HOTKEY ?? DEFAULT_HOTKEY;
     if (take(saved).error && saved !== DEFAULT_HOTKEY) take(DEFAULT_HOTKEY);
     warmUp(MODELS);
