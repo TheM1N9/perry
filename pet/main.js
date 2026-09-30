@@ -8,8 +8,11 @@
  * shows, hides, restarts and quits it.
  *
  * `perry pet` installs Electron here (pnpm, in this folder), starts this, and
- * has it start at login; `perry pet off` stops both. Everything the pet knows
- * comes from the server, so this file keeps only where the window stands.
+ * has it start at login; `perry pet off` stops both. On the owner's other
+ * computers, the installer's pet-only mode does the same, and connect.js pairs
+ * him with Perry's server over the network. Everything the pet knows comes
+ * from the server, so this file keeps only where the window stands, and on
+ * another computer which server and its key for him.
  *
  * Run again while running, it acts on the one already there: --quit quits it,
  * --reload reloads its page (after `perry update`), anything else shows it.
@@ -59,13 +62,28 @@ function envFile() {
   return values;
 }
 
-const env = envFile();
-const BASE = process.env.PERRY_URL ?? `http://127.0.0.1:${process.env.PERRY_PORT ?? env.PERRY_PORT ?? 7377}`;
-const KEY = process.env.DASHBOARD_KEY ?? env.DASHBOARD_KEY ?? "";
-
 function readState() {
   try { return JSON.parse(readFileSync(STATE, "utf8")); } catch { return {}; }
 }
+
+/**
+ * Which Perry he shows, and with what key. On Perry's own computer, the
+ * checkout's .env.local: the dashboard key, and the port. On another
+ * computer, paired from Perry's Settings → Desktop pet (connect.js), pet.json:
+ * the server's address and this computer's own key, which opens only what
+ * his page needs. Read again when he is started again (a new pairing).
+ */
+function connection() {
+  const env = envFile();
+  const { server, token } = readState();
+  if (!process.env.DASHBOARD_KEY && typeof server === "string" && typeof token === "string") return { base: server.replace(/\/+$/, ""), key: token, paired: true };
+  return {
+    base: process.env.PERRY_URL ?? `http://127.0.0.1:${process.env.PERRY_PORT ?? env.PERRY_PORT ?? 7377}`,
+    key: process.env.DASHBOARD_KEY ?? env.DASHBOARD_KEY ?? "",
+    paired: false,
+  };
+}
+let { base: BASE, key: KEY, paired: PAIRED } = connection();
 
 function saveState(patch) {
   try {
@@ -220,10 +238,14 @@ if (!app.requestSingleInstanceLock({ argv })) {
   };
 
   const load = () => win?.loadURL(`${BASE}/pet#key=${encodeURIComponent(KEY)}`).catch(() => {});
-  /** A page of the dashboard in the owner's browser, unlocked as `perry open` does; only this server's own pages. */
+  /**
+   * A page of the dashboard in the owner's browser, unlocked as `perry open`
+   * does; only this server's own pages. Paired from another computer, his key
+   * opens only his own page, so the dashboard asks for its key there, once.
+   */
   const openDashboard = (path) => {
     const page = typeof path === "string" && path.startsWith("/") && !path.startsWith("//") ? path : "/";
-    void shell.openExternal(`${BASE}${page}#key=${encodeURIComponent(KEY)}`);
+    void shell.openExternal(PAIRED ? `${BASE}${page}` : `${BASE}${page}#key=${encodeURIComponent(KEY)}`);
   };
 
   const show = () => { wanted = true; if (win && !win.isVisible()) win.showInactive(); refreshMenu(); };
@@ -277,9 +299,13 @@ if (!app.requestSingleInstanceLock({ argv })) {
 
   app.on("second-instance", (_event, _commandLine, _cwd, data) => {
     const args = data?.argv ?? [];
-    if (args.includes("--quit")) app.quit();
-    else if (args.includes("--reload")) load();
-    else show();
+    if (args.includes("--quit")) return app.quit();
+    // Paired again (connect.js starts him): another server or key, and his page from it.
+    const now = connection();
+    const changed = now.base !== BASE || now.key !== KEY;
+    ({ base: BASE, key: KEY, paired: PAIRED } = now);
+    if (args.includes("--reload") || changed) load();
+    if (!args.includes("--reload")) show();
   });
 
   app.whenReady().then(() => {

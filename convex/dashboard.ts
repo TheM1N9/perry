@@ -924,7 +924,9 @@ export const getShortcuts = query({
   handler: async (ctx, args): Promise<ShortcutsView> => {
     assertDashboardKey(args.key);
     const install = await ctx.db.query("installation").first();
-    const pet = await ctx.db.query("petPresence").first();
+    // The pet on Perry's own computer while it runs; otherwise the one heard from last, on another computer.
+    const pets = (await ctx.db.query("petPresence").collect()).sort((a, b) => b.seenAt - a.seenAt);
+    const pet = pets.find((row) => !row.device && Date.now() - row.seenAt < 150_000) ?? pets[0];
     return {
       shortcuts: resolveShortcuts(install?.shortcuts),
       pet: { running: Boolean(pet && Date.now() - pet.seenAt < 150_000), keys: { talk: { hotkey: pet?.hotkey, error: pet?.hotkeyError, hold: pet?.hotkeyHold }, ...pet?.keys } },

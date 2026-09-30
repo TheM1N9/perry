@@ -281,13 +281,9 @@ export default defineSchema({
     .index("by_next_nag", ["nextNagAt"]),
 
   /**
-   * One row: when the desktop pet last checked in, and when the owner last
-   * touched the computer it runs on. While they are at it, reminders are the
-   * pet's to give; otherwise they go to the phone.
-   */
-  /**
    * Perry asking the desktop pet for a picture of the screen during a chat
    * (screen.ts): asked, then done with where the pet saved it, or failed.
+   * With pets on several computers, the one the owner was last at is asked.
    */
   screenLooks: defineTable({
     conversationId: v.id("conversations"),
@@ -298,9 +294,18 @@ export default defineSchema({
     name: v.optional(v.string()),
     error: v.optional(v.string()),
     createdAt: v.number(),
+    /** The pet asked: one on another computer, or none for the one on Perry's own. */
+    device: v.optional(v.id("petDevices")),
   }).index("by_status", ["status", "createdAt"]),
 
+  /**
+   * A row per desktop pet: when it last checked in, and when the owner last
+   * touched the computer it runs on. While they are at any of them,
+   * reminders are the pets' to give; otherwise they go to the phone. `device`
+   * is a pet on another computer; the one on Perry's own computer has none.
+   */
   petPresence: defineTable({
+    device: v.optional(v.id("petDevices")),
     seenAt: v.number(),
     activeAt: v.number(),
     /** The Talk hotkey the pet holds, or why it could not take the one asked for (another app has it). */
@@ -310,6 +315,31 @@ export default defineSchema({
     hotkeyHold: v.optional(v.string()),
     /** The same for his other global shortcuts, by shortcut id (convex/lib/shortcuts.ts): Look. */
     keys: v.optional(v.record(v.string(), v.object({ hotkey: v.optional(v.string()), error: v.optional(v.string()) }))),
+  }),
+
+  /**
+   * A desktop pet on another of the owner's computers, paired from Settings →
+   * Desktop pet (pet.ts). It calls Perry with a key of its own, made for it as
+   * it paired, which opens only what the pet's page does (server/devices.ts);
+   * removing the computer here is what takes that away. Only the key's hash
+   * is kept: the key itself is on that computer alone.
+   */
+  petDevices: defineTable({
+    name: v.string(),
+    platform: v.optional(v.string()),
+    keyHash: v.string(),
+    pairedAt: v.number(),
+  }).index("by_key_hash", ["keyHash"]),
+
+  /**
+   * One row: the pairing code last made in Settings → Desktop pet, good once
+   * and for a few minutes (pet.ts). Only its hash is kept; too many wrong
+   * codes tried while it is open close it.
+   */
+  petPairing: defineTable({
+    codeHash: v.string(),
+    expiresAt: v.number(),
+    misses: v.number(),
   }),
 
   /**

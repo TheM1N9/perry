@@ -163,16 +163,16 @@ async function installPackages(): Promise<{ code: number | null; output: string 
   return await run(command, args, { cwd: REPO });
 }
 
-/** Whether his page has checked in with Perry, which it does as it opens. */
+/** Whether his page on this computer has checked in with Perry, which it does as it opens; not a pet on another computer. */
 async function onScreen(): Promise<boolean> {
   try {
     const response = await fetch(`http://127.0.0.1:${PORT}/api/backend/call`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "dashboard:getShortcuts", args: { key: process.env.DASHBOARD_KEY ?? readEnvFile().DASHBOARD_KEY ?? "" } }),
+      body: JSON.stringify({ path: "pet:status", args: { key: process.env.DASHBOARD_KEY ?? readEnvFile().DASHBOARD_KEY ?? "" } }),
     });
-    const body = await response.json() as { value?: { pet: { running: boolean } } };
-    return Boolean(body.value?.pet.running);
+    const body = await response.json() as { value?: { running: boolean } };
+    return Boolean(body.value?.running);
   } catch {
     return false;
   }

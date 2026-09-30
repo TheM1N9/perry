@@ -13,12 +13,22 @@
 #
 # PERRY_DIR, PERRY_REPO and PERRY_BRANCH change where it goes and what it
 # fetches. PERRY_NO_SETUP=1 stops after installing, with the perry command linked.
+#
+# Just the desktop pet, on another computer, for the Perry on your main one
+# (its Settings → Desktop pet → Add a computer shows this line, with its own
+# address and a pairing code):
+#
+#   curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | PERRY_PET='http://192.168.1.20:7377 ABCD-EFGH' sh
+#
+# That needs only Git, Node.js and pnpm, gets only the pet's folder of Perry
+# into ~/perry-pet, installs Electron there, and pairs it (pet/connect.js).
 
 set -eu
 
 REPO="${PERRY_REPO:-https://github.com/TheM1N9/perry.git}"
 BRANCH="${PERRY_BRANCH:-main}"
-DIR="${PERRY_DIR:-$HOME/perry}"
+PET="${PERRY_PET:-}"
+if [ -n "$PET" ]; then DIR="${PERRY_DIR:-$HOME/perry-pet}"; else DIR="${PERRY_DIR:-$HOME/perry}"; fi
 PERRY_HOME="${PERRY_HOME:-$HOME/.perry}"
 # Node and npm packages Perry installs itself live here, so nothing needs sudo.
 LOCAL_NODE="$PERRY_HOME/node"
@@ -109,7 +119,15 @@ remember_path() {
   done
 }
 
-printf '\n\033[1mInstalling Perry\033[0m\n'
+if [ -n "$PET" ]; then
+  printf "\n\033[1mInstalling Perry's desktop pet\033[0m\n"
+  # Perry's address and the pairing code, split on spaces.
+  set -- $PET
+  [ $# -eq 2 ] || fail "PERRY_PET is Perry's address and a pairing code, as its Settings → Desktop pet → Add a computer shows them."
+  PET_SERVER=$1; PET_CODE=$2
+else
+  printf '\n\033[1mInstalling Perry\033[0m\n'
+fi
 find_existing
 # What an earlier run installed for Perry, again after everything you have.
 add_path "$LOCAL_NPM/bin"; add_path "$HOME/.bun/bin"; export PATH
@@ -138,6 +156,24 @@ if has pnpm; then found "pnpm $(pnpm --version)"
 else
   printf '  installing pnpm\n'; npm install -g --prefix "$LOCAL_NPM" pnpm@10 >/dev/null || fail "Installing pnpm failed."
   added "pnpm $(pnpm --version)"
+fi
+if [ -n "$PET" ]; then
+  # The pet alone needs neither Bun nor Codex: Perry thinks and works on its own computer.
+  remember_path
+  ok "$TOOLS"
+  # Only pet/ of Perry's files (and the few at the top), and only their latest version: the pet is all this computer runs.
+  if [ -d "$DIR/.git" ]; then
+    quietly "updating the pet" git -C "$DIR" pull --ff-only || fail "Updating the pet failed."
+  elif [ -d "$DIR" ] && [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; then
+    fail "$DIR exists and is not the pet's folder. Move it, or set PERRY_DIR to another folder."
+  else
+    quietly "downloading the pet" git clone --depth 1 --filter=blob:none --sparse --branch "$BRANCH" "$REPO" "$DIR" || fail "Downloading the pet failed."
+    quietly "picking out his folder" git -C "$DIR" sparse-checkout set pet || fail "Downloading the pet failed."
+  fi
+  quietly "installing his window and his ears (Electron and ONNX Runtime, under 1 GB)" pnpm install --dir "$DIR/pet" --frozen-lockfile || fail "Installing the pet failed."
+  ok "the pet in $DIR"
+  node "$DIR/pet/connect.js" "$PET_SERVER" "$PET_CODE" || fail "Pairing failed."
+  exit 0
 fi
 if has bun; then found "bun $(bun --version)"
 else

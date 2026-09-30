@@ -22,8 +22,9 @@ export function dashboardKey(request: NextRequest): string | null {
   return request.cookies.get(MEDIA_COOKIE)?.value || null;
 }
 
-/** Call a public backend function, as the browser would, in this same process. */
+/** Call a public backend function, as the browser would, in this same process; a desktop pet elsewhere, with its own key, too (server/devices.ts). */
 export async function query<T>(path: string, args: Record<string, unknown>): Promise<T> {
   const { backend } = await import("@/server/index");
-  return (await backend().runQuery(path, args)).value as T;
+  const { asPet } = await import("@/server/devices");
+  return (await backend().runQuery(path, await asPet(path, args))).value as T;
 }

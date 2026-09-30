@@ -27,6 +27,7 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_browser from "../lib/browser.js";
 import type * as lib_checkout from "../lib/checkout.js";
 import type * as lib_commands from "../lib/commands.js";
+import type * as lib_devices from "../lib/devices.js";
 import type * as lib_embed from "../lib/embed.js";
 import type * as lib_engines from "../lib/engines.js";
 import type * as lib_errors from "../lib/errors.js";
@@ -91,6 +92,7 @@ declare const fullApi: ApiFromModules<{
   "lib/browser": typeof lib_browser;
   "lib/checkout": typeof lib_checkout;
   "lib/commands": typeof lib_commands;
+  "lib/devices": typeof lib_devices;
   "lib/embed": typeof lib_embed;
   "lib/engines": typeof lib_engines;
   "lib/errors": typeof lib_errors;
