@@ -325,6 +325,38 @@ The key is a bearer token for one person, not a login system. Localhost does
 not bypass it, because a dashboard that can read your memory should not be open
 to anything else running on your machine.
 
+Perry's server listens on every address the computer has, as Next.js does, so
+a phone or another computer on your network, or on your Tailscale, can open it
+with the key; nothing is opened to the internet, and Perry never forwards a
+port. To keep it to this computer alone, put `PERRY_HOST=127.0.0.1` in
+`.env.local` and restart Perry. Over Tailscale the traffic is encrypted; on a
+local network it is plain HTTP, so use one you trust.
+
+### The desktop pet on another computer
+
+`perry pet` puts him on the computer Perry runs on. For a laptop beside it:
+Settings → Desktop pet → **Add a computer** makes a pairing code, good once and
+for ten minutes, and shows a line to paste in a terminal there. It installs
+only the pet (Git, Node.js and pnpm if missing, the `pet/` folder of this repo
+into `~/perry-pet`, and Electron), trades the code for that computer's own key,
+and starts him there, and at every login:
+
+```powershell
+$env:PERRY_PET='http://192.168.1.20:7377 ABCD-EFGH'; iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | PERRY_PET='http://192.168.1.20:7377 ABCD-EFGH' sh
+```
+
+That key opens only what the pet shows (chats, to-dos, what needs you, his
+check-ins), not the rest of the dashboard; opened from him there, the dashboard
+asks for its own key. Each computer is listed in Settings with when it was last
+heard from; **Remove** takes its key away at once. Reminders go to your phone
+only when every pet has seen you gone, and Perry looks at the screen you were
+at last. `node ~/perry-pet/pet/connect.js off` stops him there; running the
+line again with a new code pairs him again and updates him.
+
 ## Other commands
 
 | Command | What it does |

@@ -6,6 +6,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { ABSOLUTE_PATH } from "./media";
+import { projectFrom } from "./projects";
 import { vEngine, vTrigger } from "./schema";
 import { engineOf, type EngineKind } from "./lib/engines";
 
@@ -239,6 +240,8 @@ export const chatFor = internalMutation({
       jobId: job._id,
       pendingTurns: 1,
       lastMessageAt: Date.now(),
+      // Set up in a project's chat, it works in the project: its instructions, its chats and its memory.
+      ...await projectFrom(ctx, job.origin),
     });
     await ctx.db.patch(job._id, { conversationId });
     return { externalId: `session:${args.threadId}`, title };

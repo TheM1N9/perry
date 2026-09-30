@@ -281,13 +281,9 @@ export default defineSchema({
     .index("by_next_nag", ["nextNagAt"]),
 
   /**
-   * One row: when the desktop pet last checked in, and when the owner last
-   * touched the computer it runs on. While they are at it, reminders are the
-   * pet's to give; otherwise they go to the phone.
-   */
-  /**
    * Perry asking the desktop pet for a picture of the screen during a chat
    * (screen.ts): asked, then done with where the pet saved it, or failed.
+   * With pets on several computers, the one the owner was last at is asked.
    */
   screenLooks: defineTable({
     conversationId: v.id("conversations"),
@@ -298,9 +294,18 @@ export default defineSchema({
     name: v.optional(v.string()),
     error: v.optional(v.string()),
     createdAt: v.number(),
+    /** The pet asked: one on another computer, or none for the one on Perry's own. */
+    device: v.optional(v.id("petDevices")),
   }).index("by_status", ["status", "createdAt"]),
 
+  /**
+   * A row per desktop pet: when it last checked in, and when the owner last
+   * touched the computer it runs on. While they are at any of them,
+   * reminders are the pets' to give; otherwise they go to the phone. `device`
+   * is a pet on another computer; the one on Perry's own computer has none.
+   */
   petPresence: defineTable({
+    device: v.optional(v.id("petDevices")),
     seenAt: v.number(),
     activeAt: v.number(),
     /** The Talk hotkey the pet holds, or why it could not take the one asked for (another app has it). */
@@ -310,6 +315,31 @@ export default defineSchema({
     hotkeyHold: v.optional(v.string()),
     /** The same for his other global shortcuts, by shortcut id (convex/lib/shortcuts.ts): Look. */
     keys: v.optional(v.record(v.string(), v.object({ hotkey: v.optional(v.string()), error: v.optional(v.string()) }))),
+  }),
+
+  /**
+   * A desktop pet on another of the owner's computers, paired from Settings →
+   * Desktop pet (pet.ts). It calls Perry with a key of its own, made for it as
+   * it paired, which opens only what the pet's page does (server/devices.ts);
+   * removing the computer here is what takes that away. Only the key's hash
+   * is kept: the key itself is on that computer alone.
+   */
+  petDevices: defineTable({
+    name: v.string(),
+    platform: v.optional(v.string()),
+    keyHash: v.string(),
+    pairedAt: v.number(),
+  }).index("by_key_hash", ["keyHash"]),
+
+  /**
+   * One row: the pairing code last made in Settings → Desktop pet, good once
+   * and for a few minutes (pet.ts). Only its hash is kept; too many wrong
+   * codes tried while it is open close it.
+   */
+  petPairing: defineTable({
+    codeHash: v.string(),
+    expiresAt: v.number(),
+    misses: v.number(),
   }),
 
   /**
@@ -538,6 +568,21 @@ export default defineSchema({
     .index("by_channel_external", ["channel", "externalId"])
     .index("by_status", ["status", "updatedAt"]),
 
+  /**
+   * A project: a folder of the owner's chats about one thing (a channel's
+   * scripts, a client, a trip), with instructions of its own for every chat in
+   * it. Its chats know of each other and can read each other; chats outside it
+   * cannot, and what Perry remembers in it stays in it (memories.projectId).
+   * See projects.ts.
+   */
+  projects: defineTable({
+    name: v.string(),
+    /** The owner's standing instructions for its chats: tone, format, audience, rules. */
+    instructions: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }),
+
   conversations: defineTable({
     channel: vChannel,
     externalId: v.string(), // telegram chat id, or a unique web session id
@@ -570,6 +615,10 @@ export default defineSchema({
     pendingTurns: v.optional(v.number()),
     /** Digest of the recalled memory this chat's Codex thread last saw, so an unchanged block is not sent again. */
     recallDigest: v.optional(v.string()),
+    /** The project it is in (projects.ts). Only the owner's own web chats, and the chats of jobs and tasks set up in them. */
+    projectId: v.optional(v.id("projects")),
+    /** Digest of what its engine session was last told about its project, so it is told again only when that changes (projects.ts). */
+    projectDigest: v.optional(v.string()),
     /** What the assistant sent here on its own (a job, an alert) since the owner last wrote; the next turn is told. */
     unprompted: v.optional(v.array(v.object({ at: v.number(), text: v.string() }))),
     lastMessageAt: v.number(),
@@ -581,7 +630,11 @@ export default defineSchema({
     contextFill: v.optional(v.number()),
     /** When memory was last checkpointed because the context filled up; cleared when Codex compacts it. */
     checkpointedAt: v.optional(v.number()),
-    /** A project chat: what Perry remembers here stays here, out of every other chat (memories.conversationId). */
+    /**
+     * From before projects: a chat that kept its memory to itself. Each one is
+     * moved into a project of its own when Perry starts (projects.migrate), and
+     * it is never set now; until then, other chats cannot read it.
+     */
     project: v.optional(v.boolean()),
     /**
      * A chat with someone other than the owner (a person or a group, contacts.ts): sealed off from
@@ -597,7 +650,8 @@ export default defineSchema({
     outbox: v.optional(v.array(v.object({ text: v.string(), at: v.number() }))),
   })
     .index("by_channel_external", ["channel", "externalId"])
-    .index("by_channel_last", ["channel", "lastMessageAt"]),
+    .index("by_channel_last", ["channel", "lastMessageAt"])
+    .index("by_project", ["projectId", "lastMessageAt"]),
 
   /**
    * Files attached to a chat turn. The bytes live either in the server's file
@@ -641,8 +695,10 @@ export default defineSchema({
     origin: v.optional(vMemoryOrigin),
     /** When the owner last changed its text on the Memory page. */
     editedAt: v.optional(v.number()),
-    /** The one chat it belongs to (a project chat's own memory), out of every other chat. Unset: everywhere. */
+    /** The one chat it belongs to, out of every other chat. With neither this nor projectId: everywhere. */
     conversationId: v.optional(v.id("conversations")),
+    /** The project it belongs to: seen in that project's chats, and in no other. */
+    projectId: v.optional(v.id("projects")),
     /**
      * Who it is about, besides the owner: names, as the owner calls them ("Datta", "Arjun"). What
      * Settings → People shows for each person. Where it may be seen is still conversationId's to say.
@@ -661,6 +717,7 @@ export default defineSchema({
     .index("by_kind", ["kind", "createdAt"])
     .index("by_day", ["day", "createdAt"])
     .index("by_todo", ["todoId"])
+    .index("by_project", ["projectId", "createdAt"])
     .searchIndex("search_text", { searchField: "text" }),
 
   /**
@@ -901,6 +958,8 @@ export default defineSchema({
     recalled: v.optional(v.string()),
     /** Digest of the long-term and recent memory this turn carried; see conversations.recallDigest. */
     recallDigest: v.optional(v.string()),
+    /** Digest of what this turn told the chat about its project; see conversations.projectDigest. */
+    projectDigest: v.optional(v.string()),
     /** A memory flush before /reset: nothing is shown or saved, and finishing it starts the chat afresh. */
     flush: v.optional(v.boolean()),
     /** A memory checkpoint (brain.checkpoint): nothing is shown or saved, and the chat goes on. */

@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { asPet, Refused } from "./devices";
 import { backend } from "./index";
 import { ArgumentError, NotFound } from "./runtime";
 
@@ -13,10 +14,12 @@ export async function runCall(request: Request, options: { internal: boolean }) 
   try { body = await request.json(); } catch { return Response.json({ error: "The request body is not JSON." }, { status: 400 }); }
   if (typeof body.path !== "string") return Response.json({ error: "Name the function to call as path." }, { status: 400 });
   try {
-    const result = await backend().call(body.path, body.args ?? {}, options);
+    // A desktop pet on another computer, with its own key: only what its page does (server/devices.ts).
+    const args = await asPet(body.path, body.args ?? {});
+    const result = await backend().call(body.path, args, options);
     return Response.json({ value: result.value ?? null, ...(result.reads ? { reads: result.reads } : {}), ...(result.writes ? { writes: result.writes } : {}) });
   } catch (error) {
-    const status = error instanceof NotFound ? 404 : error instanceof ArgumentError ? 400 : 500;
+    const status = error instanceof NotFound ? 404 : error instanceof ArgumentError ? 400 : error instanceof Refused ? 403 : 500;
     if (status === 500) console.error(`[perry] ${body.path} failed: ${error instanceof Error ? error.stack : String(error)}`);
     return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status });
   }
