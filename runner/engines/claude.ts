@@ -9,13 +9,15 @@ import {
   type SDKUserMessage, type SpawnOptions, type SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk";
 import { ACCESSES } from "../../convex/lib/commands";
+import { updateOf } from "../../convex/lib/engines";
 import type {
   Access, Engine, EngineAttachment, EngineCapabilities, EngineItem, EngineModel, EngineRequest, EngineStatus, ItemStatus, ItemType,
-  LoginFlow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
+  LoginFlow, PlanLimits, PlanWindow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
 } from "../engine";
 import { toolsOfChat } from "../engine";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
+import { updateCommand } from "../versions";
 import { killTree } from "./process";
 
 /**
@@ -45,6 +47,8 @@ const QUICK_MODEL = "haiku";
 /** How long a sign-in in the terminal is waited for. */
 const LOGIN_WAIT_MS = 10 * 60_000;
 const VERSION_TTL_MS = 10 * 60_000;
+/** How long reading the plan's limits may take: a second, usually. */
+const LIMITS_TIMEOUT_MS = 20_000;
 /** Image types Claude reads; other attachments are named by their path. */
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
@@ -350,7 +354,9 @@ export class ClaudeEngine implements Engine {
     }
     try {
       const path = binary.sdkPath ?? binary.prefix.at(-1) ?? binary.command;
-      if (this.version?.path !== path || Date.now() - this.version.at > VERSION_TTL_MS) {
+      // One too old for Perry is asked again at every look, so its update is seen at once.
+      const tooOld = updateOf({ kind: "claude", version: this.version?.value })?.need === "required";
+      if (this.version?.path !== path || tooOld || Date.now() - this.version.at > VERSION_TTL_MS) {
         const { stdout } = await run(binary, ["--version"]);
         this.version = { path, value: stdout.trim().split(/\s+/)[0] || undefined, at: Date.now() };
       }
@@ -361,6 +367,7 @@ export class ClaudeEngine implements Engine {
         kind: "claude",
         installed: true,
         version: this.version.value,
+        update: updateCommand("claude", path),
         signedIn,
         // Signed out, it says "none"; that is no account.
         auth: signedIn ? {
@@ -375,7 +382,7 @@ export class ClaudeEngine implements Engine {
           : "Runs through the official Claude Code, on the account it is signed in with.",
       };
     } catch (error) {
-      return { kind: "claude", installed: true, version: this.version?.value, signedIn: false, auth: {}, models: [], error: message(error) };
+      return { kind: "claude", installed: true, version: this.version?.value, signedIn: false, auth: {}, models: [], error: message(error), update: updateCommand("claude", binary.sdkPath ?? binary.prefix.at(-1) ?? binary.command) };
     }
   }
 
@@ -651,6 +658,51 @@ export class ClaudeEngine implements Engine {
       throw Object.assign(failed, { model });
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  /**
+   * The Claude plan's limits, from the data behind Claude Code's /usage: a
+   * `claude` with no message and no session, asked once and ended, so none of
+   * the plan is spent. The SDK marks the call experimental; should it change
+   * or go, this fails, and Perry shows only the limits Claude Code hits.
+   * Signed in with an API key, there are none.
+   */
+  async limits(): Promise<PlanLimits | null> {
+    const binary = findClaude();
+    if (!binary) return null;
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), LIMITS_TIMEOUT_MS);
+    const idle = new Inbox();
+    const q = query({
+      prompt: idle,
+      options: {
+        ...this.base(binary, () => {}), abortController: abort, cwd: HOME,
+        tools: [], strictMcpConfig: true, mcpServers: {}, settingSources: [], persistSession: false,
+      },
+    });
+    try {
+      const usage = await q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true });
+      if (!usage.rate_limits_available || !usage.rate_limits) return null;
+      const limits = usage.rate_limits;
+      const windows: PlanWindow[] = [];
+      const add = (id: string, label: string, minutes: number | undefined, window?: { utilization: number | null; resets_at: string | null } | null) => {
+        if (!window || window.utilization === null) return;
+        const resetsAt = window.resets_at ? Date.parse(window.resets_at) : NaN;
+        windows.push({ id, label, usedPercent: Math.max(0, Math.min(100, window.utilization)), ...(Number.isFinite(resetsAt) ? { resetsAt } : {}), ...(minutes ? { minutes } : {}) });
+      };
+      add("five_hour", "5-hour", 5 * 60, limits.five_hour);
+      add("seven_day", "Weekly", 7 * 24 * 60, limits.seven_day);
+      add("seven_day_opus", "Weekly (Opus)", 7 * 24 * 60, limits.seven_day_opus);
+      add("seven_day_sonnet", "Weekly (Sonnet)", 7 * 24 * 60, limits.seven_day_sonnet);
+      for (const model of limits.model_scoped ?? []) add(`model:${model.display_name}`, `Weekly (${model.display_name})`, 7 * 24 * 60, model);
+      return { windows, ...(usage.subscription_type ? { plan: usage.subscription_type } : {}), at: Date.now() };
+    } catch (error) {
+      throw new Error(abort.signal.aborted ? `Claude Code took longer than ${LIMITS_TIMEOUT_MS / 1000}s to say its limits.` : message(error));
+    } finally {
+      clearTimeout(timer);
+      idle.close();
+      q.close();
     }
   }
 

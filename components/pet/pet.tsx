@@ -11,6 +11,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Activity } from "@/convex/dashboard";
 import type { Pose } from "@/convex/lib/activity";
+import { limitWarning } from "@/convex/lib/usage";
 import type { Board, TodoView } from "@/convex/todos";
 import { errorText, plural, useNow } from "@/lib/format";
 import { KEY_STORAGE, SessionContext, useDashboardKey } from "@/lib/session";
@@ -56,8 +57,8 @@ type Bridge = VoiceBridge & {
   idleSeconds: () => Promise<number>;
   /** A page of the dashboard (a path), opened unlocked in the browser. */
   openDashboard: (path?: string) => void;
-  /** Showing him the screen (pet/look.js): a picture now; one taken with the Look hotkey; which keys that is on. Absent in a pet window from before. */
-  look?: () => Promise<TakenShot>;
+  /** Showing him the screen (pet/look.js): a picture now, for the owner (`byOwner`) or for Perry; one taken with the Look hotkey; which keys that is on. Absent in a pet window from before. */
+  look?: (byOwner?: boolean) => Promise<TakenShot>;
   onLook?: (listener: (shot: TakenShot) => void) => () => void;
   setLookHotkey?: (accelerator: string) => Promise<HotkeyState>;
 };
@@ -76,6 +77,10 @@ const HEADS_UP_SHOWS_MS = 12_000;
 const UPDATE_SHOWS_MS = 20_000;
 /** The newest change he last mentioned, so each new version is mentioned once. */
 const UPDATE_STORAGE = "perry.pet.update";
+/** An engine near or at its plan's limit is mentioned once per limit and level, for this long; it stays under his name while it lasts. */
+const LIMIT_SHOWS_MS = 20_000;
+/** The limits he last mentioned, so each is mentioned once. */
+const LIMIT_STORAGE = "perry.pet.limits";
 /** How long a dashboard tab already open has to take a page he opens, before he opens a new tab. */
 const TAB_CLAIMS_MS = 1_500;
 
@@ -258,6 +263,24 @@ function Pet() {
     window.localStorage.setItem(UPDATE_STORAGE, sha);
     setUpdateNews(Date.now() + UPDATE_SHOWS_MS);
   }, [updates]);
+  // The engines he works with, near or at their plan's limit: said before a reply fails for it, not after.
+  const planLimits = useQuery(api.usage.limits, { key });
+  const limits = (planLimits?.engines ?? [])
+    .filter((engine) => planLimits!.used.includes(engine.kind))
+    .flatMap((engine) => {
+      const warning = limitWarning(engine.kind, engine.usage, now);
+      return warning ? [{ ...warning, mark: `${engine.kind}:${warning.level}:${warning.title}` }] : [];
+    })
+    .sort((a, b) => (a.level === "out" ? 0 : 1) - (b.level === "out" ? 0 : 1));
+  const limit = limits[0];
+  const [limitNews, setLimitNews] = useState<{ mark: string; until: number } | null>(null);
+  useEffect(() => {
+    if (!limit) return;
+    const seen: string[] = JSON.parse(window.localStorage.getItem(LIMIT_STORAGE) ?? "[]");
+    if (seen.includes(limit.mark)) return;
+    window.localStorage.setItem(LIMIT_STORAGE, JSON.stringify([...seen, limit.mark].slice(-20)));
+    setLimitNews({ mark: limit.mark, until: Date.now() + LIMIT_SHOWS_MS });
+  }, [limit?.mark]);
   const updateNow = useCallback(() => {
     setUpdateNews(null);
     void update().then((text) => say("See you in a few minutes", text, 6000), (cause) => say("I couldn't update", errorText(cause), 6000));
@@ -414,7 +437,8 @@ function Pet() {
 
   // A picture of the screen: his chat opens with it in the box, ready for the question.
   const showShot = useCallback((taken: TakenShot) => {
-    if (!taken.window && !taken.screen) return say("I couldn't see the screen", taken.error, 8000);
+    // What to allow on a Mac, and where, takes a while to read: it stays up longer.
+    if (!taken.window && !taken.screen) return say("I couldn't see the screen", taken.error, taken.needs ? 30_000 : 8000);
     setShot({ ...taken, use: taken.window ? "window" : "screen" });
     setTab("chat");
     setOpen(true);
@@ -434,6 +458,8 @@ function Pet() {
           if (!window.perryPet?.look) throw new Error("This desktop pet is from before Perry could look at the screen; ask the owner to restart it (Quit from its tray icon, then turn it on again).");
           const taken = await window.perryPet.look();
           const picture = taken[request.which] ?? taken.screen ?? taken.window;
+          // Perry is told, and says so in the chat; the owner may be looking at him instead, so he says it too.
+          if (!picture && taken.needs) say("I couldn't see the screen", taken.error, 30_000);
           if (!picture) throw new Error(taken.error ?? "The desktop pet could not take the picture.");
           const kept = await keepPicture(picture.image);
           await fulfilLook({ key, id: request.id, path: kept.path, name: picture.name });
@@ -445,7 +471,7 @@ function Pet() {
     }
   }, [lookRequests, key, fulfilLook, say]);
   const lookNow = useCallback(async () => {
-    const taken = await window.perryPet?.look?.().catch((error: unknown) => ({ error: String(error) }));
+    const taken = await window.perryPet?.look?.(true).catch((error: unknown) => ({ error: String(error) }));
     if (taken) showShot(taken);
   }, [showShot]);
 
@@ -542,6 +568,14 @@ function Pet() {
       }
     }
   }
+  if (!bubble && limit && limitNews?.mark === limit.mark && limitNews.until > now) {
+    bubble = (
+      <Bubble id="limit" tone={limit.level === "out" ? "late" : "soon"} title={limit.title} detail={limit.detail} onClose={() => setLimitNews(null)}>
+        <BubbleButton primary onClick={() => { setLimitNews(null); openPath("/settings?tab=usage"); }}>See usage</BubbleButton>
+        <BubbleButton onClick={() => setLimitNews(null)}>OK</BubbleButton>
+      </Bubble>
+    );
+  }
   if (!bubble && updateNews && updateNews > now && updates && updateReady(updates)) {
     bubble = (
       <Bubble id="update" title="A new version of me is ready" detail={`${plural(updates.behind, "change")} · ${updates.latest?.title ?? ""}`} onClose={() => setUpdateNews(null)}>
@@ -561,6 +595,11 @@ function Pet() {
   // Under his name: what he is doing, what waits on you, or a new version of him, a click away.
   const status: ReactNode = petChat?.isRunning ? `${step?.label ?? "Working on it"}…`
     : needs ? `${plural(needs, "thing")} waiting on you`
+      : limit ? (
+        <button type="button" onClick={() => openPath("/settings?tab=usage")} className={cn("cursor-pointer hover:underline", limit.level === "out" ? "text-destructive" : "text-warning")}>
+          {limit.title}
+        </button>
+      )
       : updates?.state === "updating" ? "Updating myself; back in a few minutes"
         : updates?.state === "waiting" ? "Updating once I'm done"
           : updateReady(updates) ? (

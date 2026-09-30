@@ -15,6 +15,7 @@ import { join } from "node:path";
  *   skills/         the agent's skills, one folder each with a SKILL.md, found by Codex
  *   logs/           the runner's output when it runs as a background service
  *   claude-models.json  the models Claude Code last said this account has
+ *   engine-versions.json  the newest release of each engine's CLI, as last looked up
  *   update-request.json  an update the dashboard asked for, for `perry run` to do
  *   update-result.json   how the last one went, for the dashboard to show
  *
@@ -32,6 +33,7 @@ export const PATHS = {
   skills: join(HOME, "skills"),
   logs: join(HOME, "logs"),
   claudeModels: join(HOME, "claude-models.json"),
+  engineVersions: join(HOME, "engine-versions.json"),
   updateRequest: join(HOME, "update-request.json"),
   updateResult: join(HOME, "update-result.json"),
 };

@@ -27,8 +27,8 @@ import { Listening, MicButton, type Voice } from "./voice";
 
 export type PetChatId = Id<"conversations"> | null;
 type Picture = { name: string; image: string };
-/** What his window took (pet/look.js): the window the owner was in, the whole screen, or why neither. */
-export type TakenShot = { window?: Picture; screen?: Picture; error?: string };
+/** What his window took (pet/look.js): the window the owner was in, the whole screen, or why neither; `needs` a permission macOS has not given. */
+export type TakenShot = { window?: Picture; screen?: Picture; error?: string; needs?: "screen-recording" };
 /** A picture waiting to be sent, and which of the two goes. */
 export type Shot = TakenShot & { use: "window" | "screen" };
 
