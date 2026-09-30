@@ -11,7 +11,10 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as { path?: string; replace?: boolean };
   if (!body.path) return Response.json({ error: "Give the export's path." }, { status: 400 });
   try {
-    return Response.json({ value: await importConvexExport(backend(), body.path, { replace: body.replace }) });
+    const value = await importConvexExport(backend(), body.path, { replace: body.replace });
+    // Its chats that kept their memory to themselves become projects, as when Perry starts.
+    await backend().runMutation("projects:migrate", {}, { internal: true });
+    return Response.json({ value });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
   }

@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  ActivityIcon, ArrowDownIcon, CopyIcon, FolderLockIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
+  ActivityIcon, ArrowDownIcon, CopyIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
   SquarePenIcon, Trash2Icon, TriangleAlertIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -29,6 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ApprovalCard } from "../approval-card";
 import { DeleteDialog, RenameDialog } from "../app-sidebar";
 import { APPS, ChannelIcon, PerryMark, TopBar } from "../common";
+import { MoveToProject, NewProjectDialog } from "../projects";
 import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
 import type { Attachment } from "./attachments";
@@ -109,7 +110,6 @@ export function ChatScreen() {
   const rewindChat = useAction(api.dashboard.rewindChat);
   const resetChat = useAction(api.dashboard.resetChat);
   const setPinned = useMutation(api.dashboard.setChatPinned);
-  const setProject = useMutation(api.dashboard.setChatProject);
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
@@ -152,6 +152,8 @@ export function ChatScreen() {
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [removing, setRemoving] = useState(false);
+  /** A new project is being made for this chat to move into. */
+  const [creatingProject, setCreatingProject] = useState(false);
   const composer = useRef<HTMLTextAreaElement>(null);
   const compactionStatus = useQuery(api.dashboard.getCompaction, compaction ? { key: dashboardKey, id: compaction } : "skip");
 
@@ -164,7 +166,11 @@ export function ChatScreen() {
     if (!paramId) window.setTimeout(() => composer.current?.focus(), 0);
   }, [paramId]);
   // Needs you starts an answer here with ?draft=, which is taken in, then out of the address.
-  const handed = useSearchParams().get("draft");
+  const search = useSearchParams();
+  const handed = search.get("draft");
+  // A new chat started inside a project (?project=) is in it from its first message.
+  const inProject = paramId ? null : search.get("project");
+  const newIn = useQuery(api.projects.get, inProject ? { key: dashboardKey, id: inProject } : "skip");
   useEffect(() => {
     if (!handed) return;
     setDraft(handed);
@@ -426,7 +432,7 @@ export function ChatScreen() {
     if (!id) {
       setBusy(true);
       try {
-        id = await createChat({ key: dashboardKey });
+        id = await createChat({ key: dashboardKey, ...(newIn ? { projectId: newIn.id } : {}) });
         setCreatedId(id);
         // The chat has its own address from now, so a reload while it sends comes back to it.
         router.replace(`/chat/${id}`);
@@ -522,6 +528,7 @@ export function ChatScreen() {
   const title = summary?.title ?? (selectedId ? chat?.title ?? "" : "New chat");
   // A Telegram or WhatsApp chat: written in here too, but what is on the phone cannot be taken back.
   const app = chat && chat.channel !== "web" ? APPS[chat.channel] : null;
+  const project = selectedId ? chat?.project : newIn ? { id: newIn.id, name: newIn.name } : undefined;
 
   return (
     <div className="flex h-dvh min-h-0 flex-col">
@@ -533,14 +540,18 @@ export function ChatScreen() {
           onCopyId={() => void copyText(summary.id).then(() => toast.success("Session ID copied."), fail)}
           activityHref={`/activity?session=${summary.id}`}
           onDelete={summary.channel === "web" ? () => setRemoving(true) : undefined}
-          project={Boolean(chat?.project)}
-          onProject={() => void setProject({ key: dashboardKey, id: summary.id, project: !chat?.project })
-            .then(() => toast.success(chat?.project ? "Memories from here are shared again from now on." : "What Perry remembers here now stays in this chat."), fail)}
+          move={summary.channel === "web" ? <MoveToProject chat={summary} onNewProject={() => setCreatingProject(true)} /> : null}
         />
       ) : !selectedId ? null : undefined}>
+        {/* A project's chat says which, and leads to the project's page. */}
+        {project && <>
+          <Link href={`/projects/${project.id}`} className="flex min-w-0 shrink items-center gap-1.5 truncate text-muted-foreground hover:text-foreground">
+            <FolderIcon className="size-4 shrink-0" aria-hidden /><span className="truncate">{project.name}</span>
+          </Link>
+          <span className="text-muted-foreground/60" aria-hidden>/</span>
+        </>}
         {chat && <ChannelIcon channel={chat.channel} />}
         <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer")} aria-busy={summary?.naming || undefined}>{title}</h1>
-        {chat?.project && <span className="inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-muted-foreground" title="What Perry remembers here stays in this chat, and other chats cannot read it."><FolderLockIcon className="size-3" aria-hidden />Project</span>}
         {summary && <StatusIndicator status={summary.status} />}
         {parent && (
           <Link href={`/chat/${parent.id}`} className="hidden min-w-0 items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground sm:flex">
@@ -565,8 +576,10 @@ export function ChatScreen() {
           {!selectedId ? (
             <div className="flex min-h-[calc(100dvh-16rem)] flex-col items-center justify-center py-12 text-center">
               <PerryMark className="size-14" />
-              <h2 className="mt-5 text-[28px] font-semibold tracking-[-0.025em] text-balance">{greeting(status?.displayName)}</h2>
-              <p className="mt-1.5 text-[15px] text-muted-foreground">What should {assistant} pick up?</p>
+              <h2 className="mt-5 text-[28px] font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
+              <p className="mt-1.5 max-w-md text-[15px] text-pretty text-muted-foreground">
+                {project ? `It follows the project's instructions, knows its other chats, and keeps what ${assistant} remembers here to the project.` : `What should ${assistant} pick up?`}
+              </p>
             </div>
           ) : (
             <div className="space-y-8 pt-6 pb-10" aria-busy={loading || undefined}>
@@ -704,14 +717,15 @@ export function ChatScreen() {
 
       {summary && <RenameDialog chat={renaming ? summary : null} onClose={() => setRenaming(false)} />}
       {summary && <DeleteDialog chat={removing ? summary : null} onClose={() => setRemoving(false)} />}
+      {summary && <NewProjectDialog open={creatingProject} chat={summary.id} onClose={() => setCreatingProject(false)} />}
     </div>
   );
 }
 
-function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, project, onProject }: {
+function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, move }: {
   pinned: boolean; onPin: () => void; onRename: () => void; onCopyId: () => void; activityHref: string; onDelete?: () => void;
-  /** A project chat keeps its memory to itself. */
-  project: boolean; onProject: () => void;
+  /** Moving it into or out of a project, for a chat that can be in one. */
+  move: ReactNode;
 }) {
   const router = useRouter();
   return (
@@ -726,7 +740,7 @@ function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, p
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem onClick={onPin}>{pinned ? <PinOffIcon /> : <PinIcon />}{pinned ? "Unpin" : "Pin"}</DropdownMenuItem>
           <DropdownMenuItem onClick={onRename}><PencilIcon />Rename</DropdownMenuItem>
-          <DropdownMenuItem onClick={onProject}><FolderLockIcon />{project ? "Share memories again" : "Keep memories in this chat"}</DropdownMenuItem>
+          {move}
           <DropdownMenuItem onClick={() => router.push(activityHref)}><ActivityIcon />View activity</DropdownMenuItem>
           <DropdownMenuItem onClick={onCopyId}><CopyIcon />Copy session ID</DropdownMenuItem>
           {onDelete && <>

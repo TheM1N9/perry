@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation } from "./_generated/server";
 import { createThread } from "./lib/agent";
 import { assertDashboardKey } from "./lib/auth";
+import { projectFrom } from "./projects";
 
 /**
  * Background tasks (issue #102): work Perry takes on and carries out by
@@ -105,6 +106,8 @@ export const chatFor = internalMutation({
       taskId: task._id,
       access: install?.defaultAccess,
       lastMessageAt: Date.now(),
+      // Started from a project's chat, it works in the project: its instructions, its chats and its memory.
+      ...await projectFrom(ctx, task.origin),
     });
     await ctx.db.patch(task._id, { conversationId });
     return { externalId: `session:${args.threadId}`, title };

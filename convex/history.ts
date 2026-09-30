@@ -25,11 +25,32 @@ function snippet(text: string, needle: string, width = 240): string {
   return `${start > 0 ? "…" : ""}${clean.slice(start, start + width)}${start + width < clean.length ? "…" : ""}`;
 }
 
-/** Another chat does not see into a project chat: what is said there stays there (memories.ts). */
-const openTo = (chat: Chat, from?: string) => !chat.project || chat._id === from;
+/**
+ * Which chats a chat may read. What is said in a project's chats stays in the
+ * project (projects.ts): a chat in it reads the project's chats, and the chats
+ * in no project too unless kept to "this project"; any other chat reads only
+ * the chats in no project. A chat with someone else reads none.
+ */
+function openFrom(chats: Chat[], from: string | undefined, scope: "this project" | "everywhere" = "this project") {
+  const here = chats.find((chat) => chat._id === from);
+  return (chat: Chat) => {
+    if (here?.contactId) return false;
+    if (chat._id === from) return true;
+    if (chat.projectId) return chat.projectId === here?.projectId;
+    // From before projects, until it is moved into one (projects.migrate).
+    if (chat.project) return false;
+    return !here?.projectId || scope === "everywhere";
+  };
+}
 
 export const search = internalAction({
-  args: { query: v.string(), limit: v.optional(v.number()), from: v.optional(v.id("conversations")) },
+  args: {
+    query: v.string(),
+    limit: v.optional(v.number()),
+    from: v.optional(v.id("conversations")),
+    /** From a project's chat: only its chats (the default), or the chats in no project too. */
+    scope: v.optional(v.union(v.literal("this project"), v.literal("everywhere"))),
+  },
   handler: async (ctx, args): Promise<{
     found: number;
     results: Array<{ chatId: string; chat: string; channel: string; role: string; date: string; snippet: string }>;
@@ -37,11 +58,14 @@ export const search = internalAction({
     const query = args.query.trim();
     const limit = Math.min(Math.max(args.limit ?? 10, 1), 30);
     if (!query) return { found: 0, results: [] };
-    const chats: Chat[] = (await ctx.runQuery(internal.conversations.list, {})).filter((chat: Chat) => openTo(chat, args.from));
+    const all: Chat[] = await ctx.runQuery(internal.conversations.list, {});
+    const chats = all.filter(openFrom(all, args.from, args.scope));
     const byThread = new Map(chats.map((chat) => [chat.threadId, chat]));
     const users = [...new Set(chats.map(userIdOf))];
-    // Each channel's hits come back best match first; interleave them by rank.
-    const lists = await Promise.all(users.map((userId) => searchMessages(ctx, { userId: userId, text: query, limit: 50 })));
+    // Each channel's hits come back best match first; interleave them by rank. The web's chats share one
+    // user, so when only some of them may be read, more hits are taken to leave enough after the rest.
+    const some = chats.length < all.length;
+    const lists = await Promise.all(users.map((userId) => searchMessages(ctx, { userId: userId, text: query, limit: some ? 300 : 50 })));
     const hits = lists.flatMap((list) => list.map((hit, rank) => ({ hit, rank }))).sort((a, b) => a.rank - b.rank).map(({ hit }) => hit);
 
     const results = hits
@@ -66,7 +90,7 @@ export const read = internalAction({
     const chats: Chat[] = await ctx.runQuery(internal.conversations.list, {});
     const chat = chats.find((item) => item._id === args.chatId);
     if (!chat) return { messages: [], note: "No chat with that id. Ids come from search_chats." };
-    if (!openTo(chat, args.from)) return { messages: [], note: "That is a project chat: what is said there stays there." };
+    if (!openFrom(chats, args.from, "everywhere")(chat)) return { messages: [], note: "This chat may not read that one: what is said in a project's chats stays in the project." };
     const page = await listMessages(ctx, {
       threadId: chat.threadId,
       excludeToolMessages: true,

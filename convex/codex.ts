@@ -137,6 +137,7 @@ export const enqueueTurn = internalMutation({
     instructions: v.string(),
     recalled: v.optional(v.string()),
     recallDigest: v.optional(v.string()),
+    projectDigest: v.optional(v.string()),
     flush: v.optional(v.boolean()),
     /** A memory checkpoint (brain.checkpoint): quiet, and nothing is saved to the chat. */
     checkpoint: v.optional(v.boolean()),
@@ -170,6 +171,7 @@ export const enqueueTurn = internalMutation({
       instructions: args.instructions,
       recalled: args.recalled || undefined,
       recallDigest: args.recallDigest,
+      projectDigest: args.projectDigest,
       ...(args.flush ? { flush: true } : {}),
       ...(args.checkpoint ? { checkpoint: true } : {}),
       ...(args.hidden ? { hidden: true } : {}),
@@ -182,7 +184,7 @@ export const enqueueTurn = internalMutation({
     };
     if (isSteering(args.policy, running, engine)) {
       // The running turn already carries recalled memory; a steer adds only the message.
-      const { recalled: _recalled, recallDigest: _digest, flush: _flush, checkpoint: _checkpoint, hidden: _hidden, guest: _guest, ...steer } = message;
+      const { recalled: _recalled, recallDigest: _digest, projectDigest: _project, flush: _flush, checkpoint: _checkpoint, hidden: _hidden, guest: _guest, ...steer } = message;
       const id = await ctx.db.insert("codexSteers", { ...steer, turnId: running._id, runnerId: running.runnerId!, status: "pending" });
       await takeFromOutbox(ctx, conversation, args.prompt);
       return id;
@@ -771,11 +773,15 @@ export const finishTurn = mutation({
       model: args.model,
       finishedAt: Date.now(),
     });
-    // The chat's Codex thread has now seen this turn's recalled memory, unless
-    // compaction summarised it away; either way the next turn knows what to send.
+    // The chat's Codex thread has now seen this turn's recalled memory and what it was told of its project, unless
+    // compaction summarised them away; either way the next turn knows what to send.
     if ((args.compacted || !args.error) && await ctx.db.get(job.conversationId)) {
       // Compacted, the thread starts filling afresh, and the next time it is nearly full is worth a checkpoint again.
-      await ctx.db.patch(job.conversationId, { recallDigest: args.compacted ? undefined : job.recallDigest, ...(args.compacted ? { checkpointedAt: undefined, contextFill: undefined } : {}) });
+      await ctx.db.patch(job.conversationId, {
+        recallDigest: args.compacted ? undefined : job.recallDigest,
+        projectDigest: args.compacted ? undefined : job.projectDigest,
+        ...(args.compacted ? { checkpointedAt: undefined, contextFill: undefined } : {}),
+      });
     }
     // Messages the turn ended before taking are answered next, in the same transaction.
     for (const steer of await pendingSteersOf(ctx, job._id)) await queueSteer(ctx, steer, { error: "The reply finished before this message could join it." });
