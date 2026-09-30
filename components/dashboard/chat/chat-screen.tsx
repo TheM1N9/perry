@@ -578,7 +578,8 @@ export function ChatScreen() {
                   <TriangleAlertIcon />
                   <AlertTitle>{assistant} couldn&apos;t finish the last reply</AlertTitle>
                   <AlertDescription>
-                    <p>{/runner|offline|computer/i.test(chat.lastError) ? "Your computer may be offline. Start Perry on it, then try again." : "Try again, or open Activity for the full run."}</p>
+                    <p>{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings shows it too."
+                      : /runner|offline|computer/i.test(chat.lastError) ? "Your computer may be offline. Start Perry on it, then try again." : "Try again, or open Activity for the full run."}</p>
                     <p className="mt-1 font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
                   </AlertDescription>
                   {lastUser && !app && (

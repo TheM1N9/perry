@@ -1,6 +1,7 @@
 import { ACCESSES } from "../../convex/lib/commands";
 import type { EngineModel, EngineStatus, LoginFlow } from "../engine";
 import { AcpEngine, modelsOr, waitForSignIn, type AcpLaunch } from "./acp";
+import { updateCommand } from "../versions";
 import { commandOf, killTree, runCli, spawnEngine } from "./process";
 
 /**
@@ -89,7 +90,7 @@ export class GrokEngine extends AcpEngine {
   }
 
   async status(): Promise<EngineStatus> {
-    const base = { kind: "grok" as const, auth: {}, models: [] };
+    const base: Pick<EngineStatus, "kind" | "auth" | "models" | "update"> = { kind: "grok", auth: {}, models: [] };
     let version: string | undefined;
     try {
       const ran = await runCli(this.cli, ["--version"]);
@@ -98,6 +99,8 @@ export class GrokEngine extends AcpEngine {
     } catch (error) {
       return { ...base, installed: false, signedIn: false, message: INSTALL, error: error instanceof Error ? error.message : String(error) };
     }
+    // Updated the way this grok was installed: `grok update`, or npm's command for an npm install.
+    base.update = updateCommand("grok", this.cli.command);
     try {
       if (!this.listed || Date.now() - this.listed.at > 2 * 60_000) {
         const ran = await runCli(this.cli, ["models"], 30_000, { ...process.env, ...ENV });

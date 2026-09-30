@@ -30,7 +30,7 @@ export async function perry(options: { name: string; outDir: string; runnerEnv: 
   const PORT = await freePort();
   const BASE = `http://127.0.0.1:${PORT}`;
   const KEY = `${options.name}-e2e-key`;
-  const home = mkdtempSync(join(tmpdir(), `perry-${options.name}-`));
+  const home = mkdtempSync(join(process.env.PERRY_E2E_DIR ?? tmpdir(), `perry-${options.name}-`));
   const checks: Record<string, boolean> = {};
   const notes: Record<string, unknown> = {};
   const check = (name: string, ok: boolean, note?: unknown) => { checks[name] = ok; if (note !== undefined) notes[name] = note; console.log(`${ok ? "ok  " : "FAIL"} ${name}`); };

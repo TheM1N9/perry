@@ -14,7 +14,9 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
+import { updateOf } from "../convex/lib/engines";
 import { ensureHome } from "../runner/home";
+import { latestVersionNow, updateCommand } from "../runner/versions";
 import { bold, dim, done, INSTALL_HINTS, runCodex, spinner, yellow } from "./lib";
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
@@ -102,6 +104,14 @@ async function main() {
     process.exit(1);
   }
   const version = (codex.output.trim().split(/\r?\n/).at(-1) ?? "").replace(/^codex-cli\s+/, "");
+  // Older than Perry works with, it could not answer: updating comes first. Behind the newest release, it is only said.
+  const update = updateOf({ kind: "codex", version, latest: await latestVersionNow("codex", 3_000), update: updateCommand("codex") });
+  if (update?.need === "required") {
+    checking.stop();
+    say(yellow(`  Codex ${update.version} is too old for Perry, which needs ${update.minimum} or newer. Update it with: ${update.command}`));
+    say(yellow("  Then run setup again."));
+    process.exit(1);
+  }
   // `codex login status` exits 0 and says "Logged in using ChatGPT" (or an API key) once signed in.
   const codexStatus = async () => {
     const ran = await runCodex(["login", "status"]);
@@ -125,6 +135,7 @@ async function main() {
     }
     rl.resume();
   }
+  if (update) say(yellow(`  Codex ${update.latest} is out. To update: ${update.command}`));
   if (signedIn) {
     await done(`codex ${version}${dim(`, ${signedIn.replace(/^Logged in/i, "signed in")}`)}`);
   } else {
