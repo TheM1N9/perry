@@ -194,17 +194,23 @@ const petText = async (devtools: number, prefix: string) => {
   try { return String(await page.evaluate(`document.body.innerText`) ?? ""); } finally { page.close(); }
 };
 // 14. Real pointer events (isTrusted: the owner's mouse, not the checks' own DOM clicks) reaching a pet's page, counted from when it opens.
+// Counted in his loaded page (installed while it still loads, it would go with that document), which it tells apart by its timeOrigin.
 const countRealPointer = async (devtools: number, prefix: string) => {
   const page = await pageOf(devtools, prefix);
   try {
-    await page.evaluate(`(() => { if (window.__realPointer === undefined) { window.__realPointer = 0;
-      for (const type of ["pointerover", "pointermove", "pointerdown", "pointerup", "wheel", "contextmenu"]) addEventListener(type, (e) => { if (e.isTrusted) window.__realPointer++; }, true); } return true; })()`);
+    return Number(await page.evaluate(`new Promise((done) => { const start = () => { if (window.__realPointer === undefined) { window.__realPointer = 0;
+      for (const type of ["pointerover", "pointermove", "pointerdown", "pointerup", "wheel", "contextmenu"]) addEventListener(type, (e) => { if (e.isTrusted) window.__realPointer++; }, true); }
+      done(performance.timeOrigin); };
+      document.readyState === "complete" ? start() : addEventListener("load", start, { once: true }); })`));
   } finally { page.close(); }
 };
-/** How many, or -1 when the page was loaded again since it was counted (a reload is itself not expected). */
-const realPointer = async (devtools: number, prefix: string) => {
+/** How many, and whether the page is still the one counted in (a reload would lose the count). */
+const realPointer = async (devtools: number, prefix: string, counted: number) => {
   const page = await pageOf(devtools, prefix);
-  try { return Number(await page.evaluate(`window.__realPointer ?? -1`)); } finally { page.close(); }
+  try {
+    const [count, origin] = await page.evaluate(`[window.__realPointer ?? null, performance.timeOrigin]`) as [number | null, number];
+    return { count, samePage: origin === counted };
+  } finally { page.close(); }
 };
 
 // Pet A: as `perry pet` starts him on Perry's own computer, with the dashboard key; launched directly, so no login entry.
@@ -235,8 +241,8 @@ try {
   // 10. The pet on Perry's own computer, with the dashboard key, as before.
   petA = spawn(electron, [join(REPO, "pet")], { cwd: join(REPO, "pet"), env: petAEnv, stdio: "ignore", windowsHide: false });
   await check("petAPageOpen", () => pageOpen(DEVTOOLS_A, `${LOCAL}/pet`), 60);
-  await countRealPointer(DEVTOOLS_A, `${LOCAL}/pet`);
   await check("petAChecksIn", async () => (await owner<{ running: boolean }>("pet:status")).running, 30);
+  const countedA = await countRealPointer(DEVTOOLS_A, `${LOCAL}/pet`);
   const pageA = await pageOf(DEVTOOLS_A, `${LOCAL}/pet`);
   checks.petAUsesDashboardKey = await pageA.evaluate(`localStorage.getItem("perry.dashboard.key")`) === KEY;
   pageA.close();
@@ -293,7 +299,6 @@ try {
 
   // 5. His page, from Perry over the network, with the computer's own key.
   await check("petBPageOpen", () => pageOpen(DEVTOOLS_B, `${LAN}/pet`), 90);
-  await countRealPointer(DEVTOOLS_B, `${LAN}/pet`);
   notes.petBGhost = configB.ghost === true;
   // The page keeps the key from its #key= once it has loaded, so this waits for that.
   const keyOfB = async () => { const b = await pageOf(DEVTOOLS_B, `${LAN}/pet`); try { return String(await b.evaluate(`localStorage.getItem("perry.dashboard.key")`)); } finally { b.close(); } };
@@ -306,6 +311,7 @@ try {
       return await b.evaluate(`!/locked out|went wrong/i.test(document.body.innerText) && Boolean(document.querySelector('button[aria-label^="Perry. Click to open him"]'))`);
     } finally { b.close(); }
   }, 30);
+  const countedB = await countRealPointer(DEVTOOLS_B, `${LAN}/pet`);
   const deviceB = async () => (await devices()).devices.find((d) => d.name === "Laptop (test)");
   await check("bothListedAndRunning", async () => {
     const view = await devices();
@@ -425,9 +431,9 @@ try {
   // 10 again: the pet on Perry's computer carries on.
   checks.petAStillWorks = (await owner<{ running: boolean }>("pet:status")).running && !/locked out/i.test(await petText(DEVTOOLS_A, `${LOCAL}/pet`));
   // 14. Neither test pet took the owner's real mouse, all the while.
-  const pointer = { a: await realPointer(DEVTOOLS_A, `${LOCAL}/pet`), b: await realPointer(DEVTOOLS_B, `${LAN}/pet`) };
+  const pointer = { a: await realPointer(DEVTOOLS_A, `${LOCAL}/pet`, countedA), b: await realPointer(DEVTOOLS_B, `${LAN}/pet`, countedB) };
   notes.realPointer = pointer;
-  checks.noRealPointerOnPets = pointer.a === 0 && pointer.b === 0;
+  checks.noRealPointerOnPets = [pointer.a, pointer.b].every(({ count, samePage }) => samePage && count === 0);
   // 13. The only calls refused to his key (server/devices.ts logs each) were the ones made here to see them refused.
   const refused = [...new Set([...serverLog.matchAll(/refused the desktop pet on Laptop \(test\): it cannot call (\S+)/g)].map((m) => m[1]))].sort();
   notes.refusedToPetB = refused;
