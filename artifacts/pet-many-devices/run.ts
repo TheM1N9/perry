@@ -49,6 +49,10 @@ import { openChat, sleep } from "../browser";
 //  11. PERRY_HOST=127.0.0.1 still answers at the network address, or Settings
 //      still offers to add a computer.
 //  12. The check touches the owner's own pet, its login entry, or ~/.perry.
+//  13. His page calls something his key may not (added to the page, not to
+//      server/devices.ts): he is locked out on the other computer alone.
+//  14. The owner's real mouse, moving over the test pets on their screen, clicks
+//      or opens them mid-check: both run as ghosts, and that is checked.
 //
 // The pets really take pictures of the screen when Perry asks (8). Those are of
 // whatever the owner has open, so they stay in this run's own Perry folder,
@@ -82,9 +86,10 @@ const homeA = mkdtempSync(join(scratch, "perry-many-a-"));
 const homeB = mkdtempSync(join(scratch, "perry-many-b-"));
 const petParent = mkdtempSync(join(scratch, "perry-many-pet-"));
 const petDir = join(petParent, "perry-pet");
-// Away from the bottom-right corner, where the owner's own pet stands, and from each other.
-writeFileSync(join(homeA, "pet.json"), JSON.stringify({ x: 40, y: 60 }));
-writeFileSync(join(homeB, "pet.json"), JSON.stringify({ x: 470, y: 60 }));
+// Away from the bottom-right corner, where the owner's own pet stands, and from each other; ghosts, so the
+// owner's real mouse goes through them (14). The checks click with the page's own DOM, which ghosts still take.
+writeFileSync(join(homeA, "pet.json"), JSON.stringify({ x: 40, y: 60, ghost: true }));
+writeFileSync(join(homeB, "pet.json"), JSON.stringify({ x: 470, y: 60, ghost: true }));
 
 const checks: Record<string, boolean> = {};
 const notes: Record<string, unknown> = { branch: BRANCH, lanAddress: lan ? LAN_HOST : "none: a loopback alias (127.0.0.2) stood in" };
@@ -188,6 +193,19 @@ const petText = async (devtools: number, prefix: string) => {
   const page = await pageOf(devtools, prefix);
   try { return String(await page.evaluate(`document.body.innerText`) ?? ""); } finally { page.close(); }
 };
+// 14. Real pointer events (isTrusted: the owner's mouse, not the checks' own DOM clicks) reaching a pet's page, counted from when it opens.
+const countRealPointer = async (devtools: number, prefix: string) => {
+  const page = await pageOf(devtools, prefix);
+  try {
+    await page.evaluate(`(() => { if (window.__realPointer === undefined) { window.__realPointer = 0;
+      for (const type of ["pointerover", "pointermove", "pointerdown", "pointerup", "wheel", "contextmenu"]) addEventListener(type, (e) => { if (e.isTrusted) window.__realPointer++; }, true); } return true; })()`);
+  } finally { page.close(); }
+};
+/** How many, or -1 when the page was loaded again since it was counted (a reload is itself not expected). */
+const realPointer = async (devtools: number, prefix: string) => {
+  const page = await pageOf(devtools, prefix);
+  try { return Number(await page.evaluate(`window.__realPointer ?? -1`)); } finally { page.close(); }
+};
 
 // Pet A: as `perry pet` starts him on Perry's own computer, with the dashboard key; launched directly, so no login entry.
 const electron = createRequire(join(REPO, "pet", "package.json"))("electron") as string;
@@ -217,6 +235,7 @@ try {
   // 10. The pet on Perry's own computer, with the dashboard key, as before.
   petA = spawn(electron, [join(REPO, "pet")], { cwd: join(REPO, "pet"), env: petAEnv, stdio: "ignore", windowsHide: false });
   await check("petAPageOpen", () => pageOpen(DEVTOOLS_A, `${LOCAL}/pet`), 60);
+  await countRealPointer(DEVTOOLS_A, `${LOCAL}/pet`);
   await check("petAChecksIn", async () => (await owner<{ running: boolean }>("pet:status")).running, 30);
   const pageA = await pageOf(DEVTOOLS_A, `${LOCAL}/pet`);
   checks.petAUsesDashboardKey = await pageA.evaluate(`localStorage.getItem("perry.dashboard.key")`) === KEY;
@@ -261,7 +280,7 @@ try {
   checks.installerNeedsNoBunOrCodex = !/bun|codex/i.test(installed.split(/\r?\n/).find((line) => /node v/.test(line)) ?? "bun");
   checks.onlyThePetFolder = existsSync(join(petDir, "pet", "main.js")) && existsSync(join(petDir, "pet", "node_modules", "electron"))
     && !existsSync(join(petDir, "convex")) && !existsSync(join(petDir, "app")) && !existsSync(join(petDir, "node_modules"));
-  const configB = JSON.parse(readFileSync(join(homeB, "pet.json"), "utf8")) as { server?: string; token?: string; x?: number };
+  const configB = JSON.parse(readFileSync(join(homeB, "pet.json"), "utf8")) as { server?: string; token?: string; x?: number; ghost?: boolean };
   tokenB = configB.token ?? "";
   checks.keptInItsOwnPetJson = configB.server === LAN && tokenB.startsWith("pet_") && tokenB !== KEY && configB.x === 470;
   notes.configB = { server: configB.server, token: tokenB ? `${tokenB.slice(0, 8)}…` : null };
@@ -274,6 +293,8 @@ try {
 
   // 5. His page, from Perry over the network, with the computer's own key.
   await check("petBPageOpen", () => pageOpen(DEVTOOLS_B, `${LAN}/pet`), 90);
+  await countRealPointer(DEVTOOLS_B, `${LAN}/pet`);
+  notes.petBGhost = configB.ghost === true;
   // The page keeps the key from its #key= once it has loaded, so this waits for that.
   const keyOfB = async () => { const b = await pageOf(DEVTOOLS_B, `${LAN}/pet`); try { return String(await b.evaluate(`localStorage.getItem("perry.dashboard.key")`)); } finally { b.close(); } };
   await check("petBUsesItsOwnKey", async () => await keyOfB() === tokenB, 30);
@@ -403,6 +424,14 @@ try {
 
   // 10 again: the pet on Perry's computer carries on.
   checks.petAStillWorks = (await owner<{ running: boolean }>("pet:status")).running && !/locked out/i.test(await petText(DEVTOOLS_A, `${LOCAL}/pet`));
+  // 14. Neither test pet took the owner's real mouse, all the while.
+  const pointer = { a: await realPointer(DEVTOOLS_A, `${LOCAL}/pet`), b: await realPointer(DEVTOOLS_B, `${LAN}/pet`) };
+  notes.realPointer = pointer;
+  checks.noRealPointerOnPets = pointer.a === 0 && pointer.b === 0;
+  // 13. The only calls refused to his key (server/devices.ts logs each) were the ones made here to see them refused.
+  const refused = [...new Set([...serverLog.matchAll(/refused the desktop pet on Laptop \(test\): it cannot call (\S+)/g)].map((m) => m[1]))].sort();
+  notes.refusedToPetB = refused;
+  checks.pageCallsOnlyWhatItsKeyMay = JSON.stringify(refused) === JSON.stringify(["dashboard:getKeys", "pet:devices", "pet:pair", "pet:status"]);
   checks.noDashboardErrors = dashboard.errors.length === 0;
   notes.dashboardErrors = dashboard.errors;
 

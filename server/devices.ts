@@ -27,6 +27,8 @@ const PET_CALLS: Record<string, "which pet" | true> = {
   "dashboard:createChat": true, "dashboard:sendChat": true, "dashboard:stopChat": true, "dashboard:registerAttachment": true,
   "screen:asked": "which pet", "screen:fulfil": "which pet",
   "updates:status": true, "updates:update": true,
+  // How much of each engine's plan is used, so he warns before a reply fails for it.
+  "usage:limits": true,
   // His pictures of the screen, sent into a chat and shown in it (app/api/media).
   "media:canStoreLocally": true, "media:localAttachment": true,
 };
@@ -56,7 +58,11 @@ export async function asPet(path: string, args: unknown): Promise<unknown> {
   const device = await runtime.exclusive(() => runtime.store.query("petDevices").withIndex("by_key_hash", (q) => q.eq("keyHash", keyHash)).first());
   if (!device) throw new Refused("This computer's desktop pet was removed from Perry. Pair it again from Settings → Desktop pet on Perry's computer.");
   const allowed = PET_CALLS[path];
-  if (!allowed) throw new Refused(`A desktop pet on another computer cannot call ${path}.`);
+  if (!allowed) {
+    // His page calling something off the list is a gap here, or someone trying the key: either way, worth a line in the log.
+    console.warn(`[perry] refused the desktop pet on ${device.name}: it cannot call ${path}`);
+    throw new Refused(`A desktop pet on another computer cannot call ${path}.`);
+  }
   const passed = args as Record<string, unknown>;
   // A file is attached from where the pet's picture was saved, in Perry's uploads folder, never from elsewhere on this computer.
   if (path === "dashboard:registerAttachment" && (typeof passed.localPath !== "string" || !resolve(passed.localPath).startsWith(resolve(PATHS.uploads) + sep))) {

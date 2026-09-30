@@ -143,7 +143,8 @@ function PetErrorFallback(_props: object, { error, reset }: ErrorInfo) {
     const timer = window.setTimeout(reset, 15_000);
     return () => window.clearTimeout(timer);
   }, [locked, reset]);
-  if (locked) return <LockedOut detail={/removed from Perry/.test(message) ? message : undefined} />;
+  // What his key may not do is said as it is: Perry serves this page and that list together, so it is a gap to report.
+  if (locked) return <LockedOut detail={/removed from Perry|cannot call/.test(message) ? message : undefined} />;
   return (
     <Stage bubble={<Bubble title="Something went wrong" detail={message.slice(0, 200)} />}>
       <Body mood="idle" asleep={false} onClick={reset} />
@@ -189,6 +190,12 @@ const STEP_HOLD_MS = 2_500;
 
 function Pet() {
   const key = useDashboardKey();
+  /**
+   * On another of the owner's computers, paired with a key of its own (its prefix,
+   * PET_KEY_PREFIX in convex/lib/devices.ts), never the dashboard key. The server
+   * lets that key call only what such a pet needs (server/devices.ts).
+   */
+  const elsewhere = key.startsWith("pet_");
   const board = useQuery(api.todos.board, { key });
   const approvals = useQuery(api.approvals.pending, { key });
   const inbox = useQuery(api.dashboard.getInbox, { key });
@@ -260,19 +267,21 @@ function Pet() {
    * A page of the dashboard, in the browser, unlocked: in a dashboard tab
    * already open, which takes it (components/dashboard/shell.tsx), or, when
    * none does in a moment, a new one. He claims it himself to open it, so it
-   * is one or the other, never both.
+   * is one or the other, never both. On another computer, always a new one there:
+   * the tabs open elsewhere may be on Perry's computer, across the room.
    */
   const openPath = useCallback((path: string) => {
     const openNew = () => {
       if (window.perryPet) window.perryPet.openDashboard(path);
       else window.open(path, "_blank");
     };
+    if (elsewhere) return openNew();
     void (async () => {
       const request = await askToOpen({ key, path });
       await new Promise((resolve) => window.setTimeout(resolve, TAB_CLAIMS_MS));
       if (await claimOpen({ key, request })) openNew();
     })().catch(openNew);
-  }, [key, askToOpen, claimOpen]);
+  }, [key, elsewhere, askToOpen, claimOpen]);
   /** A chat in his panel, maybe with something already typed. */
   const openChat = useCallback((id: PetChatId, text?: string) => {
     setChatId(id);
@@ -315,10 +324,11 @@ function Pet() {
     void update().then((text) => say("See you in a few minutes", text, 6000), (cause) => say("I couldn't update", errorText(cause), 6000));
   }, [update, say]);
 
-  // Scheduled things run in the owner's timezone, which only this computer knows.
+  // Scheduled things run in the owner's timezone, which only this computer knows: Perry's own, not a laptop taken abroad.
   useEffect(() => {
+    if (elsewhere) return;
     void setTimezone({ key, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
-  }, [key, setTimezone]);
+  }, [key, elsewhere, setTimezone]);
 
   // How long the owner has been away, once a minute, for the server, which then sends reminders to the phone.
   // Refused (this computer removed from Perry's Settings, or the key changed), he is locked out from then on.
