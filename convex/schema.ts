@@ -95,7 +95,25 @@ export const vEngineStatus = v.object({
   /** What to do next, such as "Run `grok login` on this computer". */
   message: v.optional(v.string()),
   error: v.optional(v.string()),
+  /** The newest release of the engine's CLI, as that computer last looked it up. */
+  latest: v.optional(v.string()),
+  /** The command that updates the CLI there, for the way it was installed. */
+  update: v.optional(v.string()),
 });
+/** An engine's plan limits, as it reports them (lib/usage.ts, PlanLimits). */
+export const vPlanLimits = v.object({
+  windows: v.array(v.object({
+    id: v.string(),
+    label: v.string(),
+    usedPercent: v.number(),
+    resetsAt: v.optional(v.number()),
+    minutes: v.optional(v.number()),
+  })),
+  plan: v.optional(v.string()),
+  at: v.number(),
+});
+/** The engine refused a turn for its plan's limit: when, and what it said (lib/usage.ts, LimitHit). */
+export const vLimitHit = v.object({ at: v.number(), message: v.string() });
 /** A sign-in or sign-out the owner asked for from Settings, until the runner has done it. */
 export const vEngineAuth = v.object({
   id: v.number(),
@@ -288,6 +306,8 @@ export default defineSchema({
     /** The Talk hotkey the pet holds, or why it could not take the one asked for (another app has it). */
     hotkey: v.optional(v.string()),
     hotkeyError: v.optional(v.string()),
+    /** Why the Talk keys can only be tapped, where holding them does not work (convex/lib/shortcuts.ts, holdProblem). */
+    hotkeyHold: v.optional(v.string()),
     /** The same for his other global shortcuts, by shortcut id (convex/lib/shortcuts.ts): Look. */
     keys: v.optional(v.record(v.string(), v.object({ hotkey: v.optional(v.string()), error: v.optional(v.string()) }))),
   }),
@@ -422,6 +442,8 @@ export default defineSchema({
     engines: v.optional(v.array(v.object({ ...vEngineStatus.fields, updatedAt: v.number() }))),
     /** Sign-ins and sign-outs asked for from Settings, by engine. */
     engineAuth: v.optional(v.record(v.string(), vEngineAuth)),
+    /** How much of each engine's plan is used, by engine, as this computer last read it (usage.ts). */
+    usage: v.optional(v.record(v.string(), v.object({ limits: v.optional(vPlanLimits), hit: v.optional(vLimitHit) }))),
     /**
      * Codex's state from before engines. Still written from Codex's entry in
      * `engines`, and read when a runner from before engines reports only these.

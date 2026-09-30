@@ -11,6 +11,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Activity } from "@/convex/dashboard";
 import type { Pose } from "@/convex/lib/activity";
+import { limitWarning } from "@/convex/lib/usage";
 import type { Board, TodoView } from "@/convex/todos";
 import { errorText, plural, useNow } from "@/lib/format";
 import { KEY_STORAGE, SessionContext, useDashboardKey } from "@/lib/session";
@@ -79,6 +80,10 @@ const HEADS_UP_SHOWS_MS = 12_000;
 const UPDATE_SHOWS_MS = 20_000;
 /** The newest change he last mentioned, so each new version is mentioned once. */
 const UPDATE_STORAGE = "perry.pet.update";
+/** An engine near or at its plan's limit is mentioned once per limit and level, for this long; it stays under his name while it lasts. */
+const LIMIT_SHOWS_MS = 20_000;
+/** The limits he last mentioned, so each is mentioned once. */
+const LIMIT_STORAGE = "perry.pet.limits";
 /** How long a dashboard tab already open has to take a page he opens, before he opens a new tab. */
 const TAB_CLAIMS_MS = 1_500;
 /** A reply held up goes by itself once it has been up this long, and a little longer for each letter of it. */
@@ -267,6 +272,24 @@ function Pet() {
     window.localStorage.setItem(UPDATE_STORAGE, sha);
     setUpdateNews(Date.now() + UPDATE_SHOWS_MS);
   }, [updates]);
+  // The engines he works with, near or at their plan's limit: said before a reply fails for it, not after.
+  const planLimits = useQuery(api.usage.limits, { key });
+  const limits = (planLimits?.engines ?? [])
+    .filter((engine) => planLimits!.used.includes(engine.kind))
+    .flatMap((engine) => {
+      const warning = limitWarning(engine.kind, engine.usage, now);
+      return warning ? [{ ...warning, mark: `${engine.kind}:${warning.level}:${warning.title}` }] : [];
+    })
+    .sort((a, b) => (a.level === "out" ? 0 : 1) - (b.level === "out" ? 0 : 1));
+  const limit = limits[0];
+  const [limitNews, setLimitNews] = useState<{ mark: string; until: number } | null>(null);
+  useEffect(() => {
+    if (!limit) return;
+    const seen: string[] = JSON.parse(window.localStorage.getItem(LIMIT_STORAGE) ?? "[]");
+    if (seen.includes(limit.mark)) return;
+    window.localStorage.setItem(LIMIT_STORAGE, JSON.stringify([...seen, limit.mark].slice(-20)));
+    setLimitNews({ mark: limit.mark, until: Date.now() + LIMIT_SHOWS_MS });
+  }, [limit?.mark]);
   const updateNow = useCallback(() => {
     setUpdateNews(null);
     void update().then((text) => say("See you in a few minutes", text, 6000), (cause) => say("I couldn't update", errorText(cause), 6000));
@@ -287,6 +310,12 @@ function Pet() {
       idleNow.current = seconds;
       if (Date.now() - lastReport >= 60_000) {
         lastReport = Date.now();
+        // Holding the Talk keys can start working meanwhile: on a Mac, once he is given Accessibility.
+        const talk = await bridge.hotkey().catch(() => null);
+        if (talk && (talk.hold ?? null) !== (hotkeyNow.current.hold ?? null)) {
+          hotkeyNow.current = { ...hotkeyNow.current, hold: talk.hold };
+          setHotkey(hotkeyNow.current);
+        }
         void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current, lookKeyNow.current) }).catch(() => {});
       }
     };
@@ -357,31 +386,39 @@ function Pet() {
   }, [board, now]);
 
   // Talking: the mic button, or the hotkey from anywhere, which opens his chat already listening.
+  // His window keeps whether the hotkey has him listening; when the page stops on its own (its buttons, Esc in
+  // the page, a microphone that would not open), it says so at once (voiceDone), so the next press starts again.
+  // Not when the hotkey stopped him: by the time what was said is written down, a press may have started him again.
   const { start: listen, stop: stopListening, cancel: cancelListening } = voice;
   const talk = useCallback((sends: boolean) => {
     talkSends.current = sends;
     setTab("chat");
     setOpen(true);
-    void listen();
+    void listen().then((on) => { if (!on && sends) window.perryPet?.voiceDone(); });
   }, [listen]);
-  const heard = useCallback(async () => {
+  const heard = useCallback(async (byKeys = false) => {
+    const sends = talkSends.current;
+    if (!byKeys) window.perryPet?.voiceDone();
     const text = await stopListening();
-    window.perryPet?.voiceDone();
     if (!text) return;
     setDraft((previous) => (previous.trim() ? `${previous.trimEnd()} ${text}` : text));
-    if (talkSends.current) setSendSignal((count) => count + 1);
+    if (sends) setSendSignal((count) => count + 1);
   }, [stopListening]);
-  const stopTalking = useCallback(() => {
+  const stopTalking = useCallback((byKeys = false) => {
     cancelListening();
-    window.perryPet?.voiceDone();
+    if (!byKeys) window.perryPet?.voiceDone();
   }, [cancelListening]);
+  const listeningNow = useRef(false);
+  listeningNow.current = voice.state === "listening";
   useEffect(() => {
     const bridge = window.perryPet;
     if (!bridge) return;
     return bridge.onVoice((type) => {
-      if (type === "start") talk(true);
-      else if (type === "stop") void heard();
-      else stopTalking();
+      // Listening from the mic button, which his window knew nothing of: the hotkey is pressed to finish.
+      if (type === "start" && listeningNow.current) void heard();
+      else if (type === "start") talk(true);
+      else if (type === "stop") void heard(true);
+      else stopTalking(true);
     });
   }, [talk, heard, stopTalking]);
   // New keys in Settings: he moves to them, and says at once how that went, for Settings to show.
@@ -546,6 +583,14 @@ function Pet() {
       }
     }
   }
+  if (!bubble && limit && limitNews?.mark === limit.mark && limitNews.until > now) {
+    bubble = (
+      <Bubble id="limit" tone={limit.level === "out" ? "late" : "soon"} title={limit.title} detail={limit.detail} onClose={() => setLimitNews(null)}>
+        <BubbleButton primary onClick={() => { setLimitNews(null); openPath("/settings?tab=usage"); }}>See usage</BubbleButton>
+        <BubbleButton onClick={() => setLimitNews(null)}>OK</BubbleButton>
+      </Bubble>
+    );
+  }
   if (!bubble && updateNews && updateNews > now && updates && updateReady(updates)) {
     bubble = (
       <Bubble id="update" title="A new version of me is ready" detail={`${plural(updates.behind, "change")} · ${updates.latest?.title ?? ""}`} onClose={() => setUpdateNews(null)}>
@@ -572,6 +617,11 @@ function Pet() {
   // Under his name: what he is doing, what waits on you, or a new version of him, a click away.
   const status: ReactNode = petChat?.isRunning ? `${step?.label ?? "Working on it"}…`
     : needs ? `${plural(needs, "thing")} waiting on you`
+      : limit ? (
+        <button type="button" onClick={() => openPath("/settings?tab=usage")} className={cn("cursor-pointer hover:underline", limit.level === "out" ? "text-destructive" : "text-warning")}>
+          {limit.title}
+        </button>
+      )
       : updates?.state === "updating" ? "Updating myself; back in a few minutes"
         : updates?.state === "waiting" ? "Updating once I'm done"
           : updateReady(updates) ? (
@@ -584,8 +634,8 @@ function Pet() {
       status={status} busy={Boolean(petChat?.isRunning)}>
       {tab === "chat" ? (
         <PetChat chatId={chatId} onChatId={setChatId} draft={draft} onDraft={setDraft} open={openPath}
-          voice={window.perryPet ? voice : undefined} hotkey={hotkey.hotkey} byHotkey={talkSends.current} sendSignal={sendSignal}
-          onTalk={() => talk(false)} onTalkSend={() => void heard()} onTalkCancel={stopTalking}
+          voice={window.perryPet ? voice : undefined} hotkey={hotkey.hotkey} hold={hotkey.hold ?? null} byHotkey={talkSends.current} sendSignal={sendSignal}
+          onTalk={() => talk(false)} onTalkSend={() => void heard()} onTalkCancel={() => stopTalking()}
           shot={shot} onShot={setShot} onLook={window.perryPet?.look ? () => void lookNow() : undefined} lookKeys={lookKey.hotkey} />
       )
         : tab === "needs" ? <PetNeedsYou now={now} onChat={openChat} open={openPath} />
@@ -602,11 +652,11 @@ function Pet() {
   );
 }
 
-/** The hotkeys' standing, as presence reports it: the keys held, and why not the ones asked for. */
+/** The hotkeys' standing, as presence reports it: the keys held, why not the ones asked for, and why the Talk keys can only be tapped. */
 const standing = (state: HotkeyState) => ({ ...(state.hotkey ? { hotkey: state.hotkey } : {}), ...(state.error ? { error: state.error } : {}) });
 const reported = (talk: HotkeyState, look: HotkeyState) => {
   const { hotkey, error } = standing(talk);
-  return { ...(hotkey ? { hotkey } : {}), ...(error ? { hotkeyError: error } : {}), keys: { look: standing(look) } };
+  return { ...(hotkey ? { hotkey } : {}), ...(error ? { hotkeyError: error } : {}), ...(talk.hold ? { hotkeyHold: talk.hold } : {}), keys: { look: standing(look) } };
 };
 
 /** A line or two of a reply, for a bubble: its start, or while it is being written, its end. */
