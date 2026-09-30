@@ -1,0 +1,44 @@
+{
+  "at": "2026-09-30T23:14:04.377Z",
+  "checks": {
+    "noResizeHandle": true,
+    "growsWithLines": true,
+    "stopsAtLimitThenScrolls": true,
+    "shrinksWhenCleared": true,
+    "fallbackGrowsWithoutFieldSizing": true,
+    "noHandleAnywhere": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "noResizeHandle": {
+      "resize": "none"
+    },
+    "growsWithLines": {
+      "one": 56,
+      "four": 98
+    },
+    "stopsAtLimitThenScrolls": {
+      "height": 480,
+      "limit": 480,
+      "scrollHeight": 1616
+    },
+    "shrinksWhenCleared": {
+      "empty": 56,
+      "cleared": 56
+    },
+    "fallbackGrowsWithoutFieldSizing": {
+      "one": 58,
+      "six": 138
+    },
+    "noHandleAnywhere": {
+      "/memory": [
+        "none"
+      ],
+      "/chat": [
+        "none"
+      ]
+    },
+    "noPageErrors": []
+  },
+  "passed": true
+}
