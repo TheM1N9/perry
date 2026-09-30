@@ -33,7 +33,9 @@ export const enginesOf = (models: ModelOption[]) => ENGINES.filter((engine) => m
  *               first, runs the routine ones and asks the owner about the rest.
  *   full        "Full access": no sandbox, and it never asks.
  *
- * A turn keeps the access it started with; a change applies from the next one.
+ * A change applies at once, to a turn already running too: its engine is
+ * told (runner/engine.ts, setAccess), and each approval is decided by the
+ * chat's access when it is asked (convex/approvals.ts).
  */
 export type Access = "supervised" | "auto" | "full";
 export const ACCESSES: readonly Access[] = ["supervised", "auto", "full"];
@@ -215,7 +217,7 @@ export function describeAccess(access: Access): string {
     "",
     ...ACCESSES.map((mode) => `${mode === access ? "•" : " "} ${ACCESS_LABELS[mode].toLowerCase().replace(" access", "").padEnd(5)} ${ACCESS_HINTS[mode]}`),
     "",
-    "Switch with /access ask, /access auto or /access full. It applies from your next message.",
+    "Switch with /access ask, /access auto or /access full. It applies at once, to a reply already running too.",
   ].join("\n");
 }
 
@@ -223,5 +225,25 @@ export function describeAccess(access: Access): string {
 export function pickAccess(mode: string): { access?: Access; reply: string } {
   const access = ACCESS_WORDS[mode.trim().toLowerCase().replace(/[\s-]+access$/, "")];
   if (!access) return { reply: `No access called "${mode}". Use /access ask, /access auto or /access full.` };
-  return { access, reply: `This chat is on ${ACCESS_LABELS[access]}: ${ACCESS_HINTS[access]} It applies from your next message.` };
+  return { access, reply: `This chat is on ${ACCESS_LABELS[access]}: ${ACCESS_HINTS[access]} It applies at once, to a reply already running too.` };
+}
+
+// --- Skills ($name) -------------------------------------------------------
+
+/**
+ * "$weekly-review" in a message names a skill, as in Codex: a skill's name
+ * (lowercase letters, digits and hyphens) after a $ that does not follow a
+ * word, so "US$5" and "$$" name none. A name no skill has is left as text.
+ */
+export const SKILL_MENTION = /(?<![\w$])\$([a-z0-9][a-z0-9-]{0,63})/g;
+
+/** The skill names a message mentions, once each, in order. */
+export function skillMentions(text: string): string[] {
+  return [...new Set([...text.matchAll(SKILL_MENTION)].map((match) => match[1]))];
+}
+
+/** The $name being typed at the end of `before` (the text up to the caret), for the composer to complete. */
+export function typingSkill(before: string): { start: number; typed: string } | null {
+  const match = before.match(/(?:^|[^\w$])\$([a-z0-9-]*)$/);
+  return match ? { start: before.length - match[1].length - 1, typed: match[1] } : null;
 }

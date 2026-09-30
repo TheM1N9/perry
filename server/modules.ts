@@ -10,6 +10,7 @@ import * as channels from "../convex/channels";
 import * as codex from "../convex/codex";
 import * as composio from "../convex/composio";
 import * as connectorAccounts from "../convex/connectorAccounts";
+import * as contacts from "../convex/contacts";
 import * as conversations from "../convex/conversations";
 import * as crons from "../convex/crons";
 import * as dashboard from "../convex/dashboard";
@@ -35,6 +36,7 @@ import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
 import * as lib_truncate from "../convex/lib/truncate";
 import * as lib_turnLimits from "../convex/lib/turnLimits";
+import * as lib_usage from "../convex/lib/usage";
 import * as lib_whatsappFormat from "../convex/lib/whatsappFormat";
 import * as mcp from "../convex/mcp";
 import * as media from "../convex/media";
@@ -48,11 +50,13 @@ import * as runner from "../convex/runner";
 import * as runs from "../convex/runs";
 import * as screen from "../convex/screen";
 import * as secrets from "../convex/secrets";
+import * as skills from "../convex/skills";
 import * as tasks from "../convex/tasks";
 import * as titles from "../convex/titles";
 import * as todos from "../convex/todos";
 import * as tools from "../convex/tools";
 import * as updates from "../convex/updates";
+import * as usage from "../convex/usage";
 import * as vault from "../convex/vault";
 import * as wake from "../convex/wake";
 import * as web from "../convex/web";
@@ -68,6 +72,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "codex": codex,
   "composio": composio,
   "connectorAccounts": connectorAccounts,
+  "contacts": contacts,
   "conversations": conversations,
   "crons": crons,
   "dashboard": dashboard,
@@ -93,6 +98,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/telegramFormat": lib_telegramFormat,
   "lib/truncate": lib_truncate,
   "lib/turnLimits": lib_turnLimits,
+  "lib/usage": lib_usage,
   "lib/whatsappFormat": lib_whatsappFormat,
   "mcp": mcp,
   "media": media,
@@ -106,11 +112,13 @@ export const modules: Record<string, Record<string, unknown>> = {
   "runs": runs,
   "screen": screen,
   "secrets": secrets,
+  "skills": skills,
   "tasks": tasks,
   "titles": titles,
   "todos": todos,
   "tools": tools,
   "updates": updates,
+  "usage": usage,
   "vault": vault,
   "wake": wake,
   "web": web,

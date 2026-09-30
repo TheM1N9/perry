@@ -28,7 +28,16 @@ export const CODEX_TOOLS: readonly ToolName[] = [
   "watch_page", "update_watch", "delete_watch", "check_watches",
   "create_job", "find_triggers", "list_jobs", "update_job", "delete_job", "run_job",
   "add_todo", "list_todos", "update_todo", "delete_todo",
+  "find_contact", "send_message", "update_contact",
 ];
+
+/**
+ * A chat with someone other than the owner (contacts.ts) gets these and
+ * nothing else: its own memory (memories.seenFrom keeps it to that chat) and
+ * a way to pass things on to the owner. No computer, files, keys, accounts,
+ * web tools or other chats, so nothing there can reach anything of the owner's.
+ */
+export const GUEST_TOOLS: readonly ToolName[] = ["remember", "recall", "read_memory", "forget", "tell_owner"];
 
 /**
  * Only Codex runs on the machine where its files are, so only Codex can show
@@ -105,6 +114,9 @@ function outward(name: string, args: Record<string, unknown>): string | null {
   if (name === "use_secret") return "use a saved login";
   // A skill someone else wrote is installed on the owner's yes, which is a new message: never in the turn that read it.
   if (name === "install_skill") return "install that skill";
+  // Writing to someone, or changing what Perry may share with them, is the owner's call, never a page's.
+  if (name === "send_message") return "send that message";
+  if (name === "update_contact") return "change what you share with them";
   if (name === "run_action") {
     const slug = String(args.slug ?? "");
     return READ_ACTION.test(slug) ? null : `run ${slug || "that action"}`;
@@ -155,7 +167,7 @@ export const handle = httpAction(async (ctx, request) => {
     return fail(message.id, -32603, "Perry is running several chats at once and cannot tell which one this call is from. Try again.");
   }
 
-  const tools = CODEX_TOOLS;
+  const tools = access.guest ? GUEST_TOOLS : CODEX_TOOLS;
   switch (message.method) {
     case "initialize":
       return reply(message.id, {
@@ -173,13 +185,15 @@ export const handle = httpAction(async (ctx, request) => {
             const tool = ALL_TOOLS[name] as unknown as Bindable;
             return { name, description: tool.description ?? name, inputSchema: z.toJSONSchema(tool.inputSchema) };
           }),
-          { name: SHARE_FILE.name, description: SHARE_FILE.description, inputSchema: z.toJSONSchema(SHARE_FILE.inputSchema) },
-          { name: TAKE_LONGER.name, description: TAKE_LONGER.description, inputSchema: z.toJSONSchema(TAKE_LONGER.inputSchema) },
-          { name: LOOK_AT_SCREEN.name, description: LOOK_AT_SCREEN.description, inputSchema: z.toJSONSchema(LOOK_AT_SCREEN.inputSchema) },
+          ...(access.guest ? [] : [
+            { name: SHARE_FILE.name, description: SHARE_FILE.description, inputSchema: z.toJSONSchema(SHARE_FILE.inputSchema) },
+            { name: TAKE_LONGER.name, description: TAKE_LONGER.description, inputSchema: z.toJSONSchema(TAKE_LONGER.inputSchema) },
+            { name: LOOK_AT_SCREEN.name, description: LOOK_AT_SCREEN.description, inputSchema: z.toJSONSchema(LOOK_AT_SCREEN.inputSchema) },
+          ]),
         ],
       });
     case "tools/call": {
-      if (message.params?.name === SHARE_FILE.name) {
+      if (!access.guest && message.params?.name === SHARE_FILE.name) {
         const parsed = SHARE_FILE.inputSchema.safeParse(message.params?.arguments ?? {});
         if (!parsed.success) return reply(message.id, { isError: true, content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }] });
         try {
@@ -189,7 +203,7 @@ export const handle = httpAction(async (ctx, request) => {
           return toolError(message.id, error);
         }
       }
-      if (message.params?.name === TAKE_LONGER.name) {
+      if (!access.guest && message.params?.name === TAKE_LONGER.name) {
         const parsed = TAKE_LONGER.inputSchema.safeParse(message.params?.arguments ?? {});
         if (!parsed.success) return reply(message.id, { isError: true, content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }] });
         try {
@@ -199,7 +213,7 @@ export const handle = httpAction(async (ctx, request) => {
           return toolError(message.id, error);
         }
       }
-      if (message.params?.name === LOOK_AT_SCREEN.name) {
+      if (!access.guest && message.params?.name === LOOK_AT_SCREEN.name) {
         const parsed = LOOK_AT_SCREEN.inputSchema.safeParse(message.params?.arguments ?? {});
         if (!parsed.success) return reply(message.id, { isError: true, content: [{ type: "text", text: `Invalid arguments: ${parsed.error.message}` }] });
         try {
@@ -243,7 +257,11 @@ export const handle = httpAction(async (ctx, request) => {
         // fromJob marks what a scheduled job's turn saves to memory as the job's.
         const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob, conversationId: access.conversationId } };
         const output = await bound.execute(parsed.data, { toolCallId: String(message.id), messages: [] });
-        if (READS_OUTSIDE.has(name)) {
+        // A chat with someone else, read from the owner's own, is what they wrote: outside, like a web page.
+        const theirs = (name === "read_chat" && await ctx.runQuery(internal.contacts.isTheirs, { chatId: String((parsed.data as { chatId?: string }).chatId ?? "") }))
+          // What someone told Perry about themselves is their word too.
+          || (name === "recall" && Boolean((output as { theySaid?: unknown[] } | null)?.theySaid?.length));
+        if (READS_OUTSIDE.has(name) || theirs) {
           await ctx.runMutation(internal.codex.markOutside, { turnId: access.turnId });
           return reply(message.id, { content: [{ type: "text", text: JSON.stringify({ untrusted: UNTRUSTED, result: withHint(output) ?? null }) }] });
         }

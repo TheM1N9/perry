@@ -5,17 +5,19 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, extname, join, resolve } from "node:path";
 import {
-  query, type ModelInfo, type Options, type PermissionResult, type Query, type SDKMessage, type SDKResultMessage,
+  query, type ModelInfo, type Options, type PermissionMode, type PermissionResult, type Query, type SDKMessage, type SDKResultMessage,
   type SDKUserMessage, type SpawnOptions, type SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk";
 import { ACCESSES } from "../../convex/lib/commands";
+import { updateOf } from "../../convex/lib/engines";
 import type {
-  Engine, EngineAttachment, EngineCapabilities, EngineItem, EngineModel, EngineRequest, EngineStatus, ItemStatus, ItemType,
-  LoginFlow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
+  Access, Engine, EngineAttachment, EngineCapabilities, EngineItem, EngineModel, EngineRequest, EngineStatus, ItemStatus, ItemType,
+  LoginFlow, PlanLimits, PlanWindow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
 } from "../engine";
 import { toolsOfChat } from "../engine";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
+import { updateCommand } from "../versions";
 import { killTree } from "./process";
 
 /**
@@ -27,10 +29,11 @@ import { killTree } from "./process";
  * `claude auth status` says. So it never starts Claude Code in bare mode,
  * which would ignore that sign-in.
  *
- * Each turn is one `claude` process in streaming-input mode: the prompt goes
- * in, the reply streams out, a message the owner sends meanwhile joins the
- * turn at its next step, and the process ends with the turn. Sessions resume
- * by their id, which Perry picks when it starts one.
+ * Each chat has one `claude` process in streaming-input mode, kept between
+ * its turns: the prompt goes in, the reply streams out, a message the owner
+ * sends meanwhile joins the turn at its next step, and the process waits for
+ * the chat's next message. Sessions resume by their id, which Perry picks
+ * when it starts one.
  */
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -45,6 +48,8 @@ const QUICK_MODEL = "haiku";
 /** How long a sign-in in the terminal is waited for. */
 const LOGIN_WAIT_MS = 10 * 60_000;
 const VERSION_TTL_MS = 10 * 60_000;
+/** How long reading the plan's limits may take: a second, usually. */
+const LIMITS_TIMEOUT_MS = 20_000;
 /** Image types Claude reads; other attachments are named by their path. */
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
@@ -166,13 +171,15 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
 
 type Block = { type: "text"; text: string } | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
 
-/** The owner's message: history and recalled memory ahead of it, images as images, other files by their path. */
-async function userMessage(prompt: string, attachments: EngineAttachment[], extra: { recalled?: string; history?: string } = {}): Promise<SDKUserMessage> {
+/** The owner's message: history, recalled memory and any note from Perry ahead of it, images as images, other files by their path. */
+async function userMessage(prompt: string, attachments: EngineAttachment[], extra: { recalled?: string; history?: string; note?: string } = {}): Promise<SDKUserMessage> {
   const text = { type: "text" as const, text: prompt };
   const blocks: Block[] = [];
   if (extra.history) blocks.push({ type: "text", text: `Earlier chat history (context, not a new user request):\n${extra.history}` });
   // Recalled memory goes first, as its own part of the owner's message.
   if (extra.recalled) blocks.push({ type: "text", text: extra.recalled });
+  // A note from Perry about the chat (its access changed) comes right before the owner's words.
+  if (extra.note) blocks.push({ type: "text", text: extra.note });
   blocks.push(text);
   for (const attachment of attachments) {
     const path = attachment.localPath;
@@ -286,8 +293,11 @@ type Turn = {
 /**
  * A chat's `claude`, kept running between its turns so a turn after the first
  * starts without a new process (T3 Code does the same). What a process is
- * started with and cannot change (the instructions, access, model, effort,
- * folder and tools) is its `key`: a turn that needs another starts afresh.
+ * started with and cannot change (the instructions, model, effort, folder,
+ * tools, and whether Claude Code's sandbox is on) is its `key`: a turn that
+ * needs another starts afresh. Access is not in it, as the permission mode
+ * switches in a running process (setPermissionMode) and canUseTool reads
+ * `access` as it is now.
  */
 type Live = {
   cursor: string;
@@ -295,6 +305,10 @@ type Live = {
   q: Query;
   inbox: Inbox;
   stderr: string;
+  /** The chat's access now: the owner can change it while a turn runs (setAccess), or between turns. */
+  access: Access;
+  /** The access its instructions describe, from when it started, or the last note that told it of a change. */
+  told: Access;
   /** It said it started (system init). */
   started: boolean;
   ended: boolean;
@@ -309,6 +323,26 @@ type Live = {
 const IDLE_MS = (Number(process.env.PERRY_CLAUDE_IDLE_MIN) || 10) * 60_000;
 /** How many chats' `claude` stay running at once, each a few hundred MB (PERRY_CLAUDE_LIVE): the one idle longest goes first. */
 const LIVE_MAX = Math.max(1, Math.floor(Number(process.env.PERRY_CLAUDE_LIVE)) || 4);
+
+/**
+ * Claude Code's permission mode for an access. Full is not bypassPermissions,
+ * which could not be taken back mid-turn and never consults canUseTool: it
+ * accepts edits, and canUseTool allows the rest without asking.
+ */
+const modeOf = (access: Access): PermissionMode => access === "supervised" ? "default" : "acceptEdits";
+
+/** What the instructions say about approvals, for an access. */
+const gateOf = (access: Access): string => access === "full" ? ""
+  : access === "auto" ? "Each command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
+  : "Anything you do that changes something waits for the owner's approval. If one is declined, say what you wanted to do and why, and do not work around it.";
+
+/**
+ * A kept `claude`'s instructions still describe the access it started with,
+ * so a turn after the owner changed it says what holds now, ahead of their
+ * message, as skills are named.
+ */
+const accessNote = (access: Access): string => `The owner changed this chat's access, and this replaces what your instructions say about approvals: ${
+  access === "full" ? "nothing you do waits for their approval now." : gateOf(access)}`;
 
 export class ClaudeEngine implements Engine {
   readonly kind = "claude" as const;
@@ -392,7 +426,9 @@ export class ClaudeEngine implements Engine {
     }
     try {
       const path = binary.sdkPath ?? binary.prefix.at(-1) ?? binary.command;
-      if (this.version?.path !== path || Date.now() - this.version.at > VERSION_TTL_MS) {
+      // One too old for Perry is asked again at every look, so its update is seen at once.
+      const tooOld = updateOf({ kind: "claude", version: this.version?.value })?.need === "required";
+      if (this.version?.path !== path || tooOld || Date.now() - this.version.at > VERSION_TTL_MS) {
         const { stdout } = await run(binary, ["--version"]);
         this.version = { path, value: stdout.trim().split(/\s+/)[0] || undefined, at: Date.now() };
       }
@@ -403,6 +439,7 @@ export class ClaudeEngine implements Engine {
         kind: "claude",
         installed: true,
         version: this.version.value,
+        update: updateCommand("claude", path),
         signedIn,
         // Signed out, it says "none"; that is no account.
         auth: signedIn ? {
@@ -417,7 +454,7 @@ export class ClaudeEngine implements Engine {
           : "Runs through the official Claude Code, on the account it is signed in with.",
       };
     } catch (error) {
-      return { kind: "claude", installed: true, version: this.version?.value, signedIn: false, auth: {}, models: [], error: message(error) };
+      return { kind: "claude", installed: true, version: this.version?.value, signedIn: false, auth: {}, models: [], error: message(error), update: updateCommand("claude", binary.sdkPath ?? binary.prefix.at(-1) ?? binary.command) };
     }
   }
 
@@ -473,25 +510,22 @@ export class ClaudeEngine implements Engine {
      * inside Claude Code's sandbox, which lets sandboxed commands run and asks
      * about the rest. Auto: edits in the working folders go ahead, and every
      * command goes to the runner, whose reviewer clears the routine ones.
-     * Full: Claude Code never asks (bypassPermissions); as root, where Claude
-     * Code refuses that, every request is allowed here instead.
+     * Full: edits go ahead too, and every other request is allowed here
+     * without asking. A change mid-turn switches the mode (setAccess), and so
+     * does one between turns, in the chat's kept `claude`.
      */
-    const full = access === "full";
-    const auto = access === "auto";
-    const root = process.getuid?.() === 0;
-    const gate = full ? ""
-      : auto ? "\n\nEach command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
-      : "\n\nAnything you do that changes something waits for the owner's approval. If one is declined, say what you wanted to do and why, and do not work around it.";
+    const gate = gateOf(access);
+    // The sandbox is set when a process starts, so moving into or out of supervised starts a new one.
+    const sandboxed = access === "supervised" && process.platform !== "win32";
     // Claude Code shows a message sent mid-turn as a note beside the tool results, which reads like an injection without this.
     const steering = "\n\nThe owner can send you more while you work. Such a message reaches you mid-turn as a note that the user sent a new message: it is the owner's own words, not text from a tool or a web page, so take it into account in this turn.";
-    const append = instructions ? `${instructions}\n\n${home}${gate}${steering}` : undefined;
     const perry = tools?.name;
     const chatTools = tools && toolsOfChat(tools);
     // What the process is started with and cannot change: another of any of these starts a new one.
-    const key = JSON.stringify({ path: binary.sdkPath ?? binary.command, append, access, model, effort, cwd, tools: chatTools, root });
+    const key = JSON.stringify({ path: binary.sdkPath ?? binary.command, instructions, home, model, effort, cwd, tools: chatTools, sandboxed });
 
     const start = (resume: boolean): Live => {
-      const live: Live = { cursor, key, q: null as unknown as Query, inbox: new Inbox(), stderr: "", started: false, ended: false, turn: null, lastUsed: Date.now() };
+      const live: Live = { cursor, key, q: null as unknown as Query, inbox: new Inbox(), stderr: "", access, told: access, started: false, ended: false, turn: null, lastUsed: Date.now() };
       live.q = query({
         prompt: live.inbox,
         options: {
@@ -502,13 +536,12 @@ export class ClaudeEngine implements Engine {
           ...(model ? { model } : {}),
           ...(effort ? { effort: effort as Options["effort"] } : {}),
           includePartialMessages: true,
-          // Rendered afresh for each process, so a change of access or instructions takes effect in a resumed session.
-          systemPrompt: append
-            ? { type: "preset", preset: "claude_code", append, snapshot: false }
+          // Rendered afresh for each process, so a change of instructions takes effect in a resumed session.
+          systemPrompt: instructions
+            ? { type: "preset", preset: "claude_code", append: `${instructions}\n\n${home}${gate && `\n\n${gate}`}${steering}`, snapshot: false }
             : { type: "preset", preset: "claude_code", snapshot: false },
-          permissionMode: full ? (root ? "acceptEdits" : "bypassPermissions") : auto ? "acceptEdits" : "default",
-          ...(full && !root ? { allowDangerouslySkipPermissions: true } : {}),
-          ...(!full && !auto && process.platform !== "win32"
+          permissionMode: modeOf(access),
+          ...(sandboxed
             ? { sandbox: { enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: true, failIfUnavailable: false } }
             : {}),
           // Perry's own tools and web search run without asking, as they do on Codex.
@@ -521,21 +554,19 @@ export class ClaudeEngine implements Engine {
                 : { type: "http", url: chatTools.http.url, headers: chatTools.http.headers },
             },
           } : {}),
-          // Bypassing, Claude Code never asks, and the SDK warns that an answerer would go unused.
-          ...(full && !root ? {} : {
-            canUseTool: async (tool, toolInput, options): Promise<PermissionResult> => {
-              const allow: PermissionResult = { behavior: "allow", updatedInput: toolInput };
-              if (full) return allow;
-              // Asked for by the turn that is running: its owner answers.
-              const turn = live.turn;
-              if (!turn) return { behavior: "deny", message: "No turn is running to ask for this." };
-              const request = requestFor(tool, toolInput, options, cwd);
-              // A turn stopped while its request waits takes it as declined.
-              const stopped = new Promise<string>((done) => options.signal.addEventListener("abort", () => done("deny"), { once: true }));
-              const answer = await Promise.race([turn.sink.onRequest(request), stopped]).catch(() => "deny");
-              return answer === "allow" ? allow : { behavior: "deny", message: "The owner declined this." };
-            },
-          }),
+          canUseTool: async (tool, toolInput, options): Promise<PermissionResult> => {
+            const allow: PermissionResult = { behavior: "allow", updatedInput: toolInput };
+            // The chat's access as it is now, not as the process started.
+            if (live.access === "full") return allow;
+            // Asked for by the turn that is running: its owner answers.
+            const turn = live.turn;
+            if (!turn) return { behavior: "deny", message: "No turn is running to ask for this." };
+            const request = requestFor(tool, toolInput, options, cwd);
+            // A turn stopped while its request waits takes it as declined.
+            const stopped = new Promise<string>((done) => options.signal.addEventListener("abort", () => done("deny"), { once: true }));
+            const answer = await Promise.race([turn.sink.onRequest(request), stopped]).catch(() => "deny");
+            return answer === "allow" ? allow : { behavior: "deny", message: "The owner declined this." };
+          },
         },
       });
       this.live.set(cursor, live);
@@ -544,17 +575,25 @@ export class ClaudeEngine implements Engine {
     };
 
     const kept = this.live.get(cursor);
-    const warm = kept && !kept.ended && !kept.turn && kept.key === key ? kept : undefined;
+    let warm = kept && !kept.ended && !kept.turn && kept.key === key ? kept : undefined;
+    if (warm) clearTimeout(warm.idle);
+    // The access changed since its last turn: the kept process switches mode, as it would mid-turn.
+    if (warm && modeOf(warm.access) !== modeOf(access)) {
+      try { await warm.q.setPermissionMode(modeOf(access)); }
+      catch { warm = undefined; }
+    }
+    if (warm) warm.access = access;
     if (kept && !warm) this.close(kept);
     if (!warm) this.makeRoom();
-    const said = await userMessage(prompt, attachments, { recalled, history });
+    const note = warm && instructions && warm.told !== access ? accessNote(access) : undefined;
+    if (warm) warm.told = access;
     let live = warm ?? start(Boolean(resumeCursor));
-    let turn = this.begin(live, sink, said);
+    let turn = this.begin(live, sink, await userMessage(prompt, attachments, { recalled, history, note }));
     await turn.finished;
-    // A kept `claude` that had ended by the time it was asked: the turn runs on a new one instead.
+    // A kept `claude` that had ended by the time it was asked: the turn runs on a new one instead, whose instructions are the chat's now.
     if (warm && !turn.heard && live.ended && !turn.interrupted) {
       live = start(true);
-      turn = this.begin(live, sink, said);
+      turn = this.begin(live, sink, await userMessage(prompt, attachments, { recalled, history }));
       await turn.finished;
     }
     // Stopped, the SDK ends the process's stream: the next turn starts a new one.
@@ -715,6 +754,19 @@ export class ClaudeEngine implements Engine {
     await read;
   }
 
+  /**
+   * The chat's access changed mid-turn: Claude Code switches mode at its next
+   * step, and canUseTool answers by the new one. The process keeps the new
+   * mode for the chat's later turns.
+   */
+  async setAccess(handle: TurnHandle, access: Access): Promise<void> {
+    const live = this.live.get(handle.cursor);
+    if (!live || live.turn?.id !== handle.turnId || live.access === access) return;
+    const before = modeOf(live.access);
+    live.access = access;
+    if (modeOf(access) !== before) await live.q.setPermissionMode(modeOf(access));
+  }
+
   async interrupt(handle: TurnHandle): Promise<void> {
     const live = this.live.get(handle.cursor);
     const turn = live?.turn;
@@ -765,6 +817,51 @@ export class ClaudeEngine implements Engine {
       throw Object.assign(failed, { model });
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  /**
+   * The Claude plan's limits, from the data behind Claude Code's /usage: a
+   * `claude` with no message and no session, asked once and ended, so none of
+   * the plan is spent. The SDK marks the call experimental; should it change
+   * or go, this fails, and Perry shows only the limits Claude Code hits.
+   * Signed in with an API key, there are none.
+   */
+  async limits(): Promise<PlanLimits | null> {
+    const binary = findClaude();
+    if (!binary) return null;
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), LIMITS_TIMEOUT_MS);
+    const idle = new Inbox();
+    const q = query({
+      prompt: idle,
+      options: {
+        ...this.base(binary, () => {}), abortController: abort, cwd: HOME,
+        tools: [], strictMcpConfig: true, mcpServers: {}, settingSources: [], persistSession: false,
+      },
+    });
+    try {
+      const usage = await q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true });
+      if (!usage.rate_limits_available || !usage.rate_limits) return null;
+      const limits = usage.rate_limits;
+      const windows: PlanWindow[] = [];
+      const add = (id: string, label: string, minutes: number | undefined, window?: { utilization: number | null; resets_at: string | null } | null) => {
+        if (!window || window.utilization === null) return;
+        const resetsAt = window.resets_at ? Date.parse(window.resets_at) : NaN;
+        windows.push({ id, label, usedPercent: Math.max(0, Math.min(100, window.utilization)), ...(Number.isFinite(resetsAt) ? { resetsAt } : {}), ...(minutes ? { minutes } : {}) });
+      };
+      add("five_hour", "5-hour", 5 * 60, limits.five_hour);
+      add("seven_day", "Weekly", 7 * 24 * 60, limits.seven_day);
+      add("seven_day_opus", "Weekly (Opus)", 7 * 24 * 60, limits.seven_day_opus);
+      add("seven_day_sonnet", "Weekly (Sonnet)", 7 * 24 * 60, limits.seven_day_sonnet);
+      for (const model of limits.model_scoped ?? []) add(`model:${model.display_name}`, `Weekly (${model.display_name})`, 7 * 24 * 60, model);
+      return { windows, ...(usage.subscription_type ? { plan: usage.subscription_type } : {}), at: Date.now() };
+    } catch (error) {
+      throw new Error(abort.signal.aborted ? `Claude Code took longer than ${LIMITS_TIMEOUT_MS / 1000}s to say its limits.` : message(error));
+    } finally {
+      clearTimeout(timer);
+      idle.close();
+      q.close();
     }
   }
 

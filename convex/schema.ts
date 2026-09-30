@@ -95,7 +95,25 @@ export const vEngineStatus = v.object({
   /** What to do next, such as "Run `grok login` on this computer". */
   message: v.optional(v.string()),
   error: v.optional(v.string()),
+  /** The newest release of the engine's CLI, as that computer last looked it up. */
+  latest: v.optional(v.string()),
+  /** The command that updates the CLI there, for the way it was installed. */
+  update: v.optional(v.string()),
 });
+/** An engine's plan limits, as it reports them (lib/usage.ts, PlanLimits). */
+export const vPlanLimits = v.object({
+  windows: v.array(v.object({
+    id: v.string(),
+    label: v.string(),
+    usedPercent: v.number(),
+    resetsAt: v.optional(v.number()),
+    minutes: v.optional(v.number()),
+  })),
+  plan: v.optional(v.string()),
+  at: v.number(),
+});
+/** The engine refused a turn for its plan's limit: when, and what it said (lib/usage.ts, LimitHit). */
+export const vLimitHit = v.object({ at: v.number(), message: v.string() });
 /** A sign-in or sign-out the owner asked for from Settings, until the runner has done it. */
 export const vEngineAuth = v.object({
   id: v.number(),
@@ -288,6 +306,8 @@ export default defineSchema({
     /** The Talk hotkey the pet holds, or why it could not take the one asked for (another app has it). */
     hotkey: v.optional(v.string()),
     hotkeyError: v.optional(v.string()),
+    /** Why the Talk keys can only be tapped, where holding them does not work (convex/lib/shortcuts.ts, holdProblem). */
+    hotkeyHold: v.optional(v.string()),
     /** The same for his other global shortcuts, by shortcut id (convex/lib/shortcuts.ts): Look. */
     keys: v.optional(v.record(v.string(), v.object({ hotkey: v.optional(v.string()), error: v.optional(v.string()) }))),
   }),
@@ -422,6 +442,8 @@ export default defineSchema({
     engines: v.optional(v.array(v.object({ ...vEngineStatus.fields, updatedAt: v.number() }))),
     /** Sign-ins and sign-outs asked for from Settings, by engine. */
     engineAuth: v.optional(v.record(v.string(), vEngineAuth)),
+    /** How much of each engine's plan is used, by engine, as this computer last read it (usage.ts). */
+    usage: v.optional(v.record(v.string(), v.object({ limits: v.optional(vPlanLimits), hit: v.optional(vLimitHit) }))),
     /**
      * Codex's state from before engines. Still written from Codex's entry in
      * `engines`, and read when a runner from before engines reports only these.
@@ -484,6 +506,38 @@ export default defineSchema({
    * One row per chat Assistant talks in. Holds the durable mode and the id of the
    * Agent component thread that carries the message history.
    */
+  /**
+   * The people and groups Perry may talk with besides the owner, on Telegram and WhatsApp
+   * (contacts.ts), and the ones it knows of: WhatsApp's address book and groups, and whoever wrote.
+   * Nobody is talked to until the owner allows them, once.
+   */
+  contacts: defineTable({
+    channel: v.union(v.literal("telegram"), v.literal("whatsapp")),
+    /** The chat: a WhatsApp jid (person or group) or a Telegram chat id. */
+    externalId: v.string(),
+    kind: v.union(v.literal("person"), v.literal("group")),
+    name: v.string(),
+    /** How they are told apart, whatever name they give: a phone number, or a Telegram @username and id. */
+    handle: v.optional(v.string()),
+    /**
+     * known: in the address book, never talked with. pending: asked the owner. allowed: Perry talks
+     * with them. blocked: the owner said no; nothing they send reaches Perry.
+     */
+    status: v.union(v.literal("known"), v.literal("pending"), v.literal("allowed"), v.literal("blocked")),
+    /** What the owner lets Perry know and share with them, in the owner's words. Nothing else of the owner's is. */
+    brief: v.optional(v.string()),
+    /** Messages that came while the owner was asked, answered once they allow it. */
+    waiting: v.optional(v.array(v.object({ text: v.string(), from: v.string(), at: v.number() }))),
+    /** When a chat with them last passed something on to the owner (tell_owner), for a limit per hour. */
+    told: v.optional(v.array(v.number())),
+    /** A group's latest messages, for context when Perry is mentioned there. */
+    recent: v.optional(v.array(v.object({ text: v.string(), from: v.string(), at: v.number() }))),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_channel_external", ["channel", "externalId"])
+    .index("by_status", ["status", "updatedAt"]),
+
   conversations: defineTable({
     channel: vChannel,
     externalId: v.string(), // telegram chat id, or a unique web session id
@@ -529,6 +583,11 @@ export default defineSchema({
     checkpointedAt: v.optional(v.number()),
     /** A project chat: what Perry remembers here stays here, out of every other chat (memories.conversationId). */
     project: v.optional(v.boolean()),
+    /**
+     * A chat with someone other than the owner (a person or a group, contacts.ts): sealed off from
+     * everything of the owner's, with its own memory and no computer, keys or accounts.
+     */
+    contactId: v.optional(v.id("contacts")),
     /**
      * Web messages sent and not yet in the chat's history: from sendChat until
      * the turn is queued (codex.enqueueTurn), or kept in the history when it
@@ -584,6 +643,16 @@ export default defineSchema({
     editedAt: v.optional(v.number()),
     /** The one chat it belongs to (a project chat's own memory), out of every other chat. Unset: everywhere. */
     conversationId: v.optional(v.id("conversations")),
+    /**
+     * Who it is about, besides the owner: names, as the owner calls them ("Datta", "Arjun"). What
+     * Settings → People shows for each person. Where it may be seen is still conversationId's to say.
+     */
+    about: v.optional(v.array(v.string())),
+    /**
+     * The to-do this note is the plan behind ("restock chicken on 29 Sep"). When the to-do moves, is ticked
+     * off, put back or deleted, the note is superseded by one that says so (memories.followTodo).
+     */
+    todoId: v.optional(v.id("todos")),
     /** Its meaning as a vector, for search by meaning (lib/embed.ts): base64 float32, and the model that made it. */
     vector: v.optional(v.string()),
     vectorModel: v.optional(v.string()),
@@ -591,6 +660,7 @@ export default defineSchema({
     .index("by_created", ["createdAt"])
     .index("by_kind", ["kind", "createdAt"])
     .index("by_day", ["day", "createdAt"])
+    .index("by_todo", ["todoId"])
     .searchIndex("search_text", { searchField: "text" }),
 
   /**
@@ -749,8 +819,14 @@ export default defineSchema({
   approvals: defineTable({
     runnerId: v.id("runners"),
     conversationId: v.optional(v.id("conversations")),
-    /** "browser": a step in Perry's own browser that buys, sends or posts (lib/browser.ts, tools.ts). */
-    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser")),
+    /**
+     * "browser": a step in Perry's own browser that buys, sends or posts (lib/browser.ts, tools.ts).
+     * "contact": someone new wrote to Perry, or added it to a group; "message": Perry wants to write to
+     * someone for the first time (contacts.ts). Allowing either lets Perry talk with them from then on.
+     */
+    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message")),
+    /** For "contact" and "message": who. */
+    contactId: v.optional(v.id("contacts")),
     title: v.string(),
     detail: v.optional(v.string()),
     cwd: v.optional(v.string()),
@@ -831,6 +907,8 @@ export default defineSchema({
     checkpoint: v.optional(v.boolean()),
     /** Its prompt is not the owner's (a greeting after the welcome page): only the reply is saved to the chat. */
     hidden: v.optional(v.boolean()),
+    /** In a chat with someone other than the owner: the runner gives the engine no shell, files or computer, only Perry's guest tools. */
+    guest: v.optional(v.boolean()),
     /** The engine's model id to run this turn with. Unset means the engine's default. */
     requestedModel: v.optional(v.string()),
     /** Reasoning effort for the turn. Unset leaves it to the engine, as before thinking levels. */

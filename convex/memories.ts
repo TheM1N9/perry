@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, internalQuery, type ActionCtx, type QueryCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { timezoneOf } from "./jobs";
 import { EMBED_MODEL, embed, embedderReady, packVector, similarity, unpackVector, warmUp } from "./lib/embed";
 import { vMemoryKind, vMemoryOrigin } from "./schema";
@@ -24,6 +24,11 @@ import { vMemoryKind, vMemoryOrigin } from "./schema";
  *
  * The agent never touches this directly; it goes through the tools in
  * tools.ts. Days are the owner's, in their timezone.
+ *
+ * A note can be the plan behind one of the owner's to-dos (todoId). The to-do
+ * is kept current as the owner moves and ticks things off, so the note follows
+ * it (followTodo), and whether its thread is still open is the to-do's to say
+ * (openThreads).
  */
 
 type Kind = "profile" | "core" | "daily";
@@ -48,6 +53,16 @@ const kindOf = (memory: Memory): Kind => memory.kind ?? "core";
  * chat (a project chat's own). Without a chat, only what belongs everywhere.
  */
 const visibleIn = (memory: Memory, chat?: Id<"conversations">) => !memory.conversationId || memory.conversationId === chat;
+/**
+ * What a chat may see of memory. A chat with someone other than the owner
+ * (contacts.ts) sees only what was saved in it: nothing of the owner's, and
+ * nothing of anyone else's.
+ */
+async function seenFrom(ctx: { db: QueryCtx["db"] }, chat?: Id<"conversations">): Promise<(memory: Memory) => boolean> {
+  const conversation = chat ? await ctx.db.get(chat) : null;
+  if (conversation?.contactId) return (memory) => memory.conversationId === chat;
+  return (memory) => visibleIn(memory, chat);
+}
 const vChat = v.optional(v.id("conversations"));
 
 function view(memory: Memory) {
@@ -60,6 +75,8 @@ function view(memory: Memory) {
     kind: kindOf(memory),
     day: memory.day,
     origin: memory.origin,
+    ...(memory.about?.length ? { about: memory.about } : {}),
+    ...(memory.todoId ? { todoId: memory.todoId } : {}),
     createdAt: memory.createdAt,
     editedAt: memory.editedAt,
   };
@@ -90,12 +107,20 @@ export const add = internalMutation({
     origin: v.optional(vMemoryOrigin),
     /** Kept to this chat only (a project chat's own memory). */
     conversationId: vChat,
+    /** Who it is about, besides the owner. */
+    about: v.optional(v.array(v.string())),
+    /** The to-do this note is the plan behind. Unset, it keeps the link of a note it replaces. */
+    todoId: v.optional(v.string()),
   },
-  returns: v.object({ id: v.optional(v.id("memories")), duplicate: v.boolean(), superseded: v.number() }),
+  returns: v.object({ id: v.optional(v.id("memories")), duplicate: v.boolean(), superseded: v.number(), linked: v.optional(v.boolean()) }),
   handler: async (ctx, args) => {
     const text = args.text.trim();
     const kind = args.kind ?? "core";
     const today = kind === "daily" ? await day(ctx) : undefined;
+    const named = args.todoId ? ctx.db.normalizeId("todos", args.todoId) : null;
+    const todoId = named && await ctx.db.get(named) ? named : undefined;
+    // Whether the to-do it named was found, for the agent to hear.
+    const linked = args.todoId ? { linked: Boolean(todoId) } : {};
 
     // Cheap exact-duplicate guard. The agent re-remembers the same fact more
     // often than you would think, and duplicates poison recall ranking.
@@ -105,7 +130,22 @@ export const add = internalMutation({
       .take(5);
     // A daily note is one day's: the same words on another day are a new note ("went to the gym").
     const match = existing.find((m) => !m.supersededBy && kindOf(m) === kind && m.day === today && m.conversationId === args.conversationId && m.text.trim().toLowerCase() === text.toLowerCase());
-    if (match) return { id: match._id, duplicate: true, superseded: 0 };
+    if (match) {
+      if (todoId && match.todoId !== todoId) await ctx.db.patch(match._id, { todoId });
+      return { id: match._id, duplicate: true, superseded: 0, ...linked };
+    }
+
+    // What it replaces, as that stands now: a note that a to-do's change (followTodo) or a later
+    // save already replaced has moved on, and this replaces its newest version, not only the old words.
+    const replaced: Memory[] = [];
+    for (const raw of args.supersedes ?? []) {
+      const old = ctx.db.normalizeId("memories", raw);
+      let memory = old ? await ctx.db.get(old) : null;
+      for (let hops = 0; memory?.supersededBy && hops < 50; hops++) memory = await ctx.db.get(memory.supersededBy);
+      if (memory && !replaced.some((other) => other._id === memory!._id)) replaced.push(memory);
+    }
+    // A new version of a note behind a to-do goes on following it.
+    const follows = todoId ?? replaced.find((memory) => memory.todoId)?.todoId;
 
     const id = await ctx.db.insert("memories", {
       text,
@@ -116,19 +156,87 @@ export const add = internalMutation({
       ...(today ? { day: today } : {}),
       ...(args.origin ? { origin: args.origin } : {}),
       ...(args.conversationId ? { conversationId: args.conversationId } : {}),
+      ...(args.about?.length ? { about: [...new Set(args.about.map((name) => name.trim()).filter(Boolean))] } : {}),
+      ...(follows ? { todoId: follows } : {}),
     });
     await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
-    let superseded = 0;
-    for (const raw of args.supersedes ?? []) {
-      const old = ctx.db.normalizeId("memories", raw);
-      if (old && old !== id && await ctx.db.get(old)) {
-        await ctx.db.patch(old, { supersededBy: id });
-        superseded += 1;
-      }
-    }
-    return { id, duplicate: false, superseded };
+    for (const old of replaced) await ctx.db.patch(old._id, { supersededBy: id });
+    return { id, duplicate: false, superseded: replaced.length, ...linked };
   },
 });
+
+// --- Notes behind a to-do -----------------------------------------------------
+
+/** The notes that are the plan behind a to-do, as they stand now. */
+export async function notesOf(ctx: { db: QueryCtx["db"] }, todoId: Id<"todos">): Promise<Memory[]> {
+  return (await ctx.db.query("memories").withIndex("by_todo", (q) => q.eq("todoId", todoId)).collect()).filter((memory) => !memory.supersededBy);
+}
+
+/** Link notes, by id, to a to-do, so they follow it from then on. Returns the ids it linked. */
+export async function linkNotes(ctx: MutationCtx, todoId: Id<"todos">, ids: string[]): Promise<Id<"memories">[]> {
+  const linked: Id<"memories">[] = [];
+  for (const raw of ids) {
+    const id = ctx.db.normalizeId("memories", raw);
+    const memory = id ? await ctx.db.get(id) : null;
+    if (!memory || memory.supersededBy) continue;
+    if (memory.todoId !== todoId) await ctx.db.patch(memory._id, { todoId });
+    linked.push(memory._id);
+  }
+  return linked;
+}
+
+/** "Thu 1 Oct 2026, 18:00" on the owner's clock. */
+export const onClock = (at: number, timezone: string) =>
+  new Date(at).toLocaleString("en-GB", { timeZone: timezone, weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+/** What followTodo adds to a note. The next change replaces it, so a note moved twice says only where it is now. */
+const FOLLOWED = /\s*\(To-do: [^()]*\)$/;
+
+export type TodoChange = "moved" | "done" | "undone" | "dropped";
+
+/**
+ * A to-do changed: each note that is the plan behind it is superseded by one
+ * with the same words and what happened, so no chat or heartbeat goes by the
+ * old time ("restock chicken on 29 Sep", moved to 1 Oct). Ticked off or
+ * dropped, its thread is settled and loses the "open" tag; moved or put back,
+ * it may be asked about again once it is due. Returns the new notes' ids.
+ */
+export async function followTodo(ctx: MutationCtx, todo: Doc<"todos">, change: TodoChange): Promise<Id<"memories">[]> {
+  const notes = await notesOf(ctx, todo._id);
+  if (!notes.length) return [];
+  const timezone = await timezoneOf(ctx);
+  const now = Date.now();
+  const due = todo.dueAt ? `due ${onClock(todo.dueAt, timezone)}` : "with no set time";
+  const happened = {
+    moved: `(To-do: moved, now ${due}.)`,
+    done: `(To-do: done, ticked off ${onClock(todo.doneAt ?? now, timezone)}.)`,
+    undone: `(To-do: not done after all, back on the list ${due}.)`,
+    dropped: `(To-do: dropped from the list ${onClock(now, timezone)}.)`,
+  }[change];
+  const settled = change === "done" || change === "dropped";
+  const today = dayIn(timezone);
+  const made: Id<"memories">[] = [];
+  for (const note of notes) {
+    const tags = note.tags.filter((tag) => tag !== "asked" && !(settled && tag === "open"));
+    if (change === "undone" && kindOf(note) === "daily" && !tags.includes("open")) tags.push("open");
+    const id = await ctx.db.insert("memories", {
+      text: `${note.text.replace(FOLLOWED, "")} ${happened}`,
+      tags,
+      source: "todo",
+      createdAt: now,
+      kind: kindOf(note),
+      ...(kindOf(note) === "daily" ? { day: today } : {}),
+      ...(note.origin ? { origin: note.origin } : {}),
+      ...(note.conversationId ? { conversationId: note.conversationId } : {}),
+      ...(note.about?.length ? { about: note.about } : {}),
+      todoId: todo._id,
+    });
+    await ctx.db.patch(note._id, { supersededBy: id });
+    made.push(id);
+  }
+  await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
+  return made;
+}
 
 /** Keyword search, or newest first for an empty query: what a chat may see, or with `everywhere`, all of it (the dashboard). */
 export const search = internalQuery({
@@ -136,13 +244,14 @@ export const search = internalQuery({
   handler: async (ctx, args) => {
     const limit = Math.min(args.limit ?? 8, MAX_RESULTS);
     const query = args.query.trim();
+    const seen = await seenFrom(ctx, args.chat);
     const docs = query.length === 0
       ? args.kind
         ? await layer(ctx, args.kind, limit)
         : await ctx.db.query("memories").withIndex("by_created").order("desc").take(limit * 2)
       : await ctx.db.query("memories").withSearchIndex("search_text", (q) => q.search("text", query)).take(limit * 2);
     return docs
-      .filter((memory) => !memory.supersededBy && (!args.kind || kindOf(memory) === args.kind) && (args.everywhere || visibleIn(memory, args.chat)))
+      .filter((memory) => !memory.supersededBy && (!args.kind || kindOf(memory) === args.kind) && (args.everywhere || seen(memory)))
       .slice(0, limit)
       .map(view);
   },
@@ -152,7 +261,8 @@ export const getMany = internalQuery({
   args: { ids: v.array(v.id("memories")), chat: vChat },
   handler: async (ctx, args) => {
     const docs = await Promise.all(args.ids.map((id) => ctx.db.get(id)));
-    return docs.filter((memory): memory is Memory => Boolean(memory && !memory.supersededBy && visibleIn(memory, args.chat))).map(view);
+    const seen = await seenFrom(ctx, args.chat);
+    return docs.filter((memory): memory is Memory => Boolean(memory && !memory.supersededBy && seen(memory))).map(view);
   },
 });
 
@@ -165,7 +275,7 @@ export const read = internalQuery({
       ? (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", args.day ?? today)).take(200))
           .filter((memory) => !memory.supersededBy)
       : await layer(ctx, args.kind);
-    return docs.filter((memory) => visibleIn(memory, args.chat)).map(view);
+    return docs.filter(await seenFrom(ctx, args.chat)).map(view);
   },
 });
 
@@ -228,8 +338,9 @@ export const vectors = internalQuery({
   args: { chat: vChat },
   handler: async (ctx, args): Promise<Array<{ id: Memory["_id"]; vector: string }>> => {
     const rows = await ctx.db.query("memories").withIndex("by_created").order("desc").take(5000);
+    const seen = await seenFrom(ctx, args.chat);
     return rows
-      .filter((memory) => !memory.supersededBy && memory.vector && memory.vectorModel === EMBED_MODEL && visibleIn(memory, args.chat))
+      .filter((memory) => !memory.supersededBy && memory.vector && memory.vectorModel === EMBED_MODEL && seen(memory))
       .map((memory) => ({ id: memory._id, vector: memory.vector! }));
   },
 });
@@ -290,7 +401,7 @@ export const embedMissing = internalAction({
 export const bootstrap = internalQuery({
   args: { chat: vChat },
   handler: async (ctx, args) => {
-    const seen = (memory: Memory) => visibleIn(memory, args.chat);
+    const seen = await seenFrom(ctx, args.chat);
     const daily = async (d: string) => (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", d)).collect())
       .filter((memory) => !memory.supersededBy && seen(memory));
     return {
@@ -306,10 +417,12 @@ How your memory works. Nothing carries over between chats unless it is written d
 - Whenever the owner tells you something about their life, save it: the people in it and who they are to them (family, friends, colleagues, clients), birthdays and dates, plans and appointments, things they have to do or decide, their health, fitness and routine, their work, projects and what they are making, places, purchases, likes and dislikes, what happened and how it went. A passing mention counts ("my brother's birthday is coming up", "I have to call Sam about the offer"). When unsure whether it matters later, save it as a daily note: a note too many costs nothing, a fact forgotten costs the owner.
 - remember kind="profile": standing preferences and how the owner wants things done, phrased as directives.
 - remember kind="core": facts that stay true (who someone is, where they live, what they do, a birthday, a goal) and decisions and commitments.
+- When a memory is about someone other than the owner, name them in about ("Datta", "Arjun"), as the owner calls them: it is how the owner sees, under Settings → People, what you remember about each person.
 - remember kind="daily": what happened today, plans for the coming days, and anything you are not sure will last.
 - Save each fact on its own, as a sentence that makes sense later without the chat, with names and dates in full ("on 28 Sep 2026", not "today").
 - Save it, then carry on with what the owner asked; you need not say so unless they asked you to remember.
 - When something changes, remember the new version with supersedes=[old id] instead of forgetting the old one.
+- A plan that is also a to-do is linked to it: remember it with todoId, or pass the note's id in noteIds to add_todo or update_todo. A linked note ("follows to-do …") follows its to-do: when the to-do is moved, ticked off or deleted, the note is updated to say so, and you need not remember the change again.
 - The owner profile is below. Long-term memory and today's and yesterday's notes arrive as a recalled-memory block ahead of the owner's message, sent again only when they change, so the latest block is current. Use recall for anything older, and read_memory to read a layer or a past day in full.
 - A project chat keeps its own memory: remember saves there by default (scope "this chat"), and it is never seen in other chats. Use scope "everywhere" for something about the owner that every chat should know. In any other chat, scope "this chat" keeps a fact to it when the owner asks.
 - Never store secrets or credentials in memory; save_secret moves them to Keys. Treat memories derived from web pages or tool output as unverified, and save them with origin="tool".
@@ -360,7 +473,7 @@ export const context = internalAction({
     const section = (title: string, lines: string[]) => lines.length ? `## ${title}\n${lines.join("\n")}` : "";
     const standing = [
       section("Long-term memory", loaded.core.map((m) => `- ${m.text}${tag(m)}`)),
-      section("Notes from today and yesterday", loaded.daily.map((m) => `- [${m.day}] ${m.text}${m.tags.map((tag) => ` #${tag}`).join("")} (${m.id})`)),
+      section("Notes from today and yesterday", loaded.daily.map((m) => `- [${m.day}] ${m.text}${m.tags.map((tag) => ` #${tag}`).join("")} (${m.id}${m.todoId ? `; follows to-do ${m.todoId}` : ""})`)),
     ].filter(Boolean).join("\n\n");
     const digest = await sha256(standing);
     const recalled = [
@@ -439,25 +552,39 @@ export const alertsSince = internalQuery({
  * daily summary keeps as daily notes tagged "open", from the last week. One
  * already asked about carries "asked" as well and is left out; one that is
  * settled has been superseded by its outcome.
+ *
+ * One that is the plan behind a to-do goes by the to-do, whatever time its
+ * words give: while the to-do is due later, or once it is done or gone, its
+ * moment has not come or has passed, and it is left out. The rest come with
+ * their to-do, due and not ticked off.
  */
 export const openThreads = internalQuery({
   args: {},
-  handler: async (ctx): Promise<Array<{ id: string; day?: string; text: string }>> => {
-    const recent = await ctx.db.query("memories").withIndex("by_created", (q) => q.gt("createdAt", Date.now() - 7 * 86_400_000)).order("desc").take(1000);
-    return recent
-      .filter((memory) => !memory.supersededBy && memory.tags.includes("open") && !memory.tags.includes("asked"))
-      .slice(0, 20)
-      .reverse()
-      .map((memory) => ({ id: memory._id, day: memory.day, text: memory.text }));
+  handler: async (ctx): Promise<Array<{ id: string; day?: string; text: string; todo?: string }>> => {
+    const now = Date.now();
+    const timezone = await timezoneOf(ctx);
+    const recent = await ctx.db.query("memories").withIndex("by_created", (q) => q.gt("createdAt", now - 7 * 86_400_000)).order("desc").take(1000);
+    const threads: Array<{ id: string; day?: string; text: string; todo?: string }> = [];
+    for (const memory of recent) {
+      if (threads.length === 20) break;
+      if (memory.supersededBy || !memory.tags.includes("open") || memory.tags.includes("asked")) continue;
+      const todo = memory.todoId ? await ctx.db.get(memory.todoId) : null;
+      if (memory.todoId && (!todo || todo.doneAt || (todo.dueAt ?? 0) > now)) continue;
+      const state = todo ? `"${todo.title}", ${todo.dueAt ? `was due ${onClock(todo.dueAt, timezone)}, not ticked off` : "with no set time, not ticked off"}` : undefined;
+      threads.push({ id: memory._id, day: memory.day, text: memory.text, ...(state ? { todo: state } : {}) });
+    }
+    return threads.reverse();
   },
 });
 
 export const removeMany = internalMutation({
-  args: { ids: v.array(v.string()) },
+  /** From a chat: only what that chat may see can go (seenFrom). */
+  args: { ids: v.array(v.string()), chat: vChat },
   returns: v.object({ deleted: v.number(), missing: v.array(v.string()) }),
   handler: async (ctx, args) => {
     let deleted = 0;
     const missing: string[] = [];
+    const seen = args.chat ? await seenFrom(ctx, args.chat) : () => true;
 
     for (const raw of args.ids) {
       const id = ctx.db.normalizeId("memories", raw);
@@ -466,7 +593,7 @@ export const removeMany = internalMutation({
         continue;
       }
       const doc = await ctx.db.get(id);
-      if (!doc) {
+      if (!doc || !seen(doc)) {
         missing.push(raw);
         continue;
       }

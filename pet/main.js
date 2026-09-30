@@ -5,7 +5,7 @@
  * except where the page says there is something to click; it sits in a
  * corner of the screen and goes where it is dragged; dragged onto the circle
  * that appears at the bottom middle of the screen, he hides. A tray icon
- * shows, hides, and quits it.
+ * shows, hides, restarts and quits it.
  *
  * `perry pet` installs Electron here (pnpm, in this folder), starts this, and
  * has it start at login; `perry pet off` stops both. Everything the pet knows
@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, readFileSync, watchFile, writeFileSync } from "n
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { capture, lookKey } from "./look.js";
+import { SCREEN_RECORDING_SETTINGS, capture, lookKey } from "./look.js";
 import { DEFAULT_HOTKEY, hotkeys, transcribe, warmUp } from "./voice.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -155,11 +155,27 @@ if (!app.requestSingleInstanceLock({ argv })) {
     win?.webContents.send("pet:voice", type);
   };
 
+  /**
+   * A picture of the window the owner is in and of the screen (look.js), for
+   * the owner (`byOwner`: the Look hotkey, his chat's button) or for Perry. While
+   * macOS does not allow it, the first time is macOS's own question; after
+   * that, the owner asking opens System Settings where they allow it. Whether
+   * it has asked is kept in pet.json: macOS tells an app only yes or no.
+   */
+  const shoot = async (byOwner) => {
+    const [x, y] = win.getPosition();
+    const shot = await capture([win, dismiss], { x: x + SIZE.width - BODY.width / 2, y: y + SIZE.height - BODY.height / 2 }).catch((error) => ({ error: String(error) }));
+    if (shot.needs === "screen-recording") {
+      if (!readState().screenRecordingAsked) saveState({ screenRecordingAsked: true });
+      else if (byOwner) void shell.openExternal(SCREEN_RECORDING_SETTINGS);
+    }
+    return shot;
+  };
+
   /** A picture of the window the owner is in and of the screen, into his chat to ask about; he comes up, ready for the question. */
   const lookNow = async () => {
     if (!win) return;
-    const [x, y] = win.getPosition();
-    const shot = await capture([win, dismiss], { x: x + SIZE.width - BODY.width / 2, y: y + SIZE.height - BODY.height / 2 }).catch((error) => ({ error: String(error) }));
+    const shot = await shoot(true);
     show();
     win.webContents.send("pet:look", shot);
     win.focus();
@@ -204,7 +220,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
       } },
       { type: "separator" },
       voice?.current()
-        ? { label: `Talk to him (${voice.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})`, click: () => voiceTo("start") }
+        ? { label: `Talk to him (${voice.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})`, click: () => voice.start() }
         : { label: "Talk to him: his keys are taken by another app", enabled: false },
       { label: `Show him the screen${look?.current() ? ` (${look.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})` : ""}`, click: () => void lookNow() },
       { label: "Keyboard shortcuts…", click: () => openDashboard("/settings?tab=shortcuts") },
@@ -215,6 +231,8 @@ if (!app.requestSingleInstanceLock({ argv })) {
         saveState({ x: undefined, y: undefined });
       } },
       { type: "separator" },
+      // Starting again is what a permission given on a Mac (Screen Recording, for looking at the screen) needs.
+      { label: "Restart", click: () => startAgain(1) },
       { label: "Quit", click: () => app.quit() },
     ]));
   }
@@ -374,20 +392,18 @@ if (!app.requestSingleInstanceLock({ argv })) {
       hotkeyError = result.error ?? null;
       if (result.hotkey) saveState({ hotkey: result.hotkey });
       refreshMenu();
-      return { hotkey: voice.current(), error: hotkeyError };
+      return standing();
     };
-    // The page asks for the keys the dashboard has; he answers with the ones he holds, and why not, if not.
-    ipcMain.handle("pet:hotkey", () => ({ hotkey: voice.current(), error: hotkeyError }));
-    ipcMain.handle("pet:set-hotkey", (_event, accelerator) => typeof accelerator === "string" ? take(accelerator) : { hotkey: voice.current(), error: hotkeyError });
+    // The page asks for the keys the dashboard has; he answers with the ones he holds, and why not, if not; and why only tapping works, if so.
+    const standing = () => ({ hotkey: voice.current(), error: hotkeyError, hold: voice.hold() });
+    ipcMain.handle("pet:hotkey", standing);
+    ipcMain.handle("pet:set-hotkey", (_event, accelerator) => typeof accelerator === "string" ? take(accelerator) : standing());
     const saved = readState().hotkey ?? process.env.PERRY_PET_HOTKEY ?? DEFAULT_HOTKEY;
     if (take(saved).error && saved !== DEFAULT_HOTKEY) take(DEFAULT_HOTKEY);
     warmUp(MODELS);
     ipcMain.on("pet:open", (_event, path) => openDashboard(path));
-    // Looking at the screen: his chat's button asks for the picture; the Look hotkey sends it to the page.
-    ipcMain.handle("pet:look", async () => {
-      const [x, y] = win.getPosition();
-      return await capture([win, dismiss], { x: x + SIZE.width - BODY.width / 2, y: y + SIZE.height - BODY.height / 2 }).catch((error) => ({ error: String(error) }));
-    });
+    // Looking at the screen: his chat's button and Perry's look_at_screen ask for the picture; the Look hotkey sends it to the page.
+    ipcMain.handle("pet:look", async (_event, byOwner) => await shoot(byOwner === true));
     look = lookKey(() => void lookNow());
     ipcMain.handle("pet:set-look-hotkey", (_event, accelerator) => {
       if (typeof accelerator === "string") {

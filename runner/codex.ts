@@ -4,7 +4,7 @@ import { readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { createInterface } from "node:readline";
-import type { GeneratedImage } from "./engine";
+import type { GeneratedImage, NamedSkill } from "./engine";
 import { killTree, spawnEngine } from "./engines/process";
 import { PATHS } from "./home";
 
@@ -83,6 +83,14 @@ export type TokenUsage = {
 /** thread/tokenUsage/updated: the thread's running total, and the latest model response's share. */
 export type TokenUsageEvent = { threadId: string; turnId: string; tokenUsage: { total: TokenUsage; last: TokenUsage; modelContextWindow?: number | null } };
 
+/** RateLimitWindow: resetsAt is in seconds. */
+export type RateLimitWindow = { usedPercent: number; windowDurationMins?: number | null; resetsAt?: number | null };
+/** RateLimitSnapshot: one bucket of the plan's limits ("codex", or a model's own), its 5-hour (primary) and weekly (secondary) windows. */
+export type RateLimitSnapshot = {
+  limitId?: string | null; limitName?: string | null; normalModelSlug?: string | null;
+  primary?: RateLimitWindow | null; secondary?: RateLimitWindow | null; planType?: string | null;
+};
+
 /** `compacted`: Codex compacted the thread's context during the turn (a contextCompaction item). */
 export type TurnOutput = { text: string; images: GeneratedImage[]; interrupted?: boolean; compacted?: boolean };
 
@@ -94,8 +102,13 @@ export class TurnFailed extends Error {
 }
 export type CodexAttachment = { url?: string; localPath?: string; fileName: string; contentType?: string };
 export type CodexModel = { id: string; name: string; isDefault: boolean; efforts: string[]; defaultEffort?: string };
-/** A message as Codex input: its text, images inline, other files named by where they are. */
-export function userInput(prompt: string, attachments: CodexAttachment[], recalled?: string): object[] {
+/**
+ * A message as Codex input: its text, images inline, other files named by
+ * where they are, and each skill it names as a `skill` item, which has Codex
+ * put that SKILL.md in front of the model with the message. (Codex also finds
+ * a "$name" in the text on its own, and uses a skill named both ways once.)
+ */
+export function userInput(prompt: string, attachments: CodexAttachment[], recalled?: string, skills: NamedSkill[] = []): object[] {
   const text = { type: "text", text: prompt, text_elements: [] };
   // Recalled memory goes first, as its own part of the owner's message.
   const input: object[] = recalled ? [{ type: "text", text: recalled, text_elements: [] }, text] : [text];
@@ -108,6 +121,7 @@ export function userInput(prompt: string, attachments: CodexAttachment[], recall
       text.text += `\nAttached file: ${attachment.fileName} (${path ?? attachment.url})`;
     }
   }
+  for (const skill of skills) input.push({ type: "skill", name: skill.name, path: skill.path });
   return input;
 }
 
@@ -152,6 +166,9 @@ export class CodexAppServer extends EventEmitter {
   closed = false;
   /** The CLI's version, from the userAgent initialize answers with. */
   version?: string;
+  /** The plan's limits by bucket, from the last read and the updates Codex sent since; and when they last changed. */
+  readonly rateLimits = new Map<string, RateLimitSnapshot>();
+  rateLimitsAt = 0;
 
   /** What a file-change item is about to change, for its approval request. */
   changesFor(itemId?: string): FileChange[] {
@@ -196,6 +213,14 @@ export class CodexAppServer extends EventEmitter {
         }
         if (message.method === "turn/completed" && params.turn?.id) {
           this.completedTurns.set(params.turn.id, params as TurnEvent);
+        }
+        // A rolling update is sparse: what it leaves out keeps its last value.
+        if (message.method === "account/rateLimits/updated" && params.rateLimits) {
+          const update = params.rateLimits as RateLimitSnapshot;
+          const id = update.limitId ?? "codex";
+          const kept = this.rateLimits.get(id) ?? {};
+          this.rateLimits.set(id, { ...kept, ...Object.fromEntries(Object.entries(update).filter(([, value]) => value !== null && value !== undefined)) });
+          this.rateLimitsAt = Date.now();
         }
         // Codex can report a thread's usage again without a new model response,
         // such as when rate limits change. Only a changed total is new usage.
@@ -270,6 +295,21 @@ export class CodexAppServer extends EventEmitter {
       planType: account?.type === "chatgpt" ? account.planType ?? undefined : undefined,
       email: account?.type === "chatgpt" ? account.email ?? undefined : undefined,
     };
+  }
+
+  /**
+   * Read the plan's limits afresh. It spends nothing; the details of limit
+   * resets the owner could buy are skipped, as for Codex's own background reads.
+   */
+  async readRateLimits(): Promise<void> {
+    const result = await this.request<{ rateLimits?: RateLimitSnapshot; rateLimitsByLimitId?: Record<string, RateLimitSnapshot | undefined> | null }>(
+      "account/rateLimits/read", { excludeResetCreditDetails: true });
+    const buckets = result.rateLimitsByLimitId
+      ? Object.entries(result.rateLimitsByLimitId).flatMap(([id, bucket]) => bucket ? [[id, bucket] as const] : [])
+      : result.rateLimits ? [[result.rateLimits.limitId ?? "codex", result.rateLimits] as const] : [];
+    this.rateLimits.clear();
+    for (const [id, bucket] of buckets) this.rateLimits.set(id, bucket);
+    this.rateLimitsAt = Date.now();
   }
 
   /** The account's models, each with the reasoning efforts turn/start takes for it (a chat's thinking level). */
@@ -422,8 +462,8 @@ export class CodexAppServer extends EventEmitter {
    * carries on in the same turn. Fails with "no active turn to steer" once the
    * turn has ended, and when expectedTurnId is no longer the active turn.
    */
-  steer(threadId: string, turnId: string, prompt: string, attachments: CodexAttachment[] = []): Promise<unknown> {
-    return this.request("turn/steer", { threadId, expectedTurnId: turnId, input: userInput(prompt, attachments) }, 30_000);
+  steer(threadId: string, turnId: string, prompt: string, attachments: CodexAttachment[] = [], skills: NamedSkill[] = []): Promise<unknown> {
+    return this.request("turn/steer", { threadId, expectedTurnId: turnId, input: userInput(prompt, attachments, undefined, skills) }, 30_000);
   }
 
   /**

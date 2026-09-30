@@ -11,7 +11,9 @@ import { perry, sleep } from "../engine-acp/harness";
 //      go to the same process, sooner, and it remembers the first.
 //   2. A message sent while a turn runs joins it (steering), on a kept process.
 //   3. A stopped turn: the next message still gets its answer.
-//   4. The chat's access changes: its next turn runs on a new process.
+//   4. The chat's access changes (Full to Auto): its next turn runs on the same
+//      process, switched to the new mode (#147). Its model changes: the next
+//      turn runs on a new process.
 //   5. Left alone, the chat's process is closed (PERRY_CLAUDE_IDLE_MIN, short here).
 //
 // Ways it could fail, written down before the checks:
@@ -20,8 +22,9 @@ import { perry, sleep } from "../engine-acp/harness";
 //      another turn (a reply shows up a turn late, or twice).
 //   3. A message sent mid-turn is dropped, or answered as a turn of its own.
 //   4. After a stop the kept process is broken, and the next message fails.
-//   5. A change the process was started with (access) is ignored: the kept
-//      process goes on with the old one.
+//   5. A change the process was started with (the model) is ignored: the kept
+//      process goes on with the old one. Or one it can switch (access) starts
+//      a new process for nothing.
 //   6. A kept process is never closed, and they pile up.
 
 const [outDir] = process.argv.slice(2);
@@ -107,15 +110,20 @@ try {
   const afterStop = await ask("This is an automated test. Reply with the single word AGAIN.");
   check("aStoppedTurnLeavesTheChatWorking", wasStopped && /AGAIN/i.test(afterStop.reply), { stopped: wasStopped, reply: afterStop.reply, pids: afterStop.pids });
 
-  // 4. Another access: a new process.
+  // 4. Another access: the same process, switched. Another model: a new one.
   const before = afterStop.pids;
   await call("dashboard:setChatAccess", { key: KEY, id: chat, access: "auto" });
   const changed = await ask("This is an automated test. Reply with the single word CHANGED.");
+  check("aChangedAccessKeepsTheProcess", /CHANGED/i.test(changed.reply) && changed.pids.length > 0 && changed.pids.every((pid) => before.includes(pid)), { before, after: changed.pids });
+  const other = options.models.find((item) => item.engine === "claude" && item.id !== model)?.id;
+  if (!other) throw new Error("no second Claude Code model offered");
+  await call("dashboard:setChatModel", { key: KEY, id: chat, model: other, engine: "claude" });
+  const remodelled = await ask("This is an automated test. Reply with the single word MODEL.");
   // The old one is closed as the new one starts, and may take a moment to exit.
-  const fresh = changed.pids.filter((pid) => !before.includes(pid));
+  const fresh = remodelled.pids.filter((pid) => !before.includes(pid));
   let oldGone = false;
   for (let i = 0; i < 30 && !oldGone; i++) { oldGone = !claudes(runner.pid!).some((pid) => before.includes(pid)); if (!oldGone) await sleep(500); }
-  check("aChangedAccessStartsANewProcess", /CHANGED/i.test(changed.reply) && fresh.length > 0 && oldGone, { before, after: changed.pids, oldGone });
+  check("aChangedModelStartsANewProcess", /MODEL/i.test(remodelled.reply) && fresh.length > 0 && oldGone, { model: other, before, after: remodelled.pids, oldGone });
 
   // 5. Left alone, it is closed.
   const idle = fresh;

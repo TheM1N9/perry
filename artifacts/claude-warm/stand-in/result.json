@@ -1,0 +1,157 @@
+{
+  "ranAt": "2026-09-30T05:24:42.237Z",
+  "platform": "win32",
+  "runtime": "node v24.3.0",
+  "stand_in": "artifacts/claude-warm/fake-claude.js",
+  "passed": "16 of 16",
+  "checks": {
+    "laterTurnsUseTheSameProcess": true,
+    "itRemembersTheFirstTurn": true,
+    "skillsFolderIsAmongItsDirectories": true,
+    "aMessageMidTurnJoinsIt": true,
+    "askThenFullMidReplyGoesAhead": true,
+    "theNextTurnKeepsTheProcessAndIsTold": true,
+    "fullThenAskMidReplyAsks": true,
+    "aChangeBetweenTurnsSwitchesTheKeptProcess": true,
+    "accessNeverRestartedIt": true,
+    "aChangedModelStartsANewProcess": true,
+    "changedInstructionsStartANewProcess": true,
+    "aStoppedTurnLeavesTheChatWorking": true,
+    "tooManyCloseTheIdlest": true,
+    "anIdleProcessIsClosed": true,
+    "limitsAreRead": true,
+    "aCliTooOldIsSeen": true
+  },
+  "notes": {
+    "laterTurnsUseTheSameProcess": {
+      "pids": [
+        45368,
+        45368,
+        45368
+      ],
+      "starts": 1
+    },
+    "itRemembersTheFirstTurn": [
+      "NOTED",
+      "7481",
+      "OK"
+    ],
+    "skillsFolderIsAmongItsDirectories": [
+      "W:\\perry-tests\\claude-warm\\run-1790745841214\\perry\\files",
+      "W:\\perry-tests\\claude-warm\\run-1790745841214\\perry\\skills",
+      "W:\\perry-tests\\claude-warm\\run-1790745841214\\perry\\uploads"
+    ],
+    "aMessageMidTurnJoinsIt": {
+      "reply": "PEAR BANANA",
+      "pid": 45368
+    },
+    "askThenFullMidReplyGoesAhead": {
+      "askedOwner": [
+        "Write"
+      ],
+      "reply": "Write:allow Write:mode Bash:allow",
+      "steps": [
+        "Write:allow@default",
+        "Write:mode@acceptEdits",
+        "Bash:allow@acceptEdits"
+      ],
+      "pid": 45368
+    },
+    "theNextTurnKeepsTheProcessAndIsTold": {
+      "pid": 45368,
+      "blocks": [
+        "The owner changed this chat's access, and this replaces what your instructions say about approvals: nothing you do waits for their approval now.",
+        "SAY STILL"
+      ]
+    },
+    "fullThenAskMidReplyAsks": {
+      "askedOwner": [
+        "Write",
+        "Bash"
+      ],
+      "reply": "Write:mode Write:deny Bash:deny",
+      "steps": [
+        "Write:mode@acceptEdits",
+        "Write:deny@default",
+        "Bash:deny@default"
+      ],
+      "pid": 45368
+    },
+    "aChangeBetweenTurnsSwitchesTheKeptProcess": {
+      "askedOwner": [
+        "Bash"
+      ],
+      "reply": "Write:mode Write:mode Bash:allow",
+      "note": "The owner changed this chat's access, and this replaces what your instructions say about approvals: Each command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it.",
+      "laterNote": false
+    },
+    "accessNeverRestartedIt": {
+      "starts": 1
+    },
+    "aChangedModelStartsANewProcess": {
+      "pid": 32076,
+      "reply": "7481",
+      "start": {
+        "resumed": true,
+        "model": "stand-in-b",
+        "mode": "acceptEdits"
+      },
+      "oldGone": true
+    },
+    "changedInstructionsStartANewProcess": {
+      "pid": 46800,
+      "appendStarts": "You are Perry (stand-in instructions two).\n\nYour own folder "
+    },
+    "aStoppedTurnLeavesTheChatWorking": {
+      "stopped": "interrupted",
+      "again": "7481",
+      "pids": [
+        46800,
+        47440
+      ]
+    },
+    "tooManyCloseTheIdlest": {
+      "a": [
+        47440,
+        false
+      ],
+      "b": [
+        30820,
+        true
+      ],
+      "c": [
+        29072,
+        true
+      ]
+    },
+    "anIdleProcessIsClosed": {
+      "closedWithin": "15 s idle + 15 s"
+    },
+    "limitsAreRead": {
+      "windows": [
+        {
+          "id": "five_hour",
+          "label": "5-hour",
+          "usedPercent": 42,
+          "resetsAt": 1790749482060,
+          "minutes": 300
+        },
+        {
+          "id": "seven_day",
+          "label": "Weekly",
+          "usedPercent": 7,
+          "resetsAt": 1790749482060,
+          "minutes": 10080
+        }
+      ],
+      "plan": "max",
+      "at": 1790745882061
+    },
+    "aCliTooOldIsSeen": {
+      "version": "2.0.0",
+      "need": "required",
+      "update": "claude update"
+    },
+    "processesStarted": 7
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "ranAt": "2026-09-29T15:33:34.687Z",
+  "engines": [
+    "codex",
+    "claude"
+  ],
+  "checks": {
+    "reviewerDefersToAsk": true,
+    "fullReleasesWaiting": true,
+    "accessSaysAtOnce": true,
+    "codexFullThenAskAsks": true,
+    "codexAskThenFullRuns": true,
+    "codexFullNeverAsks": true,
+    "claudeFullThenAskAsks": true,
+    "claudeAskThenFullRuns": true,
+    "claudeFullNeverAsks": true,
+    "runnerToldEngine": true
+  },
+  "notes": {
+    "reviewer": {
+      "next": "review",
+      "cleared": false,
+      "row": [
+        "pending/-: Write-Output e2e-review"
+      ]
+    },
+    "released": [
+      "auto/trust: Write-Output e2e-review"
+    ],
+    "accessAnswers": [
+      "This chat is on Full access.\n\n  ask   Works in its sandbox and asks you before anything beyond it.\n  auto  A reviewer checks each command before it runs: routine ones go ahead on their own, risky ones come to you.\n• full  No sandbox, and it never asks. It can change anything your account can.\n\nSwitch with /access ask, /access auto or /access full. It applies at once, to a reply already running too.",
+      "This chat is on Ask: Works in its sandbox and asks you before anything beyond it. It applies at once, to a reply already running too."
+    ],
+    "codexFullThenAsk": {
+      "asked": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Write-Output step-two-ran | Out-File -FilePath step-two.txt; Get-Content step-two.txt'"
+      ],
+      "reply": "declined",
+      "rows": [
+        "auto/trust: \"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Start-Sleep -Seconds 20; Write-Output step-one-done'",
+        "declined/dashboard: \"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Write-Output step-two-ran | Out-File -FilePath step-two.txt; Get-Content step-two.txt'"
+      ]
+    },
+    "codexAskThenFull": {
+      "waited": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '(Invoke-WebRequest -Uri https://example.com -UseBasicParsing).StatusCode'"
+      ],
+      "reply": "200",
+      "rows": [
+        "auto/trust: \"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '(Invoke-WebRequest -Uri https://example.com -UseBasicParsing).StatusCode'"
+      ]
+    },
+    "codexFull": {
+      "reply": "full-ran",
+      "rows": [
+        "auto/trust: \"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Write-Output full-ran | Out-File -FilePath full.txt; Get-Content full.txt'"
+      ]
+    },
+    "claudeFullThenAsk": {
+      "asked": [
+        "Write-Output step-two-ran | Out-File -FilePath step-two.txt; Get-Content step-two.txt"
+      ],
+      "reply": "declined",
+      "rows": [
+        "declined/dashboard: Write-Output step-two-ran | Out-File -FilePath step-two.txt; Get-Content step-two.txt"
+      ]
+    },
+    "claudeAskThenFull": {
+      "waited": [
+        "(Invoke-WebRequest -Uri https://example.com -UseBasicParsing).StatusCode"
+      ],
+      "reply": "200",
+      "rows": [
+        "auto/trust: (Invoke-WebRequest -Uri https://example.com -UseBasicParsing).StatusCode"
+      ]
+    },
+    "claudeFull": {
+      "reply": "full-ran",
+      "rows": []
+    }
+  },
+  "passed": true
+}
