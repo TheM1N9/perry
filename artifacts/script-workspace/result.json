@@ -1,0 +1,188 @@
+{
+  "ranAt": "2026-09-30T04:24:11.440Z",
+  "model": "gpt-6-luna",
+  "realTurn": false,
+  "checks": {
+    "toolsHandedToCodex": true,
+    "firstSaveMakesTheFolder": true,
+    "revisionsAreNewVersions": true,
+    "feedbackUnderTheVersionItIsAbout": true,
+    "hooksSourcesCutsKept": true,
+    "listShowsThreeVersions": true,
+    "readAnyVersionWithItsNotes": true,
+    "statusChanges": true,
+    "pathsGuarded": true,
+    "sameSlugTwoChannels": true,
+    "handEditsAreWhatPerrySees": true,
+    "workPageLists": true,
+    "openShowsEachVersionWithNotes": true,
+    "pageShowsANewVersionAsItIsSaved": true,
+    "ownersStatusChangeReachesTheFiles": true,
+    "dashboardThrewNothing": true
+  },
+  "notes": {
+    "toolsHandedToCodex": [
+      "save_script",
+      "list_scripts",
+      "read_script",
+      "update_script"
+    ],
+    "firstSaveMakesTheFolder": {
+      "result": {
+        "saved": true,
+        "slug": "amazon-boomerang",
+        "channel": "tech-talks",
+        "version": 1,
+        "versions": 1,
+        "status": "draft",
+        "path": "W:\\perry-tests\\script-workspace\\perry-script-workspace-FG4RwN\\files\\scripts\\tech-talks\\amazon-boomerang"
+      },
+      "files": [
+        "notes.md",
+        "v1.md"
+      ]
+    },
+    "revisionsAreNewVersions": {
+      "second": {
+        "saved": true,
+        "slug": "amazon-boomerang",
+        "channel": "tech-talks",
+        "version": 2,
+        "versions": 2,
+        "status": "draft",
+        "path": "W:\\perry-tests\\script-workspace\\perry-script-workspace-FG4RwN\\files\\scripts\\tech-talks\\amazon-boomerang"
+      },
+      "third": {
+        "saved": true,
+        "slug": "amazon-boomerang",
+        "channel": "tech-talks",
+        "version": 3,
+        "versions": 3,
+        "status": "draft",
+        "path": "W:\\perry-tests\\script-workspace\\perry-script-workspace-FG4RwN\\files\\scripts\\tech-talks\\amazon-boomerang"
+      }
+    },
+    "feedbackUnderTheVersionItIsAbout": {
+      "v1": "## v1 · 30 Sept 2026, 04:23\n\nHook: Amazon will take back almost anything you bought.\n\nWhat changed: First draft.\n\n### Hooks tried\n\n- Where do your Amazon returns go?\n- Amazon has a secret warehouse for your returns.\n\n### Sources\n\n- https://www.aboutamazon.com/news/operations/amazon-returns (how returns are resold)\n\n### Feedback\n\n- The hook is too slow; open on the surprise.\n\n",
+      "v2": "## v2 · 30 Sept 2026, 04:23\n\nHook: You returned it. Amazon sold it again, the same week.\n\nWhat changed: Opens on the resale instead of the warehouse.\n\n### Hooks tried\n\n- Your return was resold before your refund landed.\n\n### Cut\n\n- “Boomerang handles 40% of all returns”: No source gives that number.\n\n### Feedback\n\n- Better, but make it about one thing people return.\n\n",
+      "v3": "## v3 · 30 Sept 2026, 04:23\n\nHook: That phone you returned? Someone else is unboxing it right now.\n\nWhat changed: A concrete object in the hook.\n\n### Hooks tried\n\n- Your old headphones have a new owner.\n\n### Sources\n\n- https://www.theverge.com/amazon-returns-resale (resale timing)\n"
+    },
+    "hooksSourcesCutsKept": "# Amazon Boomerang\n\nChannel: Tech Talks\nStatus: draft\n\n## v1 · 30 Sept 2026, 04:23\n\nHook: Amazon will take back almost anything you bought.\n\nWhat changed: First draft.\n\n### Hooks tried\n\n- Where do your Amazon returns go?\n- Amazon has a secret warehouse for your returns.\n\n### Sources\n\n- https://www.aboutamazon.com/news/operations/amazon-returns (how returns are resold)\n\n### Feedback\n\n- The hook is too slow; open on the surprise.\n\n## v2 · 30 Sept 2026, 04:23\n\nHook: You returned it. Amazon sold it again, the same week.\n\nWhat changed: Opens on the resale instead of the warehouse.\n\n### Hooks tried\n\n- Your return was resold before your refund landed.\n\n### Cut\n\n- “Boomerang handles 40% of all returns”: No source gives that number.\n\n### Feedback\n\n- Better, but make it about one thing people return.\n\n## v3 · 30 Sept 2026, 04:23\n\nHook: That phone you returned? Someone else is unboxing it right now.\n\nWhat changed: A concrete object in the hook.\n\n### Hooks tried\n\n- Your old headphones have a new owner.\n\n### Sources\n\n- https://www.theverge.com/amazon-returns-resale (resale timing)\n",
+    "listShowsThreeVersions": {
+      "count": 1,
+      "scripts": [
+        {
+          "title": "Amazon Boomerang",
+          "slug": "amazon-boomerang",
+          "channel": "Tech Talks",
+          "status": "draft",
+          "versions": 3,
+          "hook": "That phone you returned? Someone else is unboxing it right now.",
+          "updated": "2026-09-30T04:23:56.781Z"
+        }
+      ]
+    },
+    "readAnyVersionWithItsNotes": {
+      "v1": {
+        "title": "Amazon Boomerang",
+        "slug": "amazon-boomerang",
+        "channel": "Tech Talks",
+        "status": "draft",
+        "version": 1,
+        "versions": 3,
+        "text": "Amazon will take back almost anything you bought.\n\nBut what happens to it after that? It goes to a warehouse called Boomerang.\n",
+        "notes": "Hook: Amazon will take back almost anything you bought.\n\nWhat changed: First draft.\n\n### Hooks tried\n\n- Where do your Amazon returns go?\n- Amazon has a secret warehouse for your returns.\n\n### Sources\n\n- https://www.aboutamazon.com/news/operations/amazon-returns (how returns are resold)\n\n### Feedback\n\n- The hook is too slow; open on the surprise.",
+        "path": "W:\\perry-tests\\script-workspace\\perry-script-workspace-FG4RwN\\files\\scripts\\tech-talks\\amazon-boomerang"
+      },
+      "latest": {
+        "version": 3,
+        "notesLength": 1085
+      }
+    },
+    "statusChanges": {
+      "cut": {
+        "updated": true,
+        "channel": "tech-talks",
+        "slug": "amazon-boomerang",
+        "version": 3,
+        "status": "draft"
+      },
+      "final": {
+        "updated": true,
+        "channel": "tech-talks",
+        "slug": "amazon-boomerang",
+        "version": 3,
+        "status": "final"
+      },
+      "finals": {
+        "count": 1,
+        "scripts": [
+          {
+            "title": "Amazon Boomerang",
+            "slug": "amazon-boomerang",
+            "channel": "Tech Talks",
+            "status": "final",
+            "versions": 3,
+            "hook": "That phone you returned? Someone else is unboxing it right now.",
+            "updated": "2026-09-30T04:23:56.841Z"
+          }
+        ]
+      }
+    },
+    "pathsGuarded": {
+      "errors": [
+        "“../../..” is not a channel name: no slashes or dots. list_scripts shows the names in use.",
+        "“..\\..\\..\\runner” is not a script name: no slashes or dots. list_scripts shows the names in use.",
+        "“C:\\Windows” is not a channel name: no slashes or dots. list_scripts shows the names in use.",
+        "“../../runner.json” is not a script name: no slashes or dots. list_scripts shows the names in use.",
+        "“../scripts/tech-talks” is not a channel name: no slashes or dots. list_scripts shows the names in use.",
+        "“../../../files” is not a script name: no slashes or dots. list_scripts shows the names in use."
+      ],
+      "added": []
+    },
+    "sameSlugTwoChannels": {
+      "telugu": {
+        "saved": true,
+        "slug": "amazon-boomerang",
+        "channel": "tech-telugu",
+        "version": 1,
+        "versions": 1,
+        "status": "draft",
+        "path": "W:\\perry-tests\\script-workspace\\perry-script-workspace-FG4RwN\\files\\scripts\\tech-telugu\\amazon-boomerang",
+        "note": "A new channel folder. The other channels are Tech Talks; if it is one of them, tell the owner rather than saving it twice."
+      },
+      "ambiguous": "“amazon-boomerang” is in more than one channel (tech-talks, tech-telugu): pass channel too."
+    },
+    "handEditsAreWhatPerrySees": {
+      "count": 1,
+      "scripts": [
+        {
+          "title": "Amazon Boomerang",
+          "slug": "amazon-boomerang",
+          "channel": "Tech Telugu",
+          "status": "shot",
+          "versions": 1,
+          "hook": "Telugu hook",
+          "updated": "2026-09-30T04:23:56.912Z"
+        }
+      ]
+    },
+    "workPageLists": "Toggle Sidebar\nWork\n\nWhat Perry does without you in the chat. Set it up here, or ask for it in a chat.\n\nSchedules\nPlans\nGoals\nWatches\nScripts\n1\n\nScripts you write with Perry, a folder each with every version and the notes on it: hooks tried, sources, what was cut and why, and your feedback.\n\nAll\nDraft\nFinal\nShot\nAmazon Boomerang\nShot\n\nTech Telugu\nv1 · 1 version\nChanged now\n\n“Telugu hook”\n\nOpen\nAmazon Boomerang\nFinal\n\nTech Talks\nv3 · 3 versions\nChanged now\n\n“That phone you returned? Someone else is unboxing it right now.”\n\nOpen",
+    "openShowsEachVersionWithNotes": {
+      "latest": "Amazon Boomerang\n\nTech Talks\nFinal\n3 versions\n\nv1\nv2\nv3\n\nv3 (latest) · saved 30 Sept 2026, 09:53\n\nThat phone you returned? Someone else is unboxing it right now.\n\nWelcome to Boomerang, Amazon's warehouse for second chances.\n\nNotes on v3\n\nHook: That phone you returned? Someone else is unboxing it right now.\n\nWhat changed: A concrete object in the hook.\n\nHooks tried\nYour old headphones have a new owner.\nSources\nhttps://www.theverge.com/amazon-returns-resale (resale timing)\nCut\n“Resold within 24 hours”: The Verge says within a week.\nFeedback\nLove it, lock it.\nW:\\perry-tests\\script-workspace\\perry",
+      "first": "Amazon Boomerang\n\nTech Talks\nFinal\n3 versions\n\nv1\nv2\nv3\n\nv1 · saved 30 Sept 2026, 09:53\n\nAmazon will take back almost anything you bought.\n\nBut what happens to it after that? It goes to a warehouse called Boomerang.\n\nNotes on v1\n\nHook: Amazon will take back almost anything you bought.\n\nWhat changed: First draft.\n\nHooks tried\nWhere do your Amazon returns go?\nAmazon has a secret warehouse for your returns.\nSources\nhttps://www.aboutamazon.com/news/operations/amazon-returns (how returns are resold)\nFeedback\nThe hook is too slow; open on the surprise.\nW:\\perry-tests\\script-workspace\\perry-script-wo"
+    },
+    "pageShowsANewVersionAsItIsSaved": "Amazon Boomerang\n\nTech Talks\nDraft\n4 versions\n\nv1\nv2\nv3\nv4\n\nv1 · saved 30 Sept 2026, 09:53\n\nAmazon will take back almost anything you bought.\n\nBut what happens to it after that? It goes to a warehouse called Boomerang.\n\nNotes on v1\n\nHook: Amazon will take back almost anything you bought.\n\nWhat changed: First draft.\n\nHooks tried\nWhere do your Amazon returns go?\nAmazon has a secret warehouse for you",
+    "ownersStatusChangeReachesTheFiles": [
+      "# Amazon Boomerang",
+      "",
+      "Channel: Tech Talks",
+      "Status: shot",
+      ""
+    ],
+    "dashboardThrewNothing": [],
+    "realTurn": "not run: the owner's ChatGPT Codex weekly limit is used up until 4 Oct 2026, 03:01. Run again with PERRY_E2E_REAL=1.",
+    "serverErrors": []
+  },
+  "passed": true
+}

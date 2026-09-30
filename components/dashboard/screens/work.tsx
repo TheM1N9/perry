@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon, ZapIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, ClapperboardIcon, ExternalLinkIcon, FileTextIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, RotateCcwIcon, Trash2Icon, ZapIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import type { JobView } from "@/convex/jobs";
+import type { ScriptStatus, ScriptSummary } from "@/convex/lib/scripts";
 import { enginesOf, modelKey, modelsOf, parseModelKey } from "@/convex/lib/commands";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
 import { ago, fullDate, plural, useNow } from "@/lib/format";
@@ -19,28 +20,33 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ActionButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCount, attempt, useTab, type Tone } from "../common";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ActionButton, CopyButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCount, attempt, useSearchParam, useTab, type Tone } from "../common";
+import { Markdown } from "../chat/markdown";
 import { GoalDialog, ScheduleDialog, TaskDialog, WatchDialog, type Editing } from "./work-forms";
 import { Input } from "@/components/ui/input";
 
-const TABS = ["schedules", "plans", "goals", "watches"] as const;
+const TABS = ["schedules", "plans", "goals", "watches", "scripts"] as const;
 type Tab = (typeof TABS)[number];
 
 /**
  * What runs without you: schedules, the plans Perry keeps as it works, your
- * goals, and the pages it watches. The agent writes plans through a tool, so
- * this is the truth rather than a summary it made on request.
+ * goals, the pages it watches, and the scripts you write together. The agent
+ * writes plans and scripts through its tools, so this is the truth rather
+ * than a summary it made on request.
  */
 export function Work() {
   const { dashboardKey } = useSession();
   const [tab, setTab] = useTab(TABS, "schedules");
   const work = useQuery(api.dashboard.getWork, { key: dashboardKey });
   const jobs = useQuery(api.jobs.listForDashboard, { key: dashboardKey });
+  const scripts = useQuery(api.scripts.list, { key: dashboardKey });
   const active = work?.tasks.filter((task) => task.status === "running" || task.status === "blocked" || task.status === "queued").length;
 
   return (
@@ -51,11 +57,13 @@ export function Work() {
           <TabsTrigger value="plans"><TabCount count={active}>Plans</TabCount></TabsTrigger>
           <TabsTrigger value="goals"><TabCount count={work?.goals.filter((goal) => goal.status === "active").length}>Goals</TabCount></TabsTrigger>
           <TabsTrigger value="watches"><TabCount count={work?.monitors.filter((monitor) => monitor.active).length}>Watches</TabCount></TabsTrigger>
+          <TabsTrigger value="scripts"><TabCount count={scripts?.filter((script) => script.status !== "shot").length}>Scripts</TabCount></TabsTrigger>
         </TabsList>
         <TabsContent value="schedules"><Schedules /></TabsContent>
         <TabsContent value="plans">{work ? <Plans tasks={work.tasks} goals={work.goals} /> : <ListSkeleton />}</TabsContent>
         <TabsContent value="goals">{work ? <Goals goals={work.goals} /> : <ListSkeleton />}</TabsContent>
         <TabsContent value="watches">{work ? <Watches monitors={work.monitors} /> : <ListSkeleton />}</TabsContent>
+        <TabsContent value="scripts">{scripts ? <Scripts scripts={scripts} /> : <ListSkeleton />}</TabsContent>
       </Tabs>
     </Page>
   );
@@ -480,5 +488,144 @@ function Watches({ monitors }: { monitors: Doc<"monitors">[] }) {
       {dialog}
       <WatchDialog editing={editing} onClose={() => setEditing(null)} />
     </div>
+  );
+}
+
+const SCRIPT: Record<ScriptStatus, { label: string; tone: Tone; mark: string; done: string; icon: ReactNode }> = {
+  draft: { label: "Draft", tone: "info", mark: "Back to draft", done: "Back to draft.", icon: <RotateCcwIcon /> },
+  final: { label: "Final", tone: "success", mark: "Mark final", done: "Marked final, ready for the shoot.", icon: <CheckIcon /> },
+  shot: { label: "Shot", tone: "neutral", mark: "Mark shot", done: "Marked shot.", icon: <ClapperboardIcon /> },
+};
+const SCRIPT_STATUSES = ["draft", "final", "shot"] as const;
+/** A script as the address names it: its channel's folder, then its own. */
+const scriptId = (script: { channel: string; slug: string }) => `${script.channel}/${script.slug}`;
+
+/**
+ * Short-video scripts, each a folder in Perry's files with every version and
+ * the notes on it (convex/lib/scripts.ts). Perry saves a version each time he
+ * writes or changes one; here you read them, and mark one final or shot.
+ */
+function Scripts({ scripts }: { scripts: ScriptSummary[] }) {
+  const { dashboardKey } = useSession();
+  const setStatus = useAction(api.scripts.setStatus);
+  const [status, setFilter] = useSearchParam("status", "all");
+  const [open, setOpen] = useSearchParam("script", "");
+  const now = useNow();
+  const filter = SCRIPT_STATUSES.find((item) => item === status);
+  const shown = filter ? scripts.filter((script) => script.status === filter) : scripts;
+  const mark = (script: ScriptSummary, next: ScriptStatus) =>
+    void attempt(() => setStatus({ key: dashboardKey, channel: script.channel, slug: script.slug, status: next }), { success: SCRIPT[next].done });
+
+  return (
+    <div className="space-y-4">
+      <Intro action={scripts.length > 0 && (
+        <ToggleGroup value={[filter ?? "all"]} onValueChange={(value) => setFilter((value[0] as string | undefined) ?? "all")} variant="outline" size="sm" aria-label="Filter by status">
+          <ToggleGroupItem value="all">All</ToggleGroupItem>
+          {SCRIPT_STATUSES.map((item) => <ToggleGroupItem key={item} value={item}>{SCRIPT[item].label}</ToggleGroupItem>)}
+        </ToggleGroup>
+      )}>
+        Scripts you write with Perry, a folder each with every version and the notes on it: hooks tried, sources, what was cut and why, and your feedback.
+      </Intro>
+      {scripts.length === 0
+        ? <EmptyState title="No scripts yet">Ask Perry for one in a chat: &ldquo;Write a 45-second script on Amazon&apos;s Boomerang for my tech channel.&rdquo; Each version he writes is saved here.</EmptyState>
+        : shown.length === 0
+          ? <EmptyState title={`No ${filter ? SCRIPT[filter].label.toLowerCase() : ""} scripts`}>Mark one from its menu, or ask Perry.</EmptyState>
+          : (
+            <List label="Scripts">
+              {shown.map((script) => (
+                <Row key={scriptId(script)}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-medium">{script.title}</h3>
+                      <StatusBadge tone={SCRIPT[script.status].tone}>{SCRIPT[script.status].label}</StatusBadge>
+                    </div>
+                    <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                      <span>{script.channelName}</span>
+                      <span className="nums">v{script.latest} · {plural(script.versions, "version")}</span>
+                      <span title={fullDate(script.updatedAt)}>Changed {ago(script.updatedAt, now)}</span>
+                    </p>
+                    {script.hook && <p className="mt-2 line-clamp-2 text-sm text-pretty text-foreground/80">&ldquo;{script.hook}&rdquo;</p>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button variant="outline" size="sm" onClick={() => setOpen(scriptId(script))}><FileTextIcon />Open</Button>
+                    <RowMenu label={`More for ${script.title}`}>
+                      {SCRIPT_STATUSES.filter((item) => item !== script.status).map((item) => (
+                        <DropdownMenuItem key={item} onClick={() => mark(script, item)}>{SCRIPT[item].icon}{SCRIPT[item].mark}</DropdownMenuItem>
+                      ))}
+                    </RowMenu>
+                  </div>
+                </Row>
+              ))}
+            </List>
+          )}
+      <ScriptDialog key={open} id={open} onClose={() => setOpen("")} />
+    </div>
+  );
+}
+
+/** One script: the latest version first, any other a click away, each with its notes. */
+function ScriptDialog({ id, onClose }: { id: string; onClose: () => void }) {
+  const { dashboardKey } = useSession();
+  const setStatus = useAction(api.scripts.setStatus);
+  const [channel = "", slug = ""] = id.split("/");
+  const script = useQuery(api.scripts.get, id ? { key: dashboardKey, channel, slug } : "skip");
+  const [picked, setPicked] = useState<number | null>(null);
+  const version = script?.all.find((item) => item.version === picked) ?? script?.all.at(-1);
+
+  return (
+    <Dialog open={Boolean(id)} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-h-[85vh] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-3xl">
+        {script === undefined ? <ListSkeleton rows={2} /> : !script || !version ? (
+          <DialogHeader>
+            <DialogTitle>Not found</DialogTitle>
+            <DialogDescription>This script&apos;s folder is gone, or has no versions.</DialogDescription>
+          </DialogHeader>
+        ) : (
+          <>
+            <DialogHeader className="pr-8">
+              <DialogTitle className="text-lg">{script.title}</DialogTitle>
+              <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>{script.channelName}</span>
+                <StatusBadge tone={SCRIPT[script.status].tone}>{SCRIPT[script.status].label}</StatusBadge>
+                <span className="nums">{plural(script.versions, "version")}</span>
+              </DialogDescription>
+            </DialogHeader>
+            {script.all.length > 1 && (
+              <ToggleGroup value={[String(version.version)]} onValueChange={(value) => { if (value[0]) setPicked(Number(value[0])); }} variant="outline" size="sm" aria-label="Version" className="flex-wrap">
+                {script.all.map((item) => <ToggleGroupItem key={item.version} value={String(item.version)} className="nums aria-pressed:bg-foreground/10">v{item.version}</ToggleGroupItem>)}
+              </ToggleGroup>
+            )}
+            <section aria-label={`Version ${version.version}`}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  v{version.version}{version.version === script.latest && " (latest)"} · saved {fullDate(version.savedAt)}
+                </p>
+                <CopyButton value={version.text} label="Copy script" />
+              </div>
+              <div className="rounded-lg border bg-card px-4 py-3 text-sm"><Markdown text={version.text} /></div>
+            </section>
+            {version.notes && (
+              <section aria-label={`Notes on version ${version.version}`}>
+                <h3 className="mb-2 text-sm font-medium">Notes on v{version.version}</h3>
+                <div className="rounded-lg bg-muted/60 px-4 py-3 text-sm"><Markdown text={version.notes} /></div>
+              </section>
+            )}
+            <DialogFooter className="items-center sm:justify-between">
+              <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                <code className="truncate font-mono" title={script.path}>{script.path}</code>
+                <CopyButton value={script.path} label="Copy folder path" size="icon-xs" />
+              </span>
+              <ToggleGroup value={[script.status]} variant="outline" size="sm" aria-label="Status"
+                onValueChange={(value) => {
+                  const next = value[0] as ScriptStatus | undefined;
+                  if (next && next !== script.status) void attempt(() => setStatus({ key: dashboardKey, channel: script.channel, slug: script.slug, status: next }), { success: SCRIPT[next].done });
+                }}>
+                {SCRIPT_STATUSES.map((item) => <ToggleGroupItem key={item} value={item} className="aria-pressed:bg-foreground/10">{SCRIPT[item].label}</ToggleGroupItem>)}
+              </ToggleGroup>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

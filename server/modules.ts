@@ -30,6 +30,7 @@ import * as lib_embed from "../convex/lib/embed";
 import * as lib_engines from "../convex/lib/engines";
 import * as lib_errors from "../convex/lib/errors";
 import * as lib_price from "../convex/lib/price";
+import * as lib_scripts from "../convex/lib/scripts";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
 import * as lib_skills from "../convex/lib/skills";
 import * as lib_telegram from "../convex/lib/telegram";
@@ -48,6 +49,7 @@ import * as recovery from "../convex/recovery";
 import * as runner from "../convex/runner";
 import * as runs from "../convex/runs";
 import * as screen from "../convex/screen";
+import * as scripts from "../convex/scripts";
 import * as secrets from "../convex/secrets";
 import * as tasks from "../convex/tasks";
 import * as titles from "../convex/titles";
@@ -89,6 +91,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/engines": lib_engines,
   "lib/errors": lib_errors,
   "lib/price": lib_price,
+  "lib/scripts": lib_scripts,
   "lib/shortcuts": lib_shortcuts,
   "lib/skills": lib_skills,
   "lib/telegram": lib_telegram,
@@ -107,6 +110,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "runner": runner,
   "runs": runs,
   "screen": screen,
+  "scripts": scripts,
   "secrets": secrets,
   "tasks": tasks,
   "titles": titles,

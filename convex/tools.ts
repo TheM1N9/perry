@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
-import { createTool } from "./lib/agent";
+import { createTool, type ToolCtx } from "./lib/agent";
 import { z } from "zod";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { SearchResult } from "./composio";
+import { folderName, listScripts, readScript, saveVersion, STATUSES, updateScript } from "./lib/scripts";
 import { installStaged, stageSkill, type Staged } from "./lib/skills";
 import * as web from "./lib/browser";
 import { watchProblem } from "./work";
@@ -610,6 +611,144 @@ const delete_todo = createTool({
   },
 });
 
+// --- The owner's scripts ---------------------------------------------------
+
+// Short-video scripts, one folder each of versions and notes (lib/scripts.ts), shown on the Work page.
+const scriptStatus = z.enum(STATUSES);
+const scriptNotes = {
+  hooks: z.array(z.string().min(1).max(500)).max(20).optional().describe("Hooks tried for this version besides the one it opens with, word for word."),
+  sources: z.array(z.string().min(1).max(500)).max(30).optional().describe("What it rests on: each an address, or a title and where it is from."),
+  cuts: z.array(z.object({ claim: z.string().min(1).max(500), why: z.string().min(1).max(500) })).max(20).optional()
+    .describe("Claims taken out, each with why (no source, wrong, too long)."),
+};
+const findScriptBy = {
+  slug: z.string().min(1).max(120).describe("From save_script or list_scripts."),
+  channel: z.string().max(120).optional().describe("Only when the same slug is in more than one channel."),
+};
+
+/** A script's change, told to the Work page. */
+async function scriptChanged(ctx: ToolCtx, done: { channel: string; slug: string }): Promise<void> {
+  await ctx.runMutation(internal.scripts.changed, { channel: done.channel, slug: done.slug });
+}
+
+/** Now, as a version's heading gives it: "30 Sep 2026, 14:05" on the owner's clock. */
+async function savedWhen(ctx: ToolCtx): Promise<string> {
+  const timeZone: string = await ctx.runQuery(internal.jobs.ownerTimezone, {});
+  return new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone });
+}
+
+const save_script = createTool({
+  description:
+    "Save a short-video script as a new version in its folder (files/scripts/<channel>/<slug>/: v1.md, v2.md, … and notes.md), " +
+    "shown on the owner's Work page. Call it every time you write a script or change one, in the same reply and without being " +
+    "asked: a first draft, a new angle, a new hook, a cut, the owner's edits. Each save is a new version and earlier ones are kept. " +
+    "A new script: give title and channel, and keep the slug it returns. A revision: pass that slug. Record with it what goes with " +
+    "this version: hook (the line it opens with), changed (what changed and why), hooks tried, sources, cuts (claims taken out and " +
+    "why), and feedback (what the owner said about the version before, which this one answers). It is a draft again unless you pass " +
+    "status. Still put the script itself in your reply.",
+  inputSchema: z.object({
+    text: z.string().min(1).max(20_000).describe("The whole script, as the owner would read it out."),
+    slug: z.string().max(120).optional().describe("The script's slug, to save a new version of it."),
+    title: z.string().max(160).optional().describe("A new script's title, e.g. 'Amazon Boomerang'."),
+    channel: z.string().max(120).optional().describe("The channel it is for, as the owner names it; needed for a new script. Use a name list_scripts already shows when it is the same channel."),
+    hook: z.string().max(500).optional().describe("The line this version opens with."),
+    changed: z.string().max(1000).optional().describe("What changed from the version before, and why."),
+    feedback: z.array(z.string().min(1).max(1000)).max(20).optional().describe("The owner's feedback on the version before, in their words, which this version answers."),
+    status: scriptStatus.optional().describe("Only if the owner said so: final when they approve it for the shoot."),
+    ...scriptNotes,
+  }),
+  execute: async (ctx, input): Promise<{ saved: true; slug: string; channel: string; version: number; versions: number; status: string; path: string; note?: string } | { error: string }> => {
+    try {
+      const done = saveVersion({ ...input, when: await savedWhen(ctx) });
+      await scriptChanged(ctx, done);
+      const others = done.newChannel ? listScripts().map((script) => script.channelName).filter((name, index, all) => all.indexOf(name) === index && folderName(name) !== done.channel) : [];
+      return {
+        saved: true, slug: done.slug, channel: done.channel, version: done.version, versions: done.versions, status: done.status, path: done.path,
+        ...(others.length ? { note: `A new channel folder. The other channels are ${others.join(", ")}; if it is one of them, tell the owner rather than saving it twice.` } : {}),
+      };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+});
+
+const list_scripts = createTool({
+  description:
+    "The owner's scripts: title, slug, channel, status (draft, final or shot), how many versions, the latest one's hook and when " +
+    "it last changed, newest first. Narrow by channel, status or words in the title. Use it for \"which scripts are final for " +
+    "tomorrow's shoot?\", and to find a script's slug before reading or changing it.",
+  inputSchema: z.object({
+    channel: z.string().max(120).optional(),
+    status: scriptStatus.optional(),
+    query: z.string().max(200).optional().describe("Words in the title or slug."),
+  }),
+  execute: async (_ctx, input): Promise<{ count: number; scripts: Array<{ title: string; slug: string; channel: string; status: string; versions: number; hook?: string; updated: string }> }> => {
+    const words = input.query?.toLowerCase().split(/\s+/).filter(Boolean) ?? [];
+    const scripts = listScripts().filter((script) =>
+      (!input.channel || script.channel === folderName(input.channel))
+      && (!input.status || script.status === input.status)
+      && words.every((word) => `${script.title} ${script.slug}`.toLowerCase().includes(word)));
+    return {
+      count: scripts.length,
+      scripts: scripts.map((script) => ({
+        title: script.title, slug: script.slug, channel: script.channelName, status: script.status, versions: script.versions,
+        ...(script.hook ? { hook: script.hook } : {}), updated: new Date(script.updatedAt).toISOString(),
+      })),
+    };
+  },
+});
+
+const read_script = createTool({
+  description:
+    "Read a script: without version, the latest with every version's notes (the owner's feedback, hooks tried, sources, claims " +
+    "cut and why); with version, that version and its own notes (\"go back to v3's hook\"). Read it before revising a script, " +
+    "so the new version builds on what the owner said.",
+  inputSchema: z.object({
+    ...findScriptBy,
+    version: z.number().int().min(1).optional().describe("Which version, e.g. 3 for v3. Defaults to the latest."),
+  }),
+  execute: async (_ctx, input): Promise<{ title: string; slug: string; channel: string; status: string; version: number; versions: number; text: string; notes: string; path: string } | { error: string }> => {
+    try {
+      const script = readScript(input.slug, input.channel);
+      const version = script.all.find((item) => item.version === (input.version ?? script.all.at(-1)?.version));
+      if (!version) return { error: `“${script.slug}” has versions ${script.all.map((item) => item.version).join(", ")}; there is no v${input.version}.` };
+      return {
+        title: script.title, slug: script.slug, channel: script.channelName, status: script.status, version: version.version, versions: script.versions,
+        text: version.text,
+        // The whole history with the latest; one version's own notes with that version.
+        notes: input.version === undefined ? script.notes.slice(0, 30_000) : version.notes,
+        path: script.path,
+      };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+});
+
+const update_script = createTool({
+  description:
+    "Record notes against a script's version without saving a new one (the latest unless version is given): the owner's " +
+    "feedback, hooks tried, sources, claims cut and why. Or set its status: final when the owner approves it for the shoot, " +
+    "shot once it is filmed, draft to reopen it. Or retitle it. A change to the script's words is a new version: save_script.",
+  inputSchema: z.object({
+    ...findScriptBy,
+    version: z.number().int().min(1).optional().describe("Which version the notes are about. Defaults to the latest."),
+    status: scriptStatus.optional(),
+    title: z.string().min(1).max(160).optional(),
+    feedback: z.array(z.string().min(1).max(1000)).max(20).optional().describe("What the owner said about that version, in their words."),
+    ...scriptNotes,
+  }),
+  execute: async (ctx, input): Promise<{ updated: true; slug: string; channel: string; version: number; status: string } | { error: string }> => {
+    try {
+      const done = updateScript(input);
+      await scriptChanged(ctx, done);
+      return { updated: true, ...done };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+});
+
 // --- The world -----------------------------------------------------------
 
 type PageResult = {
@@ -1098,6 +1237,10 @@ export const ALL_TOOLS = {
   list_todos,
   update_todo,
   delete_todo,
+  save_script,
+  list_scripts,
+  read_script,
+  update_script,
   read_page,
   browser,
   list_connectors,

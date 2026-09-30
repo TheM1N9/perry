@@ -263,6 +263,17 @@ export default defineSchema({
     .index("by_next_nag", ["nextNagAt"]),
 
   /**
+   * Scripts are files (convex/lib/scripts.ts), read from disk each time; a row
+   * here only says when one last changed, so the Work page, open while Perry
+   * saves a version, shows it at once. Nothing of a script is kept here.
+   */
+  scripts: defineTable({
+    channel: v.string(),
+    slug: v.string(),
+    changedAt: v.number(),
+  }).index("by_folder", ["channel", "slug"]),
+
+  /**
    * One row: when the desktop pet last checked in, and when the owner last
    * touched the computer it runs on. While they are at it, reminders are the
    * pet's to give; otherwise they go to the phone.
