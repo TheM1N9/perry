@@ -201,7 +201,7 @@ function Pet() {
    * PET_KEY_PREFIX in convex/lib/devices.ts), never the dashboard key. The server
    * lets that key call only what such a pet needs (server/devices.ts).
    */
-  const elsewhere = key.startsWith("pet_");
+  const paired = key.startsWith("pet_");
   const board = useQuery(api.todos.board, { key });
   const approvals = useQuery(api.approvals.pending, { key });
   const inbox = useQuery(api.dashboard.getInbox, { key });
@@ -284,13 +284,13 @@ function Pet() {
       if (window.perryPet) window.perryPet.openDashboard(path);
       else window.open(path, "_blank");
     };
-    if (elsewhere) return openNew();
+    if (paired) return openNew();
     void (async () => {
       const request = await askToOpen({ key, path });
       await new Promise((resolve) => window.setTimeout(resolve, TAB_CLAIMS_MS));
       if (await claimOpen({ key, request })) openNew();
     })().catch(openNew);
-  }, [key, elsewhere, askToOpen, claimOpen]);
+  }, [key, paired, askToOpen, claimOpen]);
   /** A chat in his panel, maybe with something already typed. */
   const openChat = useCallback((id: PetChatId, text?: string) => {
     setChatId(id);
@@ -335,9 +335,9 @@ function Pet() {
 
   // Scheduled things run in the owner's timezone, which only this computer knows: Perry's own, not a laptop taken abroad.
   useEffect(() => {
-    if (elsewhere) return;
+    if (paired) return;
     void setTimezone({ key, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
-  }, [key, elsewhere, setTimezone]);
+  }, [key, paired, setTimezone]);
 
   // How long the owner has been away, once a minute, for the server, which then sends reminders to the phone.
   // Refused (this computer removed from Perry's Settings, or the key changed), he is locked out from then on.
