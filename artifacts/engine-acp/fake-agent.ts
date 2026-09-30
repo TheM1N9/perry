@@ -26,6 +26,7 @@
  *   HANG             one chunk, then nothing, and session/cancel is ignored
  *   EARLY            an empty end_turn at once, then the reply as updates after it
  *   RECALL           the messages this session has had before, to show it was resumed
+ *   REJECT ...       session/prompt fails at once, without taking the prompt in (it is logged as `rejected`)
  *   /compact, /compress   the agent's compaction command
  *   anything else    a reply streamed in chunks, after a thought and a plan
  */
@@ -425,6 +426,11 @@ async function serve() {
     .onRequest("session/prompt", loose<{ sessionId: string; prompt: ContentBlock[] }>, async ({ params, client }) => {
       const session = restore(params.sessionId);
       if (!session) throw new RequestError(-32002, "Session not found");
+      const texts = params.prompt.flatMap((block) => block.type === "text" ? [block.text] : []);
+      if (texts.at(-1)?.trim().startsWith("REJECT")) {
+        log({ rejected: texts.at(-1)?.trim(), context: texts.slice(0, -1).join("\n\n") || undefined });
+        throw new RequestError(-32603, "Internal error: the prompt was turned away");
+      }
       // Prompts to a busy session wait their turn, as Grok queues them.
       const queued = session.queue.then(async () => {
         const controller = new AbortController();

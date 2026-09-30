@@ -432,11 +432,15 @@ export class CodexEngine implements Engine {
     const id = thread.thread?.id;
     if (!id) throw new Error("Codex did not return a thread ID.");
     if (!threadId) await sink.onSession(id);
-    if (threadId) await this.updateInstructions(app, id, current);
-    else gave(id, current);
+    const untold = threadId ? await this.updateInstructions(app, id, current) : null;
+    if (!threadId) gave(id, current);
     // The next new chat is most likely started the same way (the same instructions, access and folder): have its thread ready.
     if (!threadId && !history) this.keepSpare(app, start);
-    const turnInput = userInput(prompt, attachments, recalled);
+    // What changed that could not go into the thread's history on its own goes ahead of the message instead.
+    const turnInput = [
+      ...(untold ? [{ type: "text", text: `<perry-instructions>\n${untold}\n</perry-instructions>`, text_elements: [] }] : []),
+      ...userInput(prompt, attachments, recalled),
+    ];
     // Deltas can arrive before turn/start answers, so match them by thread.
     const written = new Map<string, string>();
     let latest = "";
@@ -489,6 +493,8 @@ export class CodexEngine implements Engine {
       }, 30_000);
       if (!started.turn?.id) throw new Error("Codex did not start a turn.");
       turnId = started.turn.id;
+      // Taken with the message, the change is in the thread's history now.
+      if (untold) gave(id, current);
       for (const replay of early.splice(0)) replay();
       sink.onStarted?.({ cursor: id, turnId });
       try {
@@ -625,16 +631,23 @@ export class CodexEngine implements Engine {
    * USER.md, the chat's access) goes into its history as a developer message
    * of its own before the turn, where it stays. A thread from before Perry
    * kept track is told all of its instructions, once.
+   *
+   * When Codex will not take it (a CLI without thread/inject_items, a hiccup),
+   * the update is returned, for the turn to carry ahead of the message: the
+   * reply follows the current instructions either way, and the chat is not
+   * held up by it.
    */
-  private async updateInstructions(app: CodexAppServer, thread: string, current: string) {
+  private async updateInstructions(app: CodexAppServer, thread: string, current: string): Promise<string | null> {
     const before = givenTo(thread);
     const update = before === undefined ? instructionsInFull(current) : instructionsUpdate(before, current);
-    if (!update) return;
+    if (!update) return null;
     try {
       await app.request("thread/inject_items", { threadId: thread, items: [{ type: "message", role: "developer", content: [{ type: "input_text", text: update }] }] }, 30_000);
       gave(thread, current);
+      return null;
     } catch (error) {
-      this.warn(`could not tell a Codex thread its instructions changed: ${message(error)}`);
+      this.warn(`could not tell a Codex thread its instructions changed on their own, so they go with the message: ${message(error)}`);
+      return update;
     }
   }
 

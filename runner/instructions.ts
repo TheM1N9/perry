@@ -42,18 +42,22 @@ function render(list: Paragraph[], quote = false): string {
 /**
  * What to tell a session that was given `before` and should now follow `now`:
  * the paragraphs that are new or changed, and those that no longer apply.
- * Null when nothing changed.
+ * The same paragraphs in another order are all of them again, since a later
+ * one can qualify an earlier one. Null when nothing changed.
  */
 export function instructionsUpdate(before: string, now: string): string | null {
   if (before === now) return null;
   const key = (paragraph: Paragraph) => `${paragraph.heading}\n${paragraph.text}`;
-  const old = paragraphs(before);
-  const fresh = paragraphs(now);
-  const had = new Set(old.map(key));
-  const has = new Set(fresh.map(key));
-  const added = fresh.filter((paragraph) => !had.has(key(paragraph)));
-  const gone = old.filter((paragraph) => !has.has(key(paragraph)));
-  if (!added.length && !gone.length) return null;
+  const old = paragraphs(before).map((paragraph) => ({ ...paragraph, key: key(paragraph) }));
+  const fresh = paragraphs(now).map((paragraph) => ({ ...paragraph, key: key(paragraph) }));
+  const had = new Set(old.map((paragraph) => paragraph.key));
+  const has = new Set(fresh.map((paragraph) => paragraph.key));
+  const added = fresh.filter((paragraph) => !had.has(paragraph.key));
+  const gone = old.filter((paragraph) => !has.has(paragraph.key));
+  if (!added.length && !gone.length) {
+    const reordered = old.length !== fresh.length || old.some((paragraph, at) => paragraph.key !== fresh[at].key);
+    return reordered ? instructionsInFull(now) : null;
+  }
   return [
     "# Your instructions changed",
     "Some of your instructions changed since you were given them. What follows is current: where it differs from anything earlier, it wins.",
@@ -62,7 +66,7 @@ export function instructionsUpdate(before: string, now: string): string | null {
   ].filter(Boolean).join("\n\n");
 }
 
-/** For a session given instructions before Perry kept track of them: all of them, as current. */
+/** For a session given instructions before Perry kept track of them, or the same ones reordered: all of them, as current. */
 export function instructionsInFull(now: string): string {
   return `# Your instructions, as they are now\n\nThese are your current instructions. Where they differ from anything earlier, they win.\n\n${now}`;
 }

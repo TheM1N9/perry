@@ -178,7 +178,7 @@ type Session = {
   cwd: string;
   modes?: SessionModeState | null;
   config: SessionConfigOption[];
-  /** The instructions a prompt of this session last gave it, in this process; unset, it has had none. */
+  /** The instructions a prompt the session took last gave it, in this process; unset, it has had none. */
   given?: string;
   /** A session/load is replaying it: its updates are dropped. The time of the last one. */
   replaying?: { lastAt: number };
@@ -667,8 +667,10 @@ ${line}`.slice(-4000); this.onText(line); });
     let failure: string | undefined;
     let last: PromptResponse | undefined;
     try {
-      this.send(conn, session, turn, blocks);
-      if (input.instructions) session.given = this.instructionsOf(input);
+      const first = this.send(conn, session, turn, blocks);
+      // The instructions count as given once the agent has taken the prompt they went in: one it
+      // turned away leaves the session as it was, so the next message tells them again.
+      const given = input.instructions ? this.instructionsOf(input) : undefined;
       sink.onStarted?.({ cursor: session.id, turnId: turn.id });
       // A steer is a prompt of its own; the turn ends once every prompt in it has.
       while (turn.prompts.size) {
@@ -679,6 +681,7 @@ ${line}`.slice(-4000); this.onText(line); });
         turn.prompts.delete(settled.prompt);
         if (settled.error !== undefined) failure ??= message(settled.error);
         else last = settled.response;
+        if (settled.prompt === first && settled.error === undefined && given !== undefined) session.given = given;
         // A steer queued behind a stopped reply would start next: it is stopped too.
         if ((turn.interrupted || turn.stalled) && turn.prompts.size && !conn.closed) void conn.agent.notify("session/cancel", { sessionId: session.id }).catch(() => {});
       }
@@ -730,6 +733,7 @@ ${line}`.slice(-4000); this.onText(line); });
     turn.prompts.add(sent);
     sent.catch(() => {});
     turn.lastActivity = Date.now();
+    return sent;
   }
 
   /** An error as the owner should read it: a sign-in problem says how to sign in. */

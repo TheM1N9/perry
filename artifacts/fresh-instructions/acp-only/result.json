@@ -1,0 +1,65 @@
+{
+  "ranAt": "2026-09-30T05:03:06.487Z",
+  "checks": {
+    "acpFirstPromptHasTheInstructions": true,
+    "acpNothingWhenNothingChanged": true,
+    "acpHearsOnlyTheChange": true,
+    "acpHearsAReorder": true,
+    "acpUpdateToldAgainAfterARejectedPrompt": true,
+    "acpPreambleToldAgainAfterARejectedFirstPrompt": true
+  },
+  "notes": {
+    "codex": "not run: --acp",
+    "acpFirstPromptHasTheInstructions": {
+      "context": "<perry-instructions>\nYour name is Perry.\n\nYou are a private assistant for one owner. Write like a thoughtful person in a\nchat: direct, clear, and concise, with no filler preamble or sign-off. Use\nsaved memories when relevant, but never invent personal facts. Separate what\nyou know from what you infe"
+    },
+    "acpNothingWhenNothingChanged": {
+      "context": "# Right now\n\nIt is now Wednesday, 30 September 2026 at 05:02 in UTC (UTC+00:00).\n\n# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or routine, their work"
+    },
+    "acpHearsOnlyTheChange": {
+      "context": "<perry-instructions>\n# Your instructions changed\n\nSome of your instructions changed since you were given them. What follows is current: where it differs from anything earlier, it wins.\n\n## New or changed\n\nYour name is Nova-Three.\n\n## No longer part of your instructions\n\n> Your name is Perry.\n</perry-instructions>\n\n# Right now\n\nIt is now Wednesday, 30 September 2026 at 05:02 in UTC (UTC+00:00).\n\n# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or routine, their work and the projects, pages or channels they run, what they made or how something went), save it with remember in this reply, even when they only ask a question about it, naming in about ",
+      "firstLength": 19224,
+      "thirdLength": 837
+    },
+    "acpHearsAReorder": {
+      "four": "<perry-instructions>\n# Your instructions changed\n\nSome of your instructions changed since you were given them. What follows is current: where it differs from anything earlier, it wins.\n\n## New or changed\n\n## About the owner (USER.md)\n\nI live in Lisbon.\n\nI work nights, so mornings are for sleep.\n</perry-instructions>\n\n# Right now\n\nIt is now Wednesday, 30 September 2026 at 05:02 in UTC (UTC+00:00).\n\n# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or ",
+      "five": "<perry-instructions>\n# Your instructions, as they are now\n\nThese are your current instructions. Where they differ from anything earlier, they win.\n\nYour name is Nova-Three.\n\nYou are a private assistan",
+      "fiveAboutTheOwner": "## About the owner (USER.md)\n\nI work nights, so mornings are for sleep.\n\nI live in Lisbon.\n\n## This computer\n\nYour own folder for files you make is W:\\perry-tests\\fresh-instructions\\perry-fresh-instru"
+    },
+    "acpUpdateToldAgainAfterARejectedPrompt": {
+      "rejected": "<perry-instructions>\n# Your instructions changed\n\nSome of your instructions changed since you were given them. What follows is current: where it differs from anything earlier, it wins.\n\n## New or changed\n\nYour name is Vega-Four.\n\n## No longer part of your instructions\n\n> Your name is Nova-Three.\n</perry-instructions>\n\n# Right now\n\nIt is now Wednesday, 30 September 2026 at 05:02 in UTC (UTC+00:00).",
+      "seven": "<perry-instructions>\n# Your instructions changed\n\nSome of your instructions changed since you were given them. What follows is current: where it differs from anything earlier, it wins.\n\n## New or changed\n\nYour name is Vega-Four.\n\n## No longer part of your instructions\n\n> Your name is Nova-Three.\n</perry-instructions>\n\n# Right now\n\nIt is now Wednesday, 30 September 2026 at 05:02 in UTC (UTC+00:00).\n\n# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or"
+    },
+    "acpPreambleToldAgainAfterARejectedFirstPrompt": {
+      "rejected": "<perry-instructions>\nYour name is Vega-Four.\n\nYou are a private assistant for one owner. Write like a thoughtful person in a\nchat: direct, clear, and concise, with no filler preamble or sign-off. Use\n",
+      "nine": "<perry-instructions>\nYour name is Vega-Four.\n\nYou are a private assistant for one owner. Write like a thoughtful person in a\nchat: direct, clear, and concise, with no filler preamble or sign-off. Use\nsaved memories when relevant, but never invent personal facts. Separate what\nyou know from what you ",
+      "nineLength": 19320
+    },
+    "model": "grok-fake-heavy (the fake ACP agent)",
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\fresh-instructions\\perry-fresh-instructions-bVx3dS\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  named a chat \"Automated ACP test one\" (haiku)\u001b[0m",
+      "\u001b[2m  saved turn tbff9g4640q4mbvk7vts6f0t8b\u001b[0m",
+      "\u001b[2m  saved turn tfy9hrktgpq9qk9mjjr9t7g2gx\u001b[0m",
+      "\u001b[2m  saved turn vz6mjt4kaq9jh11m2vn24q0mm4\u001b[0m",
+      "\u001b[2m  saved turn cmfaqzzj9mz9dh2h5y60xdza00\u001b[0m",
+      "\u001b[2m  saved turn 8gh1snwzt25bpwgaf4zkdj7d4q\u001b[0m",
+      "\u001b[2m  saved turn wxsvmer337fgshy0ysrwv1bv2m\u001b[0m",
+      "\u001b[2m  saved turn f2b29ks3gtz03b2zd4hgf32bnw\u001b[0m",
+      "\u001b[2m  saved turn swgbf8dm8g7zqj2wjpnygfvgs9\u001b[0m",
+      "\u001b[2m  saved turn p4r7ssfthe2dswkxsey8j64a8k\u001b[0m",
+      "\u001b[2m  named a chat \"Automated ACP test eight\" (haiku)\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}
