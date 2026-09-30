@@ -10,6 +10,7 @@ import { join } from "node:path";
  *
  *   runner.json     how this machine's runner connects
  *   codex-results/  finished Codex turns not yet delivered
+ *   codex-instructions/  what each Codex thread was last told to follow (instructions.ts)
  *   uploads/        files the owner attached in chat
  *   files/          the agent's own folder for what it makes, organised as it sees fit
  *   skills/         the agent's skills, one folder each with a SKILL.md, found by Codex
@@ -26,6 +27,7 @@ export const HOME = process.env.PERRY_HOME ?? join(homedir(), ".perry");
 export const PATHS = {
   runnerConfig: join(HOME, "runner.json"),
   codexResults: join(HOME, "codex-results"),
+  codexInstructions: join(HOME, "codex-instructions"),
   uploads: join(HOME, "uploads"),
   files: join(HOME, "files"),
   /** An empty folder a chat with someone else runs in: nothing of the owner's is in it. */

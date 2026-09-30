@@ -8,8 +8,11 @@
  * shows, hides, restarts and quits it.
  *
  * `perry pet` installs Electron here (pnpm, in this folder), starts this, and
- * has it start at login; `perry pet off` stops both. Everything the pet knows
- * comes from the server, so this file keeps only where the window stands.
+ * has it start at login; `perry pet off` stops both. On the owner's other
+ * computers, the installer's pet-only mode does the same, and connect.js pairs
+ * him with Perry's server over the network. Everything the pet knows comes
+ * from the server, so this file keeps only where the window stands, and on
+ * another computer which server and its key for him.
  *
  * Run again while running, it acts on the one already there: --quit quits it,
  * --reload reloads its page (after `perry update`), anything else shows it.
@@ -29,9 +32,9 @@ const HOME = process.env.PERRY_HOME ?? join(homedir(), ".perry");
 const STATE = join(HOME, "pet.json");
 /** Where the voice model is kept once downloaded. */
 const MODELS = process.env.PERRY_MODELS_DIR ?? join(HOME, "models");
-/** Room for the platypus in the bottom-right corner, and his bubble or panel above him. */
+/** Room for the platypus and his bubble or panel: above him, or below him near the top of a screen. */
 const SIZE = { width: 404, height: 620 };
-/** The part of the window he stands in, which is kept on screen. */
+/** The part of the window he stands in, at its bottom-right corner away from the edges of the screen. */
 const BODY = { width: 150, height: 170 };
 /**
  * Dragged onto this, he goes: a circle at the bottom middle of the screen,
@@ -59,13 +62,28 @@ function envFile() {
   return values;
 }
 
-const env = envFile();
-const BASE = process.env.PERRY_URL ?? `http://127.0.0.1:${process.env.PERRY_PORT ?? env.PERRY_PORT ?? 7377}`;
-const KEY = process.env.DASHBOARD_KEY ?? env.DASHBOARD_KEY ?? "";
-
 function readState() {
   try { return JSON.parse(readFileSync(STATE, "utf8")); } catch { return {}; }
 }
+
+/**
+ * Which Perry he shows, and with what key. On Perry's own computer, the
+ * checkout's .env.local: the dashboard key, and the port. On another
+ * computer, paired from Perry's Settings → Desktop pet (connect.js), pet.json:
+ * the server's address and this computer's own key, which opens only what
+ * his page needs. Read again when he is started again (a new pairing).
+ */
+function connection() {
+  const env = envFile();
+  const { server, token } = readState();
+  if (!process.env.DASHBOARD_KEY && typeof server === "string" && typeof token === "string") return { base: server.replace(/\/+$/, ""), key: token, paired: true };
+  return {
+    base: process.env.PERRY_URL ?? `http://127.0.0.1:${process.env.PERRY_PORT ?? env.PERRY_PORT ?? 7377}`,
+    key: process.env.DASHBOARD_KEY ?? env.DASHBOARD_KEY ?? "",
+    paired: false,
+  };
+}
+let { base: BASE, key: KEY, paired: PAIRED } = connection();
 
 function saveState(patch) {
   try {
@@ -76,13 +94,39 @@ function saveState(patch) {
   }
 }
 
-/** Where the window may stand: anywhere, so long as he is on a screen. */
+/** The part of the screen he stands on that windows may use, for his spot. */
+const areaOf = (x, y) => screen.getDisplayNearestPoint({ x: x + SIZE.width - BODY.width / 2, y: y + SIZE.height - BODY.height / 2 }).workArea;
+const clamp = (value, low, high) => Math.min(Math.max(value, low), high);
+
+/**
+ * Where he may stand: anywhere, so long as he is on a screen. His spot is
+ * where his window would be with him in its bottom-right corner, as it is
+ * away from the edges; it is what pet.json keeps.
+ */
 function keepOnScreen(x, y) {
-  const area = screen.getDisplayNearestPoint({ x: x + SIZE.width - BODY.width / 2, y: y + SIZE.height - BODY.height / 2 }).workArea;
+  const area = areaOf(x, y);
   return {
-    x: Math.round(Math.min(Math.max(x, area.x - (SIZE.width - BODY.width)), area.x + area.width - SIZE.width)),
-    y: Math.round(Math.min(Math.max(y, area.y - (SIZE.height - BODY.height)), area.y + area.height - SIZE.height)),
+    x: Math.round(clamp(x, area.x - (SIZE.width - BODY.width), area.x + area.width - SIZE.width)),
+    y: Math.round(clamp(y, area.y - (SIZE.height - BODY.height), area.y + area.height - SIZE.height)),
   };
+}
+
+/**
+ * His window, for him at a spot: always wholly on his screen, so his bubble
+ * and panel are too. Near the top of the screen it hangs below him, and they
+ * open under him, unless there is more room above; near the left edge he
+ * stands further left in it, and they open over to his right. He is not
+ * moved: his page is told where he is in the window (`place`: how far up and
+ * left of its bottom-right corner, and whether they open below him).
+ */
+function frame(spot) {
+  const area = areaOf(spot.x, spot.y);
+  const above = spot.y + SIZE.height - BODY.height - area.y;
+  const under = area.y + area.height - (spot.y + SIZE.height);
+  const below = above < SIZE.height - BODY.height && under > above;
+  const x = clamp(spot.x, area.x, area.x + area.width - SIZE.width);
+  const y = clamp(below ? spot.y + SIZE.height - BODY.height : spot.y, area.y, area.y + area.height - SIZE.height);
+  return { bounds: { x, y, ...SIZE }, place: { x: spot.x - x, y: spot.y - y, below } };
 }
 
 function startingPlace() {
@@ -131,7 +175,20 @@ if (!app.requestSingleInstanceLock({ argv })) {
   /** Ghost: every click goes through him, even on him. */
   let ghost = Boolean(readState().ghost);
   let saveTimer = null;
-  /** While he is dragged: the circle to drop him on, whether he is over it, where he came from, and where his body is in his window. */
+  /** Where he stands (see keepOnScreen), and his window for it (frame). */
+  let spot = null;
+  let framed = null;
+  /** He stands at a spot: his window goes where it keeps all of him on screen, and his page hears where he is in it. */
+  const standAt = (to) => {
+    spot = to;
+    framed = frame(spot);
+    // The size is set with the place each time: on a scaled screen, moving alone can grow a window a pixel at a time.
+    win?.setBounds(framed.bounds);
+    win?.webContents.send("pet:place", framed.place);
+  };
+  /** Where his body's middle is on the screen, for the screen he is on. */
+  const bodyPoint = () => ({ x: spot.x + SIZE.width - BODY.width / 2, y: spot.y + SIZE.height - BODY.height / 2 });
+  /** While he is dragged: the circle to drop him on, whether he is over it, where he came from, and where his body is from his spot. */
   let dismiss = null;
   let dragging = false;
   let armed = false;
@@ -163,8 +220,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
    * it has asked is kept in pet.json: macOS tells an app only yes or no.
    */
   const shoot = async (byOwner) => {
-    const [x, y] = win.getPosition();
-    const shot = await capture([win, dismiss], { x: x + SIZE.width - BODY.width / 2, y: y + SIZE.height - BODY.height / 2 }).catch((error) => ({ error: String(error) }));
+    const shot = await capture([win, dismiss], bodyPoint()).catch((error) => ({ error: String(error) }));
     if (shot.needs === "screen-recording") {
       if (!readState().screenRecordingAsked) saveState({ screenRecordingAsked: true });
       else if (byOwner) void shell.openExternal(SCREEN_RECORDING_SETTINGS);
@@ -182,10 +238,14 @@ if (!app.requestSingleInstanceLock({ argv })) {
   };
 
   const load = () => win?.loadURL(`${BASE}/pet#key=${encodeURIComponent(KEY)}`).catch(() => {});
-  /** A page of the dashboard in the owner's browser, unlocked as `perry open` does; only this server's own pages. */
+  /**
+   * A page of the dashboard in the owner's browser, unlocked as `perry open`
+   * does; only this server's own pages. Paired from another computer, his key
+   * opens only his own page, so the dashboard asks for its key there, once.
+   */
   const openDashboard = (path) => {
     const page = typeof path === "string" && path.startsWith("/") && !path.startsWith("//") ? path : "/";
-    void shell.openExternal(`${BASE}${page}#key=${encodeURIComponent(KEY)}`);
+    void shell.openExternal(PAIRED ? `${BASE}${page}` : `${BASE}${page}#key=${encodeURIComponent(KEY)}`);
   };
 
   const show = () => { wanted = true; if (win && !win.isVisible()) win.showInactive(); refreshMenu(); };
@@ -227,7 +287,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
       { label: "Open Perry", click: () => openDashboard("/") },
       { label: "Put him back in the corner", click: () => {
         const area = screen.getPrimaryDisplay().workArea;
-        win?.setBounds({ x: area.x + area.width - SIZE.width, y: area.y + area.height - SIZE.height, ...SIZE });
+        standAt({ x: area.x + area.width - SIZE.width, y: area.y + area.height - SIZE.height });
         saveState({ x: undefined, y: undefined });
       } },
       { type: "separator" },
@@ -239,9 +299,13 @@ if (!app.requestSingleInstanceLock({ argv })) {
 
   app.on("second-instance", (_event, _commandLine, _cwd, data) => {
     const args = data?.argv ?? [];
-    if (args.includes("--quit")) app.quit();
-    else if (args.includes("--reload")) load();
-    else show();
+    if (args.includes("--quit")) return app.quit();
+    // Paired again (connect.js starts him): another server or key, and his page from it.
+    const now = connection();
+    const changed = now.base !== BASE || now.key !== KEY;
+    ({ base: BASE, key: KEY, paired: PAIRED } = now);
+    if (args.includes("--reload") || changed) load();
+    if (!args.includes("--reload")) show();
   });
 
   app.whenReady().then(() => {
@@ -260,9 +324,10 @@ if (!app.requestSingleInstanceLock({ argv })) {
     applyTheme();
     watchFile(STATE, { interval: 1000 }, applyTheme);
 
+    spot = startingPlace();
+    framed = frame(spot);
     win = new BrowserWindow({
-      ...SIZE,
-      ...startingPlace(),
+      ...framed.bounds,
       title: "Perry",
       frame: false,
       transparent: true,
@@ -315,20 +380,20 @@ if (!app.requestSingleInstanceLock({ argv })) {
       win.setAlwaysOnTop(true, "floating");
       win.moveTop();
     }, 15_000);
-    // A screen unplugged may take him with it.
-    screen.on("display-removed", () => {
-      const [x, y] = win.getPosition();
-      win.setBounds({ ...keepOnScreen(x, y), ...SIZE });
-    });
+    // A screen unplugged may take him with it; one changed (its size, its scale, the taskbar) may leave less room around him.
+    const restand = () => standAt(keepOnScreen(spot.x, spot.y));
+    screen.on("display-removed", restand);
+    screen.on("display-metrics-changed", restand);
+    // His page asks where he is in his window, and hears each time that changes (pet:place).
+    ipcMain.handle("pet:place", () => framed.place);
 
     ipcMain.on("pet:solid", (_event, on) => {
       if (!ghost) win.setIgnoreMouseEvents(!on, { forward: true });
     });
     ipcMain.on("pet:move", (_event, x, y) => {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-      // The size is set with the place each time: on a scaled screen, moving alone can grow a window a pixel at a time.
       const place = keepOnScreen(x, y);
-      win.setBounds({ ...place, ...SIZE });
+      standAt(place);
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => saveState(place), 500);
       if (dragging && body) {
@@ -345,9 +410,12 @@ if (!app.requestSingleInstanceLock({ argv })) {
     // A drag starts: the circle appears at the bottom middle of his screen. It ends: over the circle, he goes.
     ipcMain.on("pet:drag", (_event, phase, bodyX, bodyY) => {
       if (phase === "start") {
-        dragFrom = win.getPosition();
-        body = { x: Number(bodyX) || SIZE.width - 68, y: Number(bodyY) || SIZE.height - 69 };
-        const area = screen.getDisplayNearestPoint({ x: dragFrom[0] + body.x, y: dragFrom[1] + body.y }).workArea;
+        dragFrom = spot;
+        // The page says where his body is in his window; taken from his spot, it holds however the window is placed.
+        body = Number(bodyX) && Number(bodyY)
+          ? { x: Number(bodyX) - framed.place.x, y: Number(bodyY) - framed.place.y }
+          : { x: SIZE.width - 68, y: SIZE.height - 69 };
+        const area = screen.getDisplayNearestPoint({ x: dragFrom.x + body.x, y: dragFrom.y + body.y }).workArea;
         dismiss.setBounds({ x: Math.round(area.x + (area.width - DISMISS.size) / 2), y: area.y + area.height - DISMISS.size - 8, width: DISMISS.size, height: DISMISS.size });
         armed = false;
         // Its window is always there, see-through; it fades in, above whatever else is on top, and he above it.
@@ -365,9 +433,8 @@ if (!app.requestSingleInstanceLock({ argv })) {
         hide();
         // Back to where he was, for when he is shown again.
         clearTimeout(saveTimer);
-        const [x, y] = dragFrom;
-        win.setBounds({ x, y, ...SIZE });
-        saveState({ x, y });
+        standAt(dragFrom);
+        saveState(dragFrom);
         if (Notification.isSupported()) {
           const keys = voice?.current()?.replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl");
           new Notification({ title: "Perry is out of sight", body: `${keys ? `Press ${keys}, or click` : "Click"} his icon in the tray, to bring him back.`, silent: true }).show();

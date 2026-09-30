@@ -5,7 +5,8 @@ import {
   PaletteIcon, PencilIcon, SearchIcon, TerminalIcon, XIcon, type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { catchError, type ErrorInfo } from "next/error";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -31,9 +32,10 @@ import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
  * with all he knows; your to-dos; and what is waiting on you, answered right
  * there. He speaks up for what matters now: a computer waiting for your yes,
  * a to-do coming due (at 15 and 10 minutes, then a countdown held for the
- * last five until it is done or pushed back), a reply you have not read, a
- * chat with something new. Talk to him with a hotkey from anywhere, or his
- * mic button; what you say goes into his chat (voice.tsx, pet/voice.js).
+ * last five until it is done or pushed back), a reply you have not read (a
+ * while, then it is left in his chat), a chat with something new. Talk to
+ * him with a hotkey from anywhere, or his mic button; what you say goes into
+ * his chat (voice.tsx, pet/voice.js).
  * With nothing going on he naps, hat off. He tells the server when the owner
  * is away, and the phone gets the reminders instead (convex/todos.ts).
  *
@@ -47,8 +49,10 @@ import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
 type Bridge = VoiceBridge & {
   /** Whether the pointer is over something to click; elsewhere clicks pass through. */
   solid: (on: boolean) => void;
-  /** Where the window's top-left corner goes, in screen points. */
+  /** Where he goes: his spot, the window's top-left corner with him in its bottom-right one, in screen points. */
   moveTo: (x: number, y: number) => void;
+  /** Where he stands in the window, now and each time that changes. Absent in a pet window from before, which keeps him in its corner. */
+  onPlace?: (listener: (place: Place) => void) => () => void;
   /** A drag of him starts (with where his body's middle is in the window) and ends; dropped on the circle it shows, he hides. */
   dragStart: (bodyX: number, bodyY: number) => void;
   dragEnd: () => void;
@@ -83,6 +87,9 @@ const LIMIT_SHOWS_MS = 20_000;
 const LIMIT_STORAGE = "perry.pet.limits";
 /** How long a dashboard tab already open has to take a page he opens, before he opens a new tab. */
 const TAB_CLAIMS_MS = 1_500;
+/** A reply held up goes by itself once it has been up this long, and a little longer for each letter of it. */
+const REPLY_SHOWS_MS = 8_000;
+const REPLY_MS_PER_LETTER = 60;
 
 export function PetScreen() {
   const [key, setKey] = useState<string | null>(null);
@@ -110,19 +117,48 @@ export function PetScreen() {
   useClickThrough();
 
   if (!ready) return null;
-  if (!session) {
-    return (
-      <Stage bubble={<Bubble title="I'm locked out." detail="Start me with perry pet, and I'll have the key." />}>
-        <Body mood="idle" asleep={false} onClick={() => {}} />
-      </Stage>
-    );
-  }
+  if (!session) return <LockedOut />;
   return (
     <SessionContext.Provider value={session}>
-      <Pet />
+      <PetErrorBoundary>
+        <Pet />
+      </PetErrorBoundary>
     </SessionContext.Provider>
   );
 }
+
+function LockedOut({ detail = "Start me with perry pet on Perry's computer, or pair me from its Settings → Desktop pet, and I'll have the key." }: { detail?: string }) {
+  return (
+    <Stage bubble={<Bubble title="I'm locked out." detail={detail} />}>
+      <Body mood="idle" asleep={false} onClick={() => {}} />
+    </Stage>
+  );
+}
+
+/**
+ * A query that fails throws while he renders. His key refused (the dashboard
+ * key changed, or this computer was removed from Perry's Settings): he says
+ * so, and stays out of the way. Anything else, he says what, and tries again
+ * in a moment.
+ */
+function PetErrorFallback(_props: object, { error, reset }: ErrorInfo) {
+  const message = errorText(error);
+  const locked = /dashboard key|DASHBOARD_KEY|removed from Perry|cannot call/i.test(message);
+  useEffect(() => {
+    if (locked) return;
+    const timer = window.setTimeout(reset, 15_000);
+    return () => window.clearTimeout(timer);
+  }, [locked, reset]);
+  // What his key may not do is said as it is: Perry serves this page and that list together, so it is a gap to report.
+  if (locked) return <LockedOut detail={/removed from Perry|cannot call/.test(message) ? message : undefined} />;
+  return (
+    <Stage bubble={<Bubble title="Something went wrong" detail={message.slice(0, 200)} />}>
+      <Body mood="idle" asleep={false} onClick={reset} />
+    </Stage>
+  );
+}
+
+const PetErrorBoundary = catchError(PetErrorFallback);
 
 /**
  * Only what is marked data-solid takes the pointer. The window hears the
@@ -160,6 +196,12 @@ const STEP_HOLD_MS = 2_500;
 
 function Pet() {
   const key = useDashboardKey();
+  /**
+   * On another of the owner's computers, paired with a key of its own (its prefix,
+   * PET_KEY_PREFIX in convex/lib/devices.ts), never the dashboard key. The server
+   * lets that key call only what such a pet needs (server/devices.ts).
+   */
+  const paired = key.startsWith("pet_");
   const board = useQuery(api.todos.board, { key });
   const approvals = useQuery(api.approvals.pending, { key });
   const inbox = useQuery(api.dashboard.getInbox, { key });
@@ -183,6 +225,9 @@ function Pet() {
   const { results: newest } = usePaginatedQuery(api.dashboard.getChatMessages, chatId ? { key, id: chatId } : "skip", { initialNumItems: 2 });
   const [said, setSaid] = useState<Said | null>(null);
   const [reply, setReply] = useState<{ id: Id<"conversations">; since: number; streamed: string } | null>(null);
+  const dropReply = useCallback(() => setReply(null), []);
+  /** The reply whose bubble the pointer is on, which holds it up. */
+  const [pointerOn, setPointerOn] = useState<string | null>(null);
   const [cheer, setCheer] = useState(0);
   const lastBusy = useRef(Date.now());
   const cheerSeen = useRef(0);
@@ -231,19 +276,21 @@ function Pet() {
    * A page of the dashboard, in the browser, unlocked: in a dashboard tab
    * already open, which takes it (components/dashboard/shell.tsx), or, when
    * none does in a moment, a new one. He claims it himself to open it, so it
-   * is one or the other, never both.
+   * is one or the other, never both. On another computer, always a new one there:
+   * the tabs open elsewhere may be on Perry's computer, across the room.
    */
   const openPath = useCallback((path: string) => {
     const openNew = () => {
       if (window.perryPet) window.perryPet.openDashboard(path);
       else window.open(path, "_blank");
     };
+    if (paired) return openNew();
     void (async () => {
       const request = await askToOpen({ key, path });
       await new Promise((resolve) => window.setTimeout(resolve, TAB_CLAIMS_MS));
       if (await claimOpen({ key, request })) openNew();
     })().catch(openNew);
-  }, [key, askToOpen, claimOpen]);
+  }, [key, paired, askToOpen, claimOpen]);
   /** A chat in his panel, maybe with something already typed. */
   const openChat = useCallback((id: PetChatId, text?: string) => {
     setChatId(id);
@@ -286,12 +333,16 @@ function Pet() {
     void update().then((text) => say("See you in a few minutes", text, 6000), (cause) => say("I couldn't update", errorText(cause), 6000));
   }, [update, say]);
 
-  // Scheduled things run in the owner's timezone, which only this computer knows.
+  // Scheduled things run in the owner's timezone, which only this computer knows: Perry's own, not a laptop taken abroad.
   useEffect(() => {
+    if (paired) return;
     void setTimezone({ key, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
-  }, [key, setTimezone]);
+  }, [key, paired, setTimezone]);
 
   // How long the owner has been away, once a minute, for the server, which then sends reminders to the phone.
+  // Refused (this computer removed from Perry's Settings, or the key changed), he is locked out from then on.
+  const [refused, setRefused] = useState<string | null>(null);
+  if (refused) throw new Error(refused);
   useEffect(() => {
     const bridge = window.perryPet;
     if (!bridge) return;
@@ -307,7 +358,9 @@ function Pet() {
           hotkeyNow.current = { ...hotkeyNow.current, hold: talk.hold };
           setHotkey(hotkeyNow.current);
         }
-        void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current, lookKeyNow.current) }).catch(() => {});
+        void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current, lookKeyNow.current) }).catch((error: unknown) => {
+          if (/dashboard key|removed from Perry/i.test(errorText(error))) setRefused(errorText(error));
+        });
       }
     };
     void check();
@@ -346,7 +399,7 @@ function Pet() {
     unseen.current = current;
   }, [chats, say, openChat, chatId]);
 
-  // His own chat's reply, finished while you were not reading it: he holds it up until you do.
+  // His own chat's reply, finished while you were not reading it: he holds it up until you do, or for a while (below).
   useEffect(() => {
     if (!petChat || !chatId) return;
     if (petChat.isRunning) {
@@ -513,6 +566,8 @@ function Pet() {
   const took = (since?: number) => since !== undefined && now - since >= STEP_TIMER_MS ? countdown(now - since) : undefined;
   let bubble: ReactNode = null;
   let urgent = false;
+  /** The reply's bubble, when that is what he is holding up, and for how long it stays. */
+  let replyUp: { key: string; ms: number } | null = null;
   if (said && said.until > now) {
     const onOpen = said.onOpen;
     bubble = <Bubble title={said.title} detail={said.detail} onClose={() => setSaid(null)} onOpen={onOpen && (() => { setSaid(null); onOpen(); })} />;
@@ -550,7 +605,11 @@ function Pet() {
     const saved = reply.id === chatId ? newest.find((message) => message.role === "assistant" && message.createdAt >= reply.since) : undefined;
     // Under the reply, what it took: "Ran 3 commands · read 2 pages".
     const did = reply.id === chatId && activity && !activity.running ? activity.summary : "";
-    bubble = <Bubble title="Perry" detail={excerpt(saved?.text || reply.streamed || "…")} note={did || undefined} onOpen={() => openChat(reply.id)} onClose={() => setReply(null)} />;
+    const words = excerpt(saved?.text || reply.streamed || "…");
+    const key = `${reply.id}:${reply.since}`;
+    replyUp = { key, ms: REPLY_SHOWS_MS + (words.length + did.length) * REPLY_MS_PER_LETTER };
+    bubble = <Bubble title="Perry" detail={words} note={did || undefined} onOpen={() => openChat(reply.id)} onClose={() => setReply(null)}
+      onPointer={(on) => setPointerOn(on ? key : null)} />;
   } else if (working) {
     const writing = step?.label === "Writing the reply" && petChat?.streaming;
     bubble = <Bubble id="working" title={step?.label ?? "On it…"} detail={writing ? excerpt(petChat!.streaming!, true) : took(step?.since)} onOpen={() => openChat(chatId)} />;
@@ -584,6 +643,13 @@ function Pet() {
       </Bubble>
     );
   }
+
+  // The reply goes by itself once it has been up a while, counted while it shows and the pointer is not on it; it stays in
+  // his chat. What waits on the owner (a yes, something late or about to be) has no such end.
+  const shown = open ? null : replyUp;
+  const shownKey = shown?.key ?? null;
+  useEffect(() => { if (!shownKey) setPointerOn(null); }, [shownKey]);
+  useGoesBy(shownKey, shown?.ms ?? 0, pointerOn !== shownKey, dropReply);
 
   // Off duty, as in the show: with nothing going on he naps, hat off; anything at all and the fedora goes back on.
   const onDuty = Boolean(bubble) || open || urgent || Boolean(petChat?.isRunning) || voice.state !== "idle" || cheer !== cheerSeen.current;
@@ -644,46 +710,97 @@ function excerpt(text: string, end = false): string {
   return end ? `…${plain.slice(-140)}` : `${plain.slice(0, 140)}…`;
 }
 
-/** The window's contents: the panel or a bubble above, and him in the bottom corner. */
+/**
+ * Calls `onGone` once what `id` names has been up `ms` in all, counting only
+ * while `counting`. Another id starts again from nothing; none, nothing counts.
+ */
+function useGoesBy(id: string | null, ms: number, counting: boolean, onGone: () => void) {
+  const spent = useRef({ id, ms: 0 });
+  if (spent.current.id !== id) spent.current = { id, ms: 0 };
+  useEffect(() => {
+    if (!id || !counting) return;
+    const up = spent.current;
+    const from = Date.now();
+    const timer = window.setTimeout(onGone, Math.max(0, ms - up.ms));
+    return () => {
+      window.clearTimeout(timer);
+      up.ms += Date.now() - from;
+    };
+  }, [id, ms, counting, onGone]);
+}
+
+/**
+ * Where he stands in his window (pet/main.js): how far up and left of its
+ * bottom-right corner, and whether his bubble and panel open below him. The
+ * window is kept wholly on screen, and moves round him near an edge.
+ */
+type Place = { x: number; y: number; below: boolean };
+const CORNER: Place = { x: 0, y: 0, below: false };
+const PlaceContext = createContext<Place>(CORNER);
+
+/**
+ * The window's contents: him, in its bottom-right corner or where the window
+ * says he is, and the panel or a bubble above him, or below him near the top
+ * of the screen. A bubble points at him; near the left edge, rather than
+ * leave the window, it goes over to his right.
+ */
 function Stage({ bubble, children }: { bubble: ReactNode; children: ReactNode }) {
+  const [place, setPlace] = useState(CORNER);
+  useEffect(() => window.perryPet?.onPlace?.(setPlace), []);
   return (
-    <main className="fixed inset-0 flex select-none flex-col items-end justify-end gap-1 overflow-hidden p-3 pr-4">
-      <AnimatePresence mode="wait">{bubble}</AnimatePresence>
-      {children}
-    </main>
+    <PlaceContext.Provider value={place}>
+      <main className="fixed inset-0 grid select-none overflow-hidden p-3" style={{ gridTemplateRows: `minmax(0, 1fr) auto ${-place.y}px` }}>
+        <div className={cn("flex min-h-0 justify-end", place.below ? "row-start-3 items-start pt-2.5" : "row-start-1 items-end pb-1")}>
+          <AnimatePresence mode="wait">{bubble}</AnimatePresence>
+          {/* From the bubble's right edge to his, given up as far as it takes to keep the bubble in the window. */}
+          <span aria-hidden className="min-w-0 shrink" style={{ flexBasis: 28 - place.x }} />
+        </div>
+        <div className="row-start-2 justify-self-end" style={{ marginRight: 4 - place.x }}>{children}</div>
+      </main>
+    </PlaceContext.Provider>
   );
 }
 
 type Tone = "late" | "soon" | "ask";
 
 /** Something he says. With onOpen, a click on it opens what it is about. */
-function Bubble({ id, title, detail, note, code, tone, onClose, onOpen, children }: {
+function Bubble({ id, title, detail, note, code, tone, onClose, onOpen, onPointer, children }: {
   /** Keeps it the same bubble while its words change, as a step does. */
   id?: string;
   title: string; detail?: string;
   /** A quiet last line, like what a reply took. */
   note?: string;
-  code?: string; tone?: Tone; onClose?: () => void; onOpen?: () => void; children?: ReactNode;
+  code?: string; tone?: Tone; onClose?: () => void; onOpen?: () => void;
+  /** The pointer comes onto it, and goes. */
+  onPointer?: (on: boolean) => void;
+  children?: ReactNode;
 }) {
+  const { x, below } = useContext(PlaceContext);
+  // Its point, over him (a little to his left), wherever the bubble had to go to stay in the window (Stage).
+  const point = `max(14px, min(calc(100% - 54px), calc(100vw - ${106 - x}px)))`;
+  const rise = below ? -1 : 1;
   return (
     <motion.div
       key={id ?? `${title}:${tone ?? ""}`}
       data-solid
       role="status"
-      initial={{ opacity: 0, y: 10, scale: 0.92 }}
+      initial={{ opacity: 0, y: 10 * rise, scale: 0.92 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 6, scale: 0.96 }}
+      exit={{ opacity: 0, y: 6 * rise, scale: 0.96 }}
       transition={{ type: "spring", stiffness: 420, damping: 28 }}
-      style={{ transformOrigin: "85% 100%" }}
+      style={{ transformOrigin: `calc(${point} + 7px) ${below ? "0%" : "100%"}` }}
       onClick={onOpen}
+      onPointerEnter={onPointer && (() => onPointer(true))}
+      onPointerLeave={onPointer && (() => onPointer(false))}
       className={cn(
-        "group/bubble relative mr-6 w-max min-w-[176px] max-w-[300px] rounded-2xl border bg-popover px-3.5 py-3 text-popover-foreground shadow-[0_12px_32px_-8px_rgb(0_0_0/0.35)]",
+        "group/bubble relative w-max min-w-[176px] max-w-[300px] shrink-0 rounded-2xl border bg-popover px-3.5 py-3 text-popover-foreground shadow-[0_12px_32px_-8px_rgb(0_0_0/0.35)]",
         tone === "late" && "border-destructive/45",
         tone === "ask" && "border-warning/55",
         onOpen && "cursor-pointer",
       )}
     >
-      <span aria-hidden className={cn("absolute right-10 -bottom-[7px] size-3.5 rotate-45 rounded-br-[3px] border-r border-b bg-popover",
+      <span aria-hidden style={{ left: point }} className={cn("absolute size-3.5 rotate-45 bg-popover",
+        below ? "-top-[7px] rounded-tl-[3px] border-t border-l" : "-bottom-[7px] rounded-br-[3px] border-r border-b",
         tone === "late" && "border-destructive/45", tone === "ask" && "border-warning/55")} />
       {onClose && (
         <button type="button" aria-label="Hide" onClick={(event) => { event.stopPropagation(); onClose(); }}
@@ -745,6 +862,8 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
   // Held over the circle that hides him, he looks down at it, worried.
   const [armed, setArmed] = useState(false);
   useEffect(() => window.perryPet?.onArmed(setArmed), []);
+  // Dragged, he goes from his spot, which is where the window is only while he stands in its corner.
+  const place = useContext(PlaceContext);
 
   useEffect(() => {
     const move = (event: PointerEvent) => {
@@ -802,7 +921,7 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
     if (event.button !== 0) return;
     onTouch?.();
     event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { x: event.screenX, y: event.screenY, left: window.screenX, top: window.screenY, moved: false };
+    drag.current = { x: event.screenX, y: event.screenY, left: window.screenX + place.x, top: window.screenY + place.y, moved: false };
     // Letting go ends the drag wherever the pointer is, even if something took the capture from him on the way.
     const release = () => { window.removeEventListener("pointerup", release, true); if (drag.current) up(); };
     window.addEventListener("pointerup", release, true);
@@ -915,17 +1034,19 @@ function Panel({ tab, onTab, needs, status, busy, onClose, onOpenApp, children }
   onClose: () => void; onOpenApp: () => void; children: ReactNode;
 }) {
   const tabs: Array<[Tab, string, typeof MessageCircleIcon]> = [["chat", "Chat", MessageCircleIcon], ["todos", "To-dos", ListTodoIcon], ["needs", "Needs you", InboxIcon]];
+  // Above him, or below him near the top of the screen; shorter where there is less room.
+  const { below } = useContext(PlaceContext);
   return (
     <motion.section
       key="panel"
       data-solid
       aria-label="Perry"
-      initial={{ opacity: 0, y: 12, scale: 0.96 }}
+      initial={{ opacity: 0, y: below ? -12 : 12, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 8, scale: 0.97 }}
+      exit={{ opacity: 0, y: below ? -8 : 8, scale: 0.97 }}
       transition={{ type: "spring", stiffness: 420, damping: 30 }}
-      style={{ transformOrigin: "85% 100%" }}
-      className="flex h-[480px] w-[372px] flex-col overflow-hidden rounded-[20px] border bg-background text-foreground shadow-[0_24px_56px_-12px_rgb(0_0_0/0.4)]"
+      style={{ transformOrigin: below ? "85% 0%" : "85% 100%" }}
+      className="flex h-[480px] max-h-full w-[372px] shrink-0 flex-col overflow-hidden rounded-[20px] border bg-background text-foreground shadow-[0_24px_56px_-12px_rgb(0_0_0/0.4)]"
     >
       <header className="flex items-center gap-2.5 px-3.5 pt-3 pb-2.5">
         <span className="relative shrink-0">

@@ -159,11 +159,23 @@ async function own(ctx: QueryCtx, raw: string): Promise<Doc<"todos"> | null> {
 
 // --- Reminders ------------------------------------------------------------
 
-/** Whether the owner is at the computer, as the pet last saw; "unknown" with no pet running. */
+/**
+ * The pets running now, one per computer that has one (Perry's own, and any
+ * paired in Settings → Desktop pet): the one the owner touched last first.
+ */
+export async function runningPets(ctx: QueryCtx, now = Date.now()): Promise<Doc<"petPresence">[]> {
+  const rows = await ctx.db.query("petPresence").collect();
+  return rows.filter((row) => now - row.seenAt < PET_GONE_MS).sort((a, b) => b.activeAt - a.activeAt || b.seenAt - a.seenAt);
+}
+
+/**
+ * Whether the owner is at a computer, as the pets last saw: here at any of
+ * them, away only when every pet has seen them gone; "unknown" with no pet running.
+ */
 export async function presenceOf(ctx: QueryCtx, now = Date.now()): Promise<"here" | "away" | "unknown"> {
-  const presence = await ctx.db.query("petPresence").first();
-  if (!presence || now - presence.seenAt >= PET_GONE_MS) return "unknown";
-  return now - presence.activeAt < AWAY_MS ? "here" : "away";
+  const [latest] = await runningPets(ctx, now);
+  if (!latest) return "unknown";
+  return now - latest.activeAt < AWAY_MS ? "here" : "away";
 }
 
 const atComputer = async (ctx: QueryCtx, now = Date.now()) => (await presenceOf(ctx, now)) === "here";
@@ -393,23 +405,26 @@ export const endDay = mutation({
 });
 
 /**
- * The pet checks in every minute, saying how long since the owner last
- * touched the computer, whether its Talk hotkey (and its others, `keys`) are its own,
- * and why holding the Talk keys does not work, where it does not.
+ * Each pet checks in every minute, saying how long since the owner last
+ * touched its computer, whether its Talk hotkey (and its others, `keys`)
+ * are its own, and why holding the Talk keys does not work, where it does not.
+ * `device` is a pet on another computer, set by the server from its key
+ * (server/devices.ts); none is the pet on Perry's own computer.
  */
 export const presence = mutation({
   args: {
     key: v.string(), idleSeconds: v.number(), hotkey: v.optional(v.string()), hotkeyError: v.optional(v.string()), hotkeyHold: v.optional(v.string()),
     keys: v.optional(v.record(v.string(), v.object({ hotkey: v.optional(v.string()), error: v.optional(v.string()) }))),
+    device: v.optional(v.id("petDevices")),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const now = Date.now();
     const row = { seenAt: now, activeAt: now - Math.max(0, args.idleSeconds) * 1000, hotkey: args.hotkey, hotkeyError: args.hotkeyError, hotkeyHold: args.hotkeyHold, keys: args.keys };
-    const existing = await ctx.db.query("petPresence").first();
+    const existing = (await ctx.db.query("petPresence").collect()).find((pet) => pet.device === args.device);
     if (existing) await ctx.db.patch(existing._id, row);
-    else await ctx.db.insert("petPresence", row);
+    else await ctx.db.insert("petPresence", { ...row, device: args.device });
     return null;
   },
 });
