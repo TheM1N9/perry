@@ -25,9 +25,11 @@ function remaining(ms: number) {
 /**
  * What a computer is waiting to be allowed to do, exactly as it will run. The
  * runner asks in its terminal and on Telegram too; whichever answer comes
- * first wins, so a late one is told it was too late.
+ * first wins, so a late one is told it was too late. `bare` drops the card
+ * around it, for a place that is already a box of its own, like the pet's
+ * panel.
  */
-export function ApprovalCard({ approval, now, showChat = true }: { approval: PendingApproval; now: number; showChat?: boolean }) {
+export function ApprovalCard({ approval, now, showChat = true, bare }: { approval: PendingApproval; now: number; showChat?: boolean; bare?: boolean }) {
   const { dashboardKey } = useSession();
   const decide = useMutation(api.approvals.decide).withOptimisticUpdate((store, args) => {
     const list = store.getQuery(api.approvals.pending, { key: args.key });
@@ -51,9 +53,9 @@ export function ApprovalCard({ approval, now, showChat = true }: { approval: Pen
   };
 
   return (
-    <article aria-label={`${approval.runner} wants to ${KIND[approval.kind]}`}
-      className="overflow-hidden rounded-2xl border border-warning/35 bg-card shadow-raised">
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-1 bg-warning-soft px-4 py-2.5 text-sm">
+    <article aria-label={`${approval.runner} wants to ${KIND[approval.kind]}`} data-bare={bare || undefined}
+      className={cn(!bare && "overflow-hidden rounded-2xl border border-warning/35 bg-card shadow-raised")}>
+      <header className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 px-4 text-sm", bare ? "pt-1" : "bg-warning-soft py-2.5")}>
         <ShieldAlertIcon className="size-4 shrink-0 text-warning" aria-hidden />
         <span className="font-medium text-foreground">{approval.runner} wants to {KIND[approval.kind]}</span>
         {showChat && approval.chat && (
@@ -66,7 +68,7 @@ export function ApprovalCard({ approval, now, showChat = true }: { approval: Pen
           {remaining(left)} left
         </TextTip>
       </header>
-      <div className="space-y-3 px-4 py-3.5">
+      <div className={cn("space-y-3 px-4", bare ? "py-2.5" : "py-3.5")}>
         <pre className="flex gap-2.5 overflow-x-auto rounded-lg bg-muted px-3 py-2.5 font-mono text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
           <Icon className="mt-[3px] size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           <code>{approval.title}</code>
@@ -90,7 +92,7 @@ export function ApprovalCard({ approval, now, showChat = true }: { approval: Pen
           </p>
         )}
       </div>
-      <footer className="flex flex-wrap items-center gap-2 border-t px-4 py-3">
+      <footer className={cn("flex flex-wrap items-center gap-2 px-4", bare ? "pb-1" : "border-t py-3")}>
         {approval.alwaysAllow && <p className="mr-auto min-w-0 text-xs text-pretty text-muted-foreground">Always allow saves a rule for {approval.alwaysAllow}.</p>}
         <div className="ml-auto flex flex-wrap gap-2">
           <Button variant="outline" disabled={answering !== null} onClick={() => void answer("decline")}>

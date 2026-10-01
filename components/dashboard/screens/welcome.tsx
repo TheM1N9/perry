@@ -14,7 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -93,7 +93,8 @@ export function Welcome() {
     event.preventDefault();
     if (step === 0) setStep(1);
     else if (step === 1) { if (!edited) setUserMd(composeUserMd(answers, timezone)); setStep(2); }
-    else void run("save");
+    // An emptied USER.md is no page about you: Perry asks in the chat instead.
+    else void run(userMd.trim() ? "save" : "chat");
   };
 
   return (
@@ -132,12 +133,15 @@ export function Welcome() {
                   </Field>
                   <FieldSet>
                     <FieldLegend variant="label">Personality</FieldLegend>
-                    <RadioGroup aria-label="Personality" value={preset} onValueChange={(value) => setPreset(value as string)} className="gap-2">
+                    <RadioGroup aria-label="Personality" value={preset} onValueChange={(value) => setPreset(value as string)} className="gap-3">
                       {[...PERSONALITIES, { id: "custom", label: "Something else", text: "Describe it in your own words." }].map((item) => (
-                        <RadioGroupCard key={item.id} value={item.id} className="block px-4 py-3 data-checked:bg-brand-soft/40">
-                          <span className="block text-sm font-medium">{item.label}</span>
-                          <span className="block text-sm text-pretty text-muted-foreground">{item.text}</span>
-                        </RadioGroupCard>
+                        <label key={item.id} className="flex cursor-pointer items-start gap-3">
+                          <RadioGroupItem value={item.id} className="mt-0.5" />
+                          <span className="grid gap-0.5">
+                            <span className="text-sm font-medium">{item.label}</span>
+                            <span className="text-sm text-pretty text-muted-foreground">{item.text}</span>
+                          </span>
+                        </label>
                       ))}
                     </RadioGroup>
                   </FieldSet>
@@ -211,7 +215,7 @@ export function Welcome() {
                 <>
                   <Heading ref={heading} title="Your USER.md">This is what {assistant} will know about you, in every chat. Edit anything; {assistant} keeps it current as you talk, and every version is kept.</Heading>
                   {persona.user && (
-                    <Alert><AlertTitle>This replaces your current USER.md</AlertTitle><AlertDescription>The old one stays in its history under Memory, so you can restore it.</AlertDescription></Alert>
+                    <Alert variant="quiet"><AlertTitle>This replaces your current USER.md</AlertTitle><AlertDescription>The old one stays in its history under Memory, so you can restore it.</AlertDescription></Alert>
                   )}
                   <Field>
                     <FieldLabel htmlFor={`${id}-md`}>USER.md</FieldLabel>
@@ -231,8 +235,8 @@ export function Welcome() {
 
           <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6">
             <div>{step > 0 && <Button type="button" variant="ghost" disabled={Boolean(busy)} onClick={() => setStep(step - 1)}>Back</Button>}</div>
-            <Button type="submit" size="lg" className="h-10 px-5" disabled={Boolean(busy) || (step === 2 && !userMd.trim())} aria-busy={busy === "save" || undefined}>
-              {busy === "save" && <Spinner />}{step === 2 ? `Save and meet ${assistant}` : "Continue"}
+            <Button type="submit" size="lg" className="h-10 px-5" disabled={Boolean(busy)} aria-busy={busy === "save" || undefined}>
+              {(busy === "save" || (step === 2 && busy === "chat")) && <Spinner />}{step === 2 ? `Save and meet ${assistant}` : "Continue"}
             </Button>
           </div>
         </div>

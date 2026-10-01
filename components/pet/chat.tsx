@@ -222,7 +222,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
 
       <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="px-3 pt-1 pb-3">
         {shot && picture && (
-          <div className="mb-1.5 flex items-start gap-2 rounded-xl border bg-card p-1.5" aria-label="Picture of the screen to send">
+          <div className="mb-1.5 flex items-start gap-2 px-1.5" aria-label="Picture of the screen to send">
             {/* eslint-disable-next-line @next/next/no-img-element -- a picture just taken, as a data URL */}
             <img src={picture.image} alt={`Picture of ${picture.name}`} className="h-16 max-w-28 shrink-0 rounded-md border object-cover object-top" />
             <div className="min-w-0 flex-1">

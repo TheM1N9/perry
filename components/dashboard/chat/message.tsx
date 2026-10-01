@@ -2,7 +2,7 @@
 
 import { BrainIcon, CheckIcon, CopyIcon, GitBranchIcon, PencilIcon, PuzzleIcon, RefreshCwIcon } from "lucide-react";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { STARTING, WRITING } from "@/convex/lib/activity";
 import { SKILL_MENTION } from "@/convex/lib/commands";
 import { fullDate, timeOf } from "@/lib/format";
@@ -85,16 +85,18 @@ export function MessageRow({ message, assistant, latest, canRegenerate, canEdit,
 
   if (editing !== null) {
     return (
-      <form className="ml-auto w-full max-w-[85%] space-y-2" onSubmit={(event) => { event.preventDefault(); if (editing.trim()) { onEdit(editing); setEditing(null); } }}>
+      <form className="ml-auto w-full max-w-[85%] space-y-2" onSubmit={(event) => { event.preventDefault(); if (editing.trim() && !busy) { onEdit(editing); setEditing(null); } }}>
         <Textarea autoFocus aria-label="Edit your message" value={editing} className="max-h-72 min-h-20 rounded-2xl bg-muted px-4 py-3 text-md"
           onChange={(event) => setEditing(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Escape") setEditing(null);
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
+            if (event.key === "Escape") { event.preventDefault(); setEditing(null); }
+            // Enter resends, as in the composer; Shift+Enter is a new line.
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
           }} />
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
-          <Button type="submit" disabled={!editing.trim() || busy}>Save and resend</Button>
+        <div className="flex items-center justify-end gap-1">
+          <span className="mr-1 text-xs text-muted-foreground">Enter resends, Esc cancels</span>
+          <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setEditing(null)}>Cancel</Button>
+          <Button type="submit" variant="ghost" size="sm" className="text-primary hover:text-primary" disabled={busy}>Save and resend</Button>
         </div>
       </form>
     );
@@ -147,14 +149,17 @@ function FromMemory({ memories }: { memories: Array<{ id: string; text: string }
     <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground" data-memories>
       <BrainIcon className="size-3.5" aria-hidden />
       <span>From memory:</span>
-      {memories.map((memory) => (
-        <Tooltip key={memory.id}>
+      {memories.map((memory, index) => (
+        <Fragment key={memory.id}>
+        {index > 0 && <span aria-hidden>·</span>}
+        <Tooltip>
           <TooltipTrigger render={<Link href={`/memory?q=${encodeURIComponent(memory.text.slice(0, 60))}`} />}
-            className="max-w-64 truncate rounded-full border px-2 py-0.5 outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
+            className="max-w-64 truncate rounded-sm underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50">
             {memory.text}
           </TooltipTrigger>
           <TooltipContent className="max-w-80 text-pretty">{memory.text}</TooltipContent>
         </Tooltip>
+        </Fragment>
       ))}
     </div>
   );

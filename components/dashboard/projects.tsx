@@ -26,6 +26,7 @@ import {
   DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   SidebarGroup, SidebarGroupAction, SidebarGroupLabel, SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub,
@@ -191,10 +192,10 @@ export function NewProjectDialog({ open, chat, onClose }: { open: boolean; chat?
           <DialogDescription>A folder for chats about one thing, like a channel&apos;s scripts or a client. Its chats share its instructions, know of each other, and keep what Perry remembers in them to the project.</DialogDescription>
         </DialogHeader>
         <form onSubmit={(event) => { event.preventDefault(); void save(); }} className="contents">
-          <Input aria-label="Project name" placeholder="Hackonomics scripts" value={name} maxLength={80} autoFocus onChange={(event) => setName(event.target.value)} />
+          <Input aria-label="Project name" placeholder="Hackonomics scripts" value={name} maxLength={80} autoFocus required onChange={(event) => setName(event.target.value)} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={!name.trim() || saving}>Create</Button>
+            <Button type="submit" disabled={saving} aria-busy={saving || undefined}>{saving && <Spinner />}Create</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -227,10 +228,10 @@ export function RenameProjectDialog({ project, onClose }: { project: { id: Proje
       <DialogContent className="sm:max-w-sm">
         <DialogHeader><DialogTitle>Rename project</DialogTitle></DialogHeader>
         <form onSubmit={(event) => { event.preventDefault(); void save(); }} className="contents">
-          <Input aria-label="Project name" value={name} maxLength={80} autoFocus onChange={(event) => setName(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+          <Input aria-label="Project name" value={name} maxLength={80} autoFocus required onChange={(event) => setName(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={!name.trim() || saving}>Save</Button>
+            <Button type="submit" disabled={saving} aria-busy={saving || undefined}>{saving && <Spinner />}Rename</Button>
           </DialogFooter>
         </form>
       </DialogContent>

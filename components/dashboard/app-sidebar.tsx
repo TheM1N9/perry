@@ -281,10 +281,10 @@ export function RenameDialog({ chat, onClose }: { chat: { id: ChatSummary["id"];
       <DialogContent className="sm:max-w-sm">
         <DialogHeader><DialogTitle>Rename chat</DialogTitle></DialogHeader>
         <form onSubmit={(event) => { event.preventDefault(); void save(); }} className="contents">
-          <Input aria-label="Chat name" value={title} maxLength={100} autoFocus onChange={(event) => setTitle(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+          <Input aria-label="Chat name" value={title} maxLength={100} autoFocus required onChange={(event) => setTitle(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={!title.trim() || saving}>Save</Button>
+            <Button type="submit" disabled={saving} aria-busy={saving || undefined}>{saving && <Spinner />}Rename</Button>
           </DialogFooter>
         </form>
       </DialogContent>
