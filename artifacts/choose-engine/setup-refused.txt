@@ -6,7 +6,7 @@ Perry setup
   Perry thinks with a coding agent on this computer, signed in with your own subscription.
     1  Claude Code  2.1.277, signed in with Claude Max
     2  Codex        0.177.7, signed in with ChatGPT Plus
-    3  Antigravity  experimental, not turned on; Settings → Engines & usage turns it on
+    3  Antigravity  experimental, not turned on; Settings → Engines turns it on
     4  Grok Build   not installed
   Which should Perry use by default? [1-4] 
   Perry needs you to choose its default engine, and there is no one here to answer.

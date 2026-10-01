@@ -5,7 +5,7 @@ Perry setup
   No bot: talk to Perry from the dashboard. Add one in Settings → Telegram any time.
   Perry thinks with a coding agent on this computer, signed in with your own subscription.
     1  Grok Build   1.0.42-fake, signed in with Grok account
-    2  Antigravity  experimental, not turned on; Settings → Engines & usage turns it on
+    2  Antigravity  experimental, not turned on; Settings → Engines turns it on
     3  Claude Code  2.1.277, not signed in
     4  Codex        not installed
   Which should Perry use by default? [1-4, Enter for Grok Build] 

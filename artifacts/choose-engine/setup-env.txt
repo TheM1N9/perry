@@ -5,7 +5,7 @@ Perry setup
   No bot: talk to Perry from the dashboard. Add one in Settings → Telegram any time.
   Claude Code isn't signed in. Sign in now? [Y/n] 
   ✔ default engine Claude Code
-  Claude Code isn't signed in, so Perry can't answer yet. Sign in from the dashboard's Settings → Engines & usage.
+  Claude Code isn't signed in, so Perry can't answer yet. Sign in from the dashboard's Settings → Engines.
 
 Next
   pnpm perry start  runs Perry in the background

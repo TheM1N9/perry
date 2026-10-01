@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-01T21:17:02.032Z",
+  "ranAt": "2026-10-01T21:44:46.513Z",
   "pass": true,
   "checks": {
     "accountMenuHasNoUsage": true,
@@ -248,8 +248,8 @@
         {
           "page": "settings-engines",
           "before": 375,
-          "after": 252,
-          "down": "33%",
+          "after": 269,
+          "down": "28%",
           "target": "20%",
           "ok": true
         },
@@ -296,7 +296,7 @@
         {
           "page": "settings-desktop-pet",
           "before": 294,
-          "after": 164,
+          "after": 165,
           "down": "44%",
           "target": "20%",
           "ok": true
@@ -392,7 +392,7 @@
       ],
       "total": {
         "before": 3944,
-        "after": 2638
+        "after": 2656
       },
       "down": "33%"
     },
