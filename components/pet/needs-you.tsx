@@ -7,7 +7,11 @@ import type { InboxItem } from "@/convex/dashboard";
 import { ago } from "@/lib/format";
 import { useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ApprovalCard } from "@/components/dashboard/approval-card";
+import { List } from "@/components/dashboard/common";
 import { Empty } from "./empty";
 
 const LABEL: Record<InboxItem["kind"], string> = {
@@ -31,13 +35,16 @@ export function PetNeedsYou({ now, onChat, open }: {
   const dismiss = useMutation(api.dashboard.dismissInbox);
   const live = (approvals ?? []).filter((item) => item.expiresAt > now);
 
-  if (approvals === undefined || inbox === undefined) return <p className="px-3.5 py-3 text-[13px] text-muted-foreground">Loading…</p>;
+  if (approvals === undefined || inbox === undefined) {
+    return <div className="space-y-2.5 px-2.5" role="status" aria-label="Loading"><Skeleton className="h-28 rounded-xl" /><Skeleton className="h-20 rounded-xl" /></div>;
+  }
   if (!live.length && !inbox.length) return <Empty title="You’re all caught up">When Perry needs a yes from you, or a plan or schedule has news, it shows up here.</Empty>;
   return (
-    <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-2.5 pb-2.5 [&_article_header]:px-3 [&_article>div]:px-3 [&_article_footer]:px-3 [&_article]:text-[13px]">
+    <ScrollArea className="min-h-0 flex-1">
+    <div className="space-y-2.5 px-2.5 pb-2.5 [&_article_header]:px-3 [&_article>div]:px-3 [&_article_footer]:px-3 [&_article]:text-sm">
       {live.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
       {inbox.length > 0 && (
-        <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Updates">
+        <List label="Updates">
           {inbox.map((item) => {
             const act = item.kind === "question" ? { label: "Answer", run: () => onChat(null, `About “${item.title}”: `) }
               : item.kind === "job-result" || (item.kind === "job-error" && item.chatId) ? { label: "Open", run: () => onChat(item.chatId!) }
@@ -45,21 +52,21 @@ export function PetNeedsYou({ now, onChat, open }: {
                   : { label: "See plan", run: () => open("/work?tab=plans") };
             return (
               <li key={`${item.kind}-${item.id}`} className="px-3 py-2.5">
-                <p className="text-[11.5px] text-muted-foreground">{LABEL[item.kind]} · {ago(item.at, now)}</p>
-                <p className="mt-0.5 text-[13.5px] font-medium">{item.title}</p>
-                <p className={cn("mt-0.5 line-clamp-3 text-[12.5px] text-pretty whitespace-pre-line", item.kind === "task-failed" || item.kind === "job-error" ? "text-destructive" : "text-foreground/80")}>{item.text}</p>
+                <p className="text-2xs text-muted-foreground">{LABEL[item.kind]} · {ago(item.at, now)}</p>
+                <p className="mt-0.5 text-sm font-medium">{item.title}</p>
+                <p className={cn("mt-0.5 line-clamp-3 text-xs text-pretty whitespace-pre-line", item.kind === "task-failed" || item.kind === "job-error" ? "text-destructive" : "text-foreground/80")}>{item.text}</p>
                 <div className="mt-1.5 flex gap-1">
-                  <button type="button" onClick={act.run} className="h-7 cursor-pointer rounded-lg border bg-background px-3 text-[12.5px] font-medium hover:bg-muted">{act.label}</button>
+                  <Button variant="outline" size="sm" className="px-3" onClick={act.run}>{act.label}</Button>
                   {item.kind !== "question" && (
-                    <button type="button" onClick={() => void dismiss({ key, items: [{ kind: item.kind, id: item.id }] }).catch(() => {})}
-                      className="h-7 cursor-pointer rounded-lg px-3 text-[12.5px] text-muted-foreground hover:bg-muted">Dismiss</button>
+                    <Button variant="ghost" size="sm" className="px-3 font-normal text-muted-foreground" onClick={() => void dismiss({ key, items: [{ kind: item.kind, id: item.id }] }).catch(() => {})}>Dismiss</Button>
                   )}
                 </div>
               </li>
             );
           })}
-        </ul>
+        </List>
       )}
     </div>
+    </ScrollArea>
   );
 }
