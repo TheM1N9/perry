@@ -1,10 +1,11 @@
 {
-  "at": "2026-10-01T16:11:41.808Z",
+  "at": "2026-10-01T16:14:20.737Z",
   "checks": {
     "textareaQuiet": true,
     "inputGroupSearchQuiet": true,
     "todoQuickAddQuiet": true,
     "composerQuiet": true,
+    "paletteSearchQuiet": true,
     "plainInputQuiet": true,
     "timePickerQuiet": true,
     "keyboardFocusStillShowsOnButtons": true,
@@ -66,6 +67,20 @@
         "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.04) 0px 1px 2px 0px, rgba(0, 0, 0, 0.16) 0px 12px 32px -16px",
         "focused": true,
         "tag": "DIV."
+      }
+    },
+    "paletteSearchQuiet": {
+      "rest": {
+        "border": "oklab(0.999994 0.0000455678 0.0000200868 / 0.0423529)",
+        "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focused": false,
+        "tag": "DIV.input-group"
+      },
+      "clicked": {
+        "border": "oklab(0.999994 0.0000455678 0.0000200868 / 0.0423529)",
+        "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+        "focused": true,
+        "tag": "DIV.input-group"
       }
     },
     "plainInputQuiet": {

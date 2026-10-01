@@ -20,7 +20,7 @@ import { openChat, sleep } from "../browser";
 //   2. A field still draws a ring (box-shadow) when clicked into.
 //   3. One kind of field was missed: a plain Input, a Textarea, a field
 //      inside an InputGroup (search, to-do quick add), the time picker, or
-//      the chat composer's shell.
+//      the chat composer's shell, or the command palette's search.
 //   4. Clicking did not actually focus the field, so the check proves nothing.
 //   5. Keyboard focus on a button lost its ring along with the fields'.
 //   6. A field marked invalid no longer shows it.
@@ -75,8 +75,8 @@ try {
     const { x, y } = await evaluate(`(() => { const box = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: box.x + Math.min(20, box.width / 2), y: box.y + box.height / 2 }; })()`);
     for (const type of ["mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
   };
-  const quiet = async (name: string, path: string, selector: string, before?: () => Promise<void>) => {
-    await open(path, selector);
+  const quiet = async (name: string, path: string, selector: string, before?: () => Promise<void>, ready = selector) => {
+    await open(path, ready);
     await before?.();
     await evaluate(`document.activeElement?.blur?.()`);
     const rest = await look(selector);
@@ -89,7 +89,17 @@ try {
   await quiet("textareaQuiet", "/memory", "#memory-text");
   await quiet("inputGroupSearchQuiet", "/memory", "input[aria-label='Search memories']");
   await quiet("todoQuickAddQuiet", "/todos", "input[aria-label='Add a to-do']");
+  const todoShot = await send("Page.captureScreenshot", { format: "png" });
+  writeFileSync(join(outDir, "todo-clicked.png"), Buffer.from(todoShot.data, "base64"));
   await quiet("composerQuiet", "/chat", "#composer");
+  // The search in the command palette (Ctrl+K), which draws its own input.
+  await quiet("paletteSearchQuiet", "/chat", "[data-slot=command-input]", async () => {
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "k", code: "KeyK", windowsVirtualKeyCode: 75, modifiers: 2 });
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "k", code: "KeyK", windowsVirtualKeyCode: 75, modifiers: 2 });
+    await evaluate(`new Promise((resolve, reject) => { const start = Date.now(); const tick = () => document.querySelector("[data-slot=command-input]") ? resolve(true) : Date.now() - start > 10000 ? reject(new Error("the palette did not open")) : setTimeout(tick, 100); tick(); })`);
+    await sleep(400);
+  }, "#composer");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
   await quiet("plainInputQuiet", "/settings/logins", "input[data-slot=input]");
   await quiet("timePickerQuiet", "/settings/notifications", "[data-slot=time-picker] input", async () => {
     // Quiet hours start off, which disables the times: turn them on first.
