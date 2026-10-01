@@ -6,6 +6,29 @@ import type { Work, WorkStep } from "@/convex/dashboard";
 import { plural } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+export type { Work };
+
+/** A turn saves its reply just before it ends its runs (codex.ts, markFinalized); this is room to spare. */
+export const SAVED_BEFORE_END_MS = 1_000;
+/** How long a run that ended stays up waiting for its reply to reach the page; one that never comes (a quiet job) goes then. */
+export const LANDING_MS = 5_000;
+
+/**
+ * Runs that went as one turn (a message sent while a reply works joins it as
+ * a run of its own): one, from the first start to the last end, with all
+ * their steps in the order they were taken.
+ */
+export function together(runs: Work[]): Work | undefined {
+  if (runs.length < 2) return runs[0];
+  const ends = runs.map((run) => run.finishedAt);
+  return {
+    ...runs[0]!,
+    startedAt: Math.min(...runs.map((run) => run.startedAt)),
+    finishedAt: ends.every((end) => end !== undefined) ? Math.max(...(ends as number[])) : undefined,
+    steps: runs.flatMap((run) => run.steps).sort((a, b) => a.startedAt - b.startedAt),
+  };
+}
+
 /** How long something took, the way a step says it: "<1s", "12s", "1m 5s". */
 export function took(ms: number): string {
   const seconds = Math.round(ms / 1000);

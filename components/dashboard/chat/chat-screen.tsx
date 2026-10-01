@@ -11,7 +11,6 @@ import { toast } from "sonner";
 import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { Work } from "@/convex/dashboard";
 import {
   ACCESS_HINTS, ACCESS_LABELS, ACCESSES, COMPACTED, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
   modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, typingSkill, type Access,
@@ -37,6 +36,7 @@ import { StatusIndicator } from "../status-indicator";
 import type { Attachment } from "./attachments";
 import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { MessageRow, PendingRow, ReplyInProgress } from "./message";
+import { LANDING_MS, SAVED_BEFORE_END_MS, together, type Work } from "./work";
 
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
@@ -230,16 +230,26 @@ export function ChatScreen() {
   const { workOf, liveWork } = useMemo(() => {
     const runs = work ?? [];
     const replies = messages.filter((message) => message.role === "assistant" && !message.pending);
+    // Each message is a run of its own, and one sent while a reply works joins that reply's turn: several runs
+    // can go with one reply. A turn saves its reply before it ends its runs, so a finished run goes with the
+    // last reply saved while it ran; a message that waited for a turn of its own then gets that turn's reply.
+    const groups = new Map<string, Work[]>();
+    for (const run of runs) {
+      if (run.status === "running" || run.finishedAt === undefined) continue;
+      const reply = [...replies].reverse().find((message) => message.createdAt >= run.startedAt && message.createdAt <= run.finishedAt! + SAVED_BEFORE_END_MS);
+      if (reply) groups.set(reply.id, [...groups.get(reply.id) ?? [], run]);
+    }
     const workOf = new Map<string, Work>();
-    // A finished run goes with the reply it wrote: the first after it started, and before the next run did.
-    runs.forEach((run, index) => {
-      if (run.status === "running" || !run.steps.length) return;
-      const next = runs[index + 1]?.startedAt ?? Infinity;
-      const reply = replies.find((message) => message.createdAt >= run.startedAt && message.createdAt < next && !workOf.has(message.id));
-      if (reply) workOf.set(reply.id, run);
-    });
-    return { workOf, liveWork: [...runs].reverse().find((run) => run.status === "running") };
-  }, [work, messages]);
+    for (const [id, group] of groups) {
+      const merged = together(group);
+      if (merged?.steps.length) workOf.set(id, merged);
+    }
+    // A run that ended well and whose reply is not in the chat yet stays up until it is: the two come
+    // from different reads, a moment apart, and the steps would blink out in between.
+    const paired = new Set([...groups.values()].flat());
+    const landing = runs.filter((run) => run.status === "ok" && run.steps.length && !paired.has(run) && now - (run.finishedAt ?? 0) < LANDING_MS);
+    return { workOf, liveWork: together([...runs.filter((run) => run.status === "running"), ...landing]) };
+  }, [work, messages, now]);
 
   // Scrolling: a chat opens at its newest message; after that, new content only scrolls into view for a reader already at the bottom.
   const scroller = useRef<HTMLDivElement>(null);
@@ -649,7 +659,7 @@ export function ChatScreen() {
                 />
               ))}
               {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
-              {waiting && !here.length && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} />}
+              {(waiting || liveWork) && !here.length && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} />}
               {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
               {chat?.lastError && !chat.isRunning && !waiting && (
                 <Alert variant="destructive">

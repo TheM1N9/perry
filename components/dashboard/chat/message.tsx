@@ -190,7 +190,8 @@ export function PendingRow({ text, attachments, sent, skills }: { text: string; 
  */
 export function ReplyInProgress({ streaming, work, now }: { streaming?: string; work?: Work; now: number }) {
   const steps = work?.steps ?? [];
-  const busy = steps.some((step) => step.status === "running");
+  // Over (its reply on its way to the page), or on a step: either way, not thinking.
+  const busy = work?.finishedAt !== undefined || steps.some((step) => step.status === "running");
   return (
     <div className="min-w-0 space-y-2" data-role="assistant" {...(streaming ? { "data-streaming": true } : { "data-thinking": true })}>
       {steps.length > 0 && <WorkSteps steps={steps} live now={now} />}

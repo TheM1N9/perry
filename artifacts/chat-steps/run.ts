@@ -30,6 +30,11 @@ import { openChat, sleep } from "../browser";
 //   8. Opened, it does not list the steps in the order they ran, each done.
 //   9. It is gone once the page loads again (kept in the page, not the server).
 //  10. The page throws.
+//  Another message sent while a reply works joins its turn as a run of its own,
+//  which takes no steps (issue #201):
+//  11. The reply's steps go from the chat once it is sent, or any drop out.
+//  12. Folded after, no reply carries the steps seen live, or the count is off.
+//  13. The earlier reply's "Worked for" changes.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/chat-steps/run.ts <outDir>");
@@ -44,7 +49,7 @@ const checks: Record<string, boolean> = {};
 const notes: Record<string, unknown> = {};
 const check = (name: string, ok: boolean, note?: unknown) => { checks[name] = ok; if (note !== undefined) notes[name] = note; };
 
-const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
+const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: process.env.PERRY_E2E_ENGINE ?? "codex" };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name === "TELEGRAM_BOT_TOKEN" || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE") delete env[name];
 const logs = { server: "", runner: "" };
 function start(name: "server" | "runner"): ChildProcess {
@@ -182,6 +187,64 @@ try {
   await until(() => evaluate(`Boolean(document.querySelector('[data-role="assistant"] [data-work] button'))`), "the chat to load again with its work", 30).catch(() => {});
   const again = await folded();
   check("keptAfterReload", again.label === closed.label, again);
+
+  // --- 11-13. Another message while a reply works (issue #201) -------------------------
+  // It joins the reply's turn as a run of its own, which takes no steps: the chat must keep showing the
+  // steps of the run that does, live and folded after, and leave the earlier reply's alone.
+  const say = async (text: string) => {
+    await evaluate(`(() => {
+      const box = document.querySelector("#composer");
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(box, ${JSON.stringify(text)});
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    })()`);
+    await sleep(200);
+    await evaluate(`document.querySelector("#composer").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); true`);
+  };
+  const live: Array<{ at: number; steps: string[]; replies: number }> = [];
+  let looking = true;
+  const look = (async () => {
+    while (looking) {
+      const now = await evaluate(`(() => ({
+        steps: [...document.querySelectorAll('[data-role="assistant"]:is([data-thinking], [data-streaming]) [data-work-steps] [data-step]')].map((step) => step.getAttribute("data-step")),
+        replies: document.querySelectorAll('[data-role="assistant"]:not([data-streaming]):not([data-thinking])').length,
+      }))()`).catch(() => null) as { steps: string[]; replies: number } | null;
+      if (now) live.push({ at: Date.now(), ...now });
+      await sleep(150);
+    }
+  })();
+  const slow = (step: string) => /^Running Start-Sleep -Seconds 4/.test(step);
+  await say("Run these three shell commands one after another, each as its own separate command call: 1) Start-Sleep -Seconds 4; Write-Output one 2) Start-Sleep -Seconds 4; Write-Output two 3) Start-Sleep -Seconds 4; Write-Output three. Then reply with: done.");
+  await until(() => live.some((item) => item.steps.some(slow)), "the reply's first step", 120);
+  await sleep(1_000);
+  const askedAt = Date.now();
+  const repliesBefore = live.at(-1)!.replies;
+  await say("Also: what is 2 + 2? Answer in one line.");
+  await sleep(2_500);
+  await shot("chat-mid-reply.png");
+  await until(async () => !(await call<{ isRunning: boolean }>("dashboard:getChat", { key: KEY, id: chat })).isRunning, "both messages to be answered", 400);
+  await until(() => live.at(-1)?.steps.length === 0 && (live.at(-1)?.replies ?? 0) > repliesBefore, "the answer to land in the chat", 30).catch(() => {});
+  await sleep(1_500);
+  looking = false;
+  await Promise.race([look, sleep(5_000)]);
+  // From the second message until the reply lands, the steps listed only grow.
+  const during = live.filter((item) => item.at >= askedAt && item.replies === repliesBefore).map((item) => item.steps);
+  notes.midReplyLive = during.filter((steps, index) => index === 0 || JSON.stringify(steps) !== JSON.stringify(during[index - 1]));
+  check("midReplyStepsStay", during.length > 0 && during.every((steps, index) => steps.length > 0 && (index === 0 || during[index - 1]!.every((step, at) => steps[at] === step))));
+  // Folded after, the slow steps seen live are all with a reply, and the first reply's "Worked for" is as it was.
+  const replies = await evaluate(`(() => {
+    for (const button of document.querySelectorAll('[data-role="assistant"] [data-work] button[aria-expanded="false"]')) button.click();
+    return new Promise((done) => setTimeout(() => done([...document.querySelectorAll('[data-role="assistant"]:not([data-streaming]):not([data-thinking])')].map((reply) => ({
+      text: (reply.querySelector(".prose-chat")?.textContent ?? "").trim().slice(0, 60),
+      worked: reply.querySelector("[data-work] button")?.textContent.trim() ?? null,
+      steps: [...reply.querySelectorAll("[data-work] [data-step]")].map((step) => step.getAttribute("data-step")),
+    }))), 300));
+  })()`) as Array<{ text: string; worked: string | null; steps: string[] }>;
+  await shot("chat-mid-reply-after.png");
+  notes.midReplyAfter = replies;
+  const seenLive = Math.max(0, ...during.map((steps) => steps.filter(slow).length));
+  check("midReplyWorkedFor", seenLive >= 1 && replies.slice(1).some((reply) => reply.steps.filter(slow).length === seenLive && reply.steps.length === Number(/· (\d+) steps?$/.exec(reply.worked ?? "")?.[1])));
+  check("earlierReplyKeepsItsWork", replies[0]?.worked === closed.label);
   check("noPageErrors", browser.errors.length === 0, browser.errors);
 } catch (error) {
   notes.stoppedAt = String(error);
