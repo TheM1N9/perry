@@ -13,7 +13,7 @@ import { api } from "@/convex/_generated/api";
 import type { ChatSummary } from "@/convex/dashboard";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
 import { DEFAULT_ENGINE, type EngineKind } from "@/convex/lib/engines";
-import { dayGroup, errorText, useNow } from "@/lib/format";
+import { errorText, useNow } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { toast } from "sonner";
@@ -33,7 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader,
   SidebarMenu, SidebarMenuAction, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSkeleton, SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
@@ -80,21 +80,23 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu className="gap-0.5">
-              <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/chat" />} isActive={pathname === "/chat"} tooltip="New chat">
-                  <SquarePenIcon />
-                  <span>New chat</span>
-                </SidebarMenuButton>
-                <SidebarMenuBadge className="opacity-0 transition-opacity max-md:hidden group-hover/menu-item:opacity-100">
-                  <Kbd className="h-5">{label("newChat")}</Kbd>
-                </SidebarMenuBadge>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton onClick={palette.open} tooltip="Search" aria-keyshortcuts="Control+K Meta+K">
-                  <SearchIcon />
-                  <span>Search</span>
-                </SidebarMenuButton>
-                <SidebarMenuBadge className="max-md:hidden"><Kbd className="h-5">{label("palette")}</Kbd></SidebarMenuBadge>
+              {/* New chat and Search share a row: New chat the most of it, Search an icon beside it; stacked when the sidebar is icons. */}
+              <SidebarMenuItem className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-0.5" data-new-chat-row>
+                <div className="relative min-w-0 flex-1 group-data-[collapsible=icon]:flex-none">
+                  <SidebarMenuButton render={<Link href="/chat" />} isActive={pathname === "/chat"} tooltip="New chat">
+                    <SquarePenIcon />
+                    <span>New chat</span>
+                  </SidebarMenuButton>
+                  <SidebarMenuBadge className="opacity-0 transition-opacity max-md:hidden group-hover/menu-item:opacity-100">
+                    <Kbd className="h-5">{label("newChat")}</Kbd>
+                  </SidebarMenuBadge>
+                </div>
+                <Tooltip>
+                  <TooltipTrigger render={<SidebarMenuButton onClick={palette.open} aria-label="Search" aria-keyshortcuts="Control+K Meta+K" className="w-11 shrink-0 justify-center" />}>
+                    <SearchIcon />
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Search · {label("palette")}</TooltipContent>
+                </Tooltip>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/inbox" />} isActive={pathname === "/inbox"} tooltip="Needs you">
@@ -161,28 +163,17 @@ function ChatGroups() {
   // A project's chats are in its folder, not in the list.
   const chats = useMemo(() => all?.filter((chat) => !chat.projectId), [all]);
 
-  const groups = useMemo(() => {
-    if (!chats) return [];
-    const pinned = chats.filter((chat) => chat.pinned);
-    const rest = chats.filter((chat) => !chat.pinned);
-    const shown = showAll ? rest : rest.slice(0, CHAT_PAGE);
-    const byDay = new Map<string, ChatSummary[]>();
-    const now = Date.now();
-    for (const chat of shown) {
-      const label = dayGroup(chat.lastMessageAt, now);
-      byDay.set(label, [...(byDay.get(label) ?? []), chat]);
-    }
-    return [
-      ...(pinned.length ? [{ label: "Pinned", chats: pinned }] : []),
-      ...[...byDay].map(([label, items]) => ({ label, chats: items })),
-    ];
+  // One plain list, newest first, with the pinned ones on top; a pin marks them, not a heading.
+  const { pinned, shown } = useMemo(() => {
+    const newest = [...(chats ?? [])].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+    const rest = newest.filter((chat) => !chat.pinned);
+    return { pinned: newest.filter((chat) => chat.pinned), shown: showAll ? rest : rest.slice(0, CHAT_PAGE) };
   }, [chats, showAll]);
   const hidden = chats ? chats.filter((chat) => !chat.pinned).length - CHAT_PAGE : 0;
 
   if (chats === undefined) {
     return (
       <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel>Chats</SidebarGroupLabel>
         <SidebarMenu>{Array.from({ length: 6 }, (_, index) => <SidebarMenuItem key={index}><SidebarMenuSkeleton /></SidebarMenuItem>)}</SidebarMenu>
       </SidebarGroup>
     );
@@ -195,14 +186,12 @@ function ChatGroups() {
           <p className="px-2 py-1 text-sm text-muted-foreground">Your chats will show up here.</p>
         </SidebarGroup>
       )}
-      {groups.map((group) => (
-        <SidebarGroup key={group.label} className="py-1 group-data-[collapsible=icon]:hidden">
-          <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-          <SidebarMenu aria-label={group.label}>
-            {group.chats.map(row)}
-          </SidebarMenu>
+      {chats.length > 0 && (
+        <SidebarGroup className="py-1 group-data-[collapsible=icon]:hidden">
+          {pinned.length > 0 && <SidebarMenu aria-label="Pinned">{pinned.map(row)}</SidebarMenu>}
+          <SidebarMenu aria-label="Chats">{shown.map(row)}</SidebarMenu>
         </SidebarGroup>
-      ))}
+      )}
       {hidden > 0 && !showAll && (
         <div className="px-4 pb-3 group-data-[collapsible=icon]:hidden">
           <Button variant="link" size="sm" className="h-auto px-0 text-sidebar-foreground/70" onClick={() => setShowAll(true)}>
@@ -234,6 +223,7 @@ function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary
     <SidebarMenuButton render={<Link href={`/chat/${chat.id}`} />} isActive={active}
       className={cn(chat.unseen && !active && "font-semibold")}
       aria-current={active ? "page" : undefined}>
+      {chat.pinned && <PinIcon role="img" aria-label="Pinned" className="text-muted-foreground" />}
       <ChannelIcon channel={chat.channel} />
       <span className={cn("pr-4", chat.naming && "shimmer")} aria-busy={chat.naming || undefined}>{chat.title}</span>
     </SidebarMenuButton>
