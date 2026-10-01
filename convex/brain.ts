@@ -9,7 +9,7 @@ import {
   ACCESS_LABELS, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, parseAccessCommand, parseModelCommand,
   parseThinkCommand, pickAccess, pickEffort, pickModel, runLabel, turnEffort, type ModelOption,
 } from "./lib/commands";
-import { engineOf, type EngineKind } from "./lib/engines";
+import { GUEST_ENGINE, type EngineKind } from "./lib/engines";
 import { DOWNLOAD_LIMIT, downloadFile, sendMessage, sendTyping } from "./lib/telegram";
 import { resumeOf } from "./engines";
 import { sha256 } from "./memories";
@@ -54,13 +54,14 @@ async function runCommand(
   const [raw] = text.trim().split(/\s+/);
   const command = raw.toLowerCase().replace(/@.*$/, ""); // strip /cmd@botname
 
-  const engine = engineOf(conversation);
+  // The chat's own engine, else the default it follows; none while the owner has not chosen one.
+  const engine = conversation.engine ?? (await ctx.runQuery(internal.installation.getDefaultEngine, {})) ?? undefined;
   const modelCommand = parseModelCommand(text);
   if (modelCommand) {
     const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
     if (!modelCommand.name) return describeModels(models, conversation.model, engine);
     const { model, reply } = pickModel(models, modelCommand.name, conversation.effort, engine);
-    if (model) await ctx.runMutation(internal.conversations.setModel, { id: conversation._id, model: model.id, engine: engineOf(model) });
+    if (model) await ctx.runMutation(internal.conversations.setModel, { id: conversation._id, model: model.id, engine: model.engine });
     return reply;
   }
 
@@ -96,7 +97,7 @@ async function runCommand(
       const effort = turnEffort(models, conversation.model, conversation.effort, engine);
       const unused = model && effortUnused(model, conversation.effort) ? ` (${conversation.effort} is not one ${model.name} takes)` : "";
       const lines = [
-        `model     ${conversation.model && model?.id === conversation.model ? `${engine}/${conversation.model}` : `${engine} default${model ? ` (${model.id})` : ""}`}`,
+        `model     ${!engine ? "none: Perry has no default engine yet" : conversation.model && model?.id === conversation.model ? `${engine}/${conversation.model}` : `${engine} default${model ? ` (${model.id})` : ""}`}`,
         `thinking  ${conversation.effort && !unused ? conversation.effort : `default${effort ? ` (${effort})` : ""}${unused}`}`,
         `access    ${ACCESS_LABELS[conversation.access ?? "supervised"]}`,
         `memories  ${memoryCount}`,
@@ -142,8 +143,8 @@ async function runCommand(
  * instructions are then the same as the last one's, so the runner can have its
  * thread started before the owner sends (runner/engines/codex.ts).
  */
-async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, query: string) {
-  const fresh = !resumeOf(conversation);
+async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, query: string, engine: EngineKind | undefined) {
+  const fresh = !resumeOf(conversation, engine);
   const memory: { instructions: string; recalled: string; digest: string } | null = await ctx.runAction(internal.memories.context, {
     query,
     chat: conversation._id,
@@ -180,14 +181,15 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
 }
 
 /**
- * A turn in a chat with someone else: Codex, whose runner can take away its
- * shell, files and computer for the turn (runner/engines/codex.ts), on the
- * chat's model or the account's default; asking about nothing.
+ * A turn in a chat with someone else: on GUEST_ENGINE, whose runner can take
+ * away its shell, files and computer for the turn (lib/engines.ts), on the
+ * chat's model or the account's default; asking about nothing. Without it
+ * signed in, the turn says so (codex.noRunner).
  */
 async function guestSettings(ctx: ActionCtx, conversation: Doc<"conversations">) {
   const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
-  const model = currentModel(models, engineOf(conversation) === "codex" ? conversation.model : undefined, "codex");
-  return { engine: "codex" as EngineKind, model, effort: turnEffort(models, model, conversation.effort, "codex"), access: "supervised" as const };
+  const model = currentModel(models, conversation.engine === GUEST_ENGINE ? conversation.model : undefined, GUEST_ENGINE);
+  return { engine: GUEST_ENGINE, model, effort: turnEffort(models, model, conversation.effort, GUEST_ENGINE), access: "supervised" as const };
 }
 
 /**
@@ -202,7 +204,7 @@ async function guestTurn(ctx: ActionCtx, conversation: Doc<"conversations">, con
     instructions: prompt.instructions,
     recalled: [`# Right now\n\n${prompt.now}`, prompt.brief, prompt.memory, context, prompt.reminder].filter(Boolean).join("\n\n"),
     recallDigest: undefined,
-    history: resumeOf(conversation) ? undefined : await historyOf(ctx, conversation),
+    history: resumeOf(conversation, GUEST_ENGINE) ? undefined : await historyOf(ctx, conversation),
   };
 }
 
@@ -222,7 +224,11 @@ async function historyOf(ctx: ActionCtx, conversation: Doc<"conversations">): Pr
 /**
  * How the chat's turns run: its engine and model, the thinking level that
  * model takes (a level it does not take falls back to its default), and its
- * access. A scheduled job's model, with its engine, wins over the chat's.
+ * access. A scheduled job's model, with its engine, wins over the chat's; a
+ * chat without an engine of its own (a phone, schedule or task chat, or a new
+ * one) is on the owner's default. With neither, the engine is unset and the
+ * turn is refused, asking the owner to choose (codex.enqueueTurn): Perry
+ * never picks one for them.
  *
  * The model is always named. Left out, Codex falls back to the `model` in
  * ~/.codex/config.toml, which the Codex app may have set to one this account
@@ -230,7 +236,8 @@ async function historyOf(ctx: ActionCtx, conversation: Doc<"conversations">): Pr
  */
 async function turnSettings(ctx: ActionCtx, conversation: Doc<"conversations">, job?: { model?: string; engine?: EngineKind }) {
   const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
-  const engine = job?.model ? engineOf(job) : engineOf(conversation);
+  const engine = job?.model && job.engine ? job.engine
+    : conversation.engine ?? (await ctx.runQuery(internal.installation.getDefaultEngine, {})) ?? undefined;
   const model = currentModel(models, job?.model ?? conversation.model, engine);
   return {
     engine,
@@ -242,10 +249,11 @@ async function turnSettings(ctx: ActionCtx, conversation: Doc<"conversations">, 
 
 /**
  * A job whose model is on another engine than its chat moves the chat there,
- * which starts afresh with the chat so far; the chat as it is then.
+ * which starts afresh with the chat so far; the chat as it is then. Without a
+ * model of the job's own, a chat that follows the default stays unset.
  */
-async function onEngine(ctx: ActionCtx, conversation: Doc<"conversations">, settings: { engine: EngineKind; model?: string }): Promise<Doc<"conversations">> {
-  if (engineOf(conversation) === settings.engine) return conversation;
+async function onEngine(ctx: ActionCtx, conversation: Doc<"conversations">, settings: { engine?: EngineKind; model?: string }, jobModel: boolean): Promise<Doc<"conversations">> {
+  if (!jobModel || !settings.engine || conversation.engine === settings.engine) return conversation;
   await ctx.runMutation(internal.conversations.setModel, { id: conversation._id, model: settings.model, engine: settings.engine });
   return (await ctx.runQuery(internal.conversations.getById, { id: conversation._id })) ?? conversation;
 }
@@ -278,7 +286,7 @@ async function reset(ctx: ActionCtx, conversation: Doc<"conversations">): Promis
       conversationId: conversation._id,
       runId,
       prompt: FLUSH,
-      ...await prepareTurn(ctx, conversation, ""),
+      ...await prepareTurn(ctx, conversation, "", settings.engine),
       ...settings,
       flush: true,
     });
@@ -320,15 +328,16 @@ const CHECKPOINT_AT = Number(process.env.PERRY_CHECKPOINT_AT) || 0.75;
  * running. False when there is nothing to save yet, or no runner.
  */
 async function checkpoint(ctx: ActionCtx, conversation: Doc<"conversations">): Promise<boolean> {
-  if (!conversation.codexThreadId) return false;
-  const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, { conversationId: conversation._id, prompt: "Memory checkpoint" });
   const settings = await turnSettings(ctx, conversation);
+  // Nothing to save before the chat's engine has a session of it.
+  if (!resumeOf(conversation, settings.engine)) return false;
+  const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, { conversationId: conversation._id, prompt: "Memory checkpoint" });
   try {
     await ctx.runMutation(internal.codex.enqueueTurn, {
       conversationId: conversation._id,
       runId,
       prompt: CHECKPOINT,
-      ...await prepareTurn(ctx, conversation, ""),
+      ...await prepareTurn(ctx, conversation, "", settings.engine),
       ...settings,
       checkpoint: true,
       policy: "queue",
@@ -336,7 +345,7 @@ async function checkpoint(ctx: ActionCtx, conversation: Doc<"conversations">): P
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access), error: message.slice(0, 1000) });
+    await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access, settings.engine), error: message.slice(0, 1000) });
     return false;
   }
 }
@@ -362,7 +371,7 @@ export const compactChat = internalAction({
   handler: async (ctx, args): Promise<Id<"codexTurns"> | null> => {
     const conversation = await ctx.runQuery(internal.conversations.getById, { id: args.id });
     if (!conversation) throw new Error("This chat was deleted.");
-    if (conversation.codexThreadId) await checkpoint(ctx, conversation);
+    await checkpoint(ctx, conversation);
     return await ctx.runMutation(internal.codex.requestCompact, { conversationId: args.id });
   },
 });
@@ -445,7 +454,7 @@ export const handleTurn = internalAction({
     label: v.optional(v.string()),
     /** A scheduled job's model, which its runs use whatever its chat has picked. */
     model: v.optional(v.string()),
-    /** The engine the job's model is one of. Unset is Codex. */
+    /** The engine the job's model is one of. */
     engine: v.optional(vEngine),
     /** Written in the web app in the owner's Telegram or WhatsApp chat: the web app shows it as its own, and the phone hears of it. */
     fromWeb: v.optional(v.boolean()),
@@ -538,7 +547,7 @@ export const handleTurn = internalAction({
         ? await ctx.runQuery(internal.media.forTurn, { conversationId: conversation._id, attachmentIds })
         : [];
       const settings = guest ? await guestSettings(ctx, conversation) : await turnSettings(ctx, conversation, args.model ? { model: args.model, engine: args.engine } : undefined);
-      conversation = await onEngine(ctx, conversation, settings);
+      conversation = await onEngine(ctx, conversation, settings, !guest && Boolean(args.model));
       const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
         conversationId: conversation._id,
         prompt: args.label ?? args.text,
@@ -553,7 +562,7 @@ export const handleTurn = internalAction({
       if (telegramToken) await sendTyping(telegramToken, args.externalId);
       if (channel === "whatsapp") await ctx.runMutation(internal.whatsapp.typing, { to: args.externalId });
 
-      const turn = guest ? await guestTurn(ctx, conversation, guest, args.guestContext) : await prepareTurn(ctx, conversation, args.hidden ? "" : args.text);
+      const turn = guest ? await guestTurn(ctx, conversation, guest, args.guestContext) : await prepareTurn(ctx, conversation, args.hidden ? "" : args.text, settings.engine);
       // What the assistant sent here on its own since the owner last wrote: their message may answer it.
       const sent = guest ? [] : conversation.unprompted ?? [];
       if (sent.length) {

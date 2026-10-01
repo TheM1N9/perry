@@ -1,12 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import crons from "../convex/crons";
 import http from "../convex/http";
 import schema from "../convex/schema";
-import { HOME, readRunnerConfig, writeRunnerConfig } from "../runner/home";
+import { HOME, PATHS, readRunnerConfig, writeRunnerConfig } from "../runner/home";
 import { modules } from "./modules";
 import { Runtime } from "./runtime";
 import { pollTelegram } from "./telegram";
@@ -70,12 +70,29 @@ async function pairThisMachine(runtime: Runtime) {
   console.log(`[perry] connected this computer (${name}) to the local backend`);
 }
 
+/**
+ * The default engine the owner chose in `perry setup` while Perry was not
+ * running, waiting in Perry's home: it becomes the default, once.
+ */
+async function engineFromSetup(runtime: Runtime) {
+  if (!existsSync(/*turbopackIgnore: true*/ PATHS.engineChoice)) return;
+  try {
+    const { engine } = JSON.parse(readFileSync(/*turbopackIgnore: true*/ PATHS.engineChoice, "utf8")) as { engine?: string };
+    await runtime.runMutation("installation:setDefaultEngine", { engine }, { internal: true });
+  } catch (error) {
+    console.error(`[perry] could not take the default engine perry setup chose: ${String(error)}`);
+  }
+  rmSync(/*turbopackIgnore: true*/ PATHS.engineChoice, { force: true });
+}
+
 /** Start the scheduler, crons, Telegram, WhatsApp, event triggers and the wake timer. Called once, from instrumentation.ts. */
 export async function startBackend() {
   const runtime = backend();
   if (box.__perry!.started) return;
   box.__perry!.started = true;
+  // Also brings an install from before the default engine was asked for forward: Codex, as it was, written down.
   await runtime.runMutation("installation:ensure", {}, { internal: true });
+  await engineFromSetup(runtime);
   // A chat from before projects that kept its memory to itself becomes a project of its own.
   await runtime.runMutation("projects:migrate", {}, { internal: true });
   await pairThisMachine(runtime).catch((error) => console.error(`[perry] could not connect this computer: ${String(error)}`));

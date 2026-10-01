@@ -71,7 +71,7 @@ export const vCodexModel = v.object({
   efforts: v.optional(v.array(v.string())),
   defaultEffort: v.optional(v.string()),
 });
-/** The engine a chat, turn or job runs on (lib/engines.ts). Unset is Codex, as everything from before engines. */
+/** The engine a chat, turn or job runs on (lib/engines.ts). */
 export const vEngine = v.union(v.literal("codex"), v.literal("claude"), v.literal("grok"), v.literal("cursor"), v.literal("antigravity"));
 /** What the owner does to finish signing an engine in (lib/engines.ts, LoginInteraction). */
 export const vLoginInteraction = v.union(
@@ -157,6 +157,19 @@ export default defineSchema({
     homeChannel: v.optional(vMessenger),
     /** The access a new chat starts with. Unset means supervised. */
     defaultAccess: v.optional(vAccess),
+    /**
+     * The engine Perry uses unless a chat or job picks another, as the owner
+     * chose it in `perry setup`, on the welcome page or in Settings → Engines
+     * & usage. Unset, Perry asks for one rather than starting a turn.
+     */
+    defaultEngine: v.optional(vEngine),
+    /**
+     * Made since Perry asks for the default engine, and not chosen yet. An
+     * install with neither this nor defaultEngine is from before, when Codex
+     * was the default without asking: starting the server writes that down as
+     * its choice (installation.ensure), so nothing changes for it.
+     */
+    askEngine: v.optional(v.boolean()),
     /** When Perry's own messages wait instead of reaching the phone, as HH:MM in the owner's timezone (notify.ts). Unset: never. */
     quietHours: v.optional(v.object({ start: v.string(), end: v.string() })),
     /** How many of Perry's own messages may reach the phone in a day; the rest wait for tomorrow. Unset: no limit. */
@@ -589,7 +602,13 @@ export default defineSchema({
     channel: vChannel,
     externalId: v.string(), // telegram chat id, or a unique web session id
     threadId: v.string(),
-    /** The engine this chat's turns run on. Unset is Codex. Picking another engine's model changes it. */
+    /**
+     * The engine this chat's turns run on. A web chat takes the owner's
+     * default engine when it is made, or at its first turn when none was
+     * chosen yet, and keeps it; a phone, schedule or task chat left unset
+     * follows the default as it changes. Picking another engine's model
+     * changes it.
+     */
     engine: v.optional(vEngine),
     /**
      * Where the chat's engine session resumes: an opaque cursor its engine
@@ -781,7 +800,7 @@ export default defineSchema({
     builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"))),
     /** The model its runs use, picked on the Work page. Unset means the account's default. */
     model: v.optional(v.string()),
-    /** The engine `model` is one of. Unset is Codex. */
+    /** The engine `model` is one of, set with it. */
     engine: v.optional(vEngine),
     /** The chat it was set up in, where its results go (channels.ts). Unset: the owner's messaging channel. */
     origin: v.optional(v.id("conversations")),
@@ -946,7 +965,7 @@ export default defineSchema({
     runnerId: v.optional(v.id("runners")),
     conversationId: v.id("conversations"),
     runId: v.id("runs"),
-    /** The engine it runs on. Unset is Codex. The table keeps its name from before engines. */
+    /** The engine it runs on, always set; unset only on a turn from before engines. The table keeps its name from before engines. */
     engine: v.optional(vEngine),
     /** A turn that compacts the chat's engine session (/compact) rather than answering a message. */
     kind: v.optional(v.literal("compact")),
@@ -1031,7 +1050,7 @@ export default defineSchema({
   codexSteers: defineTable({
     /** The running turn it joins. */
     turnId: v.id("codexTurns"),
-    /** The engine of that turn. Unset is Codex. */
+    /** The engine of that turn. */
     engine: v.optional(vEngine),
     runnerId: v.id("runners"),
     conversationId: v.id("conversations"),

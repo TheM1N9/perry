@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { defaultAccess } from "./installation";
+import { defaultAccess, engineFor } from "./installation";
 import { vAccess, vChannel, vEngine } from "./schema";
 import { deleteThread } from "./lib/agent";
 import { FORGET_SESSION, pickPatch } from "./engines";
@@ -42,7 +42,7 @@ export const setModel = internalMutation({
   handler: async (ctx, args) => {
     const chat = await ctx.db.get(args.id);
     if (!chat) return null;
-    await ctx.db.patch(args.id, pickPatch(chat, args.model, args.engine));
+    await ctx.db.patch(args.id, pickPatch(chat, args.model, args.engine, await engineFor(ctx, chat)));
     return null;
   },
 });
@@ -252,6 +252,8 @@ export const createBranch = internalMutation({
       channel: "web",
       externalId: `session:${args.threadId}`,
       threadId: args.threadId,
+      // On the parent's engine, as its model is one of that engine's.
+      ...(parent.engine ? { engine: parent.engine } : {}),
       model: parent.model,
       effort: parent.effort,
       access: parent.access,

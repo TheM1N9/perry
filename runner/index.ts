@@ -347,13 +347,18 @@ async function main() {
     }, wait));
   };
   const readAllLimits = () => { for (const engine of engines.values()) void readLimits(engine); };
+  /** The owner's default engine, as the server has it; unset until chosen. */
+  let defaultEngine: EngineKind | undefined;
+  watch(api.engines.preferred, { token }, (engine) => { defaultEngine = engine ?? undefined; });
   /**
    * An engine for quick side turns (the reviewer, chat names): the preferred
-   * one when it runs them and is signed in, else any that is.
+   * one (the chat's) when it runs them and is signed in, else the owner's
+   * default engine, else any that is.
    */
   const quickEngine = (preferred?: EngineKind): Engine | undefined => {
     const ready = (engine?: Engine) => engine?.quickTurn && engine.capabilities.quickTurns && statuses.get(engine.kind)?.signedIn && !tooOld(engine.kind) ? engine : undefined;
-    return ready(preferred ? engines.get(preferred) : undefined) ?? [...engines.values()].find((engine) => ready(engine));
+    return ready(preferred ? engines.get(preferred) : undefined) ?? ready(defaultEngine ? engines.get(defaultEngine) : undefined)
+      ?? [...engines.values()].find((engine) => ready(engine));
   };
   /** Until when each running turn may go past its limits, by turn: the agent asked (take_longer). */
   let patience: Record<string, number> = {};
@@ -998,7 +1003,7 @@ async function main() {
           if (active.size >= MAX_TURNS) break;
           if (active.has(next._id) || held.has(next.conversationId)) continue;
           held.add(next.conversationId);
-          const engine = engines.get(next.engine ?? "codex");
+          const engine = next.engine ? engines.get(next.engine) : undefined;
           if (engine && !engine.capabilities.concurrentTurns && [...active.values()].some((turn) => turn.engine === engine)) continue;
           const job = await client.mutation(api.codex.claimTurn, { token, id: next._id })
             .catch((error) => { console.error(red(`  could not claim a turn: ${message(error)}`)); return null; });

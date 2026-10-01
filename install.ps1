@@ -2,16 +2,23 @@
 #
 #   iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
 #
-# Uses the Git, Node.js, pnpm, Bun and Codex CLI you already have, wherever
-# they are installed, and installs only what is missing. A Node older than
-# Perry needs is not upgraded behind your back: it says so and stops. Then it
-# gets Perry into ~\perry, installs its packages, and runs
-# `perry setup`, which sets up a Telegram bot if you want one and signs in to Codex,
-# keeps your data in ~\.perry, starts Perry in the background and opens the
-# dashboard. Safe to run again: it updates what is there.
+# Uses the Git, Node.js, pnpm and Bun you already have, wherever they are
+# installed, and installs only what is missing. A Node older than Perry needs
+# is not upgraded behind your back: it says so and stops. Then it gets Perry
+# into ~\perry, installs its packages, and runs `perry setup`, which sets up a
+# Telegram bot if you want one, asks which engine Perry thinks with (Codex,
+# Claude Code, Grok Build or Antigravity: it never picks one for you) and
+# offers to install and sign in to it, keeps your data in ~\.perry, starts
+# Perry in the background and opens the dashboard. Safe to run again: it
+# updates what is there.
 #
 # PERRY_DIR, PERRY_REPO and PERRY_BRANCH change where it goes and what it
-# fetches. PERRY_NO_SETUP=1 stops after installing, with the perry command linked.
+# fetches. PERRY_ENGINE (codex, claude, grok or antigravity) chooses the
+# default engine without asking, for an install with no one to answer:
+#
+#   $env:PERRY_ENGINE='claude'; iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
+#
+# PERRY_NO_SETUP=1 stops after installing, with the perry command linked.
 #
 # Just the desktop pet, on another computer, for the Perry on your main one
 # (its Settings → Desktop pet → Add a computer shows this line, with its own
@@ -103,8 +110,7 @@
     if (-not $pet) {
       if (Has bun) { Found "bun $(bun --version)" }
       else { Quietly 'installing Bun' { powershell -NoProfile -ExecutionPolicy Bypass -Command "irm bun.sh/install.ps1 | iex" }; Refresh-Path; Added "bun $(bun --version)" }
-      if (Has codex) { Found 'codex' }
-      else { Quietly 'installing the Codex CLI' { npm install -g @openai/codex }; Refresh-Path; Added 'codex' }
+      # No engine here: perry setup asks which one Perry should think with, and installs that one.
     }
     Ok ($tools -join ', ')
 

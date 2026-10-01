@@ -13,7 +13,7 @@ export function Close() {
         <a href="#setup" className="mt-10 inline-flex h-12 items-center rounded-full bg-teal px-7 text-[16px] font-semibold text-white transition-colors hover:bg-[#0a6a61]">
           Get Perry
         </a>
-        <p className="mt-5 text-[15px] text-ink-3">Runs on macOS, Linux and Windows, on the ChatGPT plan you already have.</p>
+        <p className="mt-5 text-[15px] text-ink-3">Runs on macOS, Linux and Windows, on the ChatGPT, Claude or Grok plan you already have.</p>
       </Reveal>
     </section>
   );

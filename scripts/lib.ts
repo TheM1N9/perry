@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import type { EngineKind } from "../convex/lib/engines";
 
 /** What the install scripts share. Bun loads .env.local into process.env on its own. */
 
@@ -113,9 +114,50 @@ export const INSTALL_HINTS = {
   bun: process.platform === "win32"
     ? `powershell -c "irm bun.sh/install.ps1 | iex"`
     : "curl -fsSL https://bun.sh/install | bash",
-  codex: process.platform === "win32"
-    ? "npm i -g @openai/codex"
-    : process.platform === "darwin"
-      ? "brew install --cask codex  (or: npm i -g @openai/codex)"
-      : "npm i -g @openai/codex  (or: curl -fsSL https://chatgpt.com/codex/install.sh | sh)",
 };
+
+/**
+ * The command that installs an engine's CLI here, as its maker documents it,
+ * for `perry setup` to offer and run: npm's package for Codex and Grok Build,
+ * Claude Code's own installer. Antigravity has none: Perry downloads Google's
+ * server itself when it is turned on in Settings → Engines & usage.
+ */
+export const INSTALL_COMMANDS: Partial<Record<EngineKind, string>> = {
+  codex: "npm install -g @openai/codex",
+  claude: process.platform === "win32"
+    ? `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex"`
+    : "curl -fsSL https://claude.ai/install.sh | bash",
+  grok: "npm install -g @xai-official/grok",
+};
+
+/**
+ * Run a command line as a shell would, for an install command above: through
+ * cmd.exe on Windows, sh elsewhere. Only this repo's own command lines.
+ */
+export function runShell(line: string, options?: { quiet?: boolean }): Promise<Ran> {
+  return process.platform === "win32"
+    ? run(process.env.COMSPEC || "cmd.exe", ["/d", "/s", "/c", line], options)
+    : run("/bin/sh", ["-c", line], options);
+}
+
+/**
+ * Call Perry's running server as this machine's CLI does, with the dashboard
+ * key: null when it is not running, or does not answer in time.
+ */
+export async function callPerry<T>(path: string, args: object = {}): Promise<{ value: T } | null> {
+  const key = process.env.DASHBOARD_KEY;
+  if (!key) return null;
+  const port = Number(process.env.PERRY_PORT ?? 7377);
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/backend/admin`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-perry-key": key },
+      body: JSON.stringify({ path, args }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    const body = await response.json() as { value?: T; error?: string };
+    return response.ok && !body.error ? { value: body.value as T } : null;
+  } catch {
+    return null;
+  }
+}

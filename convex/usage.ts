@@ -2,7 +2,8 @@ import { v } from "convex/values";
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
-import { ENGINE_LABELS, ENGINES, engineOf, isEngine, type EngineKind } from "./lib/engines";
+import { ENGINE_LABELS, ENGINES, isEngine, type EngineKind } from "./lib/engines";
+import { engineFor } from "./installation";
 import { USAGE_REPORTS, type EngineUsage } from "./lib/usage";
 import { isOnline, statusesOf } from "./engines";
 import { authenticate } from "./runner";
@@ -47,8 +48,8 @@ const labelled = (run: Doc<"runs">): EngineKind | undefined => {
   return isEngine(named) ? named : undefined;
 };
 
-/** The engine a run was on: its label says, else its chat's. */
-const engineOfRun = (run: Doc<"runs">, chat: Doc<"conversations"> | null): EngineKind => labelled(run) ?? engineOf(chat);
+/** The engine a run was on: its label says, else its chat's (or the default it follows). None for a run refused for want of one. */
+const engineOfRun = async (ctx: QueryCtx, run: Doc<"runs">, chat: Doc<"conversations"> | null): Promise<EngineKind | undefined> => labelled(run) ?? (chat ? await engineFor(ctx, chat) : undefined);
 
 /** Each engine's usage, the newest read across the computers it is on. */
 function usageByEngine(runners: Doc<"runners">[]): Partial<Record<EngineKind, EngineUsage>> {
@@ -78,10 +79,10 @@ async function runsSince(ctx: QueryCtx, since: number) {
     .filter((run) => run.status === "ok" || run.status === "running" || (run.usage?.totalTokens ?? 0) > 0);
   const chats = new Map<Id<"conversations">, Doc<"conversations"> | null>();
   for (const run of runs) if (!chats.has(run.conversationId)) chats.set(run.conversationId, await ctx.db.get(run.conversationId));
-  return runs.map((run) => {
+  return (await Promise.all(runs.map(async (run) => {
     const chat = chats.get(run.conversationId) ?? null;
-    return { run, chat, engine: engineOfRun(run, chat), tokens: run.usage?.totalTokens ?? 0 };
-  });
+    return { run, chat, engine: await engineOfRun(ctx, run, chat), tokens: run.usage?.totalTokens ?? 0 };
+  }))).filter((item): item is typeof item & { engine: EngineKind } => item.engine !== undefined);
 }
 
 /**
@@ -96,7 +97,10 @@ export const limits = query({
     // The latest runs are enough to say which engines are in use, and keep this light: it reruns as each reply streams.
     const recent = await ctx.db.query("runs").withIndex("by_started", (q) => q.gte("startedAt", Date.now() - SHARE_MS)).order("desc").take(200);
     const used = new Set<EngineKind>();
-    for (const run of recent) used.add(engineOfRun(run, labelled(run) ? null : await ctx.db.get(run.conversationId)));
+    for (const run of recent) {
+      const engine = await engineOfRun(ctx, run, labelled(run) ? null : await ctx.db.get(run.conversationId));
+      if (engine) used.add(engine);
+    }
     return {
       engines: ENGINES.flatMap((kind) => merged[kind] ? [{ kind, usage: merged[kind] }] : []),
       used: [...used],

@@ -115,6 +115,7 @@ function Schedules() {
   const runNow = useMutation(api.jobs.runNow);
   const setModel = useMutation(api.jobs.setModel);
   const models = useQuery(api.models.options, { key: dashboardKey })?.models;
+  const preferred = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
   const several = enginesOf(models ?? []).length > 1;
   const now = useNow();
   const { ask, dialog } = useConfirm();
@@ -132,14 +133,15 @@ function Schedules() {
     const over = job.runAt !== undefined && !job.enabled && job.runAt <= now;
     const readable = job.schedule ? describeSchedule(job.schedule) : null;
     const state: { tone: Tone; label: string } | null = job.lastError ? { tone: "danger", label: "Failed" } : job.enabled ? null : { tone: "neutral", label: over ? "Done" : "Paused" };
-    // Unset runs on the account's default; a pick the account no longer offers falls back to it too.
+    // Unset runs on the default engine's own default model; a pick the account no longer offers falls back to it too.
     // Each model is "<engine>/<id>", named with its engine once there is more than one.
-    const fallback = modelsOf(models ?? [], "codex").find((item) => item.isDefault) ?? models?.[0];
-    const picked = job.model ? modelKey(job.engine, job.model) : undefined;
+    const offered = modelsOf(models ?? [], preferred ?? undefined);
+    const fallback = offered.find((item) => item.isDefault) ?? offered[0];
+    const picked = job.model && job.engine ? modelKey(job.engine, job.model) : undefined;
     const modelItems = [
-      { value: "default", label: fallback ? `Default (${fallback.name})` : "Default model" },
-      ...(models ?? []).map((item) => ({ value: modelKey(item.engine ?? "codex", item.id), label: several ? `${item.name} · ${ENGINE_LABELS[item.engine ?? "codex"]}` : item.name })),
-      ...(picked && models && !models.some((item) => modelKey(item.engine ?? "codex", item.id) === picked) ? [{ value: picked, label: `${job.model} (not offered, uses default)` }] : []),
+      { value: "default", label: fallback ? `Default (${fallback.name})` : preferred === null ? "Default (no engine chosen)" : "Default model" },
+      ...(models ?? []).map((item) => ({ value: modelKey(item.engine, item.id), label: several ? `${item.name} · ${ENGINE_LABELS[item.engine]}` : item.name })),
+      ...(picked && models && !models.some((item) => modelKey(item.engine, item.id) === picked) ? [{ value: picked, label: `${job.model} (not offered, uses default)` }] : []),
     ];
     return (
       <Row key={job.id}>
