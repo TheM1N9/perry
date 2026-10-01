@@ -1,0 +1,379 @@
+{
+  "ranAt": "2026-10-01T09:25:17.679Z",
+  "pass": true,
+  "checks": {
+    "checklistIsPerrys": true,
+    "tableIsPerrys": true,
+    "skillChipTip": true,
+    "memoryChipTip": true,
+    "kbdInComposerNote": true,
+    "statusDotTip": true,
+    "newProjectTip": true,
+    "searchHasOneClearButton": true,
+    "onlyInChatTip": true,
+    "onlyInProjectTip": true,
+    "promotedTip": true,
+    "cronTip": true,
+    "nextRunTip": true,
+    "lastRanTip": true,
+    "timePickerSavesDailyTime": true,
+    "datePickerSavesOnce-light": true,
+    "updateLogIsCollapsible": true,
+    "updateLogOpens": true,
+    "timePickerSavesQuietHours": true,
+    "themeIsToggleGroup": true,
+    "radioCardsAndCheckbox": true,
+    "activityScrollsAndFocus": true,
+    "approvalExpiryTip": true,
+    "workdirTip": true,
+    "commandTip": true,
+    "repeatTip": true,
+    "streakTip": true,
+    "roundCheckboxTicks": true,
+    "petPickerMenu": true,
+    "petFocusShows": true,
+    "petTipsInWindow": true,
+    "datePickerSavesOnce-dark": true,
+    "noNativeControls": true,
+    "nothingThrows": true
+  },
+  "notes": {
+    "checklistIsPerrys": {
+      "bullets": "none",
+      "boxes": [
+        {
+          "role": "checkbox",
+          "checked": "true",
+          "readonly": "true",
+          "tab": -1
+        },
+        {
+          "role": "checkbox",
+          "checked": "true",
+          "readonly": "true",
+          "tab": -1
+        },
+        {
+          "role": "checkbox",
+          "checked": "false",
+          "readonly": "true",
+          "tab": -1
+        },
+        {
+          "role": "checkbox",
+          "checked": "false",
+          "readonly": "true",
+          "tab": -1
+        }
+      ],
+      "header": "oklab(0.970708 0.000790477 -0.00252378 / 0.5)",
+      "lastRowBorder": "0px",
+      "wrapperBorder": "1px",
+      "afterClick": 2
+    },
+    "tableIsPerrys": {
+      "bullets": "none",
+      "boxes": [
+        {
+          "role": "checkbox",
+          "checked": "true",
+          "readonly": "true",
+          "tab": -1
+        },
+        {
+          "role": "checkbox",
+          "checked": "true",
+          "readonly": "true",
+          "tab": -1
+        },
+        {
+          "role": "checkbox",
+          "checked": "false",
+          "readonly": "true",
+          "tab": -1
+        },
+        {
+          "role": "checkbox",
+          "checked": "false",
+          "readonly": "true",
+          "tab": -1
+        }
+      ],
+      "header": "oklab(0.970708 0.000790477 -0.00252378 / 0.5)",
+      "lastRowBorder": "0px",
+      "wrapperBorder": "1px"
+    },
+    "searchHasOneClearButton": {
+      "ours": 1,
+      "type": "search",
+      "browsers": [
+        {
+          "appearance": "none",
+          "display": "block"
+        }
+      ]
+    },
+    "timePickerSavesDailyTime": {
+      "id": "yk3a9ytxzts2yaezfssk56caze",
+      "name": "E2E stretch reminder",
+      "schedule": "45 7 * * *",
+      "prompt": "Remind me to stretch.",
+      "enabled": true,
+      "engine": "codex",
+      "nextRunAt": 1790907300000
+    },
+    "datePickerSavesOnce-light": {
+      "saved": "Sun Nov 15 2026 16:20:00 GMT+0530 (India Standard Time)",
+      "wanted": "Sun Nov 15 2026 16:20:00 GMT+0530 (India Standard Time)",
+      "afterEscape": {
+        "calendar": false,
+        "dialog": true,
+        "shown": "Sun, 15 Nov 2026, 16:20"
+      }
+    },
+    "timePickerSavesQuietHours": {
+      "quietHours": {
+        "start": "21:30",
+        "end": "07:00"
+      },
+      "waiting": 0
+    },
+    "themeIsToggleGroup": {
+      "role": "group",
+      "items": [
+        [
+          "System",
+          "true"
+        ],
+        [
+          "Light",
+          "false"
+        ],
+        [
+          "Dark",
+          "false"
+        ]
+      ]
+    },
+    "radioCardsAndCheckbox": {
+      "before": "A separate number",
+      "moved": "My own number",
+      "phone": true
+    },
+    "activityScrollsAndFocus": {
+      "scrollAreas": 5,
+      "nativeScrollers": 0,
+      "ring": true,
+      "inset": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.522197 -0.089299 -0.00737262 / 0.5) 0px 0px 0px 3px inset, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+    },
+    "roundCheckboxTicks": {
+      "box": {
+        "radius": "3.35544e+07px",
+        "slot": "checkbox"
+      },
+      "ticked": true
+    },
+    "petPickerMenu": {
+      "opened": {
+        "solid": true,
+        "items": [
+          "Export last year's receipts",
+          "Plan my week",
+          "Coffee order"
+        ]
+      },
+      "escaped": {
+        "menu": false,
+        "panel": true
+      },
+      "outside": {
+        "menu": false,
+        "panel": true
+      },
+      "first": "Export last year's receipts",
+      "second": "Plan my week",
+      "picked": {
+        "label": "Export last year's receipts: pick a chat",
+        "stored": "13zg62gfvc43nv6tfq729a51yy",
+        "menu": false
+      }
+    },
+    "petFocusShows": {
+      "focus": {
+        "Chat tab": {
+          "visible": true,
+          "shows": true
+        },
+        "To-dos tab": {
+          "visible": true,
+          "shows": true
+        },
+        "Needs you tab": {
+          "visible": true,
+          "shows": true
+        },
+        "Open Perry": {
+          "visible": true,
+          "shows": true
+        },
+        "Close": {
+          "visible": true,
+          "shows": true
+        },
+        "Chat picker": {
+          "visible": true,
+          "shows": true
+        },
+        "New chat": {
+          "visible": true,
+          "shows": true
+        },
+        "Open in Perry": {
+          "visible": true,
+          "shows": true
+        }
+      },
+      "tabs": [
+        [
+          "Chat",
+          "true"
+        ],
+        [
+          "To-dos",
+          "false"
+        ],
+        [
+          "Needs you 1",
+          "false"
+        ]
+      ],
+      "arrowed": "To-dos"
+    },
+    "petTipsInWindow": {
+      "Close": {
+        "hover": {
+          "text": "Close",
+          "solid": true,
+          "left": 326,
+          "top": 63,
+          "right": 379.15625,
+          "bottom": 91
+        },
+        "focus": "Close",
+        "ok": true
+      },
+      "Open Perry": {
+        "hover": {
+          "text": "Open Perry",
+          "solid": true,
+          "left": 270,
+          "top": 63,
+          "right": 352.515625,
+          "bottom": 91
+        },
+        "focus": "Open Perry",
+        "ok": true
+      },
+      "New chat": {
+        "hover": {
+          "text": "New chat",
+          "solid": true,
+          "left": 292,
+          "top": 85,
+          "right": 365.390625,
+          "bottom": 113
+        },
+        "focus": "New chat",
+        "ok": true
+      },
+      "Open in Perry": {
+        "hover": {
+          "text": "Open in Perry",
+          "solid": true,
+          "left": 305,
+          "top": 85,
+          "right": 399.078125,
+          "bottom": 113
+        },
+        "focus": "Open in Perry",
+        "ok": true
+      }
+    },
+    "datePickerSavesOnce-dark": {
+      "saved": "Sun Nov 15 2026 16:20:00 GMT+0530 (India Standard Time)",
+      "wanted": "Sun Nov 15 2026 16:20:00 GMT+0530 (India Standard Time)",
+      "afterEscape": {
+        "calendar": false,
+        "dialog": true,
+        "shown": "Sun, 15 Nov 2026, 16:20"
+      }
+    },
+    "noNativeControls": {},
+    "tooltips": {
+      "skill chip": {
+        "hover": "The weekly-review skill",
+        "focus": "The weekly-review skill"
+      },
+      "memory chip": {
+        "hover": "Sam takes their coffee black, no sugar.",
+        "focus": "Sam takes their coffee black, no sugar."
+      },
+      "status dot": {
+        "hover": "The last reply failed",
+        "focus": "The last reply failed"
+      },
+      "new project": {
+        "hover": "New project",
+        "focus": "New project"
+      },
+      "only in chat": {
+        "hover": "Kept to one chat: no other chat sees it.",
+        "focus": "Kept to one chat: no other chat sees it."
+      },
+      "only in project": {
+        "hover": "Kept to a project: only its chats see it.",
+        "focus": "Kept to a project: only its chats see it."
+      },
+      "promoted overnight": {
+        "hover": "Promoted from daily notes overnight",
+        "focus": "Promoted from daily notes overnight"
+      },
+      "cron": {
+        "hover": "0 8 * * 1-5",
+        "focus": "0 8 * * 1-5"
+      },
+      "next run": {
+        "hover": "2 Oct 2026, 08:00",
+        "focus": "2 Oct 2026, 08:00"
+      },
+      "last ran": {
+        "hover": "1 Oct 2026, 14:53",
+        "focus": "1 Oct 2026, 14:53"
+      },
+      "approval expiry": {
+        "hover": "Unanswered requests are declined when this runs out",
+        "focus": "Unanswered requests are declined when this runs out"
+      },
+      "workdir": {
+        "hover": "W:\\perry-tests\\fewer-boxes\\perry-ui-consistency-yx5aT0\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure\\site",
+        "focus": "W:\\perry-tests\\fewer-boxes\\perry-ui-consistency-yx5aT0\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure\\site"
+      },
+      "command": {
+        "hover": "git push origin main --force-with-lease --no-verify # after the rebase of the long-lived feature branch",
+        "focus": "git push origin main --force-with-lease --no-verify # after the rebase of the long-lived feature branch"
+      },
+      "repeat": {
+        "hover": "Every day at 11:00",
+        "focus": "Every day at 11:00"
+      },
+      "streak": {
+        "hover": "Days in a row with something done",
+        "focus": "Days in a row with something done"
+      }
+    },
+    "nothingThrows": {
+      "exceptions": [],
+      "consoleErrors": []
+    }
+  }
+}
