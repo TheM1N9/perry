@@ -472,9 +472,8 @@ function Keys() {
                       <FieldLabel htmlFor={id}>{entry.label}</FieldLabel>
                       <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{entry.hint}</p>
                     </div>
-                    {entry.set
-                      ? <StatusBadge tone="success"><span translate="no">Set{entry.preview ? ` · ${entry.preview}` : ""}</span></StatusBadge>
-                      : <StatusBadge>Not set</StatusBadge>}
+                    {/* Not set is said once, in the line under the field. */}
+                    {entry.set && <StatusBadge tone="success"><span translate="no">Set{entry.preview ? ` · ${entry.preview}` : ""}</span></StatusBadge>}
                   </div>
                   <SecretInput id={id} name={entry.name} value={drafts[entry.name] ?? ""} placeholder={entry.set ? "Paste a new value to replace it" : "Paste the key"}
                     invalid={Boolean(error)} describedBy={error ? `${id}-error` : undefined} save={{ busy: saving === entry.name }}

@@ -210,6 +210,9 @@ try {
 
   // A person to brief, a login, a goal, a watch, and a task waiting on a question.
   await call("contacts:learn", { items: [{ channel: "whatsapp", externalId: "15550001111@s.whatsapp.net", kind: "person", name: "Datta" }] });
+  // Allowed, as the owner's yes makes him: People lists only who Perry talks with, or is asked about.
+  const datta = await call<{ _id: string }>("contacts:byChat", { channel: "whatsapp", externalId: "15550001111@s.whatsapp.net" });
+  await call("contacts:decided", { contactId: datta._id, kind: "contact", approved: true });
   await call("dashboard:saveToVault", { key: KEY, label: "Netflix", url: "https://www.netflix.com/login", username: "sam@example.com", value: "e2e-not-a-password" });
   await call("dashboard:saveGoal", { key: KEY, title: "Run a half marathon by March", description: "", milestones: [{ title: "Run 5 km without stopping", done: true }, { title: "Run 10 km", done: false }] }).catch((error) => { notes.goalSeed = String(error); });
   await call("dashboard:saveMonitor", { key: KEY, title: "Headphones back in stock", url: "https://example.com/headphones", condition: "contains", value: "In stock", intervalMinutes: 60 }).catch((error) => { notes.watchSeed = String(error); });
@@ -340,7 +343,7 @@ try {
     await collectErrors(`chat-${mode}`);
 
     // --- Settings, each tab ----------------------------------------------------------------------
-    for (const [tab, words] of [["general", "Quiet hours"], ["usage", "Your plans"], ["keys", "Logins and secrets"], ["people", "Datta"], ["shortcuts", "Keyboard shortcuts"], ["telegram", "Telegram"], ["whatsapp", "A separate number"]] as const) {
+    for (const [tab, words] of [["general", "Quiet hours"], ["usage", "Your plans"], ["keys", "Logins and secrets"], ["people", "Talks with Perry"], ["shortcuts", "Keyboard shortcuts"], ["telegram", "Telegram"], ["whatsapp", "A separate number"]] as const) {
       await go(`/settings${tab === "general" ? "" : `?tab=${tab}`}`, words);
       await shot(`settings-${tab}`);
       await measure(`settings-${tab}-${mode}`);
@@ -535,7 +538,7 @@ try {
     await collectErrors("autosave-about");
 
     // --- Autosave: a person's brief -----------------------------------------------------------------
-    await go("/settings?tab=people", "Datta");
+    await go("/settings?tab=people", "Talks with Perry");
     await click(byText("main li button", "Brief"));
     await waitFor(`document.querySelector('textarea[aria-label^="What Perry may share with Datta"]')`, "the brief");
     await typeText("He can know my gym times.");
