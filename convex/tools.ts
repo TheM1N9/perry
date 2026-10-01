@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { createTool } from "./lib/agent";
+import { createTool, type ToolCtx } from "./lib/agent";
+import type { PerryPick } from "./lib/routing";
 import { z } from "zod";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -458,6 +459,33 @@ const trigger = z.object({
   folder: z.string().optional().describe("Instead of an app: the absolute path of a folder on this computer; each new file there starts a run."),
 }).describe("Run the job on an event instead of a time: give slug (and config) for an app's event, or folder.");
 
+/** What Perry may pick for a job's or task's runs; the tier's rule picks the rest (lib/routing.ts). */
+const picks = {
+  tier: z.enum(["quick", "standard", "deep"]).optional()
+    .describe("How much model it needs: quick (a fast model, low thinking: a reminder, a short check), standard (the engine's default), deep (its strongest, high thinking: research, long writing). Leave it out and it is picked by the kind of work; list_engines says how."),
+  model: z.string().optional()
+    .describe("A model as <engine>/<id> from list_engines, only when one fits better than its tier's. The owner's own pick on the Work page wins over it."),
+  effort: z.string().optional().describe("A thinking level that model takes, from list_engines."),
+};
+type PickInput = { tier?: string; model?: string; effort?: string };
+/** The agent's pick, checked against what the engines offer: the pick, or why it cannot be. */
+async function checkPick(ctx: ToolCtx, input: PickInput): Promise<{ pick?: PerryPick; error?: string }> {
+  if (!input.tier && !input.model && !input.effort) return {};
+  return await ctx.runQuery(internal.routing.checkPick, { ...(input.tier ? { tier: input.tier } : {}), ...(input.model ? { model: input.model } : {}), ...(input.effort ? { effort: input.effort } : {}) });
+}
+
+const list_engines = createTool({
+  description:
+    "List the engines your work can run on (Codex, Claude Code, Grok Build, Antigravity), as signed in on the owner's " +
+    "computers: how much of each plan is left (room, low, or out, with why and when it resets), their models and " +
+    "thinking levels, and what each tier runs there. Use it before picking a model or tier for a job or task, or when " +
+    "the owner asks what you run on. Background work moves off an engine that is low or out by itself.",
+  inputSchema: z.object({}),
+  execute: async (ctx): Promise<{ engines: Array<Record<string, unknown>>; rule: string }> => {
+    return await ctx.runQuery(internal.routing.engines, {});
+  },
+});
+
 const find_triggers = createTool({
   description:
     "List the events a connected app can send to start a job on: a new email, a pull request, " +
@@ -489,10 +517,13 @@ const create_job = createTool({
     at: at.optional(),
     trigger: trigger.optional(),
     prompt: z.string().min(10).describe("What to do on each run. For an event, say what to do with it, and when to stay quiet (\"only tell me if it needs a reply\")."),
+    ...picks,
   }),
   execute: async (ctx, input): Promise<{ id?: string; nextRun?: string; error?: string }> => {
-    const origin = ctx.conversationId ? { origin: ctx.conversationId } : {};
-    const { trigger: on, ...rest } = input;
+    const { trigger: on, tier, model, effort, ...rest } = input;
+    const checked = await checkPick(ctx, { tier, model, effort });
+    if (checked.error) return { error: checked.error };
+    const origin = { ...(ctx.conversationId ? { origin: ctx.conversationId } : {}), ...(checked.pick ? { pick: checked.pick } : {}) };
     if (!on) return await ctx.runMutation(internal.jobs.create, { ...rest, ...origin });
     if (Boolean(on.slug) === Boolean(on.folder)) return { error: "A trigger is an app's event (slug) or a folder, one of them." };
     if (on.folder) {
@@ -515,20 +546,28 @@ const create_job = createTool({
 /** "New Gmail Message" as the end of "When …": "When new Gmail message". Names keep their capitals. */
 const lowerFirst = (name: string) => name.replace(/^([A-Z])(?=[a-z])/, (letter) => letter.toLowerCase());
 
-type JobRow = { id: string; name: string; schedule?: string; runAt?: number; enabled: boolean; builtin?: string; nextRunAt: number; lastRunAt?: number; lastResult?: string; lastError?: string };
+type JobRow = {
+  id: string; name: string; schedule?: string; runAt?: number; enabled: boolean; builtin?: string; nextRunAt: number; lastRunAt?: number; lastResult?: string; lastError?: string;
+  model?: string; engine: string; stay?: boolean; pick?: PerryPick; route?: { engine: string; model?: string; effort?: string; tier: string; by: string; why: string }; waiting?: { until: number; why: string };
+};
 
 const list_jobs = createTool({
   description:
     "List the scheduled jobs, including the built-in heartbeat, daily summary and memory " +
     "consolidation, with their schedules or one-time runs, when they next run, and how the " +
-    "last run went, including why it failed.",
+    "last run went, including why it failed; what each runs on and why (the owner's model, your pick, " +
+    "or the tier's), and a run waiting for an engine's plan to reset.",
   inputSchema: z.object({}),
-  execute: async (ctx): Promise<Array<Omit<JobRow, "runAt" | "nextRunAt" | "lastRunAt"> & { runAt?: string; nextRunAt: string; lastRunAt?: string }>> => {
+  execute: async (ctx): Promise<Array<Record<string, unknown>>> => {
     const jobs: JobRow[] = await ctx.runQuery(internal.jobs.list, {});
     const iso = (ms?: number) => ms === undefined ? undefined : new Date(ms).toISOString();
     return jobs.map((job) => ({
       id: job.id, name: job.name, schedule: job.schedule, runAt: iso(job.runAt), enabled: job.enabled, builtin: job.builtin,
       nextRunAt: iso(job.nextRunAt)!, lastRunAt: iso(job.lastRunAt), lastResult: job.lastResult, lastError: job.lastError,
+      ...(job.model ? { ownerModel: `${job.engine}/${job.model}`, ...(job.stay ? { keptOnItsEngine: true } : {}) } : {}),
+      ...(job.pick ? { yourPick: job.pick } : {}),
+      ...(job.route ? { lastRanOn: { model: `${job.route.engine}/${job.route.model ?? "default"}`, effort: job.route.effort, tier: job.route.tier, why: job.route.why } } : {}),
+      ...(job.waiting ? { waitingUntil: iso(job.waiting.until), waitingWhy: job.waiting.why } : {}),
     }));
   },
 });
@@ -551,7 +590,8 @@ const update_job = createTool({
     "Change, pause, or resume a scheduled job by id, from list_jobs: rename it, " +
     "change its prompt, or move it to a cron schedule or a one-time at. A new " +
     "time also resumes it unless enabled is false. List jobs before changing an " +
-    "ambiguous one. The heartbeat and other built-in jobs can only be rescheduled, paused or resumed.",
+    "ambiguous one. The heartbeat and other built-in jobs can only be rescheduled, paused or resumed, " +
+    "or given a tier or model. tier, model and effort set what its runs use (tier \"auto\" goes back to picking by the kind of work).",
   inputSchema: z.object({
     id: z.string().min(1),
     name: z.string().min(2).max(80).optional(),
@@ -559,9 +599,16 @@ const update_job = createTool({
     schedule: schedule.optional().describe("Make it repeat on this cron schedule, replacing a one-time at."),
     at: at.optional().describe("Make it run once at this time (ISO 8601 with the owner's UTC offset), replacing a cron schedule."),
     enabled: z.boolean().optional().describe("false pauses it, true resumes it."),
+    tier: z.enum(["quick", "standard", "deep", "auto"]).optional().describe(picks.tier.description!),
+    model: picks.model,
+    effort: picks.effort,
   }),
   execute: async (ctx, input): Promise<{ updated: boolean; nextRun?: string; error?: string }> => {
-    return await ctx.runMutation(internal.jobs.update, input);
+    const { tier, model, effort, ...rest } = input;
+    if (tier === "auto") return await ctx.runMutation(internal.jobs.update, { ...rest, pick: null });
+    const checked = await checkPick(ctx, { tier, model, effort });
+    if (checked.error) return { updated: false, error: checked.error };
+    return await ctx.runMutation(internal.jobs.update, { ...rest, ...(checked.pick ? { pick: checked.pick } : {}) });
   },
 });
 
@@ -909,12 +956,16 @@ const queue_task = createTool({
     title: z.string().min(2).max(160).describe("A short name, e.g. 'Compare three flats near work'."),
     prompt: z.string().min(10).max(12000).describe("Everything needed to do it without asking: what, where to put the result, what counts as done."),
     goalId: z.string().optional().describe("The goal it serves, from status_report, if any."),
+    ...picks,
   }),
   execute: async (ctx, input): Promise<{ taskId?: string; note?: string; error?: string }> => {
     const goal = input.goalId ? await ctx.runQuery(internal.work.getGoal, { goalId: input.goalId }) : null;
     if (input.goalId && !goal) return { error: "No goal with that id; status_report lists them." };
+    const checked = await checkPick(ctx, input);
+    if (checked.error) return { error: checked.error };
     const taskId: Id<"tasks"> = await ctx.runMutation(internal.tasks.queue, {
       title: input.title, prompt: input.prompt, ...(goal ? { goalId: goal._id } : {}), ...(ctx.conversationId ? { origin: ctx.conversationId } : {}),
+      ...(checked.pick ? { pick: checked.pick } : {}),
     });
     return { taskId, note: NO_WAIT };
   },
@@ -1120,6 +1171,7 @@ export const ALL_TOOLS = {
   search_chats,
   read_chat,
   create_job,
+  list_engines,
   find_triggers,
   list_jobs,
   update_job,
