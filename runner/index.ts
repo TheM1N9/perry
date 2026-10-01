@@ -618,6 +618,8 @@ async function main() {
     try {
       const engine = engines.get(request.engine);
       if (!engine) throw new Error(`${ENGINE_LABELS[request.engine]} is not on this computer's runner yet. Update Perry here.`);
+      // Its CLI may be half replaced, and its processes are ended as it is.
+      if (updating.has(request.engine)) throw new Error(`${engine.label} is being updated on this computer. Sign in once that's done`);
       if (request.kind === "logout") {
         await engine.logout();
       } else {
@@ -1084,9 +1086,19 @@ async function main() {
     const engine = engines.get(kind);
     const label = ENGINE_LABELS[kind];
     // One report at a time, in order, so what it printed last is never overwritten by what came before.
+    // How it ended is tried again for a while: lost, Settings would say it was still updating.
     let reporting = Promise.resolve();
-    const progress = (payload: Omit<FunctionArgs<typeof api.engineUpdates.progress>, "token" | "id">) =>
-      (reporting = reporting.then(async () => { await client.mutation(api.engineUpdates.progress, { token, id: request.id, ...payload }); }).catch(() => {}));
+    const progress = (payload: Omit<FunctionArgs<typeof api.engineUpdates.progress>, "token" | "id">) => (reporting = reporting.then(async () => {
+      for (let tries = payload.status === "waiting" || payload.status === "running" ? 1 : 10; tries > 0; tries--) {
+        try {
+          await client.mutation(api.engineUpdates.progress, { token, id: request.id, ...payload });
+          return;
+        } catch (error) {
+          if (tries === 1) console.error(red(`  could not report ${label}'s update: ${message(error)}`));
+          else await new Promise((resolve) => setTimeout(resolve, 3_000));
+        }
+      }
+    }));
     updating.add(kind);
     try {
       const where = engine?.where?.();
@@ -1168,18 +1180,19 @@ async function main() {
       const namer = quickEngine(request.engine);
       if (!namer) return;
       naming.add(request.id);
-      void (async () => {
+      // Counted from here, so an update of its engine waits for the whole of it.
+      void quickly(namer, async () => {
         if (!await client.mutation(api.titles.claim, { token, id: request.id })) return;
         let title: string | undefined;
         try {
-          const named = await quickly(namer, () => nameChat(namer, request.text));
+          const named = await nameChat(namer, request.text);
           title = named.title;
           console.log(dim(`  named a chat "${title}" (${named.model ?? `${namer.label} default`})`));
         } catch (error) {
           console.log(yellow(`  could not name a chat: ${message(error)}`));
         }
         await client.mutation(api.titles.finish, { token, id: request.id, title });
-      })()
+      })
         .catch((error) => console.error(red(`  Could not save a chat's name: ${message(error)}`)))
         .finally(() => naming.delete(request.id));
     }
