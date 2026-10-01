@@ -46,18 +46,6 @@ export const fullDate = (timestamp: number, timeZone?: string) =>
 export const timeOf = (timestamp: number) =>
   new Date(timestamp).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
-/** Today, Yesterday, Previous 7 days, Previous 30 days, or the month: how a chat list groups by date. */
-export function dayGroup(timestamp: number, now = Date.now()): string {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  const day = 86_400_000;
-  if (timestamp >= start.getTime()) return "Today";
-  if (timestamp >= start.getTime() - day) return "Yesterday";
-  if (timestamp >= start.getTime() - 7 * day) return "Previous 7 days";
-  if (timestamp >= start.getTime() - 30 * day) return "Previous 30 days";
-  return new Date(timestamp).toLocaleDateString(undefined, { month: "long", year: "numeric" });
-}
-
 export const bytes = (size: number) =>
   size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`;
 

@@ -329,7 +329,7 @@ try {
 
   // --- 13. Settings → People -----------------------------------------------------------------------------------------------
   browser = await openChat(BASE, KEY);
-  await browser.send("Page.navigate", { url: `${BASE}/settings?tab=people` });
+  await browser.send("Page.navigate", { url: `${BASE}/settings/people` });
   await until(async () => Boolean(await browser!.evaluate(`document.body.innerText.includes("Datta") && document.body.innerText.includes("gym times")`)), "People to list Datta and his brief", 30).catch(() => {});
   const shown = String(await browser.evaluate("document.body.innerText"));
   const shot = await browser.send("Page.captureScreenshot", { format: "png" }) as { data: string };

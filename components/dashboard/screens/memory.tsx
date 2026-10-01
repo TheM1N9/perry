@@ -242,43 +242,24 @@ function TeachForm() {
 
 const BY = { owner: "You", assistant: "Your assistant", job: "A schedule" } as const;
 
-/** USER.md and the assistant's name and personality: edit either, see who changed what, and bring an older version back. */
-function AboutYou() {
+/**
+ * Settings → General: the assistant's name and personality, each saved as you
+ * type. Their earlier versions are in Memory → About you, with USER.md's.
+ */
+export function YourAssistant() {
   const { dashboardKey } = useSession();
-  const router = useRouter();
   const persona = useQuery(api.dashboard.getPersona, { key: dashboardKey });
-  const userHistory = useQuery(api.dashboard.personaHistory, { key: dashboardKey, kind: "user" });
-  const identityHistory = useQuery(api.dashboard.personaHistory, { key: dashboardKey, kind: "identity" });
-  const saveUserMd = useMutation(api.dashboard.saveUserMd);
   const saveIdentity = useMutation(api.dashboard.saveIdentity);
-  const restore = useMutation(api.dashboard.restorePersonaVersion);
-  const redo = useMutation(api.dashboard.redoOnboarding);
-
-  /** USER.md reads as a document; Edit (or a double click) turns it into its Markdown, which saves itself as you type. */
-  const [editingUser, setEditingUser] = useState(false);
   const name = useAutosave({ saved: persona?.name ?? "", save: (text) => saveIdentity({ key: dashboardKey, name: text }) });
   const personality = useAutosave({ saved: persona?.personality ?? "", save: (text) => saveIdentity({ key: dashboardKey, personality: text }) });
-  const user = useAutosave({ saved: persona?.user ?? "", save: (text) => saveUserMd({ key: dashboardKey, text }) });
-  /** Done with USER.md: saved first, and still open if that failed, so nothing typed is lost. */
-  const doneWithUser = () => void user.flush().then((ok) => { if (ok) setEditingUser(false); });
-
-  if (persona === undefined) return <ListSkeleton rows={2} />;
-  const savedUser = persona.user;
   // The two fields save on their own; one line says how both went.
   const both = [name.state, personality.state];
   const identity: SaveState = both.find((state) => state.status === "error") ?? both.find((state) => state.status === "saving")
     ?? both.find((state) => state.status === "saved") ?? { status: "idle" };
 
-  const restoreButton = (id: string, what: string) => (
-    <ActionButton variant="ghost" size="sm" action={() => restore({ key: dashboardKey, id: id as Id<"persona"> })} success="Restored. The version it replaced stays in history."
-      confirm={{ title: `Restore this ${what}?`, body: "It becomes the current version. What it replaces stays in history, so you can switch back.", label: "Restore" }}>
-      Restore
-    </ActionButton>
-  );
-
   return (
-    <div>
-      <Section title="Your assistant" description="Its name and how it comes across. Both go into every chat.">
+    <Section title="Your assistant" description="Its name and how it comes across. Both go into every chat.">
+      {persona === undefined ? <ListSkeleton rows={2} /> : (
         <div className="space-y-4">
           <Field>
             <FieldLabel htmlFor="identity-name">Name</FieldLabel>
@@ -301,8 +282,40 @@ function AboutYou() {
           </Field>
           <SaveStatus state={identity} idle="Saves as you type. It applies from the next reply." onRetry={() => { void name.flush(); void personality.flush(); }} />
         </div>
-      </Section>
+      )}
+    </Section>
+  );
+}
 
+/** USER.md, and the history of it and of the assistant's name and personality: see who changed what, and bring an older version back. */
+function AboutYou() {
+  const { dashboardKey } = useSession();
+  const router = useRouter();
+  const persona = useQuery(api.dashboard.getPersona, { key: dashboardKey });
+  const userHistory = useQuery(api.dashboard.personaHistory, { key: dashboardKey, kind: "user" });
+  const identityHistory = useQuery(api.dashboard.personaHistory, { key: dashboardKey, kind: "identity" });
+  const saveUserMd = useMutation(api.dashboard.saveUserMd);
+  const restore = useMutation(api.dashboard.restorePersonaVersion);
+  const redo = useMutation(api.dashboard.redoOnboarding);
+
+  /** USER.md reads as a document; Edit (or a double click) turns it into its Markdown, which saves itself as you type. */
+  const [editingUser, setEditingUser] = useState(false);
+  const user = useAutosave({ saved: persona?.user ?? "", save: (text) => saveUserMd({ key: dashboardKey, text }) });
+  /** Done with USER.md: saved first, and still open if that failed, so nothing typed is lost. */
+  const doneWithUser = () => void user.flush().then((ok) => { if (ok) setEditingUser(false); });
+
+  if (persona === undefined) return <ListSkeleton rows={2} />;
+  const savedUser = persona.user;
+
+  const restoreButton = (id: string, what: string) => (
+    <ActionButton variant="ghost" size="sm" action={() => restore({ key: dashboardKey, id: id as Id<"persona"> })} success="Restored. The version it replaced stays in history."
+      confirm={{ title: `Restore this ${what}?`, body: "It becomes the current version. What it replaces stays in history, so you can switch back.", label: "Restore" }}>
+      Restore
+    </ActionButton>
+  );
+
+  return (
+    <div>
       <Section title="USER.md" description={`Who you are, in your words. ${persona.name} reads all of it before every reply, and keeps it current as you talk.`}>
         {editingUser ? (
           <div>
@@ -336,7 +349,7 @@ function AboutYou() {
 
       <Section title="History" description="Every version, newest first; a few minutes of your own typing make one. Restoring one keeps the version it replaces.">
         {(userHistory === undefined || identityHistory === undefined) && <ListSkeleton rows={2} />}
-        {userHistory?.length === 0 && identityHistory?.length === 0 && <EmptyState title="No versions yet">Saving either of the above starts the history.</EmptyState>}
+        {userHistory?.length === 0 && identityHistory?.length === 0 && <EmptyState title="No versions yet">Saving USER.md, or the name or personality in <Link href="/settings/general" className="link">Settings → General</Link>, starts the history.</EmptyState>}
         {((userHistory?.length ?? 0) > 0 || (identityHistory?.length ?? 0) > 0) && (
           <List label="Versions">
             {userHistory?.map((version, index) => (

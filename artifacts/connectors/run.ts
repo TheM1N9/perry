@@ -20,7 +20,7 @@ import { openChat, sleep } from "../browser";
 //      the extra argument, and a new one must return a connect link for it.
 //   3. Sign-in opens a new tab, so nothing brings you back: clicking a
 //      suggestion must send this same tab to connect.composio.dev.
-//   4. Coming back does nothing: /connectors?connected=<active>&status=success
+//   4. Coming back does nothing: /apps/connectors?connected=<active>&status=success
 //      must say that account is connected, and the query must be cleared.
 //   5. A failed sign-in reads as success: ?connected=<slug>&status=failed for
 //      an unconnected toolkit must say it didn't finish.
@@ -54,7 +54,7 @@ try {
   checks.everyActiveAccountListed = active.length > 0 && active.every((slug) => shown.includes(slug));
 
   // 2. The callback URL is accepted and a link comes back.
-  const link = await convex.action(api.dashboard.connectToolkit, { key: dashboardKey, toolkit: "slack", callbackUrl: `${base}/connectors?connected=slack` });
+  const link = await convex.action(api.dashboard.connectToolkit, { key: dashboardKey, toolkit: "slack", callbackUrl: `${base}/apps/connectors?connected=slack` });
   checks.callbackAccepted = typeof link.redirectUrl === "string" && link.redirectUrl.startsWith("https://connect.composio.dev/");
 
   const browser = await openChat(base, dashboardKey);
@@ -65,20 +65,20 @@ try {
     // 4. Coming back from a sign-in that worked.
     const returnedSlug = active[0]!;
     const returnedName = listed.connectors.find((item) => item.slug === returnedSlug)!.name;
-    await browser.send("Page.navigate", { url: `${base}/connectors?connected=${returnedSlug}&status=success&connected_account_id=ca_test` });
+    await browser.send("Page.navigate", { url: `${base}/apps/connectors?connected=${returnedSlug}&status=success&connected_account_id=ca_test` });
     await waitFor(`document.body.innerText.includes(${JSON.stringify(`${returnedName} is connected`)})`, "no success notice after returning");
     checks.returnSaysConnected = true;
-    checks.returnClearsQuery = await browser.evaluate(`location.pathname === "/connectors" && location.search === ""`);
+    checks.returnClearsQuery = await browser.evaluate(`location.pathname === "/apps/connectors" && location.search === ""`);
     await shot("returned-success.png");
 
     // 5. Coming back from a sign-in that failed.
-    await browser.send("Page.navigate", { url: `${base}/connectors?connected=youtube&status=failed` });
+    await browser.send("Page.navigate", { url: `${base}/apps/connectors?connected=youtube&status=failed` });
     await waitFor(`document.body.innerText.includes("Signing in to youtube didn't finish")`, "no failure notice after returning");
     checks.returnSaysFailed = true;
     await shot("returned-failed.png");
 
     // 3. Connecting goes to Composio in this tab.
-    await browser.send("Page.navigate", { url: `${base}/connectors` });
+    await browser.send("Page.navigate", { url: `${base}/apps/connectors` });
     await waitFor(`[...document.querySelectorAll("button")].some((b) => b.innerText.trim() === "Slack")`, "no Slack suggestion");
     const targetsBefore = (await (await fetch(`http://127.0.0.1:${browser.port}/json/list`)).json() as Array<{ type: string }>).filter((t) => t.type === "page").length;
     await browser.evaluate(`[...document.querySelectorAll("button")].find((b) => b.innerText.trim() === "Slack").click(); true`);

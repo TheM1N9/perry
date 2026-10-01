@@ -74,7 +74,7 @@ async function checkMachine() {
     await checkVersion("codex", "codex", lastLine(codex.output));
     const login = await runCodex(["login", "status"]);
     if (login.code === 0) ok("codex sign-in", lastLine(login.output));
-    else warn("codex sign-in", "not signed in. Connect the runner, then sign in on the dashboard's Settings page");
+    else warn("codex sign-in", "not signed in. Connect the runner, then sign in on the dashboard's Settings → Engines & usage");
 
     // Windows's sandbox is set up by Codex itself on first use; elsewhere a real sandboxed write shows it works.
     if (process.platform !== "win32") {
@@ -144,7 +144,7 @@ async function main() {
   // Telegram, which Perry polls: a webhook left from before stops that until the server removes it.
   const token = env.TELEGRAM_BOT_TOKEN;
   if (!token) {
-    ok("telegram", "not set up; Perry is used from the dashboard (a bot saved on the Keys page is not checked here)");
+    ok("telegram", "not set up; Perry is used from the dashboard (a bot token saved in Settings → Telegram is not checked here)");
   } else {
     const me = await fetch(`https://api.telegram.org/bot${token}/getMe`).then((r) => r.json(), () => null);
     if (me?.ok) ok("telegram bot", `@${me.result.username}`);

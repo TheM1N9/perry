@@ -135,7 +135,7 @@ process.stdout.write(JSON.stringify(/^\\s*select/i.test(process.argv[2]) ? state
   };
   const settingsText = async () => {
     if (!browser) return "";
-    await browser.send("Page.navigate", { url: `${BASE}/settings` });
+    await browser.send("Page.navigate", { url: `${BASE}/settings/engines` });
     await until(() => browser!.evaluate(`Boolean(document.querySelector('section[aria-label="Engines"]'))`), "Settings' Engines section", 30);
     return await browser.evaluate(`document.querySelector('section[aria-label="Engines"]').innerText`) as string;
   };

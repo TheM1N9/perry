@@ -346,7 +346,7 @@ app.whenReady().then(() => {
   // Settings says it works, holding and all.
   browser = await openChat(BASE, KEY);
   const settingsTalk = async () => {
-    await browser!.send("Page.navigate", { url: `${BASE}/settings?tab=shortcuts` });
+    await browser!.send("Page.navigate", { url: `${BASE}/settings/desktop-pet` });
     await until(() => browser!.evaluate(`document.body.innerText.includes("Talk to Perry")`), "the shortcuts", 30).catch(() => {});
     await sleep(1_500);
     return await browser!.evaluate(`[...document.querySelectorAll("li")].find((li) => li.innerText.includes("Talk to Perry"))?.innerText ?? ""`) as string;

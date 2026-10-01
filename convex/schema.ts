@@ -528,7 +528,7 @@ export default defineSchema({
     username: v.optional(v.string()),
     value: v.string(),
     note: v.optional(v.string()),
-    /** Who saved it: the owner on the Keys page, or the agent from a chat. */
+    /** Who saved it: the owner in Settings → Logins & secrets, or the agent from a chat. */
     by: v.union(v.literal("owner"), v.literal("assistant")),
     updatedAt: v.number(),
     lastUsedAt: v.optional(v.number()),

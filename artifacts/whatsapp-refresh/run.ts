@@ -106,7 +106,7 @@ try {
   const { evaluate, send } = browser;
   const shownQr = () => evaluate(`document.querySelector('img[alt="WhatsApp link QR code"]')?.getAttribute("src") ?? null`) as Promise<string | null>;
   const pageText = () => evaluate(`document.querySelector("main")?.innerText ?? ""`) as Promise<string>;
-  await send("Page.navigate", { url: `${BASE}/settings?tab=whatsapp` });
+  await send("Page.navigate", { url: `${BASE}/settings/whatsapp` });
   await until(async () => (await pageText()).includes("Link WhatsApp"), "the WhatsApp tab");
 
   // 1. A new QR, in place.

@@ -165,7 +165,7 @@ try {
   const closeMenu = () => dashboard!.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); true`);
 
   // 1. Offered, and not claimed to be on.
-  await dashboard.send("Page.navigate", { url: `${BASE}/settings?tab=general` });
+  await dashboard.send("Page.navigate", { url: `${BASE}/settings/desktop-pet` });
   await check("offeredInSettings", async () => /Desktop pet[\s\S]*Not on your desktop[\s\S]*Turn on/.test(await page()), 30);
   await shot("settings-off.png");
 
@@ -231,7 +231,7 @@ try {
   await check("repeatStopped", async () => { const next = await stretch(); return Boolean(next && next.repeat === undefined); });
 
   // 9. His theme, from Settings: kept in his pet.json beside where he stands, and he changes while he runs.
-  await dashboard.send("Page.navigate", { url: `${BASE}/settings?tab=general` });
+  await dashboard.send("Page.navigate", { url: `${BASE}/settings/desktop-pet` });
   await until(async () => (await page()).includes("On your desktop"), "settings", 30);
   const pick = (label: string) => dashboard!.evaluate(`(() => { const b = ${byText('[role=group][aria-label="Pet theme"] button', label)}; b?.click(); return Boolean(b); })()`);
   const pet = await petTab();
@@ -302,7 +302,7 @@ try {
   notes.failure = failed.setup;
   checks.failureSaid = failed.setup?.state === "failed" && /Could not run perry/.test(failed.setup.error ?? "");
   // Another port is another origin, not yet unlocked in this browser: the key goes in the fragment, as `perry open` does.
-  await dashboard.send("Page.navigate", { url: `${brokenBase}/settings?tab=general#key=${encodeURIComponent(KEY)}` });
+  await dashboard.send("Page.navigate", { url: `${brokenBase}/settings/desktop-pet#key=${encodeURIComponent(KEY)}` });
   await check("failureOnPage", async () => /Could not run perry[\s\S]*Try again/.test(await page()), 30);
   await shot("settings-failed.png");
 

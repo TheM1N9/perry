@@ -212,9 +212,9 @@ if (!app.requestSingleInstanceLock({ argv })) {
   /** Whether the owner wants him on screen; the tray's Hide says no. */
   let wanted = true;
   /**
-   * The hotkey that talks to him: the one last set (Settings → Keyboard
-   * shortcuts, kept in pet.json so it works before his page loads), or the
-   * default. `hotkeyError` says why he does not have the one asked for.
+   * The hotkey that talks to him: the one last set (Settings → Desktop pet →
+   * Keyboard shortcuts, kept in pet.json so it works before his page loads),
+   * or the default. `hotkeyError` says why he does not have the one asked for.
    */
   let voice = null;
   let hotkeyError = null;
@@ -298,7 +298,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
         ? { label: `Talk to him (${voice.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})`, click: () => voice.start() }
         : { label: "Talk to him: his keys are taken by another app", enabled: false },
       { label: `Show him the screen${look?.current() ? ` (${look.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})` : ""}`, click: () => void lookNow() },
-      { label: "Keyboard shortcuts…", click: () => openDashboard("/settings?tab=shortcuts") },
+      { label: "Keyboard shortcuts…", click: () => openDashboard("/settings/desktop-pet#shortcuts") },
       { label: "Open Perry", click: () => openDashboard("/") },
       { label: "Put him back in the corner", click: () => {
         const area = screen.getPrimaryDisplay().workArea;

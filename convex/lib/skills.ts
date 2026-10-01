@@ -199,7 +199,7 @@ export function installStaged(reviewId: string, replace: boolean): { name: strin
 
 /** What installing a skill from elsewhere leaves in its folder: where it came from, and when. */
 const ORIGIN = ".perry-source.json";
-/** The most of a SKILL.md the Skills page shows. */
+/** The most of a SKILL.md Apps & skills → Skills shows. */
 const SHOWN_READ = 200_000;
 
 export type InstalledSkill = {

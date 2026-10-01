@@ -1666,7 +1666,7 @@ export const getConnectedAccounts = action({
   },
 });
 
-/** Every app that can be connected, for the Connectors page to search. */
+/** Every app that can be connected, for Apps & skills → Connectors to search. */
 export const getCatalog = action({
   args: { key: vKey },
   handler: async (ctx, args): Promise<{ apps: CatalogApp[]; error?: string }> => {
