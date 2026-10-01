@@ -20,6 +20,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -36,12 +37,13 @@ import {
 } from "@/components/ui/sidebar";
 import { usePalette } from "./command-palette";
 import { ChannelIcon, PerryMark } from "./common";
-import { StatusIndicator } from "./status-indicator";
+import { StatusIndicator, statusLabel } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
 import { UpdateNotice } from "./updates";
 import { PlatypusArt } from "./platypus";
 import { MoveToProject, NewProjectDialog, ProjectFolders } from "./projects";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /** How many chats show before "Show all", so a long history stays scannable. */
 const CHAT_PAGE = 25;
@@ -66,7 +68,7 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" render={<Link href="/chat" />} tooltip={assistant} className="gap-2.5">
               <PerryMark className="size-8" />
-              <span className="truncate text-[15px] font-semibold tracking-[-0.01em]" translate="no">{assistant}</span>
+              <span className="truncate text-md font-semibold tracking-[-0.01em]" translate="no">{assistant}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -97,7 +99,7 @@ export function AppSidebar() {
                   <span>Needs you</span>
                 </SidebarMenuButton>
                 {count > 0 && (
-                  <SidebarMenuBadge className="rounded-full bg-warning px-1.5 text-[11px] font-semibold text-background peer-data-active/menu-button:text-background">
+                  <SidebarMenuBadge className="rounded-full bg-warning px-1.5 text-2xs font-semibold text-background peer-data-active/menu-button:text-background">
                     {count}
                   </SidebarMenuBadge>
                 )}
@@ -211,14 +213,25 @@ function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary
   const pin = () => void setPinned({ key: dashboardKey, id: chat.id, pinned: !chat.pinned })
     .catch((cause) => toast.error(`Couldn't ${chat.pinned ? "unpin" : "pin"} it: ${errorText(cause)}`));
 
+  // The dot gives way to the options button under the pointer, so on hover or focus the row says what the dot meant.
+  const said = statusLabel(chat.status, chat.unseen && !active);
+  const row = (
+    <SidebarMenuButton render={<Link href={`/chat/${chat.id}`} />} isActive={active}
+      className={cn(chat.unseen && !active && "font-semibold")}
+      aria-current={active ? "page" : undefined}>
+      <ChannelIcon channel={chat.channel} />
+      <span className={cn("pr-4", chat.naming && "shimmer")} aria-busy={chat.naming || undefined}>{chat.title}</span>
+    </SidebarMenuButton>
+  );
+
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton render={<Link href={`/chat/${chat.id}`} />} isActive={active}
-        className={cn(chat.unseen && !active && "font-semibold")}
-        aria-current={active ? "page" : undefined}>
-        <ChannelIcon channel={chat.channel} />
-        <span className={cn("pr-4", chat.naming && "shimmer")} aria-busy={chat.naming || undefined}>{chat.title}</span>
-      </SidebarMenuButton>
+      {said ? (
+        <Tooltip>
+          <TooltipTrigger render={row} />
+          <TooltipContent side="right">{said}</TooltipContent>
+        </Tooltip>
+      ) : row}
       <StatusIndicator status={chat.status} unseen={chat.unseen && !active}
         className="pointer-events-none absolute top-1/2 right-8 -translate-y-1/2 transition-opacity md:right-1.5 md:group-focus-within/menu-item:opacity-0 md:group-hover/menu-item:opacity-0" />
       <DropdownMenu>
@@ -413,9 +426,9 @@ function AccountMenu() {
       <SidebarMenuItem>
         <DropdownMenu>
           <DropdownMenuTrigger render={<SidebarMenuButton size="lg" className="data-popup-open:bg-sidebar-accent" />}>
-            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-foreground text-[13px] font-semibold text-background" aria-hidden>
-              {name.charAt(0).toUpperCase()}
-            </span>
+            <Avatar aria-hidden className="after:hidden">
+              <AvatarFallback className="bg-foreground text-sm font-semibold text-background">{name.charAt(0).toUpperCase()}</AvatarFallback>
+            </Avatar>
             <span className="grid min-w-0 flex-1 text-left leading-tight">
               <span className="truncate text-sm font-medium">{name}</span>
               <span className="truncate text-xs text-muted-foreground">

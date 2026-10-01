@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpCircleIcon } from "lucide-react";
+import { ArrowUpCircleIcon, ChevronRightIcon } from "lucide-react";
 import { useCallback } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
@@ -8,6 +8,8 @@ import { api } from "@/convex/_generated/api";
 import type { UpdateView } from "@/convex/updates";
 import { ago, errorText, plural, useNow } from "@/lib/format";
 import { useDashboardKey } from "@/lib/session";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
@@ -148,10 +150,16 @@ function LastUpdate({ last, now }: { last: NonNullable<UpdateView["last"]>; now:
         <p className="text-pretty text-destructive">The update {when} didn&apos;t work. {last.error}</p>
       )}
       {!last.ok && last.log && (
-        <details className="mt-2">
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">What it said</summary>
-          <pre className="mt-1.5 max-h-64 overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap">{last.log}</pre>
-        </details>
+        <Collapsible className="mt-2">
+          <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1 rounded-md text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+            <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" aria-hidden />What it said
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <ScrollArea className="mt-1.5 rounded-lg border bg-muted/40" viewportClassName="max-h-64">
+              <pre className="p-3 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{last.log}</pre>
+            </ScrollArea>
+          </CollapsibleContent>
+        </Collapsible>
       )}
     </div>
   );

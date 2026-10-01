@@ -24,7 +24,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ActionButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCount, attempt, useTab, type Tone } from "../common";
+import { ActionButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCount, TextTip, attempt, useTab, type Tone } from "../common";
 import { GoalDialog, ScheduleDialog, TaskDialog, WatchDialog, type Editing } from "./work-forms";
 import { Input } from "@/components/ui/input";
 
@@ -153,9 +153,13 @@ function Schedules() {
               ? <span className="inline-flex items-center gap-1"><ZapIcon className="size-3.5" aria-hidden />{job.trigger.label}</span>
               : job.runAt !== undefined
                 ? <span>Once, {when(job.runAt)}</span>
-                : <span title={job.schedule}>{readable ?? <code className="font-mono text-xs">{job.schedule}</code>}</span>}
-            {job.enabled && job.runAt === undefined && !job.trigger && <span title={when(job.nextRunAt)}>Next {ago(job.nextRunAt, now)}</span>}
-            <span title={job.lastRunAt ? when(job.lastRunAt) : undefined}>{job.lastRunAt ? `Last ran ${ago(job.lastRunAt, now)}` : "Hasn't run yet"}</span>
+                : readable
+                  ? <TextTip tip={<code className="font-mono">{job.schedule}</code>}>{readable}</TextTip>
+                  : <code className="font-mono text-xs">{job.schedule}</code>}
+            {job.enabled && job.runAt === undefined && !job.trigger && <TextTip tip={when(job.nextRunAt)} spoken={when(job.nextRunAt)}>Next {ago(job.nextRunAt, now)}</TextTip>}
+            {job.lastRunAt
+              ? <TextTip tip={when(job.lastRunAt)} spoken={when(job.lastRunAt)}>Last ran {ago(job.lastRunAt, now)}</TextTip>
+              : <span>Hasn&apos;t run yet</span>}
           </p>
           {job.lastError && <p className="mt-2 text-sm text-pretty text-destructive">{job.lastError}</p>}
           {!job.lastError && job.lastResult && job.lastResult.trim() !== "NOTHING" && (
@@ -205,7 +209,7 @@ function Schedules() {
         : <List label="Your schedules">{yours.map(row)}</List>}
       {builtins.length > 0 && (
         <Collapsible>
-          <CollapsibleTrigger className="group flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+          <CollapsibleTrigger className="group flex cursor-pointer items-center gap-2 rounded-md text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
             <ChevronRightIcon className="size-4 transition-transform group-data-panel-open:rotate-90" />
             Built in <span className="nums font-normal">({builtins.length})</span>
             <span className="font-normal">· Heartbeat, daily summary and memory upkeep</span>
@@ -317,7 +321,7 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
                 )}
                 {task.plan.length > 0 && (
                   <Collapsible defaultOpen={live} className="mt-3">
-                    <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+                    <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1.5 rounded-md text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
                       <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" />Steps
                     </CollapsibleTrigger>
                     <CollapsibleContent>

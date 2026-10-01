@@ -39,10 +39,13 @@ function WithSkills({ text, skills }: { text: string; skills?: ReadonlySet<strin
     if (!skills.has(match[1])) continue;
     parts.push(text.slice(from, match.index));
     parts.push(
-      <Link key={match.index} href={`/skills?skill=${encodeURIComponent(match[1])}`} data-skill-mention={match[1]} title={`The ${match[1]} skill`}
-        className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-primary no-underline [box-decoration-break:clone] hover:bg-primary/15">
-        <PuzzleIcon className="mr-1 inline size-3.5 align-[-2px]" aria-hidden />{match[0]}
-      </Link>,
+      <Tooltip key={match.index}>
+        <TooltipTrigger render={<Link href={`/skills?skill=${encodeURIComponent(match[1])}`} data-skill-mention={match[1]} aria-label={`${match[0]}: the ${match[1]} skill`} />}
+          className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-primary no-underline outline-none [box-decoration-break:clone] hover:bg-primary/15 focus-visible:ring-2 focus-visible:ring-ring/50">
+          <PuzzleIcon className="mr-1 inline size-3.5 align-[-2px]" aria-hidden />{match[0]}
+        </TooltipTrigger>
+        <TooltipContent>The {match[1]} skill</TooltipContent>
+      </Tooltip>,
     );
     from = match.index + match[0].length;
   }
@@ -83,7 +86,7 @@ export function MessageRow({ message, assistant, latest, canRegenerate, canEdit,
   if (editing !== null) {
     return (
       <form className="ml-auto w-full max-w-[85%] space-y-2" onSubmit={(event) => { event.preventDefault(); if (editing.trim()) { onEdit(editing); setEditing(null); } }}>
-        <Textarea autoFocus aria-label="Edit your message" value={editing} className="max-h-72 min-h-20 rounded-2xl bg-muted px-4 py-3 text-[15px]"
+        <Textarea autoFocus aria-label="Edit your message" value={editing} className="max-h-72 min-h-20 rounded-2xl bg-muted px-4 py-3 text-md"
           onChange={(event) => setEditing(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") setEditing(null);
@@ -101,7 +104,7 @@ export function MessageRow({ message, assistant, latest, canRegenerate, canEdit,
     <div className={cn("group/message flex flex-col", mine ? "items-end" : "items-start")} data-role={mine ? "user" : "assistant"}>
       <h3 className="sr-only">{mine ? "You said" : `${assistant} said`}</h3>
       {mine ? (
-        <div className="max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
+        <div className="max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-md leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
           <WithSkills text={message.text} skills={skills} />
           <AttachmentList attachments={message.attachments} align="end" />
         </div>
@@ -145,10 +148,13 @@ function FromMemory({ memories }: { memories: Array<{ id: string; text: string }
       <BrainIcon className="size-3.5" aria-hidden />
       <span>From memory:</span>
       {memories.map((memory) => (
-        <Link key={memory.id} href={`/memory?q=${encodeURIComponent(memory.text.slice(0, 60))}`} title={memory.text}
-          className="max-w-64 truncate rounded-full border px-2 py-0.5 hover:bg-muted hover:text-foreground">
-          {memory.text}
-        </Link>
+        <Tooltip key={memory.id}>
+          <TooltipTrigger render={<Link href={`/memory?q=${encodeURIComponent(memory.text.slice(0, 60))}`} />}
+            className="max-w-64 truncate rounded-full border px-2 py-0.5 outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
+            {memory.text}
+          </TooltipTrigger>
+          <TooltipContent className="max-w-80 text-pretty">{memory.text}</TooltipContent>
+        </Tooltip>
       ))}
     </div>
   );
@@ -158,7 +164,7 @@ function FromMemory({ memories }: { memories: Array<{ id: string; text: string }
 export function PendingRow({ text, attachments, sent, skills }: { text: string; attachments: Attachment[]; sent: boolean; skills?: ReadonlySet<string> }) {
   return (
     <div className="flex flex-col items-end" data-role="user" data-pending>
-      <div className={cn("max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]", !sent && "opacity-70")}>
+      <div className={cn("max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-md leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]", !sent && "opacity-70")}>
         <WithSkills text={text} skills={skills} />
         <AttachmentList attachments={attachments} align="end" />
       </div>
@@ -185,7 +191,7 @@ export function ReplyInProgress({ streaming, step }: { streaming?: string; step?
       </div>
     );
   }
-  return <Doing label={step ?? STARTING.label} className="text-[15px] font-medium" data-role="assistant" data-thinking />;
+  return <Doing label={step ?? STARTING.label} className="text-md font-medium" data-role="assistant" data-thinking />;
 }
 
 function Doing({ label, className, ...data }: { label: string; className?: string } & Record<`data-${string}`, unknown>) {

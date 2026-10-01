@@ -13,8 +13,10 @@ import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CopyButton, EmptyState, ListSkeleton, Page, RelativeTime, StatusBadge, useSearchParam, type Tone } from "../common";
+import { Skeleton } from "@/components/ui/skeleton";
+import { CopyButton, EmptyState, List, ListSkeleton, Page, RelativeTime, StatusBadge, useSearchParam, type Tone } from "../common";
 
 /** Runs shown at a time; the rest are a click away. */
 const PAGE = 20;
@@ -94,9 +96,9 @@ export function Activity() {
         ? <EmptyState title="No runs match" action={<Button variant="outline" size="sm" onClick={clear}>Clear filters</Button>} />
         : <EmptyState title="No runs yet">Every message Perry answers shows up here, with its tools, tokens and timing.</EmptyState>)}
       {visible.length > 0 && (
-        <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Runs">
+        <List label="Runs">
           {visible.slice(0, shown).map((run) => <RunRow key={run.id} run={run} />)}
-        </ul>
+        </List>
       )}
       {visible.length > shown && (
         <div className="mt-4 flex justify-center">
@@ -113,7 +115,7 @@ function RunRow({ run }: { run: RunView }) {
   return (
     <li>
       <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger className="group flex w-full items-start gap-3 px-4 py-3.5 text-left hover:bg-muted/40">
+        <CollapsibleTrigger className="group flex w-full cursor-pointer items-start gap-3 px-4 py-3.5 text-left outline-none hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset">
           <ChevronRightIcon className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90" />
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-center gap-2">
@@ -134,7 +136,11 @@ function RunRow({ run }: { run: RunView }) {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="space-y-5 border-t bg-muted/20 px-4 py-4 sm:pl-11">
-            {run.error && <pre className="max-h-48 overflow-auto rounded-lg border border-destructive/30 bg-destructive/5 p-3 font-mono text-xs whitespace-pre-wrap text-destructive">{run.error}</pre>}
+            {run.error && (
+              <ScrollArea className="rounded-lg border border-destructive/30 bg-destructive/5" viewportClassName="max-h-48">
+                <pre className="p-3 font-mono text-xs whitespace-pre-wrap text-destructive [overflow-wrap:anywhere]">{run.error}</pre>
+              </ScrollArea>
+            )}
             {run.toolCalls && run.toolCalls.length > 0 && (
               <div>
                 <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Tools</h4>
@@ -147,7 +153,9 @@ function RunRow({ run }: { run: RunView }) {
             </div>
             <div>
               <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Prompt</h4>
-              <p className="max-h-60 overflow-auto rounded-lg border bg-background p-3 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{run.prompt}</p>
+              <ScrollArea className="rounded-lg border bg-background" viewportClassName="max-h-60">
+                <p className="p-3 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{run.prompt}</p>
+              </ScrollArea>
             </div>
             {run.usage?.inputTokens !== undefined && (
               <p className="nums text-xs text-muted-foreground">
@@ -182,7 +190,7 @@ function RunRow({ run }: { run: RunView }) {
 function Trace({ run }: { run: RunView }) {
   const { dashboardKey } = useSession();
   const spans = useQuery(api.dashboard.runTrace, { key: dashboardKey, runId: run.id as Id<"runs"> });
-  if (spans === undefined) return <p className="text-sm text-muted-foreground" role="status">Loading…</p>;
+  if (spans === undefined) return <div className="space-y-1.5" role="status" aria-label="Loading"><Skeleton className="h-4 w-2/3" /><Skeleton className="h-4 w-1/2" /></div>;
   if (spans.length === 0) return <p className="text-sm text-muted-foreground">Nothing was traced for this run.</p>;
   const origin = Math.min(...spans.map((span) => span.startedAt));
   const end = Math.max(...spans.map((span) => span.startedAt + (span.durationMs ?? Date.now() - span.startedAt)));
@@ -197,9 +205,9 @@ function Trace({ run }: { run: RunView }) {
         return (
           <li key={span.id}>
             <Collapsible disabled={!span.input && !span.output}>
-              <CollapsibleTrigger className="group grid w-full grid-cols-[minmax(0,14rem)_1fr_4.5rem] items-center gap-3 rounded-md px-1 py-1 text-left text-xs enabled:hover:bg-muted">
+              <CollapsibleTrigger className="group grid w-full grid-cols-[minmax(0,14rem)_1fr_4.5rem] items-center gap-3 rounded-md px-1 py-1 text-left text-xs outline-none enabled:cursor-pointer enabled:hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50">
                 <span className="flex min-w-0 items-center gap-1.5" title={span.name}>
-                  <span className="shrink-0 rounded bg-muted px-1 font-mono text-[10px] text-muted-foreground uppercase">{SPAN_KINDS[span.kind]}</span>
+                  <span className="shrink-0 rounded bg-muted px-1 font-mono text-2xs text-muted-foreground uppercase">{SPAN_KINDS[span.kind]}</span>
                   <span className="truncate">{span.name}</span>
                 </span>
                 <span className="relative h-1.5 rounded-full bg-muted" aria-hidden><span className={cn("absolute inset-y-0 rounded-full", bar)} style={{ left: `${left}%`, width: `${width}%` }} /></span>
@@ -210,8 +218,8 @@ function Trace({ run }: { run: RunView }) {
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <div className="my-1 grid gap-2 pl-1">
-                  {span.input && <pre className="max-h-48 overflow-auto rounded-md border bg-background p-2 font-mono text-[11px] whitespace-pre-wrap">{span.input}</pre>}
-                  {span.output && <pre className="max-h-48 overflow-auto rounded-md border bg-background p-2 font-mono text-[11px] whitespace-pre-wrap">{span.output}</pre>}
+                  {span.input && <ScrollArea className="rounded-md border bg-background" viewportClassName="max-h-48"><pre className="p-2 font-mono text-2xs whitespace-pre-wrap [overflow-wrap:anywhere]">{span.input}</pre></ScrollArea>}
+                  {span.output && <ScrollArea className="rounded-md border bg-background" viewportClassName="max-h-48"><pre className="p-2 font-mono text-2xs whitespace-pre-wrap [overflow-wrap:anywhere]">{span.output}</pre></ScrollArea>}
                 </div>
               </CollapsibleContent>
             </Collapsible>

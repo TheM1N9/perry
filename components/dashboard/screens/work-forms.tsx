@@ -9,11 +9,13 @@ import type { JobView } from "@/convex/jobs";
 import { errorText, plural } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { TimePicker } from "@/components/ui/time-picker";
 
 /**
  * Making and changing schedules, goals and page watches on the Work page, so
@@ -94,7 +96,7 @@ const MONTH_DAYS = Array.from({ length: 28 }, (_, index) => ({ value: String(ind
 type When = { repeat: Repeat; time: string; weekday: string; monthDay: string; cron: string; once: string; folder: string };
 
 const pad = (n: number) => String(n).padStart(2, "0");
-/** A time as the datetime-local input shows it, on this browser's clock. */
+/** A time as the form keeps it ("2026-10-02T14:30"), on this browser's clock. */
 const localInput = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
 /** The form's reading of a job's time: one of the simple shapes when it is one, else its cron as written. */
@@ -180,13 +182,13 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
       {["daily", "weekdays", "weekly", "monthly"].includes(when.repeat) && (
         <Field>
           <FieldLabel htmlFor="schedule-time">At</FieldLabel>
-          <Input id="schedule-time" type="time" value={when.time} required onChange={(event) => change({ time: event.target.value })} />
+          <TimePicker id="schedule-time" aria-label="At" value={when.time} onValueChange={(time) => change({ time })} />
         </Field>
       )}
       {when.repeat === "once" && (
         <Field>
           <FieldLabel htmlFor="schedule-once">Date and time</FieldLabel>
-          <Input id="schedule-once" type="datetime-local" value={when.once} required onChange={(event) => change({ once: event.target.value })} />
+          <DatePicker id="schedule-once" time value={when.once ? new Date(when.once) : undefined} onValueChange={(at) => change({ once: localInput(at.getTime()) })} />
         </Field>
       )}
       {when.repeat === "folder" && (

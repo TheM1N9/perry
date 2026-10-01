@@ -81,13 +81,15 @@ export function Composer({
   return (
     <div className="relative">
       {above}
+      {/* The Command menu's look, kept by hand: cmdk gives its list and items ids of its own and runs Enter itself, and
+          here the box keeps the focus (aria-activedescendant names the option) and a command typed out in full runs as typed. */}
       {shown.length > 0 && (
         <div role="listbox" id="chat-commands" aria-label={suggesting}
-          className="absolute inset-x-0 bottom-full z-10 mb-2 max-h-72 overflow-y-auto rounded-xl border bg-popover p-1 shadow-lg">
+          className="absolute inset-x-0 bottom-full z-10 mb-2 max-h-72 overflow-y-auto rounded-xl bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
           {shown.map((item, position) => (
             <button type="button" key={item.key} id={`chat-command-${position}`} role="option" aria-selected={position === index} tabIndex={-1}
               onMouseMove={() => setHighlight(position)} onMouseDown={(event) => { event.preventDefault(); item.apply(); }}
-              className="flex w-full items-baseline gap-3 rounded-lg px-3 py-2 text-left text-sm aria-selected:bg-muted">
+              className="flex w-full cursor-default items-baseline gap-3 rounded-lg px-3 py-2 text-left text-sm outline-none select-none aria-selected:bg-muted aria-selected:text-foreground">
               <span className="shrink-0 font-mono font-medium">{item.label}</span>
               <span className="min-w-0 truncate text-muted-foreground">{item.hint}</span>
             </button>
@@ -96,7 +98,7 @@ export function Composer({
       )}
       <div
         className={cn(
-          "rounded-3xl border bg-background shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_-12px_rgb(0_0_0/0.12)] transition-[border-color,box-shadow] focus-within:border-ring/60 dark:bg-card",
+          "rounded-3xl border bg-background shadow-float transition-[border-color,box-shadow] has-[#composer:focus-visible]:border-ring has-[#composer:focus-visible]:ring-3 has-[#composer:focus-visible]:ring-ring/50 dark:bg-card",
           dragging && "border-primary ring-3 ring-primary/20",
         )}
         onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } }}
@@ -116,7 +118,7 @@ export function Composer({
           aria-controls={shown.length ? "chat-commands" : undefined}
           aria-autocomplete="list"
           aria-activedescendant={shown.length ? `chat-command-${index}` : undefined}
-          className="block max-h-[40vh] min-h-[52px] w-full resize-none bg-transparent px-5 pt-4 pb-1 text-base leading-relaxed outline-none sm:text-[15px] field-sizing-content placeholder:text-muted-foreground"
+          className="block max-h-[40vh] min-h-[52px] w-full resize-none bg-transparent px-5 pt-4 pb-1 text-base leading-relaxed outline-none sm:text-md field-sizing-content placeholder:text-muted-foreground"
           onChange={(event) => { onDraftChange(event.target.value); onCaret?.(event.target.selectionStart); }}
           onSelect={(event) => onCaret?.(event.currentTarget.selectionStart)}
           onPaste={(event) => { const pasted = Array.from(event.clipboardData.files); if (pasted.length) { event.preventDefault(); onAddFiles(pasted); } }}
@@ -164,7 +166,7 @@ export function Composer({
   );
 }
 
-const pill = "h-8 gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-popup-open:bg-muted dark:bg-transparent dark:hover:bg-muted [&>svg:last-child]:hidden sm:[&>svg:last-child]:block";
+const pill = "h-8 gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-sm font-medium text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-popup-open:bg-muted dark:bg-transparent dark:hover:bg-muted [&>svg:last-child]:hidden sm:[&>svg:last-child]:block";
 
 /**
  * Which model, how hard it thinks, and what it may do on your computer. The
@@ -247,7 +249,7 @@ export function ComposerNote({ tone, children, onDismiss }: { tone: "info" | "wa
     <div role={tone === "error" ? "alert" : "status"}
       className={cn("mb-2 flex items-start gap-2 rounded-2xl border px-4 py-2.5 text-sm",
         tone === "error" ? "border-destructive/30 bg-destructive/5 text-destructive" : tone === "warning" ? "border-warning/40 bg-warning-soft text-warning" : "bg-muted/60")}>
-      <div className={cn("min-w-0 flex-1 leading-relaxed whitespace-pre-wrap", tone === "info" && "font-mono text-[12.5px]")}>{children}</div>
+      <div className={cn("min-w-0 flex-1 leading-relaxed whitespace-pre-wrap", tone === "info" && "font-mono text-xs")}>{children}</div>
       <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss} className="-mr-1 shrink-0"><XIcon /></Button>
     </div>
   );

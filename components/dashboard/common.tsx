@@ -67,6 +67,33 @@ export function InfoTip({ children, className }: { children: string; className?:
   );
 }
 
+/**
+ * Words that say more on hover or focus: a time's full date, a cron behind its
+ * reading, the rest of a cut-off path. The tip is in the words for screen
+ * readers too (`spoken`, when it adds to them). Its popup is data-solid, for
+ * the pet's window, which takes the pointer only there.
+ */
+export function TextTip({ tip, spoken, children, className }: { tip: ReactNode; spoken?: string; children: ReactNode; className?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span tabIndex={0} />} className={cn("min-w-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50", className)}>
+        {children}{spoken && <span className="sr-only">{` (${spoken})`}</span>}
+      </TooltipTrigger>
+      <TooltipContent data-solid className="max-w-80 text-pretty [overflow-wrap:anywhere]">{tip}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** A code to read off the screen and type elsewhere (a sign-in or pairing code): big, spaced monospace, and a button that copies it. */
+export function CodeDisplay({ children, label, className, ...props }: { children: string; label?: string; className?: string } & ComponentProps<"span">) {
+  return (
+    <span className={cn("inline-flex items-center gap-2", className)}>
+      <span translate="no" aria-label={label} className="font-mono text-2xl font-semibold tracking-[0.2em] sm:text-3xl" {...props}>{children}</span>
+      <CopyButton value={children} label="Copy code" />
+    </span>
+  );
+}
+
 export function CopyButton({ value, label = "Copy", className, size = "icon-sm" }: {
   value: string; label?: string; className?: string; size?: "icon-xs" | "icon-sm" | "icon";
 }) {
@@ -114,7 +141,7 @@ export function Page({ title, description, actions, children, wide }: {
           <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold tracking-[-0.02em] text-balance">{title}</h1>
-              {description && <p className="mt-1.5 max-w-prose text-[15px] text-pretty text-muted-foreground">{description}</p>}
+              {description && <p className="mt-1.5 max-w-prose text-md text-pretty text-muted-foreground">{description}</p>}
             </div>
             {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
           </div>
@@ -133,7 +160,7 @@ export function Section({ title, description, actions, children, className }: {
     <section className={cn("mt-10 first:mt-0", className)} aria-label={title}>
       <div className="mb-3 flex items-end justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
+          <h2 className="text-md font-semibold tracking-[-0.01em]">{title}</h2>
           {description && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{description}</p>}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -153,7 +180,7 @@ export function EmptyState({ title, children, action, mascot }: { title: string;
   return (
     <div className="flex flex-col items-center rounded-xl border border-dashed px-6 py-12 text-center">
       {mascot && <PerryMark className="mb-4 size-14" />}
-      <p className="text-[15px] font-medium">{title}</p>
+      <p className="text-md font-medium">{title}</p>
       {children && <p className="mt-1 max-w-sm text-sm text-pretty text-muted-foreground">{children}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
@@ -180,7 +207,7 @@ export function SecretInput({ value, onChange, id, placeholder, autoFocus, inval
         spellCheck={false}
         aria-invalid={invalid || undefined}
         aria-describedby={describedBy}
-        className="font-mono text-[13px]"
+        className="font-mono text-sm"
       />
       <InputGroupAddon align="inline-end">
         <InputGroupButton size="icon-xs" aria-label={shown ? "Hide" : "Show"} aria-pressed={shown} onClick={() => setShown(!shown)}>
@@ -194,7 +221,7 @@ export function SecretInput({ value, onChange, id, placeholder, autoFocus, inval
 /** A shell command to copy, in the monospace it will be typed in. */
 export function CommandLine({ children }: { children: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border bg-muted/60 py-1 pr-1 pl-3 font-mono text-[13px]">
+    <div className="flex items-center gap-2 rounded-lg border bg-muted/60 py-1 pr-1 pl-3 font-mono text-sm">
       <span className="select-none text-muted-foreground">$</span>
       <code className="min-w-0 flex-1 truncate">{children}</code>
       <CopyButton value={children} label="Copy command" size="icon-xs" />
@@ -304,7 +331,7 @@ export function TabCount({ children, count }: { children: ReactNode; count?: num
   return (
     <>
       {children}
-      {count !== undefined && count > 0 && <span className="nums rounded-full bg-foreground/8 px-1.5 text-[11px] font-medium text-muted-foreground">{count}</span>}
+      {count !== undefined && count > 0 && <span className="nums rounded-full bg-foreground/8 px-1.5 text-2xs font-medium text-muted-foreground">{count}</span>}
     </>
   );
 }

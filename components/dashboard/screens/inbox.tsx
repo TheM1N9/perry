@@ -11,7 +11,7 @@ import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ApprovalCard } from "../approval-card";
-import { ActionButton, EmptyState, ListSkeleton, Page, RelativeTime, Section, attempt } from "../common";
+import { ActionButton, EmptyState, List, ListSkeleton, Page, RelativeTime, Section, attempt } from "../common";
 
 type Dismissable = Exclude<InboxItem, { kind: "question" }>;
 
@@ -56,12 +56,12 @@ export function Inbox() {
       )}
       {inbox && inbox.length > 0 && (
         <Section title="Updates">
-          <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Updates">
+          <List label="Updates">
             {inbox.map((item) => (
               <InboxRow key={`${item.kind}-${item.id}`} item={item}
                 onDismiss={item.kind === "question" ? undefined : () => void attempt(() => clear([item]))} />
             ))}
-          </ul>
+          </List>
         </Section>
       )}
     </Page>
