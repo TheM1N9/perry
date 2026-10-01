@@ -29,14 +29,14 @@ export function Shortcuts() {
   const [recording, setRecording] = useState<ShortcutId | null>(null);
 
   return (
-    <Section id="shortcuts" title="Keyboard shortcuts" description="Click one and press the keys you want it on. Esc leaves it as it was.">
+    <Section id="shortcuts" title="Keyboard shortcuts" description="Click one, then press the new keys.">
       {data === undefined ? <ListSkeleton rows={4} /> : (
         <List label="Keyboard shortcuts">
           {SHORTCUT_IDS.map((id) => (
             <li key={id} className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-4">
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{SHORTCUTS[id].label}</p>
-                <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{SHORTCUTS[id].description}</p>
+                {SHORTCUTS[id].description && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{SHORTCUTS[id].description}</p>}
                 {SHORTCUTS[id].global && <PetStatus pet={{ running: data.pet.running, ...data.pet.keys[id] }} wanted={data.shortcuts[id]} mac={mac} />}
               </div>
               <div className="flex shrink-0 items-center gap-2">

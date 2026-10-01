@@ -150,7 +150,7 @@ try {
     writeFileSync(join(outDir, name), Buffer.from(image.data, "base64"));
   };
   // The note above the composer about the engine's limit: the one that links to Settings → Usage.
-  const note = () => evaluate(`[...document.querySelectorAll('[role="alert"], [role="status"]')].find((el) => el.querySelector('a[href="/settings/engines"]'))?.innerText ?? ""`) as Promise<string>;
+  const note = () => evaluate(`[...document.querySelectorAll('[role="alert"], [role="status"]')].find((el) => el.querySelector('a[href="/settings/usage"]'))?.innerText ?? ""`) as Promise<string>;
   const openChatPage = async (chat: string) => {
     await send("Page.navigate", { url: `${BASE}/chat/${chat}` });
     await until(() => evaluate(`Boolean(document.querySelector('textarea'))`), "the chat page", 30);
@@ -231,7 +231,7 @@ try {
   check("passedResetNotFull", !/used up/.test(lowNote));
 
   // --- 9. Settings → Usage -------------------------------------------------------------------------------------
-  await send("Page.navigate", { url: `${BASE}/settings/engines` });
+  await send("Page.navigate", { url: `${BASE}/settings/usage` });
   await until(() => evaluate(`Boolean(document.querySelector('section[aria-label="Your plans"] li'))`), "the Usage tab", 30);
   await sleep(1_500);
   const plans = await evaluate(`document.querySelector('section[aria-label="Your plans"]').innerText`) as string;
@@ -241,8 +241,8 @@ try {
   await evaluate(`document.querySelector('section[aria-label="Perry\\'s share this week"]').scrollIntoView(); true`);
   await shot("settings-usage-share.png");
   notes.usageTab = { plans, share };
-  check("usageShowsCodexWindows", /Codex/.test(plans) && /5-hour/.test(plans) && /Weekly/.test(plans) && /% used/.test(plans) && /resets/.test(plans) && /counts all your Codex use/.test(plans));
-  check("usageSaysWhoReportsNothing", /Grok Build doesn't say how much of your plan is used or left/.test(plans) && /Antigravity reports neither/.test(plans));
+  check("usageShowsCodexWindows", /Codex/.test(plans) && /5-hour/.test(plans) && /Weekly/.test(plans) && /% used/.test(plans) && /resets/.test(plans) && /all your Codex use/.test(plans));
+  check("usageSaysWhoReportsNothing", /Grok Build doesn't report its limits/.test(plans) && /Antigravity reports neither/.test(plans));
   // Two Grok replies of 1,280 tokens each; the refused one used none, and neither did a Codex message it refused.
   const refusedCodex = Boolean(notes.codexHit);
   check("usageShowsPerrysShare", /Usage check on Grok/.test(share) && /2\.6k tokens/i.test(share) && /2 replies/.test(share) && /Grok Build/.test(share)

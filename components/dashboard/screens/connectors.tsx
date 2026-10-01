@@ -239,7 +239,7 @@ export function Connectors() {
     if (!returned || !state) return;
     const found = state.accounts.find((item) => item.toolkit === returned.slug && item.status === "ACTIVE");
     const failed = returned.status !== null && returned.status.toLowerCase() !== "success";
-    if (found) toast.success(`${found.name}${found.account ? ` (${found.account})` : ""} is connected. Perry can use it from the next message.`);
+    if (found) toast.success(`${found.name}${found.account ? ` (${found.account})` : ""} is connected.`);
     else if (failed) toast.error(`Signing in to ${returned.slug} didn't finish. Try connecting it again.`);
     else toast.info(`${returned.slug} isn't showing as connected yet. Refresh in a moment.`);
     setReturned(null);
@@ -295,7 +295,7 @@ export function Connectors() {
 
   if (!state.configured) {
     return (
-      <Page title="Connectors" description="Accounts Perry can use for you: your calendar, email, notes and more.">
+      <Page title="Connectors">
         <Section title="Connect through Composio" description="Composio holds the sign-ins, so Perry never sees a password or token.">
           <ol className="list-decimal space-y-2 pl-5 text-sm">
             <li>Create a Composio account and copy an API key from <a href="https://composio.dev" target="_blank" rel="noopener noreferrer" className="link">composio.dev</a>.</li>
@@ -321,12 +321,12 @@ export function Connectors() {
   const rest = term ? found : found.filter((app) => !POPULAR.includes(app.slug));
 
   return (
-    <Page wide title="Connectors" description="Let Perry work across the apps you already use. It checks what's connected each time it acts." actions={<div className="flex items-center gap-2">{searchBox}{refreshButton}</div>}>
+    <Page wide title="Connectors" actions={<div className="flex items-center gap-2">{searchBox}{refreshButton}</div>}>
       {state.error && <Alert variant="destructive" className="mb-6"><TriangleAlertIcon /><AlertTitle>Couldn&apos;t reach Composio</AlertTitle><AlertDescription>{state.error}</AlertDescription></Alert>}
 
-      <Section title="Connected" description="The apps Perry can act on, and the accounts signed in to each. The sign-ins stay with Composio.">
+      <Section title="Connected" tip="Sign-ins happen on each app's own page and stay with Composio. Perry checks what's connected each time it acts.">
         {state.accounts.length === 0
-          ? !state.error && <EmptyState title="No accounts connected">Pick an app below. Sign-in happens on the provider&apos;s own page.</EmptyState>
+          ? !state.error && <EmptyState title="No accounts connected" />
           : shownApps.length === 0
             ? <p className="text-sm text-muted-foreground" role="status">No connected app or account matches &ldquo;{search.trim()}&rdquo;.</p>
             : (
@@ -347,7 +347,7 @@ export function Connectors() {
           )}
           <Section title={term ? `Apps matching “${search.trim()}”` : "All apps"} description={term ? `${rest.length} ${rest.length === 1 ? "app" : "apps"}` : undefined}>
             {rest.length === 0
-              ? <EmptyState title="No app by that name" action={<Button variant="outline" size="sm" onClick={() => setSearch("")}>Clear search</Button>}>Try another word, like what it does: email, calendar, CRM.</EmptyState>
+              ? <EmptyState title="No app by that name" action={<Button variant="outline" size="sm" onClick={() => setSearch("")}>Clear search</Button>} />
               : (
                 <>
                   <ul aria-label={term ? "Matching apps" : "All apps"} className="grid gap-1 sm:grid-cols-2">
@@ -396,7 +396,7 @@ function ActionLookup() {
   };
 
   return (
-    <Section title="Test what Perry can do" description="Describe an action to see which of your accounts' operations Perry would find for it.">
+    <Section title="Test what Perry can do" tip="Describe an action to see which of your accounts' operations Perry would find for it.">
       <form className="flex gap-2" onSubmit={(event) => void look(event)}>
         <InputGroup>
           <InputGroupAddon><SearchIcon /></InputGroupAddon>
@@ -405,7 +405,7 @@ function ActionLookup() {
         <Button type="submit" variant="outline" disabled={query.trim().length < 2 || looking}>{looking && <Spinner />}Look up</Button>
       </form>
       {error && <p className="mt-3 text-sm text-destructive" role="alert">{error}</p>}
-      {actions?.length === 0 && !error && <p className="mt-3 text-sm text-muted-foreground" role="status">No actions match. Try other words, or connect the service first.</p>}
+      {actions?.length === 0 && !error && <p className="mt-3 text-sm text-muted-foreground" role="status">No actions match.</p>}
       {actions && actions.length > 0 && (
         <div className="mt-3" role="status">
           <p className="mb-2 text-sm text-muted-foreground">{actions.length} {actions.length === 1 ? "action" : "actions"} found</p>

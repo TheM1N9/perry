@@ -187,7 +187,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
             {voice && hotkey ? (holdProblem(hold)
               ? <>Type, or tap <Kbd>{keys(hotkey)}</Kbd> anywhere, talk, and tap it again.</>
               : <>Type, or hold <Kbd>{keys(hotkey)}</Kbd> anywhere and talk.</>)
-              : "I know your chats and memory, and work on this computer."}
+              : null}
           </Empty>
           <div className="flex flex-wrap justify-center gap-1.5 px-2">
             {SUGGESTIONS.map((text) => (
@@ -255,7 +255,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
               onChange={(event) => { onDraft(event.target.value); setError(""); }}
               onKeyDown={onKey}
               aria-label="Message Perry"
-              placeholder={picture ? "Ask about it, or just send" : running ? "Add to what he's doing…" : "Ask Perry, or tell him what to do"}
+              placeholder={picture ? "Ask about it, or just send" : running ? "Add to what he's doing…" : "Message Perry"}
               className="max-h-28 min-h-9 py-2 pl-3 text-sm md:text-sm"
             />
             <InputGroupAddon align="inline-end" className="gap-1 self-end pb-1.5">
@@ -282,9 +282,9 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
         )}
         {voice?.state === "listening" && (
           <p className="mt-1 px-1 text-2xs text-muted-foreground">
-            {!byHotkey || !hotkey ? "Listening. Send when you're done, and it goes into the box to check; Esc to stop."
+            {!byHotkey || !hotkey ? "Listening. Send when you're done; Esc to stop."
               : holdProblem(hold) ? `Listening. Press ${keys(hotkey)} again to send; Esc to stop. ${holdProblem(hold)}`
-                : `Listening. Let go of ${keys(hotkey)}, or press it again, to send; Esc to stop.`}
+                : `Listening. Let go of ${keys(hotkey)} to send; Esc to stop.`}
           </p>
         )}
         {(error || voice?.error) && <p className="mt-1 px-1 text-xs text-destructive">{error || voice?.error}</p>}

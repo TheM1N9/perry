@@ -44,7 +44,7 @@ export function Work() {
   const active = work?.tasks.filter((task) => task.status === "running" || task.status === "blocked" || task.status === "queued").length;
 
   return (
-    <Page title="Work" description="What Perry does without you in the chat. Set it up here, or ask for it in a chat." wide>
+    <Page title="Work" wide>
       <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)}>
         <TabsList variant="line" className="mb-5 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
           <TabsTrigger value="schedules"><TabCount count={jobs?.jobs.filter((job) => !job.builtin).length}>Schedules</TabCount></TabsTrigger>
@@ -61,8 +61,8 @@ export function Work() {
   );
 }
 
-/** A tab's explanation, with its New button beside it. */
-function Intro({ children, action }: { children: ReactNode; action: ReactNode }) {
+/** A tab's New button, and a line beside it when there is something it must say. */
+function Intro({ children, action }: { children?: ReactNode; action: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="max-w-2xl text-sm text-muted-foreground">{children}</p>
@@ -201,11 +201,11 @@ function Schedules() {
   return (
     <div className="space-y-6">
       <Intro action={<Button size="sm" onClick={() => setEditing({})}><PlusIcon />New schedule</Button>}>
-        Prompts Perry runs on a schedule, like a morning briefing; once, like a reminder; or when something happens, like a new email or a file landing in a folder. Times are in <span className="font-medium text-foreground">{data.timezone}</span>.
+        Times are in <span className="font-medium text-foreground">{data.timezone}</span>.
       </Intro>
       <Wake timezone={data.timezone} />
       {yours.length === 0
-        ? <EmptyState title="Nothing scheduled yet">Make one here, or ask in a chat: &ldquo;Every weekday at 8am, send me a summary of my calendar.&rdquo;</EmptyState>
+        ? <EmptyState title="Nothing scheduled yet" />
         : <List label="Your schedules">{yours.map(row)}</List>}
       {builtins.length > 0 && (
         <Collapsible>
@@ -271,14 +271,12 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
   // Queued tasks run oldest first, one at a time.
   const line = tasks.filter((task) => task.status === "queued").sort((a, b) => a.createdAt - b.createdAt).map((task) => task._id);
   const intro = (
-    <Intro action={<Button size="sm" onClick={() => setAdding({})}><PlusIcon />New task</Button>}>
-      Work Perry does by himself, a few tasks at once, each in a chat of its own. Its plan shows here as it goes; a question comes to you.
-    </Intro>
+    <Intro action={<Button size="sm" onClick={() => setAdding({})}><PlusIcon />New task</Button>} />
   );
   if (!tasks.length) return (
     <div className="space-y-4">
       {intro}
-      <EmptyState title="No plans yet">Hand Perry a task here, or ask for something that takes a few steps in a chat, and its plan shows up here as it works.</EmptyState>
+      <EmptyState title="No plans yet" />
       <TaskDialog open={adding !== null} goals={goals} onClose={() => setAdding(null)} />
     </div>
   );
@@ -377,9 +375,9 @@ function Goals({ goals }: { goals: Doc<"goals">[] }) {
   return (
     <div className="space-y-4">
       <Intro action={<Button size="sm" onClick={() => setEditing({})}><PlusIcon />New goal</Button>}>
-        Outcomes you&apos;re working toward, with milestones. Perry keeps them in mind in every chat.
+        Perry keeps them in mind in every chat.
       </Intro>
-      {!goals.length ? <EmptyState title="No goals yet">Make one here, or tell Perry about something you&apos;re working toward.</EmptyState> : (
+      {!goals.length ? <EmptyState title="No goals yet" /> : (
         <List label="Goals">
           {goals.map((goal) => {
             const reached = goal.milestones.filter((milestone) => milestone.done).length;
@@ -444,11 +442,9 @@ function Watches({ monitors }: { monitors: Doc<"monitors">[] }) {
           </ActionButton>
         )}
         <Button size="sm" onClick={() => setEditing({})}><PlusIcon />New watch</Button>
-      </>}>
-        Pages Perry checks on an interval. A new watch records a baseline first and stays quiet until its condition is met.
-      </Intro>
+      </>} />
       {monitors.length === 0
-        ? <EmptyState title="Nothing watched">Watch one here, or ask Perry: &ldquo;Tell me when this is back in stock.&rdquo;</EmptyState>
+        ? <EmptyState title="Nothing watched" />
         : (
           <List label="Watches">
             {monitors.map((monitor) => (

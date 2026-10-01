@@ -179,15 +179,18 @@ export function Page({ title, description, actions, children, wide }: {
   );
 }
 
-/** A titled group of rows on a page. */
-export function Section({ title, description, actions, children, className, id }: {
-  title: string; description?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; id?: string;
+/**
+ * A titled group of rows on a page. A `description` is one short line at most;
+ * what is worth knowing but not worth a line goes in `tip`, an ⓘ by the title.
+ */
+export function Section({ title, description, tip, actions, children, className, id }: {
+  title: string; description?: ReactNode; tip?: string; actions?: ReactNode; children: ReactNode; className?: string; id?: string;
 }) {
   return (
     <section id={id} className={cn("mt-10 scroll-mt-16 first:mt-0", className)} aria-label={title}>
       <div className="mb-3 flex items-end justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-md font-semibold tracking-[-0.01em]">{title}</h2>
+          <h2 className="flex items-center gap-1.5 text-md font-semibold tracking-[-0.01em]">{title}{tip && <InfoTip>{tip}</InfoTip>}</h2>
           {description && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{description}</p>}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -206,7 +209,7 @@ export function List({ children, className, label }: { children: ReactNode; clas
 }
 
 /**
- * Nothing here yet: what is missing, a sentence, and the one thing to do
+ * Nothing here yet: what is missing in a few words, and the one thing to do
  * about it, laid on the page like the rest. With `mascot`, for a page that is
  * empty as a whole: Perry, centred, as the pet's empty tabs have him.
  */

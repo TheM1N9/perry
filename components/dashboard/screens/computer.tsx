@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -29,14 +28,9 @@ export function Computers() {
   const revoked = compute?.runners.filter((runner) => runner.revoked) ?? [];
 
   return (
-    <Section title="Computers" description="Where Perry does the work. Perry's own computer connects when Perry starts; add another from its terminal. Every computer here dials out, so none can be reached from the internet.">
+    <Section title="Computers" tip="Add one by running perry start on it. Each computer dials out, so none can be reached from the internet.">
       {compute === undefined ? <ListSkeleton rows={2} /> : active.length === 0
-        ? (
-          <EmptyState title={compute.runners.length ? "Every computer here was revoked" : "No computer connected"}
-            action={<CommandLine>perry start</CommandLine>}>
-            Start Perry on the computer you want it to use.
-          </EmptyState>
-        )
+        ? <EmptyState title={compute.runners.length ? "Every computer here was revoked" : "No computer connected"} action={<CommandLine>perry start</CommandLine>} />
         : <List label="Computers">{[...active, ...(showRevoked ? revoked : [])].map((runner) => <RunnerRow key={runner.id} runner={runner} />)}</List>}
       {revoked.length > 0 && active.length > 0 && (
         <Button variant="link" size="sm" className="mt-2 px-0 text-muted-foreground" aria-expanded={showRevoked} onClick={() => setShowRevoked(!showRevoked)}>
@@ -65,11 +59,6 @@ function RunnerRow({ runner }: { runner: ComputeView["runners"][number] }) {
           {runner.lastSeenAt && <span>Seen <RelativeTime at={runner.lastSeenAt} /></span>}
         </p>
         {!runner.revoked && !runner.online && <p className="mt-1 text-sm text-muted-foreground">Start it again with <code className="font-mono text-xs">perry start</code> on that computer.</p>}
-        {!runner.revoked && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            Whether it asks before acting is set per chat: Ask, Auto or Full access, from the chat&apos;s composer or <Link href="/settings/access" className="link">Access &amp; approvals</Link> for new chats.
-          </p>
-        )}
       </div>
       {!runner.revoked && (
         <ActionButton variant="ghost" size="sm" className="shrink-0 text-muted-foreground hover:text-destructive" action={() => revoke({ key: dashboardKey, runnerId: runner.id })} success={`${runner.name} can no longer run anything.`}
@@ -93,19 +82,16 @@ export function ApprovalRules() {
   });
 
   return (
-    <Section title="Always allowed" description="Saved when you answer with Always allow; a matching request runs without asking. A decline is never remembered.">
+    <Section title="Always allowed" tip="Saved when you answer Always allow: a matching request then runs without asking. A decline is never remembered.">
       {telegram?.ownerOnTelegram && (
         <label className="mb-4 flex cursor-pointer items-start justify-between gap-4">
-          <span className="grid gap-0.5">
-            <span className="text-sm font-medium">Ask me on Telegram too</span>
-            <span className="text-sm text-muted-foreground">Requests arrive there with Approve, Decline and Always allow.</span>
-          </span>
+          <span className="text-sm font-medium">Ask me on Telegram too</span>
           <Switch checked={telegram.enabled} onCheckedChange={(enabled) => void setTelegram({ key: dashboardKey, enabled })
             .then(() => toast.success(enabled ? "Requests come to Telegram too." : "Requests stay in the dashboard and terminal."), (cause) => toast.error(errorText(cause)))} />
         </label>
       )}
       {rules === undefined && <ListSkeleton rows={2} />}
-      {rules?.length === 0 && <EmptyState title="No saved rules">Answer a request with Always allow, and the rule shows up here.</EmptyState>}
+      {rules?.length === 0 && <EmptyState title="No saved rules" />}
       {rules && rules.length > 0 && (
         <List label="Rules">
           {rules.map((rule) => (
@@ -152,9 +138,9 @@ export function RecentRequests() {
   const { dashboardKey } = useSession();
   const recent = useQuery(api.approvals.recent, { key: dashboardKey });
   return (
-    <Section title="Recent requests" description="Everything a computer asked to do, and who let it or stopped it.">
+    <Section title="Recent requests">
       {recent === undefined && <ListSkeleton rows={2} />}
-      {recent?.length === 0 && <EmptyState title="No requests yet">When a computer asks before acting, the answer is recorded here.</EmptyState>}
+      {recent?.length === 0 && <EmptyState title="No requests yet" />}
       {recent && recent.length > 0 && (
         <List label="Recent requests">
           {recent.map((item) => {

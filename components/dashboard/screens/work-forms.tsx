@@ -160,8 +160,7 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
     <FormDialog open={editing !== null} onClose={onClose} saving={saving} action={job ? "Save" : "Create"}
       title={job ? `Change “${job.name}”` : "New schedule"}
       description={builtin ? "A built-in schedule keeps its own prompt; you can change when it runs."
-        : event ? "Perry runs the prompt each time the event happens, and sends you what it finds."
-          : `Perry runs the prompt as a fresh turn at these times, in ${timezone}, or when a file lands in a folder, and sends you what it finds.`}
+        : event ? undefined : `Times are in ${timezone}.`}
       onSave={() => void save(() => saveJob({ key: dashboardKey, ...(job ? { id: job.id } : {}), name, prompt, ...writeWhen(when) }), job ? "Schedule saved." : "Schedule made.")}>
       {!builtin && (
         <>
@@ -173,7 +172,7 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
             <FieldLabel htmlFor="schedule-prompt">What Perry does</FieldLabel>
             <Textarea id="schedule-prompt" value={prompt} maxLength={4000} rows={4} placeholder="Summarise today's calendar and anything urgent in my inbox. If there is nothing, say nothing."
               onChange={(event) => setPrompt(event.target.value)} />
-            <FieldDescription>Write it so it stands on its own. &ldquo;Only tell me if…&rdquo; makes a quiet run send nothing.</FieldDescription>
+            <FieldDescription>&ldquo;Only tell me if…&rdquo; keeps a quiet run silent.</FieldDescription>
           </Field>
         </>
       )}
@@ -196,11 +195,11 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
         <Field>
           <FieldLabel htmlFor="schedule-folder">Folder</FieldLabel>
           <Input id="schedule-folder" value={when.folder} className="font-mono" placeholder="C:\Users\you\Downloads" required onChange={(event) => change({ folder: event.target.value })} />
-          <FieldDescription>Its full path on this computer. Each new file there starts a run, with the file&apos;s path.</FieldDescription>
+          <FieldDescription>Its full path. Each new file starts a run.</FieldDescription>
         </Field>
       )}
       {when.repeat === "event" && job?.trigger && (
-        <FieldDescription>Perry set this up in a chat. To start it on something else, delete it and ask Perry for a new one.</FieldDescription>
+        <FieldDescription>Set up in a chat. For another event, delete it and ask Perry.</FieldDescription>
       )}
       {when.repeat === "custom" && (
         <Field>
@@ -227,7 +226,6 @@ export function TaskDialog({ open, goals, onClose }: { open: boolean; goals: Doc
   const items = [{ value: "none", label: "None" }, ...goals.filter((item) => item.status !== "done").map((item) => ({ value: item._id, label: item.title }))];
   return (
     <FormDialog open={open} onClose={onClose} saving={saving} action="Create" title="New task"
-      description="Perry works on it by himself when nothing else is running, and tells you the result, or asks if he gets stuck."
       onSave={() => void save(() => queue({ key: dashboardKey, title, prompt, ...(goal !== "none" ? { goalId: goal as Doc<"goals">["_id"] } : {}) }), "Queued. Perry starts when he is free.")}>
       <Field>
         <FieldLabel htmlFor="task-title">Task</FieldLabel>
@@ -237,7 +235,6 @@ export function TaskDialog({ open, goals, onClose }: { open: boolean; goals: Doc
         <FieldLabel htmlFor="task-prompt">What to do</FieldLabel>
         <Textarea id="task-prompt" value={prompt} rows={5} maxLength={12000} placeholder="Find three 2-bedroom flats within 5 km of my office, under ₹40,000 a month, and put a comparison in a note in your files folder."
           onChange={(event) => setPrompt(event.target.value)} />
-        <FieldDescription>Everything he needs to do it without asking: what, where the result goes, what counts as done.</FieldDescription>
       </Field>
       {items.length > 1 && <Choice id="task-goal" label="For a goal" value={goal} items={items} onChange={setGoal} />}
     </FormDialog>
@@ -275,7 +272,6 @@ export function GoalDialog({ editing, onClose }: { editing: Editing<Doc<"goals">
   return (
     <FormDialog open={editing !== null} onClose={onClose} saving={saving} action={goal ? "Save" : "Create"}
       title={goal ? `Change “${goal.title}”` : "New goal"}
-      description="Something you're working toward. Perry keeps it in mind, and ticks milestones off as you tell it."
       onSave={() => void save(() => saveGoal({ key: dashboardKey, ...(goal ? { id: goal._id, status } : {}), title, description, milestones: list }), goal ? "Goal saved." : "Goal made.")}>
       <Field>
         <FieldLabel htmlFor="goal-title">Goal</FieldLabel>
@@ -328,7 +324,7 @@ export function WatchDialog({ editing, onClose }: { editing: Editing<Doc<"monito
   return (
     <FormDialog open={editing !== null} onClose={onClose} saving={saving} action={watch ? "Save" : "Create"}
       title={watch ? `Change “${watch.title}”` : "Watch a page"}
-      description="Perry checks a public page on an interval and tells you when the condition is met. A change of page or condition starts it over."
+      description="Public pages only. Changing the page or condition starts it over."
       onSave={() => void save(() => saveMonitor({
         key: dashboardKey, ...(watch ? { id: watch._id } : {}), title, url, condition, intervalMinutes: Number(interval),
         ...(condition === "change" ? {} : { value }),
@@ -346,7 +342,7 @@ export function WatchDialog({ editing, onClose }: { editing: Editing<Doc<"monito
         <Field>
           <FieldLabel htmlFor="watch-value">{condition === "contains" ? "Text to look for" : "Price"}</FieldLabel>
           <Input id="watch-value" value={value} maxLength={300} required placeholder={condition === "contains" ? "In stock" : "₹25,000"} onChange={(event) => setValue(event.target.value)} />
-          {condition === "price_below" && <FieldDescription>With its currency as the page writes it (₹, $, €, £…). A plain number matches any currency.</FieldDescription>}
+          {condition === "price_below" && <FieldDescription>With its currency (₹, $, €…). A plain number matches any.</FieldDescription>}
         </Field>
       )}
       <Choice id="watch-interval" label="How often" value={interval} items={intervals} onChange={setInterval} />

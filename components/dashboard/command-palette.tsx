@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, GaugeIcon, InboxIcon, KeyboardIcon, KeyRoundIcon, ListChecksIcon, LockIcon, MessageSquareIcon,
+  ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, CpuIcon, GaugeIcon, InboxIcon, KeyboardIcon, KeyRoundIcon, ListChecksIcon, LockIcon, MessageSquareIcon,
   MonitorIcon, MoonIcon, PuzzleIcon, SettingsIcon, ShieldCheckIcon, SquarePenIcon, SunIcon, TextSearchIcon,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useState } from "react";
@@ -28,7 +28,8 @@ const PAGES = [
   { href: "/apps/connectors", label: "Connectors", icon: CableIcon },
   { href: "/apps/skills", label: "Skills", icon: PuzzleIcon },
   { href: "/settings/general", label: "Settings", icon: SettingsIcon },
-  { href: "/settings/engines", label: "Engines & usage", icon: GaugeIcon },
+  { href: "/settings/engines", label: "Engines", icon: CpuIcon },
+  { href: "/settings/usage", label: "Usage", icon: GaugeIcon },
   { href: "/settings/computers", label: "Computers", icon: MonitorIcon },
   { href: "/settings/access", label: "Access & approvals", icon: ShieldCheckIcon },
   { href: "/settings/logins", label: "Logins & secrets", icon: KeyRoundIcon },

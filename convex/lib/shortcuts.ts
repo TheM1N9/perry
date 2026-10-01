@@ -11,25 +11,25 @@
 export const SHORTCUTS = {
   talk: {
     label: "Talk to Perry",
-    description: "Anywhere on this computer, with the desktop pet running: hold, speak and let go, or tap, speak and tap again.",
+    description: "Anywhere, with the desktop pet on: hold, speak, let go.",
     default: "CommandOrControl+Shift+Space",
     global: true,
   },
   look: {
     label: "Show Perry the screen",
-    description: "Anywhere on this computer, with the desktop pet running: a picture of the window you're in goes into his chat, for you to check and ask about.",
+    description: "Anywhere, with the desktop pet on: the window you're in goes to his chat.",
     default: "CommandOrControl+Alt+Shift+Space",
     global: true,
   },
   palette: {
     label: "Search and commands",
-    description: "On the dashboard: chats, pages and actions.",
+    description: "Chats, pages and actions.",
     default: "CommandOrControl+K",
     global: false,
   },
   newChat: {
     label: "New chat",
-    description: "On the dashboard.",
+    description: "",
     default: "CommandOrControl+Shift+O",
     global: false,
   },
