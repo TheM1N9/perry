@@ -22,6 +22,9 @@ import { openChat, sleep } from "../browser";
 //   5. Where the browser has no `field-sizing` (older Firefox and Safari), it
 //      stays one size: the fallback must set its height from the text.
 //   6. Any page throws.
+//   7. There, a box made narrower or wider keeps the height it had: the same
+//      text wraps onto more or fewer lines, so with no typing the height must
+//      follow the width, both ways.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/textareas/run.ts <outDir>");
@@ -100,14 +103,33 @@ try {
   const cleared = await measure(BOX);
   check("shrinksWhenCleared", Math.abs(cleared.height - empty.height) <= 1, { empty: empty.height, cleared: cleared.height });
 
-  // As a browser without field-sizing would size it: the native growing off, and CSS.supports saying no.
-  await evaluate(`(() => { const supports = CSS.supports.bind(CSS); CSS.supports = (...args) => String(args[0]).includes("field-sizing") ? false : supports(...args); document.querySelector(${JSON.stringify(BOX)}).style.fieldSizing = "fixed"; })()`);
+  // As a browser without field-sizing would load the page: CSS.supports saying no, and the native growing off, from the start.
+  const { identifier } = await send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
+    const supports = CSS.supports.bind(CSS);
+    CSS.supports = (...args) => String(args[0]).includes("field-sizing") ? false : supports(...args);
+    document.addEventListener("DOMContentLoaded", () => { const style = document.createElement("style"); style.textContent = "textarea { field-sizing: fixed !important; }"; document.head.append(style); });
+  })()` }) as { identifier: string };
+  await open("/memory", BOX);
   await type(BOX, "x");
   const fallbackOne = await measure(BOX);
   await type(BOX, "One\nTwo\nThree\nFour\nFive\nSix");
   const fallbackSix = await measure(BOX);
   check("fallbackGrowsWithoutFieldSizing", fallbackSix.height > fallbackOne.height + 40 && fallbackSix.scrollHeight <= fallbackSix.clientHeight + 1, { one: fallbackOne.height, six: fallbackSix.height });
+
+  // 7. The same text in a narrower box, then the full width again, with no typing in between.
+  await type(BOX, "Coffee black, no sugar, and oat milk only when there is nothing else in the house.\nNever after 4 pm.");
+  const wide = await measure(BOX);
+  const width = (value: string) => evaluate(`(() => { document.querySelector(${JSON.stringify(BOX)}).style.width = ${JSON.stringify(value)}; return true; })()`);
+  await width("220px");
+  await sleep(300);
+  const narrow = await measure(BOX);
+  await width("");
+  await sleep(300);
+  const widened = await measure(BOX);
+  check("fallbackFollowsWidth", narrow.height > wide.height + 20 && narrow.scrollHeight <= narrow.clientHeight + 1 && Math.abs(widened.height - wide.height) <= 1,
+    { wide: wide.height, narrow: narrow.height, narrowScroll: narrow.scrollHeight, narrowClient: narrow.clientHeight, widened: widened.height });
   await type(BOX, "");
+  await send("Page.removeScriptToEvaluateOnNewDocument", { identifier });
 
   // Every text box on the pages that have them: none can be dragged to a size.
   const handles: Record<string, string[]> = {};
