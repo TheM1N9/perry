@@ -3,7 +3,8 @@
 import { BrainIcon, CheckIcon, CopyIcon, GitBranchIcon, PencilIcon, PuzzleIcon, RefreshCwIcon } from "lucide-react";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { STARTING, WRITING } from "@/convex/lib/activity";
+import type { Work } from "@/convex/dashboard";
+import { STARTING } from "@/convex/lib/activity";
 import { SKILL_MENTION } from "@/convex/lib/commands";
 import { fullDate, timeOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useCopy } from "../common";
 import { AttachmentList, type Attachment } from "./attachments";
 import { Markdown } from "./markdown";
+import { Spinner, WorkSteps, WorkSummary } from "./work";
 
 export type ChatMessage = { id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; memories?: Array<{ id: string; text: string }> };
 
@@ -63,8 +65,10 @@ function CopyAction({ text }: { text: string }) {
  * width of the column, unboxed, since that is what you read. The actions show
  * on hover and focus, and always on the newest reply.
  */
-export function MessageRow({ message, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch }: {
+export function MessageRow({ message, work, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch }: {
   message: ChatMessage;
+  /** The run that wrote this reply, when it took steps: "Worked for 46s" above it. */
+  work?: Work;
   assistant: string;
   latest: boolean;
   canRegenerate: boolean;
@@ -110,6 +114,7 @@ export function MessageRow({ message, assistant, latest, canRegenerate, canEdit,
         </div>
       ) : (
         <div className="w-full min-w-0">
+          {work && <WorkSummary work={work} />}
           <Markdown text={message.text} />
           <AttachmentList attachments={message.attachments} />
           {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
@@ -174,31 +179,27 @@ export function PendingRow({ text, attachments, sent, skills }: { text: string; 
 }
 
 /**
- * The reply being written: what has streamed so far, and what Perry is doing
- * (dashboard.getActivity: "Running git status", "Editing notes.md"), with a
- * shimmer until the first words.
+ * The reply being written: each step the run has taken so far, in order
+ * (dashboard.getChatWork), so none goes by unseen; then what has streamed of
+ * the words, or "Thinking" while nothing else is going on.
  */
-export function ReplyInProgress({ streaming, step }: { streaming?: string; step?: string }) {
-  if (streaming) {
-    // Once words have come, a step is worth a line only when it is something besides writing them.
-    const doing = step && step !== WRITING.label ? step : undefined;
-    return (
-      <div className="min-w-0" data-role="assistant" data-streaming>
-        <Markdown text={streaming} />
-        {doing
-          ? <Doing label={doing} className="mt-2 text-sm text-muted-foreground" />
-          : <span className="mt-1 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle motion-reduce:animate-none" aria-hidden />}
-      </div>
-    );
-  }
-  return <Doing label={step ?? STARTING.label} className="text-md font-medium" data-role="assistant" data-thinking />;
-}
-
-function Doing({ label, className, ...data }: { label: string; className?: string } & Record<`data-${string}`, unknown>) {
+export function ReplyInProgress({ streaming, work, now }: { streaming?: string; work?: Work; now: number }) {
+  const steps = work?.steps ?? [];
+  const busy = steps.some((step) => step.status === "running");
   return (
-    <p className={cn("flex min-w-0 items-center gap-2", className)} data-step={label} {...data}>
-      <span className="size-3.5 shrink-0 rounded-full border-2 border-primary/25 border-t-primary motion-safe:animate-spin motion-reduce:animate-pulse" aria-hidden />
-      <span className="shimmer truncate">{label}</span>
-    </p>
+    <div className="min-w-0 space-y-2" data-role="assistant" {...(streaming ? { "data-streaming": true } : { "data-thinking": true })}>
+      {steps.length > 0 && <WorkSteps steps={steps} live now={now} />}
+      {streaming ? (
+        <div>
+          <Markdown text={streaming} />
+          {!busy && <span className="mt-1 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle motion-reduce:animate-none" aria-hidden />}
+        </div>
+      ) : !busy && (
+        <p className="flex items-center gap-2 text-md font-medium" data-step={STARTING.label}>
+          <Spinner />
+          <span className="shimmer">{STARTING.label}</span>
+        </p>
+      )}
+    </div>
   );
 }
