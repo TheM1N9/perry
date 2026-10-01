@@ -89,6 +89,17 @@ export class GrokEngine extends AcpEngine {
     return { command: this.cli.command, args: [...this.cli.args, "--permission-mode", "default", "agent", "--no-leader", "stdio"], env: ENV };
   }
 
+  /** `grok`, or what PERRY_GROK_COMMAND names: not when that runs it through another program, which is not Grok's to update. */
+  where(): string | undefined {
+    return this.cli.args.length ? undefined : this.cli.command;
+  }
+
+  /** Its agent ends with the old Grok, and its models are asked again. */
+  reload(): void {
+    this.kill();
+    this.listed = null;
+  }
+
   async status(): Promise<EngineStatus> {
     const base: Pick<EngineStatus, "kind" | "auth" | "models" | "update"> = { kind: "grok", auth: {}, models: [] };
     let version: string | undefined;

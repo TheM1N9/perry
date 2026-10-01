@@ -1,7 +1,7 @@
 import { v, type Infer } from "convex/values";
 import { internal } from "./_generated/api";
-import { mutation, query, type MutationCtx } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
 import { ENGINE_LABELS, refusal, updateOf, type EngineKind, type EngineUpdate, type LoginInteraction } from "./lib/engines";
 import { defaultEngine } from "./installation";
@@ -248,7 +248,22 @@ export type EngineView = {
   update?: EngineUpdate;
   updatedAt: number;
   request?: { kind: "login" | "logout"; status: "queued" | "running" | "done" | "error"; interaction?: LoginInteraction; error?: string };
+  /** Its last update from Settings (engineUpdates.ts): how it is going, or how it went. */
+  updating?: EngineUpdating;
 };
+
+export type EngineUpdating = Pick<Doc<"engineUpdates">, "status" | "command" | "waitingFor" | "from" | "to" | "output" | "error" | "requestedAt" | "finishedAt">;
+
+/** Each engine's last update from Settings on a computer. */
+async function updatesOf(ctx: QueryCtx, runnerId: Id<"runners">): Promise<Partial<Record<EngineKind, EngineUpdating>>> {
+  const latest: Partial<Record<EngineKind, EngineUpdating>> = {};
+  for (const row of await ctx.db.query("engineUpdates").withIndex("by_runner_engine", (q) => q.eq("runnerId", runnerId)).collect()) {
+    if ((latest[row.engine]?.requestedAt ?? 0) > row.requestedAt) continue;
+    const { status, command, waitingFor, from, to, output, error, requestedAt, finishedAt } = row;
+    latest[row.engine] = { status, command, waitingFor, from, to, output, error, requestedAt, finishedAt };
+  }
+  return latest;
+}
 
 /** Every connected computer and its engines, for Settings. */
 export const list = query({
@@ -256,27 +271,32 @@ export const list = query({
   handler: async (ctx, args): Promise<Array<{ id: Doc<"runners">["_id"]; name: string; online: boolean; engines: EngineView[] }>> => {
     assertDashboardKey(args.key);
     const runners = await ctx.db.query("runners").order("desc").take(20);
-    return runners.filter((runner) => !runner.revoked).map((runner) => ({
-      id: runner._id,
-      name: runner.name,
-      online: isOnline(runner),
-      engines: statusesOf(runner).map((status) => {
-        const request = runner.engineAuth?.[status.kind];
-        const update = updateOf(status);
-        return {
-          ...(update ? { update } : {}),
-          kind: status.kind,
-          label: ENGINE_LABELS[status.kind],
-          installed: status.installed,
-          version: status.version,
-          signedIn: status.signedIn,
-          auth: status.auth,
-          message: status.message,
-          error: status.error,
-          updatedAt: status.updatedAt,
-          ...(request ? { request: { kind: request.kind, status: request.status, interaction: request.interaction, error: request.error } } : {}),
-        };
-      }),
+    return Promise.all(runners.filter((runner) => !runner.revoked).map(async (runner) => {
+      const updates = await updatesOf(ctx, runner._id);
+      return {
+        id: runner._id,
+        name: runner.name,
+        online: isOnline(runner),
+        engines: statusesOf(runner).map((status) => {
+          const request = runner.engineAuth?.[status.kind];
+          const update = updateOf(status);
+          const updating = updates[status.kind];
+          return {
+            ...(update ? { update } : {}),
+            ...(updating ? { updating } : {}),
+            kind: status.kind,
+            label: ENGINE_LABELS[status.kind],
+            installed: status.installed,
+            version: status.version,
+            signedIn: status.signedIn,
+            auth: status.auth,
+            message: status.message,
+            error: status.error,
+            updatedAt: status.updatedAt,
+            ...(request ? { request: { kind: request.kind, status: request.status, interaction: request.interaction, error: request.error } } : {}),
+          };
+        }),
+      };
     }));
   },
 });
