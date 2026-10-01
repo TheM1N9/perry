@@ -503,7 +503,8 @@ try {
         const codex = menu.usage["Codex usage"] ?? "";
         const claude = menu.usage["Claude Code usage"] ?? "";
         check("accountMenuItems", JSON.stringify(menu.items) === JSON.stringify(["Usage details", "Theme", "Settings", "Lock dashboard"]), menu.items);
-        check("accountMenuUsageSummary", /ChatGPT Plus/.test(codex) && /5-hour 63% left · resets at /.test(codex) && /Weekly 16% left · resets /.test(codex)
+        // The 5-hour window resets 2h13m after the seed: "at 23:42" today, or with the day once that is past midnight.
+        check("accountMenuUsageSummary", /ChatGPT Plus/.test(codex) && /5-hour 63% left · resets (at \d{1,2}:\d{2}|\w{3} \d{1,2} \w{3}, \d{1,2}:\d{2})/.test(codex) && /Weekly 16% left · resets /.test(codex)
           && /Claude Max/.test(claude) && /No limits reported yet/.test(claude) && Object.keys(menu.usage).length === 2 && menu.bars.length === 2, menu);
         await click(byText("[role=menuitem]", "Usage details"));
         const details = await soon(async () => (await where()) === "/settings/engines" && (await text()).includes("Your plans"), 10);

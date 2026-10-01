@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-01T16:01:15.532Z",
+  "ranAt": "2026-10-01T16:58:54.067Z",
   "pass": true,
   "checks": {
     "everySectionHoldsWhatItShould": true,
@@ -178,7 +178,7 @@
     "unknownSectionIs404": 404,
     "redirectsKeepTheirQuery": {
       "filtered": {
-        "at": "/settings/activity?session=2rke2g5xwgeyerstf7yk4v4fe5",
+        "at": "/settings/activity?session=12prfa6e1p9y99kmmbaa2kt6b3",
         "plan": false,
         "runs": 1
       },
@@ -336,7 +336,7 @@
         "Lock dashboard"
       ],
       "usage": {
-        "Codex usage": "Codex · ChatGPT Plus 5-hour 63% left · resets at 23:42 x Weekly 16% left · resets Sun 4 Oct, 21:29 x",
+        "Codex usage": "Codex · ChatGPT Plus 5-hour 63% left · resets Fri 2 Oct, 0:39 x Weekly 16% left · resets Sun 4 Oct, 22:26 x",
         "Claude Code usage": "Claude Code · Claude Max No limits reported yet."
       },
       "bars": [
@@ -384,10 +384,10 @@
         "set": true,
         "source": "dashboard",
         "preview": "…AbCd",
-        "updatedAt": 1790870416956
+        "updatedAt": 1790873873684
       }
     },
-    "connectorsAfterKey": "Toggle Sidebar\nApps & skills\nConnectors\nSkills\nConnectors\n\nLet Perry work across the apps you already use. It checks what's connected each time it acts.\n\nRefresh\nCouldn't load every connection\n401 {\"error\":{\"message\":\"Invalid API key: e2e**9Zq1\",\"code\":801,\"slug\":\"APIKey_InvalidAPIKey\",\"status\":401,\"request_id\":\"7ccf45a6-402d-411f-bff4-44638b8d909a\",\"suggested_fix\":\"Please check you are using a va",
+    "connectorsAfterKey": "Toggle Sidebar\nApps & skills\nConnectors\nSkills\nConnectors\n\nLet Perry work across the apps you already use. It checks what's connected each time it acts.\n\nRefresh\nCouldn't load every connection\n401 {\"error\":{\"message\":\"Invalid API key: e2e**9Zq1\",\"code\":801,\"slug\":\"APIKey_InvalidAPIKey\",\"status\":401,\"request_id\":\"352baade-5d00-4232-8293-1276f7020535\",\"suggested_fix\":\"Please check you are using a va",
     "composioKeySavesInConnectors": {
       "composioSaved": true,
       "noticed": true,
