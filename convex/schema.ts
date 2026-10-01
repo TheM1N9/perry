@@ -114,6 +114,14 @@ export const vPlanLimits = v.object({
 });
 /** The engine refused a turn for its plan's limit: when, and what it said (lib/usage.ts, LimitHit). */
 export const vLimitHit = v.object({ at: v.number(), message: v.string() });
+/**
+ * Where an engine's update from Settings is (engineUpdates.ts): asked for,
+ * picked up and waiting for that engine's replies to end, running, and then
+ * done, failed, or left to the owner because it needs admin rights.
+ */
+export const vEngineUpdateStatus = v.union(
+  v.literal("queued"), v.literal("waiting"), v.literal("running"), v.literal("done"), v.literal("error"), v.literal("elevate"),
+);
 /** A sign-in or sign-out the owner asked for from Settings, until the runner has done it. */
 export const vEngineAuth = v.object({
   id: v.number(),
@@ -496,6 +504,31 @@ export default defineSchema({
     codexRequestError: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_token", ["token"]),
+
+  /**
+   * An engine's CLI updated from Settings on one computer: asked for by the
+   * owner, then run by that computer's runner once no reply is running on
+   * that engine there (engineUpdates.ts). The last one for each engine on each
+   * computer is kept, for Settings to say how it went.
+   */
+  engineUpdates: defineTable({
+    runnerId: v.id("runners"),
+    engine: vEngine,
+    status: vEngineUpdateStatus,
+    /** The command: what the runner runs, or, needing admin rights, what the owner runs instead. */
+    command: v.optional(v.string()),
+    /** Why it has not started yet: replies running on that engine there. */
+    waitingFor: v.optional(v.string()),
+    /** The version before, and after once it worked. */
+    from: v.optional(v.string()),
+    to: v.optional(v.string()),
+    /** The end of what the command printed, as it runs. */
+    output: v.optional(v.string()),
+    error: v.optional(v.string()),
+    requestedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    finishedAt: v.optional(v.number()),
+  }).index("by_runner_engine", ["runnerId", "engine"]),
 
   /**
    * Service keys, set from the dashboard instead of a terminal.
