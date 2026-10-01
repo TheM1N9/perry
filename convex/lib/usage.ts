@@ -115,7 +115,7 @@ export function limitWarning(engine: EngineKind, usage: EngineUsage | undefined,
 }
 
 /**
- * What each engine can tell about its plan, said plainly for the Usage page.
+ * What each engine can tell about its plan, said plainly for Settings → Engines & usage.
  * `limits`: it reports its plan's windows; `hits`: it only says when a limit
  * is hit; `tokens` whether its turns report the tokens they use.
  */

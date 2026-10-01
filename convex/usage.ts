@@ -132,7 +132,7 @@ export type EngineOverview = {
   share: { week: { tokens: number; turns: number }; windows: Record<string, { tokens: number; turns: number; since: number }> };
 };
 
-/** The Usage page: each engine's limits beside Perry's share of them, and what used the most this week. */
+/** Settings → Engines & usage: each engine's limits beside Perry's share of them, and what used the most this week. */
 export const overview = query({
   args: { key: v.string() },
   handler: async (ctx, args): Promise<{ engines: EngineOverview[]; items: ShareItem[]; since: number; computers: number }> => {

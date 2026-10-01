@@ -43,7 +43,7 @@ export function pollTelegram(runtime: Runtime): () => void {
       const token = await runtime.runQuery("secrets:get", { name: "TELEGRAM_BOT_TOKEN" }, { internal: true })
         .then((result) => result.value as string | null, () => null);
       if (!token) {
-        // No bot; Perry is used from the dashboard. A token saved on the Keys page is picked up here.
+        // No bot; Perry is used from the dashboard. A token saved in Settings → Telegram is picked up here.
         await sleep(15_000, stop.signal);
         continue;
       }

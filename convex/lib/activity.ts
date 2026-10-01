@@ -50,7 +50,7 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   forget: () => ({ label: "Forgetting that", pose: "remembering" }),
   update_user_md: () => ({ label: "Updating what I know about you", pose: "remembering" }),
   update_identity: () => ({ label: "Changing how I come across", pose: "remembering" }),
-  save_secret: () => ({ label: "Putting that in Keys", pose: "typing" }),
+  save_secret: () => ({ label: "Putting that in Logins and secrets", pose: "typing" }),
   list_secrets: () => ({ label: "Looking through your logins", pose: "reading" }),
   use_secret: () => ({ label: "Getting a saved login", pose: "reading" }),
   search_chats: () => ({ label: "Looking through your chats", pose: "searching" }),

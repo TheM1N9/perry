@@ -739,7 +739,7 @@ ${line}`.slice(-4000); this.onText(line); });
   /** An error as the owner should read it: a sign-in problem says how to sign in. */
   protected explain(error: unknown): Error {
     const text = message(error);
-    if (this.isAuthError(error)) return new Error(`${this.label} isn't signed in on this computer. Sign in from Settings → Engines. (${text})`);
+    if (this.isAuthError(error)) return new Error(`${this.label} isn't signed in on this computer. Sign in from Settings → Engines & usage. (${text})`);
     return error instanceof Error ? error : new Error(text);
   }
 

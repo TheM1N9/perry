@@ -84,7 +84,7 @@ No account is needed but Codex's: Perry keeps everything on this computer, in
    you in now, before the first chat needs it: `codex login` in the browser,
    or a device code where there is no browser (a server, or over SSH). If
    you are already signed in, it says so and moves on. Setup stops if Codex
-   is not installed. The dashboard's Settings page can sign in too.
+   is not installed. The dashboard's Settings → Engines & usage can sign in too.
 3. **Saving it.** Generates a dashboard key and writes it, with the bot token,
    to a gitignored `.env.local`.
 
@@ -135,7 +135,8 @@ it in `.env.local`, in Perry's folder, then `perry stop && perry start`.
 
 Perry thinks and works through Codex on your machine. The computer Perry is
 installed on is connected by its server as it starts; nothing to do. Open
-Settings in the dashboard to see the Codex account, or sign in there; the runner
+Settings → Engines & usage in the dashboard to see the Codex account, or sign in
+there; the runner
 reports which Codex models your subscription offers. Perry answers while the
 computer is on: a message sent while the runner is not running fails with a
 clear error, and one sent on Telegram while the computer is off is answered when
@@ -151,10 +152,11 @@ pnpm run connect -- --url <address> --token <token> --dir <folder> --service
 
 What Codex wants to do beyond its sandbox is asked in the runner's terminal, in
 the dashboard and, if you own Perry from Telegram, as a Telegram message with
-Approve, Decline and Always allow buttons. Turn Telegram prompts off on the
-Computer page.
+Approve, Decline and Always allow buttons. Turn Telegram prompts off in Settings
+→ Access & approvals, where the requests answered with Always allow are listed
+too.
 
-Each machine has a policy, set on the Computer page or when starting it:
+Each machine has a policy, set when starting it:
 
 ```bash
 pnpm run runner -- --policy review   # ask | review | trust; --auto means trust
@@ -228,7 +230,7 @@ on macOS and Linux to show the sandbox works.
 
 All of this is for **Supervised** chats, the default. A chat set to **Full
 access** (in its composer, with `/access full`, or by the default for new chats
-in Settings) runs every turn with `danger-full-access` whatever
+in Settings → Access & approvals) runs every turn with `danger-full-access` whatever
 `PERRY_CODEX_SANDBOX` says: no sandbox, and nothing waits for you. Codex still
 sends each command to the runner, which lets it through at once, so that a
 chat put back on Ask or Auto while a reply runs is asked or reviewed from its
@@ -247,7 +249,7 @@ both.
 
 - **Signing in.** Perry never signs Claude Code in and never reads, copies or
   stores its credentials. Install Claude Code, then run `claude auth login` in a
-  terminal on that computer; Settings shows what it says (for example "Claude
+  terminal on that computer; Settings → Engines & usage shows what it says (for example "Claude
   Max · you@example.com") and the command to run while it is signed out. Perry
   doesn't sign it out either, since that would sign you out of Claude Code in
   your terminal too: run `claude auth logout` for that.
@@ -314,12 +316,18 @@ that point in a separate thread. Each chat shows a stable session ID in the
 sidebar and header; the header copies the full ID. Older messages load on demand. Web chats share
 Perry's saved memories with Telegram while keeping their histories separate.
 
-The sidebar holds your chats, Search, and Tasks: scheduled jobs, Perry's plans,
-goals, and watched pages. Everything else opens from your name at the bottom of
-the sidebar: Memory, Connectors, Activity, Computer, Settings, Keys, and Setup.
-Settings shows the Codex account on each connected machine; Activity is a run
-log with session filters, tools, tokens, errors, and a link back to each web
-chat.
+The sidebar holds New chat, Search, Needs you, To-dos, Work (scheduled jobs,
+Perry's plans, goals, and watched pages), Memory, Apps & skills (connected
+accounts and skills), your projects and your chats. At the bottom are the
+desktop pet, the computer Perry works on, and your name, which opens how much of
+each engine's plan is left, the theme, Settings and Lock dashboard. Settings
+puts everything else in sections down its left: General, Engines & usage,
+Computers, Access & approvals, Notifications, Telegram, WhatsApp, Desktop pet,
+People, Activity log and Security. Each key is entered beside what it unlocks:
+the Telegram bot token in Telegram, the Gemini API key in Engines & usage, and
+the Composio key in Apps & skills. Engines & usage shows the Codex account on
+each connected machine; the activity log lists every run with session filters,
+tools, tokens, errors, and a link back to each web chat.
 
 The key is a bearer token for one person, not a login system. Localhost does
 not bypass it, because a dashboard that can read your memory should not be open
@@ -351,7 +359,7 @@ curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | PER
 
 That key opens only what the pet shows (chats, to-dos, what needs you, his
 check-ins), not the rest of the dashboard; opened from him there, the dashboard
-asks for its own key. Each computer is listed in Settings with when it was last
+asks for its own key. Each computer is listed in Settings → Desktop pet with when it was last
 heard from; **Remove** takes its key away at once. Reminders go to your phone
 only when every pet has seen you gone, and Perry looks at the screen you were
 at last. `node ~/perry-pet/pet/connect.js off` stops him there; running the
@@ -397,7 +405,7 @@ them. The full error is in `perry logs` and in the Activity tab.
 
 **"The Codex runner for this chat is offline" in chat.** Every reply comes from
 Codex on a connected machine. Start Perry with `perry start` (or the runner on
-the other machine) and check the Codex account on the Settings page.
+the other machine) and check the Codex account in Settings → Engines & usage.
 
 **Codex's commands all fail on Linux.** Its sandbox needs user namespaces; see
 "Codex's sandbox" above, and run `pnpm run doctor -- --machine`.

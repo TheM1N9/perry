@@ -80,7 +80,7 @@ TOKEN=$(pnpm run -s connect -- --token-only --name evals | awk '/token/ {print $
 mkdir -p /tmp/perry-evals-work
 PERRY_HOME=/tmp/perry-evals bun runner/index.ts --url http://127.0.0.1:7377 --token "$TOKEN" --dir /tmp/perry-evals-work --name evals --auto &
 pnpm evals --runner-token "$TOKEN"
-kill %1   # then revoke "evals" on the dashboard's Computer page
+kill %1   # then revoke "evals" in the dashboard's Settings → Computers
 ```
 
 Results land in `artifacts/evals/<time>/`.

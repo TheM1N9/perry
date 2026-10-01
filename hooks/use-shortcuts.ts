@@ -14,7 +14,7 @@ export function useIsMac() {
 }
 
 /**
- * The keyboard shortcuts in force (Settings → Keyboard shortcuts), the
+ * The keyboard shortcuts in force (Settings → Desktop pet → Keyboard shortcuts), the
  * defaults until they load, and how each reads on this computer.
  */
 export function useShortcuts(): { shortcuts: Shortcuts; mac: boolean; label: (id: keyof Shortcuts) => string } {

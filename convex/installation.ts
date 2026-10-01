@@ -247,7 +247,7 @@ export const ownerWrote = internalMutation({
   },
 });
 
-/** Quiet hours and the day's limit for Perry's own messages, from Settings (notify.ts). Unset turns one off. */
+/** Quiet hours and the day's limit for Perry's own messages, from Settings → Notifications (notify.ts). Unset turns one off. */
 export const setManners = internalMutation({
   args: { quietHours: v.optional(v.object({ start: v.string(), end: v.string() })), dailyLimit: v.optional(v.number()) },
   returns: v.null(),
