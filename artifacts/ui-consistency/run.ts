@@ -446,15 +446,11 @@ try {
     }
     await collectErrors(`work-${mode}`);
 
-    // --- Settings: the theme, quiet hours, the update's log; WhatsApp's cards and checkbox -----
-    await go("/settings", "Quiet hours");
+    // --- Settings: the theme and the update's log (General), quiet hours (Notifications); WhatsApp's cards and checkbox -----
+    await go("/settings/notifications", "Quiet hours");
     if (!BEFORE) {
-      await noNatives(`settings-${mode}`);
+      await noNatives(`settings-notifications-${mode}`);
       if (mode === "light") {
-        const logOpen = byText("button", "What it said");
-        check("updateLogIsCollapsible", Boolean(await evaluate(`Boolean(${logOpen}) && !document.querySelector("details")`)));
-        await click(logOpen);
-        check("updateLogOpens", Boolean(await evaluate(`document.body.innerText.includes("ERR_PNPM_META_FETCH_FAIL")`)));
         // Quiet hours, saved when focus leaves the time.
         await click(`document.querySelector('[role=switch][aria-label="Quiet hours"]')`);
         await sleep(400);
@@ -466,13 +462,23 @@ try {
         let manners: { quietHours?: { start: string; end: string } } | null = null;
         await until(async () => { manners = await call("dashboard:getManners", { key: KEY }); return manners?.quietHours?.start === "21:30"; }, "quiet hours to save", 10).catch(() => {});
         check("timePickerSavesQuietHours", (manners as { quietHours?: { start: string } } | null)?.quietHours?.start === "21:30", manners);
+      }
+    }
+    await go("/settings/general", "What it said");
+    if (!BEFORE) {
+      await noNatives(`settings-${mode}`);
+      if (mode === "light") {
+        const logOpen = byText("button", "What it said");
+        check("updateLogIsCollapsible", Boolean(await evaluate(`Boolean(${logOpen}) && !document.querySelector("details")`)));
+        await click(logOpen);
+        check("updateLogOpens", Boolean(await evaluate(`document.body.innerText.includes("ERR_PNPM_META_FETCH_FAIL")`)));
         const theme = await evaluate(`(() => { const group = document.querySelector('[aria-label="Theme"]'); const items = [...group.querySelectorAll("button")]; return { role: group.getAttribute("role"), items: items.map((b) => [b.innerText.trim(), b.getAttribute("aria-pressed")]) }; })()`);
         check("themeIsToggleGroup", JSON.stringify(theme).includes('["System","true"]'), theme);
       }
     }
     await sleep(300);
     await shot(`settings-${mode}`);
-    await go("/settings?tab=whatsapp", "A separate number");
+    await go("/settings/whatsapp", "A separate number");
     await evaluate(`[...document.querySelectorAll("label")].find((l) => l.innerText.includes("Link with a code"))?.scrollIntoView({ block: "center" }); true`);
     await shot(`settings-whatsapp-${mode}`);
     if (!BEFORE) {
@@ -490,7 +496,7 @@ try {
     await collectErrors(`settings-${mode}`);
 
     // --- Activity: lists, scroll areas, the inset focus ring -------------------------------------
-    await go("/activity", "Export last year's receipts");
+    await go("/settings/activity", "Export last year's receipts");
     await click(byText("[data-slot=collapsible-trigger]", "Export last year's receipts"));
     await click(byText("[data-slot=collapsible-trigger]", "Plan my week"));
     await waitFor(`document.body.innerText.includes("Get-Content calendar.ics")`, "the trace", 15).catch(() => {});
@@ -521,14 +527,16 @@ try {
     }
     await collectErrors(`inbox-${mode}`);
 
-    // --- Computer: the cut-off folder and command -------------------------------------------------
-    await go("/computer", "Recent requests");
+    // --- Computers and Access & approvals (once the Computer page): the cut-off folder and command ------------
+    await go("/settings/computers", "a-long-folder-name");
     if (!BEFORE) {
-      await noNatives(`computer-${mode}`);
-      if (mode === "light") {
-        check("workdirTip", await tipCheck("workdir", byText("span[tabindex]", "a-long-folder-name"), /and-one-more-level-for-good-measure/));
-        check("commandTip", await tipCheck("command", byText("span[tabindex]", "git push origin main"), /no-verify # after the rebase/));
-      }
+      await noNatives(`computers-${mode}`);
+      if (mode === "light") check("workdirTip", await tipCheck("workdir", byText("span[tabindex]", "a-long-folder-name"), /and-one-more-level-for-good-measure/));
+    }
+    await go("/settings/access", "Recent requests");
+    if (!BEFORE) {
+      await noNatives(`access-${mode}`);
+      if (mode === "light") check("commandTip", await tipCheck("command", byText("span[tabindex]", "git push origin main"), /no-verify # after the rebase/));
     }
     await collectErrors(`computer-${mode}`);
 
@@ -553,10 +561,10 @@ try {
     }
     await collectErrors(`todos-${mode}`);
 
-    for (const [path, words] of [["/skills", "weekly-review"], ["/connectors", "Composio"], ["/welcome", "Meet your assistant"]] as const) {
+    for (const [path, words] of [["/apps/skills", "weekly-review"], ["/apps/connectors", "Composio"], ["/welcome", "Meet your assistant"]] as const) {
       await go(path, words).catch(() => {});
-      if (!BEFORE) await noNatives(`${path.slice(1)}-${mode}`);
-      await collectErrors(`${path.slice(1)}-${mode}`);
+      if (!BEFORE) await noNatives(`${path.split("/").pop()}-${mode}`);
+      await collectErrors(`${path.split("/").pop()}-${mode}`);
     }
 
     // --- The pet's page, at his window's size -----------------------------------------------------

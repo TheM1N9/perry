@@ -241,7 +241,7 @@ try {
 
   // --- 5. Settings ------------------------------------------------------------------------------------------
   await until(async () => (await call<{ pet: { keys: Record<string, { hotkey?: string }> } }>("dashboard:getShortcuts", { key: KEY })).pet.keys.look?.hotkey === LOOK_KEYS, "the pet to report its Look keys", 20).catch(() => {});
-  await send("Page.navigate", { url: `${BASE}/settings?tab=shortcuts` });
+  await send("Page.navigate", { url: `${BASE}/settings/desktop-pet` });
   await until(() => evaluate(`document.body.innerText.includes("Show Perry the screen")`), "the shortcuts", 30).catch(() => {});
   await sleep(1_000);
   const rowOf = `[...document.querySelectorAll("li")].find((li) => li.innerText.includes("Show Perry the screen"))?.innerText ?? ""`;

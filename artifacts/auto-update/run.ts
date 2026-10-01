@@ -283,7 +283,7 @@ try {
   browser = await openChat(BASE, KEY);
   const sidebar = await browser.evaluate(`document.querySelector('[data-sidebar="footer"], [data-slot="sidebar-footer"]')?.innerText ?? document.body.innerText`) as string;
   check("sidebarShowsUpdate", /Update available/.test(sidebar) && /1 change/.test(sidebar), sidebar.slice(0, 300));
-  await browser.send("Page.navigate", { url: `${BASE}/settings` });
+  await browser.send("Page.navigate", { url: `${BASE}/settings/general` });
   await until(() => browser!.evaluate(`Boolean(document.querySelector('[data-update-state]'))`), "the Updates section", 30).catch(() => {});
   await sleep(1_500);
   const section = await browser.evaluate(`(() => { const box = document.querySelector('[data-update-state]'); box?.scrollIntoView({ block: 'center' }); return box?.closest('section')?.innerText ?? box?.parentElement?.parentElement?.innerText ?? ''; })()`) as string;

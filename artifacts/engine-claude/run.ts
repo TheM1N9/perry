@@ -386,7 +386,7 @@ try {
   };
   // Tall enough for the Engines section of three rows and the sign-in steps, set before the page lays out.
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 1150, deviceScaleFactor: 1, mobile: false });
-  await send("Page.navigate", { url: `${BASE}/settings` });
+  await send("Page.navigate", { url: `${BASE}/settings/engines` });
   await until(() => evaluate(`(document.querySelector('section[aria-label="Engines"]')?.innerText ?? "").includes("Signed-out computer")`), "Settings' Engines section", 30);
   const offRowSelector = `[aria-label="Claude Code on Signed-out computer"]`;
   await evaluate(`(() => { const button = [...document.querySelector('${offRowSelector}').querySelectorAll("button")].find((item) => /Sign in with Claude/.test(item.innerText)); button?.click(); return Boolean(button); })()`);

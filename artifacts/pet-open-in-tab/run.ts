@@ -235,10 +235,10 @@ try {
 
   // --- 7, 9. The path, query and all; and only the dashboard's own ---------------------------------
   {
-    await call<string>("pet:askToOpen", { key: KEY, path: "/settings?tab=shortcuts" });
-    await until(async () => (await shown.where()) === "/settings?tab=shortcuts", "the settings page", 5).catch(() => {});
+    await call<string>("pet:askToOpen", { key: KEY, path: "/settings/activity?status=error" });
+    await until(async () => (await shown.where()) === "/settings/activity?status=error", "the activity log", 5).catch(() => {});
     const now = await shown.where();
-    check("pathWithQueryKept", now === "/settings?tab=shortcuts" && (await hidden.where()) === "/memory", { now });
+    check("pathWithQueryKept", now === "/settings/activity?status=error" && (await hidden.where()) === "/memory", { now });
     await shown.goTo("/todos");
     const bad = ["//evil.example/x", "/\\evil.example", "javascript:alert(1)", "https://evil.example/", ""];
     const stored: string[] = [];

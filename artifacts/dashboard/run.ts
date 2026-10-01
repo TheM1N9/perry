@@ -125,10 +125,10 @@ const ROUTES: Array<{ path: string; heading: string; name: string }> = [
   { path: "/inbox", heading: "Needs you", name: "inbox" },
   { path: "/work", heading: "Work", name: "work" },
   { path: "/memory", heading: "Memory", name: "memory" },
-  { path: "/connectors", heading: "Connectors", name: "connectors" },
-  { path: "/computer", heading: "Computer", name: "computer" },
-  { path: "/activity", heading: "Activity", name: "activity" },
-  { path: "/settings", heading: "Settings", name: "settings" },
+  { path: "/apps/connectors", heading: "Apps & skills", name: "connectors" },
+  { path: "/settings/computers", heading: "Settings", name: "computer" },
+  { path: "/settings/activity", heading: "Settings", name: "activity" },
+  { path: "/settings/general", heading: "Settings", name: "settings" },
 ];
 
 let page: Awaited<ReturnType<typeof launch>> | null = null;
@@ -175,7 +175,7 @@ try {
   await p.go(`${BASE}/nowhere`);
   try { await heading("Nothing here"); } catch { missing.push("/nowhere (404)"); }
   check("every route renders its heading", missing.length === 0, missing);
-  const redirects: Record<string, string> = { "/tasks": "/work", "/about": "/memory?tab=about", "/profile": "/settings", "/keys": "/settings?tab=keys", "/setup": "/settings?tab=telegram" };
+  const redirects: Record<string, string> = { "/tasks": "/work", "/about": "/memory?tab=about", "/profile": "/settings/general", "/keys": "/settings/access", "/setup": "/settings/telegram", "/connectors": "/apps/connectors", "/skills": "/apps/skills", "/computer": "/settings/computers", "/activity": "/settings/activity" };
   const wrong: Record<string, string | null> = {};
   for (const [from, to] of Object.entries(redirects)) {
     const response = await fetch(`${BASE}${from}`, { redirect: "manual" });
@@ -369,7 +369,7 @@ try {
 
   // 12. Theme.
   await p.scheme("dark");
-  await p.go(`${BASE}/settings`);
+  await p.go(`${BASE}/settings/general`);
   await heading("Settings");
   check("the system's dark theme applies", await p.evaluate(`document.documentElement.classList.contains("dark")`));
   await p.scheme("light");
@@ -377,7 +377,7 @@ try {
   const theme = (name: string) => `[...document.querySelectorAll('[role=group][aria-label="Theme"] button')].find((b) => b.innerText.trim() === ${JSON.stringify(name)})`;
   await p.click(theme("Dark"));
   await p.waitFor(`document.documentElement.classList.contains("dark")`, "dark to apply");
-  await p.go(`${BASE}/settings`);
+  await p.go(`${BASE}/settings/general`);
   await heading("Settings");
   check("a theme picked in Settings sticks", await p.evaluate(`localStorage.getItem("perry.theme") === "dark" && document.documentElement.classList.contains("dark")`));
   await p.click(theme("System"));
@@ -387,7 +387,7 @@ try {
   const overflow: Record<string, number> = {};
   const contrast: Record<string, unknown> = {};
   let texts = 0;
-  const pages = [...ROUTES, { path: `/chat/${seeded.pinnedChat}`, heading: "", name: "chat" }, { path: "/settings?tab=keys", heading: "Settings", name: "keys" }, { path: "/settings?tab=telegram", heading: "Settings", name: "telegram" }, { path: "/memory?tab=about", heading: "Memory", name: "about" }, { path: "/welcome", heading: "Meet your assistant", name: "welcome" }];
+  const pages = [...ROUTES, { path: `/chat/${seeded.pinnedChat}`, heading: "", name: "chat" }, { path: "/settings/access", heading: "Settings", name: "keys" }, { path: "/settings/telegram", heading: "Settings", name: "telegram" }, { path: "/memory?tab=about", heading: "Memory", name: "about" }, { path: "/welcome", heading: "Meet your assistant", name: "welcome" }];
   for (const [width, height, mobile] of [[1440, 900, false], [1280, 800, false], [768, 1024, true], [375, 812, true]] as const) {
     await p.viewport(width, height, mobile);
     for (const scheme of ["light", "dark"] as const) {

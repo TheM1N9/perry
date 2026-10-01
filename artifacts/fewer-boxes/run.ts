@@ -1,10 +1,8 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openChat, sleep } from "../browser";
+import { seed, startPerry, type Perry } from "./seed";
 
 // bun artifacts/fewer-boxes/run.ts <outDir> [--before <checkout>]
 // Issues #179 and #180: the boxes that did not earn their place gone (List,
@@ -19,10 +17,12 @@ import { openChat, sleep } from "../browser";
 // artifacts/ui-consistency's (a reply with a checklist, a failed run, memories,
 // to-dos, a schedule that ran, a failed update, an approval and a decided one,
 // a skill, a project), plus a person, a login, a goal, a watch and a task with
-// a question, so every changed screen has rows. Headless Chrome, light and
-// dark; the pet's page in a plain tab at his window's 404×620, never the real
-// pet. With --before <checkout>, the same seed and pictures from that
-// checkout's build, and no checks.
+// a question, so every changed screen has rows (both in seed.ts, which
+// artifacts/settings-sections shares). Headless Chrome, light and dark; the
+// pet's page in a plain tab at his window's 404×620, never the real pet.
+// With --before <checkout>, the same seed and pictures from that checkout's
+// build, and no checks. Since Settings took sections (#184) the addresses are
+// the new ones, so --before needs a checkout from after #184.
 //
 // Ways it could fail, written down before the checks:
 //   1. A List, EmptyState or card wrapper still draws a box: a border on three
@@ -70,13 +70,7 @@ const BEFORE = beforeAt >= 0;
 const OUT = resolve(outDir);
 mkdirSync(OUT, { recursive: true });
 
-const freePort = () => new Promise<number>((done) => { const probe = createServer().listen(0, "127.0.0.1", () => { const { port } = probe.address() as { port: number }; probe.close(() => done(port)); }); });
-const PORT = await freePort();
-const BASE = `http://127.0.0.1:${PORT}`;
 const KEY = "fewer-boxes-e2e-key";
-const homes = process.env.PERRY_E2E_HOMES ?? tmpdir();
-mkdirSync(homes, { recursive: true });
-const home = mkdtempSync(join(homes, "perry-fewer-boxes-"));
 const checks: Record<string, boolean> = {};
 const notes: Record<string, unknown> = {};
 const check = (name: string, ok: boolean, note?: unknown) => {
@@ -85,140 +79,24 @@ const check = (name: string, ok: boolean, note?: unknown) => {
   console.log(`${ok ? "ok  " : "FAIL"} ${name}${!ok && note !== undefined ? ` ${JSON.stringify(note).slice(0, 600)}` : ""}`);
 };
 
-mkdirSync(join(home, "skills", "weekly-review"), { recursive: true });
-writeFileSync(join(home, "skills", "weekly-review", "SKILL.md"), "---\nname: weekly-review\ndescription: Writes the owner's weekly review the way they like it.\n---\n\nStart with what shipped, then what slipped.\n");
-
-const env: NodeJS.ProcessEnv = {
-  ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
-  // Never the owner's accounts: no engine here has a sign-in.
-  CODEX_HOME: join(home, "codex-home"), CLAUDE_CONFIG_DIR: join(home, "claude-home"),
-};
-for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("TELEGRAM") || name === "COMPOSIO_API_KEY" || name === "GEMINI_API_KEY" || name === "ELECTRON_RUN_AS_NODE" || name === "PERRY_URL") delete env[name];
-mkdirSync(env.CODEX_HOME!, { recursive: true });
-mkdirSync(env.CLAUDE_CONFIG_DIR!, { recursive: true });
-let log = "";
-const server: ChildProcess = spawn("node", [join(REPO, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)], { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-server.stdout?.on("data", (chunk: Buffer) => { log += chunk; });
-server.stderr?.on("data", (chunk: Buffer) => { log += chunk; });
-
-async function call<T>(path: string, callArgs: object = {}): Promise<T> {
-  const response = await fetch(`${BASE}/api/backend/admin`, { method: "POST", headers: { "content-type": "application/json", "x-perry-key": KEY }, body: JSON.stringify({ path, args: callArgs }) });
-  const body = await response.json() as { value?: T; error?: string };
-  if (body.error) throw new Error(`${path}: ${body.error}`);
-  return body.value as T;
-}
-async function until(test: () => Promise<unknown> | unknown, what: string, seconds = 30) {
-  for (let i = 0; i < seconds * 4; i++) {
-    if (await Promise.resolve().then(test).catch(() => false)) return;
-    await sleep(250);
-  }
-  throw new Error(`timed out: ${what}`);
-}
-/** Whether `test` comes true within `seconds`, without throwing. */
-const soon = (test: () => Promise<unknown> | unknown, seconds = 8) => until(test, "", seconds).then(() => true, () => false);
-
 type Browser = Awaited<ReturnType<typeof openChat>>;
 let browser: Browser | null = null;
-let heartbeat: ReturnType<typeof setInterval> | null = null;
-
-const CHECKLIST_REPLY = `Here's the week, with what's done ticked:
-
-- [x] Book the dentist
-- [x] Send the invoice to Priya
-- [ ] Renew the passport photos
-- [ ] Call Sam about Saturday
-
-| Day | Plan | Time |
-| --- | --- | --- |
-| Monday | Gym, then the design review | 07:30 |
-| Wednesday | Dentist | 14:00 |
-| Friday | Weekly review | 16:00 |
-
-Want me to put the passport photos on your list?`;
+let perry: Perry | null = null;
 
 type Persona = { user: string; name: string; personality: string };
 
+/** Each section of Settings, and words that show once its seeded rows have loaded. */
+const SECTION_WORDS = [
+  ["general", "Update on his own at night"], ["engines", "Perry's share this week"], ["computers", "a-long-folder-name"],
+  ["access", "Netflix"], ["notifications", "Quiet hours"], ["telegram", "Pair with Telegram"], ["whatsapp", "A separate number"],
+  ["desktop-pet", "Show Perry the screen"], ["people", "Talks with Perry"], ["activity", "Export last year's receipts"], ["security", "Lock this browser"],
+] as const;
+
 try {
-  await until(() => fetch(`${BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start", 120);
-  await call("dashboard:skipOnboarding", { key: KEY }).catch(() => {});
-  const runnerJson = join(home, "runner.json");
-  await until(() => existsSync(runnerJson), "the server to connect this computer", 60);
-  const token = (JSON.parse(readFileSync(runnerJson, "utf8")) as { token: string }).token;
-  const workdir = join(home, "work", "a-long-folder-name-that-the-row-cuts-off", "and-one-more-level-for-good-measure");
-  const online = async () => {
-    await call("runner:checkIn", { token, platform: "win32", hostname: "E2E", workdir });
-    await call("codex:reportAccount", { token, available: true, authMode: "chatgpt", planType: "plus" }).catch(() => {});
-  };
-  await online();
-  heartbeat = setInterval(() => void online().catch(() => {}), 20_000);
-
-  // --- The seed: artifacts/ui-consistency's, then what the other changed screens need ----------
-  const project = await call<string>("projects:create", { key: KEY, name: "Kitchen renovation" });
-  const chat = async (title: string) => {
-    const id = await call<string>("dashboard:createChat", { key: KEY });
-    await call("dashboard:renameChat", { key: KEY, id, title }).catch(() => {});
-    return id;
-  };
-  const turn = async (id: string, text: string, finish: { response?: string; error?: string; spans?: object[] }) => {
-    await call("dashboard:sendChat", { key: KEY, id, text });
-    let queued: { _id: string } | undefined;
-    await until(async () => { queued = (await call<Array<{ _id: string; conversationId: string }>>("codex:queuedTurns", { token })).find((item) => item.conversationId === id); return Boolean(queued); }, "the turn to queue", 30);
-    await call("codex:claimTurn", { token, id: queued!._id });
-    if (finish.spans) await call("codex:traceTurn", { token, id: queued!._id, spans: finish.spans, steps: 3, usage: { inputTokens: 18_204, cachedInputTokens: 12_000, outputTokens: 912 } });
-    await call("codex:finishTurn", { token, id: queued!._id, ...(finish.response ? { response: finish.response, model: "gpt-6-luna" } : {}), ...(finish.error ? { error: finish.error } : {}) });
-  };
-
-  const planChat = await chat("Plan my week");
-  const receiptsChat = await chat("Export last year's receipts");
-  const memoryChat = await chat("Coffee order");
-  const coffee = await call<{ id?: string }>("memories:add", { text: "Sam takes their coffee black, no sugar.", tags: [], source: "e2e", kind: "profile", origin: "owner" });
-  await call("memories:add", { text: "In this chat, answers stay under three lines.", tags: [], source: "e2e", kind: "core", origin: "owner", conversationId: memoryChat });
-  await call("memories:add", { text: "The kitchen tiles are the matte green ones from Porto.", tags: [], source: "e2e", kind: "core", origin: "owner", projectId: project });
-  await call("memories:add", { text: "Prefers trains to flights for trips under six hours.", tags: [], source: "dreaming", kind: "core", origin: "owner" });
-  await call("memories:add", { text: "Booked passport photos for Saturday at 11:00.", tags: [], source: "e2e", kind: "daily", origin: "owner" });
-
-  const started = Date.now() - 40_000;
-  await turn(planChat, "$weekly-review Plan my week, and tick off what's already done.", {
-    response: `${CHECKLIST_REPLY}\nmemories: ${coffee.id}`,
-    spans: [
-      { callId: "c1", kind: "command", name: "Get-Content calendar.ics", status: "ok", startedAt: started, durationMs: 1_800, input: "Get-Content C:\\Users\\sam\\calendar.ics | Select-String 'DTSTART'", output: "DTSTART:20261002T083000" },
-      { callId: "c2", kind: "fileChange", name: "notes/week.md", status: "ok", startedAt: started + 2_000, durationMs: 400, input: "notes/week.md", output: "Added the week's plan." },
-    ],
-  });
-  await turn(receiptsChat, "Export last year's receipts from the bank.", { error: "The bank's export page asked for a one-time code, and none was available." });
-
-  const today = new Date();
-  const at = (days: number, hours: number, minutes = 0) => { const d = new Date(today); d.setDate(d.getDate() + days); d.setHours(hours, minutes, 0, 0); return d.getTime(); };
-  await call("todos:add", { key: KEY, title: "Stretch", dueAt: at(1, 11), repeat: "0 11 * * *" });
-  await call("todos:add", { key: KEY, title: "Water the plants", dueAt: Date.now() + 2 * 3_600_000 });
-  await call("todos:add", { key: KEY, title: "Weekly review", dueAt: at(2, 16), repeat: "0 16 * * 5" });
-  const done = await call<string>("todos:add", { key: KEY, title: "Send the invoice to Priya" });
-  await call("todos:setDone", { key: KEY, id: done, done: true });
-
-  const job = await call<{ id: string }>("jobs:create", { name: "Morning briefing", schedule: "0 8 * * 1-5", prompt: "Summarise my calendar and anything urgent in email." });
-  await call("jobs:trigger", { id: job.id });
-  await call("jobs:finished", { id: job.id, result: "Three meetings today; the 14:00 with Priya moved to 15:30." });
-
-  await call("updates:finished", { result: {
-    id: "e2e-update", by: "nightly", at: Date.now() - 3 * 3_600_000, ok: false, from: "6fb9d92", to: "429446f",
-    error: "pnpm install could not reach the registry.", log: "step 1: ok\nstep 2: ERR_PNPM_META_FETCH_FAIL",
-  } });
-
-  await call("approvals:request", { token, kind: "command", title: "Remove-Item -Recurse .\\build-cache", cwd: join(workdir, "site"), conversationId: planChat });
-  const old = await call<{ id: string }>("approvals:request", { token, kind: "command", title: "git push origin main --force-with-lease", cwd: workdir });
-  await call("approvals:decide", { key: KEY, id: old.id, approved: false });
-
-  // A person to brief, a login, a goal, a watch, and a task waiting on a question.
-  await call("contacts:learn", { items: [{ channel: "whatsapp", externalId: "15550001111@s.whatsapp.net", kind: "person", name: "Datta" }] });
-  // Allowed, as the owner's yes makes him: People lists only who Perry talks with, or is asked about.
-  const datta = await call<{ _id: string }>("contacts:byChat", { channel: "whatsapp", externalId: "15550001111@s.whatsapp.net" });
-  await call("contacts:decided", { contactId: datta._id, kind: "contact", approved: true });
-  await call("dashboard:saveToVault", { key: KEY, label: "Netflix", url: "https://www.netflix.com/login", username: "sam@example.com", value: "e2e-not-a-password" });
-  await call("dashboard:saveGoal", { key: KEY, title: "Run a half marathon by March", description: "", milestones: [{ title: "Run 5 km without stopping", done: true }, { title: "Run 10 km", done: false }] }).catch((error) => { notes.goalSeed = String(error); });
-  await call("dashboard:saveMonitor", { key: KEY, title: "Headphones back in stock", url: "https://example.com/headphones", condition: "contains", value: "In stock", intervalMinutes: 60 }).catch((error) => { notes.watchSeed = String(error); });
-  const task = await call<string>("tasks:queue", { title: "Compare three flats near work", prompt: "Find three flats near the office." });
-  await sleep(1500);
-  await call("work:updateTask", { taskId: task, status: "blocked", question: "Is ₹40,000 a month the most you'd pay, or is that with the deposit spread out?" }).catch((error) => { notes.taskSeed = String(error); });
+  // --- The seed: artifacts/ui-consistency's, then what the other changed screens need (seed.ts) ----------
+  perry = await startPerry({ repo: REPO, key: KEY, name: "fewer-boxes" });
+  const { base: BASE, call, until, soon } = perry;
+  const { project, planChat, receiptsChat } = await seed(perry, notes);
 
   // --- The browser -------------------------------------------------------------------------
   browser = await openChat(BASE, KEY);
@@ -312,6 +190,7 @@ try {
       && (b.disabled || b.getAttribute("aria-disabled") === "true" || Number(getComputedStyle(b).opacity) < 1)).map((b) => b.getAttribute("aria-label") || b.innerText.trim());
   })()`;
   const boxesFound: Record<string, unknown> = {};
+  const keyPills: Record<string, unknown> = {};
   const badPills: Record<string, unknown> = {};
   const greyed: Record<string, unknown> = {};
   /** Measure a screen at rest: boxes, pills that should not be, and greyed-out primary buttons. */
@@ -342,19 +221,22 @@ try {
     await measure(`chat-reply-${mode}`);
     await collectErrors(`chat-${mode}`);
 
-    // --- Settings, each tab ----------------------------------------------------------------------
-    for (const [tab, words] of [["general", "Quiet hours"], ["usage", "Your plans"], ["keys", "Logins and secrets"], ["people", "Talks with Perry"], ["shortcuts", "Keyboard shortcuts"], ["telegram", "Telegram"], ["whatsapp", "A separate number"]] as const) {
-      await go(`/settings${tab === "general" ? "" : `?tab=${tab}`}`, words);
-      await shot(`settings-${tab}`);
-      await measure(`settings-${tab}-${mode}`);
-      if (!BEFORE && mode === "light" && tab === "general") {
+    // --- Settings, each section (the old tabs' contents, and Computer's) -----------------------------
+    for (const [section, words] of SECTION_WORDS) {
+      await go(`/settings/${section}`, words);
+      await shot(`settings-${section}`);
+      await measure(`settings-${section}-${mode}`);
+      if (!BEFORE && mode === "light" && section === "engines") {
         check("healthyEngineHasNoPill", (await noPillIn(`document.querySelector('[aria-label^="Codex on"]')`)) === true);
       }
-      if (!BEFORE && mode === "light" && tab === "keys") {
-        check("setLoginRowsHaveNoPill", (await evaluate(`![...document.querySelectorAll('main [data-pill]')].some((p) => /Set|Not set/.test(p.innerText))`)) === true);
+      if (!BEFORE && mode === "light" && section === "computers") check("onlineComputerHasNoPill", (await noPillIn(`document.querySelector('ul[aria-label=Computers] li')`)) === true);
+      // The keys, now each beside what it unlocks, and the logins: none wears a Set or Not set pill.
+      if (!BEFORE && mode === "light" && ["engines", "access", "telegram"].includes(section)) {
+        keyPills[section] = await evaluate(`[...document.querySelectorAll('main [data-pill]')].filter((p) => /Set|Not set/.test(p.innerText)).map((p) => p.innerText)`);
       }
-      await collectErrors(`settings-${tab}-${mode}`);
+      await collectErrors(`settings-${section}-${mode}`);
     }
+    if (!BEFORE && mode === "light") check("setLoginRowsHaveNoPill", Object.values(keyPills).every((pills) => (pills as string[]).length === 0) && Object.keys(keyPills).length === 3, keyPills);
 
     // --- Memory, both tabs ---------------------------------------------------------------------------
     await go("/memory", "coffee black");
@@ -399,7 +281,7 @@ try {
     await collectErrors(`todos-${mode}`);
 
     // --- Activity, a run open ---------------------------------------------------------------------------
-    await go("/activity", "Export last year's receipts");
+    await go("/settings/activity", "Export last year's receipts");
     await click(byText("[data-slot=collapsible-trigger]", "Plan my week"));
     await waitFor(`document.body.innerText.includes("Get-Content calendar.ics")`, "the trace", 15).catch(() => {});
     await sleep(400);
@@ -414,15 +296,11 @@ try {
     }
     await collectErrors(`activity-${mode}`);
 
-    // --- Needs you, Computer, Skills -------------------------------------------------------------------
+    // --- Needs you, Skills (Computer is Settings' Computers and Access & approvals, above) ------------------
     await go("/inbox", "build-cache");
     await shot("inbox");
     await measure(`inbox-${mode}`);
-    await go("/computer", "Recent requests");
-    await shot("computer");
-    await measure(`computer-${mode}`);
-    if (!BEFORE && mode === "light") check("onlineComputerHasNoPill", (await noPillIn(`document.querySelector('ul[aria-label=Computers] li')`)) === true);
-    await go("/skills", "weekly-review");
+    await go("/apps/skills", "weekly-review");
     await shot("skills");
     await measure(`skills-${mode}`);
     await collectErrors(`others-${mode}`);
@@ -506,8 +384,8 @@ try {
     check("failedSaveSaysSoAndRetries", failed?.state === "error" && /Couldn't save/.test(failed.text) && /Try again/.test(failed.text) && stillThere === true && notSaved && retried && after?.state === "saved", { failed, stillThere, notSaved, retried, after });
     await collectErrors("autosave-project");
 
-    // --- Autosave: name, personality and USER.md, and USER.md's history -------------------------------
-    await go("/memory?tab=about", "USER.md");
+    // --- Autosave: name and personality (Settings → General), USER.md and its history (Memory) ---------
+    await go("/settings/general", "Your assistant");
     const persona = () => call<Persona>("dashboard:getPersona", { key: KEY });
     await focus(`document.querySelector("#identity-personality")`);
     await typeText("Dry wit, straight talk.");
@@ -519,6 +397,7 @@ try {
     const named = await soon(async () => (await persona()).name === "Pip", 6);
     const identityStatus = await status(`document.querySelector("#identity-personality").closest("section").querySelector("[data-save]")`);
     check("nameAndPersonalitySaveThemselves", personality && named && identityStatus?.text === "Saved" && (await buttonsNamed("Save")) === 0, { personality, named, identityStatus, persona: await persona() });
+    await go("/memory?tab=about", "USER.md");
     const before = (await call<unknown[]>("dashboard:personaHistory", { key: KEY, kind: "user" })).length;
     await click(byText("main button", "Write it"));
     await waitFor(`document.querySelector("#user-md")`, "the USER.md editor");
@@ -538,7 +417,7 @@ try {
     await collectErrors("autosave-about");
 
     // --- Autosave: a person's brief -----------------------------------------------------------------
-    await go("/settings?tab=people", "Talks with Perry");
+    await go("/settings/people", "Talks with Perry");
     await click(byText("main li button", "Brief"));
     await waitFor(`document.querySelector('textarea[aria-label^="What Perry may share with Datta"]')`, "the brief");
     await typeText("He can know my gym times.");
@@ -549,8 +428,8 @@ try {
     check("briefSavesItself", briefed && briefStatus?.text === "Saved" && (await buttonsNamed("Save")) === 0, { briefed, briefStatus });
     await collectErrors("autosave-brief");
 
-    // --- Secrets: never half typed; Enter, or the quiet Save inside the field --------------------------
-    await go("/settings?tab=keys", "Logins and secrets");
+    // --- Secrets: never half typed; Enter, or the quiet Save inside the field (the Gemini key, by its engines) ----
+    await go("/settings/engines", "Gemini API key");
     const gemini = async () => (await call<Array<{ name: string; set: boolean; preview?: string; source: string }>>("dashboard:getKeys", { key: KEY })).find((entry) => entry.name === "GEMINI_API_KEY");
     const field = `document.querySelector("#key-GEMINI_API_KEY")`;
     const inField = (words: string) => evaluate(`[...${field}.closest("[data-slot=input-group]").querySelectorAll("button")].some((b) => b.innerText.trim() === ${JSON.stringify(words)})`);
@@ -574,6 +453,7 @@ try {
       { atRest, half, offered, byEnter, afterEnter, cleared, byClick });
 
     // --- Add login: named for what it does, there only with something to add, and Enter adds ----------
+    await go("/settings/access", "Netflix");
     const vault = () => call<Array<{ label: string; username?: string }>>("dashboard:getVault", { key: KEY });
     await focus(`document.querySelector("#login-label")`);
     await typeText("Spotify");
@@ -625,17 +505,13 @@ try {
   console.error(error);
   if (browser) await browser.send("Page.captureScreenshot", { format: "png" }).then((image: { data: string }) => writeFileSync(join(OUT, `failure${BEFORE ? "-before" : ""}.png`), Buffer.from(image.data, "base64"))).catch(() => {});
 } finally {
-  if (heartbeat) clearInterval(heartbeat);
   browser?.close();
-  if (process.platform === "win32" && server.pid) spawn("taskkill", ["/PID", String(server.pid), "/T", "/F"], { stdio: "ignore" });
-  else server.kill();
-  await sleep(1500);
-  try { rmSync(home, { recursive: true, force: true }); } catch {}
+  await perry?.stop();
 }
 
 if (!BEFORE) {
   const pass = Object.values(checks).length > 0 && Object.values(checks).every(Boolean);
-  const result = { ranAt: new Date().toISOString(), pass, checks, notes, serverLog: pass ? undefined : log.slice(-4000) };
+  const result = { ranAt: new Date().toISOString(), pass, checks, notes, serverLog: pass ? undefined : perry?.log().slice(-4000) };
   writeFileSync(join(OUT, "result.json"), JSON.stringify(result, null, 2) + "\n");
   console.log(pass ? "PASS" : "FAIL");
   process.exit(pass ? 0 : 1);

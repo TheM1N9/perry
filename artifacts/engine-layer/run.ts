@@ -181,7 +181,7 @@ try {
     const image = await send("Page.captureScreenshot", { format: "png" }) as { data: string };
     writeFileSync(join(outDir, name), Buffer.from(image.data, "base64"));
   };
-  await send("Page.navigate", { url: `${BASE}/settings` });
+  await send("Page.navigate", { url: `${BASE}/settings/engines` });
   await until(() => evaluate(`Boolean(document.querySelector('section[aria-label="Engines"]'))`), "Settings' Engines section", 30);
   await until(() => evaluate(`document.querySelector('section[aria-label="Engines"]').innerText.includes("Signed in")`), "Codex signed in on Settings", 30).catch(() => {});
   const settingsText = await evaluate(`document.querySelector('section[aria-label="Engines"]').innerText`) as string;
@@ -378,7 +378,7 @@ try {
     { doc: { engines: oldDoc.engines ?? null, codexAuthMode: oldDoc.codexAuthMode, codexModels: oldDoc.codexModels }, settings: listedOld?.engines, models: oldModels, claimed: oldClaim?.engine ?? null });
 
   // Settings with every kind of computer: this one, another engine, and a runner from before engines.
-  await send("Page.navigate", { url: `${BASE}/settings` });
+  await send("Page.navigate", { url: `${BASE}/settings/engines` });
   await until(() => evaluate(`(document.querySelector('section[aria-label="Engines"]')?.innerText ?? "").includes("Claude Code")`), "Settings to show every engine", 30).catch(() => {});
   await shot("settings-engines-all.png");
   notes.settingsAll = await evaluate(`document.querySelector('section[aria-label="Engines"]').innerText`);

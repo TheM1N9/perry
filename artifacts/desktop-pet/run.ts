@@ -748,7 +748,7 @@ try {
     };
     const recorder = (label: string) => dashboard.evaluate(`document.querySelector('button[aria-label^=${JSON.stringify(`${label}:`)}]')?.click() ?? false`);
     const paletteOpen = () => dashboard.evaluate(`Boolean(document.querySelector('[role=dialog] input[placeholder^="Search chats"]'))`) as Promise<boolean>;
-    await dashboard.send("Page.navigate", { url: `${BASE}/settings?tab=shortcuts` });
+    await dashboard.send("Page.navigate", { url: `${BASE}/settings/desktop-pet` });
     await check("shortcutsPage", async () => /Talk to Perry[\s\S]*Search and commands[\s\S]*New chat/.test(await main()), 30);
     await check("petHotkeyShownWorking", async () => (await main()).includes("Working in the desktop pet"), 20);
     const settingsShot = await dashboard.send("Page.captureScreenshot", { format: "png" });
