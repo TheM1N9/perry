@@ -12,6 +12,21 @@ function Textarea({ className, ref, onInput, ...props }: React.ComponentProps<"t
   const own = React.useRef<HTMLTextAreaElement>(null)
   React.useImperativeHandle(ref, () => own.current as HTMLTextAreaElement)
   React.useLayoutEffect(() => fit(own.current), [props.value])
+  React.useEffect(() => {
+    const area = own.current
+    // Where the browser cannot size it, a new width rewraps the text, so the height must follow it too.
+    if (!area || CSS.supports("field-sizing", "content") || typeof ResizeObserver === "undefined") return
+    let width: number | undefined
+    const observer = new ResizeObserver(([entry]) => {
+      // Its own height changes come here as well; only a change of width needs a new height.
+      if (entry.contentRect.width === width) return
+      width = entry.contentRect.width
+      // Next frame: a height set inside the callback would loop back into it.
+      requestAnimationFrame(() => fit(area))
+    })
+    observer.observe(area)
+    return () => observer.disconnect()
+  }, [])
   return (
     <textarea
       ref={own}
