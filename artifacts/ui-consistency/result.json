@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-01T07:25:54.001Z",
+  "ranAt": "2026-10-01T16:22:05.142Z",
   "pass": true,
   "checks": {
     "checklistIsPerrys": true,
@@ -114,7 +114,7 @@
       ]
     },
     "timePickerSavesDailyTime": {
-      "id": "rbjpkf418ef1gq5rys4gbe36bf",
+      "id": "4p1jq1hvv9dwatf45ktnxvwxe5",
       "name": "E2E stretch reminder",
       "schedule": "45 7 * * *",
       "prompt": "Remind me to stretch.",
@@ -194,7 +194,7 @@
       "second": "Plan my week",
       "picked": {
         "label": "Export last year's receipts: pick a chat",
-        "stored": "em5fc7q9bp5gcykkbk7adam3zy",
+        "stored": "rxy55c09ey4p011behyk68b5cv",
         "menu": false
       }
     },
@@ -347,16 +347,16 @@
         "focus": "2 Oct 2026, 08:00"
       },
       "last ran": {
-        "hover": "1 Oct 2026, 12:53",
-        "focus": "1 Oct 2026, 12:53"
+        "hover": "1 Oct 2026, 21:50",
+        "focus": "1 Oct 2026, 21:50"
       },
       "approval expiry": {
         "hover": "Unanswered requests are declined when this runs out",
         "focus": "Unanswered requests are declined when this runs out"
       },
       "workdir": {
-        "hover": "W:\\perry-tests\\ui-consistency\\perry-ui-consistency-yLE1LZ\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure\\site",
-        "focus": "W:\\perry-tests\\ui-consistency\\perry-ui-consistency-yLE1LZ\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure\\site"
+        "hover": "W:\\perry-tests\\homes\\perry-ui-consistency-Wn4ciB\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure\\site",
+        "focus": "W:\\perry-tests\\homes\\perry-ui-consistency-Wn4ciB\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure\\site"
       },
       "command": {
         "hover": "git push origin main --force-with-lease --no-verify # after the rebase of the long-lived feature branch",
