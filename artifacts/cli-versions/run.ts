@@ -198,8 +198,9 @@ try {
   await p.shot("settings-update-required.png");
   const signIn = await call("engines:requestAuth", { key: KEY, runnerId: (await computers())[0].id, engine: "codex", kind: "login" }).then(() => "accepted", (error: Error) => error.message);
   check("settingsSaysWhatToUpdate", settings.split("Update required").length === 3 && settings.includes("Update available")
-    && settings.includes("npm install -g @openai/codex@latest") && settings.includes("claude update") && settings.includes("grok update")
-    && settings.includes("older than Perry works with (0.136.0 or newer)") && settings.includes("Grok Build 1.0.44 is out"),
+    // Each command is folded under "Or run it yourself" since #192 (commandFitsInstall checks them); Update runs it.
+    && settings.split("Or run it yourself").length === 4 && settings.split(/\nUpdate\n/).length === 4
+    && settings.includes("Perry needs 0.136.0 or newer") && settings.includes("Grok Build 1.0.44 is out"),
     settings.slice(0, 1400));
   check("tooOldCannotSignIn", /Codex 0\.120\.0 on .* is too old for Perry/.test(signIn), signIn);
 
