@@ -292,16 +292,18 @@ async function clickable(step: string, { ghost = false } = {}) {
   // 4. A move over him on his page: Windows hit-tests his window at his body (a click there is his); off him, not.
   // Up to three tries: something of the owner's that pops up over everything (a taskbar preview) can be there a moment.
   type Hit = { hwnd: number; title: string; pid: number };
+  // The title of a window that is not the test pet's (the owner's own) stays out of the results.
+  const hit = (x: number, y: number) => { const h = win32("hit", String(x), String(y)) as Hit; return latest().some((w) => w.hwnd === h.hwnd) ? h : { ...h, title: "(another window)" }; };
   const tries: Array<{ over: Hit; transparent: boolean; off: Hit }> = [];
   for (let i = 0; i < 3; i++) {
     await t.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: body.x, y: body.y, button: "none", buttons: 0 });
     await sleep(400);
-    const over = win32("hit", String(at.x), String(at.y)) as Hit;
+    const over = hit(at.x, at.y);
     // WS_EX_TRANSPARENT on his window: Windows passes clicks through it.
     const transparent = ((petWindows().find((w) => w.hwnd === win.hwnd)?.exstyle ?? 0x20) & 0x20) !== 0;
     await t.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 6, y: 6, button: "none", buttons: 0 });
     await sleep(400);
-    const off = win32("hit", String(at.x), String(at.y)) as Hit;
+    const off = hit(at.x, at.y);
     tries.push({ over, transparent, off });
     const settled = ghost ? over.hwnd !== win.hwnd && transparent : over.hwnd === win.hwnd && !transparent;
     if (settled && off.hwnd !== win.hwnd) break;

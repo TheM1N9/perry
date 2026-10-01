@@ -159,7 +159,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "T3 Code (Alpha)",
+            "title": "(another window)",
             "hwnd": 920182,
             "pid": 9848
           }
@@ -181,7 +181,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "T3 Code (Alpha)",
+            "title": "(another window)",
             "hwnd": 920182,
             "pid": 9848
           }
@@ -280,7 +280,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -302,7 +302,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -423,7 +423,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -445,7 +445,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -526,7 +526,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -548,7 +548,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -647,7 +647,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -669,7 +669,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -772,7 +772,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -794,7 +794,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -867,13 +867,13 @@
       "tries": [
         {
           "over": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -886,7 +886,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -902,13 +902,13 @@
       "tries": [
         {
           "over": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -921,7 +921,7 @@
           },
           "transparent": false,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }
@@ -988,13 +988,13 @@
       "tries": [
         {
           "over": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           },
           "transparent": true,
           "off": {
-            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "title": "(another window)",
             "hwnd": 1050002,
             "pid": 6604
           }

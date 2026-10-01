@@ -45,6 +45,8 @@ public class PetWin {
   }
 }
 '@
+# UTF-8 out: a title of the owner's in the console's code page (850 here) can end a JSON string mid-character.
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 # Physical pixels, as Electron's own windows are placed.
 [PetWin]::SetProcessDpiAwarenessContext([IntPtr]::new(-4)) | Out-Null
 switch ($op) {
