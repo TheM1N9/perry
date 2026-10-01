@@ -87,12 +87,10 @@ export function Skills() {
 
   return (
     <Page title="Skills" actions={refreshButton}
-      description={<>How Perry does particular kinds of work. He writes a skill when you tell him how you like something done, and imports someone else&apos;s once you say yes. Type <Kbd className="font-mono">$</Kbd> in a chat to use one.</>}>
+      description={<>Type <Kbd className="font-mono">$</Kbd> in a chat to use one.</>}>
       {error && <Alert variant="destructive" className="mb-6"><TriangleAlertIcon /><AlertTitle>Couldn&apos;t read the skills folder</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
       {skills === null ? <ListSkeleton /> : skills.length === 0 ? (
-        <EmptyState title="No skills yet" mascot>
-          Tell Perry how you like something done (&ldquo;from now on, write my weekly review like this&rdquo;), or give him the address of a skill to look over and install.
-        </EmptyState>
+        <EmptyState title="No skills yet" mascot>Tell Perry how you like something done.</EmptyState>
       ) : (
         <List label="Skills">
           {skills.map((skill) => (
@@ -161,7 +159,7 @@ function SkillDialog({ skill, onClose, onRemove }: { skill: SkillView | null; on
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
               <dt className="text-muted-foreground">From</dt>
               <dd className="min-w-0 [overflow-wrap:anywhere]">
-                {!skill.source ? "Written by Perry in a chat, or put in his skills folder by hand."
+                {!skill.source ? "Written by Perry, or added by hand."
                   : /^https?:\/\//i.test(skill.source) ? <>Imported from <a href={skill.source} target="_blank" rel="noopener noreferrer" className="link">{skill.source}</a></>
                   : <>Imported from <span className="font-mono text-sm">{skill.source}</span></>}
               </dd>

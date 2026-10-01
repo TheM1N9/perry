@@ -45,12 +45,12 @@ export function Inbox() {
   const empty = !loading && live.length === 0 && inbox.length === 0;
 
   return (
-    <Page title="Needs you" description="What's waiting on you. Answer here, or in the chat it came from."
+    <Page title="Needs you"
       actions={dismissable.length > 1 && <ActionButton variant="outline" size="sm" action={() => clear(dismissable)} success="Cleared.">Clear all</ActionButton>}>
       {loading && <ListSkeleton rows={2} />}
-      {empty && <EmptyState mascot title="You're all caught up">Approvals, questions and anything that failed land here, as it happens.</EmptyState>}
+      {empty && <EmptyState mascot title="You're all caught up" />}
       {live.length > 0 && (
-        <Section title="Approvals" description="A computer is waiting to do this. Unanswered requests are declined after ten minutes.">
+        <Section title="Approvals" description="Unanswered requests are declined after ten minutes.">
           <div className="space-y-3">{live.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} />)}</div>
         </Section>
       )}
