@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MessageSquarePlusIcon, PuzzleIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { MessageSquarePlusIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useAction } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -96,8 +96,7 @@ export function Skills() {
       ) : (
         <List label="Skills">
           {skills.map((skill) => (
-            <li key={skill.folder} className="flex items-start gap-3 px-4 py-3" data-skill={skill.name}>
-              <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-full border bg-background text-muted-foreground" aria-hidden><PuzzleIcon className="size-4" /></span>
+            <li key={skill.folder} className="flex items-start gap-3 py-3" data-skill={skill.name}>
               <button type="button" className="min-w-0 flex-1 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setOpen(skill.name)}>
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-sm font-medium">{skill.name}</span>
@@ -158,7 +157,7 @@ function SkillDialog({ skill, onClose, onRemove }: { skill: SkillView | null; on
           </DialogHeader>
           <ScrollArea className="-mx-4 min-h-0" viewportClassName="px-4" data-skill-read={skill.name}>
           <div className="space-y-4">
-            {skill.problem && <Alert><TriangleAlertIcon /><AlertTitle>Not loaded</AlertTitle><AlertDescription>{skill.problem}</AlertDescription></Alert>}
+            {skill.problem && <Alert variant="quiet"><TriangleAlertIcon /><AlertTitle>Not loaded</AlertTitle><AlertDescription>{skill.problem}</AlertDescription></Alert>}
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
               <dt className="text-muted-foreground">From</dt>
               <dd className="min-w-0 [overflow-wrap:anywhere]">
@@ -176,7 +175,7 @@ function SkillDialog({ skill, onClose, onRemove }: { skill: SkillView | null; on
             {shown?.error ? <p className="text-sm text-destructive" role="alert">{shown.error}</p>
               : !shown?.skill ? <div className="space-y-2" role="status" aria-label="Loading"><Skeleton className="h-4 w-2/3" /><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-5/6" /></div>
               : (
-                <div className="rounded-xl border px-4 py-3" data-skill-md>
+                <div className="border-t pt-4" data-skill-md>
                   <p className="mb-2 font-mono text-xs text-muted-foreground">SKILL.md</p>
                   <Markdown text={readable(shown.skill.skill)} />
                 </div>

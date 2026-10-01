@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MonitorIcon, Trash2Icon } from "lucide-react";
+import { Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
@@ -43,7 +43,7 @@ export function Computer() {
         {active.length === 0
           ? (
             <EmptyState title={compute.runners.length ? "Every computer here was revoked" : "No computer connected"}
-              action={<div className="w-[min(360px,80vw)]"><CommandLine>perry start</CommandLine></div>}>
+              action={<CommandLine>perry start</CommandLine>}>
               Start Perry on the computer you want it to use.
             </EmptyState>
           )
@@ -66,12 +66,11 @@ function RunnerRow({ runner }: { runner: ComputeView["runners"][number] }) {
   const state: { tone: Tone; label: string } = runner.revoked ? { tone: "danger", label: "Revoked" } : runner.online ? { tone: "success", label: "Online" } : { tone: "neutral", label: "Offline" };
 
   return (
-    <li className={cn("flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-start", runner.revoked && "opacity-60")}>
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted max-sm:hidden" aria-hidden><MonitorIcon className="size-5 text-muted-foreground" /></span>
+    <li className={cn("flex flex-col gap-4 py-4 sm:flex-row sm:items-start", runner.revoked && "opacity-60")}>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-baseline gap-2">
           <h3 className="font-medium">{runner.name}</h3>
-          <StatusBadge tone={state.tone} pulse={runner.online}>{state.label}</StatusBadge>
+          <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
         </div>
         <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
           <span>{runner.platform ?? "Unknown system"}</span>
@@ -107,7 +106,7 @@ function Rules({ telegram }: { telegram: ComputeView["telegramApprovals"] }) {
   return (
     <Section title="Always allowed" description="Saved when you answer with Always allow; a matching request runs without asking. A decline is never remembered.">
       {telegram.ownerOnTelegram && (
-        <label className="mb-3 flex cursor-pointer items-start justify-between gap-4 rounded-xl border bg-card px-4 py-3.5">
+        <label className="mb-4 flex cursor-pointer items-start justify-between gap-4">
           <span className="grid gap-0.5">
             <span className="text-sm font-medium">Ask me on Telegram too</span>
             <span className="text-sm text-muted-foreground">Requests arrive there with Approve, Decline and Always allow.</span>
@@ -121,9 +120,9 @@ function Rules({ telegram }: { telegram: ComputeView["telegramApprovals"] }) {
       {rules && rules.length > 0 && (
         <List label="Rules">
           {rules.map((rule) => (
-            <li key={rule.id} className="flex items-start gap-4 px-4 py-3.5">
+            <li key={rule.id} className="flex items-start gap-4 py-3.5">
               <div className="min-w-0 flex-1">
-                {rule.command && <code className="block max-h-28 overflow-auto rounded-lg bg-muted px-3 py-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{rule.command}</code>}
+                {rule.command && <code className="line-clamp-4 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{rule.command}</code>}
                 <p className="mt-1.5 text-sm text-pretty">{rule.description}</p>
                 <p className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
                   <span>{rule.runner}</span>
@@ -171,7 +170,7 @@ function Recent() {
           {recent.map((item) => {
             const status = STATUS[item.status] ?? { tone: "neutral" as Tone, label: item.status };
             return (
-              <li key={item.id} className="flex items-start gap-4 px-4 py-3">
+              <li key={item.id} className="flex items-start gap-4 py-3">
                 <div className="min-w-0 flex-1">
                   <TextTip tip={<code className="font-mono">{item.title}</code>} className="block truncate"><code className="font-mono text-xs">{item.title}</code></TextTip>
                   <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
