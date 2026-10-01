@@ -177,7 +177,7 @@ const pill = "h-8 gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-sm fo
  */
 function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, access, onAccess, accessDisabled }: Pickers) {
   const efforts = modelInfo?.efforts ?? [];
-  const keyOf = (item: ModelOption) => modelKey(item.engine ?? "codex", item.id);
+  const keyOf = (item: ModelOption) => modelKey(item.engine, item.id);
   const engines = enginesOf(models ?? []);
   const modelItems = (models ?? []).map((item) => ({ value: keyOf(item), label: item.name }));
   const modelItem = (item: ModelOption) => (

@@ -7,14 +7,16 @@ change goes in through a pull request against `main`.
 ## Running from source
 
 You need Node.js 20.9 or newer, [pnpm](https://pnpm.io), [Bun](https://bun.sh)
-and the [Codex CLI](https://github.com/openai/codex) signed in to ChatGPT.
-Use pnpm, not npm.
+and one engine's CLI signed in: [Codex](https://github.com/openai/codex),
+[Claude Code](https://code.claude.com) or Grok Build. `perry setup` asks which
+one Perry uses by default (`--engine <name>` answers without asking). Use
+pnpm, not npm.
 
 ```bash
 git clone https://github.com/TheM1N9/perry.git
 cd perry
 pnpm install
-pnpm perry setup    # writes .env.local, connects this computer, starts Perry
+pnpm perry setup    # writes .env.local, asks for the default engine, connects this computer, starts Perry
 ```
 
 For working on the dashboard with hot reload, stop the background service
@@ -32,7 +34,7 @@ change without the dashboard.
 
 ```
 Telegram / WhatsApp ─┐
-                     ├─> Perry's server: dashboard + backend ─> runner ─> Codex
+                     ├─> Perry's server: dashboard + backend ─> runner ─> the engine (Codex, Claude Code, ...)
 Web chat ────────────┘    SQLite in ~/.perry
 ```
 
@@ -41,7 +43,7 @@ Web chat ────────────┘    SQLite in ~/.perry
 | `app/`, `components/` | The dashboard (Next.js) |
 | `convex/` | Backend functions: chats, memory, jobs, approvals, Perry's MCP tools |
 | `server/` | The local runtime those functions run on, over SQLite |
-| `runner/` | The process that drives Codex on your machine (Bun) |
+| `runner/` | The process that drives the engines on your machine (Bun) |
 | `scripts/` | The `perry` CLI: setup, service, update, doctor |
 | `pet/` | The desktop companion (Electron) |
 | `site/` | The public landing page, a separate Next.js app |

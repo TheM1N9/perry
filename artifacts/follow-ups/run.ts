@@ -78,7 +78,7 @@ const ownerSays = (text: string) => telegram.pending.push({
 
 const env: NodeJS.ProcessEnv = {
   ...process.env,
-  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   TELEGRAM_BOT_TOKEN: "123456:follow-ups-e2e",
   TELEGRAM_API_BASE: `http://127.0.0.1:${(stub.address() as { port: number }).port}`,
 };

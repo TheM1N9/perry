@@ -1,8 +1,14 @@
 /**
  * The engines a chat can run on: the coding agents on the owner's computer,
- * each signed in with the owner's own subscription. Codex is the only one
- * built so far; the rest are named here so a chat, a turn or a runner's report
- * can already hold them (runner/engine.ts says how one is added).
+ * each signed in with the owner's own subscription. Codex, Claude Code, Grok
+ * Build and Antigravity are built (runner/engines); Cursor is named here so a
+ * chat, a turn or a runner's report can already hold it (runner/engine.ts
+ * says how one is added).
+ *
+ * Which one Perry uses by default is the owner's choice, made in `perry
+ * setup`, on the welcome page or in Settings → Engines, and kept on
+ * the installation (installation.ts, defaultEngine). Nothing picks one for
+ * them: with none chosen, Perry asks rather than starting a turn.
  *
  * Pure, with no server imports, so the browser bundle and the runner use it too.
  */
@@ -10,8 +16,20 @@
 export const ENGINES = ["codex", "claude", "grok", "cursor", "antigravity"] as const;
 export type EngineKind = (typeof ENGINES)[number];
 
-/** Chats, turns and jobs from before engines ran on Codex, and leave it unset. */
-export const DEFAULT_ENGINE: EngineKind = "codex";
+/** The engines a runner drives today (runner/engines/index.ts): the ones the owner can choose as the default. */
+export const RUNNABLE_ENGINES: readonly EngineKind[] = ["codex", "claude", "grok", "antigravity"];
+export const isRunnable = (value: unknown): value is EngineKind => (RUNNABLE_ENGINES as readonly unknown[]).includes(value);
+
+/**
+ * A chat with someone other than the owner runs on Codex, whatever the
+ * default: its runner can take away Codex's shell, files and computer for the
+ * turn (runner/engines/codex.ts, guest), which no other engine here offers,
+ * and only that is safe with someone else's words. A capability, not a pick.
+ */
+export const GUEST_ENGINE: EngineKind = "codex";
+
+/** What a turn is refused with while the owner has not chosen an engine for Perry, nor a model for the chat. */
+export const NO_ENGINE = "Perry has no default engine yet. Choose one in Settings → Engines, or pick a model for this chat, then send it again.";
 
 export const ENGINE_LABELS: Record<EngineKind, string> = {
   codex: "Codex",
@@ -32,8 +50,13 @@ export const SIGN_IN_LABELS: Record<EngineKind, string> = {
 
 export const isEngine = (value: unknown): value is EngineKind => (ENGINES as readonly unknown[]).includes(value);
 
-/** The engine of a chat, turn or job; unset is Codex. */
-export const engineOf = (item?: { engine?: EngineKind } | null): EngineKind => item?.engine ?? DEFAULT_ENGINE;
+/**
+ * The engine a chat, turn or job was set to, if any. Nothing stands in for an
+ * unset one: a chat or job without its own follows the owner's default engine
+ * (installation.ts, engineFor), and an install from before engines had its
+ * rows set to Codex, what they ran on, when it was brought forward.
+ */
+export const engineOf = (item?: { engine?: EngineKind } | null): EngineKind | undefined => item?.engine;
 
 /**
  * What the owner does to finish signing an engine in. Perry never proxies a
@@ -49,15 +72,15 @@ export type LoginInteraction =
 
 /**
  * A model as pickers and commands name it: "<engine>/<model id>", so the same
- * id on two engines stays two choices. A bare id is Codex's, as chats and jobs
- * from before engines stored it.
+ * id on two engines stays two choices. A bare id names no engine: the caller
+ * keeps the chat's.
  */
 export const modelKey = (engine: EngineKind, id: string) => `${engine}/${id}`;
 
-export function parseModelKey(key: string): { engine: EngineKind; id: string } {
+export function parseModelKey(key: string): { engine?: EngineKind; id: string } {
   const slash = key.indexOf("/");
   const engine = slash > 0 ? key.slice(0, slash) : "";
-  return isEngine(engine) ? { engine, id: key.slice(slash + 1) } : { engine: DEFAULT_ENGINE, id: key };
+  return isEngine(engine) ? { engine, id: key.slice(slash + 1) } : { id: key };
 }
 
 // --- Versions -----------------------------------------------------------------

@@ -8,7 +8,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { ABSOLUTE_PATH } from "./media";
 import { projectFrom } from "./projects";
 import { vEngine, vTrigger } from "./schema";
-import { engineOf, type EngineKind } from "./lib/engines";
+import type { EngineKind } from "./lib/engines";
 
 /**
  * Proactivity: named jobs that run a prompt as a Codex turn, either on a cron
@@ -320,7 +320,7 @@ export const run = internalAction({
       externalId: chat.externalId,
       text: `${job.trigger ? "⚡" : "⏰"} ${job.name} (${now})\n\n${job.prompt}${context}\n\n${CONDITIONAL_DELIVERY}`,
       title: chat.title,
-      ...(job.model ? { model: job.model, engine: engineOf(job) } : {}),
+      ...(job.model ? { model: job.model, engine: job.engine } : {}),
     });
     return null;
   },
@@ -372,7 +372,8 @@ export type JobView = {
   enabled: boolean;
   builtin?: string;
   model?: string;
-  engine: EngineKind;
+  /** The engine `model` is one of; unset without a model, when the job runs on its chat's engine or the default. */
+  engine?: EngineKind;
   nextRunAt: number;
   lastRunAt?: number;
   lastResult?: string;
@@ -390,7 +391,7 @@ const view = (job: Doc<"jobs">): JobView => ({
   enabled: job.enabled,
   builtin: job.builtin,
   model: job.model,
-  engine: engineOf(job),
+  engine: job.engine,
   nextRunAt: job.nextRunAt,
   lastRunAt: job.lastRunAt,
   lastResult: job.lastResult,

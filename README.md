@@ -20,8 +20,11 @@
 ## What it is
 
 Perry is an assistant you install once and then just message. It thinks with
-the [Codex CLI](https://github.com/openai/codex) on your ChatGPT subscription,
-so there is no API bill and no extra account to make.
+a coding agent on your own subscription, the one you choose:
+[Codex](https://github.com/openai/codex) on ChatGPT,
+[Claude Code](https://code.claude.com) on Claude, Grok Build on Grok, or
+Antigravity (experimental) on Google. There is no API bill and no extra
+account to make.
 
 Everything stays yours: Perry runs on your computer, keeps its data in a
 single file there, and has no server of its own to send anything to. Anyone
@@ -50,7 +53,8 @@ can run their own copy, and every copy is separate.
 
 ## Install
 
-You need a ChatGPT account (for Codex) and a Mac, Linux or Windows computer.
+You need a Mac, Linux or Windows computer, and an account with one of the
+engines above (ChatGPT for Codex, Claude for Claude Code, and so on).
 
 macOS or Linux:
 
@@ -64,10 +68,17 @@ Windows (PowerShell):
 iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
 ```
 
-The installer adds anything missing (Node.js, pnpm, Bun, the Codex CLI), puts
-Perry in `~/perry`, and walks you through setup: sign in to Codex, optionally
-connect a Telegram bot, and open the dashboard. Perry then runs in the
-background and starts with your computer.
+The installer adds anything missing (Node.js, pnpm, Bun), puts Perry in
+`~/perry`, and walks you through setup: optionally connect a Telegram bot,
+choose the engine Perry thinks with (it shows which ones are installed and
+signed in, and never picks one for you), install and sign in to it, and open
+the dashboard. Perry then runs in the background and starts with your
+computer. Change the engine any time in Settings → Engines.
+
+Installing where nobody can answer questions, such as a server or CI? Name
+the engine: `sh -s -- --engine claude` after the `curl ... |`, or
+`$env:PERRY_ENGINE='claude'` before the PowerShell line. Without it, setup
+stops rather than guess.
 
 Already cloned the repo? Run `pnpm install` and then `pnpm perry setup`.
 [INSTALL.md](INSTALL.md) has the details for each OS.

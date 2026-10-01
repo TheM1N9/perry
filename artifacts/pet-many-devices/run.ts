@@ -114,7 +114,7 @@ const entryB = `Perry pet-${createHash("sha256").update(homeB).digest("hex").sli
 
 // --- Perry's server ---------------------------------------------------------------
 
-const serverEnv: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: homeA, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
+const serverEnv: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: homeA, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
 for (const name of ["TELEGRAM_BOT_TOKEN", "ELECTRON_RUN_AS_NODE", "PERRY_HOST", "PERRY_URL", "COMPOSIO_API_KEY"]) delete serverEnv[name];
 for (const name of Object.keys(serverEnv)) if (name.startsWith("CONVEX")) delete serverEnv[name];
 let serverLog = "";

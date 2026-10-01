@@ -12,7 +12,7 @@ import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
 import { api } from "../convex/_generated/api";
 import { describeModels, parseModelCommand, pickModel } from "../convex/lib/commands";
-import { engineOf, type EngineKind } from "../convex/lib/engines";
+import type { EngineKind } from "../convex/lib/engines";
 import { bold, dim, red, yellow } from "./lib";
 import { Perry, type ChatId } from "./perry-client";
 
@@ -145,11 +145,12 @@ async function handle(text: string): Promise<void> {
     const { models } = await perry.convex.query(api.models.options, { key: perry.key });
     const chat = chatId ? await perry.getChat(chatId) : undefined;
     const picked = chat ? chat.model : draftModel;
-    const engine = chat ? chat.engine : draftEngine ?? "codex";
+    // A chat not started yet is on the owner's default engine, unless a model was picked for it; none while there is no default.
+    const engine = chat ? chat.engine : draftEngine ?? (await perry.convex.query(api.dashboard.getDefaultEngine, { key: perry.key })) ?? undefined;
     if (!modelCommand.name) return console.log(dim(describeModels(models, picked, engine)));
     const choice = pickModel(models, modelCommand.name, undefined, engine);
-    if (choice.model && chatId) await perry.setModel(chatId, choice.model.id, engineOf(choice.model));
-    else if (choice.model) { draftModel = choice.model.id; draftEngine = engineOf(choice.model); }
+    if (choice.model && chatId) await perry.setModel(chatId, choice.model.id, choice.model.engine);
+    else if (choice.model) { draftModel = choice.model.id; draftEngine = choice.model.engine; }
     console.log(dim(choice.reply));
     return;
   }

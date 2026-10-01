@@ -130,7 +130,7 @@ async function perry(label: string) {
   const base = `http://127.0.0.1:${port}`;
   const home = mkdtempSync(join(homes, `perry-heartbeat-todos-${label}-`));
   const env: NodeJS.ProcessEnv = {
-    ...process.env, PERRY_HOME: home, PERRY_PORT: String(port), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+    ...process.env, PERRY_HOME: home, PERRY_PORT: String(port), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
     TELEGRAM_BOT_TOKEN: "123456:heartbeat-todos-e2e", TELEGRAM_API_BASE: `http://127.0.0.1:${(stub.address() as { port: number }).port}`,
   };
   for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name === "NEXT_PUBLIC_CONVEX_URL" || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE") delete env[name];

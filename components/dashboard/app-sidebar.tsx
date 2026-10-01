@@ -12,7 +12,7 @@ import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { ChatSummary } from "@/convex/dashboard";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
-import { DEFAULT_ENGINE, type EngineKind } from "@/convex/lib/engines";
+import type { EngineKind } from "@/convex/lib/engines";
 import { errorText } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useShortcuts } from "@/hooks/use-shortcuts";
@@ -417,12 +417,13 @@ function ComputerStatus() {
 type SignedIn = { kind: EngineKind; label: string; account?: string };
 
 /**
- * The engines signed in on a computer that is online, the one new chats start
- * on first, each with the account it uses as its maker names it: "ChatGPT Plus".
+ * The engines signed in on a computer that is online, the owner's default
+ * first, each with the account it uses as its maker names it: "ChatGPT Plus".
  */
 function useSignedIn(): SignedIn[] | undefined {
   const { dashboardKey } = useSession();
   const computers = useQuery(api.engines.list, { key: dashboardKey });
+  const preferred = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
   return useMemo(() => {
     if (!computers) return undefined;
     const found = new Map<EngineKind, SignedIn>();
@@ -433,8 +434,8 @@ function useSignedIn(): SignedIn[] | undefined {
         found.set(engine.kind, { kind: engine.kind, label: engine.label, account: [engine.auth.label, plan].filter(Boolean).join(" ") || undefined });
       }
     }
-    return [...found.values()].sort((a, b) => Number(b.kind === DEFAULT_ENGINE) - Number(a.kind === DEFAULT_ENGINE));
-  }, [computers]);
+    return [...found.values()].sort((a, b) => Number(b.kind === preferred) - Number(a.kind === preferred));
+  }, [computers, preferred]);
 }
 
 /**

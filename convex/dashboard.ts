@@ -7,10 +7,10 @@ import { action, mutation, query, type MutationCtx, type QueryCtx } from "./_gen
 import { assertDashboardKey } from "./lib/auth";
 import { problemWith, resolve as resolveShortcuts, SHORTCUT_IDS, SHORTCUTS, type ShortcutId, type Shortcuts } from "./lib/shortcuts";
 import { ABSOLUTE_PATH } from "./media";
-import { defaultAccess, type Onboarding } from "./installation";
+import { defaultAccess, defaultEngine, engineFor, type Onboarding } from "./installation";
 import { callName, DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./persona";
 import type { Access } from "./lib/commands";
-import { engineOf, type EngineKind } from "./lib/engines";
+import type { EngineKind } from "./lib/engines";
 import type { CatalogApp, ConnectedAccount } from "./composio";
 import { policyOf, type Policy } from "./runner";
 import { vAccess, vEngine, vMemoryKind, vPolicy } from "./schema";
@@ -220,11 +220,14 @@ export const createChat = mutation({
     assertDashboardKey(args.key);
     if (args.projectId && !await ctx.db.get(args.projectId)) throw new Error("This project was deleted.");
     const threadId = await createThread(ctx, { userId: "web:dashboard", title: "New chat" });
+    const engine = await defaultEngine(ctx);
     return await ctx.db.insert("conversations", {
       channel: WEB_CHANNEL,
       externalId: `session:${threadId}`,
       threadId,
       title: "New chat",
+      // On the owner's default engine, kept when that changes; with none chosen yet, it is set at the first turn.
+      ...(engine ? { engine } : {}),
       access: await defaultAccess(ctx),
       lastMessageAt: Date.now(),
       ...(args.projectId ? { projectId: args.projectId } : {}),
@@ -378,7 +381,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine: EngineKind; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean } }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean } }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
@@ -396,7 +399,8 @@ export const getChat = query({
     const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
     return {
       channel: conversation.channel,
-      engine: engineOf(conversation),
+      // Its own, else the default it follows; unset while there is neither.
+      engine: await engineFor(ctx, conversation),
       ...(project ? { project: { id: project._id, name: project.name } } : {}),
       model: conversation.model,
       effort: conversation.effort,
@@ -717,7 +721,7 @@ export const sendChat = mutation({
       ...(web ? { pendingTurns: (chat.pendingTurns ?? 0) + 1 } : {}),
       // Shown in the chat from now, until a turn or the history has it (conversations.takeFromOutbox).
       outbox: [...(chat.outbox ?? []).filter((entry) => entry.at > Date.now() - OUTBOX_TTL_MS), { text: prompt, at: Date.now() }],
-      ...(args.model !== undefined ? pickPatch(chat, args.model, args.engine) : {}),
+      ...(args.model !== undefined ? pickPatch(chat, args.model, args.engine, await engineFor(ctx, chat)) : {}),
       ...(args.effort !== undefined ? { effort: args.effort.trim() || undefined } : {}),
       ...(args.access !== undefined ? { access: args.access } : {}),
     });
@@ -846,7 +850,7 @@ export const setChatModel = mutation({
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
     const chat = ownerChat(await ctx.db.get(args.id));
-    await ctx.db.patch(args.id, pickPatch(chat, args.model, args.engine));
+    await ctx.db.patch(args.id, pickPatch(chat, args.model, args.engine, await engineFor(ctx, chat)));
     return null;
   },
 });
@@ -878,21 +882,24 @@ export const setChatAccess = mutation({
 
 /** The access new chats start with, for Settings and the composer of a chat not yet sent. */
 /**
- * A new chat starts on the model and thinking level of the chat written in
- * last, so a pick carries over without a setting of its own. A scheduled job's
- * chat has its own model, and is passed over.
+ * A new chat starts on the owner's default engine, with the model and
+ * thinking level of the chat on it written in last, so a pick carries over
+ * without a setting of its own. A scheduled job's chat has its own model, and
+ * is passed over. No engine while the owner has not chosen one.
  */
 export const getLastPicks = query({
   args: { key: vKey },
   handler: async (ctx, args): Promise<{ engine?: EngineKind; model?: string; effort?: string }> => {
     assertDashboardKey(args.key);
+    const engine = await defaultEngine(ctx);
+    if (!engine) return {};
     const recent = await ctx.db.query("conversations")
       .withIndex("by_channel_last", (q) => q.eq("channel", WEB_CHANNEL))
       .order("desc")
       .take(20);
     // A chat sent from the composer always has its model; the welcome chat and the like leave it unset.
-    const last = recent.find((chat) => !chat.jobId && chat.model);
-    return { engine: last ? engineOf(last) : undefined, model: last?.model, effort: last?.effort };
+    const last = recent.find((chat) => !chat.jobId && chat.model && chat.engine === engine);
+    return { engine, model: last?.model, effort: last?.effort };
   },
 });
 
@@ -931,6 +938,26 @@ export const setDefaultAccess = mutation({
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
     await ctx.runMutation(internal.installation.setDefaultAccess, { access: args.access });
+    return null;
+  },
+});
+
+/** The engine Perry uses unless a chat or job picks another, for the welcome page, Settings and the composer. Null until chosen. */
+export const getDefaultEngine = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<EngineKind | null> => {
+    assertDashboardKey(args.key);
+    return (await defaultEngine(ctx)) ?? null;
+  },
+});
+
+/** The owner chose the default engine: new chats start on it, and chats that follow it move to it from their next turn. */
+export const setDefaultEngine = mutation({
+  args: { key: vKey, engine: vEngine },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.installation.setDefaultEngine, { engine: args.engine });
     return null;
   },
 });
@@ -1154,6 +1181,8 @@ export const getStatus = query({
     telegramConfigured: boolean;
     onboarding: Onboarding;
     assistantName: string;
+    /** Unset until the owner chooses one: the welcome page asks first. */
+    defaultEngine?: EngineKind;
   }> => {
     assertDashboardKey(args.key);
 
@@ -1181,6 +1210,7 @@ export const getStatus = query({
       telegramConfigured: Boolean(telegramToken),
       onboarding: install.onboarding,
       assistantName: persona.name,
+      ...(install.defaultEngine ? { defaultEngine: install.defaultEngine } : {}),
     };
   },
 });
@@ -1224,11 +1254,13 @@ async function startWelcomeChat(
   options: { title: string; prompt: string; label: string },
 ): Promise<Id<"conversations">> {
   const threadId = await createThread(ctx, { userId: "web:dashboard", title: options.title });
+  const engine = await defaultEngine(ctx);
   const id = await ctx.db.insert("conversations", {
     channel: WEB_CHANNEL,
     externalId: `session:${threadId}`,
     threadId,
     title: options.title,
+    ...(engine ? { engine } : {}),
     access: await defaultAccess(ctx),
     lastMessageAt: Date.now(),
     pendingTurns: 1,

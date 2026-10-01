@@ -3,9 +3,10 @@
  * `perry` — Perry's one command.
  *
  *   perry setup     set Perry up, or check it, and leave it running: your bot
- *                   and Codex, the dashboard built, Perry running in the
- *                   background from login on, and the dashboard opened,
- *                   already unlocked
+ *                   and the engine you choose to think with (--engine names
+ *                   it where there is no one to ask), the dashboard built,
+ *                   Perry running in the background from login on, and the
+ *                   dashboard opened, already unlocked
  *   perry start     start Perry in the background (installing the service if need be)
  *   perry stop      stop it
  *   perry status    whether it is running, and where the dashboard is
@@ -19,7 +20,7 @@
  *   perry run       run Perry in this terminal instead of the background
  *   perry uninstall stop Perry starting at login, keeping its files or removing them from this computer
  *
- * The runner (Codex on this machine) and the dashboard (a production build of
+ * The runner (the engines on this machine) and the dashboard (a production build of
  * the Next.js app, on PERRY_PORT, 7377 unless set) run together under `perry
  * run`, which restarts either if it dies, and does the updates the dashboard
  * asks for (selfUpdate). The service installed at login runs
@@ -692,8 +693,9 @@ async function pairTelegram() {
   say(`\n      ${bold(green(code))}\n`);
 }
 
-async function setup() {
-  const configured = exec(bunScript("setup.ts", ["--from-perry"]));
+/** `args` go on to setup.ts: `--engine <kind>` names the default engine without asking. */
+async function setup(args: string[]) {
+  const configured = exec(bunScript("setup.ts", ["--from-perry", ...args]));
   if (configured.code !== 0) process.exit(configured.code);
 
   if (!(await build())) process.exit(1);
@@ -712,7 +714,7 @@ ${bold("Your data on Convex")}`);
     else say(dim(`  Skipped. ${bold("perry migrate")} brings them over whenever you like.`));
   }
 
-  // Codex not being signed in was said by setup.ts, where it was checked.
+  // An engine not signed in was said by setup.ts, where it was checked.
   link();
   await open();
   say(dim(`  perry status | logs | stop | start | open | update | doctor\n`));
@@ -765,7 +767,8 @@ async function update() {
 const HELP = `
   ${bold("perry")} setup | start | stop | status | logs [-f] | open | update | migrate | doctor | pair | pet | run | uninstall
 
-  ${bold("setup")}      set Perry up (or check it), start it in the background, open the dashboard
+  ${bold("setup")}      set Perry up (or check it), start it in the background, open the dashboard;
+             ${bold("--engine")} codex|claude|grok|antigravity picks the default engine without asking
   ${bold("start")}      start Perry in the background, from now on at every login
   ${bold("stop")}       stop it
   ${bold("status")}     whether it is running, and where
@@ -783,7 +786,7 @@ const HELP = `
 async function main() {
   const [command = "help", ...rest] = process.argv.slice(2);
   switch (command) {
-    case "setup": return setup();
+    case "setup": return setup(rest);
     case "start": return process.exit((await start()) ? 0 : 1);
     case "stop": return stop();
     case "status": return status();

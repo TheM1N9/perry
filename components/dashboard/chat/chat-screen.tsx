@@ -115,6 +115,7 @@ export function ChatScreen() {
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
+  const defaultEngine = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
   const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
   // The heads-up about the engine's limit the owner closed, until it changes.
   const [limitSeen, setLimitSeen] = useState("");
@@ -270,8 +271,10 @@ export function ChatScreen() {
   };
 
   const models = modelOptions?.models;
-  // The chat's engine; a chat not sent yet takes the last chat's, like its model.
-  const engine: EngineKind = (selectedId ? chat?.engine : draftEngine ?? lastPicks?.engine) ?? "codex";
+  // The chat's engine; a chat not sent yet is on the owner's default, unless a model was picked for it. None while there is neither.
+  const engine: EngineKind | undefined = selectedId ? chat?.engine : draftEngine ?? lastPicks?.engine;
+  // Perry never picks an engine for the owner: with none for this chat and no default, it asks (below).
+  const noEngine = defaultEngine === null && !engine && !chat?.contact && (!selectedId || chat !== undefined);
   const model = (selectedId ? chat?.model : draftModel ?? lastPicks?.model) || currentModel(models ?? [], undefined, engine);
   // The thinking levels are the model's own; a level it does not take is kept but unused.
   const modelInfo = chatModel(models ?? [], model, engine);
@@ -281,17 +284,20 @@ export function ChatScreen() {
   const access: Access = (selectedId ? chat?.access : draftAccess) ?? defaultAccess ?? "supervised";
   // The chat's engine near or at its plan's limit, said before a reply fails for it.
   const engineUsage = planLimits?.engines.find((item) => item.kind === engine)?.usage;
-  const limit = chat?.contact ? null : limitWarning(engine, engineUsage, now);
+  const limit = chat?.contact || !engine ? null : limitWarning(engine, engineUsage, now);
   const limitMark = limit ? `${engine}:${limit.level}:${limit.title}` : "";
   const fail = (cause: unknown) => setError(errorText(cause));
 
   /** Pick a model by its "<engine>/<id>" key; another engine's moves the chat there. */
   function applyModel(key: string) {
-    const next = parseModelKey(key);
-    const picked = models?.find((item) => (item.engine ?? "codex") === next.engine && item.id === next.id);
+    const parsed = parseModelKey(key);
+    // A bare id is one of the chat's own engine's models.
+    const next = { id: parsed.id, engine: parsed.engine ?? engine };
+    if (!next.engine) return;
+    const picked = models?.find((item) => item.engine === next.engine && item.id === next.id);
     if (picked && pickedEffort && effortUnused(picked, pickedEffort)) {
       setNotice(`${picked.name} doesn't take the ${pickedEffort} thinking level, so it thinks at its default here.`);
-    } else if (selectedId && next.engine !== engine) {
+    } else if (selectedId && engine && next.engine !== engine) {
       setNotice(`This chat moves to ${ENGINE_LABELS[next.engine]}, which picks up from the chat so far.`);
     }
     if (!selectedId) {
@@ -359,8 +365,8 @@ export function ChatScreen() {
     ? skillSuggestions
     : typedModel && choosing
       ? (typedModel.name ? findModel(models ?? [], typedModel.name, engine).matches : models ?? []).map((item) => {
-          const key = modelKey(item.engine ?? "codex", item.id);
-          const current = (item.engine ?? "codex") === engine && item.id === model;
+          const key = modelKey(item.engine, item.id);
+          const current = item.engine === engine && item.id === model;
           return {
             key, label: item.name, hint: `${key}${current ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
             apply: () => void runCommand(`/model ${key}`),
@@ -393,7 +399,7 @@ export function ChatScreen() {
       if (!modelCommand.name) { setDraft(""); setNotice(describeModels(models ?? [], model, engine)); return true; }
       const picked = pickModel(models ?? [], modelCommand.name, pickedEffort, engine);
       // A name that matched nothing, or several models, stays in the box to be fixed.
-      if (picked.model) { applyModel(modelKey(picked.model.engine ?? "codex", picked.model.id)); setDraft(""); }
+      if (picked.model) { applyModel(modelKey(picked.model.engine, picked.model.id)); setDraft(""); }
       setNotice(picked.reply);
       return true;
     }
@@ -579,6 +585,15 @@ export function ChatScreen() {
 
       <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]" id="content" tabIndex={-1}>
         <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
+          {noEngine && (
+            <Alert variant="quiet" className="mt-4" role="alert">
+              <AlertTitle>Choose the engine {assistant} thinks with</AlertTitle>
+              <AlertDescription>{assistant} doesn&apos;t pick one for you. Choose a default for every chat, or pick a model for this one in the box below.</AlertDescription>
+              <AlertAction>
+                <Button size="sm" render={<Link href="/settings/engines" />}>Choose</Button>
+              </AlertAction>
+            </Alert>
+          )}
           {status?.onboarding === "offer" && (
             <Alert variant="quiet" className="mt-4">
               <AlertTitle>Tell {assistant} about yourself</AlertTitle>
@@ -696,7 +711,7 @@ export function ChatScreen() {
             suggesting={mention ? "Skills" : "Commands"}
             completing={completing}
             pickers={{
-              models, model: model ? modelKey(engine, model) : undefined, onModel: applyModel, modelInfo, effort, onEffort: applyEffort, access, onAccess: applyAccess,
+              models, model: engine && model ? modelKey(engine, model) : undefined, onModel: applyModel, modelInfo, effort, onEffort: applyEffort, access, onAccess: applyAccess,
               accessDisabled: selectedId ? chat === undefined : defaultAccess === undefined,
             }}
             above={<>

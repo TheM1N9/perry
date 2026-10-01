@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
-import { internalMutation, internalQuery, type QueryCtx } from "./_generated/server";
-import { vAccess, vChannel } from "./schema";
+import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { GUEST_ENGINE, isRunnable, RUNNABLE_ENGINES, type EngineKind } from "./lib/engines";
+import { vAccess, vChannel, vEngine } from "./schema";
 
 /**
  * Who owns this install, and how they proved it.
@@ -45,6 +46,9 @@ async function neverUsed(ctx: QueryCtx): Promise<boolean> {
   return !(await ctx.db.query("conversations").filter((q) => q.eq(q.field("jobId"), undefined)).first());
 }
 
+/** A new install's row: getting to know each other ahead, and its default engine still to be chosen. */
+const fresh = () => ({ onboarding: "pending" as const, askEngine: true, createdAt: Date.now() });
+
 /** "offer" clears it, as on an install from before: offered on the chat page, not opened. */
 export const setOnboarding = internalMutation({
   args: { state: v.union(v.literal("pending"), v.literal("done"), v.literal("skipped"), v.literal("offer")) },
@@ -53,7 +57,7 @@ export const setOnboarding = internalMutation({
     const onboarding = args.state === "offer" ? undefined : args.state;
     const install = await read(ctx);
     if (install) await ctx.db.patch(install._id, { onboarding });
-    else await ctx.db.insert("installation", { onboarding, createdAt: Date.now() });
+    else await ctx.db.insert("installation", { ...fresh(), onboarding });
     return null;
   },
 });
@@ -77,6 +81,8 @@ export const status = internalQuery({
     pairingCode?: string;
     pairingExpiresAt?: number;
     onboarding: Onboarding;
+    /** The engine Perry uses by default, unset until the owner chooses one. */
+    defaultEngine?: EngineKind;
   }> => {
     const install = await read(ctx);
     // No row yet means setup has not finished making one: a new install, so pending.
@@ -92,20 +98,86 @@ export const status = internalQuery({
       pairingCode: open ? install.pairingCode : undefined,
       pairingExpiresAt: open ? install.pairingExpiresAt : undefined,
       onboarding: install.onboarding ?? (await neverUsed(ctx) ? "pending" : "offer"),
+      ...(install.defaultEngine ? { defaultEngine: install.defaultEngine } : {}),
     };
   },
 });
 
 /**
- * Make the installation row if there is none. Setup calls it when Telegram is
- * skipped: pairing is what otherwise makes the row, and settings such as the
- * timezone, default access and the offline fallback are kept on it.
+ * Make the installation row if there is none, and bring an install from
+ * before forward. Perry's server calls it each time it starts: settings such
+ * as the timezone, default access and the offline fallback are kept on the
+ * row.
+ *
+ * An install from before Perry asked for a default engine ran on Codex
+ * without being asked, so Codex is written down as its choice, and its web
+ * chats and jobs that ran on Codex without saying so are set to it, along
+ * with replies still waiting: nothing it already does moves. Its phone,
+ * schedule and task chats stay unset, so they follow the default if the
+ * owner changes it.
  */
 export const ensure = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
-    if (!(await read(ctx))) await ctx.db.insert("installation", { onboarding: "pending", createdAt: Date.now() });
+    const install = await read(ctx);
+    if (!install) await ctx.db.insert("installation", fresh());
+    else if (!install.defaultEngine && !install.askEngine) await bringForward(ctx, install);
+    return null;
+  },
+});
+
+/** An install from before the default engine was asked for: Codex, as it was, written down. */
+async function bringForward(ctx: MutationCtx, install: Doc<"installation">) {
+  const engine: EngineKind = "codex";
+  for (const chat of await ctx.db.query("conversations").withIndex("by_channel_last", (q) => q.eq("channel", "web")).collect()) {
+    if (!chat.engine && !chat.jobId && !chat.taskId && !chat.contactId) await ctx.db.patch(chat._id, { engine });
+  }
+  for (const job of await ctx.db.query("jobs").collect()) {
+    if (job.model && !job.engine) await ctx.db.patch(job._id, { engine });
+  }
+  const waiting = await ctx.db.query("codexTurns").filter((q) => q.or(q.eq(q.field("status"), "queued"), q.eq(q.field("status"), "running"))).collect();
+  for (const turn of waiting) if (!turn.engine) await ctx.db.patch(turn._id, { engine });
+  for (const steer of await ctx.db.query("codexSteers").withIndex("by_status", (q) => q.eq("status", "pending")).collect()) {
+    if (!steer.engine) await ctx.db.patch(steer._id, { engine });
+  }
+  await ctx.db.patch(install._id, { defaultEngine: engine });
+}
+
+/** The engine Perry uses unless a chat or job picks another; unset until the owner chooses one. */
+export async function defaultEngine(ctx: Parameters<typeof read>[0]): Promise<EngineKind | undefined> {
+  return (await read(ctx))?.defaultEngine;
+}
+
+/** The same, for actions (brain.ts). */
+export const getDefaultEngine = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<EngineKind | null> => (await defaultEngine(ctx)) ?? null,
+});
+
+/**
+ * The engine a chat or job runs on: its own, else the owner's default; a chat
+ * with someone else is always on GUEST_ENGINE. Unset when there is neither:
+ * Perry asks.
+ */
+export async function engineFor(ctx: Parameters<typeof read>[0], item?: { engine?: EngineKind; contactId?: unknown } | null): Promise<EngineKind | undefined> {
+  if (item?.contactId) return GUEST_ENGINE;
+  return item?.engine ?? await defaultEngine(ctx);
+}
+
+/**
+ * The owner chose the engine Perry uses by default. Chats already made keep
+ * theirs; new web chats, and phone, schedule and task chats without one of
+ * their own, use it from their next turn.
+ */
+export const setDefaultEngine = internalMutation({
+  args: { engine: vEngine },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (!isRunnable(args.engine)) throw new Error(`${args.engine} can't run Perry yet; choose ${RUNNABLE_ENGINES.join(", ")}.`);
+    const install = await read(ctx);
+    if (install) await ctx.db.patch(install._id, { defaultEngine: args.engine, askEngine: undefined });
+    else await ctx.db.insert("installation", { ...fresh(), defaultEngine: args.engine, askEngine: undefined });
     return null;
   },
 });
@@ -129,10 +201,9 @@ export const startPairing = internalMutation({
       });
     } else {
       await ctx.db.insert("installation", {
+        ...fresh(),
         pairingCode: code,
         pairingExpiresAt: expiresAt,
-        onboarding: "pending",
-        createdAt: Date.now(),
       });
     }
 

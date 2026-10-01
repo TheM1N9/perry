@@ -19,7 +19,7 @@ export function Close() {
         >
           Get Perry
         </TrackLink>
-        <p className="mt-5 text-[15px] text-ink-3">Runs on macOS, Linux and Windows, on the ChatGPT plan you already have.</p>
+        <p className="mt-5 text-[15px] text-ink-3">Runs on macOS, Linux and Windows, on the ChatGPT, Claude or Grok plan you already have.</p>
       </Reveal>
     </section>
   );

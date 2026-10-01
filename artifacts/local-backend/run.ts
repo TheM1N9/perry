@@ -83,6 +83,8 @@ const env: NodeJS.ProcessEnv = {
   TELEGRAM_BOT_TOKEN: BOT,
   TELEGRAM_API_BASE: `http://127.0.0.1:${stubPort}`,
   NODE_ENV: "production",
+  // A new Perry asks for its default engine (issue #190): this one is told, as Codex ran its chats before.
+  PERRY_ENGINE: "codex",
 };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name === "NEXT_PUBLIC_CONVEX_URL") delete env[name];
 

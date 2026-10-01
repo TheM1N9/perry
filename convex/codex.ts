@@ -5,7 +5,8 @@ import { api, internal } from "./_generated/api";
 import { createThread, saveMessages } from "./lib/agent";
 import { CAPTION_LIMIT, UPLOAD_LIMIT, deleteMessage, editDraft, finishDraft, sendDraft, sendFile, sendMessage } from "./lib/telegram";
 import { COMPACTED, runLabel, type Access } from "./lib/commands";
-import { ENGINE_LABELS, engineOf, refusal, type EngineKind } from "./lib/engines";
+import { ENGINE_LABELS, NO_ENGINE, refusal, type EngineKind } from "./lib/engines";
+import { engineFor } from "./installation";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
@@ -119,7 +120,7 @@ async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">, 
 function isSteering(policy: "steer" | "queue" | undefined, running: Doc<"codexTurns"> | null, engine: EngineKind): running is Doc<"codexTurns"> {
   // A memory checkpoint or the flush before /reset is not a reply the owner's words could join.
   return (policy ?? "queue") === "steer" && running !== null && !running.stopRequested && running.kind !== "compact"
-    && !running.checkpoint && !running.flush && running.runnerId !== undefined && engineOf(running) === engine;
+    && !running.checkpoint && !running.flush && running.runnerId !== undefined && running.engine === engine;
 }
 
 /**
@@ -145,7 +146,7 @@ export const enqueueTurn = internalMutation({
     hidden: v.optional(v.boolean()),
     /** A chat with someone other than the owner: the runner gives the engine no shell, files or computer. */
     guest: v.optional(v.boolean()),
-    /** The chat's engine, which `model` is one of. Unset is Codex. */
+    /** The engine to run on, which `model` is one of. Unset: the chat's own, else the owner's default. */
     engine: v.optional(vEngine),
     model: v.optional(v.string()),
     /** The reasoning effort for the turn, already checked against the model (commands.turnEffort). */
@@ -161,7 +162,13 @@ export const enqueueTurn = internalMutation({
     const running = await ctx.db.query("codexTurns")
       .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.conversationId).eq("status", "running"))
       .first();
-    const engine = args.engine ?? engineOf(conversation);
+    // Perry never picks an engine for the owner: with none for the chat and no default chosen, it asks.
+    const engine = args.engine ?? await engineFor(ctx, conversation);
+    if (!engine) throw new Error(NO_ENGINE);
+    // A web chat made before the owner chose keeps the engine of its first turn, as one made after would have.
+    if (conversation.channel === "web" && !conversation.engine && !conversation.jobId && !conversation.taskId && !conversation.contactId) {
+      await ctx.db.patch(conversation._id, { engine });
+    }
     const message = {
       engine,
       conversationId: args.conversationId,
@@ -382,8 +389,8 @@ export const requestCompact = internalMutation({
   handler: async (ctx, args) => {
     const conversation = await ctx.db.get(args.conversationId);
     if (!conversation) throw new Error("This chat was deleted.");
-    if (!resumeOf(conversation)) return null;
-    const engine = engineOf(conversation);
+    const engine = await engineFor(ctx, conversation);
+    if (!engine || !resumeOf(conversation, engine)) return null;
     const runnerId = await pickRunner(ctx, conversation, engine);
     // Only the runner's engine holds the session; answering without the computer cannot compact it.
     if (!runnerId) throw new Error(await noRunner(ctx, conversation, engine));
@@ -419,8 +426,8 @@ export const claimTurn = mutation({
   handler: async (ctx, args) => {
     const runner = await authenticate(ctx, args.token);
     const job = await ctx.db.get(args.id);
-    const engine = engineOf(job);
-    if (!job || job.runnerId !== runner._id || job.status !== "queued" || !engineReady(runner, engine)) return null;
+    const engine = job?.engine;
+    if (!job || !engine || job.runnerId !== runner._id || job.status !== "queued" || !engineReady(runner, engine)) return null;
     const conversation = await ctx.db.get(job.conversationId);
     if (!conversation) return null;
     const running = await ctx.db.query("codexTurns")
@@ -429,8 +436,7 @@ export const claimTurn = mutation({
     if (running) return null;
     await ctx.db.patch(job._id, { status: "running", startedAt: Date.now() });
     // The chat's session, when it is on this turn's engine; a chat moved to another engine since starts one.
-    const resume = resumeOf(conversation);
-    const resumeCursor = resume?.engine === engine ? resume.cursor : undefined;
+    const resumeCursor = resumeOf(conversation, engine)?.cursor;
     return {
       ...job,
       engine,
@@ -456,9 +462,9 @@ async function recordSession(ctx: MutationCtx, token: string, id: Id<"codexTurns
   const job = await ctx.db.get(id);
   if (!job || job.runnerId !== runner._id || job.status !== "running") return;
   const conversation = await ctx.db.get(job.conversationId);
-  const engine = engineOf(job);
-  if (!conversation || engineOf(conversation) !== engine) return;
-  const current = resumeOf(conversation);
+  const engine = job.engine;
+  if (!conversation || !engine || (await engineFor(ctx, conversation)) !== engine) return;
+  const current = resumeOf(conversation, engine);
   // A new session may take over only from the one the chat has: an engine that lost it says which.
   if (current && current.cursor !== cursor && current.cursor !== replaces) throw new Error(`Chat already has another ${ENGINE_LABELS[engine]} session.`);
   await ctx.db.patch(conversation._id, {
@@ -922,7 +928,7 @@ export const markFinalized = internalMutation({
     for (const runId of [job.runId, ...steers.map((steer) => steer.runId)]) {
       await ctx.db.patch(runId, {
         status: job.status === "done" ? "ok" : "error",
-        model: job.model ?? runLabel(undefined, undefined, undefined, engineOf(job)),
+        model: job.model ?? runLabel(undefined, undefined, undefined, job.engine),
         error: job.error,
         finishedAt: Date.now(),
       });
@@ -1188,7 +1194,7 @@ export const mcpAccess = internalQuery({
       .take(20);
     const turns = (await Promise.all(running.map(async (job) => ({ job, conversation: await ctx.db.get(job.conversationId) }))))
       .filter((turn): turn is { job: Doc<"codexTurns">; conversation: Doc<"conversations"> } => turn.conversation !== null);
-    const named = turns.find(({ conversation }) => args.threads?.includes(resumeOf(conversation)?.cursor ?? ""))
+    const named = turns.find(({ job, conversation }) => args.threads?.includes(resumeOf(conversation, job.engine)?.cursor ?? ""))
       ?? turns.find(({ conversation }) => conversation._id === args.chat);
     const only = turns.length === 1 ? turns[0] : undefined;
     const turn = named ?? only ?? turns[0];

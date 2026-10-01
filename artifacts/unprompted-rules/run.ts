@@ -71,7 +71,7 @@ const ownerSays = (text: string) => telegram.pending.push({
 const since = (at: number) => telegram.sent.filter((message) => message.at >= at);
 
 const env: NodeJS.ProcessEnv = {
-  ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+  ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   TELEGRAM_BOT_TOKEN: "123456:manners-e2e", TELEGRAM_API_BASE: `http://127.0.0.1:${(stub.address() as { port: number }).port}`,
 };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE") delete env[name];

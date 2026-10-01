@@ -78,7 +78,7 @@ mkdirSync(join(home, "skills", "weekly-review"), { recursive: true });
 writeFileSync(join(home, "skills", "weekly-review", "SKILL.md"), "---\nname: weekly-review\ndescription: Writes the owner's weekly review the way they like it.\n---\n\nStart with what shipped, then what slipped.\n");
 
 const env: NodeJS.ProcessEnv = {
-  ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+  ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   // Never the owner's accounts: no engine here has a sign-in.
   CODEX_HOME: join(home, "codex-home"), CLAUDE_CONFIG_DIR: join(home, "claude-home"),
 };

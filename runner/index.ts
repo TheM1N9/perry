@@ -270,7 +270,7 @@ async function main() {
 
   const engines = createEngines({
     warn: (line) => console.log(yellow(`  ${line}`)),
-    // A key from Settings → Engines & usage an engine needs on this computer (Antigravity's Gemini API key).
+    // A key from Settings → Engines an engine needs on this computer (Antigravity's Gemini API key).
     secret: async (name) => name === "GEMINI_API_KEY" ? (await client.query(api.engines.secret, { token, name })) ?? undefined : undefined,
   });
   // However the runner ends (stopped, a crash, its console closed), the agents it started end with it.
@@ -359,13 +359,18 @@ async function main() {
     }, wait));
   };
   const readAllLimits = () => { for (const engine of engines.values()) void readLimits(engine); };
+  /** The owner's default engine, as the server has it; unset until chosen. */
+  let defaultEngine: EngineKind | undefined;
+  watch(api.engines.preferred, { token }, (engine) => { defaultEngine = engine ?? undefined; });
   /**
    * An engine for quick side turns (the reviewer, chat names): the preferred
-   * one when it runs them and is signed in, else any that is.
+   * one (the chat's) when it runs them and is signed in, else the owner's
+   * default engine, else any that is.
    */
   const quickEngine = (preferred?: EngineKind): Engine | undefined => {
     const ready = (engine?: Engine) => engine?.quickTurn && engine.capabilities.quickTurns && statuses.get(engine.kind)?.signedIn && !tooOld(engine.kind) && !updating.has(engine.kind) ? engine : undefined;
-    return ready(preferred ? engines.get(preferred) : undefined) ?? [...engines.values()].find((engine) => ready(engine));
+    return ready(preferred ? engines.get(preferred) : undefined) ?? ready(defaultEngine ? engines.get(defaultEngine) : undefined)
+      ?? [...engines.values()].find((engine) => ready(engine));
   };
   /** A quick turn on an engine, counted while it runs. */
   const quickly = async <T,>(engine: Engine | undefined, work: () => Promise<T>): Promise<T> => {
@@ -1022,10 +1027,10 @@ async function main() {
           if (active.has(next._id) || held.has(next.conversationId)) continue;
           held.add(next.conversationId);
           // An engine being updated here starts nothing new until it is done (handleUpdate).
-          if (updating.has(next.engine ?? "codex")) continue;
-          const engine = engines.get(next.engine ?? "codex");
+          if (next.engine && updating.has(next.engine)) continue;
+          const engine = next.engine ? engines.get(next.engine) : undefined;
           if (engine && !engine.capabilities.concurrentTurns && [...active.values()].some((turn) => turn.engine === engine)) continue;
-          claiming = next.engine ?? "codex";
+          claiming = next.engine ?? null;
           const job = await client.mutation(api.codex.claimTurn, { token, id: next._id })
             .catch((error) => { console.error(red(`  could not claim a turn: ${message(error)}`)); return null; });
           if (!job) { claiming = null; continue; }

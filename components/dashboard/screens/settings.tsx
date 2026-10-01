@@ -9,7 +9,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { EngineUpdating, EngineView } from "@/convex/engines";
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access } from "@/convex/lib/commands";
-import { SIGN_IN_LABELS, type EngineUpdate, type LoginInteraction } from "@/convex/lib/engines";
+import { ENGINE_LABELS, SIGN_IN_LABELS, type EngineKind, type EngineUpdate, type LoginInteraction } from "@/convex/lib/engines";
 import type { PetTheme } from "@/convex/pet";
 import type { SecretName } from "@/convex/secrets";
 import type { SettingsSection } from "@/lib/settings";
@@ -41,6 +41,7 @@ import { ApprovalRules, Computers, RecentRequests } from "./computer";
 import { YourAssistant } from "./memory";
 import { Usage, UsageMoved } from "./usage";
 import { SaveStatus, useAutosave } from "../autosave";
+import { EngineChoice, useEngineChoices } from "../default-engine";
 import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, ListSkeleton, SecretInput, Section, StatusBadge, type Tone } from "../common";
 
 /**
@@ -50,7 +51,7 @@ import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, List
  */
 const SECTIONS: Record<SettingsSection, () => ReactNode> = {
   general: () => <><YourAssistant /><Appearance /><Updates /></>,
-  engines: () => <><UsageMoved /><Engines /></>,
+  engines: () => <><UsageMoved /><DefaultEngine /><Engines /></>,
   usage: () => <Usage />,
   computers: () => <Computers />,
   access: () => <><NewChatAccess /><ApprovalRules /><RecentRequests /></>,
@@ -68,6 +69,45 @@ const SECTIONS: Record<SettingsSection, () => ReactNode> = {
 export function SettingsSectionScreen({ section }: { section: SettingsSection }) {
   const Content = SECTIONS[section];
   return <Content />;
+}
+
+/**
+ * The engine Perry uses unless a chat or job picks another, chosen by the
+ * owner and changed here. New web chats start on it; phone, schedule and task
+ * chats without one of their own move to it from their next turn; a web chat
+ * already started keeps its own. Unset, Perry asks before any turn.
+ */
+function DefaultEngine() {
+  const { dashboardKey } = useSession();
+  const current = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
+  const reported = useEngineChoices();
+  const setDefault = useMutation(api.dashboard.setDefaultEngine).withOptimisticUpdate((store, args) => {
+    store.setQuery(api.dashboard.getDefaultEngine, { key: args.key }, args.engine);
+  });
+  const choose = (engine: EngineKind) => void setDefault({ key: dashboardKey, engine })
+    .then(() => toast.success(`Perry now uses ${ENGINE_LABELS[engine]} by default.`), (cause) => toast.error(errorText(cause)));
+  // The default stays listed while no connected computer reports it.
+  const engines = reported && current && !reported.some((engine) => engine.kind === current)
+    ? [...reported, { kind: current, label: ENGINE_LABELS[current], ready: false, detail: "No connected computer has it right now." }]
+    : reported;
+  return (
+    <Section title="Default engine" description="For new chats, your phone, schedules and tasks." tip="A chat or schedule with a model of its own keeps it. Chats you already started keep their engine.">
+      {current === undefined || engines === undefined ? <ListSkeleton rows={1} />
+        : engines.length === 0 ? (
+          <EmptyState title="No engines to choose from yet" action={<CommandLine>perry start</CommandLine>} />
+        ) : (
+          <div className="grid gap-3">
+            {current === null && (
+              <Alert variant="quiet">
+                <AlertTitle>Choose one to start chatting</AlertTitle>
+                <AlertDescription>Until you do, Perry asks instead of answering.</AlertDescription>
+              </Alert>
+            )}
+            <EngineChoice engines={engines} value={current ?? undefined} current={current ?? undefined} onChange={choose} />
+          </div>
+        )}
+    </Section>
+  );
 }
 
 /**
@@ -105,8 +145,8 @@ function Engines() {
   );
 }
 
-/** One engine on one computer: whether it is there and signed in, and signing it in or out. */
-function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runners">; computer: string; online: boolean; engine: EngineView }) {
+/** One engine on one computer: whether it is there and signed in, and signing it in or out. The welcome page shows it too. */
+export function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runners">; computer: string; online: boolean; engine: EngineView }) {
   const { dashboardKey } = useSession();
   const requestAuth = useMutation(api.engines.requestAuth);
   const requestUpdate = useMutation(api.engineUpdates.request);

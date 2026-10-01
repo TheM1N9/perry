@@ -6,6 +6,7 @@ import { CheckIcon, RefreshCwIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type Ref } from "react";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
+import type { EngineKind } from "@/convex/lib/engines";
 import { errorText } from "@/lib/format";
 import { EMPTY_ANSWERS, HELP, PERSONALITIES, REPLY_STYLES, composeUserMd, type Answers } from "@/lib/persona";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
@@ -19,21 +20,30 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { PerryMark } from "../common";
+import { EngineChoice, useEngineChoices } from "../default-engine";
 import { Platypus } from "../platypus";
+import { EngineRow } from "./settings";
 
 const STEPS = ["Meet your assistant", "About you", "Review"] as const;
+/** First, when Perry has no default engine yet: it never picks one for the owner. */
+const ENGINE_STEP = "Choose an engine";
+type Step = typeof ENGINE_STEP | (typeof STEPS)[number];
 
 /**
- * Getting to know each other, before the first chat: name the assistant, set
- * its personality, answer a few questions, and review the USER.md written
- * from them. Every answer is optional, and "just chat" asks the same
- * questions in the chat instead.
+ * Getting to know each other, before the first chat: choose the engine Perry
+ * thinks with when none is chosen yet, name the assistant, set its
+ * personality, answer a few questions, and review the USER.md written from
+ * them. Every answer is optional, and "just chat" asks the same questions in
+ * the chat instead.
  */
 export function Welcome() {
   const { dashboardKey } = useSession();
   const router = useRouter();
   const persona = useQuery(api.dashboard.getPersona, { key: dashboardKey });
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
+  const engines = useEngineChoices();
+  const computers = useQuery(api.engines.list, { key: dashboardKey });
+  const chooseEngine = useMutation(api.dashboard.setDefaultEngine);
   const finish = useMutation(api.dashboard.finishOnboarding);
   const skip = useMutation(api.dashboard.skipOnboarding);
   const id = useId();
@@ -41,13 +51,16 @@ export function Welcome() {
   const heading = useRef<HTMLHeadingElement>(null);
 
   const [step, setStep] = useState(0);
+  // Whether this visit asks for the engine, settled once, so choosing one does not move the steps under the owner.
+  const [steps, setSteps] = useState<readonly Step[]>();
+  const [engine, setEngine] = useState<EngineKind>();
   const [name, setName] = useState("");
   const [preset, setPreset] = useState<string>(PERSONALITIES[0].id);
   const [custom, setCustom] = useState("");
   const [answers, setAnswers] = useState<Answers>(EMPTY_ANSWERS);
   const [userMd, setUserMd] = useState("");
   const [edited, setEdited] = useState(false);
-  const [busy, setBusy] = useState<"" | "save" | "chat" | "skip">("");
+  const [busy, setBusy] = useState<"" | "save" | "chat" | "skip" | "engine">("");
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const timezone = typeof Intl === "undefined" ? "" : Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -60,11 +73,18 @@ export function Welcome() {
     if (known) setPreset(known.id);
     else if (persona.personality) { setPreset("custom"); setCustom(persona.personality); }
     setAnswers((current) => ({ ...current, call: status.displayName ?? "" }));
+    setSteps(status.defaultEngine ? STEPS : [ENGINE_STEP, ...STEPS]);
     setLoaded(true);
   }, [loaded, persona, status]);
   useEffect(() => { if (loaded) heading.current?.focus(); }, [step, loaded]);
+  // With exactly one engine ready to answer, it is picked to begin with; the owner still confirms it.
+  const ready = engines?.filter((item) => item.ready) ?? [];
+  const onlyReady = ready.length === 1 ? ready[0].kind : undefined;
+  useEffect(() => {
+    if (engine === undefined && onlyReady) setEngine(onlyReady);
+  }, [engine, onlyReady]);
 
-  if (!loaded || !persona) {
+  if (!loaded || !persona || !steps) {
     return <main className="grid min-h-dvh place-items-center"><Spinner className="size-5 text-muted-foreground" /></main>;
   }
 
@@ -89,13 +109,21 @@ export function Welcome() {
       setBusy("");
     }
   };
+  const at = steps[step];
+  const picked = engines?.find((item) => item.kind === engine);
   const next = (event: FormEvent) => {
     event.preventDefault();
-    if (step === 0) setStep(1);
-    else if (step === 1) { if (!edited) setUserMd(composeUserMd(answers, timezone)); setStep(2); }
+    if (at === ENGINE_STEP) {
+      if (!engine) return setError("Choose the engine Perry should use.");
+      setBusy("engine");
+      setError("");
+      void chooseEngine({ key: dashboardKey, engine }).then(() => { setBusy(""); setStep(step + 1); }, (cause) => { setError(errorText(cause)); setBusy(""); });
+    } else if (at === "Meet your assistant") setStep(step + 1);
+    else if (at === "About you") { if (!edited) setUserMd(composeUserMd(answers, timezone)); setStep(step + 1); }
     // An emptied USER.md is no page about you: Perry asks in the chat instead.
     else void run(userMd.trim() ? "save" : "chat");
   };
+  const last = step === steps.length - 1;
 
   return (
     <main className="min-h-dvh bg-muted/40 px-4 py-10 sm:py-16">
@@ -103,14 +131,14 @@ export function Welcome() {
         <div className="mb-8 flex items-center justify-between gap-4">
           <PerryMark className="size-10" />
           <ol className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-label="Steps">
-            {STEPS.map((label, index) => (
+            {steps.map((label, index) => (
               <li key={label} aria-current={index === step ? "step" : undefined} className="flex items-center gap-1.5">
                 <span className={cn("grid size-5 place-items-center rounded-full border text-2xs font-medium",
                   index < step && "border-primary bg-primary text-primary-foreground", index === step && "border-foreground text-foreground")}>
                   {index < step ? <CheckIcon className="size-3" /> : index + 1}
                 </span>
                 <span className={cn("max-sm:sr-only", index === step && "font-medium text-foreground")}>{index < step && <span className="sr-only">Done: </span>}{label}</span>
-                {index < STEPS.length - 1 && <span className="mx-1 h-px w-4 bg-border" aria-hidden />}
+                {index < steps.length - 1 && <span className="mx-1 h-px w-4 bg-border" aria-hidden />}
               </li>
             ))}
           </ol>
@@ -124,7 +152,27 @@ export function Welcome() {
               exit={reduce ? { opacity: 0 } : { opacity: 0, x: -16 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
               className="space-y-6">
-              {step === 0 && (
+              {at === ENGINE_STEP && (
+                <>
+                  <Heading ref={heading} title="Choose an engine">You can change it later in Settings.</Heading>
+                  {engines === undefined ? <Spinner className="size-5 text-muted-foreground" />
+                    : engines.length === 0 ? (
+                      <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><Spinner className="size-3" />Waiting for your computer to say which engines it has…</p>
+                    ) : <EngineChoice engines={engines} value={engine} onChange={(kind) => { setEngine(kind); setError(""); }} disabled={busy === "engine"} />}
+                  {picked && !picked.ready && (
+                    <div className="rounded-xl border p-4" role="group" aria-label={`Sign in to ${picked.label}`}>
+                      <p className="text-sm font-medium">{picked.label} isn&apos;t ready yet</p>
+                      <p className="mt-0.5 text-sm text-pretty text-muted-foreground">Perry answers once it&apos;s installed and signed in.</p>
+                      <ul className="mt-1 divide-y">
+                        {computers?.flatMap((computer) => computer.engines.filter((item) => item.kind === picked.kind)
+                          .map((item) => <li key={computer.id}><EngineRow runnerId={computer.id} computer={computer.name} online={computer.online} engine={item} /></li>))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {at === "Meet your assistant" && (
                 <>
                   <Heading ref={heading} title="Meet your assistant">You can change both later in Settings.</Heading>
                   <Field>
@@ -164,7 +212,7 @@ export function Welcome() {
                 </>
               )}
 
-              {step === 1 && (
+              {at === "About you" && (
                 <>
                   <Heading ref={heading} title="About you">All optional.</Heading>
                   <Question id={`${id}-call`} label="What should I call you?">
@@ -211,7 +259,7 @@ export function Welcome() {
                 </>
               )}
 
-              {step === 2 && (
+              {at === "Review" && (
                 <>
                   <Heading ref={heading} title="Your USER.md">What {assistant} knows about you in every chat. Edit anything.</Heading>
                   {persona.user && (
@@ -235,16 +283,17 @@ export function Welcome() {
 
           <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6">
             <div>{step > 0 && <Button type="button" variant="ghost" disabled={Boolean(busy)} onClick={() => setStep(step - 1)}>Back</Button>}</div>
-            <Button type="submit" size="lg" className="h-10 px-5" disabled={Boolean(busy)} aria-busy={busy === "save" || undefined}>
-              {(busy === "save" || (step === 2 && busy === "chat")) && <Spinner />}{step === 2 ? `Save and meet ${assistant}` : "Continue"}
+            <Button type="submit" size="lg" className="h-10 px-5" disabled={Boolean(busy) || (at === ENGINE_STEP && !engine)} aria-busy={busy === "save" || busy === "engine" || undefined}>
+              {(busy === "save" || busy === "engine" || (last && busy === "chat")) && <Spinner />}{last ? `Save and meet ${assistant}` : "Continue"}
             </Button>
           </div>
         </div>
 
-        {step === 0 && (
+        {(at === ENGINE_STEP || at === "Meet your assistant") && (
           <div className="mt-6 flex flex-col items-center gap-4">
             <div className="flex flex-wrap justify-center gap-2">
-              <Button type="button" variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void run("chat")}>{busy === "chat" && <Spinner />}I&apos;d rather just chat</Button>
+              {/* Chatting needs an engine; skipping does not, and the chat page asks for one then. */}
+              {at === "Meet your assistant" && <Button type="button" variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void run("chat")}>{busy === "chat" && <Spinner />}I&apos;d rather just chat</Button>}
               <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" disabled={Boolean(busy)} onClick={() => void run("skip")}>{busy === "skip" && <Spinner />}Skip for now</Button>
             </div>
             <div className="hidden w-40 sm:block"><Platypus greeting={`Hi. I'm ${assistant}.`} /></div>
