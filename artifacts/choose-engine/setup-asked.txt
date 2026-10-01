@@ -1,0 +1,25 @@
+
+Perry setup
+  Telegram is optional. For a bot: message @BotFather, send /newbot, and paste its token.
+  Bot token, or Enter to skip: 
+  No bot: talk to Perry from the dashboard. Add one in Settings → Telegram any time.
+  Perry thinks with a coding agent on this computer, signed in with your own subscription.
+    1  Grok Build   1.0.42-fake, signed in with Grok account
+    2  Antigravity  experimental, not turned on; Settings → Engines & usage turns it on
+    3  Claude Code  2.1.277, not signed in
+    4  Codex        not installed
+  Which should Perry use by default? [1-4, Enter for Grok Build] 
+  Codex isn't installed here. Install it now? It runs: npm install -g @openai/codex [Y/n] 
+  Codex isn't signed in. Sign in now? [Y/n] 
+  Sign in with your ChatGPT account in the browser window that opens.
+
+Signing in in the browser… (fake: at once)
+Successfully logged in
+  ✔ default engine Codex, 0.177.7, signed in with ChatGPT Plus
+
+Next
+  pnpm perry start  runs Perry in the background
+  dashboard key: (this run's own)
+
+  (also saved in .env.local; `pnpm perry doctor` checks everything)
+

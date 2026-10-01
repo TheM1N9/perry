@@ -1,0 +1,297 @@
+{
+  "ranAt": "2026-10-01T18:49:15.249Z",
+  "platform": "win32",
+  "setupOnly": false,
+  "checks": {
+    "refusesWithoutChoice": true,
+    "isolated": true,
+    "oneReadyNotTakenUnconfirmed": true,
+    "unknownEngineRefused": true,
+    "flagChoosesWithoutAsking": true,
+    "envLabelChoosesNoSignInAlone": true,
+    "listSaysHowEachStands": true,
+    "installsTheChosenOne": true,
+    "signsInToTheChosenOne": true,
+    "rerunKeepsChoice": true,
+    "enterConfirmsTheOneReady": true,
+    "pipedAnswersKept": true,
+    "setupInstalledNothingForReal": true,
+    "newInstallHasNoDefault": true,
+    "runnerOnStandIns": true,
+    "noTurnWithoutChoice": true,
+    "chatAsksForEngine": true,
+    "welcomeAsksWithOneOffered": true,
+    "welcomeSignsIn": true,
+    "welcomeSavesChoice": true,
+    "turnsRunOnTheChoice": true,
+    "settingsShowsDefault": true,
+    "settingsChangesDefault": true,
+    "noPageErrorsNewInstall": true,
+    "upgradeKeepsCodex": true,
+    "upgradeChatGoesOnOnCodex": true,
+    "stoppedChoiceTakenOnStart": true,
+    "runningChoiceReachesServer": true,
+    "rerunWithServerKeeps": true
+  },
+  "notes": {
+    "refusesWithoutChoice": [
+      "    2  Codex        0.177.7, signed in with ChatGPT Plus",
+      "    3  Antigravity  experimental, not turned on; Settings → Engines & usage turns it on",
+      "    4  Grok Build   not installed",
+      "  Which should Perry use by default? [1-4] ",
+      "  Perry needs you to choose its default engine, and there is no one here to answer.",
+      "  Run setup again with --engine <codex|claude|grok|antigravity>, or set PERRY_ENGINE."
+    ],
+    "isolated": {
+      "resolved": {
+        "codex": [
+          "W:\\perry-tests\\choose-engine\\work\\perry-choose-engine-vLUpL4\\world-1\\bin\\codex.cmd"
+        ],
+        "claude": [
+          "W:\\perry-tests\\choose-engine\\work\\perry-choose-engine-vLUpL4\\world-1\\bin\\claude.cmd"
+        ],
+        "grok": []
+      },
+      "claude": {
+        "command": "C:\\Users\\owner\\.bun\\bin\\bun.exe",
+        "prefix": [
+          "W:\\perry-tests\\choose-engine\\work\\perry-choose-engine-vLUpL4\\world-1\\bin\\claude-code\\cli.js"
+        ],
+        "sdkPath": "W:\\perry-tests\\choose-engine\\work\\perry-choose-engine-vLUpL4\\world-1\\bin\\claude-code\\cli.js"
+      }
+    },
+    "oneReadyNotTakenUnconfirmed": [
+      "    4  Grok Build   not installed",
+      "  Which should Perry use by default? [1-4, Enter for Codex] ",
+      "  Perry needs you to choose its default engine, and there is no one here to answer.",
+      "  Run setup again with --engine <codex|claude|grok|antigravity>, or set PERRY_ENGINE."
+    ],
+    "unknownEngineRefused": [
+      "  No bot: talk to Perry from the dashboard. Add one in Settings → Telegram any time.",
+      "  \"gemini\" is not an engine Perry runs. Choose one of: codex, claude, grok, antigravity."
+    ],
+    "flagChoosesWithoutAsking": [
+      "  pnpm perry start  runs Perry in the background",
+      "  dashboard key: 2ntrvhuQGvamhg3ndozMgTIMfTJbVTWI",
+      "",
+      "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
+    ],
+    "envLabelChoosesNoSignInAlone": [
+      "  pnpm perry start  runs Perry in the background",
+      "  dashboard key: YfI-dQq_XNJrvU7oXHfjkBodCqw3MlQc",
+      "",
+      "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
+    ],
+    "listSaysHowEachStands": [
+      {
+        "n": "1",
+        "engine": "Grok Build",
+        "standing": "1.0.42-fake, signed in with Grok account"
+      },
+      {
+        "n": "2",
+        "engine": "Antigravity",
+        "standing": "experimental, not turned on; Settings → Engines & usage turns it on"
+      },
+      {
+        "n": "3",
+        "engine": "Claude Code",
+        "standing": "2.1.277, not signed in"
+      },
+      {
+        "n": "4",
+        "engine": "Codex",
+        "standing": "not installed"
+      }
+    ],
+    "installsTheChosenOne": {
+      "npm": [
+        "install -g @openai/codex"
+      ]
+    },
+    "signsInToTheChosenOne": {
+      "logins": [
+        "codex login"
+      ],
+      "last": [
+        "  pnpm perry start  runs Perry in the background",
+        "  dashboard key: Khhh4OJUHlqYItHWFlCDjp2q9OaqgvUF",
+        "",
+        "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
+      ]
+    },
+    "rerunKeepsChoice": [
+      "  dashboard key: Khhh4OJUHlqYItHWFlCDjp2q9OaqgvUF",
+      "",
+      "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
+    ],
+    "enterConfirmsTheOneReady": [
+      "  dashboard key: 3lE1IImXq9zD06bD7sCpoAHhQUQGrHcC",
+      "",
+      "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
+    ],
+    "pipedAnswersKept": {
+      "second": "Antigravity",
+      "last": [
+        "  pnpm perry start  runs Perry in the background",
+        "  dashboard key: LXwSo0raBzG_P8Em2BVDvipsRAPJkMB_",
+        "",
+        "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
+      ]
+    },
+    "newInstallHasNoDefault": {
+      "_id": "qmf7mgst2qh7a060gs4k619b50",
+      "_creationTime": 1790880380427,
+      "onboarding": "pending",
+      "askEngine": true,
+      "createdAt": 1790880380427,
+      "wake": false
+    },
+    "runnerOnStandIns": {
+      "codex": {
+        "version": "0.177.7",
+        "signedIn": false
+      },
+      "grok": {
+        "version": "1.0.42-fake",
+        "signedIn": true
+      },
+      "claude": {
+        "version": "2.1.277",
+        "signedIn": false
+      },
+      "antigravity": {
+        "signedIn": false
+      }
+    },
+    "noTurnWithoutChoice": {
+      "earlyRun": {
+        "id": "e4bns1a19yxkh8mys6hwfeyx81",
+        "sessionId": "czjze9dx0sppvbgh251j91gvrb",
+        "threadId": "4d760gf2ttynt8a4np9ncsh2g2",
+        "chatTitle": "Hello before choosing",
+        "channel": "web",
+        "prompt": "Hello before choosing",
+        "status": "error",
+        "model": "no engine",
+        "error": "Perry has no default engine yet. Choose one in Settings → Engines & usage, or pick a model for this chat, then send it again.",
+        "startedAt": 1790880382973,
+        "durationMs": 189
+      },
+      "turns": 0,
+      "heartbeatChat": {
+        "id": "3mswfjvmpa0ejdg8vj8angb9bv",
+        "sessionId": "f5msv5de0bazk8neycce0gn6m5",
+        "threadId": "rd2hqn9f276005xsx44mh8rt1p",
+        "chatTitle": "⏰ Heartbeat",
+        "channel": "web",
+        "prompt": "⏰ Heartbeat (Thursday, 1 October 2026 at 18:47)\n\nThis is your scheduled heartbeat, not a message from the owner. Look over what could need the owner's attention now: status_report for tasks, goals and page watches, today's and yesterday's notes in memory, and connected accounts where it helps (for example today's calendar). Delivery is conditional: only if there is something they would want to know now, or a follow-up worth asking about a thread they left open, reply with a short message for them. Do not take actions that change anything.\n\nConditional delivery\nOnly when this job makes delivery conditional and there is nothing new to report, reply with exactly NOTHING and no other text. This includes results already delivered or incorporated into an earlier run; do not send an acknowledgement of that redundancy. Do not use NOTHING to omit commentary from a result that still needs delivery. Never return an empty reply; use NOTHING to intentionally deliver nothing.",
+        "status": "error",
+        "model": "no engine",
+        "error": "Perry has no default engine yet. Choose one in Settings → Engines & usage, or pick a model for this chat, then send it again.",
+        "startedAt": 1790880440739,
+        "durationMs": 69
+      }
+    },
+    "chatAsksForEngine": "Choose the engine Perry thinks with\nPerry doesn't pick one for you. Choose a default for every chat, or pick a model for this one in the box below.\nChoose\nPerry couldn't finish the last reply\n\nTry again, or open Activity for the full run.\n\nPerry has no default engine yet. Choose one in Settings → Engines & usage, or pick a model for this chat, then send it again.\n\nTry again",
+    "welcomeAsksWithOneOffered": {
+      "heading": "Choose an engine",
+      "cards": [
+        {
+          "label": "Grok Build",
+          "checked": true,
+          "text": "Grok Build\nSigned in with Grok account · 1.0.42-fake."
+        },
+        {
+          "label": "Antigravity",
+          "checked": false,
+          "text": "Antigravity\nNot ready\nExperimental. Not turned on yet; Settings → Engines & usage turns it on."
+        },
+        {
+          "label": "Claude Code",
+          "checked": false,
+          "text": "Claude Code\nNot ready\nInstalled, not signed in."
+        },
+        {
+          "label": "Codex",
+          "checked": false,
+          "text": "Codex\nNot ready\nInstalled, not signed in."
+        }
+      ]
+    },
+    "welcomeSignsIn": "Codex\nSigned in with ChatGPT Plus · 0.177.7.",
+    "turnsRunOnTheChoice": {
+      "welcome": [
+        "codex"
+      ],
+      "early": "codex",
+      "reply": "Fake Codex reply to: Hello after choosing"
+    },
+    "settingsShowsDefault": "Codex\nDefault\nSigned in with ChatGPT Plus · 0.177.7.",
+    "settingsChangesDefault": {
+      "later": "grok",
+      "grok": "Fake grok reply to: Hello Grok by default. One two three four five six seven eig",
+      "early": "Fake Codex reply to: Still on Codex?",
+      "heartbeat": "grok"
+    },
+    "noPageErrorsNewInstall": [],
+    "runnerLogNew": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\choose-engine\\work\\perry-choose-engine-vTyb2Q\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  named a chat \"Fake chat name\" (gpt-fake)\u001b[0m",
+      "\u001b[2m  saved turn 9y6qydfrmayampv7m5bvg9s4wa\u001b[0m",
+      "\u001b[2m  saved turn 66r54axdp0g4sathj1kkt0n40s\u001b[0m",
+      "\u001b[2m  named a chat \"Fake chat name\" (gpt-fake)\u001b[0m",
+      "\u001b[2m  saved turn wpva5vmv5fdab9x8kwzx5df2nz\u001b[0m",
+      "\u001b[2m  saved turn vt904h2nae8ccd65q5127sftfe\u001b[0m",
+      "\u001b[2m  saved turn x95f1f6jbw6vwe0kj13qpx7724\u001b[0m"
+    ],
+    "upgradeKeepsCodex": {
+      "seeded": {},
+      "after": {
+        "defaultEngine": "codex"
+      },
+      "chat": "codex",
+      "job": {
+        "model": "gpt-fake",
+        "engine": "codex"
+      }
+    },
+    "upgradeChatGoesOnOnCodex": {
+      "reply": "Fake Codex reply to: Hello after the upgrade",
+      "resumed": [
+        "thread/start ",
+        "thread/resume fake-thread-legacy",
+        "thread/inject_items fake-thread-legacy"
+      ]
+    },
+    "stoppedChoiceTakenOnStart": {
+      "chosen": "codex",
+      "taken": "codex"
+    },
+    "runningChoiceReachesServer": {
+      "now": "grok",
+      "last": [
+        "  dashboard key: choose-engine-setup-e2e-key",
+        "",
+        "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
+      ]
+    },
+    "rerunWithServerKeeps": [
+      "  dashboard key: choose-engine-setup-e2e-key",
+      "",
+      "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
+    ],
+    "wakeTasksLeft": [],
+    "tempRemoved": true
+  },
+  "passed": true
+}

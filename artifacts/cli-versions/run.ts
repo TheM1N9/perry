@@ -104,7 +104,8 @@ const enginesNow = async () => {
 const lastRunError = async (chat: string) => (await call<Array<{ status: string; error?: string }>>("dashboard:listRuns", { key: KEY, conversationId: chat }))[0];
 /** `perry doctor --machine` or `perry setup` against the stand-ins, with this run's Perry home and registry. */
 const script = (name: "doctor" | "setup", cwd: string) => new Promise<{ code: number | null; output: string }>((done) => {
-  const env: NodeJS.ProcessEnv = { ...process.env, ...onPath, PERRY_HOME: p.home, PERRY_NPM_REGISTRY: REGISTRY, FAKE_CLI_HOME: state, FAKE_ACP_HOME: acpHome, NO_COLOR: "1" };
+  // Setup checks Codex as the engine the owner chose (issue #190: it never picks one by itself).
+  const env: NodeJS.ProcessEnv = { ...process.env, ...onPath, PERRY_HOME: p.home, PERRY_NPM_REGISTRY: REGISTRY, FAKE_CLI_HOME: state, FAKE_ACP_HOME: acpHome, NO_COLOR: "1", PERRY_ENGINE: "codex" };
   for (const variable of Object.keys(env)) if (variable.startsWith("TELEGRAM") || variable === "DASHBOARD_KEY") delete env[variable];
   const child = spawn(process.execPath, [join(REPO, "scripts", `${name}.ts`), ...(name === "doctor" ? ["--machine"] : [])], { cwd, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   let output = "";
@@ -128,6 +129,8 @@ try {
   p.start("server");
   await until(() => fetch(`${BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start", 90);
   await call("dashboard:skipOnboarding", { key: KEY }).catch(() => {});
+  // The owner's default engine, as the welcome page would have asked for it (issue #190).
+  await call("dashboard:setDefaultEngine", { key: KEY, engine: "codex" });
   await until(async () => Boolean((await call<Array<{ builtin?: string }>>("jobs:list")).find((job) => job.builtin === "heartbeat")), "the built-in jobs", 90);
 
   // --- 1, 2. Offline: the registry refuses ------------------------------------------------------------
