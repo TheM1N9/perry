@@ -28,7 +28,8 @@
  *   EARLY            an empty end_turn at once, then the reply as updates after it
  *   RECALL           the messages this session has had before, to show it was resumed
  *   REJECT ...       session/prompt fails at once, without taking the prompt in (it is logged as `rejected`)
- *   LIMIT            the prompt fails as Grok's does when the plan's limit is hit
+ *   LIMIT            the prompt fails as Grok's does when the plan's limit is hit; so does every
+ *                    prompt while FAKE_ACP_HOME has a file named <profile>-limited (a plan used up)
  *   /compact, /compress   the agent's compaction command
  *   anything else    a reply streamed in chunks, after a thought and a plan
  */
@@ -219,8 +220,8 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     return { stopReason };
   };
 
-  if (text.startsWith("LIMIT")) {
-    log({ limit: true });
+  if (text.startsWith("LIMIT") || existsSync(join(HOME, `${profile}-limited`))) {
+    log({ limit: true, prompt: text.slice(0, 120) });
     // Grok Build's own words for it (xai-grok-shell).
     throw new RequestError(-32000, "You've hit the rate limit for your plan. Upgrade your account or try again later.");
   }
