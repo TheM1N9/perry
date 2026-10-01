@@ -18,7 +18,7 @@ const config: NextConfig = {
       { source: "/tasks", destination: "/work", permanent: false },
       { source: "/about", destination: "/memory?tab=about", permanent: false },
       { source: "/profile", destination: "/settings/general", permanent: false },
-      { source: "/keys", destination: "/settings/access", permanent: false },
+      { source: "/keys", destination: "/settings/logins", permanent: false },
       { source: "/setup", destination: "/settings/telegram", permanent: false },
       { source: "/apps", destination: "/apps/connectors", permanent: false },
       { source: "/connectors", destination: "/apps/connectors", permanent: false },

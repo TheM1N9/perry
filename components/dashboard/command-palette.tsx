@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, GaugeIcon, InboxIcon, KeyboardIcon, KeyRoundIcon, ListChecksIcon, LockIcon, MessageSquareIcon,
-  MonitorIcon, MoonIcon, PuzzleIcon, SettingsIcon, SquarePenIcon, SunIcon, TextSearchIcon,
+  MonitorIcon, MoonIcon, PuzzleIcon, SettingsIcon, ShieldCheckIcon, SquarePenIcon, SunIcon, TextSearchIcon,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useState } from "react";
 import { useAction, useQuery } from "@/client/react";
@@ -30,7 +30,8 @@ const PAGES = [
   { href: "/settings/general", label: "Settings", icon: SettingsIcon },
   { href: "/settings/engines", label: "Engines & usage", icon: GaugeIcon },
   { href: "/settings/computers", label: "Computers", icon: MonitorIcon },
-  { href: "/settings/access", label: "Access & approvals", icon: KeyRoundIcon },
+  { href: "/settings/access", label: "Access & approvals", icon: ShieldCheckIcon },
+  { href: "/settings/logins", label: "Logins & secrets", icon: KeyRoundIcon },
   { href: "/settings/activity", label: "Activity log", icon: ActivityIcon },
   { href: "/settings/desktop-pet#shortcuts", label: "Keyboard shortcuts", icon: KeyboardIcon },
 ];

@@ -280,7 +280,7 @@ const tell_owner = createTool({
 
 const save_secret = createTool({
   description:
-    "Move a password, login, API key or other secret the owner gives you into Logins and secrets (Settings → Access & approvals), " +
+    "Move a password, login, API key or other secret the owner gives you into Settings → Logins & secrets, " +
     "where you can use it later to sign in to a website with computer use or the browser. Use it " +
     "whenever the owner sends one, even without asking you to save it, and never put one in memory. " +
     "Saving it also removes the value from this chat's history. The same name and username replaces " +
@@ -305,14 +305,14 @@ const save_secret = createTool({
     return {
       saved: true,
       id: result.id,
-      note: `${result.replaced ? "Replaced the saved entry" : "Saved"} under Settings → Access & approvals → Logins and secrets, and removed from this chat. Do not repeat the value.`,
+      note: `${result.replaced ? "Replaced the saved entry" : "Saved"} under Settings → Logins & secrets, and removed from this chat. Do not repeat the value.`,
     };
   },
 });
 
 const list_secrets = createTool({
   description:
-    "List the logins and secrets saved in Settings → Access & approvals: their names, sites and usernames, never the values. " +
+    "List the logins and secrets saved in Settings → Logins & secrets: their names, sites and usernames, never the values. " +
     "Check it before asking the owner for a login, and for the id use_secret takes.",
   inputSchema: z.object({}),
   execute: async (ctx): Promise<{ count: number; secrets: VaultEntry[] }> => {
@@ -742,7 +742,7 @@ const browser = createTool({
           if (!input.secretId || input.passwordRef === undefined) return { error: "sign_in needs secretId and passwordRef (and usernameRef for the name box)." };
           const login: (VaultEntry & { value: string }) | null = await ctx.runMutation(internal.vault.reveal, { id: input.secretId });
           if (!login) return { error: "No saved login with that id; list_secrets shows them." };
-          if (!login.url) return { error: `The saved login “${login.label}” has no site address, so Perry cannot tell whether this is its site. The owner can add one in Settings → Access & approvals.` };
+          if (!login.url) return { error: `The saved login “${login.label}” has no site address, so Perry cannot tell whether this is its site. The owner can add one in Settings → Logins & secrets.` };
           const here = (await web.describe(input.passwordRef)).url;
           if (!web.onSite(here, login.url)) return { error: `This page (${new URL(here).hostname}) is not the site the login “${login.label}” is for (${login.url}). It was not entered.` };
           return await web.signIn(login, input.usernameRef, input.passwordRef, input.submit !== false);

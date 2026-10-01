@@ -4,9 +4,9 @@ import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from
 
 /**
  * The owner's logins and secrets, for Perry to sign in to websites with
- * computer use: the Logins and secrets in Settings → Access & approvals.
+ * computer use: Settings → Logins & secrets.
  *
- * The owner adds one in Settings → Access & approvals, or sends it in a chat and the agent
+ * The owner adds one in Settings → Logins & secrets, or sends it in a chat and the agent
  * moves it here with save_secret. Moving means the value also leaves the chat:
  * it is replaced in that chat's history, its turns and its trace, so the only
  * copy Perry keeps is this row.
@@ -39,7 +39,7 @@ const entry = (row: Doc<"vault">): VaultEntry => ({
   ...(row.lastUsedAt ? { lastUsedAt: row.lastUsedAt } : {}),
 });
 
-export const HIDDEN = "[saved in Logins and secrets]";
+export const HIDDEN = "[saved in Logins & secrets]";
 
 /**
  * Saved values shorter than this are not hidden everywhere: a four-digit PIN

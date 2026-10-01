@@ -17,10 +17,11 @@ export const SETTINGS_GROUPS = [
   ] },
   { label: "Desktop pet", sections: [{ slug: "desktop-pet", label: "Desktop pet" }] },
   { label: "People", sections: [{ slug: "people", label: "People" }] },
-  { label: "System", sections: [
-    { slug: "activity", label: "Activity log" },
-    { slug: "security", label: "Security" },
+  { label: "Security", sections: [
+    { slug: "logins", label: "Logins & secrets" },
+    { slug: "security", label: "Dashboard key" },
   ] },
+  { label: "System", sections: [{ slug: "activity", label: "Activity log" }] },
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_GROUPS)[number]["sections"][number]["slug"];
@@ -40,14 +41,14 @@ export const KEY_HOMES: Record<string, string> = {
 /**
  * Where each of the old Settings tabs (/settings?tab=…) went, for proxy.ts.
  * Keys has no one home: a link naming its key (&key=) goes to that key, and
- * the rest to the logins and secrets, the most of what that tab held.
+ * the rest to Logins & secrets, the most of what that tab held.
  */
 export function oldSettingsTab(tab?: string, key?: string): string {
   if (tab === "keys" && key && KEY_HOMES[key]) return KEY_HOMES[key];
   const moved: Record<string, string> = {
     general: "/settings/general",
     usage: "/settings/engines",
-    keys: "/settings/access",
+    keys: "/settings/logins",
     people: "/settings/people",
     shortcuts: "/settings/desktop-pet#shortcuts",
     telegram: "/settings/telegram",

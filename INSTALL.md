@@ -323,9 +323,9 @@ desktop pet, the computer Perry works on, and your name, which opens how much of
 each engine's plan is left, the theme, Settings and Lock dashboard. Settings
 puts everything else in sections down its left: General, Engines & usage,
 Computers, Access & approvals, Notifications, Telegram, WhatsApp, Desktop pet,
-People, Activity log and Security. Each key is entered beside what it unlocks:
-the Telegram bot token in Telegram, the Gemini API key in Engines & usage, and
-the Composio key in Apps & skills. Engines & usage shows the Codex account on
+People, Logins & secrets, Dashboard key and Activity log. Each key is entered
+beside what it unlocks: the Telegram bot token in Telegram, the Gemini API key
+in Engines & usage, and the Composio key in Apps & skills. Engines & usage shows the Codex account on
 each connected machine; the activity log lists every run with session filters,
 tools, tokens, errors, and a link back to each web chat.
 

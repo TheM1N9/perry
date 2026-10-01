@@ -50,13 +50,14 @@ const SECTIONS: Record<SettingsSection, () => ReactNode> = {
   general: () => <><YourAssistant /><Appearance /><Updates /></>,
   engines: () => <><Engines /><Usage /></>,
   computers: () => <Computers />,
-  access: () => <><NewChatAccess /><ApprovalRules /><Logins /><RecentRequests /></>,
+  access: () => <><NewChatAccess /><ApprovalRules /><RecentRequests /></>,
   notifications: () => <><Manners /><AwayChannel /></>,
   telegram: () => <Telegram />,
   whatsapp: () => <WhatsApp />,
   "desktop-pet": () => <><DesktopPet /><Shortcuts /></>,
   people: () => <People />,
   activity: () => <Activity />,
+  logins: () => <Logins />,
   security: () => <Security />,
 };
 
@@ -492,7 +493,7 @@ export function KeyRow({ name, className }: { name: SecretName; className?: stri
   );
 }
 
-/** The key that guards the dashboard, and locking this browser. */
+/** Settings → Dashboard key: the key that guards the dashboard, and locking this browser. */
 function Security() {
   const { lock } = useSession();
   return (
@@ -545,11 +546,11 @@ function Logins() {
   };
 
   return (
-    <Section title="Logins and secrets" description="For Perry to sign in to websites with computer use. Send one in a chat and Perry moves it here, out of the chat. Passwords are never shown again.">
+    <Section title="Logins & secrets" description="For Perry to sign in to websites with computer use. Send one in a chat and Perry moves it here, out of the chat. Passwords are never shown again.">
       {logins === undefined ? <ListSkeleton /> : logins.length === 0 ? (
         <EmptyState title="No logins saved">Add one below, or send it to Perry in a chat.</EmptyState>
       ) : (
-        <List label="Logins and secrets">
+        <List label="Logins & secrets">
           {logins.map((login) => (
             <li key={login.id} className="flex flex-wrap items-start justify-between gap-2 py-3">
               <div className="min-w-0">
