@@ -42,12 +42,27 @@ const BODY = { width: 150, height: 170 };
  * hotkey, his tray icon or `perry pet` bring him back, to where he was.
  */
 const DISMISS = { size: 220, reach: 70 };
-const DISMISS_PAGE = `<!doctype html><html><head><title>Perry: drop here to hide</title></head><body style="margin:0;height:100vh;display:grid;place-items:center;background:transparent;font:600 12px system-ui,sans-serif">
-<div id="all" style="display:grid;justify-items:center;gap:10px;margin-top:34px;opacity:0;transition:opacity .12s">
-<div id="ring" style="width:110px;height:110px;border-radius:50%;display:grid;place-items:center;background:rgba(24,24,27,.82);color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.35);transition:transform .15s,background .15s">
-<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
-<div id="label" style="padding:3px 9px;border-radius:99px;background:rgba(24,24,27,.82);color:#fff">Hide Perry</div></div>
-<script>window.shown=(on)=>{all.style.opacity=on?"1":"0";};window.arm=(on)=>{ring.style.transform=on?"scale(1.2)":"";ring.style.background=on?"rgba(220,38,38,.92)":"rgba(24,24,27,.82)";label.textContent=on?"Let go to hide him":"Hide Perry";}</script>
+/**
+ * The circle's page, in Perry's colours (app/globals.css: popover, foreground,
+ * border, destructive, and the overlay shadow), light or dark as his theme is:
+ * nativeTheme, from pet.json, is what this page sees as the system's. It is a
+ * data: URL, made before Perry's server may be up (at login, or restarting to
+ * update), so it cannot load the app's font; two words in the system's own
+ * font, rather than a circle that waits on the server.
+ */
+const DISMISS_PAGE = `<!doctype html><html><head><title>Perry: drop here to hide</title><meta name="color-scheme" content="light dark"><style>
+:root{--popover:#ffffff;--foreground:#1d1d1f;--border:#e5e5ea;--destructive:#c4221a;--on-destructive:#ffffff}
+@media (prefers-color-scheme:dark){:root{--popover:#18181b;--foreground:#f2f2f4;--border:rgb(255 255 255/.09);--destructive:#ff7a70;--on-destructive:#0c0c0e}}
+body{margin:0;height:100vh;display:grid;place-items:center;background:transparent;font:600 12px system-ui,sans-serif}
+#all{display:grid;justify-items:center;gap:10px;margin-top:34px;opacity:0;transition:opacity .12s}
+#ring,#label{background:var(--popover);color:var(--foreground);border:1px solid var(--border);box-shadow:0 16px 40px -12px rgb(0 0 0/.38)}
+#ring{width:110px;height:110px;box-sizing:border-box;border-radius:50%;display:grid;place-items:center;transition:transform .15s,background .15s,color .15s}
+#label{padding:3px 9px;border-radius:99px}
+body.armed #ring{transform:scale(1.2);background:var(--destructive);color:var(--on-destructive);border-color:transparent}
+</style></head><body>
+<div id="all"><div id="ring"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+<div id="label">Hide Perry</div></div>
+<script>window.shown=(on)=>{all.style.opacity=on?"1":"0";};window.arm=(on)=>{document.body.classList.toggle("armed",on);label.textContent=on?"Let go to hide him":"Hide Perry";}</script>
 </body></html>`;
 
 /** The checkout's .env.local, where the dashboard key and any PERRY_PORT live. */

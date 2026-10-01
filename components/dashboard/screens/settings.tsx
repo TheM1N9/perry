@@ -2,7 +2,7 @@
 
 import { useTheme } from "next-themes";
 import { ExternalLinkIcon, MessageCircleIcon, MonitorIcon, MoonIcon, RefreshCwIcon, SendIcon, ShieldAlertIcon, ShieldCheckIcon, SmartphoneIcon, SunIcon, UserIcon } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -16,21 +16,25 @@ import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TimePicker } from "@/components/ui/time-picker";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ACCESS_ICONS } from "../chat/composer";
 import { PetControl } from "../pet-control";
 import { PetDevices } from "../pet-devices";
 import { Shortcuts } from "../shortcuts";
 import { Updates } from "../updates";
 import { Usage } from "./usage";
-import { ActionButton, CommandLine, CopyButton, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
+import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
 
 const TABS = ["general", "usage", "keys", "people", "shortcuts", "telegram", "whatsapp"] as const;
 
@@ -194,8 +198,7 @@ function LoginSteps({ engine, interaction }: { engine: string; interaction: Logi
         <>
           <p className="mt-0.5 text-sm text-muted-foreground">Open the sign-in page, sign in, and enter this code. This page updates by itself.</p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            <span className="rounded-lg border bg-background px-3 py-1.5 font-mono text-2xl font-semibold tracking-[0.15em]" translate="no">{interaction.userCode}</span>
-            <CopyButton value={interaction.userCode} label="Copy code" />
+            <CodeDisplay>{interaction.userCode}</CodeDisplay>
             <Button size="sm" render={<a href={interaction.verificationUrl} target="_blank" rel="noopener noreferrer" />}>Open sign-in page<ExternalLinkIcon /></Button>
           </div>
         </>
@@ -221,7 +224,7 @@ function LoginSteps({ engine, interaction }: { engine: string; interaction: Logi
 function GoogleWarning({ inline }: { inline?: boolean }) {
   const quote = (
     <>
-      Google&apos;s <a className="underline underline-offset-2" href="https://antigravity.google/docs/faq/" target="_blank" rel="noopener noreferrer">Antigravity FAQ</a> says
+      Google&apos;s <a className="link" href="https://antigravity.google/docs/faq/" target="_blank" rel="noopener noreferrer">Antigravity FAQ</a> says
       “Using third party software, tools, or services to access Antigravity is a violation of our Terms of Service … may be grounds for suspension or termination of your account.”
     </>
   );
@@ -245,22 +248,17 @@ function ChoiceCards<T extends string>({ label, value, options, onChange, disabl
   onChange: (value: T) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="grid gap-2 sm:grid-cols-2">
-      {options.map((option) => {
-        const checked = value === option.value;
-        return (
-          <button key={option.value} type="button" role="radio" aria-checked={checked} disabled={disabled} onClick={() => onChange(option.value)}
-            className={cn("flex items-start gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/40 disabled:opacity-60",
-              checked && (option.warning ? "border-warning/60 ring-1 ring-warning/40" : "border-primary/60 ring-1 ring-primary/40"))}>
-            <span className={cn("mt-0.5 shrink-0 [&>svg]:size-4", option.warning ? "text-warning" : "text-muted-foreground", checked && !option.warning && "text-primary")}>{option.icon}</span>
-            <span className="grid gap-0.5">
-              <span className="text-sm font-medium">{option.title}</span>
-              <span className="text-sm text-pretty text-muted-foreground">{option.body}</span>
-            </span>
-          </button>
-        );
-      })}
-    </div>
+    <RadioGroup aria-label={label} value={value ?? null} disabled={disabled} onValueChange={(next) => onChange(next as T)} className="gap-2 sm:grid-cols-2">
+      {options.map((option) => (
+        <RadioGroupCard key={option.value} value={option.value} tone={option.warning ? "warning" : "default"}>
+          <span className={cn("mt-0.5 shrink-0 [&>svg]:size-4", option.warning ? "text-warning" : "text-muted-foreground group-data-checked/radio-card:text-primary")}>{option.icon}</span>
+          <span className="grid gap-0.5">
+            <span className="text-sm font-medium">{option.title}</span>
+            <span className="text-sm text-pretty text-muted-foreground">{option.body}</span>
+          </span>
+        </RadioGroupCard>
+      ))}
+    </RadioGroup>
   );
 }
 
@@ -308,31 +306,35 @@ function Manners() {
   const { dashboardKey } = useSession();
   const manners = useQuery(api.dashboard.getManners, { key: dashboardKey });
   const save = useMutation(api.dashboard.setManners);
-  const [quiet, setQuiet] = useState({ on: false, start: "22:00", end: "07:00" });
+  const [quiet, setQuietState] = useState({ on: false, start: "22:00", end: "07:00" });
+  // The latest hours, kept as they change: a time field can still change as focus leaves it, in the same event as the blur that saves.
+  const latest = useRef(quiet);
+  const setQuiet = (next: typeof quiet) => { latest.current = next; setQuietState(next); };
   useEffect(() => {
-    if (manners) setQuiet({ on: Boolean(manners.quietHours), start: manners.quietHours?.start ?? "22:00", end: manners.quietHours?.end ?? "07:00" });
+    if (!manners) return;
+    latest.current = { on: Boolean(manners.quietHours), start: manners.quietHours?.start ?? "22:00", end: manners.quietHours?.end ?? "07:00" };
+    setQuietState(latest.current);
   }, [manners]);
   const store = (next: { quietHours?: { start: string; end: string }; dailyLimit?: number }, success: string) =>
     void save({ key: dashboardKey, ...next }).then(() => toast.success(success), (cause) => toast.error(errorText(cause)));
   const limit = manners?.dailyLimit;
-  const hours = (on: boolean, start = quiet.start, end = quiet.end) => on ? { quietHours: { start, end } } : {};
+  const hours = (on: boolean, start = latest.current.start, end = latest.current.end) => on ? { quietHours: { start, end } } : {};
+  const saveHours = () => { const { on, start, end } = latest.current; if (on) store({ ...hours(true, start, end), dailyLimit: limit }, `Quiet from ${start} to ${end}.`); };
   return (
     <Section title="Messages Perry sends on his own" description="Schedules, page watches and the heartbeat. What arrives in quiet hours or past the day's limit waits, and comes as one message when it may. Due reminders always go.">
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm font-medium">
             <Switch checked={quiet.on} disabled={!manners} aria-label="Quiet hours"
-              onCheckedChange={(on) => { setQuiet({ ...quiet, on }); store({ ...hours(on), dailyLimit: limit }, on ? `Quiet from ${quiet.start} to ${quiet.end}.` : "Quiet hours off."); }} />
+              onCheckedChange={(on) => { setQuiet({ ...latest.current, on }); store({ ...hours(on), dailyLimit: limit }, on ? `Quiet from ${latest.current.start} to ${latest.current.end}.` : "Quiet hours off."); }} />
             Quiet hours
           </label>
           <span className="text-sm text-muted-foreground">from</span>
-          <Input type="time" aria-label="Quiet from" className="w-28" value={quiet.start} disabled={!quiet.on}
-            onChange={(event) => setQuiet({ ...quiet, start: event.target.value })}
-            onBlur={() => quiet.on && store({ ...hours(true), dailyLimit: limit }, `Quiet from ${quiet.start} to ${quiet.end}.`)} />
+          <TimePicker aria-label="Quiet from" value={quiet.start} disabled={!quiet.on}
+            onValueChange={(start) => setQuiet({ ...latest.current, start })} onBlur={saveHours} />
           <span className="text-sm text-muted-foreground">to</span>
-          <Input type="time" aria-label="Quiet until" className="w-28" value={quiet.end} disabled={!quiet.on}
-            onChange={(event) => setQuiet({ ...quiet, end: event.target.value })}
-            onBlur={() => quiet.on && store({ ...hours(true), dailyLimit: limit }, `Quiet from ${quiet.start} to ${quiet.end}.`)} />
+          <TimePicker aria-label="Quiet until" value={quiet.end} disabled={!quiet.on}
+            onValueChange={(end) => setQuiet({ ...latest.current, end })} onBlur={saveHours} />
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium">At most</span>
@@ -401,21 +403,17 @@ const THEMES = [
   { value: "dark", label: "Dark", icon: MoonIcon },
 ] as const;
 
-/** System, Light or Dark; none checked while the value is not known yet. */
+/** System, Light or Dark; none pressed while the value is not known yet. Pressing the one pressed keeps it. */
 function ThemeChoice<Value extends string>({ label, value, onChange }: { label: string; value: string | undefined; onChange: (value: Value) => void }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg border bg-muted/50 p-0.5">
-      {THEMES.map((option) => {
-        const checked = value === option.value;
-        return (
-          <button key={option.value} type="button" role="radio" aria-checked={checked} onClick={() => onChange(option.value as Value)}
-            className={cn("flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
-              checked && "bg-background text-foreground shadow-sm")}>
-            <option.icon className="size-4" />{option.label}
-          </button>
-        );
-      })}
-    </div>
+    <ToggleGroup aria-label={label} value={value ? [value] : []} onValueChange={(next) => { if (next[0]) onChange(next[0] as Value); }}
+      spacing={0.5} className="rounded-lg border bg-muted/50 p-0.5">
+      {THEMES.map((option) => (
+        <ToggleGroupItem key={option.value} value={option.value} className="rounded-md px-3 text-muted-foreground hover:bg-transparent aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm">
+          <option.icon />{option.label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   );
 }
 
@@ -765,8 +763,7 @@ function Telegram() {
           <p className="mt-1 text-sm text-pretty text-muted-foreground">Send the code to your Perry bot. Whoever sends it first owns this Perry.</p>
           {live ? (
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <span className="rounded-xl border bg-muted/40 px-4 py-2 font-mono text-3xl font-semibold tracking-[0.2em]" translate="no" aria-label={`Pairing code ${status.pairingCode!.split("").join(" ")}`}>{status.pairingCode}</span>
-              <CopyButton value={status.pairingCode!} label="Copy code" />
+              <CodeDisplay label={`Pairing code ${status.pairingCode!.split("").join(" ")}`}>{status.pairingCode!}</CodeDisplay>
               {remaining !== undefined && <span className="nums text-sm text-muted-foreground">Expires in {countdown(remaining)}</span>}
             </div>
           ) : <p className="mt-4 text-sm text-muted-foreground">{status.pairingCode ? "That code expired." : "Generate a code, then send it to your bot."}</p>}
@@ -845,8 +842,8 @@ function WhatsApp() {
           {state.status === "logged-out" && <Alert variant="destructive"><AlertTitle>Unlinked</AlertTitle><AlertDescription>{state.error ?? "WhatsApp was unlinked on the phone."} Link it again below.</AlertDescription></Alert>}
           <ChoiceCards label="Which number Perry uses" value={mode} options={WHATSAPP_MODES} onChange={setMode} />
           <div className="rounded-xl border bg-card p-4">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={byCode} onChange={(event) => setByCode(event.target.checked)} className="size-4 accent-primary" />
+            <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+              <Checkbox checked={byCode} onCheckedChange={setByCode} />
               Link with a code typed on the phone instead of scanning a QR
             </label>
             {byCode && (
@@ -878,7 +875,7 @@ function WhatsApp() {
           )}
           {state.status === "code" && state.code && (
             <div className="mt-4 space-y-3">
-              <span className="inline-block rounded-xl border bg-muted/40 px-4 py-2 font-mono text-3xl font-semibold tracking-[0.2em]" translate="no">{state.code}</span>
+              <CodeDisplay>{state.code}</CodeDisplay>
               <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
                 <li>On {phoneOf} phone: WhatsApp › Settings › Linked devices › Link a device.</li>
                 <li>Tap &ldquo;Link with phone number instead&rdquo;, then type this code.</li>
@@ -919,8 +916,7 @@ function WhatsApp() {
               <h3 className="font-medium">Send this from your own WhatsApp to {state.number ?? "Perry's number"}</h3>
               {state.pairingCode ? (
                 <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <span className="rounded-xl border bg-muted/40 px-4 py-2 font-mono text-3xl font-semibold tracking-[0.2em]" translate="no">{state.pairingCode}</span>
-                  <CopyButton value={state.pairingCode} label="Copy code" />
+                  <CodeDisplay>{state.pairingCode}</CodeDisplay>
                 </div>
               ) : <p className="mt-2 text-sm text-muted-foreground">That code expired.</p>}
               <ActionButton className="mt-3" variant="outline" size="sm" action={() => newCode({ key: dashboardKey })}><RefreshCwIcon />New code</ActionButton>

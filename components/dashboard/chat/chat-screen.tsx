@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApprovalCard } from "../approval-card";
 import { DeleteDialog, RenameDialog } from "../app-sidebar";
@@ -592,8 +593,8 @@ export function ChatScreen() {
           {!selectedId ? (
             <div className="flex min-h-[calc(100dvh-16rem)] flex-col items-center justify-center py-12 text-center">
               <PerryMark className="size-14" />
-              <h2 className="mt-5 text-[28px] font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
-              <p className="mt-1.5 max-w-md text-[15px] text-pretty text-muted-foreground">
+              <h2 className="mt-5 text-3xl font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
+              <p className="mt-1.5 max-w-md text-md text-pretty text-muted-foreground">
                 {project ? `It follows the project's instructions, knows its other chats, and keeps what ${assistant} remembers here to the project.` : `What should ${assistant} pick up?`}
               </p>
             </div>
@@ -676,7 +677,7 @@ export function ChatScreen() {
               <p className="font-medium text-foreground">{assistant}&apos;s chat with {chat.contact.name}{chat.contact.group ? " (a group)" : ""}</p>
               <p className="mt-1 text-pretty">
                 You can read it, but not write in it: what you write would reach them. To have {assistant} tell them something, ask in your own chat.
-                {" "}What {assistant} may share with them is under <Link href="/settings?tab=people" className="underline underline-offset-2 hover:text-foreground">Settings → People</Link>.
+                {" "}What {assistant} may share with them is under <Link href="/settings?tab=people" className="link">Settings → People</Link>.
               </p>
             </div>
           ) : (<>
@@ -707,7 +708,7 @@ export function ChatScreen() {
               {limit && limitSeen !== limitMark && (
                 <ComposerNote tone={limit.level === "out" ? "error" : "warning"} onDismiss={() => setLimitSeen(limitMark)}>
                   <span className="font-medium">{limit.title}.</span> {limit.detail}{" "}
-                  <Link href="/settings?tab=usage" className="underline underline-offset-2">See usage</Link>
+                  <Link href="/settings?tab=usage" className="link">See usage</Link>
                 </ComposerNote>
               )}
               {!selectedId && !draft && files.length === 0 && (
@@ -726,7 +727,7 @@ export function ChatScreen() {
               ? <span className="text-warning">Full access: {assistant} acts on this computer without asking. Every command still shows in Activity.</span>
               : app
                 ? <>Your {app} chat. What you write here, and {assistant}&apos;s reply, also go to {app}.</>
-                : <>Type <kbd className="font-mono">/</kbd> for commands, <kbd className="font-mono">$</kbd> for skills. Drop or paste files to attach them.</>}
+                : <>Type <Kbd className="font-mono">/</Kbd> for commands, <Kbd className="font-mono">$</Kbd> for skills. Drop or paste files to attach them.</>}
           </p>
           </>)}
         </div>

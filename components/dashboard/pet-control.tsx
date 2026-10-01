@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { errorText } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { PlatypusArt } from "./platypus";
 
@@ -24,7 +25,7 @@ export function PetControl() {
   // It runs as long as setup takes, minutes the first time; the page follows it in pet.status, not in this call.
   const start = (which: typeof turnOn) => void which({ key: dashboardKey }).catch((cause) => toast.error(errorText(cause)));
 
-  if (pet === undefined) return <div className="h-20 animate-pulse rounded-xl border bg-muted/40" />;
+  if (pet === undefined) return <Skeleton className="h-20 rounded-xl" />;
   const working = pet.setup?.state === "working";
   const failed = pet.setup?.state === "failed" ? pet.setup : null;
 

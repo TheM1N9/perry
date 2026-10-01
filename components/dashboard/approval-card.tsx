@@ -12,6 +12,7 @@ import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { TextTip } from "./common";
 
 const KIND = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone" } as const;
 const ICON = { command: TerminalIcon, file: FilePenIcon, write: FilePenIcon, browser: GlobeIcon, contact: UserPlusIcon, message: MessageCircleIcon } as const;
@@ -51,7 +52,7 @@ export function ApprovalCard({ approval, now, showChat = true }: { approval: Pen
 
   return (
     <article aria-label={`${approval.runner} wants to ${KIND[approval.kind]}`}
-      className="overflow-hidden rounded-2xl border border-warning/35 bg-card shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
+      className="overflow-hidden rounded-2xl border border-warning/35 bg-card shadow-raised">
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1 bg-warning-soft px-4 py-2.5 text-sm">
         <ShieldAlertIcon className="size-4 shrink-0 text-warning" aria-hidden />
         <span className="font-medium text-foreground">{approval.runner} wants to {KIND[approval.kind]}</span>
@@ -60,12 +61,13 @@ export function ApprovalCard({ approval, now, showChat = true }: { approval: Pen
             in {approval.chat.title}
           </Link>
         )}
-        <span className={cn("nums ml-auto text-xs", left < 60_000 ? "font-medium text-warning" : "text-muted-foreground")} title="Unanswered requests are declined when this runs out">
+        <TextTip tip="Unanswered requests are declined when this runs out" spoken="then it is declined"
+          className={cn("nums ml-auto text-xs", left < 60_000 ? "font-medium text-warning" : "text-muted-foreground")}>
           {remaining(left)} left
-        </span>
+        </TextTip>
       </header>
       <div className="space-y-3 px-4 py-3.5">
-        <pre className="flex gap-2.5 overflow-x-auto rounded-lg bg-muted px-3 py-2.5 font-mono text-[13px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
+        <pre className="flex gap-2.5 overflow-x-auto rounded-lg bg-muted px-3 py-2.5 font-mono text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
           <Icon className="mt-[3px] size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           <code>{approval.title}</code>
         </pre>
@@ -75,7 +77,7 @@ export function ApprovalCard({ approval, now, showChat = true }: { approval: Pen
               <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
                 <dt className="sr-only">Folder</dt>
                 <FolderIcon className="size-3.5 shrink-0" aria-hidden />
-                <dd className="truncate font-mono text-[12.5px]" title={approval.cwd}>{approval.cwd}</dd>
+                <dd className="min-w-0"><TextTip tip={approval.cwd} className="block truncate font-mono text-xs">{approval.cwd}</TextTip></dd>
               </div>
             )}
             {approval.detail && <div><dt className="sr-only">Detail</dt><dd className="text-pretty text-muted-foreground">{approval.detail}</dd></div>}

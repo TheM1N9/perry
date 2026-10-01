@@ -22,8 +22,10 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from "../chat/markdown";
-import { ActionButton, EmptyState, List, ListSkeleton, Page, RelativeTime, Section, StatusBadge, useTab } from "../common";
+import { ActionButton, EmptyState, List, ListSkeleton, Page, RelativeTime, Section, StatusBadge, TextTip, useTab } from "../common";
 
 const TABS = ["memories", "about"] as const;
 
@@ -150,18 +152,21 @@ function Memories() {
                   </form>
                 ) : <>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[15px] text-pretty [overflow-wrap:anywhere]">{memory.text}</p>
+                  <p className="text-md text-pretty [overflow-wrap:anywhere]">{memory.text}</p>
                   <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
                     <StatusBadge>{KINDS.find((item) => item.kind === memory.kind)?.label ?? memory.kind}</StatusBadge>
-                    {memory.chat && <span title="Kept to one chat: no other chat sees it.">Only in {memory.chat}</span>}
+                    {memory.chat && <TextTip tip="Kept to one chat: no other chat sees it." spoken="kept to one chat">Only in {memory.chat}</TextTip>}
                     {memory.project && (
-                      <Link href={`/projects/${memory.projectId}`} className="underline-offset-2 hover:text-foreground hover:underline" title="Kept to a project: only its chats see it.">
-                        Only in {memory.project}
-                      </Link>
+                      <Tooltip>
+                        <TooltipTrigger render={<Link href={`/projects/${memory.projectId}`} />} className="rounded-sm underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50">
+                          Only in {memory.project}<span className="sr-only"> (kept to a project)</span>
+                        </TooltipTrigger>
+                        <TooltipContent>Kept to a project: only its chats see it.</TooltipContent>
+                      </Tooltip>
                     )}
                     <span>{when(memory.createdAt, memory.day)}</span>
                     {memory.origin && <span>{ORIGINS[memory.origin]}</span>}
-                    {memory.source === "dreaming" && <span title="Promoted from daily notes overnight">Promoted overnight</span>}
+                    {memory.source === "dreaming" && <TextTip tip="Promoted from daily notes overnight">Promoted overnight</TextTip>}
                     {memory.tags.length > 0 && <span>{memory.tags.map((tag) => `#${tag}`).join(" ")}</span>}
                     {memory.editedAt && <span title={`Edited ${new Date(memory.editedAt).toLocaleString()}`}>Edited</span>}
                   </p>
@@ -316,7 +321,7 @@ function AboutYou() {
                   if (event.key === "Escape") stopEditingUser();
                   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
                 }}
-                className="min-h-72 font-mono text-[13px] leading-relaxed" spellCheck />
+                className="min-h-72 font-mono text-sm leading-relaxed" spellCheck />
               <FieldDescription>Markdown. Ctrl+Enter saves, Esc cancels.</FieldDescription>
             </Field>
             <div className="mt-4 flex gap-2">
@@ -345,13 +350,13 @@ function AboutYou() {
             {userHistory?.map((version, index) => (
               <li key={version.id} className="flex items-start gap-4 px-4 py-3">
                 <Collapsible className="min-w-0 flex-1">
-                  <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm font-medium">
+                  <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1.5 rounded-md text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
                     <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-data-panel-open:rotate-90" />
-                    USER.md{index === 0 && <span className="font-normal text-muted-foreground">(current)</span>}
+                    USER.md{index === 0 && <span className="font-normal text-muted-foreground"> (current)</span>}
                   </CollapsibleTrigger>
                   <p className="mt-0.5 pl-5 text-xs text-muted-foreground">{BY[version.by]} · <RelativeTime at={version.createdAt} /></p>
                   <CollapsibleContent>
-                    <div className="mt-2 max-h-80 overflow-auto rounded-lg bg-muted/60 px-4 py-3 text-sm"><Markdown text={version.text ?? ""} /></div>
+                    <ScrollArea className="mt-2 rounded-lg bg-muted/60" viewportClassName="max-h-80"><div className="px-4 py-3 text-sm"><Markdown text={version.text ?? ""} /></div></ScrollArea>
                   </CollapsibleContent>
                 </Collapsible>
                 {index > 0 && restoreButton(version.id, "USER.md")}

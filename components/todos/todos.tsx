@@ -1,9 +1,14 @@
 "use client";
 
-import { AlarmClockIcon, CheckIcon, FlameIcon, PlusIcon, RepeatIcon, SparklesIcon, XIcon } from "lucide-react";
+import { AlarmClockIcon, FlameIcon, PlusIcon, RepeatIcon, SparklesIcon, XIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@/client/react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { StatusBadge, TextTip } from "@/components/dashboard/common";
 import { api } from "@/convex/_generated/api";
 import type { TodoView } from "@/convex/todos";
 import { errorText } from "@/lib/format";
@@ -42,18 +47,18 @@ export function QuickAdd({ onAdded, autoFocus, className }: { onAdded?: (title: 
 
   return (
     <form onSubmit={(event) => void submit(event)} className={className}>
-      <div className="relative">
-        <PlusIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-        <input
+      <InputGroup className="h-10 rounded-xl bg-card shadow-raised dark:bg-card">
+        <InputGroupAddon><PlusIcon aria-hidden /></InputGroupAddon>
+        <InputGroupInput
           value={text}
           onChange={(event) => { setText(event.target.value); setError(""); }}
           autoFocus={autoFocus}
           aria-label="Add a to-do"
           placeholder="Add a to-do: “call Sam 2pm”"
-          className="h-10 w-full rounded-xl border bg-card pr-3 pl-9 text-[14px] shadow-[0_1px_2px_rgb(0_0_0/0.05)] outline-none transition-colors placeholder:text-muted-foreground/80 focus-visible:border-ring/60 focus-visible:ring-2 focus-visible:ring-ring/15"
+          className="md:text-sm"
         />
-      </div>
-      <div className="mt-1.5 flex min-h-5 items-center gap-1.5 px-0.5 text-[12px] text-muted-foreground" aria-live="polite">
+      </InputGroup>
+      <div className="mt-1.5 flex min-h-5 items-center gap-1.5 px-0.5 text-xs text-muted-foreground" aria-live="polite">
         {error ? <span className="text-destructive">{error}</span>
           : read?.repeatName ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2 py-0.5 font-medium text-foreground">
@@ -73,9 +78,9 @@ export function QuickAdd({ onAdded, autoFocus, className }: { onAdded?: (title: 
 export function StreakBadge({ days }: { days: number }) {
   if (!days) return null;
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-warning/12 px-2 py-0.5 text-[12px] font-semibold text-warning" title="Days in a row with something done">
-      <FlameIcon className="size-3.5" aria-hidden />{days} {days === 1 ? "day" : "days"}
-    </span>
+    <TextTip tip="Days in a row with something done" spoken="in a row with something done" className="rounded-full">
+      <StatusBadge tone="warning"><FlameIcon className="-mx-0.5 size-3.5" aria-hidden />{days} {days === 1 ? "day" : "days"}</StatusBadge>
+    </TextTip>
   );
 }
 
@@ -91,41 +96,31 @@ export function TodoRows({ todos, now, compact, onDone }: { todos: TodoView[]; n
         const soon = !done && todo.dueAt !== undefined && !late && todo.dueAt - now < 3_600_000;
         return (
           <li key={todo.id} className={cn("group flex items-center gap-2.5 rounded-lg", compact ? "px-1.5 py-1.5" : "px-2 py-2.5", "hover:bg-muted/60")}>
-            <button
-              type="button"
-              role="checkbox"
-              aria-checked={done}
+            {/* Perry's checkbox, kept round: a to-do ticked off, not a setting. */}
+            <Checkbox
+              checked={done}
               aria-label={done ? `Put back “${todo.title}”` : `Done: “${todo.title}”`}
-              onClick={() => {
+              onCheckedChange={() => {
                 void setDone({ key, id: todo.id, done: !done }).catch(() => {});
                 if (!done) onDone?.(todo);
               }}
-              className={cn(
-                "grid size-[18px] shrink-0 cursor-pointer place-items-center rounded-full border-[1.5px] transition-colors",
-                done ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/45 hover:border-primary hover:bg-primary/10",
-              )}
-            >
-              {done && <CheckIcon className="size-3" strokeWidth={3} aria-hidden />}
-            </button>
-            <span className={cn("min-w-0 flex-1 truncate", compact ? "text-[13.5px]" : "text-[14.5px]", done && "text-muted-foreground line-through")}>
+              className="size-[18px] cursor-pointer rounded-full border-[1.5px] border-muted-foreground/45 hover:border-primary hover:bg-primary/10 data-checked:hover:bg-primary [&_[data-slot=checkbox-indicator]>svg]:size-3 [&_svg]:stroke-3"
+            />
+            <span className={cn("min-w-0 flex-1 truncate", compact ? "text-sm" : "text-md", done && "text-muted-foreground line-through")}>
               {todo.title}
             </span>
             {todo.by === "assistant" && <SparklesIcon className="size-3.5 shrink-0 text-primary" aria-label="Perry added this" />}
             {!done && <RepeatMenu todo={todo} />}
             {done && todo.repeat && <RepeatIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label="Repeats" />}
             {todo.dueAt !== undefined && !done && (
-              <span className={cn("shrink-0 text-[12px] nums", late ? "font-semibold text-destructive" : soon ? "font-medium text-warning" : "text-muted-foreground")}>
+              <span className={cn("shrink-0 text-xs nums", late ? "font-semibold text-destructive" : soon ? "font-medium text-warning" : "text-muted-foreground")}>
                 {dueLabel(todo.dueAt, now)}
               </span>
             )}
-            <button
-              type="button"
-              aria-label={`Remove “${todo.title}”`}
-              onClick={() => void remove({ key, id: todo.id }).catch(() => {})}
-              className="grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-            >
-              <XIcon className="size-3.5" aria-hidden />
-            </button>
+            <Button variant="ghost" size="icon-xs" aria-label={`Remove “${todo.title}”`} onClick={() => void remove({ key, id: todo.id }).catch(() => {})}
+              className="text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100">
+              <XIcon className="size-3.5" />
+            </Button>
           </li>
         );
       })}
@@ -149,17 +144,20 @@ function RepeatMenu({ todo }: { todo: TodoView }) {
   };
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label={todo.repeat ? `Repeats ${repeatLabel(todo.repeat).toLowerCase()}: change` : `Make “${todo.title}” repeat`}
-        title={todo.repeat ? (describeSchedule(todo.repeat) ?? todo.repeat) : "Repeat"}
-        className={cn(
-          "inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:opacity-100 data-popup-open:opacity-100",
-          todo.repeat ? "px-1.5" : "w-6 justify-center opacity-0 transition-opacity group-hover:opacity-100",
-        )}
-      >
-        <RepeatIcon className="size-3.5" aria-hidden />
-        {todo.repeat && repeatLabel(todo.repeat)}
-      </DropdownMenuTrigger>
+      {/* What the repeat is in full, in a tip; data-solid, as everything that pops up in the pet's window must be. */}
+      <Tooltip>
+        <TooltipTrigger
+          render={<DropdownMenuTrigger aria-label={todo.repeat ? `Repeats ${repeatLabel(todo.repeat).toLowerCase()}: change` : `Make “${todo.title}” repeat`} />}
+          className={cn(
+            "inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md text-xs text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 data-popup-open:opacity-100",
+            todo.repeat ? "px-1.5" : "w-6 justify-center opacity-0 transition-opacity group-hover:opacity-100",
+          )}
+        >
+          <RepeatIcon className="size-3.5" aria-hidden />
+          {todo.repeat && repeatLabel(todo.repeat)}
+        </TooltipTrigger>
+        <TooltipContent data-solid>{todo.repeat ? (describeSchedule(todo.repeat) ?? todo.repeat) : "Repeat"}</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent align="end" className="w-44" data-solid>
         <DropdownMenuRadioGroup value={current ?? (todo.repeat ? "other" : "none")} onValueChange={(value) => change(value as string)}>
           <DropdownMenuRadioItem value="none">Doesn’t repeat</DropdownMenuRadioItem>

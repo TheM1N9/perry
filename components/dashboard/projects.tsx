@@ -26,6 +26,7 @@ import {
   DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   SidebarGroup, SidebarGroupAction, SidebarGroupLabel, SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub,
 } from "@/components/ui/sidebar";
@@ -56,7 +57,10 @@ export function ProjectFolders({ chats, row, onNewProject }: {
   return (
     <SidebarGroup className="py-1 group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel>Projects</SidebarGroupLabel>
-      <SidebarGroupAction aria-label="New project" title="New project" onClick={onNewProject}><PlusIcon /></SidebarGroupAction>
+      <Tooltip>
+        <TooltipTrigger render={<SidebarGroupAction aria-label="New project" onClick={onNewProject} />}><PlusIcon /></TooltipTrigger>
+        <TooltipContent side="right">New project</TooltipContent>
+      </Tooltip>
       <SidebarMenu aria-label="Projects">
         {projects.map((project) => (
           <Folder key={project.id} project={project} chats={(chats ?? []).filter((chat) => chat.projectId === project.id)} row={row}

@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ActionButton, EmptyState, List, ListSkeleton, Page, Section, StatusBadge, type Tone } from "../common";
 
 type FoundAction = { slug: string; description?: string; toolkit?: string };
@@ -60,10 +61,13 @@ function AppRow({ app, connected, busy, onConnect }: { app: CatalogApp; connecte
         </p>
         {app.description && <p className="truncate text-sm text-muted-foreground" title={app.description}>{app.description}</p>}
       </div>
-      <Button variant="ghost" size="icon-sm" aria-label={connected ? `Connect another ${app.name} account` : `Connect ${app.name}`} title={connected ? "Connect another account" : "Connect"}
-        disabled={busy !== null} aria-busy={busy === app.slug || undefined} onClick={() => onConnect(app.slug)}>
-        {busy === app.slug ? <Spinner /> : <PlusIcon />}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={connected ? `Connect another ${app.name} account` : `Connect ${app.name}`}
+          disabled={busy !== null} aria-busy={busy === app.slug || undefined} onClick={() => onConnect(app.slug)} />}>
+          {busy === app.slug ? <Spinner /> : <PlusIcon />}
+        </TooltipTrigger>
+        <TooltipContent>{connected ? "Connect another account" : "Connect"}</TooltipContent>
+      </Tooltip>
     </li>
   );
 }

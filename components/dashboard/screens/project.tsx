@@ -131,7 +131,7 @@ function Chats({ project }: { project: ProjectView }) {
       {project.chats.map((chat) => (
         <li key={chat.id} className="flex items-center gap-3 px-4 py-3">
           <MessageSquareIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <Link href={`/chat/${chat.id}`} className="min-w-0 flex-1 truncate text-[15px] hover:underline underline-offset-2">{chat.title}</Link>
+          <Link href={`/chat/${chat.id}`} className="min-w-0 flex-1 truncate text-md hover:underline underline-offset-2">{chat.title}</Link>
           {(chat.job || chat.task) && <StatusBadge>{chat.job ? "Schedule" : "Task"}</StatusBadge>}
           <RelativeTime at={chat.lastMessageAt} className="shrink-0 text-xs text-muted-foreground" />
           <Button variant="ghost" size="sm" className="shrink-0 text-muted-foreground" onClick={() => void move(chat.id, null)}>
@@ -154,7 +154,7 @@ function Memories({ project }: { project: ProjectView }) {
       {project.memories.map((memory) => (
         <li key={memory.id} className="flex items-start gap-4 px-4 py-3.5">
           <div className="min-w-0 flex-1">
-            <p className="text-[15px] text-pretty [overflow-wrap:anywhere]">{memory.text}</p>
+            <p className="text-md text-pretty [overflow-wrap:anywhere]">{memory.text}</p>
             <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
               <StatusBadge>{KINDS[memory.kind]}</StatusBadge>
               <RelativeTime at={memory.editedAt ?? memory.createdAt} />

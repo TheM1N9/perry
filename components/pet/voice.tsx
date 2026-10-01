@@ -3,6 +3,9 @@
 import { MicIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Progress, ProgressLabel, ProgressValue } from "@/components/ui/progress";
+import { PetTip } from "./tip";
 
 /**
  * Talking to Perry: the microphone, recorded here in the page while he
@@ -191,39 +194,39 @@ export function useVoice(bridge: VoiceBridge | undefined): Voice {
 /** Where the composer was, while he listens: the waveform, and how to send or stop. */
 export function Listening({ voice, onSend, onCancel }: { voice: Voice; onSend: () => void; onCancel: () => void }) {
   if (voice.state === "transcribing") {
+    // The voice model's first download: how far, as a bar.
+    if (voice.downloading !== null) {
+      return (
+        <Progress value={Math.round(voice.downloading * 100)} className="gap-1.5 px-1 py-1">
+          <ProgressLabel className="text-xs font-normal text-muted-foreground">Getting his ears ready, once (about 80 MB)…</ProgressLabel>
+          <ProgressValue className="text-xs" />
+        </Progress>
+      );
+    }
     return (
-      <div className="flex h-9 items-center gap-2 px-1 text-[13px] text-muted-foreground" role="status">
+      <div className="flex h-9 items-center gap-2 px-1 text-sm text-muted-foreground" role="status">
         <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-        {voice.downloading !== null
-          ? `Getting his ears ready, once (about 80 MB)… ${Math.round(voice.downloading * 100)}%`
-          : "Writing it down…"}
+        Writing it down…
       </div>
     );
   }
   return (
     <div className="flex items-center gap-2" role="status" aria-label="Listening">
-      <button type="button" aria-label="Stop listening" onClick={onCancel}
-        className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground">
-        <XIcon className="size-4" aria-hidden />
-      </button>
+      <Button variant="ghost" size="icon-sm" className="rounded-full text-muted-foreground" aria-label="Stop listening" onClick={onCancel}><XIcon /></Button>
       <div className="flex h-8 min-w-0 flex-1 items-center gap-[3px]" aria-hidden>
         {voice.levels.map((level, index) => (
           <span key={index} className="w-[3px] flex-1 rounded-full bg-primary transition-[height] duration-75" style={{ height: `${Math.max(8, level * 100)}%` }} />
         ))}
       </div>
-      <button type="button" onClick={onSend}
-        className="h-7 shrink-0 cursor-pointer rounded-full bg-primary px-3 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/90">
-        Send
-      </button>
+      <Button size="sm" className="rounded-full px-3" onClick={onSend}>Send</Button>
     </div>
   );
 }
 
 export function MicButton({ onClick, className }: { onClick: () => void; className?: string }) {
   return (
-    <button type="button" aria-label="Talk" title="Talk" onClick={onClick}
-      className={cn("grid size-7 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground", className)}>
-      <MicIcon className="size-4" aria-hidden />
-    </button>
+    <PetTip label="Talk">
+      <Button variant="ghost" size="icon-sm" className={cn("rounded-full text-muted-foreground", className)} aria-label="Talk" onClick={onClick}><MicIcon /></Button>
+    </PetTip>
   );
 }

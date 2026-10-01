@@ -260,7 +260,7 @@ try {
   const code = await dashboard.evaluate(`document.querySelector("[data-pairing-code]").innerText.trim()`) as string;
   checks.codeLooksRight = /^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(code);
   // The address this computer's network gives it, picked as the owner would for a laptop on the same network.
-  await dashboard.evaluate(`[...document.querySelectorAll('[aria-label="Perry\\'s address"] [role=radio]')].find((b) => b.innerText.startsWith(${JSON.stringify(LAN_HOST)}))?.click(); true`);
+  await dashboard.evaluate(`[...document.querySelectorAll('[aria-label="Perry\\'s address"] button')].find((b) => b.innerText.startsWith(${JSON.stringify(LAN_HOST)}))?.click(); true`);
   await sleep(300);
   const lines = await dashboard.evaluate(`[...document.querySelectorAll("main code")].map((c) => c.innerText)`) as string[];
   const windowsLine = lines.find((line) => line.includes("install.ps1")) ?? "";
