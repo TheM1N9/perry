@@ -18,7 +18,7 @@
  * --reload reloads its page (after `perry update`), anything else shows it.
  */
 
-import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, powerMonitor, screen, shell } from "electron";
+import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, net, powerMonitor, screen, shell } from "electron";
 import { existsSync, mkdirSync, readFileSync, watchFile, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -189,6 +189,25 @@ if (!app.requestSingleInstanceLock({ argv })) {
   let tray = null;
   /** Ghost: every click goes through him, even on him. */
   let ghost = Boolean(readState().ghost);
+  /** Whether his page last said the pointer is on him (pet:solid): his window takes clicks then. */
+  let solid = false;
+  /**
+   * His window lets clicks through, or takes them, as ghost and his page say.
+   * While it lets them through, the pointer's moves still reach his page
+   * (forward), so it can tell when the pointer comes onto him. On Windows,
+   * Electron hears them with a low-level mouse hook, which Windows silently
+   * removes when this process is too busy to answer it in time (loading the
+   * voice model holds it for a second or more, longer at login); turning
+   * forwarding off and on again puts the hook back. So this is done again
+   * wherever it may have gone (see the ticks below).
+   */
+  const applyMouse = () => {
+    if (!win || win.isDestroyed()) return;
+    if (ghost) return win.setIgnoreMouseEvents(true);
+    if (solid) return win.setIgnoreMouseEvents(false);
+    win.setIgnoreMouseEvents(true, { forward: false });
+    win.setIgnoreMouseEvents(true, { forward: true });
+  };
   let saveTimer = null;
   /** Where he stands (see keepOnScreen), and his window for it (frame). */
   let spot = null;
@@ -252,7 +271,93 @@ if (!app.requestSingleInstanceLock({ argv })) {
     win.focus();
   };
 
-  const load = () => win?.loadURL(`${BASE}/pet#key=${encodeURIComponent(KEY)}`).catch(() => {});
+  /**
+   * His window, new for each page he loads. On Windows, Electron forwards the
+   * pointer's moves to the child window Chromium makes for a window's first
+   * page, and only that one; a page loaded again in the same window (a reload,
+   * a retry after a failed load, a page after a crash) brings a new child, the
+   * moves go nowhere, his page never hears the pointer come onto him, and every
+   * click goes through him (issue #191; electron/electron#15376 and #49982).
+   * Hidden until its page is there; the one before goes.
+   */
+  function makeWindow() {
+    const old = win;
+    solid = false;
+    const self = new BrowserWindow({
+      ...framed.bounds,
+      title: "Perry",
+      frame: false,
+      transparent: true,
+      backgroundColor: "#00000000",
+      hasShadow: false,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      show: false,
+      webPreferences: {
+        preload: join(HERE, "preload.cjs"),
+        contextIsolation: true,
+        sandbox: true,
+        // He keeps counting down while nothing else is on screen.
+        backgroundThrottling: false,
+      },
+    });
+    win = self;
+    self.setAlwaysOnTop(true, "floating");
+    // skipTransformProcessType: otherwise macOS turns him back into a regular app for this, and his Dock icon comes back.
+    self.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false, skipTransformProcessType: true });
+    // Clicks pass through until the page says the pointer is on him (pet:solid); forwarded, so it can tell.
+    applyMouse();
+
+    // He appears once his page is there, without taking the focus from what the owner is doing.
+    self.webContents.on("did-finish-load", () => {
+      if (wanted && !self.isVisible()) self.showInactive();
+      applyMouse();
+    });
+    // Perry's server went away between asking and loading: out of sight, try again until it is back.
+    self.webContents.on("did-fail-load", (_event, _code, _description, _url, mainFrame) => {
+      if (!mainFrame || win !== self) return;
+      self.hide();
+      loadLater(3000);
+    });
+    self.webContents.on("render-process-gone", () => { if (win === self) loadLater(1000); });
+    // His page loaded again in this window (it reloaded itself): it goes into a new one, as above.
+    let pages = 0;
+    self.webContents.on("did-navigate", () => { if (++pages > 1 && win === self) void load(); });
+    // The page stays the pet; any link opens in the browser.
+    self.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:/.test(url)) void shell.openExternal(url);
+      return { action: "deny" };
+    });
+    self.webContents.on("will-navigate", (event, url) => {
+      if (!url.startsWith(`${BASE}/pet`)) {
+        event.preventDefault();
+        if (/^https?:/.test(url)) void shell.openExternal(url);
+      }
+    });
+    old?.destroy();
+  }
+
+  let loads = 0;
+  let loadTimer = null;
+  const loadLater = (ms) => { clearTimeout(loadTimer); loadTimer = setTimeout(load, ms); };
+  /**
+   * His page, in a new window, once Perry's server answers: at login he may
+   * start before it, and an update restarts it. Until then nothing is loaded,
+   * so no failed load leaves a page in his window; asked again, the last ask wins.
+   */
+  async function load() {
+    clearTimeout(loadTimer);
+    const ask = ++loads;
+    const up = await net.fetch(`${BASE}/pet`, { method: "HEAD", signal: AbortSignal.timeout(10_000) }).then(() => true, () => false);
+    if (ask !== loads) return;
+    if (!up) return loadLater(3000);
+    makeWindow();
+    win.loadURL(`${BASE}/pet#key=${encodeURIComponent(KEY)}`).catch(() => {});
+  }
   /**
    * A page of the dashboard in the owner's browser, unlocked as `perry open`
    * does; only this server's own pages. Paired from another computer, his key
@@ -263,7 +368,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
     void shell.openExternal(PAIRED ? `${BASE}${page}` : `${BASE}${page}#key=${encodeURIComponent(KEY)}`);
   };
 
-  const show = () => { wanted = true; if (win && !win.isVisible()) win.showInactive(); refreshMenu(); };
+  const show = () => { wanted = true; if (win && !win.isVisible()) { win.showInactive(); applyMouse(); } refreshMenu(); };
   const hide = () => { wanted = false; win?.hide(); refreshMenu(); };
 
   function dismissWindow() {
@@ -290,7 +395,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
       { label: "Let clicks through him", type: "checkbox", checked: ghost, click: (item) => {
         ghost = item.checked;
         saveState({ ghost });
-        win?.setIgnoreMouseEvents(true, { forward: !ghost });
+        applyMouse();
         refreshMenu();
       } },
       { type: "separator" },
@@ -319,7 +424,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
     const now = connection();
     const changed = now.base !== BASE || now.key !== KEY;
     ({ base: BASE, key: KEY, paired: PAIRED } = now);
-    if (args.includes("--reload") || changed) load();
+    if (args.includes("--reload") || changed) void load();
     if (!args.includes("--reload")) show();
   });
 
@@ -341,54 +446,6 @@ if (!app.requestSingleInstanceLock({ argv })) {
 
     spot = startingPlace();
     framed = frame(spot);
-    win = new BrowserWindow({
-      ...framed.bounds,
-      title: "Perry",
-      frame: false,
-      transparent: true,
-      backgroundColor: "#00000000",
-      hasShadow: false,
-      resizable: false,
-      maximizable: false,
-      minimizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      alwaysOnTop: true,
-      show: false,
-      webPreferences: {
-        preload: join(HERE, "preload.cjs"),
-        contextIsolation: true,
-        sandbox: true,
-        // He keeps counting down while nothing else is on screen.
-        backgroundThrottling: false,
-      },
-    });
-    win.setAlwaysOnTop(true, "floating");
-    // skipTransformProcessType: otherwise macOS turns him back into a regular app for this, and his Dock icon comes back.
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false, skipTransformProcessType: true });
-    // Clicks pass through until the page says the pointer is on him (pet:solid); forwarded, so it can tell.
-    win.setIgnoreMouseEvents(true, { forward: !ghost });
-
-    // He appears once his page is there, without taking the focus from what the owner is doing.
-    win.webContents.on("did-finish-load", () => { if (wanted && !win.isVisible()) win.showInactive(); });
-    // Perry's server may not be up yet (at login) or may be restarting (an update): out of sight, try again until it is.
-    win.webContents.on("did-fail-load", (_event, _code, _description, _url, mainFrame) => {
-      if (!mainFrame) return;
-      win.hide();
-      setTimeout(load, 3000);
-    });
-    win.webContents.on("render-process-gone", () => setTimeout(load, 1000));
-    // The page stays the pet; any link opens in the browser.
-    win.webContents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:/.test(url)) void shell.openExternal(url);
-      return { action: "deny" };
-    });
-    win.webContents.on("will-navigate", (event, url) => {
-      if (!url.startsWith(`${BASE}/pet`)) {
-        event.preventDefault();
-        if (/^https?:/.test(url)) void shell.openExternal(url);
-      }
-    });
     // Other windows asking to be on top do not push him under for long.
     setInterval(() => {
       if (!win?.isVisible()) return;
@@ -396,14 +453,27 @@ if (!app.requestSingleInstanceLock({ argv })) {
       win.moveTop();
     }, 15_000);
     // A screen unplugged may take him with it; one changed (its size, its scale, the taskbar) may leave less room around him.
-    const restand = () => standAt(keepOnScreen(spot.x, spot.y));
+    const restand = () => { standAt(keepOnScreen(spot.x, spot.y)); applyMouse(); };
+    screen.on("display-added", applyMouse);
     screen.on("display-removed", restand);
     screen.on("display-metrics-changed", restand);
+    // Where the hook that brings him the pointer may have gone (applyMouse), it is put back: after this process
+    // was too busy to answer it (a gap in these ticks: the voice model loading, a sleep), and on waking or unlocking.
+    let tick = Date.now();
+    setInterval(() => {
+      const now = Date.now();
+      if (now - tick > 500) applyMouse();
+      tick = now;
+    }, 250);
+    powerMonitor.on("resume", applyMouse);
+    powerMonitor.on("unlock-screen", applyMouse);
     // His page asks where he is in his window, and hears each time that changes (pet:place).
     ipcMain.handle("pet:place", () => framed.place);
 
-    ipcMain.on("pet:solid", (_event, on) => {
-      if (!ghost) win.setIgnoreMouseEvents(!on, { forward: true });
+    ipcMain.on("pet:solid", (event, on) => {
+      if (event.sender !== win?.webContents) return;
+      solid = Boolean(on);
+      applyMouse();
     });
     ipcMain.on("pet:move", (_event, x, y) => {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
@@ -504,7 +574,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
     tray.on("click", () => (wanted ? hide() : show()));
     refreshMenu();
 
-    load();
+    void load();
   });
 
   // He lives in the tray: closing his window is not quitting.
