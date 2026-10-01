@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-01T18:36:11.561Z",
+  "ranAt": "2026-10-01T20:42:27.964Z",
   "passed": true,
   "checks": {
     "shortReplyGoesByItself": true,
@@ -87,40 +87,40 @@
     },
     "shortReplyGoesByItself": {
       "heldUp": true,
-      "lasted": 9211,
+      "lasted": 9072,
       "afterLetGo": 0,
       "due": 8660
     },
     "shortReplyNotTooSoon": {
       "heldUp": true,
-      "lasted": 9211,
+      "lasted": 9072,
       "afterLetGo": 0,
       "due": 8660
     },
     "longReplyStaysLonger": {
       "heldUp": true,
-      "lasted": 16965,
+      "lasted": 16944,
       "afterLetGo": 0,
       "due": 16460
     },
     "holdWindow": {
-      "from": 1790879632505,
-      "to": 1790879665735,
+      "from": 1790887213201,
+      "to": 1790887246476,
       "goneAt": null
     },
     "pointerHoldsReply": {
       "heldUp": true,
-      "lasted": 50225,
-      "afterLetGo": 16070
+      "lasted": 50301,
+      "afterLetGo": 16112
     },
     "letGoReplyGoes": {
       "heldUp": true,
-      "lasted": 50225,
-      "afterLetGo": 16070,
+      "lasted": 50301,
+      "afterLetGo": 16112,
       "due": 16460
     },
     "approval": {
-      "id": "59v979vy42jdmeawny8s72b8et",
+      "id": "ezvgcjx3mjy8mtt13avngckfp7",
       "next": "ask"
     },
     "spots": {
@@ -521,8 +521,8 @@
       }
     },
     "dragWindow": [
-      1790879703235,
-      1790879705151
+      1790887283957,
+      1790887285874
     ],
     "overTheCircleArms": {
       "shrunk": "matrix(0.5, 0, 0, 0.5, 0, 0)",
@@ -546,7 +546,7 @@
   "petLog": [
     "\r",
     "\r",
-    "DevTools listening on ws://127.0.0.1:57382/devtools/browser/72172344-d241-4c1f-b0b0-7e5bdde7a926\r",
+    "DevTools listening on ws://127.0.0.1:57379/devtools/browser/bcf82503-9155-4e5a-a179-4c8fa0f00aae\r",
     ""
   ]
 }

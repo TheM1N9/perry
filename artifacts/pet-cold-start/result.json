@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-01T18:37:28.316Z",
+  "ranAt": "2026-10-01T20:47:24.154Z",
   "passed": true,
   "realMouse": false,
   "serverDownMs": 12000,
@@ -73,12 +73,12 @@
     },
     "nothingShownWhileServerDown": [],
     "showsOnceServerUp": {
-      "after": 449
+      "after": 436
     },
     "coldStart:oneWindowShown": [
       {
-        "hwnd": 12324706,
-        "title": "Pet � Perry",
+        "hwnd": 15405322,
+        "title": "Pet · Perry",
         "visible": true,
         "exstyle": 2621480,
         "rect": [
@@ -88,16 +88,16 @@
           1368
         ],
         "page": [
-          3869760
+          27856346
         ]
       }
     ],
     "coldStart:pageChildKept": {
-      "window": 12324706,
+      "window": 15405322,
       "pageChildren": [
-        "3869760"
+        "27856346"
       ],
-      "firstSeen": 1790879787033
+      "firstSeen": 1790887579260
     },
     "coldStart:onScreenOnTop": {
       "rect": [
@@ -131,15 +131,15 @@
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 12324706,
-            "pid": 41796
+            "title": "Pet · Perry",
+            "hwnd": 15405322,
+            "pid": 43688
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -147,21 +147,21 @@
         "x": 507,
         "y": 1265
       },
-      "window": 12324706
+      "window": 15405322
     },
     "coldStart:letsClickThroughOffHim": {
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 12324706,
-            "pid": 41796
+            "title": "Pet · Perry",
+            "hwnd": 15405322,
+            "pid": 43688
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -171,7 +171,7 @@
       }
     },
     "circleLetsClicksThrough": {
-      "hwnd": 2428810,
+      "hwnd": 38342554,
       "title": "Perry: drop here to hide",
       "visible": true,
       "exstyle": 136839208,
@@ -182,14 +182,14 @@
         1356
       ],
       "page": [
-        397306
+        25956512
       ]
     },
     "realMouse": "skipped: set PERRY_E2E_DESKTOP=1 on Windows to use the real mouse (it moves the owner's pointer)",
     "reload:oneWindowShown": [
       {
-        "hwnd": 26349242,
-        "title": "Pet � Perry",
+        "hwnd": 36311004,
+        "title": "Pet · Perry",
         "visible": true,
         "exstyle": 2621480,
         "rect": [
@@ -199,16 +199,16 @@
           1368
         ],
         "page": [
-          2560168
+          17501880
         ]
       }
     ],
     "reload:pageChildKept": {
-      "window": 26349242,
+      "window": 36311004,
       "pageChildren": [
-        "2560168"
+        "17501880"
       ],
-      "firstSeen": 1790879792176
+      "firstSeen": 1790887583981
     },
     "reload:onScreenOnTop": {
       "rect": [
@@ -242,15 +242,15 @@
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 26349242,
-            "pid": 41796
+            "title": "Pet · Perry",
+            "hwnd": 36311004,
+            "pid": 43688
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -258,21 +258,21 @@
         "x": 507,
         "y": 1265
       },
-      "window": 26349242
+      "window": 36311004
     },
     "reload:letsClickThroughOffHim": {
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 26349242,
-            "pid": 41796
+            "title": "Pet · Perry",
+            "hwnd": 36311004,
+            "pid": 43688
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -283,8 +283,8 @@
     },
     "reloadWhileDown:staysAsHeWas": [
       {
-        "hwnd": 26349242,
-        "title": "Pet � Perry",
+        "hwnd": 36311004,
+        "title": "Pet · Perry",
         "visible": true,
         "exstyle": 2621480,
         "rect": [
@@ -294,14 +294,14 @@
           1368
         ],
         "page": [
-          2560168
+          17501880
         ]
       }
     ],
     "reloadWhileDown:backOnNewPage": [
       {
-        "hwnd": 43584900,
-        "title": "Pet � Perry",
+        "hwnd": 17961294,
+        "title": "Pet · Perry",
         "visible": true,
         "exstyle": 2621480,
         "rect": [
@@ -311,14 +311,14 @@
           1368
         ],
         "page": [
-          26414778
+          24514366
         ]
       }
     ],
     "reloadWhileDown:oneWindowShown": [
       {
-        "hwnd": 43584900,
-        "title": "Pet � Perry",
+        "hwnd": 17961294,
+        "title": "Pet · Perry",
         "visible": true,
         "exstyle": 2621480,
         "rect": [
@@ -328,16 +328,16 @@
           1368
         ],
         "page": [
-          26414778
+          24514366
         ]
       }
     ],
     "reloadWhileDown:pageChildKept": {
-      "window": 43584900,
+      "window": 17961294,
       "pageChildren": [
-        "26414778"
+        "24514366"
       ],
-      "firstSeen": 1790879807026
+      "firstSeen": 1790887598378
     },
     "reloadWhileDown:onScreenOnTop": {
       "rect": [
@@ -371,15 +371,15 @@
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 43584900,
-            "pid": 41796
+            "title": "Pet · Perry",
+            "hwnd": 17961294,
+            "pid": 43688
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -387,21 +387,21 @@
         "x": 507,
         "y": 1265
       },
-      "window": 43584900
+      "window": 17961294
     },
     "reloadWhileDown:letsClickThroughOffHim": {
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 43584900,
-            "pid": 41796
+            "title": "Pet · Perry",
+            "hwnd": 17961294,
+            "pid": 43688
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -412,8 +412,8 @@
     },
     "pageReload:oneWindowShown": [
       {
-        "hwnd": 26480314,
-        "title": "Pet � Perry",
+        "hwnd": 24579902,
+        "title": "Pet · Perry",
         "visible": true,
         "exstyle": 2621480,
         "rect": [
@@ -423,16 +423,16 @@
           1368
         ],
         "page": [
-          593910
+          36442076
         ]
       }
     ],
     "pageReload:pageChildKept": {
-      "window": 26480314,
+      "window": 24579902,
       "pageChildren": [
-        "593910"
+        "36442076"
       ],
-      "firstSeen": 1790879811390
+      "firstSeen": 1790887602627
     },
     "pageReload:onScreenOnTop": {
       "rect": [
@@ -466,15 +466,15 @@
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 26480314,
-            "pid": 41796
+            "title": "Pet · Perry",
+            "hwnd": 24579902,
+            "pid": 43688
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -482,21 +482,21 @@
         "x": 507,
         "y": 1265
       },
-      "window": 26480314
+      "window": 24579902
     },
     "pageReload:letsClickThroughOffHim": {
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 26480314,
-            "pid": 41796
+            "title": "Pet · Perry",
+            "hwnd": 24579902,
+            "pid": 43688
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -507,8 +507,8 @@
     },
     "crash:backWithin20s": [
       {
-        "hwnd": 6098836,
-        "title": "Pet � Perry",
+        "hwnd": 5115850,
+        "title": "Pet · Perry",
         "visible": true,
         "exstyle": 2621480,
         "rect": [
@@ -518,14 +518,14 @@
           1368
         ],
         "page": [
-          9113366
+          24645438
         ]
       }
     ],
     "crash:oneWindowShown": [
       {
-        "hwnd": 6098836,
-        "title": "Pet � Perry",
+        "hwnd": 5115850,
+        "title": "Pet · Perry",
         "visible": true,
         "exstyle": 2621480,
         "rect": [
@@ -535,16 +535,16 @@
           1368
         ],
         "page": [
-          9113366
+          24645438
         ]
       }
     ],
     "crash:pageChildKept": {
-      "window": 6098836,
+      "window": 5115850,
       "pageChildren": [
-        "9113366"
+        "24645438"
       ],
-      "firstSeen": 1790879822509
+      "firstSeen": 1790887616989
     },
     "crash:onScreenOnTop": {
       "rect": [
@@ -578,15 +578,15 @@
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 6098836,
-            "pid": 41796
+            "title": "Pet · Perry",
+            "hwnd": 5115850,
+            "pid": 43688
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -594,21 +594,21 @@
         "x": 507,
         "y": 1265
       },
-      "window": 6098836
+      "window": 5115850
     },
     "crash:letsClickThroughOffHim": {
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 6098836,
-            "pid": 41796
+            "title": "Pet · Perry",
+            "hwnd": 5115850,
+            "pid": 43688
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -619,8 +619,8 @@
     },
     "hidden:gone": [
       {
-        "hwnd": 6098836,
-        "title": "Pet � Perry",
+        "hwnd": 5115850,
+        "title": "Pet · Perry",
         "visible": false,
         "exstyle": 2621480,
         "rect": [
@@ -630,14 +630,14 @@
           1368
         ],
         "page": [
-          9113366
+          24645438
         ]
       }
     ],
     "shownAgain:oneWindowShown": [
       {
-        "hwnd": 6098836,
-        "title": "Pet � Perry",
+        "hwnd": 5115850,
+        "title": "Pet · Perry",
         "visible": true,
         "exstyle": 2621480,
         "rect": [
@@ -647,16 +647,16 @@
           1368
         ],
         "page": [
-          9113366
+          24645438
         ]
       }
     ],
     "shownAgain:pageChildKept": {
-      "window": 6098836,
+      "window": 5115850,
       "pageChildren": [
-        "9113366"
+        "24645438"
       ],
-      "firstSeen": 1790879822509
+      "firstSeen": 1790887616989
     },
     "shownAgain:onScreenOnTop": {
       "rect": [
@@ -694,15 +694,15 @@
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 6098836,
-            "pid": 41796
+            "title": "Pet · Perry",
+            "hwnd": 5115850,
+            "pid": 43688
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -710,21 +710,21 @@
         "x": 507,
         "y": 1265
       },
-      "window": 6098836
+      "window": 5115850
     },
     "shownAgain:letsClickThroughOffHim": {
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 6098836,
-            "pid": 41796
+            "title": "Pet · Perry",
+            "hwnd": 5115850,
+            "pid": 43688
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -736,13 +736,13 @@
     "takeover:onePetProcess": [
       {
         "cmd": "\"W:\\perry-tests\\wt-191\\pet\\node_modules\\.pnpm\\electron@44.4.5\\node_modules\\electron\\dist\\electron.exe\" \"W:\\perry-tests\\wt-191\\pet\" --takeover=1",
-        "pid": 25584
+        "pid": 58492
       }
     ],
     "takeover:oneWindowShown": [
       {
-        "hwnd": 7016226,
-        "title": "Pet � Perry",
+        "hwnd": 31067442,
+        "title": "Pet · Perry",
         "visible": true,
         "exstyle": 2621480,
         "rect": [
@@ -752,16 +752,16 @@
           1368
         ],
         "page": [
-          10227638
+          54398370
         ]
       }
     ],
     "takeover:pageChildKept": {
-      "window": 7016226,
+      "window": 31067442,
       "pageChildren": [
-        "10227638"
+        "54398370"
       ],
-      "firstSeen": 1790879833746
+      "firstSeen": 1790887629245
     },
     "takeover:onScreenOnTop": {
       "rect": [
@@ -795,15 +795,15 @@
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 7016226,
-            "pid": 25584
+            "title": "Pet · Perry",
+            "hwnd": 31067442,
+            "pid": 58492
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -811,21 +811,21 @@
         "x": 507,
         "y": 1265
       },
-      "window": 7016226
+      "window": 31067442
     },
     "takeover:letsClickThroughOffHim": {
       "tries": [
         {
           "over": {
-            "title": "Pet � Perry",
-            "hwnd": 7016226,
-            "pid": 25584
+            "title": "Pet · Perry",
+            "hwnd": 31067442,
+            "pid": 58492
           },
           "transparent": false,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -836,8 +836,8 @@
     },
     "ghost:oneWindowShown": [
       {
-        "hwnd": 9244438,
-        "title": "Pet � Perry",
+        "hwnd": 38604698,
+        "title": "Pet · Perry",
         "visible": true,
         "exstyle": 2621480,
         "rect": [
@@ -847,16 +847,16 @@
           1368
         ],
         "page": [
-          8458144
+          37228540
         ]
       }
     ],
     "ghost:pageChildKept": {
-      "window": 9244438,
+      "window": 38604698,
       "pageChildren": [
-        "8458144"
+        "37228540"
       ],
-      "firstSeen": 1790879839632
+      "firstSeen": 1790887635905
     },
     "ghost:onScreenOnTop": {
       "rect": [
@@ -890,15 +890,15 @@
       "tries": [
         {
           "over": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           },
           "transparent": true,
           "off": {
-            "title": "Microsoft Store",
-            "hwnd": 30346756,
-            "pid": 29968
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
           }
         }
       ],
@@ -929,9 +929,9 @@
   "petLog": [
     "\r",
     "\r",
-    "DevTools listening on ws://127.0.0.1:50393/devtools/browser/cf4ec159-867a-4b2a-8d82-5f3a25b98743\r",
+    "DevTools listening on ws://127.0.0.1:61184/devtools/browser/3e44ce08-b0bc-4649-90d4-7c43dd2823b6\r",
     "\r",
     "\r",
-    "DevTools listening on ws://127.0.0.1:50393/devtools/browser/2b1bc0a2-2305-48ac-aa29-204297a1cc47\r"
+    "DevTools listening on ws://127.0.0.1:61184/devtools/browser/fda324aa-db64-4cc6-a5ee-224ca8db20e6\r"
   ]
 }
