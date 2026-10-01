@@ -248,7 +248,7 @@ export function SecretInput({ value, onChange, id, placeholder, autoFocus, inval
 /** A shell command to copy, in the monospace it will be typed in. */
 export function CommandLine({ children }: { children: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border bg-muted/60 py-1 pr-1 pl-3 font-mono text-sm">
+    <div className="flex items-center gap-2 rounded-lg border bg-muted/60 py-1 pr-1 pl-3 font-mono text-sm" data-command-line>
       <span className="select-none text-muted-foreground">$</span>
       <code className="min-w-0 flex-1 truncate">{children}</code>
       <CopyButton value={children} label="Copy command" size="icon-xs" />

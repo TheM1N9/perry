@@ -96,7 +96,7 @@ export function Composer({
           ))}
         </div>
       )}
-      <div
+      <div data-composer
         className={cn(
           "rounded-3xl border bg-background shadow-float transition-[border-color,box-shadow] has-[#composer:focus-visible]:border-ring has-[#composer:focus-visible]:ring-3 has-[#composer:focus-visible]:ring-ring/50 dark:bg-card",
           dragging && "border-primary ring-3 ring-primary/20",

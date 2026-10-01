@@ -402,7 +402,7 @@ try {
       await evaluate(`document.querySelector('[aria-label="At: minutes"]').focus(); true`);
       await typeText("45");
       await noNatives("schedule-daily");
-      await click(byText('[role=dialog] button[type=submit]', "Save"));
+      await click(byText('[role=dialog] button[type=submit]', "Create"));
       let daily: Job | undefined;
       await until(async () => { daily = (await call<{ jobs: Job[] }>("jobs:listForDashboard", { key: KEY })).jobs.find((item) => item.name === "E2E stretch reminder"); return Boolean(daily); }, "the daily schedule", 15).catch(() => {});
       check("timePickerSavesDailyTime", daily?.schedule === "45 7 * * *", daily);
@@ -435,7 +435,7 @@ try {
       await shot(`schedule-once-${mode}`);
       await press("Escape");
       const afterEscape = await evaluate(`({ calendar: Boolean(document.querySelector("[data-slot=calendar]")), dialog: Boolean(document.querySelector("[role=dialog]")), shown: document.querySelector("#schedule-once").innerText })`) as { calendar: boolean; dialog: boolean; shown: string };
-      await click(byText('[role=dialog] button[type=submit]', "Save"));
+      await click(byText('[role=dialog] button[type=submit]', "Create"));
       let once: Job | undefined;
       await until(async () => { once = (await call<{ jobs: Job[] }>("jobs:listForDashboard", { key: KEY })).jobs.find((item) => item.name === `E2E passport photos ${mode}`); return Boolean(once); }, "the one-time schedule", 15).catch(() => {});
       check(`datePickerSavesOnce-${mode}`, once?.runAt === target.ms && !afterEscape.calendar && afterEscape.dialog && /16:20|4:20/.test(afterEscape.shown), { saved: once?.runAt && new Date(once.runAt).toString(), wanted: new Date(target.ms).toString(), afterEscape });
