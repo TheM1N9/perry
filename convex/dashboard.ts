@@ -1231,21 +1231,23 @@ export const personaHistory = query({
   },
 });
 
+/** USER.md from the About you page, saved as the owner types: the same words again change nothing, and a sitting's saves are one version. */
 export const saveUserMd = mutation({
   args: { key: vKey, text: v.string() },
   returns: v.object({ changed: v.boolean() }),
   handler: async (ctx, args): Promise<{ changed: boolean }> => {
     assertDashboardKey(args.key);
-    return await ctx.runMutation(internal.persona.writeUser, { text: args.text, by: "owner" });
+    return await ctx.runMutation(internal.persona.writeUser, { text: args.text, by: "owner", typing: true });
   },
 });
 
+/** The assistant's name, its personality or both, saved as typed like USER.md; what is not given stays as it is. */
 export const saveIdentity = mutation({
-  args: { key: vKey, name: v.string(), personality: v.string() },
+  args: { key: vKey, name: v.optional(v.string()), personality: v.optional(v.string()) },
   returns: v.object({ changed: v.boolean() }),
   handler: async (ctx, args): Promise<{ changed: boolean }> => {
     assertDashboardKey(args.key);
-    return await ctx.runMutation(internal.persona.writeIdentity, { name: args.name, personality: args.personality, by: "owner" });
+    return await ctx.runMutation(internal.persona.writeIdentity, { name: args.name, personality: args.personality, by: "owner", typing: true });
   },
 });
 
