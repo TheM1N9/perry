@@ -476,6 +476,8 @@ async function dashboard() {
     const checkout = join(setupWorld.root, "running");
     mkdirSync(checkout, { recursive: true });
     writeFileSync(join(checkout, ".env.local"), `DASHBOARD_KEY=${c.KEY}\nPERRY_PORT=${new URL(c.BASE).port}\n`);
+    // A choice left waiting from before would undo this one at the next start: it goes once the server has this one.
+    writeFileSync(choiceFile(c.home), JSON.stringify({ engine: "codex" }));
     const switched = await setup(setupWorld, { cwd: checkout, args: ["--engine=grok"], env: { PERRY_HOME: c.home } });
     transcript("setup-while-running", switched.output);
     const now = await c.call<string | null>("dashboard:getDefaultEngine", { key: c.KEY });

@@ -19,7 +19,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { accessSync, constants, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { delimiter, join, resolve } from "node:path";
 import { ENGINE_LABELS, isRunnable, RUNNABLE_ENGINES, updateOf, type EngineKind } from "../convex/lib/engines";
@@ -214,7 +214,7 @@ async function signIn(kind: EngineKind): Promise<boolean> {
  * that engine installed and signed in, if the owner wants. Null when there is
  * no one to ask and nothing names one: setup stops rather than guess.
  */
-async function chooseEngine(): Promise<{ engine: EngineKind; chosen: boolean } | null> {
+async function chooseEngine(): Promise<{ engine: EngineKind; chosen: boolean; live: boolean } | null> {
   const named = engineFlag() ?? process.env.PERRY_ENGINE;
   const requested = named === undefined ? undefined : engineNamed(named);
   if (named !== undefined && !requested) {
@@ -316,7 +316,8 @@ async function chooseEngine(): Promise<{ engine: EngineKind; chosen: boolean } |
     await done(`default engine ${label}`);
     say(yellow(`  ${label} isn't signed in, so Perry can't answer yet. Sign in from the dashboard's Settings → Engines & usage.`));
   }
-  return { engine, chosen: engine !== current };
+  // live: the running server already has it, so nothing needs to wait for it.
+  return { engine, chosen: engine !== current, live: status?.value.defaultEngine === engine };
 }
 
 /**
@@ -372,9 +373,10 @@ async function main() {
   writeEnvFile({ ...kept, TELEGRAM_BOT_TOKEN: token, DASHBOARD_KEY: dashboardKey });
   ensureHome();
   // A new choice goes to the running server, or waits in Perry's home for it to start (server/index.ts).
-  if (choice.chosen && !(await callPerry("installation:setDefaultEngine", { engine: choice.engine }))) {
-    writeFileSync(PATHS.engineChoice, JSON.stringify({ engine: choice.engine }), "utf8");
-  }
+  // Once the running server has the choice, one left waiting from before would only undo it at the next start.
+  const saved = choice.chosen ? Boolean(await callPerry("installation:setDefaultEngine", { engine: choice.engine })) : choice.live;
+  if (saved) rmSync(PATHS.engineChoice, { force: true });
+  else if (choice.chosen) writeFileSync(PATHS.engineChoice, JSON.stringify({ engine: choice.engine }), "utf8");
 
   input.close();
   // `perry setup` goes on to start Perry, pair the bot and open the dashboard.
