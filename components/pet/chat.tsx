@@ -273,7 +273,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
                   </InputGroupButton>
                 </PetTip>
               ) : (
-                <InputGroupButton type="submit" size="icon-xs" variant="default" className="size-7 rounded-full" aria-label="Send" disabled={(!draft.trim() && !picture) || sending}>
+                <InputGroupButton type="submit" size="icon-xs" variant={!draft.trim() && !picture ? "secondary" : "default"} className={cn("size-7 rounded-full", !draft.trim() && !picture && "text-muted-foreground disabled:opacity-100")} aria-label="Send" disabled={(!draft.trim() && !picture) || sending}>
                   <ArrowUpIcon className="size-4" />
                 </InputGroupButton>
               )}

@@ -155,7 +155,8 @@ export function Composer({
               <SquareIcon className="size-3.5 fill-current" />
             </Button>
           ) : (
-            <Button type="button" size="icon" className="size-9 rounded-full" aria-label={waiting ? "Send into the reply" : "Send message"}
+            // Nothing to send yet: a quiet grey circle, not a greyed-out teal one.
+            <Button type="button" size="icon" variant={empty ? "secondary" : "default"} className={cn("size-9 rounded-full", empty && "text-muted-foreground disabled:opacity-100")} aria-label={waiting ? "Send into the reply" : "Send message"}
               onClick={onSubmit} disabled={empty || busy || Boolean(uploading)}>
               {uploading ? <Spinner /> : <ArrowUpIcon className="size-[18px]" />}
             </Button>

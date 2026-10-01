@@ -145,15 +145,17 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
           ? <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={Boolean(unavailable) || pending}
               action={() => ask("logout")}
               confirm={{ title: `Sign out of ${engine.label} on ${computer}?`, body: `Perry can't use ${engine.label} on this computer until you sign in again.`, label: "Sign out" }}>Sign out</ActionButton>
+          // Signing in shows only when it can happen: offline, missing or too old, the line above says why instead.
+          : unavailable || pending || outdated ? null
           : experimental
             ? (
               <div className="flex flex-wrap gap-2">
-                <ActionButton size="sm" disabled={Boolean(unavailable) || pending || outdated} action={() => ask("login", "gemini-api-key")}>Use Gemini API key</ActionButton>
-                <ActionButton variant="outline" size="sm" disabled={Boolean(unavailable) || pending || outdated} action={() => ask("login", "oauth-personal")}
+                <ActionButton size="sm" action={() => ask("login", "gemini-api-key")}>Use Gemini API key</ActionButton>
+                <ActionButton variant="outline" size="sm" action={() => ask("login", "oauth-personal")}
                   confirm={{ title: "Sign in with Google? (Experimental)", body: <GoogleWarning />, label: "Sign in anyway" }}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>
               </div>
             )
-            : <ActionButton size="sm" disabled={Boolean(unavailable) || pending || outdated} action={() => ask("login")}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>}
+            : <ActionButton size="sm" action={() => ask("login")}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>}
       </div>
       {experimental && !engine.signedIn && (
         <p className="mt-2 text-sm text-pretty text-muted-foreground">
