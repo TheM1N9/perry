@@ -1,0 +1,1038 @@
+{
+  "ranAt": "2026-10-01T18:31:09.559Z",
+  "passed": false,
+  "realMouse": false,
+  "serverDownMs": 12000,
+  "checks": {
+    "nothingShownWhileServerDown": false,
+    "showsOnceServerUp": true,
+    "coldStart:oneWindowShown": true,
+    "coldStart:pageChildKept": false,
+    "coldStart:onScreenOnTop": true,
+    "coldStart:postedMoveReachesPage": true,
+    "coldStart:takesClickOnHim": true,
+    "coldStart:letsClickThroughOffHim": true,
+    "circleLetsClicksThrough": true,
+    "reload:newPage": false,
+    "reload:oneWindowShown": true,
+    "reload:pageChildKept": false,
+    "reload:onScreenOnTop": true,
+    "reload:postedMoveReachesPage": true,
+    "reload:takesClickOnHim": true,
+    "reload:letsClickThroughOffHim": true,
+    "reloadWhileDown:staysAsHeWas": true,
+    "reloadWhileDown:backOnNewPage": false,
+    "reloadWhileDown:oneWindowShown": true,
+    "reloadWhileDown:pageChildKept": false,
+    "reloadWhileDown:onScreenOnTop": true,
+    "reloadWhileDown:postedMoveReachesPage": true,
+    "reloadWhileDown:takesClickOnHim": true,
+    "reloadWhileDown:letsClickThroughOffHim": true,
+    "pageReload:oneWindowShown": true,
+    "pageReload:pageChildKept": false,
+    "pageReload:onScreenOnTop": true,
+    "pageReload:postedMoveReachesPage": true,
+    "pageReload:takesClickOnHim": true,
+    "pageReload:letsClickThroughOffHim": true,
+    "crash:backWithin20s": false,
+    "crash:oneWindowShown": true,
+    "crash:pageChildKept": false,
+    "crash:onScreenOnTop": true,
+    "crash:postedMoveReachesPage": true,
+    "crash:takesClickOnHim": true,
+    "crash:letsClickThroughOffHim": true,
+    "hidden:gone": true,
+    "shownAgain:oneWindowShown": true,
+    "shownAgain:pageChildKept": false,
+    "shownAgain:onScreenOnTop": true,
+    "shownAgain:postedMoveReachesPage": true,
+    "shownAgain:takesClickOnHim": true,
+    "shownAgain:letsClickThroughOffHim": true,
+    "takeover:onePetProcess": true,
+    "takeover:oneWindowShown": true,
+    "takeover:pageChildKept": true,
+    "takeover:onScreenOnTop": true,
+    "takeover:postedMoveReachesPage": true,
+    "takeover:takesClickOnHim": true,
+    "takeover:letsClickThroughOffHim": true,
+    "ghost:oneWindowShown": true,
+    "ghost:pageChildKept": true,
+    "ghost:onScreenOnTop": true,
+    "ghost:postedMoveReachesPage": true,
+    "ghost:ghostLetsClicksThrough": true,
+    "pageDidNotThrow": true,
+    "ownerPetUntouched": true
+  },
+  "notes": {
+    "ownerBefore": {
+      "petJson": "b5b04bc21ddc905ff0da6d57620f3a521e104f6a14249767a269cb5bc69fcac0",
+      "loginEntry": true,
+      "pets": [
+        37668
+      ]
+    },
+    "nothingShownWhileServerDown": [
+      {
+        "hwnd": 27135492,
+        "title": "Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          1380210
+        ]
+      }
+    ],
+    "showsOnceServerUp": {
+      "after": 9
+    },
+    "coldStart:oneWindowShown": [
+      {
+        "hwnd": 27135492,
+        "title": "Pet � Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          1445746
+        ]
+      }
+    ],
+    "coldStart:pageChildKept": {
+      "window": 27135492,
+      "pageChildren": [
+        "30346860",
+        "1380210,30346860",
+        "1380210",
+        "10620550,1380210",
+        "10686086",
+        "1445746,10686086",
+        "1445746"
+      ],
+      "firstSeen": 1790879245661
+    },
+    "coldStart:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "coldStart:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "coldStart:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 27135492,
+            "pid": 44028
+          },
+          "transparent": false,
+          "off": {
+            "title": "T3 Code (Alpha)",
+            "hwnd": 920182,
+            "pid": 9848
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 27135492
+    },
+    "coldStart:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 27135492,
+            "pid": 44028
+          },
+          "transparent": false,
+          "off": {
+            "title": "T3 Code (Alpha)",
+            "hwnd": 920182,
+            "pid": 9848
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "circleLetsClicksThrough": {
+      "hwnd": 23793194,
+      "title": "Perry: drop here to hide",
+      "visible": true,
+      "exstyle": 136839208,
+      "rect": [
+        1556,
+        1026,
+        1891,
+        1356
+      ],
+      "page": [
+        18746994
+      ]
+    },
+    "realMouse": "skipped: set PERRY_E2E_DESKTOP=1 on Windows to use the real mouse (it moves the owner's pointer)",
+    "reload:oneWindowShown": [
+      {
+        "hwnd": 27135492,
+        "title": "Pet � Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          1445746
+        ]
+      }
+    ],
+    "reload:pageChildKept": {
+      "window": 27135492,
+      "pageChildren": [
+        "30346860",
+        "1380210,30346860",
+        "1380210",
+        "10620550,1380210",
+        "10686086",
+        "1445746,10686086",
+        "1445746"
+      ],
+      "firstSeen": 1790879245661
+    },
+    "reload:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "reload:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          552
+        ],
+        [
+          338,
+          552
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 552.6435546875
+      },
+      "onHim": true
+    },
+    "reload:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 27135492,
+            "pid": 44028
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1267
+      },
+      "window": 27135492
+    },
+    "reload:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 27135492,
+            "pid": 44028
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1267
+      }
+    },
+    "reloadWhileDown:staysAsHeWas": [
+      {
+        "hwnd": 27135492,
+        "title": "Pet � Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          1445746
+        ]
+      }
+    ],
+    "reloadWhileDown:backOnNewPage": [
+      {
+        "hwnd": 27135492,
+        "title": "Pet � Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          1445746
+        ]
+      }
+    ],
+    "reloadWhileDown:oneWindowShown": [
+      {
+        "hwnd": 27135492,
+        "title": "Pet � Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          1445746
+        ]
+      }
+    ],
+    "reloadWhileDown:pageChildKept": {
+      "window": 27135492,
+      "pageChildren": [
+        "30346860",
+        "1380210,30346860",
+        "1380210",
+        "10620550,1380210",
+        "10686086",
+        "1445746,10686086",
+        "1445746"
+      ],
+      "firstSeen": 1790879245661
+    },
+    "reloadWhileDown:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "reloadWhileDown:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ],
+        [
+          338,
+          551
+        ],
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.2713241577148
+      },
+      "onHim": true
+    },
+    "reloadWhileDown:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 27135492,
+            "pid": 44028
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 27135492
+    },
+    "reloadWhileDown:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 27135492,
+            "pid": 44028
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "pageReload:oneWindowShown": [
+      {
+        "hwnd": 27135492,
+        "title": "Pet � Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          34410040
+        ]
+      }
+    ],
+    "pageReload:pageChildKept": {
+      "window": 27135492,
+      "pageChildren": [
+        "30346860",
+        "1380210,30346860",
+        "1380210",
+        "10620550,1380210",
+        "10686086",
+        "1445746,10686086",
+        "1445746",
+        "34410040,1445746",
+        "34410040"
+      ],
+      "firstSeen": 1790879245661
+    },
+    "pageReload:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "pageReload:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "pageReload:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 27135492,
+            "pid": 44028
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 27135492
+    },
+    "pageReload:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 27135492,
+            "pid": 44028
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "crash:backWithin20s": [
+      {
+        "hwnd": 27135492,
+        "title": "Pet � Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          3215272
+        ]
+      }
+    ],
+    "crash:oneWindowShown": [
+      {
+        "hwnd": 27135492,
+        "title": "Pet � Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          3215272
+        ]
+      }
+    ],
+    "crash:pageChildKept": {
+      "window": 27135492,
+      "pageChildren": [
+        "30346860",
+        "1380210,30346860",
+        "1380210",
+        "10620550,1380210",
+        "10686086",
+        "1445746,10686086",
+        "1445746",
+        "34410040,1445746",
+        "34410040",
+        "3215272"
+      ],
+      "firstSeen": 1790879245661
+    },
+    "crash:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "crash:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "crash:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 27135492,
+            "pid": 44028
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 27135492
+    },
+    "crash:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 27135492,
+            "pid": 44028
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "hidden:gone": [
+      {
+        "hwnd": 27135492,
+        "title": "Pet � Perry",
+        "visible": false,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          3215272
+        ]
+      }
+    ],
+    "shownAgain:oneWindowShown": [
+      {
+        "hwnd": 27135492,
+        "title": "Pet � Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          3215272
+        ]
+      }
+    ],
+    "shownAgain:pageChildKept": {
+      "window": 27135492,
+      "pageChildren": [
+        "30346860",
+        "1380210,30346860",
+        "1380210",
+        "10620550,1380210",
+        "10686086",
+        "1445746,10686086",
+        "1445746",
+        "34410040,1445746",
+        "34410040",
+        "3215272"
+      ],
+      "firstSeen": 1790879245661
+    },
+    "shownAgain:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "shownAgain:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ],
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "shownAgain:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 27135492,
+            "pid": 44028
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 27135492
+    },
+    "shownAgain:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 27135492,
+            "pid": 44028
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "takeover:onePetProcess": [
+      {
+        "cmd": "\"W:\\perry-tests\\wt-191\\pet\\node_modules\\.pnpm\\electron@44.4.5\\node_modules\\electron\\dist\\electron.exe\" \"W:\\perry-tests\\wt-191\\pet\" --takeover=1",
+        "pid": 44064
+      }
+    ],
+    "takeover:oneWindowShown": [
+      {
+        "hwnd": 18878066,
+        "title": "Pet � Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          29822576
+        ]
+      }
+    ],
+    "takeover:pageChildKept": {
+      "window": 18878066,
+      "pageChildren": [
+        "29822576"
+      ],
+      "firstSeen": 1790879452230
+    },
+    "takeover:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "takeover:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "takeover:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        },
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 18878066,
+            "pid": 44064
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 18878066
+    },
+    "takeover:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        },
+        {
+          "over": {
+            "title": "Pet � Perry",
+            "hwnd": 18878066,
+            "pid": 44064
+          },
+          "transparent": false,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "ghost:oneWindowShown": [
+      {
+        "hwnd": 1576842,
+        "title": "Pet � Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          15929108
+        ]
+      }
+    ],
+    "ghost:pageChildKept": {
+      "window": 1576842,
+      "pageChildren": [
+        "15929108"
+      ],
+      "firstSeen": 1790879461624
+    },
+    "ghost:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "ghost:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "ghost:ghostLetsClicksThrough": {
+      "tries": [
+        {
+          "over": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          },
+          "transparent": true,
+          "off": {
+            "title": "Daytona - Secure Infrastructure for Running AI-Generated Code - Google Chrome",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "pageDidNotThrow": [],
+    "ownerPetUntouched": {
+      "before": {
+        "petJson": "b5b04bc21ddc905ff0da6d57620f3a521e104f6a14249767a269cb5bc69fcac0",
+        "loginEntry": true,
+        "pets": [
+          37668
+        ]
+      },
+      "after": {
+        "petJson": "b5b04bc21ddc905ff0da6d57620f3a521e104f6a14249767a269cb5bc69fcac0",
+        "loginEntry": true,
+        "pets": [
+          37668
+        ]
+      }
+    }
+  },
+  "serverErrors": [],
+  "petLog": [
+    "\r",
+    "\r",
+    "DevTools listening on ws://127.0.0.1:51103/devtools/browser/4b8d675d-21df-4a15-92dc-eeb4155823ab\r",
+    "(node:44028) electron: Failed to load URL: http://127.0.0.1:51102/pet#key=pet-cold-start-e2e-key with error: ERR_CONNECTION_REFUSED",
+    "(Use `electron --trace-warnings ...` to show where the warning was created)",
+    "(node:44028) electron: Failed to load URL: http://127.0.0.1:51102/pet#key=pet-cold-start-e2e-key with error: ERR_CONNECTION_REFUSED",
+    "\r",
+    "\r",
+    "DevTools listening on ws://127.0.0.1:51103/devtools/browser/e9206950-9eda-430f-92e5-8b8deeed89ff\r"
+  ]
+}
