@@ -630,7 +630,7 @@ function Pet() {
   if (!bubble && limit && limitNews?.mark === limit.mark && limitNews.until > now) {
     bubble = (
       <Bubble id="limit" tone={limit.level === "out" ? "late" : "soon"} title={limit.title} detail={limit.detail} onClose={() => setLimitNews(null)}>
-        <BubbleButton primary onClick={() => { setLimitNews(null); openPath("/settings/engines"); }}>See usage</BubbleButton>
+        <BubbleButton primary onClick={() => { setLimitNews(null); openPath("/settings/usage"); }}>See usage</BubbleButton>
         <BubbleButton onClick={() => setLimitNews(null)}>OK</BubbleButton>
       </Bubble>
     );
@@ -662,7 +662,7 @@ function Pet() {
   const status: ReactNode = petChat?.isRunning ? `${step?.label ?? "Working on it"}…`
     : needs ? `${plural(needs, "thing")} waiting on you`
       : limit ? (
-        <Button variant="link" className={cn("h-auto p-0 text-xs font-normal", limit.level === "out" ? "text-destructive" : "text-warning")} onClick={() => openPath("/settings/engines")}>
+        <Button variant="link" className={cn("h-auto p-0 text-xs font-normal", limit.level === "out" ? "text-destructive" : "text-warning")} onClick={() => openPath("/settings/usage")}>
           {limit.title}
         </Button>
       )

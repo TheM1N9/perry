@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ArrowRightIcon, BlocksIcon, BookUserIcon, CheckCircle2Icon, ChevronsUpDownIcon, GaugeIcon, InboxIcon, ListChecksIcon, LockIcon, MonitorIcon,
+  BlocksIcon, BookUserIcon, CheckCircle2Icon, ChevronsUpDownIcon, GaugeIcon, InboxIcon, ListChecksIcon, LockIcon, MonitorIcon,
   MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -13,7 +13,7 @@ import { api } from "@/convex/_generated/api";
 import type { ChatSummary } from "@/convex/dashboard";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
 import { DEFAULT_ENGINE, type EngineKind } from "@/convex/lib/engines";
-import { errorText, useNow } from "@/lib/format";
+import { errorText } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { toast } from "sonner";
@@ -31,7 +31,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader,
   SidebarMenu, SidebarMenuAction, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSkeleton, SidebarRail,
@@ -43,7 +42,6 @@ import { StatusIndicator, statusLabel } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
 import { UpdateNotice } from "./updates";
 import { PlatypusArt } from "./platypus";
-import { WindowRow } from "./screens/usage";
 import { MoveToProject, NewProjectDialog, ProjectFolders } from "./projects";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -183,7 +181,7 @@ function ChatGroups() {
       <ProjectFolders chats={all} row={row} onNewProject={() => setCreating({})} />
       {!chats.length && (
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          <p className="px-2 py-1 text-sm text-muted-foreground">Your chats will show up here.</p>
+          <p className="px-2 py-1 text-sm text-muted-foreground">No chats yet.</p>
         </SidebarGroup>
       )}
       {chats.length > 0 && (
@@ -369,7 +367,7 @@ function DesktopPet() {
               <DropdownMenuLabel className="font-normal">
                 <span className="block text-sm font-medium text-foreground">{state}</span>
                 {pet && <span className="block text-xs text-pretty text-muted-foreground">
-                  {failed ? pet.setup?.error?.split("\n")[0] : pet.running ? `On ${pet.host}, and he starts with it.` : `He'd appear on ${pet.host}, the computer Perry runs on.`}
+                  {failed ? pet.setup?.error?.split("\n")[0] : pet.running ? `On ${pet.host}` : `He'd appear on ${pet.host}`}
                 </span>}
               </DropdownMenuLabel>
             </DropdownMenuGroup>
@@ -440,36 +438,10 @@ function useSignedIn(): SignedIn[] | undefined {
 }
 
 /**
- * How much of each signed-in engine's plan is left, window by window, and when
- * each starts again: Settings → Engines & usage, short. Read only while the
- * menu is open.
- */
-function UsageSummary({ engines }: { engines: SignedIn[] }) {
-  const { dashboardKey } = useSession();
-  const limits = useQuery(api.usage.limits, { key: dashboardKey });
-  const now = useNow(30_000);
-  if (!engines.length) return <p className="px-2 py-1.5 text-xs text-muted-foreground">No engine is signed in.</p>;
-  return (
-    <div className="grid gap-3 px-2 py-1.5" role="group" aria-label="Usage">
-      {engines.map((engine) => {
-        const windows = limits?.engines.find((item) => item.kind === engine.kind)?.usage.limits?.windows ?? [];
-        return (
-          <div key={engine.kind} aria-label={`${engine.label} usage`} role="group">
-            <p className="truncate text-xs font-medium">{engine.label}{engine.account && <span className="font-normal text-muted-foreground"> · {engine.account}</span>}</p>
-            {limits === undefined ? <Skeleton className="mt-1.5 h-6 w-full" />
-              : windows.length ? <div className="mt-1.5 grid gap-2">{windows.map((window) => <WindowRow key={window.id} window={window} now={now} compact />)}</div>
-              : <p className="mt-0.5 text-xs text-muted-foreground">No limits reported yet.</p>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
  * The owner, at the foot of the sidebar: under the name, the plan and engine
- * Perry thinks with (or Telegram waiting to be paired). Open, how much of each
- * plan is left, then the theme, Settings and locking the dashboard.
+ * Perry thinks with (or Telegram waiting to be paired). Open, the same two
+ * lines, then Usage (Settings → Usage), the theme, Settings and locking the
+ * dashboard. How much of each plan is left is on the usage page, not here.
  */
 function AccountMenu() {
   const { dashboardKey, lock } = useSession();
@@ -499,13 +471,15 @@ function AccountMenu() {
             </span>
             <ChevronsUpDownIcon className="ml-auto text-sidebar-foreground/50" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent side={isMobile ? "top" : "right"} align="end" sideOffset={8} className="w-72">
+          <DropdownMenuContent side={isMobile ? "top" : "right"} align="end" sideOffset={8} className="w-60">
             <DropdownMenuGroup>
-              <DropdownMenuLabel>{name}</DropdownMenuLabel>
+              <DropdownMenuLabel className="grid font-normal">
+                <span className="truncate text-sm font-medium text-foreground">{name}</span>
+                <span className="truncate text-xs text-muted-foreground">{line}</span>
+              </DropdownMenuLabel>
             </DropdownMenuGroup>
-            {engines && <UsageSummary engines={engines} />}
-            <DropdownMenuItem onClick={() => go("/settings/engines")}><GaugeIcon />Usage details<ArrowRightIcon className="ml-auto" /></DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => go("/settings/usage")}><GaugeIcon />Usage</DropdownMenuItem>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger><SunMoonIcon />Theme</DropdownMenuSubTrigger>
               <DropdownMenuSubContent>

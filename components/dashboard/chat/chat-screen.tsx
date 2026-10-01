@@ -644,7 +644,7 @@ export function ChatScreen() {
                   <TriangleAlertIcon />
                   <AlertTitle>{assistant} couldn&apos;t finish the last reply</AlertTitle>
                   <AlertDescription>
-                    <p>{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings → Engines & usage shows it too."
+                    <p>{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings → Engines shows it too."
                       : /runner|offline|computer/i.test(chat.lastError) ? "Your computer may be offline. Start Perry on it, then try again." : "Try again, or open Activity for the full run."}</p>
                     <p className="mt-1 font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
                   </AlertDescription>
@@ -706,7 +706,7 @@ export function ChatScreen() {
               {limit && limitSeen !== limitMark && (
                 <ComposerNote tone={limit.level === "out" ? "error" : "warning"} onDismiss={() => setLimitSeen(limitMark)}>
                   <span className="font-medium">{limit.title}.</span> {limit.detail}{" "}
-                  <Link href="/settings/engines" className="link">See usage</Link>
+                  <Link href="/settings/usage" className="link">See usage</Link>
                 </ComposerNote>
               )}
               {!selectedId && !draft && files.length === 0 && (

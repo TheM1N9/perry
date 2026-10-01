@@ -37,7 +37,7 @@ import { Updates } from "../updates";
 import { Activity } from "./activity";
 import { ApprovalRules, Computers, RecentRequests } from "./computer";
 import { YourAssistant } from "./memory";
-import { Usage } from "./usage";
+import { Usage, UsageMoved } from "./usage";
 import { SaveStatus, useAutosave } from "../autosave";
 import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, ListSkeleton, SecretInput, Section, StatusBadge, type Tone } from "../common";
 
@@ -48,7 +48,8 @@ import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, List
  */
 const SECTIONS: Record<SettingsSection, () => ReactNode> = {
   general: () => <><YourAssistant /><Appearance /><Updates /></>,
-  engines: () => <><Engines /><Usage /></>,
+  engines: () => <><UsageMoved /><Engines /></>,
+  usage: () => <Usage />,
   computers: () => <Computers />,
   access: () => <><NewChatAccess /><ApprovalRules /><RecentRequests /></>,
   notifications: () => <><Manners /><AwayChannel /></>,
