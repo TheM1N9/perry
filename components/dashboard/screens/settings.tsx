@@ -2,7 +2,7 @@
 
 import { useTheme } from "next-themes";
 import { ExternalLinkIcon, MessageCircleIcon, MonitorIcon, MoonIcon, RefreshCwIcon, SendIcon, ShieldAlertIcon, ShieldCheckIcon, SmartphoneIcon, SunIcon, UserIcon } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -306,31 +306,35 @@ function Manners() {
   const { dashboardKey } = useSession();
   const manners = useQuery(api.dashboard.getManners, { key: dashboardKey });
   const save = useMutation(api.dashboard.setManners);
-  const [quiet, setQuiet] = useState({ on: false, start: "22:00", end: "07:00" });
+  const [quiet, setQuietState] = useState({ on: false, start: "22:00", end: "07:00" });
+  // The latest hours, kept as they change: a time field can still change as focus leaves it, in the same event as the blur that saves.
+  const latest = useRef(quiet);
+  const setQuiet = (next: typeof quiet) => { latest.current = next; setQuietState(next); };
   useEffect(() => {
-    if (manners) setQuiet({ on: Boolean(manners.quietHours), start: manners.quietHours?.start ?? "22:00", end: manners.quietHours?.end ?? "07:00" });
+    if (!manners) return;
+    latest.current = { on: Boolean(manners.quietHours), start: manners.quietHours?.start ?? "22:00", end: manners.quietHours?.end ?? "07:00" };
+    setQuietState(latest.current);
   }, [manners]);
   const store = (next: { quietHours?: { start: string; end: string }; dailyLimit?: number }, success: string) =>
     void save({ key: dashboardKey, ...next }).then(() => toast.success(success), (cause) => toast.error(errorText(cause)));
   const limit = manners?.dailyLimit;
-  const hours = (on: boolean, start = quiet.start, end = quiet.end) => on ? { quietHours: { start, end } } : {};
+  const hours = (on: boolean, start = latest.current.start, end = latest.current.end) => on ? { quietHours: { start, end } } : {};
+  const saveHours = () => { const { on, start, end } = latest.current; if (on) store({ ...hours(true, start, end), dailyLimit: limit }, `Quiet from ${start} to ${end}.`); };
   return (
     <Section title="Messages Perry sends on his own" description="Schedules, page watches and the heartbeat. What arrives in quiet hours or past the day's limit waits, and comes as one message when it may. Due reminders always go.">
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm font-medium">
             <Switch checked={quiet.on} disabled={!manners} aria-label="Quiet hours"
-              onCheckedChange={(on) => { setQuiet({ ...quiet, on }); store({ ...hours(on), dailyLimit: limit }, on ? `Quiet from ${quiet.start} to ${quiet.end}.` : "Quiet hours off."); }} />
+              onCheckedChange={(on) => { setQuiet({ ...latest.current, on }); store({ ...hours(on), dailyLimit: limit }, on ? `Quiet from ${latest.current.start} to ${latest.current.end}.` : "Quiet hours off."); }} />
             Quiet hours
           </label>
           <span className="text-sm text-muted-foreground">from</span>
           <TimePicker aria-label="Quiet from" value={quiet.start} disabled={!quiet.on}
-            onValueChange={(start) => setQuiet((current) => ({ ...current, start }))}
-            onBlur={() => quiet.on && store({ ...hours(true), dailyLimit: limit }, `Quiet from ${quiet.start} to ${quiet.end}.`)} />
+            onValueChange={(start) => setQuiet({ ...latest.current, start })} onBlur={saveHours} />
           <span className="text-sm text-muted-foreground">to</span>
           <TimePicker aria-label="Quiet until" value={quiet.end} disabled={!quiet.on}
-            onValueChange={(end) => setQuiet((current) => ({ ...current, end }))}
-            onBlur={() => quiet.on && store({ ...hours(true), dailyLimit: limit }, `Quiet from ${quiet.start} to ${quiet.end}.`)} />
+            onValueChange={(end) => setQuiet({ ...latest.current, end })} onBlur={saveHours} />
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium">At most</span>
