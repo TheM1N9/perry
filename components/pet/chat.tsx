@@ -199,7 +199,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
           </div>
         </div>)}
         {messages.map((message) => message.role === "user" ? (
-          <div key={message.id} className="ml-auto flex w-fit max-w-[85%] flex-col items-end gap-1">
+          <div key={message.id} className="ml-auto flex w-fit max-w-[85%] flex-col items-end gap-1" data-role="user">
             {message.attachments.filter((file) => file.contentType.startsWith("image/")).map((file) => (
               // eslint-disable-next-line @next/next/no-img-element -- a local file served by /api/media, not a static asset
               <img key={file.url} src={file.url} alt={file.fileName} className="max-h-32 rounded-xl border object-contain" />

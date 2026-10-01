@@ -283,7 +283,7 @@ try {
       "[data-slot=input-group]", "[data-slot=select-trigger]", "[data-slot=toggle-group]", "[data-slot=tabs-list]", "[data-slot=radio-group-card]",
       "[data-slot=checkbox]", "[data-slot=switch]", "[data-slot=skeleton]", "[data-slot=progress]", "[data-slot=scroll-area-scrollbar]",
       "[data-slot=alert][role=alert]", "article:not([data-bare])", "article pre", ".prose-chat", "[data-command-line]", "ol[aria-label=Trace]",
-      "[data-pill]", "[data-role=user] > div", "[data-pending] > div", "[data-composer]", "[data-slot=avatar]", "[data-slot=calendar]",
+      "[data-pill]", "[data-slot=button]", "[data-role=user] > *", "[data-pending] > div", "[data-composer]", "[data-slot=avatar]", "[data-slot=calendar]",
       "[data-slot=time-picker]", "[data-slot=tabs-list]",
     ].join(",");
     const page = getComputedStyle(document.body).backgroundColor;

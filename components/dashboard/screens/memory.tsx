@@ -141,7 +141,8 @@ function Memories() {
                   <form className="min-w-0 flex-1" onSubmit={(event) => void saveEdit(event)}>
                     <Field data-invalid={Boolean(editing.error) || undefined}>
                       <FieldLabel htmlFor={`memory-edit-${memory.id}`} className="sr-only">Edit this memory</FieldLabel>
-                      <Textarea id={`memory-edit-${memory.id}`} rows={2} value={editing.text} autoFocus aria-invalid={Boolean(editing.error) || undefined} className="min-h-14 resize-none"
+                      <Textarea id={`memory-edit-${memory.id}`} rows={2} value={editing.text} autoFocus
+                        onFocus={(event) => { const end = event.currentTarget.value.length; event.currentTarget.setSelectionRange(end, end); }} aria-invalid={Boolean(editing.error) || undefined} className="min-h-14 resize-none"
                         onChange={(event) => setEditing({ ...editing, text: event.target.value, error: "" })}
                         onKeyDown={(event) => {
                           if (event.key === "Escape") setEditing(null);
