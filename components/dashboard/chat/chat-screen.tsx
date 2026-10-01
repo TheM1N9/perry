@@ -582,7 +582,7 @@ export function ChatScreen() {
           {status?.onboarding === "offer" && (
             <Alert variant="quiet" className="mt-4">
               <AlertTitle>Tell {assistant} about yourself</AlertTitle>
-              <AlertDescription>A name, a personality, and a page about you that {assistant} reads before every reply. About two minutes.</AlertDescription>
+              <AlertDescription>About two minutes.</AlertDescription>
               <AlertAction className="flex gap-2">
                 <Button size="sm" variant="ghost" onClick={() => void skipOnboarding({ key: dashboardKey }).catch(fail)}>Not now</Button>
                 <Button size="sm" onClick={() => void redoOnboarding({ key: dashboardKey }).then(() => router.push("/welcome"), fail)}>Start</Button>
@@ -594,9 +594,6 @@ export function ChatScreen() {
             <div className="flex min-h-[calc(100dvh-16rem)] flex-col items-center justify-center py-12 text-center">
               <PerryMark className="size-14" />
               <h2 className="mt-5 text-3xl font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
-              <p className="mt-1.5 max-w-md text-md text-pretty text-muted-foreground">
-                {project ? `It follows the project's instructions, knows its other chats, and keeps what ${assistant} remembers here to the project.` : `What should ${assistant} pick up?`}
-              </p>
             </div>
           ) : (
             <div className="space-y-8 pt-6 pb-10" aria-busy={loading || undefined}>
@@ -608,7 +605,7 @@ export function ChatScreen() {
               )}
               {missing && (
                 <EmptyState mascot title="This chat isn't here" action={<Button size="sm" render={<Link href="/chat" />}>New chat</Button>}>
-                  It may have been deleted. Start a new one, or pick another from the sidebar.
+                  It may have been deleted.
                 </EmptyState>
               )}
               {messageStatus === "CanLoadMore" && (
@@ -644,9 +641,11 @@ export function ChatScreen() {
                   <TriangleAlertIcon />
                   <AlertTitle>{assistant} couldn&apos;t finish the last reply</AlertTitle>
                   <AlertDescription>
-                    <p>{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings → Engines shows it too."
-                      : /runner|offline|computer/i.test(chat.lastError) ? "Your computer may be offline. Start Perry on it, then try again." : "Try again, or open Activity for the full run."}</p>
-                    <p className="mt-1 font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
+                    {/too old for Perry|runner|offline|computer/i.test(chat.lastError) && (
+                      <p className="mb-1">{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings → Engines shows it too."
+                        : "Your computer may be offline. Start Perry on it, then try again."}</p>
+                    )}
+                    <p className="font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
                   </AlertDescription>
                   {lastUser && !app && (
                     <AlertAction>
@@ -674,8 +673,8 @@ export function ChatScreen() {
             <div className="px-1 pb-1 text-sm text-muted-foreground" role="note">
               <p className="font-medium text-foreground">{assistant}&apos;s chat with {chat.contact.name}{chat.contact.group ? " (a group)" : ""}</p>
               <p className="mt-1 text-pretty">
-                You can read it, but not write in it: what you write would reach them. To have {assistant} tell them something, ask in your own chat.
-                {" "}What {assistant} may share with them is under <Link href="/settings/people" className="link">Settings → People</Link>.
+                Read only: what you write would reach them. Ask in your own chat to tell them something.
+                {" "}<Link href="/settings/people" className="link">What {assistant} may share</Link>
               </p>
             </div>
           ) : (<>
@@ -725,7 +724,7 @@ export function ChatScreen() {
               ? <span className="text-warning">Full access: {assistant} acts on this computer without asking. Every command still shows in Activity.</span>
               : app
                 ? <>Your {app} chat. What you write here, and {assistant}&apos;s reply, also go to {app}.</>
-                : <>Type <Kbd className="font-mono">/</Kbd> for commands, <Kbd className="font-mono">$</Kbd> for skills. Drop or paste files to attach them.</>}
+                : <>Type <Kbd className="font-mono">/</Kbd> for commands, <Kbd className="font-mono">$</Kbd> for skills.</>}
           </p>
           </>)}
         </div>

@@ -1095,9 +1095,7 @@ function PetTodos({ board, now, onDone, onAdded }: {
       <div className="px-1.5 pb-1">
         {board === undefined ? <div className="space-y-2 px-2.5 py-3" role="status" aria-label="Loading"><Skeleton className="h-5 w-3/4" /><Skeleton className="h-5 w-2/3" /><Skeleton className="h-5 w-1/2" /></div>
           : board.open.length === 0 ? (
-            <Empty title={board.doneToday.length ? "All done for now" : "Nothing on your list"}>
-              Type one above, like “stretch every day at 11”, or tell Perry in a chat.
-            </Empty>
+            <Empty title={board.doneToday.length ? "All done for now" : "Nothing on your list"} />
           ) : (<>
             <div className="flex items-center gap-2 px-2.5 pt-1 pb-0.5">
               <p className="flex-1 text-2xs font-medium tracking-wide text-muted-foreground uppercase">
