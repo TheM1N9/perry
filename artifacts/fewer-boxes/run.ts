@@ -88,8 +88,8 @@ type Persona = { user: string; name: string; personality: string };
 /** Each section of Settings, and words that show once its seeded rows have loaded. */
 const SECTION_WORDS = [
   ["general", "Update on his own at night"], ["engines", "Perry's share this week"], ["computers", "a-long-folder-name"],
-  ["access", "Netflix"], ["notifications", "Quiet hours"], ["telegram", "Pair with Telegram"], ["whatsapp", "A separate number"],
-  ["desktop-pet", "Show Perry the screen"], ["people", "Talks with Perry"], ["activity", "Export last year's receipts"], ["security", "Lock this browser"],
+  ["access", "git push origin main"], ["notifications", "Quiet hours"], ["telegram", "Pair with Telegram"], ["whatsapp", "A separate number"],
+  ["desktop-pet", "Show Perry the screen"], ["people", "Talks with Perry"], ["logins", "Netflix"], ["security", "Lock this browser"], ["activity", "Export last year's receipts"],
 ] as const;
 
 try {
@@ -231,7 +231,7 @@ try {
       }
       if (!BEFORE && mode === "light" && section === "computers") check("onlineComputerHasNoPill", (await noPillIn(`document.querySelector('ul[aria-label=Computers] li')`)) === true);
       // The keys, now each beside what it unlocks, and the logins: none wears a Set or Not set pill.
-      if (!BEFORE && mode === "light" && ["engines", "access", "telegram"].includes(section)) {
+      if (!BEFORE && mode === "light" && ["engines", "logins", "telegram"].includes(section)) {
         keyPills[section] = await evaluate(`[...document.querySelectorAll('main [data-pill]')].filter((p) => /Set|Not set/.test(p.innerText)).map((p) => p.innerText)`);
       }
       await collectErrors(`settings-${section}-${mode}`);
@@ -453,7 +453,7 @@ try {
       { atRest, half, offered, byEnter, afterEnter, cleared, byClick });
 
     // --- Add login: named for what it does, there only with something to add, and Enter adds ----------
-    await go("/settings/access", "Netflix");
+    await go("/settings/logins", "Netflix");
     const vault = () => call<Array<{ label: string; username?: string }>>("dashboard:getVault", { key: KEY });
     await focus(`document.querySelector("#login-label")`);
     await typeText("Spotify");

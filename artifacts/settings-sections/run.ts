@@ -61,6 +61,15 @@ import { seed, startPerry, type Perry } from "../fewer-boxes/seed";
 //      Skills shows its own page heading inside the page.
 //  14. Anything throws or logs an error, in either theme.
 //  15. A picture proves nothing: each is taken once its seeded words show.
+// After the owner's review:
+//  16. Logins & secrets is not a section of its own, holds more than the
+//      logins, or the logins are still in Access & approvals.
+//  17. New chat and Search are not one row: New chat under 70% of it, Search
+//      with words or without its name, tooltip and shortcut, or a box around
+//      the row; collapsed to icons, the two are not stacked, New chat first.
+//  18. The chat list still has date headings (Today, Yesterday, Previous 7
+//      days…), a Pinned heading, pinned chats not first, or the rest not
+//      newest first; or a pinned chat has no pin to say so.
 
 const args = process.argv.slice(2);
 const outDir = args[0];
@@ -87,7 +96,7 @@ const GROUPS: Array<[string, Array<[string, string, string[]]>]> = [
     ["engines", "Engines & usage", ["Perry's share this week", "Engines", "Codex", "Claude Code", "Gemini API key", "Your plans"]],
     ["computers", "Computers", ["a-long-folder-name", "Computers", "Revoke"]],
   ]],
-  ["Permissions", [["access", "Access & approvals", ["Netflix", "Access for new chats", "Always allowed", "pnpm test", "Logins and secrets", "Add a login", "Recent requests", "git push origin main"]]]],
+  ["Permissions", [["access", "Access & approvals", ["pnpm test", "Access for new chats", "Always allowed", "Recent requests", "git push origin main"]]]],
   ["Reaching you", [
     ["notifications", "Notifications", ["Quiet hours", "Messages Perry sends on his own", "At most", "When you're away"]],
     ["telegram", "Telegram", ["Pair with Telegram", "Telegram bot token", "Generate code"]],
@@ -95,21 +104,22 @@ const GROUPS: Array<[string, Array<[string, string, string[]]>]> = [
   ]],
   ["Desktop pet", [["desktop-pet", "Desktop pet", ["Show Perry the screen", "His light or dark look", "Let Perry look at the screen", "Keyboard shortcuts", "Talk to Perry"]]]],
   ["People", [["people", "People", ["Talks with Perry", "Datta"]]]],
-  ["System", [
-    ["activity", "Activity log", ["Export last year's receipts", "Plan my week", "Runs"]],
-    ["security", "Security", ["Lock this browser", "Dashboard key", "DASHBOARD_KEY", "Lock dashboard"]],
+  ["Security", [
+    ["logins", "Logins & secrets", ["Netflix", "Logins & secrets", "Add a login", "sam@example.com"]],
+    ["security", "Dashboard key", ["Lock this browser", "Dashboard key", "DASHBOARD_KEY", "Lock dashboard"]],
   ]],
+  ["System", [["activity", "Activity log", ["Export last year's receipts", "Plan my week", "Runs"]]]],
 ];
 const SECTIONS = GROUPS.flatMap(([group, sections]) => sections.map(([slug, label, words]) => ({ group, slug, label, words })));
 /** Words that must stay in one place: a key outside its home, or Keys, means the move is not done. */
-const ONLY_IN: Array<[string, string]> = [["Telegram bot token", "telegram"], ["Gemini API key", "engines"], ["Composio key", "apps"], ["Logins and secrets", "access"], ["Keyboard shortcuts", "desktop-pet"]];
+const ONLY_IN: Array<[string, string]> = [["Telegram bot token", "telegram"], ["Gemini API key", "engines"], ["Composio key", "apps"], ["Logins & secrets", "logins"], ["Add a login", "logins"], ["Netflix", "logins"], ["Keyboard shortcuts", "desktop-pet"]];
 
 const OLD_TABS = ["general", "usage", "keys", "people", "shortcuts", "telegram", "whatsapp"] as const;
 const REDIRECTS: Record<string, string> = {
   "/settings": "/settings/general",
   "/settings?tab=general": "/settings/general",
   "/settings?tab=usage": "/settings/engines",
-  "/settings?tab=keys": "/settings/access",
+  "/settings?tab=keys": "/settings/logins",
   "/settings?tab=keys&key=TELEGRAM_BOT_TOKEN": "/settings/telegram",
   "/settings?tab=keys&key=COMPOSIO_API_KEY": "/apps/connectors",
   "/settings?tab=keys&key=GEMINI_API_KEY": "/settings/engines",
@@ -126,7 +136,7 @@ const REDIRECTS: Record<string, string> = {
   "/activity": "/settings/activity",
   "/activity?status=error": "/settings/activity?status=error",
   "/apps": "/apps/connectors",
-  "/keys": "/settings/access",
+  "/keys": "/settings/logins",
   "/profile": "/settings/general",
   "/setup": "/settings/telegram",
 };
@@ -167,6 +177,8 @@ try {
   const collectErrors = async (page: string) => { for (const error of (await evaluate(`window.__errors ?? []`).catch(() => [])) as string[]) errors.push({ page, error }); await evaluate(`window.__errors = []; true`).catch(() => {}); };
   const waitFor = (test: string, what: string, seconds = 20) => until(() => evaluate(`Boolean(${test})`), what, seconds);
   const text = () => evaluate(`document.querySelector("main")?.innerText ?? document.body.innerText`) as Promise<string>;
+  /** What the open section shows, without the nav beside it, which names every section. */
+  const sectionText = () => evaluate(`document.querySelector('nav[aria-label=Settings]')?.parentElement.lastElementChild.innerText ?? ""`) as Promise<string>;
   const where = () => evaluate(`location.pathname + location.search + location.hash`) as Promise<string>;
   const scheme = async (value: "light" | "dark") => {
     await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value }] });
@@ -283,7 +295,7 @@ try {
       for (const section of SECTIONS) {
         await go(`/settings/${section.slug}`, section.words[0]);
         if (mode === "light") {
-          const shown = await text();
+          const shown = await sectionText();
           const absent = section.words.filter((words) => !shown.includes(words));
           if (absent.length) missing[section.slug] = absent;
           for (const [words, home] of ONLY_IN) if (home !== section.slug && shown.includes(words)) (misplaced[section.slug] ??= []).push(words);
@@ -301,6 +313,12 @@ try {
     check("everySectionHoldsWhatItShould", Object.keys(missing).length === 0, missing);
     check("eachKeyOnlyBesideWhatItUnlocks", Object.keys(misplaced).length === 0, misplaced);
     check("navMarksTheOpenSection", Object.keys(marked).length === 0, marked);
+    // 16. Logins & secrets on its own: the logins and nothing else; Access & approvals without them.
+    await go("/settings/logins", "Netflix");
+    const logins = await evaluate(`[...document.querySelector('nav[aria-label=Settings]').parentElement.lastElementChild.querySelectorAll("section")].map((section) => section.getAttribute("aria-label"))`) as string[];
+    await go("/settings/access", "pnpm test");
+    const access = await sectionText();
+    check("loginsIsItsOwnSection", JSON.stringify(logins) === '["Logins & secrets"]' && !/Netflix|Add a login|Logins & secrets/.test(access), { logins, accessHasLogins: /Netflix|Add a login|Logins & secrets/.test(access) });
     theme = "light";
     await scheme("light");
     await size(1280, 800);
@@ -336,7 +354,7 @@ try {
     const opened = await soon(async () => (await where()) === "/settings/computers", 8);
     await waitFor(`document.body.innerText.includes("a-long-folder-name")`, "Computers", 15).catch(() => {});
     check("navByKeyboard", reached === "General" && ring === true && opened
-      && JSON.stringify(steps) === JSON.stringify(["General", "Engines & usage", "Computers", "Security", "Activity log", "General", "Engines & usage", "Computers"]), { tabs, reached, ring, steps, opened, at: await where() });
+      && JSON.stringify(steps) === JSON.stringify(["General", "Engines & usage", "Computers", "Activity log", "Dashboard key", "General", "Engines & usage", "Computers"]), { tabs, reached, ring, steps, opened, at: await where() });
 
     // --- 6. Old addresses, and an unknown section -----------------------------------------------------
     const wrong: Record<string, unknown> = {};
@@ -370,11 +388,79 @@ try {
     // --- 8. The sidebar: its items, the footer's order, and where the footer goes ------------------------
     await go("/chat", "New chat");
     const sidebar = await evaluate(`(() => {
-      const top = [...document.querySelector("[data-sidebar=content] [data-sidebar=group] [data-sidebar=menu]").querySelectorAll(":scope > [data-sidebar=menu-item]")].map((li) => li.querySelector("[data-sidebar=menu-button]").innerText.trim().split("\\n")[0]);
+      const top = [...document.querySelector("[data-sidebar=content] [data-sidebar=group] [data-sidebar=menu]").querySelectorAll(":scope > [data-sidebar=menu-item]")].flatMap((li) => [...li.querySelectorAll("[data-sidebar=menu-button]")].map((b) => b.innerText.trim().split("\\n")[0] || b.getAttribute("aria-label")));
       const footer = [...document.querySelector("[data-sidebar=footer]").querySelectorAll("[data-sidebar=menu-button]")].map((b) => b.innerText.replace(/\\s+/g, " ").trim());
       return { top, footer };
     })()`) as { top: string[]; footer: string[] };
     check("sidebarHasMemoryAndApps", JSON.stringify(sidebar.top) === JSON.stringify(["New chat", "Search", "Needs you", "To-dos", "Work", "Memory", "Apps & skills"]), sidebar.top);
+
+    // --- 17. New chat and Search, one row; stacked when the sidebar is icons ----------------------------------
+    const ROW = `document.querySelector("[data-new-chat-row]")`;
+    const rowShape = () => evaluate(`(() => {
+      const row = ${ROW}; const [chat, search] = row.querySelectorAll("[data-sidebar=menu-button]");
+      const r = row.getBoundingClientRect(), c = chat.getBoundingClientRect(), s = search.getBoundingClientRect();
+      const clear = (v) => v === "transparent" || /rgba\\(\\d+, \\d+, \\d+, 0\\)/.test(v);
+      const st = getComputedStyle(row);
+      return {
+        share: Math.round((c.width / r.width) * 100), chat: chat.innerText.trim(), search: { words: search.innerText.trim(), label: search.getAttribute("aria-label"), keys: search.getAttribute("aria-keyshortcuts"), tag: search.tagName, icon: Boolean(search.querySelector("svg")), focusable: search.tabIndex >= 0 },
+        boxed: ["Top", "Right", "Bottom", "Left"].some((side) => parseFloat(st["border" + side + "Width"]) > 0) || !clear(st.backgroundColor),
+        stacked: s.top >= c.bottom - 1 && Math.abs(s.left - c.left) < 4, sideBySide: Math.abs(s.top - c.top) < 4 && s.left >= c.right,
+        sizes: [Math.round(c.width), Math.round(c.height), Math.round(s.width), Math.round(s.height)],
+      };
+    })()`) as Promise<{ share: number; chat: string; search: { words: string; label: string; keys: string; tag: string; icon: boolean; focusable: boolean }; boxed: boolean; stacked: boolean; sideBySide: boolean; sizes: number[] }>;
+    const open = await rowShape();
+    const searchButton = `${ROW}.querySelectorAll("[data-sidebar=menu-button]")[1]`;
+    const hover = await middle(searchButton);
+    if (hover) await mouse("mouseMoved", hover.x, hover.y);
+    const tip = await soon(() => evaluate(`[...document.querySelectorAll("[data-slot=tooltip-content]")].some((el) => el.innerText.trim() === "Search · Ctrl+K")`), 5);
+    await click(searchButton);
+    const palette1 = await soon(() => evaluate(`Boolean(document.querySelector("[cmdk-input]"))`), 5);
+    await press("Escape");
+    // Keyboard: focus the button and press Enter.
+    await focus(searchButton);
+    await press("Enter");
+    const palette2 = await soon(() => evaluate(`Boolean(document.querySelector("[cmdk-input]"))`), 5);
+    await press("Escape");
+    check("newChatAndSearchShareARow", open.share >= 70 && open.chat === "New chat" && open.sideBySide && !open.boxed
+      && open.search.words === "" && open.search.label === "Search" && open.search.icon && open.search.tag === "BUTTON" && open.search.focusable && /Control\+K/.test(open.search.keys)
+      && tip && palette1 && palette2, { open, tip, palette1, palette2 });
+    await shot("sidebar-row", false);
+    // Collapsed to icons: the two stacked, New chat first.
+    const collapsed: Record<string, unknown> = {};
+    for (const mode of ["light", "dark"] as const) {
+      theme = mode;
+      await scheme(mode);
+      await go("/chat", "New chat");
+      await click(`document.querySelector("[data-sidebar=trigger]")`);
+      await waitFor(`document.querySelector("[data-collapsible=icon]")`, "the sidebar to collapse", 10).catch(() => {});
+      await sleep(600);
+      collapsed[mode] = await rowShape();
+      await shot("sidebar-collapsed", false);
+      await click(`document.querySelector("[data-sidebar=trigger]")`);
+      await sleep(600);
+    }
+    theme = "light";
+    await scheme("light");
+    const folded = collapsed.light as Awaited<ReturnType<typeof rowShape>>;
+    check("collapsedShowsTwoStackedIcons", folded.stacked && folded.sizes.every((size) => size > 0 && size <= 40), collapsed);
+
+    // --- 18. One plain list of chats: no date headings, pinned first with a pin, the rest newest first ------------------
+    await call("dashboard:setChatPinned", { key: KEY, id: receiptsChat, pinned: true });
+    await go("/chat", "New chat");
+    await waitFor(`document.querySelector('[aria-label=Pinned] [aria-label=Pinned]')`, "the pinned chat", 15).catch(() => {});
+    const chatList = await evaluate(`(() => {
+      const headings = [...document.querySelectorAll("[data-sidebar=content] [data-sidebar=group-label]")].map((el) => el.innerText.trim());
+      const rows = [...document.querySelectorAll("[data-sidebar=content] ul[aria-label=Pinned] > li, [data-sidebar=content] ul[aria-label=Chats] > li")].map((li) => ({ title: li.querySelector("[data-sidebar=menu-button]").innerText.trim(), pin: Boolean(li.querySelector('[aria-label=Pinned]')) }));
+      const words = document.querySelector("[data-sidebar=content]").innerText;
+      return { headings, rows, dates: ["Today", "Yesterday", "Previous 7 days", "Previous 30 days", "Pinned"].filter((word) => words.split("\\n").some((line) => line.trim() === word)) };
+    })()`) as { headings: string[]; rows: Array<{ title: string; pin: boolean }>; dates: string[] };
+    const all = (await call<Array<{ id: string; title: string; pinned?: boolean; projectId?: string; lastMessageAt: number }>>("dashboard:listChats", { key: KEY })).filter((chat) => !chat.projectId);
+    const wantedOrder = [...all.filter((chat) => chat.pinned), ...all.filter((chat) => !chat.pinned).sort((a, b) => b.lastMessageAt - a.lastMessageAt)].map((chat) => chat.title);
+    await shot("sidebar-chats", false);
+    check("chatsAreOnePlainList", JSON.stringify(chatList.headings) === '["Projects"]' && chatList.dates.length === 0
+      && chatList.rows.length === wantedOrder.length && chatList.rows.every((row, index) => row.title.includes(wantedOrder[index])) && chatList.rows[0]?.pin === true && chatList.rows.slice(1).every((row) => !row.pin), { chatList, wantedOrder });
+    await call("dashboard:setChatPinned", { key: KEY, id: receiptsChat, pinned: false });
+    await collectErrors("sidebar-row");
     const computer = (await call<{ runners: Array<{ name: string; revoked?: boolean }> }>("dashboard:getCompute", { key: KEY })).runners.find((runner) => !runner.revoked)?.name ?? "";
     const owner = (await call<{ displayName?: string }>("dashboard:getStatus", { key: KEY })).displayName ?? "You";
     // The pet's button starts with his sleeping "z", the owner's with their initial.
@@ -516,7 +602,7 @@ try {
     await sleep(300);
     await click(byText("[role=option]", "Telegram"));
     const switched = await soon(async () => (await where()) === "/settings/telegram", 10);
-    check("phoneUsesTheSwitcher", phone.nav === "none" && phone.switcher && phone.shown === "Security" && listed2.length === 6 && switched, { phone, listed: listed2, switched });
+    check("phoneUsesTheSwitcher", phone.nav === "none" && phone.switcher && phone.shown === "Activity log" && listed2.length === 7 && switched, { phone, listed: listed2, switched });
     for (const path of ["/apps/connectors", "/apps/skills"]) {
       await go(path, path.endsWith("skills") ? "weekly-review" : "Composio");
       const measured = await evaluate(OVERFLOW) as { doc: number; worst: number; tabs: number[] };

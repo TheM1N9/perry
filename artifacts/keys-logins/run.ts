@@ -151,8 +151,8 @@ try {
   const type = (selector: string, value: string) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
   const pageHas = (text: string) => evaluate(`document.body.innerText.includes(${JSON.stringify(text)})`) as Promise<boolean>;
   const openKeys = async () => {
-    await send("Page.navigate", { url: `${BASE}/settings/access` });
-    await until(() => pageHas("Logins and secrets"), "the Keys tab", 30);
+    await send("Page.navigate", { url: `${BASE}/settings/logins` });
+    await until(() => pageHas("Logins & secrets"), "the Keys tab", 30);
     await sleep(1_000);
   };
 

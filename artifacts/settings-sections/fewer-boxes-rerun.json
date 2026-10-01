@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-01T10:57:14.496Z",
+  "ranAt": "2026-10-01T16:00:29.250Z",
   "pass": true,
   "checks": {
     "healthyEngineHasNoPill": true,
@@ -33,8 +33,8 @@
   "notes": {
     "setLoginRowsHaveNoPill": {
       "engines": [],
-      "access": [],
-      "telegram": []
+      "telegram": [],
+      "logins": []
     },
     "tabCountsArePlain": false,
     "taskQuestionIsALabelAndAnInlineForm": {
@@ -133,7 +133,7 @@
         "set": true,
         "source": "dashboard",
         "preview": "…7Q2x",
-        "updatedAt": 1790852226472
+        "updatedAt": 1790870421020
       },
       "cleared": true,
       "byClick": true

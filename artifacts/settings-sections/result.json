@@ -1,10 +1,11 @@
 {
-  "ranAt": "2026-10-01T11:01:43.200Z",
+  "ranAt": "2026-10-01T16:01:15.532Z",
   "pass": true,
   "checks": {
     "everySectionHoldsWhatItShould": true,
     "eachKeyOnlyBesideWhatItUnlocks": true,
     "navMarksTheOpenSection": true,
+    "loginsIsItsOwnSection": true,
     "navGroupsAsTheIssueSays": true,
     "navIsNotABox": true,
     "navByKeyboard": true,
@@ -12,6 +13,9 @@
     "unknownSectionIs404": true,
     "redirectsKeepTheirQuery": true,
     "sidebarHasMemoryAndApps": true,
+    "newChatAndSearchShareARow": true,
+    "collapsedShowsTwoStackedIcons": true,
+    "chatsAreOnePlainList": true,
     "footerIsPetThenComputerThenYou": true,
     "footerLandsOnItsSections": true,
     "sidebarItemsGoToTheirPages": true,
@@ -32,6 +36,12 @@
     "everySectionHoldsWhatItShould": {},
     "eachKeyOnlyBesideWhatItUnlocks": {},
     "navMarksTheOpenSection": {},
+    "loginsIsItsOwnSection": {
+      "logins": [
+        "Logins & secrets"
+      ],
+      "accessHasLogins": false
+    },
     "navGroupsAsTheIssueSays": {
       "got": [
         {
@@ -74,10 +84,17 @@
           "shownName": false
         },
         {
+          "name": "Security",
+          "items": [
+            "Logins & secrets",
+            "Dashboard key"
+          ],
+          "shownName": true
+        },
+        {
           "name": "System",
           "items": [
-            "Activity log",
-            "Security"
+            "Activity log"
           ],
           "shownName": true
         }
@@ -123,10 +140,17 @@
           "shownName": false
         },
         {
+          "name": "Security",
+          "items": [
+            "Logins & secrets",
+            "Dashboard key"
+          ],
+          "shownName": true
+        },
+        {
           "name": "System",
           "items": [
-            "Activity log",
-            "Security"
+            "Activity log"
           ],
           "shownName": true
         }
@@ -141,8 +165,8 @@
         "General",
         "Engines & usage",
         "Computers",
-        "Security",
         "Activity log",
+        "Dashboard key",
         "General",
         "Engines & usage",
         "Computers"
@@ -154,7 +178,7 @@
     "unknownSectionIs404": 404,
     "redirectsKeepTheirQuery": {
       "filtered": {
-        "at": "/settings/activity?session=n3fwf8z08jcg5cnfj8bzyn5ev5",
+        "at": "/settings/activity?session=2rke2g5xwgeyerstf7yk4v4fe5",
         "plan": false,
         "runs": 1
       },
@@ -172,6 +196,113 @@
       "Memory",
       "Apps & skills"
     ],
+    "newChatAndSearchShareARow": {
+      "open": {
+        "share": 80,
+        "chat": "New chat",
+        "search": {
+          "words": "",
+          "label": "Search",
+          "keys": "Control+K Meta+K",
+          "tag": "BUTTON",
+          "icon": true,
+          "focusable": true
+        },
+        "boxed": false,
+        "stacked": false,
+        "sideBySide": true,
+        "sizes": [
+          191,
+          32,
+          44,
+          32
+        ]
+      },
+      "tip": true,
+      "palette1": true,
+      "palette2": true
+    },
+    "collapsedShowsTwoStackedIcons": {
+      "light": {
+        "share": 103,
+        "chat": "New chat",
+        "search": {
+          "words": "",
+          "label": "Search",
+          "keys": "Control+K Meta+K",
+          "tag": "BUTTON",
+          "icon": true,
+          "focusable": true
+        },
+        "boxed": false,
+        "stacked": true,
+        "sideBySide": false,
+        "sizes": [
+          32,
+          32,
+          32,
+          32
+        ]
+      },
+      "dark": {
+        "share": 103,
+        "chat": "New chat",
+        "search": {
+          "words": "",
+          "label": "Search",
+          "keys": "Control+K Meta+K",
+          "tag": "BUTTON",
+          "icon": true,
+          "focusable": true
+        },
+        "boxed": false,
+        "stacked": true,
+        "sideBySide": false,
+        "sizes": [
+          32,
+          32,
+          32,
+          32
+        ]
+      }
+    },
+    "chatsAreOnePlainList": {
+      "chatList": {
+        "headings": [
+          "Projects"
+        ],
+        "rows": [
+          {
+            "title": "Export last year's receipts",
+            "pin": true
+          },
+          {
+            "title": "🧩 Compare three flats near work",
+            "pin": false
+          },
+          {
+            "title": "⏰ Morning briefing",
+            "pin": false
+          },
+          {
+            "title": "Plan my week",
+            "pin": false
+          },
+          {
+            "title": "Coffee order",
+            "pin": false
+          }
+        ],
+        "dates": []
+      },
+      "wantedOrder": [
+        "Export last year's receipts",
+        "🧩 Compare three flats near work",
+        "⏰ Morning briefing",
+        "Plan my week",
+        "Coffee order"
+      ]
+    },
     "footerIsPetThenComputerThenYou": {
       "footer": [
         "z z z Desktop pet",
@@ -205,7 +336,7 @@
         "Lock dashboard"
       ],
       "usage": {
-        "Codex usage": "Codex · ChatGPT Plus 5-hour 63% left · resets at 18:42 x Weekly 16% left · resets Sun 4 Oct, 16:29 x",
+        "Codex usage": "Codex · ChatGPT Plus 5-hour 63% left · resets at 23:42 x Weekly 16% left · resets Sun 4 Oct, 21:29 x",
         "Claude Code usage": "Claude Code · Claude Max No limits reported yet."
       },
       "bars": [
@@ -253,10 +384,10 @@
         "set": true,
         "source": "dashboard",
         "preview": "…AbCd",
-        "updatedAt": 1790852446770
+        "updatedAt": 1790870416956
       }
     },
-    "connectorsAfterKey": "Toggle Sidebar\nApps & skills\nConnectors\nSkills\nConnectors\n\nLet Perry work across the apps you already use. It checks what's connected each time it acts.\n\nRefresh\nCouldn't load every connection\n401 {\"error\":{\"message\":\"Invalid API key: e2e**9Zq1\",\"code\":801,\"slug\":\"APIKey_InvalidAPIKey\",\"status\":401,\"request_id\":\"778425f2-41f7-4c88-9a84-4e4b36131bb8\",\"suggested_fix\":\"Please check you are using a va",
+    "connectorsAfterKey": "Toggle Sidebar\nApps & skills\nConnectors\nSkills\nConnectors\n\nLet Perry work across the apps you already use. It checks what's connected each time it acts.\n\nRefresh\nCouldn't load every connection\n401 {\"error\":{\"message\":\"Invalid API key: e2e**9Zq1\",\"code\":801,\"slug\":\"APIKey_InvalidAPIKey\",\"status\":401,\"request_id\":\"7ccf45a6-402d-411f-bff4-44638b8d909a\",\"suggested_fix\":\"Please check you are using a va",
     "composioKeySavesInConnectors": {
       "composioSaved": true,
       "noticed": true,
@@ -273,7 +404,7 @@
       "phone": {
         "nav": "none",
         "switcher": true,
-        "shown": "Security"
+        "shown": "Activity log"
       },
       "listed": [
         "Perry General Engines & usage Computers",
@@ -281,7 +412,8 @@
         "Reaching you Notifications Telegram WhatsApp",
         "Desktop pet Desktop pet",
         "People People",
-        "System Activity log Security"
+        "Security Logins & secrets Dashboard key",
+        "System Activity log"
       ],
       "switched": true
     },
@@ -297,13 +429,14 @@
       "Engines & usage": "/settings/engines",
       "Computers": "/settings/computers",
       "Access & approvals": "/settings/access",
+      "Logins & secrets": "/settings/logins",
       "Activity log": "/settings/activity",
       "Keyboard shortcuts": "/settings/desktop-pet#shortcuts"
     },
-    "linksCrawled": 32,
+    "linksCrawled": 33,
     "noLinkGoesNowhere": {
       "dead": {},
-      "palette": 12
+      "palette": 13
     },
     "nothingThrows": {
       "exceptions": [],
