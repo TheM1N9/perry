@@ -210,20 +210,19 @@ function UpdateSteps({ engine, computer, update, last, onUpdate }: {
       {!elevate && (
         <ActionButton size="sm" className="mt-2" variant={required ? "default" : "outline"} action={onUpdate}>{failed ? "Try again" : "Update"}</ActionButton>
       )}
-      <p className="mt-2 text-sm text-pretty text-muted-foreground">
-        {required
-          ? `${computer} has ${engine} ${update.version}, older than Perry works with (${update.minimum} or newer). Until it's updated, Perry won't start replies with it.`
-          : `${computer} has ${update.version}.`}
-        {elevate && ` ${tried?.error ?? ""} Run this yourself on ${computer}, in a terminal with those rights:`}
-      </p>
+      {(required || elevate) && (
+        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+          {required && `${computer} has ${update.version}; Perry needs ${update.minimum} or newer and won't start replies with it until then.`}
+          {elevate && ` ${tried?.error ?? ""} Run this yourself in a terminal with those rights:`}
+        </p>
+      )}
       {failed && <p className="mt-2 text-sm text-pretty text-destructive">The update didn&apos;t work. {tried?.error}</p>}
       {failed && tried?.output && <Folded label="What it said"><Printed output={tried.output} /></Folded>}
       {elevate
         ? <div className="mt-3 max-w-md"><CommandLine>{elevate}</CommandLine></div>
         : (
           <Folded label="Or run it yourself">
-            <p className="text-sm text-pretty text-muted-foreground">Run this in a terminal on {computer}. Perry notices the new version by himself.</p>
-            <div className="mt-2 max-w-md"><CommandLine>{update.command}</CommandLine></div>
+            <div className="max-w-md"><CommandLine>{update.command}</CommandLine></div>
           </Folded>
         )}
     </div>
@@ -238,13 +237,14 @@ function UpdateProgress({ engine, computer, updating }: { engine: string; comput
   return (
     <div className="mt-3 border-l-2 border-primary/60 pl-3" role="status" data-engine-update={updating.status}>
       <p className="flex items-center gap-2 text-sm font-medium"><Spinner className="size-3.5" />{updating.status === "waiting" ? "Update waiting" : `Updating ${engine}…`}</p>
-      <p className="mt-0.5 text-sm text-pretty text-muted-foreground">
-        {updating.status === "queued" ? `Waiting for ${computer} to pick this up…`
-          : updating.status === "waiting" ? updating.waitingFor
-            ? `It starts once ${updating.waitingFor} ${/^a /.test(updating.waitingFor) ? "is" : "are"} done. New replies on ${engine} wait for the update.`
-            : "Getting ready…"
-          : `Running ${updating.command ?? "the update"} on ${computer}.`}
-      </p>
+      {updating.status !== "running" && (
+        <p className="mt-0.5 text-sm text-pretty text-muted-foreground">
+          {updating.status === "queued" ? `Waiting for ${computer} to pick this up…`
+            : updating.waitingFor
+              ? `Starts once ${updating.waitingFor} ${/^a /.test(updating.waitingFor) ? "is" : "are"} done. New replies on ${engine} wait.`
+              : "Getting ready…"}
+        </p>
+      )}
       {updating.status === "running" && output && (
         <pre className="mt-2 line-clamp-3 font-mono text-xs whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]" aria-label="What the update prints">{lines.slice(-3).join("\n")}</pre>
       )}

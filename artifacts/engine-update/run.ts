@@ -217,7 +217,7 @@ try {
   await shot("run-it-yourself.png", "Codex");
   const unfolded = await rowText("Codex");
   await click("Codex", "Or run it yourself");
-  check("commandFoldedAway", !folded.includes("npm install -g") && unfolded.includes("Run this in a terminal on Test PC") && unfolded.includes("npm install -g @openai/codex@latest"), { folded, unfolded });
+  check("commandFoldedAway", !folded.includes("npm install -g") && unfolded.includes("npm install -g @openai/codex@latest"), { folded, unfolded });
 
   // --- 4, 5. Codex: asked for mid-reply, it waits; the next reply waits for it --------------------------------
   const busyChat = await call<string>("dashboard:createChat", { key: KEY });
@@ -227,13 +227,13 @@ try {
   await until(async () => (await engines()).all.codex.updating?.status === "waiting" && Boolean((await engines()).all.codex.updating?.waitingFor), "the update to wait", 30);
   const heldChat = await call<string>("dashboard:createChat", { key: KEY });
   await call("dashboard:sendChat", { key: KEY, id: heldChat, text: "Hello after the update" });
-  await until(async () => (await rowText("Codex")).includes("It starts once"), "the wait on the page", 15);
+  await until(async () => (await rowText("Codex")).includes("Starts once"), "the wait on the page", 15);
   await sleep(3_000);
   await shot("waiting.png", "Codex");
   const waitingText = await rowText("Codex");
   const npmWhileBusy = fakeLog().filter((entry) => entry.cli === "npm").length;
   const heldStatus = turnsOf(heldChat).map((turn) => turn.status);
-  check("waitsForTheReply", clicked && npmWhileBusy === 0 && /It starts once a reply on Codex is done/.test(waitingText) && turnsOf(busyChat).some((turn) => turn.status === "running"),
+  check("waitsForTheReply", clicked && npmWhileBusy === 0 && /Starts once a reply on Codex is done/.test(waitingText) && turnsOf(busyChat).some((turn) => turn.status === "running"),
     { waitingText, npmWhileBusy });
   check("newReplyHeld", heldStatus.length === 1 && heldStatus[0] === "queued" && !fakeLog().some((entry) => entry.turn === "Hello after the update"), heldStatus);
 
@@ -242,7 +242,7 @@ try {
   await shot("updating.png", "Codex");
   const progressText = await rowText("Codex");
   const streamed = await browser.evaluate(`document.querySelector('[aria-label="Codex on ${NAME}"] pre[aria-label="What the update prints"]')?.innerText ?? ""`) as string;
-  check("progressShown", progressText.includes("Updating Codex…") && progressText.includes("Running npm install -g @openai/codex@latest") && progressText.includes("npm http fetch")
+  check("progressShown", progressText.includes("Updating Codex…") && progressText.includes("npm http fetch")
     && streamed.split("\n").length <= 3, { progressText, streamed });
 
   await until(async () => (await engines()).all.codex.updating?.status === "done", "the Codex update to finish", 60);
@@ -313,7 +313,7 @@ try {
   const grok = (await engines()).all.grok;
   const elevateText = await rowText("Grok Build");
   const grokRan = fakeLog(acpHome).filter((entry) => JSON.stringify(entry).includes("update"));
-  check("elevationShowsTheCommand", grok.updating?.command === "grok update" && elevateText.includes("needs administrator rights") && elevateText.includes("Run this yourself on Test PC, in a terminal with those rights")
+  check("elevationShowsTheCommand", grok.updating?.command === "grok update" && elevateText.includes("needs administrator rights") && elevateText.includes("Run this yourself in a terminal with those rights")
     && elevateText.includes("grok update") && !(await buttons("Grok Build")).includes("Update") && grokRan.length === 0 && grok.version === "1.0.42-fake",
     { elevateText, updating: grok.updating, grokRan });
 
