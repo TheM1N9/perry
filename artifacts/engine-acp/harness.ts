@@ -14,6 +14,12 @@ import { openChat, sleep } from "../browser";
  * PERRY_<ENGINE>_COMMAND, this machine's real Codex beside it on the same
  * runner, headless Chrome for Settings, and ways to read Perry's documents and
  * the fake agent's log. Nothing touches the owner's own Perry.
+ *
+ * A new Perry asks its owner for a default engine (issue #190), so this one is
+ * given it: `engine` names it; unset, it is Grok Build when the runner drives
+ * the fake agent as Grok with Codex taken away (an empty CODEX_HOME), else
+ * Codex, which every chat left without a model ran on before Perry asked;
+ * null leaves the choice to the test.
  */
 
 export { sleep };
@@ -31,7 +37,7 @@ export type Row = Record<string, any> & { _id: string };
 
 const freePort = () => new Promise<number>((done) => { const probe = createServer().listen(0, "127.0.0.1", () => { const { port } = probe.address() as { port: number }; probe.close(() => done(port)); }); });
 
-export async function perry(options: { name: string; outDir: string; runnerEnv: (home: string) => Record<string, string> }) {
+export async function perry(options: { name: string; outDir: string; runnerEnv: (home: string) => Record<string, string>; engine?: "codex" | "claude" | "grok" | "antigravity" | null }) {
   mkdirSync(options.outDir, { recursive: true });
   const PORT = await freePort();
   const BASE = `http://127.0.0.1:${PORT}`;
@@ -42,7 +48,11 @@ export async function perry(options: { name: string; outDir: string; runnerEnv: 
   const check = (name: string, ok: boolean, note?: unknown) => { checks[name] = ok; if (note !== undefined) notes[name] = note; console.log(`${ok ? "ok  " : "FAIL"} ${name}`); };
 
   const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
-  for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("TELEGRAM") || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE") delete env[name];
+  for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("TELEGRAM") || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE" || name === "PERRY_ENGINE") delete env[name];
+  // The server takes PERRY_ENGINE as the default of an install with none chosen (server/index.ts).
+  const drives = options.runnerEnv(home);
+  const engine = options.engine !== undefined ? options.engine : drives.PERRY_GROK_COMMAND && drives.CODEX_HOME ? "grok" : "codex";
+  if (engine) env.PERRY_ENGINE = engine;
   const logs = { server: "", runner: "" };
   const children: ChildProcess[] = [];
   const start = (name: "server" | "runner"): ChildProcess => {

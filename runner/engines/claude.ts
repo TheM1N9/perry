@@ -84,6 +84,8 @@ const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
 /** How to run the owner's `claude`: a command and the arguments before its own. */
 type Binary = {
+  /** Where it was found: on PATH, or where the native installer puts it. */
+  file: string;
   command: string;
   prefix: string[];
   /** For the SDK: the native binary or cli.js. Unset when only a shim was found, and the SDK's own copy of the same CLI runs. */
@@ -104,9 +106,9 @@ function throughShim(shim: string): string | undefined {
   return undefined;
 }
 
-const runnable = (path: string): Binary => /\.(?:c|m)?js$/i.test(path)
-  ? { command: process.execPath, prefix: [path], sdkPath: path }
-  : { command: path, prefix: [], sdkPath: path };
+const runnable = (file: string, path: string): Binary => /\.(?:c|m)?js$/i.test(path)
+  ? { file, command: process.execPath, prefix: [path], sdkPath: path }
+  : { file, command: path, prefix: [], sdkPath: path };
 
 /**
  * The owner's `claude`, as installed: on PATH, or where the native installer
@@ -122,15 +124,15 @@ export function findClaude(): Binary | undefined {
     for (const name of names) {
       const file = join(dir, name);
       try { if (!statSync(file).isFile()) continue; } catch { continue; }
-      if (!windows) return runnable(realpathSync(file));
-      if (extname(file).toLowerCase() === ".exe") return runnable(file);
+      if (!windows) return runnable(file, realpathSync(file));
+      if (extname(file).toLowerCase() === ".exe") return runnable(file, file);
       const target = throughShim(file);
-      if (target) return runnable(target);
+      if (target) return runnable(file, target);
       shim ??= file;
     }
   }
   // A shim whose target could not be read still signs in and reports; the SDK's own copy of Claude Code runs the turns.
-  return shim ? { command: process.env.COMSPEC || "cmd.exe", prefix: ["/d", "/s", "/c", shim] } : undefined;
+  return shim ? { file: shim, command: process.env.COMSPEC || "cmd.exe", prefix: ["/d", "/s", "/c", shim] } : undefined;
 }
 
 function run(binary: Binary, args: string[], timeoutMs = 20_000): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -868,5 +870,17 @@ export class ClaudeEngine implements Engine {
   kill(): void {
     for (const child of this.children) killTree(child, "SIGKILL");
     this.children.clear();
+  }
+
+  /** The `claude` found on PATH or where its installer puts it. */
+  where(): string | undefined {
+    return findClaude()?.file;
+  }
+
+  /** Chats' idle sessions end with the old Claude Code, and its version is asked again. */
+  reload(): void {
+    for (const live of [...this.live.values()]) if (!live.turn) this.close(live);
+    this.kill();
+    this.version = null;
   }
 }

@@ -15,9 +15,12 @@
  *   schema (a chat's name) answers {"title": ...}. Below 0.136.0 it lacks
  *   skills/extraRoots/set, as real Codex does.
  *   claude --version and claude auth status --json, signed in with Claude.
+ *   claude update, for artifacts/engine-update: as FAKE_CLI_HOME/claude-update
+ *   says (ok, fail or hang), to the version in FAKE_CLI_HOME/claude-latest.
+ *   A Codex prompt starting "SLOW <seconds>" is answered that much later.
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -35,6 +38,29 @@ const older = (a: string, b: string) => {
   for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0);
   return false;
 };
+
+if (cli === "claude" && args[0] === "update") {
+  // `claude update`, as artifacts/engine-update plays it: FAKE_CLI_HOME/claude-update says how (ok, fail or hang),
+  // and FAKE_CLI_HOME/claude-latest is the version it updates to.
+  const mode = existsSync(join(HOME, "claude-update")) ? readFileSync(join(HOME, "claude-update"), "utf8").trim() : "ok";
+  const latest = existsSync(join(HOME, "claude-latest")) ? readFileSync(join(HOME, "claude-latest"), "utf8").trim() : version;
+  log({ update: mode });
+  console.log(`Current version: ${version}`);
+  console.log("Checking for updates...");
+  await new Promise((done) => setTimeout(done, 1_500));
+  if (mode === "hang") await new Promise(() => setInterval(() => {}, 60_000));
+  if (mode === "fail") {
+    console.error(`Error: Failed to install update: EBUSY: resource busy or locked, rename '${join(HOME, "claude.exe")}'`);
+    console.error("Try running the update again, or reinstall with: curl -fsSL https://claude.ai/install.sh | bash");
+    process.exit(1);
+  }
+  console.log(`New version available: ${latest} (current: ${version})`);
+  console.log("Installing update...");
+  await new Promise((done) => setTimeout(done, 1_500));
+  writeFileSync(join(HOME, "claude-version"), latest);
+  console.log(`Successfully updated from ${version} to version ${latest}`);
+  process.exit(0);
+}
 
 if (cli === "claude") {
   if (args[0] === "--version") console.log(`${version} (Claude Code)`);
@@ -80,12 +106,15 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       log({ turn: prompt.slice(0, 200) });
       answer({ turn: { id: turnId } });
       const itemId = `fake-item-${next}`;
+      // "SLOW <seconds> ..." answers that much later, for a turn that is still running when something else happens.
+      const slow = Number(/^SLOW (\d+)/.exec(prompt)?.[1] ?? 0);
       setTimeout(() => {
         for (const piece of text.match(/.{1,12}/gs) ?? []) send({ method: "item/agentMessage/delta", params: { threadId, turnId, itemId, delta: piece } });
         const item = { id: itemId, type: "agentMessage", text };
         send({ method: "item/completed", params: { threadId, turnId, item, completedAtMs: Date.now() } });
         send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed", items: [item] } } });
-      }, 200);
+        log({ turnEnded: prompt.slice(0, 200) });
+      }, slow * 1000 || 200);
       return;
     }
     default: return send({ id, error: { code: -32601, message: `fake codex does not play ${method}` } });

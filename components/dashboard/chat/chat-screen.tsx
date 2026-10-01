@@ -115,6 +115,7 @@ export function ChatScreen() {
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
+  const defaultEngine = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
   const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
   // The heads-up about the engine's limit the owner closed, until it changes.
   const [limitSeen, setLimitSeen] = useState("");
@@ -272,8 +273,10 @@ export function ChatScreen() {
   };
 
   const models = modelOptions?.models;
-  // The chat's engine; a chat not sent yet takes the last chat's, like its model.
-  const engine: EngineKind = (selectedId ? chat?.engine : draftEngine ?? lastPicks?.engine) ?? "codex";
+  // The chat's engine; a chat not sent yet is on the owner's default, unless a model was picked for it. None while there is neither.
+  const engine: EngineKind | undefined = selectedId ? chat?.engine : draftEngine ?? lastPicks?.engine;
+  // Perry never picks an engine for the owner: with none for this chat and no default, it asks (below).
+  const noEngine = defaultEngine === null && !engine && !chat?.contact && (!selectedId || chat !== undefined);
   const model = (selectedId ? chat?.model : draftModel ?? lastPicks?.model) || currentModel(models ?? [], undefined, engine);
   // The thinking levels are the model's own; a level it does not take is kept but unused.
   const modelInfo = chatModel(models ?? [], model, engine);
@@ -283,17 +286,20 @@ export function ChatScreen() {
   const access: Access = (selectedId ? chat?.access : draftAccess) ?? defaultAccess ?? "supervised";
   // The chat's engine near or at its plan's limit, said before a reply fails for it.
   const engineUsage = planLimits?.engines.find((item) => item.kind === engine)?.usage;
-  const limit = chat?.contact ? null : limitWarning(engine, engineUsage, now);
+  const limit = chat?.contact || !engine ? null : limitWarning(engine, engineUsage, now);
   const limitMark = limit ? `${engine}:${limit.level}:${limit.title}` : "";
   const fail = (cause: unknown) => setError(errorText(cause));
 
   /** Pick a model by its "<engine>/<id>" key; another engine's moves the chat there. */
   function applyModel(key: string) {
-    const next = parseModelKey(key);
-    const picked = models?.find((item) => (item.engine ?? "codex") === next.engine && item.id === next.id);
+    const parsed = parseModelKey(key);
+    // A bare id is one of the chat's own engine's models.
+    const next = { id: parsed.id, engine: parsed.engine ?? engine };
+    if (!next.engine) return;
+    const picked = models?.find((item) => item.engine === next.engine && item.id === next.id);
     if (picked && pickedEffort && effortUnused(picked, pickedEffort)) {
       setNotice(`${picked.name} doesn't take the ${pickedEffort} thinking level, so it thinks at its default here.`);
-    } else if (selectedId && next.engine !== engine) {
+    } else if (selectedId && engine && next.engine !== engine) {
       setNotice(`This chat moves to ${ENGINE_LABELS[next.engine]}, which picks up from the chat so far.`);
     }
     if (!selectedId) {
@@ -361,8 +367,8 @@ export function ChatScreen() {
     ? skillSuggestions
     : typedModel && choosing
       ? (typedModel.name ? findModel(models ?? [], typedModel.name, engine).matches : models ?? []).map((item) => {
-          const key = modelKey(item.engine ?? "codex", item.id);
-          const current = (item.engine ?? "codex") === engine && item.id === model;
+          const key = modelKey(item.engine, item.id);
+          const current = item.engine === engine && item.id === model;
           return {
             key, label: item.name, hint: `${key}${current ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
             apply: () => void runCommand(`/model ${key}`),
@@ -395,7 +401,7 @@ export function ChatScreen() {
       if (!modelCommand.name) { setDraft(""); setNotice(describeModels(models ?? [], model, engine)); return true; }
       const picked = pickModel(models ?? [], modelCommand.name, pickedEffort, engine);
       // A name that matched nothing, or several models, stays in the box to be fixed.
-      if (picked.model) { applyModel(modelKey(picked.model.engine ?? "codex", picked.model.id)); setDraft(""); }
+      if (picked.model) { applyModel(modelKey(picked.model.engine, picked.model.id)); setDraft(""); }
       setNotice(picked.reply);
       return true;
     }
@@ -581,10 +587,19 @@ export function ChatScreen() {
 
       <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]" id="content" tabIndex={-1}>
         <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
+          {noEngine && (
+            <Alert variant="quiet" className="mt-4" role="alert">
+              <AlertTitle>Choose the engine {assistant} thinks with</AlertTitle>
+              <AlertDescription>{assistant} doesn&apos;t pick one for you. Choose a default for every chat, or pick a model for this one in the box below.</AlertDescription>
+              <AlertAction>
+                <Button size="sm" render={<Link href="/settings/engines" />}>Choose</Button>
+              </AlertAction>
+            </Alert>
+          )}
           {status?.onboarding === "offer" && (
             <Alert variant="quiet" className="mt-4">
               <AlertTitle>Tell {assistant} about yourself</AlertTitle>
-              <AlertDescription>A name, a personality, and a page about you that {assistant} reads before every reply. About two minutes.</AlertDescription>
+              <AlertDescription>About two minutes.</AlertDescription>
               <AlertAction className="flex gap-2">
                 <Button size="sm" variant="ghost" onClick={() => void skipOnboarding({ key: dashboardKey }).catch(fail)}>Not now</Button>
                 <Button size="sm" onClick={() => void redoOnboarding({ key: dashboardKey }).then(() => router.push("/welcome"), fail)}>Start</Button>
@@ -596,9 +611,6 @@ export function ChatScreen() {
             <div className="flex min-h-[calc(100dvh-16rem)] flex-col items-center justify-center py-12 text-center">
               <PerryMark className="size-14" />
               <h2 className="mt-5 text-3xl font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
-              <p className="mt-1.5 max-w-md text-md text-pretty text-muted-foreground">
-                {project ? `It follows the project's instructions, knows its other chats, and keeps what ${assistant} remembers here to the project.` : `What should ${assistant} pick up?`}
-              </p>
             </div>
           ) : (
             <div className="space-y-8 pt-6 pb-10" aria-busy={loading || undefined}>
@@ -610,7 +622,7 @@ export function ChatScreen() {
               )}
               {missing && (
                 <EmptyState mascot title="This chat isn't here" action={<Button size="sm" render={<Link href="/chat" />}>New chat</Button>}>
-                  It may have been deleted. Start a new one, or pick another from the sidebar.
+                  It may have been deleted.
                 </EmptyState>
               )}
               {messageStatus === "CanLoadMore" && (
@@ -646,9 +658,11 @@ export function ChatScreen() {
                   <TriangleAlertIcon />
                   <AlertTitle>{assistant} couldn&apos;t finish the last reply</AlertTitle>
                   <AlertDescription>
-                    <p>{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings → Engines & usage shows it too."
-                      : /runner|offline|computer/i.test(chat.lastError) ? "Your computer may be offline. Start Perry on it, then try again." : "Try again, or open Activity for the full run."}</p>
-                    <p className="mt-1 font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
+                    {/too old for Perry|runner|offline|computer/i.test(chat.lastError) && (
+                      <p className="mb-1">{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings → Engines shows it too."
+                        : "Your computer may be offline. Start Perry on it, then try again."}</p>
+                    )}
+                    <p className="font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
                   </AlertDescription>
                   {lastUser && !app && (
                     <AlertAction>
@@ -676,8 +690,8 @@ export function ChatScreen() {
             <div className="px-1 pb-1 text-sm text-muted-foreground" role="note">
               <p className="font-medium text-foreground">{assistant}&apos;s chat with {chat.contact.name}{chat.contact.group ? " (a group)" : ""}</p>
               <p className="mt-1 text-pretty">
-                You can read it, but not write in it: what you write would reach them. To have {assistant} tell them something, ask in your own chat.
-                {" "}What {assistant} may share with them is under <Link href="/settings/people" className="link">Settings → People</Link>.
+                Read only: what you write would reach them. Ask in your own chat to tell them something.
+                {" "}<Link href="/settings/people" className="link">What {assistant} may share</Link>
               </p>
             </div>
           ) : (<>
@@ -699,22 +713,23 @@ export function ChatScreen() {
             suggesting={mention ? "Skills" : "Commands"}
             completing={completing}
             pickers={{
-              models, model: model ? modelKey(engine, model) : undefined, onModel: applyModel, modelInfo, effort, onEffort: applyEffort, access, onAccess: applyAccess,
+              models, model: engine && model ? modelKey(engine, model) : undefined, onModel: applyModel, modelInfo, effort, onEffort: applyEffort, access, onAccess: applyAccess,
               accessDisabled: selectedId ? chat === undefined : defaultAccess === undefined,
             }}
             above={<>
               {error && <ComposerNote tone="error" onDismiss={() => setError("")}>{error}</ComposerNote>}
               {notice && <ComposerNote tone="info" onDismiss={() => setNotice("")}>{notice}</ComposerNote>}
-              {chat?.moved && movedSeen !== chat.moved.at && (
+              {chat?.moved && movedSeen !== chat.moved.at && (chat.moved.to ?? chat.engine) && (
                 <ComposerNote tone="warning" onDismiss={() => setMovedSeen(chat.moved!.at)}>
-                  <span className="font-medium">Moved to {ENGINE_LABELS[engine]}.</span> {chat.moved.why}, so this chat goes on there, with what was said so far.{" "}
-                  Pick a {ENGINE_LABELS[chat.moved.from]} model to move it back.
+                  <span className="font-medium">Moved to {ENGINE_LABELS[(chat.moved.to ?? chat.engine)!]}.</span> {chat.moved.why}, so this chat goes on there, with what was said so far.{" "}
+                  {/* A chat that follows the default goes back by itself; one on an engine of its own, when the owner says. */}
+                  {chat.moved.to ? `It goes back to ${ENGINE_LABELS[chat.moved.from]} once that has room.` : `Pick a ${ENGINE_LABELS[chat.moved.from]} model to move it back.`}
                 </ComposerNote>
               )}
               {limit && limitSeen !== limitMark && (
                 <ComposerNote tone={limit.level === "out" ? "error" : "warning"} onDismiss={() => setLimitSeen(limitMark)}>
                   <span className="font-medium">{limit.title}.</span> {limit.detail}{" "}
-                  <Link href="/settings/engines" className="link">See usage</Link>
+                  <Link href="/settings/usage" className="link">See usage</Link>
                 </ComposerNote>
               )}
               {!selectedId && !draft && files.length === 0 && (
@@ -733,7 +748,7 @@ export function ChatScreen() {
               ? <span className="text-warning">Full access: {assistant} acts on this computer without asking. Every command still shows in Activity.</span>
               : app
                 ? <>Your {app} chat. What you write here, and {assistant}&apos;s reply, also go to {app}.</>
-                : <>Type <Kbd className="font-mono">/</Kbd> for commands, <Kbd className="font-mono">$</Kbd> for skills. Drop or paste files to attach them.</>}
+                : <>Type <Kbd className="font-mono">/</Kbd> for commands, <Kbd className="font-mono">$</Kbd> for skills.</>}
           </p>
           </>)}
         </div>

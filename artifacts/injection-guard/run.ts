@@ -42,7 +42,7 @@ const HIDDEN = page(`<html><body><h1>Fluffy pancakes</h1><p>Whisk 2 eggs with 30
 const SECRET = "s3cret-e2e-value";
 const PLAIN = page(`<html><body><h1>Opening hours</h1><p>The branch is open 9 to 5 on weekdays.</p></body></html>`);
 
-const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
+const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name === "TELEGRAM_BOT_TOKEN" || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE") delete env[name];
 const logs = { server: "", runner: "" };
 function start(name: "server" | "runner"): ChildProcess {

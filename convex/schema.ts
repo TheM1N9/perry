@@ -71,7 +71,7 @@ export const vCodexModel = v.object({
   efforts: v.optional(v.array(v.string())),
   defaultEffort: v.optional(v.string()),
 });
-/** The engine a chat, turn or job runs on (lib/engines.ts). Unset is Codex, as everything from before engines. */
+/** The engine a chat, turn or job runs on (lib/engines.ts). */
 export const vEngine = v.union(v.literal("codex"), v.literal("claude"), v.literal("grok"), v.literal("cursor"), v.literal("antigravity"));
 /** What the owner does to finish signing an engine in (lib/engines.ts, LoginInteraction). */
 export const vLoginInteraction = v.union(
@@ -134,6 +134,14 @@ export const vRoute = v.object({
 });
 /** Work waiting for an engine's plan to reset: until when, and why. */
 export const vWaiting = v.object({ until: v.number(), why: v.string() });
+/**
+ * Where an engine's update from Settings is (engineUpdates.ts): asked for,
+ * picked up and waiting for that engine's replies to end, running, and then
+ * done, failed, or left to the owner because it needs admin rights.
+ */
+export const vEngineUpdateStatus = v.union(
+  v.literal("queued"), v.literal("waiting"), v.literal("running"), v.literal("done"), v.literal("error"), v.literal("elevate"),
+);
 /** A sign-in or sign-out the owner asked for from Settings, until the runner has done it. */
 export const vEngineAuth = v.object({
   id: v.number(),
@@ -177,6 +185,19 @@ export default defineSchema({
     homeChannel: v.optional(vMessenger),
     /** The access a new chat starts with. Unset means supervised. */
     defaultAccess: v.optional(vAccess),
+    /**
+     * The engine Perry uses unless a chat or job picks another, as the owner
+     * chose it in `perry setup`, on the welcome page or in Settings → Engines
+     * & usage. Unset, Perry asks for one rather than starting a turn.
+     */
+    defaultEngine: v.optional(vEngine),
+    /**
+     * Made since Perry asks for the default engine, and not chosen yet. An
+     * install with neither this nor defaultEngine is from before, when Codex
+     * was the default without asking: starting the server writes that down as
+     * its choice (installation.ensure), so nothing changes for it.
+     */
+    askEngine: v.optional(v.boolean()),
     /** When Perry's own messages wait instead of reaching the phone, as HH:MM in the owner's timezone (notify.ts). Unset: never. */
     quietHours: v.optional(v.object({ start: v.string(), end: v.string() })),
     /** How many of Perry's own messages may reach the phone in a day; the rest wait for tomorrow. Unset: no limit. */
@@ -526,6 +547,31 @@ export default defineSchema({
   }).index("by_token", ["token"]),
 
   /**
+   * An engine's CLI updated from Settings on one computer: asked for by the
+   * owner, then run by that computer's runner once no reply is running on
+   * that engine there (engineUpdates.ts). The last one for each engine on each
+   * computer is kept, for Settings to say how it went.
+   */
+  engineUpdates: defineTable({
+    runnerId: v.id("runners"),
+    engine: vEngine,
+    status: vEngineUpdateStatus,
+    /** The command: what the runner runs, or, needing admin rights, what the owner runs instead. */
+    command: v.optional(v.string()),
+    /** Why it has not started yet: replies running on that engine there. */
+    waitingFor: v.optional(v.string()),
+    /** The version before, and after once it worked. */
+    from: v.optional(v.string()),
+    to: v.optional(v.string()),
+    /** The end of what the command printed, as it runs. */
+    output: v.optional(v.string()),
+    error: v.optional(v.string()),
+    requestedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    finishedAt: v.optional(v.number()),
+  }).index("by_runner_engine", ["runnerId", "engine"]),
+
+  /**
    * Service keys, set from the dashboard instead of a terminal.
    *
    * Keys in .env.local need a terminal and a restart to change. These rows take
@@ -617,10 +663,20 @@ export default defineSchema({
     channel: vChannel,
     externalId: v.string(), // telegram chat id, or a unique web session id
     threadId: v.string(),
-    /** The engine this chat's turns run on. Unset is Codex. Picking another engine's model changes it. */
+    /**
+     * The engine this chat's turns run on. A web chat takes the owner's
+     * default engine when it is made, or at its first turn when none was
+     * chosen yet, and keeps it; a phone, schedule or task chat left unset
+     * follows the default as it changes. Picking another engine's model
+     * changes it.
+     */
     engine: v.optional(vEngine),
-    /** Perry moved the chat to `engine` because its own had no room (lib/routing.ts); said above the composer until the owner picks a model. */
-    moved: v.optional(v.object({ from: vEngine, why: v.string(), at: v.number() })),
+    /**
+     * Perry moved the chat off `from` because it had no room (lib/routing.ts): to `to`, where a chat that follows
+     * the default runs until the default has room again, or for a chat on an engine of its own, to `engine`.
+     * Said above the composer until the owner picks a model, or the chat is back on its default.
+     */
+    moved: v.optional(v.object({ from: vEngine, to: v.optional(vEngine), why: v.string(), at: v.number() })),
     /**
      * Where the chat's engine session resumes: an opaque cursor its engine
      * made (for Codex, the thread id), versioned by that engine. Unset, the
@@ -813,7 +869,7 @@ export default defineSchema({
     builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"))),
     /** The model its runs use, picked on the Work page. Unset means the account's default. */
     model: v.optional(v.string()),
-    /** The engine `model` is one of. Unset is Codex. */
+    /** The engine `model` is one of, set with it. */
     engine: v.optional(vEngine),
     /** Kept on `engine` whatever its plan: when that has no room, a run waits for its reset instead of moving (lib/routing.ts). */
     stay: v.optional(v.boolean()),
@@ -988,7 +1044,7 @@ export default defineSchema({
     runnerId: v.optional(v.id("runners")),
     conversationId: v.id("conversations"),
     runId: v.id("runs"),
-    /** The engine it runs on. Unset is Codex. The table keeps its name from before engines. */
+    /** The engine it runs on, always set; unset only on a turn from before engines. The table keeps its name from before engines. */
     engine: v.optional(vEngine),
     /** A turn that compacts the chat's engine session (/compact) rather than answering a message. */
     kind: v.optional(v.literal("compact")),
@@ -1077,7 +1133,7 @@ export default defineSchema({
   codexSteers: defineTable({
     /** The running turn it joins. */
     turnId: v.id("codexTurns"),
-    /** The engine of that turn. Unset is Codex. */
+    /** The engine of that turn. */
     engine: v.optional(vEngine),
     runnerId: v.id("runners"),
     conversationId: v.id("conversations"),

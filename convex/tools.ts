@@ -548,7 +548,7 @@ const lowerFirst = (name: string) => name.replace(/^([A-Z])(?=[a-z])/, (letter) 
 
 type JobRow = {
   id: string; name: string; schedule?: string; runAt?: number; enabled: boolean; builtin?: string; nextRunAt: number; lastRunAt?: number; lastResult?: string; lastError?: string;
-  model?: string; engine: string; stay?: boolean; pick?: PerryPick; route?: { engine: string; model?: string; effort?: string; tier: string; by: string; why: string }; waiting?: { until: number; why: string };
+  model?: string; engine?: string; stay?: boolean; pick?: PerryPick; route?: { engine: string; model?: string; effort?: string; tier: string; by: string; why: string }; waiting?: { until: number; why: string };
 };
 
 const list_jobs = createTool({

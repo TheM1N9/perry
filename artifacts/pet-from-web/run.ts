@@ -70,7 +70,7 @@ notes.ownersPetBefore = before;
 
 const env: NodeJS.ProcessEnv = {
   ...process.env,
-  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   PERRY_BUN: process.execPath, PERRY_PET_DEVTOOLS_PORT: String(DEVTOOLS),
 };
 delete env.TELEGRAM_BOT_TOKEN;

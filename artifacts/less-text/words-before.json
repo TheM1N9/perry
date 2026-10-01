@@ -1,0 +1,134 @@
+{
+  "chat-new": {
+    "words": 59,
+    "text": "New chat Up late What should Perry pick up? Codex is running low . 85% of the 5-hour limit is used; it resets at 3:22. See usage Plan my day What did we work on this week? Help me think through an idea Default model ▼ Ask ▼ Type / for commands, $ for skills. Drop or paste files to attach them. Message Perry"
+  },
+  "chat-reply": {
+    "words": 139,
+    "text": "Plan my week $weekly-review Plan my week, and tick off what's already done. Worked for <1s · 2 steps Here's the week, with what's done ticked: Book the dentist Send the invoice to Priya Renew the passport photos Call Sam about Saturday Day Plan Time Monday Gym, then the design review 07:30 Wednesday Dentist 14:00 Friday Weekly review 16:00 Want me to put the passport photos on your list? From memory: Sam takes their coffee black, no sugar. 1:52 DESKTOP-27SQLCP wants to run a command 9:49 left Remove-Item -Recurse .\\build-cache W:\\perry-tests\\less-text\\homes\\perry-less-text-1c6dw7\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure\\site Always allow saves a rule for this exact command in W:\\perry-tests\\less-text\\homes\\perry-less-text-1c6dw7\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure\\site . Decline Always allow Approve Codex is running low . 85% of the 5-hour limit is used; it resets at 3:22. See usage Default model ▼ Ask ▼ Type / for commands, $ for skills. Drop or paste files to attach them. Message Perry"
+  },
+  "chat-alert": {
+    "words": 75,
+    "text": "Export last year's receipts Export last year's receipts from the bank. Perry couldn't finish the last reply Try again, or open Activity for the full run. The bank's export page asked for a one-time code, and none was available. Try again Codex is running low . 85% of the 5-hour limit is used; it resets at 3:22. See usage Default model ▼ Ask ▼ Type / for commands, $ for skills. Drop or paste files to attach them. Message Perry"
+  },
+  "inbox": {
+    "words": 90,
+    "text": "Needs you What's waiting on you. Answer here, or in the chat it came from. Approvals A computer is waiting to do this. Unanswered requests are declined after ten minutes. DESKTOP-27SQLCP wants to run a command in Plan my week 9:47 left Remove-Item -Recurse .\\build-cache W:\\perry-tests\\less-text\\homes\\perry-less-text-1c6dw7\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure\\site Always allow saves a rule for this exact command in W:\\perry-tests\\less-text\\homes\\perry-less-text-1c6dw7\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure\\site . Decline Always allow Approve Updates A plan needs your answer · now Compare three flats near work Is ₹40,000 a month the most you'd pay, or is that with the deposit spread out? Answer"
+  },
+  "todos": {
+    "words": 57,
+    "text": "To-dos What you mean to do. Give one a time and you're reminded then, by Perry on your screen or on your phone when you're away, until it's done. 1 day Water the plants 3:52 Stretch Daily Tomorrow 11:00 Weekly review Fridays Sun 16:00 Done today Send the invoice to Priya Add a to-do: “call Sam 2pm”"
+  },
+  "work": {
+    "words": 118,
+    "text": "Work What Perry does without you in the chat. Set it up here, or ask for it in a chat. Schedules 1 Plans 1 Goals 1 Watches 1 Prompts Perry runs on a schedule, like a morning briefing; once, like a reminder; or when something happens, like a new email or a file landing in a folder. Times are in Asia/Calcutta . New schedule Wake this computer for them Next: 2 Oct 2026, 03:51, a minute before the reminder “Water the plants” (in 2 hr). Keeping it awake now, while Perry works. Morning briefing Weekdays at 8:00 Next in 6 hr Last ran now Three meetings today; the 14:00 with Priya moved to 15:30. Results Default model ▼ Run now"
+  },
+  "work-plans": {
+    "words": 91,
+    "text": "Work What Perry does without you in the chat. Set it up here, or ask for it in a chat. Schedules 1 Plans 1 Goals 1 Watches 1 Work Perry does by himself, a few tasks at once, each in a chat of its own. Its plan shows here as it goes; a question comes to you. New task Compare three flats near work Needs you Updated now Needs you: Is ₹40,000 a month the most you'd pay, or is that with the deposit spread out? Its chat Cancel Your answer"
+  },
+  "work-goals": {
+    "words": 62,
+    "text": "Work What Perry does without you in the chat. Set it up here, or ask for it in a chat. Schedules 1 Plans 1 Goals 1 Watches 1 Outcomes you're working toward, with milestones. Perry keeps them in mind in every chat. New goal Run a half marathon by March x 1 / 2 Run 5 km without stopping Run 10 km Change"
+  },
+  "work-watches": {
+    "words": 67,
+    "text": "Work What Perry does without you in the chat. Set it up here, or ask for it in a chat. Schedules 1 Plans 1 Goals 1 Watches 1 Pages Perry checks on an interval. A new watch records a baseline first and stays quiet until its condition is met. Check now New watch Headphones back in stock https://example.com/headphones When it contains “In stock” Every 1 hour Pause"
+  },
+  "memory": {
+    "words": 150,
+    "text": "Memory What Perry knows about you, and the place to correct it. All of it stays on this computer. Memories About you Teach Perry something Long-term ▼ Durable facts and decisions. Loaded in every chat. All Profile Long-term Daily notes 5 memories Booked passport photos for Saturday at 11:00. Daily notes 1 Oct 2026 From you Edit Forget Prefers trains to flights for trips under six hours. Long-term 2 Oct 2026 From you Promoted overnight Edit Forget The kitchen tiles are the matte green ones from Porto. Long-term Only in Kitchen renovation 2 Oct 2026 From you Edit Forget In this chat, answers stay under three lines. Long-term Only in Coffee order 2 Oct 2026 From you Edit Forget Sam takes their coffee black, no sugar. Profile 2 Oct 2026 From you Edit Forget One sentence that will still make sense in six months, like: I take my coffee black. Search"
+  },
+  "memory-about": {
+    "words": 130,
+    "text": "Memory What Perry knows about you, and the place to correct it. All of it stays on this computer. Memories About you USER.md Who you are, in your words. Perry reads all of it before every reply, and keeps it current as you talk. Nothing here yet Your work, your day, the people who matter and how you like replies. Perry fills it in as you talk, too. Write it History Every version, newest first; a few minutes of your own typing make one. Restoring one keeps the version it replaces. No versions yet Saving USER.md, or the name or personality in Settings → General , starts the history. Start over Go through the welcome page again. What you save there becomes the newest version; nothing is lost. Open the welcome page"
+  },
+  "project": {
+    "words": 178,
+    "text": "Kitchen renovation A folder of chats about one thing. Its chats follow its instructions, know of each other and can read each other, and keep what Perry remembers in them to the project. New chat Instructions How Perry works in this project: tone, format, audience, standing rules. A change reaches every chat in it with your next message, chats already going too. Saves as you type. Chats Each one is told what the others are about, and can search and read them. Chats outside the project cannot. No chats yet Start a chat here, or move one in from its menu. Start one Memory What Perry remembers in this project's chats. Only they see it; what Perry saves for every chat is on the Memory page. The kitchen tiles are the matte green ones from Porto. Long-term now Forget For example: Scripts for the Hackonomics YouTube channel: money explained for people in their twenties. Hook in the first line, short sentences, no jargon, 8 to 10 minutes read aloud. End every script with one question for the comments."
+  },
+  "apps-connectors": {
+    "words": 69,
+    "text": "Apps & skills Connectors Skills Accounts Perry can use for you: your calendar, email, notes and more. Connect through Composio Composio holds the sign-ins, so Perry never sees a password or token. Create a Composio account and copy an API key from composio.dev . Paste your Composio key below . Refresh Composio Composio key Gmail, Calendar, Notion and the rest. Without it no accounts can be connected. Not set Paste the key"
+  },
+  "apps-skills": {
+    "words": 59,
+    "text": "Apps & skills Connectors Skills How Perry does particular kinds of work. He writes a skill when you tell him how you like something done, and imports someone else's once you say yes. Type $ in a chat to use one. Refresh weekly-review Writes the owner's weekly review the way they like it. Written by Perry · Added 2 Oct 2026 Remove"
+  },
+  "settings-general": {
+    "words": 156,
+    "text": "Settings Perry General Engines & usage Computers Permissions Access & approvals Reaching you Notifications Telegram WhatsApp Desktop pet People Security Logins & secrets Dashboard key System Activity log Your assistant Its name and how it comes across. Both go into every chat. Name Personality Warm & chatty Calm & concise Playful Formal Saves as you type. It applies from the next reply. Appearance Follows your system unless you pick one. Remembered in this browser. System Light Dark Updates Perry looks for a new version once a day. Around 4:00 at night, your time, he updates himself if he isn't busy. Not checked yet Perry updates himself when he runs in the background: start him with perry start. Until then, perry update in his folder does it. Check now Update on his own at night The update 3 hr ago, overnight didn't work. pnpm install could not reach the registry. What it said Leave empty for the default: direct, clear and concise."
+  },
+  "settings-engines": {
+    "words": 375,
+    "text": "Settings Perry General Engines & usage Computers Permissions Access & approvals Reaching you Notifications Telegram WhatsApp Desktop pet People Security Logins & secrets Dashboard key System Activity log Engines Perry thinks with a coding agent on your computer, signed in with your own subscription. The sign-in stays on that computer. DESKTOP-27SQLCP Online Codex Signed in ChatGPT Plus Sign out Gemini API key For Antigravity, from aistudio.google.com/apikey. Only Antigravity's server on your computer gets it. Not set Your plans How much of each engine's plan is used, counting all your use of it, and when each limit starts again. Perry warns in the chat and on the pet from 80%. Codex Plus Running low Read now 5-hour 85% used · 15 % left · resets at 3:22 x Perry in this window: 0 tokens over 3 replies Weekly 40% used · 60 % left · resets Mon 5 Oct, 1:52 x Perry in this window: 0 tokens over 3 replies Codex reports your ChatGPT plan's limits: how much of the 5-hour and weekly windows is used, and when each resets. It counts all your Codex use, not only Perry's. Perry this week: 0 tokens over 3 replies . Claude Code Not set up Set up Claude Code above to see its limits. Claude Code reports your Claude plan's limits: the 5-hour window, the weekly one and any per-model weekly limit. It counts all your Claude use. Tokens a subagent uses are not in Perry's share. Grok Build Not set up Grok Build doesn't say how much of your plan is used or left. Perry shows the tokens its replies used, and says so here when Grok refuses a reply for your plan's limit. Antigravity Not set up Antigravity reports neither your plan's limits nor the tokens its replies use. Perry counts its replies, and says so here when it refuses one for a limit. Perry's share this week Tokens Perry's chats, schedules and background tasks used in the last 7 days, as each engine reported them reply by reply. Codex 0 tokens over 3 replies Compare three flats near work Background task · Codex · last now No token count 1 reply Morning briefing Schedule · Codex · last now No token count 1 reply Plan my week Chat · Codex · last now No token count 1 reply Paste the key"
+  },
+  "settings-computers": {
+    "words": 87,
+    "text": "Settings Perry General Engines & usage Computers Permissions Access & approvals Reaching you Notifications Telegram WhatsApp Desktop pet People Security Logins & secrets Dashboard key System Activity log Computers Where Perry does the work. Perry's own computer connects when Perry starts; add another from its terminal. Every computer here dials out, so none can be reached from the internet. DESKTOP-27SQLCP Online win32 W:\\perry-tests\\less-text\\homes\\perry-less-text-1c6dw7\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure Seen now Whether it asks before acting is set per chat: Ask, Auto or Full access, from the chat's composer or Access & approvals for new chats. Revoke"
+  },
+  "settings-access": {
+    "words": 115,
+    "text": "Settings Perry General Engines & usage Computers Permissions Access & approvals Reaching you Notifications Telegram WhatsApp Desktop pet People Security Logins & secrets Dashboard key System Activity log Access for new chats What Perry may do without asking in chats you start. Change any chat from its composer, or with /access. Ask ▼ Always allowed Saved when you answer with Always allow; a matching request runs without asking. A decline is never remembered. No saved rules Answer a request with Always allow, and the rule shows up here. Recent requests Everything a computer asked to do, and who let it or stopped it. git push origin main --force-with-lease DESKTOP-27SQLCP now You, here Declined Remove-Item -Recurse .\\build-cache DESKTOP-27SQLCP now pending"
+  },
+  "settings-notifications": {
+    "words": 119,
+    "text": "Settings Perry General Engines & usage Computers Permissions Access & approvals Reaching you Notifications Telegram WhatsApp Desktop pet People Security Logins & secrets Dashboard key System Activity log Messages Perry sends on his own Schedules, page watches and the heartbeat. What arrives in quiet hours or past the day's limit waits, and comes as one message when it may. Due reminders always go. Quiet hours from : to : At most No limit ▼ When you let three messages from the same schedule or watch go unanswered, Perry asks once whether to pause it. When you're away Replies always go where you wrote. Perry's own messages, like the heartbeat and alerts, go to one app. Pair Telegram or WhatsApp to get them on your phone."
+  },
+  "settings-telegram": {
+    "words": 119,
+    "text": "Settings Perry General Engines & usage Computers Permissions Access & approvals Reaching you Notifications Telegram WhatsApp Desktop pet People Security Logins & secrets Dashboard key System Activity log Telegram isn't set up Telegram is optional. To talk to Perry there, add a bot token from @BotFather below first. Pair with Telegram Not paired Send the code to your Perry bot. Whoever sends it first owns this Perry. Generate a code, then send it to your bot. Generate code Bot Perry asks Telegram for new messages while it runs, so nothing here has to be reachable from the internet. Telegram bot token From @BotFather. Perry starts listening to the new bot within a few seconds of saving it. Not set Paste the key"
+  },
+  "settings-whatsapp": {
+    "words": 125,
+    "text": "Settings Perry General Engines & usage Computers Permissions Access & approvals Reaching you Notifications Telegram WhatsApp Desktop pet People Security Logins & secrets Dashboard key System Activity log WhatsApp may ban the number WhatsApp doesn't allow automating an account, so Perry links as a device, like WhatsApp Web. It only ever talks to you, which keeps the risk down, but a ban is possible. A separate number A spare SIM or eSIM just for Perry. You message it like a contact; a ban would only take that number. My own number Perry links to your WhatsApp, and you talk in your “Message yourself” chat. A ban would take your own WhatsApp with it. Link with a code typed on the phone instead of scanning a QR Link WhatsApp"
+  },
+  "settings-desktop-pet": {
+    "words": 294,
+    "text": "Settings Perry General Engines & usage Computers Permissions Access & approvals Reaching you Notifications Telegram WhatsApp Desktop pet People Security Logins & secrets Dashboard key System Activity log Desktop pet Perry as a platypus on your screen, with your chats, to-dos and what needs you a click away. Talk to him from anywhere with the Talk shortcut. z z Not on your desktop He appears on DESKTOP-27SQLCP, the computer Perry runs on, and starts with it from then on. Turn on System Light Dark His light or dark look on this computer, kept in pet.json . He changes at once; on your other computers he follows their system's. Let Perry look at the screen when he needs to In a chat, when your question is about something on screen. What he saw shows in the chat, and he says so on the pet. Never in scheduled jobs or background work. On your other computers A laptop beside this one, say: he shows the same chats and to-dos there, and Perry looks at whichever screen you were at last. Add a computer Keyboard shortcuts Click one and press the keys you want it on. Esc leaves it as it was. Talk to Perry Anywhere on this computer, with the desktop pet running: hold, speak and let go, or tap, speak and tap again. The desktop pet isn't on. Turn him on above . Ctrl Shift Space Show Perry the screen Anywhere on this computer, with the desktop pet running: a picture of the window you're in goes into his chat, for you to check and ask about. The desktop pet isn't on. Turn him on above . Ctrl Alt Shift Space Search and commands On the dashboard: chats, pages and actions. Ctrl K New chat On the dashboard. Ctrl Shift O"
+  },
+  "settings-people": {
+    "words": 89,
+    "text": "Settings Perry General Engines & usage Computers Permissions Access & approvals Reaching you Notifications Telegram WhatsApp Desktop pet People Security Logins & secrets Dashboard key System Activity log People The people in your life, and what Perry remembers about them: from your chats, used only in yours, and from theirs, used only in theirs. You are asked the first time Perry talks with anyone: when someone new writes to it, and before it first writes to someone. Datta Talks with Perry WhatsApp · now Perry shares nothing about you with them. Brief Block"
+  },
+  "settings-logins": {
+    "words": 95,
+    "text": "Settings Perry General Engines & usage Computers Permissions Access & approvals Reaching you Notifications Telegram WhatsApp Desktop pet People Security Logins & secrets Dashboard key System Activity log Logins & secrets For Perry to sign in to websites with computer use. Send one in a chat and Perry moves it here, out of the chat. Passwords are never shown again. Netflix sam@example.com · https://www.netflix.com/login Added here now · not used yet Change Delete Add a login Name Site Username or email Password or secret The same name and username replaces a saved one. Enter adds it. Netflix https://www.netflix.com/login Never shown again"
+  },
+  "settings-security": {
+    "words": 77,
+    "text": "Settings Perry General Engines & usage Computers Permissions Access & approvals Reaching you Notifications Telegram WhatsApp Desktop pet People Security Logins & secrets Dashboard key System Activity log Dashboard key The key that guards this page can't be changed from behind it, which keeps a lockout recoverable. Change DASHBOARD_KEY in .env.local in Perry's folder, then restart Perry: $ perry stop && perry start Lock this browser Forget the key in this browser. Opening the dashboard here asks for it again. Lock dashboard"
+  },
+  "settings-activity": {
+    "words": 418,
+    "text": "Settings Perry General Engines & usage Computers Permissions Access & approvals Reaching you Notifications Telegram WhatsApp Desktop pet People Security Logins & secrets Dashboard key System Activity log Every run, with its tools, tokens, timing and errors. Newest first. Runs 4 Failed 1 Tokens 0 Every chat ▼ Every status ▼ 🧩 Compare three flats near work 🧩 Background task: Compare three flats near work Find three flats near the office. You are working on this by yourself: the owner is not in this chat and does not read your replies. Keep its plan current with set_plan (task id y0ge36m7yw8bqk0kz2z8ys5k0v), and end by calling finish_task: done with the result (what you made and where), blocked with one clear question only if you truly need the owner, or failed with why. Only finish_task reaches the owner; a reply alone leaves the task open. Do the work now; do not ask for permission to start. now Running ⏰ Morning briefing ⏰ Morning briefing (Thursday, 1 October 2026 at 20:22) Summarise my calendar and anything urgent in email. The owner's to-do list as it stands now. It changes as they move and tick things off, so it is their latest word on any plan on it, and a note in memory can be out of date: - Water the plants: due Thu, 1 Oct 2026, 22:22, still to come - Stretch: due Sat, 3 Oct 2026, 05:30, still to come - Weekly review: due Sun, 4 Oct 2026, 10:30, still to come - Send the invoice to Priya: done, ticked off Thu, 1 Oct 2026, 20:22 When a thread or a note is about something on this list, go by the to-do, whatever time the note gave: one due later than now has not happened yet, and one that is done is settled, so do not ask about either. The to-do list reminds them of each to-do when it is due; do not remind them of to-dos here. Conditional delivery Only when this job makes delivery conditional and there is nothing new to report, reply with exactly NOTHING and no other text. This includes results already delivered or incorporated into an earlier run; do not send an acknowledgement of that redundancy. Do not use NOTHING to omit commentary from a result that still needs delivery. Never return an empty reply; use NOTHING to intentionally deliver nothing. now Running Export last year's receipts Export last year's receipts from the bank. now codex subscription 274 ms Failed Plan my week $weekly-review Plan my week, and tick off what's already done. now gpt-6-luna 3 steps 292 ms"
+  },
+  "welcome-1": {
+    "words": 145,
+    "text": "1 Meet your assistant 2 About you 3 Review Meet your assistant Give it a name and a way of talking. You can change both later, under Memory. Name Personality Warm & chatty Warm and friendly, with a light touch of humour. Talks like a thoughtful friend, and checks in on how things are going. Calm & concise Calm, brief and to the point. No small talk; leads with the answer and adds detail only when it helps. Playful Playful and upbeat, quick with a joke or an emoji, but never at the expense of getting things done. Formal Polite and professional, in complete sentences, like a trusted executive assistant. Something else Describe it in your own words. Perry Morning! Your 10:00 moved to 11:30, so you have a clear hour. Want me to block it for the report? Continue I'd rather just chat Skip for now"
+  },
+  "welcome-2": {
+    "words": 154,
+    "text": "Meet your assistant 2 About you 3 Review About you Perry reads this before every reply. Answer what you like and skip the rest; you can always tell it more in a chat. What should I call you? What do you do? Your work, study, or what fills your time. What does a typical day look like? Your timezone, Asia/Calcutta, is saved too. Who matters to you? Family, partner, team, friends: whoever you might mention by name. How do you like replies? Short Balanced Detailed Language Leave it empty to be answered in whatever you write in. What do you want help with? Email Calendar and scheduling Reminders Research Writing Planning Coding Finances Health and habits Travel Anything I should never do? Topics to avoid, people not to contact, things to always ask about first. Back Continue Up at 7, gym before work, deep work in the mornings English Anything else, one per line"
+  },
+  "welcome-3": {
+    "words": 45,
+    "text": "Meet your assistant About you 3 Review Your USER.md This is what Perry will know about you, in every chat. Edit anything; Perry keeps it current as you talk, and every version is kept. USER.md # About the owner - **Timezone:** Asia/Calcutta Back Save and meet Perry"
+  },
+  "account-menu": {
+    "words": 26,
+    "text": "You Codex · ChatGPT Plus 5-hour 15 % left · resets at 3:22 x Weekly 60 % left · resets Mon 5 Oct, 1:52 x Usage details Theme Settings Lock dashboard"
+  },
+  "pet-chat": {
+    "words": 57,
+    "text": "Perry 2 things waiting on you Chat To-dos Needs you 2 New chat What can I do for you? I know your chats and memory, and work on this computer. What’s on my list today? Remind me to stretch every day at 11 What did we talk about yesterday? Ask Perry, or tell him what to do"
+  },
+  "pet-needs": {
+    "words": 66,
+    "text": "Perry 2 things waiting on you Chat To-dos Needs you 2 DESKTOP-27SQLCP wants to run a command 9:15 left Remove-Item -Recurse .\\build-cache W:\\perry-tests\\less-text\\homes\\perry-less-text-1c6dw7\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure\\site Always allow saves a rule for this exact command in W:\\perry-tests\\less-text\\homes\\perry-less-text-1c6dw7\\work\\a-long-folder-name-that-the-row-cuts-off\\and-one-more-level-for-good-measure\\site . Decline Always allow Approve A plan needs your answer · now Compare three flats near work Is ₹40,000 a month the most you'd pay, or is that with the deposit spread out? Answer"
+  },
+  "pet-todos": {
+    "words": 43,
+    "text": "Perry 2 things waiting on you Chat To-dos Needs you 2 1 left today 1 day Water the plants 3:52 Stretch Daily Tomorrow 11:00 Weekly review Fridays Sun 16:00 1 done today End the day · 1 left Add a to-do: “call Sam 2pm”"
+  }
+}

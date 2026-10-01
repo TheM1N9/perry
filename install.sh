@@ -3,16 +3,24 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh
 #
-# Uses the Node.js, pnpm, Bun and Codex CLI you already have, wherever your
-# shell or a version manager keeps them, and installs only what is missing,
-# none of it needing root. A Node older than Perry needs is left alone: Perry
-# gets its own copy in ~/.perry/node. It gets Perry into ~/perry, installs its packages,
-# and runs `perry setup`, which sets up a Telegram bot if you want one and signs in
-# to Codex, keeps your data in ~/.perry, starts Perry in the background and opens the
-# dashboard. Safe to run again: it updates what is there.
+# Uses the Node.js, pnpm and Bun you already have, wherever your shell or a
+# version manager keeps them, and installs only what is missing, none of it
+# needing root. A Node older than Perry needs is left alone: Perry gets its
+# own copy in ~/.perry/node. It gets Perry into ~/perry, installs its
+# packages, and runs `perry setup`, which sets up a Telegram bot if you want
+# one, asks which engine Perry thinks with (Codex, Claude Code, Grok Build or
+# Antigravity: it never picks one for you) and offers to install and sign in
+# to it, keeps your data in ~/.perry, starts Perry in the background and opens
+# the dashboard. Safe to run again: it updates what is there.
 #
 # PERRY_DIR, PERRY_REPO and PERRY_BRANCH change where it goes and what it
-# fetches. PERRY_NO_SETUP=1 stops after installing, with the perry command linked.
+# fetches. --engine (or PERRY_ENGINE) chooses the default engine without
+# asking: codex, claude, grok or antigravity. With it, an install with no
+# terminal to ask in sets up too:
+#
+#   curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh -s -- --engine claude
+#
+# PERRY_NO_SETUP=1 stops after installing, with the perry command linked.
 #
 # Just the desktop pet, on another computer, for the Perry on your main one
 # (its Settings → Desktop pet → Add a computer shows this line, with its own
@@ -24,6 +32,15 @@
 # into ~/perry-pet, installs Electron there, and pairs it (pet/connect.js).
 
 set -eu
+
+# --engine <name> is PERRY_ENGINE, which perry setup reads.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --engine) [ $# -ge 2 ] || { printf '  --engine needs a name: codex, claude, grok or antigravity.\n'; exit 1; }; PERRY_ENGINE=$2; export PERRY_ENGINE; shift 2 ;;
+    --engine=*) PERRY_ENGINE=${1#--engine=}; export PERRY_ENGINE; shift ;;
+    *) printf '  Unknown option: %s\n' "$1"; exit 1 ;;
+  esac
+done
 
 REPO="${PERRY_REPO:-https://github.com/TheM1N9/perry.git}"
 BRANCH="${PERRY_BRANCH:-main}"
@@ -99,11 +116,11 @@ real_tty() {
   [ -r "$name" ] && [ -w "$name" ] && printf '%s' "$name"
 }
 
-# The perry command, and whatever this script installed, on PATH for new terminals. After your own
-# PATH, never before it: a Node or pnpm you already have stays the one your terminal runs.
+# The perry command, and whatever this script or perry setup installed, on PATH for new terminals. After your own
+# PATH, never before it: a Node or pnpm you already have stays the one your terminal runs. Perry's npm folder is
+# there even before it exists, for an engine perry setup puts in it.
 remember_path() {
-  dirs="$PERRY_HOME/bin"
-  [ -d "$LOCAL_NPM/bin" ] && dirs="$dirs:$LOCAL_NPM/bin"
+  dirs="$PERRY_HOME/bin:$LOCAL_NPM/bin"
   [ -d "$LOCAL_NODE/bin" ] && dirs="$dirs:$LOCAL_NODE/bin"
   line="export PATH=\"\$PATH:$dirs\"  # added by Perry"
   case "${SHELL:-}" in *zsh) rc="$HOME/.zshrc" ;; *bash) rc="$HOME/.bashrc" ;; *) rc="$HOME/.profile" ;; esac
@@ -158,7 +175,7 @@ else
   added "pnpm $(pnpm --version)"
 fi
 if [ -n "$PET" ]; then
-  # The pet alone needs neither Bun nor Codex: Perry thinks and works on its own computer.
+  # The pet alone needs neither Bun nor an engine: Perry thinks and works on its own computer.
   remember_path
   ok "$TOOLS"
   # Only pet/ of Perry's files (and the few at the top), and only their latest version: the pet is all this computer runs.
@@ -183,11 +200,7 @@ else
   else npm install -g --prefix "$LOCAL_NPM" bun >/dev/null || fail "Installing Bun failed."; fi
   added "bun $(bun --version)"
 fi
-if has codex; then found "codex"
-else
-  printf '  installing the Codex CLI\n'; npm install -g --prefix "$LOCAL_NPM" @openai/codex >/dev/null || fail "Installing Codex failed."
-  added "codex"
-fi
+# No engine here: perry setup asks which one Perry should think with, and installs that one.
 remember_path
 ok "$TOOLS"
 
@@ -210,7 +223,11 @@ elif [ -t 0 ]; then
 elif terminal=$(real_tty); then
   # Piped into sh, this script's stdin is the script itself; setup asks questions, so it reads the terminal.
   bun --cwd "$DIR" "$DIR/scripts/perry.ts" setup <"$terminal"
+elif [ -n "${PERRY_ENGINE:-}" ]; then
+  # No one to ask, and the engine named: setup goes on without questions, skipping what only a person could answer.
+  bun --cwd "$DIR" "$DIR/scripts/perry.ts" setup </dev/null
 else
-  printf '\n  \033[32mInstalled.\033[0m There is no terminal to ask questions in; run \033[1mperry setup\033[0m in one.\n\n'
+  printf '\n  \033[32mInstalled.\033[0m There is no terminal to ask questions in; run \033[1mperry setup\033[0m in one,\n'
+  printf '  or this again with \033[1m--engine\033[0m codex, claude, grok or antigravity to set up without questions.\n\n'
   bun --cwd "$DIR" "$DIR/scripts/perry.ts" link
 fi

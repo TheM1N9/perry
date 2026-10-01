@@ -121,7 +121,7 @@ const SITE = `http://${SITE_HOST}`;
 const browserSaw = (path: string) => seen.filter((request) => request.path === path && request.browser);
 
 // --- Perry ---------------------------------------------------------------------------------------
-const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_WEB_TEST_SITE: SITE_HOST, TEMP: temp, TMP: temp };
+const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex", PERRY_WEB_TEST_SITE: SITE_HOST, TEMP: temp, TMP: temp };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("TELEGRAM") || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE" || name === "PERRY_BROWSER_HEADED") delete env[name];
 let serverLog = "";
 const server: ChildProcess = spawn("node", [join(REPO, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)], { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });

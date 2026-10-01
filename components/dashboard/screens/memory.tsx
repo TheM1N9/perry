@@ -26,14 +26,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from "../chat/markdown";
 import { SaveStatus, useAutosave, type SaveState } from "../autosave";
-import { ActionButton, EmptyState, List, ListSkeleton, Page, RelativeTime, Section, TextTip, useTab } from "../common";
+import { ActionButton, EmptyState, InfoTip, List, ListSkeleton, Page, RelativeTime, Section, TextTip, useTab } from "../common";
 
 const TABS = ["memories", "about"] as const;
 
 export function Memory() {
   const [tab, setTab] = useTab(TABS, "memories");
   return (
-    <Page title="Memory" description="What Perry knows about you, and the place to correct it. All of it stays on this computer.">
+    <Page title="Memory" description="All of it stays on this computer.">
       <Tabs value={tab} onValueChange={(value) => setTab(value as (typeof TABS)[number])}>
         <TabsList variant="line" className="mb-6 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
           <TabsTrigger value="memories">Memories</TabsTrigger>
@@ -131,8 +131,8 @@ function Memories() {
         )}
         {memories === undefined && <ListSkeleton />}
         {memories?.length === 0 && (term || filter !== "all"
-          ? <EmptyState title="Nothing matches" action={<Button variant="outline" size="sm" onClick={() => { setSearch(""); setFilter("all"); }}>Clear filters</Button>}>Try other words, or look in every kind.</EmptyState>
-          : <EmptyState mascot title="Nothing saved yet">Ask Perry to remember something in a chat, or add it above.</EmptyState>)}
+          ? <EmptyState title="Nothing matches" action={<Button variant="outline" size="sm" onClick={() => { setSearch(""); setFilter("all"); }}>Clear filters</Button>} />
+          : <EmptyState mascot title="Nothing saved yet" />)}
         {memories && memories.length > 0 && (
           <List label="Memories">
             {memories.map((memory) => (
@@ -222,7 +222,7 @@ function TeachForm() {
     <form onSubmit={(event) => void add(event)} aria-label="Teach Perry something">
       <Field data-invalid={Boolean(refused) || undefined}>
         <FieldLabel htmlFor="memory-text">Teach Perry something</FieldLabel>
-        <Textarea id="memory-text" rows={2} value={draft} placeholder="One sentence that will still make sense in six months, like: I take my coffee black."
+        <Textarea id="memory-text" rows={2} value={draft} placeholder="I take my coffee black."
           aria-invalid={Boolean(refused) || undefined} className="min-h-14 resize-none"
           onChange={(event) => { setDraft(event.target.value); setRefused(""); }}
           onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
@@ -233,7 +233,8 @@ function TeachForm() {
           <SelectTrigger aria-label="Where to keep it" size="sm"><SelectValue /></SelectTrigger>
           <SelectContent>{KINDS.map((item) => <SelectItem key={item.kind} value={item.kind}>{item.label}</SelectItem>)}</SelectContent>
         </Select>
-        <p className="min-w-0 flex-1 text-xs text-muted-foreground">{KINDS.find((item) => item.kind === kind)?.hint}</p>
+        <InfoTip>{KINDS.find((item) => item.kind === kind)?.hint ?? ""}</InfoTip>
+        <span className="flex-1" />
         {(draft.trim() || saving) && <Button type="submit" size="sm" disabled={saving} aria-busy={saving || undefined}>{saving && <Spinner />}Remember</Button>}
       </div>
     </form>
@@ -258,7 +259,7 @@ export function YourAssistant() {
     ?? both.find((state) => state.status === "saved") ?? { status: "idle" };
 
   return (
-    <Section title="Your assistant" description="Its name and how it comes across. Both go into every chat.">
+    <Section title="Your assistant">
       {persona === undefined ? <ListSkeleton rows={2} /> : (
         <div className="space-y-4">
           <Field>
@@ -280,7 +281,7 @@ export function YourAssistant() {
               ))}
             </div>
           </Field>
-          <SaveStatus state={identity} idle="Saves as you type. It applies from the next reply." onRetry={() => { void name.flush(); void personality.flush(); }} />
+          <SaveStatus state={identity} idle="Saves as you type." onRetry={() => { void name.flush(); void personality.flush(); }} />
         </div>
       )}
     </Section>
@@ -316,7 +317,7 @@ function AboutYou() {
 
   return (
     <div>
-      <Section title="USER.md" description={`Who you are, in your words. ${persona.name} reads all of it before every reply, and keeps it current as you talk.`}>
+      <Section title="USER.md" description={`${persona.name} reads it before every reply.`}>
         {editingUser ? (
           <div>
             <Field>
@@ -327,7 +328,7 @@ function AboutYou() {
                   if (event.key === "Escape" || (event.key === "Enter" && (event.metaKey || event.ctrlKey))) { event.preventDefault(); doneWithUser(); }
                 }}
                 className="min-h-72 font-mono text-sm leading-relaxed" spellCheck />
-              <FieldDescription>Markdown. It saves as you type; Esc or Ctrl+Enter when you&apos;re done.</FieldDescription>
+              <FieldDescription>Markdown. Saves as you type.</FieldDescription>
             </Field>
             <div className="mt-2 flex items-center gap-3">
               <SaveStatus state={user.state} onRetry={() => void user.flush()} className="flex-1" />
@@ -341,15 +342,13 @@ function AboutYou() {
             {userHistory?.[0] && <p className="mt-5 border-t pt-3 text-xs text-muted-foreground">Last changed by {BY[userHistory[0].by].toLowerCase()}, <RelativeTime at={userHistory[0].createdAt} />.</p>}
           </article>
         ) : (
-          <EmptyState title="Nothing here yet" action={<Button variant="outline" size="sm" onClick={() => setEditingUser(true)}><PencilIcon />Write it</Button>}>
-            Your work, your day, the people who matter and how you like replies. {persona.name} fills it in as you talk, too.
-          </EmptyState>
+          <EmptyState title="Nothing here yet" action={<Button variant="outline" size="sm" onClick={() => setEditingUser(true)}><PencilIcon />Write it</Button>} />
         )}
       </Section>
 
-      <Section title="History" description="Every version, newest first; a few minutes of your own typing make one. Restoring one keeps the version it replaces.">
+      <Section title="History">
         {(userHistory === undefined || identityHistory === undefined) && <ListSkeleton rows={2} />}
-        {userHistory?.length === 0 && identityHistory?.length === 0 && <EmptyState title="No versions yet">Saving USER.md, or the name or personality in <Link href="/settings/general" className="link">Settings → General</Link>, starts the history.</EmptyState>}
+        {userHistory?.length === 0 && identityHistory?.length === 0 && <EmptyState title="No versions yet" />}
         {((userHistory?.length ?? 0) > 0 || (identityHistory?.length ?? 0) > 0) && (
           <List label="Versions">
             {userHistory?.map((version, index) => (
@@ -381,7 +380,7 @@ function AboutYou() {
         )}
       </Section>
 
-      <Section title="Start over" description="Go through the welcome page again. What you save there becomes the newest version; nothing is lost.">
+      <Section title="Start over" description="Nothing is lost: what you save becomes the newest version.">
         <ActionButton variant="outline" action={async () => { await redo({ key: dashboardKey }); router.push("/welcome"); }}>Open the welcome page</ActionButton>
       </Section>
     </div>

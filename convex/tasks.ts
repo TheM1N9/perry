@@ -141,20 +141,20 @@ export const work = internalAction({
     const task: Doc<"tasks"> | null = await ctx.runQuery(internal.tasks.get, { id: args.id });
     if (!task || task.status !== "running") return null;
     // Where this turn runs, on what and why; or, with no engine that has room, back in line until one has.
+    // With no engine to route to (no default chosen), it goes on unrouted and is refused there, asking for one.
     const choice: Choice | null = await ctx.runQuery(internal.routing.forTask, { id: task._id });
-    if (!choice) return null;
-    if (choice.wait) {
+    if (choice?.wait) {
       await ctx.runMutation(internal.tasks.wait, { id: task._id, until: choice.wait.until, why: choice.wait.why });
       return null;
     }
-    const route = routeOf(choice);
-    await ctx.runMutation(internal.tasks.routed, { id: task._id, route });
+    const route = choice ? routeOf(choice) : undefined;
+    if (route) await ctx.runMutation(internal.tasks.routed, { id: task._id, route });
     const existing = task.conversationId ? await ctx.runQuery(internal.conversations.getWebById, { id: task.conversationId }) : null;
     const threadId = existing?.threadId ?? await createThread(ctx, { userId: "web:dashboard", title: `🧩 ${task.title}` });
     const chat = await ctx.runMutation(internal.tasks.chatFor, { id: task._id, threadId });
     if (!chat) return null;
     await ctx.runMutation(internal.tasks.clearAnswer, { id: task._id });
-    await ctx.scheduler.runAfter(0, internal.brain.handleTurn, { channel: "web", externalId: chat.externalId, text: promptFor(task), title: chat.title, route });
+    await ctx.scheduler.runAfter(0, internal.brain.handleTurn, { channel: "web", externalId: chat.externalId, text: promptFor(task), title: chat.title, ...(route ? { route } : {}) });
     return null;
   },
 });
@@ -208,6 +208,7 @@ export async function recoverTask(ctx: MutationCtx, task: Doc<"tasks">): Promise
   if (tries >= MAX_RECOVERIES) return false;
   const refused = task.route?.engine;
   const choice = await choose(ctx, await taskAsk(ctx, task, refused ? [refused] : undefined));
+  if (!choice) return false;
   const what = `${refused ? ENGINE_LABELS[refused] : "Its engine"} refused it for its plan's limit`;
   await requeue(ctx, task, choice.wait);
   await tellOnce(ctx, task, `🧩 **${task.title}** stopped: ${what}. ${choice.wait ? choice.wait.why : `It carries on on ${ENGINE_LABELS[choice.engine]}.`}`, tries + 1);

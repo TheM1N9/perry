@@ -45,7 +45,7 @@ export function Work() {
   const active = work?.tasks.filter((task) => task.status === "running" || task.status === "blocked" || task.status === "queued").length;
 
   return (
-    <Page title="Work" description="What Perry does without you in the chat. Set it up here, or ask for it in a chat." wide>
+    <Page title="Work" wide>
       <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)}>
         <TabsList variant="line" className="mb-5 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
           <TabsTrigger value="schedules"><TabCount count={jobs?.jobs.filter((job) => !job.builtin).length}>Schedules</TabCount></TabsTrigger>
@@ -62,8 +62,8 @@ export function Work() {
   );
 }
 
-/** A tab's explanation, with its New button beside it. */
-function Intro({ children, action }: { children: ReactNode; action: ReactNode }) {
+/** A tab's New button, and a line beside it when there is something it must say. */
+function Intro({ children, action }: { children?: ReactNode; action: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="max-w-2xl text-sm text-muted-foreground">{children}</p>
@@ -117,6 +117,7 @@ function Schedules() {
   const setModel = useMutation(api.jobs.setModel);
   const keepOn = useMutation(api.jobs.keepOn);
   const models = useQuery(api.models.options, { key: dashboardKey })?.models;
+  const preferred = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
   const several = enginesOf(models ?? []).length > 1;
   const now = useNow();
   const { ask, dialog } = useConfirm();
@@ -135,14 +136,15 @@ function Schedules() {
     const readable = job.schedule ? describeSchedule(job.schedule) : null;
     // A run waiting for an engine's reset is not a failure, whatever the run before it said.
     const state: { tone: Tone; label: string } | null = job.waiting ? { tone: "warning", label: "Waiting" } : job.lastError ? { tone: "danger", label: "Failed" } : job.enabled ? null : { tone: "neutral", label: over ? "Done" : "Paused" };
-    // Unset, Perry picks a model that fits the job, on an engine with room (lib/routing.ts); a pick the account
-    // no longer offers is picked for too. Each model is "<engine>/<id>", named with its engine once there is more than one.
-    const picked = job.model ? modelKey(job.engine, job.model) : undefined;
+    // Unset, Perry picks a model that fits the job on the default engine, or on another with room when the default
+    // has none (lib/routing.ts); a pick the account no longer offers is picked for too. Each model is
+    // "<engine>/<id>", named with its engine once there is more than one.
+    const picked = job.model && job.engine ? modelKey(job.engine, job.model) : undefined;
     const moved = job.route?.movedFrom;
     const modelItems = [
-      { value: "default", label: "Automatic" },
-      ...(models ?? []).map((item) => ({ value: modelKey(item.engine ?? "codex", item.id), label: several ? `${item.name} · ${ENGINE_LABELS[item.engine ?? "codex"]}` : item.name })),
-      ...(picked && models && !models.some((item) => modelKey(item.engine ?? "codex", item.id) === picked) ? [{ value: picked, label: `${job.model} (not offered, uses default)` }] : []),
+      { value: "default", label: preferred === null ? "Automatic (no engine chosen)" : "Automatic" },
+      ...(models ?? []).map((item) => ({ value: modelKey(item.engine, item.id), label: several ? `${item.name} · ${ENGINE_LABELS[item.engine]}` : item.name })),
+      ...(picked && models && !models.some((item) => modelKey(item.engine, item.id) === picked) ? [{ value: picked, label: `${job.model} (not offered, uses default)` }] : []),
     ];
     return (
       <Row key={job.id}>
@@ -182,7 +184,7 @@ function Schedules() {
             </div>
           )}
           {job.stay && job.model && (
-            <p className="mt-1 text-sm text-pretty text-muted-foreground" data-kept>Kept on {ENGINE_LABELS[job.engine]}: when its plan has no room, a run waits for the reset instead of moving.</p>
+            <p className="mt-1 text-sm text-pretty text-muted-foreground" data-kept>Kept on {job.engine ? ENGINE_LABELS[job.engine] : "its engine"}: when its plan has no room, a run waits for the reset instead of moving.</p>
           )}
           {job.lastError && !job.waiting && <p className="mt-2 text-sm text-pretty text-destructive">{job.lastError}</p>}
           {!job.lastError && job.lastResult && job.lastResult.trim() !== "NOTHING" && (
@@ -225,11 +227,11 @@ function Schedules() {
   return (
     <div className="space-y-6">
       <Intro action={<Button size="sm" onClick={() => setEditing({})}><PlusIcon />New schedule</Button>}>
-        Prompts Perry runs on a schedule, like a morning briefing; once, like a reminder; or when something happens, like a new email or a file landing in a folder. Times are in <span className="font-medium text-foreground">{data.timezone}</span>.
+        Times are in <span className="font-medium text-foreground">{data.timezone}</span>.
       </Intro>
       <Wake timezone={data.timezone} />
       {yours.length === 0
-        ? <EmptyState title="Nothing scheduled yet">Make one here, or ask in a chat: &ldquo;Every weekday at 8am, send me a summary of my calendar.&rdquo;</EmptyState>
+        ? <EmptyState title="Nothing scheduled yet" />
         : <List label="Your schedules">{yours.map(row)}</List>}
       {builtins.length > 0 && (
         <Collapsible>
@@ -295,14 +297,12 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
   // Queued tasks run oldest first, one at a time.
   const line = tasks.filter((task) => task.status === "queued").sort((a, b) => a.createdAt - b.createdAt).map((task) => task._id);
   const intro = (
-    <Intro action={<Button size="sm" onClick={() => setAdding({})}><PlusIcon />New task</Button>}>
-      Work Perry does by himself, a few tasks at once, each in a chat of its own. Its plan shows here as it goes; a question comes to you.
-    </Intro>
+    <Intro action={<Button size="sm" onClick={() => setAdding({})}><PlusIcon />New task</Button>} />
   );
   if (!tasks.length) return (
     <div className="space-y-4">
       {intro}
-      <EmptyState title="No plans yet">Hand Perry a task here, or ask for something that takes a few steps in a chat, and its plan shows up here as it works.</EmptyState>
+      <EmptyState title="No plans yet" />
       <TaskDialog open={adding !== null} goals={goals} onClose={() => setAdding(null)} />
     </div>
   );
@@ -408,9 +408,9 @@ function Goals({ goals }: { goals: Doc<"goals">[] }) {
   return (
     <div className="space-y-4">
       <Intro action={<Button size="sm" onClick={() => setEditing({})}><PlusIcon />New goal</Button>}>
-        Outcomes you&apos;re working toward, with milestones. Perry keeps them in mind in every chat.
+        Perry keeps them in mind in every chat.
       </Intro>
-      {!goals.length ? <EmptyState title="No goals yet">Make one here, or tell Perry about something you&apos;re working toward.</EmptyState> : (
+      {!goals.length ? <EmptyState title="No goals yet" /> : (
         <List label="Goals">
           {goals.map((goal) => {
             const reached = goal.milestones.filter((milestone) => milestone.done).length;
@@ -475,11 +475,9 @@ function Watches({ monitors }: { monitors: Doc<"monitors">[] }) {
           </ActionButton>
         )}
         <Button size="sm" onClick={() => setEditing({})}><PlusIcon />New watch</Button>
-      </>}>
-        Pages Perry checks on an interval. A new watch records a baseline first and stays quiet until its condition is met.
-      </Intro>
+      </>} />
       {monitors.length === 0
-        ? <EmptyState title="Nothing watched">Watch one here, or ask Perry: &ldquo;Tell me when this is back in stock.&rdquo;</EmptyState>
+        ? <EmptyState title="Nothing watched" />
         : (
           <List label="Watches">
             {monitors.map((monitor) => (

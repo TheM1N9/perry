@@ -36,7 +36,7 @@ export function ProjectScreen() {
     return (
       <Page title="Project">
         <EmptyState mascot title="This project isn't here" action={<Button variant="outline" size="sm" render={<Link href="/chat" />}>New chat</Button>}>
-          It may have been deleted. Its chats, if it had any, are in your chat list.
+          It may have been deleted.
         </EmptyState>
       </Page>
     );
@@ -44,7 +44,6 @@ export function ProjectScreen() {
   return (
     <Page
       title={project.name}
-      description="A folder of chats about one thing. Its chats follow its instructions, know of each other and can read each other, and keep what Perry remembers in them to the project."
       actions={<>
         <Button render={<Link href={`/chat?project=${project.id}`} />}><PlusIcon />New chat</Button>
         <DropdownMenu>
@@ -57,13 +56,13 @@ export function ProjectScreen() {
         </DropdownMenu>
       </>}
     >
-      <Section title="Instructions" description="How Perry works in this project: tone, format, audience, standing rules. A change reaches every chat in it with your next message, chats already going too.">
+      <Section title="Instructions" tip="Every chat in the project follows them, from your next message.">
         <Instructions project={project} />
       </Section>
-      <Section title="Chats" description="Each one is told what the others are about, and can search and read them. Chats outside the project cannot.">
+      <Section title="Chats" tip="They know of each other and can read each other. Chats outside the project can't.">
         <Chats project={project} />
       </Section>
-      <Section title="Memory" description="What Perry remembers in this project's chats. Only they see it; what Perry saves for every chat is on the Memory page.">
+      <Section title="Memory" description="Only this project's chats see it.">
         <Memories project={project} />
       </Section>
       <RenameProjectDialog project={renaming ? project : null} onClose={() => setRenaming(false)} />
@@ -93,9 +92,7 @@ function Chats({ project }: { project: ProjectView }) {
   const move = useMoveChat();
   if (!project.chats.length) {
     return (
-      <EmptyState title="No chats yet" action={<Button variant="outline" size="sm" render={<Link href={`/chat?project=${project.id}`} />}><PlusIcon />Start one</Button>}>
-        Start a chat here, or move one in from its menu.
-      </EmptyState>
+      <EmptyState title="No chats yet" action={<Button variant="outline" size="sm" render={<Link href={`/chat?project=${project.id}`} />}><PlusIcon />Start one</Button>} />
     );
   }
   return (
@@ -119,7 +116,7 @@ function Memories({ project }: { project: ProjectView }) {
   const { dashboardKey } = useSession();
   const forget = useMutation(api.dashboard.deleteMemory);
   if (!project.memories.length) {
-    return <EmptyState title="Nothing remembered here yet">What Perry saves in this project&apos;s chats shows up here.</EmptyState>;
+    return <EmptyState title="Nothing remembered here yet" />;
   }
   return (
     <List label={`What Perry remembers in ${project.name}`}>

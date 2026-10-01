@@ -85,7 +85,7 @@ export function Updates() {
   const now = useNow();
 
   return (
-    <Section title="Updates" description="Perry looks for a new version once a day. Around 4:00 at night, your time, he updates himself if he isn't busy.">
+    <Section title="Updates" tip="Perry looks for a new version once a day. With the switch on, he updates around 4:00 at night, your time, when he isn't busy.">
       {view === undefined ? <ListSkeleton rows={1} /> : (
         <div className="space-y-4">
           <div className="flex flex-wrap items-start gap-3" data-update-state={view.state}>
@@ -128,13 +128,13 @@ function Headline({ view }: { view: UpdateView }) {
 }
 
 function detail(view: UpdateView, now: number): string {
-  if (view.state === "updating") return "Perry is stopping, updating and starting again, in a few minutes. This page reconnects on its own.";
+  if (view.state === "updating") return "Back in a few minutes. This page reconnects on its own.";
   if (view.state === "waiting") return `He updates as soon as he's done with ${view.busy ?? "what he's doing"}.`;
   const newest = view.latest ? `The newest: “${view.latest.title}”. ` : "";
   if (view.problem) return `${newest}${view.problem}`;
-  if (!view.supervised) return `${newest}Perry updates himself when he runs in the background: start him with perry start. Until then, perry update in his folder does it.`;
+  if (!view.supervised) return `${newest}Start Perry with perry start to update from here, or run perry update in his folder.`;
   if (view.behind > 0) return newest.trim();
-  return view.checkedAt ? `Checked ${ago(view.checkedAt, now)}.` : "He looks for one a minute or so after he starts.";
+  return view.checkedAt ? `Checked ${ago(view.checkedAt, now)}.` : "";
 }
 
 function LastUpdate({ last, now }: { last: NonNullable<UpdateView["last"]>; now: number }) {

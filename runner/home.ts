@@ -19,6 +19,7 @@ import { join } from "node:path";
  *   engine-versions.json  the newest release of each engine's CLI, as last looked up
  *   update-request.json  an update the dashboard asked for, for `perry run` to do
  *   update-result.json   how the last one went, for the dashboard to show
+ *   default-engine.json  the default engine `perry setup` chose while Perry was not running, for its server to take when it starts
  *
  * PERRY_HOME moves the whole thing.
  */
@@ -38,6 +39,7 @@ export const PATHS = {
   engineVersions: join(HOME, "engine-versions.json"),
   updateRequest: join(HOME, "update-request.json"),
   updateResult: join(HOME, "update-result.json"),
+  engineChoice: join(HOME, "default-engine.json"),
 };
 
 export function ensureHome() {

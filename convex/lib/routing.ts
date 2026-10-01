@@ -15,14 +15,18 @@ import { resetsText, usedNow, type EngineUsage } from "./usage";
  *        quick     its fastest model (one named mini, flash, fast, haiku, lite, luna…), at low
  *        standard  its default model, at its default level
  *        deep      its strongest model (one named opus, pro, heavy, max…), at high
- *   3. The engine is the work's own (the one picked for it, or the one its chat is on) while that
- *      has room; new work goes to the signed-in engine with the most of its plan left.
+ *   3. The engine is the work's own (the one picked for it, or the engine of its own a chat is on),
+ *      else the owner's default engine (installation.defaultEngine), while that has room.
  *
  * The owner's pick wins over 1 and 2, and Perry's own (create_job, queue_task) over the tier's.
- * When the engine has no room, the work moves to one that has and says why; work the owner
- * said to keep on its engine (`stay`) waits for its reset instead. Background work with nowhere
- * to go waits for the earliest reset rather than failing. A chat moves only when its engine's
- * plan is used up: the owner is there, and the last of a plan is theirs.
+ * Routing steps in only for a plan's limit: when the engine has no room, the work moves to the
+ * default engine if that has room, else to the signed-in engine with the most of its plan left,
+ * and says why; work the owner said to keep on its engine (`stay`) waits for its reset instead.
+ * Background work with nowhere to go waits for the earliest reset rather than failing. A chat
+ * moves only when its engine's plan is used up: the owner is there, and the last of a plan is
+ * theirs. An engine that is only signed out is not routed around: the work stays, and says so.
+ * With no engine for the work and no default chosen there is nothing to route: Perry asks the
+ * owner to choose (codex.enqueueTurn), and routing never picks a default for them.
  *
  * Pure, with no server imports: the server routes with it, and the dashboard explains it.
  */
@@ -150,8 +154,10 @@ export type RouteInput = {
   work: Work;
   owner?: OwnerPick;
   perry?: PerryPick;
-  /** The engine the work's chat is on, when it has one. */
+  /** The engine the work's chat is on, when it has one of its own. */
   current?: EngineKind;
+  /** The owner's default engine (installation.defaultEngine): the work's engine when nothing else names one. */
+  preferred?: EngineKind;
   /** Signed in and recent enough on a computer that is online. */
   engines: EngineKind[];
   models: ModelOption[];
@@ -166,8 +172,12 @@ export type RouteInput = {
 
 const clockAt = (at: number, timeZone?: string) => new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZone });
 
-/** The engine, model and thinking level for a piece of work, and why; or how long it waits. */
-export function route(input: RouteInput): Choice {
+/**
+ * The engine, model and thinking level for a piece of work, and why; or how
+ * long it waits. Null when nothing names an engine for it and the owner has
+ * chosen no default: Perry asks rather than picking one.
+ */
+export function route(input: RouteInput): Choice | null {
   const { work, owner, perry, models, usage, now, timeZone } = input;
   const given = perry?.tier;
   const { tier, why: kind } = given ? { tier: given, why: "Perry's pick" } : tierOf(work);
@@ -176,7 +186,8 @@ export function route(input: RouteInput): Choice {
   const usable = input.engines.filter((engine) => !avoid.has(engine));
   const rooms = new Map(ENGINES.map((engine) => [engine, roomOf(engine, usage[engine], now, cap, timeZone)]));
   const room = (engine: EngineKind) => rooms.get(engine)!;
-  const home = owner?.engine ?? perry?.engine ?? input.current;
+  const home = owner?.engine ?? perry?.engine ?? input.current ?? input.preferred;
+  if (!home) return null;
   const whyNot = (engine: EngineKind) => avoid.has(engine) ? `${ENGINE_LABELS[engine]} refused it for its plan's limit`
     : !input.engines.includes(engine) ? `${ENGINE_LABELS[engine]} isn't signed in on a computer that is online`
       : room(engine).why ?? `${ENGINE_LABELS[engine]} has no room`;
@@ -205,36 +216,34 @@ export function route(input: RouteInput): Choice {
     return { engine, tier, ...rest, why: `${said}. ${where}`, ...(movedFrom ? { movedFrom } : {}) };
   };
 
-  // Its own engine, while that has room.
-  if (home && usable.includes(home) && room(home).state === "room") {
-    return choose(home, `On ${ENGINE_LABELS[home]}, ${owner?.engine === home ? "as picked" : perry?.engine === home ? "as Perry picked" : "where it already was"}, which has room.`);
+  const where = owner?.engine === home ? "as picked" : perry?.engine === home ? "as Perry picked"
+    : input.current === home ? "where it already was" : "your default engine";
+  // Its own engine, or the default, while that has room.
+  if (usable.includes(home) && room(home).state === "room") {
+    return choose(home, `On ${ENGINE_LABELS[home]}, ${where}, which has room.`);
   }
-  // A chat is not moved for an engine that is only signed out: it says so, as before. Kept on its engine, the work waits.
-  const homeSignedOut = home !== undefined && !input.engines.includes(home);
-  if (home && input.attended && homeSignedOut) return choose(home, `On ${ENGINE_LABELS[home]}, the chat's engine.`);
-  if (home && owner?.stay && input.engines.includes(home) && !input.attended) {
+  // Routing is for a plan's limit only: work is not moved for an engine that is only signed out. It stays, and says so.
+  if (!input.engines.includes(home)) return choose(home, `On ${ENGINE_LABELS[home]}, ${where}.`);
+  if (owner?.stay && !input.attended) {
     // Refused just now, before its plan says so, it is given the hour a refusal holds an engine.
     const held = room(home).state === "room" ? now + HIT_HOLD_MS : room(home).until ?? now + HIT_HOLD_MS;
     const until = Math.max(now, held) + RESET_MARGIN_MS;
     const choice = choose(home, `Kept on ${ENGINE_LABELS[home]}, as you asked.`);
     return { ...choice, wait: { until, why: `${whyNot(home)}, and you asked to keep it there: it waits until ${clockAt(until, timeZone)}.` } };
   }
+  // Elsewhere: the default engine when it has room, else the signed-in engine with the most of its plan left.
+  const first = (engine: EngineKind) => engine === input.preferred ? 0 : 1;
   const roomy = usable.filter((engine) => room(engine).state === "room")
-    .sort((a, b) => (room(a).used ?? 50) - (room(b).used ?? 50) || ENGINES.indexOf(a) - ENGINES.indexOf(b));
+    .sort((a, b) => first(a) - first(b) || (room(a).used ?? 50) - (room(b).used ?? 50) || ENGINES.indexOf(a) - ENGINES.indexOf(b));
   if (roomy.length) {
     const to = roomy[0];
-    if (!home || (homeSignedOut && !owner?.engine && !perry?.engine)) {
-      return choose(to, `On ${ENGINE_LABELS[to]}, the signed-in engine with the most of its plan left.`);
-    }
     const moved: Moved = { engine: home, ...(pick(home).model ? { model: pick(home).model } : {}), why: whyNot(home) };
-    return choose(to, `Moved from ${ENGINE_LABELS[home]} to ${ENGINE_LABELS[to]}: ${moved.why}.`, moved);
+    const there = to === input.preferred ? "your default engine" : "the signed-in engine with the most of its plan left";
+    return choose(to, `Moved from ${ENGINE_LABELS[home]} to ${ENGINE_LABELS[to]}, ${there}: ${moved.why}.`, moved);
   }
   // Nowhere has room. A chat stays where it is, and its engine has the last word (a chat refused by it is not
-  // moved to one that is out too); with nothing signed in, the work goes where it would have, and says why it cannot.
-  if (input.attended || !input.engines.length) {
-    const engine = home ?? usable[0] ?? input.engines[0] ?? "codex";
-    return choose(engine, input.engines.length ? `Every engine is at its plan's limit, so it stays on ${ENGINE_LABELS[engine]}.` : `On ${ENGINE_LABELS[engine]}.`);
-  }
+  // moved to one that is out too).
+  if (input.attended) return choose(home, `Every engine is at its plan's limit, so it stays on ${ENGINE_LABELS[home]}.`);
   // Other work waits for the first engine to have room again: one that just refused it, after the hour a refusal holds.
   const soonest = input.engines.map((engine) => ({
     engine,
@@ -252,7 +261,7 @@ export function route(input: RouteInput): Choice {
 /** The rule in a few lines, for the agent's list_engines and the run's details. */
 export const ROUTING_RULE = [
   "Tiers: quick (chat names, reviews, the heartbeat, reminders) runs an engine's fastest model at low; standard (chats, recurring and event jobs, the daily summary, short background tasks) its default model at its default level; deep (background tasks with a long brief, memory consolidation) its strongest at high.",
-  `The engine is the work's own while it has room; new work goes to the signed-in engine with the most of its plan left. Background work leaves an engine at ${BACKGROUND_CAP}% of any window, and waits for the first reset when every engine is past it. A chat moves only when its engine is used up.`,
+  `The engine is the work's own (a model picked for it, or its chat's engine), else the owner's default engine, while it has room. Background work leaves an engine at ${BACKGROUND_CAP}% of any window for the default engine if that has room, else the signed-in engine with the most of its plan left, and waits for the first reset when every engine is past it. A chat moves only when its engine is used up. With no default engine chosen, Perry asks the owner to choose one rather than picking.`,
   "The owner's pick wins over Perry's, and Perry's over the tier's.",
 ].join(" ");
 

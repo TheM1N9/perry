@@ -1,0 +1,13 @@
+
+Perry setup
+  Telegram is optional. For a bot: message @BotFather, send /newbot, and paste its token.
+  Bot token, or Enter to skip: 
+  No bot: talk to Perry from the dashboard. Add one in Settings → Telegram any time.
+  Perry thinks with a coding agent on this computer, signed in with your own subscription.
+    1  Codex        0.177.7, signed in with ChatGPT Plus
+    2  Antigravity  experimental, not turned on; Settings → Engines turns it on
+    3  Claude Code  2.1.277, not signed in
+    4  Grok Build   not installed
+  Which should Perry use by default? [1-4, Enter for Codex] 
+  Perry needs you to choose its default engine, and there is no one here to answer.
+  Run setup again with --engine <codex|claude|grok|antigravity>, or set PERRY_ENGINE.

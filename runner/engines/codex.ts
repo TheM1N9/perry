@@ -696,4 +696,18 @@ export class CodexEngine implements Engine {
   kill(): void {
     this.app?.close("SIGKILL");
   }
+
+  /** Codex is run as `codex` from PATH. */
+  where(): string {
+    return "codex";
+  }
+
+  /** The app-server holds the old Codex's files open: it is ended, and the next look starts the one installed then, at once. */
+  reload(): void {
+    const app = this.app;
+    this.app = null;
+    this.lastAttempt = 0;
+    this.comparedAt = 0;
+    app?.close("SIGKILL");
+  }
 }

@@ -2,13 +2,14 @@ import { v, type Infer } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { ENGINE_LABELS, ENGINES, engineOf, type EngineKind } from "./lib/engines";
+import { ENGINE_LABELS, ENGINES, type EngineKind } from "./lib/engines";
 import { BACKGROUND_CAP, ROUTING_RULE, effortFor, isTier, modelFor, roomOf, route, type Choice, type OwnerPick, type PerryPick, type Work } from "./lib/routing";
 import { modelsOf, parseModelKey } from "./lib/commands";
 import { LIMIT_HIT } from "./lib/usage";
 import { historyOf } from "./lib/agent";
 import { sendMessage } from "./lib/telegram";
-import { FORGET_SESSION, engineUsable, isOnline, resumeOf } from "./engines";
+import { FORGET_SESSION, engineUsable, isOnline } from "./engines";
+import { defaultEngine } from "./installation";
 import { engineModels } from "./models";
 import { authenticate } from "./runner";
 import { liveRunners, usageByEngine } from "./usage";
@@ -43,15 +44,20 @@ type Ask = {
   runnerId?: Id<"runners">;
 };
 
-/** Pick for a piece of work, from what the server knows now. */
-export async function choose(ctx: QueryCtx, ask: Ask): Promise<Choice> {
+/**
+ * Pick for a piece of work, from what the server knows now: on the owner's
+ * default engine unless something names another. Null when nothing names one
+ * and no default is chosen: the turn is then refused, asking for one.
+ */
+export async function choose(ctx: QueryCtx, ask: Ask): Promise<Choice | null> {
+  const preferred = await defaultEngine(ctx);
   const runners = await liveRunners(ctx);
   const pinned = ask.runnerId ? runners.find((runner) => runner._id === ask.runnerId) : undefined;
   // A chat stays on its computer (codex.pickRunner): only the engines there will take it.
   const here = runners.filter((runner) => isOnline(runner) && (!pinned || (runner.hostname === pinned.hostname && runner.platform === pinned.platform)));
   const engines = ENGINES.filter((engine) => here.some((runner) => engineUsable(runner, engine)));
   const timeZone = (await ctx.db.query("installation").first())?.timezone;
-  return route({ ...ask, engines, models: await engineModels(ctx), usage: usageByEngine(runners), now: Date.now(), ...(timeZone ? { timeZone } : {}) });
+  return route({ ...ask, ...(preferred ? { preferred } : {}), engines, models: await engineModels(ctx), usage: usageByEngine(runners), now: Date.now(), ...(timeZone ? { timeZone } : {}) });
 }
 
 /** What a run records of a choice: all but the wait. */
@@ -61,43 +67,42 @@ export const routeOf = (choice: Choice): Route => ({
   ...(choice.movedFrom ? { movedFrom: { ...choice.movedFrom, why: choice.movedFrom.why.slice(0, 500) } } : {}),
 });
 
-/** The engine a job's or task's chat is on, once it has one. */
-async function chatEngine(ctx: QueryCtx, id?: Id<"conversations">): Promise<EngineKind | undefined> {
-  const chat = id ? await ctx.db.get(id) : null;
-  return chat ? engineOf(chat) : undefined;
-}
-
-/** A job's ask: the owner's model (Work page) and keep-it-there, Perry's pick, and its chat's engine. */
-export async function jobAsk(ctx: QueryCtx, job: Doc<"jobs">, avoid?: EngineKind[]): Promise<Ask> {
-  const owner: OwnerPick | undefined = job.model || job.stay ? { engine: engineOf(job), ...(job.model ? { model: job.model } : {}), ...(job.stay ? { stay: true } : {}) } : undefined;
+/**
+ * A job's ask: the owner's model (Work page) and keep-it-there, and Perry's
+ * pick. Without either it follows the owner's default engine (choose), as its
+ * chat does: a run moved off it for a limit comes back once the default has room.
+ */
+export async function jobAsk(_ctx: QueryCtx, job: Doc<"jobs">, avoid?: EngineKind[]): Promise<Ask> {
+  const owner: OwnerPick | undefined = job.engine && (job.model || job.stay)
+    ? { engine: job.engine, ...(job.model ? { model: job.model } : {}), ...(job.stay ? { stay: true } : {}) } : undefined;
   return {
     work: { kind: "job", ...(job.builtin ? { builtin: job.builtin } : {}), once: job.runAt !== undefined, event: Boolean(job.trigger) },
     ...(owner ? { owner } : {}),
     ...(job.pick ? { perry: job.pick } : {}),
-    current: await chatEngine(ctx, job.conversationId),
     ...(avoid?.length ? { avoid } : {}),
   };
 }
 
-export async function taskAsk(ctx: QueryCtx, task: Doc<"tasks">, avoid?: EngineKind[]): Promise<Ask> {
+/** A task's ask: Perry's pick, else the owner's default engine, as for a job. */
+export async function taskAsk(_ctx: QueryCtx, task: Doc<"tasks">, avoid?: EngineKind[]): Promise<Ask> {
   return {
     work: { kind: "task", brief: task.prompt.length },
     ...(task.pick ? { perry: task.pick } : {}),
-    current: await chatEngine(ctx, task.conversationId),
     ...(avoid?.length ? { avoid } : {}),
   };
 }
 
 /**
- * An owner's chat: its engine and model, kept while its engine has room. A
- * chat that has never run picks an engine; one from before engines that has a
- * Codex session is on Codex.
+ * An owner's chat: the engine of its own (a web chat takes the default when it
+ * is made, a model picked sets one) and its model, kept while that has room; a
+ * phone chat without one follows the owner's default engine (choose).
  */
 export function chatAsk(chat: Doc<"conversations">): Ask {
-  const engine = chat.engine ?? (resumeOf(chat) ? "codex" : undefined);
+  const engine = chat.engine;
   return {
     work: { kind: "chat" },
-    owner: { ...(engine ? { engine } : {}), ...(chat.model && engine ? { model: chat.model } : {}), ...(chat.effort ? { effort: chat.effort } : {}) },
+    // A model picked for it is the owner's pick; the engine alone is only where it already is.
+    owner: { ...(chat.model && engine ? { engine, model: chat.model } : {}), ...(chat.effort ? { effort: chat.effort } : {}) },
     ...(engine ? { current: engine } : {}),
     attended: true,
     ...(chat.codexRunnerId ? { runnerId: chat.codexRunnerId } : {}),
@@ -131,28 +136,44 @@ export const forChat = internalQuery({
 /** For the agent's own picks: which engines it can name, as list_engines shows them. */
 export const pickFor = internalQuery({
   args: { work: vWork, perry: v.optional(vPerryPick), owner: v.optional(vOwnerPick) },
-  handler: async (ctx, args): Promise<Choice> => await choose(ctx, { work: args.work, ...(args.perry ? { perry: args.perry } : {}), ...(args.owner ? { owner: args.owner } : {}) }),
+  handler: async (ctx, args): Promise<Choice | null> => await choose(ctx, { work: args.work, ...(args.perry ? { perry: args.perry } : {}), ...(args.owner ? { owner: args.owner } : {}) }),
 });
 
 /**
- * Move a chat to another engine, as routing chose: it starts a session there
- * with the chat so far. An owner's chat says why above its composer.
+ * A chat moved to another engine, as routing chose. A job's or task's chat
+ * follows the owner's default and is routed each run, so it keeps nothing. An
+ * owner's chat on an engine of its own goes on on the new one, starting a
+ * session there with the chat so far; one that follows the default (a phone
+ * chat) runs on the new one until the default has room again, keeping the
+ * default's session for then. Either says why above its composer.
  */
 export async function moveChat(ctx: MutationCtx, chat: Doc<"conversations">, choice: { engine: EngineKind; model?: string }, moved?: { from: EngineKind; why: string }) {
-  // Already there (a chat from before engines is on Codex): only said so.
-  if (engineOf(chat) === choice.engine) {
-    if (!chat.engine) await ctx.db.patch(chat._id, { engine: choice.engine });
+  if (chat.jobId || chat.taskId) return;
+  const note = moved ? { moved: { from: moved.from, to: choice.engine, why: moved.why.slice(0, 500), at: Date.now() } } : {};
+  if (!chat.engine) {
+    if (moved) await ctx.db.patch(chat._id, note);
     return;
   }
-  const owners = !chat.jobId && !chat.taskId;
+  if (chat.engine === choice.engine) return;
   await ctx.db.patch(chat._id, {
     engine: choice.engine,
-    // An owner's chat keeps no model of the engine it left; a job's or task's is routed each run.
-    model: owners ? undefined : choice.model,
+    // It keeps no model of the engine it left.
+    model: undefined,
     ...FORGET_SESSION, recallDigest: undefined, projectDigest: undefined,
-    ...(owners && moved ? { moved: { from: moved.from, why: moved.why.slice(0, 500), at: Date.now() } } : {}),
+    ...note,
   });
 }
+
+/** A chat that follows the default is back on it: the note about its move goes. */
+export const clearMoved = internalMutation({
+  args: { id: v.id("conversations") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const chat = await ctx.db.get(args.id);
+    if (chat?.moved && !chat.engine) await ctx.db.patch(chat._id, { moved: undefined });
+    return null;
+  },
+});
 
 export const moveChatTo = internalMutation({
   args: { id: v.id("conversations"), engine: vEngine, model: v.optional(v.string()), moved: v.optional(v.object({ from: vEngine, why: v.string() })) },
@@ -188,14 +209,15 @@ export const retryPlan = internalQuery({
     const turn = await ctx.db.get(args.id);
     const conversation = turn ? await ctx.db.get(turn.conversationId) : null;
     if (!turn || !conversation || !turn.retrying || turn.finalizedAt) return null;
-    const refused = engineOf(turn);
+    const refused = turn.engine;
+    if (!refused) return null;
     const job = conversation.jobId ? await ctx.db.get(conversation.jobId) : null;
     const task = conversation.taskId ? await ctx.db.get(conversation.taskId) : null;
     const ask = job ? await jobAsk(ctx, job, [refused]) : task ? await taskAsk(ctx, task, [refused]) : { ...chatAsk(conversation), avoid: [refused] };
     // Kept on its engine by the owner, it is not moved for a refusal either.
     if (ask.owner?.stay) return null;
     const choice = await choose(ctx, ask);
-    if (choice.wait || choice.engine === refused) return null;
+    if (!choice || choice.wait || choice.engine === refused) return null;
     return { choice, conversation };
   },
 });
@@ -283,8 +305,8 @@ export const checkPick = internalQuery({
     const models = await engineModels(ctx);
     if (args.model) {
       const { engine, id } = parseModelKey(args.model.trim());
-      const model = models.find((item) => (item.engine ?? "codex") === engine && item.id === id);
-      if (!model) return { error: `No signed-in engine offers "${args.model}"; list_engines names the models as <engine>/<id>.` };
+      const model = engine ? models.find((item) => item.engine === engine && item.id === id) : undefined;
+      if (!engine || !model) return { error: `No signed-in engine offers "${args.model}"; list_engines names the models as <engine>/<id>.` };
       Object.assign(pick, { engine, model: id });
       if (args.effort && model.efforts?.length && !model.efforts.includes(args.effort)) {
         return { error: `${model.name} has no thinking level "${args.effort}": it takes ${model.efforts.join(", ")}.` };
@@ -299,6 +321,8 @@ export type EngineRow = {
   engine: EngineKind;
   label: string;
   room: "room" | "low" | "out";
+  /** The owner's default engine: work runs here unless something names another, or it has no room. */
+  default?: true;
   why?: string;
   resetsAt?: string;
   /** What each tier runs there: "<model> at <level>". */
@@ -310,6 +334,7 @@ export type EngineRow = {
 export const engines = internalQuery({
   args: {},
   handler: async (ctx): Promise<{ engines: EngineRow[]; rule: string }> => {
+    const preferred = await defaultEngine(ctx);
     const runners = await liveRunners(ctx);
     const usage = usageByEngine(runners);
     const models = await engineModels(ctx);
@@ -324,6 +349,7 @@ export const engines = internalQuery({
         })) as Record<"quick" | "standard" | "deep", string>;
         return {
           engine, label: ENGINE_LABELS[engine], room: room.state, tiers,
+          ...(engine === preferred ? { default: true as const } : {}),
           ...(room.why ? { why: room.why } : {}),
           ...(room.until ? { resetsAt: new Date(room.until).toISOString() } : {}),
           models: modelsOf(models, engine).map((model) => ({

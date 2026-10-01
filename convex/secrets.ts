@@ -30,11 +30,11 @@ export function isSecretName(value: string): value is SecretName {
 export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> = {
   TELEGRAM_BOT_TOKEN: {
     label: "Telegram bot token",
-    hint: "From @BotFather. Perry starts listening to the new bot within a few seconds of saving it.",
+    hint: "From @BotFather.",
   },
   COMPOSIO_API_KEY: {
     label: "Composio key",
-    hint: "Gmail, Calendar, Notion and the rest. Without it no accounts can be connected.",
+    hint: "From composio.dev.",
   },
   GEMINI_API_KEY: {
     label: "Gemini API key",

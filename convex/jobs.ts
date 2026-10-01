@@ -8,7 +8,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { ABSOLUTE_PATH } from "./media";
 import { projectFrom } from "./projects";
 import { vEngine, vPerryPick, vRoute, vTrigger } from "./schema";
-import { ENGINE_LABELS, engineOf, isEngine, type EngineKind } from "./lib/engines";
+import { ENGINE_LABELS, isEngine, type EngineKind } from "./lib/engines";
 import { LIMIT_HIT } from "./lib/usage";
 import type { Choice } from "./lib/routing";
 import { choose, jobAsk, routeOf, type Route } from "./routing";
@@ -282,15 +282,15 @@ export const run = internalAction({
     const { job, timezone } = found;
     // A run that waited goes ahead only while it is still waited for: pausing the job calls it off.
     if (args.waited && !job.waiting) return null;
-    // Where it runs, on what and why; or, with no engine that has room, when it runs instead.
+    // Where it runs, on what and why; or, with no engine that has room, when it runs instead. With no engine to
+    // route to (no model of its own and no default chosen), it goes on unrouted and is refused there, asking for one.
     const choice: Choice | null = await ctx.runQuery(internal.routing.forJob, { id: job._id, ...(args.avoid?.length ? { avoid: args.avoid } : {}) });
-    if (!choice) return null;
-    if (choice.wait) {
+    if (choice?.wait) {
       await ctx.runMutation(internal.jobs.wait, { id: job._id, until: choice.wait.until, why: choice.wait.why, ...(args.since ? { since: args.since } : {}), ...(args.event !== undefined ? { event: args.event } : {}) });
       return null;
     }
-    const route = routeOf(choice);
-    await ctx.runMutation(internal.jobs.routed, { id: job._id, route });
+    const route = choice ? routeOf(choice) : undefined;
+    if (route) await ctx.runMutation(internal.jobs.routed, { id: job._id, route });
     // A thread is only created when the job has no chat yet; chatFor ignores it otherwise.
     const existing = job.conversationId
       ? await ctx.runQuery(internal.conversations.getWebById, { id: job.conversationId })
@@ -347,7 +347,8 @@ export const run = internalAction({
       externalId: chat.externalId,
       text: `${job.trigger ? "⚡" : "⏰"} ${job.name} (${now})\n\n${job.prompt}${context}\n\n${CONDITIONAL_DELIVERY}`,
       title: chat.title,
-      route,
+      // Routed (lib/routing.ts); with no engine to route to (no default chosen), as before, and refused there.
+      ...(route ? { route } : job.model && job.engine ? { model: job.model, engine: job.engine } : {}),
     });
     return null;
   },
@@ -405,6 +406,7 @@ export async function recoverJob(ctx: MutationCtx, job: Doc<"jobs">): Promise<bo
   if (tries >= MAX_RECOVERIES) return false;
   const refused = job.route?.engine;
   const choice = await choose(ctx, await jobAsk(ctx, job, refused ? [refused] : undefined));
+  if (!choice) return false;
   const what = `${refused ? ENGINE_LABELS[refused] : "Its engine"} refused it for its plan's limit`;
   if (choice.wait) {
     await ctx.db.patch(job._id, { waiting: { until: choice.wait.until, why: choice.wait.why.slice(0, 500) } });
@@ -465,7 +467,8 @@ export type JobView = {
   enabled: boolean;
   builtin?: string;
   model?: string;
-  engine: EngineKind;
+  /** The engine `model` is one of; unset without a model, when the job runs on its chat's engine or the default. */
+  engine?: EngineKind;
   /** Kept on its engine whatever its plan: a run waits for the reset rather than moving. */
   stay?: boolean;
   /** Perry's own pick of tier, model or thinking level. */
@@ -491,7 +494,7 @@ const view = (job: Doc<"jobs">): JobView => ({
   enabled: job.enabled,
   builtin: job.builtin,
   model: job.model,
-  engine: engineOf(job),
+  engine: job.engine,
   ...(job.stay ? { stay: true } : {}),
   ...(job.pick ? { pick: job.pick } : {}),
   ...(job.route ? { route: job.route } : {}),
@@ -648,9 +651,9 @@ export const keepOn = mutation({
     const job = await ctx.db.get(args.id);
     if (!job) throw new Error("That job no longer exists.");
     const from = job.route?.movedFrom;
-    const engine = from?.engine ?? (job.model ? engineOf(job) : job.route?.engine);
+    const engine = from?.engine ?? (job.model ? job.engine : job.route?.engine);
     if (!engine || !isEngine(engine)) throw new Error("This job has not run anywhere yet.");
-    const model = from?.engine === engine ? from.model : engineOf(job) === engine ? job.model : job.route?.model;
+    const model = from?.engine === engine ? from.model : job.engine === engine ? job.model : job.route?.model;
     await ctx.db.patch(job._id, { engine, model, stay: true });
     return null;
   },
