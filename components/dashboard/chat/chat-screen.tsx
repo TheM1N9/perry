@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { shownStep } from "@/convex/lib/activity";
+import type { Work } from "@/convex/dashboard";
 import {
   ACCESS_HINTS, ACCESS_LABELS, ACCESSES, COMPACTED, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
   modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, typingSkill, type Access,
@@ -224,9 +224,21 @@ export function ChatScreen() {
 
   const shownPending = pending.filter((item) => item.id === selectedId);
   const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
-  // What Perry is doing while the reply is on its way, step by step, as the pet shows it.
-  const activity = useQuery(api.dashboard.getActivity, selectedId && waiting ? { key: dashboardKey, id: selectedId } : "skip");
-  const step = shownStep(activity, now);
+  // Every step Perry takes: listed as they come while a reply is on its way, and kept with the reply after.
+  const work = useQuery(api.dashboard.getChatWork, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
+  const { workOf, liveWork } = useMemo(() => {
+    const runs = work ?? [];
+    const replies = messages.filter((message) => message.role === "assistant" && !message.pending);
+    const workOf = new Map<string, Work>();
+    // A finished run goes with the reply it wrote: the first after it started, and before the next run did.
+    runs.forEach((run, index) => {
+      if (run.status === "running" || !run.steps.length) return;
+      const next = runs[index + 1]?.startedAt ?? Infinity;
+      const reply = replies.find((message) => message.createdAt >= run.startedAt && message.createdAt < next && !workOf.has(message.id));
+      if (reply) workOf.set(reply.id, run);
+    });
+    return { workOf, liveWork: [...runs].reverse().find((run) => run.status === "running") };
+  }, [work, messages]);
 
   // Scrolling: a chat opens at its newest message; after that, new content only scrolls into view for a reader already at the bottom.
   const scroller = useRef<HTMLDivElement>(null);
@@ -250,7 +262,7 @@ export function ChatScreen() {
     } else if (stick.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, step?.label, here.length]);
+  }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, liveWork?.steps.length, here.length]);
   const jumpToLatest = () => {
     stick.current = true;
     setAtBottom(true);
@@ -611,6 +623,7 @@ export function ChatScreen() {
                 <MessageRow
                   key={message.id}
                   message={message}
+                  work={workOf.get(message.id)}
                   assistant={assistant}
                   latest={message.id === lastMessage?.id}
                   canEdit={!waiting && !app}
@@ -624,7 +637,7 @@ export function ChatScreen() {
                 />
               ))}
               {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
-              {waiting && !here.length && <ReplyInProgress streaming={chat?.streaming} step={step?.label} />}
+              {waiting && !here.length && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} />}
               {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
               {chat?.lastError && !chat.isRunning && !waiting && (
                 <Alert variant="destructive">

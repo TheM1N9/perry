@@ -7,8 +7,9 @@ import { fileURLToPath } from "node:url";
 import { openChat, sleep } from "../browser";
 
 // bun artifacts/chat-steps/run.ts <outDir>
-// The web chat shows each step Perry is on while a reply is on its way, as the
-// pet does (dashboard.getActivity), not a "Thinking" that stays put until the
+// The web chat lists every step Perry takes while a reply is on its way, in
+// order, and keeps them with the reply after, folded into "Worked for 12s ·
+// 3 steps" (dashboard.getChatWork), not a "Thinking" that stays put until the
 // whole reply lands. A fresh Perry (production build, `pnpm build` first) with
 // the real runner and Codex (PERRY_E2E_MODEL picks the model), and the chat in
 // headless Chrome. PERRY_E2E_ENGINE=claude (or another engine) runs it there
@@ -19,13 +20,16 @@ import { openChat, sleep } from "../browser";
 //      "Reading example.com" and "Running Start-Sleep -Seconds 8…".
 //   2. A step reads as a raw name: a tool id (read_page), or a command in its
 //      PowerShell wrapper.
-//   3. The step is off screen: the line must be in view while it shows.
-//   4. Words and step fight: once the reply streams, "Writing the reply" must
-//      not show as a line of its own under the words it is writing.
-//   5. The step or its spinner stays once the reply is in.
+//   3. The steps are off screen: they must be in view while they show.
+//   4. A step goes away when the next starts: each look must still list every
+//      step seen before, in the same order.
+//   5. The live list or a spinner stays once the reply is in.
 //   6. The reply does not land. (Whether its words streamed is noted, not
 //      checked: after a tool, Claude Code sends them in one burst at the end.)
-//   7. The page throws.
+//   7. No "Worked for …" above the reply, or it is open from the start.
+//   8. Opened, it does not list the steps in the order they ran, each done.
+//   9. It is gone once the page loads again (kept in the page, not the server).
+//  10. The page throws.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/chat-steps/run.ts <outDir>");
@@ -114,7 +118,8 @@ try {
         const last = seen.at(-1);
         if (!last || JSON.stringify([last.thinking, last.streaming === null, last.steps, last.inView, last.replies]) !== JSON.stringify([now.thinking, now.streaming === null, now.steps, now.inView, now.replies])) {
           seen.push({ at: Date.now(), ...now });
-          const name = /^Reading/.test(now.steps[0] ?? "") ? "chat-reading.png" : /^Running/.test(now.steps[0] ?? "") ? "chat-running.png" : now.streaming !== null ? "chat-streaming.png" : "";
+          const latest = now.steps.filter((step) => step !== "Thinking").at(-1) ?? "";
+          const name = /^Reading/.test(latest) ? "chat-reading.png" : /^Running/.test(latest) ? "chat-running.png" : now.streaming !== null ? "chat-streaming.png" : "";
           if (name && !shots.has(name)) { shots.add(name); void shot(name); }
         }
       }
@@ -147,11 +152,36 @@ try {
   check("stepsShowNotThinking", steps.includes("Reading example.com") && steps.some((step) => /^Running Start-Sleep -Seconds 8/.test(step)), [...new Set(steps)]);
   check("noRawNames", !steps.some((step) => /read_page|powershell|-Command|mcp/i.test(step)));
   check("stepInView", seen.every((item) => item.inView));
-  check("noWritingLineUnderWords", !seen.some((item) => item.streaming !== null && item.steps.includes("Writing the reply")));
+  // While the reply is on its way, the steps listed only grow: no earlier one drops out or moves.
+  const lists = seen.filter((item) => item.replies === 0).map((item) => item.steps.filter((step) => step !== "Thinking"));
+  check("stepsStayInOrder", lists.every((list, index) => index === 0 || lists[index - 1]!.every((step, at) => list[at] === step)) && Math.max(0, ...lists.map((list) => list.length)) >= 2);
   const end = seen.at(-1);
   check("nothingLingers", Boolean(end && end.thinking === null && end.streaming === null && end.steps.length === 0 && end.replies === 1), end);
   check("replyLands", end?.replies === 1);
   notes.wordsStreamed = seen.some((item) => item.streaming !== null);
+
+  // Above the reply, folded: "Worked for …", opened by a click to the steps in the order they ran.
+  const folded = () => evaluate(`(() => {
+    const reply = [...document.querySelectorAll('[data-role="assistant"]:not([data-streaming]):not([data-thinking])')].at(-1);
+    const work = reply?.querySelector("[data-work]");
+    const button = work?.querySelector("button");
+    return { label: button ? button.textContent.trim() : null, open: button?.getAttribute("aria-expanded") === "true", above: Boolean(work && work.compareDocumentPosition(reply.querySelector(".prose-chat, p") ?? work) & Node.DOCUMENT_POSITION_FOLLOWING),
+      steps: work ? [...work.querySelectorAll("[data-step]")].map((step) => ({ label: step.getAttribute("data-step"), status: step.getAttribute("data-status") })) : [] };
+  })()`) as Promise<{ label: string | null; open: boolean; above: boolean; steps: Array<{ label: string; status: string }> }>;
+  const closed = await folded();
+  check("workedForAboveReply", Boolean(closed.label && /^Worked for (<1s|\d+s|\d+m \d+s) · \d+ steps?$/.test(closed.label) && !closed.open && closed.steps.length === 0 && closed.above), closed);
+  await evaluate(`[...document.querySelectorAll('[data-role="assistant"] [data-work] button')].at(-1).click(); true`);
+  await sleep(300);
+  const opened = await folded();
+  await shot("chat-worked-for.png");
+  const reading = opened.steps.findIndex((step) => step.label === "Reading example.com");
+  const running = opened.steps.findIndex((step) => /^Running Start-Sleep -Seconds 8/.test(step.label));
+  check("opensToStepsInOrder", opened.open && reading >= 0 && running > reading && opened.steps.every((step) => step.status === "ok")
+    && closed.label?.endsWith(`· ${opened.steps.length} step${opened.steps.length === 1 ? "" : "s"}`) === true, opened);
+  await send("Page.reload", {});
+  await until(() => evaluate(`Boolean(document.querySelector('[data-role="assistant"] [data-work] button'))`), "the chat to load again with its work", 30).catch(() => {});
+  const again = await folded();
+  check("keptAfterReload", again.label === closed.label, again);
   check("noPageErrors", browser.errors.length === 0, browser.errors);
 } catch (error) {
   notes.stoppedAt = String(error);
