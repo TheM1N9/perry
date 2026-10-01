@@ -170,27 +170,49 @@ export function Section({ title, description, actions, children, className }: {
   );
 }
 
-/** Rows in one bordered block, divided by hairlines. */
+/**
+ * Rows on the page, divided by hairlines and nothing else: no box around them,
+ * so each row lines up with the section's title above it.
+ */
 export function List({ children, className, label }: { children: ReactNode; className?: string; label?: string }) {
-  return <ul aria-label={label} className={cn("divide-y overflow-hidden rounded-xl border bg-card", className)}>{children}</ul>;
+  return <ul aria-label={label} className={cn("divide-y *:px-0", className)}>{children}</ul>;
 }
 
-/** Nothing here yet: a sentence, and the one thing to do about it. */
+/**
+ * Nothing here yet: what is missing, a sentence, and the one thing to do
+ * about it, laid on the page like the rest. With `mascot`, for a page that is
+ * empty as a whole: Perry, centred, as the pet's empty tabs have him.
+ */
 export function EmptyState({ title, children, action, mascot }: { title: string; children?: ReactNode; action?: ReactNode; mascot?: boolean }) {
+  if (mascot) {
+    return (
+      <div className="flex flex-col items-center px-6 py-12 text-center" data-empty>
+        <PerryMark className="mb-4 size-14" />
+        <p className="text-md font-medium">{title}</p>
+        {children && <p className="mt-1 max-w-sm text-sm text-pretty text-muted-foreground">{children}</p>}
+        {action && <div className="mt-4">{action}</div>}
+      </div>
+    );
+  }
   return (
-    <div className="flex flex-col items-center rounded-xl border border-dashed px-6 py-12 text-center">
-      {mascot && <PerryMark className="mb-4 size-14" />}
-      <p className="text-md font-medium">{title}</p>
-      {children && <p className="mt-1 max-w-sm text-sm text-pretty text-muted-foreground">{children}</p>}
-      {action && <div className="mt-4">{action}</div>}
+    <div className="py-1" data-empty>
+      <p className="text-sm font-medium">{title}</p>
+      {children && <p className="mt-0.5 max-w-prose text-sm text-pretty text-muted-foreground">{children}</p>}
+      {action && <div className="mt-3 max-w-md">{action}</div>}
     </div>
   );
 }
 
-/** A secret field: hidden until asked, never autofilled. */
-export function SecretInput({ value, onChange, id, placeholder, autoFocus, invalid, describedBy, name }: {
+/**
+ * A secret field: hidden until asked, never autofilled. With `save`, it keeps
+ * its own quiet Save inside, there only once something is typed: a key is
+ * stored when you say so (that or Enter, which submits its form), never half
+ * typed.
+ */
+export function SecretInput({ value, onChange, id, placeholder, autoFocus, invalid, describedBy, name, save }: {
   value: string; onChange: (value: string) => void; id?: string; placeholder?: string; autoFocus?: boolean;
   invalid?: boolean; describedBy?: string; name?: string;
+  save?: { label?: string; busy?: boolean };
 }) {
   const [shown, setShown] = useState(false);
   return (
@@ -213,6 +235,11 @@ export function SecretInput({ value, onChange, id, placeholder, autoFocus, inval
         <InputGroupButton size="icon-xs" aria-label={shown ? "Hide" : "Show"} aria-pressed={shown} onClick={() => setShown(!shown)}>
           {shown ? <EyeOffIcon /> : <EyeIcon />}
         </InputGroupButton>
+        {save && (value.trim() || save.busy) && (
+          <InputGroupButton type="submit" size="xs" className="text-primary hover:text-primary" disabled={save.busy} aria-busy={save.busy || undefined}>
+            {save.busy && <Spinner />}{save.label ?? "Save"}
+          </InputGroupButton>
+        )}
       </InputGroupAddon>
     </InputGroup>
   );
@@ -250,10 +277,18 @@ const TONES: Record<Tone, string> = {
   info: "bg-brand-soft text-primary",
 };
 
-/** A short state in a tinted pill: Active, Paused, Needs you. */
+/**
+ * A short state. Only what wants a look gets a tinted pill: a warning, a
+ * failure, something that needs you, or work going on now (`pulse`). Anything
+ * else (Paused, Signed in, a plan's name) is a few muted words, and a row that
+ * is simply fine is better off saying nothing.
+ */
 export function StatusBadge({ tone = "neutral", children, pulse }: { tone?: Tone; children: ReactNode; pulse?: boolean }) {
+  if (!pulse && tone !== "warning" && tone !== "danger") {
+    return <span className="shrink-0 text-xs whitespace-nowrap text-muted-foreground" data-status={tone}>{children}</span>;
+  }
   return (
-    <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium whitespace-nowrap", TONES[tone])}>
+    <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium whitespace-nowrap", TONES[tone])} data-status={tone} data-pill>
       {pulse && <span className="size-1.5 rounded-full bg-current motion-safe:animate-pulse" aria-hidden />}
       {children}
     </span>
@@ -331,7 +366,7 @@ export function TabCount({ children, count }: { children: ReactNode; count?: num
   return (
     <>
       {children}
-      {count !== undefined && count > 0 && <span className="nums rounded-full bg-foreground/8 px-1.5 text-2xs font-medium text-muted-foreground">{count}</span>}
+      {count !== undefined && count > 0 && <span className="nums font-normal text-muted-foreground">{count}</span>}
     </>
   );
 }
@@ -339,9 +374,9 @@ export function TabCount({ children, count }: { children: ReactNode; count?: num
 /** Rows standing in for a list that is still loading. */
 export function ListSkeleton({ rows = 3 }: { rows?: number }) {
   return (
-    <div className="divide-y rounded-xl border" role="status" aria-label="Loading">
+    <div className="divide-y" role="status" aria-label="Loading">
       {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="space-y-2 px-4 py-4">
+        <div key={index} className="space-y-2 py-4">
           <Skeleton className="h-4 w-1/3" />
           <Skeleton className="h-3 w-1/2" />
         </div>
