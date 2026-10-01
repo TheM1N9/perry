@@ -11,8 +11,9 @@ import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
 import { hide, savedValues } from "./vault";
 import { takeFromOutbox } from "./conversations";
+import { moveChat, retryable } from "./routing";
 import { engineReady, engineUsable, isOnline, recordEngines, resumeOf, statusesOf, tooOld } from "./engines";
-import { vAccess, vCodexModel, vEngine, vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
+import { vAccess, vCodexModel, vEngine, vRoute, vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
 
 // --- For runners from before engines ------------------------------------------
@@ -96,7 +97,7 @@ export const updateAuth = mutation({
  * server paired it afresh) is still it: the chat moves to the new runner,
  * since its engine sessions are on that disk.
  */
-async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">, engine: EngineKind): Promise<Id<"runners"> | null> {
+export async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">, engine: EngineKind): Promise<Id<"runners"> | null> {
   const pinned = conversation.codexRunnerId ? await ctx.db.get(conversation.codexRunnerId) : null;
   const online = (item: Doc<"runners">) => isOnline(item) && engineUsable(item, engine);
   if (pinned && online(pinned)) return pinned._id;
@@ -198,7 +199,7 @@ export const enqueueTurn = internalMutation({
 });
 
 /** Why no runner can take the chat's turn, and what to do about it. */
-async function noRunner(ctx: MutationCtx, conversation: Doc<"conversations">, engine: EngineKind): Promise<string> {
+export async function noRunner(ctx: MutationCtx, conversation: Doc<"conversations">, engine: EngineKind): Promise<string> {
   const pinned = conversation.codexRunnerId ? await ctx.db.get(conversation.codexRunnerId) : null;
   // An engine too old for Perry says so, with the command that updates it, whether or not it is signed in.
   const old = (runner: Doc<"runners">) => {
@@ -758,6 +759,13 @@ export const finishTurn = mutation({
         createdAt: Date.now(),
       });
     }
+    // Refused for a limit before it did anything: it runs again on another engine, as the same run (routing.retryTurn).
+    if (await retryable(ctx, job, { error: args.error, response: args.response, stopped: args.stopped, media: args.media?.length })) {
+      await ctx.db.patch(job._id, { status: "error", error: args.error?.slice(0, 2000), model: args.model, finishedAt: Date.now(), retrying: true });
+      for (const steer of await pendingSteersOf(ctx, job._id)) await queueSteer(ctx, steer, { error: "The reply was refused before this message could join it." });
+      await ctx.scheduler.runAfter(0, internal.routing.retryTurn, { id: job._id });
+      return null;
+    }
     // The memories the reply relied on, named on its last line: kept, and the line taken off.
     const cited = citedMemories(args.response);
     const named = cited.ids.map((raw) => ctx.db.normalizeId("memories", raw)).filter((id): id is Id<"memories"> => Boolean(id));
@@ -787,6 +795,47 @@ export const finishTurn = mutation({
     for (const steer of await pendingSteersOf(ctx, job._id)) await queueSteer(ctx, steer, { error: "The reply finished before this message could join it." });
     await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: job._id });
     return null;
+  },
+});
+
+/** The refused turn, again, on the engine chosen: the same run goes on, and the refused turn is done with quietly. */
+export const retryOn = internalMutation({
+  args: { id: v.id("codexTurns"), route: vRoute, history: v.optional(v.string()) },
+  returns: v.boolean(),
+  handler: async (ctx, args): Promise<boolean> => {
+    const turn = await ctx.db.get(args.id);
+    const conversation = turn ? await ctx.db.get(turn.conversationId) : null;
+    if (!turn || !conversation || !turn.retrying || turn.finalizedAt) return false;
+    const engine = args.route.engine;
+    await moveChat(ctx, conversation, { engine, ...(args.route.model ? { model: args.route.model } : {}) }, args.route.movedFrom ? { from: args.route.movedFrom.engine, why: args.route.movedFrom.why } : undefined);
+    const moved = (await ctx.db.get(conversation._id))!;
+    const runnerId = await pickRunner(ctx, moved, engine);
+    if (!runnerId) return false;
+    await ctx.db.insert("codexTurns", {
+      engine,
+      runnerId,
+      conversationId: turn.conversationId,
+      runId: turn.runId,
+      prompt: turn.prompt,
+      ...(args.history ? { history: args.history } : {}),
+      instructions: turn.instructions,
+      recalled: turn.recalled,
+      ...(turn.hidden ? { hidden: true } : {}),
+      requestedModel: args.route.model,
+      requestedEffort: args.route.effort,
+      access: turn.access,
+      attachments: turn.attachments,
+      retryOf: turn._id,
+      status: "queued",
+      createdAt: Date.now(),
+    });
+    // Done with, and not finalized: the retry's own finalize saves the chat's messages and ends the run.
+    await ctx.db.patch(turn._id, { retrying: undefined, finalizedAt: Date.now() });
+    const route = { ...args.route, retried: true };
+    await ctx.db.patch(turn.runId, { route });
+    if (conversation.jobId && await ctx.db.get(conversation.jobId)) await ctx.db.patch(conversation.jobId, { route });
+    if (conversation.taskId && await ctx.db.get(conversation.taskId)) await ctx.db.patch(conversation.taskId, { route });
+    return true;
   },
 });
 

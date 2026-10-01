@@ -1,4 +1,4 @@
-import { createThread, listMessages, saveMessages } from "./lib/agent";
+import { createThread, historyOf, saveMessages } from "./lib/agent";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -9,12 +9,14 @@ import {
   ACCESS_LABELS, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, parseAccessCommand, parseModelCommand,
   parseThinkCommand, pickAccess, pickEffort, pickModel, runLabel, turnEffort, type ModelOption,
 } from "./lib/commands";
-import { engineOf, type EngineKind } from "./lib/engines";
+import { ENGINE_LABELS, engineOf, type EngineKind } from "./lib/engines";
+import type { Choice } from "./lib/routing";
 import { DOWNLOAD_LIMIT, downloadFile, sendMessage, sendTyping } from "./lib/telegram";
 import { resumeOf } from "./engines";
 import { sha256 } from "./memories";
 import { LEFT_PROJECT } from "./projects";
-import { vChannel, vEngine, vTelegramMedia } from "./schema";
+import { routeOf, type Route } from "./routing";
+import { vChannel, vEngine, vRoute, vTelegramMedia } from "./schema";
 
 /** Perry's own reminder, sent with each message from the owner, ahead of it. */
 const REMEMBER_NOTE = "# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or routine, their work and the projects, pages or channels they run, what they made or how something went), save it with remember in this reply, even when they only ask a question about it, naming in about anyone else it is about. Then answer.";
@@ -204,19 +206,6 @@ async function guestTurn(ctx: ActionCtx, conversation: Doc<"conversations">, con
     recallDigest: undefined,
     history: resumeOf(conversation) ? undefined : await historyOf(ctx, conversation),
   };
-}
-
-/** A fresh engine session's view of the chat so far: its last messages, as lines. */
-async function historyOf(ctx: ActionCtx, conversation: Doc<"conversations">): Promise<string | undefined> {
-  const page = await listMessages(ctx, {
-    threadId: conversation.threadId,
-    excludeToolMessages: true,
-    paginationOpts: { cursor: null, numItems: 60 },
-  });
-  const lines = page.page.reverse()
-    .filter((item) => item.message?.role === "user" || item.message?.role === "assistant")
-    .map((item) => `${item.message?.role}: ${item.text ?? ""}`);
-  return lines.join("\n\n").slice(-24_000) || undefined;
 }
 
 /**
@@ -447,6 +436,8 @@ export const handleTurn = internalAction({
     model: v.optional(v.string()),
     /** The engine the job's model is one of. Unset is Codex. */
     engine: v.optional(vEngine),
+    /** Where a job's or task's turn runs, on what and why, as routing chose it (lib/routing.ts); it wins over model and engine. */
+    route: v.optional(vRoute),
     /** Written in the web app in the owner's Telegram or WhatsApp chat: the web app shows it as its own, and the phone hears of it. */
     fromWeb: v.optional(v.boolean()),
     /** From someone other than the owner (contacts.ts), already allowed: a sealed turn in their chat. */
@@ -537,11 +528,26 @@ export const handleTurn = internalAction({
       const attachments = attachmentIds.length > 0
         ? await ctx.runQuery(internal.media.forTurn, { conversationId: conversation._id, attachmentIds })
         : [];
-      const settings = guest ? await guestSettings(ctx, conversation) : await turnSettings(ctx, conversation, args.model ? { model: args.model, engine: args.engine } : undefined);
-      conversation = await onEngine(ctx, conversation, settings);
+      // A job's or task's turn comes routed; an owner's chat is routed here: its engine while that has room (lib/routing.ts).
+      const owners = !guest && !conversation.jobId && !conversation.taskId;
+      const chosen: Choice | null = owners && !args.route && !args.model ? await ctx.runQuery(internal.routing.forChat, { id: conversation._id }) : null;
+      const route: Route | undefined = args.route ?? (chosen ? routeOf(chosen) : undefined);
+      const settings = guest ? await guestSettings(ctx, conversation)
+        : route ? { engine: route.engine, model: route.model, effort: route.effort, access: conversation.access ?? "supervised" as const }
+          : await turnSettings(ctx, conversation, args.model ? { model: args.model, engine: args.engine } : undefined);
+      if (owners && route && (engineOf(conversation) !== route.engine || !conversation.engine)) {
+        // Moved for its engine's limit, or given its first engine: it starts there with the chat so far, and says why.
+        const moved = route.movedFrom;
+        await ctx.runMutation(internal.routing.moveChatTo, { id: conversation._id, engine: route.engine, ...(moved ? { moved: { from: moved.engine, why: moved.why } } : {}) });
+        conversation = (await ctx.runQuery(internal.conversations.getById, { id: conversation._id })) ?? conversation;
+        if (moved) await say(`${moved.why}, so ${ENGINE_LABELS[route.engine]} answers this chat now.`).catch((error) => console.error(`could not say the chat moved: ${String(error)}`));
+      } else {
+        conversation = await onEngine(ctx, conversation, settings);
+      }
       const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
         conversationId: conversation._id,
         prompt: args.label ?? args.text,
+        ...(route ? { route } : {}),
       });
       // The phone shows the reply, so it shows what it answers too.
       if (args.fromWeb && channel !== "web") {

@@ -347,13 +347,20 @@ async function main() {
     }, wait));
   };
   const readAllLimits = () => { for (const engine of engines.values()) void readLimits(engine); };
+  /** Which engines' plans have room for side work, as the server reads them (convex/routing.ts, rooms). */
+  let rooms: Partial<Record<EngineKind, "room" | "low" | "out">> = {};
+  watch(api.routing.rooms, { token }, (next) => { rooms = next ?? {}; });
   /**
    * An engine for quick side turns (the reviewer, chat names): the preferred
-   * one when it runs them and is signed in, else any that is.
+   * one when it runs them, is signed in and its plan has room, else any that
+   * has; with none that has room, the preferred one or any that runs them, and
+   * its own plan has the last word.
    */
   const quickEngine = (preferred?: EngineKind): Engine | undefined => {
     const ready = (engine?: Engine) => engine?.quickTurn && engine.capabilities.quickTurns && statuses.get(engine.kind)?.signedIn && !tooOld(engine.kind) ? engine : undefined;
-    return ready(preferred ? engines.get(preferred) : undefined) ?? [...engines.values()].find((engine) => ready(engine));
+    const roomy = (engine?: Engine) => ready(engine) && (rooms[engine!.kind] ?? "room") === "room" ? engine : undefined;
+    const first = preferred ? engines.get(preferred) : undefined;
+    return roomy(first) ?? [...engines.values()].find((engine) => roomy(engine)) ?? ready(first) ?? [...engines.values()].find((engine) => ready(engine));
   };
   /** Until when each running turn may go past its limits, by turn: the agent asked (take_longer). */
   let patience: Record<string, number> = {};

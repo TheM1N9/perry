@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import { internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import type { MessagePage, StoredMessage } from "../agentStore";
 
@@ -15,6 +15,19 @@ type Writer = Pick<ActionCtx, "runQuery" | "runMutation">;
 
 export async function createThread(ctx: Writer, args: { userId?: string; title?: string }): Promise<string> {
   return await ctx.runMutation(internal.agentStore.createThread, args);
+}
+
+/** A fresh engine session's view of the chat so far: its last messages, as lines. */
+export async function historyOf(ctx: Runner, conversation: Pick<Doc<"conversations">, "threadId">): Promise<string | undefined> {
+  const page = await listMessages(ctx, {
+    threadId: conversation.threadId,
+    excludeToolMessages: true,
+    paginationOpts: { cursor: null, numItems: 60 },
+  });
+  const lines = page.page.reverse()
+    .filter((item) => item.message?.role === "user" || item.message?.role === "assistant")
+    .map((item) => `${item.message?.role}: ${item.text ?? ""}`);
+  return lines.join("\n\n").slice(-24_000) || undefined;
 }
 
 export async function listMessages(

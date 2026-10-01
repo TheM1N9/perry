@@ -378,7 +378,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine: EngineKind; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean } }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean } }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
@@ -397,6 +397,8 @@ export const getChat = query({
     return {
       channel: conversation.channel,
       engine: engineOf(conversation),
+      // Perry moved it to this engine because its own had no room (routing.moveChat).
+      ...(conversation.moved ? { moved: conversation.moved } : {}),
       ...(project ? { project: { id: project._id, name: project.name } } : {}),
       model: conversation.model,
       effort: conversation.effort,
@@ -1083,6 +1085,8 @@ export type RunView = {
   steps?: number;
   toolCalls?: string[];
   model?: string;
+  /** What it ran on, who chose it and why (lib/routing.ts). */
+  route?: Doc<"runs">["route"];
   totalTokens?: number;
   usage?: Doc<"runs">["usage"];
   error?: string;

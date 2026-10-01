@@ -114,6 +114,26 @@ export const vPlanLimits = v.object({
 });
 /** The engine refused a turn for its plan's limit: when, and what it said (lib/usage.ts, LimitHit). */
 export const vLimitHit = v.object({ at: v.number(), message: v.string() });
+/** How much model a piece of work gets (lib/routing.ts). */
+export const vTier = v.union(v.literal("quick"), v.literal("standard"), v.literal("deep"));
+/** Perry's own pick for a job or task, made with its tools: a tier, or a model and level (lib/routing.ts, PerryPick). */
+export const vPerryPick = v.object({ tier: v.optional(vTier), engine: v.optional(vEngine), model: v.optional(v.string()), effort: v.optional(v.string()) });
+/** Where work was moved from because that engine had no room, and why (lib/routing.ts, Moved). */
+export const vMoved = v.object({ engine: vEngine, model: v.optional(v.string()), why: v.string() });
+/** The engine, model and thinking level a run was given, who chose them, and why (lib/routing.ts, Choice). */
+export const vRoute = v.object({
+  engine: vEngine,
+  model: v.optional(v.string()),
+  effort: v.optional(v.string()),
+  tier: vTier,
+  by: v.union(v.literal("owner"), v.literal("perry"), v.literal("auto")),
+  why: v.string(),
+  movedFrom: v.optional(vMoved),
+  /** Its first engine refused it part-way for a limit, and it ran again on this one. */
+  retried: v.optional(v.boolean()),
+});
+/** Work waiting for an engine's plan to reset: until when, and why. */
+export const vWaiting = v.object({ until: v.number(), why: v.string() });
 /** A sign-in or sign-out the owner asked for from Settings, until the runner has done it. */
 export const vEngineAuth = v.object({
   id: v.number(),
@@ -254,6 +274,14 @@ export default defineSchema({
     error: v.optional(v.string()),
     /** When the owner dismissed its failure from Needs you. */
     seenAt: v.optional(v.number()),
+    /** Perry's pick of tier, model or thinking level for it (queue_task); unset, the tier's rule picks (lib/routing.ts). */
+    pick: v.optional(vPerryPick),
+    /** What its last turn ran on, and why. */
+    route: v.optional(vRoute),
+    /** Waiting for an engine's plan to reset before its next turn; it is queued meanwhile. */
+    waiting: v.optional(vWaiting),
+    /** A limit stopped it and Perry is getting it going again: told once, cleared when a turn goes through. */
+    recovery: v.optional(v.object({ at: v.number(), tries: v.number() })),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -591,6 +619,8 @@ export default defineSchema({
     threadId: v.string(),
     /** The engine this chat's turns run on. Unset is Codex. Picking another engine's model changes it. */
     engine: v.optional(vEngine),
+    /** Perry moved the chat to `engine` because its own had no room (lib/routing.ts); said above the composer until the owner picks a model. */
+    moved: v.optional(v.object({ from: vEngine, why: v.string(), at: v.number() })),
     /**
      * Where the chat's engine session resumes: an opaque cursor its engine
      * made (for Codex, the thread id), versioned by that engine. Unset, the
@@ -739,6 +769,8 @@ export default defineSchema({
     steps: v.optional(v.number()),
     toolCalls: v.optional(v.array(v.string())),
     model: v.optional(v.string()),
+    /** The engine, model and thinking level it was given, who chose them and why (lib/routing.ts). */
+    route: v.optional(vRoute),
     usage: v.optional(vUsage),
     error: v.optional(v.string()),
     startedAt: v.number(),
@@ -783,6 +815,16 @@ export default defineSchema({
     model: v.optional(v.string()),
     /** The engine `model` is one of. Unset is Codex. */
     engine: v.optional(vEngine),
+    /** Kept on `engine` whatever its plan: when that has no room, a run waits for its reset instead of moving (lib/routing.ts). */
+    stay: v.optional(v.boolean()),
+    /** Perry's pick of tier, model or thinking level for it (create_job, update_job); the owner's `model` wins over it. */
+    pick: v.optional(vPerryPick),
+    /** What its last run ran on, and why: where it was moved from, when it was. */
+    route: v.optional(vRoute),
+    /** A run waiting for an engine's plan to reset (lib/routing.ts): until when, and why. */
+    waiting: v.optional(vWaiting),
+    /** A limit stopped it and Perry is getting it going again: told once, cleared when a run goes through. */
+    recovery: v.optional(v.object({ at: v.number(), tries: v.number() })),
     /** The chat it was set up in, where its results go (channels.ts). Unset: the owner's messaging channel. */
     origin: v.optional(v.id("conversations")),
     nextRunAt: v.number(),
@@ -998,6 +1040,10 @@ export default defineSchema({
     patienceWhy: v.optional(v.string()),
     /** The turn ended because the owner stopped it. */
     stopped: v.optional(v.boolean()),
+    /** Its engine refused it for a limit before it did anything: it is being tried once on another (routing.retryTurn). */
+    retrying: v.optional(v.boolean()),
+    /** The turn this one tries again, on another engine. */
+    retryOf: v.optional(v.id("codexTurns")),
     /** Finalizing steps already done, so a retried finalize never repeats one. */
     reportedAt: v.optional(v.number()),
     savedAt: v.optional(v.number()),

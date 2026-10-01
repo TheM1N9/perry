@@ -111,7 +111,8 @@ export function pickPatch(chat: Doc<"conversations">, model: string | undefined,
   const switching = engine !== undefined && engine !== engineOf(chat);
   return {
     model: model?.trim() || undefined,
-    ...(switching ? { engine, ...FORGET_SESSION, recallDigest: undefined } : {}),
+    // The owner's own move ends what Perry said about moving it (routing.moveChat).
+    ...(switching ? { engine, ...FORGET_SESSION, recallDigest: undefined, moved: undefined } : {}),
   };
 }
 
