@@ -177,7 +177,7 @@ export function route(input: RouteInput): Choice {
   const rooms = new Map(ENGINES.map((engine) => [engine, roomOf(engine, usage[engine], now, cap, timeZone)]));
   const room = (engine: EngineKind) => rooms.get(engine)!;
   const home = owner?.engine ?? perry?.engine ?? input.current;
-  const whyNot = (engine: EngineKind) => avoid.has(engine) ? `${ENGINE_LABELS[engine]} refused this reply for its plan's limit`
+  const whyNot = (engine: EngineKind) => avoid.has(engine) ? `${ENGINE_LABELS[engine]} refused it for its plan's limit`
     : !input.engines.includes(engine) ? `${ENGINE_LABELS[engine]} isn't signed in on a computer that is online`
       : room(engine).why ?? `${ENGINE_LABELS[engine]} has no room`;
 
@@ -244,7 +244,8 @@ export function route(input: RouteInput): Choice {
   const choice = choose(soonest.engine, `Waited for ${ENGINE_LABELS[soonest.engine]}.`);
   return {
     ...choice,
-    wait: { until, why: `No engine has room: ${input.engines.map(whyNot).join("; ")}. It runs at ${clockAt(until, timeZone)}, when ${ENGINE_LABELS[soonest.engine]} has room again.` },
+    // What refused it is said already, by whoever tells of it (jobs.recoverJob, tasks.recoverTask): the others are why it waits.
+    wait: { until, why: `No engine has room: ${(usable.length ? usable : input.engines).map(whyNot).join("; ")}. It runs at ${clockAt(until, timeZone)}, when ${ENGINE_LABELS[soonest.engine]} has room again.` },
   };
 }
 
