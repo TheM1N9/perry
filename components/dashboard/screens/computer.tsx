@@ -7,56 +7,43 @@ import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { ComputeView } from "@/convex/dashboard";
-import { errorText, plural, useNow } from "@/lib/format";
+import { errorText, plural } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { ApprovalCard } from "../approval-card";
-import { ActionButton, CommandLine, EmptyState, List, ListSkeleton, Page, RelativeTime, Section, StatusBadge, TextTip, type Tone } from "../common";
+import { ActionButton, CommandLine, EmptyState, List, ListSkeleton, RelativeTime, Section, StatusBadge, TextTip, type Tone } from "../common";
 
 /**
- * The computers Perry works on. Each one runs Codex for Perry's turns and asks
- * before it acts, as its policy says. Nothing here listens on a port: every
- * runner dials out, so none can be reached from the internet.
+ * Settings → Computers: the computers Perry works on. Each one runs an engine
+ * for Perry's turns and asks before it acts, as the chat's access says.
+ * Nothing here listens on a port: every runner dials out, so none can be
+ * reached from the internet. What one asks and waits on is in Needs you; its
+ * rules and its record are under Access & approvals.
  */
-export function Computer() {
+export function Computers() {
   const { dashboardKey } = useSession();
   const compute = useQuery(api.dashboard.getCompute, { key: dashboardKey });
-  const approvals = useQuery(api.approvals.pending, { key: dashboardKey });
-  const now = useNow(1000);
   const [showRevoked, setShowRevoked] = useState(false);
-  const live = (approvals ?? []).filter((item) => item.expiresAt > now);
-
-  if (compute === undefined) return <Page title="Computer"><ListSkeleton rows={2} /></Page>;
-  const active = compute.runners.filter((runner) => !runner.revoked);
-  const revoked = compute.runners.filter((runner) => runner.revoked);
+  const active = compute?.runners.filter((runner) => !runner.revoked) ?? [];
+  const revoked = compute?.runners.filter((runner) => runner.revoked) ?? [];
 
   return (
-    <Page title="Computer" description="Where Perry does the work, and what it asks you before it acts. Every computer here dials out; none can be reached from the internet.">
-      {live.length > 0 && (
-        <Section title="Waiting for you">
-          <div className="space-y-3">{live.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} />)}</div>
-        </Section>
+    <Section title="Computers" description="Where Perry does the work. Perry's own computer connects when Perry starts; add another from its terminal. Every computer here dials out, so none can be reached from the internet.">
+      {compute === undefined ? <ListSkeleton rows={2} /> : active.length === 0
+        ? (
+          <EmptyState title={compute.runners.length ? "Every computer here was revoked" : "No computer connected"}
+            action={<CommandLine>perry start</CommandLine>}>
+            Start Perry on the computer you want it to use.
+          </EmptyState>
+        )
+        : <List label="Computers">{[...active, ...(showRevoked ? revoked : [])].map((runner) => <RunnerRow key={runner.id} runner={runner} />)}</List>}
+      {revoked.length > 0 && active.length > 0 && (
+        <Button variant="link" size="sm" className="mt-2 px-0 text-muted-foreground" aria-expanded={showRevoked} onClick={() => setShowRevoked(!showRevoked)}>
+          {showRevoked ? "Hide revoked computers" : `Show ${plural(revoked.length, "revoked computer")}`}
+        </Button>
       )}
-      <Section title="Computers" description="Perry's own computer connects when Perry starts. Add another from its terminal.">
-        {active.length === 0
-          ? (
-            <EmptyState title={compute.runners.length ? "Every computer here was revoked" : "No computer connected"}
-              action={<CommandLine>perry start</CommandLine>}>
-              Start Perry on the computer you want it to use.
-            </EmptyState>
-          )
-          : <List label="Computers">{[...active, ...(showRevoked ? revoked : [])].map((runner) => <RunnerRow key={runner.id} runner={runner} />)}</List>}
-        {revoked.length > 0 && active.length > 0 && (
-          <Button variant="link" size="sm" className="mt-2 px-0 text-muted-foreground" aria-expanded={showRevoked} onClick={() => setShowRevoked(!showRevoked)}>
-            {showRevoked ? "Hide revoked computers" : `Show ${plural(revoked.length, "revoked computer")}`}
-          </Button>
-        )}
-      </Section>
-      <Rules telegram={compute.telegramApprovals} />
-      <Recent />
-    </Page>
+    </Section>
   );
 }
 
@@ -80,7 +67,7 @@ function RunnerRow({ runner }: { runner: ComputeView["runners"][number] }) {
         {!runner.revoked && !runner.online && <p className="mt-1 text-sm text-muted-foreground">Start it again with <code className="font-mono text-xs">perry start</code> on that computer.</p>}
         {!runner.revoked && (
           <p className="mt-2 text-xs text-muted-foreground">
-            Whether it asks before acting is set per chat: Ask, Auto or Full access, from the chat&apos;s composer or <Link href="/settings" className="link">Settings</Link> for new chats.
+            Whether it asks before acting is set per chat: Ask, Auto or Full access, from the chat&apos;s composer or <Link href="/settings/access" className="link">Access &amp; approvals</Link> for new chats.
           </p>
         )}
       </div>
@@ -94,8 +81,10 @@ function RunnerRow({ runner }: { runner: ComputeView["runners"][number] }) {
   );
 }
 
-function Rules({ telegram }: { telegram: ComputeView["telegramApprovals"] }) {
+/** Settings → Access & approvals: the requests a computer may run without asking, and asking on Telegram too. */
+export function ApprovalRules() {
   const { dashboardKey } = useSession();
+  const telegram = useQuery(api.dashboard.getCompute, { key: dashboardKey })?.telegramApprovals;
   const rules = useQuery(api.approvals.rules, { key: dashboardKey });
   const deleteRule = useMutation(api.approvals.deleteRule);
   const setTelegram = useMutation(api.dashboard.setTelegramApprovals).withOptimisticUpdate((store, args) => {
@@ -105,7 +94,7 @@ function Rules({ telegram }: { telegram: ComputeView["telegramApprovals"] }) {
 
   return (
     <Section title="Always allowed" description="Saved when you answer with Always allow; a matching request runs without asking. A decline is never remembered.">
-      {telegram.ownerOnTelegram && (
+      {telegram?.ownerOnTelegram && (
         <label className="mb-4 flex cursor-pointer items-start justify-between gap-4">
           <span className="grid gap-0.5">
             <span className="text-sm font-medium">Ask me on Telegram too</span>
@@ -158,7 +147,8 @@ const STATUS: Record<string, { tone: Tone; label: string }> = {
   expired: { tone: "warning", label: "Expired" },
 };
 
-function Recent() {
+/** Settings → Access & approvals: what each computer asked, and who let it or stopped it. */
+export function RecentRequests() {
   const { dashboardKey } = useSession();
   const recent = useQuery(api.approvals.recent, { key: dashboardKey });
   return (

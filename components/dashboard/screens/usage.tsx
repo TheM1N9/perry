@@ -19,8 +19,9 @@ export const tokens = (count: number) => `${compact.format(count)} ${count === 1
 const KINDS: Record<ShareItem["kind"], string> = { chat: "Chat", contact: "With someone", job: "Schedule", task: "Background task" };
 
 /**
- * Settings → Usage: how much of each engine's subscription is used and what
- * is left, as the engines report it, and Perry's own share of it.
+ * Settings → Engines & usage: how much of each engine's subscription is used
+ * and what is left, as the engines report it, and Perry's own share of it.
+ * The account menu shows the same windows, shorter (WindowRow's compact).
  */
 export function Usage() {
   const { dashboardKey } = useSession();
@@ -74,7 +75,7 @@ function PlanRow({ engine, now }: { engine: EngineOverview; now: number }) {
       )}
       {engine.reportsLimits && !limits?.windows.length && (
         <p className="mt-1 text-sm text-muted-foreground">
-          {engine.signedIn ? `Waiting for ${engine.label} to report its limits…` : `${engine.installed ? "Sign in to" : "Set up"} ${engine.label} under General to see its limits.`}
+          {engine.signedIn ? `Waiting for ${engine.label} to report its limits…` : `${engine.installed ? "Sign in to" : "Set up"} ${engine.label} above to see its limits.`}
         </p>
       )}
       {hit && (
@@ -92,19 +93,20 @@ function PlanRow({ engine, now }: { engine: EngineOverview; now: number }) {
   );
 }
 
-function WindowRow({ window, share, now }: { window: PlanWindow; share?: { tokens: number; turns: number }; now: number }) {
+/** One limit window: how full, how much is left and when it resets; compact, for the account menu, says only what is left. */
+export function WindowRow({ window, share, now, compact }: { window: PlanWindow; share?: { tokens: number; turns: number }; now: number; compact?: boolean }) {
   const used = usedNow(window, now);
   const resets = resetsText(window, now);
   const bar = used >= 100 ? "[&_[data-slot=progress-indicator]]:bg-destructive" : used >= WARN_PERCENT ? "[&_[data-slot=progress-indicator]]:bg-warning" : "";
   return (
     <div>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-sm">
+      <div className={cn("flex flex-wrap items-baseline justify-between gap-x-3", compact ? "text-xs" : "text-sm")}>
         <span className="font-medium">{window.label}</span>
         <span className={cn("nums", used >= 100 ? "font-medium text-destructive" : used >= WARN_PERCENT ? "font-medium text-warning" : "text-muted-foreground")}>
-          {Math.round(used)}% used · {Math.max(0, 100 - Math.round(used))}% left{resets ? ` · ${resets}` : window.resetsAt ? " · reset since" : ""}
+          {compact ? "" : `${Math.round(used)}% used · `}{Math.max(0, 100 - Math.round(used))}% left{resets ? ` · ${resets}` : window.resetsAt ? " · reset since" : ""}
         </span>
       </div>
-      <Progress value={used} aria-label={`${window.label}: ${Math.round(used)}% used`} className={cn("mt-1.5", bar)} />
+      <Progress value={used} aria-label={`${window.label}: ${Math.round(used)}% used`} className={cn(compact ? "mt-1 [&_[data-slot=progress-track]]:h-1" : "mt-1.5", bar)} />
       {share && (
         <p className="mt-1 text-xs text-muted-foreground">
           Perry in this window: {share.turns ? `${tokens(share.tokens)} over ${plural(share.turns, "reply", "replies")}` : "nothing yet"}

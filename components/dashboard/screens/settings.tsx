@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { ExternalLinkIcon, MessageCircleIcon, MonitorIcon, MoonIcon, RefreshCwIcon, SendIcon, ShieldAlertIcon, ShieldCheckIcon, SmartphoneIcon, SunIcon, UserIcon } from "lucide-react";
+import { ExternalLinkIcon, LockIcon, MessageCircleIcon, MonitorIcon, MoonIcon, RefreshCwIcon, SendIcon, ShieldAlertIcon, ShieldCheckIcon, SmartphoneIcon, SunIcon, UserIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
@@ -11,6 +11,8 @@ import type { EngineView } from "@/convex/engines";
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access } from "@/convex/lib/commands";
 import { SIGN_IN_LABELS, type EngineUpdate, type LoginInteraction } from "@/convex/lib/engines";
 import type { PetTheme } from "@/convex/pet";
+import type { SecretName } from "@/convex/secrets";
+import type { SettingsSection } from "@/lib/settings";
 import { ago, errorText, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -25,7 +27,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TimePicker } from "@/components/ui/time-picker";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ACCESS_ICONS } from "../chat/composer";
@@ -33,41 +34,42 @@ import { PetControl } from "../pet-control";
 import { PetDevices } from "../pet-devices";
 import { Shortcuts } from "../shortcuts";
 import { Updates } from "../updates";
+import { Activity } from "./activity";
+import { ApprovalRules, Computers, RecentRequests } from "./computer";
+import { YourAssistant } from "./memory";
 import { Usage } from "./usage";
 import { SaveStatus, useAutosave } from "../autosave";
-import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
+import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, ListSkeleton, SecretInput, Section, StatusBadge, type Tone } from "../common";
 
-const TABS = ["general", "usage", "keys", "people", "shortcuts", "telegram", "whatsapp"] as const;
+/**
+ * What each section of Settings holds (lib/settings.ts names them and puts
+ * them in groups). Each key sits beside what it unlocks; the Composio key is
+ * with the connectors, in Apps & skills.
+ */
+const SECTIONS: Record<SettingsSection, () => ReactNode> = {
+  general: () => <><YourAssistant /><Appearance /><Updates /></>,
+  engines: () => <><Engines /><Usage /></>,
+  computers: () => <Computers />,
+  access: () => <><NewChatAccess /><ApprovalRules /><Logins /><RecentRequests /></>,
+  notifications: () => <><Manners /><AwayChannel /></>,
+  telegram: () => <Telegram />,
+  whatsapp: () => <WhatsApp />,
+  "desktop-pet": () => <><DesktopPet /><Shortcuts /></>,
+  people: () => <People />,
+  activity: () => <Activity />,
+  security: () => <Security />,
+};
 
-export function Settings() {
-  const [tab, setTab] = useTab(TABS, "general");
-  return (
-    <Page title="Settings" description="How Perry thinks, what it may do on its own, and the keys it uses.">
-      <Tabs value={tab} onValueChange={(value) => setTab(value as (typeof TABS)[number])}>
-        <TabsList variant="line" className="mb-6 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="usage">Usage</TabsTrigger>
-          <TabsTrigger value="keys">Keys</TabsTrigger>
-          <TabsTrigger value="people">People</TabsTrigger>
-          <TabsTrigger value="shortcuts">Keyboard shortcuts</TabsTrigger>
-          <TabsTrigger value="telegram">Telegram</TabsTrigger>
-          <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
-        </TabsList>
-        <TabsContent value="general"><Engines /><NewChatAccess /><Manners /><Updates /><DesktopPet /><Appearance /></TabsContent>
-        <TabsContent value="usage"><Usage /></TabsContent>
-        <TabsContent value="keys"><Keys /></TabsContent>
-        <TabsContent value="people"><People /></TabsContent>
-        <TabsContent value="shortcuts"><Shortcuts /></TabsContent>
-        <TabsContent value="telegram"><Telegram /></TabsContent>
-        <TabsContent value="whatsapp"><WhatsApp /></TabsContent>
-      </Tabs>
-    </Page>
-  );
+/** One section of Settings, inside the page and its nav (settings-shell.tsx). */
+export function SettingsSectionScreen({ section }: { section: SettingsSection }) {
+  const Content = SECTIONS[section];
+  return <Content />;
 }
 
 /**
  * Perry thinks with a coding agent on a connected computer, signed in with the
  * owner's own subscription: each computer's engines, and signing them in and out.
+ * The Gemini API key, Antigravity's way in, is entered here too.
  */
 function Engines() {
   const { dashboardKey } = useSession();
@@ -98,6 +100,7 @@ function Engines() {
           ))}
         </div>
       )}
+      <KeyRow name="GEMINI_API_KEY" className="mt-4 border-t" />
     </Section>
   );
 }
@@ -159,7 +162,7 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
       </div>
       {experimental && !engine.signedIn && (
         <p className="mt-2 text-sm text-pretty text-muted-foreground">
-          Perry runs Google&apos;s own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved in the Keys tab. Signing in with Google also works, at your own risk: <GoogleWarning inline />
+          Perry runs Google&apos;s own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved below. Signing in with Google also works, at your own risk: <GoogleWarning inline />
         </p>
       )}
       {online && engine.update && <UpdateSteps engine={engine.label} computer={computer} update={engine.update} />}
@@ -422,81 +425,83 @@ function ThemeChoice<Value extends string>({ label, value, onChange }: { label: 
 const SOURCE = { dashboard: "Saved here", environment: "From .env.local", none: "Not set" } as const;
 
 /**
- * Service keys. A key entered here is write-only: it is saved on this
- * computer, and nothing reads one back to the page. You see whether it is set,
- * where it came from, and its last four characters.
+ * One service key, entered beside what it unlocks: the Telegram bot token in
+ * Telegram, the Gemini API key with the engines, the Composio key with the
+ * connectors. A key entered here is write-only: it is saved on this computer,
+ * and nothing reads one back to the page. You see whether it is set, where it
+ * came from, and its last four characters. One saved here overrides one in
+ * .env.local; clearing it falls back to that one.
  */
-function Keys() {
+export function KeyRow({ name, className }: { name: SecretName; className?: string }) {
   const { dashboardKey } = useSession();
-  const keys = useQuery(api.dashboard.getKeys, { key: dashboardKey });
+  const entry = useQuery(api.dashboard.getKeys, { key: dashboardKey })?.find((item) => item.name === name);
   const setKey = useMutation(api.dashboard.setKey);
   const clearKey = useMutation(api.dashboard.clearKey);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-  if (keys === undefined) return <ListSkeleton />;
+  if (!entry) return <div className={className}><ListSkeleton rows={1} /></div>;
+  const id = `key-${name}`;
 
-  const save = async (event: FormEvent, name: string) => {
+  const save = async (event: FormEvent) => {
     event.preventDefault();
-    const value = (drafts[name] ?? "").trim();
+    const value = draft.trim();
     if (!value || saving) return;
-    setSaving(name);
-    setErrors((current) => ({ ...current, [name]: "" }));
+    setSaving(true);
+    setError("");
     try {
       await setKey({ key: dashboardKey, name, value });
-      setDrafts((current) => ({ ...current, [name]: "" }));
+      setDraft("");
       toast.success(name.startsWith("TELEGRAM") ? "Saved. Perry listens to this bot within a few seconds." : "Saved. It takes effect on the next message.");
     } catch (cause) {
-      setErrors((current) => ({ ...current, [name]: errorText(cause) }));
+      setError(errorText(cause));
     } finally {
-      setSaving(null);
+      setSaving(false);
     }
   };
 
   return (
+    <div className={cn("py-4", className)} data-key={name}>
+      <form onSubmit={(event) => void save(event)}>
+        <Field data-invalid={Boolean(error) || undefined}>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <FieldLabel htmlFor={id}>{entry.label}</FieldLabel>
+              <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{entry.hint}</p>
+            </div>
+            {/* Not set is said once, in the line under the field. */}
+            {entry.set && <StatusBadge tone="success"><span translate="no">Set{entry.preview ? ` · ${entry.preview}` : ""}</span></StatusBadge>}
+          </div>
+          <SecretInput id={id} name={name} value={draft} placeholder={entry.set ? "Paste a new value to replace it" : "Paste the key"}
+            invalid={Boolean(error)} describedBy={error ? `${id}-error` : undefined} save={{ busy: saving }}
+            onChange={(value) => { setDraft(value); setError(""); }} />
+          {error && <FieldError id={`${id}-error`}>{error}</FieldError>}
+        </Field>
+      </form>
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+        <span>{SOURCE[entry.source]}{entry.source === "environment" ? ". Saving here overrides it." : entry.source === "dashboard" ? ", never shown again." : ""}</span>
+        {entry.source === "dashboard" && (
+          <ActionButton variant="link" size="xs" className="h-auto px-0 text-xs text-destructive" action={() => clearKey({ key: dashboardKey, name })} success={`${entry.label} cleared.`}
+            confirm={{ title: `Clear the ${entry.label}?`, body: "Perry falls back to .env.local if it has one. Otherwise anything that needs this key stops working.", label: "Clear" }}>
+            Clear
+          </ActionButton>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The key that guards the dashboard, and locking this browser. */
+function Security() {
+  const { lock } = useSession();
+  return (
     <>
-      <p className="mb-4 text-sm text-pretty text-muted-foreground">
-        Saved on this computer and never shown again. A key saved here overrides one in <code className="font-mono text-xs">.env.local</code>; clearing it falls back to that one.
-      </p>
-      <List label="Service keys">
-        {keys.map((entry) => {
-          const id = `key-${entry.name}`;
-          const error = errors[entry.name];
-          return (
-            <li key={entry.name} className="py-4">
-              <form onSubmit={(event) => void save(event, entry.name)}>
-                <Field data-invalid={Boolean(error) || undefined}>
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <FieldLabel htmlFor={id}>{entry.label}</FieldLabel>
-                      <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{entry.hint}</p>
-                    </div>
-                    {/* Not set is said once, in the line under the field. */}
-                    {entry.set && <StatusBadge tone="success"><span translate="no">Set{entry.preview ? ` · ${entry.preview}` : ""}</span></StatusBadge>}
-                  </div>
-                  <SecretInput id={id} name={entry.name} value={drafts[entry.name] ?? ""} placeholder={entry.set ? "Paste a new value to replace it" : "Paste the key"}
-                    invalid={Boolean(error)} describedBy={error ? `${id}-error` : undefined} save={{ busy: saving === entry.name }}
-                    onChange={(value) => { setDrafts((current) => ({ ...current, [entry.name]: value })); setErrors((current) => ({ ...current, [entry.name]: "" })); }} />
-                  {error && <FieldError id={`${id}-error`}>{error}</FieldError>}
-                </Field>
-              </form>
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
-                <span>{SOURCE[entry.source]}{entry.source === "environment" ? ". Saving here overrides it." : ""}</span>
-                {entry.source === "dashboard" && (
-                  <ActionButton variant="link" size="xs" className="h-auto px-0 text-xs text-destructive" action={() => clearKey({ key: dashboardKey, name: entry.name })} success={`${entry.label} cleared.`}
-                    confirm={{ title: `Clear the ${entry.label}?`, body: "Perry falls back to .env.local if it has one. Otherwise anything that needs this key stops working.", label: "Clear" }}>
-                    Clear
-                  </ActionButton>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </List>
-      <Logins />
       <Section title="Dashboard key" description="The key that guards this page can't be changed from behind it, which keeps a lockout recoverable. Change DASHBOARD_KEY in .env.local in Perry's folder, then restart Perry:">
         <CommandLine>perry stop && perry start</CommandLine>
+      </Section>
+      <Section title="Lock this browser" description="Forget the key in this browser. Opening the dashboard here asks for it again.">
+        <Button variant="outline" onClick={lock}><LockIcon />Lock dashboard</Button>
       </Section>
     </>
   );
@@ -720,7 +725,7 @@ const countdown = (ms: number) => {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 };
 
-/** Pairing: Perry answers nobody on Telegram until someone claims it with a code. */
+/** Telegram: the bot token, then pairing. Perry answers nobody there until someone claims it with a code. */
 function Telegram() {
   const { dashboardKey } = useSession();
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
@@ -739,7 +744,7 @@ function Telegram() {
       {!status.telegramConfigured && (
         <Alert variant="quiet" className="mb-6">
           <AlertTitle>Telegram isn&apos;t set up</AlertTitle>
-          <AlertDescription>Telegram is optional. To talk to Perry there, add a bot token under Keys first.</AlertDescription>
+          <AlertDescription>Telegram is optional. To talk to Perry there, add a bot token from @BotFather below first.</AlertDescription>
         </Alert>
       )}
       {status.telegramPaired ? (
@@ -768,17 +773,18 @@ function Telegram() {
           </ActionButton>
         </div>
       )}
-      {status.telegramConfigured && (
-        <Section title="Bot" description="Perry asks Telegram for new messages while it runs, so nothing here has to be reachable from the internet.">
-          <div className="flex flex-wrap items-center gap-3">
+      <Section title="Bot" description="Perry asks Telegram for new messages while it runs, so nothing here has to be reachable from the internet.">
+        <KeyRow name="TELEGRAM_BOT_TOKEN" className="pt-0" />
+        {status.telegramConfigured && (
+          <div className="mt-2 flex flex-wrap items-center gap-3">
             <ActionButton variant="outline" size="sm" action={async () => {
               const result = await checkBot({ key: dashboardKey });
               setBot(result.ok ? { ok: true, text: `Listening as @${result.bot}. Message it on Telegram.` } : { ok: false, text: `The bot isn't working: ${result.error}` });
             }}>Check the bot</ActionButton>
             {bot && <p role="status" className={cn("text-sm", bot.ok ? "text-success" : "text-destructive")}>{bot.text}</p>}
           </div>
-        </Section>
-      )}
+        )}
+      </Section>
     </>
   );
 }
@@ -799,7 +805,6 @@ function WhatsApp() {
   const startLinking = useMutation(api.whatsapp.startLinking);
   const unlink = useMutation(api.whatsapp.unlink);
   const newCode = useMutation(api.whatsapp.newPairingCode);
-  const setHome = useMutation(api.whatsapp.setHomeChannel);
   /** Picked here, else the way it was linked before, else a separate number. */
   const [picked, setMode] = useState<"separate" | "self" | null>(null);
   const now = useNow(1000);
@@ -921,16 +926,34 @@ function WhatsApp() {
         </div>
       )}
 
-      {state.paired && state.telegramPaired && (
-        <Section title="When you're away" description="Replies always go where you wrote. Perry's own messages, like the heartbeat and alerts, go to one app.">
-          <ChoiceCards label="Where Perry reaches you" value={state.homeChannel}
-            options={[
-              { value: "telegram", title: "Telegram", body: "Background messages and approvals go to Telegram.", icon: <SendIcon /> },
-              { value: "whatsapp", title: "WhatsApp", body: "Background messages and approvals go to WhatsApp.", icon: <MessageCircleIcon /> },
-            ]}
-            onChange={(channel) => void setHome({ key: dashboardKey, channel }).then(() => toast.success(`Perry will reach you on ${channel === "telegram" ? "Telegram" : "WhatsApp"}.`), (cause) => toast.error(errorText(cause)))} />
-        </Section>
-      )}
     </>
+  );
+}
+
+/**
+ * Where Perry's own messages go when you're away: one app, chosen here once
+ * both Telegram and WhatsApp are paired. Replies always go where you wrote.
+ */
+function AwayChannel() {
+  const { dashboardKey } = useSession();
+  const state = useQuery(api.whatsapp.status, { key: dashboardKey });
+  const setHome = useMutation(api.whatsapp.setHomeChannel);
+  return (
+    <Section title="When you're away" description="Replies always go where you wrote. Perry's own messages, like the heartbeat and alerts, go to one app.">
+      {!state ? <ListSkeleton rows={1} /> : state.paired && state.telegramPaired ? (
+        <ChoiceCards label="Where Perry reaches you" value={state.homeChannel}
+          options={[
+            { value: "telegram", title: "Telegram", body: "Background messages and approvals go to Telegram.", icon: <SendIcon /> },
+            { value: "whatsapp", title: "WhatsApp", body: "Background messages and approvals go to WhatsApp.", icon: <MessageCircleIcon /> },
+          ]}
+          onChange={(channel) => void setHome({ key: dashboardKey, channel }).then(() => toast.success(`Perry will reach you on ${channel === "telegram" ? "Telegram" : "WhatsApp"}.`), (cause) => toast.error(errorText(cause)))} />
+      ) : (
+        <p className="text-sm text-pretty text-muted-foreground">
+          {state.paired || state.telegramPaired ? `They go to ${state.paired ? "WhatsApp" : "Telegram"}, the one you've paired. Pair both ` : "Pair "}
+          <Link href="/settings/telegram" className="link">Telegram</Link>{state.paired || state.telegramPaired ? " and " : " or "}<Link href="/settings/whatsapp" className="link">WhatsApp</Link>
+          {state.paired || state.telegramPaired ? " to choose." : " to get them on your phone."}
+        </p>
+      )}
+    </Section>
   );
 }

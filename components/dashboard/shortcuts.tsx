@@ -16,11 +16,11 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { List, ListSkeleton, Section } from "./common";
 
 /**
- * Settings → Keyboard shortcuts: each one, and the keys it is on. Click one
- * and press the keys you want; Esc leaves it as it was. Talk to Perry and Show
- * Perry the screen are the desktop pet's, and work anywhere on this computer;
- * each says whether the pet could take the keys, since another app may
- * already have them.
+ * Settings → Desktop pet → Keyboard shortcuts: each one, and the keys it is
+ * on. Click one and press the keys you want; Esc leaves it as it was. Talk to
+ * Perry and Show Perry the screen are the desktop pet's, and work anywhere on
+ * this computer; each says whether the pet could take the keys, since another
+ * app may already have them.
  */
 export function Shortcuts() {
   const { dashboardKey } = useSession();
@@ -29,7 +29,7 @@ export function Shortcuts() {
   const [recording, setRecording] = useState<ShortcutId | null>(null);
 
   return (
-    <Section title="Keyboard shortcuts" description="Click one and press the keys you want it on. Esc leaves it as it was.">
+    <Section id="shortcuts" title="Keyboard shortcuts" description="Click one and press the keys you want it on. Esc leaves it as it was.">
       {data === undefined ? <ListSkeleton rows={4} /> : (
         <List label="Keyboard shortcuts">
           {SHORTCUT_IDS.map((id) => (
@@ -119,7 +119,7 @@ function PetStatus({ pet, wanted, mac }: { pet: { running: boolean; hotkey?: str
   if (!pet.running) {
     return (
       <p className="mt-1.5 text-sm text-muted-foreground">
-        The desktop pet isn't on. <Link href="/settings?tab=general" className="link">Turn him on in General</Link>.
+        The desktop pet isn't on. <Link href="/settings/desktop-pet" className="link">Turn him on above</Link>.
       </p>
     );
   }

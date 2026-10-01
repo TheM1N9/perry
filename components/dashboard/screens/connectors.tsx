@@ -163,7 +163,7 @@ export function Connectors() {
           <p className="mt-1 text-sm text-pretty text-muted-foreground">Composio holds the sign-ins, so Perry never sees a password or token.</p>
           <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm">
             <li>Create a Composio account and copy an API key from <a href="https://composio.dev" target="_blank" rel="noopener noreferrer" className="font-medium text-primary underline-offset-2 hover:underline">composio.dev</a>.</li>
-            <li>Paste it into <Link href="/settings?tab=keys" className="font-medium text-primary underline-offset-2 hover:underline">Settings › Keys</Link>, as the Composio key.</li>
+            <li>Paste it <Link href="#key-COMPOSIO_API_KEY" className="font-medium text-primary underline-offset-2 hover:underline">below</Link>, as the Composio key.</li>
           </ol>
           {state.error && <Alert variant="destructive" className="mt-4"><TriangleAlertIcon /><AlertTitle>Couldn&apos;t reach Composio</AlertTitle><AlertDescription>{state.error}</AlertDescription></Alert>}
           <div className="mt-5">{refreshButton}</div>

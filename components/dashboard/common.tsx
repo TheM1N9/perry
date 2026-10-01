@@ -2,7 +2,7 @@
 
 import { CheckIcon, CopyIcon, EyeIcon, EyeOffIcon, InfoIcon, MessageCircleIcon, SendIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ago, copyText, errorText, fullDate, useNow } from "@/lib/format";
@@ -129,10 +129,37 @@ export function TopBar({ children, actions }: { children?: ReactNode; actions?: 
   );
 }
 
+const InPage = createContext(false);
+
+/**
+ * A screen shown inside another page, as a section of Settings or a tab of
+ * Apps & skills: its Page is then its words and rows, without a top bar, a
+ * column or a title of its own, since the page around it has them.
+ */
+export function PageInPage({ children }: { children: ReactNode }) {
+  return <InPage.Provider value>{children}</InPage.Provider>;
+}
+
 /** A page: its top bar, then a readable column with a title. */
 export function Page({ title, description, actions, children, wide }: {
   title: string; description?: ReactNode; actions?: ReactNode; children: ReactNode; wide?: boolean;
 }) {
+  const inPage = useContext(InPage);
+  if (inPage) {
+    return (
+      <div className="[&>section:first-of-type]:mt-0">
+        {/* The page around it says where you are; the title stays for a screen reader. */}
+        <h2 className="sr-only">{title}</h2>
+        {(description || actions) && (
+          <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+            {description && <p className="min-w-0 max-w-prose flex-1 text-sm text-pretty text-muted-foreground">{description}</p>}
+            {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+          </div>
+        )}
+        {children}
+      </div>
+    );
+  }
   return (
     <>
       <TopBar />
@@ -153,11 +180,11 @@ export function Page({ title, description, actions, children, wide }: {
 }
 
 /** A titled group of rows on a page. */
-export function Section({ title, description, actions, children, className }: {
-  title: string; description?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string;
+export function Section({ title, description, actions, children, className, id }: {
+  title: string; description?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; id?: string;
 }) {
   return (
-    <section className={cn("mt-10 first:mt-0", className)} aria-label={title}>
+    <section id={id} className={cn("mt-10 scroll-mt-16 first:mt-0", className)} aria-label={title}>
       <div className="mb-3 flex items-end justify-between gap-4">
         <div className="min-w-0">
           <h2 className="text-md font-semibold tracking-[-0.01em]">{title}</h2>
