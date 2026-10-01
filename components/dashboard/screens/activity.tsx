@@ -61,7 +61,7 @@ export function Activity() {
   const sessionItems = [{ value: "all", label: "Every chat" }, ...(sessions ?? []).map((session) => ({ value: session.id, label: `${session.title}${session.channel === "telegram" ? " · Telegram" : session.channel === "whatsapp" ? " · WhatsApp" : ""}` }))];
 
   return (
-    <Page title="Activity" description="Every run, with its tools, tokens, timing and errors. Newest first." wide>
+    <Page title="Activity" wide>
       <dl className="mb-6 flex flex-wrap gap-x-12 gap-y-3" aria-label="Summary">
         {[
           { label: "Runs", value: visible.length.toLocaleString() },
@@ -94,7 +94,7 @@ export function Activity() {
       {runs === undefined && <ListSkeleton rows={4} />}
       {runs && visible.length === 0 && (filtered
         ? <EmptyState title="No runs match" action={<Button variant="outline" size="sm" onClick={clear}>Clear filters</Button>} />
-        : <EmptyState title="No runs yet">Every message Perry answers shows up here, with its tools, tokens and timing.</EmptyState>)}
+        : <EmptyState title="No runs yet" />)}
       {visible.length > 0 && (
         <List label="Runs">
           {visible.slice(0, shown).map((run) => <RunRow key={run.id} run={run} />)}

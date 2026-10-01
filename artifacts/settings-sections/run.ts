@@ -38,10 +38,10 @@ import { seed, startPerry, type Perry } from "../fewer-boxes/seed";
 //      /activity, /settings, each /settings?tab=…, /keys, /profile and /setup;
 //      or a redirect drops its query (?session=, ?skill=, ?connected=), or an
 //      unknown section is not a 404.
-//   7. The account menu still lists pages, lacks Usage details, Theme,
-//      Settings or Lock, or its summary is wrong: an engine not signed in
-//      shown, a window's % left not the seeded one, no reset time; or the line
-//      under the name still counts memories instead of the plan and engine.
+//   7. The account menu still lists pages, lacks Usage, Theme, Settings or
+//      Lock, or shows usage itself (#197 moved it to Settings → Usage, which
+//      its Usage opens); or the line under the name still counts memories
+//      instead of the plan and engine.
 //   8. The sidebar lacks Memory or Apps & skills or has them out of order; the
 //      footer is not the pet, then the computer, then the owner; Pet settings
 //      or the computer row lands somewhere else.
@@ -93,7 +93,9 @@ const check = (name: string, ok: boolean, note?: unknown) => {
 const GROUPS: Array<[string, Array<[string, string, string[]]>]> = [
   ["Perry", [
     ["general", "General", ["Update on his own at night", "Your assistant", "Personality", "Appearance", "Updates"]],
-    ["engines", "Engines & usage", ["Perry's share this week", "Engines", "Codex", "Claude Code", "Gemini API key", "Your plans"]],
+    ["engines", "Engines", ["Gemini API key", "Engines", "Codex", "Claude Code"]],
+    // #197: usage left Engines for a section of its own, which the account menu's Usage opens.
+    ["usage", "Usage", ["Perry's share this week", "Your plans", "Codex", "Claude Code"]],
     ["computers", "Computers", ["a-long-folder-name", "Computers", "Revoke"]],
   ]],
   ["Permissions", [["access", "Access & approvals", ["pnpm test", "Access for new chats", "Always allowed", "Recent requests", "git push origin main"]]]],
@@ -102,7 +104,7 @@ const GROUPS: Array<[string, Array<[string, string, string[]]>]> = [
     ["telegram", "Telegram", ["Pair with Telegram", "Telegram bot token", "Generate code"]],
     ["whatsapp", "WhatsApp", ["A separate number", "WhatsApp may ban the number", "Link WhatsApp"]],
   ]],
-  ["Desktop pet", [["desktop-pet", "Desktop pet", ["Show Perry the screen", "His light or dark look", "Let Perry look at the screen", "Keyboard shortcuts", "Talk to Perry"]]]],
+  ["Desktop pet", [["desktop-pet", "Desktop pet", ["Show Perry the screen", "Others follow their system", "Let Perry look at the screen", "Keyboard shortcuts", "Talk to Perry"]]]],
   ["People", [["people", "People", ["Talks with Perry", "Datta"]]]],
   ["Security", [
     ["logins", "Logins & secrets", ["Netflix", "Logins & secrets", "Add a login", "sam@example.com"]],
@@ -118,7 +120,7 @@ const OLD_TABS = ["general", "usage", "keys", "people", "shortcuts", "telegram",
 const REDIRECTS: Record<string, string> = {
   "/settings": "/settings/general",
   "/settings?tab=general": "/settings/general",
-  "/settings?tab=usage": "/settings/engines",
+  "/settings?tab=usage": "/settings/usage",
   "/settings?tab=keys": "/settings/logins",
   "/settings?tab=keys&key=TELEGRAM_BOT_TOKEN": "/settings/telegram",
   "/settings?tab=keys&key=COMPOSIO_API_KEY": "/apps/connectors",
@@ -351,10 +353,10 @@ try {
       steps.push(await evaluate(`document.activeElement.innerText.trim()`) as string);
     }
     await press("Enter");
-    const opened = await soon(async () => (await where()) === "/settings/computers", 8);
-    await waitFor(`document.body.innerText.includes("a-long-folder-name")`, "Computers", 15).catch(() => {});
+    const opened = await soon(async () => (await where()) === "/settings/usage", 8);
+    await waitFor(`document.body.innerText.includes("Your plans")`, "Usage", 15).catch(() => {});
     check("navByKeyboard", reached === "General" && ring === true && opened
-      && JSON.stringify(steps) === JSON.stringify(["General", "Engines & usage", "Computers", "Activity log", "Dashboard key", "General", "Engines & usage", "Computers"]), { tabs, reached, ring, steps, opened, at: await where() });
+      && JSON.stringify(steps) === JSON.stringify(["General", "Engines", "Usage", "Activity log", "Dashboard key", "General", "Engines", "Usage"]), { tabs, reached, ring, steps, opened, at: await where() });
 
     // --- 6. Old addresses, and an unknown section -----------------------------------------------------
     const wrong: Record<string, unknown> = {};
@@ -489,7 +491,7 @@ try {
       await scheme(mode);
       await go("/chat", "New chat");
       await click(ACCOUNT);
-      await waitFor(`document.querySelector("[role=menu]")?.innerText.includes("% left")`, "the usage summary", 15).catch(() => {});
+      await waitFor(byText("[role=menuitem]", "Lock dashboard"), "the account menu", 15).catch(() => {});
       await sleep(400);
       await shot("account-menu", false);
       if (mode === "light") {
@@ -500,14 +502,11 @@ try {
           const bars = [...menu.querySelectorAll("[data-slot=progress]")].map((el) => el.getAttribute("aria-label") ?? el.querySelector("[aria-label]")?.getAttribute("aria-label"));
           return { items, usage, bars };
         })()`) as { items: string[]; usage: Record<string, string>; bars: string[] };
-        const codex = menu.usage["Codex usage"] ?? "";
-        const claude = menu.usage["Claude Code usage"] ?? "";
-        check("accountMenuItems", JSON.stringify(menu.items) === JSON.stringify(["Usage details", "Theme", "Settings", "Lock dashboard"]), menu.items);
-        // The 5-hour window resets 2h13m after the seed: "at 23:42" today, or with the day once that is past midnight.
-        check("accountMenuUsageSummary", /ChatGPT Plus/.test(codex) && /5-hour 63% left · resets (at \d{1,2}:\d{2}|\w{3} \d{1,2} \w{3}, \d{1,2}:\d{2})/.test(codex) && /Weekly 16% left · resets /.test(codex)
-          && /Claude Max/.test(claude) && /No limits reported yet/.test(claude) && Object.keys(menu.usage).length === 2 && menu.bars.length === 2, menu);
-        await click(byText("[role=menuitem]", "Usage details"));
-        const details = await soon(async () => (await where()) === "/settings/engines" && (await text()).includes("Your plans"), 10);
+        // #197: no usage in the menu, only the item that opens it.
+        check("accountMenuItems", JSON.stringify(menu.items) === JSON.stringify(["Usage", "Theme", "Settings", "Lock dashboard"]), menu.items);
+        check("accountMenuHasNoUsage", Object.keys(menu.usage).length === 0 && menu.bars.length === 0, menu);
+        await click(byText("[role=menuitem]", "Usage"));
+        const details = await soon(async () => (await where()) === "/settings/usage" && (await text()).includes("Your plans"), 10);
         await sleep(600);
         await click(ACCOUNT);
         await waitFor(byText("[role=menuitem]", "Lock dashboard"), "the account menu");

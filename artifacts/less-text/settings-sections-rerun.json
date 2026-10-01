@@ -1,0 +1,443 @@
+{
+  "ranAt": "2026-10-01T20:44:56.286Z",
+  "pass": true,
+  "checks": {
+    "everySectionHoldsWhatItShould": true,
+    "eachKeyOnlyBesideWhatItUnlocks": true,
+    "navMarksTheOpenSection": true,
+    "loginsIsItsOwnSection": true,
+    "navGroupsAsTheIssueSays": true,
+    "navIsNotABox": true,
+    "navByKeyboard": true,
+    "oldAddressesRedirect": true,
+    "unknownSectionIs404": true,
+    "redirectsKeepTheirQuery": true,
+    "sidebarHasMemoryAndApps": true,
+    "newChatAndSearchShareARow": true,
+    "collapsedShowsTwoStackedIcons": true,
+    "chatsAreOnePlainList": true,
+    "footerIsPetThenComputerThenYou": true,
+    "footerLandsOnItsSections": true,
+    "sidebarItemsGoToTheirPages": true,
+    "lineUnderTheNameIsThePlan": true,
+    "accountMenuItems": true,
+    "accountMenuHasNoUsage": true,
+    "accountMenuGoes": true,
+    "appsAndSkillsTabs": true,
+    "telegramTokenSavesInTelegram": true,
+    "composioKeySavesInConnectors": true,
+    "approvalRulesListAndDelete": true,
+    "phoneUsesTheSwitcher": true,
+    "nothingOverflowsAPhone": true,
+    "noLinkGoesNowhere": true,
+    "nothingThrows": true
+  },
+  "notes": {
+    "everySectionHoldsWhatItShould": {},
+    "eachKeyOnlyBesideWhatItUnlocks": {},
+    "navMarksTheOpenSection": {},
+    "loginsIsItsOwnSection": {
+      "logins": [
+        "Logins & secrets"
+      ],
+      "accessHasLogins": false
+    },
+    "navGroupsAsTheIssueSays": {
+      "got": [
+        {
+          "name": "Perry",
+          "items": [
+            "General",
+            "Engines",
+            "Usage",
+            "Computers"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "Permissions",
+          "items": [
+            "Access & approvals"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "Reaching you",
+          "items": [
+            "Notifications",
+            "Telegram",
+            "WhatsApp"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "Desktop pet",
+          "items": [
+            "Desktop pet"
+          ],
+          "shownName": false
+        },
+        {
+          "name": "People",
+          "items": [
+            "People"
+          ],
+          "shownName": false
+        },
+        {
+          "name": "Security",
+          "items": [
+            "Logins & secrets",
+            "Dashboard key"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "System",
+          "items": [
+            "Activity log"
+          ],
+          "shownName": true
+        }
+      ],
+      "wanted": [
+        {
+          "name": "Perry",
+          "items": [
+            "General",
+            "Engines",
+            "Usage",
+            "Computers"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "Permissions",
+          "items": [
+            "Access & approvals"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "Reaching you",
+          "items": [
+            "Notifications",
+            "Telegram",
+            "WhatsApp"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "Desktop pet",
+          "items": [
+            "Desktop pet"
+          ],
+          "shownName": false
+        },
+        {
+          "name": "People",
+          "items": [
+            "People"
+          ],
+          "shownName": false
+        },
+        {
+          "name": "Security",
+          "items": [
+            "Logins & secrets",
+            "Dashboard key"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "System",
+          "items": [
+            "Activity log"
+          ],
+          "shownName": true
+        }
+      ]
+    },
+    "navIsNotABox": [],
+    "navByKeyboard": {
+      "tabs": 26,
+      "reached": "General",
+      "ring": true,
+      "steps": [
+        "General",
+        "Engines",
+        "Usage",
+        "Activity log",
+        "Dashboard key",
+        "General",
+        "Engines",
+        "Usage"
+      ],
+      "opened": true,
+      "at": "/settings/usage"
+    },
+    "oldAddressesRedirect": {},
+    "unknownSectionIs404": 404,
+    "redirectsKeepTheirQuery": {
+      "filtered": {
+        "at": "/settings/activity?session=23ynxskfpgygp0tm176yvek8eq",
+        "plan": false,
+        "runs": 1
+      },
+      "skillOpen": true,
+      "shortcuts": true,
+      "pushed": true,
+      "at": "/settings/people"
+    },
+    "sidebarHasMemoryAndApps": [
+      "New chat",
+      "Search",
+      "Needs you",
+      "To-dos",
+      "Work",
+      "Memory",
+      "Apps & skills"
+    ],
+    "newChatAndSearchShareARow": {
+      "open": {
+        "share": 80,
+        "chat": "New chat",
+        "search": {
+          "words": "",
+          "label": "Search",
+          "keys": "Control+K Meta+K",
+          "tag": "BUTTON",
+          "icon": true,
+          "focusable": true
+        },
+        "boxed": false,
+        "stacked": false,
+        "sideBySide": true,
+        "sizes": [
+          191,
+          32,
+          44,
+          32
+        ]
+      },
+      "tip": true,
+      "palette1": true,
+      "palette2": true
+    },
+    "collapsedShowsTwoStackedIcons": {
+      "light": {
+        "share": 103,
+        "chat": "New chat",
+        "search": {
+          "words": "",
+          "label": "Search",
+          "keys": "Control+K Meta+K",
+          "tag": "BUTTON",
+          "icon": true,
+          "focusable": true
+        },
+        "boxed": false,
+        "stacked": true,
+        "sideBySide": false,
+        "sizes": [
+          32,
+          32,
+          32,
+          32
+        ]
+      },
+      "dark": {
+        "share": 103,
+        "chat": "New chat",
+        "search": {
+          "words": "",
+          "label": "Search",
+          "keys": "Control+K Meta+K",
+          "tag": "BUTTON",
+          "icon": true,
+          "focusable": true
+        },
+        "boxed": false,
+        "stacked": true,
+        "sideBySide": false,
+        "sizes": [
+          32,
+          32,
+          32,
+          32
+        ]
+      }
+    },
+    "chatsAreOnePlainList": {
+      "chatList": {
+        "headings": [
+          "Projects"
+        ],
+        "rows": [
+          {
+            "title": "Export last year's receipts",
+            "pin": true
+          },
+          {
+            "title": "🧩 Compare three flats near work",
+            "pin": false
+          },
+          {
+            "title": "⏰ Morning briefing",
+            "pin": false
+          },
+          {
+            "title": "Plan my week",
+            "pin": false
+          },
+          {
+            "title": "Coffee order",
+            "pin": false
+          }
+        ],
+        "dates": []
+      },
+      "wantedOrder": [
+        "Export last year's receipts",
+        "🧩 Compare three flats near work",
+        "⏰ Morning briefing",
+        "Plan my week",
+        "Coffee order"
+      ]
+    },
+    "footerIsPetThenComputerThenYou": {
+      "footer": [
+        "z z z Desktop pet",
+        "DESKTOP-27SQLCP",
+        "Y You ChatGPT Plus · Codex"
+      ],
+      "computer": "DESKTOP-27SQLCP",
+      "owner": "You"
+    },
+    "footerLandsOnItsSections": {
+      "computerRow": true,
+      "petSettings": true,
+      "at": "/settings/desktop-pet"
+    },
+    "sidebarItemsGoToTheirPages": {
+      "apps": true,
+      "memory": true
+    },
+    "lineUnderTheNameIsThePlan": "ChatGPT Plus · Codex",
+    "accountMenuItems": [
+      "Usage",
+      "Theme",
+      "Settings",
+      "Lock dashboard"
+    ],
+    "accountMenuHasNoUsage": {
+      "items": [
+        "Usage",
+        "Theme",
+        "Settings",
+        "Lock dashboard"
+      ],
+      "usage": {},
+      "bars": []
+    },
+    "accountMenuGoes": {
+      "details": true,
+      "settings": true
+    },
+    "appsAndSkillsTabs": {
+      "page": {
+        "h1": [
+          "Apps & skills"
+        ],
+        "tabs": [
+          [
+            "Connectors",
+            "true"
+          ],
+          [
+            "Skills",
+            "false"
+          ]
+        ],
+        "key": true,
+        "below": "below"
+      },
+      "skills": true,
+      "skillsPage": {
+        "h1": [
+          "Apps & skills"
+        ],
+        "selected": "Skills"
+      }
+    },
+    "telegramTokenSavesInTelegram": {
+      "telegramSaved": true,
+      "checkBot": true,
+      "key": {
+        "name": "TELEGRAM_BOT_TOKEN",
+        "label": "Telegram bot token",
+        "hint": "From @BotFather.",
+        "set": true,
+        "source": "dashboard",
+        "preview": "…AbCd",
+        "updatedAt": 1790887433580
+      }
+    },
+    "connectorsAfterKey": "Toggle Sidebar\nApps & skills\nConnectors\nSkills\nConnectors\nRefresh\nCouldn't reach Composio\n401 {\"error\":{\"message\":\"Invalid API key: e2e**9Zq1\",\"code\":801,\"slug\":\"APIKey_InvalidAPIKey\",\"status\":401,\"request_id\":\"0f517d36-8ae3-4466-87f5-3cef6e230eff\",\"suggested_fix\":\"Please check you are using a valid API key.\"}}\nConnected\nAll apps\n\nNo app by that name\n\nClear search\nTest what Perry can do\nLook up\nCo",
+    "composioKeySavesInConnectors": {
+      "composioSaved": true,
+      "noticed": true,
+      "backToSetup": true
+    },
+    "approvalRulesListAndDelete": {
+      "listed": [
+        "pnpm test"
+      ],
+      "gone": true,
+      "emptied": true
+    },
+    "phoneUsesTheSwitcher": {
+      "phone": {
+        "nav": "none",
+        "switcher": true,
+        "shown": "Activity log"
+      },
+      "listed": [
+        "Perry General Engines Usage Computers",
+        "Permissions Access & approvals",
+        "Reaching you Notifications Telegram WhatsApp",
+        "Desktop pet Desktop pet",
+        "People People",
+        "Security Logins & secrets Dashboard key",
+        "System Activity log"
+      ],
+      "switched": true
+    },
+    "nothingOverflowsAPhone": {},
+    "palette": {
+      "Needs you": "/inbox",
+      "To-dos": "/todos",
+      "Work": "/work",
+      "Memory": "/memory",
+      "Connectors": "/apps/connectors",
+      "Skills": "/apps/skills",
+      "Settings": "/settings/general",
+      "Engines": "/settings/engines",
+      "Usage": "/settings/usage",
+      "Computers": "/settings/computers",
+      "Access & approvals": "/settings/access",
+      "Logins & secrets": "/settings/logins",
+      "Activity log": "/settings/activity",
+      "Keyboard shortcuts": "/settings/desktop-pet#shortcuts"
+    },
+    "linksCrawled": 34,
+    "noLinkGoesNowhere": {
+      "dead": {},
+      "palette": 14
+    },
+    "nothingThrows": {
+      "exceptions": [],
+      "consoleErrors": []
+    }
+  }
+}

@@ -115,26 +115,26 @@ export function limitWarning(engine: EngineKind, usage: EngineUsage | undefined,
 }
 
 /**
- * What each engine can tell about its plan, said plainly for Settings → Engines & usage.
+ * What each engine can tell about its plan, said in a line on Settings → Usage.
  * `limits`: it reports its plan's windows; `hits`: it only says when a limit
  * is hit; `tokens` whether its turns report the tokens they use.
  */
 export const USAGE_REPORTS: Record<EngineKind, { limits: boolean; tokens: "all" | "most" | "none"; note: string }> = {
   codex: {
     limits: true, tokens: "all",
-    note: "Codex reports your ChatGPT plan's limits: how much of the 5-hour and weekly windows is used, and when each resets. It counts all your Codex use, not only Perry's.",
+    note: "Counts all your Codex use, not only Perry's.",
   },
   claude: {
     limits: true, tokens: "most",
-    note: "Claude Code reports your Claude plan's limits: the 5-hour window, the weekly one and any per-model weekly limit. It counts all your Claude use. Tokens a subagent uses are not in Perry's share.",
+    note: "Counts all your Claude use. Subagents' tokens aren't in Perry's share.",
   },
   grok: {
     limits: false, tokens: "all",
-    note: "Grok Build doesn't say how much of your plan is used or left. Perry shows the tokens its replies used, and says so here when Grok refuses a reply for your plan's limit.",
+    note: "Grok Build doesn't report its limits. Perry says so here when it refuses a reply for one.",
   },
   antigravity: {
     limits: false, tokens: "none",
-    note: "Antigravity reports neither your plan's limits nor the tokens its replies use. Perry counts its replies, and says so here when it refuses one for a limit.",
+    note: "Antigravity reports neither limits nor tokens. Perry says so here when it refuses a reply for one.",
   },
   cursor: {
     limits: false, tokens: "none",
