@@ -15,6 +15,7 @@ import type * as contacts from "../contacts.js";
 import type * as conversations from "../conversations.js";
 import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
+import type * as engineUpdates from "../engineUpdates.js";
 import type * as engines from "../engines.js";
 import type * as history from "../history.js";
 import type * as http from "../http.js";
@@ -81,6 +82,7 @@ declare const fullApi: ApiFromModules<{
   conversations: typeof conversations;
   crons: typeof crons;
   dashboard: typeof dashboard;
+  engineUpdates: typeof engineUpdates;
   engines: typeof engines;
   history: typeof history;
   http: typeof http;

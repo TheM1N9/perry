@@ -1,13 +1,13 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { ExternalLinkIcon, LockIcon, MessageCircleIcon, MonitorIcon, MoonIcon, RefreshCwIcon, SendIcon, ShieldAlertIcon, ShieldCheckIcon, SmartphoneIcon, SunIcon, UserIcon } from "lucide-react";
+import { ChevronRightIcon, ExternalLinkIcon, LockIcon, MessageCircleIcon, MonitorIcon, MoonIcon, RefreshCwIcon, SendIcon, ShieldAlertIcon, ShieldCheckIcon, SmartphoneIcon, SunIcon, UserIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { EngineView } from "@/convex/engines";
+import type { EngineUpdating, EngineView } from "@/convex/engines";
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access } from "@/convex/lib/commands";
 import { SIGN_IN_LABELS, type EngineUpdate, type LoginInteraction } from "@/convex/lib/engines";
 import type { PetTheme } from "@/convex/pet";
@@ -19,9 +19,11 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -110,7 +112,10 @@ function Engines() {
 function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runners">; computer: string; online: boolean; engine: EngineView }) {
   const { dashboardKey } = useSession();
   const requestAuth = useMutation(api.engines.requestAuth);
+  const requestUpdate = useMutation(api.engineUpdates.request);
   const request = engine.request;
+  const updating = engine.updating;
+  const updatingNow = updating?.status === "queued" || updating?.status === "waiting" || updating?.status === "running";
   const pending = request?.status === "queued" || request?.status === "running";
   const unavailable = !online ? "This computer is offline." : !engine.installed ? `${engine.label} isn't installed or can't start on this computer.` : null;
   // Too old for Perry: it is updated before it is signed in.
@@ -166,7 +171,13 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
           Perry runs Google&apos;s own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved below. Signing in with Google also works, at your own risk: <GoogleWarning inline />
         </p>
       )}
-      {online && engine.update && <UpdateSteps engine={engine.label} computer={computer} update={engine.update} />}
+      {updatingNow
+        ? <UpdateProgress engine={engine.label} computer={computer} updating={updating} />
+        : online && engine.update && (
+          <UpdateSteps engine={engine.label} computer={computer} update={engine.update} last={updating}
+            onUpdate={() => requestUpdate({ key: dashboardKey, runnerId, engine: engine.kind })} />
+        )}
+      {updating?.status === "done" && <Updated engine={engine.label} updating={updating} />}
       {engine.error && <p className="mt-2 text-sm text-destructive">{engine.error}</p>}
       {request?.status === "queued" && <Waiting>Waiting for the computer to pick this up…</Waiting>}
       {request?.status === "running" && request.kind === "logout" && <Waiting>Signing out…</Waiting>}
@@ -180,22 +191,86 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
 }
 
 /**
- * An engine whose CLI should be updated, and the command that does it on that
- * computer. Too old for Perry, it takes no new replies until it is; otherwise
- * it is only a newer release. Perry notices the update by itself.
+ * An engine whose CLI should be updated. Too old for Perry, it takes no new
+ * replies until it is; otherwise it is only a newer release. Update has that
+ * computer's Perry run the command (convex/engineUpdates.ts); the owner can
+ * also run it there, and Perry notices by himself. One that needs admin rights
+ * Perry leaves to the owner, with the command; one that failed says what it
+ * printed.
  */
-function UpdateSteps({ engine, computer, update }: { engine: string; computer: string; update: EngineUpdate }) {
+function UpdateSteps({ engine, computer, update, last, onUpdate }: {
+  engine: string; computer: string; update: EngineUpdate; last?: EngineUpdating; onUpdate: () => Promise<unknown>;
+}) {
   const required = update.need === "required";
+  // How the last try went, while it is still this version to update from.
+  const tried = last?.from === update.version ? last : undefined;
+  const elevate = tried?.status === "elevate" && tried.command;
+  const failed = tried?.status === "error";
   return (
-    <div className={cn("mt-3 border-l-2 pl-3", required && "border-destructive")} role={required ? "alert" : "status"}>
+    <div className={cn("mt-3 border-l-2 pl-3", required && "border-destructive")} role={required ? "alert" : "status"} data-engine-update={tried?.status ?? "none"}>
       <p className={cn("text-sm font-medium", required && "text-destructive")}>{required ? `Update ${engine} to keep using it` : `${engine} ${update.latest} is out`}</p>
       <p className="mt-0.5 text-sm text-pretty text-muted-foreground">
         {required
-          ? `${computer} has ${engine} ${update.version}, older than Perry works with (${update.minimum} or newer). Until it's updated, Perry won't start replies with it. Run this on ${computer}:`
-          : `${computer} has ${update.version}. To update, run this on ${computer}:`}
+          ? `${computer} has ${engine} ${update.version}, older than Perry works with (${update.minimum} or newer). Until it's updated, Perry won't start replies with it.`
+          : `${computer} has ${update.version}.`}
+        {elevate ? ` ${tried?.error ?? ""} Run this yourself on ${computer}, in a terminal with those rights:` : ` Perry can update it on ${computer}, or you can run this there:`}
       </p>
-      <div className="mt-3 max-w-md"><CommandLine>{update.command}</CommandLine></div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="max-w-md min-w-0 flex-1"><CommandLine>{elevate || update.command}</CommandLine></div>
+        {!elevate && <ActionButton size="sm" variant={required ? "default" : "outline"} action={onUpdate}>{failed ? "Try again" : "Update"}</ActionButton>}
+      </div>
+      {failed && <p className="mt-2 text-sm text-pretty text-destructive">The update didn&apos;t work. {tried?.error}</p>}
+      {failed && tried?.output && <UpdateOutput output={tried.output} />}
     </div>
+  );
+}
+
+/** An update on its way: asked for, waiting for that engine's replies to end, or running, with what it prints. */
+function UpdateProgress({ engine, computer, updating }: { engine: string; computer: string; updating: EngineUpdating }) {
+  const lines = updating.output?.trim().split("\n").slice(-12).join("\n");
+  return (
+    <div className="mt-3 border-l-2 border-primary/60 pl-3" role="status" data-engine-update={updating.status}>
+      <p className="flex items-center gap-2 text-sm font-medium"><Spinner className="size-3.5" />{updating.status === "waiting" ? "Update waiting" : `Updating ${engine}…`}</p>
+      <p className="mt-0.5 text-sm text-pretty text-muted-foreground">
+        {updating.status === "queued" ? `Waiting for ${computer} to pick this up…`
+          : updating.status === "waiting" ? updating.waitingFor
+            ? `It starts once ${updating.waitingFor} ${/^a /.test(updating.waitingFor) ? "is" : "are"} done. New replies on ${engine} wait for the update.`
+            : "Getting ready…"
+          : `Running ${updating.command ?? "the update"} on ${computer}.`}
+      </p>
+      {updating.status === "running" && lines && (
+        <pre className="mt-2 font-mono text-xs whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]" aria-label="What the update prints">{lines}</pre>
+      )}
+    </div>
+  );
+}
+
+/** An update that worked, for a while after it did. */
+function Updated({ engine, updating }: { engine: string; updating: EngineUpdating }) {
+  const now = useNow();
+  if (!updating.finishedAt || now - updating.finishedAt > 30 * 60_000) return null;
+  const at = ago(updating.finishedAt, now);
+  return (
+    <div className="mt-2" data-engine-update="done">
+      <p className="text-sm text-muted-foreground" role="status">Updated {engine}{updating.from ? ` from ${updating.from}` : ""} to {updating.to}, {at === "now" ? "just now" : at}.</p>
+      {updating.output && <UpdateOutput output={updating.output} />}
+    </div>
+  );
+}
+
+/** What an update printed, folded away. */
+function UpdateOutput({ output }: { output: string }) {
+  return (
+    <Collapsible className="mt-1.5">
+      <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1 rounded-md text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+        <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" aria-hidden />What it said
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <ScrollArea className="mt-1.5 border-l-2 border-muted" viewportClassName="max-h-64">
+          <pre className="py-1 pr-3 pl-3 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{output}</pre>
+        </ScrollArea>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

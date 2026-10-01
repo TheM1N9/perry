@@ -63,6 +63,9 @@
  *               ever shows the limits it hits (convex/lib/usage.ts).
  *   kill()      Ends the engine's processes, the whole group. The runner's
  *               watchdog interrupts a turn that runs too long, then kills.
+ *   where(), reload()  Optional. Where the engine's CLI is, and starting afresh
+ *               once it is updated: the runner updates it from Settings when
+ *               no turn runs on it (convex/engineUpdates.ts).
  */
 
 import type { Access } from "../convex/lib/commands";
@@ -336,4 +339,17 @@ export interface Engine {
   limits?(): Promise<PlanLimits | null>;
   /** End its processes, the whole group. Whatever runs fails; the next call starts it again. */
   kill(): void;
+  /**
+   * Where its CLI is, as a path or a name looked up on PATH, for updating it
+   * from Settings (runner/versions.ts, updatePlan). Unset for an engine whose
+   * CLI Perry downloads and pins itself.
+   */
+  where?(): string | undefined;
+  /**
+   * Its CLI is about to be updated, or just was: end its processes, as kill()
+   * does, and forget what it knew of the CLI (its version, an app-server it
+   * would not start again for a while), so the next status() looks afresh.
+   * Called with no turn running on it.
+   */
+  reload?(): void;
 }

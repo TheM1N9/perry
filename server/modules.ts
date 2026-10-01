@@ -14,6 +14,7 @@ import * as contacts from "../convex/contacts";
 import * as conversations from "../convex/conversations";
 import * as crons from "../convex/crons";
 import * as dashboard from "../convex/dashboard";
+import * as engineUpdates from "../convex/engineUpdates";
 import * as engines from "../convex/engines";
 import * as history from "../convex/history";
 import * as http from "../convex/http";
@@ -78,6 +79,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "conversations": conversations,
   "crons": crons,
   "dashboard": dashboard,
+  "engineUpdates": engineUpdates,
   "engines": engines,
   "history": history,
   "http": http,
