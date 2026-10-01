@@ -88,6 +88,8 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const PET_DIR = join(REPO, "pet");
 const WINDOWS_PS1 = join(REPO, "artifacts", "pet-cold-start", "windows.ps1");
 const REAL_MOUSE = process.env.PERRY_E2E_DESKTOP === "1";
+/** The real mouse, for PERRY_E2E_DESKTOP=1 only (realClick): before the checks, which use it. */
+const MOUSE = "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class M { [DllImport(\"user32.dll\")] public static extern bool SetProcessDpiAwarenessContext(IntPtr v); [DllImport(\"user32.dll\")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, IntPtr e); [DllImport(\"user32.dll\")] public static extern int GetSystemMetrics(int i); }'; [M]::SetProcessDpiAwarenessContext([IntPtr]::new(-4)) | Out-Null; $w = [M]::GetSystemMetrics(0); $h = [M]::GetSystemMetrics(1)";
 const freePort = () => new Promise<number>((done) => { const probe = createServer().listen(0, "127.0.0.1", () => { const { port } = probe.address() as { port: number }; probe.close(() => done(port)); }); });
 const PORT = await freePort();
 const DEVTOOLS = await freePort();
@@ -525,7 +527,6 @@ function catcher(box: { x: number; y: number; w: number; h: number }, log: strin
   return spawn("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { stdio: "ignore", windowsHide: true });
 }
 
-const MOUSE = "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class M { [DllImport(\"user32.dll\")] public static extern bool SetProcessDpiAwarenessContext(IntPtr v); [DllImport(\"user32.dll\")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, IntPtr e); [DllImport(\"user32.dll\")] public static extern int GetSystemMetrics(int i); }'; [M]::SetProcessDpiAwarenessContext([IntPtr]::new(-4)) | Out-Null; $w = [M]::GetSystemMetrics(0); $h = [M]::GetSystemMetrics(1)";
 /** The real pointer to a point of the screen (physical pixels; PERRY_E2E_DESKTOP=1 only). */
 function realMove(x: number, y: number) {
   ps(`${MOUSE}; [M]::mouse_event(0x8001, [uint32](${x} * 65535 / ($w - 1)), [uint32](${y} * 65535 / ($h - 1)), 0, [IntPtr]::Zero)`);

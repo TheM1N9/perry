@@ -352,7 +352,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
   async function load() {
     clearTimeout(loadTimer);
     const ask = ++loads;
-    const up = await net.fetch(`${BASE}/pet`, { method: "HEAD", signal: AbortSignal.timeout(10_000) }).then(() => true, () => false);
+    const up = await net.fetch(`${BASE}/pet`, { method: "HEAD", signal: AbortSignal.timeout(10_000) }).then((response) => response.ok, () => false);
     if (ask !== loads) return;
     if (!up) return loadLater(3000);
     makeWindow();
