@@ -1,0 +1,1676 @@
+[
+ {
+  "at": 1790888589658,
+  "step": "pet starts; Perry's server is not up"
+ },
+ {
+  "at": 1790888590088,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888601868,
+  "step": "Perry's server starts"
+ },
+ {
+  "at": 1790888603317,
+  "step": "Perry's server answers"
+ },
+ {
+  "at": 1790888605015,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   },
+   {
+    "hwnd": 10228076,
+    "title": "",
+    "visible": false,
+    "exstyle": "0x200000",
+    "rect": [
+     0,
+     438,
+     606,
+     1368
+    ],
+    "page": []
+   }
+  ]
+ },
+ {
+  "at": 1790888605063,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 10228076,
+    "title": "Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     25824464
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888605094,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 10228076,
+    "title": "Pet · Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     25824464
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888605210,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 10228076,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     25824464
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888607321,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 10228076,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x200008",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     25824464
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888608672,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 10228076,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     25824464
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888609465,
+  "step": "--reload, server up"
+ },
+ {
+  "at": 1790888609588,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27135832,
+    "title": "Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": []
+   },
+   {
+    "hwnd": 10228076,
+    "title": "Pet · Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     25824464
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888609637,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27135832,
+    "title": "Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     10293612
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888609669,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27135832,
+    "title": "Pet · Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     10293612
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888609702,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27135832,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     10293612
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888612147,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27135832,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x200008",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     10293612
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888613779,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27135832,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     10293612
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888614682,
+  "step": "--reload, server down"
+ },
+ {
+  "at": 1790888623220,
+  "step": "Perry's server starts again"
+ },
+ {
+  "at": 1790888624848,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27135832,
+    "title": "Pet · Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     10293612
+    ]
+   },
+   {
+    "hwnd": 19075322,
+    "title": "Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": []
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888624882,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 19075322,
+    "title": "Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     1704660
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888624913,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 19075322,
+    "title": "Pet · Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     1704660
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888624945,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 19075322,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     1704660
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888626856,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 19075322,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x200008",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     1704660
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888628245,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 19075322,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     1704660
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888629074,
+  "step": "the page reloads itself"
+ },
+ {
+  "at": 1790888629104,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 19075322,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     14487940
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   },
+   {
+    "hwnd": 1770196,
+    "title": "Perry",
+    "visible": false,
+    "exstyle": "0x200000",
+    "rect": [
+     1418,
+     219,
+     2024,
+     1149
+    ],
+    "page": []
+   }
+  ]
+ },
+ {
+  "at": 1790888629167,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 1770196,
+    "title": "Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     27266904
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888638378,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 1770196,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     27266904
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888640501,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 1770196,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x200008",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     27266904
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888640965,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 1770196,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     27266904
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888641103,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 1770196,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x200008",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     27266904
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888641201,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 1770196,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     27266904
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888643768,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 1770196,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x200008",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     27266904
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888644588,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 1770196,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     27266904
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888645388,
+  "step": "his page's process crashes"
+ },
+ {
+  "at": 1790888645411,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 1770196,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": []
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888646433,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27332440,
+    "title": "Perry",
+    "visible": false,
+    "exstyle": "0x200008",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": []
+   },
+   {
+    "hwnd": 1770196,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": []
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888646479,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27332440,
+    "title": "Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     19206394
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888646526,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27332440,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     19206394
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888648763,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27332440,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x200008",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     19206394
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888650362,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27332440,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     19206394
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888651129,
+  "step": "hidden, then shown again"
+ },
+ {
+  "at": 1790888651495,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27332440,
+    "title": "Pet · Perry",
+    "visible": false,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     19206394
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888651792,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27332440,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     19206394
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888653927,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27332440,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x200008",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     19206394
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888654866,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27332440,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     19206394
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888657185,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27332440,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x200008",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     19206394
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888657977,
+  "pid": 36500,
+  "windows": [
+   {
+    "hwnd": 27332440,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     19206394
+    ]
+   },
+   {
+    "hwnd": 51711590,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     5246942
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888658773,
+  "step": "--quit --restart: a new pet takes over"
+ },
+ {
+  "at": 1790888658898,
+  "pid": 36500,
+  "windows": []
+ },
+ {
+  "at": 1790888660709,
+  "pid": 50904,
+  "windows": [
+   {
+    "hwnd": 4788182,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     11079658
+    ]
+   },
+   {
+    "hwnd": 28904182,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     22286008
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888663275,
+  "pid": 50904,
+  "windows": [
+   {
+    "hwnd": 4788182,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x200008",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     11079658
+    ]
+   },
+   {
+    "hwnd": 28904182,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     22286008
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888664642,
+  "pid": 50904,
+  "windows": [
+   {
+    "hwnd": 4788182,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     11079658
+    ]
+   },
+   {
+    "hwnd": 28904182,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     22286008
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888665448,
+  "step": "ghost: started with Let clicks through him"
+ },
+ {
+  "at": 1790888665618,
+  "pid": 50904,
+  "windows": []
+ },
+ {
+  "at": 1790888667637,
+  "pid": 58128,
+  "windows": [
+   {
+    "hwnd": 32771378,
+    "title": "Pet · Perry",
+    "visible": true,
+    "exstyle": "0x280028",
+    "rect": [
+     0,
+     438,
+     609,
+     1368
+    ],
+    "page": [
+     14553312
+    ]
+   },
+   {
+    "hwnd": 25628798,
+    "title": "Perry: drop here to hide",
+    "visible": true,
+    "exstyle": "0x8280028",
+    "rect": [
+     1556,
+     1026,
+     1891,
+     1356
+    ],
+    "page": [
+     9179124
+    ]
+   }
+  ]
+ },
+ {
+  "at": 1790888672786,
+  "pid": 58128,
+  "windows": []
+ }
+]
