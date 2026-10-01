@@ -178,10 +178,10 @@ try {
   // --- 9. The page --------------------------------------------------------------------------
   await call("dashboard:setManners", { key: KEY, quietHours: { start: "22:00", end: "07:00" }, dailyLimit: 5 });
   browser = await openChat(BASE, KEY);
-  await browser.send("Page.navigate", { url: `${BASE}/settings` });
+  await browser.send("Page.navigate", { url: `${BASE}/settings/notifications` });
   await until(() => browser!.evaluate(`document.body.innerText.includes("Messages Perry sends on his own")`), "the Settings section", 30).catch(() => {});
   await sleep(1_500);
-  const shown = await browser.evaluate(`({ quietFrom: document.querySelector('input[aria-label="Quiet from"]')?.value, quietTo: document.querySelector('input[aria-label="Quiet until"]')?.value, limit: document.querySelector('[aria-label="Daily limit"]')?.textContent })`) as { quietFrom?: string; quietTo?: string; limit?: string };
+  const shown = await browser.evaluate(`({ quietFrom: ["hours", "minutes"].map((part) => document.querySelector('input[aria-label="Quiet from: ' + part + '"]')?.value).join(":"), quietTo: ["hours", "minutes"].map((part) => document.querySelector('input[aria-label="Quiet until: ' + part + '"]')?.value).join(":"), limit: document.querySelector('[aria-label="Daily limit"]')?.textContent })`) as { quietFrom?: string; quietTo?: string; limit?: string };
   const shot = await browser.send("Page.captureScreenshot", { format: "png" });
   writeFileSync(join(outDir, "settings-manners.png"), Buffer.from(shot.data, "base64"));
   check("settingsShowWhatIsSaved", shown.quietFrom === "22:00" && shown.quietTo === "07:00" && /5 a day/.test(shown.limit ?? ""), shown);

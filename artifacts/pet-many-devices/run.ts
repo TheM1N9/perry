@@ -253,14 +253,14 @@ try {
   const shot = async (name: string) => writeFileSync(join(outDir, name), Buffer.from((await dashboard!.send("Page.captureScreenshot", { format: "png" })).data, "base64"));
   const click = (selector: string, text: string) => dashboard!.evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(selector)})].find((b) => b.innerText.trim() === ${JSON.stringify(text)}); b?.click(); return Boolean(b); })()`) as Promise<boolean>;
   const scrollTo = (text: string) => dashboard!.evaluate(`[...document.querySelectorAll("h3")].find((h) => h.innerText.includes(${JSON.stringify(text)}))?.scrollIntoView({ block: "start" }); true`);
-  await dashboard.send("Page.navigate", { url: `${LOCAL}/settings?tab=general` });
+  await dashboard.send("Page.navigate", { url: `${LOCAL}/settings/desktop-pet` });
   await check("addComputerOffered", async () => /On your other computers[\s\S]*Add a computer/.test(await page()), 30);
   await click("main button", "Add a computer");
   await check("codeShown", () => dashboard!.evaluate(`Boolean(document.querySelector("[data-pairing-code]"))`), 10);
   const code = await dashboard.evaluate(`document.querySelector("[data-pairing-code]").innerText.trim()`) as string;
   checks.codeLooksRight = /^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(code);
   // The address this computer's network gives it, picked as the owner would for a laptop on the same network.
-  await dashboard.evaluate(`[...document.querySelectorAll('[aria-label="Perry\\'s address"] [role=radio]')].find((b) => b.innerText.startsWith(${JSON.stringify(LAN_HOST)}))?.click(); true`);
+  await dashboard.evaluate(`[...document.querySelectorAll('[aria-label="Perry\\'s address"] button')].find((b) => b.innerText.startsWith(${JSON.stringify(LAN_HOST)}))?.click(); true`);
   await sleep(300);
   const lines = await dashboard.evaluate(`[...document.querySelectorAll("main code")].map((c) => c.innerText)`) as string[];
   const windowsLine = lines.find((line) => line.includes("install.ps1")) ?? "";
@@ -357,7 +357,7 @@ try {
   checks.hereAtA = await settle(atA, (view) => view.presence === "here" && view.devices[0].current && !view.devices[1].current);
   checks.hereAtBWithAIdle = await settle(atB, (view) => view.presence === "here" && view.devices[1].current && !view.devices[0].current);
   checks.awayOnlyWhenBothIdle = await settle(atNeither, (view) => view.presence === "away");
-  await dashboard.send("Page.navigate", { url: `${LOCAL}/settings?tab=general` });
+  await dashboard.send("Page.navigate", { url: `${LOCAL}/settings/desktop-pet` });
   await until(async () => /Laptop \(test\)/.test(await page()), "the list", 20).catch(() => {});
   await atNeither();
   await check("awaySaidInSettings", async () => { await atNeither(); return /away from all of them/.test(await page()); }, 15);
@@ -413,7 +413,7 @@ try {
   checks.guessingClosesTheCode = Boolean(afterGuesses.value?.error) && (await devices()).pairing === null && (await devices()).devices.length === 2;
 
   // 9. Removed from Settings: the key stops at once, he says he is locked out, and he is no longer listed or counted.
-  await dashboard.send("Page.navigate", { url: `${LOCAL}/settings?tab=general` });
+  await dashboard.send("Page.navigate", { url: `${LOCAL}/settings/desktop-pet` });
   await until(async () => /Laptop \(test\)/.test(await page()), "the list", 20);
   await dashboard.evaluate(`[...document.querySelector('[data-pet-device="Laptop (test)"]').querySelectorAll("button")].find((b) => b.innerText.trim() === "Remove").click(); true`);
   await until(() => dashboard!.evaluate(`Boolean(document.querySelector("[role=alertdialog]"))`), "the confirmation", 10);
@@ -449,7 +449,7 @@ try {
   checks.loopbackOnlyNotOnNetwork = LAN_HOST.startsWith("127.") ? true : await fetch(`${LAN}/api/backend/http/health`, { signal: AbortSignal.timeout(5000) }).then(() => false, () => true);
   const closed = await devices();
   checks.loopbackOnlySaid = closed.loopbackOnly && closed.addresses.length === 0;
-  await dashboard.send("Page.navigate", { url: `${LOCAL}/settings?tab=general` });
+  await dashboard.send("Page.navigate", { url: `${LOCAL}/settings/desktop-pet` });
   await check("addComputerDisabled", () => dashboard!.evaluate(`(() => { const b = [...document.querySelectorAll("main button")].find((b) => b.innerText.trim() === "Add a computer"); return Boolean(b?.disabled) && document.querySelector("main").innerText.includes("Perry listens on this computer alone"); })()`), 30);
   await scrollTo("On your other computers");
   await shot("settings-this-computer-alone.png");

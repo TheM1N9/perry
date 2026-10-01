@@ -3,18 +3,16 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FolderOutputIcon, MessageSquareIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
-import { toast } from "sonner";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { ProjectView } from "@/convex/projects";
-import { errorText } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Spinner } from "@/components/ui/spinner";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
+import { SaveStatus, useAutosave } from "../autosave";
 import { ActionButton, EmptyState, List, ListSkeleton, Page, RelativeTime, Section, StatusBadge } from "../common";
 import { DeleteProjectDialog, RenameProjectDialog, useMoveChat } from "../projects";
 
@@ -37,7 +35,7 @@ export function ProjectScreen() {
   if (project === null) {
     return (
       <Page title="Project">
-        <EmptyState title="This project isn't here" action={<Button variant="outline" size="sm" render={<Link href="/chat" />}>New chat</Button>}>
+        <EmptyState mascot title="This project isn't here" action={<Button variant="outline" size="sm" render={<Link href="/chat" />}>New chat</Button>}>
           It may have been deleted. Its chats, if it had any, are in your chat list.
         </EmptyState>
       </Page>
@@ -74,46 +72,20 @@ export function ProjectScreen() {
   );
 }
 
+/** The project's instructions, saved as you type: a pause, or leaving the field, saves them. */
 function Instructions({ project }: { project: ProjectView }) {
   const { dashboardKey } = useSession();
   const save = useMutation(api.projects.setInstructions);
-  // The draft follows the saved text until it is edited, so a change made elsewhere shows up.
-  const [draft, setDraft] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const text = draft ?? project.instructions;
-  const dirty = text.trim() !== project.instructions;
-  useEffect(() => { if (draft !== null && draft.trim() === project.instructions) setDraft(null); }, [draft, project.instructions]);
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!dirty || saving) return;
-    setSaving(true);
-    try {
-      const { changed } = await save({ key: dashboardKey, id: project.id, instructions: text });
-      setDraft(null);
-      toast.success(changed ? "Saved. Every chat in the project follows them from its next message." : "Nothing changed.");
-    } catch (cause) {
-      toast.error(errorText(cause));
-    } finally {
-      setSaving(false);
-    }
-  };
-
+  const instructions = useAutosave({ saved: project.instructions, save: (text) => save({ key: dashboardKey, id: project.id, instructions: text }) });
   return (
-    <form className="rounded-xl border bg-card p-4" onSubmit={(event) => void submit(event)}>
-      <Field>
-        <FieldLabel htmlFor="project-instructions" className="sr-only">Instructions for {project.name}</FieldLabel>
-        <Textarea id="project-instructions" value={text} rows={6} maxLength={8000} className="min-h-36 leading-relaxed"
-          placeholder={"For example:\nScripts for the Hackonomics YouTube channel: money explained for people in their twenties.\nHook in the first line, short sentences, no jargon, 8 to 10 minutes read aloud.\nEnd every script with one question for the comments."}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
-        <FieldDescription>Ctrl+Enter saves.</FieldDescription>
-      </Field>
-      <div className="mt-3 flex gap-2">
-        <Button type="submit" disabled={!dirty || saving}>{saving && <Spinner />}Save</Button>
-        {dirty && <Button type="button" variant="ghost" onClick={() => setDraft(null)} disabled={saving}>Discard</Button>}
-      </div>
-    </form>
+    <Field>
+      <FieldLabel htmlFor="project-instructions" className="sr-only">Instructions for {project.name}</FieldLabel>
+      <Textarea id="project-instructions" value={instructions.value} rows={6} maxLength={8000} className="min-h-36 leading-relaxed" {...instructions.field}
+        placeholder={"For example:\nScripts for the Hackonomics YouTube channel: money explained for people in their twenties.\nHook in the first line, short sentences, no jargon, 8 to 10 minutes read aloud.\nEnd every script with one question for the comments."}
+        onChange={(event) => instructions.change(event.target.value)}
+        onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void instructions.flush(); } }} />
+      <SaveStatus state={instructions.state} idle="Saves as you type." onRetry={() => void instructions.flush()} />
+    </Field>
   );
 }
 
@@ -131,7 +103,7 @@ function Chats({ project }: { project: ProjectView }) {
       {project.chats.map((chat) => (
         <li key={chat.id} className="flex items-center gap-3 px-4 py-3">
           <MessageSquareIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <Link href={`/chat/${chat.id}`} className="min-w-0 flex-1 truncate text-[15px] hover:underline underline-offset-2">{chat.title}</Link>
+          <Link href={`/chat/${chat.id}`} className="min-w-0 flex-1 truncate text-md hover:underline underline-offset-2">{chat.title}</Link>
           {(chat.job || chat.task) && <StatusBadge>{chat.job ? "Schedule" : "Task"}</StatusBadge>}
           <RelativeTime at={chat.lastMessageAt} className="shrink-0 text-xs text-muted-foreground" />
           <Button variant="ghost" size="sm" className="shrink-0 text-muted-foreground" onClick={() => void move(chat.id, null)}>
@@ -154,9 +126,9 @@ function Memories({ project }: { project: ProjectView }) {
       {project.memories.map((memory) => (
         <li key={memory.id} className="flex items-start gap-4 px-4 py-3.5">
           <div className="min-w-0 flex-1">
-            <p className="text-[15px] text-pretty [overflow-wrap:anywhere]">{memory.text}</p>
+            <p className="text-md text-pretty [overflow-wrap:anywhere]">{memory.text}</p>
             <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
-              <StatusBadge>{KINDS[memory.kind]}</StatusBadge>
+              <span>{KINDS[memory.kind]}</span>
               <RelativeTime at={memory.editedAt ?? memory.createdAt} />
             </p>
           </div>

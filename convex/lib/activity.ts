@@ -50,7 +50,7 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   forget: () => ({ label: "Forgetting that", pose: "remembering" }),
   update_user_md: () => ({ label: "Updating what I know about you", pose: "remembering" }),
   update_identity: () => ({ label: "Changing how I come across", pose: "remembering" }),
-  save_secret: () => ({ label: "Putting that in Keys", pose: "typing" }),
+  save_secret: () => ({ label: "Putting that in Logins & secrets", pose: "typing" }),
   list_secrets: () => ({ label: "Looking through your logins", pose: "reading" }),
   use_secret: () => ({ label: "Getting a saved login", pose: "reading" }),
   search_chats: () => ({ label: "Looking through your chats", pose: "searching" }),
@@ -107,6 +107,21 @@ export function describeStep(span: Span): Step {
 export const WAITING: Step = { label: "Waiting for you to approve", pose: "waiting" };
 export const WRITING: Step = { label: "Writing the reply", pose: "typing" };
 export const STARTING: Step = { label: "Thinking", pose: "thinking" };
+
+/** A step that finished between two reports is held up this long. */
+const STEP_HOLD_MS = 2_500;
+
+type Shown = { running: boolean; step?: Step & { since: number; live: boolean }; recent?: Step & { since: number; endedAt: number } };
+
+/**
+ * The step to show for a turn (dashboard.getActivity): the one it is on, or
+ * between steps the one that just finished, held up a moment so a quick one
+ * is seen at all. Nothing once the turn is over.
+ */
+export function shownStep(of: Shown | null | undefined, now: number) {
+  return !of?.running || !of.step ? undefined
+    : of.step.live || !of.recent || now - of.recent.endedAt > STEP_HOLD_MS ? of.step : of.recent;
+}
 
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 

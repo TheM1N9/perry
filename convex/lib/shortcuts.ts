@@ -1,5 +1,5 @@
 /**
- * Keyboard shortcuts the owner can change, on the dashboard's Settings page.
+ * Keyboard shortcuts the owner can change, in the dashboard's Settings → Desktop pet.
  * Pure functions with no server imports: the dashboard, the desktop pet's page
  * and the backend all use them.
  *

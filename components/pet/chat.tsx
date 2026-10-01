@@ -8,10 +8,17 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { errorText } from "@/lib/format";
 import { useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group";
+import { Kbd } from "@/components/ui/kbd";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Markdown } from "@/components/dashboard/chat/markdown";
 import { StatusIndicator } from "@/components/dashboard/status-indicator";
 import { describe, holdProblem } from "@/convex/lib/shortcuts";
 import { Empty } from "./empty";
+import { PetTip } from "./tip";
 import { Listening, MicButton, type Voice } from "./voice";
 
 /**
@@ -76,9 +83,9 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   const stopChat = useMutation(api.dashboard.stopChat);
   const markSeen = useMutation(api.dashboard.markChatSeen);
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
-  const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  /** What scrolls: the ScrollArea's viewport, kept at the newest message. */
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -143,64 +150,62 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="relative flex items-center gap-0.5 border-b px-2.5 pb-1.5">
-        <button type="button" onClick={() => setPicking((value) => !value)} aria-expanded={picking}
-          className="flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-[13px] font-medium hover:bg-muted">
-          <span className="truncate">{title}</span>
-          <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        </button>
-        <span className="flex-1" />
-        <button type="button" title="New chat" aria-label="New chat" onClick={() => { onChatId(null); setPicking(false); }}
-          className="grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
-          <PlusIcon className="size-4" aria-hidden />
-        </button>
-        {chatId && (
-          <button type="button" title="Open in Perry" aria-label="Open this chat in Perry" onClick={() => open(`/chat/${chatId}`)}
-            className="grid size-7 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
-            <ExternalLinkIcon className="size-3.5" aria-hidden />
-          </button>
-        )}
-        {picking && (
-          <ul className="absolute top-full left-2.5 z-10 mt-0.5 max-h-64 w-[250px] overflow-y-auto rounded-xl border bg-popover p-1 text-popover-foreground shadow-lg" aria-label="Your chats">
-            {yours.length === 0 && <li className="px-2.5 py-2 text-[13px] text-muted-foreground">No chats yet.</li>}
-            {yours.map((item) => (
-              <li key={item.id}>
-                <button type="button" onClick={() => { onChatId(item.id); setPicking(false); }}
-                  className={cn("flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-muted", item.id === chatId && "bg-muted")}>
+      <div className="flex items-center gap-0.5 border-b px-2.5 pb-1.5">
+        {/* Your chats, as a menu: arrow keys, Esc and a click outside close it; data-solid, or the window would let its clicks through. */}
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="min-w-0 px-1.5 text-sm" aria-label={`${title}: pick a chat`} />}>
+            <span className="truncate">{title}</span>
+            <ChevronDownIcon className="text-muted-foreground" aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent data-solid align="start" className="max-h-64 w-[250px]" aria-label="Your chats">
+            {yours.length === 0 && <p className="px-2 py-1.5 text-sm text-muted-foreground">No chats yet.</p>}
+            <DropdownMenuRadioGroup value={chatId ?? ""} onValueChange={(id) => onChatId(id as Id<"conversations">)}>
+              {yours.map((item) => (
+                <DropdownMenuRadioItem key={item.id} value={item.id} closeOnClick className="gap-2">
                   <span className={cn("min-w-0 flex-1 truncate", item.naming && "shimmer")}>{item.title}</span>
                   <StatusIndicator status={item.status} unseen={item.unseen && item.id !== chatId} />
-                </button>
-              </li>
-            ))}
-          </ul>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <span className="flex-1" />
+        <PetTip label="New chat">
+          <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="New chat" onClick={() => onChatId(null)}><PlusIcon /></Button>
+        </PetTip>
+        {chatId && (
+          <PetTip label="Open in Perry">
+            <Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="Open this chat in Perry" onClick={() => open(`/chat/${chatId}`)}><ExternalLinkIcon /></Button>
+          </PetTip>
         )}
       </div>
 
-      <div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 pt-3 pb-2 [scrollbar-width:thin] [&_.prose-chat]:text-[13.5px] [&_.prose-chat]:leading-[1.6]" aria-live="polite">
-        {!chatId && (<div className="flex min-h-full flex-col justify-center pb-3">
+      <ScrollArea viewportRef={scroller} className="min-h-0 flex-1">
+      <div className="flex min-h-full flex-col space-y-3 px-3.5 pt-3 pb-2 [&_.prose-chat]:text-sm [&_.prose-chat]:leading-[1.6]" aria-live="polite">
+        {!chatId && (<div className="flex flex-1 flex-col justify-center pb-3">
           <Empty title="What can I do for you?" awake className="pt-0">
             {voice && hotkey ? (holdProblem(hold)
-              ? <>Type, or tap <kbd className="rounded border bg-muted px-1 font-mono text-[11px]">{keys(hotkey)}</kbd> anywhere, talk, and tap it again.</>
-              : <>Type, or hold <kbd className="rounded border bg-muted px-1 font-mono text-[11px]">{keys(hotkey)}</kbd> anywhere and talk.</>)
+              ? <>Type, or tap <Kbd>{keys(hotkey)}</Kbd> anywhere, talk, and tap it again.</>
+              : <>Type, or hold <Kbd>{keys(hotkey)}</Kbd> anywhere and talk.</>)
               : "I know your chats and memory, and work on this computer."}
           </Empty>
           <div className="flex flex-wrap justify-center gap-1.5 px-2">
             {SUGGESTIONS.map((text) => (
-              <button key={text} type="button" onClick={() => { onDraft(text); input.current?.focus(); }}
-                className="cursor-pointer rounded-full border bg-background px-3 py-1 text-[12.5px] text-foreground/85 transition-colors hover:border-primary/40 hover:bg-brand-soft">
+              <Button key={text} variant="outline" size="sm" className="rounded-full px-3 font-normal text-foreground/85 hover:border-primary/40 hover:bg-brand-soft"
+                onClick={() => { onDraft(text); input.current?.focus(); }}>
                 {text}
-              </button>
+              </Button>
             ))}
           </div>
         </div>)}
         {messages.map((message) => message.role === "user" ? (
-          <div key={message.id} className="ml-auto flex w-fit max-w-[85%] flex-col items-end gap-1">
+          <div key={message.id} className="ml-auto flex w-fit max-w-[85%] flex-col items-end gap-1" data-role="user">
             {message.attachments.filter((file) => file.contentType.startsWith("image/")).map((file) => (
               // eslint-disable-next-line @next/next/no-img-element -- a local file served by /api/media, not a static asset
               <img key={file.url} src={file.url} alt={file.fileName} className="max-h-32 rounded-xl border object-contain" />
             ))}
             {message.text && (
-              <p className={cn("w-fit rounded-2xl rounded-br-md bg-muted px-3 py-1.5 text-[13.5px] whitespace-pre-wrap [overflow-wrap:anywhere]", message.pending && "opacity-70")}>
+              <p className={cn("w-fit rounded-2xl rounded-br-md bg-muted px-3 py-1.5 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]", message.pending && "opacity-70")}>
                 {message.text}
               </p>
             )}
@@ -210,78 +215,79 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
         ))}
         {running && (chat?.streaming
           ? <div className="opacity-90"><Markdown text={chat.streaming} /></div>
-          : <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground"><span className="size-1.5 animate-pulse rounded-full bg-primary" />Working…</p>)}
-        {chat?.lastError && !running && <p className="text-[12.5px] text-destructive">{chat.lastError}</p>}
+          : <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><span className="size-1.5 animate-pulse rounded-full bg-primary" />Working…</p>)}
+        {chat?.lastError && !running && <p className="text-xs text-destructive">{chat.lastError}</p>}
       </div>
+      </ScrollArea>
 
       <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="px-3 pt-1 pb-3">
         {shot && picture && (
-          <div className="mb-1.5 flex items-start gap-2 rounded-xl border bg-card p-1.5" aria-label="Picture of the screen to send">
+          <div className="mb-1.5 flex items-start gap-2 px-1.5" aria-label="Picture of the screen to send">
             {/* eslint-disable-next-line @next/next/no-img-element -- a picture just taken, as a data URL */}
             <img src={picture.image} alt={`Picture of ${picture.name}`} className="h-16 max-w-28 shrink-0 rounded-md border object-cover object-top" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[12.5px] font-medium" title={picture.name}>{picture.name}</p>
-              <p className="text-[11.5px] text-muted-foreground">Goes with your next message.</p>
+              <p className="truncate text-xs font-medium" title={picture.name}>{picture.name}</p>
+              <p className="text-2xs text-muted-foreground">Goes with your next message.</p>
               {shot.window && shot.screen && (
-                <div className="mt-1 flex gap-1" role="group" aria-label="Which picture">
+                <ToggleGroup aria-label="Which picture" value={[shot.use]} onValueChange={(next) => { if (next[0]) onShot({ ...shot, use: next[0] as Shot["use"] }); }}
+                  variant="outline" size="sm" spacing={1} className="mt-1">
                   {(["window", "screen"] as const).map((use) => (
-                    <button key={use} type="button" aria-pressed={shot.use === use} onClick={() => onShot({ ...shot, use })}
-                      className={cn("cursor-pointer rounded-full border px-2 py-0.5 text-[11.5px]", shot.use === use ? "border-primary/50 bg-brand-soft text-foreground" : "text-muted-foreground hover:text-foreground")}>
+                    <ToggleGroupItem key={use} value={use} className="h-6 min-w-0 rounded-full px-2 text-xs font-normal text-muted-foreground aria-pressed:border-primary/50 aria-pressed:bg-brand-soft aria-pressed:text-foreground">
                       {use === "window" ? "This window" : "Whole screen"}
-                    </button>
+                    </ToggleGroupItem>
                   ))}
-                </div>
+                </ToggleGroup>
               )}
             </div>
-            <button type="button" aria-label="Don't send the picture" title="Don't send it" onClick={() => onShot(null)}
-              className="grid size-6 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">
-              <XIcon className="size-3.5" aria-hidden />
-            </button>
+            <PetTip label="Don't send it">
+              <Button variant="ghost" size="icon-xs" className="text-muted-foreground" aria-label="Don't send the picture" onClick={() => onShot(null)}><XIcon /></Button>
+            </PetTip>
           </div>
         )}
-        <div className="flex items-end gap-1.5 rounded-2xl border bg-card py-1.5 pr-1.5 pl-3 shadow-[0_1px_2px_rgb(0_0_0/0.05)] transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/15">
-          {voice && voice.state !== "idle" ? (
-            <div className="min-w-0 flex-1"><Listening voice={voice} onSend={onTalkSend} onCancel={onTalkCancel} /></div>
-          ) : (<>
-          <textarea
-            ref={input}
-            value={draft}
-            rows={1}
-            onChange={(event) => { onDraft(event.target.value); setError(""); }}
-            onKeyDown={onKey}
-            aria-label="Message Perry"
-            placeholder={picture ? "Ask about it, or just send" : running ? "Add to what he's doing…" : "Ask Perry, or tell him what to do"}
-            className="max-h-28 min-h-7 flex-1 resize-none bg-transparent py-1 text-[13.5px] outline-none [field-sizing:content] placeholder:text-muted-foreground/80"
-          />
-          {onLook && (
-            <button type="button" onClick={onLook} aria-label="Show Perry the screen"
-              title={`Show him the window you're in${lookKeys ? ` (${keys(lookKeys)} from anywhere)` : ""}`}
-              className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground">
-              <ScanEyeIcon className="size-4" aria-hidden />
-            </button>
-          )}
-          {voice && <MicButton onClick={onTalk} />}
-          {running && !draft.trim() && !picture ? (
-            <button type="button" aria-label="Stop" title="Stop" onClick={() => chatId && void stopChat({ key, id: chatId })}
-              className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-full bg-foreground text-background">
-              <SquareIcon className="size-3 fill-current" aria-hidden />
-            </button>
-          ) : (
-            <button type="submit" aria-label="Send" disabled={(!draft.trim() && !picture) || sending}
-              className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-full bg-primary text-primary-foreground disabled:cursor-default disabled:opacity-40">
-              <ArrowUpIcon className="size-4" aria-hidden />
-            </button>
-          )}
-          </>)}
-        </div>
+        {voice && voice.state !== "idle" ? (
+          <div className="rounded-2xl border bg-card py-1.5 pr-1.5 pl-3 shadow-raised"><Listening voice={voice} onSend={onTalkSend} onCancel={onTalkCancel} /></div>
+        ) : (
+          <InputGroup className="rounded-2xl bg-card shadow-raised dark:bg-card">
+            <InputGroupTextarea
+              ref={input}
+              value={draft}
+              rows={1}
+              onChange={(event) => { onDraft(event.target.value); setError(""); }}
+              onKeyDown={onKey}
+              aria-label="Message Perry"
+              placeholder={picture ? "Ask about it, or just send" : running ? "Add to what he's doing…" : "Ask Perry, or tell him what to do"}
+              className="max-h-28 min-h-9 py-2 pl-3 text-sm md:text-sm"
+            />
+            <InputGroupAddon align="inline-end" className="gap-1 self-end pb-1.5">
+              {onLook && (
+                <PetTip label={`Show him the window you're in${lookKeys ? ` (${keys(lookKeys)} from anywhere)` : ""}`}>
+                  <InputGroupButton size="icon-xs" className="size-7 rounded-full text-muted-foreground" onClick={onLook} aria-label="Show Perry the screen"><ScanEyeIcon className="size-4" /></InputGroupButton>
+                </PetTip>
+              )}
+              {voice && <MicButton onClick={onTalk} />}
+              {running && !draft.trim() && !picture ? (
+                <PetTip label="Stop">
+                  <InputGroupButton size="icon-xs" variant="default" className="size-7 rounded-full bg-foreground text-background hover:bg-foreground/80" aria-label="Stop"
+                    onClick={() => chatId && void stopChat({ key, id: chatId })}>
+                    <SquareIcon className="size-3 fill-current" />
+                  </InputGroupButton>
+                </PetTip>
+              ) : (
+                <InputGroupButton type="submit" size="icon-xs" variant={!draft.trim() && !picture ? "secondary" : "default"} className={cn("size-7 rounded-full", !draft.trim() && !picture && "text-muted-foreground disabled:opacity-100")} aria-label="Send" disabled={(!draft.trim() && !picture) || sending}>
+                  <ArrowUpIcon className="size-4" />
+                </InputGroupButton>
+              )}
+            </InputGroupAddon>
+          </InputGroup>
+        )}
         {voice?.state === "listening" && (
-          <p className="mt-1 px-1 text-[11.5px] text-muted-foreground">
+          <p className="mt-1 px-1 text-2xs text-muted-foreground">
             {!byHotkey || !hotkey ? "Listening. Send when you're done, and it goes into the box to check; Esc to stop."
               : holdProblem(hold) ? `Listening. Press ${keys(hotkey)} again to send; Esc to stop. ${holdProblem(hold)}`
                 : `Listening. Let go of ${keys(hotkey)}, or press it again, to send; Esc to stop.`}
           </p>
         )}
-        {(error || voice?.error) && <p className="mt-1 px-1 text-[12px] text-destructive">{error || voice?.error}</p>}
+        {(error || voice?.error) && <p className="mt-1 px-1 text-xs text-destructive">{error || voice?.error}</p>}
       </form>
     </div>
   );

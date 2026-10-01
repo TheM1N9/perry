@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { Work } from "@/convex/dashboard";
 import {
   ACCESS_HINTS, ACCESS_LABELS, ACCESSES, COMPACTED, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
   modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, typingSkill, type Access,
@@ -25,10 +26,11 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApprovalCard } from "../approval-card";
 import { DeleteDialog, RenameDialog } from "../app-sidebar";
-import { APPS, ChannelIcon, PerryMark, TopBar } from "../common";
+import { APPS, ChannelIcon, EmptyState, PerryMark, TopBar } from "../common";
 import { MoveToProject, NewProjectDialog } from "../projects";
 import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
@@ -222,6 +224,21 @@ export function ChatScreen() {
 
   const shownPending = pending.filter((item) => item.id === selectedId);
   const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
+  // Every step Perry takes: listed as they come while a reply is on its way, and kept with the reply after.
+  const work = useQuery(api.dashboard.getChatWork, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
+  const { workOf, liveWork } = useMemo(() => {
+    const runs = work ?? [];
+    const replies = messages.filter((message) => message.role === "assistant" && !message.pending);
+    const workOf = new Map<string, Work>();
+    // A finished run goes with the reply it wrote: the first after it started, and before the next run did.
+    runs.forEach((run, index) => {
+      if (run.status === "running" || !run.steps.length) return;
+      const next = runs[index + 1]?.startedAt ?? Infinity;
+      const reply = replies.find((message) => message.createdAt >= run.startedAt && message.createdAt < next && !workOf.has(message.id));
+      if (reply) workOf.set(reply.id, run);
+    });
+    return { workOf, liveWork: [...runs].reverse().find((run) => run.status === "running") };
+  }, [work, messages]);
 
   // Scrolling: a chat opens at its newest message; after that, new content only scrolls into view for a reader already at the bottom.
   const scroller = useRef<HTMLDivElement>(null);
@@ -245,7 +262,7 @@ export function ChatScreen() {
     } else if (stick.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, here.length]);
+  }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, liveWork?.steps.length, here.length]);
   const jumpToLatest = () => {
     stick.current = true;
     setAtBottom(true);
@@ -538,7 +555,7 @@ export function ChatScreen() {
           onPin={() => void setPinned({ key: dashboardKey, id: summary.id, pinned: !summary.pinned }).catch(fail)}
           onRename={() => setRenaming(true)}
           onCopyId={() => void copyText(summary.id).then(() => toast.success("Session ID copied."), fail)}
-          activityHref={`/activity?session=${summary.id}`}
+          activityHref={`/settings/activity?session=${summary.id}`}
           onDelete={summary.channel === "web" ? () => setRemoving(true) : undefined}
           move={summary.channel === "web" ? <MoveToProject chat={summary} onNewProject={() => setCreatingProject(true)} /> : null}
         />
@@ -563,7 +580,7 @@ export function ChatScreen() {
       <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]" id="content" tabIndex={-1}>
         <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
           {status?.onboarding === "offer" && (
-            <Alert className="mt-4">
+            <Alert variant="quiet" className="mt-4">
               <AlertTitle>Tell {assistant} about yourself</AlertTitle>
               <AlertDescription>A name, a personality, and a page about you that {assistant} reads before every reply. About two minutes.</AlertDescription>
               <AlertAction className="flex gap-2">
@@ -576,8 +593,8 @@ export function ChatScreen() {
           {!selectedId ? (
             <div className="flex min-h-[calc(100dvh-16rem)] flex-col items-center justify-center py-12 text-center">
               <PerryMark className="size-14" />
-              <h2 className="mt-5 text-[28px] font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
-              <p className="mt-1.5 max-w-md text-[15px] text-pretty text-muted-foreground">
+              <h2 className="mt-5 text-3xl font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
+              <p className="mt-1.5 max-w-md text-md text-pretty text-muted-foreground">
                 {project ? `It follows the project's instructions, knows its other chats, and keeps what ${assistant} remembers here to the project.` : `What should ${assistant} pick up?`}
               </p>
             </div>
@@ -590,11 +607,9 @@ export function ChatScreen() {
                 </div>
               )}
               {missing && (
-                <Alert>
-                  <AlertTitle>This chat isn&apos;t here</AlertTitle>
-                  <AlertDescription>It may have been deleted. Start a new one, or pick another from the sidebar.</AlertDescription>
-                  <AlertAction><Button size="sm" render={<Link href="/chat" />}>New chat</Button></AlertAction>
-                </Alert>
+                <EmptyState mascot title="This chat isn't here" action={<Button size="sm" render={<Link href="/chat" />}>New chat</Button>}>
+                  It may have been deleted. Start a new one, or pick another from the sidebar.
+                </EmptyState>
               )}
               {messageStatus === "CanLoadMore" && (
                 <div className="flex justify-center">
@@ -608,6 +623,7 @@ export function ChatScreen() {
                 <MessageRow
                   key={message.id}
                   message={message}
+                  work={workOf.get(message.id)}
                   assistant={assistant}
                   latest={message.id === lastMessage?.id}
                   canEdit={!waiting && !app}
@@ -621,14 +637,14 @@ export function ChatScreen() {
                 />
               ))}
               {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
-              {waiting && !here.length && <ReplyInProgress streaming={chat?.streaming} />}
+              {waiting && !here.length && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} />}
               {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
               {chat?.lastError && !chat.isRunning && !waiting && (
                 <Alert variant="destructive">
                   <TriangleAlertIcon />
                   <AlertTitle>{assistant} couldn&apos;t finish the last reply</AlertTitle>
                   <AlertDescription>
-                    <p>{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings shows it too."
+                    <p>{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings → Engines & usage shows it too."
                       : /runner|offline|computer/i.test(chat.lastError) ? "Your computer may be offline. Start Perry on it, then try again." : "Try again, or open Activity for the full run."}</p>
                     <p className="mt-1 font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
                   </AlertDescription>
@@ -655,11 +671,11 @@ export function ChatScreen() {
         <div className="mx-auto w-full max-w-3xl">
           <p className="sr-only" role="status" aria-live="polite">{waiting ? `${assistant} is replying` : ""}</p>
           {chat?.contact ? (
-            <div className="rounded-xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            <div className="px-1 pb-1 text-sm text-muted-foreground" role="note">
               <p className="font-medium text-foreground">{assistant}&apos;s chat with {chat.contact.name}{chat.contact.group ? " (a group)" : ""}</p>
               <p className="mt-1 text-pretty">
                 You can read it, but not write in it: what you write would reach them. To have {assistant} tell them something, ask in your own chat.
-                {" "}What {assistant} may share with them is under <Link href="/settings?tab=people" className="underline underline-offset-2 hover:text-foreground">Settings → People</Link>.
+                {" "}What {assistant} may share with them is under <Link href="/settings/people" className="link">Settings → People</Link>.
               </p>
             </div>
           ) : (<>
@@ -690,7 +706,7 @@ export function ChatScreen() {
               {limit && limitSeen !== limitMark && (
                 <ComposerNote tone={limit.level === "out" ? "error" : "warning"} onDismiss={() => setLimitSeen(limitMark)}>
                   <span className="font-medium">{limit.title}.</span> {limit.detail}{" "}
-                  <Link href="/settings?tab=usage" className="underline underline-offset-2">See usage</Link>
+                  <Link href="/settings/engines" className="link">See usage</Link>
                 </ComposerNote>
               )}
               {!selectedId && !draft && files.length === 0 && (
@@ -709,7 +725,7 @@ export function ChatScreen() {
               ? <span className="text-warning">Full access: {assistant} acts on this computer without asking. Every command still shows in Activity.</span>
               : app
                 ? <>Your {app} chat. What you write here, and {assistant}&apos;s reply, also go to {app}.</>
-                : <>Type <kbd className="font-mono">/</kbd> for commands, <kbd className="font-mono">$</kbd> for skills. Drop or paste files to attach them.</>}
+                : <>Type <Kbd className="font-mono">/</Kbd> for commands, <Kbd className="font-mono">$</Kbd> for skills. Drop or paste files to attach them.</>}
           </p>
           </>)}
         </div>

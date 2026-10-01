@@ -27,12 +27,12 @@ export const ask = internalMutation({
   returns: v.union(v.object({ id: v.id("screenLooks") }), v.object({ error: v.string() })),
   handler: async (ctx, args) => {
     const install = await ctx.db.query("installation").first();
-    if (install?.screenLook === false) return { error: "The owner turned off letting you look at the screen (Settings → General → Desktop pet). Ask them to show you with the Look hotkey instead." };
+    if (install?.screenLook === false) return { error: "The owner turned off letting you look at the screen (Settings → Desktop pet). Ask them to show you with the Look hotkey instead." };
     const chat = await ctx.db.get(args.conversationId);
     // A background task works in a chat of its own (taskId, once background tasks are in); the owner is not reading it either.
     if (!chat || chat.jobId || (chat as { taskId?: unknown }).taskId) return { error: "You can look at the screen only in a chat with the owner, not in a scheduled job or a background task." };
     const [pet] = await runningPets(ctx);
-    if (!pet) return { error: "The desktop pet is not running, and it is what sees the screen. Ask the owner to turn it on (Settings → General), or to paste a screenshot." };
+    if (!pet) return { error: "The desktop pet is not running, and it is what sees the screen. Ask the owner to turn it on (Settings → Desktop pet), or to paste a screenshot." };
     const id = await ctx.db.insert("screenLooks", { conversationId: args.conversationId, which: args.which, why: args.why.slice(0, 200), status: "asked", createdAt: Date.now(), device: pet.device });
     return { id };
   },

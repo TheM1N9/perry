@@ -150,7 +150,7 @@ try {
     writeFileSync(join(outDir, name), Buffer.from(image.data, "base64"));
   };
   // The note above the composer about the engine's limit: the one that links to Settings → Usage.
-  const note = () => evaluate(`[...document.querySelectorAll('[role="alert"], [role="status"]')].find((el) => el.querySelector('a[href="/settings?tab=usage"]'))?.innerText ?? ""`) as Promise<string>;
+  const note = () => evaluate(`[...document.querySelectorAll('[role="alert"], [role="status"]')].find((el) => el.querySelector('a[href="/settings/engines"]'))?.innerText ?? ""`) as Promise<string>;
   const openChatPage = async (chat: string) => {
     await send("Page.navigate", { url: `${BASE}/chat/${chat}` });
     await until(() => evaluate(`Boolean(document.querySelector('textarea'))`), "the chat page", 30);
@@ -231,7 +231,7 @@ try {
   check("passedResetNotFull", !/used up/.test(lowNote));
 
   // --- 9. Settings → Usage -------------------------------------------------------------------------------------
-  await send("Page.navigate", { url: `${BASE}/settings?tab=usage` });
+  await send("Page.navigate", { url: `${BASE}/settings/engines` });
   await until(() => evaluate(`Boolean(document.querySelector('section[aria-label="Your plans"] li'))`), "the Usage tab", 30);
   await sleep(1_500);
   const plans = await evaluate(`document.querySelector('section[aria-label="Your plans"]').innerText`) as string;

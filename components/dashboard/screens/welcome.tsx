@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -92,7 +93,8 @@ export function Welcome() {
     event.preventDefault();
     if (step === 0) setStep(1);
     else if (step === 1) { if (!edited) setUserMd(composeUserMd(answers, timezone)); setStep(2); }
-    else void run("save");
+    // An emptied USER.md is no page about you: Perry asks in the chat instead.
+    else void run(userMd.trim() ? "save" : "chat");
   };
 
   return (
@@ -103,7 +105,7 @@ export function Welcome() {
           <ol className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-label="Steps">
             {STEPS.map((label, index) => (
               <li key={label} aria-current={index === step ? "step" : undefined} className="flex items-center gap-1.5">
-                <span className={cn("grid size-5 place-items-center rounded-full border text-[11px] font-medium",
+                <span className={cn("grid size-5 place-items-center rounded-full border text-2xs font-medium",
                   index < step && "border-primary bg-primary text-primary-foreground", index === step && "border-foreground text-foreground")}>
                   {index < step ? <CheckIcon className="size-3" /> : index + 1}
                 </span>
@@ -114,7 +116,7 @@ export function Welcome() {
           </ol>
         </div>
 
-        <div className="rounded-2xl border bg-card p-6 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_16px_40px_-24px_rgb(0_0_0/0.2)] sm:p-8">
+        <div className="rounded-2xl border bg-card p-6 shadow-float sm:p-8">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div key={step}
               initial={reduce ? false : { opacity: 0, x: 16 }}
@@ -131,15 +133,17 @@ export function Welcome() {
                   </Field>
                   <FieldSet>
                     <FieldLegend variant="label">Personality</FieldLegend>
-                    <div role="radiogroup" aria-label="Personality" className="grid gap-2">
+                    <RadioGroup aria-label="Personality" value={preset} onValueChange={(value) => setPreset(value as string)} className="gap-3">
                       {[...PERSONALITIES, { id: "custom", label: "Something else", text: "Describe it in your own words." }].map((item) => (
-                        <button type="button" role="radio" aria-checked={preset === item.id} key={item.id} onClick={() => setPreset(item.id)}
-                          className={cn("rounded-xl border px-4 py-3 text-left transition-colors hover:bg-muted/40", preset === item.id && "border-primary/60 bg-brand-soft/40 ring-1 ring-primary/40")}>
-                          <span className="block text-sm font-medium">{item.label}</span>
-                          <span className="block text-sm text-pretty text-muted-foreground">{item.text}</span>
-                        </button>
+                        <label key={item.id} className="flex cursor-pointer items-start gap-3">
+                          <RadioGroupItem value={item.id} className="mt-0.5" />
+                          <span className="grid gap-0.5">
+                            <span className="text-sm font-medium">{item.label}</span>
+                            <span className="text-sm text-pretty text-muted-foreground">{item.text}</span>
+                          </span>
+                        </label>
                       ))}
-                    </div>
+                    </RadioGroup>
                   </FieldSet>
                   {preset === "custom" && (
                     <Field>
@@ -151,7 +155,7 @@ export function Welcome() {
                   {sample && (
                     <figure className="flex items-start gap-3" aria-label="How it might sound">
                       <PerryMark className="size-8" />
-                      <blockquote className="rounded-2xl rounded-tl-md bg-muted px-4 py-2.5 text-[15px] text-pretty">
+                      <blockquote className="rounded-2xl rounded-tl-md bg-muted px-4 py-2.5 text-md text-pretty">
                         <span className="mb-0.5 block text-xs font-medium text-muted-foreground">{assistant}</span>
                         {sample}
                       </blockquote>
@@ -211,11 +215,11 @@ export function Welcome() {
                 <>
                   <Heading ref={heading} title="Your USER.md">This is what {assistant} will know about you, in every chat. Edit anything; {assistant} keeps it current as you talk, and every version is kept.</Heading>
                   {persona.user && (
-                    <Alert><AlertTitle>This replaces your current USER.md</AlertTitle><AlertDescription>The old one stays in its history under Memory, so you can restore it.</AlertDescription></Alert>
+                    <Alert variant="quiet"><AlertTitle>This replaces your current USER.md</AlertTitle><AlertDescription>The old one stays in its history under Memory, so you can restore it.</AlertDescription></Alert>
                   )}
                   <Field>
                     <FieldLabel htmlFor={`${id}-md`}>USER.md</FieldLabel>
-                    <Textarea id={`${id}-md`} value={userMd} spellCheck className="min-h-80 font-mono text-[13px] leading-relaxed" onChange={(event) => { setUserMd(event.target.value); setEdited(true); }} />
+                    <Textarea id={`${id}-md`} value={userMd} spellCheck className="min-h-80 font-mono text-sm leading-relaxed" onChange={(event) => { setUserMd(event.target.value); setEdited(true); }} />
                     {edited && (
                       <Button type="button" variant="ghost" size="sm" className="w-fit" onClick={() => { setUserMd(composeUserMd(answers, timezone)); setEdited(false); }}>
                         <RefreshCwIcon />Rebuild from my answers
@@ -231,8 +235,8 @@ export function Welcome() {
 
           <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6">
             <div>{step > 0 && <Button type="button" variant="ghost" disabled={Boolean(busy)} onClick={() => setStep(step - 1)}>Back</Button>}</div>
-            <Button type="submit" size="lg" className="h-10 px-5" disabled={Boolean(busy) || (step === 2 && !userMd.trim())} aria-busy={busy === "save" || undefined}>
-              {busy === "save" && <Spinner />}{step === 2 ? `Save and meet ${assistant}` : "Continue"}
+            <Button type="submit" size="lg" className="h-10 px-5" disabled={Boolean(busy)} aria-busy={busy === "save" || undefined}>
+              {(busy === "save" || (step === 2 && busy === "chat")) && <Spinner />}{step === 2 ? `Save and meet ${assistant}` : "Continue"}
             </Button>
           </div>
         </div>
@@ -255,7 +259,7 @@ function Heading({ ref, title, children }: { ref: Ref<HTMLHeadingElement>; title
   return (
     <div>
       <h1 ref={ref} tabIndex={-1} className="text-2xl font-semibold tracking-[-0.02em] outline-none">{title}</h1>
-      <p className="mt-1.5 text-[15px] text-pretty text-muted-foreground">{children}</p>
+      <p className="mt-1.5 text-md text-pretty text-muted-foreground">{children}</p>
     </div>
   );
 }

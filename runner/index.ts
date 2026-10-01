@@ -270,7 +270,7 @@ async function main() {
 
   const engines = createEngines({
     warn: (line) => console.log(yellow(`  ${line}`)),
-    // A key from Settings → Keys an engine needs on this computer (Antigravity's Gemini API key).
+    // A key from Settings → Engines & usage an engine needs on this computer (Antigravity's Gemini API key).
     secret: async (name) => name === "GEMINI_API_KEY" ? (await client.query(api.engines.secret, { token, name })) ?? undefined : undefined,
   });
   // However the runner ends (stopped, a crash, its console closed), the agents it started end with it.

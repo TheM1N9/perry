@@ -11,15 +11,16 @@ import { errorText } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { useIsMac } from "@/hooks/use-shortcuts";
+import { Button } from "@/components/ui/button";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { List, ListSkeleton, Section } from "./common";
 
 /**
- * Settings → Keyboard shortcuts: each one, and the keys it is on. Click one
- * and press the keys you want; Esc leaves it as it was. Talk to Perry and Show
- * Perry the screen are the desktop pet's, and work anywhere on this computer;
- * each says whether the pet could take the keys, since another app may
- * already have them.
+ * Settings → Desktop pet → Keyboard shortcuts: each one, and the keys it is
+ * on. Click one and press the keys you want; Esc leaves it as it was. Talk to
+ * Perry and Show Perry the screen are the desktop pet's, and work anywhere on
+ * this computer; each says whether the pet could take the keys, since another
+ * app may already have them.
  */
 export function Shortcuts() {
   const { dashboardKey } = useSession();
@@ -28,7 +29,7 @@ export function Shortcuts() {
   const [recording, setRecording] = useState<ShortcutId | null>(null);
 
   return (
-    <Section title="Keyboard shortcuts" description="Click one and press the keys you want it on. Esc leaves it as it was.">
+    <Section id="shortcuts" title="Keyboard shortcuts" description="Click one and press the keys you want it on. Esc leaves it as it was.">
       {data === undefined ? <ListSkeleton rows={4} /> : (
         <List label="Keyboard shortcuts">
           {SHORTCUT_IDS.map((id) => (
@@ -52,7 +53,7 @@ export function Shortcuts() {
 }
 
 function Keys({ accelerator, mac }: { accelerator: string; mac: boolean }) {
-  return <KbdGroup>{keysOf(accelerator, mac).map((key, index) => <Kbd key={index} className="h-6 min-w-6 px-1.5 text-[12.5px]">{key}</Kbd>)}</KbdGroup>;
+  return <KbdGroup>{keysOf(accelerator, mac).map((key, index) => <Kbd key={index} className="h-6 min-w-6 px-1.5">{key}</Kbd>)}</KbdGroup>;
 }
 
 /** The keys, as a button: click, then press the new ones. */
@@ -94,11 +95,10 @@ function Recorder({ id, value, mac, recording, onRecording }: {
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <button type="button" onClick={() => onRecording(!recording)} aria-label={`${SHORTCUTS[id].label}: ${keysOf(value, mac).join(" ")}. Click to change.`}
-        className={cn("flex h-9 min-w-36 cursor-pointer items-center justify-center rounded-lg border bg-background px-3 transition-colors hover:bg-muted",
-          recording && "border-ring ring-3 ring-ring/30")}>
-        {recording ? <span className="text-sm text-muted-foreground">Press keys…</span> : <Keys accelerator={value} mac={mac} />}
-      </button>
+      <Button type="button" variant="outline" size="lg" onClick={() => onRecording(!recording)} aria-label={`${SHORTCUTS[id].label}: ${keysOf(value, mac).join(" ")}. Click to change.`}
+        aria-pressed={recording} className={cn("min-w-36 px-3", recording && "border-ring ring-3 ring-ring/50")}>
+        {recording ? <span className="font-normal text-muted-foreground">Press keys…</span> : <Keys accelerator={value} mac={mac} />}
+      </Button>
       {recording && problem && <p role="alert" className="max-w-60 text-right text-xs text-destructive">{problem}</p>}
     </div>
   );
@@ -108,10 +108,9 @@ function ResetButton({ id }: { id: ShortcutId }) {
   const { dashboardKey } = useSession();
   const save = useMutation(api.dashboard.setShortcut);
   return (
-    <button type="button" onClick={() => void save({ key: dashboardKey, id, accelerator: null }).catch((cause) => toast.error(errorText(cause)))}
-      className="cursor-pointer text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+    <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => void save({ key: dashboardKey, id, accelerator: null }).catch((cause) => toast.error(errorText(cause)))}>
       Reset
-    </button>
+    </Button>
   );
 }
 
@@ -120,7 +119,7 @@ function PetStatus({ pet, wanted, mac }: { pet: { running: boolean; hotkey?: str
   if (!pet.running) {
     return (
       <p className="mt-1.5 text-sm text-muted-foreground">
-        The desktop pet isn't on. <Link href="/settings?tab=general" className="font-medium text-foreground underline-offset-2 hover:underline">Turn him on in General</Link>.
+        The desktop pet isn't on. <Link href="/settings/desktop-pet" className="link">Turn him on above</Link>.
       </p>
     );
   }

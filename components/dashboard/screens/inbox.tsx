@@ -11,7 +11,7 @@ import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ApprovalCard } from "../approval-card";
-import { ActionButton, EmptyState, ListSkeleton, Page, RelativeTime, Section, attempt } from "../common";
+import { ActionButton, EmptyState, List, ListSkeleton, Page, RelativeTime, Section, attempt } from "../common";
 
 type Dismissable = Exclude<InboxItem, { kind: "question" }>;
 
@@ -56,12 +56,12 @@ export function Inbox() {
       )}
       {inbox && inbox.length > 0 && (
         <Section title="Updates">
-          <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Updates">
+          <List label="Updates">
             {inbox.map((item) => (
               <InboxRow key={`${item.kind}-${item.id}`} item={item}
                 onDismiss={item.kind === "question" ? undefined : () => void attempt(() => clear([item]))} />
             ))}
-          </ul>
+          </List>
         </Section>
       )}
     </Page>
@@ -83,7 +83,7 @@ function InboxRow({ item, onDismiss }: { item: InboxItem; onDismiss?: () => void
     action = <Button size="sm" variant="outline" render={<Link href="/work?tab=plans" />}>See plan</Button>;
   }
   return (
-    <li className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start">
+    <li className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start">
       <Icon className={cn("mt-0.5 size-4 shrink-0 max-sm:hidden", kind.tone)} aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="text-xs text-muted-foreground">{kind.label} · <RelativeTime at={item.at} /></p>

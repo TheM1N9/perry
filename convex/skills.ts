@@ -4,7 +4,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { listSkills, readSkill, removeSkill, type InstalledSkill } from "./lib/skills";
 
 /**
- * The Skills page, and the $ list in the chat composer: the skills in
+ * Apps & skills → Skills, and the $ list in the chat composer: the skills in
  * Perry's skills folder, the one every engine is pointed at. They live on
  * disk rather than in the database (Perry writes them there in a chat, and
  * install_skill moves them there), so these read the folder each time, as

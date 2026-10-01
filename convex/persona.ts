@@ -74,30 +74,47 @@ export const forPrompt = internalQuery({
   },
 });
 
+/**
+ * The About you page saves as the owner types, a pause at a time. Each of
+ * those saves would be a version of its own and push the real ones out of
+ * history, so a typed save within this long of the last one, also typed,
+ * takes its place: a sitting's typing is one version.
+ */
+const SITTING = 5 * 60_000;
+
+/** Write a new version, or with `typing`, replace the owner's typed one from a moment ago. */
+async function write(ctx: MutationCtx, row: Omit<Doc<"persona">, "_id" | "_creationTime">, previous: Doc<"persona"> | null) {
+  if (row.typing && previous?.typing && previous.by === "owner" && row.createdAt - previous.createdAt < SITTING) {
+    await ctx.db.patch(previous._id, row);
+    return;
+  }
+  await ctx.db.insert("persona", row);
+  await trim(ctx, row.kind);
+}
+
 /** Save USER.md, unless it is unchanged. */
 export const writeUser = internalMutation({
-  args: { text: v.string(), by: vBy },
+  args: { text: v.string(), by: vBy, typing: v.optional(v.boolean()) },
   returns: v.object({ changed: v.boolean() }),
   handler: async (ctx, args) => {
     const text = args.text.trim();
-    if ((await latest(ctx, "user"))?.text?.trim() === text) return { changed: false };
-    await ctx.db.insert("persona", { kind: "user", text, by: args.by, createdAt: Date.now() });
-    await trim(ctx, "user");
+    const previous = await latest(ctx, "user");
+    if (previous?.text?.trim() === text) return { changed: false };
+    await write(ctx, { kind: "user", text, by: args.by, ...(args.typing ? { typing: true } : {}), createdAt: Date.now() }, previous);
     return { changed: true };
   },
 });
 
 /** Change the assistant's name, personality or both; what is not given stays as it was. */
 export const writeIdentity = internalMutation({
-  args: { name: v.optional(v.string()), personality: v.optional(v.string()), by: vBy },
+  args: { name: v.optional(v.string()), personality: v.optional(v.string()), by: vBy, typing: v.optional(v.boolean()) },
   returns: v.object({ changed: v.boolean() }),
   handler: async (ctx, args) => {
     const now = await readPersona(ctx);
     const name = (args.name ?? now.name).trim().slice(0, 40) || DEFAULT_NAME;
     const personality = (args.personality ?? now.personality).trim().slice(0, 600);
     if (name === now.name && personality === now.personality) return { changed: false };
-    await ctx.db.insert("persona", { kind: "identity", name, personality, by: args.by, createdAt: Date.now() });
-    await trim(ctx, "identity");
+    await write(ctx, { kind: "identity", name, personality, by: args.by, ...(args.typing ? { typing: true } : {}), createdAt: Date.now() }, await latest(ctx, "identity"));
     return { changed: true };
   },
 });

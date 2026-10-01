@@ -195,7 +195,7 @@ try {
   await until(async () => (await call<{ access?: string }>("dashboard:getChat", { key: KEY, id: slash })).access === "auto", "/access auto to set the chat", 15)
     .then(() => { checks.slashAccessAuto = true; }, () => { checks.slashAccessAuto = false; });
 
-  await send("Page.navigate", { url: `${BASE}/settings` });
+  await send("Page.navigate", { url: `${BASE}/settings/access` });
   await until(async () => Boolean(await evaluate(`!!document.querySelector('button[aria-label="Access for new chats"]')`)), "the settings picker", 20);
   await evaluate(`document.querySelector('button[aria-label="Access for new chats"]').scrollIntoView({ block: "center" }); true`);
   await sleep(300);
@@ -204,7 +204,7 @@ try {
   const settingsOptions = await evaluate(`[...document.querySelectorAll('[role="option"]')].map((o) => o.innerText.trim())`) as string[];
   await shoot("access-settings.png");
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-  await send("Page.navigate", { url: `${BASE}/computer` });
+  await send("Page.navigate", { url: `${BASE}/settings/computers` });
   await until(async () => Boolean(await evaluate(`document.querySelector("main")?.innerText.includes("set per chat")`)), "the computer page", 20).catch(() => {});
   const computer = await evaluate(`document.querySelector("main")?.innerText ?? ""`) as string;
   notes.settingsOptions = settingsOptions;

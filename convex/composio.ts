@@ -83,7 +83,7 @@ export const connectors = internalAction({
       return {
         configured: false,
         connectors: [],
-        error: "No Composio key yet. Add one on the Keys page.",
+        error: "No Composio key yet. Add one in Apps & skills → Connectors.",
       };
     }
 
@@ -141,12 +141,12 @@ async function catalogOf(apiKey: string): Promise<CatalogApp[]> {
   return apps;
 }
 
-/** Every app Composio can connect, with its logo and a line about it: the Connectors page's catalogue. */
+/** Every app Composio can connect, with its logo and a line about it: the catalogue in Apps & skills → Connectors. */
 export const catalog = internalAction({
   args: {},
   handler: async (ctx): Promise<{ apps: CatalogApp[]; error?: string }> => {
     const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
-    if (!apiKey) return { apps: [], error: "No Composio key yet. Add one on the Keys page." };
+    if (!apiKey) return { apps: [], error: "No Composio key yet. Add one in Apps & skills → Connectors." };
     try {
       return { apps: await catalogOf(apiKey) };
     } catch (error) {
@@ -210,7 +210,7 @@ export const accounts = internalAction({
   args: {},
   handler: async (ctx): Promise<{ configured: boolean; accounts: ConnectedAccount[]; error?: string }> => {
     const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
-    if (!apiKey) return { configured: false, accounts: [], error: "No Composio key yet. Add one on the Keys page." };
+    if (!apiKey) return { configured: false, accounts: [], error: "No Composio key yet. Add one in Apps & skills → Connectors." };
     try {
       const composio = client(apiKey);
       const items: Array<{ id: string; status: string; createdAt?: string; alias?: string | null; toolkit: { slug: string } }> = [];

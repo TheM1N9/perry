@@ -28,10 +28,10 @@ export function Todos() {
           <EmptyState title="Nothing to do" mascot>
             Type one above, or tell Perry in any chat: “remind me to call Sam at 2”.
           </EmptyState>
-        ) : <div className="rounded-xl border bg-card p-1.5"><TodoRows todos={board.open} now={now} /></div>}
+        ) : <div className="-mx-2"><TodoRows todos={board.open} now={now} /></div>}
       {board && board.doneToday.length > 0 && (
         <Section title="Done today" className="mt-8">
-          <div className="rounded-xl border bg-card p-1.5"><TodoRows todos={board.doneToday} now={now} /></div>
+          <div className="-mx-2"><TodoRows todos={board.doneToday} now={now} /></div>
         </Section>
       )}
     </Page>

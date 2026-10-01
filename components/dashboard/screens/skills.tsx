@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MessageSquarePlusIcon, PuzzleIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { MessageSquarePlusIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useAction } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -11,6 +11,8 @@ import { useSession } from "@/lib/session";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Kbd } from "@/components/ui/kbd";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Markdown } from "../chat/markdown";
@@ -85,7 +87,7 @@ export function Skills() {
 
   return (
     <Page title="Skills" actions={refreshButton}
-      description={<>How Perry does particular kinds of work. He writes a skill when you tell him how you like something done, and imports someone else&apos;s once you say yes. Type <kbd className="rounded border bg-muted px-1 font-mono text-[13px]">$</kbd> in a chat to use one.</>}>
+      description={<>How Perry does particular kinds of work. He writes a skill when you tell him how you like something done, and imports someone else&apos;s once you say yes. Type <Kbd className="font-mono">$</Kbd> in a chat to use one.</>}>
       {error && <Alert variant="destructive" className="mb-6"><TriangleAlertIcon /><AlertTitle>Couldn&apos;t read the skills folder</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
       {skills === null ? <ListSkeleton /> : skills.length === 0 ? (
         <EmptyState title="No skills yet" mascot>
@@ -94,11 +96,10 @@ export function Skills() {
       ) : (
         <List label="Skills">
           {skills.map((skill) => (
-            <li key={skill.folder} className="flex items-start gap-3 px-4 py-3" data-skill={skill.name}>
-              <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-full border bg-background text-muted-foreground" aria-hidden><PuzzleIcon className="size-4" /></span>
+            <li key={skill.folder} className="flex items-start gap-3 py-3" data-skill={skill.name}>
               <button type="button" className="min-w-0 flex-1 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setOpen(skill.name)}>
                 <span className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-[14px] font-medium">{skill.name}</span>
+                  <span className="font-mono text-sm font-medium">{skill.name}</span>
                   {skill.problem && <StatusBadge tone="warning">Not loaded</StatusBadge>}
                 </span>
                 <span className="mt-0.5 line-clamp-2 block text-sm text-pretty text-muted-foreground">{skill.description || skill.problem}</span>
@@ -154,26 +155,27 @@ function SkillDialog({ skill, onClose, onRemove }: { skill: SkillView | null; on
             <DialogTitle className="font-mono">{skill.name}</DialogTitle>
             <DialogDescription className="text-pretty">{skill.description}</DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 space-y-4 overflow-y-auto" data-skill-read={skill.name}>
-            {skill.problem && <Alert><TriangleAlertIcon /><AlertTitle>Not loaded</AlertTitle><AlertDescription>{skill.problem}</AlertDescription></Alert>}
+          <ScrollArea className="-mx-4 min-h-0" viewportClassName="px-4" data-skill-read={skill.name}>
+          <div className="space-y-4">
+            {skill.problem && <Alert variant="quiet"><TriangleAlertIcon /><AlertTitle>Not loaded</AlertTitle><AlertDescription>{skill.problem}</AlertDescription></Alert>}
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
               <dt className="text-muted-foreground">From</dt>
               <dd className="min-w-0 [overflow-wrap:anywhere]">
                 {!skill.source ? "Written by Perry in a chat, or put in his skills folder by hand."
-                  : /^https?:\/\//i.test(skill.source) ? <>Imported from <a href={skill.source} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-2 hover:underline">{skill.source}</a></>
-                  : <>Imported from <span className="font-mono text-[13px]">{skill.source}</span></>}
+                  : /^https?:\/\//i.test(skill.source) ? <>Imported from <a href={skill.source} target="_blank" rel="noopener noreferrer" className="link">{skill.source}</a></>
+                  : <>Imported from <span className="font-mono text-sm">{skill.source}</span></>}
               </dd>
               <dt className="text-muted-foreground">Added</dt>
               <dd>{addedOn(skill.addedAt)}</dd>
               {shown?.skill && (<>
                 <dt className="text-muted-foreground">File</dt>
-                <dd className="flex min-w-0 items-center gap-1"><span className="min-w-0 truncate font-mono text-[12.5px]" title={shown.skill.path}>{shown.skill.path}</span><CopyButton value={shown.skill.path} label="Copy the path" size="icon-xs" /></dd>
+                <dd className="flex min-w-0 items-center gap-1"><span className="min-w-0 truncate font-mono text-xs" title={shown.skill.path}>{shown.skill.path}</span><CopyButton value={shown.skill.path} label="Copy the path" size="icon-xs" /></dd>
               </>)}
             </dl>
             {shown?.error ? <p className="text-sm text-destructive" role="alert">{shown.error}</p>
               : !shown?.skill ? <div className="space-y-2" role="status" aria-label="Loading"><Skeleton className="h-4 w-2/3" /><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-5/6" /></div>
               : (
-                <div className="rounded-xl border px-4 py-3" data-skill-md>
+                <div className="border-t pt-4" data-skill-md>
                   <p className="mb-2 font-mono text-xs text-muted-foreground">SKILL.md</p>
                   <Markdown text={readable(shown.skill.skill)} />
                 </div>
@@ -181,10 +183,11 @@ function SkillDialog({ skill, onClose, onRemove }: { skill: SkillView | null; on
             {others.length > 0 && (
               <div className="text-sm">
                 <p className="mb-1 text-muted-foreground">Also in its folder</p>
-                <ul className="space-y-0.5 font-mono text-[12.5px]">{others.map((file) => <li key={file.path}>{file.path} <span className="text-muted-foreground">({size(file.bytes)})</span></li>)}</ul>
+                <ul className="space-y-0.5 font-mono text-xs">{others.map((file) => <li key={file.path}>{file.path} <span className="text-muted-foreground">({size(file.bytes)})</span></li>)}</ul>
               </div>
             )}
           </div>
+          </ScrollArea>
           <DialogFooter className="gap-2">
             <RemoveButton skill={skill} onRemove={() => onRemove(skill)} />
             {!skill.problem && <Button render={<Link href={`/chat?draft=${encodeURIComponent(`$${skill.name} `)}`} />}><MessageSquarePlusIcon />Use in a chat</Button>}

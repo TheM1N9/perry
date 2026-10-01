@@ -474,6 +474,38 @@ export const getActivity = query({
   },
 });
 
+/** A step of a run, as the chat lists it under "Worked for…". */
+export type WorkStep = Step & { status: Doc<"runSpans">["status"]; startedAt: number; durationMs?: number };
+/** One run of a chat and every step it took, in order. */
+export type Work = { runId: Id<"runs">; status: Doc<"runs">["status"]; startedAt: number; finishedAt?: number; steps: WorkStep[] };
+/** The runs a chat lists the steps of: its latest, which covers the replies it shows. */
+const WORK_RUNS = 50;
+
+/**
+ * What each of a chat's latest runs did, step by step, oldest first, for the
+ * chat to show with its reply: as a list that grows while the run goes, and
+ * folded into "Worked for 46s" once the reply is in. Reasoning is left out;
+ * its time is in the run's.
+ */
+export const getChatWork = query({
+  args: { key: vKey, id: v.id("conversations") },
+  handler: async (ctx, args): Promise<Work[]> => {
+    assertDashboardKey(args.key);
+    ownerChat(await ctx.db.get(args.id));
+    const runs = await ctx.db.query("runs").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).order("desc").take(WORK_RUNS);
+    return await Promise.all(runs.reverse().map(async (run): Promise<Work> => {
+      const spans = await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).take(500);
+      const steps = spans.filter((span) => span.kind !== "reasoning").sort((a, b) => a.startedAt - b.startedAt).map((span): WorkStep => ({
+        ...describeStep(span),
+        status: span.status,
+        startedAt: span.startedAt,
+        ...(span.durationMs !== undefined ? { durationMs: span.durationMs } : {}),
+      }));
+      return { runId: run._id, status: run.status, startedAt: run.startedAt, ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}), steps };
+    }));
+  },
+});
+
 export const getChatMessages = query({
   args: { key: vKey, id: v.id("conversations"), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
@@ -1230,21 +1262,23 @@ export const personaHistory = query({
   },
 });
 
+/** USER.md from the About you page, saved as the owner types: the same words again change nothing, and a sitting's saves are one version. */
 export const saveUserMd = mutation({
   args: { key: vKey, text: v.string() },
   returns: v.object({ changed: v.boolean() }),
   handler: async (ctx, args): Promise<{ changed: boolean }> => {
     assertDashboardKey(args.key);
-    return await ctx.runMutation(internal.persona.writeUser, { text: args.text, by: "owner" });
+    return await ctx.runMutation(internal.persona.writeUser, { text: args.text, by: "owner", typing: true });
   },
 });
 
+/** The assistant's name, its personality or both, saved as typed like USER.md; what is not given stays as it is. */
 export const saveIdentity = mutation({
-  args: { key: vKey, name: v.string(), personality: v.string() },
+  args: { key: vKey, name: v.optional(v.string()), personality: v.optional(v.string()) },
   returns: v.object({ changed: v.boolean() }),
   handler: async (ctx, args): Promise<{ changed: boolean }> => {
     assertDashboardKey(args.key);
-    return await ctx.runMutation(internal.persona.writeIdentity, { name: args.name, personality: args.personality, by: "owner" });
+    return await ctx.runMutation(internal.persona.writeIdentity, { name: args.name, personality: args.personality, by: "owner", typing: true });
   },
 });
 
@@ -1632,7 +1666,7 @@ export const getConnectedAccounts = action({
   },
 });
 
-/** Every app that can be connected, for the Connectors page to search. */
+/** Every app that can be connected, for Apps & skills → Connectors to search. */
 export const getCatalog = action({
   args: { key: vKey },
   handler: async (ctx, args): Promise<{ apps: CatalogApp[]; error?: string }> => {

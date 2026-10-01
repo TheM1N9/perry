@@ -87,7 +87,7 @@ async function main() {
     }
     if (!botName) {
       token = undefined;
-      say(dim("  No bot: talk to Perry from the dashboard. Add one on the Keys page any time."));
+      say(dim("  No bot: talk to Perry from the dashboard. Add one in Settings → Telegram any time."));
     }
   }
   if (botName) await done(`bot @${botName}`);
@@ -139,7 +139,7 @@ async function main() {
   if (signedIn) {
     await done(`codex ${version}${dim(`, ${signedIn.replace(/^Logged in/i, "signed in")}`)}`);
   } else {
-    say(yellow(`  Codex is not signed in, so Perry cannot answer yet. Run ${bold("codex login")}, or sign in from the dashboard's Settings page.`));
+    say(yellow(`  Codex is not signed in, so Perry cannot answer yet. Run ${bold("codex login")}, or sign in from the dashboard's Settings → Engines & usage.`));
   }
 
   // --- Saving it, without a word unless it fails --------------------------------

@@ -202,7 +202,7 @@ export function Platypus({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ type: "spring", stiffness: 420, damping: 26 }}
-            className="absolute bottom-[92%] left-1/2 z-10 w-max max-w-[240px] -translate-x-1/2 rounded-2xl bg-foreground px-3.5 py-2 text-center text-[14px] font-medium leading-snug text-background shadow-[0_10px_30px_rgb(0_0_0/0.18)] after:absolute after:left-1/2 after:top-full after:-translate-x-1/2 after:border-8 after:border-transparent after:border-t-foreground"
+            className="absolute bottom-[92%] left-1/2 z-10 w-max max-w-[240px] -translate-x-1/2 rounded-2xl bg-foreground px-3.5 py-2 text-center text-sm font-medium leading-snug text-background shadow-overlay after:absolute after:left-1/2 after:top-full after:-translate-x-1/2 after:border-8 after:border-transparent after:border-t-foreground"
           >
             {said}
           </motion.p>
@@ -218,7 +218,7 @@ export function Platypus({
         transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
         whileTap={{ scale: 0.95 }}
       >
-        <PlatypusArt look={look} lid={blink ? 1 : 0.32} hatLift={tip ? 16 : 0} className="h-auto w-full drop-shadow-[0_16px_20px_rgb(0_0_0/0.10)]" />
+        <PlatypusArt look={look} lid={blink ? 1 : 0.32} hatLift={tip ? 16 : 0} className="h-auto w-full drop-shadow-mascot" />
       </motion.button>
     </div>
   );
