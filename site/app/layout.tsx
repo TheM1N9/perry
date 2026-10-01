@@ -1,3 +1,5 @@
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
@@ -51,6 +53,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           Skip to content
         </a>
         <Motion>{children}</Motion>
+        {/* Vercel Web Analytics and Speed Insights: cookieless, sent to this site's own /_vercel paths, and nothing is sent in development. */}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

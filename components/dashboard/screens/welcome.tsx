@@ -176,7 +176,7 @@ export function Welcome() {
 
               {at === "Meet your assistant" && (
                 <>
-                  <Heading ref={heading} title="Meet your assistant">Give it a name and a way of talking. You can change both later, under Memory.</Heading>
+                  <Heading ref={heading} title="Meet your assistant">You can change both later in Settings.</Heading>
                   <Field>
                     <FieldLabel htmlFor={`${id}-name`}>Name</FieldLabel>
                     <Input id={`${id}-name`} value={name} maxLength={40} autoComplete="off" placeholder={persona.defaultName} onChange={(event) => setName(event.target.value)} className="h-10 max-w-xs" />
@@ -216,17 +216,17 @@ export function Welcome() {
 
               {at === "About you" && (
                 <>
-                  <Heading ref={heading} title="About you">{assistant} reads this before every reply. Answer what you like and skip the rest; you can always tell it more in a chat.</Heading>
+                  <Heading ref={heading} title="About you">All optional.</Heading>
                   <Question id={`${id}-call`} label="What should I call you?">
                     <Input id={`${id}-call`} value={answers.call} autoComplete="given-name" onChange={(event) => set("call", event.target.value)} className="h-10 max-w-xs" />
                   </Question>
-                  <Question id={`${id}-work`} label="What do you do?" hint="Your work, study, or what fills your time.">
+                  <Question id={`${id}-work`} label="What do you do?">
                     <Textarea id={`${id}-work`} rows={2} value={answers.work} onChange={(event) => set("work", event.target.value)} />
                   </Question>
                   <Question id={`${id}-day`} label="What does a typical day look like?" hint={timezone ? `Your timezone, ${timezone}, is saved too.` : undefined}>
                     <Textarea id={`${id}-day`} rows={2} value={answers.day} placeholder="Up at 7, gym before work, deep work in the mornings" onChange={(event) => set("day", event.target.value)} />
                   </Question>
-                  <Question id={`${id}-people`} label="Who matters to you?" hint="Family, partner, team, friends: whoever you might mention by name.">
+                  <Question id={`${id}-people`} label="Who matters to you?">
                     <Textarea id={`${id}-people`} rows={2} value={answers.people} onChange={(event) => set("people", event.target.value)} />
                   </Question>
                   <Field>
@@ -237,7 +237,7 @@ export function Welcome() {
                     </ToggleGroup>
                     {answers.replies && <FieldDescription>{REPLY_STYLES.find((style) => style.id === answers.replies)?.text}</FieldDescription>}
                   </Field>
-                  <Question id={`${id}-language`} label="Language" hint="Leave it empty to be answered in whatever you write in.">
+                  <Question id={`${id}-language`} label="Language" hint="Empty: whatever you write in.">
                     <Input id={`${id}-language`} value={answers.language} autoComplete="off" placeholder="English" onChange={(event) => set("language", event.target.value)} className="h-10 max-w-xs" />
                   </Question>
                   <FieldSet>
@@ -255,7 +255,7 @@ export function Welcome() {
                     </div>
                     <Textarea aria-label="Anything else" rows={2} value={answers.helpOther} placeholder="Anything else, one per line" onChange={(event) => set("helpOther", event.target.value)} />
                   </FieldSet>
-                  <Question id={`${id}-boundaries`} label="Anything I should never do?" hint="Topics to avoid, people not to contact, things to always ask about first.">
+                  <Question id={`${id}-boundaries`} label="Anything I should never do?">
                     <Textarea id={`${id}-boundaries`} rows={2} value={answers.boundaries} onChange={(event) => set("boundaries", event.target.value)} />
                   </Question>
                 </>
@@ -263,7 +263,7 @@ export function Welcome() {
 
               {at === "Review" && (
                 <>
-                  <Heading ref={heading} title="Your USER.md">This is what {assistant} will know about you, in every chat. Edit anything; {assistant} keeps it current as you talk, and every version is kept.</Heading>
+                  <Heading ref={heading} title="Your USER.md">What {assistant} knows about you in every chat. Edit anything.</Heading>
                   {persona.user && (
                     <Alert variant="quiet"><AlertTitle>This replaces your current USER.md</AlertTitle><AlertDescription>The old one stays in its history under Memory, so you can restore it.</AlertDescription></Alert>
                   )}

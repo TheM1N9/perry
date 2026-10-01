@@ -177,8 +177,12 @@ try {
   // A first load before the server was ready is retried by the window (pet/main.js): wait for him.
   await until(() => tab!.evaluate(`Boolean(document.querySelector('button[aria-label^="Perry."]'))`), "him on his page", 60);
   await tab.evaluate(`localStorage.setItem("perry.pet.chat", ${JSON.stringify(own)}); true`);
-  await tab.send("Page.reload");
-  await sleep(1_500);
+  // His page loaded again goes into a new window (pet/main.js, issue #191): his page from there.
+  await tab.send("Page.reload").catch(() => {});
+  await sleep(4_000);
+  tab.close();
+  await until(async () => (await (await fetch(`http://127.0.0.1:${DEVTOOLS}/json/list`)).json() as Array<{ url: string }>).filter((item) => item.url.startsWith(`${BASE}/pet`)).length === 1, "one page of his", 30);
+  tab = await petTab();
   await until(() => tab!.evaluate(`Boolean(document.querySelector('button[aria-label^="Perry."]'))`), "him on his page", 30);
   await sleep(2_000);
   const t = tab;

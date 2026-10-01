@@ -630,7 +630,7 @@ function Pet() {
   if (!bubble && limit && limitNews?.mark === limit.mark && limitNews.until > now) {
     bubble = (
       <Bubble id="limit" tone={limit.level === "out" ? "late" : "soon"} title={limit.title} detail={limit.detail} onClose={() => setLimitNews(null)}>
-        <BubbleButton primary onClick={() => { setLimitNews(null); openPath("/settings/engines"); }}>See usage</BubbleButton>
+        <BubbleButton primary onClick={() => { setLimitNews(null); openPath("/settings/usage"); }}>See usage</BubbleButton>
         <BubbleButton onClick={() => setLimitNews(null)}>OK</BubbleButton>
       </Bubble>
     );
@@ -662,7 +662,7 @@ function Pet() {
   const status: ReactNode = petChat?.isRunning ? `${step?.label ?? "Working on it"}…`
     : needs ? `${plural(needs, "thing")} waiting on you`
       : limit ? (
-        <Button variant="link" className={cn("h-auto p-0 text-xs font-normal", limit.level === "out" ? "text-destructive" : "text-warning")} onClick={() => openPath("/settings/engines")}>
+        <Button variant="link" className={cn("h-auto p-0 text-xs font-normal", limit.level === "out" ? "text-destructive" : "text-warning")} onClick={() => openPath("/settings/usage")}>
           {limit.title}
         </Button>
       )
@@ -1095,9 +1095,7 @@ function PetTodos({ board, now, onDone, onAdded }: {
       <div className="px-1.5 pb-1">
         {board === undefined ? <div className="space-y-2 px-2.5 py-3" role="status" aria-label="Loading"><Skeleton className="h-5 w-3/4" /><Skeleton className="h-5 w-2/3" /><Skeleton className="h-5 w-1/2" /></div>
           : board.open.length === 0 ? (
-            <Empty title={board.doneToday.length ? "All done for now" : "Nothing on your list"}>
-              Type one above, like “stretch every day at 11”, or tell Perry in a chat.
-            </Empty>
+            <Empty title={board.doneToday.length ? "All done for now" : "Nothing on your list"} />
           ) : (<>
             <div className="flex items-center gap-2 px-2.5 pt-1 pb-0.5">
               <p className="flex-1 text-2xs font-medium tracking-wide text-muted-foreground uppercase">

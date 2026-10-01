@@ -14,7 +14,7 @@ import { AcpEngine, modelsOr, type AcpLaunch } from "./acp";
  * dl.google.com only when the owner turns Antigravity on in Settings.
  *
  * Two ways in:
- *   - A Gemini API key (recommended): saved in Settings → Engines & usage and given to
+ *   - A Gemini API key (recommended): saved in Settings → Engines and given to
  *     the server as GEMINI_API_KEY in its environment only (`gemini-api-key`).
  *   - Signing in with Google (`oauth-personal`), marked Experimental: the
  *     server opens Google's sign-in page in a browser on this computer and
@@ -150,13 +150,13 @@ export class AntigravityEngine extends AcpEngine {
 
   protected async launch(): Promise<AcpLaunch> {
     const found = this.installed();
-    if (!found) throw new Error("Antigravity is not turned on here yet. Turn it on in Settings → Engines & usage.");
+    if (!found) throw new Error("Antigravity is not turned on here yet. Turn it on in Settings → Engines.");
     const state = this.state();
     const env: Record<string, string> = {};
     for (const [name, value] of Object.entries(process.env)) if (value !== undefined && !STRIPPED.has(name.toUpperCase())) env[name] = value;
     if (state.method === "gemini-api-key") {
       const key = await this.secret("GEMINI_API_KEY");
-      if (!key) throw new Error("Antigravity needs your Gemini API key: save it in Settings → Engines & usage.");
+      if (!key) throw new Error("Antigravity needs your Gemini API key: save it in Settings → Engines.");
       env.GEMINI_API_KEY = key;
     }
     // Its temp folder is emptied before each start: a server that was ended leaves ~1 GB there.
@@ -259,19 +259,19 @@ export class AntigravityEngine extends AcpEngine {
       signedIn,
       auth: signedIn ? (state.method === "gemini-api-key" ? { type: "gemini-api-key", label: "Gemini API key" } : { type: "oauth-personal", label: "Google account (experimental)" }) : {},
       models: signedIn ? modelsOr(this.learnedModels(), this.label) : [],
-      message: this.progress ?? (signedIn ? "Experimental." : state.method === "gemini-api-key" ? "Save your Gemini API key in Settings → Engines & usage." : "Experimental. Use a Gemini API key (recommended), or sign in with Google."),
+      message: this.progress ?? (signedIn ? "Experimental." : state.method === "gemini-api-key" ? "Save your Gemini API key in Settings → Engines." : "Experimental. Use a Gemini API key (recommended), or sign in with Google."),
     };
   }
 
   /**
    * Turn Antigravity on: the download (once), then the way in the owner
-   * picked: the Gemini API key from Settings → Engines & usage (the default), or
+   * picked: the Gemini API key from Settings → Engines (the default), or
    * signing in with Google in a browser on this computer.
    */
   async login(method?: string): Promise<LoginFlow> {
     const way: Method = method === "oauth-personal" ? "oauth-personal" : "gemini-api-key";
     if (way === "gemini-api-key" && !await this.secret("GEMINI_API_KEY")) {
-      throw new Error("Save your Gemini API key in Settings → Engines & usage first (from aistudio.google.com/apikey), then try again");
+      throw new Error("Save your Gemini API key in Settings → Engines first (from aistudio.google.com/apikey), then try again");
     }
     const downloading = !this.installed();
     const before = this.state();

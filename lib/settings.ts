@@ -6,7 +6,8 @@
 export const SETTINGS_GROUPS = [
   { label: "Perry", sections: [
     { slug: "general", label: "General" },
-    { slug: "engines", label: "Engines & usage" },
+    { slug: "engines", label: "Engines" },
+    { slug: "usage", label: "Usage" },
     { slug: "computers", label: "Computers" },
   ] },
   { label: "Permissions", sections: [{ slug: "access", label: "Access & approvals" }] },
@@ -47,7 +48,7 @@ export function oldSettingsTab(tab?: string, key?: string): string {
   if (tab === "keys" && key && KEY_HOMES[key]) return KEY_HOMES[key];
   const moved: Record<string, string> = {
     general: "/settings/general",
-    usage: "/settings/engines",
+    usage: "/settings/usage",
     keys: "/settings/logins",
     people: "/settings/people",
     shortcuts: "/settings/desktop-pet#shortcuts",

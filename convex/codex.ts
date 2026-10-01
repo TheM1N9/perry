@@ -213,7 +213,7 @@ async function noRunner(ctx: MutationCtx, conversation: Doc<"conversations">, en
     return update && refusal(ENGINE_LABELS[engine], update, runner.name);
   };
   if (pinned && isOnline(pinned)) {
-    return old(pinned) ?? `${ENGINE_LABELS[engine]} isn't signed in on ${pinned.name}. Sign in to it in Settings → Engines & usage, or pick a model from another engine.`;
+    return old(pinned) ?? `${ENGINE_LABELS[engine]} isn't signed in on ${pinned.name}. Sign in to it in Settings → Engines, or pick a model from another engine.`;
   }
   if (!conversation.codexRunnerId) {
     const outdated = (await ctx.db.query("runners").order("desc").take(20)).filter(isOnline).map(old).find(Boolean);
@@ -221,7 +221,7 @@ async function noRunner(ctx: MutationCtx, conversation: Doc<"conversations">, en
   }
   return conversation.codexRunnerId
     ? "The runner for this chat is offline. Start Perry on its computer (perry start) to continue."
-    : "Sign in to an engine in Settings → Engines & usage and start Perry's runner (perry start) to chat.";
+    : "Sign in to an engine in Settings → Engines and start Perry's runner (perry start) to chat.";
 }
 
 /**

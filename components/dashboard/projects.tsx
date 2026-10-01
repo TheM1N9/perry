@@ -153,8 +153,8 @@ export function useMoveChat() {
   });
   return (id: ChatId, project: { id: ProjectId; name: string } | null) => moveChat({ key: dashboardKey, id, projectId: project?.id ?? null })
     .then(() => toast.success(project
-      ? `Moved into ${project.name}. It follows the project's instructions from its next message.`
-      : "Taken out of the project. What Perry remembered there stays with the project."))
+      ? `Moved into ${project.name}.`
+      : "Taken out of the project. Its memories stay with the project."))
     .catch((cause) => toast.error(`Couldn't move it: ${errorText(cause)}`));
 }
 
@@ -189,7 +189,7 @@ export function NewProjectDialog({ open, chat, onClose }: { open: boolean; chat?
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>New project</DialogTitle>
-          <DialogDescription>A folder for chats about one thing, like a channel&apos;s scripts or a client. Its chats share its instructions, know of each other, and keep what Perry remembers in them to the project.</DialogDescription>
+          <DialogDescription>Chats in it share instructions and memory.</DialogDescription>
         </DialogHeader>
         <form onSubmit={(event) => { event.preventDefault(); void save(); }} className="contents">
           <Input aria-label="Project name" placeholder="Hackonomics scripts" value={name} maxLength={80} autoFocus required onChange={(event) => setName(event.target.value)} />

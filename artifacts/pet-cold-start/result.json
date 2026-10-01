@@ -1,0 +1,1013 @@
+{
+  "ranAt": "2026-10-01T21:04:35.983Z",
+  "passed": true,
+  "realMouse": false,
+  "serverDownMs": 12000,
+  "checks": {
+    "nothingShownWhileServerDown": true,
+    "showsOnceServerUp": true,
+    "coldStart:oneWindowShown": true,
+    "coldStart:pageChildKept": true,
+    "coldStart:onScreenOnTop": true,
+    "coldStart:postedMoveReachesPage": true,
+    "coldStart:takesClickOnHim": true,
+    "coldStart:letsClickThroughOffHim": true,
+    "circleLetsClicksThrough": true,
+    "reload:newPage": true,
+    "reload:oneWindowShown": true,
+    "reload:pageChildKept": true,
+    "reload:onScreenOnTop": true,
+    "reload:postedMoveReachesPage": true,
+    "reload:takesClickOnHim": true,
+    "reload:letsClickThroughOffHim": true,
+    "reloadWhileDown:staysAsHeWas": true,
+    "reloadWhileDown:backOnNewPage": true,
+    "reloadWhileDown:oneWindowShown": true,
+    "reloadWhileDown:pageChildKept": true,
+    "reloadWhileDown:onScreenOnTop": true,
+    "reloadWhileDown:postedMoveReachesPage": true,
+    "reloadWhileDown:takesClickOnHim": true,
+    "reloadWhileDown:letsClickThroughOffHim": true,
+    "pageReload:oneWindowShown": true,
+    "pageReload:pageChildKept": true,
+    "pageReload:onScreenOnTop": true,
+    "pageReload:postedMoveReachesPage": true,
+    "pageReload:takesClickOnHim": true,
+    "pageReload:letsClickThroughOffHim": true,
+    "crash:backWithin20s": true,
+    "crash:oneWindowShown": true,
+    "crash:pageChildKept": true,
+    "crash:onScreenOnTop": true,
+    "crash:postedMoveReachesPage": true,
+    "crash:takesClickOnHim": true,
+    "crash:letsClickThroughOffHim": true,
+    "hidden:gone": true,
+    "shownAgain:oneWindowShown": true,
+    "shownAgain:pageChildKept": true,
+    "shownAgain:onScreenOnTop": true,
+    "shownAgain:postedMoveReachesPage": true,
+    "shownAgain:takesClickOnHim": true,
+    "shownAgain:letsClickThroughOffHim": true,
+    "takeover:onePetProcess": true,
+    "takeover:oneWindowShown": true,
+    "takeover:pageChildKept": true,
+    "takeover:onScreenOnTop": true,
+    "takeover:postedMoveReachesPage": true,
+    "takeover:takesClickOnHim": true,
+    "takeover:letsClickThroughOffHim": true,
+    "ghost:oneWindowShown": true,
+    "ghost:pageChildKept": true,
+    "ghost:onScreenOnTop": true,
+    "ghost:postedMoveReachesPage": true,
+    "ghost:ghostLetsClicksThrough": true,
+    "pageDidNotThrow": true,
+    "ownerPetUntouched": true
+  },
+  "notes": {
+    "ownerBefore": {
+      "petJson": "7d949e53790013e0da4620327c3411126adbc1e222d0cf04228fced08bb27b00",
+      "loginEntry": true,
+      "pets": [
+        37668
+      ]
+    },
+    "nothingShownWhileServerDown": [],
+    "showsOnceServerUp": {
+      "after": 2030
+    },
+    "coldStart:oneWindowShown": [
+      {
+        "hwnd": 10228076,
+        "title": "Pet · Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          25824464
+        ]
+      }
+    ],
+    "coldStart:pageChildKept": {
+      "window": 10228076,
+      "pageChildren": [
+        "25824464"
+      ],
+      "firstSeen": 1790888605015
+    },
+    "coldStart:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "coldStart:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "coldStart:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 10228076,
+            "pid": 36500
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 920182,
+            "pid": 9848
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 10228076
+    },
+    "coldStart:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 10228076,
+            "pid": 36500
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 920182,
+            "pid": 9848
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "circleLetsClicksThrough": {
+      "hwnd": 51711590,
+      "title": "Perry: drop here to hide",
+      "visible": true,
+      "exstyle": 136839208,
+      "rect": [
+        1556,
+        1026,
+        1891,
+        1356
+      ],
+      "page": [
+        5246942
+      ]
+    },
+    "realMouse": "skipped: set PERRY_E2E_DESKTOP=1 on Windows to use the real mouse (it moves the owner's pointer)",
+    "reload:oneWindowShown": [
+      {
+        "hwnd": 27135832,
+        "title": "Pet · Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          10293612
+        ]
+      }
+    ],
+    "reload:pageChildKept": {
+      "window": 27135832,
+      "pageChildren": [
+        "10293612"
+      ],
+      "firstSeen": 1790888609588
+    },
+    "reload:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "reload:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "reload:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 27135832,
+            "pid": 36500
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 920182,
+            "pid": 9848
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 27135832
+    },
+    "reload:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 27135832,
+            "pid": 36500
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 920182,
+            "pid": 9848
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "reloadWhileDown:staysAsHeWas": [
+      {
+        "hwnd": 27135832,
+        "title": "Pet · Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          10293612
+        ]
+      }
+    ],
+    "reloadWhileDown:backOnNewPage": [
+      {
+        "hwnd": 19075322,
+        "title": "Pet · Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          1704660
+        ]
+      }
+    ],
+    "reloadWhileDown:oneWindowShown": [
+      {
+        "hwnd": 19075322,
+        "title": "Pet · Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          1704660
+        ]
+      }
+    ],
+    "reloadWhileDown:pageChildKept": {
+      "window": 19075322,
+      "pageChildren": [
+        "1704660"
+      ],
+      "firstSeen": 1790888624848
+    },
+    "reloadWhileDown:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "reloadWhileDown:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "reloadWhileDown:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 19075322,
+            "pid": 36500
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 920182,
+            "pid": 9848
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 19075322
+    },
+    "reloadWhileDown:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 19075322,
+            "pid": 36500
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 920182,
+            "pid": 9848
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "pageReload:oneWindowShown": [
+      {
+        "hwnd": 1770196,
+        "title": "Pet · Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          27266904
+        ]
+      }
+    ],
+    "pageReload:pageChildKept": {
+      "window": 1770196,
+      "pageChildren": [
+        "27266904"
+      ],
+      "firstSeen": 1790888629104
+    },
+    "pageReload:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "pageReload:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ],
+        [
+          212,
+          576
+        ],
+        [
+          212,
+          574
+        ],
+        [
+          214,
+          573
+        ],
+        [
+          219,
+          570
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "pageReload:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          },
+          "transparent": true,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        },
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 1770196,
+            "pid": 36500
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 1770196
+    },
+    "pageReload:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          },
+          "transparent": true,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        },
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 1770196,
+            "pid": 36500
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "crash:backWithin20s": [
+      {
+        "hwnd": 27332440,
+        "title": "Pet · Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          19206394
+        ]
+      }
+    ],
+    "crash:oneWindowShown": [
+      {
+        "hwnd": 27332440,
+        "title": "Pet · Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          19206394
+        ]
+      }
+    ],
+    "crash:pageChildKept": {
+      "window": 27332440,
+      "pageChildren": [
+        "19206394"
+      ],
+      "firstSeen": 1790888646433
+    },
+    "crash:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "crash:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ],
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "crash:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 27332440,
+            "pid": 36500
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 27332440
+    },
+    "crash:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 27332440,
+            "pid": 36500
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "hidden:gone": [
+      {
+        "hwnd": 27332440,
+        "title": "Pet · Perry",
+        "visible": false,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          19206394
+        ]
+      }
+    ],
+    "shownAgain:oneWindowShown": [
+      {
+        "hwnd": 27332440,
+        "title": "Pet · Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          19206394
+        ]
+      }
+    ],
+    "shownAgain:pageChildKept": {
+      "window": 27332440,
+      "pageChildren": [
+        "19206394"
+      ],
+      "firstSeen": 1790888646433
+    },
+    "shownAgain:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "shownAgain:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ],
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "shownAgain:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          },
+          "transparent": true,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        },
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 27332440,
+            "pid": 36500
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 27332440
+    },
+    "shownAgain:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          },
+          "transparent": true,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        },
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 27332440,
+            "pid": 36500
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "takeover:onePetProcess": [
+      {
+        "cmd": "\"W:\\perry-tests\\wt-191\\pet\\node_modules\\.pnpm\\electron@44.4.5\\node_modules\\electron\\dist\\electron.exe\" \"W:\\perry-tests\\wt-191\\pet\" --takeover=1",
+        "pid": 50904
+      }
+    ],
+    "takeover:oneWindowShown": [
+      {
+        "hwnd": 4788182,
+        "title": "Pet · Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          11079658
+        ]
+      }
+    ],
+    "takeover:pageChildKept": {
+      "window": 4788182,
+      "pageChildren": [
+        "11079658"
+      ],
+      "firstSeen": 1790888660709
+    },
+    "takeover:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "takeover:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "takeover:takesClickOnHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 4788182,
+            "pid": 50904
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      },
+      "window": 4788182
+    },
+    "takeover:letsClickThroughOffHim": {
+      "tries": [
+        {
+          "over": {
+            "title": "Pet · Perry",
+            "hwnd": 4788182,
+            "pid": 50904
+          },
+          "transparent": false,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "ghost:oneWindowShown": [
+      {
+        "hwnd": 32771378,
+        "title": "Pet · Perry",
+        "visible": true,
+        "exstyle": 2621480,
+        "rect": [
+          0,
+          438,
+          609,
+          1368
+        ],
+        "page": [
+          14553312
+        ]
+      }
+    ],
+    "ghost:pageChildKept": {
+      "window": 32771378,
+      "pageChildren": [
+        "14553312"
+      ],
+      "firstSeen": 1790888667637
+    },
+    "ghost:onScreenOnTop": {
+      "rect": [
+        0,
+        438,
+        609,
+        1368
+      ],
+      "work": {
+        "left": 0,
+        "top": 0,
+        "right": 2294,
+        "bottom": 912
+      },
+      "exstyle": 2621480
+    },
+    "ghost:postedMoveReachesPage": {
+      "moves": [
+        [
+          338,
+          551
+        ],
+        [
+          338,
+          551
+        ]
+      ],
+      "body": {
+        "x": 338,
+        "y": 551.234375
+      },
+      "onHim": true
+    },
+    "ghost:ghostLetsClicksThrough": {
+      "tries": [
+        {
+          "over": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          },
+          "transparent": true,
+          "off": {
+            "title": "(another window)",
+            "hwnd": 1050002,
+            "pid": 6604
+          }
+        }
+      ],
+      "at": {
+        "x": 507,
+        "y": 1265
+      }
+    },
+    "pageDidNotThrow": [],
+    "ownerPetUntouched": {
+      "before": {
+        "petJson": "7d949e53790013e0da4620327c3411126adbc1e222d0cf04228fced08bb27b00",
+        "loginEntry": true,
+        "pets": [
+          37668
+        ]
+      },
+      "after": {
+        "petJson": "7d949e53790013e0da4620327c3411126adbc1e222d0cf04228fced08bb27b00",
+        "loginEntry": true,
+        "pets": [
+          37668
+        ]
+      }
+    }
+  },
+  "serverErrors": [],
+  "petLog": [
+    "\r",
+    "\r",
+    "DevTools listening on ws://127.0.0.1:57374/devtools/browser/7a19b434-b098-4ef2-8ac2-c65ef0a07cb6\r",
+    "\r",
+    "\r",
+    "DevTools listening on ws://127.0.0.1:57374/devtools/browser/a2defaa1-c0e9-43da-ba09-099592914d7a\r"
+  ]
+}

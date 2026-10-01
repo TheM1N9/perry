@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-30T05:11:37.632Z",
+  "ranAt": "2026-10-01T21:07:37.389Z",
   "passed": true,
   "checks": {
     "shortReplyGoesByItself": true,
@@ -82,58 +82,58 @@
     "screen": {
       "left": 0,
       "top": 0,
-      "right": 1920,
-      "bottom": 1032
+      "right": 2294,
+      "bottom": 912
     },
     "shortReplyGoesByItself": {
       "heldUp": true,
-      "lasted": 9176,
+      "lasted": 9157,
       "afterLetGo": 0,
       "due": 8660
     },
     "shortReplyNotTooSoon": {
       "heldUp": true,
-      "lasted": 9176,
+      "lasted": 9157,
       "afterLetGo": 0,
       "due": 8660
     },
     "longReplyStaysLonger": {
       "heldUp": true,
-      "lasted": 16882,
+      "lasted": 16885,
       "afterLetGo": 0,
       "due": 16460
     },
     "holdWindow": {
-      "from": 1790744960585,
-      "to": 1790744993949,
+      "from": 1790888721541,
+      "to": 1790888754792,
       "goneAt": null
     },
     "pointerHoldsReply": {
       "heldUp": true,
-      "lasted": 50327,
-      "afterLetGo": 16038
+      "lasted": 50190,
+      "afterLetGo": 16030
     },
     "letGoReplyGoes": {
       "heldUp": true,
-      "lasted": 50327,
-      "afterLetGo": 16038,
+      "lasted": 50190,
+      "afterLetGo": 16030,
       "due": 16460
     },
     "approval": {
-      "id": "w0a5frvy4a9vbzqbnwbe0pqnm9",
+      "id": "ewa3tgx7a010x5anfxfdcyg2az",
       "next": "ask"
     },
     "spots": {
       "middle": {
         "spot": {
-          "x": 660,
-          "y": 156,
+          "x": 847,
+          "y": 96,
           "hotkey": "CommandOrControl+Alt+Shift+F11",
           "ghost": true
         },
         "asked": {
-          "x": 660,
-          "y": 156
+          "x": 847,
+          "y": 96
         },
         "heStays": true,
         "windowOnScreen": true,
@@ -147,34 +147,34 @@
         "windowAtSpot": true,
         "boxes": {
           "body": {
-            "left": 944,
-            "top": 650.46875,
-            "right": 1048,
-            "bottom": 764
+            "left": 1131,
+            "top": 590.46875,
+            "right": 1235,
+            "bottom": 704
           },
           "bubble": {
-            "left": 724,
-            "top": 474.71875,
-            "right": 1024,
-            "bottom": 646.46875
+            "left": 911,
+            "top": 420.63543701171875,
+            "right": 1211,
+            "bottom": 586.4687805175781
           },
           "point": {
-            "left": 966.1005249023438,
-            "top": 635.5692749023438,
-            "right": 985.8995056152344,
-            "bottom": 655.3682250976562
+            "left": 1153.433837890625,
+            "top": 575.902587890625,
+            "right": 1173.2328300476074,
+            "bottom": 595.7015800476074
           },
           "panel": {
-            "left": 672,
-            "top": 168,
-            "right": 1044,
-            "bottom": 646.46875
+            "left": 859,
+            "top": 108,
+            "right": 1231,
+            "bottom": 586.46875
           },
           "window": {
-            "left": 660,
-            "top": 156,
-            "right": 1064,
-            "bottom": 776
+            "left": 847,
+            "top": 96,
+            "right": 1251,
+            "bottom": 716
           }
         }
       },
@@ -209,13 +209,13 @@
             "left": 12,
             "top": 168,
             "right": 312,
-            "bottom": 339.75
+            "bottom": 333.8333435058594
           },
           "point": {
-            "left": 54.10050582885742,
-            "top": 159.1005096435547,
-            "right": 73.89949035644531,
-            "bottom": 178.8994903564453
+            "left": 53.767173767089844,
+            "top": 158.76718139648438,
+            "right": 73.56616592407227,
+            "bottom": 178.5661735534668
           },
           "panel": {
             "left": 12,
@@ -233,13 +233,13 @@
       },
       "top-right": {
         "spot": {
-          "x": 1516,
+          "x": 1890,
           "y": -450,
           "hotkey": "CommandOrControl+Alt+Shift+F11",
           "ghost": true
         },
         "asked": {
-          "x": 1516,
+          "x": 1890,
           "y": -450
         },
         "heStays": true,
@@ -253,46 +253,46 @@
         "panelTall": true,
         "boxes": {
           "body": {
-            "left": 1800,
+            "left": 2174,
             "top": 44.46875,
-            "right": 1904,
+            "right": 2278,
             "bottom": 158
           },
           "bubble": {
-            "left": 1580,
+            "left": 1954,
             "top": 168,
-            "right": 1880,
-            "bottom": 339.75
+            "right": 2254,
+            "bottom": 333.8333435058594
           },
           "point": {
-            "left": 1822.1005249023438,
-            "top": 159.1005096435547,
-            "right": 1841.8995056152344,
-            "bottom": 178.8994903564453
+            "left": 2196.433837890625,
+            "top": 158.76718139648438,
+            "right": 2216.2328300476074,
+            "bottom": 178.5661735534668
           },
           "panel": {
-            "left": 1528,
+            "left": 1902,
             "top": 168,
-            "right": 1900,
+            "right": 2274,
             "bottom": 608
           },
           "window": {
-            "left": 1516,
+            "left": 1890,
             "top": 0,
-            "right": 1920,
+            "right": 2294,
             "bottom": 620
           }
         }
       },
       "near-top": {
         "spot": {
-          "x": 760,
+          "x": 947,
           "y": -300,
           "hotkey": "CommandOrControl+Alt+Shift+F11",
           "ghost": true
         },
         "asked": {
-          "x": 760,
+          "x": 947,
           "y": -300
         },
         "heStays": true,
@@ -306,33 +306,33 @@
         "panelTall": true,
         "boxes": {
           "body": {
-            "left": 1044,
+            "left": 1231,
             "top": 194.46875,
-            "right": 1148,
+            "right": 1335,
             "bottom": 308
           },
           "bubble": {
-            "left": 824,
+            "left": 1011,
             "top": 318,
-            "right": 1124,
-            "bottom": 489.75
+            "right": 1311,
+            "bottom": 483.8333435058594
           },
           "point": {
-            "left": 1066.1005249023438,
-            "top": 309.1005096435547,
-            "right": 1085.8995056152344,
-            "bottom": 328.8994903564453
+            "left": 1253.433837890625,
+            "top": 308.7671813964844,
+            "right": 1273.2328300476074,
+            "bottom": 328.5661735534668
           },
           "panel": {
-            "left": 772,
+            "left": 959,
             "top": 318,
-            "right": 1144,
+            "right": 1331,
             "bottom": 758
           },
           "window": {
-            "left": 760,
+            "left": 947,
             "top": 150,
-            "right": 1164,
+            "right": 1351,
             "bottom": 770
           }
         }
@@ -340,13 +340,13 @@
       "left": {
         "spot": {
           "x": -254,
-          "y": 156,
+          "y": 96,
           "hotkey": "CommandOrControl+Alt+Shift+F11",
           "ghost": true
         },
         "asked": {
           "x": -254,
-          "y": 156
+          "y": 96
         },
         "heStays": true,
         "windowOnScreen": true,
@@ -360,46 +360,46 @@
         "boxes": {
           "body": {
             "left": 30,
-            "top": 650.46875,
+            "top": 590.46875,
             "right": 134,
-            "bottom": 764
+            "bottom": 704
           },
           "bubble": {
             "left": 12,
-            "top": 474.71875,
+            "top": 420.63543701171875,
             "right": 312,
-            "bottom": 646.46875
+            "bottom": 586.4687805175781
           },
           "point": {
-            "left": 54.10050582885742,
-            "top": 635.5692749023438,
-            "right": 73.89949035644531,
-            "bottom": 655.3682250976562
+            "left": 53.767173767089844,
+            "top": 575.902587890625,
+            "right": 73.56616592407227,
+            "bottom": 595.7015800476074
           },
           "panel": {
             "left": 12,
-            "top": 168,
+            "top": 108,
             "right": 384,
-            "bottom": 646.46875
+            "bottom": 586.46875
           },
           "window": {
             "left": 0,
-            "top": 156,
+            "top": 96,
             "right": 404,
-            "bottom": 776
+            "bottom": 716
           }
         }
       },
       "left-a-little": {
         "spot": {
           "x": -130,
-          "y": 156,
+          "y": 96,
           "hotkey": "CommandOrControl+Alt+Shift+F11",
           "ghost": true
         },
         "asked": {
           "x": -130,
-          "y": 156
+          "y": 96
         },
         "heStays": true,
         "windowOnScreen": true,
@@ -412,46 +412,46 @@
         "boxes": {
           "body": {
             "left": 154,
-            "top": 650.46875,
+            "top": 590.46875,
             "right": 258,
-            "bottom": 764
+            "bottom": 704
           },
           "bubble": {
             "left": 12,
-            "top": 474.71875,
+            "top": 420.63543701171875,
             "right": 312,
-            "bottom": 646.46875
+            "bottom": 586.4687805175781
           },
           "point": {
-            "left": 178.1005096435547,
-            "top": 635.5692749023438,
-            "right": 197.8994903564453,
-            "bottom": 655.3682250976562
+            "left": 177.76718139648438,
+            "top": 575.902587890625,
+            "right": 197.5661735534668,
+            "bottom": 595.7015800476074
           },
           "panel": {
             "left": 12,
-            "top": 168,
+            "top": 108,
             "right": 384,
-            "bottom": 646.46875
+            "bottom": 586.46875
           },
           "window": {
             "left": 0,
-            "top": 156,
+            "top": 96,
             "right": 404,
-            "bottom": 776
+            "bottom": 716
           }
         }
       },
       "bottom-left": {
         "spot": {
           "x": -254,
-          "y": 412,
+          "y": 292,
           "hotkey": "CommandOrControl+Alt+Shift+F11",
           "ghost": true
         },
         "asked": {
           "x": -254,
-          "y": 412
+          "y": 292
         },
         "heStays": true,
         "windowOnScreen": true,
@@ -465,33 +465,33 @@
         "boxes": {
           "body": {
             "left": 30,
-            "top": 906.46875,
+            "top": 786.46875,
             "right": 134,
-            "bottom": 1020
+            "bottom": 900
           },
           "bubble": {
             "left": 12,
-            "top": 730.71875,
+            "top": 616.6354370117188,
             "right": 312,
-            "bottom": 902.46875
+            "bottom": 782.4687805175781
           },
           "point": {
-            "left": 54.10050582885742,
-            "top": 891.5692749023438,
-            "right": 73.89949035644531,
-            "bottom": 911.3682250976562
+            "left": 53.767173767089844,
+            "top": 771.902587890625,
+            "right": 73.56616592407227,
+            "bottom": 791.7015800476074
           },
           "panel": {
             "left": 12,
-            "top": 424,
+            "top": 304,
             "right": 384,
-            "bottom": 902.46875
+            "bottom": 782.46875
           },
           "window": {
             "left": 0,
-            "top": 412,
+            "top": 292,
             "right": 404,
-            "bottom": 1032
+            "bottom": 912
           }
         }
       }
@@ -521,8 +521,8 @@
       }
     },
     "dragWindow": [
-      1790745032401,
-      1790745034697
+      1790888792213,
+      1790888794125
     ],
     "overTheCircleArms": {
       "shrunk": "matrix(0.5, 0, 0, 0.5, 0, 0)",
@@ -534,7 +534,7 @@
     ],
     "lateTodoStaysUp": [
       "Call the landlord",
-      "2:23 late"
+      "2:22 late"
     ],
     "pageDidNotThrow": [],
     "realPointerKeptOut": {
@@ -546,7 +546,7 @@
   "petLog": [
     "\r",
     "\r",
-    "DevTools listening on ws://127.0.0.1:56860/devtools/browser/6ff7579a-a1b0-430e-9a16-472ee28bed7b\r",
+    "DevTools listening on ws://127.0.0.1:57395/devtools/browser/cbad9849-2f48-42ee-85bf-268042322213\r",
     ""
   ]
 }

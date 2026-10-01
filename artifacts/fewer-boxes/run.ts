@@ -87,7 +87,7 @@ type Persona = { user: string; name: string; personality: string };
 
 /** Each section of Settings, and words that show once its seeded rows have loaded. */
 const SECTION_WORDS = [
-  ["general", "Update on his own at night"], ["engines", "Perry's share this week"], ["computers", "a-long-folder-name"],
+  ["general", "Update on his own at night"], ["engines", "Gemini API key"], ["usage", "Perry's share this week"], ["computers", "a-long-folder-name"],
   ["access", "git push origin main"], ["notifications", "Quiet hours"], ["telegram", "Pair with Telegram"], ["whatsapp", "A separate number"],
   ["desktop-pet", "Show Perry the screen"], ["people", "Talks with Perry"], ["logins", "Netflix"], ["security", "Lock this browser"], ["activity", "Export last year's receipts"],
 ] as const;

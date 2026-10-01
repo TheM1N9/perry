@@ -38,7 +38,7 @@ export function PetNeedsYou({ now, onChat, open }: {
   if (approvals === undefined || inbox === undefined) {
     return <div className="space-y-2.5 px-2.5" role="status" aria-label="Loading"><Skeleton className="h-28 rounded-xl" /><Skeleton className="h-20 rounded-xl" /></div>;
   }
-  if (!live.length && !inbox.length) return <Empty title="You’re all caught up">When Perry needs a yes from you, or a plan or schedule has news, it shows up here.</Empty>;
+  if (!live.length && !inbox.length) return <Empty title="You’re all caught up" />;
   return (
     <ScrollArea className="min-h-0 flex-1">
     <div className="space-y-4 px-2.5 pb-2.5 [&_article_header]:px-1.5 [&_article>div]:px-1.5 [&_article_footer]:px-1.5 [&_article]:text-sm">

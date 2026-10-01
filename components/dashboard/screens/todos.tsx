@@ -19,15 +19,13 @@ export function Todos() {
   return (
     <Page
       title="To-dos"
-      description="What you mean to do. Give one a time and you're reminded then, by Perry on your screen or on your phone when you're away, until it's done."
+      description="Timed ones remind you on screen, or on your phone when you're away."
       actions={board ? <StreakBadge days={board.streak} /> : undefined}
     >
       <QuickAdd className="mb-6" />
       {board === undefined ? <ListSkeleton />
         : board.open.length === 0 ? (
-          <EmptyState title="Nothing to do" mascot>
-            Type one above, or tell Perry in any chat: “remind me to call Sam at 2”.
-          </EmptyState>
+          <EmptyState title="Nothing to do" mascot />
         ) : <div className="-mx-2"><TodoRows todos={board.open} now={now} /></div>}
       {board && board.doneToday.length > 0 && (
         <Section title="Done today" className="mt-8">

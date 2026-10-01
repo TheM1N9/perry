@@ -1,4 +1,5 @@
 import { Reveal } from "@/components/fx/Reveal";
+import { TrackLink } from "@/components/fx/TrackLink";
 import { Platypus, PlatypusArt } from "@/components/mascot/Platypus";
 import { INSTALL_GUIDE, REPO } from "@/lib/site";
 
@@ -10,9 +11,14 @@ export function Close() {
         <h2 id="close-title" className="mt-10 max-w-[14ch] text-[48px] font-[600] leading-[1] tracking-[-0.04em] md:text-[84px]">
           Tomorrow, 07:00. Want in?
         </h2>
-        <a href="#setup" className="mt-10 inline-flex h-12 items-center rounded-full bg-teal px-7 text-[16px] font-semibold text-white transition-colors hover:bg-[#0a6a61]">
+        <TrackLink
+          href="#setup"
+          event="CTA click"
+          data={{ cta: "get_perry", from: "close" }}
+          className="mt-10 inline-flex h-12 items-center rounded-full bg-teal px-7 text-[16px] font-semibold text-white transition-colors hover:bg-[#0a6a61]"
+        >
           Get Perry
-        </a>
+        </TrackLink>
         <p className="mt-5 text-[15px] text-ink-3">Runs on macOS, Linux and Windows, on the ChatGPT, Claude or Grok plan you already have.</p>
       </Reveal>
     </section>
@@ -28,8 +34,12 @@ export function Footer() {
           <p className="text-[14px] text-ink-3">Off the clock. Your data stays put.</p>
         </div>
         <nav aria-label="Footer" className="flex gap-6 text-[14px] text-ink-3">
-          <a href={INSTALL_GUIDE} target="_blank" rel="noopener noreferrer" className="hover:text-ink">Install guide</a>
-          <a href={REPO} target="_blank" rel="noopener noreferrer" className="hover:text-ink">GitHub</a>
+          <TrackLink href={INSTALL_GUIDE} target="_blank" rel="noopener noreferrer" event="GitHub click" data={{ link: "install_guide" }} className="hover:text-ink">
+            Install guide
+          </TrackLink>
+          <TrackLink href={REPO} target="_blank" rel="noopener noreferrer" event="GitHub click" data={{ link: "repo" }} className="hover:text-ink">
+            GitHub
+          </TrackLink>
         </nav>
       </div>
     </footer>
