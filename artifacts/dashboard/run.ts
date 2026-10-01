@@ -373,12 +373,14 @@ try {
   await heading("Settings");
   check("the system's dark theme applies", await p.evaluate(`document.documentElement.classList.contains("dark")`));
   await p.scheme("light");
-  await p.click(byRole("radio", "Dark"));
+  // The app's theme, not the pet's (Settings has both): System, Light and Dark toggle buttons in the group named Theme.
+  const theme = (name: string) => `[...document.querySelectorAll('[role=group][aria-label="Theme"] button')].find((b) => b.innerText.trim() === ${JSON.stringify(name)})`;
+  await p.click(theme("Dark"));
   await p.waitFor(`document.documentElement.classList.contains("dark")`, "dark to apply");
   await p.go(`${BASE}/settings`);
   await heading("Settings");
   check("a theme picked in Settings sticks", await p.evaluate(`localStorage.getItem("perry.theme") === "dark" && document.documentElement.classList.contains("dark")`));
-  await p.click(byRole("radio", "System"));
+  await p.click(theme("System"));
   await p.waitFor(`!document.documentElement.classList.contains("dark")`, "the system theme to return");
 
   // 13, 14. Every page at four widths, in both themes: overflow, contrast, screenshots.

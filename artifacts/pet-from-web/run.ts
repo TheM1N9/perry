@@ -233,7 +233,7 @@ try {
   // 9. His theme, from Settings: kept in his pet.json beside where he stands, and he changes while he runs.
   await dashboard.send("Page.navigate", { url: `${BASE}/settings?tab=general` });
   await until(async () => (await page()).includes("On your desktop"), "settings", 30);
-  const pick = (label: string) => dashboard!.evaluate(`(() => { const b = ${byText('[role=radiogroup][aria-label="Pet theme"] [role=radio]', label)}; b?.click(); return Boolean(b); })()`);
+  const pick = (label: string) => dashboard!.evaluate(`(() => { const b = ${byText('[role=group][aria-label="Pet theme"] button', label)}; b?.click(); return Boolean(b); })()`);
   const pet = await petTab();
   try {
     const dark = () => pet.evaluate(`document.documentElement.classList.contains("dark")`) as Promise<boolean>;
@@ -253,7 +253,7 @@ try {
     await petShot("pet-light.png");
     await pick("System");
     await check("themeBackToSystem", () => config().theme === "system");
-    checks.settingsShowsPicked = await dashboard.evaluate(`${byText('[role=radiogroup][aria-label="Pet theme"] [role=radio]', "System")}?.getAttribute("aria-checked") === "true"`) as boolean;
+    checks.settingsShowsPicked = await dashboard.evaluate(`${byText('[role=group][aria-label="Pet theme"] button', "System")}?.getAttribute("aria-pressed") === "true"`) as boolean;
     await shot("settings-pet-theme.png");
   } finally {
     pet.close();
