@@ -1,0 +1,111 @@
+{
+  "at": "2026-10-01T16:11:41.808Z",
+  "checks": {
+    "textareaQuiet": true,
+    "inputGroupSearchQuiet": true,
+    "todoQuickAddQuiet": true,
+    "composerQuiet": true,
+    "plainInputQuiet": true,
+    "timePickerQuiet": true,
+    "keyboardFocusStillShowsOnButtons": true,
+    "invalidStillMarked": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "textareaQuiet": {
+      "rest": {
+        "border": "rgba(255, 255, 255, 0.14)",
+        "shadow": "none",
+        "focused": false,
+        "tag": "TEXTAREA.textarea"
+      },
+      "clicked": {
+        "border": "rgba(255, 255, 255, 0.14)",
+        "shadow": "none",
+        "focused": true,
+        "tag": "TEXTAREA.textarea"
+      }
+    },
+    "inputGroupSearchQuiet": {
+      "rest": {
+        "border": "rgba(255, 255, 255, 0.14)",
+        "shadow": "none",
+        "focused": false,
+        "tag": "DIV.input-group"
+      },
+      "clicked": {
+        "border": "rgba(255, 255, 255, 0.14)",
+        "shadow": "none",
+        "focused": true,
+        "tag": "DIV.input-group"
+      }
+    },
+    "todoQuickAddQuiet": {
+      "rest": {
+        "border": "rgba(255, 255, 255, 0.14)",
+        "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+        "focused": false,
+        "tag": "DIV.input-group"
+      },
+      "clicked": {
+        "border": "rgba(255, 255, 255, 0.14)",
+        "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+        "focused": true,
+        "tag": "DIV.input-group"
+      }
+    },
+    "composerQuiet": {
+      "rest": {
+        "border": "rgba(255, 255, 255, 0.09)",
+        "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.04) 0px 1px 2px 0px, rgba(0, 0, 0, 0.16) 0px 12px 32px -16px",
+        "focused": false,
+        "tag": "DIV."
+      },
+      "clicked": {
+        "border": "rgba(255, 255, 255, 0.09)",
+        "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.04) 0px 1px 2px 0px, rgba(0, 0, 0, 0.16) 0px 12px 32px -16px",
+        "focused": true,
+        "tag": "DIV."
+      }
+    },
+    "plainInputQuiet": {
+      "rest": {
+        "border": "rgba(255, 255, 255, 0.14)",
+        "shadow": "none",
+        "focused": false,
+        "tag": "INPUT.input"
+      },
+      "clicked": {
+        "border": "rgba(255, 255, 255, 0.14)",
+        "shadow": "none",
+        "focused": true,
+        "tag": "INPUT.input"
+      }
+    },
+    "timePickerQuiet": {
+      "rest": {
+        "border": "rgba(255, 255, 255, 0.14)",
+        "shadow": "none",
+        "focused": false,
+        "tag": "DIV.time-picker"
+      },
+      "clicked": {
+        "border": "rgba(255, 255, 255, 0.14)",
+        "shadow": "none",
+        "focused": true,
+        "tag": "DIV.time-picker"
+      }
+    },
+    "keyboardFocusStillShowsOnButtons": {
+      "tag": "BUTTON Search",
+      "shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgb(95, 212, 200) 0px 0px 0px 2px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+      "outline": "none"
+    },
+    "invalidStillMarked": {
+      "rest": "rgba(255, 255, 255, 0.14)",
+      "marked": "oklab(0.999994 0.0000455678 0.0000200272 / 0.141176)"
+    },
+    "noPageErrors": []
+  },
+  "passed": true
+}
