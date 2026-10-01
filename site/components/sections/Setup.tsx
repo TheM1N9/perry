@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { Reveal } from "@/components/fx/Reveal";
+import { trackEvent } from "@/lib/analytics";
 
 // The one-line installers from the README.
 const INSTALL = {
@@ -18,19 +19,21 @@ const RUN = [
   { command: "perry update", note: "the latest Perry, rebuilt and restarted" },
 ];
 
-function CopyButton({ text, id }: { text: string; id: string }) {
+function CopyButton({ text, id, os }: { text: string; id: "install" | "run"; os: Os }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   return (
     <button
       type="button"
       data-copy={id}
       onClick={async () => {
+        let copied = true;
         try {
           await navigator.clipboard.writeText(text);
-          setState("copied");
         } catch {
-          setState("failed");
+          copied = false;
         }
+        setState(copied ? "copied" : "failed");
+        trackEvent("Copy command", { command: id, os, copied });
         setTimeout(() => setState("idle"), 1800);
       }}
       className="rounded-md px-2.5 py-1 text-[13px] font-medium text-[#c7c7cc] transition-colors hover:bg-white/10 hover:text-white"
@@ -115,7 +118,7 @@ export function Setup() {
                       </button>
                     ))}
                   </div>
-                  <CopyButton id="install" text={install.command} />
+                  <CopyButton id="install" os={os} text={install.command} />
                 </div>
               }
             >
@@ -127,7 +130,7 @@ export function Setup() {
             </Terminal>
           </Reveal>
           <Reveal delay={0.1}>
-            <Terminal step="2" title="Run it" bar={<CopyButton id="run" text={RUN.map((line) => line.command).join("\n")} />}>
+            <Terminal step="2" title="Run it" bar={<CopyButton id="run" os={os} text={RUN.map((line) => line.command).join("\n")} />}>
               <ul>
                 {RUN.map((line) => (
                   <li key={line.command} className="flex flex-wrap items-baseline justify-between gap-x-4">
