@@ -30,7 +30,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApprovalCard } from "../approval-card";
 import { DeleteDialog, RenameDialog } from "../app-sidebar";
-import { APPS, ChannelIcon, PerryMark, TopBar } from "../common";
+import { APPS, ChannelIcon, EmptyState, PerryMark, TopBar } from "../common";
 import { MoveToProject, NewProjectDialog } from "../projects";
 import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
@@ -580,7 +580,7 @@ export function ChatScreen() {
       <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]" id="content" tabIndex={-1}>
         <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
           {status?.onboarding === "offer" && (
-            <Alert className="mt-4">
+            <Alert variant="quiet" className="mt-4">
               <AlertTitle>Tell {assistant} about yourself</AlertTitle>
               <AlertDescription>A name, a personality, and a page about you that {assistant} reads before every reply. About two minutes.</AlertDescription>
               <AlertAction className="flex gap-2">
@@ -607,11 +607,9 @@ export function ChatScreen() {
                 </div>
               )}
               {missing && (
-                <Alert>
-                  <AlertTitle>This chat isn&apos;t here</AlertTitle>
-                  <AlertDescription>It may have been deleted. Start a new one, or pick another from the sidebar.</AlertDescription>
-                  <AlertAction><Button size="sm" render={<Link href="/chat" />}>New chat</Button></AlertAction>
-                </Alert>
+                <EmptyState mascot title="This chat isn't here" action={<Button size="sm" render={<Link href="/chat" />}>New chat</Button>}>
+                  It may have been deleted. Start a new one, or pick another from the sidebar.
+                </EmptyState>
               )}
               {messageStatus === "CanLoadMore" && (
                 <div className="flex justify-center">
@@ -673,7 +671,7 @@ export function ChatScreen() {
         <div className="mx-auto w-full max-w-3xl">
           <p className="sr-only" role="status" aria-live="polite">{waiting ? `${assistant} is replying` : ""}</p>
           {chat?.contact ? (
-            <div className="rounded-xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            <div className="px-1 pb-1 text-sm text-muted-foreground" role="note">
               <p className="font-medium text-foreground">{assistant}&apos;s chat with {chat.contact.name}{chat.contact.group ? " (a group)" : ""}</p>
               <p className="mt-1 text-pretty">
                 You can read it, but not write in it: what you write would reach them. To have {assistant} tell them something, ask in your own chat.

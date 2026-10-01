@@ -199,7 +199,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
           </div>
         </div>)}
         {messages.map((message) => message.role === "user" ? (
-          <div key={message.id} className="ml-auto flex w-fit max-w-[85%] flex-col items-end gap-1">
+          <div key={message.id} className="ml-auto flex w-fit max-w-[85%] flex-col items-end gap-1" data-role="user">
             {message.attachments.filter((file) => file.contentType.startsWith("image/")).map((file) => (
               // eslint-disable-next-line @next/next/no-img-element -- a local file served by /api/media, not a static asset
               <img key={file.url} src={file.url} alt={file.fileName} className="max-h-32 rounded-xl border object-contain" />
@@ -222,7 +222,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
 
       <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="px-3 pt-1 pb-3">
         {shot && picture && (
-          <div className="mb-1.5 flex items-start gap-2 rounded-xl border bg-card p-1.5" aria-label="Picture of the screen to send">
+          <div className="mb-1.5 flex items-start gap-2 px-1.5" aria-label="Picture of the screen to send">
             {/* eslint-disable-next-line @next/next/no-img-element -- a picture just taken, as a data URL */}
             <img src={picture.image} alt={`Picture of ${picture.name}`} className="h-16 max-w-28 shrink-0 rounded-md border object-cover object-top" />
             <div className="min-w-0 flex-1">
@@ -273,7 +273,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
                   </InputGroupButton>
                 </PetTip>
               ) : (
-                <InputGroupButton type="submit" size="icon-xs" variant="default" className="size-7 rounded-full" aria-label="Send" disabled={(!draft.trim() && !picture) || sending}>
+                <InputGroupButton type="submit" size="icon-xs" variant={!draft.trim() && !picture ? "secondary" : "default"} className={cn("size-7 rounded-full", !draft.trim() && !picture && "text-muted-foreground disabled:opacity-100")} aria-label="Send" disabled={(!draft.trim() && !picture) || sending}>
                   <ArrowUpIcon className="size-4" />
                 </InputGroupButton>
               )}

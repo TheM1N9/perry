@@ -62,13 +62,13 @@ export function Activity() {
 
   return (
     <Page title="Activity" description="Every run, with its tools, tokens, timing and errors. Newest first." wide>
-      <dl className="mb-6 flex flex-wrap divide-x rounded-xl border bg-card" aria-label="Summary">
+      <dl className="mb-6 flex flex-wrap gap-x-12 gap-y-3" aria-label="Summary">
         {[
           { label: "Runs", value: visible.length.toLocaleString() },
           { label: "Failed", value: errors.toLocaleString(), alert: errors > 0 },
           { label: "Tokens", value: tokens.toLocaleString() },
         ].map((stat) => (
-          <div key={stat.label} className="min-w-28 flex-1 px-5 py-4">
+          <div key={stat.label}>
             <dt className="text-xs text-muted-foreground">{stat.label}</dt>
             <dd className={cn("nums mt-1 text-2xl font-semibold tracking-tight", stat.alert && "text-destructive")}>{runs === undefined ? "–" : stat.value}</dd>
           </div>
@@ -115,11 +115,11 @@ function RunRow({ run }: { run: RunView }) {
   return (
     <li>
       <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger className="group flex w-full cursor-pointer items-start gap-3 px-4 py-3.5 text-left outline-none hover:bg-muted/40 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset">
+        <CollapsibleTrigger className="group flex w-full cursor-pointer items-start gap-3 py-3.5 text-left outline-none hover:[&_.run-title]:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset">
           <ChevronRightIcon className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90" />
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-center gap-2">
-              <span className="truncate font-medium">{run.chatTitle}</span>
+              <span className="run-title truncate font-medium underline-offset-2">{run.chatTitle}</span>
               {run.channel === "telegram" && <StatusBadge>Telegram</StatusBadge>}
               {run.channel === "whatsapp" && <StatusBadge>WhatsApp</StatusBadge>}
             </span>
@@ -132,19 +132,19 @@ function RunRow({ run }: { run: RunView }) {
               {typeof run.totalTokens === "number" && <span>{run.totalTokens.toLocaleString()} tokens</span>}
             </span>
           </span>
-          <StatusBadge tone={state.tone} pulse={run.status === "running"}>{state.label}</StatusBadge>
+          {run.status !== "ok" && <StatusBadge tone={state.tone} pulse={run.status === "running"}>{state.label}</StatusBadge>}
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="space-y-5 border-t bg-muted/20 px-4 py-4 sm:pl-11">
+          <div className="space-y-5 pb-5 sm:pl-7">
             {run.error && (
-              <ScrollArea className="rounded-lg border border-destructive/30 bg-destructive/5" viewportClassName="max-h-48">
-                <pre className="p-3 font-mono text-xs whitespace-pre-wrap text-destructive [overflow-wrap:anywhere]">{run.error}</pre>
+              <ScrollArea className="border-l-2 border-destructive/60" viewportClassName="max-h-48">
+                <pre className="py-0.5 pl-3 font-mono text-xs whitespace-pre-wrap text-destructive [overflow-wrap:anywhere]">{run.error}</pre>
               </ScrollArea>
             )}
             {run.toolCalls && run.toolCalls.length > 0 && (
               <div>
-                <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Tools</h4>
-                <div className="flex flex-wrap gap-1.5">{run.toolCalls.map((tool, index) => <code key={`${tool}-${index}`} className="rounded-md border bg-background px-1.5 py-0.5 font-mono text-xs">{tool}</code>)}</div>
+                <h4 className="mb-1 text-xs font-medium text-muted-foreground">Tools</h4>
+                <p className="font-mono text-xs [overflow-wrap:anywhere]" data-tools>{run.toolCalls.join(", ")}</p>
               </div>
             )}
             <div>
@@ -153,8 +153,8 @@ function RunRow({ run }: { run: RunView }) {
             </div>
             <div>
               <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Prompt</h4>
-              <ScrollArea className="rounded-lg border bg-background" viewportClassName="max-h-60">
-                <p className="p-3 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{run.prompt}</p>
+              <ScrollArea viewportClassName="max-h-60">
+                <p className="pr-3 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{run.prompt}</p>
               </ScrollArea>
             </div>
             {run.usage?.inputTokens !== undefined && (

@@ -203,6 +203,8 @@ export default defineSchema({
     name: v.optional(v.string()),
     personality: v.optional(v.string()),
     by: v.union(v.literal("owner"), v.literal("assistant"), v.literal("job")),
+    /** Saved as the owner typed on the About you page; their next save within a few minutes takes its place (persona.ts). */
+    typing: v.optional(v.boolean()),
     createdAt: v.number(),
   }).index("by_kind", ["kind", "createdAt"]),
 

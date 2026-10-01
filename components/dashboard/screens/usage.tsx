@@ -31,7 +31,7 @@ export function Usage() {
       <Section title="Your plans" description={`How much of each engine's plan is used, counting all your use of it, and when each limit starts again. Perry warns in the chat and on the pet from ${WARN_PERCENT}%.`}>
         {overview === undefined && <ListSkeleton rows={2} />}
         {overview && overview.computers === 0 && (
-          <EmptyState title="No computer connected" action={<div className="w-[min(360px,80vw)]"><CommandLine>perry start</CommandLine></div>}>
+          <EmptyState title="No computer connected" action={<CommandLine>perry start</CommandLine>}>
             Start Perry on the computer that will do the work, then sign in to an engine.
           </EmptyState>
         )}
@@ -54,12 +54,12 @@ export function Usage() {
 function PlanRow({ engine, now }: { engine: EngineOverview; now: number }) {
   const limits = engine.usage?.limits;
   const { level, hit } = standing(engine.usage, now);
+  // Only a plan running out says so; one with room left needs no word.
   const state: { tone: Tone; label: string } | null = level === "out" ? { tone: "danger", label: "Used up" }
-    : level === "low" ? { tone: "warning", label: "Running low" }
-    : limits?.windows.length ? { tone: "success", label: "Room left" } : null;
+    : level === "low" ? { tone: "warning", label: "Running low" } : null;
   const plan = engine.plan ? `${engine.plan[0].toUpperCase()}${engine.plan.slice(1)}` : null;
   return (
-    <li className="px-4 py-4" aria-label={`${engine.label} plan`}>
+    <li className="py-4" aria-label={`${engine.label} plan`}>
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-medium">{engine.label}</h3>
         {plan && <StatusBadge>{plan}</StatusBadge>}
@@ -78,7 +78,7 @@ function PlanRow({ engine, now }: { engine: EngineOverview; now: number }) {
         </p>
       )}
       {hit && (
-        <p className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-pretty text-destructive" role="alert">
+        <p className="mt-3 text-sm text-pretty text-destructive" role="alert">
           {engine.label} refused a reply for your plan&apos;s limit at {new Date(hit.at).toDateString() === new Date(now).toDateString() ? timeOf(hit.at) : fullDate(hit.at)}: “{hit.message.slice(0, 300)}”
         </p>
       )}
@@ -122,9 +122,9 @@ function Share({ engines, items, now }: { engines: EngineOverview[]; items: Shar
   }
   return (
     <>
-      <div className="mb-3 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap gap-x-10 gap-y-3">
         {used.map((engine) => (
-          <div key={engine.kind} className="rounded-xl border bg-card px-4 py-3">
+          <div key={engine.kind}>
             <p className="text-xs text-muted-foreground">{engine.label}</p>
             <p className="mt-0.5 text-lg font-semibold nums">{engine.tokens === "none" ? "—" : compact.format(engine.share.week.tokens)}</p>
             <p className="text-xs text-muted-foreground">{engine.tokens === "none" ? `${plural(engine.share.week.turns, "reply", "replies")}; it reports no tokens` : `tokens over ${plural(engine.share.week.turns, "reply", "replies")}`}</p>
@@ -133,7 +133,7 @@ function Share({ engines, items, now }: { engines: EngineOverview[]; items: Shar
       </div>
       <List label="What used the most">
         {items.map((item) => (
-          <li key={item.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+          <li key={item.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
             {item.channel !== "deleted" && <ChannelIcon channel={item.channel} className="size-4 shrink-0 text-muted-foreground" />}
             <div className="min-w-0 flex-1">
               {item.channel === "deleted"

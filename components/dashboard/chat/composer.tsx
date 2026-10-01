@@ -96,7 +96,7 @@ export function Composer({
           ))}
         </div>
       )}
-      <div
+      <div data-composer
         className={cn(
           "rounded-3xl border bg-background shadow-float transition-[border-color,box-shadow] has-[#composer:focus-visible]:border-ring has-[#composer:focus-visible]:ring-3 has-[#composer:focus-visible]:ring-ring/50 dark:bg-card",
           dragging && "border-primary ring-3 ring-primary/20",
@@ -155,7 +155,8 @@ export function Composer({
               <SquareIcon className="size-3.5 fill-current" />
             </Button>
           ) : (
-            <Button type="button" size="icon" className="size-9 rounded-full" aria-label={waiting ? "Send into the reply" : "Send message"}
+            // Nothing to send yet: a quiet grey circle, not a greyed-out teal one.
+            <Button type="button" size="icon" variant={empty ? "secondary" : "default"} className={cn("size-9 rounded-full", empty && "text-muted-foreground disabled:opacity-100")} aria-label={waiting ? "Send into the reply" : "Send message"}
               onClick={onSubmit} disabled={empty || busy || Boolean(uploading)}>
               {uploading ? <Spinner /> : <ArrowUpIcon className="size-[18px]" />}
             </Button>
@@ -247,8 +248,8 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
 export function ComposerNote({ tone, children, onDismiss }: { tone: "info" | "warning" | "error"; children: ReactNode; onDismiss: () => void }) {
   return (
     <div role={tone === "error" ? "alert" : "status"}
-      className={cn("mb-2 flex items-start gap-2 rounded-2xl border px-4 py-2.5 text-sm",
-        tone === "error" ? "border-destructive/30 bg-destructive/5 text-destructive" : tone === "warning" ? "border-warning/40 bg-warning-soft text-warning" : "bg-muted/60")}>
+      className={cn("mb-2 flex items-start gap-2 text-sm",
+        tone === "error" ? "rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-2.5 text-destructive" : tone === "warning" ? "rounded-2xl border border-warning/40 bg-warning-soft px-4 py-2.5 text-warning" : "px-4 text-muted-foreground")}>
       <div className={cn("min-w-0 flex-1 leading-relaxed whitespace-pre-wrap", tone === "info" && "font-mono text-xs")}>{children}</div>
       <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss} className="-mr-1 shrink-0"><XIcon /></Button>
     </div>
