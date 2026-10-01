@@ -34,6 +34,7 @@ import { PetDevices } from "../pet-devices";
 import { Shortcuts } from "../shortcuts";
 import { Updates } from "../updates";
 import { Usage } from "./usage";
+import { SaveStatus, useAutosave } from "../autosave";
 import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
 
 const TABS = ["general", "usage", "keys", "people", "shortcuts", "telegram", "whatsapp"] as const;
@@ -76,26 +77,26 @@ function Engines() {
     <Section title="Engines" description="Perry thinks with a coding agent on your computer, signed in with your own subscription. The sign-in stays on that computer.">
       {computers === undefined && <ListSkeleton rows={1} />}
       {computers?.length === 0 && (
-        <EmptyState title="No computer connected" action={<div className="w-[min(360px,80vw)]"><CommandLine>perry start</CommandLine></div>}>
+        <EmptyState title="No computer connected" action={<CommandLine>perry start</CommandLine>}>
           Start Perry on the computer that will do the work, then sign in to an engine here.
         </EmptyState>
       )}
       {computers && computers.length > 0 && (
-        <List label="Engines">
+        <div className="space-y-6">
           {computers.map((computer) => (
-            <li key={computer.id} className="px-4 py-4">
-              <div className="flex flex-wrap items-center gap-2">
+            <div key={computer.id} aria-label={computer.name} role="group">
+              <div className="flex flex-wrap items-baseline gap-2">
                 <h3 className="font-medium">{computer.name}</h3>
-                <StatusBadge tone={computer.online ? "success" : "neutral"}>{computer.online ? "Online" : "Offline"}</StatusBadge>
+                <StatusBadge>{computer.online ? "Online" : "Offline"}</StatusBadge>
               </div>
               {!computer.online && <p className="mt-0.5 text-sm text-muted-foreground">This computer is offline. Start Perry on it.</p>}
               {computer.online && computer.engines.length === 0 && <Waiting>Waiting for this computer to say which engines it has…</Waiting>}
-              <div className="mt-2 divide-y">
-                {computer.engines.map((engine) => <EngineRow key={engine.kind} runnerId={computer.id} computer={computer.name} online={computer.online} engine={engine} />)}
-              </div>
-            </li>
+              <List label={`Engines on ${computer.name}`} className="mt-1">
+                {computer.engines.map((engine) => <li key={engine.kind}><EngineRow runnerId={computer.id} computer={computer.name} online={computer.online} engine={engine} /></li>)}
+              </List>
+            </div>
           ))}
-        </List>
+        </div>
       )}
     </Section>
   );
@@ -113,6 +114,11 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
   const state: { tone: Tone; label: string } = !online ? { tone: "neutral", label: "Offline" }
     : !engine.installed ? { tone: "danger", label: `${engine.label} unavailable` }
     : engine.signedIn ? { tone: "success", label: "Signed in" } : { tone: "warning", label: "Signed out" };
+  const update: { tone: Tone; label: string } | null = online && engine.update
+    ? engine.update.need === "required" ? { tone: "danger", label: "Update required" } : { tone: "info", label: "Update available" }
+    : null;
+  // One pill at most, for what needs you first; everything else is said in words beside it.
+  const pill = update?.tone === "danger" ? update : state.tone === "danger" || state.tone === "warning" ? state : null;
   const plan = engine.auth.plan ? ` ${engine.auth.plan[0].toUpperCase()}${engine.auth.plan.slice(1)}` : "";
   const account = engine.signedIn
     ? `${engine.auth.label ?? "Signed in"}${plan}${engine.auth.email ? ` · ${engine.auth.email}` : ""}`
@@ -125,14 +131,12 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
     <div className="py-3 first:pt-1 last:pb-0" aria-label={`${engine.label} on ${computer}`}>
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-sm font-medium">{engine.label}</span>
-            {experimental && <StatusBadge tone="warning">Experimental</StatusBadge>}
-            <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
-            {online && engine.update && (
-              <StatusBadge tone={engine.update.need === "required" ? "danger" : "info"}>{engine.update.need === "required" ? "Update required" : "Update available"}</StatusBadge>
-            )}
-            {engine.version && <span className="text-xs text-muted-foreground">{engine.version}</span>}
+            {pill && <StatusBadge tone={pill.tone}>{pill.label}</StatusBadge>}
+            <span className="text-xs text-muted-foreground">
+              {[experimental && "Experimental", pill !== state && state.label, update && pill !== update && update.label, engine.version].filter(Boolean).join(" · ")}
+            </span>
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">{account}{unavailable && ` · ${unavailable}`}</p>
           {engine.message && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{engine.message}</p>}
@@ -177,8 +181,8 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
 function UpdateSteps({ engine, computer, update }: { engine: string; computer: string; update: EngineUpdate }) {
   const required = update.need === "required";
   return (
-    <div className={cn("mt-3 rounded-xl border p-4", required ? "border-destructive/30 bg-destructive/5" : "bg-muted/40")} role={required ? "alert" : "status"}>
-      <p className="text-sm font-medium">{required ? `Update ${engine} to keep using it` : `${engine} ${update.latest} is out`}</p>
+    <div className={cn("mt-3 border-l-2 pl-3", required && "border-destructive")} role={required ? "alert" : "status"}>
+      <p className={cn("text-sm font-medium", required && "text-destructive")}>{required ? `Update ${engine} to keep using it` : `${engine} ${update.latest} is out`}</p>
       <p className="mt-0.5 text-sm text-pretty text-muted-foreground">
         {required
           ? `${computer} has ${engine} ${update.version}, older than Perry works with (${update.minimum} or newer). Until it's updated, Perry won't start replies with it. Run this on ${computer}:`
@@ -192,7 +196,7 @@ function UpdateSteps({ engine, computer, update }: { engine: string; computer: s
 /** What the owner does to finish signing in: a code to enter, a page to open, or a command to run on the computer. */
 function LoginSteps({ engine, interaction }: { engine: string; interaction: LoginInteraction }) {
   return (
-    <div className="mt-3 rounded-xl border bg-muted/40 p-4" role="status">
+    <div className="mt-3 border-l-2 border-primary/60 pl-3" role="status">
       <p className="text-sm font-medium">Finish signing in</p>
       {interaction.type === "deviceCode" && (
         <>
@@ -458,7 +462,7 @@ function Keys() {
           const id = `key-${entry.name}`;
           const error = errors[entry.name];
           return (
-            <li key={entry.name} className="px-4 py-4">
+            <li key={entry.name} className="py-4">
               <form onSubmit={(event) => void save(event, entry.name)}>
                 <Field data-invalid={Boolean(error) || undefined}>
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -470,14 +474,9 @@ function Keys() {
                       ? <StatusBadge tone="success"><span translate="no">Set{entry.preview ? ` · ${entry.preview}` : ""}</span></StatusBadge>
                       : <StatusBadge>Not set</StatusBadge>}
                   </div>
-                  <div className="flex gap-2">
-                    <div className="min-w-0 flex-1">
-                      <SecretInput id={id} name={entry.name} value={drafts[entry.name] ?? ""} placeholder={entry.set ? "Paste a new value to replace it" : "Paste the key"}
-                        invalid={Boolean(error)} describedBy={error ? `${id}-error` : undefined}
-                        onChange={(value) => { setDrafts((current) => ({ ...current, [entry.name]: value })); setErrors((current) => ({ ...current, [entry.name]: "" })); }} />
-                    </div>
-                    <Button type="submit" className="h-10" disabled={!(drafts[entry.name] ?? "").trim() || saving !== null}>{saving === entry.name && <Spinner />}Save</Button>
-                  </div>
+                  <SecretInput id={id} name={entry.name} value={drafts[entry.name] ?? ""} placeholder={entry.set ? "Paste a new value to replace it" : "Paste the key"}
+                    invalid={Boolean(error)} describedBy={error ? `${id}-error` : undefined} save={{ busy: saving === entry.name }}
+                    onChange={(value) => { setDrafts((current) => ({ ...current, [entry.name]: value })); setErrors((current) => ({ ...current, [entry.name]: "" })); }} />
                   {error && <FieldError id={`${id}-error`}>{error}</FieldError>}
                 </Field>
               </form>
@@ -521,6 +520,9 @@ function Logins() {
   const [error, setError] = useState("");
 
   const edit = (field: keyof typeof NO_LOGIN, value: string) => { setDraft((current) => ({ ...current, [field]: value })); setError(""); };
+  const ready = Boolean(draft.label.trim() && draft.value.trim());
+  // The same name and username is a login already saved, which this replaces.
+  const replacing = logins?.some((login) => login.label === draft.label.trim() && (login.username ?? "") === draft.username.trim());
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (!draft.label.trim() || !draft.value.trim() || saving) return;
@@ -528,7 +530,7 @@ function Logins() {
     try {
       await saveLogin({ key: dashboardKey, label: draft.label, url: draft.url || undefined, username: draft.username || undefined, value: draft.value });
       setDraft(NO_LOGIN);
-      toast.success("Saved. Perry can sign in with it from the next message.");
+      toast.success(`${draft.label.trim()} added. Perry can sign in with it from the next message.`);
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -543,7 +545,7 @@ function Logins() {
       ) : (
         <List label="Logins and secrets">
           {logins.map((login) => (
-            <li key={login.id} className="flex flex-wrap items-start justify-between gap-2 px-4 py-3">
+            <li key={login.id} className="flex flex-wrap items-start justify-between gap-2 py-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{login.label}</p>
                 <p className="truncate text-sm text-muted-foreground">
@@ -567,7 +569,8 @@ function Logins() {
           ))}
         </List>
       )}
-      <form onSubmit={(event) => void save(event)} className="mt-3 rounded-xl border bg-card p-4">
+      <form onSubmit={(event) => void save(event)} className="mt-6" aria-label="Add a login">
+        <h3 className="mb-3 text-sm font-medium">Add a login</h3>
         <Field data-invalid={Boolean(error) || undefined}>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
@@ -590,9 +593,9 @@ function Logins() {
           </div>
           {error && <FieldError id="login-error">{error}</FieldError>}
         </Field>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <p className="min-w-0 flex-1 text-xs text-muted-foreground">The same name and username replaces a saved one.</p>
-          <Button type="submit" size="sm" disabled={!draft.label.trim() || !draft.value.trim() || saving}>{saving && <Spinner />}Save</Button>
+        <div className="mt-3 flex min-h-7 flex-wrap items-center gap-2">
+          <p className="min-w-0 flex-1 text-xs text-muted-foreground">The same name and username replaces a saved one. Enter adds it.</p>
+          {(ready || saving) && <Button type="submit" variant="outline" size="sm" disabled={saving} aria-busy={saving || undefined}>{saving && <Spinner />}{replacing ? "Replace login" : "Add login"}</Button>}
         </div>
       </form>
     </Section>
@@ -634,22 +637,7 @@ function People() {
   const remembered = useQuery(api.contacts.memoriesForDashboard, { key: dashboardKey });
   const set = useMutation(api.contacts.setForDashboard);
   const now = useNow();
-  const [editing, setEditing] = useState<{ id: Id<"contacts">; brief: string } | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const saveBrief = async () => {
-    if (!editing || saving) return;
-    setSaving(true);
-    try {
-      await set({ key: dashboardKey, id: editing.id, brief: editing.brief });
-      setEditing(null);
-      toast.success("Saved. Perry uses it from their next message.");
-    } catch (cause) {
-      toast.error(errorText(cause));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const [editing, setEditing] = useState<Id<"contacts"> | null>(null);
 
   return (
     <Section title="People" description="The people in your life, and what Perry remembers about them: from your chats, used only in yours, and from theirs, used only in theirs. You are asked the first time Perry talks with anyone: when someone new writes to it, and before it first writes to someone.">
@@ -658,7 +646,7 @@ function People() {
       ) : (
         <List label="People">
           {people.map((person) => (
-            <li key={person.id} className="px-4 py-3">
+            <li key={person.id} className="py-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -668,7 +656,7 @@ function People() {
                   <p className="truncate text-sm text-muted-foreground">
                     {[person.kind === "group" ? "Group" : person.handle, person.channel === "whatsapp" ? "WhatsApp" : "Telegram"].filter(Boolean).join(" · ")} · {ago(person.updatedAt, now)}
                   </p>
-                  {editing?.id !== person.id && (
+                  {editing !== person.id && (
                     <p className="mt-1 text-sm text-pretty text-muted-foreground">
                       {person.brief ? <>Perry may share: <span className="text-foreground">{person.brief}</span></> : "Perry shares nothing about you with them."}
                     </p>
@@ -676,7 +664,7 @@ function People() {
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   {person.chatId && <Button variant="ghost" size="sm" render={<Link href={`/chat/${person.chatId}`} />}>Open chat</Button>}
-                  {editing?.id !== person.id && <Button variant="ghost" size="sm" onClick={() => setEditing({ id: person.id, brief: person.brief ?? "" })}>Brief</Button>}
+                  {editing !== person.id && <Button variant="ghost" size="sm" onClick={() => setEditing(person.id)}>Brief</Button>}
                   {person.status === "blocked"
                     ? <ActionButton variant="ghost" size="sm" action={() => set({ key: dashboardKey, id: person.id, status: "allowed" })} success={`Perry talks with ${person.name} again.`}>Allow</ActionButton>
                     : <ActionButton variant="ghost" size="sm" className="text-destructive" action={() => set({ key: dashboardKey, id: person.id, status: "blocked" })} success={`${person.name} is blocked.`}
@@ -684,15 +672,9 @@ function People() {
                 </div>
               </div>
               <Remembered items={remembered?.byContact[person.id]} />
-              {editing?.id === person.id && (
-                <div className="mt-2 grid gap-2">
-                  <Textarea value={editing.brief} rows={3} placeholder={`What Perry may know and share with ${person.name}. "He can know my gym times."`}
-                    onChange={(event) => setEditing({ id: person.id, brief: event.target.value })} />
-                  <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>Cancel</Button>
-                    <Button size="sm" disabled={saving} onClick={() => void saveBrief()}>{saving && <Spinner />}Save</Button>
-                  </div>
-                </div>
+              {editing === person.id && (
+                <Brief name={person.name} brief={person.brief ?? ""} onDone={() => setEditing(null)}
+                  save={(brief) => set({ key: dashboardKey, id: person.id, brief })} />
               )}
             </li>
           ))}
@@ -703,7 +685,7 @@ function People() {
           <h3 className="mb-2 text-sm font-medium">Others you&apos;ve told Perry about</h3>
           <List label="Others you've told Perry about">
             {remembered.others.map((person) => (
-              <li key={person.name} className="px-4 py-3">
+              <li key={person.name} className="py-3">
                 <p className="text-sm font-medium">{person.name}</p>
                 <Remembered items={person.memories} />
               </li>
@@ -712,6 +694,23 @@ function People() {
         </div>
       )}
     </Section>
+  );
+}
+
+/** What Perry may share with one person, saved as you type; Done or Esc puts it away once it is saved. */
+function Brief({ name, brief, save, onDone }: { name: string; brief: string; save: (brief: string) => Promise<unknown>; onDone: () => void }) {
+  const text = useAutosave({ saved: brief, save });
+  const done = () => void text.flush().then((ok) => { if (ok) onDone(); });
+  return (
+    <div className="mt-2 grid gap-1.5">
+      <Textarea value={text.value} rows={3} autoFocus aria-label={`What Perry may share with ${name}`} placeholder={`What Perry may know and share with ${name}. "He can know my gym times."`} {...text.field}
+        onChange={(event) => text.change(event.target.value)}
+        onKeyDown={(event) => { if (event.key === "Escape" || (event.key === "Enter" && (event.metaKey || event.ctrlKey))) { event.preventDefault(); done(); } }} />
+      <div className="flex items-center gap-3">
+        <SaveStatus state={text.state} idle="Saves as you type. Perry uses it from their next message." onRetry={() => void text.flush()} className="flex-1" />
+        <Button variant="ghost" size="sm" onClick={done}>Done</Button>
+      </div>
+    </div>
   );
 }
 
@@ -737,15 +736,15 @@ function Telegram() {
   return (
     <>
       {!status.telegramConfigured && (
-        <Alert className="mb-6">
+        <Alert variant="quiet" className="mb-6">
           <AlertTitle>Telegram isn&apos;t set up</AlertTitle>
           <AlertDescription>Telegram is optional. To talk to Perry there, add a bot token under Keys first.</AlertDescription>
         </Alert>
       )}
       {status.telegramPaired ? (
-        <div className="flex flex-wrap items-start gap-4 rounded-xl border bg-card p-5">
+        <div className="flex flex-wrap items-start gap-4">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2"><h2 className="font-semibold">Paired</h2><StatusBadge tone="success">Working for {status.ownerName ?? "you"}</StatusBadge></div>
+            <div className="flex items-baseline gap-2"><h2 className="font-semibold">Paired</h2><StatusBadge tone="success">Working for {status.ownerName ?? "you"}</StatusBadge></div>
             <p className="mt-1 text-sm text-pretty text-muted-foreground">Messages from anyone else are ignored. Unpair to move Perry to another Telegram account.</p>
           </div>
           <ActionButton variant="outline" action={() => unclaim({ key: dashboardKey })} success="Unpaired. Generate a code to pair again."
@@ -754,7 +753,7 @@ function Telegram() {
           </ActionButton>
         </div>
       ) : (
-        <div className="rounded-xl border bg-card p-5">
+        <div>
           <div className="flex items-center gap-2"><h2 className="font-semibold">Pair with Telegram</h2><StatusBadge tone="warning">Not paired</StatusBadge></div>
           <p className="mt-1 text-sm text-pretty text-muted-foreground">Send the code to your Perry bot. Whoever sends it first owns this Perry.</p>
           {live ? (
@@ -826,7 +825,7 @@ function WhatsApp() {
 
   return (
     <>
-      <Alert className="mb-6">
+      <Alert variant="quiet" className="mb-6">
         <ShieldAlertIcon />
         <AlertTitle>WhatsApp may ban the number</AlertTitle>
         <AlertDescription>WhatsApp doesn&apos;t allow automating an account, so Perry links as a device, like WhatsApp Web. It only ever talks to you, which keeps the risk down, but a ban is possible.</AlertDescription>
@@ -834,10 +833,10 @@ function WhatsApp() {
 
       {!state.wanted && (
         <form onSubmit={(event) => void link(event)} className="space-y-4">
-          {state.status === "expired" && <Alert><AlertTitle>The code ran out</AlertTitle><AlertDescription>Nobody linked it in time, so Perry stopped making new ones. Get a new code when your phone is ready.</AlertDescription></Alert>}
+          {state.status === "expired" && <Alert variant="quiet"><AlertTitle>The code ran out</AlertTitle><AlertDescription>Nobody linked it in time, so Perry stopped making new ones. Get a new code when your phone is ready.</AlertDescription></Alert>}
           {state.status === "logged-out" && <Alert variant="destructive"><AlertTitle>Unlinked</AlertTitle><AlertDescription>{state.error ?? "WhatsApp was unlinked on the phone."} Link it again below.</AlertDescription></Alert>}
           <ChoiceCards label="Which number Perry uses" value={mode} options={WHATSAPP_MODES} onChange={setMode} />
-          <div className="rounded-xl border bg-card p-4">
+          <div>
             <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
               <Checkbox checked={byCode} onCheckedChange={setByCode} />
               Link with a code typed on the phone instead of scanning a QR
@@ -855,8 +854,8 @@ function WhatsApp() {
       )}
 
       {linking && (
-        <div className="rounded-xl border bg-card p-5">
-          <div className="flex items-center gap-2"><h2 className="font-semibold">Link {state.mode === "self" ? "your WhatsApp" : "Perry's number"}</h2><StatusBadge tone="info">Waiting for the phone</StatusBadge></div>
+        <div>
+          <div className="flex items-baseline gap-2"><h2 className="font-semibold">Link {state.mode === "self" ? "your WhatsApp" : "Perry's number"}</h2><StatusBadge tone="info">Waiting for the phone</StatusBadge></div>
           {state.status === "qr" && state.qr && (
             <div className="mt-4 flex flex-wrap items-start gap-6">
               {/* eslint-disable-next-line @next/next/no-img-element -- a QR made on this computer */}
@@ -886,10 +885,10 @@ function WhatsApp() {
       )}
 
       {linked && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-start gap-4 rounded-xl border bg-card p-5">
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-start gap-4">
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-baseline gap-2">
                 <h2 className="font-semibold">{state.mode === "self" ? "Your WhatsApp" : "Perry's number"}{state.number ? ` · ${state.number}` : ""}</h2>
                 {state.status === "connected"
                   ? <StatusBadge tone={state.paired ? "success" : "warning"}>{state.paired ? "Linked" : "Linked, waiting for you"}</StatusBadge>
@@ -908,7 +907,7 @@ function WhatsApp() {
             </ActionButton>
           </div>
           {state.mode === "separate" && !state.paired && (
-            <div className="rounded-xl border bg-card p-5">
+            <div>
               <h3 className="font-medium">Send this from your own WhatsApp to {state.number ?? "Perry's number"}</h3>
               {state.pairingCode ? (
                 <div className="mt-3 flex flex-wrap items-center gap-3">

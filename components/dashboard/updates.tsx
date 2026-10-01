@@ -55,7 +55,7 @@ export function UpdateNotice() {
           {busy ? <Spinner /> : <ArrowUpCircleIcon className="text-primary" />}
           <span>{label}</span>
         </SidebarMenuButton>
-        <div role="status" className="rounded-lg border bg-background px-3 py-2.5 group-data-[collapsible=icon]:hidden">
+        <div role="status" className="px-2 py-1.5 group-data-[collapsible=icon]:hidden">
           <p className="flex items-center gap-1.5 text-sm font-medium">
             {busy ? <Spinner className="size-3.5" /> : <ArrowUpCircleIcon className="size-4 text-primary" aria-hidden />}{label}
           </p>
@@ -65,7 +65,7 @@ export function UpdateNotice() {
                 : `${plural(view.behind, "change")} · ${view.latest?.title ?? ""}`}
           </p>
           {!busy && (
-            <ActionButton size="xs" className="mt-2" action={async () => toast.success(await update())}>Update</ActionButton>
+            <ActionButton variant="link" size="xs" className="mt-0.5 h-auto px-0" action={async () => toast.success(await update())}>Update now</ActionButton>
           )}
         </div>
       </SidebarMenuItem>
@@ -88,7 +88,7 @@ export function Updates() {
     <Section title="Updates" description="Perry looks for a new version once a day. Around 4:00 at night, your time, he updates himself if he isn't busy.">
       {view === undefined ? <ListSkeleton rows={1} /> : (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-start gap-3 rounded-xl border bg-card p-4" data-update-state={view.state}>
+          <div className="flex flex-wrap items-start gap-3" data-update-state={view.state}>
             <div className="min-w-0 flex-1">
               <Headline view={view} />
               <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{detail(view, now)}</p>
@@ -155,8 +155,8 @@ function LastUpdate({ last, now }: { last: NonNullable<UpdateView["last"]>; now:
             <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" aria-hidden />What it said
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <ScrollArea className="mt-1.5 rounded-lg border bg-muted/40" viewportClassName="max-h-64">
-              <pre className="p-3 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{last.log}</pre>
+            <ScrollArea className="mt-1.5 border-l-2 border-destructive/50" viewportClassName="max-h-64">
+              <pre className="py-1 pr-3 pl-3 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{last.log}</pre>
             </ScrollArea>
           </CollapsibleContent>
         </Collapsible>

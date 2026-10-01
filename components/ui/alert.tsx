@@ -10,6 +10,8 @@ const alertVariants = cva(
         default: "bg-card text-card-foreground",
         destructive:
           "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current",
+        // Information, not trouble: words on the page, with no border or fill.
+        quiet: "border-transparent bg-transparent px-0 *:[svg]:text-muted-foreground *:data-[slot=alert-action]:right-0",
       },
     },
     defaultVariants: {
@@ -26,7 +28,7 @@ function Alert({
   return (
     <div
       data-slot="alert"
-      role="alert"
+      role={variant === "quiet" ? "status" : "alert"}
       className={cn(alertVariants({ variant }), className)}
       {...props}
     />
