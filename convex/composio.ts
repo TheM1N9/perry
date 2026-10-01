@@ -210,7 +210,8 @@ export const accounts = internalAction({
   args: {},
   handler: async (ctx): Promise<{ configured: boolean; accounts: ConnectedAccount[]; error?: string }> => {
     const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
-    if (!apiKey) return { configured: false, accounts: [], error: "No Composio key yet. Add one in Apps & skills → Connectors." };
+    // No key yet is not a failure: the page shows how to set one up, with the key field under it.
+    if (!apiKey) return { configured: false, accounts: [] };
     try {
       const composio = client(apiKey);
       const items: Array<{ id: string; status: string; createdAt?: string; alias?: string | null; toolkit: { slug: string } }> = [];
