@@ -1,9 +1,11 @@
 {
-  "ranAt": "2026-10-01T07:16:21.349Z",
+  "ranAt": "2026-10-01T17:18:38.061Z",
   "checks": {
+    "noKeyIsNotAnError": true,
     "namesTheAccount": true,
     "askedOnceThenKept": true,
     "showsEveryAccount": true,
+    "keyRowBelowConnectors": true,
     "everyConnectionAccountedFor": true,
     "oneCardPerApp": true,
     "oneRowPerAddress": true,
@@ -29,13 +31,36 @@
     "addAnotherStartsFromTheApp": true,
     "reconnectStartsFromTheApp": true,
     "noUnknownCalls": true,
+    "refusedKeyIsAnError": true,
     "noPageErrors": true
   },
   "notes": {
     "mode": "stand-in",
+    "noKey": {
+      "before": {
+        "steps": [
+          "Create a Composio account and copy an API key from composio.dev.",
+          "Paste your Composio key below."
+        ],
+        "alerts": [],
+        "errorWords": false,
+        "keyField": "Composio key",
+        "keyBelowSetup": true
+      },
+      "afterRefresh": {
+        "steps": [
+          "Create a Composio account and copy an API key from composio.dev.",
+          "Paste your Composio key below."
+        ],
+        "alerts": [],
+        "errorWords": false,
+        "keyField": "Composio key",
+        "keyBelowSetup": true
+      }
+    },
     "loads": {
-      "firstMs": 85,
-      "secondMs": 15
+      "firstMs": 146,
+      "secondMs": 36
     },
     "composio": [
       "gmail ACTIVE",
@@ -61,6 +86,16 @@
       "Higgsfield MCP | ACTIVE | -",
       "Higgsfield MCP | ACTIVE | -"
     ],
+    "keyRow": {
+      "field": true,
+      "sections": [
+        "Connected",
+        "Popular",
+        "All apps",
+        "Test what Perry can do"
+      ],
+      "below": true
+    },
     "cards": [
       {
         "name": "Gmail",
@@ -125,14 +160,17 @@
     "links": [
       {
         "toolkit": "gmail",
-        "callbackUrl": "http://127.0.0.1:58696/connectors?connected=gmail"
+        "callbackUrl": "http://127.0.0.1:49968/apps/connectors?connected=gmail"
       },
       {
         "toolkit": "youtube",
-        "callbackUrl": "http://127.0.0.1:58696/connectors?connected=youtube"
+        "callbackUrl": "http://127.0.0.1:49968/apps/connectors?connected=youtube"
       }
     ],
     "unknownCalls": [],
+    "refusedKey": [
+      "Couldn't reach Composio | 401 {\"error\":{\"message\":\"Invalid API key\",\"code\":401}}"
+    ],
     "pageErrors": []
   },
   "passed": true

@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Composio } from "@composio/core";
 import { openChat, sleep } from "../browser";
-import { startStandIn } from "./stand-in";
+import { KEY as STAND_IN_KEY, startStandIn } from "./stand-in";
 
 // bun artifacts/connector-accounts/run.ts <outDir> [composio key | --stand-in]
 // The Connectors page, grouped by app, on a fresh PERRY_HOME (in
@@ -54,13 +54,20 @@ import { startStandIn } from "./stand-in";
 //      page of apps and "Show more" (real account only: the stand-in has 8).
 //  14. Any page throws: no uncaught errors in the browser. With the stand-in,
 //      no call it was not built for.
+//  15. No key yet reads as a failure: before a key is set, the page must show
+//      the setup steps ("Paste your Composio key below") with the key field
+//      under them, and no error alert, also after Refresh.
+//  16. The Composio key is not under the connectors: in Apps & skills, its
+//      field must sit below every section of the Connectors page.
+//  17. A real failure is hidden along with "no key": with a key Composio
+//      refuses (stand-in only), the page must say it couldn't reach Composio.
 
 const [outDir, given] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/connector-accounts/run.ts <outDir> [composio key | --stand-in]");
 mkdirSync(outDir, { recursive: true });
 const standIn = given === "--stand-in" ? await startStandIn() : null;
 // Read with Node's own SQLite, read-only; the key goes from its output straight into this process.
-const apiKey = standIn ? "stand-in-key" : given ?? (spawnSync("node", ["-e", `const { DatabaseSync } = require("node:sqlite"); const db = new DatabaseSync(${JSON.stringify(join(homedir(), ".perry", "perry.sqlite"))}, { readOnly: true }); const row = db.prepare("SELECT doc FROM doc_secrets WHERE json_extract(doc, '$.name') = 'COMPOSIO_API_KEY'").get(); process.stdout.write(row ? JSON.parse(row.doc).value : "");`], { encoding: "utf8" }).stdout.trim() || undefined);
+const apiKey = standIn ? STAND_IN_KEY : given ?? (spawnSync("node", ["-e", `const { DatabaseSync } = require("node:sqlite"); const db = new DatabaseSync(${JSON.stringify(join(homedir(), ".perry", "perry.sqlite"))}, { readOnly: true }); const row = db.prepare("SELECT doc FROM doc_secrets WHERE json_extract(doc, '$.name') = 'COMPOSIO_API_KEY'").get(); process.stdout.write(row ? JSON.parse(row.doc).value : "");`], { encoding: "utf8" }).stdout.trim() || undefined);
 if (!apiKey) throw new Error("No Composio key: pass one, or connect Composio in ~/.perry first.");
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -113,6 +120,36 @@ const alias = (address?: string) => { if (address?.includes("@")) aliases[addres
 let browser: Awaited<ReturnType<typeof openChat>> | null = null;
 try {
   await until(() => fetch(`${BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start", 90);
+  browser = await openChat(BASE, KEY);
+  const { evaluate, send } = browser;
+  const has = (expression: string) => evaluate(`!!(${expression})`) as Promise<boolean>;
+  const text = (expression: string) => evaluate(`(${expression})?.innerText ?? ""`) as Promise<string>;
+  const main = `document.querySelector("main")`;
+
+  // 15. No key yet: the setup steps and the key field under them, and no alert, before and after Refresh.
+  await send("Page.navigate", { url: `${BASE}/apps/connectors` });
+  await until(() => has(`document.querySelector('section[aria-label="Connect through Composio"]') && document.querySelector('[data-key="COMPOSIO_API_KEY"] input')`), "the setup and the key field", 60);
+  await sleep(1_000);
+  const noKey = async () => await evaluate(`(() => {
+    const setup = document.querySelector('section[aria-label="Connect through Composio"]');
+    const key = document.querySelector('[data-key="COMPOSIO_API_KEY"]');
+    return {
+      steps: [...(setup?.querySelectorAll("ol > li") ?? [])].map((li) => li.innerText.trim()),
+      alerts: [...document.querySelectorAll('main [role="alert"]')].map((el) => el.innerText.replace(/\\n+/g, " | ")),
+      errorWords: /Couldn.t reach|No Composio key yet/.test(document.querySelector("main").innerText),
+      keyField: key?.querySelector("label")?.innerText.trim() ?? null,
+      keyBelowSetup: Boolean(setup && key && key.getBoundingClientRect().top >= setup.getBoundingClientRect().bottom),
+    };
+  })()`) as { steps: string[]; alerts: string[]; errorWords: boolean; keyField: string | null; keyBelowSetup: boolean };
+  const before = await noKey();
+  writeFileSync(join(outDir, "no-key.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).data, "base64"));
+  await evaluate(`[...document.querySelectorAll('section[aria-label="Connect through Composio"] button')].find((b) => b.innerText.trim() === "Refresh").click(), true`);
+  await sleep(2_000);
+  const afterRefresh = await noKey();
+  notes.noKey = { before, afterRefresh };
+  checks.noKeyIsNotAnError = [before, afterRefresh].every((seen) => seen.steps.includes("Paste your Composio key below.") && seen.alerts.length === 0 && !seen.errorWords
+    && seen.keyField === "Composio key" && seen.keyBelowSetup);
+
   await call("secrets:set", { name: "COMPOSIO_API_KEY", value: apiKey }, true);
 
   // 5 and 6: the accounts, asked once and then kept.
@@ -139,10 +176,6 @@ try {
   notes.accounts = now.accounts.map((item) => `${item.name} | ${item.status} | ${item.account ?? "-"}`);
   checks.showsEveryAccount = now.accounts.length === expected.length && expected.every((item) => now.accounts.some((row) => row.id === item.id));
 
-  browser = await openChat(BASE, KEY);
-  const { evaluate, send } = browser;
-  const has = (expression: string) => evaluate(`!!(${expression})`) as Promise<boolean>;
-  const text = (expression: string) => evaluate(`(${expression})?.innerText ?? ""`) as Promise<string>;
   // The artifact is committed: real addresses are checked, then each shown as a made-up one of its own
   // (two different Google accounts stay two different addresses) in screenshots.
   const mask = () => standIn ? Promise.resolve() : evaluate(`(() => { const aliases = ${JSON.stringify(aliases)}; const swap = (text) => text.replace(/[\\w.+-]+@[\\w-]+(\\.[\\w-]+)+/g, (found) => aliases[found.toLowerCase()] ?? "someone@example.com"); const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); for (let n = walk.nextNode(); n; n = walk.nextNode()) n.nodeValue = swap(n.nodeValue); for (const input of document.querySelectorAll("input")) input.value = swap(input.value); return true; })()`);
@@ -185,10 +218,20 @@ try {
   const row = (name: string, label: string) => `[...${card(name)}.querySelectorAll(":scope > ul > li")].find((li) => li.querySelector("p")?.innerText === ${JSON.stringify(label)})`;
   const catalogueNote = (list: string, name: string) => evaluate(`[...document.querySelectorAll('[aria-label="${list}"] > li')].find((li) => li.querySelector("p")?.firstChild?.textContent === ${JSON.stringify(name)})?.querySelector("p span")?.innerText ?? ""`) as Promise<string>;
 
-  await send("Page.navigate", { url: `${BASE}/connectors` });
+  await send("Page.navigate", { url: `${BASE}/apps/connectors` });
   await until(() => has(cardsList), "the Connected section", 60);
   await until(() => has(`document.querySelector('[aria-label="Popular apps"]')`), "the catalogue", 60);
   await sleep(1_500);
+
+  // 16. The Composio key under every section of the Connectors page.
+  const keyAt = await evaluate(`(() => {
+    const key = document.querySelector('section[aria-label="Composio"]');
+    const field = key?.querySelector('[data-key="COMPOSIO_API_KEY"]');
+    const above = [...document.querySelectorAll("main section[aria-label]")].filter((s) => s !== key && !s.contains(key));
+    return { field: Boolean(field), sections: above.map((s) => s.getAttribute("aria-label")), below: Boolean(key) && above.every((s) => s.getBoundingClientRect().bottom <= key.getBoundingClientRect().top + 1) };
+  })()`) as { field: boolean; sections: string[]; below: boolean };
+  notes.keyRow = keyAt;
+  checks.keyRowBelowConnectors = keyAt.field && keyAt.below && keyAt.sections.includes("Connected") && keyAt.sections.includes("Test what Perry can do");
 
   // 1 to 4 and 7 on the page, whatever the account holds.
   const shown = await cards();
@@ -324,15 +367,25 @@ try {
       await evaluate(`${click}.click(); true`);
       await until(async () => String(await evaluate(`location.href`).catch(() => "")).startsWith(`${standIn.url}/link?toolkit=${toolkit}`), `the ${toolkit} sign-in`);
       const link = standIn.links.at(-1);
-      return link?.toolkit === toolkit && link.callbackUrl === `${BASE}/connectors?connected=${toolkit}`;
+      return link?.toolkit === toolkit && link.callbackUrl === `${BASE}/apps/connectors?connected=${toolkit}`;
     };
     checks.addAnotherStartsFromTheApp = await signIn(`${card("Gmail")}.querySelector(':scope > div button')`, "gmail");
-    await send("Page.navigate", { url: `${BASE}/connectors` });
+    await send("Page.navigate", { url: `${BASE}/apps/connectors` });
     await until(() => has(cardsList), "the page again", 60);
     checks.reconnectStartsFromTheApp = await signIn(`[...${row("YouTube", (await cards()).find((item) => item.name === "YouTube")!.rows[0].label)}.querySelectorAll("button")].find((b) => b.innerText.trim() === "Reconnect")`, "youtube");
     notes.links = standIn.links;
     notes.unknownCalls = standIn.unknown;
     checks.noUnknownCalls = standIn.unknown.length === 0;
+
+    // 17. A key Composio refuses: a real failure, said as one, and not the setup for no key.
+    await call("secrets:set", { name: "COMPOSIO_API_KEY", value: "a-key-composio-refuses" }, true);
+    await send("Page.navigate", { url: `${BASE}/apps/connectors` });
+    await until(async () => /Couldn.t reach Composio/.test(await text(main)), "the error for a refused key", 60);
+    const refused = await evaluate(`[...document.querySelectorAll('main [role="alert"]')].map((el) => el.innerText.replace(/\\n+/g, " | "))`) as string[];
+    notes.refusedKey = refused;
+    checks.refusedKeyIsAnError = refused.length === 1 && /Couldn.t reach Composio/.test(refused[0])
+      && !(await has(`document.querySelector('section[aria-label="Connect through Composio"]')`)) && !(await text(main)).includes("No accounts connected");
+    writeFileSync(join(outDir, "refused-key.png"), Buffer.from((await send("Page.captureScreenshot", { format: "png" })).data, "base64"));
   }
 
   notes.pageErrors = browser.errors;

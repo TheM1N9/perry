@@ -1,9 +1,11 @@
 {
-  "ranAt": "2026-10-01T07:17:00.168Z",
+  "ranAt": "2026-10-01T17:19:26.323Z",
   "checks": {
+    "noKeyIsNotAnError": true,
     "namesTheAccount": true,
     "askedOnceThenKept": true,
     "showsEveryAccount": true,
+    "keyRowBelowConnectors": true,
     "everyConnectionAccountedFor": true,
     "oneCardPerApp": true,
     "oneRowPerAddress": true,
@@ -22,9 +24,31 @@
   },
   "notes": {
     "mode": "real account",
+    "noKey": {
+      "before": {
+        "steps": [
+          "Create a Composio account and copy an API key from composio.dev.",
+          "Paste your Composio key below."
+        ],
+        "alerts": [],
+        "errorWords": false,
+        "keyField": "Composio key",
+        "keyBelowSetup": true
+      },
+      "afterRefresh": {
+        "steps": [
+          "Create a Composio account and copy an API key from composio.dev.",
+          "Paste your Composio key below."
+        ],
+        "alerts": [],
+        "errorWords": false,
+        "keyField": "Composio key",
+        "keyBelowSetup": true
+      }
+    },
     "loads": {
-      "firstMs": 6184,
-      "secondMs": 471
+      "firstMs": 5483,
+      "secondMs": 449
     },
     "composio": [
       "instagram ACTIVE",
@@ -56,6 +80,16 @@
       "Gmail | ACTIVE | account2@example.com",
       "Google Calendar | ACTIVE | account2@example.com"
     ],
+    "keyRow": {
+      "field": true,
+      "sections": [
+        "Connected",
+        "Popular",
+        "All apps",
+        "Test what Perry can do"
+      ],
+      "below": true
+    },
     "cards": [
       {
         "name": "GitHub",

@@ -53,6 +53,9 @@ export const CONNECTIONS: Connection[] = [
   { id: "ca_hf_2", toolkit: "higgsfield_mcp", status: "ACTIVE", createdAt: at("24T17:40:00") },
 ];
 
+/** The one key the stand-in takes. */
+export const KEY = "stand-in-key";
+
 export async function startStandIn() {
   const connections = CONNECTIONS.map((item) => ({ ...item }));
   const deleted: string[] = [];
@@ -94,6 +97,8 @@ export async function startStandIn() {
       res.writeHead(app ? 200 : 404, { "content-type": "image/svg+xml" });
       return res.end(app ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22"><rect width="22" height="22" rx="6" fill="${app.color}"/><text x="11" y="15.5" font-family="Arial" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">${app.name[0]}</text></svg>` : "");
     }
+    // Composio refuses a key it doesn't know, as the real one does; the logos above and the sign-in page below need none.
+    if (url.pathname !== "/link" && url.pathname !== "/favicon.ico" && req.headers["x-api-key"] !== KEY) return json(res, 401, { error: { message: "Invalid API key", code: 401 } });
     // Where "Add another account" and Reconnect land: the provider's sign-in page, in real life.
     if (req.method === "GET" && url.pathname === "/link") {
       res.writeHead(200, { "content-type": "text/html" });
