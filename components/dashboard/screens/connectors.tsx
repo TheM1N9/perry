@@ -92,12 +92,12 @@ function AppLogo({ name, logo, className }: { name: string; logo?: string; class
 }
 
 /** One app in the catalogue: its logo, name and a line about it, and + to connect an account. */
-function AppRow({ app, connected, busy, onConnect }: { app: CatalogApp; connected: number; busy: string | null; onConnect: (slug: string) => void }) {
+function AppRow({ app, connected, busy, onConnect }: { app: CatalogApp; connected: number; busy: string | null; onConnect: (slug: string, from: string) => void }) {
   return (
     <li className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-muted/50">
       <AppLogo name={app.name} logo={app.logo} />
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 truncate text-[15px] font-medium">
+        <p className="flex items-center gap-2 truncate text-md font-medium">
           {app.name}
           {connected > 0 && <span className="text-xs font-normal text-success">{connected === 1 ? "Connected" : `${connected} connected`}</span>}
         </p>
@@ -105,8 +105,8 @@ function AppRow({ app, connected, busy, onConnect }: { app: CatalogApp; connecte
       </div>
       <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={connected ? `Connect another ${app.name} account` : `Connect ${app.name}`}
-          disabled={busy !== null} aria-busy={busy === app.slug || undefined} onClick={() => onConnect(app.slug)} />}>
-          {busy === app.slug ? <Spinner /> : <PlusIcon />}
+          disabled={busy !== null} aria-busy={busy === `app:${app.slug}` || undefined} onClick={() => onConnect(app.slug, `app:${app.slug}`)} />}>
+          {busy === `app:${app.slug}` ? <Spinner /> : <PlusIcon />}
         </TooltipTrigger>
         <TooltipContent>{connected ? "Connect another account" : "Connect"}</TooltipContent>
       </Tooltip>
@@ -119,22 +119,22 @@ const TONE_TEXT: Record<Tone, string> = { neutral: "text-muted-foreground", succ
 
 /** An app you've connected, drawn like a catalogue row, with its accounts listed under its name. */
 function AppGroup({ app, busy, onConnect, onRemove }: {
-  app: AppAccounts; busy: string | null; onConnect: (slug: string) => void; onRemove: (items: ConnectedAccount[]) => Promise<void>;
+  app: AppAccounts; busy: string | null; onConnect: (slug: string, from: string) => void; onRemove: (items: ConnectedAccount[]) => Promise<void>;
 }) {
   return (
     <li aria-label={app.name}>
       <div className="flex items-center gap-3 rounded-xl px-3 py-2.5">
         <AppLogo name={app.name} logo={app.logo} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-medium">{app.name}</p>
+          <p className="truncate text-md font-medium">{app.name}</p>
           <p className="truncate text-sm text-muted-foreground">
             {plural(app.accounts.length, "account")}
             {app.broken > 0 && <span className="text-warning"> · {app.broken} {app.broken === 1 ? "needs" : "need"} reconnecting</span>}
             {app.finishing > 0 && <> · {app.finishing} finishing sign-in</>}
           </p>
         </div>
-        <Button variant="ghost" size="sm" className="text-muted-foreground" aria-label={`Add another ${app.name} account`} disabled={busy !== null} aria-busy={busy === app.toolkit || undefined} onClick={() => onConnect(app.toolkit)}>
-          {busy === app.toolkit ? <Spinner /> : <PlusIcon />}<span className="hidden sm:inline">Add another account</span>
+        <Button variant="ghost" size="sm" className="text-muted-foreground" aria-label={`Add another ${app.name} account`} disabled={busy !== null} aria-busy={busy === `add:${app.toolkit}` || undefined} onClick={() => onConnect(app.toolkit, `add:${app.toolkit}`)}>
+          {busy === `add:${app.toolkit}` ? <Spinner /> : <PlusIcon />}<span className="hidden sm:inline">Add another account</span>
         </Button>
       </div>
       <ul aria-label={`${app.name} accounts`}>
@@ -146,7 +146,7 @@ function AppGroup({ app, busy, onConnect, onRemove }: {
 
 /** One account under its app, lined up with the app's name: who it is, and what to do when it isn't working. */
 function AccountRow({ app, account, busy, onConnect, onRemove }: {
-  app: AppAccounts; account: Account; busy: string | null; onConnect: (slug: string) => void; onRemove: (items: ConnectedAccount[]) => Promise<void>;
+  app: AppAccounts; account: Account; busy: string | null; onConnect: (slug: string, from: string) => void; onRemove: (items: ConnectedAccount[]) => Promise<void>;
 }) {
   const { main, spares, label } = account;
   const status = connectionStatus(main.status);
@@ -175,7 +175,7 @@ function AccountRow({ app, account, busy, onConnect, onRemove }: {
       <div className="flex items-center gap-2">
         {!working && <span className={cn("text-sm font-medium", TONE_TEXT[status.tone])}>{status.label}</span>}
         {!working && (
-          <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => onConnect(app.toolkit)}>{busy === app.toolkit && <Spinner />}Reconnect</Button>
+          <Button variant="outline" size="sm" disabled={busy !== null} aria-busy={busy === `account:${main.id}` || undefined} onClick={() => onConnect(app.toolkit, `account:${main.id}`)}>{busy === `account:${main.id}` && <Spinner />}Reconnect</Button>
         )}
         <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive"
           action={() => onRemove([main, ...spares])}
@@ -205,6 +205,7 @@ export function Connectors() {
   const [state, setState] = useState<{ configured: boolean; accounts: ConnectedAccount[]; error?: string } | null>(null);
   const [catalog, setCatalog] = useState<CatalogApp[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  /** The control that started a sign-in ("app:gmail", "add:gmail", "account:<id>"), so only it spins. */
   const [busy, setBusy] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [shown, setShown] = useState(PAGE);
@@ -244,10 +245,10 @@ export function Connectors() {
     setReturned(null);
   }, [returned, state]);
 
-  const connect = async (toolkit: string) => {
+  const connect = async (toolkit: string, from: string) => {
     const slug = toolkit.trim().toLowerCase();
     if (!slug || busy) return;
-    setBusy(slug);
+    setBusy(from);
     try {
       const callbackUrl = `${window.location.origin}${window.location.pathname}?connected=${encodeURIComponent(slug)}`;
       const result = await connectToolkit({ key: dashboardKey, toolkit: slug, callbackUrl });
@@ -264,8 +265,10 @@ export function Connectors() {
   const remove = async (items: ConnectedAccount[]) => {
     const results = await Promise.all(items.map((item) => disconnectAccount({ key: dashboardKey, accountId: item.id }).catch((cause) => ({ error: errorText(cause) }))));
     await refresh();
-    const failed = results.find((result) => result.error);
-    if (failed) throw new Error(failed.error);
+    const failed = results.filter((result) => result.error);
+    if (failed.length === 0) return;
+    if (failed.length === items.length) throw new Error(failed[0].error);
+    throw new Error(`${failed.length} of ${items.length} connections couldn't be removed (${failed[0].error}); the other ${items.length - failed.length} were.`);
   };
 
   const term = search.trim().toLowerCase();
@@ -295,9 +298,10 @@ export function Connectors() {
       <Page title="Connectors" description="Accounts Perry can use for you: your calendar, email, notes and more.">
         <Section title="Connect through Composio" description="Composio holds the sign-ins, so Perry never sees a password or token.">
           <ol className="list-decimal space-y-2 pl-5 text-sm">
-            <li>Create a Composio account and copy an API key from <a href="https://composio.dev" target="_blank" rel="noopener noreferrer" className="font-medium text-primary underline-offset-2 hover:underline">composio.dev</a>.</li>
-            <li>Paste it <Link href="#key-COMPOSIO_API_KEY" className="font-medium text-primary underline-offset-2 hover:underline">below</Link>, as the Composio key.</li>
+            <li>Create a Composio account and copy an API key from <a href="https://composio.dev" target="_blank" rel="noopener noreferrer" className="link">composio.dev</a>.</li>
+            <li>Paste your Composio key <Link href="#key-COMPOSIO_API_KEY" className="link">below</Link>.</li>
           </ol>
+          {/* No key yet is not a failure (the key field is below); this is only for a load that failed. */}
           {state.error && <Alert variant="destructive" className="mt-4"><TriangleAlertIcon /><AlertTitle>Couldn&apos;t reach Composio</AlertTitle><AlertDescription>{state.error}</AlertDescription></Alert>}
           <div className="mt-5">{refreshButton}</div>
         </Section>
@@ -318,16 +322,16 @@ export function Connectors() {
 
   return (
     <Page wide title="Connectors" description="Let Perry work across the apps you already use. It checks what's connected each time it acts." actions={<div className="flex items-center gap-2">{searchBox}{refreshButton}</div>}>
-      {state.error && <Alert variant="destructive" className="mb-6"><TriangleAlertIcon /><AlertTitle>Couldn&apos;t load every connection</AlertTitle><AlertDescription>{state.error}</AlertDescription></Alert>}
+      {state.error && <Alert variant="destructive" className="mb-6"><TriangleAlertIcon /><AlertTitle>Couldn&apos;t reach Composio</AlertTitle><AlertDescription>{state.error}</AlertDescription></Alert>}
 
       <Section title="Connected" description="The apps Perry can act on, and the accounts signed in to each. The sign-ins stay with Composio.">
         {state.accounts.length === 0
-          ? <EmptyState title="No accounts connected">Pick an app below. Sign-in happens on the provider&apos;s own page.</EmptyState>
+          ? !state.error && <EmptyState title="No accounts connected">Pick an app below. Sign-in happens on the provider&apos;s own page.</EmptyState>
           : shownApps.length === 0
             ? <p className="text-sm text-muted-foreground" role="status">No connected app or account matches &ldquo;{search.trim()}&rdquo;.</p>
             : (
               <ul aria-label="Connected apps" className="-mx-3 space-y-4">
-                {shownApps.map((app) => <AppGroup key={app.toolkit} app={app} busy={busy} onConnect={(slug) => void connect(slug)} onRemove={remove} />)}
+                {shownApps.map((app) => <AppGroup key={app.toolkit} app={app} busy={busy} onConnect={(slug, from) => void connect(slug, from)} onRemove={remove} />)}
               </ul>
             )}
       </Section>
@@ -337,7 +341,7 @@ export function Connectors() {
           {!term && popular.length > 0 && (
             <Section title="Popular">
               <ul aria-label="Popular apps" className="grid gap-1 sm:grid-cols-2">
-                {popular.map((app) => <AppRow key={app.slug} app={app} connected={connectedCount(app.slug)} busy={busy} onConnect={(slug) => void connect(slug)} />)}
+                {popular.map((app) => <AppRow key={app.slug} app={app} connected={connectedCount(app.slug)} busy={busy} onConnect={(slug, from) => void connect(slug, from)} />)}
               </ul>
             </Section>
           )}
@@ -347,7 +351,7 @@ export function Connectors() {
               : (
                 <>
                   <ul aria-label={term ? "Matching apps" : "All apps"} className="grid gap-1 sm:grid-cols-2">
-                    {rest.slice(0, shown).map((app) => <AppRow key={app.slug} app={app} connected={connectedCount(app.slug)} busy={busy} onConnect={(slug) => void connect(slug)} />)}
+                    {rest.slice(0, shown).map((app) => <AppRow key={app.slug} app={app} connected={connectedCount(app.slug)} busy={busy} onConnect={(slug, from) => void connect(slug, from)} />)}
                   </ul>
                   {rest.length > shown && (
                     <div className="mt-4 flex justify-center">
