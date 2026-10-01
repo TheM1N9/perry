@@ -431,8 +431,7 @@ export type Activity = {
 };
 
 /**
- * What Perry is doing, for the desktop pet and the web chat while a reply is on
- * its way (lib/activity.ts): the latest turn
+ * What Perry is doing, for the desktop pet (lib/activity.ts): the latest turn
  * of this chat, or with no chat given, whatever turn is running anywhere (a
  * job, a Telegram message). Null when there is nothing to say.
  */
@@ -472,6 +471,38 @@ export const getActivity = query({
       ...(recent ? { recent } : {}),
       summary: running ? "" : summarize(spans),
     };
+  },
+});
+
+/** A step of a run, as the chat lists it under "Worked for…". */
+export type WorkStep = Step & { status: Doc<"runSpans">["status"]; startedAt: number; durationMs?: number };
+/** One run of a chat and every step it took, in order. */
+export type Work = { runId: Id<"runs">; status: Doc<"runs">["status"]; startedAt: number; finishedAt?: number; steps: WorkStep[] };
+/** The runs a chat lists the steps of: its latest, which covers the replies it shows. */
+const WORK_RUNS = 50;
+
+/**
+ * What each of a chat's latest runs did, step by step, oldest first, for the
+ * chat to show with its reply: as a list that grows while the run goes, and
+ * folded into "Worked for 46s" once the reply is in. Reasoning is left out;
+ * its time is in the run's.
+ */
+export const getChatWork = query({
+  args: { key: vKey, id: v.id("conversations") },
+  handler: async (ctx, args): Promise<Work[]> => {
+    assertDashboardKey(args.key);
+    ownerChat(await ctx.db.get(args.id));
+    const runs = await ctx.db.query("runs").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).order("desc").take(WORK_RUNS);
+    return await Promise.all(runs.reverse().map(async (run): Promise<Work> => {
+      const spans = await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).take(500);
+      const steps = spans.filter((span) => span.kind !== "reasoning").sort((a, b) => a.startedAt - b.startedAt).map((span): WorkStep => ({
+        ...describeStep(span),
+        status: span.status,
+        startedAt: span.startedAt,
+        ...(span.durationMs !== undefined ? { durationMs: span.durationMs } : {}),
+      }));
+      return { runId: run._id, status: run.status, startedAt: run.startedAt, ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}), steps };
+    }));
   },
 });
 

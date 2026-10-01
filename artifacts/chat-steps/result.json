@@ -1,12 +1,15 @@
 {
-  "ranAt": "2026-09-30T23:29:13.970Z",
+  "ranAt": "2026-10-01T07:48:19.113Z",
   "checks": {
     "stepsShowNotThinking": true,
     "noRawNames": true,
     "stepInView": true,
-    "noWritingLineUnderWords": true,
+    "stepsStayInOrder": true,
     "nothingLingers": true,
     "replyLands": true,
+    "workedForAboveReply": true,
+    "opensToStepsInOrder": true,
+    "keptAfterReload": true,
     "noPageErrors": true
   },
   "notes": {
@@ -21,7 +24,7 @@
         "replies": 0
       },
       {
-        "t": 313,
+        "t": 447,
         "thinking": "Thinking",
         "streaming": null,
         "steps": [
@@ -31,37 +34,187 @@
         "replies": 0
       },
       {
-        "t": 6154,
-        "thinking": "Using ToolSearch",
+        "t": 5813,
+        "thinking": "Using ToolSearch<1sThinking",
         "streaming": null,
         "steps": [
-          "Using ToolSearch"
+          "Using ToolSearch",
+          "Thinking"
         ],
         "inView": true,
         "replies": 0
       },
       {
-        "t": 7867,
-        "thinking": "Reading example.com",
+        "t": 7568,
+        "thinking": "Using ToolSearch<1sReading example.com<1sThinking",
         "streaming": null,
         "steps": [
-          "Reading example.com"
+          "Using ToolSearch",
+          "Reading example.com",
+          "Thinking"
         ],
         "inView": true,
         "replies": 0
       },
       {
-        "t": 9920,
-        "thinking": "Running Start-Sleep -Seconds 8; Write-Output perry-…",
+        "t": 9927,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…<1s",
         "streaming": null,
         "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
           "Running Start-Sleep -Seconds 8; Write-Output perry-…"
         ],
         "inView": true,
         "replies": 0
       },
       {
-        "t": 20593,
+        "t": 11018,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…1s",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 11950,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…2s",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 12901,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…3s",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 14033,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…4s",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 14966,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…5s",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 15975,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…6s",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 16914,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…7s",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 18001,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…8s",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 18934,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…9s",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 20028,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…10s",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 21023,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…11s",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 21491,
+        "thinking": "Using ToolSearch<1sReading example.com<1sRunning Start-Sleep -Seconds 8; Write-Output perry-…12sThinking",
+        "streaming": null,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…",
+          "Thinking"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 24152,
         "thinking": null,
         "streaming": null,
         "steps": [],
@@ -76,7 +229,7 @@
       "Running Start-Sleep -Seconds 8; Write-Output perry-…"
     ],
     "nothingLingers": {
-      "at": 1790810943523,
+      "at": 1790840888121,
       "thinking": null,
       "streaming": null,
       "steps": [],
@@ -84,6 +237,37 @@
       "replies": 1
     },
     "wordsStreamed": false,
+    "workedForAboveReply": {
+      "label": "Worked for 24s · 3 steps",
+      "open": false,
+      "above": true,
+      "steps": []
+    },
+    "opensToStepsInOrder": {
+      "label": "Worked for 24s · 3 steps",
+      "open": true,
+      "above": true,
+      "steps": [
+        {
+          "label": "Using ToolSearch",
+          "status": "ok"
+        },
+        {
+          "label": "Reading example.com",
+          "status": "ok"
+        },
+        {
+          "label": "Running Start-Sleep -Seconds 8; Write-Output perry-…",
+          "status": "ok"
+        }
+      ]
+    },
+    "keptAfterReload": {
+      "label": "Worked for 24s · 3 steps",
+      "open": false,
+      "above": true,
+      "steps": []
+    },
     "noPageErrors": []
   },
   "passed": true
