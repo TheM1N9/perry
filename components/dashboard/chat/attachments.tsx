@@ -58,7 +58,7 @@ export function PickedFiles({ files, onRemove, disabled }: { files: File[]; onRe
             {url && file.type.startsWith("image/") ? <img src={url} alt={file.name} className="size-full object-cover" />
               : url ? <video src={url} muted playsInline preload="metadata" aria-label={file.name} className="size-full object-cover" />
               : (
-                <span className="flex size-full flex-col justify-end p-1.5 text-[10px] leading-tight">
+                <span className="flex size-full flex-col justify-end p-1.5 text-2xs leading-tight">
                   <FileIcon className="mb-auto size-4 text-muted-foreground" />
                   <span className="truncate font-medium">{file.name}</span>
                   <span className="text-muted-foreground">{bytes(file.size)}</span>

@@ -38,7 +38,7 @@ export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> 
   },
   GEMINI_API_KEY: {
     label: "Gemini API key",
-    hint: "For Antigravity (Settings → General → Engines), from aistudio.google.com/apikey. Only Antigravity's server on your computer gets it.",
+    hint: "For Antigravity, from aistudio.google.com/apikey. Only Antigravity's server on your computer gets it.",
   },
 };
 

@@ -1,0 +1,177 @@
+{
+  "ranAt": "2026-10-01T17:18:38.061Z",
+  "checks": {
+    "noKeyIsNotAnError": true,
+    "namesTheAccount": true,
+    "askedOnceThenKept": true,
+    "showsEveryAccount": true,
+    "keyRowBelowConnectors": true,
+    "everyConnectionAccountedFor": true,
+    "oneCardPerApp": true,
+    "oneRowPerAddress": true,
+    "pageShowsAddresses": true,
+    "expiredOffersReconnect": true,
+    "attentionFirstThenByName": true,
+    "everyCardAddsAnother": true,
+    "workingAccountsSayNothing": true,
+    "noBoxes": true,
+    "orderIsAttentionThenName": true,
+    "cardSummaries": true,
+    "duplicateShowsOnce": true,
+    "expiredSpareUnderWorkingAccount": true,
+    "expiredWithoutAddress": true,
+    "noAddressStaysApart": true,
+    "catalogueCountsAccounts": true,
+    "searchByAppShowsWholeCard": true,
+    "searchByAddress": true,
+    "searchSaysNothing": true,
+    "removeExtrasRemovesOnlySpares": true,
+    "disconnectAsksAndCancelKeeps": true,
+    "disconnectRemovesEveryConnection": true,
+    "addAnotherStartsFromTheApp": true,
+    "reconnectStartsFromTheApp": true,
+    "noUnknownCalls": true,
+    "refusedKeyIsAnError": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "mode": "stand-in",
+    "noKey": {
+      "before": {
+        "steps": [
+          "Create a Composio account and copy an API key from composio.dev.",
+          "Paste your Composio key below."
+        ],
+        "alerts": [],
+        "errorWords": false,
+        "keyField": "Composio key",
+        "keyBelowSetup": true
+      },
+      "afterRefresh": {
+        "steps": [
+          "Create a Composio account and copy an API key from composio.dev.",
+          "Paste your Composio key below."
+        ],
+        "alerts": [],
+        "errorWords": false,
+        "keyField": "Composio key",
+        "keyBelowSetup": true
+      }
+    },
+    "loads": {
+      "firstMs": 146,
+      "secondMs": 36
+    },
+    "composio": [
+      "gmail ACTIVE",
+      "gmail ACTIVE",
+      "gmail EXPIRED",
+      "googlecalendar EXPIRED",
+      "googlecalendar ACTIVE",
+      "slack ACTIVE",
+      "youtube EXPIRED",
+      "notion INITIATED",
+      "higgsfield_mcp ACTIVE",
+      "higgsfield_mcp ACTIVE"
+    ],
+    "accounts": [
+      "Gmail | ACTIVE | alex@example.com",
+      "Gmail | ACTIVE | alex@example.com",
+      "Gmail | EXPIRED | sam@example.com",
+      "Google Calendar | EXPIRED | alex@example.com",
+      "Google Calendar | ACTIVE | alex@example.com",
+      "Slack | ACTIVE | alex",
+      "YouTube | EXPIRED | -",
+      "Notion | INITIATED | -",
+      "Higgsfield MCP | ACTIVE | -",
+      "Higgsfield MCP | ACTIVE | -"
+    ],
+    "keyRow": {
+      "field": true,
+      "sections": [
+        "Connected",
+        "Popular",
+        "All apps",
+        "Test what Perry can do"
+      ],
+      "below": true
+    },
+    "cards": [
+      {
+        "name": "Gmail",
+        "summary": "2 accounts · 1 needs reconnecting",
+        "rows": [
+          "sam@example.com | Expired | Reconnect | Disconnect",
+          "alex@example.com | Connected 2 times | Remove extras | Disconnect"
+        ]
+      },
+      {
+        "name": "Notion",
+        "summary": "1 account · 1 finishing sign-in",
+        "rows": [
+          "Added 25 Sept 2026 | Finishing sign-in | Reconnect | Disconnect"
+        ]
+      },
+      {
+        "name": "YouTube",
+        "summary": "1 account · 1 needs reconnecting",
+        "rows": [
+          "Added 3 Sept 2026 | Expired | Reconnect | Disconnect"
+        ]
+      },
+      {
+        "name": "Google Calendar",
+        "summary": "1 account",
+        "rows": [
+          "alex@example.com | Connected 2 times | Remove extras | Disconnect"
+        ]
+      },
+      {
+        "name": "Higgsfield MCP",
+        "summary": "2 accounts",
+        "rows": [
+          "Added 24 Sept 2026, 13:45 | Disconnect",
+          "Added 24 Sept 2026, 23:10 | Disconnect"
+        ]
+      },
+      {
+        "name": "Slack",
+        "summary": "1 account",
+        "rows": [
+          "alex | Disconnect"
+        ]
+      }
+    ],
+    "catalogue": {
+      "gmail": "Connected",
+      "calendar": "Connected",
+      "notion": ""
+    },
+    "searchSam": [
+      "Gmail: sam@example.com"
+    ],
+    "removeExtrasDialog": "Remove 1 extra connection? | alex@example.com was signed in to Google Calendar more than once. Perry keeps the working connection and the other is removed. | Keep it | Remove extras",
+    "disconnectDialog": "Disconnect Gmail? | Perry can no longer use alex@example.com, and all 2 of its connections are removed. You can connect it again any time. | Keep it | Disconnect",
+    "deleted": [
+      "ca_cal_old",
+      "ca_gmail_alex_2",
+      "ca_gmail_alex_1"
+    ],
+    "links": [
+      {
+        "toolkit": "gmail",
+        "callbackUrl": "http://127.0.0.1:49968/apps/connectors?connected=gmail"
+      },
+      {
+        "toolkit": "youtube",
+        "callbackUrl": "http://127.0.0.1:49968/apps/connectors?connected=youtube"
+      }
+    ],
+    "unknownCalls": [],
+    "refusedKey": [
+      "Couldn't reach Composio | 401 {\"error\":{\"message\":\"Invalid API key\",\"code\":401}}"
+    ],
+    "pageErrors": []
+  },
+  "passed": true
+}

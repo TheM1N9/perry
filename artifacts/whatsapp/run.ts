@@ -191,7 +191,7 @@ try {
   browser = await openChat(BASE, KEY);
   const { evaluate, send } = browser;
   const shoot = (name: string) => send("Page.captureScreenshot", { format: "png" }).then((shot) => writeFileSync(join(outDir, name), Buffer.from(shot.data, "base64")));
-  await send("Page.navigate", { url: `${BASE}/settings?tab=whatsapp` });
+  await send("Page.navigate", { url: `${BASE}/settings/whatsapp` });
   await until(async () => Boolean(await evaluate(`!!document.querySelector('img[alt="WhatsApp link QR code"]')`)), "the QR on the dashboard", 30);
   await shoot("whatsapp-qr.png");
 
@@ -272,7 +272,7 @@ try {
   await sleep(8_000);
   const out = await view();
   checks.loggedOutHandled = !out.wanted && !out.paired && wa.connects === connectsBefore && !existsSync(join(home, "whatsapp", "auth"));
-  await send("Page.navigate", { url: `${BASE}/settings?tab=whatsapp` });
+  await send("Page.navigate", { url: `${BASE}/settings/whatsapp` });
   await until(async () => Boolean(await evaluate(`document.body.innerText.includes("Unlinked")`)), "the dashboard to say unlinked", 20).catch(() => {});
 
   // 9. Self mode.

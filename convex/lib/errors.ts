@@ -66,7 +66,7 @@ const NETWORK_HINT =
   "Check the address is right and the site is up. If it is, this is likely temporary: try once more, then tell the owner.";
 
 const RECONNECT_HINT =
-  "The account's sign-in has expired or was revoked. Ask the owner to reconnect it on the dashboard's Connectors page, then try again. Retrying before that will fail the same way.";
+  "The account's sign-in has expired or was revoked. Ask the owner to reconnect it in the dashboard's Apps & skills, then try again. Retrying before that will fail the same way.";
 
 const RULES: Rule[] = [
   // --- Web -----------------------------------------------------------------
@@ -89,7 +89,7 @@ const RULES: Rule[] = [
     id: "account-not-connected",
     when: nameIs("ComposioConnectedAccountNotFoundError"),
     message: passThrough,
-    hint: "That account is not connected. Check list_connectors, and ask the owner to connect it on the dashboard's Connectors page.",
+    hint: "That account is not connected. Check list_connectors, and ask the owner to connect it in the dashboard's Apps & skills.",
   },
   {
     // Composio relays the provider's refusal as prose ("Token has been expired

@@ -10,20 +10,24 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { Activity } from "@/convex/dashboard";
-import type { Pose } from "@/convex/lib/activity";
+import { shownStep, type Pose } from "@/convex/lib/activity";
 import { limitWarning } from "@/convex/lib/usage";
 import type { Board, TodoView } from "@/convex/todos";
 import { errorText, plural, useNow } from "@/lib/format";
 import { KEY_STORAGE, SessionContext, useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { countdown, dueLabel } from "@/lib/when";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlatypusArt } from "@/components/dashboard/platypus";
 import { updateReady, useUpdates } from "@/components/dashboard/updates";
 import { QuickAdd, StreakBadge, TodoRows } from "@/components/todos/todos";
 import { PetChat, keepPicture, type PetChatId, type Shot, type TakenShot } from "./chat";
 import { Empty } from "./empty";
 import { PetNeedsYou } from "./needs-you";
+import { PetTip } from "./tip";
 import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
 
 /**
@@ -191,8 +195,6 @@ const CHAT_STORAGE = "perry.pet.chat";
 const ASKS = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone" } as const;
 /** A step that has taken this long shows its time. */
 const STEP_TIMER_MS = 5_000;
-/** A step that finished between two reports is held up this long. */
-const STEP_HOLD_MS = 2_500;
 
 function Pet() {
   const key = useDashboardKey();
@@ -530,7 +532,8 @@ function Pet() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      // An Esc that closed a menu or a tip in his panel did only that.
+      if (event.key !== "Escape" || event.defaultPrevented) return;
       if (busy.current) stopTalking();
       else setOpen(false);
     };
@@ -556,12 +559,9 @@ function Pet() {
   const late = timed.filter((todo) => todo.dueAt! <= now);
   const next = timed.find((todo) => todo.dueAt! > now);
   const working = Boolean(petChat?.isRunning) && !reading;
-  // The step he is on; between steps, the one that just finished, held up a moment, so a quick one is seen at all.
-  const stepOf = (of?: Activity | null) => !of?.running || !of.step ? undefined
-    : of.step.live || !of.recent || now - of.recent.endedAt > STEP_HOLD_MS ? of.step : of.recent;
-  const step = working ? stepOf(activity) : undefined;
+  const step = working ? shownStep(activity, now) : undefined;
   const away = !petChat?.isRunning && elsewhere?.running && elsewhere.conversationId !== chatId ? elsewhere : undefined;
-  const awayStep = stepOf(away);
+  const awayStep = shownStep(away, now);
   // How long the step has taken, once that is worth saying.
   const took = (since?: number) => since !== undefined && now - since >= STEP_TIMER_MS ? countdown(now - since) : undefined;
   let bubble: ReactNode = null;
@@ -630,7 +630,7 @@ function Pet() {
   if (!bubble && limit && limitNews?.mark === limit.mark && limitNews.until > now) {
     bubble = (
       <Bubble id="limit" tone={limit.level === "out" ? "late" : "soon"} title={limit.title} detail={limit.detail} onClose={() => setLimitNews(null)}>
-        <BubbleButton primary onClick={() => { setLimitNews(null); openPath("/settings?tab=usage"); }}>See usage</BubbleButton>
+        <BubbleButton primary onClick={() => { setLimitNews(null); openPath("/settings/engines"); }}>See usage</BubbleButton>
         <BubbleButton onClick={() => setLimitNews(null)}>OK</BubbleButton>
       </Bubble>
     );
@@ -662,15 +662,15 @@ function Pet() {
   const status: ReactNode = petChat?.isRunning ? `${step?.label ?? "Working on it"}…`
     : needs ? `${plural(needs, "thing")} waiting on you`
       : limit ? (
-        <button type="button" onClick={() => openPath("/settings?tab=usage")} className={cn("cursor-pointer hover:underline", limit.level === "out" ? "text-destructive" : "text-warning")}>
+        <Button variant="link" className={cn("h-auto p-0 text-xs font-normal", limit.level === "out" ? "text-destructive" : "text-warning")} onClick={() => openPath("/settings/engines")}>
           {limit.title}
-        </button>
+        </Button>
       )
       : updates?.state === "updating" ? "Updating myself; back in a few minutes"
         : updates?.state === "waiting" ? "Updating once I'm done"
           : updateReady(updates) ? (
             <>A new version is ready ·{" "}
-              <button type="button" onClick={updateNow} className="cursor-pointer font-medium text-primary hover:underline">Update</button>
+              <Button variant="link" className="h-auto p-0 text-xs" onClick={updateNow}>Update</Button>
             </>
           ) : "Here when you need him";
   const panel = (
@@ -793,7 +793,7 @@ function Bubble({ id, title, detail, note, code, tone, onClose, onOpen, onPointe
       onPointerEnter={onPointer && (() => onPointer(true))}
       onPointerLeave={onPointer && (() => onPointer(false))}
       className={cn(
-        "group/bubble relative w-max min-w-[176px] max-w-[300px] shrink-0 rounded-2xl border bg-popover px-3.5 py-3 text-popover-foreground shadow-[0_12px_32px_-8px_rgb(0_0_0/0.35)]",
+        "group/bubble relative w-max min-w-[176px] max-w-[300px] shrink-0 rounded-2xl border bg-popover px-3.5 py-3 text-popover-foreground shadow-overlay",
         tone === "late" && "border-destructive/45",
         tone === "ask" && "border-warning/55",
         onOpen && "cursor-pointer",
@@ -803,32 +803,26 @@ function Bubble({ id, title, detail, note, code, tone, onClose, onOpen, onPointe
         below ? "-top-[7px] rounded-tl-[3px] border-t border-l" : "-bottom-[7px] rounded-br-[3px] border-r border-b",
         tone === "late" && "border-destructive/45", tone === "ask" && "border-warning/55")} />
       {onClose && (
-        <button type="button" aria-label="Hide" onClick={(event) => { event.stopPropagation(); onClose(); }}
-          className="absolute top-1.5 right-1.5 grid size-5 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-muted">
-          <XIcon className="size-3" aria-hidden />
-        </button>
+        <Button variant="ghost" size="icon-xs" className="absolute top-1.5 right-1.5 size-5 rounded-full text-muted-foreground" aria-label="Hide"
+          onClick={(event) => { event.stopPropagation(); onClose(); }}>
+          <XIcon />
+        </Button>
       )}
-      <p className={cn("text-[14px] font-semibold leading-snug tracking-[-0.005em]", onClose && "pr-5", onOpen && "group-hover/bubble:text-primary")}>{title}</p>
-      {code && <pre className="mt-1.5 max-h-16 overflow-hidden rounded-md bg-muted px-2 py-1 font-mono text-[11.5px] whitespace-pre-wrap [overflow-wrap:anywhere]">{code.slice(0, 160)}</pre>}
-      {detail && <p className={cn("mt-0.5 text-[12.5px] text-pretty nums", tone === "late" ? "font-medium text-destructive" : tone === "soon" ? "font-medium text-warning" : "text-muted-foreground")}>{detail}</p>}
-      {note && <p className="mt-1.5 text-[11.5px] text-muted-foreground/80">{note}</p>}
+      <p className={cn("text-sm font-semibold leading-snug tracking-[-0.005em]", onClose && "pr-5", onOpen && "group-hover/bubble:text-primary")}>{title}</p>
+      {code && <pre className="mt-1.5 max-h-16 overflow-hidden rounded-md bg-muted px-2 py-1 font-mono text-2xs whitespace-pre-wrap [overflow-wrap:anywhere]">{code.slice(0, 160)}</pre>}
+      {detail && <p className={cn("mt-0.5 text-xs text-pretty nums", tone === "late" ? "font-medium text-destructive" : tone === "soon" ? "font-medium text-warning" : "text-muted-foreground")}>{detail}</p>}
+      {note && <p className="mt-1.5 text-2xs text-muted-foreground/80">{note}</p>}
       {children && <div className="mt-2.5 flex gap-1.5">{children}</div>}
     </motion.div>
   );
 }
 
+/** A bubble's answer: the one it is for, filled; the rest outlined. A click answers, and does not open what the bubble is about. */
 function BubbleButton({ primary, onClick, children }: { primary?: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={(event) => { event.stopPropagation(); onClick(); }}
-      className={cn(
-        "h-7 cursor-pointer rounded-lg px-3 text-[12.5px] font-medium transition-colors",
-        primary ? "bg-primary text-primary-foreground hover:bg-primary/90" : "border bg-background text-foreground hover:bg-muted",
-      )}
-    >
+    <Button variant={primary ? "default" : "outline"} size="sm" className="px-3" onClick={(event) => { event.stopPropagation(); onClick(); }}>
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -978,7 +972,7 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
           hatLift={tip ? 16 : mood === "listening" ? 6 + level * 12 : 0}
           asleep={asleep}
           hat={!asleep}
-          className="pointer-events-none h-auto w-full drop-shadow-[0_8px_10px_rgb(0_0_0/0.22)]"
+          className="pointer-events-none h-auto w-full drop-shadow-mascot"
         />
       </motion.button>
       </motion.div>
@@ -986,7 +980,7 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
         {pose && !asleep && <Prop key={pose} pose={pose} reduced={Boolean(reduced)} />}
       </AnimatePresence>
       {badge > 0 && (
-        <span className="pointer-events-none absolute top-1 right-0 grid h-5 min-w-5 place-items-center rounded-full bg-warning px-1.5 text-[11px] font-bold text-background shadow" aria-hidden>
+        <span className="pointer-events-none absolute top-1 right-0 grid h-5 min-w-5 place-items-center rounded-full bg-warning px-1.5 text-2xs font-bold text-background shadow" aria-hidden>
           {badge}
         </span>
       )}
@@ -1016,7 +1010,7 @@ function Prop({ pose, reduced }: { pose: Pose; reduced: boolean }) {
           : { scale: [1, 1.12, 1], transition: { duration: 1.4, repeat: Infinity, ease: "easeInOut" as const } };
   return (
     <motion.span
-      role="img" aria-label={label} title={label} data-pose={pose}
+      role="img" aria-label={label} data-pose={pose}
       initial={{ opacity: 0, scale: 0.4, y: 6 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.4 }}
       transition={{ type: "spring", stiffness: 500, damping: 26 }}
       className="pointer-events-none absolute bottom-6 -left-1 grid size-8 place-items-center rounded-full border bg-popover text-primary shadow-md"
@@ -1046,7 +1040,7 @@ function Panel({ tab, onTab, needs, status, busy, onClose, onOpenApp, children }
       exit={{ opacity: 0, y: below ? -8 : 8, scale: 0.97 }}
       transition={{ type: "spring", stiffness: 420, damping: 30 }}
       style={{ transformOrigin: below ? "85% 0%" : "85% 100%" }}
-      className="flex h-[480px] max-h-full w-[372px] shrink-0 flex-col overflow-hidden rounded-[20px] border bg-background text-foreground shadow-[0_24px_56px_-12px_rgb(0_0_0/0.4)]"
+      className="flex h-[480px] max-h-full w-[372px] shrink-0 flex-col overflow-hidden rounded-[20px] border bg-background text-foreground shadow-overlay"
     >
       <header className="flex items-center gap-2.5 px-3.5 pt-3 pb-2.5">
         <span className="relative shrink-0">
@@ -1054,30 +1048,28 @@ function Panel({ tab, onTab, needs, status, busy, onClose, onOpenApp, children }
           <span className={cn("absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-background", busy ? "animate-pulse bg-primary" : "bg-success")} aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[14.5px] leading-tight font-semibold tracking-[-0.01em]">Perry</p>
-          <p className="truncate text-[12px] leading-tight text-muted-foreground" aria-live="polite">{status}</p>
+          <p className="text-sm leading-tight font-semibold tracking-[-0.01em]">Perry</p>
+          <p className="truncate text-xs leading-tight text-muted-foreground" aria-live="polite">{status}</p>
         </div>
-        <button type="button" onClick={onOpenApp} aria-label="Open Perry" title="Open Perry"
-          className="grid size-8 cursor-pointer place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
-          <ExternalLinkIcon className="size-4" aria-hidden />
-        </button>
-        <button type="button" onClick={onClose} aria-label="Close" title="Close"
-          className="grid size-8 cursor-pointer place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
-          <XIcon className="size-4" aria-hidden />
-        </button>
+        <PetTip label="Open Perry" side="bottom">
+          <Button variant="ghost" size="icon" className="text-muted-foreground" aria-label="Open Perry" onClick={onOpenApp}><ExternalLinkIcon /></Button>
+        </PetTip>
+        <PetTip label="Close" side="bottom">
+          <Button variant="ghost" size="icon" className="text-muted-foreground" aria-label="Close" onClick={onClose}><XIcon /></Button>
+        </PetTip>
       </header>
-      <div role="tablist" aria-label="Perry" className="mx-3 mb-2.5 grid grid-cols-3 gap-0.5 rounded-xl bg-muted p-[3px]">
-        {tabs.map(([value, label, Icon]) => (
-          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => onTab(value)}
-            className={cn("flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-[9px] text-[12.5px] font-medium transition-colors",
-              tab === value ? "bg-background text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08),0_0_0_1px_var(--border)]" : "text-muted-foreground hover:text-foreground")}>
-            <Icon className="size-3.5" aria-hidden />
-            {label}
-            {value === "needs" && needs > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-warning px-1 text-[10.5px] font-bold text-background nums">{needs}</span>}
-          </button>
-        ))}
-      </div>
-      {children}
+      <Tabs value={tab} onValueChange={(value) => onTab(value as Tab)} className="min-h-0 flex-1 gap-0">
+        <TabsList aria-label="Perry" className="mx-3 mb-2.5 grid h-9! w-auto grid-cols-3 rounded-xl">
+          {tabs.map(([value, label, Icon]) => (
+            <TabsTrigger key={value} value={value} className="rounded-[9px] text-xs">
+              <Icon className="size-3.5" aria-hidden />
+              {label}
+              {value === "needs" && needs > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-warning px-1 text-2xs font-bold text-background nums">{needs}</span>}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value={tab} className="flex min-h-0 flex-col">{children}</TabsContent>
+      </Tabs>
     </motion.section>
   );
 }
@@ -1099,15 +1091,16 @@ function PetTodos({ board, now, onDone, onAdded }: {
   return (
     <>
       <QuickAdd autoFocus onAdded={onAdded} className="px-3" />
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1">
-        {board === undefined ? <p className="px-2.5 py-3 text-[13px] text-muted-foreground">Loading…</p>
+      <ScrollArea className="min-h-0 flex-1">
+      <div className="px-1.5 pb-1">
+        {board === undefined ? <div className="space-y-2 px-2.5 py-3" role="status" aria-label="Loading"><Skeleton className="h-5 w-3/4" /><Skeleton className="h-5 w-2/3" /><Skeleton className="h-5 w-1/2" /></div>
           : board.open.length === 0 ? (
             <Empty title={board.doneToday.length ? "All done for now" : "Nothing on your list"}>
               Type one above, like “stretch every day at 11”, or tell Perry in a chat.
             </Empty>
           ) : (<>
             <div className="flex items-center gap-2 px-2.5 pt-1 pb-0.5">
-              <p className="flex-1 text-[11.5px] font-medium tracking-wide text-muted-foreground uppercase">
+              <p className="flex-1 text-2xs font-medium tracking-wide text-muted-foreground uppercase">
                 {leftToday ? `${leftToday} left today` : `${board.open.length} to do`}
               </p>
               <StreakBadge days={board.streak} />
@@ -1116,14 +1109,14 @@ function PetTodos({ board, now, onDone, onAdded }: {
           </>)}
         {board && board.doneToday.length > 0 && (
           <div className="px-1 pt-1.5">
-            <button type="button" onClick={() => setShowDone((value) => !value)} aria-expanded={showDone}
-              className="flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] font-medium text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="xs" className="px-1.5 text-muted-foreground" onClick={() => setShowDone((value) => !value)} aria-expanded={showDone}>
               <CheckIcon className="size-3.5 text-success" aria-hidden />{board.doneToday.length} done today
-            </button>
+            </Button>
             {showDone && <TodoRows todos={board.doneToday} now={now} compact />}
           </div>
         )}
       </div>
+      </ScrollArea>
       {leftToday > 0 && (
         <footer className="flex h-11 items-center gap-1.5 border-t bg-muted/30 px-3">
           {ending ? (
@@ -1131,13 +1124,12 @@ function PetTodos({ board, now, onDone, onAdded }: {
               <BubbleButton primary onClick={() => { void endDay({ key, action: "move" }); setEnding(false); }}>Move {leftToday} to tomorrow</BubbleButton>
               <BubbleButton onClick={() => { void endDay({ key, action: "clear" }); setEnding(false); }}>Clear</BubbleButton>
               <span className="flex-1" />
-              <button type="button" onClick={() => setEnding(false)} className="cursor-pointer text-[12px] text-muted-foreground hover:text-foreground">Cancel</button>
+              <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setEnding(false)}>Cancel</Button>
             </>
           ) : (
-            <button type="button" onClick={() => setEnding(true)}
-              className="flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-1 text-[12.5px] font-medium text-muted-foreground hover:text-foreground">
-              <MoonIcon className="size-3.5" aria-hidden />End the day · {leftToday} left
-            </button>
+            <Button variant="ghost" size="sm" className="-ml-1.5 px-1.5 text-muted-foreground" onClick={() => setEnding(true)}>
+              <MoonIcon aria-hidden />End the day · {leftToday} left
+            </Button>
           )}
         </footer>
       )}

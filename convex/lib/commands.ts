@@ -75,7 +75,7 @@ export function currentModel(models: ModelOption[], picked?: string, engine: Eng
   return (offered.find((model) => model.isDefault) ?? offered[0])?.id;
 }
 
-const NO_MODELS = "No models yet. Start the runner and sign in to an engine in Settings, then try again.";
+const NO_MODELS = "No models yet. Start the runner and sign in to an engine in Settings → Engines & usage, then try again.";
 
 /** The reply to "/model": every engine's models, with the chat's current one marked. */
 export function describeModels(models: ModelOption[], picked?: string, engine: EngineKind = DEFAULT_ENGINE): string {
@@ -114,7 +114,7 @@ export function pickModel(models: ModelOption[], name: string, effort?: string, 
   return { reply: `No model called "${name}". /model lists them.` };
 }
 
-/** A run's model as the Activity page shows it: "<engine>/<model> · <effort>", and "· full access" when it was. */
+/** A run's model as the activity log shows it: "<engine>/<model> · <effort>", and "· full access" when it was. */
 export function runLabel(model?: string, effort?: string, access?: Access, engine: EngineKind = DEFAULT_ENGINE): string {
   return [model ? `${engine}/${model}` : `${engine} subscription`, effort, access === "full" ? "full access" : access === "auto" ? "auto" : undefined]
     .filter(Boolean).join(" · ");

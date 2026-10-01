@@ -194,7 +194,7 @@ try {
 
   // --- 1, 2. The Skills page lists them, with where each came from ----------------------------
   browser = await openChat(BASE, KEY);
-  await browser.send("Page.navigate", { url: `${BASE}/skills` });
+  await browser.send("Page.navigate", { url: `${BASE}/apps/skills` });
   await until(() => page<boolean>(`document.querySelectorAll('li[data-skill]').length > 0`), "the Skills page to list skills", 30);
   const rows = await page<Array<{ name: string; text: string }>>(`[...document.querySelectorAll('li[data-skill]')].map((row) => ({ name: row.dataset.skill, text: row.innerText }))`);
   await shot("skills-page.png");
@@ -212,7 +212,7 @@ try {
   await shot("skill-open.png");
   check("openShowsSkillMd", opened.url === "?skill=trip-planner" && opened.text.includes("Ask for the dates.") && opened.text.includes(`Imported from ${elsewhere}`)
     && opened.yaml.includes("name: trip-planner") && opened.text.includes(join(skills, "trip-planner", "SKILL.md")), opened);
-  await browser.send("Page.navigate", { url: `${BASE}/skills?skill=weekly-review` });
+  await browser.send("Page.navigate", { url: `${BASE}/apps/skills?skill=weekly-review` });
   await until(() => page<boolean>(`Boolean(document.querySelector('[data-skill-md]')?.innerText.includes('what shipped'))`), "weekly-review from the address", 30);
   const linked = await page<string>(`document.querySelector('[data-skill-read]').innerText`);
   check("addressOpensSkill", linked.includes("references/format.md"), linked.slice(0, 400));
@@ -259,7 +259,7 @@ try {
   await sleep(1_000);
   const bubble = await page<{ mentions: string[]; text: string; href: string | null }>(`(() => { const row = [...document.querySelectorAll('[data-role=user]')].at(-1); return { mentions: [...row.querySelectorAll('[data-skill-mention]')].map((item) => item.dataset.skillMention), text: row.innerText, href: row.querySelector('[data-skill-mention]')?.getAttribute('href') ?? null }; })()`);
   await shot("chat-sent.png");
-  check("sentMessageMarksTheSkill", bubble.mentions.join(",") === "e2e-codeword" && bubble.text.includes("It costs $5.") && bubble.href === "/skills?skill=e2e-codeword", bubble);
+  check("sentMessageMarksTheSkill", bubble.mentions.join(",") === "e2e-codeword" && bubble.text.includes("It costs $5.") && bubble.href === "/apps/skills?skill=e2e-codeword", bubble);
 
   // --- 7. What reached Codex --------------------------------------------------------------------------
   const webChat = await page<string>(`decodeURIComponent(location.pathname.split('/')[2] ?? '')`);

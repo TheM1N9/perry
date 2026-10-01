@@ -101,7 +101,7 @@ function fakeKeys() {
 /**
  * The hotkey. `send(type)` tells the page what to do: start listening, stop
  * and send, or cancel. Returns what the hotkey can be asked:
- *   change(accelerator)  move to other keys (Settings → Keyboard shortcuts);
+ *   change(accelerator)  move to other keys (Settings → Desktop pet → Keyboard shortcuts);
  *                        { hotkey } once it has them, or { error: "taken" }
  *                        when another app has them ("invalid" when they are
  *                        not keys at all), keeping the ones it had

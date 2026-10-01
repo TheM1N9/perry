@@ -95,7 +95,7 @@ const batch = (s: string) => `"${s.replace(/%/g, "%%")}"`;
 export function servicePlan(ctx: ServiceContext): ServicePlan {
   // The target OS's separators, so a plan for any OS can be built and checked on any other.
   const { join } = ctx.platform === "win32" ? win32 : posix;
-  // The runner and the dashboard together. No policy flag: the one chosen on the dashboard's Computer page stands across restarts.
+  // The runner and the dashboard together. No policy flag: the access chosen on the dashboard stands across restarts.
   const args = [join(ctx.repo, "scripts", "perry.ts"), "run"];
 
   if (ctx.platform === "darwin") {

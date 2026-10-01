@@ -24,9 +24,9 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ActionButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCount, attempt, useTab, type Tone } from "../common";
+import { ActionButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCount, TextTip, attempt, useTab, type Tone } from "../common";
 import { GoalDialog, ScheduleDialog, TaskDialog, WatchDialog, type Editing } from "./work-forms";
-import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 
 const TABS = ["schedules", "plans", "goals", "watches"] as const;
 type Tab = (typeof TABS)[number];
@@ -72,7 +72,7 @@ function Intro({ children, action }: { children: ReactNode; action: ReactNode })
 }
 
 function Row({ children, className }: { children: ReactNode; className?: string }) {
-  return <li className={cn("flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:gap-4", className)}>{children}</li>;
+  return <li className={cn("flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:gap-4", className)}>{children}</li>;
 }
 
 /** A small menu for a row's quieter actions, so the one you want most stays a button. */
@@ -131,7 +131,7 @@ function Schedules() {
     // A one-time job whose time has passed has run, or was paused past it; either way it is over.
     const over = job.runAt !== undefined && !job.enabled && job.runAt <= now;
     const readable = job.schedule ? describeSchedule(job.schedule) : null;
-    const tone: Tone = job.lastError ? "danger" : job.enabled ? "success" : "neutral";
+    const state: { tone: Tone; label: string } | null = job.lastError ? { tone: "danger", label: "Failed" } : job.enabled ? null : { tone: "neutral", label: over ? "Done" : "Paused" };
     // Unset runs on the account's default; a pick the account no longer offers falls back to it too.
     // Each model is "<engine>/<id>", named with its engine once there is more than one.
     const fallback = modelsOf(models ?? [], "codex").find((item) => item.isDefault) ?? models?.[0];
@@ -144,18 +144,22 @@ function Schedules() {
     return (
       <Row key={job.id}>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-baseline gap-2">
             <h3 className="font-medium">{job.name}</h3>
-            <StatusBadge tone={tone}>{job.lastError ? "Failed" : job.enabled ? "Active" : over ? "Done" : "Paused"}</StatusBadge>
+            {state && <StatusBadge tone={state.tone}>{state.label}</StatusBadge>}
           </div>
           <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
             {job.trigger
               ? <span className="inline-flex items-center gap-1"><ZapIcon className="size-3.5" aria-hidden />{job.trigger.label}</span>
               : job.runAt !== undefined
                 ? <span>Once, {when(job.runAt)}</span>
-                : <span title={job.schedule}>{readable ?? <code className="font-mono text-xs">{job.schedule}</code>}</span>}
-            {job.enabled && job.runAt === undefined && !job.trigger && <span title={when(job.nextRunAt)}>Next {ago(job.nextRunAt, now)}</span>}
-            <span title={job.lastRunAt ? when(job.lastRunAt) : undefined}>{job.lastRunAt ? `Last ran ${ago(job.lastRunAt, now)}` : "Hasn't run yet"}</span>
+                : readable
+                  ? <TextTip tip={<code className="font-mono">{job.schedule}</code>}>{readable}</TextTip>
+                  : <code className="font-mono text-xs">{job.schedule}</code>}
+            {job.enabled && job.runAt === undefined && !job.trigger && <TextTip tip={when(job.nextRunAt)} spoken={when(job.nextRunAt)}>Next {ago(job.nextRunAt, now)}</TextTip>}
+            {job.lastRunAt
+              ? <TextTip tip={when(job.lastRunAt)} spoken={when(job.lastRunAt)}>Last ran {ago(job.lastRunAt, now)}</TextTip>
+              : <span>Hasn&apos;t run yet</span>}
           </p>
           {job.lastError && <p className="mt-2 text-sm text-pretty text-destructive">{job.lastError}</p>}
           {!job.lastError && job.lastResult && job.lastResult.trim() !== "NOTHING" && (
@@ -205,7 +209,7 @@ function Schedules() {
         : <List label="Your schedules">{yours.map(row)}</List>}
       {builtins.length > 0 && (
         <Collapsible>
-          <CollapsibleTrigger className="group flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+          <CollapsibleTrigger className="group flex cursor-pointer items-center gap-2 rounded-md text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
             <ChevronRightIcon className="size-4 transition-transform group-data-panel-open:rotate-90" />
             Built in <span className="nums font-normal">({builtins.length})</span>
             <span className="font-normal">· Heartbeat, daily summary and memory upkeep</span>
@@ -232,7 +236,7 @@ function Wake({ timezone }: { timezone: string }) {
       : wake.at ? `Next: ${fullDate(wake.at - 60_000, timezone)}, a minute before ${wake.what ?? "the next job"} (${ago(wake.at, now)}).`
         : "Nothing is due, so no wake is set.";
   return (
-    <div className="flex items-start gap-3 rounded-xl border px-4 py-3">
+    <div className="flex items-start gap-3">
       <Switch id="wake-computer" checked={wake.enabled} className="mt-0.5"
         onCheckedChange={(enabled) => void attempt(() => set({ key: dashboardKey, enabled }), { success: enabled ? "Perry wakes this computer for what is due." : "Perry no longer wakes this computer." })} />
       <div className="min-w-0 text-sm">
@@ -300,24 +304,30 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
                   <p className="mt-1 text-sm text-muted-foreground">{line.indexOf(task._id) === 0 ? "Next in line" : `${line.indexOf(task._id) + 1} in line`}</p>
                 )}
                 {task.question && (
-                  <div className="mt-3 rounded-lg bg-warning-soft px-3 py-2 text-sm text-pretty">
-                    <span className="font-medium text-warning">Needs you: </span>{task.question}
+                  <div className="mt-3 text-sm text-pretty">
+                    <p><span className="font-medium text-warning">Needs you: </span>{task.question}</p>
                     {task.status === "blocked" && task.conversationId && (
-                      <form className="mt-2 flex gap-2" onSubmit={(event) => {
+                      <form className="mt-2 max-w-md" onSubmit={(event) => {
                         event.preventDefault();
                         const answer = answers[task._id]?.trim();
                         if (answer) void attempt(() => answerTask({ key: dashboardKey, id: task._id, answer }), { success: "Answered. It carries on." }).then((ok) => { if (ok) setAnswers((all) => ({ ...all, [task._id]: "" })); });
                       }}>
-                        <Input aria-label={`Answer for ${task.title}`} placeholder="Your answer" value={answers[task._id] ?? ""} className="h-8 bg-background"
-                          onChange={(event) => setAnswers((all) => ({ ...all, [task._id]: event.target.value }))} />
-                        <Button type="submit" size="sm" disabled={!answers[task._id]?.trim()}>Answer</Button>
+                        <InputGroup>
+                          <InputGroupInput aria-label={`Answer for ${task.title}`} placeholder="Your answer" value={answers[task._id] ?? ""}
+                            onChange={(event) => setAnswers((all) => ({ ...all, [task._id]: event.target.value }))} />
+                          {answers[task._id]?.trim() && (
+                            <InputGroupAddon align="inline-end">
+                              <InputGroupButton type="submit" size="xs" className="text-primary hover:text-primary">Answer</InputGroupButton>
+                            </InputGroupAddon>
+                          )}
+                        </InputGroup>
                       </form>
                     )}
                   </div>
                 )}
                 {task.plan.length > 0 && (
                   <Collapsible defaultOpen={live} className="mt-3">
-                    <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+                    <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1.5 rounded-md text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
                       <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" />Steps
                     </CollapsibleTrigger>
                     <CollapsibleContent>
@@ -364,7 +374,6 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
 
 function Goals({ goals }: { goals: Doc<"goals">[] }) {
   const [editing, setEditing] = useState<Editing<Doc<"goals">>>(null);
-  const tone: Record<Doc<"goals">["status"], Tone> = { active: "info", paused: "neutral", done: "success" };
   return (
     <div className="space-y-4">
       <Intro action={<Button size="sm" onClick={() => setEditing({})}><PlusIcon />New goal</Button>}>
@@ -377,9 +386,9 @@ function Goals({ goals }: { goals: Doc<"goals">[] }) {
             return (
               <Row key={goal._id}>
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-baseline gap-2">
                     <h3 className="font-medium">{goal.title}</h3>
-                    <StatusBadge tone={tone[goal.status]}>{goal.status[0].toUpperCase() + goal.status.slice(1)}</StatusBadge>
+                    {goal.status !== "active" && <StatusBadge>{goal.status === "done" ? "Done" : "Paused"}</StatusBadge>}
                   </div>
                   {goal.description && <p className="mt-1 text-sm text-pretty text-muted-foreground">{goal.description}</p>}
                   {goal.milestones.length > 0 && (
@@ -445,9 +454,9 @@ function Watches({ monitors }: { monitors: Doc<"monitors">[] }) {
             {monitors.map((monitor) => (
               <Row key={monitor._id}>
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-baseline gap-2">
                     <h3 className="font-medium">{monitor.title}</h3>
-                    <StatusBadge tone={monitor.active ? "success" : "neutral"}>{monitor.active ? "Watching" : "Paused"}</StatusBadge>
+                    {!monitor.active && <StatusBadge>Paused</StatusBadge>}
                     {monitor.failures > 0 && <StatusBadge tone="warning">{plural(monitor.failures, "failed check")}</StatusBadge>}
                   </div>
                   <a href={monitor.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex max-w-full items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground">

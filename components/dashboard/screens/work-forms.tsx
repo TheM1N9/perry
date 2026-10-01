@@ -9,11 +9,14 @@ import type { JobView } from "@/convex/jobs";
 import { errorText, plural } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import { TimePicker } from "@/components/ui/time-picker";
 
 /**
  * Making and changing schedules, goals and page watches on the Work page, so
@@ -24,8 +27,8 @@ import { Textarea } from "@/components/ui/textarea";
 /** What a dialog is doing: closed, making a new one, or changing one. */
 export type Editing<T> = { item?: T } | null;
 
-function FormDialog({ open, onClose, title, description, saving, onSave, children }: {
-  open: boolean; onClose: () => void; title: string; description?: string; saving: boolean; onSave: () => void; children: ReactNode;
+function FormDialog({ open, onClose, title, description, saving, onSave, action = "Save", children }: {
+  open: boolean; onClose: () => void; title: string; description?: string; saving: boolean; onSave: () => void; action?: string; children: ReactNode;
 }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
@@ -38,7 +41,7 @@ function FormDialog({ open, onClose, title, description, saving, onSave, childre
           <FieldGroup>{children}</FieldGroup>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+            <Button type="submit" disabled={saving} aria-busy={saving || undefined}>{saving && <Spinner />}{action}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -94,7 +97,7 @@ const MONTH_DAYS = Array.from({ length: 28 }, (_, index) => ({ value: String(ind
 type When = { repeat: Repeat; time: string; weekday: string; monthDay: string; cron: string; once: string; folder: string };
 
 const pad = (n: number) => String(n).padStart(2, "0");
-/** A time as the datetime-local input shows it, on this browser's clock. */
+/** A time as the form keeps it ("2026-10-02T14:30"), on this browser's clock. */
 const localInput = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
 /** The form's reading of a job's time: one of the simple shapes when it is one, else its cron as written. */
@@ -154,7 +157,7 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
         : job ? REPEATS.filter((item) => item.value !== "folder") : REPEATS;
 
   return (
-    <FormDialog open={editing !== null} onClose={onClose} saving={saving}
+    <FormDialog open={editing !== null} onClose={onClose} saving={saving} action={job ? "Save" : "Create"}
       title={job ? `Change “${job.name}”` : "New schedule"}
       description={builtin ? "A built-in schedule keeps its own prompt; you can change when it runs."
         : event ? "Perry runs the prompt each time the event happens, and sends you what it finds."
@@ -180,13 +183,13 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
       {["daily", "weekdays", "weekly", "monthly"].includes(when.repeat) && (
         <Field>
           <FieldLabel htmlFor="schedule-time">At</FieldLabel>
-          <Input id="schedule-time" type="time" value={when.time} required onChange={(event) => change({ time: event.target.value })} />
+          <TimePicker id="schedule-time" aria-label="At" value={when.time} onValueChange={(time) => change({ time })} />
         </Field>
       )}
       {when.repeat === "once" && (
         <Field>
           <FieldLabel htmlFor="schedule-once">Date and time</FieldLabel>
-          <Input id="schedule-once" type="datetime-local" value={when.once} required onChange={(event) => change({ once: event.target.value })} />
+          <DatePicker id="schedule-once" time value={when.once ? new Date(when.once) : undefined} onValueChange={(at) => change({ once: localInput(at.getTime()) })} />
         </Field>
       )}
       {when.repeat === "folder" && (
@@ -223,7 +226,7 @@ export function TaskDialog({ open, goals, onClose }: { open: boolean; goals: Doc
   useEffect(() => { if (open) { setTitle(""); setPrompt(""); setGoal("none"); } }, [open]);
   const items = [{ value: "none", label: "None" }, ...goals.filter((item) => item.status !== "done").map((item) => ({ value: item._id, label: item.title }))];
   return (
-    <FormDialog open={open} onClose={onClose} saving={saving} title="New task"
+    <FormDialog open={open} onClose={onClose} saving={saving} action="Create" title="New task"
       description="Perry works on it by himself when nothing else is running, and tells you the result, or asks if he gets stuck."
       onSave={() => void save(() => queue({ key: dashboardKey, title, prompt, ...(goal !== "none" ? { goalId: goal as Doc<"goals">["_id"] } : {}) }), "Queued. Perry starts when he is free.")}>
       <Field>
@@ -270,7 +273,7 @@ export function GoalDialog({ editing, onClose }: { editing: Editing<Doc<"goals">
   const list = milestones.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => ({ title: line, done: done.has(line) }));
 
   return (
-    <FormDialog open={editing !== null} onClose={onClose} saving={saving}
+    <FormDialog open={editing !== null} onClose={onClose} saving={saving} action={goal ? "Save" : "Create"}
       title={goal ? `Change “${goal.title}”` : "New goal"}
       description="Something you're working toward. Perry keeps it in mind, and ticks milestones off as you tell it."
       onSave={() => void save(() => saveGoal({ key: dashboardKey, ...(goal ? { id: goal._id, status } : {}), title, description, milestones: list }), goal ? "Goal saved." : "Goal made.")}>
@@ -323,7 +326,7 @@ export function WatchDialog({ editing, onClose }: { editing: Editing<Doc<"monito
   const intervals = [...new Set([...INTERVALS, Number(interval)])].sort((a, b) => a - b).map((minutes) => ({ value: String(minutes), label: every(minutes) }));
 
   return (
-    <FormDialog open={editing !== null} onClose={onClose} saving={saving}
+    <FormDialog open={editing !== null} onClose={onClose} saving={saving} action={watch ? "Save" : "Create"}
       title={watch ? `Change “${watch.title}”` : "Watch a page"}
       description="Perry checks a public page on an interval and tells you when the condition is met. A change of page or condition starts it over."
       onSave={() => void save(() => saveMonitor({

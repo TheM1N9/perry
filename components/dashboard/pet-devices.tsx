@@ -1,6 +1,6 @@
 "use client";
 
-import { LaptopIcon, MonitorIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
+import { PlusIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
@@ -8,9 +8,10 @@ import { api } from "@/convex/_generated/api";
 import type { PetDeviceView } from "@/convex/pet";
 import { errorText, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ActionButton, CommandLine, List, RelativeTime, StatusBadge } from "./common";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ActionButton, CodeDisplay, CommandLine, List, RelativeTime, StatusBadge } from "./common";
 
 const PLATFORMS: Record<string, string> = { win32: "Windows", darwin: "macOS", linux: "Linux" };
 const INSTALLER = "https://raw.githubusercontent.com/TheM1N9/perry/main";
@@ -44,7 +45,7 @@ export function PetDevices() {
     }
   }, [code, open, count, view]);
 
-  if (view === undefined) return <div className="mt-6 h-16 animate-pulse rounded-xl border bg-muted/40" />;
+  if (view === undefined) return <Skeleton className="mt-6 h-16 rounded-xl" />;
 
   // The address this page is open at, when it is not this computer's own name for itself: the other computer can likely use it too.
   const here = typeof window !== "undefined" && !/^(localhost|127\.|\[?::1\]?$)/.test(window.location.hostname) ? window.location.hostname : null;
@@ -123,29 +124,28 @@ function PairingPanel({ code, server, addresses, address, onPick, onCancel }: {
   const tailscale = addresses.find((a) => a.address === address)?.tailscale ?? false;
   const pet = `${server} ${code.code}`;
   return (
-    <div className="mt-4 rounded-xl border bg-card p-4" aria-live="polite">
+    <div className="mt-4 border-l-2 border-primary/60 pl-4" aria-live="polite">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="text-sm font-medium">Pairing code</p>
         <p className="nums text-sm text-muted-foreground">
           {left > 0 ? `Works once, for ${Math.floor(left / 60_000)}:${String(Math.floor(left / 1000) % 60).padStart(2, "0")} more` : "Expired: make a new one"}
         </p>
       </div>
-      <p className="mt-1 font-mono text-2xl font-semibold tracking-widest" data-pairing-code>{code.code}</p>
+      <CodeDisplay className="mt-2" data-pairing-code>{code.code}</CodeDisplay>
 
       {server ? (
         <>
           {addresses.length > 1 && (
             <div className="mt-4">
               <p className="text-sm font-medium">Where the other computer finds Perry</p>
-              <div role="radiogroup" aria-label="Perry's address" className="mt-1.5 flex flex-wrap gap-1.5">
+              <ToggleGroup aria-label="Perry's address" value={address ? [address] : []} onValueChange={(next) => { if (next[0]) onPick(next[0]); }}
+                variant="outline" size="sm" className="mt-1.5 flex-wrap">
                 {addresses.map((option) => (
-                  <button key={option.address} type="button" role="radio" aria-checked={option.address === address} onClick={() => onPick(option.address)}
-                    className={cn("rounded-md border px-2.5 py-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground",
-                      option.address === address && "border-foreground/30 bg-muted text-foreground")}>
-                    {option.address}{option.tailscale && <span className="ml-1.5 font-sans">Tailscale</span>}
-                  </button>
+                  <ToggleGroupItem key={option.address} value={option.address} className="font-mono text-xs text-muted-foreground aria-pressed:text-foreground">
+                    {option.address}{option.tailscale && <span className="font-sans">Tailscale</span>}
+                  </ToggleGroupItem>
                 ))}
-              </div>
+              </ToggleGroup>
             </div>
           )}
           <p className="mt-4 text-sm font-medium">On the other computer, paste this in a terminal</p>
@@ -175,16 +175,14 @@ function PairingPanel({ code, server, addresses, address, onPick, onCancel }: {
 }
 
 function DeviceRow({ device, onRemove }: { device: PetDeviceView; onRemove?: () => Promise<unknown> }) {
-  const Icon = device.id ? LaptopIcon : MonitorIcon;
   return (
-    <li className="flex items-center gap-3 px-4 py-3" data-pet-device={device.name}>
-      <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted max-sm:hidden" aria-hidden><Icon className="size-4.5 text-muted-foreground" /></span>
+    <li className="flex items-center gap-3 py-3" data-pet-device={device.name}>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate font-medium">{device.name}</span>
           {!device.id && <span className="text-xs text-muted-foreground">Perry&apos;s computer</span>}
-          <StatusBadge tone={device.running ? "success" : "neutral"} pulse={device.running}>{device.running ? "Running" : "Not running"}</StatusBadge>
-          {device.current && <StatusBadge tone="info">You&apos;re here</StatusBadge>}
+          <StatusBadge>{device.running ? "Running" : "Not running"}</StatusBadge>
+          {device.current && <StatusBadge>You&apos;re here</StatusBadge>}
         </div>
         <p className="mt-0.5 flex flex-wrap gap-x-3 text-sm text-muted-foreground">
           {device.platform && <span>{PLATFORMS[device.platform] ?? device.platform}</span>}

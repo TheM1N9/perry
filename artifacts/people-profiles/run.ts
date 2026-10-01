@@ -262,7 +262,7 @@ try {
 
   // --- 8. Settings → People ------------------------------------------------------------------------------------
   browser = await openChat(BASE, KEY);
-  await browser.send("Page.navigate", { url: `${BASE}/settings?tab=people` });
+  await browser.send("Page.navigate", { url: `${BASE}/settings/people` });
   await until(async () => Boolean(await browser!.evaluate(`document.body.innerText.includes("Arjun") && document.body.innerText.includes("from their chat")`)), "People to show both sides", 30).catch(() => {});
   const shown = String(await browser.evaluate("document.body.innerText"));
   const shot = await browser.send("Page.captureScreenshot", { format: "png" }) as { data: string };
