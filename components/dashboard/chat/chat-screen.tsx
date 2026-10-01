@@ -543,7 +543,7 @@ export function ChatScreen() {
           onPin={() => void setPinned({ key: dashboardKey, id: summary.id, pinned: !summary.pinned }).catch(fail)}
           onRename={() => setRenaming(true)}
           onCopyId={() => void copyText(summary.id).then(() => toast.success("Session ID copied."), fail)}
-          activityHref={`/activity?session=${summary.id}`}
+          activityHref={`/settings/activity?session=${summary.id}`}
           onDelete={summary.channel === "web" ? () => setRemoving(true) : undefined}
           move={summary.channel === "web" ? <MoveToProject chat={summary} onNewProject={() => setCreatingProject(true)} /> : null}
         />
@@ -631,7 +631,7 @@ export function ChatScreen() {
                   <TriangleAlertIcon />
                   <AlertTitle>{assistant} couldn&apos;t finish the last reply</AlertTitle>
                   <AlertDescription>
-                    <p>{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings shows it too."
+                    <p>{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings → Engines & usage shows it too."
                       : /runner|offline|computer/i.test(chat.lastError) ? "Your computer may be offline. Start Perry on it, then try again." : "Try again, or open Activity for the full run."}</p>
                     <p className="mt-1 font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
                   </AlertDescription>
@@ -662,7 +662,7 @@ export function ChatScreen() {
               <p className="font-medium text-foreground">{assistant}&apos;s chat with {chat.contact.name}{chat.contact.group ? " (a group)" : ""}</p>
               <p className="mt-1 text-pretty">
                 You can read it, but not write in it: what you write would reach them. To have {assistant} tell them something, ask in your own chat.
-                {" "}What {assistant} may share with them is under <Link href="/settings?tab=people" className="link">Settings → People</Link>.
+                {" "}What {assistant} may share with them is under <Link href="/settings/people" className="link">Settings → People</Link>.
               </p>
             </div>
           ) : (<>
@@ -693,7 +693,7 @@ export function ChatScreen() {
               {limit && limitSeen !== limitMark && (
                 <ComposerNote tone={limit.level === "out" ? "error" : "warning"} onDismiss={() => setLimitSeen(limitMark)}>
                   <span className="font-medium">{limit.title}.</span> {limit.detail}{" "}
-                  <Link href="/settings?tab=usage" className="link">See usage</Link>
+                  <Link href="/settings/engines" className="link">See usage</Link>
                 </ComposerNote>
               )}
               {!selectedId && !draft && files.length === 0 && (

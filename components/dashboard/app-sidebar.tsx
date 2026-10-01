@@ -4,15 +4,16 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, ChevronsUpDownIcon, InboxIcon, ListChecksIcon, LockIcon, MonitorIcon,
-  MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, PuzzleIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
+  ArrowRightIcon, BlocksIcon, BookUserIcon, CheckCircle2Icon, ChevronsUpDownIcon, GaugeIcon, InboxIcon, ListChecksIcon, LockIcon, MonitorIcon,
+  MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { ChatSummary } from "@/convex/dashboard";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
-import { dayGroup, errorText } from "@/lib/format";
+import { DEFAULT_ENGINE, type EngineKind } from "@/convex/lib/engines";
+import { dayGroup, errorText, useNow } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { toast } from "sonner";
@@ -30,6 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
   SidebarMenu, SidebarMenuAction, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSkeleton, SidebarRail,
@@ -41,6 +43,7 @@ import { StatusIndicator, statusLabel } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
 import { UpdateNotice } from "./updates";
 import { PlatypusArt } from "./platypus";
+import { WindowRow } from "./screens/usage";
 import { MoveToProject, NewProjectDialog, ProjectFolders } from "./projects";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -114,6 +117,18 @@ export function AppSidebar() {
                 <SidebarMenuButton render={<Link href="/work" />} isActive={pathname.startsWith("/work")} tooltip="Work">
                   <ListChecksIcon />
                   <span>Work</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/memory" />} isActive={pathname.startsWith("/memory")} tooltip="Memory">
+                  <BookUserIcon />
+                  <span>Memory</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/apps/connectors" />} isActive={pathname.startsWith("/apps")} tooltip="Apps & skills">
+                  <BlocksIcon />
+                  <span>Apps &amp; skills</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -372,7 +387,7 @@ function DesktopPet() {
             {pet?.running
               ? <DropdownMenuItem disabled={working} onClick={() => start(turnOff)}><PowerOffIcon />Turn him off</DropdownMenuItem>
               : <DropdownMenuItem disabled={working || pet === undefined} onClick={() => start(turnOn)}><PowerIcon />{failed ? "Try again" : "Turn him on"}</DropdownMenuItem>}
-            <DropdownMenuItem onClick={() => router.push("/settings?tab=general")}><SettingsIcon />Pet settings</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/settings/desktop-pet")}><SettingsIcon />Pet settings</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         {pet !== undefined && (
@@ -397,7 +412,7 @@ function ComputerStatus() {
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <SidebarMenuButton render={<Link href="/computer" />} isActive={pathname === "/computer"} tooltip={`${label}${online.length ? " · online" : ""}`}>
+        <SidebarMenuButton render={<Link href="/settings/computers" />} isActive={pathname === "/settings/computers"} tooltip={`${label}${online.length ? " · online" : ""}`}>
           <MonitorIcon />
           <span className="truncate">{label}</span>
         </SidebarMenuButton>
@@ -411,14 +426,73 @@ function ComputerStatus() {
   );
 }
 
+type SignedIn = { kind: EngineKind; label: string; account?: string };
+
+/**
+ * The engines signed in on a computer that is online, the one new chats start
+ * on first, each with the account it uses as its maker names it: "ChatGPT Plus".
+ */
+function useSignedIn(): SignedIn[] | undefined {
+  const { dashboardKey } = useSession();
+  const computers = useQuery(api.engines.list, { key: dashboardKey });
+  return useMemo(() => {
+    if (!computers) return undefined;
+    const found = new Map<EngineKind, SignedIn>();
+    for (const computer of computers.filter((item) => item.online)) {
+      for (const engine of computer.engines) {
+        if (!engine.signedIn || found.has(engine.kind)) continue;
+        const plan = engine.auth.plan ? `${engine.auth.plan[0].toUpperCase()}${engine.auth.plan.slice(1)}` : "";
+        found.set(engine.kind, { kind: engine.kind, label: engine.label, account: [engine.auth.label, plan].filter(Boolean).join(" ") || undefined });
+      }
+    }
+    return [...found.values()].sort((a, b) => Number(b.kind === DEFAULT_ENGINE) - Number(a.kind === DEFAULT_ENGINE));
+  }, [computers]);
+}
+
+/**
+ * How much of each signed-in engine's plan is left, window by window, and when
+ * each starts again: Settings → Engines & usage, short. Read only while the
+ * menu is open.
+ */
+function UsageSummary({ engines }: { engines: SignedIn[] }) {
+  const { dashboardKey } = useSession();
+  const limits = useQuery(api.usage.limits, { key: dashboardKey });
+  const now = useNow(30_000);
+  if (!engines.length) return <p className="px-2 py-1.5 text-xs text-muted-foreground">No engine is signed in.</p>;
+  return (
+    <div className="grid gap-3 px-2 py-1.5" role="group" aria-label="Usage">
+      {engines.map((engine) => {
+        const windows = limits?.engines.find((item) => item.kind === engine.kind)?.usage.limits?.windows ?? [];
+        return (
+          <div key={engine.kind} aria-label={`${engine.label} usage`} role="group">
+            <p className="truncate text-xs font-medium">{engine.label}{engine.account && <span className="font-normal text-muted-foreground"> · {engine.account}</span>}</p>
+            {limits === undefined ? <Skeleton className="mt-1.5 h-6 w-full" />
+              : windows.length ? <div className="mt-1.5 grid gap-2">{windows.map((window) => <WindowRow key={window.id} window={window} now={now} compact />)}</div>
+              : <p className="mt-0.5 text-xs text-muted-foreground">No limits reported yet.</p>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The owner, at the foot of the sidebar: under the name, the plan and engine
+ * Perry thinks with (or Telegram waiting to be paired). Open, how much of each
+ * plan is left, then the theme, Settings and locking the dashboard.
+ */
 function AccountMenu() {
   const { dashboardKey, lock } = useSession();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { isMobile } = useSidebar();
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
+  const engines = useSignedIn();
   const name = status?.displayName ?? "You";
   const pairing = Boolean(status?.telegramConfigured && !status.claimed);
+  const first = engines?.[0];
+  const line = status === undefined || engines === undefined ? " " : pairing ? "Telegram not paired"
+    : first ? (first.account ? `${first.account} · ${first.label}` : first.label) : "No engine signed in";
   const go = (href: string) => router.push(href);
 
   return (
@@ -431,24 +505,16 @@ function AccountMenu() {
             </Avatar>
             <span className="grid min-w-0 flex-1 text-left leading-tight">
               <span className="truncate text-sm font-medium">{name}</span>
-              <span className="truncate text-xs text-muted-foreground">
-                {status === undefined ? " " : pairing ? "Telegram not paired" : `${status.memories} ${status.memories === 1 ? "memory" : "memories"}`}
-              </span>
+              <span className="truncate text-xs text-muted-foreground" data-account-line>{line}</span>
             </span>
             <ChevronsUpDownIcon className="ml-auto text-sidebar-foreground/50" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent side={isMobile ? "top" : "right"} align="end" sideOffset={8} className="w-60">
+          <DropdownMenuContent side={isMobile ? "top" : "right"} align="end" sideOffset={8} className="w-72">
             <DropdownMenuGroup>
               <DropdownMenuLabel>{name}</DropdownMenuLabel>
             </DropdownMenuGroup>
-            <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => go("/memory")}><BookUserIcon />Memory</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => go("/skills")}><PuzzleIcon />Skills</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => go("/connectors")}><CableIcon />Connectors</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => go("/activity")}><ActivityIcon />Activity</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => go("/computer")}><MonitorIcon />Computer</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => go("/settings")}><SettingsIcon />Settings</DropdownMenuItem>
-            </DropdownMenuGroup>
+            {engines && <UsageSummary engines={engines} />}
+            <DropdownMenuItem onClick={() => go("/settings/engines")}><GaugeIcon />Usage details<ArrowRightIcon className="ml-auto" /></DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuSub>
               <DropdownMenuSubTrigger><SunMoonIcon />Theme</DropdownMenuSubTrigger>
@@ -460,6 +526,7 @@ function AccountMenu() {
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            <DropdownMenuItem onClick={() => go("/settings/general")}><SettingsIcon />Settings</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={lock}><LockIcon />Lock dashboard</DropdownMenuItem>
           </DropdownMenuContent>

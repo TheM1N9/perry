@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, InboxIcon, KeyboardIcon, KeyRoundIcon, ListChecksIcon, LockIcon, MessageSquareIcon,
+  ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, GaugeIcon, InboxIcon, KeyboardIcon, KeyRoundIcon, ListChecksIcon, LockIcon, MessageSquareIcon,
   MonitorIcon, MoonIcon, PuzzleIcon, SettingsIcon, SquarePenIcon, SunIcon, TextSearchIcon,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useState } from "react";
@@ -25,13 +25,14 @@ const PAGES = [
   { href: "/todos", label: "To-dos", icon: CheckCircle2Icon },
   { href: "/work", label: "Work", icon: ListChecksIcon },
   { href: "/memory", label: "Memory", icon: BookUserIcon },
-  { href: "/skills", label: "Skills", icon: PuzzleIcon },
-  { href: "/connectors", label: "Connectors", icon: CableIcon },
-  { href: "/computer", label: "Computer", icon: MonitorIcon },
-  { href: "/activity", label: "Activity", icon: ActivityIcon },
-  { href: "/settings", label: "Settings", icon: SettingsIcon },
-  { href: "/settings?tab=keys", label: "Keys", icon: KeyRoundIcon },
-  { href: "/settings?tab=shortcuts", label: "Keyboard shortcuts", icon: KeyboardIcon },
+  { href: "/apps/connectors", label: "Connectors", icon: CableIcon },
+  { href: "/apps/skills", label: "Skills", icon: PuzzleIcon },
+  { href: "/settings/general", label: "Settings", icon: SettingsIcon },
+  { href: "/settings/engines", label: "Engines & usage", icon: GaugeIcon },
+  { href: "/settings/computers", label: "Computers", icon: MonitorIcon },
+  { href: "/settings/access", label: "Access & approvals", icon: KeyRoundIcon },
+  { href: "/settings/activity", label: "Activity log", icon: ActivityIcon },
+  { href: "/settings/desktop-pet#shortcuts", label: "Keyboard shortcuts", icon: KeyboardIcon },
 ];
 
 type Found = { id: Id<"conversations">; title: string; snippet: string };

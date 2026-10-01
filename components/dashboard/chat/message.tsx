@@ -29,7 +29,7 @@ function Action({ label, onClick, disabled, children }: { label: string; onClick
 
 /**
  * Your words, with each skill they name ("$weekly-review") marked as one and
- * linked to it on the Skills page. A $name no skill has stays plain text.
+ * linked to it in Apps & skills. A $name no skill has stays plain text.
  */
 function WithSkills({ text, skills }: { text: string; skills?: ReadonlySet<string> }) {
   if (!skills?.size || !text.includes("$")) return <>{text}</>;
@@ -40,7 +40,7 @@ function WithSkills({ text, skills }: { text: string; skills?: ReadonlySet<strin
     parts.push(text.slice(from, match.index));
     parts.push(
       <Tooltip key={match.index}>
-        <TooltipTrigger render={<Link href={`/skills?skill=${encodeURIComponent(match[1])}`} data-skill-mention={match[1]} aria-label={`${match[0]}: the ${match[1]} skill`} />}
+        <TooltipTrigger render={<Link href={`/apps/skills?skill=${encodeURIComponent(match[1])}`} data-skill-mention={match[1]} aria-label={`${match[0]}: the ${match[1]} skill`} />}
           className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-primary no-underline outline-none [box-decoration-break:clone] hover:bg-primary/15 focus-visible:ring-2 focus-visible:ring-ring/50">
           <PuzzleIcon className="mr-1 inline size-3.5 align-[-2px]" aria-hidden />{match[0]}
         </TooltipTrigger>

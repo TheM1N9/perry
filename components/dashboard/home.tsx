@@ -20,7 +20,7 @@ export function Home() {
   useEffect(() => {
     if (!status || !chats) return;
     if (status.onboarding === "pending") return router.replace("/welcome");
-    if (status.telegramConfigured && !status.claimed) return router.replace("/settings?tab=telegram");
+    if (status.telegramConfigured && !status.claimed) return router.replace("/settings/telegram");
     const last = window.localStorage.getItem(ACTIVE_CHAT);
     router.replace(last && chats.some((chat) => chat.id === last) ? `/chat/${last}` : "/chat");
   }, [status, chats, router]);
