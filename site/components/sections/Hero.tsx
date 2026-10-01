@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react";
 import { BlurWords } from "@/components/fx/BlurWords";
+import { TrackLink } from "@/components/fx/TrackLink";
 import { Platypus } from "@/components/mascot/Platypus";
 
 export function Hero() {
@@ -33,12 +34,22 @@ export function Hero() {
           Perry lives in your Telegram, works on your own computer, and never makes a risky move without you.
         </motion.p>
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.65 }} className="mt-9 flex flex-wrap justify-center gap-3">
-          <a href="#setup" className="inline-flex h-12 items-center rounded-full bg-teal px-7 text-[16px] font-semibold text-white transition-colors hover:bg-[#0a6a61]">
+          <TrackLink
+            href="#setup"
+            event="CTA click"
+            data={{ cta: "get_perry", from: "hero" }}
+            className="inline-flex h-12 items-center rounded-full bg-teal px-7 text-[16px] font-semibold text-white transition-colors hover:bg-[#0a6a61]"
+          >
             Get Perry
-          </a>
-          <a href="#day" className="inline-flex h-12 items-center rounded-full px-5 text-[16px] font-medium text-teal hover:underline">
+          </TrackLink>
+          <TrackLink
+            href="#day"
+            event="CTA click"
+            data={{ cta: "see_day", from: "hero" }}
+            className="inline-flex h-12 items-center rounded-full px-5 text-[16px] font-medium text-teal hover:underline"
+          >
             See a day with Perry →
-          </a>
+          </TrackLink>
         </motion.div>
       </div>
     </section>
