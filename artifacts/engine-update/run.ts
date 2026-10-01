@@ -210,6 +210,14 @@ try {
     && !(await buttons("Antigravity")).includes("Update"),
     { codex: await buttons("Codex"), claude: await buttons("Claude Code"), grok: await buttons("Grok Build"), antigravity: antigravityRow ? await buttons("Antigravity") : "not listed" });
   await shot("before.png", "Codex");
+  // The command is there for the owner who would rather run it, folded away until asked for.
+  const folded = await rowText("Codex");
+  await click("Codex", "Or run it yourself");
+  await until(async () => (await rowText("Codex")).includes("npm install -g @openai/codex@latest"), "the command to unfold", 10);
+  await shot("run-it-yourself.png", "Codex");
+  const unfolded = await rowText("Codex");
+  await click("Codex", "Or run it yourself");
+  check("commandFoldedAway", !folded.includes("npm install -g") && unfolded.includes("Run this in a terminal on Test PC") && unfolded.includes("npm install -g @openai/codex@latest"), { folded, unfolded });
 
   // --- 4, 5. Codex: asked for mid-reply, it waits; the next reply waits for it --------------------------------
   const busyChat = await call<string>("dashboard:createChat", { key: KEY });
@@ -233,7 +241,9 @@ try {
   await until(async () => /npm http fetch/.test(await rowText("Codex")), "its output on the page", 10);
   await shot("updating.png", "Codex");
   const progressText = await rowText("Codex");
-  check("progressShown", progressText.includes("Updating Codex…") && progressText.includes("Running npm install -g @openai/codex@latest") && progressText.includes("npm http fetch"), progressText);
+  const streamed = await browser.evaluate(`document.querySelector('[aria-label="Codex on ${NAME}"] pre[aria-label="What the update prints"]')?.innerText ?? ""`) as string;
+  check("progressShown", progressText.includes("Updating Codex…") && progressText.includes("Running npm install -g @openai/codex@latest") && progressText.includes("npm http fetch")
+    && streamed.split("\n").length <= 3, { progressText, streamed });
 
   await until(async () => (await engines()).all.codex.updating?.status === "done", "the Codex update to finish", 60);
   await until(async () => (await rowText("Codex")).includes("Updated Codex"), "the result on the page", 15);
