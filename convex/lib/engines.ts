@@ -6,7 +6,7 @@
  * says how one is added).
  *
  * Which one Perry uses by default is the owner's choice, made in `perry
- * setup`, on the welcome page or in Settings → Engines & usage, and kept on
+ * setup`, on the welcome page or in Settings → Engines, and kept on
  * the installation (installation.ts, defaultEngine). Nothing picks one for
  * them: with none chosen, Perry asks rather than starting a turn.
  *
@@ -29,7 +29,7 @@ export const isRunnable = (value: unknown): value is EngineKind => (RUNNABLE_ENG
 export const GUEST_ENGINE: EngineKind = "codex";
 
 /** What a turn is refused with while the owner has not chosen an engine for Perry, nor a model for the chat. */
-export const NO_ENGINE = "Perry has no default engine yet. Choose one in Settings → Engines & usage, or pick a model for this chat, then send it again.";
+export const NO_ENGINE = "Perry has no default engine yet. Choose one in Settings → Engines, or pick a model for this chat, then send it again.";
 
 export const ENGINE_LABELS: Record<EngineKind, string> = {
   codex: "Codex",

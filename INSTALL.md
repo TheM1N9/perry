@@ -112,7 +112,7 @@ everything on this computer, in `~/.perry`.
    kept. Setup stops if the engine is missing and you'd rather install it
    yourself, or if it is too old for Perry. Run again, it keeps the engine
    already chosen; `--engine` changes it. Change it any time in Settings →
-   Engines & usage, where each engine can be signed in too, and pick another
+   Engines, where each engine can be signed in too, and pick another
    model, on any engine, for a single chat. An install from before this
    choice existed ran on Codex, and keeps Codex as its chosen default.
 3. **Saving it.** Generates a dashboard key and writes it, with the bot token,
@@ -165,7 +165,7 @@ it in `.env.local`, in Perry's folder, then `perry stop && perry start`.
 
 Perry thinks and works through the engine you chose, on your machine. The
 computer Perry is installed on is connected by its server as it starts;
-nothing to do. Open Settings → Engines & usage in the dashboard to see each
+nothing to do. Open Settings → Engines in the dashboard to see each
 engine's account, sign in, or change the default engine; the runner reports
 which models each subscription offers. Perry answers while the
 computer is on: a message sent while the runner is not running fails with a
@@ -283,7 +283,7 @@ both.
 
 - **Signing in.** Perry never signs Claude Code in and never reads, copies or
   stores its credentials. Install Claude Code, then run `claude auth login` in a
-  terminal on that computer; Settings → Engines & usage shows what it says (for example "Claude
+  terminal on that computer; Settings → Engines shows what it says (for example "Claude
   Max · you@example.com") and the command to run while it is signed out. Perry
   doesn't sign it out either, since that would sign you out of Claude Code in
   your terminal too: run `claude auth logout` for that.
@@ -353,13 +353,13 @@ Perry's saved memories with Telegram while keeping their histories separate.
 The sidebar holds New chat, Search, Needs you, To-dos, Work (scheduled jobs,
 Perry's plans, goals, and watched pages), Memory, Apps & skills (connected
 accounts and skills), your projects and your chats. At the bottom are the
-desktop pet, the computer Perry works on, and your name, which opens how much of
-each engine's plan is left, the theme, Settings and Lock dashboard. Settings
-puts everything else in sections down its left: General, Engines & usage,
+desktop pet, the computer Perry works on, and your name, which opens Usage (how
+much of each engine's plan is left), the theme, Settings and Lock dashboard. Settings
+puts everything else in sections down its left: General, Engines, Usage,
 Computers, Access & approvals, Notifications, Telegram, WhatsApp, Desktop pet,
 People, Logins & secrets, Dashboard key and Activity log. Each key is entered
 beside what it unlocks: the Telegram bot token in Telegram, the Gemini API key
-in Engines & usage, and the Composio key in Apps & skills. Engines & usage shows the default engine,
+in Engines, and the Composio key in Apps & skills. Engines shows the default engine,
 and each engine's account on each connected machine; the activity log lists every run with session filters,
 tools, tokens, errors, and a link back to each web chat.
 
@@ -438,12 +438,12 @@ pairing code. If Perry's server is not answering, `perry start`, and
 them. The full error is in `perry logs` and in the Activity tab.
 
 **"Perry has no default engine yet" in chat.** Perry never picks an engine for
-you. Choose one in Settings → Engines & usage, or pick a model for that chat,
+you. Choose one in Settings → Engines, or pick a model for that chat,
 and send the message again.
 
 **"The runner for this chat is offline" in chat.** Every reply comes from an
 engine on a connected machine. Start Perry with `perry start` (or the runner on
-the other machine) and check the engine's account in Settings → Engines & usage.
+the other machine) and check the engine's account in Settings → Engines.
 
 **Codex's commands all fail on Linux.** Its sandbox needs user namespaces; see
 "Codex's sandbox" above, and run `pnpm run doctor -- --machine`.

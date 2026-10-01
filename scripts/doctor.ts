@@ -83,7 +83,7 @@ async function checkMachine() {
     await checkVersion("codex", "codex", lastLine(codex.output));
     const login = await runCodex(["login", "status"]);
     if (login.code === 0) ok("codex sign-in", lastLine(login.output));
-    else warn("codex sign-in", "not signed in. Connect the runner, then sign in on the dashboard's Settings → Engines & usage");
+    else warn("codex sign-in", "not signed in. Connect the runner, then sign in on the dashboard's Settings → Engines");
 
     // Windows's sandbox is set up by Codex itself on first use; elsewhere a real sandboxed write shows it works.
     if (process.platform !== "win32") {
@@ -107,7 +107,7 @@ async function checkMachine() {
   // Antigravity is Google's server, downloaded into Perry's folder when it is turned on in Settings.
   const antigravity = existsSync(antigravityDirs.server) && readdirSync(antigravityDirs.server).length > 0;
   if (antigravity) { installedHere.add("antigravity"); ok("antigravity", "turned on (experimental)"); }
-  else note("antigravity", "not turned on (optional, experimental; Settings → Engines & usage)");
+  else note("antigravity", "not turned on (optional, experimental; Settings → Engines)");
   if (!installedHere.size) bad("engines", "none installed here, so Perry has nothing to think with. Run perry setup to choose one and install it");
 
   try {
@@ -184,8 +184,8 @@ async function main() {
     // The engine Perry thinks with unless a chat picks another: the owner's choice, never assumed.
     const chosen = status?.value?.defaultEngine;
     if (!status?.value) warn("default engine", "could not read");
-    else if (!chosen) warn("default engine", "none chosen yet, so Perry asks before answering. Choose one in Settings → Engines & usage, or run: perry setup");
-    else if (!installedHere.has(chosen)) warn("default engine", `${ENGINE_LABELS[chosen]}, which is not installed on this computer. Run perry setup to install it, or choose another in Settings → Engines & usage`);
+    else if (!chosen) warn("default engine", "none chosen yet, so Perry asks before answering. Choose one in Settings → Engines, or run: perry setup");
+    else if (!installedHere.has(chosen)) warn("default engine", `${ENGINE_LABELS[chosen]}, which is not installed on this computer. Run perry setup to install it, or choose another in Settings → Engines`);
     else ok("default engine", ENGINE_LABELS[chosen]);
   }
 

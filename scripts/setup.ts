@@ -125,11 +125,11 @@ function engineFlag(): string | undefined {
 /** Ready to answer: installed, signed in, and not older than Perry works with. */
 const ready = (status: EngineStatus) => status.installed && status.signedIn && updateOf(status)?.need !== "required";
 
-/** One line on how an engine stands here, as Settings → Engines & usage says it. */
+/** One line on how an engine stands here, as Settings → Engines says it. */
 function standing(status: EngineStatus): string {
   const version = status.version ? `${status.version}, ` : "";
   if (status.kind === "antigravity") {
-    return status.signedIn ? `experimental, on with ${status.auth.label ?? "its sign-in"}` : "experimental, not turned on; Settings → Engines & usage turns it on";
+    return status.signedIn ? `experimental, on with ${status.auth.label ?? "its sign-in"}` : "experimental, not turned on; Settings → Engines turns it on";
   }
   if (!status.installed) return "not installed";
   const update = updateOf(status);
@@ -305,7 +305,7 @@ async function chooseEngine(): Promise<{ engine: EngineKind; chosen: boolean; li
   }
   if (!found.signedIn) {
     if (engine === "antigravity") {
-      say(dim("  Antigravity is turned on in Settings → Engines & usage once Perry runs: it downloads Google's server, then takes a Gemini API key or a Google sign-in."));
+      say(dim("  Antigravity is turned on in Settings → Engines once Perry runs: it downloads Google's server, then takes a Gemini API key or a Google sign-in."));
     } else if (await confirm(`  ${label} isn't signed in. Sign in now?`, false) && await handOver(() => signIn(engine))) {
       found = await lookAgain(engine);
     }
@@ -314,7 +314,7 @@ async function chooseEngine(): Promise<{ engine: EngineKind; chosen: boolean; li
   if (found.signedIn) await done(`default engine ${label}${dim(`, ${standing(found)}`)}`);
   else {
     await done(`default engine ${label}`);
-    say(yellow(`  ${label} isn't signed in, so Perry can't answer yet. Sign in from the dashboard's Settings → Engines & usage.`));
+    say(yellow(`  ${label} isn't signed in, so Perry can't answer yet. Sign in from the dashboard's Settings → Engines.`));
   }
   // live: the running server already has it, so nothing needs to wait for it.
   return { engine, chosen: engine !== current, live: status?.value.defaultEngine === engine };

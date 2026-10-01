@@ -154,17 +154,15 @@ export function Welcome() {
               className="space-y-6">
               {at === ENGINE_STEP && (
                 <>
-                  <Heading ref={heading} title="Choose an engine">
-                    Perry thinks with a coding agent on your computer, signed in with your own subscription. Pick the one it uses by default; you can change it in Settings → Engines &amp; usage, and pick another model for any chat.
-                  </Heading>
+                  <Heading ref={heading} title="Choose an engine">You can change it later in Settings.</Heading>
                   {engines === undefined ? <Spinner className="size-5 text-muted-foreground" />
                     : engines.length === 0 ? (
-                      <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><Spinner className="size-3" />Waiting for your computer to say which engines it has. Perry starts it with itself; this page updates by itself.</p>
+                      <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><Spinner className="size-3" />Waiting for your computer to say which engines it has…</p>
                     ) : <EngineChoice engines={engines} value={engine} onChange={(kind) => { setEngine(kind); setError(""); }} disabled={busy === "engine"} />}
                   {picked && !picked.ready && (
                     <div className="rounded-xl border p-4" role="group" aria-label={`Sign in to ${picked.label}`}>
                       <p className="text-sm font-medium">{picked.label} isn&apos;t ready yet</p>
-                      <p className="mt-0.5 text-sm text-pretty text-muted-foreground">You can choose it anyway; Perry answers once it is installed and signed in. Sign in here, or later in Settings → Engines &amp; usage.</p>
+                      <p className="mt-0.5 text-sm text-pretty text-muted-foreground">Perry answers once it&apos;s installed and signed in.</p>
                       <ul className="mt-1 divide-y">
                         {computers?.flatMap((computer) => computer.engines.filter((item) => item.kind === picked.kind)
                           .map((item) => <li key={computer.id}><EngineRow runnerId={computer.id} computer={computer.name} online={computer.online} engine={item} /></li>))}

@@ -31,7 +31,7 @@ function describe(engine: EngineView, computer: string, online: boolean, several
   if (!online) return `On ${computer}, which is offline.`;
   if (!engine.installed) return `Not installed${where}.`;
   // Antigravity is Google's server, downloaded when it is turned on: until then there is nothing to sign in to.
-  if (engine.kind === "antigravity" && !engine.signedIn) return `Experimental. Not turned on${where} yet; Settings → Engines & usage turns it on.`;
+  if (engine.kind === "antigravity" && !engine.signedIn) return `Experimental. Not turned on${where} yet; Settings → Engines turns it on.`;
   if (engine.update?.need === "required") return `${engine.update.version}${where} is too old for Perry; it needs ${engine.update.minimum} or newer.`;
   if (!engine.signedIn) return `Installed${where}, not signed in.`;
   const plan = engine.auth.plan ? ` ${engine.auth.plan[0].toUpperCase()}${engine.auth.plan.slice(1)}` : "";

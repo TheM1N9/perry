@@ -89,18 +89,16 @@ function DefaultEngine() {
     ? [...reported, { kind: current, label: ENGINE_LABELS[current], ready: false, detail: "No connected computer has it right now." }]
     : reported;
   return (
-    <Section title="Default engine" description="What Perry thinks with in new chats, on your phone, and for schedules and tasks, unless one picks another model. Chats you already started keep theirs.">
+    <Section title="Default engine" description="For new chats, your phone, schedules and tasks." tip="A chat or schedule with a model of its own keeps it. Chats you already started keep their engine.">
       {current === undefined || engines === undefined ? <ListSkeleton rows={1} />
         : engines.length === 0 ? (
-          <EmptyState title="No engines to choose from yet" action={<CommandLine>perry start</CommandLine>}>
-            Start Perry on the computer that will do the work; its engines show here.
-          </EmptyState>
+          <EmptyState title="No engines to choose from yet" action={<CommandLine>perry start</CommandLine>} />
         ) : (
           <div className="grid gap-3">
             {current === null && (
               <Alert variant="quiet">
                 <AlertTitle>Choose one to start chatting</AlertTitle>
-                <AlertDescription>Perry doesn&apos;t pick an engine for you. Until you choose, it asks instead of answering.</AlertDescription>
+                <AlertDescription>Until you do, Perry asks instead of answering.</AlertDescription>
               </Alert>
             )}
             <EngineChoice engines={engines} value={current ?? undefined} current={current ?? undefined} onChange={choose} />

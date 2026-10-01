@@ -120,7 +120,7 @@ export const INSTALL_HINTS = {
  * The command that installs an engine's CLI here, as its maker documents it,
  * for `perry setup` to offer and run: npm's package for Codex and Grok Build,
  * Claude Code's own installer. Antigravity has none: Perry downloads Google's
- * server itself when it is turned on in Settings → Engines & usage.
+ * server itself when it is turned on in Settings → Engines.
  */
 export const INSTALL_COMMANDS: Partial<Record<EngineKind, string>> = {
   codex: "npm install -g @openai/codex",

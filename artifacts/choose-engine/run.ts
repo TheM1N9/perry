@@ -59,7 +59,7 @@ const ROOT = realpathSync(mkdtempSync(join(process.env.PERRY_E2E_DIR ?? tmpdir()
 process.env.PERRY_E2E_DIR ??= ROOT;
 const WINDOWS = process.platform === "win32";
 const strip = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "").replace(/\r/g, "");
-const NO_ENGINE = "Perry has no default engine yet. Choose one in Settings → Engines & usage, or pick a model for this chat, then send it again.";
+const NO_ENGINE = "Perry has no default engine yet. Choose one in Settings → Engines, or pick a model for this chat, then send it again.";
 
 const checks: Record<string, boolean> = {};
 const notes: Record<string, unknown> = {};

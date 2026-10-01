@@ -75,9 +75,9 @@ export function currentModel(models: ModelOption[], picked: string | undefined, 
   return (offered.find((model) => model.isDefault) ?? offered[0])?.id;
 }
 
-const NO_MODELS = "No models yet. Start the runner and sign in to an engine in Settings → Engines & usage, then try again.";
+const NO_MODELS = "No models yet. Start the runner and sign in to an engine in Settings → Engines, then try again.";
 /** For /think in a chat with no engine of its own while the owner has not chosen a default. */
-const NO_ENGINE_YET = "Perry has no default engine yet. Pick a model for this chat with /model <name>, or choose the default in Settings → Engines & usage.";
+const NO_ENGINE_YET = "Perry has no default engine yet. Pick a model for this chat with /model <name>, or choose the default in Settings → Engines.";
 
 /** The reply to "/model": every engine's models, with the chat's current one marked. */
 export function describeModels(models: ModelOption[], picked: string | undefined, engine: EngineKind | undefined): string {
@@ -92,7 +92,7 @@ export function describeModels(models: ModelOption[], picked: string | undefined
         `${kind === engine && model.id === current ? "•" : " "} ${model.id}${model.name.toLowerCase() !== model.id ? ` (${model.name})` : ""}${model.isDefault ? ", default" : ""}`),
     ]),
     "",
-    !engine ? "Perry has no default engine yet. Pick one for this chat with /model <name>, or choose the default in Settings → Engines & usage."
+    !engine ? "Perry has no default engine yet. Pick one for this chat with /model <name>, or choose the default in Settings → Engines."
       : engines.length > 1
       ? "Switch with /model <name>. Another engine's model moves this chat to that engine, which picks up from the chat so far."
       : "Switch with /model <name>.",

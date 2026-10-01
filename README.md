@@ -73,7 +73,7 @@ The installer adds anything missing (Node.js, pnpm, Bun), puts Perry in
 choose the engine Perry thinks with (it shows which ones are installed and
 signed in, and never picks one for you), install and sign in to it, and open
 the dashboard. Perry then runs in the background and starts with your
-computer. Change the engine any time in Settings → Engines & usage.
+computer. Change the engine any time in Settings → Engines.
 
 Installing where nobody can answer questions, such as a server or CI? Name
 the engine: `sh -s -- --engine claude` after the `curl ... |`, or

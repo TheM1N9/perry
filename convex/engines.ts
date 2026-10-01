@@ -149,7 +149,7 @@ export const preferred = query({
 });
 
 /**
- * The key an engine needs from Settings → Engines & usage, for this runner only: the
+ * The key an engine needs from Settings → Engines, for this runner only: the
  * Gemini API key Antigravity takes. It goes into that engine's environment
  * on the computer and nowhere else.
  */
