@@ -89,7 +89,7 @@ function TimePicker({
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onBlur?.()
       }}
       className={cn(
-        "inline-flex h-8 w-fit items-center gap-0.5 rounded-lg border border-input bg-transparent px-2.5 text-base transition-colors has-focus-visible:border-ring has-focus-visible:ring-3 has-focus-visible:ring-ring/50 data-disabled:pointer-events-none data-disabled:bg-input/50 data-disabled:opacity-50 md:text-sm dark:bg-input/30 dark:data-disabled:bg-input/80",
+        "inline-flex h-8 w-fit items-center gap-0.5 rounded-lg border border-input bg-transparent px-2.5 text-base transition-colors data-disabled:pointer-events-none data-disabled:bg-input/50 data-disabled:opacity-50 md:text-sm dark:bg-input/30 dark:data-disabled:bg-input/80",
         className
       )}
     >
