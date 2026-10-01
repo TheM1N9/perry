@@ -72,7 +72,7 @@ const check = (name: string, ok: boolean, note?: unknown) => {
 };
 
 const env: NodeJS.ProcessEnv = {
-  ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+  ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   PERRY_PET_DEVTOOLS_PORT: String(DEVTOOLS), PERRY_PET_HOTKEY: TALK,
 };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("TELEGRAM") || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE") delete env[name];

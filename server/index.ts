@@ -85,6 +85,21 @@ async function engineFromSetup(runtime: Runtime) {
   rmSync(/*turbopackIgnore: true*/ PATHS.engineChoice, { force: true });
 }
 
+/**
+ * PERRY_ENGINE in the server's own environment names the default engine of
+ * an install that has none chosen yet, as `perry setup --engine` does: a
+ * choice whoever started it made (a test Perry, a scripted install), never a
+ * guess. One already chosen is left as it is.
+ */
+async function engineFromEnvironment(runtime: Runtime) {
+  const named = process.env.PERRY_ENGINE?.trim().toLowerCase();
+  if (!named) return;
+  const install = (await runtime.runQuery("installation:get", {}, { internal: true })).value as { defaultEngine?: string } | null;
+  if (install?.defaultEngine) return;
+  await runtime.runMutation("installation:setDefaultEngine", { engine: named }, { internal: true })
+    .catch((error) => console.error(`[perry] PERRY_ENGINE=${named} is not an engine Perry can use: ${String(error)}`));
+}
+
 /** Start the scheduler, crons, Telegram, WhatsApp, event triggers and the wake timer. Called once, from instrumentation.ts. */
 export async function startBackend() {
   const runtime = backend();
@@ -93,6 +108,7 @@ export async function startBackend() {
   // Also brings an install from before the default engine was asked for forward: Codex, as it was, written down.
   await runtime.runMutation("installation:ensure", {}, { internal: true });
   await engineFromSetup(runtime);
+  await engineFromEnvironment(runtime);
   // A chat from before projects that kept its memory to itself becomes a project of its own.
   await runtime.runMutation("projects:migrate", {}, { internal: true });
   await pairThisMachine(runtime).catch((error) => console.error(`[perry] could not connect this computer: ${String(error)}`));

@@ -80,7 +80,7 @@ const home = mkdtempSync(join(homes, "perry-connectors-"));
 const checks: Record<string, boolean> = {};
 const notes: Record<string, unknown> = { mode: standIn ? "stand-in" : "real account" };
 
-const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
+const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
 delete env.TELEGRAM_BOT_TOKEN;
 delete env.COMPOSIO_API_KEY;
 delete env.COMPOSIO_BASE_URL;

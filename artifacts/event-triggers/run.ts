@@ -54,7 +54,7 @@ const notes: Record<string, unknown> = {};
 const check = (name: string, ok: boolean, note?: unknown) => { checks[name] = ok; if (note !== undefined) notes[name] = note; };
 
 const env: NodeJS.ProcessEnv = {
-  ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+  ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   PERRY_TRIGGER_DRIVER: join(REPO, "artifacts", "event-triggers", "driver.mjs"), PERRY_TRIGGER_LOG: log, PERRY_TRIGGER_INBOX: inbox,
 };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name === "TELEGRAM_BOT_TOKEN" || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE") delete env[name];

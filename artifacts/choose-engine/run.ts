@@ -296,7 +296,7 @@ const clickText = (tag: string, text: string) => `(() => { const el = [...docume
 async function dashboard() {
   // --- A. A new install ------------------------------------------------------------------------------------------
   const runnerWorld = world({ codex: "signed-out", claude: "signed-out", grok: "signed-in" });
-  const a = await perry({ name: "choose-engine", outDir, runnerEnv: () => forRunner(runnerWorld) });
+  const a = await perry({ name: "choose-engine", outDir, runnerEnv: () => forRunner(runnerWorld), engine: null });
   testHomes.push(a.home);
   const stops: Array<() => void> = [];
   try {
@@ -415,7 +415,7 @@ async function dashboard() {
 
   // --- B. An install from before the choice ------------------------------------------------------------------------
   const oldWorld = world({ codex: "signed-in" });
-  const b = await perry({ name: "choose-engine-upgrade", outDir, runnerEnv: () => forRunner(oldWorld) });
+  const b = await perry({ name: "choose-engine-upgrade", outDir, runnerEnv: () => forRunner(oldWorld), engine: null });
   testHomes.push(b.home);
   const stopsB: Array<() => void> = [];
   try {
@@ -459,7 +459,7 @@ async function dashboard() {
 
   // --- C. perry setup's choice reaching Perry ---------------------------------------------------------------------
   const setupWorld = world({ codex: "signed-in", grok: "signed-in" });
-  const c = await perry({ name: "choose-engine-setup", outDir, runnerEnv: () => forRunner(setupWorld) });
+  const c = await perry({ name: "choose-engine-setup", outDir, runnerEnv: () => forRunner(setupWorld), engine: null });
   testHomes.push(c.home);
   const stopsC: Array<() => void> = [];
   try {
@@ -493,6 +493,44 @@ async function dashboard() {
     await sleep(2_500);
     try { rmSync(c.home, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }); } catch {}
   }
+  // --- D. A test Perry told its engine: the shared harness, and PERRY_ENGINE in a server's environment --------------
+  // Checks written before this one start a fresh Perry and send without choosing: harness.ts gives them the engine
+  // they drive (Grok here, as the fake agent plays it with Codex taken away), and own-server ones name it.
+  const grokWorld = world({ grok: "signed-in" });
+  const d = await perry({ name: "choose-engine-harness", outDir, runnerEnv: () => ({ ...forRunner(grokWorld), PERRY_GROK_COMMAND: `${process.execPath} ${FAKE_AGENT} --profile grok` }) });
+  testHomes.push(d.home);
+  const stopsD: Array<() => void> = [];
+  try {
+    let server = d.start("server");
+    stopsD.push(() => d.stop(server));
+    await d.until(() => fetch(`${d.BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start", 120);
+    await d.call("wake:set", { key: d.KEY, enabled: false });
+    const given = await d.call<string | null>("dashboard:getDefaultEngine", { key: d.KEY });
+    const runner = d.start("runner");
+    stopsD.push(() => d.stop(runner));
+    await d.until(async () => Boolean((await d.computers()).find((computer) => computer.online)?.engines.some((engine) => engine.kind === "grok" && engine.signedIn)), "the runner", 120);
+    const chat = await d.call<string>("dashboard:createChat", { key: d.KEY });
+    const reply = await d.exchange(chat, "Hello with nothing picked");
+    check("harnessGivesTheEngineItDrives", given === "grok" && (await d.conversation(chat)).engine === "grok" && /Fake grok reply to: Hello with nothing picked/.test(reply.reply),
+      { given, reply: reply.reply.slice(0, 80) });
+    // A server started again with another PERRY_ENGINE keeps the default already chosen: the variable only fills a gap.
+    d.stop(server);
+    await sleep(3_000);
+    server = spawn("node", [join(REPO, "node_modules", "next", "dist", "bin", "next"), "start", "-p", new URL(d.BASE).port], {
+      cwd: REPO, env: { ...process.env, PERRY_HOME: d.home, PERRY_PORT: new URL(d.BASE).port, DASHBOARD_KEY: d.KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" }, stdio: "ignore", windowsHide: true,
+    });
+    await d.until(() => fetch(`${d.BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start again", 120);
+    const kept = await d.call<string | null>("dashboard:getDefaultEngine", { key: d.KEY });
+    check("environmentOnlyFillsAGap", kept === "grok", { kept });
+  } catch (error) {
+    notes.stoppedAt = `${notes.stoppedAt ?? ""} harness: ${String(error)}`;
+    checks.completed = false;
+  } finally {
+    for (const stop of stopsD.reverse()) stop();
+    await sleep(2_500);
+    try { rmSync(d.home, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }); } catch {}
+  }
+
   // The test Perrys' wake timers were turned off; a task one left anyway, by its own name, goes too, and no other.
   if (WINDOWS) {
     notes.wakeTasksLeft = testHomes.map((home) => `Perry wake-${createHash("sha256").update(home).digest("hex").slice(0, 8)}`).filter((name) => {

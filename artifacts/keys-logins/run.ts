@@ -81,7 +81,7 @@ const shopServer = createServer((request: IncomingMessage, response: ServerRespo
 await new Promise<void>((done) => shopServer.listen(0, "127.0.0.1", done));
 const SHOP = `http://127.0.0.1:${(shopServer.address() as { port: number }).port}`;
 
-const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
+const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name === "NEXT_PUBLIC_CONVEX_URL" || name.startsWith("TELEGRAM")) delete env[name];
 const logs = { server: "", runner: "" };
 function start(name: "server" | "runner"): ChildProcess {

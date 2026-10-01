@@ -36,7 +36,10 @@ $env:PERRY_ENGINE='claude'; iwr -useb https://raw.githubusercontent.com/TheM1N9/
 ```
 
 `perry setup --engine <name>` and `PERRY_ENGINE` do the same in a clone. The
-names are `codex`, `claude`, `grok` and `antigravity`.
+names are `codex`, `claude`, `grok` and `antigravity`. `PERRY_ENGINE` in the
+environment Perry's server starts in also becomes the default of an install
+with none chosen yet (one already chosen stays); the end-to-end checks in
+`artifacts/` start their test Perrys this way.
 
 In a clone of your own, the same without the installer:
 

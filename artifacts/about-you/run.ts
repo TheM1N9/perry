@@ -36,7 +36,7 @@ const home = mkdtempSync(join(tmpdir(), "perry-about-you-"));
 const checks: Record<string, boolean> = {};
 const notes: Record<string, unknown> = {};
 
-const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
+const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
 delete env.TELEGRAM_BOT_TOKEN;
 let log = "";
 const server: ChildProcess = spawn("node", [join(REPO, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)], { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });

@@ -59,7 +59,7 @@ const open = () => push({ user: { id: "15550001111:7@s.whatsapp.net", name: "Per
 
 const env: NodeJS.ProcessEnv = {
   ...process.env,
-  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   PERRY_WHATSAPP_DRIVER: join(REPO, "artifacts", "whatsapp", "fake-driver.mjs"),
   PERRY_WHATSAPP_CONTROL: `http://127.0.0.1:${(control.address() as { port: number }).port}`,
   PERRY_WHATSAPP_QUIET_MS: String(QUIET_MS),

@@ -49,7 +49,7 @@ const home = mkdtempSync(join(tmpdir(), "perry-chat-indicators-"));
 const checks: Record<string, boolean> = {};
 const notes: Record<string, unknown> = {};
 
-const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
+const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name === "NEXT_PUBLIC_CONVEX_URL" || name.startsWith("TELEGRAM")) delete env[name];
 const logs = { server: "", runner: "" };
 function start(name: "server" | "runner"): ChildProcess {
