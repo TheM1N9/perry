@@ -1,0 +1,313 @@
+{
+  "ranAt": "2026-10-01T11:01:43.200Z",
+  "pass": true,
+  "checks": {
+    "everySectionHoldsWhatItShould": true,
+    "eachKeyOnlyBesideWhatItUnlocks": true,
+    "navMarksTheOpenSection": true,
+    "navGroupsAsTheIssueSays": true,
+    "navIsNotABox": true,
+    "navByKeyboard": true,
+    "oldAddressesRedirect": true,
+    "unknownSectionIs404": true,
+    "redirectsKeepTheirQuery": true,
+    "sidebarHasMemoryAndApps": true,
+    "footerIsPetThenComputerThenYou": true,
+    "footerLandsOnItsSections": true,
+    "sidebarItemsGoToTheirPages": true,
+    "lineUnderTheNameIsThePlan": true,
+    "accountMenuItems": true,
+    "accountMenuUsageSummary": true,
+    "accountMenuGoes": true,
+    "appsAndSkillsTabs": true,
+    "telegramTokenSavesInTelegram": true,
+    "composioKeySavesInConnectors": true,
+    "approvalRulesListAndDelete": true,
+    "phoneUsesTheSwitcher": true,
+    "nothingOverflowsAPhone": true,
+    "noLinkGoesNowhere": true,
+    "nothingThrows": true
+  },
+  "notes": {
+    "everySectionHoldsWhatItShould": {},
+    "eachKeyOnlyBesideWhatItUnlocks": {},
+    "navMarksTheOpenSection": {},
+    "navGroupsAsTheIssueSays": {
+      "got": [
+        {
+          "name": "Perry",
+          "items": [
+            "General",
+            "Engines & usage",
+            "Computers"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "Permissions",
+          "items": [
+            "Access & approvals"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "Reaching you",
+          "items": [
+            "Notifications",
+            "Telegram",
+            "WhatsApp"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "Desktop pet",
+          "items": [
+            "Desktop pet"
+          ],
+          "shownName": false
+        },
+        {
+          "name": "People",
+          "items": [
+            "People"
+          ],
+          "shownName": false
+        },
+        {
+          "name": "System",
+          "items": [
+            "Activity log",
+            "Security"
+          ],
+          "shownName": true
+        }
+      ],
+      "wanted": [
+        {
+          "name": "Perry",
+          "items": [
+            "General",
+            "Engines & usage",
+            "Computers"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "Permissions",
+          "items": [
+            "Access & approvals"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "Reaching you",
+          "items": [
+            "Notifications",
+            "Telegram",
+            "WhatsApp"
+          ],
+          "shownName": true
+        },
+        {
+          "name": "Desktop pet",
+          "items": [
+            "Desktop pet"
+          ],
+          "shownName": false
+        },
+        {
+          "name": "People",
+          "items": [
+            "People"
+          ],
+          "shownName": false
+        },
+        {
+          "name": "System",
+          "items": [
+            "Activity log",
+            "Security"
+          ],
+          "shownName": true
+        }
+      ]
+    },
+    "navIsNotABox": [],
+    "navByKeyboard": {
+      "tabs": 26,
+      "reached": "General",
+      "ring": true,
+      "steps": [
+        "General",
+        "Engines & usage",
+        "Computers",
+        "Security",
+        "Activity log",
+        "General",
+        "Engines & usage",
+        "Computers"
+      ],
+      "opened": true,
+      "at": "/settings/computers"
+    },
+    "oldAddressesRedirect": {},
+    "unknownSectionIs404": 404,
+    "redirectsKeepTheirQuery": {
+      "filtered": {
+        "at": "/settings/activity?session=n3fwf8z08jcg5cnfj8bzyn5ev5",
+        "plan": false,
+        "runs": 1
+      },
+      "skillOpen": true,
+      "shortcuts": true,
+      "pushed": true,
+      "at": "/settings/people"
+    },
+    "sidebarHasMemoryAndApps": [
+      "New chat",
+      "Search",
+      "Needs you",
+      "To-dos",
+      "Work",
+      "Memory",
+      "Apps & skills"
+    ],
+    "footerIsPetThenComputerThenYou": {
+      "footer": [
+        "z z z Desktop pet",
+        "DESKTOP-27SQLCP",
+        "Y You ChatGPT Plus · Codex"
+      ],
+      "computer": "DESKTOP-27SQLCP",
+      "owner": "You"
+    },
+    "footerLandsOnItsSections": {
+      "computerRow": true,
+      "petSettings": true,
+      "at": "/settings/desktop-pet"
+    },
+    "sidebarItemsGoToTheirPages": {
+      "apps": true,
+      "memory": true
+    },
+    "lineUnderTheNameIsThePlan": "ChatGPT Plus · Codex",
+    "accountMenuItems": [
+      "Usage details",
+      "Theme",
+      "Settings",
+      "Lock dashboard"
+    ],
+    "accountMenuUsageSummary": {
+      "items": [
+        "Usage details",
+        "Theme",
+        "Settings",
+        "Lock dashboard"
+      ],
+      "usage": {
+        "Codex usage": "Codex · ChatGPT Plus 5-hour 63% left · resets at 18:42 x Weekly 16% left · resets Sun 4 Oct, 16:29 x",
+        "Claude Code usage": "Claude Code · Claude Max No limits reported yet."
+      },
+      "bars": [
+        "5-hour: 37% used",
+        "Weekly: 84% used"
+      ]
+    },
+    "accountMenuGoes": {
+      "details": true,
+      "settings": true
+    },
+    "appsAndSkillsTabs": {
+      "page": {
+        "h1": [
+          "Apps & skills"
+        ],
+        "tabs": [
+          [
+            "Connectors",
+            "true"
+          ],
+          [
+            "Skills",
+            "false"
+          ]
+        ],
+        "key": true,
+        "below": "below"
+      },
+      "skills": true,
+      "skillsPage": {
+        "h1": [
+          "Apps & skills"
+        ],
+        "selected": "Skills"
+      }
+    },
+    "telegramTokenSavesInTelegram": {
+      "telegramSaved": true,
+      "checkBot": true,
+      "key": {
+        "name": "TELEGRAM_BOT_TOKEN",
+        "label": "Telegram bot token",
+        "hint": "From @BotFather. Perry starts listening to the new bot within a few seconds of saving it.",
+        "set": true,
+        "source": "dashboard",
+        "preview": "…AbCd",
+        "updatedAt": 1790852446770
+      }
+    },
+    "connectorsAfterKey": "Toggle Sidebar\nApps & skills\nConnectors\nSkills\nConnectors\n\nLet Perry work across the apps you already use. It checks what's connected each time it acts.\n\nRefresh\nCouldn't load every connection\n401 {\"error\":{\"message\":\"Invalid API key: e2e**9Zq1\",\"code\":801,\"slug\":\"APIKey_InvalidAPIKey\",\"status\":401,\"request_id\":\"778425f2-41f7-4c88-9a84-4e4b36131bb8\",\"suggested_fix\":\"Please check you are using a va",
+    "composioKeySavesInConnectors": {
+      "composioSaved": true,
+      "noticed": true,
+      "backToSetup": true
+    },
+    "approvalRulesListAndDelete": {
+      "listed": [
+        "pnpm test"
+      ],
+      "gone": true,
+      "emptied": true
+    },
+    "phoneUsesTheSwitcher": {
+      "phone": {
+        "nav": "none",
+        "switcher": true,
+        "shown": "Security"
+      },
+      "listed": [
+        "Perry General Engines & usage Computers",
+        "Permissions Access & approvals",
+        "Reaching you Notifications Telegram WhatsApp",
+        "Desktop pet Desktop pet",
+        "People People",
+        "System Activity log Security"
+      ],
+      "switched": true
+    },
+    "nothingOverflowsAPhone": {},
+    "palette": {
+      "Needs you": "/inbox",
+      "To-dos": "/todos",
+      "Work": "/work",
+      "Memory": "/memory",
+      "Connectors": "/apps/connectors",
+      "Skills": "/apps/skills",
+      "Settings": "/settings/general",
+      "Engines & usage": "/settings/engines",
+      "Computers": "/settings/computers",
+      "Access & approvals": "/settings/access",
+      "Activity log": "/settings/activity",
+      "Keyboard shortcuts": "/settings/desktop-pet#shortcuts"
+    },
+    "linksCrawled": 32,
+    "noLinkGoesNowhere": {
+      "dead": {},
+      "palette": 12
+    },
+    "nothingThrows": {
+      "exceptions": [],
+      "consoleErrors": []
+    }
+  }
+}
