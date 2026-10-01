@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-30T23:21:43.250Z",
+  "ranAt": "2026-10-01T07:16:21.349Z",
   "checks": {
     "namesTheAccount": true,
     "askedOnceThenKept": true,
@@ -11,6 +11,8 @@
     "expiredOffersReconnect": true,
     "attentionFirstThenByName": true,
     "everyCardAddsAnother": true,
+    "workingAccountsSayNothing": true,
+    "noBoxes": true,
     "orderIsAttentionThenName": true,
     "cardSummaries": true,
     "duplicateShowsOnce": true,
@@ -32,8 +34,8 @@
   "notes": {
     "mode": "stand-in",
     "loads": {
-      "firstMs": 94,
-      "secondMs": 11
+      "firstMs": 85,
+      "secondMs": 15
     },
     "composio": [
       "gmail ACTIVE",
@@ -65,7 +67,7 @@
         "summary": "2 accounts · 1 needs reconnecting",
         "rows": [
           "sam@example.com | Expired | Reconnect | Disconnect",
-          "alex@example.com | Connected 2 times | Remove extras | Connected | Disconnect"
+          "alex@example.com | Connected 2 times | Remove extras | Disconnect"
         ]
       },
       {
@@ -86,22 +88,22 @@
         "name": "Google Calendar",
         "summary": "1 account",
         "rows": [
-          "alex@example.com | Connected 2 times | Remove extras | Connected | Disconnect"
+          "alex@example.com | Connected 2 times | Remove extras | Disconnect"
         ]
       },
       {
         "name": "Higgsfield MCP",
         "summary": "2 accounts",
         "rows": [
-          "Added 24 Sept 2026, 13:45 | Connected | Disconnect",
-          "Added 24 Sept 2026, 23:10 | Connected | Disconnect"
+          "Added 24 Sept 2026, 13:45 | Disconnect",
+          "Added 24 Sept 2026, 23:10 | Disconnect"
         ]
       },
       {
         "name": "Slack",
         "summary": "1 account",
         "rows": [
-          "alex | Connected | Disconnect"
+          "alex | Disconnect"
         ]
       }
     ],
@@ -123,11 +125,11 @@
     "links": [
       {
         "toolkit": "gmail",
-        "callbackUrl": "http://127.0.0.1:61215/connectors?connected=gmail"
+        "callbackUrl": "http://127.0.0.1:58696/connectors?connected=gmail"
       },
       {
         "toolkit": "youtube",
-        "callbackUrl": "http://127.0.0.1:61215/connectors?connected=youtube"
+        "callbackUrl": "http://127.0.0.1:58696/connectors?connected=youtube"
       }
     ],
     "unknownCalls": [],

@@ -110,53 +110,57 @@ function AppRow({ app, connected, busy, onConnect }: { app: CatalogApp; connecte
   );
 }
 
-/** An app you've connected: its accounts inside, each with its state, and a way to add another. */
-function AppCard({ app, busy, onConnect, onRemove }: {
+/** A connection's state as words, said only when it isn't working: a healthy account needs no label. */
+const TONE_TEXT: Record<Tone, string> = { neutral: "text-muted-foreground", success: "text-success", warning: "text-warning", danger: "text-destructive", info: "text-primary" };
+
+/** An app you've connected, drawn like a catalogue row, with its accounts listed under its name. */
+function AppGroup({ app, busy, onConnect, onRemove }: {
   app: AppAccounts; busy: string | null; onConnect: (slug: string) => void; onRemove: (items: ConnectedAccount[]) => Promise<void>;
 }) {
   return (
-    <li className="overflow-hidden rounded-xl border bg-card" aria-label={app.name}>
-      <div className="flex items-center gap-4 px-4 py-3">
+    <li aria-label={app.name}>
+      <div className="flex items-center gap-3 rounded-xl px-3 py-2.5">
         <AppLogo name={app.name} logo={app.logo} />
         <div className="min-w-0 flex-1">
-          <p className="truncate font-medium">{app.name}</p>
+          <p className="truncate text-[15px] font-medium">{app.name}</p>
           <p className="truncate text-sm text-muted-foreground">
             {plural(app.accounts.length, "account")}
             {app.broken > 0 && <span className="text-warning"> · {app.broken} {app.broken === 1 ? "needs" : "need"} reconnecting</span>}
             {app.finishing > 0 && <> · {app.finishing} finishing sign-in</>}
           </p>
         </div>
-        <Button variant="outline" size="sm" aria-label={`Add another ${app.name} account`} disabled={busy !== null} aria-busy={busy === app.toolkit || undefined} onClick={() => onConnect(app.toolkit)}>
+        <Button variant="ghost" size="sm" className="text-muted-foreground" aria-label={`Add another ${app.name} account`} disabled={busy !== null} aria-busy={busy === app.toolkit || undefined} onClick={() => onConnect(app.toolkit)}>
           {busy === app.toolkit ? <Spinner /> : <PlusIcon />}<span className="hidden sm:inline">Add another account</span>
         </Button>
       </div>
-      <ul aria-label={`${app.name} accounts`} className="divide-y border-t">
+      <ul aria-label={`${app.name} accounts`}>
         {app.accounts.map((account) => <AccountRow key={account.main.id} app={app} account={account} busy={busy} onConnect={onConnect} onRemove={onRemove} />)}
       </ul>
     </li>
   );
 }
 
-/** One account inside an app's card: who it is, whether it works, and what to do when it doesn't. */
+/** One account under its app, lined up with the app's name: who it is, and what to do when it isn't working. */
 function AccountRow({ app, account, busy, onConnect, onRemove }: {
   app: AppAccounts; account: Account; busy: string | null; onConnect: (slug: string) => void; onRemove: (items: ConnectedAccount[]) => Promise<void>;
 }) {
   const { main, spares, label } = account;
   const status = connectionStatus(main.status);
+  const working = status.tone === "success";
   const who = main.account ? <strong>{main.account}</strong> : "this account";
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:pl-[4.5rem]">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-3 py-1.5 hover:bg-muted/50 sm:pl-16">
       <div className="min-w-0 flex-1 basis-48">
         <p className={cn("truncate", !main.account && "text-muted-foreground")} title={main.account ? `Signed in as ${main.account}` : undefined}>{label}</p>
         {spares.length > 0 && (
           <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
             Connected {spares.length + 1} times
-            <ActionButton variant="link" size="xs" className="h-auto px-0"
+            <ActionButton variant="link" size="xs" className="h-auto px-0 text-muted-foreground underline underline-offset-2 hover:text-foreground"
               action={() => onRemove(spares)}
               success={`Removed ${plural(spares.length, "extra connection")}.`}
               confirm={{
                 title: `Remove ${plural(spares.length, "extra connection")}?`,
-                body: <>{who} was signed in to {app.name} more than once. Perry keeps the {status.tone === "success" ? "working" : "newest"} connection and the {spares.length === 1 ? "other is" : `other ${spares.length} are`} removed.</>,
+                body: <>{who} was signed in to {app.name} more than once. Perry keeps the {working ? "working" : "newest"} connection and the {spares.length === 1 ? "other is" : `other ${spares.length} are`} removed.</>,
                 label: "Remove extras",
               }}>
               Remove extras
@@ -165,8 +169,8 @@ function AccountRow({ app, account, busy, onConnect, onRemove }: {
         )}
       </div>
       <div className="flex items-center gap-2">
-        <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
-        {status.tone !== "success" && (
+        {!working && <span className={cn("text-sm font-medium", TONE_TEXT[status.tone])}>{status.label}</span>}
+        {!working && (
           <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => onConnect(app.toolkit)}>{busy === app.toolkit && <Spinner />}Reconnect</Button>
         )}
         <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive"
@@ -285,16 +289,14 @@ export function Connectors() {
   if (!state.configured) {
     return (
       <Page title="Connectors" description="Accounts Perry can use for you: your calendar, email, notes and more.">
-        <div className="rounded-xl border bg-card p-6">
-          <h2 className="font-semibold">Connect through Composio</h2>
-          <p className="mt-1 text-sm text-pretty text-muted-foreground">Composio holds the sign-ins, so Perry never sees a password or token.</p>
-          <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm">
+        <Section title="Connect through Composio" description="Composio holds the sign-ins, so Perry never sees a password or token.">
+          <ol className="list-decimal space-y-2 pl-5 text-sm">
             <li>Create a Composio account and copy an API key from <a href="https://composio.dev" target="_blank" rel="noopener noreferrer" className="font-medium text-primary underline-offset-2 hover:underline">composio.dev</a>.</li>
             <li>Paste it into <Link href="/settings?tab=keys" className="font-medium text-primary underline-offset-2 hover:underline">Settings › Keys</Link>, as the Composio key.</li>
           </ol>
           {state.error && <Alert variant="destructive" className="mt-4"><TriangleAlertIcon /><AlertTitle>Couldn&apos;t reach Composio</AlertTitle><AlertDescription>{state.error}</AlertDescription></Alert>}
           <div className="mt-5">{refreshButton}</div>
-        </div>
+        </Section>
       </Page>
     );
   }
@@ -320,8 +322,8 @@ export function Connectors() {
           : shownApps.length === 0
             ? <p className="text-sm text-muted-foreground" role="status">No connected app or account matches &ldquo;{search.trim()}&rdquo;.</p>
             : (
-              <ul aria-label="Connected apps" className="space-y-3">
-                {shownApps.map((app) => <AppCard key={app.toolkit} app={app} busy={busy} onConnect={(slug) => void connect(slug)} onRemove={remove} />)}
+              <ul aria-label="Connected apps" className="-mx-3 space-y-4">
+                {shownApps.map((app) => <AppGroup key={app.toolkit} app={app} busy={busy} onConnect={(slug) => void connect(slug)} onRemove={remove} />)}
               </ul>
             )}
       </Section>

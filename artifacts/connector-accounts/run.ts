@@ -38,7 +38,8 @@ import { startStandIn } from "./stand-in";
 //      kept), and so be quicker.
 //   7. Something broken hides: an expired account must say Expired and offer
 //      Reconnect, its card must say it needs reconnecting, and cards needing
-//      attention come first, then by name.
+//      attention come first, then by name. A working account says nothing
+//      about its state (no "Connected" on every row), only Disconnect.
 //   8. "Add another account" connects something else: it must start a sign-in
 //      for that card's app, coming back to this page.
 //   9. Removing spares removes the account, or disconnecting leaves a spare
@@ -101,7 +102,7 @@ async function until(test: () => Promise<boolean> | boolean, what: string, secon
 }
 type Account = { id: string; toolkit: string; name: string; status: string; account?: string; logo?: string };
 /** A card as the page shows it: the app, its summary line, and each account row. */
-type Card = { name: string; summary: string; add: string; rows: Array<{ label: string; times: number; status: string; reconnect: boolean; text: string }> };
+type Card = { name: string; summary: string; add: string; rows: Array<{ label: string; times: number; status: string; reconnect: boolean; actions: string; text: string }> };
 const truth = standIn
   ? async () => standIn.connections.map((item) => ({ id: item.id, status: item.status, toolkit: { slug: item.toolkit } }))
   : async () => ((await new Composio({ apiKey }).connectedAccounts.list({ userIds: ["owner"], limit: 100 } as never)) as unknown as { items: Array<{ id: string; status: string; toolkit: { slug: string } }> }).items;
@@ -170,7 +171,9 @@ try {
     rows: [...li.querySelectorAll(":scope > ul > li")].map((row) => ({
       label: row.querySelector("p")?.innerText ?? "",
       times: Number(row.innerText.match(/Connected (\\d+) times/)?.[1] ?? 1),
-      status: row.querySelector(":scope > div:last-child > span")?.innerText ?? "",
+      // A state is shown only when the account isn't working; none shown means it works.
+      status: row.querySelector(":scope > div:last-child > span")?.innerText || "Connected",
+      actions: row.querySelector(":scope > div:last-child")?.innerText.replace(/\\n+/g, " | ") ?? "",
       reconnect: [...row.querySelectorAll("button")].some((b) => b.innerText.trim() === "Reconnect"),
       text: row.innerText.replace(/\\n+/g, " | "),
     })),
@@ -208,6 +211,9 @@ try {
   checks.attentionFirstThenByName = (firstFine === -1 || attention.slice(firstFine).every((value) => !value))
     && sorted(names.filter((_, index) => attention[index])) && sorted(names.filter((_, index) => !attention[index]));
   checks.everyCardAddsAnother = shown.every((item) => item.add === `Add another ${item.name} account`);
+  checks.workingAccountsSayNothing = rows.filter((entry) => entry.status === "Connected").every((entry) => entry.actions === "Disconnect");
+  // No boxes: neither the app groups nor their account lists are drawn with a border.
+  checks.noBoxes = await evaluate(`[...${cardsList}.children].every((li) => [li, ...li.querySelectorAll(":scope > div, :scope > ul, :scope > ul > li")].every((el) => parseFloat(getComputedStyle(el).borderTopWidth) === 0 && parseFloat(getComputedStyle(el).borderBottomWidth) === 0))`) as boolean;
   await shoot("connectors.png", `section[aria-label="Connected"]`);
 
   if (!standIn) {

@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-30T23:21:14.552Z",
+  "ranAt": "2026-10-01T07:17:00.168Z",
   "checks": {
     "namesTheAccount": true,
     "askedOnceThenKept": true,
@@ -11,6 +11,8 @@
     "expiredOffersReconnect": true,
     "attentionFirstThenByName": true,
     "everyCardAddsAnother": true,
+    "workingAccountsSayNothing": true,
+    "noBoxes": true,
     "catalogueHasLogosAndPages": true,
     "searchNarrowsApps": true,
     "searchMatchesAddress": true,
@@ -21,8 +23,8 @@
   "notes": {
     "mode": "real account",
     "loads": {
-      "firstMs": 3061,
-      "secondMs": 447
+      "firstMs": 6184,
+      "secondMs": 471
     },
     "composio": [
       "instagram ACTIVE",
@@ -59,73 +61,73 @@
         "name": "GitHub",
         "summary": "1 account",
         "rows": [
-          "TheM1N9 | Connected | Disconnect"
+          "TheM1N9 | Disconnect"
         ]
       },
       {
         "name": "Gmail",
         "summary": "1 account",
         "rows": [
-          "account2@example.com | Connected | Disconnect"
+          "account2@example.com | Disconnect"
         ]
       },
       {
         "name": "Google Calendar",
         "summary": "2 accounts",
         "rows": [
-          "account1@example.com | Connected | Disconnect",
-          "account2@example.com | Connected | Disconnect"
+          "account1@example.com | Disconnect",
+          "account2@example.com | Disconnect"
         ]
       },
       {
         "name": "Google Drive",
         "summary": "1 account",
         "rows": [
-          "account2@example.com | Connected | Disconnect"
+          "account2@example.com | Disconnect"
         ]
       },
       {
         "name": "Google Sheets",
         "summary": "1 account",
         "rows": [
-          "Added 30 Sept 2026 | Connected | Disconnect"
+          "Added 30 Sept 2026 | Disconnect"
         ]
       },
       {
         "name": "Google Super",
         "summary": "2 accounts",
         "rows": [
-          "Added 30 Sept 2026, 23:30 | Connected | Disconnect",
-          "Added 30 Sept 2026, 23:54 | Connected | Disconnect"
+          "Added 30 Sept 2026, 23:30 | Disconnect",
+          "Added 30 Sept 2026, 23:54 | Disconnect"
         ]
       },
       {
         "name": "Higgsfield MCP",
         "summary": "1 account",
         "rows": [
-          "Added 27 Sept 2026 | Connected | Disconnect"
+          "Added 27 Sept 2026 | Disconnect"
         ]
       },
       {
         "name": "Instagram",
         "summary": "2 accounts",
         "rows": [
-          "Added 1 Oct 2026 | Connected | Disconnect",
-          "Added 30 Sept 2026 | Connected | Disconnect"
+          "Added 1 Oct 2026 | Disconnect",
+          "Added 30 Sept 2026 | Disconnect"
         ]
       },
       {
         "name": "Slack",
         "summary": "1 account",
         "rows": [
-          "manikanta | Connected | Disconnect"
+          "manikanta | Disconnect"
         ]
       },
       {
         "name": "YouTube",
         "summary": "1 account",
         "rows": [
-          "M1n9 | Connected | Disconnect"
+          "M1n9 | Disconnect"
         ]
       }
     ],
