@@ -44,10 +44,8 @@ export function PetControl() {
         )}
         <p className="mt-0.5 text-sm text-pretty text-muted-foreground">
           {working && pet.setup?.action === "on"
-            ? `On ${pet.host}. The first time installs him (under 1 GB), a few minutes; after that he starts in seconds.`
-            : pet.running
-              ? `On ${pet.host}, and he starts with it. Click him for your chats, to-dos and what needs you.`
-              : `He appears on ${pet.host}, the computer Perry runs on, and starts with it from then on.`}
+            ? `On ${pet.host}. The first time installs him (under 1 GB) in a few minutes.`
+            : pet.running ? `On ${pet.host}; he starts with it.` : `He'd appear on ${pet.host} and start with it.`}
         </p>
         {failed && !working && (
           <div role="alert" className="mt-2 flex items-start gap-1.5 text-sm text-destructive">

@@ -71,9 +71,6 @@ export function PetDevices() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-medium">On your other computers</h3>
-          <p className="mt-0.5 text-sm text-pretty text-muted-foreground">
-            A laptop beside this one, say: he shows the same chats and to-dos there, and Perry looks at whichever screen you were at last.
-          </p>
         </div>
         {!code && (
           <Button variant="outline" disabled={making || view.loopbackOnly} onClick={() => void start()}>
@@ -85,7 +82,7 @@ export function PetDevices() {
       {view.loopbackOnly && (
         <p className="mt-3 flex items-start gap-1.5 text-sm text-muted-foreground">
           <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" />
-          Perry listens on this computer alone (PERRY_HOST in .env.local), so no other computer can reach it. Remove that line and restart Perry to add one.
+          Perry listens on this computer alone (PERRY_HOST in .env.local), so no other computer can reach it.
         </p>
       )}
 
@@ -154,8 +151,7 @@ function PairingPanel({ code, server, addresses, address, onPick, onCancel }: {
           <p className="mt-2 mb-1.5 text-xs text-muted-foreground">macOS or Linux:</p>
           <CommandLine>{`curl -fsSL ${INSTALLER}/install.sh | PERRY_PET='${pet}' sh`}</CommandLine>
           <p className="mt-3 text-xs text-pretty text-muted-foreground">
-            It installs only the pet (Git, Node.js and pnpm if missing, then Electron, under 1 GB), and he starts with that computer from then on.
-            Its pet gets a key of its own, which opens only what he shows; remove the computer here to take it away.
+            It installs only the pet (under 1 GB), which starts with that computer and gets a key of its own; remove the computer here to take it away.
             {tailscale
               ? " Over Tailscale, what he and Perry say to each other is encrypted on the way."
               : " On a local network it is not encrypted on the way: pair over one you trust, like your home's, or use Tailscale."}
@@ -164,7 +160,7 @@ function PairingPanel({ code, server, addresses, address, onPick, onCancel }: {
       ) : (
         <p className="mt-3 flex items-start gap-1.5 text-sm text-muted-foreground">
           <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" />
-          This computer has no address another one could reach. Connect it to your network, or to Tailscale, and it shows here.
+          No other computer can reach this one. Connect it to your network or to Tailscale.
         </p>
       )}
       <div className="mt-4 flex gap-2">

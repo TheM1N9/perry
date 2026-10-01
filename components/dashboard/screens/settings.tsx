@@ -78,13 +78,9 @@ function Engines() {
   const computers = useQuery(api.engines.list, { key: dashboardKey });
 
   return (
-    <Section title="Engines" description="Perry thinks with a coding agent on your computer, signed in with your own subscription. The sign-in stays on that computer.">
+    <Section title="Engines" tip="Coding agents on your computers, signed in with your own subscriptions. Each sign-in stays on its computer.">
       {computers === undefined && <ListSkeleton rows={1} />}
-      {computers?.length === 0 && (
-        <EmptyState title="No computer connected" action={<CommandLine>perry start</CommandLine>}>
-          Start Perry on the computer that will do the work, then sign in to an engine here.
-        </EmptyState>
-      )}
+      {computers?.length === 0 && <EmptyState title="No computer connected" action={<CommandLine>perry start</CommandLine>} />}
       {computers && computers.length > 0 && (
         <div className="space-y-6">
           {computers.map((computer) => (
@@ -207,7 +203,7 @@ function LoginSteps({ engine, interaction }: { engine: string; interaction: Logi
       <p className="text-sm font-medium">Finish signing in</p>
       {interaction.type === "deviceCode" && (
         <>
-          <p className="mt-0.5 text-sm text-muted-foreground">Open the sign-in page, sign in, and enter this code. This page updates by itself.</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">Enter this code on the sign-in page.</p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <CodeDisplay>{interaction.userCode}</CodeDisplay>
             <Button size="sm" render={<a href={interaction.verificationUrl} target="_blank" rel="noopener noreferrer" />}>Open sign-in page<ExternalLinkIcon /></Button>
@@ -216,13 +212,13 @@ function LoginSteps({ engine, interaction }: { engine: string; interaction: Logi
       )}
       {interaction.type === "browser" && (
         <>
-          <p className="mt-0.5 text-sm text-muted-foreground">Open the sign-in page and sign in to {engine}. This page updates by itself.</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">Sign in to {engine} on the sign-in page.</p>
           <Button size="sm" className="mt-3" render={<a href={interaction.url} target="_blank" rel="noopener noreferrer" />}>Open sign-in page<ExternalLinkIcon /></Button>
         </>
       )}
       {interaction.type === "terminal" && (
         <>
-          <p className="mt-0.5 text-sm text-muted-foreground">Run this in a terminal on that computer, and follow what it says. This page updates by itself.</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">Run this in a terminal on that computer.</p>
           <div className="mt-3 max-w-md"><CommandLine>{interaction.command}</CommandLine></div>
         </>
       )}
@@ -255,7 +251,7 @@ function Waiting({ children }: { children: ReactNode }) {
 /** A choice among a few, as cards you pick one of. */
 function ChoiceCards<T extends string>({ label, value, options, onChange, disabled }: {
   label: string; value: T | undefined; disabled?: boolean;
-  options: Array<{ value: T; title: string; body: string; icon: ReactNode; warning?: boolean }>;
+  options: Array<{ value: T; title: string; body?: string; icon: ReactNode; warning?: boolean }>;
   onChange: (value: T) => void;
 }) {
   return (
@@ -265,7 +261,7 @@ function ChoiceCards<T extends string>({ label, value, options, onChange, disabl
           <span className={cn("mt-0.5 shrink-0 [&>svg]:size-4", option.warning ? "text-warning" : "text-muted-foreground group-data-checked/radio-card:text-primary")}>{option.icon}</span>
           <span className="grid gap-0.5">
             <span className="text-sm font-medium">{option.title}</span>
-            <span className="text-sm text-pretty text-muted-foreground">{option.body}</span>
+            {option.body && <span className="text-sm text-pretty text-muted-foreground">{option.body}</span>}
           </span>
         </RadioGroupCard>
       ))}
@@ -284,7 +280,7 @@ function NewChatAccess() {
     .then(() => toast.success(`New chats start on ${ACCESS_LABELS[access]}.`), (cause) => toast.error(errorText(cause)));
   const Icon = current ? ACCESS_ICONS[current] : ShieldCheckIcon;
   return (
-    <Section title="Access for new chats" description="What Perry may do without asking in chats you start. Change any chat from its composer, or with /access.">
+    <Section title="Access for new chats" tip="What Perry may do without asking in a chat you start. Change any chat from its composer, or with /access.">
       <Select modal={false} items={ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode] }))} value={current ?? null} onValueChange={(value) => { if (value) choose(value as Access); }} disabled={current === undefined}>
         <SelectTrigger aria-label="Access for new chats" className={cn("w-56", current === "full" && "text-warning")}><Icon className="size-4" /><SelectValue /></SelectTrigger>
         <SelectContent className="w-56">
@@ -332,7 +328,8 @@ function Manners() {
   const hours = (on: boolean, start = latest.current.start, end = latest.current.end) => on ? { quietHours: { start, end } } : {};
   const saveHours = () => { const { on, start, end } = latest.current; if (on) store({ ...hours(true, start, end), dailyLimit: limit }, `Quiet from ${start} to ${end}.`); };
   return (
-    <Section title="Messages Perry sends on his own" description="Schedules, page watches and the heartbeat. What arrives in quiet hours or past the day's limit waits, and comes as one message when it may. Due reminders always go.">
+    <Section title="Messages Perry sends on his own" description="Schedules, watches and the heartbeat. Due reminders always go."
+      tip="What comes in quiet hours or past the day's limit waits, then arrives as one message.">
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm font-medium">
@@ -356,7 +353,6 @@ function Manners() {
           </Select>
           {manners && manners.waiting > 0 && <StatusBadge tone="info">{manners.waiting} waiting</StatusBadge>}
         </div>
-        <p className="text-sm text-muted-foreground">When you let three messages from the same schedule or watch go unanswered, Perry asks once whether to pause it.</p>
       </div>
     </Section>
   );
@@ -373,14 +369,14 @@ function DesktopPet() {
   const [picked, setPicked] = useState<PetTheme | null>(null);
   const theme = picked ?? pet?.theme;
   return (
-    <Section title="Desktop pet" description="Perry as a platypus on your screen, with your chats, to-dos and what needs you a click away. Talk to him from anywhere with the Talk shortcut.">
+    <Section title="Desktop pet">
       <PetControl />
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
         <ThemeChoice<PetTheme> label="Pet theme" value={theme} onChange={(value) => {
           setPicked(value);
           void setTheme({ key: dashboardKey, theme: value }).catch((cause) => { setPicked(null); toast.error(errorText(cause)); });
         }} />
-        <p className="text-sm text-muted-foreground">His light or dark look on this computer, kept in <code className="font-mono text-[0.9em]">pet.json</code>. He changes at once; on your other computers he follows their system&apos;s.</p>
+        <p className="text-sm text-muted-foreground">On this computer. Others follow their system.</p>
       </div>
       <div className="mt-4 flex items-start gap-3">
         <Switch id="screen-look" checked={screenLook ?? true} disabled={screenLook === undefined} className="mt-0.5"
@@ -389,7 +385,7 @@ function DesktopPet() {
             (cause) => toast.error(errorText(cause)))} />
         <div className="text-sm">
           <label htmlFor="screen-look" className="font-medium">Let Perry look at the screen when he needs to</label>
-          <p className="mt-0.5 text-pretty text-muted-foreground">In a chat, when your question is about something on screen. What he saw shows in the chat, and he says so on the pet. Never in scheduled jobs or background work.</p>
+          <p className="mt-0.5 text-pretty text-muted-foreground">Only in chats, never in scheduled or background work. What he saw shows in the chat.</p>
         </div>
       </div>
       <PetDevices />
@@ -402,7 +398,7 @@ function Appearance() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   return (
-    <Section title="Appearance" description="Follows your system unless you pick one. Remembered in this browser.">
+    <Section title="Appearance">
       <ThemeChoice label="Theme" value={mounted ? (theme ?? "system") : undefined} onChange={setTheme} />
     </Section>
   );
@@ -503,10 +499,11 @@ function Security() {
   const { lock } = useSession();
   return (
     <>
-      <Section title="Dashboard key" description="The key that guards this page can't be changed from behind it, which keeps a lockout recoverable. Change DASHBOARD_KEY in .env.local in Perry's folder, then restart Perry:">
+      <Section title="Dashboard key" description="Change DASHBOARD_KEY in .env.local in Perry's folder, then restart Perry:"
+        tip="It can't be changed from here, so a mistake can't lock you out.">
         <CommandLine>perry stop && perry start</CommandLine>
       </Section>
-      <Section title="Lock this browser" description="Forget the key in this browser. Opening the dashboard here asks for it again.">
+      <Section title="Lock this browser" description="This browser asks for the key again.">
         <Button variant="outline" onClick={lock}><LockIcon />Lock dashboard</Button>
       </Section>
     </>
@@ -551,10 +548,9 @@ function Logins() {
   };
 
   return (
-    <Section title="Logins & secrets" description="For Perry to sign in to websites with computer use. Send one in a chat and Perry moves it here, out of the chat. Passwords are never shown again.">
-      {logins === undefined ? <ListSkeleton /> : logins.length === 0 ? (
-        <EmptyState title="No logins saved">Add one below, or send it to Perry in a chat.</EmptyState>
-      ) : (
+    <Section title="Logins & secrets" description="For Perry to sign in to websites. Passwords are never shown again."
+      tip="Send one in a chat and Perry moves it here, out of the chat.">
+      {logins === undefined ? <ListSkeleton /> : logins.length === 0 ? <EmptyState title="No logins saved" /> : (
         <List label="Logins & secrets">
           {logins.map((login) => (
             <li key={login.id} className="flex flex-wrap items-start justify-between gap-2 py-3">
@@ -606,7 +602,7 @@ function Logins() {
           {error && <FieldError id="login-error">{error}</FieldError>}
         </Field>
         <div className="mt-3 flex min-h-7 flex-wrap items-center gap-2">
-          <p className="min-w-0 flex-1 text-xs text-muted-foreground">The same name and username replaces a saved one. Enter adds it.</p>
+          <span className="flex-1" />
           {(ready || saving) && <Button type="submit" variant="outline" size="sm" disabled={saving} aria-busy={saving || undefined}>{saving && <Spinner />}{replacing ? "Replace login" : "Add login"}</Button>}
         </div>
       </form>
@@ -652,10 +648,8 @@ function People() {
   const [editing, setEditing] = useState<Id<"contacts"> | null>(null);
 
   return (
-    <Section title="People" description="The people in your life, and what Perry remembers about them: from your chats, used only in yours, and from theirs, used only in theirs. You are asked the first time Perry talks with anyone: when someone new writes to it, and before it first writes to someone.">
-      {people === undefined ? <ListSkeleton /> : people.length === 0 && !remembered?.others.length ? (
-        <EmptyState title="Nobody yet">Ask Perry to message someone (&ldquo;tell Datta I&apos;m running late&rdquo;), or share Perry&apos;s WhatsApp or Telegram with someone.</EmptyState>
-      ) : (
+    <Section title="People" tip="What Perry remembers about someone from your chats is used only in yours, and from theirs only in theirs. You're asked before Perry first talks with anyone.">
+      {people === undefined ? <ListSkeleton /> : people.length === 0 && !remembered?.others.length ? <EmptyState title="Nobody yet" /> : (
         <List label="People">
           {people.map((person) => (
             <li key={person.id} className="py-3">
@@ -719,7 +713,7 @@ function Brief({ name, brief, save, onDone }: { name: string; brief: string; sav
         onChange={(event) => text.change(event.target.value)}
         onKeyDown={(event) => { if (event.key === "Escape" || (event.key === "Enter" && (event.metaKey || event.ctrlKey))) { event.preventDefault(); done(); } }} />
       <div className="flex items-center gap-3">
-        <SaveStatus state={text.state} idle="Saves as you type. Perry uses it from their next message." onRetry={() => void text.flush()} className="flex-1" />
+        <SaveStatus state={text.state} idle="Saves as you type." onRetry={() => void text.flush()} className="flex-1" />
         <Button variant="ghost" size="sm" onClick={done}>Done</Button>
       </div>
     </div>
@@ -750,14 +744,14 @@ function Telegram() {
       {!status.telegramConfigured && (
         <Alert variant="quiet" className="mb-6">
           <AlertTitle>Telegram isn&apos;t set up</AlertTitle>
-          <AlertDescription>Telegram is optional. To talk to Perry there, add a bot token from @BotFather below first.</AlertDescription>
+          <AlertDescription>Add a bot token from @BotFather below.</AlertDescription>
         </Alert>
       )}
       {status.telegramPaired ? (
         <div className="flex flex-wrap items-start gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2"><h2 className="font-semibold">Paired</h2><StatusBadge tone="success">Working for {status.ownerName ?? "you"}</StatusBadge></div>
-            <p className="mt-1 text-sm text-pretty text-muted-foreground">Messages from anyone else are ignored. Unpair to move Perry to another Telegram account.</p>
+            <p className="mt-1 text-sm text-pretty text-muted-foreground">Messages from anyone else are ignored.</p>
           </div>
           <ActionButton variant="outline" action={() => unclaim({ key: dashboardKey })} success="Unpaired. Generate a code to pair again."
             confirm={{ title: "Unpair Perry?", body: `Perry stops answering ${status.ownerName ?? "you"} on Telegram until someone pairs it again with a new code.`, label: "Unpair" }}>
@@ -773,13 +767,13 @@ function Telegram() {
               <CodeDisplay label={`Pairing code ${status.pairingCode!.split("").join(" ")}`}>{status.pairingCode!}</CodeDisplay>
               {remaining !== undefined && <span className="nums text-sm text-muted-foreground">Expires in {countdown(remaining)}</span>}
             </div>
-          ) : <p className="mt-4 text-sm text-muted-foreground">{status.pairingCode ? "That code expired." : "Generate a code, then send it to your bot."}</p>}
+          ) : status.pairingCode ? <p className="mt-4 text-sm text-muted-foreground">That code expired.</p> : null}
           <ActionButton className="mt-4" variant={live ? "outline" : "default"} action={() => startPairing({ key: dashboardKey })} success={live ? "New code ready. The old one no longer works." : undefined}>
             <RefreshCwIcon />{live ? "New code" : "Generate code"}
           </ActionButton>
         </div>
       )}
-      <Section title="Bot" description="Perry asks Telegram for new messages while it runs, so nothing here has to be reachable from the internet.">
+      <Section title="Bot" tip="Perry asks Telegram for new messages, so nothing here has to be reachable from the internet.">
         <KeyRow name="TELEGRAM_BOT_TOKEN" className="pt-0" />
         {status.telegramConfigured && (
           <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -796,8 +790,8 @@ function Telegram() {
 }
 
 const WHATSAPP_MODES: Array<{ value: "separate" | "self"; title: string; body: string; icon: ReactNode; warning?: boolean }> = [
-  { value: "separate", title: "A separate number", body: "A spare SIM or eSIM just for Perry. You message it like a contact; a ban would only take that number.", icon: <SmartphoneIcon /> },
-  { value: "self", title: "My own number", body: "Perry links to your WhatsApp, and you talk in your “Message yourself” chat. A ban would take your own WhatsApp with it.", icon: <UserIcon />, warning: true },
+  { value: "separate", title: "A separate number", body: "A spare SIM for Perry. A ban would only take that number.", icon: <SmartphoneIcon /> },
+  { value: "self", title: "My own number", body: "You talk in “Message yourself”. A ban would take your own WhatsApp.", icon: <UserIcon />, warning: true },
 ];
 
 /**
@@ -840,18 +834,18 @@ function WhatsApp() {
       <Alert variant="quiet" className="mb-6">
         <ShieldAlertIcon />
         <AlertTitle>WhatsApp may ban the number</AlertTitle>
-        <AlertDescription>WhatsApp doesn&apos;t allow automating an account, so Perry links as a device, like WhatsApp Web. It only ever talks to you, which keeps the risk down, but a ban is possible.</AlertDescription>
+        <AlertDescription>Perry links as a device, like WhatsApp Web, which WhatsApp doesn&apos;t allow. A ban is possible.</AlertDescription>
       </Alert>
 
       {!state.wanted && (
         <form onSubmit={(event) => void link(event)} className="space-y-4">
-          {state.status === "expired" && <Alert variant="quiet"><AlertTitle>The code ran out</AlertTitle><AlertDescription>Nobody linked it in time, so Perry stopped making new ones. Get a new code when your phone is ready.</AlertDescription></Alert>}
+          {state.status === "expired" && <Alert variant="quiet"><AlertTitle>The code ran out</AlertTitle><AlertDescription>Get a new code when your phone is ready.</AlertDescription></Alert>}
           {state.status === "logged-out" && <Alert variant="destructive"><AlertTitle>Unlinked</AlertTitle><AlertDescription>{state.error ?? "WhatsApp was unlinked on the phone."} Link it again below.</AlertDescription></Alert>}
           <ChoiceCards label="Which number Perry uses" value={mode} options={WHATSAPP_MODES} onChange={setMode} />
           <div>
             <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
               <Checkbox checked={byCode} onCheckedChange={setByCode} />
-              Link with a code typed on the phone instead of scanning a QR
+              Link with a code instead of a QR
             </label>
             {byCode && (
               <Field className="mt-3 max-w-xs" data-invalid={Boolean(error) || undefined}>
@@ -875,7 +869,7 @@ function WhatsApp() {
               <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
                 <li>On {phoneOf} phone, open WhatsApp.</li>
                 <li>Settings › Linked devices › Link a device.</li>
-                <li>Scan this code. It changes every 20 seconds or so, as on WhatsApp Web; scan the one showing.</li>
+                <li>Scan this code. It changes every 20 seconds or so.</li>
               </ol>
               {refreshed && <p className="basis-full text-xs text-muted-foreground" role="status">{refreshed}</p>}
             </div>
@@ -887,7 +881,7 @@ function WhatsApp() {
                 <li>On {phoneOf} phone: WhatsApp › Settings › Linked devices › Link a device.</li>
                 <li>Tap &ldquo;Link with phone number instead&rdquo;, then type this code.</li>
               </ol>
-              <p className="text-xs text-muted-foreground" role="status">A new code comes every couple of minutes until you use one; type the one showing.{refreshed ? ` ${refreshed}.` : ""}</p>
+              <p className="text-xs text-muted-foreground" role="status">It changes every couple of minutes.{refreshed ? ` ${refreshed}.` : ""}</p>
             </div>
           )}
           {state.status === "starting" && <Waiting>Starting WhatsApp…</Waiting>}
@@ -945,12 +939,12 @@ function AwayChannel() {
   const state = useQuery(api.whatsapp.status, { key: dashboardKey });
   const setHome = useMutation(api.whatsapp.setHomeChannel);
   return (
-    <Section title="When you're away" description="Replies always go where you wrote. Perry's own messages, like the heartbeat and alerts, go to one app.">
+    <Section title="When you're away" tip="Replies always go where you wrote. Perry's own messages, like the heartbeat and alerts, go to one app.">
       {!state ? <ListSkeleton rows={1} /> : state.paired && state.telegramPaired ? (
         <ChoiceCards label="Where Perry reaches you" value={state.homeChannel}
           options={[
-            { value: "telegram", title: "Telegram", body: "Background messages and approvals go to Telegram.", icon: <SendIcon /> },
-            { value: "whatsapp", title: "WhatsApp", body: "Background messages and approvals go to WhatsApp.", icon: <MessageCircleIcon /> },
+            { value: "telegram", title: "Telegram", icon: <SendIcon /> },
+            { value: "whatsapp", title: "WhatsApp", icon: <MessageCircleIcon /> },
           ]}
           onChange={(channel) => void setHome({ key: dashboardKey, channel }).then(() => toast.success(`Perry will reach you on ${channel === "telegram" ? "Telegram" : "WhatsApp"}.`), (cause) => toast.error(errorText(cause)))} />
       ) : (
