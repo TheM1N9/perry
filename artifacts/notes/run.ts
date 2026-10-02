@@ -317,7 +317,9 @@ try {
   await exchange(inProject, "What tiles did we pick?");
   const told = contextOf("What tiles did we pick?");
   const readInProject = await tool(inProject, "read_note", { id: tiles });
-  check("projectNoteInProject", noteRow(tiles)?.projectId === project && told.includes("## Its notes") && told.includes(`"Tile choices" (id ${tiles})`) && !told.includes("GREYHEX-41")
+  check("projectNoteInProject", noteRow(tiles)?.projectId === project && told.includes("## Its notes") && told.includes(`"Tile choices" (id ${tiles})`)
+    // The project lists its notes by title; a note's words come only as recall, when they bear on the message (issue #210).
+    && !told.slice(told.indexOf("## Its notes"), told.indexOf("## Its memory")).includes("GREYHEX-41")
     && readInProject?.content?.includes("GREYHEX-41"), told.slice(told.indexOf("## Its notes"), told.indexOf("## Its notes") + 400));
   const outsideRead = await tool(general, "read_note", { id: tiles });
   const outsideList = await tool(general, "list_notes", {});
