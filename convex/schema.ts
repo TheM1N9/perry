@@ -178,6 +178,11 @@ export default defineSchema({
    * owner, and the owner is whoever answered the code first.
    */
   installation: defineTable({
+    /**
+     * "undone" once the owner moved memories back out of pages (pages.undoMigration, `perry brain move-back`):
+     * Perry then no longer moves them in when it starts, until `perry brain move-in`.
+     */
+    memoriesInPages: v.optional(v.literal("undone")),
     ownerChannel: v.optional(vChannel),
     ownerExternalId: v.optional(v.string()),
     ownerName: v.optional(v.string()),
@@ -724,6 +729,8 @@ export default defineSchema({
     pinnedSections: v.optional(v.array(v.string())),
     /** When it, or a section of it, was pinned: what is pinned later loads after. */
     pinnedAt: v.optional(v.number()),
+    /** Made by moving memories from before pages into pages (pages.migrate); moving them back deletes it if nothing else is in it. */
+    migrated: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -860,6 +867,12 @@ export default defineSchema({
     editedAt: v.optional(v.number()),
     /** When it was last said again or confirmed to still hold (remember with the same words), so it is not taken for stale. */
     confirmedAt: v.optional(v.number()),
+    /**
+     * A memory from before pages, moved into its page when (pages.migrate); with its words as they were, when they
+     * had to become one line. Moving it back (pages.undoMigration) undoes exactly this.
+     */
+    migratedAt: v.optional(v.number()),
+    migratedFrom: v.optional(v.string()),
     /** The one chat it belongs to, out of every other chat. With neither this nor projectId: everywhere. */
     conversationId: v.optional(v.id("conversations")),
     /** The project it belongs to: seen in that project's chats, and in no other. */

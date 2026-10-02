@@ -113,7 +113,8 @@ function Memories() {
     <div className="space-y-8">
       <TeachForm />
       <MemoryPages />
-      <section aria-label="What Perry remembers" className="space-y-3">
+      {/* Memories from before pages, until Perry moves them into theirs: none once moved. */}
+      {(memories === undefined || memories.length > 0 || term || filter !== "all") && <section aria-label="What Perry remembers" className="space-y-3">
         <h2 className="text-md font-semibold tracking-[-0.01em]">Older memories</h2>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <ToggleGroup value={[filter]} onValueChange={(value) => setFilter((value[0] as Kind | "all" | undefined) ?? "all")} variant="outline" size="sm" aria-label="Filter by kind">
@@ -191,7 +192,7 @@ function Memories() {
             ))}
           </List>
         )}
-      </section>
+      </section>}
     </div>
   );
 }

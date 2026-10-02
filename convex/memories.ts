@@ -5,7 +5,7 @@ import { internalAction, internalMutation, internalQuery, type ActionCtx, type M
 import { timezoneOf } from "./jobs";
 import { EMBED_MODEL, embed, embedderReady, packVector, similarity, unpackVector, warmUp } from "./lib/embed";
 import { PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
-import { dropLine, memoryPage, putLine, rewordLine, writePage, type Author, type Place, type Standing } from "./pages";
+import { dropLine, memoryPage, placeFor, putLine, rewordLine, writePage, type Author, type Standing } from "./pages";
 import { vLineBy, vMemoryKind, vMemoryOrigin } from "./schema";
 
 /**
@@ -103,22 +103,6 @@ async function layer(ctx: QueryCtx, kind: Kind, limit?: number): Promise<Memory[
     : [];
   const current = [...rows, ...legacy].filter((memory) => !memory.supersededBy).sort((a, b) => b.createdAt - a.createdAt);
   return limit === undefined ? current : current.slice(0, limit);
-}
-
-/**
- * Where a memory goes (pages.ts): what a chat kept to itself to that chat's
- * page; a day's note to that day's journal; a standing preference to About me
- * (a project's to its Things to remember); a fact about someone else, kept
- * for every chat, to their page in People; any other fact to Things to
- * remember, the project's in a project.
- */
-function placeFor(kind: "profile" | "core" | "daily", today: string, args: { conversationId?: Id<"conversations">; projectId?: Id<"projects">; about?: string[] }): Place {
-  if (args.conversationId) return { kind: "chat", conversationId: args.conversationId };
-  if (kind === "daily") return { kind: "journal", day: today, ...(args.projectId ? { projectId: args.projectId } : {}) };
-  if (kind === "profile") return args.projectId ? { kind: "remember", projectId: args.projectId } : { kind: "about" };
-  const person = args.about?.map((name) => name.trim()).find(Boolean);
-  if (person && !args.projectId) return { kind: "person", name: person };
-  return { kind: "remember", ...(args.projectId ? { projectId: args.projectId } : {}) };
 }
 
 /**

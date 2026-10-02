@@ -26,8 +26,11 @@ export function titleFrom(text: string): string {
   return cleanTitle(line.length > 60 ? `${line.slice(0, 59).trimEnd()}…` : line);
 }
 
-export function tooLong(content: string): string | null {
-  return content.length > CONTENT_LIMIT ? `A note holds up to ${CONTENT_LIMIT.toLocaleString("en-US")} characters; this one would have ${content.length.toLocaleString("en-US")}.` : null;
+/** A page of memory (pages.ts) holds every memory of its kind, so it may grow far longer than a note. */
+export const MEMORY_PAGE_LIMIT = 1_000_000;
+
+export function tooLong(content: string, limit = CONTENT_LIMIT): string | null {
+  return content.length > limit ? `A page holds up to ${limit.toLocaleString("en-US")} characters; this one would have ${content.length.toLocaleString("en-US")}.` : null;
 }
 
 /** Text added to the end of a note, after a blank line. */

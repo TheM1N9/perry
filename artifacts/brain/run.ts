@@ -1,7 +1,8 @@
-import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 import { GUEST_TOOLS } from "../../convex/lib/engines";
+import { journalTitle as journalTitleOf } from "../../convex/lib/pages";
 
 // bun artifacts/brain/run.ts <outDir>
 // Issue #210: Brain, where notes and memory are one place and a memory is a line in a page. Grown step by step.
@@ -53,6 +54,19 @@ import { GUEST_TOOLS } from "../../convex/lib/engines";
 //      is left out is not said, with where to read it.
 //  19. A chat outside a project is sent the project's pinned page; a chat with someone else is sent any of it.
 //  20. The pin button does not pin, or the Memory page does not show what is pinned and how much of the budget it uses.
+// Step 4, memories from before pages moved into them (an old-style install seeded as an older Perry left it):
+//  21. A memory lands on the wrong page or section, or none: each layer (profile, core, a row with no layer, daily with
+//      and without its day), each scope (everywhere, a project, one chat, a chat with someone else), people (one and
+//      two named), alerts and open threads.
+//  22. Provenance is lost: a new id (citations, to-do links and asked threads break), or changed words, tags, people,
+//      scope, source, origin, dates or vector; words that cannot be one line are changed without the original kept.
+//  23. No backup is written first, or it misses rows (superseded ones, USER.md's versions, the notes).
+//  24. A superseded memory is moved in as if current; About me loses USER.md or the owner's preferences.
+//  25. It is not idempotent: a second start moves, writes or backs up anything again.
+//  26. It cannot be undone: moving back leaves rows in pages, changes their words or ids, leaves empty pages it made,
+//      leaves the lines of the owner's other pages an older Perry would read as memories, or Perry moves them in again
+//      on the next start; moving in again does not put them back where they were.
+//  27. Memories moved in are no longer loaded or listed: the Memory page loses them, or turns are not sent them.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/brain/run.ts <outDir>");
@@ -117,22 +131,125 @@ try {
   await startServer();
   await call("dashboard:skipOnboarding", { key: KEY }).catch(() => {});
 
-  // --- 1. A note from before lines, as an older Perry left it, is indexed when Perry starts --------------------
+  // --- An install as an older Perry left it: USER.md, chats, a project, someone the owner lets Perry talk with, a to-do,
+  // a note from before lines and memories from before pages, every layer and scope.
   const now = Date.now();
+  const userMd = "# About Alex\n\n- **Call them:** Alex\n- Lives in Pune.\n";
+  await call("persona:writeUser", { text: userMd, by: "owner" });
+  const general = await call<string>("dashboard:createChat", { key: KEY });
+  const project = await call<string>("projects:create", { key: KEY, name: "Bathroom" });
+  const inProject = await call<string>("dashboard:createChat", { key: KEY, projectId: project });
+  const jid = "15550001111@s.whatsapp.net";
+  await call("contacts:learn", { items: [{ channel: "whatsapp", externalId: jid, kind: "person", name: "Datta" }] });
+  const contact = await call<{ _id: string }>("contacts:byChat", { channel: "whatsapp", externalId: jid });
+  const thread = await call<string>("agentStore:createThread", { userId: `whatsapp:${jid}`, title: "Datta" });
+  const theirs = await call<string>("conversations:create", { channel: "whatsapp", externalId: jid, threadId: thread, contactId: contact._id });
+  const followUp = (await call<{ added?: { id: string } }>("todos:addFromAgent", { title: "Dentist follow-up" })).added!.id;
+  const timezone = await call<string>("jobs:ownerTimezone");
+  const dayOf = (at: number) => new Date(at).toLocaleDateString("en-CA", { timeZone: timezone });
+  const DAY = 86_400_000;
   const oldNote = seed("notes", {
     title: "Old garden plan", content: "## Beds\n\n- Tomatoes by the south wall\n- Basil between them\n\nWater at dawn in July.\n",
-    revision: 3, search: "Old garden plan", by: "owner", createdAt: now - 86_400_000 * 40, updatedAt: now - 86_400_000 * 30,
+    revision: 3, search: "Old garden plan", by: "owner", createdAt: now - DAY * 40, updatedAt: now - DAY * 30,
   });
-  // And a memory from before pages: a row with no page, as every install has today.
-  const oldCar = seed("memories", { text: "The owner's car is a blue Skoda.", tags: [], source: "telegram:4242", createdAt: now - 86_400_000 * 200, kind: "core", origin: "owner" });
+  const MODEL = "Xenova/paraphrase-multilingual-MiniLM-L12-v2";
+  const memory = (doc: Record<string, unknown>) => ({ tags: [], source: "telegram:4242", createdAt: now - DAY * 90, origin: "owner", ...doc });
+  const seeds: Record<string, Record<string, unknown>> = {
+    profile: memory({ text: "Always answer in British English.", kind: "profile", createdAt: now - DAY * 60 }),
+    noKind: memory({ text: "The owner's flat is on the 4th floor.", source: "web:dashboard", createdAt: now - DAY * 300 }),
+    car: memory({ text: "The owner's car is a blue Skoda.", kind: "core", createdAt: now - DAY * 200, editedAt: now - DAY * 100 }),
+    cousin: memory({ text: "Arjun is the owner's cousin in Bangalore.", kind: "core", about: ["Arjun"] }),
+    wedding: memory({ text: "Arjun and Meera are getting married in Dec 2026.", kind: "core", about: ["Arjun", "Meera"] }),
+    budget: memory({ text: "Bathroom budget is 4000 euros.", kind: "core", projectId: project }),
+    plumber: memory({ text: "Ravi the plumber comes on Tuesdays.", kind: "core", projectId: project, about: ["Ravi"] }),
+    spanish: memory({ text: "In this project, reply in Spanish.", kind: "profile", projectId: project }),
+    dentist: memory({ text: "Dentist follow-up call on Friday.", kind: "daily", day: dayOf(now - DAY * 3), createdAt: now - DAY * 3, tags: ["open"], todoId: followUp }),
+    alert: memory({ text: "Alerted the owner at 06:00: Flight moved to 7:25.", kind: "daily", day: dayOf(now - DAY), createdAt: now - DAY, tags: ["alert"], origin: "job", source: "alert" }),
+    kettle: memory({ text: "Bought a new kettle.", kind: "daily", createdAt: now - DAY * 5 }),
+    tiles: memory({ text: "Tiles for the bathroom arrived.", kind: "daily", day: dayOf(now - DAY * 2), createdAt: now - DAY * 2, projectId: project }),
+    owl: memory({ text: "Codename for the surprise party is OWL.", kind: "core", conversationId: general }),
+    voice: memory({ text: "Datta prefers WhatsApp voice notes.", kind: "core", conversationId: theirs, about: ["Datta"], origin: "tool", source: `whatsapp:${jid}` }),
+    globex: memory({ text: "The owner works at Globex.", kind: "core", createdAt: now - DAY * 20 }),
+    list: memory({ text: "Shopping list idea:\n\nmilk and bread", kind: "core" }),
+    checkbox: memory({ text: "[x] Renewed the passport in May.", kind: "core" }),
+    tea: memory({ text: "The owner's favourite tea is Assam.", kind: "core", vector: "AACAPw==", vectorModel: MODEL }),
+  };
+  const old: Record<string, string> = {};
+  for (const [name, doc] of Object.entries(seeds)) old[name] = seed("memories", doc);
+  // A fact that was replaced: it stays as history, superseded, and is not moved in.
+  seeds.acme = memory({ text: "The owner works at Acme.", kind: "core", createdAt: now - DAY * 400, supersededBy: old.globex });
+  old.acme = seed("memories", seeds.acme);
   const beforeRestart = linesOf(oldNote).length;
   p.stop(server);
   await sleep(2_000);
   await startServer();
+
+  // --- 1. The note from before lines is indexed when Perry starts ----------------------------------------------
   const oldLines = linesOf(oldNote);
   check("oldNoteIndexedOnStart", beforeRestart === 0 && oldLines.length === 3 && oldLines[0].section === "Beds" && oldLines[2].text === "Water at dawn in July."
-    && noteRow(oldNote)?.linesAt === 3 && oldLines.every((line) => line.by === "owner" && line.createdAt === now - 86_400_000 * 30),
+    && noteRow(oldNote)?.linesAt === 3 && oldLines.every((line) => line.by === "owner" && line.createdAt === now - DAY * 30),
   { beforeRestart, lines: oldLines.map((line) => ({ text: line.text, section: line.section, by: line.by })) });
+
+  // === Step 4: memories from before pages, moved into them when Perry starts ========================================
+  const M = (name: string) => rows("memories").find((row) => row._id === old[name]);
+  const P = (name: string) => rows("notes").find((row) => row._id === M(name)?.pageId);
+  const at = (name: string) => ({ page: P(name)?.title, kind: P(name)?.kind, section: M(name)?.section, project: P(name)?.projectId === project ? "project" : P(name)?.projectId, chat: P(name)?.conversationId === general ? "general" : P(name)?.conversationId === theirs ? "theirs" : P(name)?.conversationId });
+  const places = Object.fromEntries(Object.keys(old).map((name) => [name, at(name)]));
+  const expect: Record<string, Partial<ReturnType<typeof at>>> = {
+    profile: { kind: "about", page: "About me", section: "How I like things done" },
+    noKind: { kind: "remember", page: "Things to remember", section: "Home", project: undefined },
+    car: { kind: "remember", section: "Home", project: undefined },
+    cousin: { kind: "person", page: "Arjun" },
+    wedding: { kind: "person", page: "Arjun" },
+    budget: { kind: "remember", project: "project" },
+    plumber: { kind: "remember", project: "project", section: "People" },
+    spanish: { kind: "remember", project: "project", section: "How I like things done" },
+    dentist: { kind: "journal", page: journalTitleOf(dayOf(now - DAY * 3)), project: undefined },
+    alert: { kind: "journal", page: journalTitleOf(dayOf(now - DAY)) },
+    kettle: { kind: "journal", page: journalTitleOf(dayOf(now - DAY * 5)) },
+    tiles: { kind: "journal", project: "project", page: journalTitleOf(dayOf(now - DAY * 2)) },
+    owl: { kind: "chat", chat: "general" },
+    voice: { kind: "chat", chat: "theirs" },
+    globex: { kind: "remember", section: "Work" },
+    list: { kind: "remember" },
+    checkbox: { kind: "remember" },
+    tea: { kind: "remember", section: "Preferences" },
+  };
+  const misplaced = Object.entries(expect).filter(([name, want]) => Object.entries(want).some(([field, value]) => (places[name] as Record<string, unknown>)[field] !== value)).map(([name]) => ({ name, got: places[name], want: expect[name] }));
+  const inContent = Object.keys(expect).filter((name) => !String(P(name)?.content ?? "").includes(String(M(name)?.text).split("\n")[0]));
+  check("migratedIntoPages", misplaced.length === 0 && inContent.length === 0 && !rows("notes").some((row) => row.kind === "person" && row.person === "datta")
+    && String(rows("notes").find((row) => row.kind === "about")?.content).startsWith("# About Alex"),
+  { misplaced, inContent, about: rows("notes").find((row) => row.kind === "about")?.content });
+
+  const KEPT = ["text", "tags", "source", "origin", "createdAt", "editedAt", "about", "todoId", "day", "kind", "projectId", "conversationId", "vector", "vectorModel"];
+  // A row with no vector gets one from the sentence model once Perry runs; one that had one keeps it.
+  const unchanged = (name: string, field: string) => (field !== "vector" && field !== "vectorModel") || seeds[name].vector !== undefined;
+  const changed = Object.keys(expect).flatMap((name) => KEPT.filter((field) => (field !== "text" || (name !== "list" && name !== "checkbox")) && unchanged(name, field))
+    .filter((field) => JSON.stringify(M(name)?.[field] ?? null) !== JSON.stringify(seeds[name][field] ?? null)).map((field) => `${name}.${field}`));
+  check("provenanceKept", Boolean(M("profile")) && changed.length === 0 && Object.keys(expect).every((name) => typeof M(name)?.migratedAt === "number")
+    && M("list")?.text === "Shopping list idea:\nmilk and bread" && M("list")?.migratedFrom === "Shopping list idea:\n\nmilk and bread"
+    && M("checkbox")?.text === "Renewed the passport in May." && M("checkbox")?.migratedFrom === "[x] Renewed the passport in May." && M("checkbox")?.origin === "owner" && !M("checkbox")?.editedAt
+    && !M("acme")?.pageId && M("acme")?.supersededBy === old.globex && !M("acme")?.migratedAt,
+  { changed, list: M("list") && { text: M("list")!.text, from: M("list")!.migratedFrom }, acme: M("acme") && { pageId: M("acme")!.pageId, supersededBy: M("acme")!.supersededBy } });
+
+  const backups = existsSync(join(p.home, "backups")) ? readdirSync(join(p.home, "backups")).filter((name) => name.startsWith("memories-before-pages-")) : [];
+  const backup = backups[0] ? JSON.parse(readFileSync(join(p.home, "backups", backups[0]), "utf8")) : null;
+  check("backupFirst", backups.length === 1 && backup?.waiting === Object.keys(expect).length && backup.memories.length >= Object.keys(old).length
+    && backup.memories.some((row: Row) => row._id === old.acme) && backup.memories.every((row: Row) => !row.pageId || row.kind === "page") && backup.persona.some((row: Row) => row.text === userMd.trim()) && backup.notes.some((row: Row) => row._id === oldNote),
+  { backups, waiting: backup?.waiting, rows: backup?.memories?.length });
+
+  // --- 25. A second start moves nothing, writes nothing, backs up nothing ------------------------------------------
+  const stable = () => JSON.stringify({
+    memories: rows("memories").filter((row) => row.kind !== "page").map((row) => [row._id, row.pageId, row.section, row.order, row.text, row.migratedAt]).sort(),
+    pages: rows("notes").map((row) => [row._id, row.revision, row.content]).sort(),
+  });
+  const once = stable();
+  p.stop(server);
+  await sleep(2_000);
+  await startServer();
+  const twice = await call<{ moved: number }>("pages:migrate", {});
+  const backupsAfter = readdirSync(join(p.home, "backups")).length;
+  check("migrationIdempotent", stable() === once && twice.moved === 0 && backupsAfter === 1, { twice, backupsAfter });
 
   p.start("runner");
   await until(async () => (await computers()).some((item) => item.online && item.engines.some((engine) => engine.kind === "grok" && engine.signedIn)), "the runner with Grok signed in", 120);
@@ -141,11 +258,8 @@ try {
   notes.realEnginesSignedIn = real;
   if (real.length) throw new Error(`${real.join(", ")} is signed in for the test's runner; stopping before anything reaches a real model.`);
 
-  const general = await call<string>("dashboard:createChat", { key: KEY });
   await onGrok(general);
   await exchange(general, "Hello, this is the general chat.");
-  const project = await call<string>("projects:create", { key: KEY, name: "Bathroom" });
-  const inProject = await call<string>("dashboard:createChat", { key: KEY, projectId: project });
   await onGrok(inProject);
   await exchange(inProject, "Hello from the bathroom project.");
 
@@ -184,12 +298,14 @@ try {
   const memoryPage = await call<Row[]>("dashboard:listMemories", { key: KEY, query: "" });
   const forgot = await call<{ deleted: number; missing: string[] }>("memories:removeMany", { ids: [passport!], chat: general });
   const count = await call<number>("memories:count");
-  check("linesAreNotMemories", !memoryPage.some((memory) => memory.kind === "page") && memoryPage.length === 1 && memoryPage[0].text === "The owner's car is a blue Skoda." && count === 4
+  // Every memory from before pages was moved in (step 4): none is left listed apart. The count is those and the three above.
+  const memoryRows = rows("memories").filter((row) => !row.supersededBy && row.kind !== "page").length;
+  check("linesAreNotMemories", !memoryPage.some((memory) => memory.kind === "page") && memoryPage.length === 0 && count === memoryRows && count < rows("memories").filter((row) => !row.supersededBy).length
     && forgot.deleted === 0 && Boolean(linesOf(lisbon).find((line) => line._id === passport)),
   { listed: memoryPage.map((memory) => memory.text), count, forgot });
 
   // --- The sentence model, and every line's vector -------------------------------------------------------------
-  const embedded = () => rows("memories").every((row) => row.vector);
+  const embedded = () => rows("memories").every((row) => row.vector || row.supersededBy);
   for (let tries = 0; tries < 120 && !embedded(); tries++) {
     await call("memories:embedMissing", {}).catch(() => {});
     if (!embedded()) await sleep(5_000);
@@ -213,16 +329,12 @@ try {
   // --- 4. Where a note may be found from -----------------------------------------------------------------------
   const outside = await tool(general, "recall", { query: "GREYHEX hexagon tiles" });
   const inside = await tool(inProject, "recall", { query: "GREYHEX hexagon tiles" });
-  const jid = "15550001111@s.whatsapp.net";
-  await call("contacts:learn", { items: [{ channel: "whatsapp", externalId: jid, kind: "person", name: "Datta" }] });
-  const contact = await call<{ _id: string }>("contacts:byChat", { channel: "whatsapp", externalId: jid });
-  const thread = await call<string>("agentStore:createThread", { userId: `whatsapp:${jid}`, title: "Datta" });
-  const theirs = await call<string>("conversations:create", { channel: "whatsapp", externalId: jid, threadId: thread, contactId: contact._id });
   const guest = await call<Row[]>("memories:recall", { query: "Lisbon passport vegetarian GREYHEX", limit: 25, chat: theirs });
+  // Empty, the newest of what it may see: only what Datta's own chat kept.
   const guestEmpty = await call<Row[]>("memories:recall", { query: "", limit: 25, chat: theirs });
   check("scopeKept", !(outside?.memories ?? []).some((item: any) => /GREYHEX/.test(item.text))
     && (inside?.memories ?? []).some((item: any) => item.kind === "note" && /GREYHEX/.test(item.text))
-    && guest.length === 0 && guestEmpty.length === 0 && !GUEST_TOOLS.some((name) => /note|page|brain/.test(name)),
+    && guest.length === 0 && guestEmpty.length === 1 && guestEmpty[0].text === "Datta prefers WhatsApp voice notes." && !GUEST_TOOLS.some((name) => /note|page|brain/.test(name)),
   { outside: outside?.memories?.map((item: any) => item.text), inside: inside?.memories?.map((item: any) => item.text), guest: guest.map((item) => item.text), guestTools: GUEST_TOOLS });
 
   // --- 6. A turn is sent the note paragraph that bears on it, and lines are not loaded as memory ------------------
@@ -245,11 +357,10 @@ try {
   const sectionOf = (page: Row | undefined, text: string) => { const body = content(page); const at = body.indexOf(text); const head = body.slice(0, at).match(/^## (.+)$/gm); return head?.at(-1)?.slice(3); };
 
   // --- 10. About me starts as USER.md --------------------------------------------------------------------------
-  const userMd = "# About Alex\n\n- **Call them:** Alex\n- Lives in Pune.\n";
-  await call("persona:writeUser", { text: userMd, by: "owner" });
   const prefer = await tool(general, "remember", { text: "Prefers replies in bullet points.", kind: "profile" });
   const about = pageOf("about");
   check("aboutMeIsUserMd", content(about).startsWith("# About Alex") && content(about).includes("## How I like things done") && sectionOf(about, "Prefers replies in bullet points.") === "How I like things done"
+    && sectionOf(about, "Always answer in British English.") === "How I like things done"
     && lineOf("Prefers replies in bullet points.")?.kind === "profile" && /About me, How I like things done/.test(prefer?.note ?? ""),
   { about: content(about), prefer });
   await tool(general, "update_user_md", { text: `${content(pageOf("about")).trim()}\n- Has a cat called Miso.\n` });
@@ -258,6 +369,12 @@ try {
   check("userMdAndPageAgree", content(pageOf("about")).includes("Has a cat called Miso.") && persona.user === content(pageOf("about")) && history[0]?.text?.includes("Has a cat called Miso.") === true
     && history.some((version) => version.text?.includes("Prefers replies in bullet points.")) && Boolean(lineOf("Has a cat called Miso.")),
   { historyCount: history.length });
+
+  // USER.md written whole again, as the welcome page does, without the preferences: they stay, the same memories.
+  await call("persona:writeUser", { text: `${userMd.trim()}\n- Has a cat called Miso.\n`, by: "owner" });
+  const rewritten = pageOf("about");
+  check("userMdRewriteKeepsPreferences", sectionOf(rewritten, "Always answer in British English.") === "How I like things done" && sectionOf(rewritten, "Prefers replies in bullet points.") === "How I like things done"
+    && lineOf("Always answer in British English.")?._id === old.profile && content(rewritten).includes("Has a cat called Miso."), content(rewritten));
 
   // --- 9. Each memory lands on its page, in its section ---------------------------------------------------------------
   const blood = await tool(general, "remember", { text: "The owner's blood group is O+.", kind: "core" });
@@ -268,7 +385,8 @@ try {
   const grout = await tool(inProject, "remember", { text: "Grout colour is warm grey.", kind: "core" });
   const remember = pageOf("remember", (row) => !row.projectId);
   const datta = pageOf("person", (row) => row.person === "datta");
-  const journal = pageOf("journal", (row) => !row.projectId);
+  const today = dayOf(Date.now());
+  const journal = pageOf("journal", (row) => !row.projectId && row.day === today);
   const chatPage = pageOf("chat", (row) => row.conversationId === general);
   const projectRemember = pageOf("remember", (row) => row.projectId === project);
   check("rememberLandsInPlace", remember?.title === "Things to remember" && sectionOf(remember, "The owner's blood group is O+.") === "Health" && sectionOf(remember, "Works at Acme as a designer.") === "Work"
@@ -314,9 +432,9 @@ try {
   await tool(general, "forget", { ids: [lineOf("Codename for this chat is HERON.")!._id] });
   check("confirmSupersedeFollowForget", again?.stored === false && Boolean(bloodLine?.confirmedAt)
     && !content(after).includes("Acme") && sectionOf(after, "Works at Globex as a lead designer.") === "Work" && oldAcme?.supersededBy === globex?._id && oldAcme?.text === "Works at Acme as a designer."
-    && followed?.supersededBy === undefined && /To-do: moved/.test(followed?.text ?? "") && content(pageOf("journal", (row) => !row.projectId)).includes("(To-do: moved")
+    && followed?.supersededBy === undefined && /To-do: moved/.test(followed?.text ?? "") && content(pageOf("journal", (row) => !row.projectId && row.day === today)).includes("(To-do: moved")
     && rows("memories").filter((row) => /Dentist call at 3pm/.test(row.text) && !row.supersededBy).length === 1
-    && content(pageOf("journal", (row) => !row.projectId)).includes("Alerted the owner at 06:10: Your 6:40 flight moved to 7:25.") && alerts.some((alert) => alert.includes("7:25"))
+    && content(pageOf("journal", (row) => !row.projectId && row.day === today)).includes("Alerted the owner at 06:10: Your 6:40 flight moved to 7:25.") && alerts.some((alert) => alert.includes("7:25"))
     && !content(pageOf("chat", (row) => row.conversationId === general)).includes("HERON") && !lineOf("Codename for this chat is HERON."),
   { again, followed: followed?.text, alerts });
 
@@ -342,12 +460,14 @@ try {
     && editChecks.recalledNew && !editChecks.recalledOld && editChecks.dashboardEdit && editChecks.dashboardSameId && editChecks.rewrittenSameId,
   { ...editChecks, recalled: recalledB.map((item) => item.text) });
 
-  // --- 14. Older memories stay: on the Memory page, and in what a turn is sent ---------------------------------------------
+  // --- 14, 27. Memories from before pages stay: in their page, and in what a turn is sent ----------------------------------
   const olderListed = await call<Row[]>("dashboard:listMemories", { key: KEY, query: "" });
   const askCar = "What colour is my car again?";
   await exchange(general, askCar);
-  const carSent = log().filter((entry) => entry.prompt && String(entry.context ?? "").includes("blue Skoda")).length > 0;
-  check("olderMemoriesStay", olderListed.length === 1 && olderListed[0].id === oldCar && carSent, { olderListed: olderListed.map((item) => item.text), carSent });
+  const carSent = log().filter((entry) => entry.prompt && String(entry.context ?? "").includes("The owner's car is a blue Skoda.")).length > 0;
+  const carPage = rows("notes").find((row) => row._id === M("car")?.pageId);
+  check("movedMemoriesStillThere", olderListed.length === 0 && carPage?.kind === "remember" && carSent && String(carPage?.content).includes("The owner's car is a blue Skoda."),
+    { olderListed: olderListed.map((item) => item.text), carSent });
 
   // === Step 3: pinning and the budget ===============================================================================
   /** A fresh chat (so nothing was sent before), one message, and what the engine was sent with it. */
@@ -532,6 +652,34 @@ try {
   await evaluate(`localStorage.setItem("perry.theme", "light"); true`);
   check("searchDarkAndDaily", swim.includes("daily") && swim.includes("page"), swim);
   check("noPageErrors", browser.errors.length === 0, browser.errors);
+
+  // --- 26. Moving back, exactly as before; staying back on the next start; and moving in again ---------------------------
+  const undone = await call<{ movedBack: number; pagesDeleted: number; linesDropped: number }>("pages:undoMigration");
+  // The project's memories went with the project when it was deleted (4b), as a project's memory does; the rest come back.
+  const alive = Object.keys(expect).filter((name) => !seeds[name].projectId);
+  const goneWithProject = Object.keys(expect).filter((name) => seeds[name].projectId).every((name) => !M(name));
+  const notBack = alive.map((name) => ({ name, row: M(name) })).filter(({ name, row }) => !row || row.pageId || row.migratedAt || row.section || row.text !== seeds[name].text
+    || KEPT.some((field) => field !== "text" && unchanged(name, field) && JSON.stringify(row[field] ?? null) !== JSON.stringify(seeds[name][field] ?? null))).map(({ name }) => name);
+  const arjunGone = !rows("notes").some((row) => row.kind === "person" && row.person === "arjun");
+  const pageLinesGone = !rows("memories").some((row) => row.kind === "page");
+  const flagged = rows("installation")[0]?.memoriesInPages === "undone";
+  const userAfter = await call<{ user: string }>("persona:current");
+  const latestUser = (await call<Array<{ text?: string }>>("persona:history", { kind: "user", limit: 1 }))[0]?.text;
+  p.stop(server);
+  await sleep(2_000);
+  await startServer();
+  const stayedBack = alive.every((name) => !M(name)?.pageId);
+  const backupsNow = readdirSync(join(p.home, "backups")).length;
+  check("undoMovesBack", undone.movedBack === alive.length && goneWithProject && notBack.length === 0 && arjunGone && pageLinesGone && flagged && stayedBack && backupsNow === 1
+    && latestUser?.trim() === userAfter.user.trim(),
+  { undone, notBack, arjunGone, pageLinesGone, flagged, stayedBack, backupsNow });
+  const redo = await call<{ moved: number }>("pages:migrate", { again: true });
+  // Where each goes again; a chat's page is named after the chat, which has been renamed since, so its title is left out.
+  const placeOf = (name: string, from: Record<string, ReturnType<typeof at>>) => JSON.stringify({ ...from[name], page: from[name].kind === "chat" ? undefined : from[name].page });
+  const redone = Object.fromEntries(Object.keys(old).map((name) => [name, at(name)]));
+  const differ = alive.filter((name) => placeOf(name, redone) !== placeOf(name, places) || M(name)?._id !== old[name]);
+  check("moveInAgain", redo.moved === alive.length && differ.length === 0 && !rows("installation")[0]?.memoriesInPages && !M("acme")?.pageId,
+    { redo, differ });
   notes.realModelTurns = "none: every chat ran on the fake Grok agent";
 } catch (error) {
   notes.stoppedAt = String(error instanceof Error ? error.stack ?? error.message : error);

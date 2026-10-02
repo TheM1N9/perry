@@ -679,6 +679,34 @@ async function backend() {
   return new BackendClient(`http://127.0.0.1:${PORT}`, { adminKey: readEnvFile().DASHBOARD_KEY });
 }
 
+/**
+ * Memories and pages (issue #210): move-back puts every memory moved into a
+ * page back as it was before, for going back to a Perry from before pages;
+ * move-in moves them into pages again. Perry must be running.
+ */
+async function brain(args: string[]): Promise<boolean> {
+  const [what] = args;
+  if (what !== "move-back" && what !== "move-in") {
+    say("  perry brain move-back   put memories back as they were before pages");
+    say("  perry brain move-in     move them into pages again");
+    return what === undefined;
+  }
+  const client = await backend();
+  try {
+    if (what === "move-back") {
+      const done = (await client.call<{ movedBack: number; pagesDeleted: number }>("pages:undoMigration")).value;
+      say(`  ${green("Done.")} ${done.movedBack} memories are back as they were; ${done.pagesDeleted} empty pages went. Perry leaves them there until ${bold("perry brain move-in")}.`);
+    } else {
+      const done = (await client.call<{ moved: number; kept: number }>("pages:migrate", { again: true })).value;
+      say(`  ${green("Done.")} ${done.moved} memories moved into pages${done.kept ? `; ${done.kept} kept as they were` : ""}.`);
+    }
+    return true;
+  } catch (error) {
+    say(`  ${red("Couldn't:")} ${error instanceof Error ? error.message : String(error)}. Is Perry running? ${bold("perry start")}`);
+    return false;
+  }
+}
+
 /** With a bot nobody has claimed, a code to claim it with, from the running server. */
 async function pairTelegram() {
   const env = readEnvFile();
@@ -765,7 +793,7 @@ async function update() {
 }
 
 const HELP = `
-  ${bold("perry")} setup | start | stop | status | logs [-f] | open | update | migrate | doctor | pair | pet | run | uninstall
+  ${bold("perry")} setup | start | stop | status | logs [-f] | open | update | migrate | doctor | pair | pet | brain | run | uninstall
 
   ${bold("setup")}      set Perry up (or check it), start it in the background, open the dashboard;
              ${bold("--engine")} codex|claude|grok|antigravity picks the default engine without asking
@@ -779,6 +807,7 @@ const HELP = `
   ${bold("doctor")}     check this machine and Perry's server
   ${bold("pair")}       a new code to claim Perry on Telegram
   ${bold("pet")}        Perry on your desktop, with your to-dos; ${bold("pet off")} to stop him
+  ${bold("brain")}      ${bold("brain move-back")} puts memories back as they were before pages; ${bold("brain move-in")} moves them in again
   ${bold("run")}        run Perry in this terminal instead of the background
   ${bold("uninstall")}  stop Perry; keep its files, or remove them from this computer
 `;
@@ -797,6 +826,7 @@ async function main() {
     case "pair": return process.exit(exec(bunScript("pair.ts")).code);
     case "migrate": return process.exit(exec(bunScript("migrate.ts", rest)).code);
     case "pet": return process.exit((await (await import("./pet")).pet(rest)) ? 0 : 1);
+    case "brain": return process.exit((await brain(rest)) ? 0 : 1);
     case "run": return runForeground();
     case "link": return process.exit(link() ? 0 : 1);
     case "uninstall": return process.exit((await uninstall(rest)) ? 0 : 1);
