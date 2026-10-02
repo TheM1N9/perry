@@ -200,6 +200,8 @@ export async function startBackend() {
   runtime.start();
   // In the background, so years of Brain never hold up the dashboard: its index brought up to date, then the lines
   // without a vector from the model in use (new ones, or all of them after the model changed) embedded.
+  // The sentence model starts loading at once, so the first search is by meaning too.
+  void import("../convex/lib/embed").then((embedding) => embedding.warmUp());
   void updateBrainIndex(runtime)
     .then(() => runtime.runAction("memories:embedMissing", {}, { internal: true }))
     .catch((error) => console.error(`[perry] could not embed Brain's lines: ${String(error)}`));

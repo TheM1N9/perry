@@ -106,3 +106,14 @@ export function unpackVector(packed: string): number[] {
 export function warmUp(model = EMBED_MODEL) {
   void load(model).catch(() => {});
 }
+
+/**
+ * Whether the model is ready, waiting up to `ms` for it to load: a search
+ * just after Perry starts waits the few seconds a model already downloaded
+ * takes, rather than going by words alone. A first download is not waited for.
+ */
+export async function readyWithin(ms: number, model = EMBED_MODEL): Promise<boolean> {
+  if (embedderReady(model)) return true;
+  const loading = load(model).then(() => true, () => false);
+  return await Promise.race([loading, new Promise<boolean>((done) => setTimeout(() => done(false), ms))]);
+}
