@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookmarkIcon, CalendarDaysIcon, ChevronRightIcon, FileTextIcon, FolderIcon, MessageSquareIcon, PencilIcon, SearchIcon, UserIcon, UserRoundIcon, XIcon } from "lucide-react";
+import { BookmarkIcon, CalendarDaysIcon, ChevronRightIcon, FileTextIcon, FolderIcon, MessageSquareIcon, SearchIcon, UserIcon, UserRoundIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
@@ -16,43 +16,24 @@ import { PERSONALITIES } from "@/lib/persona";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from "../chat/markdown";
 import { SaveStatus, useAutosave, type SaveState } from "../autosave";
-import { ActionButton, EmptyState, InfoTip, List, ListSkeleton, Page, RelativeTime, Section, TextTip, useTab } from "../common";
-
-const TABS = ["memories", "about"] as const;
-
-export function Memory() {
-  const [tab, setTab] = useTab(TABS, "memories");
-  return (
-    <Page title="Memory" description="All of it stays on this computer.">
-      <Tabs value={tab} onValueChange={(value) => setTab(value as (typeof TABS)[number])}>
-        <TabsList variant="line" className="mb-6 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
-          <TabsTrigger value="memories">Memories</TabsTrigger>
-          <TabsTrigger value="about">About you</TabsTrigger>
-        </TabsList>
-        <TabsContent value="memories"><Memories /></TabsContent>
-        <TabsContent value="about"><AboutYou /></TabsContent>
-      </Tabs>
-    </Page>
-  );
-}
+import { ActionButton, EmptyState, InfoTip, List, ListSkeleton, RelativeTime, Section, TextTip } from "../common";
 
 type Kind = MemoryView["kind"];
 const KINDS: Array<{ kind: Kind; label: string; hint: string }> = [
-  { kind: "profile", label: "Profile", hint: "Standing preferences and relationships. Loaded in every chat." },
-  { kind: "core", label: "Long-term", hint: "Durable facts and decisions. Loaded in every chat." },
-  { kind: "daily", label: "Daily notes", hint: "What happened each day. Today and yesterday load; older days are searched." },
+  { kind: "profile", label: "About me", hint: "How you like things done. In every chat." },
+  { kind: "core", label: "Things to remember", hint: "Facts that stay true, in their section. In every chat." },
+  { kind: "daily", label: "Today's journal", hint: "What happened. Today and yesterday are in every chat; older days are recalled." },
 ];
 const ORIGINS = { owner: "From you", tool: "From a chat", job: "From a schedule" } as const;
 /** The list shows at most this many; a search finds the rest. */
@@ -68,7 +49,8 @@ function when(ts: number, day?: string): string {
  * What Perry remembers. The agent writes here through its remember tool; this
  * view exists because a memory it got slightly wrong is worse than none.
  */
-function Memories() {
+/** Memories from before pages, until Perry moves them into theirs; nothing once they are moved. */
+export function OlderMemories() {
   const { dashboardKey } = useSession();
   const [search, setSearch] = useState("");
   const [term, setTerm] = useState("");
@@ -213,7 +195,7 @@ const DAYS = 7;
  * page a day, a page per person, and what a chat kept to itself. Each opens in
  * the page editor, where every memory is a line to read and edit as text.
  */
-function MemoryPages() {
+export function MemoryPages({ filter = "" }: { filter?: string }) {
   const { dashboardKey } = useSession();
   const router = useRouter();
   const pages = useQuery(api.pages.memoryPages, { key: dashboardKey });
@@ -227,10 +209,11 @@ function MemoryPages() {
     <section aria-label="Memory pages" className="space-y-6">
       {GROUPS.map((group) => {
         // Pinned pages (any kind) come first; each other group has the rest of its kind.
-        let shown = pages.filter((page) => group.kinds.includes(page.kind) && (group.pinned ? page.pinned || page.pinnedSections?.length : !(page.pinned || page.pinnedSections?.length)));
+        let shown = pages.filter((page) => group.kinds.includes(page.kind) && (group.pinned ? page.pinned || page.pinnedSections?.length : !(page.pinned || page.pinnedSections?.length))
+          && (!filter || `${page.title} ${page.project ?? ""}`.toLocaleLowerCase().includes(filter)));
         const more = group.kinds.includes("journal") && !allDays && shown.length > DAYS ? shown.length - DAYS : 0;
         if (more) shown = shown.slice(0, DAYS);
-        const starters = group.pinned ? (["about", "remember"] as const).filter((kind) => !has(kind)) : [];
+        const starters = group.pinned && !filter ? (["about", "remember"] as const).filter((kind) => !has(kind)) : [];
         if (!shown.length && !starters.length) return null;
         return (
           <div key={group.label}>
@@ -252,7 +235,6 @@ function MemoryPages() {
                     <Link href={noteHref(page.id)} data-memory-page={page.kind} className="min-w-0 flex-1 truncate text-md font-medium after:absolute after:inset-0 hover:underline underline-offset-2">{page.title}</Link>
                     {page.project && <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><FolderIcon className="size-3" />{page.project}</span>}
                     {!page.pinned && page.pinnedSections && <span className="shrink-0 truncate text-xs text-muted-foreground">{page.pinnedSections.join(", ")}</span>}
-                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{page.lines === 1 ? "1 line" : `${page.lines} lines`}</span>
                   </li>
                 );
               })}
@@ -270,7 +252,7 @@ function MemoryPages() {
   );
 }
 
-function TeachForm() {
+export function TeachForm() {
   const { dashboardKey } = useSession();
   const addMemory = useMutation(api.dashboard.addMemory);
   const [draft, setDraft] = useState("");
@@ -323,7 +305,7 @@ const BY = { owner: "You", assistant: "Your assistant", job: "A schedule" } as c
 
 /**
  * Settings → General: the assistant's name and personality, each saved as you
- * type. Their earlier versions are in Memory → About you, with USER.md's.
+ * type. Their earlier versions are under Brain → About me, with its own.
  */
 export function YourAssistant() {
   const { dashboardKey } = useSession();
@@ -366,25 +348,18 @@ export function YourAssistant() {
   );
 }
 
-/** USER.md, and the history of it and of the assistant's name and personality: see who changed what, and bring an older version back. */
-function AboutYou() {
+/**
+ * About me's versions (it is USER.md: persona.ts keeps each), and the
+ * assistant's name and personality's: see who changed what, and bring an
+ * older one back. Shown under the About me page.
+ */
+export function AboutVersions() {
   const { dashboardKey } = useSession();
   const router = useRouter();
-  const persona = useQuery(api.dashboard.getPersona, { key: dashboardKey });
   const userHistory = useQuery(api.dashboard.personaHistory, { key: dashboardKey, kind: "user" });
   const identityHistory = useQuery(api.dashboard.personaHistory, { key: dashboardKey, kind: "identity" });
-  const saveUserMd = useMutation(api.dashboard.saveUserMd);
   const restore = useMutation(api.dashboard.restorePersonaVersion);
   const redo = useMutation(api.dashboard.redoOnboarding);
-
-  /** USER.md reads as a document; Edit (or a double click) turns it into its Markdown, which saves itself as you type. */
-  const [editingUser, setEditingUser] = useState(false);
-  const user = useAutosave({ saved: persona?.user ?? "", save: (text) => saveUserMd({ key: dashboardKey, text }) });
-  /** Done with USER.md: saved first, and still open if that failed, so nothing typed is lost. */
-  const doneWithUser = () => void user.flush().then((ok) => { if (ok) setEditingUser(false); });
-
-  if (persona === undefined) return <ListSkeleton rows={2} />;
-  const savedUser = persona.user;
 
   const restoreButton = (id: string, what: string) => (
     <ActionButton variant="ghost" size="sm" action={() => restore({ key: dashboardKey, id: id as Id<"persona"> })} success="Restored. The version it replaced stays in history."
@@ -394,36 +369,7 @@ function AboutYou() {
   );
 
   return (
-    <div>
-      <Section title="USER.md" description={`${persona.name} reads it before every reply.`}>
-        {editingUser ? (
-          <div>
-            <Field>
-              <FieldLabel htmlFor="user-md" className="sr-only">USER.md</FieldLabel>
-              <Textarea id="user-md" value={user.value} autoFocus placeholder={"# About you\n\n## Work\n\n## A typical day\n\n…"} {...user.field}
-                onChange={(event) => user.change(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape" || (event.key === "Enter" && (event.metaKey || event.ctrlKey))) { event.preventDefault(); doneWithUser(); }
-                }}
-                className="min-h-72 font-mono text-sm leading-relaxed" spellCheck />
-              <FieldDescription>Markdown. Saves as you type.</FieldDescription>
-            </Field>
-            <div className="mt-2 flex items-center gap-3">
-              <SaveStatus state={user.state} onRetry={() => void user.flush()} className="flex-1" />
-              <Button type="button" variant="ghost" size="sm" onClick={doneWithUser}>Done</Button>
-            </div>
-          </div>
-        ) : savedUser.trim() ? (
-          <article aria-label="USER.md" className="group/doc relative pr-20" onDoubleClick={() => setEditingUser(true)}>
-            <Button variant="ghost" size="sm" className="absolute top-0 right-0 text-muted-foreground" onClick={() => setEditingUser(true)}><PencilIcon />Edit</Button>
-            <Markdown text={savedUser} />
-            {userHistory?.[0] && <p className="mt-5 border-t pt-3 text-xs text-muted-foreground">Last changed by {BY[userHistory[0].by].toLowerCase()}, <RelativeTime at={userHistory[0].createdAt} />.</p>}
-          </article>
-        ) : (
-          <EmptyState title="Nothing here yet" action={<Button variant="outline" size="sm" onClick={() => setEditingUser(true)}><PencilIcon />Write it</Button>} />
-        )}
-      </Section>
-
+    <div data-about-versions>
       <Section title="History">
         {(userHistory === undefined || identityHistory === undefined) && <ListSkeleton rows={2} />}
         {userHistory?.length === 0 && identityHistory?.length === 0 && <EmptyState title="No versions yet" />}
@@ -434,14 +380,14 @@ function AboutYou() {
                 <Collapsible className="min-w-0 flex-1">
                   <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1.5 rounded-md text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
                     <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-data-panel-open:rotate-90" />
-                    USER.md{index === 0 && <span className="font-normal text-muted-foreground"> (current)</span>}
+                    About me{index === 0 && <span className="font-normal text-muted-foreground"> (current)</span>}
                   </CollapsibleTrigger>
                   <p className="mt-0.5 pl-5 text-xs text-muted-foreground">{BY[version.by]} · <RelativeTime at={version.createdAt} /></p>
                   <CollapsibleContent>
                     <ScrollArea className="mt-2 ml-1.5 border-l-2" viewportClassName="max-h-80"><div className="py-1 pr-4 pl-4 text-sm"><Markdown text={version.text ?? ""} /></div></ScrollArea>
                   </CollapsibleContent>
                 </Collapsible>
-                {index > 0 && restoreButton(version.id, "USER.md")}
+                {index > 0 && restoreButton(version.id, "About me")}
               </li>
             ))}
             {identityHistory?.map((version, index) => (

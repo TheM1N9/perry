@@ -44,6 +44,13 @@ function host(url: unknown): string {
 
 /** Perry's own tools (convex/tools.ts), as the owner would say what it is doing. */
 const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
+  brain_search: () => ({ label: "Checking what I remember", pose: "remembering" }),
+  search_memory: () => ({ label: "Checking what I remember", pose: "remembering" }),
+  brain_list: () => ({ label: "Looking through your pages", pose: "reading" }),
+  brain_read: (input) => ({ label: typeof input.page === "string" && input.page.length < 40 ? `Reading “${short(input.page, 30)}”` : "Reading a page", pose: "reading" }),
+  brain_write: () => ({ label: "Writing a page", pose: "typing" }),
+  brain_append: () => ({ label: "Adding to a page", pose: "typing" }),
+  brain_pin: (input) => ({ label: input.pinned === false ? "Unpinning a page" : "Pinning a page", pose: "typing" }),
   recall: () => ({ label: "Checking what I remember", pose: "remembering" }),
   remember: () => ({ label: "Noting that down", pose: "remembering" }),
   read_memory: () => ({ label: "Reading my memory", pose: "remembering" }),

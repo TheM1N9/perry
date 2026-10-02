@@ -3,8 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, CpuIcon, FilePlusIcon, FileTextIcon, GaugeIcon, InboxIcon, KeyboardIcon, KeyRoundIcon, ListChecksIcon, LockIcon,
-  MessageSquareIcon, MonitorIcon, MoonIcon, NotebookPenIcon, PuzzleIcon, SettingsIcon, ShieldCheckIcon, SquarePenIcon, SunIcon, TextSearchIcon,
+  ActivityIcon, BookUserIcon, BrainIcon, CableIcon, CheckCircle2Icon, CpuIcon, FilePlusIcon, FileTextIcon, GaugeIcon, InboxIcon, KeyboardIcon, KeyRoundIcon, ListChecksIcon, LockIcon,
+  MessageSquareIcon, MonitorIcon, MoonIcon, PuzzleIcon, SettingsIcon, ShieldCheckIcon, SquarePenIcon, SunIcon, TextSearchIcon,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useState } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
@@ -25,9 +25,8 @@ export const usePalette = () => useContext(PaletteContext);
 const PAGES = [
   { href: "/inbox", label: "Needs you", icon: InboxIcon },
   { href: "/todos", label: "To-dos", icon: CheckCircle2Icon },
-  { href: "/notes", label: "Notes", icon: NotebookPenIcon },
+  { href: "/brain", label: "Brain", icon: BrainIcon },
   { href: "/work", label: "Work", icon: ListChecksIcon },
-  { href: "/memory", label: "Memory", icon: BookUserIcon },
   { href: "/apps/connectors", label: "Connectors", icon: CableIcon },
   { href: "/apps/skills", label: "Skills", icon: PuzzleIcon },
   { href: "/settings/general", label: "Settings", icon: SettingsIcon },
@@ -43,8 +42,8 @@ const PAGES = [
 type Found = { id: Id<"conversations">; title: string; snippet: string };
 type Recalled = { term: string; results: BrainHit[] };
 
-/** Where a hit from memory and notes opens: a note at its page, a memory on the Memory page. */
-const hrefOf = (hit: BrainHit) => hit.page ? noteHref(hit.page.id) : `/memory?q=${encodeURIComponent(hit.text)}`;
+/** Where a hit opens: its page, or for a memory not yet in one, Brain's search. */
+const hrefOf = (hit: BrainHit) => hit.page ? noteHref(hit.page.id) : `/brain?q=${encodeURIComponent(hit.text)}`;
 const MEMORY_KIND = { profile: "Profile", core: "Long-term", daily: "Daily note", page: "Note" } as const;
 
 /**
@@ -96,7 +95,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const themeLabel = `Switch to ${resolvedTheme === "dark" ? "light" : "dark"} theme`;
   const actions = [
     { id: "new", label: "New chat", icon: SquarePenIcon, shortcut: shortcutLabel("newChat"), run: () => router.push("/chat") },
-    { id: "note", label: "New note", icon: FilePlusIcon, run: () => void createNote({ key: dashboardKey }).then((id) => router.push(noteHref(id))) },
+    { id: "note", label: "New page", icon: FilePlusIcon, run: () => void createNote({ key: dashboardKey }).then((id) => router.push(noteHref(id))) },
     { id: "theme", label: themeLabel, icon: resolvedTheme === "dark" ? SunIcon : MoonIcon, run: () => setTheme(resolvedTheme === "dark" ? "light" : "dark") },
     { id: "lock", label: "Lock dashboard", icon: LockIcon, run: lock },
   ].filter((action) => matches(action.label, action.id === "theme" ? "theme dark light" : ""));
@@ -136,7 +135,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             </CommandGroup>
           )}
           {(noteTitles.length > 0 || brainHits.length > 0) && (
-            <CommandGroup heading="Memory and notes">
+            <CommandGroup heading="Brain">
               {noteTitles.map((note) => (
                 <CommandItem key={note.id} value={`note-${note.id}`} onSelect={() => run(() => router.push(noteHref(note.id)))}>
                   <FileTextIcon />

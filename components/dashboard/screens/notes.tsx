@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ChevronRightIcon, CodeIcon, CopyIcon, PinIcon, DownloadIcon, FileTextIcon, FileUpIcon, FolderIcon, FolderInputIcon, LinkIcon, MessageSquareIcon, MoreHorizontalIcon,
-  PlusIcon, SearchIcon, SparklesIcon, Trash2Icon,
+  ChevronRightIcon, CodeIcon, CopyIcon, PinIcon, DownloadIcon, FileTextIcon, FolderIcon, FolderInputIcon, LinkIcon, MessageSquareIcon, MoreHorizontalIcon,
+  SparklesIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
@@ -27,74 +27,16 @@ import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator,
   DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SaveStatus, type SaveState } from "../autosave";
+import { AboutVersions } from "./memory";
 import { EmptyState, List, ListSkeleton, Page, RelativeTime, StatusBadge, TopBar } from "../common";
-
-/**
- * Notes (convex/notes.ts): pages you and Perry write together. The list, and
- * one note in the editor, which saves as you type and never over a newer
- * version: if Perry or another tab saved since, your words stay on screen
- * until you choose.
- */
-export function Notes() {
-  const { dashboardKey } = useSession();
-  const router = useRouter();
-  const notes = useQuery(api.notes.list, { key: dashboardKey });
-  const create = useMutation(api.notes.create);
-  const [filter, setFilter] = useState("");
-  const file = useRef<HTMLInputElement>(null);
-  const needle = filter.trim().toLocaleLowerCase();
-  const shown = (notes ?? []).filter((note) => !needle || `${note.title} ${note.preview} ${note.project ?? ""}`.toLocaleLowerCase().includes(needle));
-
-  const newNote = async (title?: string, content?: string) => {
-    try {
-      const id = await create({ key: dashboardKey, ...(title ? { title } : {}), ...(content !== undefined ? { content } : {}) });
-      router.push(noteHref(id));
-    } catch (cause) {
-      toast.error(`Couldn't make it: ${errorText(cause)}`);
-    }
-  };
-  // A Markdown file from elsewhere (one downloaded and edited by hand, say) opens as a new note.
-  const open = async (picked: File | undefined) => {
-    if (!picked) return;
-    await newNote(picked.name.replace(/\.(md|markdown|txt)$/i, ""), await picked.text());
-  };
-
-  return (
-    <Page
-      title="Notes"
-      description="Pages you and Perry write together."
-      actions={<>
-        <input ref={file} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" className="hidden" aria-label="Open a Markdown file"
-          onChange={(event) => { void open(event.target.files?.[0]); event.target.value = ""; }} />
-        <Button variant="outline" onClick={() => file.current?.click()}><FileUpIcon />Open .md</Button>
-        <Button onClick={() => void newNote()}><PlusIcon />New note</Button>
-      </>}
-    >
-      {notes === undefined ? <ListSkeleton rows={4} /> : notes.length === 0 ? (
-        <EmptyState mascot title="No notes yet">
-          Start one here, or ask Perry to write something down. /note on your phone adds to your Inbox note.
-        </EmptyState>
-      ) : (
-        <>
-          <InputGroup className="mb-4">
-            <InputGroupAddon><SearchIcon /></InputGroupAddon>
-            <InputGroupInput aria-label="Filter notes" placeholder="Filter notes" value={filter} onChange={(event) => setFilter(event.target.value)} />
-          </InputGroup>
-          {shown.length === 0 ? <EmptyState title="No note matches" /> : <NoteRows notes={shown} />}
-        </>
-      )}
-    </Page>
-  );
-}
 
 /** Notes as rows: title, where, the first words, and when last changed. */
 export function NoteRows({ notes, hideProject }: { notes: NoteSummary[]; hideProject?: boolean }) {
   return (
-    <List label="Notes">
+    <List label="Pages">
       {notes.map((note) => (
         <li key={note.id} className="relative flex items-start gap-3 py-3">
           <FileTextIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -122,11 +64,11 @@ export function NoteScreen() {
   const note = useQuery(api.notes.get, { key: dashboardKey, id });
   useEffect(() => { if (note) document.title = `${note.title} · Perry`; }, [note?.title]);
 
-  if (note === undefined) return <Page title="Note"><ListSkeleton rows={4} /></Page>;
+  if (note === undefined) return <Page title="Page"><ListSkeleton rows={4} /></Page>;
   if (note === null) {
     return (
-      <Page title="Note">
-        <EmptyState mascot title="This note isn't here" action={<Button variant="outline" size="sm" render={<Link href="/notes" />}>All notes</Button>}>
+      <Page title="Page">
+        <EmptyState mascot title="This page isn't here" action={<Button variant="outline" size="sm" render={<Link href="/brain" />}>Brain</Button>}>
           It may have been deleted.
         </EmptyState>
       </Page>
@@ -225,7 +167,7 @@ function NoteEditing({ note }: { note: NoteView }) {
           {note.pinned ? <PinIcon className="fill-current" /> : <PinIcon />}
         </Button>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="Note options" />}><MoreHorizontalIcon /></DropdownMenuTrigger>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="Page options" />}><MoreHorizontalIcon /></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
             {!memory && <DropdownMenuSub>
               <DropdownMenuSubTrigger><FolderInputIcon />Move to project</DropdownMenuSubTrigger>
@@ -260,7 +202,7 @@ function NoteEditing({ note }: { note: NoteView }) {
           </DropdownMenuContent>
         </DropdownMenu>
       </>}>
-        <Link href={memory ? "/memory" : "/notes"} className="text-muted-foreground hover:text-foreground">{memory ? "Memory" : "Notes"}</Link>
+        <Link href="/brain" className="text-muted-foreground hover:text-foreground">Brain</Link>
         <span className="text-muted-foreground/60" aria-hidden>/</span>
         <span className="truncate">{draft.title}</span>
       </TopBar>
@@ -298,17 +240,25 @@ function NoteEditing({ note }: { note: NoteView }) {
             <NoteEditor value={draft.content} label={draft.title} onChange={(content) => controller.edit({ content })} onBlur={() => void controller.flush()} />
           )}
           <LineSources id={note.id} memory={memory} />
+          {note.kind === "about" && (
+            <Collapsible className="mt-3 border-t pt-3">
+              <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1.5 rounded-md text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+                <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" />Earlier versions
+              </CollapsibleTrigger>
+              <CollapsibleContent><AboutVersions /></CollapsibleContent>
+            </Collapsible>
+          )}
         </div>
       </main>
       <AlertDialog open={removing} onOpenChange={setRemoving}>
         <AlertDialogContent size="sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this note?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this page?</AlertDialogTitle>
             <AlertDialogDescription>“{draft.title}” goes for good, for you and for Perry{memory ? ", with everything remembered in it" : ""}.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep it</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => void remove({ key: dashboardKey, id: note.id }).then(() => { controller.dispose(); router.replace("/notes"); toast.success("Note deleted."); }, (cause) => toast.error(`Couldn't delete it: ${errorText(cause)}`))}>
+            <AlertDialogAction variant="destructive" onClick={() => void remove({ key: dashboardKey, id: note.id }).then(() => { controller.dispose(); router.replace("/brain"); toast.success("Page deleted."); }, (cause) => toast.error(`Couldn't delete it: ${errorText(cause)}`))}>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>

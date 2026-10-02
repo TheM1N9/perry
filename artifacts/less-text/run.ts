@@ -203,8 +203,9 @@ try {
     { name: "work-plans", path: "/work?tab=plans", wait: "Compare three flats" },
     { name: "work-goals", path: "/work?tab=goals", wait: "half marathon" },
     { name: "work-watches", path: "/work?tab=watches", wait: "Headphones" },
-    { name: "memory", path: "/memory", wait: "coffee black" },
-    { name: "memory-about", path: "/memory?tab=about", wait: "USER.md" },
+    // Memory is Brain now (issue #210): its page, and About me, where the owner's preferences are.
+    { name: "memory", path: "/brain", wait: "Things to remember" },
+    { name: "memory-about", path: "/about", wait: "coffee black" },
     { name: "project", path: `/projects/${project}`, wait: "matte green" },
     { name: "apps-connectors", path: "/apps/connectors", wait: "Composio key" },
     { name: "apps-skills", path: "/apps/skills", wait: "weekly-review" },
@@ -273,7 +274,8 @@ try {
       })()`) as { items: string[]; bars: number; usageGroup: boolean; text: string; line: string };
       notes.accountMenu = menu;
       check("accountMenuHasNoUsage", menu.bars === 0 && !menu.usageGroup && !/% left|No limits reported|5-hour|Weekly/.test(menu.text), menu);
-      check("accountMenuItems", JSON.stringify(menu.items) === JSON.stringify(["Usage", "Theme", "Settings", "Lock dashboard"]), menu.items);
+      // Pause Perry joined the menu on main since (the pause), as settings-sections expects too.
+      check("accountMenuItems", JSON.stringify(menu.items) === JSON.stringify(["Pause Perry", "Usage", "Theme", "Settings", "Lock dashboard"]), menu.items);
       check("accountMenuKeepsNameAndPlan", /You|E2E|Sam/.test(menu.text.split("\n")[0]) && Boolean(menu.line?.trim()) && menu.text.includes(menu.line), menu);
       await click(byText("[role=menuitem]", "Usage"));
       const landed = await soon(async () => (await where()) === "/settings/usage" && await evaluate(`document.body.innerText.includes("Your plans")`), 10);
@@ -349,7 +351,7 @@ try {
       { name: "failedUpdateSaysWhy", path: "/settings/general", wait: "Update on his own at night", find: /didn't work\. pnpm install could not reach the registry/ },
       { name: "passwordsNeverShownAgain", path: "/settings/logins", wait: "Netflix", find: /never shown again/i },
       { name: "composioHoldsSignIns", path: "/apps/connectors", wait: "Composio key", find: /Perry never sees a password or token/ },
-      { name: "memoryStaysHere", path: "/memory", wait: "coffee black", find: /stays on this computer/i },
+      { name: "memoryStaysHere", path: "/brain", wait: "Things to remember", find: /stays on this computer/i },
       { name: "nothingSharedByDefault", path: "/settings/people", wait: "Datta", find: /Perry shares nothing about you with them/ },
       { name: "peopleKeptApart", path: "/settings/people", wait: "Datta", find: /only in yours[\s\S]*only in theirs/ },
       { name: "dashboardKeyHowToChange", path: "/settings/security", wait: "Lock this browser", find: /DASHBOARD_KEY in \.env\.local/ },
@@ -359,7 +361,7 @@ try {
       { name: "usageCountsAllYourUse", path: "/settings/usage", wait: "Perry's share this week", find: /all your Codex use/ },
       { name: "remindersAlwaysGo", path: "/settings/notifications", wait: "Quiet hours", find: /Due reminders always go/ },
       { name: "deleteChatConsequence", path: `/chat/${planChat}`, wait: "Call Sam about Saturday", open: `document.querySelector('button[aria-label="Chat options"]')|Delete`, dialog: true, find: /go for good[\s\S]*memory from it stays/ },
-      { name: "forgetMemoryConsequence", path: "/memory", wait: "coffee black", open: `${byText("main li", "coffee black")}?.querySelector("button:last-of-type")`, dialog: true, find: /is deleted, and Perry won.t recall it again/ },
+      { name: "forgetMemoryConsequence", path: `/projects/${project}`, wait: "matte green", open: `${byText("main li", "matte green")}?.querySelector("button:last-of-type")`, dialog: true, find: /is deleted, and Perry won.t recall it again/ },
       { name: "revokeComputerConsequence", path: "/settings/computers", wait: "a-long-folder-name", open: byText("main button", "Revoke"), dialog: true, find: /next request is refused/ },
       { name: "signOutEngineConsequence", path: "/settings/engines", wait: "Gemini API key", open: byText("main button", "Sign out"), dialog: true, find: /can't use Codex on this computer until you sign in again/ },
       { name: "blockPersonConsequence", path: "/settings/people", wait: "Datta", open: byText("main button", "Block"), dialog: true, find: /stops answering them/ },

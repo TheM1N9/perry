@@ -29,7 +29,7 @@ function languageOf(node: ReactNode): string | undefined {
  * Replies are GitHub-flavoured Markdown, with single line breaks kept as a
  * chat reader expects. Raw HTML stays text, since replies quote web pages and
  * email, and links open in a new tab, except a link to one of the owner's
- * notes (/notes/…), which opens it here. A checklist's boxes and a table are
+ * pages (/brain/…, or /notes/… from before Brain), which opens it here. A checklist's boxes and a table are
  * Perry's own, read-only: ticking one would not tell Perry anything.
  */
 export const Markdown = memo(function Markdown({ text, openNote }: {
@@ -42,7 +42,7 @@ export const Markdown = memo(function Markdown({ text, openNote }: {
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
-          a: ({ node: _node, href, children, ...props }) => href?.startsWith("/notes/")
+          a: ({ node: _node, href, children, ...props }) => href?.startsWith("/brain/") || href?.startsWith("/notes/")
             ? <Link href={href} data-note-link className="inline-flex items-baseline gap-1" onClick={openNote ? (event) => { event.preventDefault(); openNote(href); } : undefined}>
               <FileTextIcon className="size-3.5 self-center" aria-hidden />{children}
             </Link>

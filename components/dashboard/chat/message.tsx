@@ -150,7 +150,7 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
 
 /**
  * What a reply remembered: the memories it said it relied on, each a link to
- * it on the Memory page, where a wrong one can be put right.
+ * it in Brain, where a wrong one can be put right.
  */
 function FromMemory({ memories }: { memories: Array<{ id: string; text: string }> }) {
   return (
@@ -161,7 +161,7 @@ function FromMemory({ memories }: { memories: Array<{ id: string; text: string }
         <Fragment key={memory.id}>
         {index > 0 && <span aria-hidden>·</span>}
         <Tooltip>
-          <TooltipTrigger render={<Link href={`/memory?q=${encodeURIComponent(memory.text.slice(0, 60))}`} />}
+          <TooltipTrigger render={<Link href={`/brain?q=${encodeURIComponent(memory.text.slice(0, 60))}`} />}
             className="max-w-64 truncate rounded-sm underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring/50">
             {memory.text}
           </TooltipTrigger>

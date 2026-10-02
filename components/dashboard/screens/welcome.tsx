@@ -9,6 +9,7 @@ import { api } from "@/convex/_generated/api";
 import type { EngineKind } from "@/convex/lib/engines";
 import { errorText } from "@/lib/format";
 import { EMPTY_ANSWERS, HELP, PERSONALITIES, REPLY_STYLES, composeUserMd, type Answers } from "@/lib/persona";
+import { hasUserMd } from "@/convex/lib/pages";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -262,8 +263,8 @@ export function Welcome() {
               {at === "Review" && (
                 <>
                   <Heading ref={heading} title="Your USER.md">What {assistant} knows about you in every chat. Edit anything.</Heading>
-                  {persona.user && (
-                    <Alert variant="quiet"><AlertTitle>This replaces your current USER.md</AlertTitle><AlertDescription>The old one stays in its history under Memory, so you can restore it.</AlertDescription></Alert>
+                  {hasUserMd(persona.user) && (
+                    <Alert variant="quiet"><AlertTitle>This replaces About me</AlertTitle><AlertDescription>The old one stays in its history under Brain, so you can restore it.</AlertDescription></Alert>
                   )}
                   <Field>
                     <FieldLabel htmlFor={`${id}-md`}>USER.md</FieldLabel>

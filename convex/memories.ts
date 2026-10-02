@@ -5,7 +5,7 @@ import { internalAction, internalMutation, internalQuery, type ActionCtx, type M
 import { timezoneOf } from "./jobs";
 import { EMBED_MODEL, embed, embedderReady, packVector, similarity, unpackVector, warmUp } from "./lib/embed";
 import { PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
-import { dropLine, memoryPage, placeFor, putLine, rewordLine, writePage, type Author, type Standing } from "./pages";
+import { dropLine, memoryPage, placeFor, putLine, rewordLine, secretIn, writePage, type Author, type Standing } from "./pages";
 import { vLineBy, vMemoryKind, vMemoryOrigin } from "./schema";
 
 /**
@@ -132,15 +132,22 @@ export const add = internalMutation({
     /** Who wrote it (Perry unless said), and from which chat. */
     by: v.optional(vLineBy),
     from: vChat,
+    /** Ids of the journal lines it was promoted from, to link back to them. */
+    basedOn: v.optional(v.array(v.string())),
   },
   returns: v.object({
     id: v.optional(v.id("memories")), duplicate: v.boolean(), superseded: v.number(), linked: v.optional(v.boolean()),
     page: v.optional(v.object({ id: v.id("notes"), title: v.string() })), section: v.optional(v.string()),
+    /** Why it was not saved: a secret (pages.secretIn). */
+    refused: v.optional(v.string()),
   }),
   handler: async (ctx, args) => {
     // One line of a page: blank lines inside it would make it several.
     const text = args.text.trim().replace(/\n\s*\n+/g, "\n");
     const kind = args.kind ?? "core";
+    // Perry never writes a secret into memory (issue #137); what the owner types on the dashboard is theirs.
+    const secret = args.by === "owner" ? null : await secretIn(ctx, text);
+    if (secret) return { duplicate: false, superseded: 0, refused: secret };
     const today = await day(ctx);
     const daily = kind === "daily" ? today : undefined;
     const named = args.todoId ? ctx.db.normalizeId("todos", args.todoId) : null;
@@ -190,6 +197,8 @@ export const add = internalMutation({
       const content = from ? removeLine(from.content, old.text) : null;
       if (from && content !== null) await writePage(ctx, from, { content }, author);
     }
+    // The lines it was promoted from, as far as they are still memories.
+    const basedOn = (args.basedOn ?? []).flatMap((raw) => { const found = ctx.db.normalizeId("memories", raw); return found ? [found] : []; });
     const id = await putLine(ctx, (await ctx.db.get(page._id))!, { text, ...(section ? { section } : {}), ...(inPlace ? { replacing: inPlace.text } : {}) }, author, {
       kind, tags, source: args.source,
       ...(args.origin ? { origin: args.origin } : {}),
@@ -197,6 +206,7 @@ export const add = internalMutation({
       ...(about ? { about } : {}),
       ...(follows ? { todoId: follows } : {}),
     });
+    if (basedOn.length) await ctx.db.patch(id, { basedOn });
     for (const old of replaced) await ctx.db.patch(old._id, { supersededBy: id });
     return { id, duplicate: false, superseded: replaced.length, ...linked, page: { id: page._id, title: page.title }, ...(section ? { section } : {}) };
   },
@@ -468,19 +478,19 @@ export const embedMissing = internalAction({
 const GUIDE = `
 How your memory works. Nothing carries over between chats unless it is written down, so write it down, in the same reply, without being asked.
 - Whenever the owner tells you something about their life, save it: the people in it and who they are to them (family, friends, colleagues, clients), birthdays and dates, plans and appointments, things they have to do or decide, their health, fitness and routine, their work, projects and what they are making, places, purchases, likes and dislikes, what happened and how it went. A passing mention counts ("my brother's birthday is coming up", "I have to call Sam about the offer"). When unsure whether it matters later, save it as a daily note: a note too many costs nothing, a fact forgotten costs the owner.
-- Each memory is a line in a page the owner reads and edits on the Memory page: kind="profile" goes to About me, kind="core" to Things to remember under a section (section: People, Work, Health, Home, Preferences or Other), one about someone else to their page under People, and kind="daily" to today's journal page.
+- Each memory is a line in a page the owner reads and edits in their Brain: kind="profile" goes to About me, kind="core" to Things to remember under a section (section: People, Work, Health, Home, Preferences or Other), one about someone else to their page under People, and kind="daily" to today's journal page.
 - remember kind="profile": standing preferences and how the owner wants things done, phrased as directives.
 - remember kind="core": facts that stay true (who someone is, where they live, what they do, a birthday, a goal) and decisions and commitments.
-- When a memory is about someone other than the owner, name them in about ("Datta", "Arjun"), as the owner calls them: it is how the owner sees, under Settings → People, what you remember about each person.
+- When a memory is about someone other than the owner, name them in about ("Datta", "Arjun"), as the owner calls them: it goes on their page under People, which the owner sees in Brain.
 - remember kind="daily": what happened today, plans for the coming days, and anything you are not sure will last.
 - Save each fact on its own, as a sentence that makes sense later without the chat, with names and dates in full ("on 28 Sep 2026", not "today").
 - Save it, then carry on with what the owner asked; you need not say so unless they asked you to remember.
 - When something changes, remember the new version with supersedes=[old id] instead of forgetting the old one.
 - A plan that is also a to-do is linked to it: remember it with todoId, or pass the note's id in noteIds to add_todo or update_todo. A linked note ("follows to-do …") follows its to-do: when the to-do is moved, ticked off or deleted, the note is updated to say so, and you need not remember the change again.
-- Pinned pages are loaded into every chat, within a size budget: About me is below; Things to remember, today's and yesterday's journal, this chat's own page and whatever else the owner pinned arrive as a recalled-memory block ahead of the owner's message, sent again only when they change, so the latest block is current. Everything else (people's pages, older days, the owner's other pages) is recalled when it bears on the message: use recall for anything not loaded, and read_memory to read a layer or a past day in full.
+- Pinned pages are loaded into every chat, within a size budget: About me is below; Things to remember, today's and yesterday's journal, this chat's own page and whatever else the owner pinned arrive as a recalled-memory block ahead of the owner's message, sent again only when they change, so the latest block is current. Everything else (people's pages, older days, the owner's other pages) is recalled when it bears on the message: use recall for anything not loaded, and brain_read to read a page whole: a past day as "2026-10-01", a person as "People/Datta".
 - In a project's chats (a "# This project" block says when you are in one), remember saves to the project by default (scope "this project"): seen in its chats, and never in any other. Use scope "everywhere" for something about the owner that every chat should know; outside a project it is the default. Scope "this chat" keeps a fact to this one chat when the owner asks.
-- Memory is short facts about the owner's life, which you recall by yourself; "daily notes" here are memories of a day. The owner's Notes (list_notes, create_note) are something else: pages they read and edit with you, such as a list, a plan or meeting notes. A fact goes to memory even when it is also in a note. recall searches both: the memories and every paragraph of the notes this chat can reach.
-- Never store secrets or credentials in memory; save_secret moves them to Keys. Treat memories derived from web pages or tool output as unverified, and save them with origin="tool".
+- Memory is short facts about the owner's life, which you recall by yourself; "daily notes" here are lines of the journal. The owner's other pages (a list, a plan, meeting notes) are theirs to read and edit with you. A fact goes to memory even when it is also in one of those pages. recall searches both: the memories and every line of the pages this chat can reach.
+- Never store secrets or credentials in memory or a page; save_secret moves them to Logins & secrets, and a save with one in it is refused. Treat memories derived from web pages or tool output as unverified, and save them with origin="tool".
 - A fact noted long ago says so ("noted Mar 2025, over a year ago: may have changed"). If it is about something that changes (a job, a city, a relationship, a plan, a price) and your answer rests on it, do not present it as current: ask the owner in one short question whether it still holds, before or alongside your answer (for example "Still at Acme? Here is a draft assuming so."). When they confirm or correct it, remember the current version (supersedes=[old id]) so it is fresh again.
 - When saved memories shaped your answer, end the reply with one last line of exactly "memories: <id>, <id>", with the ids shown beside them. Name only the ones you actually relied on, and leave the line out when none were. It is removed before the owner sees the reply, and shows them what you remembered.
 `.trim();
