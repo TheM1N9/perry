@@ -206,8 +206,18 @@ async function userMessage(prompt: string, attachments: EngineAttachment[], extr
   return { type: "user", message: { role: "user", content: blocks as never }, parent_tool_use_id: null };
 }
 
-/** A tool call as a canonical item: what kind of step it is, and one line naming it. */
-function describe(name: string, input: Record<string, unknown>, perry?: string): { type: ItemType; title: string; input?: string } {
+/** What a file tool changes, as the lines it takes out (-) and puts in (+). */
+function diffOf(tool: string, input: Record<string, unknown>): string | undefined {
+  const lines = (sign: string, value: unknown) => `${sign}${String(value ?? "").split("\n").join(`\n${sign}`)}`;
+  const edit = (change: Record<string, unknown>) => `${lines("-", change.old_string)}\n${lines("+", change.new_string)}`;
+  if (tool === "Write") return lines("+", input.content);
+  if (tool === "Edit") return edit(input);
+  if (tool === "MultiEdit" && Array.isArray(input.edits)) return input.edits.map((change) => edit(change as Record<string, unknown>)).join("\n");
+  return json(input.edits ?? input.new_source);
+}
+
+/** A tool call as a canonical item: what kind of step it is, and one line naming it. A file change carries its diff. */
+function describe(name: string, input: Record<string, unknown>, perry?: string): { type: ItemType; title: string; input?: string; output?: string } {
   const text = (value: unknown) => typeof value === "string" ? value : undefined;
   if (COMMAND_TOOLS.has(name)) {
     const command = text(input.command) ?? name;
@@ -215,7 +225,7 @@ function describe(name: string, input: Record<string, unknown>, perry?: string):
   }
   if (FILE_TOOLS.has(name)) {
     const path = text(input.file_path) ?? text(input.notebook_path) ?? "file";
-    return { type: "file_change", title: path, input: `${name === "Write" ? "write" : "edit"} ${path}` };
+    return { type: "file_change", title: path, input: `${name === "Write" ? "write" : "edit"} ${path}`, output: diffOf(name, input) };
   }
   if (name.startsWith("mcp__")) {
     const [, server = "", ...rest] = name.split("__");
@@ -250,9 +260,7 @@ function requestFor(tool: string, input: Record<string, unknown>, asked: { title
   const raw = { tool, input, title: asked.title, decisionReason: asked.decisionReason, blockedPath: asked.blockedPath };
   if (FILE_TOOLS.has(tool)) {
     const path = String(input.file_path ?? input.notebook_path ?? "");
-    const diff = tool === "Write" ? `+${String(input.content ?? "").split("\n").join("\n+")}`
-      : tool === "Edit" ? `-${String(input.old_string ?? "").split("\n").join("\n-")}\n+${String(input.new_string ?? "").split("\n").join("\n+")}`
-      : json(input.edits ?? input.new_source);
+    const diff = diffOf(tool, input);
     return { type: "file_change_approval", detail: { reason, changes: [{ path: path ? resolve(cwd, path) : cwd, kind: tool === "Write" ? "add" : "update", diff }] }, options: choices, raw };
   }
   const described = describe(tool, input);
@@ -742,7 +750,7 @@ export class ClaudeEngine implements Engine {
             turn.open.delete(block.tool_use_id);
             const { at, ...item } = begun;
             const status: ItemStatus = kinds.get(block.tool_use_id) ? "declined" : block.is_error ? "failed" : "completed";
-            turn.sink.onEvent?.({ type: "item", phase: "completed", item: { ...item, status, output: resultText(block.content), durationMs: Date.now() - at, raw: { use: item.raw, result: block } }, atMs: Date.now() });
+            turn.sink.onEvent?.({ type: "item", phase: "completed", item: { ...item, status, output: item.type === "file_change" && status === "completed" && item.output ? item.output : resultText(block.content), durationMs: Date.now() - at, raw: { use: item.raw, result: block } }, atMs: Date.now() });
           }
         } else if (event.type === "result") {
           turn.results++;
