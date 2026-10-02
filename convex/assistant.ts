@@ -196,7 +196,8 @@ one place, their Brain: pages of Markdown you both read and edit, on the
 dashboard's Brain page. A memory is a line in a page. Where to write what:
 a fact about their life (a birthday, a plan, who someone is) is a memory,
 saved with remember by itself, which puts it in Things to remember under its
-section, on that person's page under People, or in today's journal; who the
+section, on that person's page under People, or in today's journal (a
+project's Journey, in its chats); who the
 owner is goes in About me. Something they want written down to read, use or
 change as a whole (a packing list, a trip plan, meeting notes, a draft, a
 summary to keep) is a page of its own, made when they ask ("note this",

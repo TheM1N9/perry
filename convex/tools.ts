@@ -100,7 +100,7 @@ const remember = createTool({
     "asked; one call per fact. kind=profile for standing preferences and how the owner wants things done, " +
     "phrased as directives (About me). kind=core for facts that stay true, decisions and commitments (Things to " +
     "remember, in a section; a fact about someone else goes to their page under People). kind=daily for " +
-    "what happened today, plans for the coming days, and anything you are not sure will last (today's journal). Write each as " +
+    "what happened today, plans for the coming days, and anything you are not sure will last (today's journal; in a project, its Journey). Write each as " +
     "a standalone sentence that will still make sense later, with names and dates in full. When a fact " +
     "changes, pass the old memory's id in supersedes instead of forgetting it. Omit secrets and instructions. " +
     "Nothing is saved unless you call this.",
@@ -122,6 +122,9 @@ const remember = createTool({
       .describe("For kind=core: the section of Things to remember it goes under: People, Work, Health, Home, Preferences or Other, or a new one when none fits. Left out, the one it fits."),
     basedOn: z.array(z.string()).optional()
       .describe("When promoting from the journal: the ids of the journal lines it comes from, so it links back to them."),
+    journey: z.string().max(200).optional()
+      .describe("For kind=daily about one of the owner's projects, from a chat outside it: the project's name or id. The note goes in that project's Journey, " +
+        "its running log, which every chat of the owner's reads. In the project's own chats, day notes go there without it."),
   }),
   execute: async (
     ctx,
@@ -144,7 +147,7 @@ const remember = createTool({
       : chat?.projectId && (scope === "this project" || fromJob) ? { projectId: chat.projectId }
       : fromJob ? {}
       : { conversationId: ctx.conversationId };
-    const result: { id?: string; duplicate: boolean; superseded: number; linked?: boolean; page?: { id: string; title: string }; section?: string; refused?: string } = await ctx.runMutation(
+    const result: { id?: string; duplicate: boolean; superseded: number; linked?: boolean; page?: { id: string; title: string }; section?: string; refused?: string; journey?: boolean } = await ctx.runMutation(
       internal.memories.add,
       {
         text: input.text,
@@ -159,13 +162,15 @@ const remember = createTool({
         ...(input.todoId && !sealed ? { todoId: input.todoId } : {}),
         ...(input.section ? { section: input.section } : {}),
         ...(input.basedOn?.length && !sealed ? { basedOn: input.basedOn } : {}),
+        ...(input.journey?.trim() && !sealed ? { journey: input.journey } : {}),
         by: fromJob ? "job" : "assistant",
         ...(ctx.conversationId ? { from: ctx.conversationId } : {}),
       },
     );
     if (result.refused) return { stored: false, superseded: 0, note: result.refused };
     const unlinked = result.linked === false ? " There is no to-do with that id, so it is not linked; list_todos shows them." : "";
-    const where = place.projectId ? "for this project" : place.conversationId ? "for this chat only" : "for every chat";
+    // A project's Journey is read from every chat of the owner's, whichever chat wrote in it.
+    const where = result.journey ? "for every chat" : place.projectId ? "for this project" : place.conversationId ? "for this chat only" : "for every chat";
     const page = result.page ? `${result.page.title}${result.section ? `, ${result.section}` : ""}` : undefined;
     return {
       id: result.id,

@@ -3,7 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { appended, editSection, headingsOf, INBOX_TITLE, noteHref, titleFrom, tooLong } from "./lib/notes";
-import type { PageKind } from "./lib/pages";
+import { journalTitle, type PageKind } from "./lib/pages";
 import { timezoneOf } from "./jobs";
 import { insertPage, isPinned, linesOf, memoryPage, mentionsOf, moveLines, removePage, secretIn, setPinned, writePage, type LineBy } from "./pages";
 import { readPersona } from "./persona";
@@ -266,7 +266,7 @@ export const remove = mutation({
     assertDashboardKey(args.key);
     const note = await ctx.db.get(args.id);
     // About me and Things to remember are where memory lives; their lines can go, the pages stay.
-    if (note?.kind === "about" || note?.kind === "remember") throw new Error("This page stays; delete its lines instead.");
+    if (note?.kind === "about" || note?.kind === "remember" || note?.kind === "journey") throw new Error("This page stays; delete its lines instead.");
     await removeNote(ctx, args.id);
     return null;
   },
@@ -335,9 +335,12 @@ async function reachOf(ctx: Reader, chatId: Id<"conversations"> | undefined): Pr
   if (chat?.contactId) return { sealed: true };
   return { sealed: false, ...(chat?.projectId ? { projectId: chat.projectId } : {}), ...(chat ? { chatId: chat._id } : {}) };
 }
-/** Where a turn may reach a page: never from a chat with someone else; a chat's own page only from that chat. */
+/**
+ * Where a turn may reach a page: never from a chat with someone else; a chat's own page only from that chat; a
+ * project's page from its chats, except its Journey, which every chat of the owner's reads (issue #227).
+ */
 const reaches = (reach: { sealed: boolean; projectId?: Id<"projects">; chatId?: Id<"conversations"> }, note: Note) => !reach.sealed
-  && (note.conversationId ? note.conversationId === reach.chatId : !note.projectId || note.projectId === reach.projectId);
+  && (note.conversationId ? note.conversationId === reach.chatId : !note.projectId || note.projectId === reach.projectId || note.kind === "journey");
 const SEALED = "Brain's pages are the owner's: a chat with someone else cannot read or write them.";
 const NOT_HERE = "There is no page by that id or name here; brain_list shows the ones this chat can reach.";
 
@@ -348,8 +351,9 @@ const dayAgo = (timezone: string, offset: number) => new Date(Date.now() - offse
 /**
  * A page this chat may reach, by id or by name: "About me", "Things to
  * remember" (the project's, in a project's chat, when it has one), a journal
- * day ("today", "yesterday", "2026-10-01"), a person ("People/Datta" or
- * "Datta"), or a page's title.
+ * day ("today", "yesterday", "2026-10-01"), a project's Journey ("Journey",
+ * this chat's project's; "Journey · Bathroom" or "Bathroom journey", any
+ * project's), a person ("People/Datta" or "Datta"), or a page's title.
  */
 async function findForAgent(ctx: Reader, reach: Reach, ref: string): Promise<Note | null> {
   const byId = await getNote(ctx, ref.trim());
@@ -359,6 +363,8 @@ async function findForAgent(ctx: Reader, reach: Reach, ref: string): Promise<Not
   const prefer = (list: Note[]) => list.find((page) => page.projectId && page.projectId === reach.projectId) ?? list.find((page) => !page.projectId) ?? list[0] ?? null;
   if (name === "about me" || name === "user.md") return pages.find((page) => page.kind === "about") ?? null;
   if (name === "things to remember") return prefer(pages.filter((page) => page.kind === "remember"));
+  const journey = await journeyNamed(ctx, reach, name);
+  if (journey) return pages.find((page) => page.kind === "journey" && page.projectId === journey) ?? null;
   const timezone = await timezoneOf(ctx);
   const day = name === "today" || name === "journal" ? dayAgo(timezone, 0) : name === "yesterday" ? dayAgo(timezone, 1) : /\b(\d{4}-\d{2}-\d{2})\b/.exec(name)?.[1];
   if (day) return prefer(pages.filter((page) => page.kind === "journal" && page.day === day));
@@ -367,9 +373,21 @@ async function findForAgent(ctx: Reader, reach: Reach, ref: string): Promise<Not
     ?? pages.filter((page) => page.title.toLocaleLowerCase() === name).sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
 }
 
-/** A page of memory named but not made yet (About me, Things to remember, today's journal): made, to write into. */
+/** The project whose Journey a name means: "journey" in a project's chat, "journey · <project>", "journey/<project>" or "<project> journey" anywhere. */
+async function journeyNamed(ctx: Reader, reach: Reach, name: string): Promise<Id<"projects"> | undefined> {
+  if (name === "journey" || name === "this project's journey") return reach.projectId;
+  const project = /^journey\s*[·:/-]\s*(.+)$/.exec(name)?.[1] ?? /^(.+?)(?:'s)?\s+journey$/.exec(name)?.[1];
+  if (!project) return undefined;
+  const byId = ctx.db.normalizeId("projects", project.trim());
+  if (byId && await ctx.db.get(byId)) return byId;
+  return (await ctx.db.query("projects").collect()).find((item) => item.name.replace(/\s+/g, " ").trim().toLocaleLowerCase() === project.trim())?._id;
+}
+
+/** A page of memory named but not made yet (About me, Things to remember, today's journal, a Journey): made, to write into. */
 async function memoryPageNamed(ctx: Writer, reach: Reach, ref: string): Promise<Note | null> {
   const name = ref.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+  const journey = await journeyNamed(ctx, reach, name);
+  if (journey) return await memoryPage(ctx, { kind: "journey", projectId: journey });
   if (name === "about me" || name === "user.md") return await memoryPage(ctx, { kind: "about" });
   if (name === "things to remember") return await memoryPage(ctx, { kind: "remember", ...(reach.projectId ? { projectId: reach.projectId } : {}) });
   if (name === "today" || name === "journal") return await memoryPage(ctx, { kind: "journal", day: dayAgo(await timezoneOf(ctx), 0) });
@@ -382,10 +400,11 @@ type AgentNote = {
   id: string; title: string; kind?: string; day?: string; pinned?: boolean; pinnedSections?: string[]; project?: string; revision: number; updated: string; chars: number; link: string;
 };
 /** What a page of memory is, as Perry is told. */
-const KIND_NAMES = { about: "About me", remember: "Things to remember", journal: "journal", person: "person", chat: "this chat's own" } as const;
+const KIND_NAMES = { about: "About me", remember: "Things to remember", journal: "journal", journey: "Journey", person: "person", chat: "this chat's own" } as const;
 const agentNote = (note: Note, names: Map<string, string>): AgentNote => ({
   id: note._id,
-  title: note.title,
+  // A Journey says whose: every chat reads every project's.
+  title: note.kind === "journey" && note.projectId ? `${note.title} · ${names.get(note.projectId) ?? "a project"}` : note.title,
   ...(note.kind ? { kind: KIND_NAMES[note.kind] } : {}),
   ...(note.day ? { day: note.day } : {}),
   ...(isPinned(note) ? { pinned: true } : note.pinnedSections?.length ? { pinnedSections: note.pinnedSections } : {}),
@@ -495,8 +514,14 @@ export const updateForAgent = internalMutation({
   handler: async (ctx, args): Promise<{ updated?: AgentNote; error?: string; current?: AgentNote & { content: string }; sections?: string[] }> => {
     const reach = await reachOf(ctx, args.chat);
     if (reach.sealed) return { error: SEALED };
-    const note = await findForAgent(ctx, reach, args.id) ?? (args.mode === "append" ? await memoryPageNamed(ctx, reach, args.id) : null);
+    const name = args.id.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+    // A project's chats keep their days in its Journey, not the owner's journal (issue #227).
+    const ownDay = Boolean(reach.projectId) && args.mode === "append" && (name === "today" || name === "journal");
+    const note = ownDay ? await memoryPage(ctx, { kind: "journey", projectId: reach.projectId! })
+      : await findForAgent(ctx, reach, args.id) ?? (args.mode === "append" ? await memoryPageNamed(ctx, reach, args.id) : null);
     if (!note) return { error: NOT_HERE };
+    // Added to a Journey, it goes under today's date, newest last.
+    if (note.kind === "journey" && args.mode === "append") args = { ...args, section: journalTitle(dayAgo(await timezoneOf(ctx), 0)) };
     const secret = await secretIn(ctx, `${args.title ?? ""}\n${args.content}`);
     if (secret) return { error: secret };
     const names = await projectNames(ctx);

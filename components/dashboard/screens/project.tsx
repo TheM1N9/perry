@@ -23,8 +23,9 @@ import { NoteRows } from "./notes";
 
 /**
  * A project's page (convex/projects.ts): the instructions its chats follow,
- * its Brain, as Brain lists it (its Things to remember, its journal days, its
- * pinned pages, its own pages), and its chats. Only its chats see any of it.
+ * its Brain, as Brain lists it (its Things to remember, its Journey, its
+ * pinned pages, its own pages), and its chats. Only its chats see any of it,
+ * but its Journey, its running log, which every chat of yours reads.
  */
 export function ProjectScreen() {
   const { dashboardKey } = useSession();
@@ -63,7 +64,7 @@ export function ProjectScreen() {
       <Section title="Instructions" tip="Every chat in the project follows them, from your next message.">
         <Instructions project={project} />
       </Section>
-      <Section title="Brain" tip="What Perry remembers here and the pages you keep here. Only this project's chats see them." actions={<NewPage project={project} />}>
+      <Section title="Brain" tip="What Perry remembers here and the pages you keep here. Only this project's chats see them, except its Journey, which all your chats can read." actions={<NewPage project={project} />}>
         <ProjectBrain project={project} />
       </Section>
       <Section title="Chats" tip="They know of each other and can read each other. Chats outside the project can't.">
