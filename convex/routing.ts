@@ -3,12 +3,12 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { ENGINE_LABELS, ENGINES, type EngineKind } from "./lib/engines";
-import { BACKGROUND_CAP, ROUTING_RULE, effortFor, isTier, modelFor, roomOf, route, type Choice, type OwnerPick, type PerryPick, type Work } from "./lib/routing";
+import { BACKGROUND_CAP, ROUTING_RULE, effortFor, isTier, modelFor, roomOf, route, routeGuest, type Choice, type OwnerPick, type PerryPick, type Work } from "./lib/routing";
 import { modelsOf, parseModelKey } from "./lib/commands";
 import { LIMIT_HIT } from "./lib/usage";
 import { historyOf } from "./lib/agent";
 import { sendMessage } from "./lib/telegram";
-import { FORGET_SESSION, engineUsable, isOnline } from "./engines";
+import { FORGET_SESSION, engineLockable, engineUsable, isOnline } from "./engines";
 import { defaultEngine } from "./installation";
 import { engineModels } from "./models";
 import { authenticate } from "./runner";
@@ -59,6 +59,71 @@ export async function choose(ctx: QueryCtx, ask: Ask): Promise<Choice | null> {
   const timeZone = (await ctx.db.query("installation").first())?.timezone;
   return route({ ...ask, ...(preferred ? { preferred } : {}), engines, models: await engineModels(ctx), usage: usageByEngine(runners), now: Date.now(), ...(timeZone ? { timeZone } : {}) });
 }
+
+/**
+ * A turn in a chat with someone else (lib/routing.ts, routeGuest): only on an
+ * engine a runner on the chat's computer can lock down for it. A model the
+ * owner picked for the chat is kept while its engine is one of those.
+ */
+export async function chooseGuest(ctx: QueryCtx, chat: Doc<"conversations">, avoid?: EngineKind[]): Promise<Choice | { none: string }> {
+  const preferred = await defaultEngine(ctx);
+  const runners = await liveRunners(ctx);
+  const pinned = chat.codexRunnerId ? runners.find((runner) => runner._id === chat.codexRunnerId) : undefined;
+  const here = runners.filter((runner) => isOnline(runner) && (!pinned || (runner.hostname === pinned.hostname && runner.platform === pinned.platform)));
+  const engines = ENGINES.filter((engine) => here.some((runner) => engineUsable(runner, engine)));
+  const lockable = ENGINES.filter((engine) => here.some((runner) => engineUsable(runner, engine) && engineLockable(runner, engine)));
+  const timeZone = (await ctx.db.query("installation").first())?.timezone;
+  const owner: OwnerPick = { ...(chat.model && chat.engine ? { engine: chat.engine, model: chat.model } : {}), ...(chat.effort ? { effort: chat.effort } : {}) };
+  return routeGuest({
+    ...(preferred ? { preferred } : {}), engines, lockable, owner, ...(avoid?.length ? { avoid } : {}),
+    models: await engineModels(ctx), usage: usageByEngine(runners), now: Date.now(), ...(timeZone ? { timeZone } : {}),
+  });
+}
+
+export const forGuest = internalQuery({
+  args: { id: v.id("conversations") },
+  handler: async (ctx, args): Promise<Choice | { none: string } | null> => {
+    const chat = await ctx.db.get(args.id);
+    return chat?.contactId ? await chooseGuest(ctx, chat) : null;
+  },
+});
+
+/**
+ * A chat with someone else is on the engine its turn was routed to, so its
+ * session there resumes (engines.resumeOf). A model the owner picked for it on
+ * another engine is dropped, as when an owner's chat moves.
+ */
+export const guestOn = internalMutation({
+  args: { id: v.id("conversations"), engine: vEngine },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const chat = await ctx.db.get(args.id);
+    if (!chat?.contactId || chat.engine === args.engine) return null;
+    await ctx.db.patch(chat._id, { engine: args.engine, ...(chat.engine ? { model: undefined } : {}) });
+    return null;
+  },
+});
+
+/**
+ * Chats with other people get no reply: the owner hears why once, on their
+ * phone, when it starts (the run's error says it in the dashboard every time).
+ * Null `why`: a turn could run again, so the next time it stops is said too.
+ */
+export const guestsStuck = internalMutation({
+  args: { why: v.union(v.string(), v.null()) },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const install = await ctx.db.query("installation").first();
+    if (!install) return false;
+    if (args.why === null) {
+      if (install.guestsStuck) await ctx.db.patch(install._id, { guestsStuck: undefined });
+      return false;
+    }
+    if (install.guestsStuck) return false;
+    await ctx.db.patch(install._id, { guestsStuck: { why: args.why.slice(0, 500), at: Date.now() } });
+    return true;
+  },
+});
 
 /** What a run records of a choice: all but the wait. */
 export const routeOf = (choice: Choice): Route => ({
@@ -192,12 +257,13 @@ export const moveChatTo = internalMutation({
 /**
  * Whether a turn its engine refused for a limit can safely run again on
  * another: it did nothing yet (no step, no words, no file), nobody's words
- * joined it, it is not memory upkeep, a compaction or someone else's chat, and
- * it is not itself a retry.
+ * joined it, it is not memory upkeep or a compaction, and it is not itself a
+ * retry. Someone else's chat runs again only on another engine that can be
+ * locked down for it (retryPlan).
  */
 export async function retryable(ctx: QueryCtx, turn: Doc<"codexTurns">, outcome: { error?: string; response?: string; stopped?: boolean; media?: number }): Promise<boolean> {
   if (!outcome.error || !LIMIT_HIT.test(outcome.error) || outcome.stopped || outcome.response?.trim() || outcome.media || turn.mediaKey) return false;
-  if (turn.retryOf || turn.kind || turn.flush || turn.checkpoint || turn.guest) return false;
+  if (turn.retryOf || turn.kind || turn.flush || turn.checkpoint) return false;
   const run = await ctx.db.get(turn.runId);
   if (run?.toolCalls?.length) return false;
   const joined = await ctx.db.query("codexSteers").withIndex("by_turn_status", (q) => q.eq("turnId", turn._id).eq("status", "applied")).first();
@@ -213,6 +279,10 @@ export const retryPlan = internalQuery({
     if (!turn || !conversation || !turn.retrying || turn.finalizedAt) return null;
     const refused = turn.engine;
     if (!refused) return null;
+    if (conversation.contactId) {
+      const guest = await chooseGuest(ctx, conversation, [refused]);
+      return "none" in guest || guest.engine === refused ? null : { choice: guest, conversation };
+    }
     const job = conversation.jobId ? await ctx.db.get(conversation.jobId) : null;
     const task = conversation.taskId ? await ctx.db.get(conversation.taskId) : null;
     const ask = job ? await jobAsk(ctx, job, [refused]) : task ? await taskAsk(ctx, task, [refused]) : { ...chatAsk(conversation), avoid: [refused] };
@@ -286,6 +356,20 @@ export const rooms = query({
     const usage = usageByEngine(await liveRunners(ctx));
     const now = Date.now();
     return Object.fromEntries(ENGINES.map((engine) => [engine, roomOf(engine, usage[engine], now, BACKGROUND_CAP).state]));
+  },
+});
+
+/** How much of each engine's plan is used, by its fullest window: the runner's quick work goes, failing the chat's engine and the default, to the one with the most left. */
+export const used = query({
+  args: { token: v.string() },
+  handler: async (ctx, args): Promise<Partial<Record<EngineKind, number>>> => {
+    await authenticate(ctx, args.token);
+    const usage = usageByEngine(await liveRunners(ctx));
+    const now = Date.now();
+    return Object.fromEntries(ENGINES.flatMap((engine) => {
+      const share = roomOf(engine, usage[engine], now, BACKGROUND_CAP).used;
+      return share === null ? [] : [[engine, share]];
+    }));
   },
 });
 

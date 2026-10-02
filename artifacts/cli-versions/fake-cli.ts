@@ -84,7 +84,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   try { message = JSON.parse(line); } catch { return; }
   if (message.id === undefined || !message.method) return;
   const { id, method, params = {} } = message;
-  log({ method });
+  // How a thread and its turns were started, for checks on what Codex was let do (artifacts/no-hardcoded-engines).
+  log({ method, ...(/^(thread\/start|thread\/resume|turn\/start)$/.test(method) ? { params } : {}) });
   const answer = (result: object) => send({ id, result });
   switch (method) {
     case "initialize": return answer({ userAgent: `codex_cli_rs/${version} (Windows fake; fake) perry (0.1.0)` });

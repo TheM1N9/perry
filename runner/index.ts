@@ -55,7 +55,8 @@ import { getFunctionName, type FunctionArgs, type FunctionReference, type Functi
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { ACCESS_LABELS, runLabel } from "../convex/lib/commands";
-import { ENGINE_LABELS, refusal, updateOf, versionIn } from "../convex/lib/engines";
+import { ENGINE_LABELS, ENGINES, refusal, updateOf, versionIn } from "../convex/lib/engines";
+import { effortFor, modelFor } from "../convex/lib/routing";
 import { skillsNamedIn } from "../convex/lib/skills";
 import {
   optionOf, skillNote, type Access, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type NamedSkill, type PerryTools,
@@ -292,7 +293,9 @@ async function main() {
       return engine.status()
         .catch((error): EngineStatus => ({ kind: engine.kind, installed: false, signedIn: false, auth: {}, models: [], error: message(error) }))
         // With the newest release known and the command that updates it; never waiting to look it up.
-        .then(withVersions);
+        .then(withVersions)
+        // Whether chats with other people may run on it (runner/engine.ts): the server sends them only to those that can.
+        .then((status): EngineStatus => ({ ...status, guestLockdown: engine.capabilities.guestLockdown }));
     }));
     for (const status of found) {
       // Said here once, when an engine is found too old for Perry; Settings says it until it is updated.
@@ -365,19 +368,30 @@ async function main() {
   /** The owner's default engine, as the server has it; unset until chosen. */
   let defaultEngine: EngineKind | undefined;
   watch(api.engines.preferred, { token }, (engine) => { defaultEngine = engine ?? undefined; });
+  /** How much of each engine's plan is used, as the server reads it (convex/routing.ts, used). */
+  let used: Partial<Record<EngineKind, number>> = {};
+  watch(api.routing.used, { token }, (next) => { used = next ?? {}; });
   /**
-   * An engine for quick side turns (the reviewer, chat names): the preferred
-   * one (the chat's), else the owner's default engine, else any, among those
-   * that run them, are signed in, are not being updated and whose plan has
-   * room; with none that has room, the same order among the rest, and its own
-   * plan has the last word.
+   * An engine for quick side turns (the reviewer, chat names), as routing
+   * would have it: the preferred one (the chat's), else the owner's default
+   * engine, else the one with the most of its plan left, among those that run
+   * them, are signed in, are not being updated and whose plan has room; with
+   * none that has room, the same order among the rest, and its own plan has
+   * the last word.
    */
   const quickEngine = (preferred?: EngineKind): Engine | undefined => {
     const ready = (engine?: Engine) => engine?.quickTurn && engine.capabilities.quickTurns && statuses.get(engine.kind)?.signedIn && !tooOld(engine.kind) && !updating.has(engine.kind) ? engine : undefined;
     const roomy = (engine?: Engine) => ready(engine) && (rooms[engine!.kind] ?? "room") === "room" ? engine : undefined;
     const first = [preferred, defaultEngine].map((kind) => kind ? engines.get(kind) : undefined);
-    const by = (test: (engine?: Engine) => Engine | undefined) => first.map(test).find(Boolean) ?? [...engines.values()].find((engine) => test(engine));
+    const rest = [...engines.values()].sort((a, b) => (used[a.kind] ?? 50) - (used[b.kind] ?? 50) || ENGINES.indexOf(a.kind) - ENGINES.indexOf(b.kind));
+    const by = (test: (engine?: Engine) => Engine | undefined) => first.map(test).find(Boolean) ?? rest.find((engine) => test(engine));
     return by(roomy) ?? by(ready);
+  };
+  /** The quick tier's model and thinking level on an engine, from the models it offers (convex/lib/routing.ts). */
+  const quickPick = (engine: Engine): { model?: string; effort?: string } => {
+    const model = modelFor((statuses.get(engine.kind)?.models ?? []).map((item) => ({ ...item, engine: engine.kind })), engine.kind, "quick");
+    const effort = effortFor(model, "quick");
+    return { ...(model ? { model: model.id } : {}), ...(effort ? { effort } : {}) };
   };
   /** A quick turn on an engine, counted while it runs. */
   const quickly = async <T,>(engine: Engine | undefined, work: () => Promise<T>): Promise<T> => {
@@ -482,7 +496,7 @@ async function main() {
         workdir,
         paths: request.paths,
         detail: [request.detail, request.evidence].filter(Boolean).join("\n\n") || undefined,
-      }));
+      }, reviewer && quickPick(reviewer)));
       const run = await client.mutation(api.approvals.reviewed, { token, id, ...verdict });
       if (run) {
         console.log(`${cyan("  reviewed")} ${request.what} ${dim(`(${verdict.reason})`)}`);
@@ -750,12 +764,14 @@ async function main() {
   };
 
   /** Compact a chat's session the way its engine can: a command it takes as a prompt runs on the chat's model. */
-  const compact = async (engine: Engine, cursor: string, access: Doc<"codexTurns">["access"], model?: string) => {
+  const compact = async (engine: Engine, cursor: string, access: Doc<"codexTurns">["access"], model?: string, guest?: boolean) => {
     const how = engine.capabilities.compaction;
-    if (how.type === "native" && engine.compact) return await engine.compact(cursor, workdir);
+    // A chat with someone else's session is compacted where it runs, locked down as its turns are.
+    const cwd = guest ? guestDir() : workdir;
+    if (how.type === "native" && engine.compact) return await engine.compact(cursor, cwd);
     if (how.type === "slash-command") {
       const done = await engine.runTurn(
-        { resumeCursor: cursor, instructions: "", prompt: how.command, attachments: [], cwd: workdir, model, access: access ?? "supervised" },
+        { resumeCursor: cursor, instructions: "", prompt: how.command, attachments: [], cwd, model, access: access ?? "supervised", ...(guest ? { guest: true } : {}) },
         { onSession: async () => {}, onRequest: async (request) => optionOf(request, "decline") },
       );
       if (done.state !== "completed") throw new Error(done.error ?? `${engine.label} did not compact.`);
@@ -916,11 +932,13 @@ async function main() {
         // Refused before it starts, rather than failing half-way in ways an old CLI would.
         const update = tooOld(kind);
         if (update) throw new Error(refusal(engine.label, update));
+        // Someone else's words never reach an engine that cannot be locked down for them, whatever the server asked.
+        if (job.guest && !engine.capabilities.guestLockdown) throw new Error(`${engine.label} can't be locked down for a chat with someone else, so it doesn't run one.`);
         if (job.kind === "compact") {
           if (!job.resumeCursor) throw new Error("This chat has no session to compact yet.");
           console.log(dim(`  compacting a chat's ${engine.label} session`));
           dog = watchdog(engine, { maxMs: COMPACT_TIMEOUT_MS }, () => undefined, { end: () => endTurn(job._id) });
-          await unlessGivenUp(compact(engine, job.resumeCursor, job.access, job.requestedModel)).finally(dog.done);
+          await unlessGivenUp(compact(engine, job.resumeCursor, job.access, job.requestedModel, job.guest)).finally(dog.done);
           result = { response: "Compacted.", compacted: true, model: runLabel(undefined, undefined, undefined, kind) };
         } else {
           const sink: TurnSink = {
@@ -1197,7 +1215,7 @@ async function main() {
         if (!await client.mutation(api.titles.claim, { token, id: request.id })) return;
         let title: string | undefined;
         try {
-          const named = await nameChat(namer, request.text);
+          const named = await nameChat(namer, request.text, quickPick(namer));
           title = named.title;
           console.log(dim(`  named a chat "${title}" (${named.model ?? `${namer.label} default`})`));
         } catch (error) {

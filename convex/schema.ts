@@ -99,6 +99,8 @@ export const vEngineStatus = v.object({
   latest: v.optional(v.string()),
   /** The command that updates the CLI there, for the way it was installed. */
   update: v.optional(v.string()),
+  /** It can be locked down for a chat with someone else (runner/engine.ts, guestLockdown). Unset from a runner from before it said. */
+  guestLockdown: v.optional(v.boolean()),
 });
 /** An engine's plan limits, as it reports them (lib/usage.ts, PlanLimits). */
 export const vPlanLimits = v.object({
@@ -198,6 +200,12 @@ export default defineSchema({
      * its choice (installation.ensure), so nothing changes for it.
      */
     askEngine: v.optional(v.boolean()),
+    /**
+     * Why chats with other people get no reply: no engine that can be locked
+     * down for them is signed in, or has room (brain.ts, guest turns). Said to
+     * the owner once, when it starts; cleared once one can run again.
+     */
+    guestsStuck: v.optional(v.object({ why: v.string(), at: v.number() })),
     /** When Perry's own messages wait instead of reaching the phone, as HH:MM in the owner's timezone (notify.ts). Unset: never. */
     quietHours: v.optional(v.object({ start: v.string(), end: v.string() })),
     /** How many of Perry's own messages may reach the phone in a day; the rest wait for tomorrow. Unset: no limit. */

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { describeError, errorText } from "./lib/errors";
+import { GUEST_TOOLS as GUEST_TOOL_NAMES } from "./lib/engines";
 import { LOOK_WAIT_MS } from "./screen";
 import { TAKE_LONGER_MAX_MIN, TURN_IDLE_MIN, TURN_MAX_MIN } from "./lib/turnLimits";
 import { ALL_TOOLS, type ToolName } from "./tools";
@@ -37,7 +38,7 @@ export const CODEX_TOOLS: readonly ToolName[] = [
  * a way to pass things on to the owner. No computer, files, keys, accounts,
  * web tools or other chats, so nothing there can reach anything of the owner's.
  */
-export const GUEST_TOOLS: readonly ToolName[] = ["remember", "recall", "read_memory", "forget", "tell_owner"];
+export const GUEST_TOOLS: readonly ToolName[] = GUEST_TOOL_NAMES;
 
 /**
  * Only Codex runs on the machine where its files are, so only Codex can show

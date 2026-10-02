@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
-import { ENGINE_LABELS, ENGINES, isEngine, type EngineKind } from "./lib/engines";
+import { ENGINE_LABELS, ENGINES, isEngine, RUNNABLE_ENGINES, type EngineKind } from "./lib/engines";
 import { engineFor } from "./installation";
 import { USAGE_REPORTS, type EngineUsage } from "./lib/usage";
 import { isOnline, statusesOf } from "./engines";
@@ -149,7 +149,7 @@ export const overview = query({
 
     const statuses = runners.filter(isOnline).flatMap(statusesOf);
     // Every engine Perry drives is listed, set up or not, so what each can tell is plain before it is.
-    const engines = ENGINES.filter((kind) => kind !== "cursor").flatMap((kind): EngineOverview[] => {
+    const engines = RUNNABLE_ENGINES.flatMap((kind): EngineOverview[] => {
       const found = statuses.filter((status) => status.kind === kind);
       const usage = merged[kind];
       const mine = runs.filter((item) => item.engine === kind);

@@ -20,7 +20,7 @@ import { runCli } from "./process";
  * Codex, over its app-server (runner/codex.ts), signed in with the owner's
  * ChatGPT plan. Everything that is Codex's own lives here: how Perry's access
  * becomes Codex's sandbox and approval policy, what its approval requests and
- * items look like, its quick-turn models, and its sign-in by device code.
+ * items look like, its quick turns, and its sign-in by device code.
  */
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -33,34 +33,16 @@ const NO_TOOLS = Object.fromEntries([
   "shell_tool", "unified_exec", "apps", "plugins", "multi_agent", "image_generation", "computer_use", "browser_use",
 ].map((feature) => [`features.${feature}`, false]));
 
-type ListedModel = { model: string; description?: string; hidden?: boolean; isDefault?: boolean; supportedReasoningEfforts?: Array<{ reasoningEffort: string }> };
 type ModelChoice = { model?: string; effort?: string };
 
-/** The owner's pick for chat names. PERRY_TITLE_MODEL picks another by id. */
-const TITLE_MODEL = "gpt-6-luna";
-
 /**
- * Which model a quick turn uses, from what the subscription offers. The
- * reviewer: PERRY_REVIEW_MODEL, else the first listed as fast, else the
- * default. Chat names: Luna, as the owner asked (PERRY_TITLE_MODEL), else the
- * first Luna listed, else a fast model, else the default.
+ * Which model a quick turn uses: the one the owner pinned for its purpose
+ * (PERRY_REVIEW_MODEL, PERRY_TITLE_MODEL), else the quick tier's, which the
+ * runner picks from what the subscription offers (convex/lib/routing.ts).
  */
-const QUICK_MODELS: Record<QuickTurn["purpose"], { wanted: () => string | undefined; pick: (all: ListedModel[], listed: ListedModel[], wanted?: string) => ListedModel | undefined }> = {
-  review: {
-    wanted: () => process.env.PERRY_REVIEW_MODEL,
-    pick: (all, listed, wanted) => (wanted ? all.find((item) => item.model === wanted) : undefined)
-      ?? listed.find((item) => /\bfast\b/i.test(item.description ?? ""))
-      ?? listed.find((item) => item.isDefault)
-      ?? listed[0],
-  },
-  title: {
-    wanted: () => process.env.PERRY_TITLE_MODEL || TITLE_MODEL,
-    pick: (all, listed, wanted) => all.find((item) => item.model === wanted)
-      ?? listed.find((item) => /luna/i.test(item.model))
-      ?? listed.find((item) => /\bfast\b/i.test(item.description ?? ""))
-      ?? listed.find((item) => item.isDefault)
-      ?? listed[0],
-  },
+const PINNED: Record<QuickTurn["purpose"], () => string | undefined> = {
+  review: () => process.env.PERRY_REVIEW_MODEL,
+  title: () => process.env.PERRY_TITLE_MODEL,
 };
 
 /** Codex's item statuses: CommandExecutionStatus, PatchApplyStatus, McpToolCallStatus. */
@@ -198,6 +180,9 @@ export class CodexEngine implements Engine {
     concurrentTurns: true,
     // A skill named in a message goes as a `skill` item of its input.
     skills: true,
+    // A guest turn: no shell, apps, plugins, images, computer or browser (NO_TOOLS), a read-only sandbox on an empty
+    // folder, approvals never asked, no AGENTS.md and no skills (runTurn).
+    guestLockdown: true,
   };
 
   private app: CodexAppServer | null = null;
@@ -207,8 +192,6 @@ export class CodexEngine implements Engine {
   private turns = new Map<string, { sink: TurnSink; cwd: string }>();
   /** Threads quick turns started. Any request Codex makes from one is refused. */
   private quickThreads = new Set<string>();
-  /** A quick-turn model per app-server and purpose, picked once. */
-  private picks = new WeakMap<CodexAppServer, Map<string, Promise<ModelChoice>>>();
   /** Threads started ahead of a new chat's first message, by what they were started with (takeSpare). */
   private spares = new Map<string, Spare>();
 
@@ -582,7 +565,8 @@ export class CodexEngine implements Engine {
     const started = Date.now();
     const left = () => Math.max(1, turn.timeoutMs - (Date.now() - started));
     const app = await this.ensure();
-    const choice = await this.quickModel(app, turn.purpose);
+    const pinned = PINNED[turn.purpose]();
+    const choice: ModelChoice = pinned ? { model: pinned } : { model: turn.model, effort: turn.effort };
     let running: TurnHandle | undefined;
     try {
       const thread = await app.request<{ thread?: { id?: string } }>("thread/start", {
@@ -614,26 +598,6 @@ export class CodexEngine implements Engine {
       if (running) void app.interrupt(running.cursor, running.turnId).catch(() => {});
       throw Object.assign(error instanceof Error ? error : new Error(message(error)), { model: choice.model });
     }
-  }
-
-  /** A model from what the subscription offers, picked once per app-server and purpose, at low effort where it has it. */
-  private quickModel(app: CodexAppServer, purpose: QuickTurn["purpose"]): Promise<ModelChoice> {
-    let picks = this.picks.get(app);
-    if (!picks) this.picks.set(app, picks = new Map());
-    let choice = picks.get(purpose);
-    if (!choice) {
-      const rule = QUICK_MODELS[purpose];
-      const wanted = rule.wanted();
-      choice = (async () => {
-        const { data = [] } = await app.request<{ data?: ListedModel[] }>("model/list", { limit: 100 });
-        const model = rule.pick(data, data.filter((item) => !item.hidden), wanted);
-        const effort = model?.supportedReasoningEfforts?.some((option) => option.reasoningEffort === "low") ? "low" : undefined;
-        return { model: model?.model ?? wanted, effort };
-      })();
-      choice.catch(() => picks.delete(purpose));
-      picks.set(purpose, choice);
-    }
-    return choice;
   }
 
   /**

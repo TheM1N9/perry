@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { GUEST_ENGINE, isRunnable, RUNNABLE_ENGINES, type EngineKind } from "./lib/engines";
+import { isRunnable, RUNNABLE_ENGINES, type EngineKind } from "./lib/engines";
 import { vAccess, vChannel, vEngine } from "./schema";
 
 /**
@@ -156,12 +156,13 @@ export const getDefaultEngine = internalQuery({
 });
 
 /**
- * The engine a chat or job runs on: its own, else the owner's default; a chat
- * with someone else is always on GUEST_ENGINE. Unset when there is neither:
- * Perry asks.
+ * The engine a chat or job runs on: its own, else the owner's default. A chat
+ * with someone else follows no default: its engine is the one its last turn
+ * was routed to, among those that can be locked down for it (routing.forGuest).
+ * Unset when there is neither: Perry asks.
  */
 export async function engineFor(ctx: Parameters<typeof read>[0], item?: { engine?: EngineKind; contactId?: unknown } | null): Promise<EngineKind | undefined> {
-  if (item?.contactId) return GUEST_ENGINE;
+  if (item?.contactId) return item.engine;
   return item?.engine ?? await defaultEngine(ctx);
 }
 
