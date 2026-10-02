@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRightIcon, PencilIcon, SearchIcon, XIcon } from "lucide-react";
+import { BookmarkIcon, CalendarDaysIcon, ChevronRightIcon, FolderIcon, MessageSquareIcon, PencilIcon, SearchIcon, UserIcon, UserRoundIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { MemoryView } from "@/convex/dashboard";
+import { noteHref } from "@/convex/lib/notes";
+import type { MemoryPage } from "@/convex/pages";
 import { errorText } from "@/lib/format";
 import { PERSONALITIES } from "@/lib/persona";
 import { useSession } from "@/lib/session";
@@ -110,7 +112,9 @@ function Memories() {
   return (
     <div className="space-y-8">
       <TeachForm />
+      <MemoryPages />
       <section aria-label="What Perry remembers" className="space-y-3">
+        <h2 className="text-md font-semibold tracking-[-0.01em]">Older memories</h2>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <ToggleGroup value={[filter]} onValueChange={(value) => setFilter((value[0] as Kind | "all" | undefined) ?? "all")} variant="outline" size="sm" aria-label="Filter by kind">
             <ToggleGroupItem value="all">All</ToggleGroupItem>
@@ -132,7 +136,7 @@ function Memories() {
         {memories === undefined && <ListSkeleton />}
         {memories?.length === 0 && (term || filter !== "all"
           ? <EmptyState title="Nothing matches" action={<Button variant="outline" size="sm" onClick={() => { setSearch(""); setFilter("all"); }}>Clear filters</Button>} />
-          : <EmptyState mascot title="Nothing saved yet" />)}
+          : <EmptyState title="None left" />)}
         {memories && memories.length > 0 && (
           <List label="Memories">
             {memories.map((memory) => (
@@ -189,6 +193,70 @@ function Memories() {
         )}
       </section>
     </div>
+  );
+}
+
+const PAGE_ICONS = { about: UserIcon, remember: BookmarkIcon, journal: CalendarDaysIcon, person: UserRoundIcon, chat: MessageSquareIcon } as const;
+const GROUPS: Array<{ kinds: Array<MemoryPage["kind"]>; label: string }> = [
+  { kinds: ["about", "remember"], label: "Loaded in every chat" },
+  { kinds: ["journal"], label: "Journal" },
+  { kinds: ["person"], label: "People" },
+  { kinds: ["chat"], label: "Kept to one chat" },
+];
+/** Journal days shown before "more". */
+const DAYS = 7;
+
+/**
+ * Memory as pages (convex/pages.ts): About me, Things to remember, a journal
+ * page a day, a page per person, and what a chat kept to itself. Each opens in
+ * the page editor, where every memory is a line to read and edit as text.
+ */
+function MemoryPages() {
+  const { dashboardKey } = useSession();
+  const router = useRouter();
+  const pages = useQuery(api.pages.memoryPages, { key: dashboardKey });
+  const open = useMutation(api.pages.openMemoryPage);
+  const [allDays, setAllDays] = useState(false);
+  const go = (kind: "about" | "remember" | "journal") => void open({ key: dashboardKey, kind }).then((id) => router.push(noteHref(id)), (cause) => toast.error(`Couldn't open it: ${errorText(cause)}`));
+  if (pages === undefined) return <ListSkeleton rows={3} />;
+  const has = (kind: MemoryPage["kind"]) => pages.some((page) => page.kind === kind && !page.projectId);
+  return (
+    <section aria-label="Memory pages" className="space-y-6">
+      {GROUPS.map((group) => {
+        let shown = pages.filter((page) => group.kinds.includes(page.kind));
+        const more = group.kinds.includes("journal") && !allDays && shown.length > DAYS ? shown.length - DAYS : 0;
+        if (more) shown = shown.slice(0, DAYS);
+        const starters = group.kinds.includes("about") ? (["about", "remember"] as const).filter((kind) => !has(kind)) : [];
+        if (!shown.length && !starters.length) return null;
+        return (
+          <div key={group.label}>
+            <h2 className="mb-1 text-sm font-medium text-muted-foreground">{group.label}</h2>
+            <List label={group.label}>
+              {starters.map((kind) => (
+                <li key={kind} className="py-2.5">
+                  <button type="button" className="flex items-center gap-3 text-md font-medium hover:underline underline-offset-2" onClick={() => go(kind)} data-memory-page={kind}>
+                    {kind === "about" ? <UserIcon className="size-4 text-muted-foreground" /> : <BookmarkIcon className="size-4 text-muted-foreground" />}
+                    {kind === "about" ? "About me" : "Things to remember"}
+                  </button>
+                </li>
+              ))}
+              {shown.map((page) => {
+                const Icon = PAGE_ICONS[page.kind];
+                return (
+                  <li key={page.id} className="relative flex items-center gap-3 py-2.5">
+                    <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    <Link href={noteHref(page.id)} data-memory-page={page.kind} className="min-w-0 flex-1 truncate text-md font-medium after:absolute after:inset-0 hover:underline underline-offset-2">{page.title}</Link>
+                    {page.project && <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><FolderIcon className="size-3" />{page.project}</span>}
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{page.lines === 1 ? "1 line" : `${page.lines} lines`}</span>
+                  </li>
+                );
+              })}
+            </List>
+            {more > 0 && <Button variant="ghost" size="xs" className="mt-1 text-muted-foreground" onClick={() => setAllDays(true)}>{more} more {more === 1 ? "day" : "days"}</Button>}
+          </div>
+        );
+      })}
+    </section>
   );
 }
 

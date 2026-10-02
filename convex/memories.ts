@@ -4,7 +4,9 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { timezoneOf } from "./jobs";
 import { EMBED_MODEL, embed, embedderReady, packVector, similarity, unpackVector, warmUp } from "./lib/embed";
-import { vMemoryKind, vMemoryOrigin } from "./schema";
+import { PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
+import { dropLine, memoryPage, putLine, rewordLine, writePage, type Author, type Place } from "./pages";
+import { vLineBy, vMemoryKind, vMemoryOrigin } from "./schema";
 
 /**
  * Internal data layer for memory, modelled on OpenClaw's workspace memory.
@@ -86,6 +88,7 @@ function view(memory: Memory) {
     ...(memory.section ? { section: memory.section } : {}),
     createdAt: memory.createdAt,
     editedAt: memory.editedAt,
+    ...(memory.confirmedAt ? { confirmedAt: memory.confirmedAt } : {}),
   };
 }
 export type MemoryView = ReturnType<typeof view> & { page?: { id: string; title: string } };
@@ -102,7 +105,27 @@ async function layer(ctx: QueryCtx, kind: Kind, limit?: number): Promise<Memory[
   return limit === undefined ? current : current.slice(0, limit);
 }
 
-/** Save a memory; one that says exactly what a current one in the same place says is not saved twice. */
+/**
+ * Where a memory goes (pages.ts): what a chat kept to itself to that chat's
+ * page; a day's note to that day's journal; a standing preference to About me
+ * (a project's to its Things to remember); a fact about someone else, kept
+ * for every chat, to their page in People; any other fact to Things to
+ * remember, the project's in a project.
+ */
+function placeFor(kind: "profile" | "core" | "daily", today: string, args: { conversationId?: Id<"conversations">; projectId?: Id<"projects">; about?: string[] }): Place {
+  if (args.conversationId) return { kind: "chat", conversationId: args.conversationId };
+  if (kind === "daily") return { kind: "journal", day: today, ...(args.projectId ? { projectId: args.projectId } : {}) };
+  if (kind === "profile") return args.projectId ? { kind: "remember", projectId: args.projectId } : { kind: "about" };
+  const person = args.about?.map((name) => name.trim()).find(Boolean);
+  if (person && !args.projectId) return { kind: "person", name: person };
+  return { kind: "remember", ...(args.projectId ? { projectId: args.projectId } : {}) };
+}
+
+/**
+ * Save a memory, as a line in the page it belongs in (placeFor), under the
+ * section named or the one it fits. One that says exactly what a current one
+ * in the same place says is not saved twice: it counts as confirmed again.
+ */
 export const add = internalMutation({
   args: {
     text: v.string(),
@@ -120,27 +143,37 @@ export const add = internalMutation({
     about: v.optional(v.array(v.string())),
     /** The to-do this note is the plan behind. Unset, it keeps the link of a note it replaces. */
     todoId: v.optional(v.string()),
+    /** The section of its page: one of Things to remember's (People, Work, Health, Home, Preferences, Other) or any other. */
+    section: v.optional(v.string()),
+    /** Who wrote it (Perry unless said), and from which chat. */
+    by: v.optional(vLineBy),
+    from: vChat,
   },
-  returns: v.object({ id: v.optional(v.id("memories")), duplicate: v.boolean(), superseded: v.number(), linked: v.optional(v.boolean()) }),
+  returns: v.object({
+    id: v.optional(v.id("memories")), duplicate: v.boolean(), superseded: v.number(), linked: v.optional(v.boolean()),
+    page: v.optional(v.object({ id: v.id("notes"), title: v.string() })), section: v.optional(v.string()),
+  }),
   handler: async (ctx, args) => {
-    const text = args.text.trim();
+    // One line of a page: blank lines inside it would make it several.
+    const text = args.text.trim().replace(/\n\s*\n+/g, "\n");
     const kind = args.kind ?? "core";
-    const today = kind === "daily" ? await day(ctx) : undefined;
+    const today = await day(ctx);
+    const daily = kind === "daily" ? today : undefined;
     const named = args.todoId ? ctx.db.normalizeId("todos", args.todoId) : null;
     const todoId = named && await ctx.db.get(named) ? named : undefined;
     // Whether the to-do it named was found, for the agent to hear.
     const linked = args.todoId ? { linked: Boolean(todoId) } : {};
 
     // Cheap exact-duplicate guard. The agent re-remembers the same fact more
-    // often than you would think, and duplicates poison recall ranking.
+    // often than you would think, and duplicates poison recall ranking. Said again, it is confirmed.
     const existing = await ctx.db
       .query("memories")
       .withSearchIndex("search_text", (q) => q.search("text", text))
-      .take(5);
+      .take(20);
     // A daily note is one day's: the same words on another day are a new note ("went to the gym").
-    const match = existing.find((m) => !m.supersededBy && kindOf(m) === kind && m.day === today && m.conversationId === args.conversationId && m.projectId === args.projectId && m.text.trim().toLowerCase() === text.toLowerCase());
+    const match = existing.find((m) => !m.supersededBy && kindOf(m) === kind && m.day === daily && m.conversationId === args.conversationId && m.projectId === args.projectId && m.text.trim().toLowerCase() === text.toLowerCase());
     if (match) {
-      if (todoId && match.todoId !== todoId) await ctx.db.patch(match._id, { todoId });
+      await ctx.db.patch(match._id, { confirmedAt: Date.now(), ...(todoId && match.todoId !== todoId ? { todoId } : {}) });
       return { id: match._id, duplicate: true, superseded: 0, ...linked };
     }
 
@@ -151,27 +184,37 @@ export const add = internalMutation({
       const old = ctx.db.normalizeId("memories", raw);
       let memory = old ? await ctx.db.get(old) : null;
       for (let hops = 0; memory?.supersededBy && hops < 50; hops++) memory = await ctx.db.get(memory.supersededBy);
-      // A page's line changes with its page, never by a memory replacing it.
+      // A line of one of the owner's other pages changes with its page, never by a memory replacing it.
       if (memory && !isPageLine(memory) && !replaced.some((other) => other._id === memory!._id)) replaced.push(memory);
     }
     // A new version of a note behind a to-do goes on following it.
     const follows = todoId ?? replaced.find((memory) => memory.todoId)?.todoId;
 
-    const id = await ctx.db.insert("memories", {
-      text,
-      tags: args.tags.map((t) => t.trim().toLowerCase()).filter(Boolean),
-      source: args.source,
-      createdAt: Date.now(),
-      kind,
-      ...(today ? { day: today } : {}),
+    const place = placeFor(kind, today, args);
+    const page = await memoryPage(ctx, place);
+    const tags = args.tags.map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const about = args.about?.length ? [...new Set(args.about.map((name) => name.trim()).filter(Boolean))] : undefined;
+    const section = args.section?.trim()
+      || (kind === "profile" ? PREFERENCES_SECTION : place.kind === "remember" ? sectionFor(text, tags, about) : undefined);
+    const author: Author = { by: args.by ?? (args.origin === "job" ? "job" : "assistant"), ...(args.from ? { from: args.from } : {}) };
+    // What it replaces leaves its page; one on this page is changed where it stands. Each stays, superseded.
+    const inPlace = replaced.find((memory) => memory.pageId === page._id);
+    for (const old of replaced) await ctx.db.patch(old._id, { supersededBy: old._id });
+    for (const old of replaced) {
+      if (!old.pageId || old === inPlace) continue;
+      const from = await ctx.db.get(old.pageId);
+      const content = from ? removeLine(from.content, old.text) : null;
+      if (from && content !== null) await writePage(ctx, from, { content }, author);
+    }
+    const id = await putLine(ctx, (await ctx.db.get(page._id))!, { text, ...(section ? { section } : {}), ...(inPlace ? { replacing: inPlace.text } : {}) }, author, {
+      kind, tags, source: args.source,
       ...(args.origin ? { origin: args.origin } : {}),
-      ...(args.conversationId ? { conversationId: args.conversationId } : args.projectId ? { projectId: args.projectId } : {}),
-      ...(args.about?.length ? { about: [...new Set(args.about.map((name) => name.trim()).filter(Boolean))] } : {}),
+      ...(daily ? { day: daily } : {}),
+      ...(about ? { about } : {}),
       ...(follows ? { todoId: follows } : {}),
     });
-    await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
     for (const old of replaced) await ctx.db.patch(old._id, { supersededBy: id });
-    return { id, duplicate: false, superseded: replaced.length, ...linked };
+    return { id, duplicate: false, superseded: replaced.length, ...linked, page: { id: page._id, title: page.title }, ...(section ? { section } : {}) };
   },
 });
 
@@ -229,6 +272,13 @@ export async function followTodo(ctx: MutationCtx, todo: Doc<"todos">, change: T
   for (const note of notes) {
     const tags = note.tags.filter((tag) => tag !== "asked" && !(settled && tag === "open"));
     if (change === "undone" && kindOf(note) === "daily" && !tags.includes("open")) tags.push("open");
+    // A line of a page says so where it stands, keeping its id.
+    if (note.pageId) {
+      await rewordLine(ctx, note, `${note.text.replace(FOLLOWED, "")} ${happened}`, { by: "owner" });
+      await ctx.db.patch(note._id, { tags });
+      made.push(note._id);
+      continue;
+    }
     const id = await ctx.db.insert("memories", {
       text: `${note.text.replace(FOLLOWED, "")} ${happened}`,
       tags,
@@ -254,7 +304,7 @@ export async function followTodo(ctx: MutationCtx, todo: Doc<"todos">, change: T
  * Pages' lines come too, unless `memoriesOnly`.
  */
 export const search = internalQuery({
-  args: { query: v.string(), limit: v.optional(v.number()), kind: v.optional(vMemoryKind), chat: vChat, everywhere: v.optional(v.boolean()), memoriesOnly: v.optional(v.boolean()) },
+  args: { query: v.string(), limit: v.optional(v.number()), kind: v.optional(vMemoryKind), chat: vChat, everywhere: v.optional(v.boolean()), memoriesOnly: v.optional(v.boolean()), loose: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const limit = Math.min(args.limit ?? 8, MAX_RESULTS);
     const query = args.query.trim();
@@ -265,7 +315,7 @@ export const search = internalQuery({
         : await ctx.db.query("memories").withIndex("by_created").order("desc").take(limit * 2)
       : await ctx.db.query("memories").withSearchIndex("search_text", (q) => q.search("text", query)).take(limit * 2);
     return docs
-      .filter((memory) => !memory.supersededBy && (!args.kind || kindOf(memory) === args.kind) && !(args.memoriesOnly && isPageLine(memory)) && (args.everywhere || seen(memory)))
+      .filter((memory) => !memory.supersededBy && (!args.kind || kindOf(memory) === args.kind) && !(args.memoriesOnly && isPageLine(memory)) && !(args.loose && memory.pageId) && (args.everywhere || seen(memory)))
       .slice(0, limit)
       .map(view);
   },
@@ -448,6 +498,7 @@ export const bootstrap = internalQuery({
 const GUIDE = `
 How your memory works. Nothing carries over between chats unless it is written down, so write it down, in the same reply, without being asked.
 - Whenever the owner tells you something about their life, save it: the people in it and who they are to them (family, friends, colleagues, clients), birthdays and dates, plans and appointments, things they have to do or decide, their health, fitness and routine, their work, projects and what they are making, places, purchases, likes and dislikes, what happened and how it went. A passing mention counts ("my brother's birthday is coming up", "I have to call Sam about the offer"). When unsure whether it matters later, save it as a daily note: a note too many costs nothing, a fact forgotten costs the owner.
+- Each memory is a line in a page the owner reads and edits on the Memory page: kind="profile" goes to About me, kind="core" to Things to remember under a section (section: People, Work, Health, Home, Preferences or Other), one about someone else to their page under People, and kind="daily" to today's journal page.
 - remember kind="profile": standing preferences and how the owner wants things done, phrased as directives.
 - remember kind="core": facts that stay true (who someone is, where they live, what they do, a birthday, a goal) and decisions and commitments.
 - When a memory is about someone other than the owner, name them in about ("Datta", "Arjun"), as the owner calls them: it is how the owner sees, under Settings → People, what you remember about each person.
@@ -471,7 +522,7 @@ export const MEMORY_LINE = "memories:";
 const STALE_AFTER_MS = 90 * DAY_MS;
 /** " (id; noted Mar 2025)" for an old fact, " (id)" for a recent one. */
 function tag(memory: MemoryView): string {
-  const at = memory.editedAt ?? memory.createdAt;
+  const at = Math.max(memory.confirmedAt ?? 0, memory.editedAt ?? 0, memory.createdAt);
   // This chat's or this project's own memory says so, and stays there.
   if (memory.chatId) return ` (${memory.id}; this chat only)`;
   if (memory.projectId) return ` (${memory.id}; this project only)`;
@@ -520,7 +571,8 @@ export const context = internalAction({
     return {
       instructions: [
         GUIDE,
-        section("Owner profile", loaded.profile.map((m) => `- ${m.text}${tag(m)}`)),
+        // About me's own lines come whole with USER.md, which it is (persona.ts).
+        section("Owner profile", loaded.profile.filter((m) => !m.pageId).map((m) => `- ${m.text}${tag(m)}`)),
       ].filter(Boolean).join("\n\n"),
       recalled: recalled ? `${RECALL_HEADER}\n\n${recalled}` : "",
       digest,
@@ -543,6 +595,12 @@ export const edit = internalMutation({
     const text = args.text.trim();
     if (text.length < 3) return { saved: false, error: "Write at least a few words, or forget it instead." };
     if (text === memory.text) return { saved: false };
+    // A line of a page changes in its page, where it stands.
+    if (memory.pageId) {
+      await rewordLine(ctx, memory, text, { by: "owner" });
+      await ctx.db.patch(id, { origin: "owner" });
+      return { saved: true };
+    }
     await ctx.db.patch(id, { text, origin: "owner", editedAt: Date.now(), vector: undefined, vectorModel: undefined });
     await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
     return { saved: true };
@@ -561,16 +619,11 @@ export const noteAlert = internalMutation({
   handler: async (ctx, args) => {
     const text = args.text.trim().replace(/\s+/g, " ").slice(0, 600);
     if (!text) return null;
-    await ctx.db.insert("memories", {
-      text: `Alerted the owner at ${args.at}: ${text}`,
-      tags: ["alert"],
-      source: "alert",
-      createdAt: Date.now(),
-      kind: "daily",
-      day: await day(ctx),
-      origin: "job",
+    const today = await day(ctx);
+    // A line of today's journal.
+    await putLine(ctx, await memoryPage(ctx, { kind: "journal", day: today }), { text: `Alerted the owner at ${args.at}: ${text}` }, { by: "job" }, {
+      kind: "daily", tags: ["alert"], source: "alert", day: today, origin: "job",
     });
-    await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
     return null;
   },
 });
@@ -632,12 +685,14 @@ export const removeMany = internalMutation({
         continue;
       }
       const doc = await ctx.db.get(id);
-      // A page's line goes by changing its page, not from here.
+      // A line of one of the owner's other pages goes by changing its page, not from here.
       if (!doc || !seen(doc) || isPageLine(doc)) {
         missing.push(raw);
         continue;
       }
-      await ctx.db.delete(id);
+      // A memory in a page leaves its page.
+      if (doc.pageId) await dropLine(ctx, doc, { by: args.chat ? "assistant" : "owner", ...(args.chat ? { from: args.chat } : {}) });
+      else await ctx.db.delete(id);
       deleted += 1;
     }
 

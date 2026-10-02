@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { writePage } from "./pages";
 
 /**
  * Who the owner is and who the assistant is, the way OpenClaw keeps USER.md
@@ -14,6 +15,9 @@ import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from
  * Standing rules for how to work stay in profile memory (memories.ts); these
  * are who, not how. Each write adds a row, so the newest is current and the
  * rest are history (schema.ts, persona).
+ *
+ * USER.md is the About me page (pages.ts) once there is one: the page is what
+ * is current, and each change to it, from anywhere, is kept here as a version.
  */
 
 export const DEFAULT_NAME = "Perry";
@@ -23,21 +27,25 @@ const HISTORY = 50;
 export type By = "owner" | "assistant" | "job";
 const vBy = v.union(v.literal("owner"), v.literal("assistant"), v.literal("job"));
 
-async function latest(ctx: QueryCtx, kind: "user" | "identity"): Promise<Doc<"persona"> | null> {
+async function latest(ctx: { db: QueryCtx["db"] }, kind: "user" | "identity"): Promise<Doc<"persona"> | null> {
   return await ctx.db.query("persona").withIndex("by_kind", (q) => q.eq("kind", kind)).order("desc").first();
 }
 
-async function trim(ctx: MutationCtx, kind: "user" | "identity") {
+async function trim(ctx: { db: MutationCtx["db"] }, kind: "user" | "identity") {
   const old = await ctx.db.query("persona").withIndex("by_kind", (q) => q.eq("kind", kind)).order("desc").collect();
   for (const row of old.slice(HISTORY)) await ctx.db.delete(row._id);
 }
 
 export type Persona = { user: string; name: string; personality: string };
 
+/** The About me page, which USER.md is once it exists. */
+const aboutPage = async (ctx: { db: QueryCtx["db"] }) =>
+  (await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", "about")).collect()).find((page) => !page.projectId) ?? null;
+
 export async function readPersona(ctx: QueryCtx): Promise<Persona> {
-  const [user, identity] = await Promise.all([latest(ctx, "user"), latest(ctx, "identity")]);
+  const [user, identity, about] = await Promise.all([latest(ctx, "user"), latest(ctx, "identity"), aboutPage(ctx)]);
   return {
-    user: user?.text ?? "",
+    user: about ? about.content : user?.text ?? "",
     name: identity?.name?.trim() || DEFAULT_NAME,
     personality: identity?.personality?.trim() ?? "",
   };
@@ -83,7 +91,7 @@ export const forPrompt = internalQuery({
 const SITTING = 5 * 60_000;
 
 /** Write a new version, or with `typing`, replace the owner's typed one from a moment ago. */
-async function write(ctx: MutationCtx, row: Omit<Doc<"persona">, "_id" | "_creationTime">, previous: Doc<"persona"> | null) {
+async function write(ctx: { db: MutationCtx["db"] }, row: Omit<Doc<"persona">, "_id" | "_creationTime">, previous: Doc<"persona"> | null) {
   if (row.typing && previous?.typing && previous.by === "owner" && row.createdAt - previous.createdAt < SITTING) {
     await ctx.db.patch(previous._id, row);
     return;
@@ -92,16 +100,27 @@ async function write(ctx: MutationCtx, row: Omit<Doc<"persona">, "_id" | "_creat
   await trim(ctx, row.kind);
 }
 
-/** Save USER.md, unless it is unchanged. */
+/** Keep a version of USER.md, unless it is the same as the last one; `typing` joins the owner's sitting. */
+export async function recordUser(ctx: { db: MutationCtx["db"] }, text: string, by: By, typing?: boolean): Promise<boolean> {
+  const previous = await latest(ctx, "user");
+  if (previous?.text?.trim() === text.trim()) return false;
+  await write(ctx, { kind: "user", text: text.trim(), by, ...(typing ? { typing: true } : {}), createdAt: Date.now() }, previous);
+  return true;
+}
+
+/** Save USER.md, unless it is unchanged: into the About me page when there is one, which keeps the version. */
 export const writeUser = internalMutation({
   args: { text: v.string(), by: vBy, typing: v.optional(v.boolean()) },
   returns: v.object({ changed: v.boolean() }),
   handler: async (ctx, args) => {
     const text = args.text.trim();
-    const previous = await latest(ctx, "user");
-    if (previous?.text?.trim() === text) return { changed: false };
-    await write(ctx, { kind: "user", text, by: args.by, ...(args.typing ? { typing: true } : {}), createdAt: Date.now() }, previous);
-    return { changed: true };
+    const about = await aboutPage(ctx);
+    if (about) {
+      if (about.content.trim() === text) return { changed: false };
+      await writePage(ctx, about, { content: text ? `${text}\n` : "" }, { by: args.by }, { typing: args.typing });
+      return { changed: true };
+    }
+    return { changed: await recordUser(ctx, text, args.by, args.typing) };
   },
 });
 
@@ -136,6 +155,12 @@ export const restore = internalMutation({
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
     if (!row) return false;
+    const about = row.kind === "user" ? await aboutPage(ctx) : null;
+    // USER.md brought back is the About me page's words again; the page keeps the version.
+    if (about) {
+      await writePage(ctx, about, { content: row.text?.trim() ? `${row.text.trim()}\n` : "" }, { by: "owner" });
+      return true;
+    }
     await ctx.db.insert("persona", { kind: row.kind, text: row.text, name: row.name, personality: row.personality, by: "owner", createdAt: Date.now() });
     await trim(ctx, row.kind);
     return true;

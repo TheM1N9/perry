@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
-  CodeIcon, CopyIcon, DownloadIcon, FileTextIcon, FileUpIcon, FolderIcon, FolderInputIcon, LinkIcon, MessageSquareIcon, MoreHorizontalIcon,
+  ChevronRightIcon, CodeIcon, CopyIcon, DownloadIcon, FileTextIcon, FileUpIcon, FolderIcon, FolderInputIcon, LinkIcon, MessageSquareIcon, MoreHorizontalIcon,
   PlusIcon, SearchIcon, SparklesIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -13,6 +13,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { noteHref } from "@/convex/lib/notes";
 import type { NoteSummary, NoteView } from "@/convex/notes";
+import type { LineView } from "@/convex/pages";
 import { copyText, errorText } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { NoteAutosave } from "@/components/notes/autosave";
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Textarea } from "@/components/ui/textarea";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SaveStatus, type SaveState } from "../autosave";
 import { EmptyState, List, ListSkeleton, Page, RelativeTime, StatusBadge, TopBar } from "../common";
 
@@ -181,6 +183,9 @@ function NoteEditing({ note }: { note: NoteView }) {
     return () => window.removeEventListener("keydown", keys);
   }, [controller]);
 
+  // A page of memory keeps its name and place: About me and Things to remember stay too.
+  const memory = Boolean(note.kind);
+  const lasting = note.kind === "about" || note.kind === "remember";
   const status: SaveState = state.status === "saving" ? { status: "saving" } : state.status === "dirty" ? { status: "editing" }
     : state.status === "error" ? { status: "error", error: state.error } : state.status === "saved" ? { status: "saved" } : { status: "idle" };
   const download = () => {
@@ -207,7 +212,7 @@ function NoteEditing({ note }: { note: NoteView }) {
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="Note options" />}><MoreHorizontalIcon /></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuSub>
+            {!memory && <DropdownMenuSub>
               <DropdownMenuSubTrigger><FolderInputIcon />Move to project</DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-48">
                 <DropdownMenuRadioGroup value={note.projectId ?? "none"} onValueChange={(value) => void moveTo(value === "none" ? null : value as Id<"projects">)}>
@@ -215,7 +220,7 @@ function NoteEditing({ note }: { note: NoteView }) {
                   {(projects ?? []).map((project) => <DropdownMenuRadioItem key={project.id} value={project.id} closeOnClick>{project.name}</DropdownMenuRadioItem>)}
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
-            </DropdownMenuSub>
+            </DropdownMenuSub>}
             <DropdownMenuCheckboxItem checked={source} onCheckedChange={(on) => {
               const back = inspectMarkdown(draft.content);
               if (!on && !back.supported) toast.info(`${back.reason} It stays as Markdown.`);
@@ -225,19 +230,19 @@ function NoteEditing({ note }: { note: NoteView }) {
             <DropdownMenuItem onClick={download}><DownloadIcon />Download .md</DropdownMenuItem>
             <DropdownMenuItem onClick={() => copy(draft.content, "Markdown")}><CopyIcon />Copy as Markdown</DropdownMenuItem>
             <DropdownMenuItem onClick={() => copy(`${window.location.origin}${noteHref(note.id)}`, "Link")}><LinkIcon />Copy link</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={() => setRemoving(true)}><Trash2Icon />Delete</DropdownMenuItem>
+            {!lasting && <DropdownMenuSeparator />}
+            {!lasting && <DropdownMenuItem variant="destructive" onClick={() => setRemoving(true)}><Trash2Icon />Delete</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
       }>
-        <Link href="/notes" className="text-muted-foreground hover:text-foreground">Notes</Link>
+        <Link href={memory ? "/memory" : "/notes"} className="text-muted-foreground hover:text-foreground">{memory ? "Memory" : "Notes"}</Link>
         <span className="text-muted-foreground/60" aria-hidden>/</span>
         <span className="truncate">{draft.title}</span>
       </TopBar>
       <main id="content" tabIndex={-1} className="flex-1 outline-none">
         <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-4 sm:px-8 sm:pt-8">
           <input
-            aria-label="Title" value={draft.title} maxLength={160} placeholder="Untitled"
+            aria-label="Title" value={draft.title} maxLength={160} placeholder="Untitled" readOnly={memory}
             className="w-full bg-transparent text-2xl font-semibold tracking-[-0.02em] outline-none placeholder:text-muted-foreground/60"
             onChange={(event) => controller.edit({ title: event.target.value })}
             onBlur={() => void controller.flush()}
@@ -266,13 +271,14 @@ function NoteEditing({ note }: { note: NoteView }) {
           ) : (
             <NoteEditor value={draft.content} label={draft.title} onChange={(content) => controller.edit({ content })} onBlur={() => void controller.flush()} />
           )}
+          <LineSources id={note.id} memory={memory} />
         </div>
       </main>
       <AlertDialog open={removing} onOpenChange={setRemoving}>
         <AlertDialogContent size="sm">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this note?</AlertDialogTitle>
-            <AlertDialogDescription>“{draft.title}” goes for good, for you and for Perry.</AlertDialogDescription>
+            <AlertDialogDescription>“{draft.title}” goes for good, for you and for Perry{memory ? ", with everything remembered in it" : ""}.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep it</AlertDialogCancel>
@@ -283,5 +289,47 @@ function NoteEditing({ note }: { note: NoteView }) {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+const WRITER = { owner: "You", assistant: "Perry", job: "A schedule" } as const;
+const day = (at: number) => new Date(at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+
+/**
+ * Where each line came from (convex/pages.ts): who wrote it, from which chat,
+ * when, and when it was last confirmed. Folded away until asked for.
+ */
+function LineSources({ id, memory }: { id: string; memory: boolean }) {
+  const { dashboardKey } = useSession();
+  const [open, setOpen] = useState(false);
+  const lines = useQuery(api.pages.lines, open ? { key: dashboardKey, id } : "skip");
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="mt-10 border-t pt-3" data-sources>
+      <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1.5 rounded-md text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+        <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" />
+        {memory ? "Where each memory came from" : "Where each line came from"}
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        {lines === undefined ? <ListSkeleton rows={2} /> : lines.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">Nothing written yet.</p> : (
+          <ul className="mt-2 divide-y" aria-label="Lines and where they came from">
+            {lines.map((line: LineView) => (
+              <li key={line.id} className="py-2" data-line={line.id}>
+                <p className="truncate text-sm">{line.text}</p>
+                <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                  {line.section && <span>{line.section}</span>}
+                  <span>{line.by ? WRITER[line.by] : "You"}</span>
+                  {line.from && <Link href={`/chat/${line.from.id}`} className="hover:text-foreground hover:underline">from “{line.from.title}”</Link>}
+                  <span>{day(line.createdAt)}</span>
+                  {line.editedAt && <span>edited {day(line.editedAt)}</span>}
+                  {line.confirmedAt && <span>confirmed {day(line.confirmedAt)}</span>}
+                  {line.origin === "tool" && <span>from a web page or app</span>}
+                  {line.tags.length > 0 && <span>{line.tags.map((tag) => `#${tag}`).join(" ")}</span>}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

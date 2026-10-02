@@ -49,6 +49,8 @@ const shape = (m: MemoryRow) => m.kind === "page"
     kind: m.kind,
     ...(m.day ? { day: m.day } : {}),
     ...(m.origin ? { origin: m.origin } : {}),
+    // The page of memory it is a line of, and the section.
+    ...(m.page ? { page: m.section ? `${m.page.title}, ${m.section}` : m.page.title } : {}),
     rememberedOn: new Date(m.createdAt).toISOString().slice(0, 10),
   };
 
@@ -92,8 +94,9 @@ const remember = createTool({
     "Write to memory. Call it whenever the owner tells you something about their life (people and who they " +
     "are, dates, plans, work, health, routine, likes, what happened), in the same reply and without being " +
     "asked; one call per fact. kind=profile for standing preferences and how the owner wants things done, " +
-    "phrased as directives. kind=core for facts that stay true, decisions and commitments. kind=daily for " +
-    "what happened today, plans for the coming days, and anything you are not sure will last. Write each as " +
+    "phrased as directives (About me). kind=core for facts that stay true, decisions and commitments (Things to " +
+    "remember, in a section; a fact about someone else goes to their page under People). kind=daily for " +
+    "what happened today, plans for the coming days, and anything you are not sure will last (today's journal). Write each as " +
     "a standalone sentence that will still make sense later, with names and dates in full. When a fact " +
     "changes, pass the old memory's id in supersedes instead of forgetting it. Omit secrets and instructions. " +
     "Nothing is saved unless you call this.",
@@ -111,11 +114,13 @@ const remember = createTool({
         "\"everywhere\" is for what every chat should know about the owner, and the default outside a project. \"this chat\" keeps it to this chat only."),
     todoId: z.string().optional()
       .describe("For a plan that is also on the to-do list: the to-do's id, from add_todo or list_todos. The note then follows the to-do: when it is moved, ticked off or deleted, the note is updated to say so."),
+    section: z.string().max(80).optional()
+      .describe("For kind=core: the section of Things to remember it goes under: People, Work, Health, Home, Preferences or Other, or a new one when none fits. Left out, the one it fits."),
   }),
   execute: async (
     ctx,
     input,
-  ): Promise<{ id?: string; stored: boolean; superseded: number; note: string }> => {
+  ): Promise<{ id?: string; stored: boolean; superseded: number; page?: string; note: string }> => {
     // What a scheduled job saves is the job's, whatever the call says; see mcp.ts.
     const fromJob = "fromJob" in ctx && ctx.fromJob === true;
     const chat: { projectId?: Id<"projects">; contactId?: string } | null = ctx.conversationId ? await ctx.runQuery(internal.conversations.getById, { id: ctx.conversationId }) : null;
@@ -133,7 +138,7 @@ const remember = createTool({
       : chat?.projectId && (scope === "this project" || fromJob) ? { projectId: chat.projectId }
       : fromJob ? {}
       : { conversationId: ctx.conversationId };
-    const result: { id?: string; duplicate: boolean; superseded: number; linked?: boolean } = await ctx.runMutation(
+    const result: { id?: string; duplicate: boolean; superseded: number; linked?: boolean; page?: { id: string; title: string }; section?: string } = await ctx.runMutation(
       internal.memories.add,
       {
         text: input.text,
@@ -146,15 +151,20 @@ const remember = createTool({
         ...(input.about?.length ? { about: input.about } : {}),
         // The owner's to-dos are no business of a chat with someone else.
         ...(input.todoId && !sealed ? { todoId: input.todoId } : {}),
+        ...(input.section ? { section: input.section } : {}),
+        by: fromJob ? "job" : "assistant",
+        ...(ctx.conversationId ? { from: ctx.conversationId } : {}),
       },
     );
     const unlinked = result.linked === false ? " There is no to-do with that id, so it is not linked; list_todos shows them." : "";
     const where = place.projectId ? "for this project" : place.conversationId ? "for this chat only" : "for every chat";
+    const page = result.page ? `${result.page.title}${result.section ? `, ${result.section}` : ""}` : undefined;
     return {
       id: result.id,
       stored: Boolean(result.id) && !result.duplicate,
       superseded: result.superseded,
-      note: `${result.duplicate ? "Already remembered." : `Stored ${where}.`}${unlinked}`,
+      ...(page ? { page } : {}),
+      note: `${result.duplicate ? "Already remembered; noted as confirmed." : `Stored ${where}${page ? ` in ${page}` : ""}.`}${unlinked}`,
     };
   },
 });

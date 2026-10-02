@@ -1082,6 +1082,8 @@ export const listMemories = query({
       kind: args.kind,
       everywhere: true,
       memoriesOnly: true,
+      // Older memories, from before they were lines in pages; those are read and edited in their pages.
+      loose: true,
     }) as MemoryView[];
     // A memory kept to one chat or one project says which.
     return await Promise.all(found.map(async (memory) => {
@@ -1111,6 +1113,7 @@ export const addMemory = mutation({
       source: "dashboard",
       kind: args.kind,
       origin: "owner",
+      by: "owner",
     });
     return null;
   },
