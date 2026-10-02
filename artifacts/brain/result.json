@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-02T10:56:24.059Z",
+  "ranAt": "2026-10-02T11:18:24.159Z",
   "checks": {
     "oldNoteIndexedOnStart": true,
     "linesKeepProvenance": true,
@@ -8,8 +8,16 @@
     "recallByMeaning": true,
     "scopeKept": true,
     "turnGetsNoteParagraph": true,
+    "aboutMeIsUserMd": true,
+    "userMdAndPageAgree": true,
+    "rememberLandsInPlace": true,
+    "guestMemoryStaysInItsChat": true,
+    "confirmSupersedeFollowForget": true,
+    "ownerEditsMemoryAsText": true,
+    "olderMemoriesStay": true,
     "projectDeleteKeepsLines": true,
     "searchFindsMemoryAndNotes": true,
+    "memoryPagesInTheEditor": true,
     "searchDarkAndDaily": true,
     "noPageErrors": true
   },
@@ -67,15 +75,13 @@
     },
     "linesAreNotMemories": {
       "listed": [
-        "Went for a long swim at the lake.",
-        "Datta flies to Lisbon on 12 Oct 2026.",
-        "The owner is vegetarian and avoids eggs."
+        "The owner's car is a blue Skoda."
       ],
-      "count": 3,
+      "count": 4,
       "forgot": {
         "deleted": 0,
         "missing": [
-          "jvb1n8prbfysjknmzx2kw680jy"
+          "22h2x8dzrnj3q9csaet00rc385"
         ]
       }
     },
@@ -87,11 +93,11 @@
       ],
       [
         "note",
-        "Basil between them"
+        "Passport"
       ],
       [
         "note",
-        "Passport"
+        "Basil between them"
       ]
     ],
     "recallByMeaning": {
@@ -100,6 +106,7 @@
         "Swimsuit for the beach",
         "Travel adapter for the UK plugs",
         "Went for a long swim at the lake.",
+        "The owner's car is a blue Skoda.",
         "Tomatoes by the south wall"
       ],
       "note": [
@@ -126,11 +133,77 @@
       ]
     },
     "turnGetsNoteParagraph": {
-      "relevant": "## Possibly relevant older memories and notes\n- [note \"Lisbon trip\", section \"Packing\", v7qptqb2p1v514t66fsv67vjth] Passport\n- [note \"Lisbon trip\", section \"Packing\", v7qptqb2p1v514t66fsv67vjth] Travel adapter for the UK plugs\n- [note \"Lisbon trip\", section \"Packing\", v7qptqb2p1v514t66fsv67vjth] Swimsuit for the beach\n\n# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or routine, their work and the projects, pages or channels they run, what they made",
+      "relevant": "## Possibly relevant older memories and notes\n- [note \"Lisbon trip\", section \"Packing\", f6zct1c3sywx6wa2vd2dt97p8e] Passport\n- [note \"Lisbon trip\", section \"Packing\", f6zct1c3sywx6wa2vd2dt97p8e] Travel adapter for the UK plugs\n- [note \"Lisbon trip\", section \"Packing\", f6zct1c3sywx6wa2vd2dt97p8e] Swimsuit for the beach\n\n# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or routine, their work and the projects, pages or channels they run, what they made",
       "longTerms": [
-        "## Long-term memory\n- Datta flies to Lisbon on 12 Oct 2026. (yvbg4wr7ygxfsvewd7yxb09f7q)\n- The owner is vegetarian and avoids eggs. (x6dbzfbzj1nqcysw0ptfncbhms)\n",
-        "## Long-term memory\n- Datta flies to Lisbon on 12 Oct 2026. (yvbg4wr7ygxfsvewd7yxb09f7q)\n- The owner is vegetarian and avoids eggs. (x6dbzfbzj1nqcysw0ptfncbhms)\n"
+        "## Long-term memory\n- The owner's car is a blue Skoda. (seedg3tuu38q8nmuqvc924; noted Mar 2026, 7 months ago: may have changed; check with the owner before relying on it)\n",
+        "## Long-term memory\n- The owner's car is a blue Skoda. (seedg3tuu38q8nmuqvc924; noted Mar 2026, 7 months ago: may have changed; check with the owner before relying on it)\n",
+        "## Long-term memory\n- Datta flies to Lisbon on 12 Oct 2026. (ak38h0bntyxkfq26da2k9zxt3m)\n- The owner is vegetarian and avoids eggs. (h61zksmd96ad6a8g155f4tnke5)\n- The owner's car is a blue Skoda. (seedg3tuu38q8nmuqvc924; noted Mar 2026, 7 months ago: may have changed; check with the owner before rel",
+        "## Long-term memory\n- Datta flies to Lisbon on 12 Oct 2026. (ak38h0bntyxkfq26da2k9zxt3m)\n- The owner is vegetarian and avoids eggs. (h61zksmd96ad6a8g155f4tnke5)\n- The owner's car is a blue Skoda. (seedg3tuu38q8nmuqvc924; noted Mar 2026, 7 months ago: may have changed; check with the owner before rel"
       ]
+    },
+    "aboutMeIsUserMd": {
+      "about": "# About Alex\n\n- **Call them:** Alex\n- Lives in Pune.\n\n## How I like things done\n\n- Prefers replies in bullet points.\n",
+      "prefer": {
+        "id": "adge458shepp77cpnfrx9n8pzv",
+        "stored": true,
+        "superseded": 0,
+        "page": "About me, How I like things done",
+        "note": "Stored for every chat in About me, How I like things done."
+      }
+    },
+    "userMdAndPageAgree": {
+      "historyCount": 3
+    },
+    "rememberLandsInPlace": {
+      "notes": [
+        "Stored for every chat in Things to remember, Health.",
+        "Stored for every chat in Things to remember, Work.",
+        "Stored for every chat in Datta.",
+        "Stored for every chat in Fri 2 Oct 2026.",
+        "Stored for this chat only in Hello, this is the general chat..",
+        "Stored for this project in Things to remember, Other."
+      ],
+      "remember": "## Health\n\n- The owner is vegetarian and avoids eggs.\n\n- The owner's blood group is O+.\n\n## Work\n\n- Works at Acme as a designer.\n"
+    },
+    "guestMemoryStaysInItsChat": {
+      "ownerSees": [],
+      "guestSees": [
+        "Priya is allergic to peanuts."
+      ]
+    },
+    "confirmSupersedeFollowForget": {
+      "again": {
+        "id": "5sdard947ga59ypmhnvssfmtte",
+        "stored": false,
+        "superseded": 0,
+        "note": "Already remembered; noted as confirmed."
+      },
+      "followed": "Dentist call at 3pm on Friday. (To-do: moved, now due Wed, 7 Oct 2026, 11:17.)",
+      "alerts": [
+        "Alerted the owner at 06:10: Your 6:40 flight moved to 7:25."
+      ]
+    },
+    "ownerEditsMemoryAsText": {
+      "saved": true,
+      "sameId": true,
+      "ownerNow": true,
+      "typedKind": "core",
+      "typedSection": "Health",
+      "typedBy": "owner",
+      "recalledNew": true,
+      "recalledOld": false,
+      "dashboardEdit": true,
+      "dashboardSameId": true,
+      "rewrittenSameId": true,
+      "recalled": [
+        "The owner's blood group is B+."
+      ]
+    },
+    "olderMemoriesStay": {
+      "olderListed": [
+        "The owner's car is a blue Skoda."
+      ],
+      "carSent": true
     },
     "projectDeleteKeepsLines": [
       {
@@ -138,8 +211,33 @@
       }
     ],
     "searchFindsMemoryAndNotes": {
-      "memoryHit": "The owner is vegetarian and avoids eggs.\nLong-term",
+      "memoryHit": "The owner is vegetarian and avoids eggs.\nThings to remember › Health",
       "lineHit": "Passport\nLisbon trip › Packing"
+    },
+    "memoryPagesInTheEditor": {
+      "listed": [
+        "about:About me",
+        "remember:Things to remember",
+        "journal:Fri 2 Oct 2026",
+        "person:Datta",
+        "chat:Hello, this is the general chat.",
+        "chat:Chat with Priya"
+      ],
+      "locked": {
+        "readOnly": true,
+        "crumb": "Memory"
+      },
+      "menu": [
+        "Download .md",
+        "Copy as Markdown",
+        "Copy link"
+      ],
+      "sources": "Where each memory came from\n\nThe owner is vegetarian and avoids eggs.\n\nHealth\nPerry\n2 Oct 2026\n#food\n\nAllergic to penicillin.\n\nHealth\nYou\n2 Oct 2026\n\nThe owner's blood group is B+.\n\nHealth\nYou\nfrom “Hello, this is the general chat.”\n2 Oct 2026\nedited 2 Oct 2026\nconfirmed 2 Oct 2026\n\nWorks at Globex as design lead.\n\nWork\nYou\nfrom “Hello, this is the general chat.”\n2 Oct 2026\nedited 2 Oct 2026",
+      "conflict": true,
+      "kept": {
+        "owner": true,
+        "perry": false
+      }
     },
     "searchDarkAndDaily": [
       "page",
@@ -151,7 +249,7 @@
     "runnerLog": [
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\perry-tests\\brain\\perry-brain-bEbOaQ\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\brain\\perry-brain-UMjYhP\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -159,15 +257,29 @@
       "\u001b[0m",
       "\u001b[32m  connected.",
       "\u001b[0m",
-      "\u001b[2m  saved turn qbkqgpvp0cgv0jy22e8k9bw9s5\u001b[0m",
-      "\u001b[2m  saved turn vec19xkb248y8am085a96mzp8x\u001b[0m",
-      "\u001b[2m  saved turn 7kv4fbw0m19jg5x470vb978956\u001b[0m",
-      "\u001b[2m  saved turn 0zsd3c9nv1jz1pax8yf2227ybj\u001b[0m",
-      "\u001b[2m  saved turn rg6r25y7kesv5hqdcyb3c0x9az\u001b[0m",
-      "\u001b[2m  saved turn 1q6s3snw8a76jzcz4ss8gwxrby\u001b[0m",
-      "\u001b[2m  saved turn 34mv9wg60041tqpcmhrcvs9jpb\u001b[0m",
-      "\u001b[2m  saved turn 509dpdmwneetadsskfwaamhwfe\u001b[0m",
-      "\u001b[2m  saved turn 0675g5n3sv6y55wmefafm4crs2\u001b[0m"
+      "\u001b[2m  saved turn 3957b9ghdb7dyqf385r5q8zmr9\u001b[0m",
+      "\u001b[2m  saved turn r5nk9fbxes4nv9gwdhtnvtdsx5\u001b[0m",
+      "\u001b[2m  saved turn n4jr2ehpk3bf4vbx8s9wb080pw\u001b[0m",
+      "\u001b[2m  saved turn 88r25atz4yk427jv3hhz01xhea\u001b[0m",
+      "\u001b[2m  saved turn b6qp68q1kcfjf3n90x0p857h0j\u001b[0m",
+      "\u001b[2m  saved turn jz4dq2dx7tsmjg1ja7j8wskzha\u001b[0m",
+      "\u001b[2m  saved turn 3s5dyjt7bhsnf3tk4hkv7q3n8h\u001b[0m",
+      "\u001b[2m  saved turn 3nyrmttv19sp1kf92sremt00yx\u001b[0m",
+      "\u001b[2m  saved turn 4qxnk40k7g9245e7a9g2bh2xg2\u001b[0m",
+      "\u001b[2m  saved turn 0hzctp5aecc21dxmcdsbdkhgv9\u001b[0m",
+      "\u001b[2m  saved turn j8m0fcm0307863fnjddnv6n4gt\u001b[0m",
+      "\u001b[2m  saved turn 0c6d8jjqqex0b7bje922byvhs4\u001b[0m",
+      "\u001b[2m  saved turn tbf0bymsn9c5zn46f1qftjd9mt\u001b[0m",
+      "\u001b[2m  saved turn j2p9zm2kna8z2m8z52qznjf62f\u001b[0m",
+      "\u001b[2m  saved turn 8gcp6kk4c34fd03c8x6824mfdv\u001b[0m",
+      "\u001b[2m  saved turn 7w4sqzbw614rwb1js03y0wkjzk\u001b[0m",
+      "\u001b[2m  saved turn 2rw7etj0asncmgkqccdkq057jx\u001b[0m",
+      "\u001b[2m  saved turn wrvp95146pphn3ab0h1xprsza2\u001b[0m",
+      "\u001b[2m  saved turn 0cv5dkm1j1p0hfe4kswv84e0c0\u001b[0m",
+      "\u001b[2m  saved turn bantqv3z4g364bnhwxnh9zw7pb\u001b[0m",
+      "\u001b[2m  saved turn wjf3bf7k8hc6kgchrt67bmfd67\u001b[0m",
+      "\u001b[2m  saved turn 74cpjpdfx6k1xaj6nc252000jb\u001b[0m",
+      "\u001b[2m  saved turn dbzq84dytx0dgvdj7cj7kw1tmc\u001b[0m"
     ],
     "tempHomeRemoved": true
   },

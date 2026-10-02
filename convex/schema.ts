@@ -11,6 +11,8 @@ export const vTelegramMedia = v.object({ fileId: v.string(), fileName: v.string(
 export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.literal("daily"));
 /** What a line in `memories` is: a memory of one of the three layers, or a line of one of the owner's pages (pages.ts). */
 export const vLineKind = v.union(vMemoryKind, v.literal("page"));
+/** What a page of memory is (lib/pages.ts, PageKind); an ordinary page has none. */
+export const vPageKind = v.union(v.literal("about"), v.literal("remember"), v.literal("journal"), v.literal("person"), v.literal("chat"));
 /** Who wrote a page's line: the owner, Perry in a chat, or a scheduled job. */
 export const vLineBy = v.union(v.literal("owner"), v.literal("assistant"), v.literal("job"));
 /**
@@ -702,12 +704,24 @@ export default defineSchema({
     from: v.optional(v.id("conversations")),
     /** The revision its lines (memories.pageId) were last brought up to; behind, pages.indexAll does it. */
     linesAt: v.optional(v.number()),
+    /**
+     * A page of memory (pages.ts): About me, Things to remember, a day of the journal, a person, or what one
+     * chat kept to itself. Its lines are memories. None for the owner's other pages.
+     */
+    kind: v.optional(vPageKind),
+    /** A journal page's day, YYYY-MM-DD on the owner's calendar. */
+    day: v.optional(v.string()),
+    /** A person's page: their name, lowercased, as the key it is found by. */
+    person: v.optional(v.string()),
+    /** The one chat a "chat" page belongs to: only that chat reads it. */
+    conversationId: v.optional(v.id("conversations")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_updated", ["updatedAt"])
     .index("by_project", ["projectId", "updatedAt"])
     .index("by_title", ["title"])
+    .index("by_kind", ["kind", "day"])
     .searchIndex("search_text", { searchField: "search" }),
 
   conversations: defineTable({
@@ -835,6 +849,8 @@ export default defineSchema({
     origin: v.optional(vMemoryOrigin),
     /** When the owner last changed its text on the Memory page. */
     editedAt: v.optional(v.number()),
+    /** When it was last said again or confirmed to still hold (remember with the same words), so it is not taken for stale. */
+    confirmedAt: v.optional(v.number()),
     /** The one chat it belongs to, out of every other chat. With neither this nor projectId: everywhere. */
     conversationId: v.optional(v.id("conversations")),
     /** The project it belongs to: seen in that project's chats, and in no other. */

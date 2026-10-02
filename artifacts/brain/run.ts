@@ -27,6 +27,24 @@ import { GUEST_TOOLS } from "../../convex/lib/engines";
 //   7. Ctrl+K finds only chats and note titles: not a memory, not the words inside a note, or a hit opens
 //      the wrong place.
 //   8. Any page throws, in light or dark.
+// Step 2, memory shown as pages:
+//   9. remember puts a memory on the wrong page or section: a standing preference not in About me under "How I
+//      like things done"; a fact not in Things to remember under the section named, or the one it fits; one about
+//      someone else not on their page under People; a day's note not in today's journal; a project's memory not in
+//      the project's Things to remember; "this chat" not in that chat's page; or a chat with someone else making a
+//      People page, or its memory reaching the owner's chats.
+//  10. About me is not USER.md: it starts from something else, update_user_md and the page drift apart, or
+//      USER.md's history stops keeping versions.
+//  11. The owner's edit in a page of memory does not change the memory: an edited line gets a new id (losing its
+//      to-do link and citations), recall still finds the old words, a deleted line is still recalled, or a line
+//      typed in is not a memory (no layer, no section).
+//  12. Said again, a memory is saved twice instead of counted as confirmed; superseded, the old line stays in the
+//      page or loses its history; a to-do's change duplicates its note instead of changing it where it stands;
+//      forget leaves the line in the page; an alert is not in today's journal.
+//  13. A memory written while the owner types in the same page overwrites their words, or theirs overwrites it.
+//  14. Older memories, from before pages, vanish from the Memory page or from what a turn is sent.
+//  15. The Memory page does not list the pages, or a page of memory can be renamed, moved or (About me, Things to
+//      remember) deleted; any of it throws in light or dark.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/brain/run.ts <outDir>");
@@ -97,6 +115,8 @@ try {
     title: "Old garden plan", content: "## Beds\n\n- Tomatoes by the south wall\n- Basil between them\n\nWater at dawn in July.\n",
     revision: 3, search: "Old garden plan", by: "owner", createdAt: now - 86_400_000 * 40, updatedAt: now - 86_400_000 * 30,
   });
+  // And a memory from before pages: a row with no page, as every install has today.
+  const oldCar = seed("memories", { text: "The owner's car is a blue Skoda.", tags: [], source: "telegram:4242", createdAt: now - 86_400_000 * 200, kind: "core", origin: "owner" });
   const beforeRestart = linesOf(oldNote).length;
   p.stop(server);
   await sleep(2_000);
@@ -156,7 +176,7 @@ try {
   const memoryPage = await call<Row[]>("dashboard:listMemories", { key: KEY, query: "" });
   const forgot = await call<{ deleted: number; missing: string[] }>("memories:removeMany", { ids: [passport!], chat: general });
   const count = await call<number>("memories:count");
-  check("linesAreNotMemories", !memoryPage.some((memory) => memory.kind === "page") && memoryPage.length === 3 && count === 3
+  check("linesAreNotMemories", !memoryPage.some((memory) => memory.kind === "page") && memoryPage.length === 1 && memoryPage[0].text === "The owner's car is a blue Skoda." && count === 4
     && forgot.deleted === 0 && Boolean(linesOf(lisbon).find((line) => line._id === passport)),
   { listed: memoryPage.map((memory) => memory.text), count, forgot });
 
@@ -209,6 +229,118 @@ try {
     && relevant.includes("] Passport") && longTerms.length > 0 && longTerms.every((part) => !/Passport|GREYHEX|Tomatoes/.test(part)) && longTerms.some((part) => part.includes("vegetarian")),
   { relevant: relevant.slice(0, 600), longTerms: longTerms.map((part) => part.slice(0, 300)) });
 
+  // === Step 2: memory as pages =====================================================================================
+  const pages = () => rows("notes");
+  const pageOf = (kind: string, test: (row: Row) => boolean = () => true) => pages().find((row) => row.kind === kind && test(row));
+  const lineOf = (text: string) => rows("memories").find((row) => row.text === text && !row.supersededBy);
+  const content = (page?: Row) => String(page?.content ?? "");
+  const sectionOf = (page: Row | undefined, text: string) => { const body = content(page); const at = body.indexOf(text); const head = body.slice(0, at).match(/^## (.+)$/gm); return head?.at(-1)?.slice(3); };
+
+  // --- 10. About me starts as USER.md --------------------------------------------------------------------------
+  const userMd = "# About Alex\n\n- **Call them:** Alex\n- Lives in Pune.\n";
+  await call("persona:writeUser", { text: userMd, by: "owner" });
+  const prefer = await tool(general, "remember", { text: "Prefers replies in bullet points.", kind: "profile" });
+  const about = pageOf("about");
+  check("aboutMeIsUserMd", content(about).startsWith("# About Alex") && content(about).includes("## How I like things done") && sectionOf(about, "Prefers replies in bullet points.") === "How I like things done"
+    && lineOf("Prefers replies in bullet points.")?.kind === "profile" && /About me, How I like things done/.test(prefer?.note ?? ""),
+  { about: content(about), prefer });
+  await tool(general, "update_user_md", { text: `${content(pageOf("about")).trim()}\n- Has a cat called Miso.\n` });
+  const persona = await call<{ user: string }>("persona:current");
+  const history = await call<Array<{ text?: string }>>("persona:history", { kind: "user", limit: 10 });
+  check("userMdAndPageAgree", content(pageOf("about")).includes("Has a cat called Miso.") && persona.user === content(pageOf("about")) && history[0]?.text?.includes("Has a cat called Miso.") === true
+    && history.some((version) => version.text?.includes("Prefers replies in bullet points.")) && Boolean(lineOf("Has a cat called Miso.")),
+  { historyCount: history.length });
+
+  // --- 9. Each memory lands on its page, in its section ---------------------------------------------------------------
+  const blood = await tool(general, "remember", { text: "The owner's blood group is O+.", kind: "core" });
+  const acme = await tool(general, "remember", { text: "Works at Acme as a designer.", kind: "core", section: "Work" });
+  const brother = await tool(general, "remember", { text: "Datta is the owner's brother.", kind: "core", about: ["Datta"] });
+  const dentist = await tool(general, "remember", { text: "Dentist call at 3pm on Friday.", kind: "daily", tags: ["open"] });
+  const kept = await tool(general, "remember", { text: "Codename for this chat is HERON.", kind: "core", scope: "this chat" });
+  const grout = await tool(inProject, "remember", { text: "Grout colour is warm grey.", kind: "core" });
+  const remember = pageOf("remember", (row) => !row.projectId);
+  const datta = pageOf("person", (row) => row.person === "datta");
+  const journal = pageOf("journal", (row) => !row.projectId);
+  const chatPage = pageOf("chat", (row) => row.conversationId === general);
+  const projectRemember = pageOf("remember", (row) => row.projectId === project);
+  check("rememberLandsInPlace", remember?.title === "Things to remember" && sectionOf(remember, "The owner's blood group is O+.") === "Health" && sectionOf(remember, "Works at Acme as a designer.") === "Work"
+    && sectionOf(remember, "The owner is vegetarian and avoids eggs.") === "Health"
+    && datta?.title === "Datta" && content(datta).includes("Datta is the owner's brother.") && content(datta).includes("Datta flies to Lisbon") && !content(remember).includes("Datta is")
+    && lineOf("Datta is the owner's brother.")?.about?.[0] === "Datta"
+    && content(journal).includes("Dentist call at 3pm on Friday.") && lineOf("Dentist call at 3pm on Friday.")?.tags?.includes("open") && lineOf("Dentist call at 3pm on Friday.")?.kind === "daily"
+    && content(chatPage).includes("HERON") && lineOf("Codename for this chat is HERON.")?.conversationId === general
+    && content(projectRemember).includes("Grout colour is warm grey.") && lineOf("Grout colour is warm grey.")?.projectId === project
+    && lineOf("Works at Acme as a designer.")?.by === "assistant" && lineOf("Works at Acme as a designer.")?.from === general,
+  { notes: [blood?.note, acme?.note, brother?.note, dentist?.note, kept?.note, grout?.note], remember: content(remember) });
+
+  // A chat with someone else keeps what it learns to its own page, and makes no page in People.
+  const guestJid = "15550002222@s.whatsapp.net";
+  await call("contacts:learn", { items: [{ channel: "whatsapp", externalId: guestJid, kind: "person", name: "Priya" }] });
+  const priya = await call<{ _id: string }>("contacts:byChat", { channel: "whatsapp", externalId: guestJid });
+  const priyaThread = await call<string>("agentStore:createThread", { userId: `whatsapp:${guestJid}`, title: "Priya" });
+  const priyaChat = await call<string>("conversations:create", { channel: "whatsapp", externalId: guestJid, threadId: priyaThread, contactId: priya._id });
+  await call("memories:add", { text: "Priya is allergic to peanuts.", tags: [], source: "whatsapp", kind: "core", origin: "tool", conversationId: priyaChat, about: ["Priya"], from: priyaChat });
+  const priyaPage = pageOf("chat", (row) => row.conversationId === priyaChat);
+  const ownerSees = await call<Row[]>("memories:recall", { query: "peanuts allergic Priya", limit: 25, chat: general });
+  const guestSees = await call<Row[]>("memories:recall", { query: "peanuts allergic Priya blood Acme HERON", limit: 25, chat: priyaChat });
+  check("guestMemoryStaysInItsChat", content(priyaPage).includes("Priya is allergic to peanuts.") && !pageOf("person", (row) => row.person === "priya")
+    && !ownerSees.some((item) => /peanuts/.test(item.text)) && guestSees.length === 1 && guestSees[0].text === "Priya is allergic to peanuts.",
+  { ownerSees: ownerSees.map((item) => item.text), guestSees: guestSees.map((item) => item.text) });
+
+  // --- 12. Said again, superseded, followed by a to-do, forgotten, an alert ----------------------------------------------
+  const again = await tool(general, "remember", { text: "The owner's blood group is O+.", kind: "core" });
+  const bloodLine = lineOf("The owner's blood group is O+.");
+  const acmeId = lineOf("Works at Acme as a designer.")?._id;
+  await tool(general, "remember", { text: "Works at Globex as a lead designer.", kind: "core", supersedes: [acmeId] });
+  const after = pageOf("remember", (row) => !row.projectId);
+  const oldAcme = rows("memories").find((row) => row._id === acmeId);
+  const globex = lineOf("Works at Globex as a lead designer.");
+  const dentistId = lineOf("Dentist call at 3pm on Friday.")!._id;
+  const due = new Date(Date.now() + 3 * 86_400_000).toISOString().replace(/\.\d+Z$/, "+00:00");
+  const todo = await tool(general, "add_todo", { title: "Dentist call", at: due, noteIds: [dentistId] });
+  const later = new Date(Date.now() + 5 * 86_400_000).toISOString().replace(/\.\d+Z$/, "+00:00");
+  await tool(general, "update_todo", { id: todo?.added?.id, at: later });
+  const followed = rows("memories").find((row) => row._id === dentistId);
+  await call("memories:noteAlert", { text: "Your 6:40 flight moved to 7:25.", at: "06:10" });
+  const alerts = await call<string[]>("memories:alertsSince", { since: Date.now() - 60_000 });
+  await tool(general, "forget", { ids: [lineOf("Codename for this chat is HERON.")!._id] });
+  check("confirmSupersedeFollowForget", again?.stored === false && Boolean(bloodLine?.confirmedAt)
+    && !content(after).includes("Acme") && sectionOf(after, "Works at Globex as a lead designer.") === "Work" && oldAcme?.supersededBy === globex?._id && oldAcme?.text === "Works at Acme as a designer."
+    && followed?.supersededBy === undefined && /To-do: moved/.test(followed?.text ?? "") && content(pageOf("journal", (row) => !row.projectId)).includes("(To-do: moved")
+    && rows("memories").filter((row) => /Dentist call at 3pm/.test(row.text) && !row.supersededBy).length === 1
+    && content(pageOf("journal", (row) => !row.projectId)).includes("Alerted the owner at 06:10: Your 6:40 flight moved to 7:25.") && alerts.some((alert) => alert.includes("7:25"))
+    && !content(pageOf("chat", (row) => row.conversationId === general)).includes("HERON") && !lineOf("Codename for this chat is HERON."),
+  { again, followed: followed?.text, alerts });
+
+  // --- 11. The owner edits a page of memory as text ---------------------------------------------------------------------
+  const before = pageOf("remember", (row) => !row.projectId)!;
+  const bloodId = lineOf("The owner's blood group is O+.")!._id;
+  const edited = content(before).replace("The owner's blood group is O+.", "The owner's blood group is B+.").replace("- The owner is vegetarian and avoids eggs.\n", "- The owner is vegetarian and avoids eggs.\n- Allergic to penicillin.\n");
+  const saved = await call<{ ok: boolean }>("notes:save", { key: KEY, id: before._id, expectedRevision: before.revision, content: edited });
+  const typed = lineOf("Allergic to penicillin.");
+  const bPlus = lineOf("The owner's blood group is B+.");
+  const recalledB = await call<Row[]>("memories:recall", { query: "blood group", limit: 10, chat: general });
+  await call("dashboard:editMemory", { key: KEY, id: globex!._id, text: "Works at Globex as design lead." });
+  // Rewritten with none of its words left, it is still the same memory.
+  const groutId = lineOf("Grout colour is warm grey.")!._id;
+  await call("dashboard:editMemory", { key: KEY, id: groutId, text: "Use epoxy for the shower tray." });
+  const editChecks = {
+    saved: saved.ok, sameId: bPlus?._id === bloodId, ownerNow: bPlus?.origin === "owner", typedKind: typed?.kind, typedSection: typed?.section, typedBy: typed?.by,
+    recalledNew: recalledB.some((item) => item.text === "The owner's blood group is B+."), recalledOld: recalledB.some((item) => item.text.includes("O+")),
+    dashboardEdit: content(pageOf("remember", (row) => !row.projectId)).includes("Works at Globex as design lead."), dashboardSameId: lineOf("Works at Globex as design lead.")?._id === globex?._id,
+    rewrittenSameId: lineOf("Use epoxy for the shower tray.")?._id === groutId && content(pageOf("remember", (row) => row.projectId === project)).includes("Use epoxy"),
+  };
+  check("ownerEditsMemoryAsText", editChecks.saved && editChecks.sameId && editChecks.ownerNow && editChecks.typedKind === "core" && editChecks.typedSection === "Health" && editChecks.typedBy === "owner"
+    && editChecks.recalledNew && !editChecks.recalledOld && editChecks.dashboardEdit && editChecks.dashboardSameId && editChecks.rewrittenSameId,
+  { ...editChecks, recalled: recalledB.map((item) => item.text) });
+
+  // --- 14. Older memories stay: on the Memory page, and in what a turn is sent ---------------------------------------------
+  const olderListed = await call<Row[]>("dashboard:listMemories", { key: KEY, query: "" });
+  const askCar = "What colour is my car again?";
+  await exchange(general, askCar);
+  const carSent = log().filter((entry) => entry.prompt && String(entry.context ?? "").includes("blue Skoda")).length > 0;
+  check("olderMemoriesStay", olderListed.length === 1 && olderListed[0].id === oldCar && carSent, { olderListed: olderListed.map((item) => item.text), carSent });
+
   // --- 4b. Deleting the project keeps its notes, and their lines move out with them ---------------------------------
   await call("projects:remove", { key: KEY, id: project });
   const moved = linesOf(tiles);
@@ -260,8 +392,41 @@ try {
   await palette("eggs");
   await waitFor(`document.querySelector('[data-recalled="core"]')`, "the memory again", 20_000);
   await click('[data-recalled="core"]');
-  await waitFor(`location.pathname === "/memory" && location.search.includes("vegetarian")`, "the memory to open on the Memory page");
-  check("searchFindsMemoryAndNotes", /vegetarian/.test(memoryHit) && /Long-term/.test(memoryHit) && /Passport/.test(lineHit) && /Lisbon trip › Packing/.test(lineHit), { memoryHit, lineHit });
+  // A memory is a line of its page now (step 2): it opens there.
+  await waitFor(`location.pathname === ${JSON.stringify(`/notes/${pageOf("remember", (row) => !row.projectId)?._id}`)}`, "the memory to open in its page");
+  check("searchFindsMemoryAndNotes", /vegetarian/.test(memoryHit) && /Things to remember › Health/.test(memoryHit) && /Passport/.test(lineHit) && /Lisbon trip › Packing/.test(lineHit), { memoryHit, lineHit });
+
+  // --- 15, 13. The Memory page lists the pages; a page of memory in the editor ------------------------------------------
+  await go("/memory");
+  await waitFor(`document.querySelector('section[aria-label="Memory pages"]') && document.querySelector('[data-memory-page="remember"]')`, "the memory pages");
+  const listed = await evaluate(`[...document.querySelectorAll('[data-memory-page]')].map((item) => item.getAttribute("data-memory-page") + ":" + item.innerText.trim())`) as string[];
+  await shot("memory-pages.png");
+  const rememberPage = pageOf("remember", (row) => !row.projectId)!;
+  await go(`/notes/${rememberPage._id}`);
+  await waitFor(`document.querySelector("[data-note-editor]")?.innerText.includes("Allergic to penicillin")`, "Things to remember in the editor");
+  const locked = await evaluate(`({ readOnly: document.querySelector('input[aria-label="Title"]').readOnly, crumb: document.querySelector("header a, nav a")?.innerText })`);
+  await click('[aria-label="Note options"]');
+  const menu = await evaluate(`[...document.querySelectorAll('[role="menuitem"], [role="menuitemradio"]')].map((item) => item.innerText.trim())`) as string[];
+  await key("Escape", "Escape", 27);
+  // Where each memory came from.
+  await click("[data-sources] button");
+  await waitFor(`document.querySelectorAll("[data-line]").length > 3`, "the lines and where they came from");
+  const sources = await evaluate(`document.querySelector("[data-sources]").innerText`) as string;
+  await shot("things-to-remember.png");
+  // The owner types while Perry remembers something into the same page: their words stay, and they choose.
+  await evaluate(`(() => { const el = document.querySelector("[data-note-editor]"); el.focus(); const range = document.createRange(); range.selectNodeContents(el); range.collapse(false); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); return true; })()`);
+  await send("Input.insertText", { text: " OWNERTYPING" });
+  await call("memories:add", { text: "Takes the train to work.", tags: [], source: "test", kind: "core", section: "Work" });
+  await sleep(4_000);
+  const conflict = await evaluate(`Boolean(document.querySelector("[data-conflict]")) && document.querySelector("[data-note-editor]").innerText.includes("OWNERTYPING")`);
+  const stillPerrys = content(pageOf("remember", (row) => !row.projectId)).includes("Takes the train to work.");
+  if (conflict) { await shot("memory-conflict.png"); await click("[data-conflict] button:last-child"); await sleep(2_000); }
+  const merged = content(pageOf("remember", (row) => !row.projectId));
+  check("memoryPagesInTheEditor", listed.some((item) => item.startsWith("about:")) && listed.some((item) => item.startsWith("remember:")) && listed.some((item) => item.startsWith("journal:")) && listed.some((item) => item === "person:Datta")
+    && listed.some((item) => item.startsWith("chat:")) && locked.readOnly === true && !menu.some((item) => /Delete|Move to project/.test(item))
+    && /Perry/.test(sources) && /You/.test(sources) && /from “/.test(sources)
+    && conflict === true && stillPerrys,
+  { listed, locked, menu, sources: sources.slice(0, 400), conflict, kept: { owner: merged.includes("OWNERTYPING"), perry: merged.includes("Takes the train") } });
 
   // --- 8. Dark, and no page errors -------------------------------------------------------------------------------------
   await evaluate(`localStorage.setItem("perry.theme", "dark"); true`);
@@ -270,6 +435,12 @@ try {
   const swim = await evaluate(`[...document.querySelectorAll('[data-recalled]')].map((item) => item.getAttribute("data-recalled"))`) as string[];
   await shot("search-memory-and-notes-dark.png");
   await key("Escape", "Escape", 27);
+  await go("/memory");
+  await waitFor(`document.documentElement.classList.contains("dark") && document.querySelector('[data-memory-page="about"]')`, "dark Memory page");
+  await shot("memory-pages-dark.png");
+  await go(`/notes/${pageOf("about")!._id}`);
+  await waitFor(`document.querySelector("[data-note-editor]")?.innerText.includes("Miso")`, "dark About me");
+  await shot("about-me-dark.png");
   await evaluate(`localStorage.setItem("perry.theme", "light"); true`);
   check("searchDarkAndDaily", swim.includes("daily") && swim.includes("page"), swim);
   check("noPageErrors", browser.errors.length === 0, browser.errors);

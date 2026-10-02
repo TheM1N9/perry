@@ -2,9 +2,10 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
-import { appended, cleanTitle, editSection, headingsOf, INBOX_TITLE, noteHref, titleFrom, tooLong } from "./lib/notes";
+import { appended, editSection, headingsOf, INBOX_TITLE, noteHref, titleFrom, tooLong } from "./lib/notes";
+import type { PageKind } from "./lib/pages";
 import { timezoneOf } from "./jobs";
-import { dropLines, moveLines, syncLines, type LineBy } from "./pages";
+import { insertPage, moveLines, removePage, writePage, type LineBy } from "./pages";
 import { readPersona } from "./persona";
 
 /**
@@ -54,9 +55,11 @@ export type NoteView = NoteSummary & {
   revision: number;
   createdAt: number;
   from?: { id: Id<"conversations">; title: string };
+  /** A page of memory (pages.ts): what it is, and a journal page's day. */
+  kind?: PageKind;
+  day?: string;
 };
 
-const searchOf = (title: string, content: string) => `${title}\n\n${content}`;
 const previewOf = (content: string) => {
   // Each line's block marker (a heading's #s, a bullet, a checkbox, a quote) and emphasis go; the words stay as written.
   const text = content.replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)/gm, "").replace(/\*\*|`|\||(^|\W)_+|_+(?=\W|$)/g, "$1 ").replace(/\s+/g, " ").trim();
@@ -86,11 +89,13 @@ async function view(ctx: Reader, note: Note): Promise<NoteView> {
     revision: note.revision,
     createdAt: note.createdAt,
     ...(chat ? { from: { id: chat._id, title: chat.title ?? "Untitled chat" } } : {}),
+    ...(note.kind ? { kind: note.kind } : {}),
+    ...(note.day ? { day: note.day } : {}),
   };
 }
 
-/** Every note, newest first. A few hundred at most, so read whole. */
-const allNotes = (ctx: Reader) => ctx.db.query("notes").withIndex("by_updated").order("desc").collect();
+/** Every note, newest first, without the pages of memory (pages.ts), which the Memory page lists. A few hundred at most, so read whole. */
+const allNotes = async (ctx: Reader) => (await ctx.db.query("notes").withIndex("by_updated").order("desc").collect()).filter((note) => !note.kind);
 
 async function getNote(ctx: Reader, raw: string): Promise<Note | null> {
   const id = ctx.db.normalizeId("notes", raw);
@@ -98,44 +103,21 @@ async function getNote(ctx: Reader, raw: string): Promise<Note | null> {
 }
 
 async function insertNote(ctx: Writer, input: { title: string; content: string; by: By; projectId?: Id<"projects">; from?: Id<"conversations"> }): Promise<Id<"notes">> {
-  const problem = tooLong(input.content);
-  if (problem) throw new Error(problem);
-  const title = cleanTitle(input.title);
-  const now = Date.now();
-  const id = await ctx.db.insert("notes", {
-    title,
-    content: input.content,
-    revision: 1,
-    search: searchOf(title, input.content),
-    by: input.by,
-    ...(input.projectId ? { projectId: input.projectId } : {}),
-    ...(input.from ? { from: input.from } : {}),
-    createdAt: now,
-    updatedAt: now,
-  });
-  await syncLines(ctx, (await ctx.db.get(id))!, input.by, input.from);
-  return id;
+  return await insertPage(ctx, { title: input.title, content: input.content, author: { by: input.by, ...(input.from ? { from: input.from } : {}) }, ...(input.projectId ? { projectId: input.projectId } : {}) });
 }
 
 /**
- * A save of what changed, as the next revision, and its lines brought up to it (pages.syncLines): `line` says who
+ * A save of what changed, as the next revision, and its lines brought up to it (pages.writePage): `line` says who
  * wrote what changed, when not `by` itself (a job's run), and from which chat. The caller has checked the revision it was made from.
  */
 async function writeNote(ctx: Writer, note: Note, patch: { title?: string; content?: string }, by: By, line?: { by: LineBy; from?: Id<"conversations"> }): Promise<number> {
-  const title = patch.title === undefined ? note.title : cleanTitle(patch.title);
-  const content = patch.content ?? note.content;
-  const problem = tooLong(content);
-  if (problem) throw new Error(problem);
-  if (title === note.title && content === note.content) return note.revision;
-  const revision = note.revision + 1;
-  await ctx.db.patch(note._id, { title, content, search: searchOf(title, content), revision, by, updatedAt: Date.now() });
-  await syncLines(ctx, (await ctx.db.get(note._id))!, line?.by ?? by, line?.from);
-  return revision;
+  await writePage(ctx, note, patch, line ?? { by });
+  return (await ctx.db.get(note._id))!.revision;
 }
 
 /** The owner's Inbox note, made the first time something is noted. Never in a project. */
 async function inbox(ctx: Writer): Promise<Note> {
-  const found = (await ctx.db.query("notes").withIndex("by_title", (q) => q.eq("title", INBOX_TITLE)).collect()).find((note) => !note.projectId);
+  const found = (await ctx.db.query("notes").withIndex("by_title", (q) => q.eq("title", INBOX_TITLE)).collect()).find((note) => !note.projectId && !note.kind);
   if (found) return found;
   return (await ctx.db.get(await insertNote(ctx, { title: INBOX_TITLE, content: "", by: "owner" })))!;
 }
@@ -220,7 +202,7 @@ export const search = query({
     const words = args.query.trim();
     if (words.length < 2) return [];
     const names = await projectNames(ctx);
-    const hits = await ctx.db.query("notes").withSearchIndex("search_text", (q) => q.search("search", words)).take(Math.min(args.limit ?? 8, 30));
+    const hits = (await ctx.db.query("notes").withSearchIndex("search_text", (q) => q.search("search", words)).take(60)).filter((note) => !note.kind).slice(0, Math.min(args.limit ?? 8, 30));
     return hits.map((note) => ({ ...summary(note, names), snippet: snippetOf(note.content, words) }));
   },
 });
@@ -261,6 +243,7 @@ export const move = mutation({
     assertDashboardKey(args.key);
     const note = await ctx.db.get(args.id);
     if (!note) throw new Error("This note was deleted.");
+    if (note.kind) throw new Error("A page of memory stays where it is.");
     if (args.projectId && !await ctx.db.get(args.projectId)) throw new Error("This project was deleted.");
     await ctx.db.patch(note._id, { projectId: args.projectId ?? undefined, updatedAt: Date.now() });
     await moveLines(ctx, note._id, args.projectId ?? undefined);
@@ -274,16 +257,16 @@ export const remove = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
+    const note = await ctx.db.get(args.id);
+    // About me and Things to remember are where memory lives; their lines can go, the pages stay.
+    if (note?.kind === "about" || note?.kind === "remember") throw new Error("This page stays; delete its lines instead.");
     await removeNote(ctx, args.id);
     return null;
   },
 });
 
 async function removeNote(ctx: Writer, id: Id<"notes">) {
-  if (!await ctx.db.get(id)) return;
-  for (const job of await ctx.db.query("jobs").collect()) if (job.noteId === id) await ctx.db.patch(job._id, { noteId: undefined });
-  await dropLines(ctx, id);
-  await ctx.db.delete(id);
+  await removePage(ctx, id);
 }
 
 /** A line added to the Inbox note: the pet's quick note, and /note in the web chat. */
@@ -340,12 +323,14 @@ export const lastReplyFromPhone = internalMutation({
  * Where a chat's turn may reach: none from a chat with someone else; else
  * notes in no project, and those of the chat's own project.
  */
-async function reachOf(ctx: Reader, chatId: Id<"conversations"> | undefined): Promise<{ sealed: boolean; projectId?: Id<"projects"> }> {
+async function reachOf(ctx: Reader, chatId: Id<"conversations"> | undefined): Promise<{ sealed: boolean; projectId?: Id<"projects">; chatId?: Id<"conversations"> }> {
   const chat = chatId ? await ctx.db.get(chatId) : null;
   if (chat?.contactId) return { sealed: true };
-  return { sealed: false, ...(chat?.projectId ? { projectId: chat.projectId } : {}) };
+  return { sealed: false, ...(chat?.projectId ? { projectId: chat.projectId } : {}), ...(chat ? { chatId: chat._id } : {}) };
 }
-const reaches = (reach: { sealed: boolean; projectId?: Id<"projects"> }, note: Note) => !reach.sealed && (!note.projectId || note.projectId === reach.projectId);
+/** Where a turn may reach a page: never from a chat with someone else; a chat's own page only from that chat. */
+const reaches = (reach: { sealed: boolean; projectId?: Id<"projects">; chatId?: Id<"conversations"> }, note: Note) => !reach.sealed
+  && (note.conversationId ? note.conversationId === reach.chatId : !note.projectId || note.projectId === reach.projectId);
 const SEALED = "Notes are the owner's: a chat with someone else cannot read or write them.";
 const NOT_HERE = "There is no note with that id here; list_notes shows the ones this chat can reach.";
 
@@ -390,7 +375,7 @@ export const searchForAgent = internalQuery({
     if (reach.sealed) return { found: 0, notes: [], error: SEALED };
     const names = await projectNames(ctx);
     const hits = (await ctx.db.query("notes").withSearchIndex("search_text", (q) => q.search("search", args.query)).take(60))
-      .filter((note) => reaches(reach, note))
+      .filter((note) => !note.kind && reaches(reach, note))
       .slice(0, Math.min(args.limit ?? 8, 20));
     return { found: hits.length, notes: hits.map((note) => ({ ...agentNote(note, names), snippet: snippetOf(note.content, args.query) })) };
   },
@@ -465,6 +450,7 @@ export const updateForAgent = internalMutation({
  */
 export const titlesIn = async (ctx: Reader, projectId: Id<"projects">): Promise<Array<{ id: Id<"notes">; title: string }>> =>
   (await ctx.db.query("notes").withIndex("by_project", (q) => q.eq("projectId", projectId)).collect())
+    .filter((note) => !note.kind)
     .sort((a, b) => b.createdAt - a.createdAt)
     .map((note) => ({ id: note._id, title: note.title }));
 
