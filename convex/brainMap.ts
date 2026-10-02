@@ -4,7 +4,7 @@ import { query, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { around, dayTime, linkedIds, type BrainGraph, type EdgeKind, type MapKind, type MapNode } from "./lib/graph";
 import { peopleIn, personKey } from "./lib/pages";
-import { isPinned } from "./pages";
+import { isPinned, mentionsKept } from "./pages";
 
 /**
  * Brain's map (issue #225), Obsidian's graph view for Brain: every page a
@@ -162,7 +162,7 @@ export async function neighbourhoodOf(ctx: Reader, seeds: string[], depth: numbe
     }
     return reached;
   };
-  const mentionsKept = (await ctx.db.query("installation").first())?.mentionsAt === Number.MAX_SAFE_INTEGER;
+  const kept = mentionsKept(await ctx.db.query("installation").first());
 
   /** Every page or project tied to this page, with the ties recorded. */
   const expand = async (page: Note): Promise<string[]> => {
@@ -183,7 +183,7 @@ export async function neighbourhoodOf(ctx: Reader, seeds: string[], depth: numbe
     }
     // For a person, the lines about them on other pages.
     if (page.kind === "person" && page.person) {
-      const lines = mentionsKept
+      const lines = kept
         ? (await Promise.all((await ctx.db.query("mentions").withIndex("by_person", (q) => q.eq("person", page.person)).collect()).map((mention) => ctx.db.get(mention.lineId)))).filter((line): line is Doc<"memories"> => Boolean(line))
         : await ctx.db.query("memories").withIndex("by_about", (q) => q.gte("about", "" as unknown as string[])).collect();
       for (const line of lines) {

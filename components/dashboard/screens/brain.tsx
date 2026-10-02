@@ -172,7 +172,7 @@ function BrainChanges() {
               <SparklesIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-md">{change.headline}</p>
-                <p className="truncate text-xs text-muted-foreground">{change.before.length} {change.before.length === 1 ? "line" : "lines"}{change.page ? ` · ${change.page.title}` : ""}</p>
+                <p className="truncate text-xs text-muted-foreground">{change.before.length} {change.before.length === 1 ? "line" : "lines"}{change.target ? ` · ${change.target.title}` : change.page ? ` · ${change.page.title}` : ""}</p>
               </div>
               <Button variant="ghost" size="sm" disabled={undoing !== null} onClick={() => void run(change.id)}>{undoing === change.id && <Spinner />}Undo</Button>
             </li>

@@ -141,8 +141,10 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
   return added;
 }
 
-/** installation.mentionsAt once every line from before mentions were kept has been read (indexMentions). */
+/** What installation.mentionsAt held, before it was a time, once every line had been read (indexMentions). */
 const MENTIONS_DONE = Number.MAX_SAFE_INTEGER;
+/** Whether every line's mentions are kept, so who someone is mentioned by is read from the mentions index alone. */
+export const mentionsKept = (install: { mentionsKept?: boolean; mentionsAt?: number } | null) => Boolean(install?.mentionsKept || install?.mentionsAt === MENTIONS_DONE);
 
 /** A line gone for good, and what it mentioned. */
 export async function deleteLine(ctx: Writer, id: Id<"memories">): Promise<void> {
@@ -213,26 +215,29 @@ export async function noteAliases(ctx: Writer, pageId: Id<"notes">): Promise<voi
 }
 
 /**
- * Who every line mentions, and what each person is called, for lines from
- * before mentions were kept (issue #220): a batch of lines oldest first after
- * where the last batch stopped (installation.mentionsAt), the next scheduled
- * until none are left. Derived from the lines, so it changes none of them.
+ * Who every line mentions, and what each person is called (issue #220), for
+ * the lines stored since the last pass (installation.mentionsAt, by when each
+ * row was stored): the first time, every line from before mentions were kept;
+ * after that, at each start, what was stored since, which this Perry noted as
+ * it wrote it but an older one, run in between, did not. In batches, the next
+ * scheduled until none are left. Derived from the lines, so it changes none.
  */
 export const indexMentions = internalMutation({
   args: {},
   returns: v.number(),
   handler: async (ctx) => {
     const install = await ctx.db.query("installation").first();
-    if (!install || install.mentionsAt === MENTIONS_DONE) return 0;
+    if (!install) return 0;
     if (install.mentionsAt === undefined) for (const page of await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", "person")).collect()) await noteAliases(ctx, page._id);
-    const from = install.mentionsAt ?? -1;
-    const batch = await ctx.db.query("memories").withIndex("by_created", (q) => q.gt("createdAt", from)).take(2000);
+    // A pass from before the cursor was a time ended at MENTIONS_DONE: the next one reads every line once more.
+    const from = install.mentionsAt === undefined || install.mentionsAt === MENTIONS_DONE ? -1 : install.mentionsAt;
+    const batch = await ctx.db.query("memories").withIndex("by_creation_time", (q) => q.gt("_creationTime", from)).take(2000);
     await noteMentions(ctx, batch.filter((line) => !line.supersededBy).map((line) => line._id), await peopleByName(ctx));
-    const first = batch[0]?.createdAt ?? 0;
-    const last = batch.at(-1)?.createdAt ?? 0;
-    // Lines written at the same moment as the last of a batch go in the next one too; noteMentions does nothing twice.
+    const first = batch[0]?._creationTime ?? from;
+    const last = batch.at(-1)?._creationTime ?? from;
+    // Lines stored at the same moment as the last of a batch go in the next one too; noteMentions does nothing twice.
     const done = batch.length < 2000;
-    await ctx.db.patch(install._id, { mentionsAt: done ? MENTIONS_DONE : first < last - 1 ? last - 1 : last });
+    await ctx.db.patch(install._id, { mentionsAt: done ? Math.max(from, last) : first < last - 1 ? last - 1 : last, ...(done ? { mentionsKept: true } : {}) });
     if (!done) await ctx.scheduler.runAfter(0, internal.pages.indexMentions, {});
     return batch.length;
   },
@@ -821,7 +826,7 @@ export async function mentionsOf(ctx: Reader, page: Note, seen: (line: Line) => 
   const titles = new Map<string, Note | null>();
   const found: Mention[] = [];
   // Once every line's mentions are kept (indexMentions), only the lines that mention them are read, not all of Brain.
-  const indexed = (await ctx.db.query("installation").first())?.mentionsAt === MENTIONS_DONE;
+  const indexed = mentionsKept(await ctx.db.query("installation").first());
   const candidates = indexed
     ? (await Promise.all((await ctx.db.query("mentions").withIndex("by_person", (q) => q.eq("person", page.person)).collect()).map((mention) => ctx.db.get(mention.lineId))))
       .filter((line): line is Line => Boolean(line)).sort((a, b) => b.createdAt - a.createdAt)

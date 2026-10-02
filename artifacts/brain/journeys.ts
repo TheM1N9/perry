@@ -275,9 +275,13 @@ try {
   const sentOutside = await fresh(undefined, "JOURNEYCHECK outside");
   const sentGarden = await fresh(garden, "JOURNEYCHECK in the garden");
   const part = (sent: string) => { const at = sent.indexOf("## This project's Journey"); return at < 0 ? "" : sent.slice(at, sent.indexOf("\n## ", at + 5) > 0 ? sent.indexOf("\n## ", at + 5) : undefined); };
+  // What goes as pinned, not what recall finds bearing on the message: every chat may read a Journey, and with the sentence
+  // model at hand (PERRY_E2E_MODELS) recall can find one of its lines by meaning ("Possibly relevant").
+  const pinnedOnly = (sent: string) => sent.split("\n## Possibly relevant")[0];
   check("projectChatsGetTheLatest", part(sentInProject).includes("SEALPIPIT") && part(sentInProject).includes("VALVEHERON") && !part(sentInProject).includes("TILEWREN")
-    && !part(sentOutside) && !sentOutside.includes("SEALPIPIT") && !part(sentGarden).includes("SEALPIPIT") && !sentGarden.includes("VALVEHERON"),
-  { inProject: part(sentInProject), outside: part(sentOutside).slice(0, 200), garden: part(sentGarden).slice(0, 300) });
+    && !part(sentOutside) && !pinnedOnly(sentOutside).includes("SEALPIPIT") && !part(sentGarden).includes("SEALPIPIT") && !pinnedOnly(sentGarden).includes("VALVEHERON"),
+  { inProject: part(sentInProject), outside: part(sentOutside).slice(0, 200), garden: part(sentGarden).slice(0, 300),
+    elsewhere: [[sentOutside, "SEALPIPIT"], [sentGarden, "VALVEHERON"]].map(([sent, word]) => (sent.includes(word) ? sent.slice(Math.max(0, sent.lastIndexOf("\n## ", sent.indexOf(word))), sent.indexOf(word) + 40) : "")) });
 
   // --- The owner edits the Journey ----------------------------------------------------------------------------------
   const journey = journeyOf(bathroom)!;

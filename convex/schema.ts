@@ -207,8 +207,10 @@ export default defineSchema({
      * row, so a stop part-way resumes and the count goes on from where it was.
      */
     reembedding: v.optional(v.object({ model: v.string(), total: v.number(), done: v.number(), startedAt: v.number(), finishedAt: v.optional(v.number()) })),
-    /** How far the lines from before mentions were kept have been read for who they mention (pages.indexMentions); done at its largest. */
+    /** When the newest line read for who it mentions was stored (pages.indexMentions): each start reads what was stored since. */
     mentionsAt: v.optional(v.number()),
+    /** Every line's mentions are kept (pages.indexMentions has read them all once): People and the map read the mentions index alone. */
+    mentionsKept: v.optional(v.boolean()),
     /** When Brain was last looked over for duplicates to propose merging (compaction.review). */
     brainReviewedAt: v.optional(v.number()),
     /** After how many days unused a line of Brain is archived (archive.ts); 0 never. Unset: 90. */

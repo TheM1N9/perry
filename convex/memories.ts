@@ -5,7 +5,7 @@ import { internalAction, internalMutation, internalQuery, query, type ActionCtx,
 import { assertDashboardKey } from "./lib/auth";
 import { timezoneOf } from "./jobs";
 import { EMBED_MODEL, embed, readyWithin, unload, warmUp } from "./lib/embed";
-import { dateRange, daysOf, eventIn, fuse, rankRecall, says, type RecallParts } from "./lib/recall";
+import { dateRange, daysOf, eventIn, fuse, rankRecall, says, tellingWords, type RecallParts } from "./lib/recall";
 import { journalTitle, peopleIn, PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
 import { dropLine, ensurePeople, findPage, memoryPage, placeFor, putLine, rewordLine, secretIn, titleOf, writePage, type Author, type Standing } from "./pages";
 import { vEngine, vLineBy, vMemoryKind, vMemoryOrigin } from "./schema";
@@ -442,7 +442,10 @@ export const recall = internalAction({
     });
     const days = range ? daysOf(range) : [];
     const dated = days.length ? await byMeaning(ctx, query, limit * 2, days, args.deep).catch(() => [] as Ranked) : [];
-    const mentioned: string[] = people.length ? await ctx.runQuery(internal.memories.mentioning, { people: people.map((person) => person.key), limit: limit * 2, ...where }) : [];
+    const named: string[] = people.length ? await ctx.runQuery(internal.memories.mentioning, { people: people.map((person) => person.key), limit: limit * 2, ...where }) : [];
+    // A page of the owner's the question names by its title ("Lisbon" and the page "Lisbon trip"): its first lines, after the people's.
+    const titled: string[] = await ctx.runQuery(internal.memories.ofPagesNamed, { query, limit: limit, ...where });
+    const mentioned = [...named, ...titled.filter((lineId) => !named.includes(lineId))];
 
     const known = new Map<string, MemoryView>(hits.map((memory) => [memory.id, memory]));
     const missing = [...new Set<string>([...meaning, ...dated].map((item) => item.id as string).concat(mentioned))].filter((id) => !known.has(id));
@@ -537,6 +540,31 @@ export const mentioning = internalQuery({
       }
     }
     return lines.sort((a, b) => b.createdAt - a.createdAt).slice(0, args.limit).map((line) => line._id);
+  },
+});
+
+/**
+ * The first lines of the owner's own pages whose title has a telling word of the question, at most two pages: what a
+ * question naming a page by its title is likely about, though its lines need not say the name. Not journal days,
+ * Journeys or people (the dates and people a question names have lists of their own), and only lines the chat may see.
+ */
+export const ofPagesNamed = internalQuery({
+  args: { query: v.string(), limit: v.number(), chat: vChat, everywhere: v.optional(v.boolean()), deep: v.optional(v.boolean()) },
+  handler: async (ctx, args): Promise<string[]> => {
+    const wanted = tellingWords(args.query);
+    if (!wanted.length) return [];
+    const seen = args.everywhere ? () => true : await seenFrom(ctx, args.chat);
+    const pages = (await ctx.db.query("notes").withSearchIndex("search_text", (q) => q.search("search", wanted.join(" "))).take(20))
+      .filter((page) => !page.kind && !page.mergedInto && tellingWords(page.title).some((word) => wanted.includes(word)))
+      .slice(0, 2);
+    const found: string[] = [];
+    for (const page of pages) {
+      const lines = (await ctx.db.query("memories").withIndex("by_page", (q) => q.eq("pageId", page._id)).collect())
+        .filter((line) => !line.supersededBy && (args.deep || !line.archivedAt) && seen(line))
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      found.push(...lines.slice(0, 3).map((line) => line._id));
+    }
+    return found.slice(0, args.limit);
   },
 });
 

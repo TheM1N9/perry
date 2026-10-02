@@ -135,6 +135,9 @@ const STOP = new Set((
 ).split(" "));
 const termsOf = (text: string) => text.toLocaleLowerCase().split(/[^\p{L}\p{N}\p{M}]+/u).filter(Boolean);
 
+/** The telling words of a question: not the common ones, nor those under three letters. */
+export const tellingWords = (query: string) => termsOf(query).filter((term) => term.length >= 3 && !STOP.has(term));
+
 /** Whether a line has every telling word of the question (the last may be the start of one): an exact match by words. */
 export function hasAllWords(query: string, text: string): boolean {
   const wanted = termsOf(query).filter((term) => term.length >= 3 && !STOP.has(term));
