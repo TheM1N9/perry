@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-02T07:42:41.708Z",
+  "ranAt": "2026-10-02T07:47:37.773Z",
   "engine": "fake Grok Build (artifacts/engine-acp/fake-agent.ts)",
   "checks": {
     "onlyFakeEngines": true,
@@ -48,10 +48,10 @@
     },
     "stoppedJobListedAsMissed": [
       {
-        "id": "5j57jgf5gv6n7vczwd0mmne8dt",
+        "id": "rk3cyj93tf8te5t3k2rs9vtw7f",
         "name": "Long job",
-        "at": 1790926775719,
-        "when": "Fri 13:09",
+        "at": 1790927074722,
+        "when": "Fri 13:14",
         "runs": 1,
         "stopped": true
       }
@@ -73,7 +73,7 @@
     },
     "pausedFromTelegram": {
       "paused": {
-        "at": 1790926782053,
+        "at": 1790927082141,
         "by": "telegram"
       },
       "said": [
@@ -95,9 +95,9 @@
       "commandNow": "pending"
     },
     "eventHeld": {
-      "at": 1790926786673,
+      "at": 1790927086914,
       "runs": 1,
-      "event": "A new file arrived: W:\\perry-tests\\pause\\run-1790926767350\\inbox-folder\\invoice-0420.pdf"
+      "event": "A new file arrived: W:\\perry-tests\\pause\\run-1790927065128\\inbox-folder\\invoice-0420.pdf"
     },
     "webMessageRefused": "dashboard:sendChat: Perry is paused. Resume him to start this.",
     "runNowRefused": "jobs:runNow: Perry is paused. Resume him to start this.",
@@ -120,32 +120,32 @@
       "turns": [],
       "missed": [
         {
-          "id": "5j57jgf5gv6n7vczwd0mmne8dt",
+          "id": "rk3cyj93tf8te5t3k2rs9vtw7f",
           "name": "Long job",
-          "at": 1790926775719,
-          "when": "Fri 13:09",
+          "at": 1790927074722,
+          "when": "Fri 13:14",
           "runs": 1,
           "stopped": true
         },
         {
-          "id": "a40gxhpxvntgh2ne9wbz88ynwa",
+          "id": "vy1ep51t1wh4v6tax3mmhvjd87",
           "name": "New file",
-          "at": 1790926786673,
-          "when": "Fri 13:09",
+          "at": 1790927086914,
+          "when": "Fri 13:14",
           "runs": 1
         },
         {
-          "id": "hnry6v3fym0bz43rmbac7959k8",
+          "id": "rhe8mnmrzkxzqgrp3tnsd4f06b",
           "name": "Every minute",
-          "at": 1790926828180,
-          "when": "Fri 13:10",
+          "at": 1790927125841,
+          "when": "Fri 13:15",
           "runs": 1
         },
         {
-          "id": "3tr3w6smnyevz5xgy01qaf6hwj",
+          "id": "b276z6nw70g2apv8e2wh3d0khh",
           "name": "Heartbeat",
-          "at": 1790926828181,
-          "when": "Fri 13:10",
+          "at": 1790927125842,
+          "when": "Fri 13:15",
           "runs": 1
         }
       ]
@@ -157,7 +157,7 @@
     "petShowsPaused": "I'm paused\n\nNothing runs until you resume.\n\nResume\nz\nz\nz\n4",
     "pauseSurvivesRestart": {
       "paused": {
-        "at": 1790926782053,
+        "at": 1790927082141,
         "by": "telegram"
       },
       "refusedAfterRestart": "dashboard:sendChat: Perry is paused. Resume him to start this."
@@ -165,15 +165,15 @@
     "resumedFromWeb": {
       "composerSaid": true
     },
-    "missedListedOnPhone": "Perry is back on.\n\nWhile paused, 4 schedules didn't run:\n1. Long job, stopped Fri 13:09\n2. New file, due Fri 13:09\n3. Every minute, due Fri 13:10\n4. Heartbeat, due Fri 13:10\n\nNone will run unless you say so. Send /run 1 to run one, /run all for all, or /skip to let them go.",
+    "missedListedOnPhone": "Perry is back on.\n\nWhile paused, 4 schedules didn't run:\n1. Long job, stopped Fri 13:14\n2. New file, due Fri 13:14\n3. Every minute, due Fri 13:15\n4. Heartbeat, due Fri 13:15\n\nNone will run unless you say so. Send /run 1 to run one, /run all for all, or /skip to let them go.",
     "resumeRunsNothingMissed": {
       "turns": [],
       "task": "blocked"
     },
-    "dashboardListsMissed": "Missed while paused\n\nLong job · Fri 13:09\nRun\nSkip\nNew file · Fri 13:09\nRun\nSkip\nEvery minute · Fri 13:10\nRun\nSkip\nHeartbeat · Fri 13:10\nRun\nSkip\nSkip all",
+    "dashboardListsMissed": "Missed while paused\n\nLong job · Fri 13:14\nRun\nSkip\nNew file · Fri 13:14\nRun\nSkip\nEvery minute · Fri 13:15\nRun\nSkip\nHeartbeat · Fri 13:15\nRun\nSkip\nSkip all",
     "runningOneRunsOnlyIt": {
       "ran": [
-        "⏰ Every minute (Friday, 2 October 2026 at 13:12)\n\nSay hello."
+        "⏰ Every minute (Friday, 2 October 2026 at 13:17)\n\nSay hello."
       ],
       "leftOver": [
         "Long job",
@@ -200,7 +200,7 @@
     "runnerLog": [
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\perry-tests\\pause\\run-1790926767350\\home\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\pause\\run-1790927065128\\home\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -210,19 +210,19 @@
       "\u001b[0m",
       "\u001b[1m  Assistant wants to run:\u001b[0m",
       "    \u001b[36mecho pause-test\u001b[0m",
-      "\u001b[2m    in W:\\perry-tests\\pause\\run-1790926767350\\home\\workspace\u001b[0m",
+      "\u001b[2m    in W:\\perry-tests\\pause\\run-1790927065128\\home\\workspace\u001b[0m",
       "\u001b[2m    The owner asked for it\u001b[0m",
       "\u001b[2m    approve or decline it in the dashboard or on Telegram\u001b[0m",
       "\u001b[33m  stopping the Grok Build turn, as asked\u001b[0m",
-      "\u001b[2m  saved turn t4k21sa8z3e61cabsxthzsnbyk\u001b[0m",
+      "\u001b[2m  saved turn v90sh6x7kq6vt6tqd8rqpe1e35\u001b[0m",
       "\u001b[33m  stopping the Grok Build turn, as asked\u001b[0m",
-      "\u001b[2m  saved turn 0jaw17xtb5sve3q8ps9y8sjxp8\u001b[0m",
+      "\u001b[2m  saved turn 0x97174j7jydkhv4ph8a17db5j\u001b[0m",
       "\u001b[33m  stopping the Grok Build turn, as asked\u001b[0m",
-      "\u001b[2m  saved turn hdegggtkps5q1fcnc7wpwy6eep\u001b[0m",
+      "\u001b[2m  saved turn ghthx0d77awd3k4bdn9tnt0sss\u001b[0m",
       "\u001b[33m  stopping the Grok Build turn, as asked\u001b[0m",
-      "\u001b[2m  saved turn r0et5n7ghgk9h5wk9jj662kxyz\u001b[0m",
-      "\u001b[2m  saved turn 97yv4s0st132b26q0fqscc6qf3\u001b[0m",
-      "\u001b[2m  saved turn e0nr7g8213hbjg07c6p8w1eh5d\u001b[0m"
+      "\u001b[2m  saved turn yvqnc5w4ncn19cg3vx7rft590w\u001b[0m",
+      "\u001b[2m  saved turn 6xz0c3nzzzss7q7eg9823kketx\u001b[0m",
+      "\u001b[2m  saved turn agp9e6fx08g7wd28b0pawah6a9\u001b[0m"
     ],
     "workRemoved": true
   },
