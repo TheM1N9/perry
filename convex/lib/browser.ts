@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HOME, PATHS } from "../../runner/home";
 
@@ -281,6 +281,23 @@ export async function screenshot(): Promise<string> {
   mkdirSync(PATHS.files, { recursive: true });
   const path = join(PATHS.files, `browser-${new Date().toISOString().replace(/[:.]/g, "-")}.png`);
   writeFileSync(path, Buffer.from(shot.data, "base64"));
+  return path;
+}
+
+/** Pictures kept for the chat's steps; older ones are deleted, and their steps show none. */
+const PREVIEWS_KEPT = 300;
+
+/**
+ * A small picture of the tab (half size, JPEG), for the step in the chat that
+ * shows what the browser did. Saved in Perry's steps folder; returns its path.
+ */
+export async function preview(): Promise<string> {
+  const shot = await send(await tab(), "Page.captureScreenshot", { format: "jpeg", quality: 60, optimizeForSpeed: true, clip: { x: 0, y: 0, width: 1280, height: 900, scale: 0.5 } }) as { data: string };
+  mkdirSync(PATHS.steps, { recursive: true });
+  const path = join(PATHS.steps, `browser-${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(36).slice(2, 6)}.jpg`);
+  writeFileSync(path, Buffer.from(shot.data, "base64"));
+  const kept = readdirSync(PATHS.steps).filter((name) => name.startsWith("browser-")).sort();
+  for (const old of kept.slice(0, Math.max(0, kept.length - PREVIEWS_KEPT))) rmSync(join(PATHS.steps, old), { force: true });
   return path;
 }
 

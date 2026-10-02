@@ -8,9 +8,9 @@ import { COMPACTED, runLabel, type Access } from "./lib/commands";
 import { ENGINE_LABELS, NO_ENGINE, refusal, type EngineKind } from "./lib/engines";
 import { engineFor } from "./installation";
 import { authenticate } from "./runner";
-import { ABSOLUTE_PATH } from "./media";
+import { ABSOLUTE_PATH, describePath, stepsKey } from "./media";
 import { QUIET } from "./jobs";
-import { hide, savedValues } from "./vault";
+import { HIDDEN, hide, savedValues } from "./vault";
 import { takeFromOutbox } from "./conversations";
 import { moveChat, retryable } from "./routing";
 import { engineLockable, engineReady, engineUsable, isOnline, recordEngines, resumeOf, statusesOf, tooOld } from "./engines";
@@ -624,6 +624,26 @@ export const traceTurn = mutation({
   },
 });
 
+/**
+ * The files a step changed, registered for the local media server, so the
+ * chat's step links to each (dashboard.getStep). Only absolute paths, once a
+ * run, and none from a change that had a saved value in it: the step hides
+ * that value, but the file itself would show it.
+ */
+async function linkFiles(ctx: MutationCtx, conversationId: Id<"conversations">, runId: Id<"runs">, span: { name: string; input?: string; output?: string }) {
+  if (`${span.input ?? ""}${span.output ?? ""}${span.name}`.includes(HIDDEN)) return;
+  const paths = span.name.split(", ").filter((path) => ABSOLUTE_PATH.test(path)).slice(0, 20);
+  if (!paths.length) return;
+  const messageKey = stepsKey(runId);
+  const linked = new Set((await ctx.db.query("chatAttachments")
+    .withIndex("by_message", (q) => q.eq("conversationId", conversationId).eq("messageKey", messageKey))
+    .collect()).map((row) => row.localPath));
+  for (const path of paths) {
+    if (linked.has(path)) continue;
+    await ctx.db.insert("chatAttachments", { conversationId, messageKey, localPath: path, ...describePath(path), size: 0, createdAt: Date.now() });
+  }
+}
+
 async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infer<typeof vTrace>) {
   const run = await ctx.db.get(job.runId);
   if (!run) return;
@@ -633,13 +653,16 @@ async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infe
   for (const span of trace.spans) {
     const row = {
       ...span,
-      name: span.name.slice(0, 300),
+      // A command names what it runs, which can hold a saved value too.
+      name: hide(span.name, values).slice(0, 300),
       input: span.input && hide(span.input, values).slice(0, SPAN_TEXT),
-      output: span.output && hide(span.output, values).slice(0, SPAN_TEXT),
+      // A command's output keeps its end, as the runner cut it.
+      output: span.output && (span.kind === "command" ? hide(span.output, values).slice(-SPAN_TEXT) : hide(span.output, values).slice(0, SPAN_TEXT)),
     };
     const existing = await ctx.db.query("runSpans")
       .withIndex("by_run", (q) => q.eq("runId", run._id).eq("callId", span.callId))
       .first();
+    if (row.kind === "fileChange" && row.status === "ok") await linkFiles(ctx, job.conversationId, run._id, row);
     if (existing) {
       await ctx.db.patch(existing._id, row);
       continue;
