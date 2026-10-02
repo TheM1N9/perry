@@ -8,6 +8,7 @@ import * as assistant from "../convex/assistant";
 import * as brain from "../convex/brain";
 import * as channels from "../convex/channels";
 import * as codex from "../convex/codex";
+import * as compaction from "../convex/compaction";
 import * as composio from "../convex/composio";
 import * as connectorAccounts from "../convex/connectorAccounts";
 import * as contacts from "../convex/contacts";
@@ -83,6 +84,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "brain": brain,
   "channels": channels,
   "codex": codex,
+  "compaction": compaction,
   "composio": composio,
   "connectorAccounts": connectorAccounts,
   "contacts": contacts,

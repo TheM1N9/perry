@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { BookUserIcon, FileTextIcon, FileUpIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { BookUserIcon, FileTextIcon, FileUpIcon, PlusIcon, SearchIcon, SparklesIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import { noteHref } from "@/convex/lib/notes";
 import type { Found } from "@/convex/pages";
+import type { ProposalView } from "@/convex/compaction";
 import { errorText } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
@@ -78,6 +79,7 @@ export function Brain() {
         {needle.length >= 2 && <FoundLines term={filter.trim()} />}
         {!needle && <TeachForm />}
         <MemoryPages filter={needle} />
+        {!needle && <BrainChanges />}
         <section aria-label="Pages" className="space-y-1">
           <h2 className="text-sm font-medium text-muted-foreground">Pages</h2>
           {notes === undefined ? <ListSkeleton rows={3} /> : pages.length === 0 ? (
@@ -87,6 +89,52 @@ export function Brain() {
         <OlderMemories />
       </div>
     </Page>
+  );
+}
+
+/**
+ * Changes to Brain the owner approved (compaction.ts): what Perry tidied with
+ * their yes, newest first, each with Undo; and how many wait in Needs you.
+ */
+function BrainChanges() {
+  const { dashboardKey } = useSession();
+  const changes = useQuery(api.compaction.list, { key: dashboardKey });
+  const undo = useMutation(api.compaction.undo);
+  const [undoing, setUndoing] = useState<string | null>(null);
+  if (!changes?.length) return null;
+  const waiting = changes.filter((change) => change.status === "pending").length;
+  const applied = changes.filter((change) => change.status === "applied").slice(0, 8);
+  const run = async (id: ProposalView["id"]) => {
+    setUndoing(id);
+    try {
+      const done = await undo({ key: dashboardKey, id });
+      if (done.undone) toast.success("Undone. The lines are back as they were.");
+      else toast.error(done.error ?? "Couldn't undo it.");
+    } catch (cause) {
+      toast.error(`Couldn't undo it: ${errorText(cause)}`);
+    } finally {
+      setUndoing(null);
+    }
+  };
+  return (
+    <section aria-label="Tidied" className="space-y-1">
+      <h2 className="text-sm font-medium text-muted-foreground">Tidied with your OK</h2>
+      {waiting > 0 && <p className="text-sm text-muted-foreground"><Link href="/inbox" className="underline-offset-2 hover:underline">{waiting} waiting in Needs you</Link></p>}
+      {applied.length > 0 && (
+        <List label="Tidied">
+          {applied.map((change) => (
+            <li key={change.id} className="flex items-center gap-3 py-2.5" data-change={change.kind}>
+              <SparklesIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-md">{change.after[0]}{change.after.length > 1 ? ` (+${change.after.length - 1})` : ""}</p>
+                <p className="truncate text-xs text-muted-foreground">{change.before.length} {change.before.length === 1 ? "line" : "lines"}{change.page ? ` · ${change.page.title}` : ""}</p>
+              </div>
+              <Button variant="ghost" size="sm" disabled={undoing !== null} onClick={() => void run(change.id)}>{undoing === change.id && <Spinner />}Undo</Button>
+            </li>
+          ))}
+        </List>
+      )}
+    </section>
   );
 }
 

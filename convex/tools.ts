@@ -929,6 +929,39 @@ const brain_lately = createTool({
   },
 });
 
+const brain_review = createTool({
+  description:
+    "For the weekly Brain review: proposes merging lines that say the same thing in nearly the same words (the owner " +
+    "is asked), and lists long sections and past weeks of the journal not rolled up yet, with their lines' ids, for " +
+    "you to propose condensing or rolling up with brain_propose.",
+  inputSchema: z.object({}),
+  execute: async (ctx): Promise<{ proposedMerges: number; sections: unknown[]; weeks: unknown[]; waiting: number }> => {
+    const proposedMerges: number = await ctx.runMutation(internal.compaction.review, {});
+    const found: { sections: unknown[]; weeks: unknown[]; waiting: number } = await ctx.runQuery(internal.compaction.forReview, {});
+    return { proposedMerges, ...found };
+  },
+});
+
+const brain_propose = createTool({
+  description:
+    "Propose a change to Brain for the owner to approve, edit or decline (Needs you and their phone show it as a " +
+    "before and after). Nothing changes until they say yes, and the old lines are kept as history. kind=merge joins " +
+    "lines that say the same thing; condense rewrites a long stretch in fewer lines; rollup sums a past week of the " +
+    "journal up on a page of its own (the days stay); infer adds a fact the lines together imply. Never for anything " +
+    "the owner did not say or that does not follow from what is written.",
+  inputSchema: z.object({
+    kind: z.enum(["merge", "condense", "rollup", "infer"]),
+    page: z.string().optional().describe("The page (title or id); for rollup, leave out."),
+    section: z.string().max(200).optional().describe("The section; for rollup, the summary page's title, as \"Week of Mon 3 Mar 2025\"."),
+    replaces: z.array(z.string()).min(1).max(400).describe("Ids of the lines it changes (for infer and rollup: those it comes from)."),
+    with: z.array(z.string().max(1000)).min(1).max(20).describe("The lines that would stand instead (or be added)."),
+    why: z.string().max(300).describe("One short sentence the owner reads first."),
+  }),
+  execute: async (ctx, input): Promise<{ proposed?: string; error?: string }> => {
+    return await ctx.runMutation(internal.compaction.proposeForAgent, { ...(ctx.conversationId ? { chat: ctx.conversationId } : {}), ...input });
+  },
+});
+
 /** search_memory: recall, under the name some engines reach for. */
 const search_memory = createTool({
   description: brain_search.description,
@@ -1438,6 +1471,8 @@ export const ALL_TOOLS = {
   brain_pin,
   brain_summarize,
   brain_lately,
+  brain_review,
+  brain_propose,
   search_memory,
   recall,
   remember,

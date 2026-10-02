@@ -9,6 +9,7 @@ import type * as assistant from "../assistant.js";
 import type * as brain from "../brain.js";
 import type * as channels from "../channels.js";
 import type * as codex from "../codex.js";
+import type * as compaction from "../compaction.js";
 import type * as composio from "../composio.js";
 import type * as connectorAccounts from "../connectorAccounts.js";
 import type * as contacts from "../contacts.js";
@@ -86,6 +87,7 @@ declare const fullApi: ApiFromModules<{
   brain: typeof brain;
   channels: typeof channels;
   codex: typeof codex;
+  compaction: typeof compaction;
   composio: typeof composio;
   connectorAccounts: typeof connectorAccounts;
   contacts: typeof contacts;

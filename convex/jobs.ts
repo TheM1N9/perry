@@ -74,7 +74,7 @@ function onTheList(thread: Thread, todos: TodoState[]): { says: string; skip: bo
   return { says, skip };
 }
 
-type Builtin = "heartbeat" | "daily-summary" | "consolidate";
+type Builtin = "heartbeat" | "daily-summary" | "consolidate" | "brain-review";
 
 /**
  * Jobs every install has. The daily summary and consolidation keep memory
@@ -105,6 +105,19 @@ const BUILTINS: Array<{ builtin: Builtin; name: string; schedule: string; prompt
       "Standing preferences and durable facts can also go straight to kind=profile or kind=core, superseding what they replace.",
       "About me is left to the nightly consolidation.",
       `This job never delivers anything to the owner: when done, deliver nothing by replying with exactly ${QUIET}.`,
+    ].join(" "),
+  },
+  {
+    builtin: "brain-review",
+    name: "Brain review",
+    schedule: "0 4 * * 0",
+    prompt: [
+      "This is your weekly Brain review, not a message from the owner. Nothing in Brain changes without the owner's yes: you only propose.",
+      "Call brain_review. It has already proposed merging lines that say the same thing in nearly the same words. It lists long sections and past weeks of the journal not rolled up yet.",
+      "For each long section, read it with brain_read and, where several lines say the same thing in different words or have gone stale, propose with brain_propose kind=merge or kind=condense: replaces = their ids, with = the lines that would stand instead, keeping every name, date and number, why = one short sentence.",
+      "For each week listed, propose kind=rollup: replaces = the ids of its journal lines that matter, with = a summary of that week in 3 to 8 lines, why = the week.",
+      "Where several lines together clearly imply a fact not written anywhere, you may propose kind=infer with page and section, replaces = those lines, with = the fact. Never invent.",
+      `This job never delivers anything to the owner: when done, reply with exactly ${QUIET}.`,
     ].join(" "),
   },
   {

@@ -116,6 +116,8 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
     else await deleteLine(ctx, id);
   }
   if (reworded.length) await noteMentions(ctx, reworded);
+  // A page of memory past a few hundred lines is looked over for duplicates to propose merging, at most daily.
+  if (page.kind && page.kind !== "journal" && page.kind !== "about" && rows.length >= 300) await ctx.scheduler.runAfter(0, internal.compaction.reviewIfDue, {});
   if (page.kind === "person" && (reworded.length || plan.drop.length)) await noteAliases(ctx, page._id);
   if (page.linesAt !== page.revision) await ctx.db.patch(page._id, { linesAt: page.revision });
   if (changed) await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
@@ -342,7 +344,9 @@ export async function findPage(ctx: Reader, place: Place): Promise<Note | null> 
   return rows.find((page) => {
     switch (place.kind) {
       case "about": return !page.projectId;
-      case "remember": case "journal": return page.projectId === place.projectId;
+      case "remember": return page.projectId === place.projectId;
+      // A rolled-up week starts on a day too, and is not that day's page.
+      case "journal": return page.projectId === place.projectId && !page.rollup;
       case "person": return page.person === personKey(place.name);
       case "chat": return page.conversationId === place.conversationId;
     }

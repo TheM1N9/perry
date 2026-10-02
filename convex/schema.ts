@@ -191,6 +191,8 @@ export default defineSchema({
     embeddedBefore: v.optional(v.string()),
     /** How far the lines from before mentions were kept have been read for who they mention (pages.indexMentions); done at its largest. */
     mentionsAt: v.optional(v.number()),
+    /** When Brain was last looked over for duplicates to propose merging (compaction.review). */
+    brainReviewedAt: v.optional(v.number()),
     ownerChannel: v.optional(vChannel),
     ownerExternalId: v.optional(v.string()),
     ownerName: v.optional(v.string()),
@@ -747,6 +749,8 @@ export default defineSchema({
     summaries: v.optional(v.array(v.object({ section: v.optional(v.string()), text: v.string(), lines: v.number(), at: v.number() }))),
     /** The Lately page: the last two weeks in short, kept by the nightly consolidation and sent after About me. */
     lately: v.optional(v.boolean()),
+    /** A week of the journal rolled up into a summary the owner approved (compaction.ts); its day is the week's first. */
+    rollup: v.optional(v.boolean()),
     /** When it, or a section of it, was pinned: what is pinned later loads after. */
     pinnedAt: v.optional(v.number()),
     /** Made by moving memories from before pages into pages (pages.migrate); moving them back deletes it if nothing else is in it. */
@@ -936,6 +940,12 @@ export default defineSchema({
     /** How many times it was said again or confirmed (remember with the same words). */
     confirmCount: v.optional(v.number()),
     /**
+     * Taken out of its page by a change the owner approved (compaction.ts): which, and where it stood, so undo can
+     * put it back. It stays as history, superseded by the line that replaced it.
+     */
+    compactedBy: v.optional(v.id("brainProposals")),
+    compactedFrom: v.optional(v.object({ pageId: v.id("notes"), section: v.optional(v.string()), order: v.number() })),
+    /**
      * The page it is a line of (pages.ts): a paragraph, list item or other block of its Markdown, kept in step
      * with the page on every save, so one search finds it with the memories. Its place and the heading it is under.
      */
@@ -956,6 +966,34 @@ export default defineSchema({
     .index("by_embedded", ["supersededBy", "embeddedWith", "createdAt"])
     .searchIndex("search_text", { searchField: "text" })
     .vectorIndex("by_embedding", { vectorField: "embedding", dimensions: 384, filterFields: ["embeddedWith", "day"] }),
+
+  /**
+   * A change to Brain Perry proposes and the owner approves, edits or declines (compaction.ts): what kind, on which
+   * page and section, the lines it would change as they were, what would stand instead, and how it went. Applied,
+   * the lines it added; undone, all as it was.
+   */
+  brainProposals: defineTable({
+    kind: v.union(v.literal("merge"), v.literal("condense"), v.literal("rollup"), v.literal("infer")),
+    pageId: v.id("notes"),
+    section: v.optional(v.string()),
+    summary: v.string(),
+    before: v.array(v.object({ id: v.id("memories"), text: v.string() })),
+    after: v.array(v.string()),
+    /** Its kind and lines, so the same is not proposed twice. */
+    key: v.string(),
+    status: v.union(v.literal("pending"), v.literal("applied"), v.literal("declined"), v.literal("expired"), v.literal("stale"), v.literal("undone")),
+    by: v.union(v.literal("review"), v.literal("assistant"), v.literal("job")),
+    edited: v.optional(v.boolean()),
+    approvalId: v.optional(v.id("approvals")),
+    added: v.optional(v.array(v.id("memories"))),
+    rollupPageId: v.optional(v.id("notes")),
+    createdAt: v.number(),
+    decidedAt: v.optional(v.number()),
+    appliedAt: v.optional(v.number()),
+    undoneAt: v.optional(v.number()),
+  })
+    .index("by_status", ["status", "createdAt"])
+    .index("by_key", ["key"]),
 
   /**
    * Who and what a line mentions: a person (their page's key, lib/pages.personKey) or a project, so a question
@@ -1028,7 +1066,7 @@ export default defineSchema({
     trigger: v.optional(vTrigger),
     prompt: v.string(),
     enabled: v.boolean(),
-    builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"))),
+    builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"), v.literal("brain-review"))),
     /** The model its runs use, picked on the Work page. Unset means the account's default. */
     model: v.optional(v.string()),
     /** The engine `model` is one of, set with it. */
@@ -1151,9 +1189,11 @@ export default defineSchema({
      * "contact": someone new wrote to Perry, or added it to a group; "message": Perry wants to write to
      * someone for the first time (contacts.ts). Allowing either lets Perry talk with them from then on.
      */
-    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message")),
+    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message"), v.literal("brain")),
     /** For "contact" and "message": who. */
     contactId: v.optional(v.id("contacts")),
+    /** For "brain": the change to Brain it asks about (compaction.ts). */
+    proposalId: v.optional(v.id("brainProposals")),
     title: v.string(),
     detail: v.optional(v.string()),
     cwd: v.optional(v.string()),
