@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openChat, sleep } from "../browser";
@@ -338,8 +339,8 @@ try {
   await sleep(4_000);
   const owner = { telegram: tgTo(OWNER_TG, at), whatsapp: waTo(OWNER_WA, at) };
   const sam = waTo(SAM, at);
-  // The owner's Telegram also hears that the stranger wrote (an approval); only replies to what the owner sent count here.
-  const answers = { telegram: owner.telegram.filter((text) => !text.includes("Rando")), whatsapp: owner.whatsapp };
+  // The owner's Telegram also gets approval cards (the stranger, Sam's edited once approved); only replies to what the owner sent count here.
+  const answers = { telegram: owner.telegram.filter((text) => !text.includes("wants to talk with someone new")), whatsapp: owner.whatsapp };
   check("ownerToldHowToResume", answers.telegram.length === 1 && answers.whatsapp.length === 1 && [...answers.telegram, ...answers.whatsapp].every((text) => text === PAUSED_OWNER), owner);
   check("othersToldOnlyPaused", sam.length === 2 && sam.every((text) => text === PAUSED_REPLY), sam);
   check("strangerStillUnanswered", tgTo(TG_STRANGER, at).length === 0);
@@ -362,6 +363,8 @@ try {
   };
   const size = (width: number, height: number) => send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
   const shot = async (name: string) => {
+    // This computer's name is in the sidebar; the picture shows a stand-in.
+    await evaluate(`(() => { const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); for (let node; (node = walk.nextNode());) node.nodeValue = node.nodeValue.split(${JSON.stringify(hostname())}).join("THIS-PC"); return true; })()`);
     const image = await send("Page.captureScreenshot", { format: "png" }) as { data: string };
     writeFileSync(join(OUT, name), Buffer.from(image.data, "base64"));
   };
@@ -408,6 +411,11 @@ try {
   await sleep(3_000);
   server = start("server");
   await until(() => fetch(`${BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start again", 120);
+  // The new server connects to WhatsApp afresh: the stand-in opens the connection again.
+  const connectsBefore = wa.connects;
+  await until(() => wa.connects > connectsBefore || wa.connects >= 2, "WhatsApp to reconnect", 60);
+  wa.commands.push({ user: { id: "15550001111:7@s.whatsapp.net", name: "Perry" } }, { event: "connection.update", data: { connection: "open" } });
+  await until(async () => (await call<{ status: string }>("whatsapp:status", { key: KEY }, "call")).status === "connected", "WhatsApp connected again", 60);
   const afterRestart = await pauseView();
   const refusedAfterRestart = await call("dashboard:sendChat", { key: KEY, id: reply, text: "Still there?" }).then(() => "sent", (error: Error) => error.message);
   await sleep(5_000);
