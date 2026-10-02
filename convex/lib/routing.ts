@@ -158,6 +158,8 @@ export type RouteInput = {
   current?: EngineKind;
   /** The owner's default engine (installation.defaultEngine): the work's engine when nothing else names one. */
   preferred?: EngineKind;
+  /** What `current` is, in the run's details, when it is not simply where the work already was. */
+  currentIs?: string;
   /** Signed in and recent enough on a computer that is online. */
   engines: EngineKind[];
   models: ModelOption[];
@@ -217,7 +219,7 @@ export function route(input: RouteInput): Choice | null {
   };
 
   const where = owner?.engine === home ? "as picked" : perry?.engine === home ? "as Perry picked"
-    : home === input.preferred ? "your default engine" : "where it already was";
+    : home === input.preferred ? "your default engine" : input.currentIs ?? "where it already was";
   // Its own engine, or the default, while that has room.
   if (usable.includes(home) && room(home).state === "room") {
     return choose(home, `On ${ENGINE_LABELS[home]}, ${where}, which has room.`);
@@ -258,11 +260,64 @@ export function route(input: RouteInput): Choice | null {
   };
 }
 
+/**
+ * A turn in a chat with someone else (issue #200): routed as an owner's chat
+ * is, but only among the engines that can be locked down for it
+ * (`lockable`: no shell, files or computer, only Perry's guest tools). The
+ * owner's default engine while it is one of them and has room, else the
+ * lockable signed-in engine with the most of its plan left; an engine that
+ * runs out moves the chat to another lockable one. With none signed in, or
+ * none with room, there is no turn: `none` says why, for the owner.
+ */
+export type GuestInput = Omit<RouteInput, "work" | "attended" | "perry" | "current" | "currentIs"> & {
+  /** Engines whose runner can lock them down for this chat. */
+  lockable: EngineKind[];
+};
+
+export function routeGuest(input: GuestInput): Choice | { none: string } {
+  const { lockable, now, timeZone } = input;
+  const label = (engine: EngineKind) => ENGINE_LABELS[engine];
+  const list = (engines: EngineKind[]) => engines.map(label).join(", ") || "none";
+  const usable = input.engines.filter((engine) => lockable.includes(engine));
+  const avoid = new Set(input.avoid ?? []);
+  const room = (engine: EngineKind) => roomOf(engine, input.usage[engine], now, 100, timeZone);
+  const open = usable.filter((engine) => !avoid.has(engine));
+  const notLocked = input.preferred && !lockable.includes(input.preferred) ? `${label(input.preferred)}, your default engine, can't be locked down. ` : "";
+  if (!open.length) {
+    const why = !input.engines.length ? "No engine is signed in on a computer that is online"
+      : !usable.length ? `None of the signed-in engines (${list(input.engines)}) can be locked down: no shell, files or computer. Only ${list(lockable)} can`
+        : `${list(usable)} refused it for a plan's limit`;
+    return { none: `${notLocked}${why}.` };
+  }
+  const among = (engine?: EngineKind) => engine && usable.includes(engine) ? engine : undefined;
+  const preferred = among(input.preferred);
+  // Without the default among them, the lockable engine with the most of its plan left is where it starts.
+  const roomiest = [...open].sort((a, b) => (room(a).state === "out" ? 1 : 0) - (room(b).state === "out" ? 1 : 0)
+    || (room(a).used ?? 50) - (room(b).used ?? 50) || ENGINES.indexOf(a) - ENGINES.indexOf(b))[0];
+  const owner = input.owner?.engine && usable.includes(input.owner.engine) ? input.owner : input.owner?.effort ? { effort: input.owner.effort } : undefined;
+  // It follows the default as a phone chat does: the engine it was last moved to is not kept.
+  const current = preferred ? undefined : roomiest;
+  const choice = route({
+    ...input, work: { kind: "chat" }, attended: true, engines: usable, owner, current, preferred,
+    currentIs: "the one that can be locked down with the most of its plan left",
+  });
+  if (!choice) return { none: `${notLocked}No engine that can be locked down is signed in.` };
+  // Every lockable engine is used up: a turn there would only be refused.
+  const left = room(choice.engine);
+  if (left.state === "out" || avoid.has(choice.engine)) return { none: `${notLocked}${left.why ?? `${label(choice.engine)} refused it for its plan's limit`}, and no other engine that can be locked down has room.` };
+  // Lockable engines passed over for their plan, which the move (if any) does not say already.
+  const passed = usable.filter((engine) => engine !== choice.engine && engine !== choice.movedFrom?.engine && (avoid.has(engine) || room(engine).state === "out"))
+    .map((engine) => avoid.has(engine) ? `${label(engine)} refused it for its plan's limit` : room(engine).why);
+  const why = `Chats with other people run only where they can be locked down (no shell, files or computer): ${list(usable)}. ${notLocked}${choice.why}${passed.length ? ` ${passed.join("; ")}.` : ""}`;
+  return { ...choice, why };
+}
+
 /** The rule in a few lines, for the agent's list_engines and the run's details. */
 export const ROUTING_RULE = [
   "Tiers: quick (chat names, reviews, the heartbeat, reminders) runs an engine's fastest model at low; standard (chats, recurring and event jobs, the daily summary, short background tasks) its default model at its default level; deep (background tasks with a long brief, memory consolidation) its strongest at high.",
   `The engine is the work's own (a model picked for it, or its chat's engine), else the owner's default engine, while it has room. Background work leaves an engine at ${BACKGROUND_CAP}% of any window for the default engine if that has room, else the signed-in engine with the most of its plan left, and waits for the first reset when every engine is past it. A chat moves only when its engine is used up. With no default engine chosen, Perry asks the owner to choose one rather than picking.`,
   "The owner's pick wins over Perry's, and Perry's over the tier's.",
+  "Chats with other people run only on engines that can be locked down (no shell, files or computer), routed the same way among them.",
 ].join(" ");
 
 /** What a run was given, in a few words: "Grok Build · grok-fake-heavy at high". */

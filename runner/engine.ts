@@ -106,6 +106,16 @@ export type EngineCapabilities = {
   /** It can run quick, tool-less side turns (the reviewer, chat names). */
   quickTurns: boolean;
   /**
+   * It can be locked down for a chat with someone other than the owner
+   * (TurnInput.guest): no shell, no reading or writing files, no computer or
+   * browser, nothing of the owner's settings or skills, and no tools but
+   * Perry's guest tools (convex/lib/engines.ts, GUEST_TOOLS) and a web search
+   * that runs at the vendor, however the model asks. Only an engine that can make sure of that by its own options,
+   * whatever the model tries, says true; the server sends such chats only to
+   * those, and the runner refuses them on any other.
+   */
+  guestLockdown: boolean;
+  /**
    * It runs turns of different chats side by side, and one stuck turn can be
    * given up on while the others go on. Unset: one turn at a time.
    */
@@ -135,6 +145,8 @@ export type EngineStatus = {
   /** The newest release of its CLI, as last looked up, and the command that updates it here (runner/versions.ts adds both). */
   latest?: string;
   update?: string;
+  /** capabilities.guestLockdown, as the runner reports it with the status. */
+  guestLockdown?: boolean;
 };
 
 export type LoginFlow = {
@@ -268,7 +280,8 @@ export type TurnInput = {
   tools?: PerryTools;
   /**
    * A chat with someone other than the owner (convex/contacts.ts): the engine gets no shell, files,
-   * images or computer, only Perry's guest tools and web search, in an empty folder.
+   * images or computer, only Perry's guest tools (and Codex its web search, which runs at OpenAI and
+   * touches nothing here), in an empty folder. Only for an engine with `capabilities.guestLockdown`.
    */
   guest?: boolean;
   /** The skills the message names, for an engine with `capabilities.skills`. */
@@ -310,6 +323,9 @@ export type QuickTurn = {
   /** JSON Schema the answer must match. */
   outputSchema?: object;
   timeoutMs: number;
+  /** The model and thinking level, as routing's quick tier gives them (convex/lib/routing.ts). Unset leaves the engine's own default. */
+  model?: string;
+  effort?: string;
 };
 
 export interface Engine {

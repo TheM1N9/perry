@@ -4,13 +4,13 @@ Perry setup
   Bot token, or Enter to skip: 
   No bot: talk to Perry from the dashboard. Add one in Settings → Telegram any time.
   Perry thinks with a coding agent on this computer, signed in with your own subscription.
-  ✔ default engine Antigravity
     1  Grok Build   1.0.42-fake, signed in with Grok account
     2  Antigravity  experimental, not turned on; Settings → Engines turns it on
     3  Codex        0.177.7, not signed in
     4  Claude Code  not installed
   Which should Perry use by default? [1-4, Enter for Grok Build] 
   Antigravity is turned on in Settings → Engines once Perry runs: it downloads Google's server, then takes a Gemini API key or a Google sign-in.
+  ✔ default engine Antigravity
   Antigravity isn't signed in, so Perry can't answer yet. Sign in from the dashboard's Settings → Engines.
 
 Next

@@ -13,7 +13,7 @@ import { QUIET } from "./jobs";
 import { hide, savedValues } from "./vault";
 import { takeFromOutbox } from "./conversations";
 import { moveChat, retryable } from "./routing";
-import { engineReady, engineUsable, isOnline, recordEngines, resumeOf, statusesOf, tooOld } from "./engines";
+import { engineLockable, engineReady, engineUsable, isOnline, recordEngines, resumeOf, statusesOf, tooOld } from "./engines";
 import { vAccess, vCodexModel, vEngine, vRoute, vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
 
@@ -96,11 +96,12 @@ export const updateAuth = mutation({
  * with the chat's engine signed in. A chat stays on its computer, but that
  * computer connected again under a new token (runner.json rewritten, so the
  * server paired it afresh) is still it: the chat moves to the new runner,
- * since its engine sessions are on that disk.
+ * since its engine sessions are on that disk. A chat with someone else goes
+ * only to a runner that can lock its engine down for it.
  */
 export async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversations">, engine: EngineKind): Promise<Id<"runners"> | null> {
   const pinned = conversation.codexRunnerId ? await ctx.db.get(conversation.codexRunnerId) : null;
-  const online = (item: Doc<"runners">) => isOnline(item) && engineUsable(item, engine);
+  const online = (item: Doc<"runners">) => isOnline(item) && engineUsable(item, engine) && (!conversation.contactId || engineLockable(item, engine));
   if (pinned && online(pinned)) return pinned._id;
   const sameComputer = (item: Doc<"runners">) => !!pinned?.hostname && item.hostname === pinned.hostname && item.platform === pinned.platform;
   const runner = (await ctx.db.query("runners").order("desc").take(20))
@@ -183,7 +184,8 @@ export const enqueueTurn = internalMutation({
       ...(args.flush ? { flush: true } : {}),
       ...(args.checkpoint ? { checkpoint: true } : {}),
       ...(args.hidden ? { hidden: true } : {}),
-      ...(args.guest ? { guest: true } : {}),
+      // Every turn in a chat with someone else is one, whoever queued it.
+      ...(args.guest || conversation.contactId ? { guest: true } : {}),
       requestedModel: args.model,
       requestedEffort: args.effort,
       access: args.access,
@@ -213,6 +215,9 @@ export async function noRunner(ctx: MutationCtx, conversation: Doc<"conversation
     const update = tooOld(runner, engine);
     return update && refusal(ENGINE_LABELS[engine], update, runner.name);
   };
+  if (conversation.contactId && (await ctx.db.query("runners").order("desc").take(20)).some((runner) => isOnline(runner) && engineUsable(runner, engine) && !engineLockable(runner, engine))) {
+    return `${ENGINE_LABELS[engine]} can't be locked down for a chat with someone else, so it doesn't run one.`;
+  }
   if (pinned && isOnline(pinned)) {
     return old(pinned) ?? `${ENGINE_LABELS[engine]} isn't signed in on ${pinned.name}. Sign in to it in Settings → Engines, or pick a model from another engine.`;
   }
@@ -404,6 +409,7 @@ export const requestCompact = internalMutation({
       kind: "compact",
       prompt: "/compact",
       instructions: "",
+      ...(conversation.contactId ? { guest: true } : {}),
       // An engine that compacts with a turn summarises on the chat's model, not its own default.
       requestedModel: conversation.model,
       status: "queued",
@@ -441,6 +447,8 @@ export const claimTurn = mutation({
     return {
       ...job,
       engine,
+      // A turn in a chat with someone else runs locked down, however it was queued (a steer that became a turn, a retry).
+      guest: job.guest || Boolean(conversation.contactId),
       resumeCursor,
       // The chat's access now, not when the turn was queued: the owner may have changed it since.
       access: conversation.access ?? "supervised",
@@ -827,6 +835,7 @@ export const retryOn = internalMutation({
       instructions: turn.instructions,
       recalled: turn.recalled,
       ...(turn.hidden ? { hidden: true } : {}),
+      ...(turn.guest ? { guest: true } : {}),
       requestedModel: args.route.model,
       requestedEffort: args.route.effort,
       access: turn.access,

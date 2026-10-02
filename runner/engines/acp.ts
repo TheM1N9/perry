@@ -143,7 +143,8 @@ export type ToolsVia =
 export type AcpOptions = {
   kind: EngineKind;
   label: string;
-  capabilities: EngineCapabilities;
+  /** All but guestLockdown, which no ACP agent has (AcpEngine). */
+  capabilities: Omit<EngineCapabilities, "guestLockdown">;
   /** Authentication methods to try in this order before the first session; ones the agent does not offer are skipped. */
   authMethods: string[];
   /** Session modes for each access, most wanted first. None found leaves the agent's own. */
@@ -299,7 +300,15 @@ export abstract class AcpEngine implements Engine {
   constructor(options: AcpOptions, protected readonly warn: (line: string) => void = () => {}) {
     this.kind = options.kind;
     this.label = options.label;
-    this.capabilities = options.capabilities;
+    /**
+     * Never for a chat with someone else (issue #200). ACP has no way to take
+     * an agent's own tools away: the client's file system and terminal are off
+     * already (initialize), and the agent reads, writes and runs with its own;
+     * session/new takes only folders and MCP servers, and an agent runs what it
+     * deems safe, such as reading a file, without asking. So nothing here can
+     * make sure it does not, and the runner refuses such a chat on it.
+     */
+    this.capabilities = { ...options.capabilities, guestLockdown: false };
     this.options = {
       startupMs: 60_000,
       cancelGraceMs: 15_000,

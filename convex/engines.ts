@@ -3,7 +3,7 @@ import { internal } from "./_generated/api";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
-import { ENGINE_LABELS, refusal, updateOf, type EngineKind, type EngineUpdate, type LoginInteraction } from "./lib/engines";
+import { ENGINE_LABELS, LOCKED_DOWN_BEFORE, refusal, updateOf, type EngineKind, type EngineUpdate, type LoginInteraction } from "./lib/engines";
 import { defaultEngine } from "./installation";
 import { authenticate } from "./runner";
 import { vEngine, vEngineStatus, vLoginInteraction } from "./schema";
@@ -56,6 +56,14 @@ export function tooOld(runner: Doc<"runners">, engine: EngineKind): EngineUpdate
 
 /** Ready, and recent enough for Perry: a new turn may go to this runner's engine. */
 export const engineUsable = (runner: Doc<"runners">, engine: EngineKind) => engineReady(runner, engine) && !tooOld(runner, engine);
+
+/**
+ * This runner's engine can be locked down for a chat with someone else (no
+ * shell, files or computer: runner/engine.ts, guestLockdown), as the runner
+ * says. A runner from before it said locked down only LOCKED_DOWN_BEFORE.
+ */
+export const engineLockable = (runner: Doc<"runners">, engine: EngineKind) =>
+  statusesOf(runner).some((status) => status.kind === engine && (status.guestLockdown ?? status.kind === LOCKED_DOWN_BEFORE));
 
 /**
  * Keep what the runner found. A model list that came back empty while signed

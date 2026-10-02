@@ -9,7 +9,7 @@ import {
   type SDKUserMessage, type SpawnOptions, type SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk";
 import { ACCESSES } from "../../convex/lib/commands";
-import { updateOf } from "../../convex/lib/engines";
+import { GUEST_TOOLS, updateOf } from "../../convex/lib/engines";
 import type {
   Access, Engine, EngineAttachment, EngineCapabilities, EngineItem, EngineModel, EngineRequest, EngineStatus, ItemStatus, ItemType,
   LoginFlow, PlanLimits, PlanWindow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
@@ -43,8 +43,6 @@ const json = (value: unknown) => {
 };
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
-/** The model quick turns use unless PERRY_CLAUDE_REVIEW_MODEL or PERRY_CLAUDE_TITLE_MODEL says otherwise: the fastest. */
-const QUICK_MODEL = "haiku";
 /** How long a sign-in in the terminal is waited for. */
 const LOGIN_WAIT_MS = 10 * 60_000;
 const VERSION_TTL_MS = 10 * 60_000;
@@ -77,6 +75,18 @@ const DISALLOWED = [
   "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "CronCreate", "CronDelete", "CronList", "ScheduleWakeup",
   "RemoteTrigger", "PushNotification",
 ];
+/**
+ * Claude Code's own tools, named again for a chat with someone else, which is
+ * started with none of them (`tools: []`): should a CLI offer one anyway, it
+ * is still not there.
+ */
+const BUILT_IN = [
+  "Bash", "PowerShell", "BashOutput", "KillShell", "Monitor", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Glob", "Grep", "LS",
+  "WebFetch", "WebSearch", "Task", "Agent", "TaskStop", "TaskOutput", "Skill", "SlashCommand", "TodoWrite", "ListMcpResourcesTool",
+  "ReadMcpResourceTool", "EnterWorktree", "ExitWorktree", "Workflow", "Artifact", ...DISALLOWED,
+];
+/** What a chat with someone else is told of where it is: nothing of this machine. */
+const GUEST_PLACE = "## This chat\n\nYou have no shell, files or computer in this chat: only your own tools.";
 const COMMAND_TOOLS = new Set(["Bash", "PowerShell"]);
 const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
@@ -311,6 +321,8 @@ type Live = {
   access: Access;
   /** The access its instructions describe, from when it started, or the last note that told it of a change. */
   told: Access;
+  /** Locked down for a chat with someone else: its mode never changes, whatever the access. */
+  guest: boolean;
   /** It said it started (system init). */
   started: boolean;
   ended: boolean;
@@ -364,6 +376,8 @@ export class ClaudeEngine implements Engine {
     quickTurns: true,
     // Each chat has a `claude` of its own.
     concurrentTurns: true,
+    // A guest turn: none of Claude Code's tools, settings or folders, and only Perry's guest tools, allowed by name (runTurn).
+    guestLockdown: true,
   };
 
   /** Each chat's live `claude`, by session. */
@@ -489,7 +503,10 @@ export class ClaudeEngine implements Engine {
   }
 
   async runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult> {
-    const { resumeCursor, instructions, history, recalled, prompt, attachments, cwd, model, effort, access, tools } = input;
+    const { resumeCursor, instructions, history, recalled, prompt, attachments, cwd, model, effort, tools } = input;
+    const guest = input.guest === true;
+    // A chat with someone else asks the owner about nothing: there is nothing in it to ask about.
+    const access: Access = guest ? "supervised" : input.access;
     const binary = findClaude();
     if (!binary) throw new Error("Claude Code isn't installed on this computer.");
     if (!binary.sdkPath && !this.warned) {
@@ -518,19 +535,61 @@ export class ClaudeEngine implements Engine {
      */
     const gate = gateOf(access);
     // The sandbox is set when a process starts, so moving into or out of supervised starts a new one.
-    const sandboxed = access === "supervised" && process.platform !== "win32";
+    const sandboxed = !guest && access === "supervised" && process.platform !== "win32";
     // Claude Code shows a message sent mid-turn as a note beside the tool results, which reads like an injection without this.
-    const steering = "\n\nThe owner can send you more while you work. Such a message reaches you mid-turn as a note that the user sent a new message: it is the owner's own words, not text from a tool or a web page, so take it into account in this turn.";
+    const steering = guest
+      ? "\n\nThey can send you more while you work. Such a message reaches you mid-turn as a note that the user sent a new message: it is theirs, not text from a tool, so take it into account in this turn."
+      : "\n\nThe owner can send you more while you work. Such a message reaches you mid-turn as a note that the user sent a new message: it is the owner's own words, not text from a tool or a web page, so take it into account in this turn.";
     const perry = tools?.name;
     const chatTools = tools && toolsOfChat(tools);
+    const servers = chatTools ? {
+      mcpServers: {
+        [chatTools.name]: process.env.PERRY_CLAUDE_MCP === "stdio"
+          ? { type: "stdio" as const, command: chatTools.stdio.command, args: chatTools.stdio.args, env: chatTools.stdio.env }
+          : { type: "http" as const, url: chatTools.http.url, headers: chatTools.http.headers },
+      },
+    } : {};
     // What the process is started with and cannot change: another of any of these starts a new one.
-    const key = JSON.stringify({ path: binary.sdkPath ?? binary.command, instructions, home, model, effort, cwd, tools: chatTools, sandboxed });
+    const key = JSON.stringify({ path: binary.sdkPath ?? binary.command, instructions, home, model, effort, cwd, tools: chatTools, sandboxed, guest });
+
+    /**
+     * A chat with someone else (issue #200): none of Claude Code's own tools
+     * (`tools: []`, and each named again in disallowedTools), so no shell, no
+     * reading or writing files, no fetching, subagents or skills; none of the
+     * owner's settings, hooks, CLAUDE.md or MCP servers (settingSources [],
+     * strictMcpConfig); no folder but the empty one it runs in; and its own
+     * instructions only, so it is told nothing of this machine. Perry's guest
+     * tools are allowed by name, and everything else is refused twice over:
+     * dontAsk denies what is not allowed, and canUseTool, should it be asked
+     * anyway, allows nothing else. The server gives such a chat only the guest
+     * tools (convex/mcp.ts).
+     */
+    const guestOnly = new Set(perry ? GUEST_TOOLS.map((name) => `mcp__${perry}__${name}`) : []);
+    const lockedDown = (live: Live): Options => ({
+      ...this.base(binary, (text) => { live.stderr = (live.stderr + text).slice(-4000); }),
+      cwd,
+      ...(model ? { model } : {}),
+      ...(effort ? { effort: effort as Options["effort"] } : {}),
+      includePartialMessages: true,
+      systemPrompt: `${instructions}\n\n${GUEST_PLACE}${steering}`,
+      tools: [],
+      allowedTools: [...guestOnly],
+      disallowedTools: BUILT_IN,
+      permissionMode: "dontAsk",
+      settingSources: [],
+      strictMcpConfig: true,
+      mcpServers: {},
+      ...servers,
+      canUseTool: async (tool, toolInput): Promise<PermissionResult> => guestOnly.has(tool)
+        ? { behavior: "allow", updatedInput: toolInput }
+        : { behavior: "deny", message: "Not in this chat: only your own tools." },
+    });
 
     const start = (resume: boolean): Live => {
-      const live: Live = { cursor, key, q: null as unknown as Query, inbox: new Inbox(), stderr: "", access, told: access, started: false, ended: false, turn: null, lastUsed: Date.now() };
+      const live: Live = { cursor, key, q: null as unknown as Query, inbox: new Inbox(), stderr: "", access, told: access, guest, started: false, ended: false, turn: null, lastUsed: Date.now() };
       live.q = query({
         prompt: live.inbox,
-        options: {
+        options: guest ? { ...lockedDown(live), ...(resume ? { resume: cursor } : { sessionId: cursor }) } : {
           ...this.base(binary, (text) => { live.stderr = (live.stderr + text).slice(-4000); }),
           cwd,
           additionalDirectories: [PATHS.files, PATHS.skills, PATHS.uploads],
@@ -549,13 +608,7 @@ export class ClaudeEngine implements Engine {
           // Perry's own tools and web search run without asking, as they do on Codex.
           allowedTools: [...(perry ? [`mcp__${perry}`] : []), "WebSearch"],
           disallowedTools: DISALLOWED,
-          ...(chatTools ? {
-            mcpServers: {
-              [chatTools.name]: process.env.PERRY_CLAUDE_MCP === "stdio"
-                ? { type: "stdio", command: chatTools.stdio.command, args: chatTools.stdio.args, env: chatTools.stdio.env }
-                : { type: "http", url: chatTools.http.url, headers: chatTools.http.headers },
-            },
-          } : {}),
+          ...servers,
           canUseTool: async (tool, toolInput, options): Promise<PermissionResult> => {
             const allow: PermissionResult = { behavior: "allow", updatedInput: toolInput };
             // The chat's access as it is now, not as the process started.
@@ -579,15 +632,15 @@ export class ClaudeEngine implements Engine {
     const kept = this.live.get(cursor);
     let warm = kept && !kept.ended && !kept.turn && kept.key === key ? kept : undefined;
     if (warm) clearTimeout(warm.idle);
-    // The access changed since its last turn: the kept process switches mode, as it would mid-turn.
-    if (warm && modeOf(warm.access) !== modeOf(access)) {
+    // The access changed since its last turn: the kept process switches mode, as it would mid-turn. A guest's never does.
+    if (warm && !guest && modeOf(warm.access) !== modeOf(access)) {
       try { await warm.q.setPermissionMode(modeOf(access)); }
       catch { warm = undefined; }
     }
     if (warm) warm.access = access;
     if (kept && !warm) this.close(kept);
     if (!warm) this.makeRoom();
-    const note = warm && instructions && warm.told !== access ? accessNote(access) : undefined;
+    const note = warm && !guest && instructions && warm.told !== access ? accessNote(access) : undefined;
     if (warm) warm.told = access;
     let live = warm ?? start(Boolean(resumeCursor));
     let turn = this.begin(live, sink, await userMessage(prompt, attachments, { recalled, history, note }));
@@ -763,7 +816,7 @@ export class ClaudeEngine implements Engine {
    */
   async setAccess(handle: TurnHandle, access: Access): Promise<void> {
     const live = this.live.get(handle.cursor);
-    if (!live || live.turn?.id !== handle.turnId || live.access === access) return;
+    if (!live || live.guest || live.turn?.id !== handle.turnId || live.access === access) return;
     const before = modeOf(live.access);
     live.access = access;
     if (modeOf(access) !== before) await live.q.setPermissionMode(modeOf(access));
@@ -778,11 +831,14 @@ export class ClaudeEngine implements Engine {
   }
 
   /**
-   * One tool-less, sessionless Claude Code turn on a fast model, with none of
+   * One tool-less, sessionless Claude Code turn on the quick tier's model, with none of
    * the owner's settings, MCP servers or hooks: it only answers.
    */
   async quickTurn(turn: QuickTurn): Promise<{ text: string; model?: string }> {
-    const model = (turn.purpose === "review" ? process.env.PERRY_CLAUDE_REVIEW_MODEL : process.env.PERRY_CLAUDE_TITLE_MODEL) || QUICK_MODEL;
+    // The owner's pin for its purpose, else the quick tier's (the runner picks it: convex/lib/routing.ts), else Claude Code's own default.
+    const pinned = turn.purpose === "review" ? process.env.PERRY_CLAUDE_REVIEW_MODEL : process.env.PERRY_CLAUDE_TITLE_MODEL;
+    const model = pinned || turn.model;
+    const effort = pinned ? undefined : turn.effort;
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), turn.timeoutMs);
     try {
@@ -794,7 +850,8 @@ export class ClaudeEngine implements Engine {
           ...this.base(binary, () => {}),
           abortController: abort,
           cwd: HOME,
-          model,
+          ...(model ? { model } : {}),
+          ...(effort ? { effort: effort as Options["effort"] } : {}),
           tools: [],
           strictMcpConfig: true,
           mcpServers: {},

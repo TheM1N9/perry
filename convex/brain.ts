@@ -9,7 +9,7 @@ import {
   ACCESS_LABELS, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, parseAccessCommand, parseModelCommand,
   parseThinkCommand, pickAccess, pickEffort, pickModel, runLabel, turnEffort, type ModelOption,
 } from "./lib/commands";
-import { ENGINE_LABELS, GUEST_ENGINE, type EngineKind } from "./lib/engines";
+import { ENGINE_LABELS, type EngineKind } from "./lib/engines";
 import type { Choice } from "./lib/routing";
 import { DOWNLOAD_LIMIT, downloadFile, sendMessage, sendTyping } from "./lib/telegram";
 import { resumeOf } from "./engines";
@@ -183,15 +183,17 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
 }
 
 /**
- * A turn in a chat with someone else: on GUEST_ENGINE, whose runner can take
- * away its shell, files and computer for the turn (lib/engines.ts), on the
- * chat's model or the account's default; asking about nothing. Without it
- * signed in, the turn says so (codex.noRunner).
+ * A turn in a chat with someone else: routed only among the engines its
+ * computer can lock down for it, so it has no shell, files or computer
+ * (routing.chooseGuest); asking about nothing. With none that can take it,
+ * there is no turn: the run says why, and so does the owner's phone, once.
  */
-async function guestSettings(ctx: ActionCtx, conversation: Doc<"conversations">) {
-  const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
-  const model = currentModel(models, conversation.engine === GUEST_ENGINE ? conversation.model : undefined, GUEST_ENGINE);
-  return { engine: GUEST_ENGINE, model, effort: turnEffort(models, model, conversation.effort, GUEST_ENGINE), access: "supervised" as const };
+async function guestRoute(ctx: ActionCtx, conversation: Doc<"conversations">): Promise<Route | { none: string }> {
+  const chosen: Choice | { none: string } | null = await ctx.runQuery(internal.routing.forGuest, { id: conversation._id });
+  if (!chosen) return { none: "This chat is not with someone else." };
+  if ("none" in chosen) return chosen;
+  await ctx.runMutation(internal.routing.guestOn, { id: conversation._id, engine: chosen.engine });
+  return routeOf(chosen);
 }
 
 /**
@@ -200,13 +202,13 @@ async function guestSettings(ctx: ActionCtx, conversation: Doc<"conversations">)
  * them; what it remembers from this chat, and a group's lead-up. Nothing of
  * the owner's memory, USER.md, goals or other chats.
  */
-async function guestTurn(ctx: ActionCtx, conversation: Doc<"conversations">, contactId: Id<"contacts">, context?: string) {
+async function guestTurn(ctx: ActionCtx, conversation: Doc<"conversations">, contactId: Id<"contacts">, engine: EngineKind | undefined, context?: string) {
   const prompt: { instructions: string; brief: string; memory: string; now: string; reminder: string } = await ctx.runQuery(internal.contacts.guestPrompt, { contactId, conversationId: conversation._id });
   return {
     instructions: prompt.instructions,
     recalled: [`# Right now\n\n${prompt.now}`, prompt.brief, prompt.memory, context, prompt.reminder].filter(Boolean).join("\n\n"),
     recallDigest: undefined,
-    history: resumeOf(conversation, GUEST_ENGINE) ? undefined : await historyOf(ctx, conversation),
+    history: resumeOf(conversation, engine) ? undefined : await historyOf(ctx, conversation),
   };
 }
 
@@ -542,8 +544,12 @@ export const handleTurn = internalAction({
       // asking the owner to choose (codex.enqueueTurn): routing never picks a default for them.
       const owners = !guest && !conversation.jobId && !conversation.taskId;
       const chosen: Choice | null = owners && !args.route && !args.model ? await ctx.runQuery(internal.routing.forChat, { id: conversation._id }) : null;
-      const route: Route | undefined = args.route ?? (chosen ? routeOf(chosen) : undefined);
-      const settings = guest ? await guestSettings(ctx, conversation)
+      // Someone else's chat is routed only among the engines that can be locked down for it; with none, no turn runs.
+      const guestly = guest ? await guestRoute(ctx, conversation) : undefined;
+      const stuck = guestly && "none" in guestly ? guestly.none : undefined;
+      if (guestly && !stuck) conversation = (await ctx.runQuery(internal.conversations.getById, { id: conversation._id })) ?? conversation;
+      const route: Route | undefined = guest ? (guestly && !("none" in guestly) ? guestly : undefined) : args.route ?? (chosen ? routeOf(chosen) : undefined);
+      const settings = guest ? { engine: route?.engine, model: route?.model, effort: route?.effort, access: "supervised" as const }
         : route ? { engine: route.engine, model: route.model, effort: route.effort, access: conversation.access ?? "supervised" as const }
           : await turnSettings(ctx, conversation, args.model ? { model: args.model, engine: args.engine } : undefined);
       const moved = owners ? route?.movedFrom : undefined;
@@ -571,10 +577,11 @@ export const handleTurn = internalAction({
         await say(`💻 You, in the web app:\n${said.slice(0, 1500)}${files}`)
           .catch((error) => console.error(`could not show the web message on the phone: ${String(error)}`));
       }
-      if (telegramToken) await sendTyping(telegramToken, args.externalId);
-      if (channel === "whatsapp") await ctx.runMutation(internal.whatsapp.typing, { to: args.externalId });
+      // Nothing will answer a chat no engine can take, so nothing says it is typing.
+      if (telegramToken && !stuck) await sendTyping(telegramToken, args.externalId);
+      if (channel === "whatsapp" && !stuck) await ctx.runMutation(internal.whatsapp.typing, { to: args.externalId });
 
-      const turn = guest ? await guestTurn(ctx, conversation, guest, args.guestContext) : await prepareTurn(ctx, conversation, args.hidden ? "" : args.text, settings.engine);
+      const turn = guest ? await guestTurn(ctx, conversation, guest, settings.engine, args.guestContext) : await prepareTurn(ctx, conversation, args.hidden ? "" : args.text, settings.engine);
       // What the assistant sent here on its own since the owner last wrote: their message may answer it.
       const sent = guest ? [] : conversation.unprompted ?? [];
       if (sent.length) {
@@ -585,6 +592,7 @@ export const handleTurn = internalAction({
       }
 
       try {
+        if (stuck) throw new Error(stuck);
         await ctx.runMutation(internal.codex.enqueueTurn, {
           conversationId: conversation._id,
           runId,
@@ -598,6 +606,7 @@ export const handleTurn = internalAction({
           policy: conversation.jobId || conversation.taskId ? "queue" : "steer",
         });
         delegated = true;
+        if (guest) await ctx.runMutation(internal.routing.guestsStuck, { why: null });
         if (sent.length) await ctx.runMutation(internal.conversations.clearUnprompted, { id: conversation._id, through: sent[sent.length - 1].at });
       } catch (error) {
         // Usually no runner is online. Say so: a silent failure is worse than
@@ -617,6 +626,11 @@ export const handleTurn = internalAction({
         if (channel !== "web" && !guest) {
           await say(`That broke: ${message.slice(0, 300)}`)
             .catch((sendError) => console.error(`could not report failure: ${String(sendError)}`));
+        }
+        // No engine could take it: the owner's phone hears why once, not at every message.
+        if (stuck && await ctx.runMutation(internal.routing.guestsStuck, { why: stuck })) {
+          await ctx.runAction(internal.notify.deliver, { text: `Chats with other people get no reply for now. ${stuck}` })
+            .catch((sendError) => console.error(`could not tell the owner: ${String(sendError)}`));
         }
       }
       return null;

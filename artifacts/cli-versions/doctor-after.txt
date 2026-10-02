@@ -7,7 +7,7 @@ ok    codex sign-in  Logged in using ChatGPT
 ok    claude code  2.1.285
 warn  grok build  1.0.42-fake; 1.0.44 is out. Update it: grok update
 info  antigravity  not turned on (optional, experimental; Settings → Engines)
-ok    runner  DESKTOP-27SQLCP, working in W:\perry-tests$a\perry-cli-versions-nIaYCX\workspace
+ok    runner  DESKTOP-27SQLCP, working in W:\perry-tests\no-hardcoded\cli-versions\perry-cli-versions-H8R2LC\workspace
 warn  background service  installed, not running. Run: pnpm run service start
 
 Perry looks healthy.

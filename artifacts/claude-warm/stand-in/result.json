@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-30T05:34:08.656Z",
+  "ranAt": "2026-10-02T01:12:59.034Z",
   "platform": "win32",
   "runtime": "node v24.3.0",
   "stand_in": "artifacts/claude-warm/fake-claude.js",
@@ -25,9 +25,9 @@
   "notes": {
     "laterTurnsUseTheSameProcess": {
       "pids": [
-        23652,
-        23652,
-        23652
+        59176,
+        59176,
+        59176
       ],
       "starts": 1
     },
@@ -37,13 +37,13 @@
       "OK"
     ],
     "skillsFolderIsAmongItsDirectories": [
-      "W:\\perry-tests\\claude-warm\\run-1790746407945\\perry\\files",
-      "W:\\perry-tests\\claude-warm\\run-1790746407945\\perry\\skills",
-      "W:\\perry-tests\\claude-warm\\run-1790746407945\\perry\\uploads"
+      "W:\\perry-tests\\no-hardcoded\\claude-warm\\run-1790903538222\\perry\\files",
+      "W:\\perry-tests\\no-hardcoded\\claude-warm\\run-1790903538222\\perry\\skills",
+      "W:\\perry-tests\\no-hardcoded\\claude-warm\\run-1790903538222\\perry\\uploads"
     ],
     "aMessageMidTurnJoinsIt": {
       "reply": "PEAR BANANA",
-      "pid": 23652
+      "pid": 59176
     },
     "askThenFullMidReplyGoesAhead": {
       "askedOwner": [
@@ -55,10 +55,10 @@
         "Write:mode@acceptEdits",
         "Bash:allow@acceptEdits"
       ],
-      "pid": 23652
+      "pid": 59176
     },
     "theNextTurnKeepsTheProcessAndIsTold": {
-      "pid": 23652,
+      "pid": 59176,
       "blocks": [
         "The owner changed this chat's access, and this replaces what your instructions say about approvals: nothing you do waits for their approval now.",
         "SAY STILL"
@@ -75,7 +75,7 @@
         "Write:deny@default",
         "Bash:deny@default"
       ],
-      "pid": 23652
+      "pid": 59176
     },
     "aChangeBetweenTurnsSwitchesTheKeptProcess": {
       "askedOwner": [
@@ -83,8 +83,8 @@
       ],
       "reply": "Write:mode Write:mode Bash:allow",
       "pids": [
-        23652,
-        23652
+        59176,
+        59176
       ],
       "switched": [
         "acceptEdits"
@@ -96,7 +96,7 @@
       "starts": 1
     },
     "aChangedModelStartsANewProcess": {
-      "pid": 37124,
+      "pid": 66000,
       "reply": "7481",
       "start": {
         "resumed": true,
@@ -106,28 +106,28 @@
       "oldGone": true
     },
     "changedInstructionsStartANewProcess": {
-      "pid": 31104,
+      "pid": 44944,
       "appendStarts": "You are Perry (stand-in instructions two).\n\nYour own folder "
     },
     "aStoppedTurnLeavesTheChatWorking": {
       "stopped": "interrupted",
       "again": "7481",
       "pids": [
-        31104,
-        41680
+        44944,
+        7164
       ]
     },
     "tooManyCloseTheIdlest": {
       "a": [
-        41680,
+        7164,
         false
       ],
       "b": [
-        35224,
+        20568,
         true
       ],
       "c": [
-        46800,
+        62236,
         true
       ]
     },
@@ -140,19 +140,19 @@
           "id": "five_hour",
           "label": "5-hour",
           "usedPercent": 42,
-          "resetsAt": 1790750048489,
+          "resetsAt": 1790907178859,
           "minutes": 300
         },
         {
           "id": "seven_day",
           "label": "Weekly",
           "usedPercent": 7,
-          "resetsAt": 1790750048489,
+          "resetsAt": 1790907178859,
           "minutes": 10080
         }
       ],
       "plan": "max",
-      "at": 1790746448490
+      "at": 1790903578860
     },
     "aCliTooOldIsSeen": {
       "version": "2.0.0",

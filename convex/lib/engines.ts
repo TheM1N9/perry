@@ -21,12 +21,17 @@ export const RUNNABLE_ENGINES: readonly EngineKind[] = ["codex", "claude", "grok
 export const isRunnable = (value: unknown): value is EngineKind => (RUNNABLE_ENGINES as readonly unknown[]).includes(value);
 
 /**
- * A chat with someone other than the owner runs on Codex, whatever the
- * default: its runner can take away Codex's shell, files and computer for the
- * turn (runner/engines/codex.ts, guest), which no other engine here offers,
- * and only that is safe with someone else's words. A capability, not a pick.
+ * A chat with someone other than the owner runs only on an engine that can be
+ * locked down for the turn: no shell, no reading or writing files, no computer
+ * or browser, only Perry's guest tools (runner/engine.ts, guestLockdown). Each
+ * runner says which of its engines can, with their status. A runner from
+ * before it said so locked down only Codex (issue #148): that is what it is
+ * taken to offer. A fact about those runners, not a pick.
  */
-export const GUEST_ENGINE: EngineKind = "codex";
+export const LOCKED_DOWN_BEFORE: EngineKind = "codex";
+
+/** Perry's tools a chat with someone else gets (convex/mcp.ts), and nothing else: by name, for the runner too. */
+export const GUEST_TOOLS = ["remember", "recall", "read_memory", "forget", "tell_owner"] as const;
 
 /** What a turn is refused with while the owner has not chosen an engine for Perry, nor a model for the chat. */
 export const NO_ENGINE = "Perry has no default engine yet. Choose one in Settings → Engines, or pick a model for this chat, then send it again.";

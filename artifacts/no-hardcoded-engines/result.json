@@ -1,0 +1,575 @@
+{
+  "ranAt": "2026-10-02T01:00:37.753Z",
+  "stand_ins": [
+    "artifacts/claude-warm/fake-claude.js",
+    "artifacts/cli-versions/fake-cli.ts",
+    "artifacts/engine-acp/fake-agent.ts"
+  ],
+  "checks": {
+    "onlyStandInEnginesRun": true,
+    "eachEngineSaysWhetherItCanBeLockedDown": true,
+    "theOwnersDefaultIsGrokWhichCannotBeLockedDown": true,
+    "aGuestTurnSkipsTheDefaultThatCantBeLockedDown": true,
+    "claudeIsStartedWithNoToolsSettingsOrFolders": true,
+    "claudeIsToldNothingOfThisComputer": true,
+    "aShellAFileAWriteAndAFetchAreNotThere": true,
+    "perrysOwnNonGuestToolIsRefused": true,
+    "aGuestToolWorks": true,
+    "nothingRanAndNothingLeaked": true,
+    "withItsGatesOffCanUseToolStillRefuses": true,
+    "aUsedUpEngineMovesToAnotherThatCanBeLockedDown": true,
+    "codexIsStartedWithNoShellAppsOrComputer": true,
+    "aTurnRefusedForALimitRunsAgainOnAnotherLockableEngine": true,
+    "withNoneThatCanBeLockedDownNoTurnRuns": true,
+    "theOwnerIsToldOnce": true,
+    "onceAnEngineHasRoomTheyAreAnsweredAgain": true,
+    "anEnginePinnedThatCantBeLockedDownIsPassedOver": true,
+    "theServerSendsNoGuestTurnToAnEngineThatCantBeLockedDown": true,
+    "theRunnerRefusesAGuestTurnOnAnEngineThatCantBeLockedDown": true,
+    "grokNeverSawSomeoneElsesWords": true,
+    "theRunsDetailsSayTheEngineAndWhy": true,
+    "noHardCodedEngineOrModelChoiceRemains": true
+  },
+  "notes": {
+    "engines": [
+      {
+        "kind": "codex",
+        "signedIn": true,
+        "version": "0.177.7",
+        "email": "owner@example.com",
+        "guestLockdown": true
+      },
+      {
+        "kind": "grok",
+        "signedIn": true,
+        "version": "1.0.42-fake",
+        "guestLockdown": false
+      },
+      {
+        "kind": "claude",
+        "signedIn": true,
+        "version": "9.9.9",
+        "email": "owner@example.com",
+        "guestLockdown": true
+      },
+      {
+        "kind": "antigravity",
+        "signedIn": false,
+        "guestLockdown": false
+      }
+    ],
+    "onlyStandInEnginesRun": [
+      {
+        "kind": "codex",
+        "signedIn": true,
+        "version": "0.177.7",
+        "email": "owner@example.com",
+        "guestLockdown": true
+      },
+      {
+        "kind": "grok",
+        "signedIn": true,
+        "version": "1.0.42-fake",
+        "guestLockdown": false
+      },
+      {
+        "kind": "claude",
+        "signedIn": true,
+        "version": "9.9.9",
+        "email": "owner@example.com",
+        "guestLockdown": true
+      },
+      {
+        "kind": "antigravity",
+        "signedIn": false,
+        "guestLockdown": false
+      }
+    ],
+    "eachEngineSaysWhetherItCanBeLockedDown": [
+      {
+        "kind": "codex",
+        "signedIn": true,
+        "version": "0.177.7",
+        "email": "owner@example.com",
+        "guestLockdown": true
+      },
+      {
+        "kind": "grok",
+        "signedIn": true,
+        "version": "1.0.42-fake",
+        "guestLockdown": false
+      },
+      {
+        "kind": "claude",
+        "signedIn": true,
+        "version": "9.9.9",
+        "email": "owner@example.com",
+        "guestLockdown": true
+      },
+      {
+        "kind": "antigravity",
+        "signedIn": false,
+        "guestLockdown": false
+      }
+    ],
+    "theOwnersDefaultIsGrokWhichCannotBeLockedDown": {
+      "defaultEngine": "grok"
+    },
+    "firstRoute": {
+      "engine": "claude",
+      "tier": "standard",
+      "by": "auto",
+      "why": "Chats with other people run only where they can be locked down (no shell, files or computer): Codex, Claude Code. Grok Build, your default engine, can't be locked down. Standard tier, for a chat: default at high. On Claude Code, the one that can be locked down with the most of its plan left, which has room.",
+      "model": "default",
+      "effort": "high"
+    },
+    "aGuestTurnSkipsTheDefaultThatCantBeLockedDown": {
+      "engine": "claude",
+      "guest": true,
+      "why": "Chats with other people run only where they can be locked down (no shell, files or computer): Codex, Claude Code. Grok Build, your default engine, can't be locked down. Standard tier, for a chat: default at high. On Claude Code, the one that can be locked down with the most of its plan left, which has room."
+    },
+    "claudeIsStartedWithNoToolsSettingsOrFolders": {
+      "tools": "",
+      "mode": "dontAsk",
+      "settingSources": "--setting-sources=",
+      "strictMcp": true,
+      "addDirs": [],
+      "cwd": "guest",
+      "allowedTools": [
+        "mcp__assistant__remember",
+        "mcp__assistant__recall",
+        "mcp__assistant__read_memory",
+        "mcp__assistant__forget",
+        "mcp__assistant__tell_owner"
+      ],
+      "disallowed": 37,
+      "mcpServers": [
+        "assistant"
+      ]
+    },
+    "claudeIsToldNothingOfThisComputer": {
+      "systemStarts": "[\"Your name is Perry. You are the owner's personal assistant.\\n\\n## Who you are talking with\\n\\nIn this chat you are talking with Sam · +1 555 777 0000 on Whats",
+      "append": null
+    },
+    "aShellAFileAWriteAndAFetchAreNotThere": [
+      {
+        "tool": "Bash",
+        "got": "unavailable",
+        "ran": false,
+        "output": "No such tool available: Bash"
+      },
+      {
+        "tool": "Read",
+        "got": "unavailable",
+        "ran": false,
+        "output": "No such tool available: Read"
+      },
+      {
+        "tool": "Write",
+        "got": "unavailable",
+        "ran": false,
+        "output": "No such tool available: Write"
+      },
+      {
+        "tool": "WebFetch",
+        "got": "unavailable",
+        "ran": false,
+        "output": "No such tool available: WebFetch"
+      },
+      {
+        "tool": "mcp__assistant__browser",
+        "got": "denied",
+        "ran": false,
+        "output": "declined"
+      },
+      {
+        "tool": "mcp__assistant__remember",
+        "got": "allowed",
+        "ran": true,
+        "output": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"id\\\":\\\"rwwgnehdccygsdpab64jntjefa\\\",\\\"stored\\\":true,\\\"superseded\\\":0,\\\"note\\\":\\\"St"
+      }
+    ],
+    "perrysOwnNonGuestToolIsRefused": {
+      "tool": "mcp__assistant__browser",
+      "got": "denied",
+      "ran": false,
+      "output": "declined"
+    },
+    "aGuestToolWorks": {
+      "step": {
+        "tool": "mcp__assistant__remember",
+        "got": "allowed",
+        "ran": true,
+        "output": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"id\\\":\\\"rwwgnehdccygsdpab64jntjefa\\\",\\\"stored\\\":true,\\\"superseded\\\":0,\\\"note\\\":\\\"St"
+      },
+      "memories": [
+        {
+          "text": "Sam takes his tea with two sugars.",
+          "chat": true
+        }
+      ]
+    },
+    "nothingRanAndNothingLeaked": {
+      "bashRan": false,
+      "written": false,
+      "pageFetched": 0,
+      "replyToSam": "Bash:unavailable Read:unavailable Write:unavailable WebFetch:unavailable mcp__assistant__browser:denied mcp__assistant__remember:allowed | No such tool available: Bash | No such tool available: Read | No such tool available: Write | No such tool available: WebFetch | declined | {\"content\":[{\"type\":\""
+    },
+    "withItsGatesOffCanUseToolStillRefuses": {
+      "steps": [
+        {
+          "tool": "Bash",
+          "got": "deny",
+          "ran": false,
+          "output": "declined"
+        },
+        {
+          "tool": "Read",
+          "got": "deny",
+          "ran": false,
+          "output": "declined"
+        },
+        {
+          "tool": "Write",
+          "got": "deny",
+          "ran": false,
+          "output": "declined"
+        },
+        {
+          "tool": "WebFetch",
+          "got": "deny",
+          "ran": false,
+          "output": "declined"
+        },
+        {
+          "tool": "mcp__assistant__browser",
+          "got": "deny",
+          "ran": false,
+          "output": "declined"
+        },
+        {
+          "tool": "mcp__assistant__remember",
+          "got": "allow",
+          "ran": true,
+          "output": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"id\\\":\\\"rwwgnehdccygsdpab64jntjefa\\\",\\\"stored\\\":false,\\\"superseded\\\":0,\\\"note\\\":\\\"A"
+        }
+      ],
+      "bashRan": false,
+      "written": false,
+      "pageFetched": 0
+    },
+    "aUsedUpEngineMovesToAnotherThatCanBeLockedDown": {
+      "engine": "codex",
+      "why": "Chats with other people run only where they can be locked down (no shell, files or computer): Codex, Claude Code. Grok Build, your default engine, can't be locked down. Standard tier, for a chat: gpt-fake at medium. On Codex, the one that can be locked down with the most of its plan left, which has room. Claude Code's 5-hour limit is used up and resets at 8:30 am.",
+      "reply": "Fake Codex 0.177.7 reply to: [Sam · +15557770000]: Are you free on Saturday?"
+    },
+    "codexIsStartedWithNoShellAppsOrComputer": {
+      "sandbox": "read-only",
+      "approvalPolicy": "never",
+      "cwd": "guest",
+      "features": {
+        "features.shell_tool": false,
+        "features.unified_exec": false,
+        "features.apps": false,
+        "features.plugins": false,
+        "features.multi_agent": false,
+        "features.image_generation": false,
+        "features.computer_use": false,
+        "features.browser_use": false,
+        "tools.view_image": false,
+        "project_doc_max_bytes": 0
+      },
+      "turnSandbox": {
+        "type": "readOnly",
+        "networkAccess": false
+      }
+    },
+    "aTurnRefusedForALimitRunsAgainOnAnotherLockableEngine": {
+      "turns": [
+        {
+          "engine": "claude",
+          "guest": true,
+          "retryOf": false,
+          "status": "error"
+        },
+        {
+          "engine": "codex",
+          "guest": true,
+          "retryOf": true,
+          "status": "done"
+        }
+      ],
+      "route": "codex"
+    },
+    "withNoneThatCanBeLockedDownNoTurnRuns": {
+      "runs": [
+        {
+          "status": "error",
+          "error": "Grok Build, your default engine, can't be locked down. Codex's 5-hour limit is used up and resets at 8:30 am, and no other engine that can be locked down has room."
+        },
+        {
+          "status": "error",
+          "error": "Grok Build, your default engine, can't be locked down. Codex's 5-hour limit is used up and resets at 8:30 am, and no other engine that can be locked down has room."
+        }
+      ],
+      "toSam": []
+    },
+    "theOwnerIsToldOnce": {
+      "told": [
+        "Chats with other people get no reply for now. Grok Build, your default engine, can't be locked down. Codex's 5-hour limit is used up and resets at 8:30 am, and no other engine that can be locked down has room."
+      ]
+    },
+    "onceAnEngineHasRoomTheyAreAnsweredAgain": {
+      "engine": "codex",
+      "stuck": null
+    },
+    "anEnginePinnedThatCantBeLockedDownIsPassedOver": {
+      "engines": [
+        "codex"
+      ],
+      "why": "Chats with other people run only where they can be locked down (no shell, files or computer): Codex, Claude Code. Grok Build, your default engine, can't be locked down. Standard tier, for a chat: gpt-fake at medium. On Codex, the one that can be locked down with the most of its plan left, which has room. Claude Code's 5-hour limit is used up and resets at 8:30 am."
+    },
+    "theServerSendsNoGuestTurnToAnEngineThatCantBeLockedDown": {
+      "byHand": "Error: codex:enqueueTurn: Grok Build can't be locked down for a chat with someone else, so it doesn't run one."
+    },
+    "theRunnerRefusesAGuestTurnOnAnEngineThatCantBeLockedDown": {
+      "status": "error",
+      "error": "Grok Build can't be locked down for a chat with someone else, so it doesn't run one."
+    },
+    "grokNeverSawSomeoneElsesWords": {
+      "grokPrompts": []
+    },
+    "runDetails": [
+      {
+        "engine": "claude",
+        "model": "default",
+        "why": "Chats with other people run only where they can be locked down (no shell, files or computer): Codex, Claude Code. Grok Build, your default engine, can't be locked down. Standard tier, for a chat: default at high. On Claude Code, the one that can be locked down with the most of its plan left, which has room.",
+        "retried": false
+      },
+      {
+        "engine": "claude",
+        "model": "default",
+        "why": "Chats with other people run only where they can be locked down (no shell, files or computer): Codex, Claude Code. Grok Build, your default engine, can't be locked down. Standard tier, for a chat: default at high. On Claude Code, the one that can be locked down with the most of its plan left, which has room.",
+        "retried": false
+      },
+      {
+        "engine": "codex",
+        "model": "gpt-fake",
+        "why": "Chats with other people run only where they can be locked down (no shell, files or computer): Codex, Claude Code. Grok Build, your default engine, can't be locked down. Standard tier, for a chat: gpt-fake at medium. On Codex, the one that can be locked down with the most of its plan left, which has room. Claude Code's 5-hour limit is used up and resets at 8:30 am.",
+        "retried": false
+      },
+      {
+        "engine": "codex",
+        "model": "gpt-fake",
+        "why": "Chats with other people run only where they can be locked down (no shell, files or computer): Codex, Claude Code. Grok Build, your default engine, can't be locked down. Standard tier, for a chat: gpt-fake at medium. On Codex, the one that can be locked down with the most of its plan left, which has room. Claude Code refused it for its plan's limit.",
+        "retried": true
+      },
+      {
+        "engine": "codex",
+        "model": "gpt-fake",
+        "why": "Chats with other people run only where they can be locked down (no shell, files or computer): Codex, Claude Code. Grok Build, your default engine, can't be locked down. Standard tier, for a chat: gpt-fake at medium. On Codex, the one that can be locked down with the most of its plan left, which has room. Claude Code's 5-hour limit is used up and resets at 8:30 am.",
+        "retried": false
+      },
+      {
+        "engine": "codex",
+        "model": "gpt-fake",
+        "why": "Chats with other people run only where they can be locked down (no shell, files or computer): Codex, Claude Code. Grok Build, your default engine, can't be locked down. Standard tier, for a chat: gpt-fake at medium. On Codex, the one that can be locked down with the most of its plan left, which has room. Claude Code's 5-hour limit is used up and resets at 8:30 am.",
+        "retried": false
+      }
+    ],
+    "grep": {
+      "literals": 67,
+      "kept": [
+        "convex/codex.ts:37 (the calls a runner from before engines makes, which were Codex's, and the Codex thread id it resumes by)",
+        "convex/codex.ts:39 (the calls a runner from before engines makes, which were Codex's, and the Codex thread id it resumes by)",
+        "convex/codex.ts:71 (the calls a runner from before engines makes, which were Codex's, and the Codex thread id it resumes by)",
+        "convex/codex.ts:87 (the calls a runner from before engines makes, which were Codex's, and the Codex thread id it resumes by)",
+        "convex/codex.ts:456 (the calls a runner from before engines makes, which were Codex's, and the Codex thread id it resumes by)",
+        "convex/codex.ts:482 (the calls a runner from before engines makes, which were Codex's, and the Codex thread id it resumes by)",
+        "convex/engines.ts:36 (a runner from before engines reported only Codex, in codex* fields, and kept Codex threads there)",
+        "convex/engines.ts:84 (a runner from before engines reported only Codex, in codex* fields, and kept Codex threads there)",
+        "convex/engines.ts:112 (a runner from before engines reported only Codex, in codex* fields, and kept Codex threads there)",
+        "convex/installation.ts:132 (an install from before the owner chose had run on Codex: its choice, written down as it was (#195))",
+        "convex/lib/engines.ts:16 (the list of engines, and the ones a runner drives: options, not a pick)",
+        "convex/lib/engines.ts:20 (the list of engines, and the ones a runner drives: options, not a pick)",
+        "convex/lib/engines.ts:31 (a runner from before guestLockdown was reported locked down only Codex (#148): a fact about old runners)",
+        "convex/models.ts:36 (Codex's models alone, as scripts from before engines read them)",
+        "convex/schema.ts:75 (the validator of the engine list)",
+        "runner/codex.ts:183 (Codex's CLI name, and the id Codex gives its plan's own limit bucket)",
+        "runner/codex.ts:220 (Codex's CLI name, and the id Codex gives its plan's own limit bucket)",
+        "runner/codex.ts:309 (Codex's CLI name, and the id Codex gives its plan's own limit bucket)",
+        "runner/engines/antigravity.ts:75 (the Antigravity engine's own kind and folder)",
+        "runner/engines/antigravity.ts:97 (the Antigravity engine's own kind and folder)",
+        "runner/engines/antigravity.ts:250 (the Antigravity engine's own kind and folder)",
+        "runner/engines/claude.ts:62 (the Claude Code engine's own kind, binary names, and the model aliases it offers before a session lists them (options, with Claude Code's own default marked))",
+        "runner/engines/claude.ts:63 (the Claude Code engine's own kind, binary names, and the model aliases it offers before a session lists them (options, with Claude Code's own default marked))",
+        "runner/engines/claude.ts:64 (the Claude Code engine's own kind, binary names, and the model aliases it offers before a session lists them (options, with Claude Code's own default marked))",
+        "runner/engines/claude.ts:65 (the Claude Code engine's own kind, binary names, and the model aliases it offers before a session lists them (options, with Claude Code's own default marked))",
+        "runner/engines/claude.ts:66 (the Claude Code engine's own kind, binary names, and the model aliases it offers before a session lists them (options, with Claude Code's own default marked))",
+        "runner/engines/claude.ts:131 (the Claude Code engine's own kind, binary names, and the model aliases it offers before a session lists them (options, with Claude Code's own default marked))",
+        "runner/engines/claude.ts:362 (the Claude Code engine's own kind, binary names, and the model aliases it offers before a session lists them (options, with Claude Code's own default marked))",
+        "runner/engines/claude.ts:439 (the Claude Code engine's own kind, binary names, and the model aliases it offers before a session lists them (options, with Claude Code's own default marked))",
+        "runner/engines/claude.ts:446 (the Claude Code engine's own kind, binary names, and the model aliases it offers before a session lists them (options, with Claude Code's own default marked))",
+        "runner/engines/claude.ts:455 (the Claude Code engine's own kind, binary names, and the model aliases it offers before a session lists them (options, with Claude Code's own default marked))",
+        "runner/engines/claude.ts:458 (the Claude Code engine's own kind, binary names, and the model aliases it offers before a session lists them (options, with Claude Code's own default marked))",
+        "runner/engines/claude.ts:473 (the Claude Code engine's own kind, binary names, and the model aliases it offers before a session lists them (options, with Claude Code's own default marked))",
+        "runner/engines/codex.ts:145 (the Codex engine's own kind, CLI name and plan bucket)",
+        "runner/engines/codex.ts:157 (the Codex engine's own kind, CLI name and plan bucket)",
+        "runner/engines/codex.ts:167 (the Codex engine's own kind, CLI name and plan bucket)",
+        "runner/engines/codex.ts:234 (the Codex engine's own kind, CLI name and plan bucket)",
+        "runner/engines/codex.ts:245 (the Codex engine's own kind, CLI name and plan bucket)",
+        "runner/engines/codex.ts:247 (the Codex engine's own kind, CLI name and plan bucket)",
+        "runner/engines/codex.ts:263 (the Codex engine's own kind, CLI name and plan bucket)",
+        "runner/engines/codex.ts:266 (the Codex engine's own kind, CLI name and plan bucket)",
+        "runner/engines/codex.ts:666 (the Codex engine's own kind, CLI name and plan bucket)",
+        "runner/engines/grok.ts:60 (the Grok engine's own kind, CLI name and sign-in type)",
+        "runner/engines/grok.ts:66 (the Grok engine's own kind, CLI name and sign-in type)",
+        "runner/engines/grok.ts:104 (the Grok engine's own kind, CLI name and sign-in type)",
+        "runner/engines/grok.ts:114 (the Grok engine's own kind, CLI name and sign-in type)",
+        "runner/engines/grok.ts:130 (the Grok engine's own kind, CLI name and sign-in type)",
+        "server/modules.ts:77 (the convex/codex.ts module's name)",
+        "scripts/doctor.ts:63 (doctor checks every engine installed on this computer, each by its own CLI: facts per engine)",
+        "scripts/doctor.ts:80 (doctor checks every engine installed on this computer, each by its own CLI: facts per engine)",
+        "scripts/doctor.ts:82 (doctor checks every engine installed on this computer, each by its own CLI: facts per engine)",
+        "scripts/doctor.ts:83 (doctor checks every engine installed on this computer, each by its own CLI: facts per engine)",
+        "scripts/doctor.ts:100 (doctor checks every engine installed on this computer, each by its own CLI: facts per engine)",
+        "scripts/doctor.ts:109 (doctor checks every engine installed on this computer, each by its own CLI: facts per engine)",
+        "scripts/doctor.ts:110 (doctor checks every engine installed on this computer, each by its own CLI: facts per engine)",
+        "scripts/lib.ts:110 (Codex's CLI name)",
+        "scripts/setup.ts:131 (how each engine installs and signs in, for the engine the owner chose)",
+        "scripts/setup.ts:184 (how each engine installs and signs in, for the engine the owner chose)",
+        "scripts/setup.ts:187 (how each engine installs and signs in, for the engine the owner chose)",
+        "scripts/setup.ts:191 (how each engine installs and signs in, for the engine the owner chose)",
+        "scripts/setup.ts:194 (how each engine installs and signs in, for the engine the owner chose)",
+        "scripts/setup.ts:201 (how each engine installs and signs in, for the engine the owner chose)",
+        "scripts/setup.ts:202 (how each engine installs and signs in, for the engine the owner chose)",
+        "scripts/setup.ts:307 (how each engine installs and signs in, for the engine the owner chose)",
+        "components/dashboard/default-engine.tsx:34 (Antigravity is experimental and turned on in Settings: a fact said beside it)",
+        "components/dashboard/screens/settings.tsx:175 (Antigravity is experimental and turned on in Settings: a fact said beside it)",
+        "evals/judge.ts:68 (the evals' judge (dev-only, `pnpm evals`) is a `codex exec` with an output schema, on the developer's own Codex; its model is --judge-model's, unset by default)"
+      ]
+    },
+    "noHardCodedEngineOrModelChoiceRemains": {
+      "unexplained": [],
+      "gone": []
+    },
+    "claudeLog": [
+      {
+        "start": "e0fcee56-0038-46b0-bfe1-5a466e5a9842",
+        "tools": "",
+        "mode": "default",
+        "allowed": 0
+      },
+      {
+        "start": "8a5a45ae-f8de-4b02-b18d-318fa8462d9a",
+        "tools": "",
+        "mode": "dontAsk",
+        "allowed": 5
+      },
+      {
+        "step": "Bash",
+        "got": "unavailable",
+        "ran": false
+      },
+      {
+        "step": "Read",
+        "got": "unavailable",
+        "ran": false
+      },
+      {
+        "step": "Write",
+        "got": "unavailable",
+        "ran": false
+      },
+      {
+        "step": "WebFetch",
+        "got": "unavailable",
+        "ran": false
+      },
+      {
+        "step": "mcp__assistant__browser",
+        "got": "denied",
+        "ran": false
+      },
+      {
+        "step": "mcp__assistant__remember",
+        "got": "allowed",
+        "ran": true
+      },
+      {
+        "step": "Bash",
+        "got": "deny",
+        "ran": false
+      },
+      {
+        "step": "Read",
+        "got": "deny",
+        "ran": false
+      },
+      {
+        "step": "Write",
+        "got": "deny",
+        "ran": false
+      },
+      {
+        "step": "WebFetch",
+        "got": "deny",
+        "ran": false
+      },
+      {
+        "step": "mcp__assistant__browser",
+        "got": "deny",
+        "ran": false
+      },
+      {
+        "step": "mcp__assistant__remember",
+        "got": "allow",
+        "ran": true
+      },
+      {
+        "start": "3472b6dc-6034-470c-88e3-3c522549997c",
+        "tools": "",
+        "mode": "dontAsk",
+        "allowed": 5
+      }
+    ],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\no-hardcoded\\no-hardcoded-engines\\perry-no-hardcoded-ufaKiF\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  could not read Codex's plan limits: fake codex does not play account/rateLimits/read\u001b[0m",
+      "Warning: canUseTool will not be invoked for: mcp__assistant__remember, mcp__assistant__recall, mcp__assistant__read_memory, mcp__assistant__forget, mcp__assistant__tell_owner. Bare allowedTools entries auto-approve the whole tool before the callback is consulted. To gate every tool call, use a PreToolUse hook; or remove the bare names from allowedTools so they fall through to canUseTool. Allow rules from settings files can also shadow the callback but are not visible here.",
+      " code: \"CLAUDE_SDK_CAN_USE_TOOL_SHADOWED\"",
+      "      at cW (W:\\perry-tests\\wt-200\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:150:14283)",
+      "      at lA (W:\\perry-tests\\wt-200\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:150:21005)",
+      "      at lze (W:\\perry-tests\\wt-200\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:151:508)",
+      "      at start (W:\\perry-tests\\wt-200\\runner\\engines\\claude.ts:590:16)",
+      "      at runTurn (W:\\perry-tests\\wt-200\\runner\\engines\\claude.ts:645:24)",
+      "\u001b[2m  saved turn ddebb6awwvnf0bzmecw0j39wga\u001b[0m",
+      "\u001b[2m  saved turn db6gchqt0z70qgdvjz8kxhw784\u001b[0m",
+      "\u001b[2m  saved turn 1mnm5zf0xb78bg6xg0vsg2y9gt\u001b[0m",
+      "Warning: canUseTool will not be invoked for: mcp__assistant__remember, mcp__assistant__recall, mcp__assistant__read_memory, mcp__assistant__forget, mcp__assistant__tell_owner. Bare allowedTools entries auto-approve the whole tool before the callback is consulted. To gate every tool call, use a PreToolUse hook; or remove the bare names from allowedTools so they fall through to canUseTool. Allow rules from settings files can also shadow the callback but are not visible here.",
+      " code: \"CLAUDE_SDK_CAN_USE_TOOL_SHADOWED\"",
+      "      at cW (W:\\perry-tests\\wt-200\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:150:14283)",
+      "      at lA (W:\\perry-tests\\wt-200\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:150:21005)",
+      "      at lze (W:\\perry-tests\\wt-200\\node_modules\\.pnpm\\@anthropic-ai+claude-agent-_f0a6f2c694c9a6856554340b88b1bf03\\node_modules\\@anthropic-ai\\claude-agent-sdk\\sdk.mjs:151:508)",
+      "      at start (W:\\perry-tests\\wt-200\\runner\\engines\\claude.ts:590:16)",
+      "      at runTurn (W:\\perry-tests\\wt-200\\runner\\engines\\claude.ts:645:24)",
+      "\u001b[2m  saved turn hnbv68n65vxt0rcfrbfh0zhrns\u001b[0m",
+      "\u001b[33m  Claude Code refused the turn for your plan's limit\u001b[0m",
+      "\u001b[2m  saved turn entvz235ps58hagdtawvv87ws7\u001b[0m",
+      "\u001b[2m  saved turn p4k9e7py5q6k9kzyq4j1x59nck\u001b[0m",
+      "\u001b[2m  saved turn d9sbhmstqssktasze7y6731ptr\u001b[0m",
+      "\u001b[2m  saved turn j90sfpt8pkgv2qz269e2ffny7a\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}
