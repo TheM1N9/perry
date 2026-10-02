@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
+import { gzipSync } from "node:zlib";
 import { join } from "node:path";
 import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 
@@ -10,7 +11,7 @@ import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 // Antigravity (experimental) as Perry's engine: Google's own ACP server, downloaded only
 // when the owner turns it on, verified against a pinned size and SHA-256, unpacked under
 // Perry's home, run with its own home and temp folders, and signed in with a Gemini API
-// key from Settings → Keys (the default) or with Google (Experimental, with Google's
+// key from Settings → Engines (the default) or with Google (Experimental, with Google's
 // warning). Google's server is not downloaded here (disk is short on this machine):
 // PERRY_ANTIGRAVITY_RELEASE points the runner at a fake release served from this test,
 // a small zip whose agy_acp_server.cmd starts the fake ACP agent playing Antigravity
@@ -84,10 +85,20 @@ const zipped = windows
 if (zipped.status !== 0) throw new Error(`could not make the fake release: ${zipped.stderr}`);
 const bytes = readFileSync(zip);
 let downloads = 0;
+// As dl.google.com does: gzipped when the client accepts gzip, with the gzipped length declared.
+// Perry once took that length for the zip's and refused a good download. With gzipAlways it
+// gzips even a request for the plain file, as a proxy might.
+const gzipped = gzipSync(bytes);
+let gzipAlways = false;
+const encodings: string[] = [];
 const files = createServer((request, response) => {
   downloads++;
-  response.writeHead(200, { "content-type": "application/zip", "content-length": bytes.length });
-  response.end(bytes);
+  encodings.push(String(request.headers["accept-encoding"] ?? ""));
+  const gzip = gzipAlways || /gzip/.test(String(request.headers["accept-encoding"] ?? ""));
+  response.writeHead(200, gzip
+    ? { "content-type": "application/zip", "content-encoding": "gzip", "content-length": gzipped.length }
+    : { "content-type": "application/zip", "content-length": bytes.length });
+  response.end(gzip ? gzipped : bytes);
 }).listen(0, "127.0.0.1");
 await new Promise((done) => files.once("listening", done));
 const url = `http://127.0.0.1:${(files.address() as { port: number }).port}/agy-acp-server-fake.zip`;
@@ -105,6 +116,11 @@ const p = await perry({
     fakeHome = join(home, "fake-antigravity");
     agyRoot = join(home, "engines", "antigravity");
     return {
+      // Codex and Claude Code signed out in folders of their own: nothing here may reach the owner's accounts.
+      CODEX_HOME: join(home, "codex"),
+      CLAUDE_CONFIG_DIR: join(home, "claude"),
+      // And Grok pointed at nothing: the owner's own `grok` is signed in on this machine and must never be reached.
+      PERRY_GROK_COMMAND: join(home, "no-grok-here"),
       PERRY_ANTIGRAVITY_RELEASE: releaseFile,
       FAKE_ACP_HOME: fakeHome,
       FAKE_ACP_START_DELAY_MS: "3000",
@@ -134,7 +150,7 @@ try {
   await until(async () => Boolean((await call<Array<{ builtin?: string }>>("jobs:list")).find((job) => job.builtin === "heartbeat")), "the built-in jobs", 90);
   runner = p.start("runner");
   await until(async () => Boolean(await agy()), "the runner to report Antigravity", 120);
-  await until(async () => (await computers()).some((item) => item.engines.some((engine) => engine.kind === "codex" && engine.signedIn)), "Codex signed in beside it", 120);
+  await until(async () => (await computers()).some((item) => item.engines.some((engine) => engine.kind === "codex")), "Codex reported beside it (signed out in its own folder)", 120);
   const computer = (await computers()).find((item) => item.online)!;
   await sleep(35_000); // a probe or two
 
@@ -154,7 +170,7 @@ try {
   const noKey = await call("engines:requestAuth", { key: KEY, runnerId: computer.id, engine: "antigravity", kind: "login", method: "gemini-api-key" }).then(() => "", (error) => String(error));
   await until(async () => ["error", "done"].includes((await agy())?.request?.status ?? ""), "the keyless attempt to end", 60);
   const noKeyRequest = (await agy())!.request;
-  check("keyRequiredFirst", noKeyRequest?.status === "error" && /Settings → Keys/.test((noKeyRequest as { error?: string }).error ?? "") && downloads === 0, { noKey, request: noKeyRequest });
+  check("keyRequiredFirst", noKeyRequest?.status === "error" && /Settings → Engines/.test((noKeyRequest as { error?: string }).error ?? "") && downloads === 0, { noKey, request: noKeyRequest });
   await call("dashboard:setKey", { key: KEY, name: "GEMINI_API_KEY", value: KEY_VALUE });
 
   // --- 4. A download that does not match is refused and removed ---------------------------------------------
@@ -166,6 +182,8 @@ try {
 
   // --- 5, 6, 7. The right one: verified, unpacked, started with the key --------------------------------------
   release(createHash("sha256").update(bytes).digest("hex"));
+  // Gzipped even though Perry asks for the plain file: its declared length is the gzipped one, and the download is still good.
+  gzipAlways = true;
   // What a killed server would have left in its temp folder.
   mkdirSync(join(agyRoot, "tmp", "_MEI-orphan"), { recursive: true });
   writeFileSync(join(agyRoot, "tmp", "_MEI-orphan", "big.bin"), "x".repeat(1024));
@@ -177,6 +195,8 @@ try {
   const auth = log().find((entry) => entry.method === "authenticate");
   check("downloadVerifiedAndUnpacked", clicked === true && downloads === 2 && existsSync(join(agyRoot, "server", "9.9.9-fake", ".verified")) && leftovers().download.length === 0 && leftovers().partial.length === 0
     && on.version === "9.9.9-fake" && on.auth.label === "Gemini API key", { on: { version: on.version, auth: on.auth }, leftovers: leftovers() });
+  check("gzippedDownloadTaken", on.version === "9.9.9-fake" && gzipped.length !== bytes.length, { gzipped: gzipped.length, zip: bytes.length });
+  check("asksForThePlainFile", encodings.length >= 2 && encodings.every((encoding) => encoding === "identity"), encodings);
   check("keyGivenOnlyToServer", auth?.methodId === "gemini-api-key" && auth.geminiKeyPresent === true, { auth });
   check("ownHomeAndTemp", auth?.env?.GEMINI_HOME === join(agyRoot, "home") && auth?.env?.TEMP === join(agyRoot, "tmp") && !existsSync(join(agyRoot, "tmp", "_MEI-orphan")), { env: auth?.env });
   await p.settingsText();
@@ -192,8 +212,9 @@ try {
   // Settings lists every engine the runner has; the model picker groups the signed-in ones' models.
   const reported = (await computers()).find((item) => item.online)!.engines.map((engine) => engine.kind);
   const kinds = options.engines.map((engine) => engine.kind);
+  // Codex, Claude and Grok are signed out or absent here: reported beside it, with no models, so only Antigravity's are offered.
   check("enginesCoexist", ["codex", "grok", "claude", "antigravity"].every((kind) => reported.includes(kind)) && !reported.includes("cursor" as never)
-    && kinds.includes("codex") && kinds.includes("antigravity") && options.models.some((model) => model.engine === "antigravity") && options.models.some((model) => (model.engine ?? "codex") === "codex"),
+    && kinds.includes("antigravity") && options.models.some((model) => model.engine === "antigravity") && options.models.every((model) => model.engine === "antigravity"),
     { reported, pickerEngines: kinds });
   check("replyStreamsAndSaves", first.streamed.length >= 3 && first.reply.includes(`Fake antigravity reply to: Hello Antigravity ${NONCE}`), { snapshots: first.streamed.length, reply: first.reply });
   const firstPrompt = log().find((entry) => entry.prompt === `Hello Antigravity ${NONCE}`);
@@ -248,20 +269,8 @@ try {
   await until(async () => !(await getChat(chat)).isRunning, "the hung turn to be ended", 120);
   check("hungReplyWatchdog", /stopped responding/.test(turnsOf(chat).at(-1)!.error ?? ""), turnsOf(chat).at(-1)!.error);
 
-  // --- 14. Codex and back -----------------------------------------------------------------------------------------
-  await call("dashboard:setChatModel", { key: KEY, id: chat, model: MODEL, engine: "codex" });
-  // Codex's own account can be out of its usage allowance: then the turn reaching Codex and
-  // failing with Codex's own quota message is what can be checked, and the note says so.
-  const turnsBefore = turnsOf(chat).length;
-  await call("dashboard:sendChat", { key: KEY, id: chat, text: "Reply with exactly: switched-ok" });
-  await until(async () => turnsOf(chat).length > turnsBefore && !(await getChat(chat)).isRunning, "the Codex turn", 240);
-  const codexTurn = turnsOf(chat).at(-1)!;
-  const codexReply = await p.lastReply(chat);
-  const codexQuota = /usage limit/i.test(`${codexTurn.error ?? ""} ${p.logs.runner}`) && !/switched-ok/.test(codexReply);
-  await call("dashboard:setChatModel", { key: KEY, id: chat, model: "gemini-fake-pro", engine: "antigravity" });
-  const back = await exchange(chat, `Back on Antigravity ${NONCE}`, 120);
-  check("switchCodexAndBack", codexTurn.engine === "codex" && (/switched-ok/.test(codexReply) || codexQuota) && turnsOf(chat).at(-1)!.engine === "antigravity" && back.reply.includes(`Back on Antigravity ${NONCE}`),
-    { codexEngine: codexTurn.engine, codexReply: codexReply.slice(0, 60), codexError: codexTurn.error?.slice(0, 200), codexOutOfQuota: codexQuota, back: back.reply.slice(0, 60) });
+  // --- 14. (Switching to another engine and back is covered by auto-routing and engine-layer, with fake engines:
+  //         here every other engine is signed out or absent, so nothing could reach the owner's accounts.)
 
   // --- 15. Signing in with Google instead (experimental) ------------------------------------------------------------
   const googleAt = Date.now();

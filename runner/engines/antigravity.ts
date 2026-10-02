@@ -196,10 +196,12 @@ export class AntigravityEngine extends AcpEngine {
       try {
         mkdirSync(DIRS.download, { recursive: true });
         this.progress = "Downloading Google's Antigravity server…";
-        const response = await fetch(asset.url);
+        // Uncompressed: dl.google.com gzips the zip when asked, and the length it then declares is the gzipped one.
+        const response = await fetch(asset.url, { headers: { "accept-encoding": "identity" } });
         if (!response.ok || !response.body) throw new Error(`The download failed (${response.status}).`);
         const hash = createHash("sha256");
-        const declared = Number(response.headers.get("content-length"));
+        // A compressed transfer declares its compressed length; then only the bytes and the checksum below count.
+        const declared = response.headers.get("content-encoding") ? 0 : Number(response.headers.get("content-length"));
         if (declared && declared !== asset.size) throw new Error(`The download is not the size Perry expects (${declared} bytes), so it was not taken.`);
         const file = createWriteStream(zip);
         let bytes = 0;

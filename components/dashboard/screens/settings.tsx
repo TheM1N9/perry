@@ -222,7 +222,7 @@ export function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id
       {interaction && <LoginSteps engine={engine.label} interaction={interaction} />}
       {request?.status === "error" && request.error && (request.kind === "logout"
         ? <p className="mt-2 text-sm text-pretty text-destructive">Sign-out didn&apos;t finish: {request.error}.</p>
-        : <p className="mt-2 text-sm text-pretty text-destructive">Sign-in didn&apos;t finish: {request.error}. Try again; each code works for a few minutes.</p>)}
+        : <p className="mt-2 text-sm text-pretty text-destructive">Didn&apos;t finish: {request.error?.replace(/\.+$/, "")}. Try again.</p>)}
     </div>
   );
 }
