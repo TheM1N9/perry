@@ -130,7 +130,9 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
     if (spare?.has(id)) await ctx.db.patch(id, { pageId: undefined, order: undefined, section: undefined, migratedAt: undefined });
     else await deleteLine(ctx, id);
   }
-  if (reworded.length) await noteMentions(ctx, reworded);
+  // Who a line mentions depends on its page too (a person's page names them): lines moved in here are read again.
+  const movedIn = spare ? plan.keep.map(({ id }) => id).filter((id) => spare.has(id)) : [];
+  if (reworded.length || movedIn.length) await noteMentions(ctx, [...reworded, ...movedIn]);
   // A page of memory past a few hundred lines is looked over for duplicates to propose merging, at most daily.
   if (page.kind && page.kind !== "journal" && page.kind !== "about" && rows.length >= 300) await ctx.scheduler.runAfter(0, internal.compaction.reviewIfDue, {});
   if (page.kind === "person" && (reworded.length || plan.drop.length)) await noteAliases(ctx, page._id);

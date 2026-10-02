@@ -4,7 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { timezoneOf } from "./jobs";
-import { EMBED_MODEL, embed, readyWithin, unload } from "./lib/embed";
+import { EMBED_MODEL, embed, readyWithin, unload, warmUp } from "./lib/embed";
 import { dateRange, daysOf, eventIn, fuse, rankRecall, says, type RecallParts } from "./lib/recall";
 import { journalTitle, peopleIn, PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
 import { dropLine, ensurePeople, findPage, memoryPage, placeFor, putLine, rewordLine, secretIn, titleOf, writePage, type Author, type Standing } from "./pages";
@@ -525,14 +525,15 @@ export const peopleAsked = internalQuery({
 
 /** The newest current lines that mention any of these people, as a chat may see them. */
 export const mentioning = internalQuery({
-  args: { people: v.array(v.string()), limit: v.number(), chat: vChat, everywhere: v.optional(v.boolean()) },
+  args: { people: v.array(v.string()), limit: v.number(), chat: vChat, everywhere: v.optional(v.boolean()), deep: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<string[]> => {
     const seen = args.everywhere ? () => true : await seenFrom(ctx, args.chat);
     const lines: Memory[] = [];
     for (const person of args.people) {
       for (const mention of await ctx.db.query("mentions").withIndex("by_person", (q) => q.eq("person", person)).collect()) {
         const line = await ctx.db.get(mention.lineId);
-        if (line && !line.supersededBy && seen(line)) lines.push(line);
+        // Not an archived line, unless the search is deep (archive.ts).
+        if (line && !line.supersededBy && (args.deep || !line.archivedAt) && seen(line)) lines.push(line);
       }
     }
     return lines.sort((a, b) => b.createdAt - a.createdAt).slice(0, args.limit).map((line) => line._id);
@@ -653,6 +654,9 @@ export const embedMissing = internalAction({
     state.running = true;
     try {
       await ctx.runMutation(internal.memories.noteModel, {});
+      // While lines are still on the model before, search uses it too: it loads now, not on the first search.
+      const before: string | null = await ctx.runQuery(internal.memories.previousModel, {});
+      if (before) warmUp(before);
       const started = Date.now();
       for (;;) {
         const pending: Array<{ id: Memory["_id"]; text: string }> = await ctx.runQuery(internal.memories.unembedded, { limit: 32 });

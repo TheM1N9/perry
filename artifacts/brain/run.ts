@@ -95,7 +95,7 @@ const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/brain/run.ts <outDir>");
 mkdirSync(outDir, { recursive: true });
 const MODELS = process.env.PERRY_E2E_MODELS ?? (process.env.PERRY_E2E_DIR ? join(process.env.PERRY_E2E_DIR, "models") : "");
-const MODEL_DIR = "Xenova/paraphrase-multilingual-MiniLM-L12-v2";
+const MODEL_DIR = "onnx-community/embeddinggemma-300m-ONNX";
 const modelReady = (dir: string) => Boolean(dir) && existsSync(join(dir, MODEL_DIR, "onnx", "model_quantized.onnx"));
 
 let fakeHome = "";
@@ -197,7 +197,9 @@ try {
     spanish: memory({ text: "In this project, reply in Spanish.", kind: "profile", projectId: project }),
     dentist: memory({ text: "Dentist follow-up call on Friday.", kind: "daily", day: dayOf(now - DAY * 3), createdAt: now - DAY * 3, tags: ["open"], todoId: followUp }),
     alert: memory({ text: "Alerted the owner at 06:00: Flight moved to 7:25.", kind: "daily", day: dayOf(now - DAY), createdAt: now - DAY, tags: ["alert"], origin: "job", source: "alert" }),
-    kettle: memory({ text: "Bought a new kettle.", kind: "daily", createdAt: now - DAY * 5 }),
+    // At noon UTC: its day is worked out when it moves in, in the owner's timezone, which is UTC until the browser sets it; noon is the
+    // same day in both, so a run past midnight on the owner's clock does not move it to another day on moving in again.
+    kettle: memory({ text: "Bought a new kettle.", kind: "daily", createdAt: Math.floor((now - DAY * 5) / DAY) * DAY + DAY / 2 }),
     tiles: memory({ text: "Tiles for the bathroom arrived.", kind: "daily", day: dayOf(now - DAY * 2), createdAt: now - DAY * 2, projectId: project }),
     owl: memory({ text: "Codename for the surprise party is OWL.", kind: "core", conversationId: general }),
     voice: memory({ text: "Datta prefers WhatsApp voice notes.", kind: "core", conversationId: theirs, about: ["Datta"], origin: "tool", source: `whatsapp:${jid}` }),

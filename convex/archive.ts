@@ -14,7 +14,9 @@ import { assertDashboardKey } from "./lib/auth";
  * Used means: recalled into a turn (the lines a message is sent as bearing on
  * it, and what Perry's recall returns), cited in a reply, edited, or on a page
  * the owner opened. A line past the time it holds until (expiresAt) is
- * archived too. Never archived: About me, a page or section the owner pinned
+ * archived too. Use was not kept before the archive, so the age counts from
+ * when it began (installation.archiveSince) for a line not used since: an
+ * install from before it archives nothing for its first three months. Never archived: About me, a page or section the owner pinned
  * themselves, and the Lately page.
  *
  * Archiving changes no words and moves no line: the line keeps its place in
@@ -99,6 +101,9 @@ export const run = internalMutation({
     const install = await ctx.db.query("installation").first();
     if (!install) return { archived: 0, done: true };
     const days = await archiveDays(ctx);
+    // Lines count as used when the archive began: until then nobody kept when a line was used.
+    const since = install.archiveSince ?? now;
+    if (install.archiveSince === undefined) await ctx.db.patch(install._id, { archiveSince: now });
     const from = install.archiveCursor ?? -1;
     const batch = await ctx.db.query("memories").withIndex("by_created", (q) => q.gt("createdAt", from)).take(BATCH);
     const pages = new Map<string, Doc<"notes"> | null>();
@@ -109,7 +114,7 @@ export const run = internalMutation({
       const page = pages.get(line.pageId)!;
       if (keptOf(page, line)) continue;
       const expired = line.expiresAt !== undefined && line.expiresAt < now;
-      const lastActive = Math.max(line.lastUsedAt ?? 0, line.createdAt, line.editedAt ?? 0, line.confirmedAt ?? 0);
+      const lastActive = Math.max(line.lastUsedAt ?? 0, line.createdAt, line.editedAt ?? 0, line.confirmedAt ?? 0, since);
       if (!expired && (days <= 0 || lastActive >= now - days * DAY_MS)) continue;
       await ctx.db.patch(line._id, { archivedAt: now, ...(line.embeddedWith ? { vectorKey: vectorKeyOf(line.embeddedWith, true) } : {}) });
       archived++;

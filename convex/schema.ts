@@ -213,6 +213,8 @@ export default defineSchema({
     brainReviewedAt: v.optional(v.number()),
     /** After how many days unused a line of Brain is archived (archive.ts); 0 never. Unset: 90. */
     archiveAfterDays: v.optional(v.number()),
+    /** When the archive began keeping when lines are used: no line counts as unused from before it (archive.run). */
+    archiveSince: v.optional(v.number()),
     /** Where the archive's pass through Brain's lines stopped, while it goes in batches. */
     archiveCursor: v.optional(v.number()),
     ownerChannel: v.optional(vChannel),
