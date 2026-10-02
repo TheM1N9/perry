@@ -233,6 +233,20 @@ const SECTION_WORDS: Array<[string, RegExp]> = [
   ["People", /\b(brother|sister|mother|mom|mum|father|dad|wife|husband|partner|son|daughter|friend|cousin|uncle|aunt|girlfriend|boyfriend|birthday)/i],
 ];
 
+/**
+ * USER.md written whole into About me (the welcome page, update_user_md, a
+ * version brought back) keeps the page's "How I like things done" when the
+ * new words leave that section out: those are memories, not USER.md's to drop.
+ */
+export function keepPreferences(text: string, page: string): string {
+  const blocks = (content: string) => blocksOf(content).filter((block) => block.section === PREFERENCES_SECTION);
+  const kept = blocks(page);
+  if (!kept.length || blocks(text).length || /^#{1,6}\s+How I like things done\s*$/im.test(text)) return text;
+  const lines = page.replace(/\r\n?/g, "\n").split("\n");
+  const body = kept.map((block) => lines.slice(block.start, block.end + 1).join("\n")).join("\n");
+  return `${text.trim()}\n\n## ${PREFERENCES_SECTION}\n\n${body}\n`;
+}
+
 /** The section of Things to remember a fact goes under when none was named. */
 export function sectionFor(text: string, tags: string[] = [], about: string[] = []): string {
   if (about.length) return "People";
