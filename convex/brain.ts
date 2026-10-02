@@ -231,7 +231,8 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   // any tips?"), so every message from the owner comes with the reminder.
   const note = conversation.jobId || conversation.taskId ? "" : REMEMBER_NOTE;
   return {
-    instructions: [persona.identity, INSTRUCTIONS, where, memory?.instructions, persona.user].filter(Boolean).join("\n\n"),
+    // About me comes with the memory guide (pages.standing); USER.md by itself only when memory could not be had.
+    instructions: [persona.identity, INSTRUCTIONS, where, memory?.instructions ?? persona.user].filter(Boolean).join("\n\n"),
     recalled: [`# Right now\n\n${now}`, goals, aboutProject, memory?.recalled, note].filter(Boolean).join("\n\n"),
     recallDigest: memory?.digest,
     projectDigest,

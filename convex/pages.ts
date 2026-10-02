@@ -299,11 +299,192 @@ export const titles = internalQuery({
   },
 });
 
+// --- What every turn is sent: pinned pages, within a budget -------------------------------------
+
+/**
+ * How much is loaded into every chat, in characters: About me, Things to
+ * remember, today's and yesterday's journal, this chat's own page, and
+ * whatever else is pinned, in that order. What does not fit is left out with
+ * a line saying how much and where to read it; nothing is refused or lost,
+ * and recall still finds it.
+ */
+export const PINNED_BUDGET = 32_000;
+/** Pinned: About me and Things to remember unless unpinned; anything else once pinned. */
+export const isPinned = (page: Pick<Note, "pinned" | "kind">) => page.pinned ?? (page.kind === "about" || page.kind === "remember");
+
+const DAY_MS = 86_400_000;
+const STALE_AFTER_MS = 90 * DAY_MS;
+const dayAgo = (timezone: string, offset: number) => new Date(Date.now() - offset * DAY_MS).toLocaleDateString("en-CA", { timeZone: timezone });
+
+/** A memory's id, and what to know of it: where it is kept, the to-do it follows, and when it was noted if long ago. */
+function ref(line: Line): string {
+  const notes: string[] = [];
+  if (line.conversationId) notes.push("this chat only");
+  else if (line.projectId) notes.push("this project only");
+  if (line.todoId) notes.push(`follows to-do ${line.todoId}`);
+  const at = Math.max(line.confirmedAt ?? 0, line.editedAt ?? 0, line.createdAt);
+  if (!line.day && Date.now() - at >= STALE_AFTER_MS) {
+    const months = Math.round((Date.now() - at) / (30 * DAY_MS));
+    const age = months >= 24 ? `${Math.round(months / 12)} years ago` : months >= 12 ? "over a year ago" : `${months} months ago`;
+    notes.push(`noted ${new Date(at).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}, ${age}: may have changed; check with the owner before relying on it`);
+  }
+  return ` (${[line._id, ...notes].join("; ")})`;
+}
+const memoryLine = (line: Line) => `- ${line.day ? `[${line.day}] ` : ""}${line.text.replace(/\n/g, " ")}${line.tags.map((tag) => ` #${tag}`).join("")}${ref(line)}`;
+
+export type Standing = { about: string; standing: string; shown: string[]; used: number; budget: number; left: string[] };
+
+/**
+ * What a chat's every turn starts with (memories.context): About me for the
+ * instructions, and as data the rest of what is pinned, within PINNED_BUDGET,
+ * in order. A chat with someone else gets none of it.
+ */
+export async function standingFor(ctx: Reader, chatId?: Id<"conversations">): Promise<Standing> {
+  const chat = chatId ? await ctx.db.get(chatId) : null;
+  const none: Standing = { about: "", standing: "", shown: [], used: 0, budget: PINNED_BUDGET, left: [] };
+  if (chat?.contactId) return none;
+  const project = chat?.projectId;
+  const pages = (await ctx.db.query("notes").collect())
+    .filter((page) => (page.conversationId ? page.conversationId === chat?._id : !page.projectId || page.projectId === project));
+  const timezone = await timezoneOf(ctx);
+  const days = [dayAgo(timezone, 0), dayAgo(timezone, 1)];
+  let left = PINNED_BUDGET;
+  const shown: string[] = [];
+  const cut: string[] = [];
+  const ordered = async (page: Note) => (await linesOf(ctx, page._id)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  /** A titled part, as many of its entries as fit; what does not is counted and named. */
+  const part = (title: string, entries: Array<{ text: string; id?: string }>, page?: Note): string => {
+    if (!entries.length) return "";
+    const head = `## ${title}`;
+    const reserve = 160;
+    if (left < head.length + reserve) { cut.push(title); return ""; }
+    const taken: string[] = [];
+    let used = head.length + 1;
+    let i = 0;
+    for (; i < entries.length; i++) {
+      const cost = entries[i].text.length + 1;
+      // Room is kept for the line that says what was left out, unless this is the last.
+      if (used + cost > left - (i === entries.length - 1 ? 0 : reserve)) break;
+      taken.push(entries[i].text);
+      if (entries[i].id) shown.push(entries[i].id!);
+      used += cost;
+    }
+    if (i < entries.length) {
+      const more = entries.length - i;
+      taken.push(`- … ${more} more ${more === 1 ? "line" : "lines"} not loaded here, to stay within what every chat is sent${page ? `: read the page (id ${page._id}) for all of it` : ""}.`);
+      cut.push(title);
+    }
+    const text = `${head}\n${taken.join("\n")}`;
+    left -= text.length + 2;
+    return text;
+  };
+  /** A page of memory's lines, under their sections. */
+  const linesIn = async (page: Note, sections?: string[]) => {
+    const entries: Array<{ text: string; id?: string }> = [];
+    let section: string | undefined;
+    for (const line of await ordered(page)) {
+      if (sections && !sections.includes(line.section ?? "")) continue;
+      const heading = line.section && line.section !== section ? `### ${line.section}\n` : "";
+      section = line.section;
+      entries.push({ text: `${heading}${memoryLine(line)}`, id: line._id });
+    }
+    return entries;
+  };
+  /** An ordinary page's words, block by block, under their headings. */
+  const wordsIn = async (page: Note, sections?: string[]) => {
+    const lines = page.content.replace(/\r\n?/g, "\n").split("\n");
+    const rows = await ordered(page);
+    const entries: Array<{ text: string; id?: string }> = [];
+    let section: string | undefined;
+    for (const block of blocksOf(page.content)) {
+      if (sections && !sections.includes(block.section ?? "")) continue;
+      const heading = block.section && block.section !== section ? `### ${block.section}\n` : "";
+      section = block.section;
+      const row = rows.find((item) => sameKey(item.text) === sameKey(block.text));
+      entries.push({ text: `${heading}${lines.slice(block.start, block.end + 1).join("\n")}`, ...(row ? { id: row._id } : {}) });
+    }
+    return entries;
+  };
+
+  // About me goes with the instructions; it is the owner's own account of themselves.
+  let about = "";
+  const aboutPage = pages.find((page) => page.kind === "about" && !page.projectId);
+  if (aboutPage ? isPinned(aboutPage) && aboutPage.content.trim() : false) {
+    about = part(`About me (USER.md, the owner's own page; id ${aboutPage!._id})`, await wordsIn(aboutPage!), aboutPage!);
+  } else if (!aboutPage) {
+    const user = (await ctx.db.query("persona").withIndex("by_kind", (q) => q.eq("kind", "user")).order("desc").first())?.text?.trim();
+    if (user) about = part("About the owner (USER.md)", user.split(/\n{2,}/).map((text) => ({ text })));
+  }
+  // Memories from before pages, until they are moved into theirs (pages.migrate).
+  const loose = (await ctx.db.query("memories").withIndex("by_created").collect()).filter((line) => !line.pageId && !line.supersededBy && line.kind !== "page"
+    && (line.conversationId ? line.conversationId === chat?._id : !line.projectId || line.projectId === project));
+  const looseProfile = part("Owner profile", loose.filter((line) => line.kind === "profile").map((line) => ({ text: memoryLine(line), id: line._id })));
+  about = [about, looseProfile].filter(Boolean).join("\n\n");
+
+  const parts: string[] = [];
+  const remember = pages.filter((page) => page.kind === "remember" && isPinned(page)).sort((a, b) => (a.projectId ? 1 : 0) - (b.projectId ? 1 : 0));
+  for (const page of remember) parts.push(part(page.projectId ? "Things to remember in this project" : "Things to remember", await linesIn(page), page));
+  for (const page of pages.filter((item) => item.kind === "chat")) parts.push(part("Kept to this chat", await linesIn(page), page));
+  const journal: Array<{ text: string; id?: string }> = [];
+  for (const day of days) for (const page of pages.filter((item) => item.kind === "journal" && item.day === day)) journal.push(...await linesIn(page));
+  parts.push(part("Journal, today and yesterday", journal));
+  // Memories from before pages were all loaded before, so they come before what the owner pinned since.
+  parts.push(part("Long-term memory not yet in a page", loose.filter((line) => line.kind !== "profile" && line.kind !== "daily").map((line) => ({ text: memoryLine(line), id: line._id }))));
+  parts.push(part("Notes from today and yesterday not yet in a page", loose.filter((line) => line.kind === "daily" && days.includes(line.day ?? "")).map((line) => ({ text: memoryLine(line), id: line._id }))));
+  const pinned = pages.filter((page) => page.kind !== "about" && page.kind !== "remember" && page.kind !== "chat" && !(page.kind === "journal" && days.includes(page.day ?? ""))
+    && (isPinned(page) || page.pinnedSections?.length)).sort((a, b) => (a.pinnedAt ?? 0) - (b.pinnedAt ?? 0));
+  for (const page of pinned) {
+    const sections = isPinned(page) ? undefined : page.pinnedSections;
+    const title = `Pinned: ${page.title}${sections ? ` (${sections.join(", ")})` : ""}${page.kind ? "" : `, a page (id ${page._id})`}`;
+    parts.push(part(title, page.kind ? await linesIn(page, sections) : await wordsIn(page, sections), page));
+  }
+  return { about, standing: parts.filter(Boolean).join("\n\n"), shown, used: PINNED_BUDGET - left, budget: PINNED_BUDGET, left: cut };
+}
+
+export const standing = internalQuery({
+  args: { chat: v.optional(v.id("conversations")) },
+  handler: async (ctx, args): Promise<Standing> => await standingFor(ctx, args.chat),
+});
+
+/** Pin a page, or one of its sections, to every chat that may read it; or unpin it. */
+export async function setPinned(ctx: Writer, page: Note, pinned: boolean, section?: string): Promise<void> {
+  if (section) {
+    const sections = new Set(page.pinnedSections ?? []);
+    if (pinned) sections.add(section); else sections.delete(section);
+    await ctx.db.patch(page._id, { pinnedSections: sections.size ? [...sections] : undefined, ...(pinned ? { pinnedAt: Date.now() } : {}) });
+    return;
+  }
+  await ctx.db.patch(page._id, { pinned, pinnedAt: pinned ? Date.now() : page.pinnedAt });
+}
+
+export const pin = mutation({
+  args: { key: v.string(), id: v.id("notes"), pinned: v.boolean(), section: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const page = await ctx.db.get(args.id);
+    if (!page) throw new Error("This page was deleted.");
+    await setPinned(ctx, page, args.pinned, args.section);
+    return null;
+  },
+});
+
+/** How much of the budget what is pinned uses, as a chat outside any project sees it. */
+export const pinnedUsage = query({
+  args: { key: v.string() },
+  handler: async (ctx, args): Promise<{ used: number; budget: number; left: string[] }> => {
+    assertDashboardKey(args.key);
+    const { used, budget, left } = await standingFor(ctx);
+    return { used, budget, left };
+  },
+});
+
 // --- The dashboard ------------------------------------------------------------------------------
 
 export type MemoryPage = {
-  id: Id<"notes">; kind: PageKind; title: string; day?: string; projectId?: Id<"projects">; project?: string;
-  conversationId?: Id<"conversations">; lines: number; updatedAt: number;
+  id: Id<"notes">; kind: PageKind | "page"; title: string; day?: string; projectId?: Id<"projects">; project?: string;
+  conversationId?: Id<"conversations">; lines: number; updatedAt: number; pinned: boolean; pinnedSections?: string[];
 };
 
 /** Every page of memory, for the Memory page: About me, Things to remember, the journal (newest day first), people, chats. */
@@ -313,13 +494,16 @@ export const memoryPages = query({
     assertDashboardKey(args.key);
     const names = new Map((await ctx.db.query("projects").collect()).map((project) => [project._id as string, project.name]));
     const pages: MemoryPage[] = [];
-    for (const kind of ["about", "remember", "journal", "person", "chat"] as const) {
-      const rows = await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", kind)).collect();
+    for (const kind of ["about", "remember", "journal", "person", "chat", undefined] as const) {
+      // Other pages are listed here only when pinned.
+      const rows = (await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", kind)).collect())
+        .filter((page) => kind || isPinned(page) || page.pinnedSections?.length);
       if (kind === "journal") rows.sort((a, b) => (b.day ?? "").localeCompare(a.day ?? ""));
       else if (kind === "person") rows.sort((a, b) => a.title.localeCompare(b.title));
       for (const page of rows) {
         pages.push({
-          id: page._id, kind, title: page.title, updatedAt: page.updatedAt, lines: (await linesOf(ctx, page._id)).length,
+          id: page._id, kind: kind ?? "page", title: page.title, updatedAt: page.updatedAt, lines: (await linesOf(ctx, page._id)).length,
+          pinned: isPinned(page), ...(page.pinnedSections?.length ? { pinnedSections: page.pinnedSections } : {}),
           ...(page.day ? { day: page.day } : {}),
           ...(page.projectId ? { projectId: page.projectId, project: names.get(page.projectId) ?? "a deleted project" } : {}),
           ...(page.conversationId ? { conversationId: page.conversationId } : {}),

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ChevronRightIcon, CodeIcon, CopyIcon, DownloadIcon, FileTextIcon, FileUpIcon, FolderIcon, FolderInputIcon, LinkIcon, MessageSquareIcon, MoreHorizontalIcon,
+  ChevronRightIcon, CodeIcon, CopyIcon, PinIcon, DownloadIcon, FileTextIcon, FileUpIcon, FolderIcon, FolderInputIcon, LinkIcon, MessageSquareIcon, MoreHorizontalIcon,
   PlusIcon, SearchIcon, SparklesIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { noteHref } from "@/convex/lib/notes";
+import { headingsOf, noteHref } from "@/convex/lib/notes";
 import type { NoteSummary, NoteView } from "@/convex/notes";
 import type { LineView } from "@/convex/pages";
 import { copyText, errorText } from "@/lib/format";
@@ -104,6 +104,7 @@ export function NoteRows({ notes, hideProject }: { notes: NoteSummary[]; hidePro
           </div>
           {!hideProject && note.project && <StatusBadge>{note.project}</StatusBadge>}
           <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+            {note.pinned && <PinIcon className="size-3" aria-label="Pinned to every chat" />}
             {note.by === "assistant" && <SparklesIcon className="size-3" aria-label="Perry changed it last" />}
             <RelativeTime at={note.updatedAt} />
           </span>
@@ -172,6 +173,16 @@ function NoteEditing({ note }: { note: NoteView }) {
   const [source, setSource] = useState(!fits.supported);
   const [removing, setRemoving] = useState(false);
   const remove = useMutation(api.notes.remove);
+  const pin = useMutation(api.pages.pin);
+  const pinTo = async (pinned: boolean, section?: string) => {
+    try {
+      await pin({ key: dashboardKey, id: note.id, pinned, ...(section ? { section } : {}) });
+      toast.success(pinned ? "Pinned. Every chat that can read it gets it." : "Unpinned. Perry recalls it when it bears on a chat.");
+    } catch (cause) {
+      toast.error(`Couldn't change it: ${errorText(cause)}`);
+    }
+  };
+  const sections = useMemo(() => [...new Set(headingsOf(draft.content).map((item) => item.text.replace(/[*_`]/g, "").trim()).filter(Boolean))], [draft.content]);
   const move = useMutation(api.notes.move);
   const projects = useQuery(api.projects.list, { key: dashboardKey });
 
@@ -208,7 +219,11 @@ function NoteEditing({ note }: { note: NoteView }) {
 
   return (
     <>
-      <TopBar actions={
+      <TopBar actions={<>
+        <Button variant="ghost" size="icon-sm" className={note.pinned ? "text-foreground" : "text-muted-foreground"} aria-pressed={note.pinned}
+          aria-label={note.pinned ? "Unpin from every chat" : "Pin to every chat"} title={note.pinned ? "Pinned: in every chat" : "Pin to every chat"} onClick={() => void pinTo(!note.pinned)}>
+          {note.pinned ? <PinIcon className="fill-current" /> : <PinIcon />}
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="Note options" />}><MoreHorizontalIcon /></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
@@ -221,6 +236,16 @@ function NoteEditing({ note }: { note: NoteView }) {
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>}
+            {!note.pinned && sections.length > 0 && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger><PinIcon />Pin a section</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56">
+                  {sections.map((section) => (
+                    <DropdownMenuCheckboxItem key={section} checked={note.pinnedSections?.includes(section) ?? false} onCheckedChange={(on) => void pinTo(Boolean(on), section)}>{section}</DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
             <DropdownMenuCheckboxItem checked={source} onCheckedChange={(on) => {
               const back = inspectMarkdown(draft.content);
               if (!on && !back.supported) toast.info(`${back.reason} It stays as Markdown.`);
@@ -234,7 +259,7 @@ function NoteEditing({ note }: { note: NoteView }) {
             {!lasting && <DropdownMenuItem variant="destructive" onClick={() => setRemoving(true)}><Trash2Icon />Delete</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
-      }>
+      </>}>
         <Link href={memory ? "/memory" : "/notes"} className="text-muted-foreground hover:text-foreground">{memory ? "Memory" : "Notes"}</Link>
         <span className="text-muted-foreground/60" aria-hidden>/</span>
         <span className="truncate">{draft.title}</span>
@@ -252,6 +277,7 @@ function NoteEditing({ note }: { note: NoteView }) {
             {note.project && <Link href={`/projects/${note.projectId}`} className="inline-flex items-center gap-1 hover:text-foreground"><FolderIcon className="size-3" />{note.project}</Link>}
             {note.from && <Link href={`/chat/${note.from.id}`} className="inline-flex items-center gap-1 hover:text-foreground"><MessageSquareIcon className="size-3" />From “{note.from.title}”</Link>}
             <span className="inline-flex items-center gap-1">{note.by === "assistant" ? <><SparklesIcon className="size-3" />Perry</> : "You"}, <RelativeTime at={note.updatedAt} /></span>
+            {(note.pinned || note.pinnedSections?.length) && <span className="inline-flex items-center gap-1" data-pinned><PinIcon className="size-3" />{note.pinned ? "In every chat" : `${note.pinnedSections!.join(", ")} in every chat`}</span>}
             <SaveStatus state={status} onRetry={() => void controller.flush(true)} className="min-h-0" />
           </div>
           {state.status === "conflict" && state.remote && (
