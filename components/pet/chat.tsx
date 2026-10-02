@@ -146,7 +146,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   };
   const attach = async (id: Id<"conversations">, messageKey: string, { image }: Picture) => {
     const { path, fileName, size } = await keepPicture(image);
-    return await registerAttachment({ key, conversationId: id, messageKey, localPath: path, fileName, contentType: "image/png", size });
+    return await registerAttachment({ key, conversationId: id, messageKey, localPath: path, fileName, contentType: "image/png", size, from: "pet" });
   };
   // What was said with the hotkey goes as soon as it is written down.
   const sent = useRef(sendSignal);
@@ -220,7 +220,10 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
         </div>)}
         {messages.map((message) => message.role === "user" ? (
           <div key={message.id} className="ml-auto flex w-fit max-w-[85%] flex-col items-end gap-1" data-role="user">
-            {message.attachments.filter((file) => file.contentType.startsWith("image/")).map((file) => (
+            {message.attachments.filter((file) => file.removed).map((file, index) => (
+              <p key={`removed-${index}`} className="text-xs text-muted-foreground" data-removed>{file.fileName} removed</p>
+            ))}
+            {message.attachments.filter((file) => !file.removed && file.contentType.startsWith("image/")).map((file) => (
               // eslint-disable-next-line @next/next/no-img-element -- a local file served by /api/media, not a static asset
               <img key={file.url} src={file.url} alt={file.fileName} className="max-h-32 rounded-xl border object-contain" />
             ))}

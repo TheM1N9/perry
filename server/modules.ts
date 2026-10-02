@@ -31,6 +31,7 @@ import * as lib_devices from "../convex/lib/devices";
 import * as lib_embed from "../convex/lib/embed";
 import * as lib_engines from "../convex/lib/engines";
 import * as lib_errors from "../convex/lib/errors";
+import * as lib_library from "../convex/lib/library";
 import * as lib_notes from "../convex/lib/notes";
 import * as lib_pages from "../convex/lib/pages";
 import * as lib_price from "../convex/lib/price";
@@ -44,6 +45,7 @@ import * as lib_truncate from "../convex/lib/truncate";
 import * as lib_turnLimits from "../convex/lib/turnLimits";
 import * as lib_usage from "../convex/lib/usage";
 import * as lib_whatsappFormat from "../convex/lib/whatsappFormat";
+import * as library from "../convex/library";
 import * as mcp from "../convex/mcp";
 import * as media from "../convex/media";
 import * as memories from "../convex/memories";
@@ -104,6 +106,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/embed": lib_embed,
   "lib/engines": lib_engines,
   "lib/errors": lib_errors,
+  "lib/library": lib_library,
   "lib/notes": lib_notes,
   "lib/pages": lib_pages,
   "lib/price": lib_price,
@@ -117,6 +120,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/turnLimits": lib_turnLimits,
   "lib/usage": lib_usage,
   "lib/whatsappFormat": lib_whatsappFormat,
+  "library": library,
   "mcp": mcp,
   "media": media,
   "memories": memories,

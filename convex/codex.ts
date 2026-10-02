@@ -10,6 +10,7 @@ import { engineFor } from "./installation";
 import { assertRunning, pausedAt } from "./pause";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH, describePath, stepsKey } from "./media";
+import { index as indexInLibrary } from "./library";
 import { QUIET } from "./jobs";
 import { HIDDEN, hide, savedValues } from "./vault";
 import { takeFromOutbox } from "./conversations";
@@ -653,7 +654,8 @@ async function linkFiles(ctx: MutationCtx, conversationId: Id<"conversations">, 
     .collect()).map((row) => row.localPath));
   for (const path of paths) {
     if (linked.has(path)) continue;
-    await ctx.db.insert("chatAttachments", { conversationId, messageKey, localPath: path, ...describePath(path), size: 0, createdAt: Date.now() });
+    // A file written in Perry's files folder is his, in the Library (library.ts); one elsewhere is only linked.
+    await indexInLibrary(ctx, await ctx.db.insert("chatAttachments", { conversationId, messageKey, localPath: path, ...describePath(path), size: 0, createdAt: Date.now() }));
   }
 }
 
@@ -744,7 +746,7 @@ export const recoverMedia = mutation({
       .withIndex("by_message", (q) => q.eq("conversationId", job.conversationId).eq("messageKey", mediaKey))
       .collect();
     if (!existing.some((item) => item.storageId === args.storageId)) {
-      await ctx.db.insert("chatAttachments", {
+      await indexInLibrary(ctx, await ctx.db.insert("chatAttachments", {
         conversationId: job.conversationId,
         messageKey: mediaKey,
         storageId: args.storageId,
@@ -752,7 +754,7 @@ export const recoverMedia = mutation({
         contentType: args.contentType || stored.contentType || "image/png",
         size: stored.size,
         createdAt: Date.now(),
-      });
+      }));
     }
     await ctx.db.patch(job._id, { mediaKey });
     return null;
@@ -799,7 +801,8 @@ export const finishTurn = mutation({
         await ctx.db.patch(row._id, { storageId: item.storageId, size: stored!.size });
         continue;
       }
-      await ctx.db.insert("chatAttachments", {
+      // What the turn made (a generated image), in the Library as Perry's (library.ts).
+      await indexInLibrary(ctx, await ctx.db.insert("chatAttachments", {
         conversationId: job.conversationId,
         messageKey: mediaKey,
         ...(stored ? { storageId: item.storageId } : { localPath: local }),
@@ -807,7 +810,7 @@ export const finishTurn = mutation({
         contentType: item.contentType || stored?.contentType || "application/octet-stream",
         size: stored?.size ?? item.size ?? 0,
         createdAt: Date.now(),
-      });
+      }), { how: "generated" });
     }
     // Refused for a limit before it did anything: it runs again on another engine, as the same run (routing.retryTurn).
     if (await retryable(ctx, job, { error: args.error, response: args.response, stopped: args.stopped, media: args.media?.length })) {
@@ -909,7 +912,8 @@ export const turnFiles = internalQuery({
     const rows = await ctx.db.query("chatAttachments")
       .withIndex("by_message", (q) => q.eq("conversationId", args.conversationId).eq("messageKey", args.messageKey))
       .collect();
-    return rows.map((row) => ({
+    // A file deleted from the Library is not sent.
+    return rows.filter((row) => !row.removedAt).map((row) => ({
       storageId: row.storageId, localPath: row.localPath, fileName: row.fileName, contentType: row.contentType, size: row.size,
     }));
   },
