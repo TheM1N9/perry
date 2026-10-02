@@ -184,7 +184,7 @@ function Schedules() {
             </div>
           )}
           {job.stay && job.model && (
-            <p className="mt-1 text-sm text-pretty text-muted-foreground" data-kept>Kept on {job.engine ? ENGINE_LABELS[job.engine] : "its engine"}: when its plan has no room, a run waits for the reset instead of moving.</p>
+            <p className="mt-1 text-sm text-pretty text-muted-foreground" data-kept>Kept on {job.engine ? ENGINE_LABELS[job.engine] : "its engine"}. With no room, it waits for the reset.</p>
           )}
           {job.lastError && !job.waiting && <p className="mt-2 text-sm text-pretty text-destructive">{job.lastError}</p>}
           {!job.lastError && job.lastResult && job.lastResult.trim() !== "NOTHING" && (

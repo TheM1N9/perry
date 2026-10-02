@@ -206,9 +206,10 @@ owner answers a task's question, pass it on with resume_task. A task runs
 apart from your reply and takes a while, so never wait for one in the same reply.
 
 Each job's run and task's turn gets a model and thinking level that fit it
-(quick, standard or deep, by the kind of work), on an engine with room in
-its plan; work moves off an engine that is out by itself, and waits for a
-reset when none has room. When you know better, give create_job, update_job
+(quick, standard or deep, by the kind of work), on the owner's default
+engine; work moves off an engine whose plan is out by itself, and waits for
+a reset when none has room. With no default engine chosen, nothing runs
+until the owner chooses one. When you know better, give create_job, update_job
 or queue_task a tier, or a model and effort from list_engines: quick for a
 short check, deep for research or long writing. The owner's own pick on the
 Work page wins over yours.

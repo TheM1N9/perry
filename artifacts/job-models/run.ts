@@ -15,8 +15,8 @@ import type { ModelOption } from "../../convex/lib/commands";
 // machine has them: ~/.codex/config.toml may name a model the account cannot
 // use (the Codex app wrote gpt-5.6-sol here), which is the case this is for.
 //
-// Since issue #189 (lib/routing.ts) a chat with no engine goes to the signed-in
-// engine with the most of its plan left, and a job with no model picked runs
+// Since issue #189 (lib/routing.ts) a chat with no engine of its own runs on
+// the owner's default engine (another with room when its plan is out), and a job with no model picked runs
 // the tier its kind gives (the heartbeat: quick, the fast model at low); the
 // checks follow that. This run needs real engines, so it was not run again
 // for that change: only its expectations were brought up to date.

@@ -16,14 +16,18 @@ import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 // the run stops before anything is sent if either reports being signed in: no real model is ever
 // asked anything. Plans are seeded as the engine-usage and settings-sections runs do (usage:report
 // with the runner's token); a refusal is the fake agent's own (a <profile>-limited file, or LIMIT).
-// Headless Chrome photographs the run's details, the Work page and a moved chat.
+// Headless Chrome photographs the run's details, the Work page and a moved chat. Grok Build is the owner's
+// default engine (the harness starts this Perry with it chosen, issue #190): work runs there unless something
+// names another engine or its plan has no room. With no default chosen, Perry asks instead
+// (artifacts/choose-engine checks that).
 //
 // Ways it could fail, written down before the checks:
 //   1. A job, task or chat with no pick runs on the engine's default for everything: the heartbeat and
 //      a reminder must get the quick tier (the fast model at low), a recurring job and a short task
 //      the standard tier, the memory consolidation and a long task the deep tier (the strongest model
 //      at high), and the engine must actually be sent that model and level (the fake agent's log).
-//   2. A new chat with no engine is put on Codex, which is not signed in, instead of an engine with room.
+//   2. A new chat or job goes to another engine than the owner's default while the default has room (say,
+//      the one with the most of its plan left), or to Codex, which is not signed in.
 //   3. The run does not record what it ran on and why (runs.route), or says it wrongly.
 //   4. The owner's pick does not win: a job's model from the Work page, or a chat's model and level,
 //      is replaced by the tier's.
@@ -192,7 +196,7 @@ try {
   const long = await runTask("Compare three flats", `Compare three flats near the owner's work on rent, commute, light and noise, and write it up. ${"Look at each one's listing, the street at night, the bus lines, and what neighbours say. ".repeat(6)}`);
   auto.shortTask = summary(short.run.route);
   auto.longTask = summary(long.run.route);
-  // An owner's chat with no engine yet: the engine with the most of its plan left, not Codex.
+  // A new chat: on the owner's default engine, not Codex.
   const fresh = await call<string>("dashboard:createChat", { key: KEY });
   await call("dashboard:renameChat", { key: KEY, id: fresh, title: "A new chat" });
   const freshReply = await exchange(fresh, "hello, which engine is this");
@@ -203,8 +207,25 @@ try {
   check("automaticStandardTier", standardJob && short.run.route?.tier === "standard" && short.run.route.model === "grok-fake-fast" && short.run.route.effort === "medium");
   check("automaticDeepTier", deepConsolidation && long.run.route?.tier === "deep" && long.run.route.model === "grok-fake-heavy" && long.run.route.effort === "high"
     && sent("🧩 Background task: Compare three flats")?.model === "grok-fake-heavy" && sent("🧩 Background task: Compare three flats")?.effort === "high");
-  check("newChatGetsAnEngineWithRoom", freshRun?.route?.engine === "grok" && freshRun.route.by === "auto" && /most of its plan left/.test(freshRun.route.why)
+  check("newChatOnTheDefaultEngine", freshRun?.route?.engine === "grok" && freshRun.route.by === "auto" && /your default engine/.test(freshRun.route.why)
     && (await getChat(fresh)).engine === "grok" && /Fake grok reply/.test(freshReply.reply));
+
+  // --- 2. The owner's default engine wins while it has room --------------------------------------------------------
+  // Antigravity has more of its plan left now, but Grok Build, the default, still has room: work stays on it.
+  await seed("grok", 60);
+  await seed("antigravity", 10);
+  await call("jobs:create", { name: "Plant watering", schedule: "0 9 * * *", prompt: "Remind the owner to water the plants.", origin: notesChat });
+  const onDefault = await runJob("Plant watering");
+  const defaultChat = await call<string>("dashboard:createChat", { key: KEY });
+  await call("dashboard:renameChat", { key: KEY, id: defaultChat, title: "Default chat" });
+  await exchange(defaultChat, "which engine while the default has room");
+  const defaultChatRun = runsIn(defaultChat)[0];
+  notes.defaultWins = { job: summary(onDefault.route), chat: summary(defaultChatRun?.route) };
+  check("defaultWinsWhileItHasRoom", onDefault.route?.engine === "grok" && onDefault.route.by === "auto" && !onDefault.route.movedFrom && /your default engine, which has room/.test(onDefault.route.why)
+    && sent("⏰ Plant watering")?.profile === "grok" && onDefault.status === "ok"
+    && defaultChatRun?.route?.engine === "grok" && !defaultChatRun.route.movedFrom && sent("which engine while the default has room")?.profile === "grok");
+  await seed("grok", 20);
+  await seed("antigravity", 40);
 
   // --- 4. The owner's pick wins ----------------------------------------------------------------------------------
   await call("jobs:setModel", { key: KEY, id: (await jobNamed("Morning briefing")).id, model: "gemini-fake-flash", engine: "antigravity" });
@@ -245,7 +266,7 @@ try {
   notes.modelsAfterPicks = await modelsNow();
   // --- 6. Background work moves off an engine past the cap; a chat stays until its engine is used up ------------
   await seed("grok", 95);
-  // The reminder's chat is on Grok, where its first run went.
+  // The reminder follows the default, Grok Build.
   const moved = await runJob("Pay rent reminder");
   await exchange(pinnedChat, "still on grok at 95");
   const stayed = runsIn(pinnedChat).at(-1);

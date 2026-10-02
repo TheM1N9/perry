@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-01T21:33:31.472Z",
+  "ranAt": "2026-10-01T22:18:22.214Z",
   "platform": "win32",
   "setupOnly": false,
   "checks": {
@@ -20,7 +20,7 @@
     "runnerOnStandIns": true,
     "noTurnWithoutChoice": true,
     "chatAsksForEngine": true,
-    "welcomeAsksWithOneOffered": true,
+    "welcomeAsksWithOneOffered": false,
     "welcomeSignsIn": true,
     "welcomeSavesChoice": true,
     "turnsRunOnTheChoice": true,
@@ -47,20 +47,20 @@
     "isolated": {
       "resolved": {
         "codex": [
-          "W:\\perry-tests\\choose-engine\\perry-choose-engine-7OIFvO\\world-1\\bin\\codex.cmd"
+          "W:\\perry-tests\\choose-engine\\perry-choose-engine-apPOJm\\world-1\\bin\\codex.cmd"
         ],
         "claude": [
-          "W:\\perry-tests\\choose-engine\\perry-choose-engine-7OIFvO\\world-1\\bin\\claude.cmd"
+          "W:\\perry-tests\\choose-engine\\perry-choose-engine-apPOJm\\world-1\\bin\\claude.cmd"
         ],
         "grok": []
       },
       "claude": {
-        "file": "W:\\perry-tests\\choose-engine\\perry-choose-engine-7OIFvO\\world-1\\bin\\claude.cmd",
+        "file": "W:\\perry-tests\\choose-engine\\perry-choose-engine-apPOJm\\world-1\\bin\\claude.cmd",
         "command": "C:\\Users\\owner\\.bun\\bin\\bun.exe",
         "prefix": [
-          "W:\\perry-tests\\choose-engine\\perry-choose-engine-7OIFvO\\world-1\\bin\\claude-code\\cli.js"
+          "W:\\perry-tests\\choose-engine\\perry-choose-engine-apPOJm\\world-1\\bin\\claude-code\\cli.js"
         ],
-        "sdkPath": "W:\\perry-tests\\choose-engine\\perry-choose-engine-7OIFvO\\world-1\\bin\\claude-code\\cli.js"
+        "sdkPath": "W:\\perry-tests\\choose-engine\\perry-choose-engine-apPOJm\\world-1\\bin\\claude-code\\cli.js"
       }
     },
     "oneReadyNotTakenUnconfirmed": [
@@ -75,13 +75,13 @@
     ],
     "flagChoosesWithoutAsking": [
       "  pnpm perry start  runs Perry in the background",
-      "  dashboard key: A5V0mOuGHQAMeZ8oNskcN-UficviPnTi",
+      "  dashboard key: mAoPKR4u8Ed9Xj3B-Jpt7rRTxClVhNIZ",
       "",
       "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
     ],
     "envLabelChoosesNoSignInAlone": [
       "  pnpm perry start  runs Perry in the background",
-      "  dashboard key: PLdZ9d-J5BM-eSXCNMaHuUP8BWnuVtSb",
+      "  dashboard key: 7fSJ5CiEkmGYjDnoCVJw8dOrvweujeme",
       "",
       "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
     ],
@@ -118,18 +118,18 @@
       ],
       "last": [
         "  pnpm perry start  runs Perry in the background",
-        "  dashboard key: uQF-lwn_u_K5yIVaLb9GF3xnGVLYZotv",
+        "  dashboard key: AlXzNQcl6VOf-qfBqEOwrbZ_NjaLCOVx",
         "",
         "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
       ]
     },
     "rerunKeepsChoice": [
-      "  dashboard key: uQF-lwn_u_K5yIVaLb9GF3xnGVLYZotv",
+      "  dashboard key: AlXzNQcl6VOf-qfBqEOwrbZ_NjaLCOVx",
       "",
       "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
     ],
     "enterConfirmsTheOneReady": [
-      "  dashboard key: CuQBHPtsxkvj8oLibzX8SjIQ3ERCQvlW",
+      "  dashboard key: WRpq-BicMHTCwlO72ZfSvt9sJtAaOxNk",
       "",
       "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
     ],
@@ -137,17 +137,17 @@
       "second": "Antigravity",
       "last": [
         "  pnpm perry start  runs Perry in the background",
-        "  dashboard key: p4Z96m-tbWIbfX55nhQu9hKD_8yxbopT",
+        "  dashboard key: IcbZbA2tAitKIkNXgFamjN1hT7xeEcdb",
         "",
         "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
       ]
     },
     "newInstallHasNoDefault": {
-      "_id": "pyr7twcq7wpzyx5jmpntxbcjxv",
-      "_creationTime": 1790890223486,
+      "_id": "03cjzj6mjzy6g87qnv2tenj058",
+      "_creationTime": 1790892904026,
       "onboarding": "pending",
       "askEngine": true,
-      "createdAt": 1790890223486,
+      "createdAt": 1790892904025,
       "wake": false
     },
     "runnerOnStandIns": {
@@ -169,42 +169,37 @@
     },
     "noTurnWithoutChoice": {
       "earlyRun": {
-        "id": "6q58v7tvbfd0xc796dq052m6gw",
-        "sessionId": "mjmbxagga0amg2k8757mwq88q1",
-        "threadId": "hb9x4nz0h45gy82qb79w8hrrcj",
+        "id": "pktjwe2jfyy3jpwec5bqc1mx0k",
+        "sessionId": "51hsfkzmq4gmr2mgb0h8q06630",
+        "threadId": "93vfrej70dssefaee2y5d0wzwf",
         "chatTitle": "Hello before choosing",
         "channel": "web",
         "prompt": "Hello before choosing",
         "status": "error",
         "model": "no engine",
         "error": "Perry has no default engine yet. Choose one in Settings → Engines, or pick a model for this chat, then send it again.",
-        "startedAt": 1790890225978,
-        "durationMs": 202
+        "startedAt": 1790892907621,
+        "durationMs": 177
       },
       "turns": 0,
       "heartbeatChat": {
-        "id": "4vv3p0fygf460bmrex9xns09dj",
-        "sessionId": "r9hagfsn8ye4pgvzsfjpmvfte8",
-        "threadId": "jzd1skghjcekt72vg82vhe4v3j",
+        "id": "6swzdr6y2ghvepdts7c5r7jx83",
+        "sessionId": "ajkcd85y90byvbzh64y8rbxjj8",
+        "threadId": "d57r3v4rcjkp5818j05achcyq9",
         "chatTitle": "⏰ Heartbeat",
         "channel": "web",
-        "prompt": "⏰ Heartbeat (Thursday, 1 October 2026 at 21:31)\n\nThis is your scheduled heartbeat, not a message from the owner. Look over what could need the owner's attention now: status_report for tasks, goals and page watches, today's and yesterday's notes in memory, and connected accounts where it helps (for example today's calendar). Delivery is conditional: only if there is something they would want to know now, or a follow-up worth asking about a thread they left open, reply with a short message for them. Do not take actions that change anything.\n\nConditional delivery\nOnly when this job makes delivery conditional and there is nothing new to report, reply with exactly NOTHING and no other text. This includes results already delivered or incorporated into an earlier run; do not send an acknowledgement of that redundancy. Do not use NOTHING to omit commentary from a result that still needs delivery. Never return an empty reply; use NOTHING to intentionally deliver nothing.",
+        "prompt": "⏰ Heartbeat (Thursday, 1 October 2026 at 22:16)\n\nThis is your scheduled heartbeat, not a message from the owner. Look over what could need the owner's attention now: status_report for tasks, goals and page watches, today's and yesterday's notes in memory, and connected accounts where it helps (for example today's calendar). Delivery is conditional: only if there is something they would want to know now, or a follow-up worth asking about a thread they left open, reply with a short message for them. Do not take actions that change anything.\n\nConditional delivery\nOnly when this job makes delivery conditional and there is nothing new to report, reply with exactly NOTHING and no other text. This includes results already delivered or incorporated into an earlier run; do not send an acknowledgement of that redundancy. Do not use NOTHING to omit commentary from a result that still needs delivery. Never return an empty reply; use NOTHING to intentionally deliver nothing.",
         "status": "error",
         "model": "no engine",
         "error": "Perry has no default engine yet. Choose one in Settings → Engines, or pick a model for this chat, then send it again.",
-        "startedAt": 1790890283938,
-        "durationMs": 51
+        "startedAt": 1790892964428,
+        "durationMs": 104
       }
     },
     "chatAsksForEngine": "Choose the engine Perry thinks with\nPerry doesn't pick one for you. Choose a default for every chat, or pick a model for this one in the box below.\nChoose\nPerry couldn't finish the last reply\n\nPerry has no default engine yet. Choose one in Settings → Engines, or pick a model for this chat, then send it again.\n\nTry again",
     "welcomeAsksWithOneOffered": {
       "heading": "Choose an engine",
       "cards": [
-        {
-          "label": "Grok Build",
-          "checked": true,
-          "text": "Grok Build\nSigned in with Grok account · 1.0.42-fake."
-        },
         {
           "label": "Antigravity",
           "checked": false,
@@ -219,6 +214,11 @@
           "label": "Codex",
           "checked": false,
           "text": "Codex\nNot ready\nInstalled, not signed in."
+        },
+        {
+          "label": "Grok Build",
+          "checked": false,
+          "text": "Grok Build\nNot ready\nNot installed."
         }
       ]
     },
@@ -241,7 +241,7 @@
     "runnerLogNew": [
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\perry-tests\\choose-engine\\perry-choose-engine-uRndZC\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\choose-engine\\perry-choose-engine-ZAecm0\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -250,12 +250,12 @@
       "\u001b[32m  connected.",
       "\u001b[0m",
       "\u001b[2m  named a chat \"Fake chat name\" (gpt-fake)\u001b[0m",
-      "\u001b[2m  saved turn m8gyme6d48v7q4d755z9v1paht\u001b[0m",
-      "\u001b[2m  saved turn 6xkyvymr9kv7hc0048xzn3vc8a\u001b[0m",
+      "\u001b[2m  saved turn mz7gt3x4f1ka86y4sdtd3at1bh\u001b[0m",
+      "\u001b[2m  saved turn 412dnnx9wmbnee430875wvy1e7\u001b[0m",
       "\u001b[2m  named a chat \"Fake chat name\" (gpt-fake)\u001b[0m",
-      "\u001b[2m  saved turn 3spxxra0etbtg609fjwch5v414\u001b[0m",
-      "\u001b[2m  saved turn rn0zqe16hkaptd599ndzr6680m\u001b[0m",
-      "\u001b[2m  saved turn hp28b9mgb6n09cfja9z60m6m7m\u001b[0m"
+      "\u001b[2m  saved turn 91j0x9skppsd186wckqyx4gytg\u001b[0m",
+      "\u001b[2m  saved turn waz9p87wfemmxcar0mfv20tezv\u001b[0m",
+      "\u001b[2m  saved turn 9jpxetybm4gd11r65zwbydd8h5\u001b[0m"
     ],
     "upgradeKeepsCodex": {
       "seeded": {},
@@ -303,5 +303,5 @@
     "wakeTasksLeft": [],
     "tempRemoved": true
   },
-  "passed": true
+  "passed": false
 }

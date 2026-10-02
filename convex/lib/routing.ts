@@ -217,7 +217,7 @@ export function route(input: RouteInput): Choice | null {
   };
 
   const where = owner?.engine === home ? "as picked" : perry?.engine === home ? "as Perry picked"
-    : input.current === home ? "where it already was" : "your default engine";
+    : home === input.preferred ? "your default engine" : "where it already was";
   // Its own engine, or the default, while that has room.
   if (usable.includes(home) && room(home).state === "room") {
     return choose(home, `On ${ENGINE_LABELS[home]}, ${where}, which has room.`);

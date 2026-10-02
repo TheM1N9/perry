@@ -149,12 +149,14 @@ export const pickFor = internalQuery({
  */
 export async function moveChat(ctx: MutationCtx, chat: Doc<"conversations">, choice: { engine: EngineKind; model?: string }, moved?: { from: EngineKind; why: string }) {
   if (chat.jobId || chat.taskId) return;
-  const note = moved ? { moved: { from: moved.from, to: choice.engine, why: moved.why.slice(0, 500), at: Date.now() } } : {};
+  const why = moved?.why.slice(0, 500) ?? "";
   if (!chat.engine) {
-    if (moved) await ctx.db.patch(chat._id, note);
+    // `to`: where it runs meanwhile, which marks a chat that goes back by itself.
+    if (moved) await ctx.db.patch(chat._id, { moved: { from: moved.from, to: choice.engine, why, at: Date.now() } });
     return;
   }
   if (chat.engine === choice.engine) return;
+  const note = moved ? { moved: { from: moved.from, why, at: Date.now() } } : {};
   await ctx.db.patch(chat._id, {
     engine: choice.engine,
     // It keeps no model of the engine it left.

@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-01T21:42:23.326Z",
+  "ranAt": "2026-10-01T22:09:51.373Z",
   "latest": {
     "@openai/codex": "0.159.1",
     "@anthropic-ai/claude-code": "2.1.285",
@@ -30,7 +30,7 @@
   },
   "notes": {
     "offlineStillRefusesTooOld": {
-      "reportedMs": 1547,
+      "reportedMs": 2944,
       "codex": {
         "need": "required",
         "version": "0.120.0",
@@ -48,15 +48,15 @@
     "offlineLookUpRecorded": {
       "cache": {
         "codex": {
-          "at": 1790890827904,
-          "found": false
-        },
-        "claude": {
-          "at": 1790890828069,
+          "at": 1790892474366,
           "found": false
         },
         "grok": {
-          "at": 1790890828413,
+          "at": 1790892475159,
+          "found": false
+        },
+        "claude": {
+          "at": 1790892475212,
           "found": false
         }
       },
@@ -67,8 +67,8 @@
       "turnsQueued": 0
     },
     "hangingRegistryHoldsNothingUp": {
-      "hangReportMs": 1982,
-      "replyMs": 3120,
+      "hangReportMs": 2397,
+      "replyMs": 2734,
       "hungLookUps": 3,
       "reply": "Fake grok reply to: Hello Grok while npm hangs. One two three four five six seve"
     },
@@ -98,17 +98,17 @@
       "cache": {
         "codex": {
           "latest": "0.159.1",
-          "at": 1790890842329,
+          "at": 1790892489346,
           "found": true
         },
         "claude": {
           "latest": "2.1.285",
-          "at": 1790890842497,
+          "at": 1790892489498,
           "found": true
         },
         "grok": {
           "latest": "1.0.44",
-          "at": 1790890842838,
+          "at": 1790892489832,
           "found": true
         }
       },
@@ -144,7 +144,7 @@
       "  Then run setup again."
     ],
     "updateNoticed": {
-      "noticedMs": 11239,
+      "noticedMs": 11297,
       "codex": {
         "need": "available",
         "version": "0.150.0",
@@ -173,15 +173,15 @@
       "",
       "Next",
       "  pnpm perry start  runs Perry in the background",
-      "  dashboard key: dwu8gqAZALLLZLznNvgM1TDElE_dVYrl",
+      "  dashboard key: 2BOy-ethROiE_7_93_S7XTjES2haqVuQ",
       "",
       "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
     ],
     "noPageErrors": [],
     "registryLookUps": [
       "down /@openai/codex/latest",
-      "down /@anthropic-ai/claude-code/latest",
       "down /@xai-official/grok/latest",
+      "down /@anthropic-ai/claude-code/latest",
       "hang /@openai/codex/latest",
       "hang /@anthropic-ai/claude-code/latest",
       "hang /@xai-official/grok/latest",
@@ -192,7 +192,7 @@
     "runnerLog": [
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\perry-tests\\cli-versions\\perry-cli-versions-XCkF0D\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests$a\\perry-cli-versions-nIaYCX\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -206,7 +206,7 @@
       "\u001b[2m  could not read Claude Code's plan limits: Claude Code process exited with code 2\u001b[0m",
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\perry-tests\\cli-versions\\perry-cli-versions-XCkF0D\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests$a\\perry-cli-versions-nIaYCX\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -218,10 +218,10 @@
       "\u001b[0m",
       "\u001b[2m  could not read Codex's plan limits: fake codex does not play account/rateLimits/read\u001b[0m",
       "\u001b[2m  could not read Claude Code's plan limits: Claude Code process exited with code 2\u001b[0m",
-      "\u001b[2m  saved turn 1brjhqk3k9t2ry1hf1y1cnwe5q\u001b[0m",
+      "\u001b[2m  saved turn w6tk0c6phwvhr5va7h7hxx6q52\u001b[0m",
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\perry-tests\\cli-versions\\perry-cli-versions-XCkF0D\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests$a\\perry-cli-versions-nIaYCX\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -233,7 +233,7 @@
       "\u001b[0m",
       "\u001b[2m  could not read Codex's plan limits: fake codex does not play account/rateLimits/read\u001b[0m",
       "\u001b[2m  could not read Claude Code's plan limits: Claude Code process exited with code 2\u001b[0m",
-      "\u001b[2m  saved turn cj64n8b9wt9r8jnbtahrra7fer\u001b[0m",
+      "\u001b[2m  saved turn bxryfszf1gztsnv3ngw3gfahxw\u001b[0m",
       "\u001b[2m  could not read Codex's plan limits: fake codex does not play account/rateLimits/read\u001b[0m"
     ],
     "tempHomeRemoved": true

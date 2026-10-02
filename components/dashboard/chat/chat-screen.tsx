@@ -721,7 +721,7 @@ export function ChatScreen() {
               {notice && <ComposerNote tone="info" onDismiss={() => setNotice("")}>{notice}</ComposerNote>}
               {chat?.moved && movedSeen !== chat.moved.at && (chat.moved.to ?? chat.engine) && (
                 <ComposerNote tone="warning" onDismiss={() => setMovedSeen(chat.moved!.at)}>
-                  <span className="font-medium">Moved to {ENGINE_LABELS[(chat.moved.to ?? chat.engine)!]}.</span> {chat.moved.why}, so this chat goes on there, with what was said so far.{" "}
+                  <span className="font-medium">Moved to {ENGINE_LABELS[(chat.moved.to ?? chat.engine)!]}.</span> {chat.moved.why}.{" "}
                   {/* A chat that follows the default goes back by itself; one on an engine of its own, when the owner says. */}
                   {chat.moved.to ? `It goes back to ${ENGINE_LABELS[chat.moved.from]} once that has room.` : `Pick a ${ENGINE_LABELS[chat.moved.from]} model to move it back.`}
                 </ComposerNote>
