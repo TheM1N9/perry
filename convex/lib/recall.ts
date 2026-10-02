@@ -11,9 +11,9 @@ import * as chrono from "chrono-node";
  * again gets stronger, a line from the days asked about counts double, and
  * one recently used a little more.
  *
- * Ideas from Supermemory (MIT, licenses/supermemory-MIT.txt): a line's type,
- * when what it says happens as against when it was said, a date filter from
- * the question, boosts by type, and people's names expanded in the query.
+ * Ideas, not code, from looking at Supermemory: a line's type, when what it
+ * says happens as against when it was said, a date filter from the question,
+ * boosts by type, and people's names expanded in the query.
  */
 
 export type LineType = "fact" | "preference" | "episode";
