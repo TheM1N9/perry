@@ -98,8 +98,9 @@ async function layer(ctx: QueryCtx, kind: Kind, limit?: number): Promise<Memory[
   const take = <T,>(query: { take(n: number): Promise<T[]>; collect(): Promise<T[]> }) => limit === undefined ? query.collect() : query.take(limit);
   const rows = await take(ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", kind)).order("desc"));
   // Rows from before the layers existed have no kind and count as core.
+  // An index range on a missing field may hold every row (#219): only those with no kind are legacy.
   const legacy = kind === "core"
-    ? await take(ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", undefined)).order("desc"))
+    ? (await ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", undefined)).order("desc").collect()).filter((memory) => !memory.kind)
     : [];
   const current = [...rows, ...legacy].filter((memory) => !memory.supersededBy).sort((a, b) => b.createdAt - a.createdAt);
   return limit === undefined ? current : current.slice(0, limit);
