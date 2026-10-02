@@ -5,7 +5,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { appended, editSection, headingsOf, INBOX_TITLE, noteHref, titleFrom, tooLong } from "./lib/notes";
 import type { PageKind } from "./lib/pages";
 import { timezoneOf } from "./jobs";
-import { insertPage, isPinned, moveLines, removePage, writePage, type LineBy } from "./pages";
+import { insertPage, isPinned, linesOf, memoryPage, moveLines, removePage, secretIn, setPinned, writePage, type LineBy } from "./pages";
 import { readPersona } from "./persona";
 
 /**
@@ -336,15 +336,57 @@ async function reachOf(ctx: Reader, chatId: Id<"conversations"> | undefined): Pr
 /** Where a turn may reach a page: never from a chat with someone else; a chat's own page only from that chat. */
 const reaches = (reach: { sealed: boolean; projectId?: Id<"projects">; chatId?: Id<"conversations"> }, note: Note) => !reach.sealed
   && (note.conversationId ? note.conversationId === reach.chatId : !note.projectId || note.projectId === reach.projectId);
-const SEALED = "Notes are the owner's: a chat with someone else cannot read or write them.";
-const NOT_HERE = "There is no note with that id here; list_notes shows the ones this chat can reach.";
+const SEALED = "Brain's pages are the owner's: a chat with someone else cannot read or write them.";
+const NOT_HERE = "There is no page by that id or name here; brain_list shows the ones this chat can reach.";
+
+type Reach = { sealed: boolean; projectId?: Id<"projects">; chatId?: Id<"conversations"> };
+const DAY_MS = 86_400_000;
+const dayAgo = (timezone: string, offset: number) => new Date(Date.now() - offset * DAY_MS).toLocaleDateString("en-CA", { timeZone: timezone });
+
+/**
+ * A page this chat may reach, by id or by name: "About me", "Things to
+ * remember" (the project's, in a project's chat, when it has one), a journal
+ * day ("today", "yesterday", "2026-10-01"), a person ("People/Datta" or
+ * "Datta"), or a page's title.
+ */
+async function findForAgent(ctx: Reader, reach: Reach, ref: string): Promise<Note | null> {
+  const byId = await getNote(ctx, ref.trim());
+  if (byId) return reaches(reach, byId) ? byId : null;
+  const pages = (await ctx.db.query("notes").collect()).filter((page) => reaches(reach, page));
+  const name = ref.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+  const prefer = (list: Note[]) => list.find((page) => page.projectId && page.projectId === reach.projectId) ?? list.find((page) => !page.projectId) ?? list[0] ?? null;
+  if (name === "about me" || name === "user.md") return pages.find((page) => page.kind === "about") ?? null;
+  if (name === "things to remember") return prefer(pages.filter((page) => page.kind === "remember"));
+  const timezone = await timezoneOf(ctx);
+  const day = name === "today" || name === "journal" ? dayAgo(timezone, 0) : name === "yesterday" ? dayAgo(timezone, 1) : /\b(\d{4}-\d{2}-\d{2})\b/.exec(name)?.[1];
+  if (day) return prefer(pages.filter((page) => page.kind === "journal" && page.day === day));
+  const person = name.replace(/^people\s*\/\s*/, "");
+  return pages.find((page) => page.kind === "person" && page.person === person)
+    ?? pages.filter((page) => page.title.toLocaleLowerCase() === name).sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
+}
+
+/** A page of memory named but not made yet (About me, Things to remember, today's journal): made, to write into. */
+async function memoryPageNamed(ctx: Writer, reach: Reach, ref: string): Promise<Note | null> {
+  const name = ref.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+  if (name === "about me" || name === "user.md") return await memoryPage(ctx, { kind: "about" });
+  if (name === "things to remember") return await memoryPage(ctx, { kind: "remember", ...(reach.projectId ? { projectId: reach.projectId } : {}) });
+  if (name === "today" || name === "journal") return await memoryPage(ctx, { kind: "journal", day: dayAgo(await timezoneOf(ctx), 0) });
+  return null;
+}
 
 const vChat = v.optional(v.id("conversations"));
 
-type AgentNote = { id: string; title: string; project?: string; revision: number; updated: string; chars: number; link: string };
+type AgentNote = {
+  id: string; title: string; kind?: string; day?: string; pinned?: boolean; pinnedSections?: string[]; project?: string; revision: number; updated: string; chars: number; link: string;
+};
+/** What a page of memory is, as Perry is told. */
+const KIND_NAMES = { about: "About me", remember: "Things to remember", journal: "journal", person: "person", chat: "this chat's own" } as const;
 const agentNote = (note: Note, names: Map<string, string>): AgentNote => ({
   id: note._id,
   title: note.title,
+  ...(note.kind ? { kind: KIND_NAMES[note.kind] } : {}),
+  ...(note.day ? { day: note.day } : {}),
+  ...(isPinned(note) ? { pinned: true } : note.pinnedSections?.length ? { pinnedSections: note.pinnedSections } : {}),
   ...(note.projectId ? { project: names.get(note.projectId) ?? "a project" } : {}),
   revision: note.revision,
   updated: new Date(note.updatedAt).toISOString().slice(0, 16).replace("T", " "),
@@ -352,26 +394,52 @@ const agentNote = (note: Note, names: Map<string, string>): AgentNote => ({
   link: noteHref(note._id),
 });
 
+/** The pages a chat may reach, newest first: the owner's pages, and with `memory` the pages of memory too. */
 export const listForAgent = internalQuery({
-  args: { chat: vChat },
+  args: { chat: vChat, memory: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<{ notes: AgentNote[]; error?: string }> => {
     const reach = await reachOf(ctx, args.chat);
     if (reach.sealed) return { notes: [], error: SEALED };
     const names = await projectNames(ctx);
-    return { notes: (await allNotes(ctx)).filter((note) => reaches(reach, note)).slice(0, 100).map((note) => agentNote(note, names)) };
+    const pages = args.memory ? await ctx.db.query("notes").withIndex("by_updated").order("desc").collect() : await allNotes(ctx);
+    return { notes: pages.filter((note) => reaches(reach, note)).slice(0, 150).map((note) => agentNote(note, names)) };
   },
 });
 
+type AgentLine = { id: string; text: string; section?: string; by?: string; fromChat?: string; noted: string; confirmed?: string };
+/**
+ * One page whole, by id or name: its Markdown, sections and revision; a page
+ * of memory also gives each line's id (for supersedes and forget) and where it came from.
+ */
 export const readForAgent = internalQuery({
-  args: { chat: vChat, id: v.string() },
-  handler: async (ctx, args): Promise<(AgentNote & { content: string; sections: string[] }) | { error: string }> => {
+  args: { chat: vChat, id: v.string(), section: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<(AgentNote & { content: string; sections: string[]; lines?: AgentLine[] }) | { error: string }> => {
     const reach = await reachOf(ctx, args.chat);
     if (reach.sealed) return { error: SEALED };
-    const note = await getNote(ctx, args.id);
-    if (!note || !reaches(reach, note)) return { error: NOT_HERE };
-    return { ...agentNote(note, await projectNames(ctx)), content: note.content, sections: headingsOf(note.content).map((item) => item.text) };
+    const note = await findForAgent(ctx, reach, args.id);
+    if (!note) return { error: NOT_HERE };
+    const day = (at: number) => new Date(at).toISOString().slice(0, 10);
+    const lines = note.kind ? (await linesOf(ctx, note._id)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .filter((line) => !args.section || line.section?.toLocaleLowerCase() === args.section.trim().toLocaleLowerCase()).slice(0, 400)
+      .map((line): AgentLine => ({
+        id: line._id, text: line.text, ...(line.section ? { section: line.section } : {}), ...(line.by ? { by: line.by } : {}),
+        ...(line.from ? { fromChat: line.from } : {}), noted: day(line.createdAt), ...(line.confirmedAt ? { confirmed: day(line.confirmedAt) } : {}),
+      })) : undefined;
+    // One section's words, when asked for one: its heading and body, as the page has them.
+    const content = args.section ? sectionOf(note.content, args.section) ?? note.content : note.content;
+    return { ...agentNote(note, await projectNames(ctx)), content, sections: headingsOf(note.content).map((item) => item.text), ...(lines ? { lines } : {}) };
   },
 });
+
+/** The words of one section, heading and all; null when the page has none by that name. */
+function sectionOf(content: string, heading: string): string | null {
+  const headings = headingsOf(content);
+  const wanted = heading.replace(/^#+\s*/, "").replace(/[*_`]/g, "").trim().toLocaleLowerCase();
+  const at = headings.findIndex((item) => item.text.replace(/[*_`]/g, "").trim().toLocaleLowerCase() === wanted);
+  if (at < 0) return null;
+  const next = headings.slice(at + 1).find((item) => item.level <= headings[at].level);
+  return content.split("\n").slice(headings[at].line, next ? next.line : undefined).join("\n").trim();
+}
 
 export const searchForAgent = internalQuery({
   args: { chat: vChat, query: v.string(), limit: v.optional(v.number()) },
@@ -391,6 +459,8 @@ export const createForAgent = internalMutation({
   handler: async (ctx, args): Promise<{ created?: AgentNote; error?: string }> => {
     const reach = await reachOf(ctx, args.chat);
     if (reach.sealed) return { error: SEALED };
+    const secret = await secretIn(ctx, `${args.title}\n${args.content}`);
+    if (secret) return { error: secret };
     const projectId = args.project === "none" ? undefined : reach.projectId;
     try {
       const id = await insertNote(ctx, { title: args.title, content: args.content, by: "assistant", ...(projectId ? { projectId } : {}), ...(args.chat ? { from: args.chat } : {}) });
@@ -420,8 +490,10 @@ export const updateForAgent = internalMutation({
   handler: async (ctx, args): Promise<{ updated?: AgentNote; error?: string; current?: AgentNote & { content: string }; sections?: string[] }> => {
     const reach = await reachOf(ctx, args.chat);
     if (reach.sealed) return { error: SEALED };
-    const note = await getNote(ctx, args.id);
-    if (!note || !reaches(reach, note)) return { error: NOT_HERE };
+    const note = await findForAgent(ctx, reach, args.id) ?? (args.mode === "append" ? await memoryPageNamed(ctx, reach, args.id) : null);
+    if (!note) return { error: NOT_HERE };
+    const secret = await secretIn(ctx, `${args.title ?? ""}\n${args.content}`);
+    if (secret) return { error: secret };
     const names = await projectNames(ctx);
     if (args.mode !== "append" && args.expectedRevision === undefined) {
       return { error: "Replacing words needs expectedRevision, the revision read_note gave: read the note first." };
@@ -460,6 +532,22 @@ export const titlesIn = async (ctx: Reader, projectId: Id<"projects">): Promise<
     .map((note) => ({ id: note._id, title: note.title }));
 
 /** Whether a chat may point a job at this note (tools.ts, create_job and update_job); the note's id when so. */
+/** Pin a page, or one of its sections, to every chat that may read it; or unpin it. */
+export const pinForAgent = internalMutation({
+  args: { chat: vChat, id: v.string(), section: v.optional(v.string()), pinned: v.boolean() },
+  handler: async (ctx, args): Promise<{ pinned?: AgentNote; error?: string }> => {
+    const reach = await reachOf(ctx, args.chat);
+    if (reach.sealed) return { error: SEALED };
+    const note = await findForAgent(ctx, reach, args.id) ?? await memoryPageNamed(ctx, reach, args.id);
+    if (!note) return { error: NOT_HERE };
+    if (args.section && !headingsOf(note.content).some((item) => item.text.replace(/[*_`]/g, "").trim().toLocaleLowerCase() === args.section!.trim().toLocaleLowerCase())) {
+      return { error: `"${note.title}" has no section "${args.section}".` };
+    }
+    await setPinned(ctx, note, args.pinned, args.section?.trim());
+    return { pinned: agentNote((await ctx.db.get(note._id))!, await projectNames(ctx)) };
+  },
+});
+
 export const reachableFrom = internalQuery({
   args: { chat: vChat, id: v.string() },
   handler: async (ctx, args): Promise<{ id?: Id<"notes">; title?: string; error?: string }> => {

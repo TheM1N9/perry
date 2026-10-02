@@ -10,6 +10,7 @@ import {
 import { timezoneOf } from "./jobs";
 import type { MemoryView } from "./memories";
 import { recordUser } from "./persona";
+import { savedValues } from "./vault";
 
 /**
  * Pages and their lines: Brain (issue #210), where notes and memory are one
@@ -175,6 +176,30 @@ export async function removePage(ctx: Writer, id: Id<"notes">): Promise<void> {
 /** A page moved into a project or out of one: its lines are read where it is now. */
 export async function moveLines(ctx: Writer, pageId: Id<"notes">, projectId: Id<"projects"> | undefined): Promise<void> {
   for (const line of await linesOf(ctx, pageId)) if (line.projectId !== projectId) await ctx.db.patch(line._id, { projectId });
+}
+
+// --- No secrets in pages (issue #137) -----------------------------------------------------------
+
+/** Shapes of keys and codes that never belong in a page: API keys, tokens, private keys, a password or PIN said outright. */
+const SECRET_SHAPES = [
+  /\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/, /\bgh[pousr]_[A-Za-z0-9]{30,}/, /\bgithub_pat_[A-Za-z0-9_]{30,}/, /\bAKIA[0-9A-Z]{16}\b/,
+  /\bxox[abprs]-[A-Za-z0-9-]{10,}/, /\bAIza[0-9A-Za-z_-]{35}\b/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  /\bpass(?:word|code|phrase)\s*(?:is|was|:|=)\s*\S{4,}/i, /\b(?:pin|otp|one[- ]time code|cvv)\s*(?:is|was|:|=)\s*\d{3,}/i,
+];
+
+/**
+ * Why words may not go into a page, or null: a value saved in Logins &
+ * secrets, or something shaped like a password, key or code. Perry's writes
+ * are refused with this; the owner's own typing is theirs.
+ */
+export async function secretIn(ctx: Reader, text: string): Promise<string | null> {
+  if ((await savedValues(ctx)).some((value) => text.includes(value))) {
+    return "Not saved: it contains a value kept in Logins & secrets, which stays there and never goes into a page or memory.";
+  }
+  if (SECRET_SHAPES.some((shape) => shape.test(text))) {
+    return "Not saved: it looks like a password, key or code. Secrets never go into a page or memory; move it to Logins & secrets with save_secret.";
+  }
+  return null;
 }
 
 // --- Pages of memory ----------------------------------------------------------------------------
@@ -668,6 +693,8 @@ export const memoryPages = query({
 export type LineView = {
   id: Id<"memories">; text: string; section?: string; by?: LineBy; origin?: string; from?: { id: Id<"conversations">; title: string };
   createdAt: number; editedAt?: number; confirmedAt?: number; tags: string[]; about?: string[]; todoId?: string;
+  /** The pages it was promoted from (the journal days), to open. */
+  basedOn?: Array<{ id: Id<"notes">; title: string }>;
 };
 
 /** A page's lines and where each came from: who wrote it, from which chat, when, and when last confirmed. */
@@ -691,11 +718,23 @@ export const lines = query({
         ...(line.confirmedAt ? { confirmedAt: line.confirmedAt } : {}),
         ...(line.about?.length ? { about: line.about } : {}),
         ...(line.todoId ? { todoId: line.todoId } : {}),
+        ...(line.basedOn?.length ? { basedOn: await basedOnPages(ctx, line.basedOn) } : {}),
       });
     }
     return views;
   },
 });
+
+/** The pages the lines a memory was promoted from are in, once each. */
+async function basedOnPages(ctx: Reader, ids: Id<"memories">[]): Promise<Array<{ id: Id<"notes">; title: string }>> {
+  const pages = new Map<string, string>();
+  for (const id of ids) {
+    const line = await ctx.db.get(id);
+    const page = line?.pageId ? await ctx.db.get(line.pageId) : null;
+    if (page) pages.set(page._id, page.title);
+  }
+  return [...pages].map(([id, title]) => ({ id: id as Id<"notes">, title }));
+}
 
 /** Open the page of memory for a place from the dashboard (About me, Things to remember, today's journal), made if need be. */
 export const openMemoryPage = mutation({

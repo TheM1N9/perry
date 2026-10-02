@@ -873,6 +873,8 @@ export default defineSchema({
      */
     migratedAt: v.optional(v.number()),
     migratedFrom: v.optional(v.string()),
+    /** The journal lines a lasting memory was promoted from (the nightly consolidation): where it came from. */
+    basedOn: v.optional(v.array(v.id("memories"))),
     /** The one chat it belongs to, out of every other chat. With neither this nor projectId: everywhere. */
     conversationId: v.optional(v.id("conversations")),
     /** The project it belongs to: seen in that project's chats, and in no other. */
