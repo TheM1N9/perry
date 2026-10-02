@@ -785,11 +785,13 @@ export async function standingFor(ctx: Reader, chatId?: Id<"conversations">, bud
   const ordered = async (page: Note) => (await linesOf(ctx, page._id)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const lineAt = (line: Line) => Math.max(line.createdAt, line.editedAt ?? 0, line.confirmedAt ?? 0);
 
+  /** Whether this chat may see a line: one of a page everyone reads can still be a project's, or a chat's, of its own. */
+  const visible = (line: Line) => (line.conversationId ? line.conversationId === chat?._id : !line.projectId || line.projectId === project);
   /** A page of memory's lines, by section. */
   const linesIn = async (page: Note, only?: string[]): Promise<Section[]> => {
     const sections: Section[] = [];
     for (const line of await ordered(page)) {
-      if (only && !only.includes(line.section ?? "")) continue;
+      if (!visible(line) || (only && !only.includes(line.section ?? ""))) continue;
       if (sections.at(-1)?.name !== line.section || !sections.length) sections.push({ name: line.section, entries: [] });
       sections.at(-1)!.entries.push({ text: memoryLine(line), id: line._id, at: lineAt(line) });
     }
