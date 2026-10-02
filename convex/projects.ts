@@ -3,7 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { isPageLine, type MemoryView } from "./memories";
-import { moveLines } from "./pages";
+import { moveLines, removePage } from "./pages";
 import { titlesIn } from "./notes";
 
 /**
@@ -182,6 +182,10 @@ export const remove = mutation({
     // Its notes' lines go out with their notes, not with what Perry remembered in it.
     const memories = (await ctx.db.query("memories").withIndex("by_project", (q) => q.eq("projectId", args.id)).collect()).filter((memory) => !isPageLine(memory));
     for (const memory of memories) await ctx.db.delete(memory._id);
+    // Its pages of memory (Things to remember, its journal) go with what was remembered in it.
+    for (const page of await ctx.db.query("notes").withIndex("by_project", (q) => q.eq("projectId", args.id)).collect()) {
+      if (page.kind) await removePage(ctx, page._id);
+    }
     const notes = await titlesIn(ctx, args.id);
     for (const note of notes) {
       await ctx.db.patch(note.id, { projectId: undefined });
