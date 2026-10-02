@@ -2,9 +2,9 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { useMutation } from "@/client/react";
+import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
-import type { Doc } from "@/convex/_generated/dataModel";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { JobView } from "@/convex/jobs";
 import { errorText, plural } from "@/lib/format";
 import { useSession } from "@/lib/session";
@@ -135,18 +135,22 @@ function writeWhen(when: When): { schedule?: string; at?: string; folder?: strin
 export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editing<JobView>; timezone: string; onClose: () => void }) {
   const { dashboardKey } = useSession();
   const saveJob = useMutation(api.jobs.saveFromDashboard);
+  const notes = useQuery(api.notes.list, editing ? { key: dashboardKey } : "skip");
   const { saving, save } = useSave(onClose);
   const job = editing?.item;
   const builtin = Boolean(job?.builtin);
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [when, setWhen] = useState<When>(readWhen());
+  const [note, setNote] = useState("none");
   useEffect(() => {
     if (!editing) return;
     setName(editing.item?.name ?? "");
     setPrompt(editing.item?.prompt ?? "");
     setWhen(readWhen(editing.item));
+    setNote(editing.item?.noteId ?? "none");
   }, [editing]);
+  const noteItems = [{ value: "none", label: "No note" }, ...(notes ?? []).map((item) => ({ value: item.id as string, label: item.title }))];
   const change = (patch: Partial<When>) => setWhen((current) => ({ ...current, ...patch }));
   // A built-in job's prompt comes from Perry's code; only when it runs is the owner's to change.
   // A job an event starts keeps its kind of event; a folder can move to another folder.
@@ -161,7 +165,7 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
       title={job ? `Change “${job.name}”` : "New schedule"}
       description={builtin ? "A built-in schedule keeps its own prompt; you can change when it runs."
         : event ? undefined : `Times are in ${timezone}.`}
-      onSave={() => void save(() => saveJob({ key: dashboardKey, ...(job ? { id: job.id } : {}), name, prompt, ...writeWhen(when) }), job ? "Schedule saved." : "Schedule made.")}>
+      onSave={() => void save(() => saveJob({ key: dashboardKey, ...(job ? { id: job.id } : {}), name, prompt, ...writeWhen(when), noteId: note === "none" ? null : note as Id<"notes"> }), job ? "Schedule saved." : "Schedule made.")}>
       {!builtin && (
         <>
           <Field>
@@ -208,6 +212,7 @@ export function ScheduleDialog({ editing, timezone, onClose }: { editing: Editin
           <FieldDescription>Minute, hour, day of the month, month, day of the week.</FieldDescription>
         </Field>
       )}
+      <Choice id="schedule-note" label="Also add each result to" value={note} items={noteItems} onChange={setNote} />
     </FormDialog>
   );
 }

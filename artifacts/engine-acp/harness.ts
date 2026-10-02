@@ -37,7 +37,11 @@ export type Row = Record<string, any> & { _id: string };
 
 const freePort = () => new Promise<number>((done) => { const probe = createServer().listen(0, "127.0.0.1", () => { const { port } = probe.address() as { port: number }; probe.close(() => done(port)); }); });
 
-export async function perry(options: { name: string; outDir: string; runnerEnv: (home: string) => Record<string, string>; engine?: "codex" | "claude" | "grok" | "antigravity" | null }) {
+export async function perry(options: {
+  name: string; outDir: string; runnerEnv: (home: string) => Record<string, string>; engine?: "codex" | "claude" | "grok" | "antigravity" | null;
+  /** For the server and the runner both, set after the owner's own are taken out: stand-ins for Telegram or WhatsApp. */
+  env?: Record<string, string>;
+}) {
   mkdirSync(options.outDir, { recursive: true });
   const PORT = await freePort();
   const BASE = `http://127.0.0.1:${PORT}`;
@@ -53,6 +57,7 @@ export async function perry(options: { name: string; outDir: string; runnerEnv: 
   const drives = options.runnerEnv(home);
   const engine = options.engine !== undefined ? options.engine : drives.PERRY_GROK_COMMAND && drives.CODEX_HOME ? "grok" : "codex";
   if (engine) env.PERRY_ENGINE = engine;
+  Object.assign(env, options.env ?? {});
   const logs = { server: "", runner: "" };
   const children: ChildProcess[] = [];
   const start = (name: "server" | "runner"): ChildProcess => {

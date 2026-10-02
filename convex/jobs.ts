@@ -6,6 +6,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { ABSOLUTE_PATH } from "./media";
+import { appendRun } from "./notes";
 import { projectFrom } from "./projects";
 import { vEngine, vPerryPick, vRoute, vTrigger } from "./schema";
 import { ENGINE_LABELS, isEngine, type EngineKind } from "./lib/engines";
@@ -182,7 +183,7 @@ function timing(input: { schedule?: string; at?: string }, timezone: string): { 
   return { schedule: input.schedule.trim() };
 }
 
-async function insertJob(ctx: MutationCtx, job: { name: string; schedule?: string; runAt?: number; trigger?: Doc<"jobs">["trigger"]; prompt: string; builtin?: Builtin; origin?: Id<"conversations">; pick?: Doc<"jobs">["pick"] }): Promise<Id<"jobs">> {
+async function insertJob(ctx: MutationCtx, job: { name: string; schedule?: string; runAt?: number; trigger?: Doc<"jobs">["trigger"]; prompt: string; builtin?: Builtin; origin?: Id<"conversations">; pick?: Doc<"jobs">["pick"]; noteId?: Id<"notes"> }): Promise<Id<"jobs">> {
   const timezone = await timezoneOf(ctx);
   return await ctx.db.insert("jobs", {
     ...job,
@@ -456,8 +457,12 @@ export const finished = internalMutation({
     // Stopped by a plan's limit: it runs again where there is room, or after the reset.
     if (args.error && LIMIT_HIT.test(args.error)) await recoverJob(ctx, (await ctx.db.get(job._id))!);
     if (result && result !== QUIET) {
+      // Kept in its note too, under the day: a weekly review's log grows a section a week. A deleted note is let go.
+      const kept = job.noteId && !args.error ? await appendRun(ctx, job.noteId, result) : null;
+      if (job.noteId && !args.error && !kept) await ctx.db.patch(job._id, { noteId: undefined });
+      const noted = kept ? `\n\n_Added to your note “${kept.title}”._` : "";
       // Back to the chat it was set up in; the heartbeat and the others to the messaging channel (channels.ts).
-      await ctx.scheduler.runAfter(0, internal.notify.deliver, { text: `⏰ **${job.name}**\n\n${result}`, ...(job.origin ? { origin: job.origin } : {}), from: { kind: "job", id: job._id, name: job.name } });
+      await ctx.scheduler.runAfter(0, internal.notify.deliver, { text: `⏰ **${job.name}**\n\n${result}${noted}`, ...(job.origin ? { origin: job.origin } : {}), from: { kind: "job", id: job._id, name: job.name } });
       // The heartbeat only speaks when something needs the owner: that is an alert, for the next brief too.
       if (job.builtin === "heartbeat") {
         await ctx.runMutation(internal.memories.noteAlert, { text: result, at: ownerClock(await timezoneOf(ctx)) });
@@ -495,6 +500,8 @@ export type JobView = {
   lastResult?: string;
   lastError?: string;
   chatId?: Id<"conversations">;
+  /** The note each run's result is added to. */
+  noteId?: Id<"notes">;
 };
 
 const view = (job: Doc<"jobs">): JobView => ({
@@ -517,6 +524,7 @@ const view = (job: Doc<"jobs">): JobView => ({
   lastResult: job.lastResult,
   lastError: job.lastError,
   chatId: job.conversationId,
+  ...(job.noteId ? { noteId: job.noteId } : {}),
 });
 
 export const list = internalQuery({
@@ -526,11 +534,14 @@ export const list = internalQuery({
 
 export const create = internalMutation({
   /** origin: the chat it is set up in, where its results go. */
-  args: { name: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()), trigger: v.optional(vTrigger), prompt: v.string(), origin: v.optional(v.id("conversations")), pick: v.optional(vPerryPick) },
+  args: { name: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()), trigger: v.optional(vTrigger), prompt: v.string(), origin: v.optional(v.id("conversations")), pick: v.optional(vPerryPick), noteId: v.optional(v.id("notes")) },
   returns: v.object({ id: v.optional(v.id("jobs")), nextRun: v.optional(v.string()), error: v.optional(v.string()) }),
   handler: async (ctx, args) => {
     const timezone = await timezoneOf(ctx);
-    const base = { name: args.name.trim().slice(0, 80), prompt: args.prompt.trim().slice(0, 4000), ...(args.origin ? { origin: args.origin } : {}), ...(args.pick && Object.keys(args.pick).length ? { pick: args.pick } : {}) };
+    const base = {
+      name: args.name.trim().slice(0, 80), prompt: args.prompt.trim().slice(0, 4000), ...(args.origin ? { origin: args.origin } : {}),
+      ...(args.pick && Object.keys(args.pick).length ? { pick: args.pick } : {}), ...(args.noteId ? { noteId: args.noteId } : {}),
+    };
     if (args.trigger) {
       if (args.schedule || args.at) return { error: "A job runs on an event, a cron schedule or a time: give only one." };
       const id = await insertJob(ctx, { ...base, trigger: args.trigger });
@@ -559,6 +570,8 @@ export const update = internalMutation({
     enabled: v.optional(v.boolean()),
     /** Perry's pick of tier, model or thinking level; null goes back to the tier's rule. */
     pick: v.optional(v.union(vPerryPick, v.null())),
+    /** The note its runs are added to; null stops that. */
+    noteId: v.optional(v.union(v.id("notes"), v.null())),
   },
   returns: v.object({ updated: v.boolean(), nextRun: v.optional(v.string()), error: v.optional(v.string()) }),
   handler: async (ctx, args) => {
@@ -573,7 +586,8 @@ export const update = internalMutation({
       return { updated: false, error: "A job an event starts keeps its event. To run it on a time instead, delete it and make a new one." };
     }
     const timezone = await timezoneOf(ctx);
-    const patch: Partial<Pick<Doc<"jobs">, "name" | "prompt" | "schedule" | "runAt" | "enabled" | "nextRunAt" | "pick" | "waiting">> = {};
+    const patch: Partial<Pick<Doc<"jobs">, "name" | "prompt" | "schedule" | "runAt" | "enabled" | "nextRunAt" | "pick" | "waiting" | "noteId">> = {};
+    if (args.noteId !== undefined) patch.noteId = args.noteId ?? undefined;
     if (args.pick !== undefined) patch.pick = args.pick && Object.keys(args.pick).length ? args.pick : undefined;
     if (args.name?.trim()) patch.name = args.name.trim().slice(0, 80);
     if (args.prompt?.trim()) patch.prompt = args.prompt.trim().slice(0, 4000);
@@ -683,6 +697,8 @@ export const saveFromDashboard = mutation({
     key: v.string(), id: v.optional(v.id("jobs")), name: v.string(), prompt: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()),
     /** Run it when a file lands in this folder on this computer. */
     folder: v.optional(v.string()),
+    /** The note its runs are added to; null for none. */
+    noteId: v.optional(v.union(v.id("notes"), v.null())),
   },
   returns: v.id("jobs"),
   handler: async (ctx, args): Promise<Id<"jobs">> => {
@@ -694,7 +710,7 @@ export const saveFromDashboard = mutation({
     if (folder && !ABSOLUTE_PATH.test(folder)) throw new Error("Give the folder's full path, such as C:\\Users\\you\\Downloads or /home/you/Downloads.");
     if (!args.id) {
       const made: { id?: Id<"jobs">; error?: string } = await ctx.runMutation(internal.jobs.create, {
-        name: args.name, prompt: args.prompt, ...(folder ? { trigger: folderTrigger(folder) } : when),
+        name: args.name, prompt: args.prompt, ...(folder ? { trigger: folderTrigger(folder) } : when), ...(args.noteId ? { noteId: args.noteId } : {}),
       });
       if (!made.id) throw new Error(made.error ?? "Could not save it.");
       return made.id;
@@ -704,7 +720,7 @@ export const saveFromDashboard = mutation({
     // A job an event starts keeps its event; a folder can move to another folder.
     if (job.trigger) {
       if (folder && job.trigger.kind === "folder" && folder !== job.trigger.path) await ctx.db.patch(job._id, { trigger: folderTrigger(folder) });
-      const changed: { updated: boolean; error?: string } = await ctx.runMutation(internal.jobs.update, { id: args.id, name: args.name, prompt: args.prompt });
+      const changed: { updated: boolean; error?: string } = await ctx.runMutation(internal.jobs.update, { id: args.id, name: args.name, prompt: args.prompt, ...(args.noteId !== undefined ? { noteId: args.noteId } : {}) });
       if (!changed.updated) throw new Error(changed.error ?? "Could not save it.");
       return args.id;
     }
@@ -714,6 +730,7 @@ export const saveFromDashboard = mutation({
       id: args.id,
       ...(job.builtin ? {} : { name: args.name, prompt: args.prompt }),
       ...(moved ? when : {}),
+      ...(args.noteId !== undefined ? { noteId: args.noteId } : {}),
     });
     if (!changed.updated) throw new Error(changed.error ?? "Could not save it.");
     return args.id;

@@ -675,6 +675,35 @@ export default defineSchema({
     updatedAt: v.number(),
   }),
 
+  /**
+   * A note: a page of Markdown the owner and Perry both read and write (a
+   * packing list, a trip plan, meeting notes, a weekly review). Every save
+   * names the revision it was made from, and one made from an older revision
+   * is refused, so a stale edit never overwrites a newer one. In a project,
+   * only its chats reach it; outside one, every chat of the owner's does. A
+   * chat with someone else never does. See notes.ts.
+   */
+  notes: defineTable({
+    title: v.string(),
+    /** Markdown. */
+    content: v.string(),
+    /** Bumped by every save; a save from an older one is refused. */
+    revision: v.number(),
+    projectId: v.optional(v.id("projects")),
+    /** Title and content together, for keyword search. */
+    search: v.string(),
+    /** Who saved it last. */
+    by: v.union(v.literal("owner"), v.literal("assistant")),
+    /** The chat it was saved from, when it was. */
+    from: v.optional(v.id("conversations")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_updated", ["updatedAt"])
+    .index("by_project", ["projectId", "updatedAt"])
+    .index("by_title", ["title"])
+    .searchIndex("search_text", { searchField: "search" }),
+
   conversations: defineTable({
     channel: vChannel,
     externalId: v.string(), // telegram chat id, or a unique web session id
@@ -905,6 +934,8 @@ export default defineSchema({
      * would have started it. Kept until the owner runs it or lets it go.
      */
     missed: v.optional(v.object({ at: v.number(), runs: v.number(), stopped: v.optional(v.boolean()), event: v.optional(v.string()) })),
+    /** A note each run's result is added to, under the date (a weekly review's log). See notes.ts. */
+    noteId: v.optional(v.id("notes")),
     nextRunAt: v.number(),
     lastRunAt: v.optional(v.number()),
     lastResult: v.optional(v.string()),
