@@ -577,8 +577,10 @@ try {
     await exchange(chat, prompt);
     const all = contextOf(prompt);
     const from = all.indexOf("# Recalled memory");
-    const to = all.indexOf("## Possibly relevant", from);
-    return { all, standing: from >= 0 ? all.slice(from, to > from ? to : undefined) : "", instructions: from >= 0 ? all.slice(0, from) : all };
+    // What is pinned, within the budget: up to what bears on this message, recalled for it (a condensed section's lines that
+    // match it, #220, and the rest that is possibly relevant), which is sent after it and is not part of the budget.
+    const to = Math.min(...["## From pinned sections sent condensed", "## Possibly relevant"].map((head) => all.indexOf(head, from)).filter((at) => at > from), Infinity);
+    return { all, standing: from >= 0 ? all.slice(from, Number.isFinite(to) ? to : undefined) : "", instructions: from >= 0 ? all.slice(0, from) : all };
   };
   const pinPage = (id: string, pinned: boolean, section?: string) => call("pages:pin", { key: KEY, id, pinned, ...(section ? { section } : {}) });
   const dattaId = pageOf("person", (row) => row.person === "datta")!._id;
