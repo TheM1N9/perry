@@ -43,7 +43,8 @@ export function largeBrain(now: number) {
     const lines = [...met].map((who) => `Saw ${peopleNames[who]} about thing ${Math.floor(rand() * 1000)}.`);
     // Most of a day names no one: those lines are the ones the map must not have to read.
     const alone = Array.from({ length: 12 }, (_, k) => `Did thing ${k} of the day, alone.`);
-    const projectId = ago % 11 === 0 ? projects[ago % projects.length] : undefined;
+    // A project's days are its Journey (#229), so every journal day is the owner's.
+    const projectId: string | undefined = undefined;
     const id = page({ title: journalTitle(day), kind: "journal", day, content: [...lines, ...alone].map((text) => `- ${text}`).join("\n"), updatedAt: now - ago * DAY, ...(projectId ? { projectId } : {}) });
     journalCount++;
     [...met].forEach((who, order) => lineDocs.push({ text: lines[order], tags: [], source: "page", createdAt: now - ago * DAY, kind: "daily", day, pageId: id, order, about: [peopleNames[who]], by: "assistant", ...(projectId ? { projectId } : {}) }));
@@ -51,7 +52,7 @@ export function largeBrain(now: number) {
   }
   projects.forEach((projectId, i) => page({ title: "Things to remember", kind: "remember", projectId, content: `- Project ${i + 1} facts.` }));
   const own: string[] = [];
-  for (let i = 0; i < 1500; i++) own.push(newId());
+  for (let i = 0; i < 1600; i++) own.push(newId());
   own.forEach((id, i) => {
     const links = Array.from({ length: 2 + Math.floor(rand() * 5) }, () => own[Math.floor(rand() * own.length)]).filter((other) => other !== id);
     const projectId = i % 4 === 0 ? projects[i % projects.length] : undefined;

@@ -1,17 +1,17 @@
 {
-  "ranAt": "2026-10-02T19:25:27.446Z",
+  "ranAt": "2026-10-02T20:31:46.608Z",
   "ownerShaped": {
     "nodes": 25,
     "edges": 18
   },
   "large": {
-    "nodes": 3036,
-    "edges": 20893,
-    "pairs": 20893,
+    "nodes": 3136,
+    "edges": 21204,
+    "pairs": 21204,
     "queryMs": [
-      1646,
-      2719,
-      4730
+      378,
+      635,
+      366
     ],
     "lines": 27665,
     "linesNamingSomeone": 14511
@@ -19,51 +19,51 @@
   "readableAtFit": {
     "drawnNodes": 150,
     "drawnEdges": 1200,
-    "labels": 27,
+    "labels": 20,
     "overlaps": 0
   },
   "zoomedIn": {
-    "drawnNodes": 682,
+    "drawnNodes": 693,
     "drawnEdges": 1200,
-    "labels": 24,
+    "labels": 13,
     "overlaps": 0
   },
   "performance": {
-    "dataMs": 5505,
-    "firstDrawMs": 5961,
-    "drawAfterDataMs": 456,
-    "settledMs": 14725,
+    "dataMs": 2617,
+    "firstDrawMs": 2730,
+    "drawAfterDataMs": 113,
+    "settledMs": 5518,
     "whileLayingOut": {
-      "frames": 417,
-      "frameMsP50": 17,
-      "frameMsP95": 17,
-      "longestMs": 50
+      "frames": 213,
+      "frameMsP50": 10,
+      "frameMsP95": 10,
+      "longestMs": 10
     },
     "panZoomedOut": {
-      "frames": 120,
-      "fps": 60,
+      "frames": 199,
+      "fps": 100,
       "longFrames": 0,
-      "frameMsP50": 16.7,
-      "frameMsP95": 16.9,
-      "drawMsP50": 0.9,
-      "drawMsP95": 1.4,
+      "frameMsP50": 10,
+      "frameMsP95": 10.1,
+      "drawMsP50": 0.6,
+      "drawMsP95": 0.9,
       "drawn": {
-        "nodes": 137,
+        "nodes": 143,
         "edges": 1200,
         "months": true
       }
     },
     "panZoomedIn": {
-      "frames": 120,
-      "fps": 60,
+      "frames": 199,
+      "fps": 100,
       "longFrames": 0,
-      "frameMsP50": 16.7,
-      "frameMsP95": 16.9,
-      "drawMsP50": 1,
-      "drawMsP95": 3.4,
+      "frameMsP50": 10,
+      "frameMsP95": 10.1,
+      "drawMsP50": 0.8,
+      "drawMsP95": 1.6,
       "drawn": {
-        "nodes": 398,
-        "edges": 1200,
+        "nodes": 415,
+        "edges": 437,
         "months": false
       }
     }
@@ -127,7 +127,7 @@
       "journal journal 2026-09-27",
       "journal journal 2026-09-29",
       "journal journal 2026-09-30",
-      "journal Kitchen journal 2026-09-30 (Kitchen)",
+      "journey Kitchen Journey (Kitchen)",
       "journal journal 2026-10-01",
       "person Arjun",
       "person Juhi",
@@ -152,7 +152,7 @@
     "noEdgeFromSupersededOrGuestOrBrokenLinks": [
       "Aadil | journal 2026-09-30 | about",
       "Arjun | journal 2025-08-28 | about",
-      "Datta | Kitchen journal 2026-09-30 | about",
+      "Datta | Kitchen Journey | about",
       "Datta | Kitchen plan | link",
       "Datta | journal 2026-09-27 | about",
       "Datta | journal 2026-10-01 | about",
@@ -162,8 +162,8 @@
       "Juhi | Vivek | also",
       "Juhi | journal 2026-08-23 | about",
       "Juhi | journal 2026-09-30 | about",
+      "Kitchen Journey | project Kitchen | project",
       "Kitchen Things to remember | project Kitchen | project",
-      "Kitchen journal 2026-09-30 | project Kitchen | project",
       "Kitchen plan | project Kitchen | project",
       "Manvi | journal 2026-09-24 | about",
       "Manvi | journal 2026-10-01 | about",
@@ -175,7 +175,7 @@
       "Kitchen plan",
       "journal 2026-10-01",
       "journal 2026-09-27",
-      "Kitchen journal 2026-09-30"
+      "Kitchen Journey"
     ],
     "smallMapNamesAllWithoutOverlap": {
       "labels": 20,
@@ -211,7 +211,7 @@
         "y": 656.5224615394078
       }
     },
-    "clickOpensThePage": "/brain/2zr1a3nz40frrpak53a9bhfp8z",
+    "clickOpensThePage": "/brain/pzkcghthgnhk5hx028f9k5ncv5",
     "searchFindsAndCentres": {
       "lit": "Manvi",
       "at": {
@@ -224,8 +224,8 @@
       }
     },
     "filterByKind": {
-      "noJournal": 16,
-      "journals": 9,
+      "noJournal": 17,
+      "journals": 8,
       "all": 25
     },
     "filterByProject": {
@@ -278,34 +278,34 @@
         "Kitchen plan",
         "journal 2026-10-01",
         "journal 2026-09-27",
-        "Kitchen journal 2026-09-30",
+        "Kitchen Journey",
         "project Kitchen",
         "Manvi"
       ]
     },
-    "localMapOpensAPage": "/brain/0c77g06wakyyj1tz7ab89nm8jp",
+    "localMapOpensAPage": "/brain/2edzy4ftac2q5cr5her2gxsfxx",
     "darkTheme": {
       "bg": "rgb(12, 12, 14)",
       "dark": true
     },
     "largeSeeded": {
-      "pages": 3003,
+      "pages": 3103,
       "journal": 1095,
       "people": 400,
-      "own": 1500,
+      "own": 1600,
       "lines": 27638
     },
     "queryUsesTheAboutIndex": "SEARCH doc_memories USING INDEX i_memories_by_about (<expr>>?)",
     "largeGraphShape": {
-      "nodes": 3036,
-      "edges": 20893,
-      "pairs": 20893
+      "nodes": 3136,
+      "edges": 21204,
+      "pairs": 21204
     },
     "largeCanvasDrawsTheData": {
       "canvas": {
         "brainMap": "true",
-        "nodes": "3036",
-        "edges": "20893",
+        "nodes": "3136",
+        "edges": "21204",
         "settled": "true",
         "drawnNodes": "150",
         "drawnEdges": "1200",
@@ -321,55 +321,55 @@
     "largeMapReadableAtDefaultZoom": {
       "drawnNodes": 150,
       "drawnEdges": 1200,
-      "labels": 27,
+      "labels": 20,
       "overlaps": 0
     },
     "zoomedInJournalDaysComeBack": "pages",
     "zoomingInRevealsMore": {
-      "drawnNodes": 682,
+      "drawnNodes": 693,
       "drawnEdges": 1200,
-      "labels": 24,
+      "labels": 13,
       "overlaps": 0
     },
     "drawsSoonAfterTheData": {
-      "dataAt": 5505,
-      "firstDraw": 5961
+      "dataAt": 2617,
+      "firstDraw": 2730
     },
     "panningSmooth": {
       "panOut": {
-        "frames": 120,
-        "fps": 60,
+        "frames": 199,
+        "fps": 100,
         "longFrames": 0,
-        "frameMsP50": 16.7,
-        "frameMsP95": 16.9,
-        "drawMsP50": 0.9,
-        "drawMsP95": 1.4,
+        "frameMsP50": 10,
+        "frameMsP95": 10.1,
+        "drawMsP50": 0.6,
+        "drawMsP95": 0.9,
         "drawn": {
-          "nodes": 137,
+          "nodes": 143,
           "edges": 1200,
           "months": true
         }
       },
       "panIn": {
-        "frames": 120,
-        "fps": 60,
+        "frames": 199,
+        "fps": 100,
         "longFrames": 0,
-        "frameMsP50": 16.7,
-        "frameMsP95": 16.9,
-        "drawMsP50": 1,
-        "drawMsP95": 3.4,
+        "frameMsP50": 10,
+        "frameMsP95": 10.1,
+        "drawMsP50": 0.8,
+        "drawMsP95": 1.6,
         "drawn": {
-          "nodes": 398,
-          "edges": 1200,
+          "nodes": 415,
+          "edges": 437,
           "months": false
         }
       }
     },
     "layoutOffTheMainThread": {
-      "frames": 417,
-      "frameMsP50": 17,
-      "frameMsP95": 17,
-      "longestMs": 50
+      "frames": 213,
+      "frameMsP50": 10,
+      "frameMsP95": 10,
+      "longestMs": 10
     },
     "noPageErrors": {
       "pageErrors": [],

@@ -4,6 +4,8 @@ import { internalMutation, internalQuery, mutation, query, type MutationCtx, typ
 import { assertDashboardKey } from "./lib/auth";
 import { appended, editSection, headingsOf, INBOX_TITLE, noteHref, titleFrom, tooLong } from "./lib/notes";
 import { journalTitle, type PageKind } from "./lib/pages";
+import { around, linkedIds, type BrainGraph } from "./lib/graph";
+import { graphOf } from "./brainMap";
 import { timezoneOf } from "./jobs";
 import { insertPage, isPinned, linesOf, memoryPage, mentionsOf, moveLines, removePage, secretIn, setPinned, writePage, type LineBy } from "./pages";
 import { readPersona } from "./persona";
@@ -586,6 +588,146 @@ export const reachableFrom = internalQuery({
     const note = await getNote(ctx, args.id);
     if (!note || !reaches(reach, note)) return { error: NOT_HERE };
     return { id: note._id, title: note.title };
+  },
+});
+
+// --- The map, for Perry (issue #230) ----------------------------------------------------------------
+
+/** A page's neighbour on the map, as Perry is told: what it is, how far, and why they are tied. */
+export type Neighbor = { id: string; title: string; kind: string; steps: number; why: string[]; via?: string; link: string };
+
+/** Brain's map (brainMap.graphOf) as a chat may see it: only the pages it reaches, and its own project. */
+async function mapFor(ctx: Reader, reach: Reach): Promise<BrainGraph> {
+  return await graphOf(ctx, { page: (page) => reaches(reach, page), project: (id) => id === reach.projectId });
+}
+
+/** Why two nodes are tied, in words, from the kinds of edge between them. */
+function reasons(graph: BrainGraph, a: number, b: number): string[] {
+  const why: string[] = [];
+  for (const [x, y, kind, weight] of graph.edges) {
+    if (!((x === a && y === b) || (x === b && y === a))) continue;
+    const lines = weight === 1 ? "a line" : `${weight} lines`;
+    const person = graph.nodes[a].kind === "person" ? graph.nodes[a] : graph.nodes[b];
+    if (kind === "link") why.push("a link between them");
+    else if (kind === "about") why.push(`${lines} about ${person.title}`);
+    else if (kind === "also") why.push(`${lines} about both`);
+    else if (kind === "project") why.push(`in the project ${graph.nodes[a].kind === "project" ? graph.nodes[a].title : graph.nodes[b].title}`);
+    else why.push(kind === "mention" ? "a mention" : "a related fact");
+  }
+  return why;
+}
+
+/** A page's neighbours, one or two steps out, strongest first, with why each is one; `skip` leaves pages out. */
+function neighborsIn(graph: BrainGraph, id: string, steps: number, skip = new Set<string>(), limit = 40): Neighbor[] {
+  const local = around(graph, id, steps);
+  const start = local.nodes.findIndex((node) => node.id === id);
+  if (start < 0) return [];
+  const near = new Map<number, number>();
+  for (const [a, b, , weight] of local.edges) {
+    if (a === start) near.set(b, (near.get(b) ?? 0) + weight);
+    if (b === start) near.set(a, (near.get(a) ?? 0) + weight);
+  }
+  const found: Array<Neighbor & { weight: number }> = [];
+  local.nodes.forEach((node, i) => {
+    if (i === start || skip.has(node.id)) return;
+    const direct = near.has(i);
+    // Two steps out: through the neighbour it is most tied to.
+    let via = -1;
+    if (!direct) {
+      let best = 0;
+      for (const [a, b, , weight] of local.edges) {
+        const other = a === i ? b : b === i ? a : -1;
+        if (other >= 0 && near.has(other) && weight > best) { best = weight; via = other; }
+      }
+      if (via < 0) return;
+    }
+    found.push({
+      id: node.id, title: node.title, kind: node.kind === "page" ? "page" : node.kind, steps: direct ? 1 : 2,
+      why: direct ? reasons(local, start, i) : reasons(local, via, i), ...(direct ? {} : { via: local.nodes[via].title }),
+      link: node.kind === "project" ? `/projects/${node.id}` : noteHref(node.id), weight: direct ? near.get(i)! : 0,
+    });
+  });
+  return found.sort((x, y) => x.steps - y.steps || y.weight - x.weight).slice(0, limit).map(({ weight: _weight, ...rest }) => rest);
+}
+
+/** brain_neighbors: a page's neighbours on the map, from the same graph the owner's Map draws. */
+export const neighborsForAgent = internalQuery({
+  args: { chat: vChat, id: v.string(), steps: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<{ page?: { id: string; title: string }; neighbors?: Neighbor[]; error?: string }> => {
+    const reach = await reachOf(ctx, args.chat);
+    if (reach.sealed) return { error: SEALED };
+    const note = await findForAgent(ctx, reach, args.id);
+    if (!note) return { error: NOT_HERE };
+    const steps = args.steps === 2 ? 2 : 1;
+    return { page: { id: note._id, title: note.title }, neighbors: neighborsIn(await mapFor(ctx, reach), note._id, steps) };
+  },
+});
+
+/** For recall: the pages one step from the pages of its best hits, not already among them, strongest first. */
+export const relatedForRecall = internalQuery({
+  args: { chat: vChat, pages: v.array(v.string()), limit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<Array<Neighbor & { from: string }>> => {
+    const reach = await reachOf(ctx, args.chat);
+    if (reach.sealed || !args.pages.length) return [];
+    const graph = await mapFor(ctx, reach);
+    const seen = new Set(args.pages);
+    const found: Array<Neighbor & { from: string }> = [];
+    for (const page of args.pages) {
+      const from = graph.nodes.find((node) => node.id === page)?.title;
+      if (!from) continue;
+      for (const neighbor of neighborsIn(graph, page, 1, seen, 4)) {
+        if (neighbor.kind === "project") continue;
+        seen.add(neighbor.id);
+        found.push({ ...neighbor, from });
+      }
+    }
+    return found.slice(0, args.limit ?? 6);
+  },
+});
+
+/** The "Related" section a link goes in, and a link line to a page in it. */
+export const RELATED_SECTION = "Related";
+const linkLine = (page: Note, why?: string) => `- [${page.title.replace(/[[\]]/g, "")}](${noteHref(page._id)})${why?.trim() ? `: ${why.trim().replace(/\s+/g, " ")}` : ""}`;
+
+/**
+ * brain_link: tie two pages, as a link line in each one's Related section (made when missing), which the owner
+ * sees and edits, and the map draws. A page that already links the other is left as it is. Each page is checked
+ * against the revision Perry read of it, when given, as any page write is.
+ */
+export const linkForAgent = internalMutation({
+  args: { chat: vChat, a: v.string(), b: v.string(), why: v.optional(v.string()), revisionA: v.optional(v.number()), revisionB: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<{ linked?: Array<{ id: string; title: string; revision: number; added: boolean }>; error?: string }> => {
+    const reach = await reachOf(ctx, args.chat);
+    if (reach.sealed) return { error: SEALED };
+    const a = await findForAgent(ctx, reach, args.a);
+    const b = await findForAgent(ctx, reach, args.b);
+    if (!a || !b) return { error: `${a ? `"${args.b}"` : `"${args.a}"`}: ${NOT_HERE}` };
+    if (a._id === b._id) return { error: "A page cannot be linked to itself." };
+    for (const [page, revision] of [[a, args.revisionA], [b, args.revisionB]] as const) {
+      if (revision !== undefined && revision !== page.revision) {
+        return { error: `"${page.title}" changed since revision ${revision}; it is at revision ${page.revision} now. Nothing was linked. Read it again first.` };
+      }
+    }
+    const why = args.why?.slice(0, 200);
+    const secret = why ? await secretIn(ctx, why) : null;
+    if (secret) return { error: secret };
+    const linked: Array<{ id: string; title: string; revision: number; added: boolean }> = [];
+    for (const [page, other] of [[a, b], [b, a]] as const) {
+      const now = (await ctx.db.get(page._id))!;
+      const already = linkedIds(now.content).includes(other._id);
+      if (!already) {
+        const edited = editSection(now.content, RELATED_SECTION, linkLine(other, why), "append");
+        const content = "content" in edited ? edited.content : appended(now.content, `## ${RELATED_SECTION}\n\n${linkLine(other, why)}`);
+        try {
+          await writeNote(ctx, now, { content }, "assistant", { by: "assistant", ...(args.chat ? { from: args.chat } : {}) });
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : String(error) };
+        }
+      }
+      const after = (await ctx.db.get(page._id))!;
+      linked.push({ id: after._id, title: after.title, revision: after.revision, added: !already });
+    }
+    return { linked };
   },
 });
 
