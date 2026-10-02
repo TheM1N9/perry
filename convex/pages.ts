@@ -746,15 +746,25 @@ const sizeOf = (section: Section) => section.entries.reduce((sum, entry) => sum 
  * until there is one its newest lines; and how to read the rest. Lines of it
  * that bear on the message are sent after it (memories.context).
  */
-function condensedText(part: Part, section: Section, pointerOnly: boolean): string {
+function condensedText(part: Part, section: Section, pointerOnly: boolean, room = 0): string {
   const lines = section.entries.filter((entry) => entry.id).length || section.entries.length;
   const read = `brain_read page="${part.page?.title ?? part.title}"${section.name ? ` section="${section.name}"` : ""}`;
   const head = `${lines.toLocaleString("en-US")} lines, sent condensed to stay within what every message carries; the lines that match a message come below, and ${read} has all of them.`;
   if (pointerOnly) return head;
   const summary = part.page?.summaries?.find((item) => (item.section ?? "") === (section.name ?? ""));
-  if (summary) return `${head}\nSummary (written ${new Date(summary.at).toISOString().slice(0, 10)}, of ${summary.lines.toLocaleString("en-US")} lines): ${summary.text}`;
-  const newest = [...section.entries].filter((entry) => entry.id).sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 6);
-  return `${head}\nNo summary yet; the newest:\n${newest.map((entry) => entry.text.split("\n").at(-1)!.slice(0, 220)).join("\n")}`;
+  // The newest lines too, as many as the room left in the budget allows: a summary gives the gist, they the latest.
+  const newest = [...section.entries].filter((entry) => entry.id).sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+  const shown: string[] = [];
+  let left = Math.max(room, summary ? 0 : 1_000);
+  for (const entry of newest) {
+    const text = entry.text.split("\n").at(-1)!.slice(0, 300);
+    if (text.length + 1 > left) break;
+    shown.push(text);
+    left -= text.length + 1;
+  }
+  const latest = shown.length ? `\nThe newest ${shown.length}:\n${shown.join("\n")}` : "";
+  if (summary) return `${head}\nSummary (written ${new Date(summary.at).toISOString().slice(0, 10)}, of ${summary.lines.toLocaleString("en-US")} lines): ${summary.text}${latest}`;
+  return `${head}\nNo summary yet.${latest}`;
 }
 
 /**
@@ -881,6 +891,9 @@ export async function standingFor(ctx: Reader, chatId?: Id<"conversations">, bud
     }
   }
 
+  // What the budget has left goes to the condensed sections, shared out, for more of their newest lines.
+  const summarized = choices.filter((choice) => choice.mode === "summary");
+  const room = summarized.length ? Math.max(0, Math.floor((budget - total()) / summarized.length)) : 0;
   const shown: string[] = [];
   const condensed: Standing["condensed"] = [];
   const render = (part: Part, modeOf: (section: Section) => Choice["mode"]) => {
@@ -892,7 +905,7 @@ export async function standingFor(ctx: Reader, chatId?: Id<"conversations">, bud
         return `${heading}${section.entries.map((entry) => entry.text).join("\n")}`;
       }
       if (part.page) condensed.push({ pageId: part.page._id, title: part.page.title, ...(section.name ? { section: section.name } : {}), lines: section.entries.length });
-      return `${heading}${condensedText(part, section, mode === "pointer")}`;
+      return `${heading}${condensedText(part, section, mode === "pointer", mode === "summary" ? room : 0)}`;
     }).filter(Boolean).join("\n");
     return body ? `## ${part.title}\n${body}` : "";
   };

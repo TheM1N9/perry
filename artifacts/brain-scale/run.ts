@@ -142,7 +142,7 @@ const found = async (query: string, id: string, chat?: string) => (await searchF
 
 try {
   // What the seed holds, as main left it: vectors inside the rows.
-  const seeded = CHECKS >= 1 ? count(`SELECT count(*) AS n FROM "doc_memories" WHERE json_extract(doc, '$.vector') IS NOT NULL`) : 0;
+  const seeded = CHECKS >= 1 && !flag("only") ? count(`SELECT count(*) AS n FROM "doc_memories" WHERE json_extract(doc, '$.vector') IS NOT NULL`) : 0;
   result.startSeconds = await startServer();
   await call("dashboard:skipOnboarding", { key: KEY }).catch(() => {});
 
@@ -154,7 +154,10 @@ try {
     return chats.get(label.project)!;
   };
 
-  if (CHECKS >= 1) {
+  // --only <n>: the checks of one step alone (on a seed already brought up to date, say).
+  const ONLY = flag("only") ? Number(flag("only")) : 0;
+  const stepOn = (n: number) => (ONLY ? ONLY === n : CHECKS >= n);
+  if (stepOn(1)) {
     // --- Step 1: the move out of the rows, after a backup, once ------------------------------------------------------
     const left = count(`SELECT count(*) AS n FROM "doc_memories" WHERE json_extract(doc, '$.vector') IS NOT NULL OR json_extract(doc, '$.vectorModel') IS NOT NULL`);
     const indexed = count(`SELECT count(*) AS n FROM "_vector_memories_by_embedding"`);
@@ -243,7 +246,7 @@ try {
     check("8. Brain is still one SQLite file in Perry's home", files.every((name) => name.startsWith("perry.sqlite")), { files });
   }
 
-  if (CHECKS >= 2) {
+  if (stepOn(2)) {
     // --- Step 2: what a message carries, per engine ---------------------------------------------------------------
     type Context = { instructions: string; recalled: string; digest: string };
     const ENGINES = ["codex", "claude", "grok", "antigravity"] as const;
@@ -260,7 +263,8 @@ try {
     }
     result.messageSizePerEngine = sizes;
     const codex = await call<Context>("memories:context", { query: "when is the Hetzner quote from?", chat, engine: "codex" });
-    check("9. a message is sized to its engine's window, not 32,000 characters: within each engine's share, and Codex's goes past 32,000", withinAll && (sizes.codex as { recalled: number }).recalled + (sizes.codex as { instructions: number }).instructions > 32_000, sizes);
+    const pinnedOf = (engine: string) => (sizes[engine] as { pinned: number }).pinned;
+    check("9. a message is sized to its engine's window, not 32,000 characters: within each engine's share, most of it used, and more on a bigger window", withinAll && pinnedOf("codex") >= 0.6 * budgetOf("codex") && pinnedOf("antigravity") > pinnedOf("codex") && pinnedOf("codex") > pinnedOf("claude"), sizes);
     const aboutPage = rows("notes").find((row) => row.kind === "about" && !row.projectId);
     const aboutLines = aboutPage ? (aboutPage.content as string).split("\n").map((line: string) => line.replace(/^[-*]\s+/, "").trim()).filter((line: string) => line && !line.startsWith("#")) : [];
     check("10. About me goes whole", aboutLines.length > 0 && aboutLines.every((line: string) => codex.instructions.includes(line)), { lines: aboutLines.length });
