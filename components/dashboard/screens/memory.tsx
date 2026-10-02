@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookmarkIcon, CalendarDaysIcon, ChevronRightIcon, FolderIcon, MessageSquareIcon, PencilIcon, SearchIcon, UserIcon, UserRoundIcon, XIcon } from "lucide-react";
+import { BookmarkIcon, CalendarDaysIcon, ChevronRightIcon, FileTextIcon, FolderIcon, MessageSquareIcon, PencilIcon, SearchIcon, UserIcon, UserRoundIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
@@ -196,9 +196,10 @@ function Memories() {
   );
 }
 
-const PAGE_ICONS = { about: UserIcon, remember: BookmarkIcon, journal: CalendarDaysIcon, person: UserRoundIcon, chat: MessageSquareIcon } as const;
-const GROUPS: Array<{ kinds: Array<MemoryPage["kind"]>; label: string }> = [
-  { kinds: ["about", "remember"], label: "Loaded in every chat" },
+const PAGE_ICONS = { about: UserIcon, remember: BookmarkIcon, journal: CalendarDaysIcon, person: UserRoundIcon, chat: MessageSquareIcon, page: FileTextIcon } as const;
+const GROUPS: Array<{ pinned?: boolean; kinds: Array<MemoryPage["kind"]>; label: string }> = [
+  { pinned: true, kinds: ["about", "remember", "journal", "person", "chat", "page"], label: "Pinned: in every chat" },
+  { kinds: ["about", "remember"], label: "Not pinned" },
   { kinds: ["journal"], label: "Journal" },
   { kinds: ["person"], label: "People" },
   { kinds: ["chat"], label: "Kept to one chat" },
@@ -215,6 +216,7 @@ function MemoryPages() {
   const { dashboardKey } = useSession();
   const router = useRouter();
   const pages = useQuery(api.pages.memoryPages, { key: dashboardKey });
+  const usage = useQuery(api.pages.pinnedUsage, { key: dashboardKey });
   const open = useMutation(api.pages.openMemoryPage);
   const [allDays, setAllDays] = useState(false);
   const go = (kind: "about" | "remember" | "journal") => void open({ key: dashboardKey, kind }).then((id) => router.push(noteHref(id)), (cause) => toast.error(`Couldn't open it: ${errorText(cause)}`));
@@ -223,10 +225,11 @@ function MemoryPages() {
   return (
     <section aria-label="Memory pages" className="space-y-6">
       {GROUPS.map((group) => {
-        let shown = pages.filter((page) => group.kinds.includes(page.kind));
+        // Pinned pages (any kind) come first; each other group has the rest of its kind.
+        let shown = pages.filter((page) => group.kinds.includes(page.kind) && (group.pinned ? page.pinned || page.pinnedSections?.length : !(page.pinned || page.pinnedSections?.length)));
         const more = group.kinds.includes("journal") && !allDays && shown.length > DAYS ? shown.length - DAYS : 0;
         if (more) shown = shown.slice(0, DAYS);
-        const starters = group.kinds.includes("about") ? (["about", "remember"] as const).filter((kind) => !has(kind)) : [];
+        const starters = group.pinned ? (["about", "remember"] as const).filter((kind) => !has(kind)) : [];
         if (!shown.length && !starters.length) return null;
         return (
           <div key={group.label}>
@@ -247,11 +250,17 @@ function MemoryPages() {
                     <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                     <Link href={noteHref(page.id)} data-memory-page={page.kind} className="min-w-0 flex-1 truncate text-md font-medium after:absolute after:inset-0 hover:underline underline-offset-2">{page.title}</Link>
                     {page.project && <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><FolderIcon className="size-3" />{page.project}</span>}
+                    {!page.pinned && page.pinnedSections && <span className="shrink-0 truncate text-xs text-muted-foreground">{page.pinnedSections.join(", ")}</span>}
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{page.lines === 1 ? "1 line" : `${page.lines} lines`}</span>
                   </li>
                 );
               })}
             </List>
+            {group.pinned && usage && (
+              <p className="mt-1 text-xs text-muted-foreground" data-usage>
+                {usage.used.toLocaleString()} of {usage.budget.toLocaleString()} characters{usage.left.length ? `. Over: ${usage.left.join(", ")} not all sent.` : "."}
+              </p>
+            )}
             {more > 0 && <Button variant="ghost" size="xs" className="mt-1 text-muted-foreground" onClick={() => setAllDays(true)}>{more} more {more === 1 ? "day" : "days"}</Button>}
           </div>
         );

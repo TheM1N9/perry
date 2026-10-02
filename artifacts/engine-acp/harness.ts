@@ -94,7 +94,7 @@ export async function perry(options: {
 const statement = db.prepare(process.argv[2]); const params = JSON.parse(process.argv[3]);
 process.stdout.write(JSON.stringify(/^\\s*select/i.test(process.argv[2]) ? statement.all(...params) : (statement.run(...params), [])));`;
   function sql<T>(statement: string, params: Array<string | number> = []): T[] {
-    const ran = spawnSync("node", ["-e", SQL, join(home, "perry.sqlite"), statement, JSON.stringify(params)], { encoding: "utf8", windowsHide: true });
+    const ran = spawnSync("node", ["-e", SQL, join(home, "perry.sqlite"), statement, JSON.stringify(params)], { encoding: "utf8", windowsHide: true, maxBuffer: 512 * 1024 * 1024 });
     if (ran.status !== 0) throw new Error(`sqlite: ${ran.stderr}`);
     return JSON.parse(ran.stdout || "[]");
   }

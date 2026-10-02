@@ -715,6 +715,15 @@ export default defineSchema({
     person: v.optional(v.string()),
     /** The one chat a "chat" page belongs to: only that chat reads it. */
     conversationId: v.optional(v.id("conversations")),
+    /**
+     * Pinned: loaded into every chat that may read it, within the size budget (pages.standing). Unset, About me
+     * and Things to remember are pinned and every other page is not; false unpins them.
+     */
+    pinned: v.optional(v.boolean()),
+    /** Sections (headings) of an unpinned page that are pinned on their own. */
+    pinnedSections: v.optional(v.array(v.string())),
+    /** When it, or a section of it, was pinned: what is pinned later loads after. */
+    pinnedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

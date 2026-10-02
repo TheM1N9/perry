@@ -5,7 +5,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { appended, editSection, headingsOf, INBOX_TITLE, noteHref, titleFrom, tooLong } from "./lib/notes";
 import type { PageKind } from "./lib/pages";
 import { timezoneOf } from "./jobs";
-import { insertPage, moveLines, removePage, writePage, type LineBy } from "./pages";
+import { insertPage, isPinned, moveLines, removePage, writePage, type LineBy } from "./pages";
 import { readPersona } from "./persona";
 
 /**
@@ -49,6 +49,9 @@ export type NoteSummary = {
   preview: string;
   by: By;
   updatedAt: number;
+  /** Loaded into every chat that may read it (pages.isPinned), whole or by sections. */
+  pinned: boolean;
+  pinnedSections?: string[];
 };
 export type NoteView = NoteSummary & {
   content: string;
@@ -78,6 +81,8 @@ function summary(note: Note, names: Map<string, string>): NoteSummary {
     preview: previewOf(note.content),
     by: note.by,
     updatedAt: note.updatedAt,
+    pinned: isPinned(note),
+    ...(note.pinnedSections?.length ? { pinnedSections: note.pinnedSections } : {}),
   };
 }
 

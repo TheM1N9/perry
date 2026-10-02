@@ -45,6 +45,14 @@ import { GUEST_TOOLS } from "../../convex/lib/engines";
 //  14. Older memories, from before pages, vanish from the Memory page or from what a turn is sent.
 //  15. The Memory page does not list the pages, or a page of memory can be renamed, moved or (About me, Things to
 //      remember) deleted; any of it throws in light or dark.
+// Step 3, pinning and the budget:
+//  16. Pinned content does not reach a turn, or what is not pinned does: a person's page, an ordinary page, a
+//      section that was not pinned. (Asserted on what the engine was sent, in a fresh chat each time.)
+//  17. Unpinning About me or Things to remember leaves them loaded; pinning one section loads the whole page.
+//  18. The budget is not kept: a big pinned page goes past it or pushes out About me or Things to remember, or what
+//      is left out is not said, with where to read it.
+//  19. A chat outside a project is sent the project's pinned page; a chat with someone else is sent any of it.
+//  20. The pin button does not pin, or the Memory page does not show what is pinned and how much of the budget it uses.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/brain/run.ts <outDir>");
@@ -223,9 +231,9 @@ try {
   const sent = contextOf(ask);
   const relevant = sent.slice(sent.indexOf("## Possibly relevant"));
   // Long-term memory goes again only when it changed, so every time it went in this chat is looked at.
-  const longTerms = log().filter((entry) => entry.prompt && String(entry.context ?? "").includes("## Long-term memory"))
-    .map((entry) => { const text = String(entry.context); const at = text.indexOf("## Long-term memory"); const end = text.indexOf("\n## ", at + 5); return text.slice(at, end > 0 ? end : undefined); });
-  check("turnGetsNoteParagraph", sent.includes("## Possibly relevant older memories and notes") && relevant.includes(`note "Lisbon trip", section "Packing"`)
+  const longTerms = log().filter((entry) => entry.prompt && String(entry.context ?? "").includes("## Things to remember"))
+    .map((entry) => { const text = String(entry.context); const at = text.indexOf("## Things to remember"); const end = text.indexOf("\n## ", at + 5); return text.slice(at, end > 0 ? end : undefined); });
+  check("turnGetsNoteParagraph", sent.includes("## Possibly relevant, from pages not loaded above") && relevant.includes(`note "Lisbon trip", section "Packing"`)
     && relevant.includes("] Passport") && longTerms.length > 0 && longTerms.every((part) => !/Passport|GREYHEX|Tomatoes/.test(part)) && longTerms.some((part) => part.includes("vegetarian")),
   { relevant: relevant.slice(0, 600), longTerms: longTerms.map((part) => part.slice(0, 300)) });
 
@@ -341,6 +349,70 @@ try {
   const carSent = log().filter((entry) => entry.prompt && String(entry.context ?? "").includes("blue Skoda")).length > 0;
   check("olderMemoriesStay", olderListed.length === 1 && olderListed[0].id === oldCar && carSent, { olderListed: olderListed.map((item) => item.text), carSent });
 
+  // === Step 3: pinning and the budget ===============================================================================
+  /** A fresh chat (so nothing was sent before), one message, and what the engine was sent with it. */
+  let freshCount = 0;
+  const fresh = async (projectId?: string) => {
+    const chat = await call<string>("dashboard:createChat", { key: KEY, ...(projectId ? { projectId } : {}) });
+    await onGrok(chat);
+    const prompt = `PINCHECK ${++freshCount}`;
+    await exchange(chat, prompt);
+    const all = contextOf(prompt);
+    const from = all.indexOf("# Recalled memory");
+    const to = all.indexOf("## Possibly relevant", from);
+    return { all, standing: from >= 0 ? all.slice(from, to > from ? to : undefined) : "", instructions: from >= 0 ? all.slice(0, from) : all };
+  };
+  const pinPage = (id: string, pinned: boolean, section?: string) => call("pages:pin", { key: KEY, id, pinned, ...(section ? { section } : {}) });
+  const dattaId = pageOf("person", (row) => row.person === "datta")!._id;
+  const rememberId = pageOf("remember", (row) => !row.projectId)!._id;
+  const aboutId = pageOf("about")!._id;
+
+  const base = await fresh();
+  await pinPage(lisbon, true);
+  const twoParts = await call<string>("notes:create", { key: KEY, title: "Two parts", content: "## Keep\n\nKEEPME this part.\n\n## Skip\n\nSKIPME not this part.\n" });
+  await pinPage(twoParts, true, "Keep");
+  await pinPage(dattaId, true);
+  const pinnedNow = await fresh();
+  check("pinnedReachesTurnsUnpinnedDoesNot", base.standing.includes("## Things to remember") && base.standing.includes("vegetarian") && base.instructions.includes("Has a cat called Miso")
+    && !base.standing.includes("Datta is the owner's brother") && !base.standing.includes("Passport") && !base.standing.includes("KEEPME")
+    && pinnedNow.standing.includes("## Pinned: Lisbon trip") && pinnedNow.standing.includes("Passport") && pinnedNow.standing.includes("KEEPME") && !pinnedNow.standing.includes("SKIPME")
+    && pinnedNow.standing.includes("Datta is the owner's brother"),
+  { base: base.standing.slice(0, 1200), pinned: pinnedNow.standing.slice(0, 2500) });
+
+  await pinPage(rememberId, false);
+  await pinPage(aboutId, false);
+  const unpinned = await fresh();
+  await pinPage(rememberId, true);
+  await pinPage(aboutId, true);
+  check("unpinningLasting", !unpinned.standing.includes("vegetarian") && !unpinned.all.includes("Has a cat called Miso") && unpinned.standing.includes("Passport"),
+    { standing: unpinned.standing.slice(0, 800) });
+
+  // A pinned page bigger than the budget: it is cut, and says so; what comes first stays whole.
+  const big = Array.from({ length: 420 }, (_, i) => `BIGLINE ${i} of a long plan, with enough words in it to fill a line of about a hundred characters.`).join("\n\n");
+  const bigPlan = await call<string>("notes:create", { key: KEY, title: "Big plan", content: `${big}\n` });
+  await pinPage(bigPlan, true);
+  const overBudget = await fresh();
+  const usage = await call<{ used: number; budget: number; left: string[] }>("pages:pinnedUsage", { key: KEY });
+  const aboutPart = overBudget.instructions.slice(overBudget.instructions.indexOf("## About me"));
+  // The parts measured here carry a little more than the budget counts: the recalled block's header, and what follows About me in the instructions.
+  check("budgetKept", usage.budget === 32_000 && usage.used <= usage.budget && overBudget.standing.length <= usage.budget && overBudget.standing.length + aboutPart.length <= usage.budget + 1_500
+    && overBudget.standing.includes("blue Skoda")
+    && /more lines not loaded here/.test(overBudget.standing) && overBudget.standing.includes(`read the page (id ${bigPlan})`) && overBudget.standing.includes("BIGLINE 0 ") && !overBudget.standing.includes("BIGLINE 419 ")
+    && overBudget.standing.includes("vegetarian") && overBudget.instructions.includes("Has a cat called Miso") && usage.left.some((title) => title.startsWith("Pinned: Big plan")),
+  { usage, standingChars: overBudget.standing.length, aboutChars: aboutPart.length });
+  await pinPage(bigPlan, false);
+
+  // A project's pinned page stays in the project; a chat with someone else gets none of it.
+  await pinPage(tiles, true);
+  const outsideProject = await fresh();
+  const insideProject = await fresh(project);
+  const guestPrompt = await call<Record<string, string>>("contacts:guestPrompt", { contactId: priya._id, conversationId: priyaChat });
+  const guestText = Object.values(guestPrompt).join("\n");
+  check("pinsKeepTheirScope", !outsideProject.standing.includes("GREYHEX") && insideProject.standing.includes("GREYHEX") && insideProject.standing.includes("Use epoxy")
+    && !/vegetarian|Miso|Passport|GREYHEX|KEEPME|Datta is the owner/.test(guestText) && guestText.includes("Priya is allergic to peanuts."),
+  { inside: insideProject.standing.slice(0, 800), guest: guestText.slice(-600) });
+  await pinPage(tiles, false);
+
   // --- 4b. Deleting the project keeps its notes, and their lines move out with them ---------------------------------
   await call("projects:remove", { key: KEY, id: project });
   const moved = linesOf(tiles);
@@ -427,6 +499,22 @@ try {
     && /Perry/.test(sources) && /You/.test(sources) && /from “/.test(sources)
     && conflict === true && stillPerrys,
   { listed, locked, menu, sources: sources.slice(0, 400), conflict, kept: { owner: merged.includes("OWNERTYPING"), perry: merged.includes("Takes the train") } });
+
+  // --- 20. The pin button, and what the Memory page says is pinned --------------------------------------------------------
+  await go(`/notes/${twoParts}`);
+  await waitFor(`document.querySelector('button[aria-label="Pin to every chat"]')`, "the pin button");
+  await click('button[aria-label="Pin to every chat"]');
+  await until(() => noteRow(twoParts)?.pinned === true, "the page to be pinned", 10);
+  await waitFor(`document.querySelector('button[aria-label="Unpin from every chat"]') && document.querySelector("[data-pinned]")`, "the page to show it is pinned");
+  await shot("page-pinned.png");
+  await go("/memory");
+  await waitFor(`document.querySelector("[data-usage]") && document.querySelector('[data-memory-page="page"]')`, "the pinned pages and their budget");
+  const pinnedGroup = await evaluate(`document.querySelector('ul[aria-label="Pinned: in every chat"]')?.innerText ?? ""`) as string;
+  const usageText = await evaluate(`document.querySelector("[data-usage]").innerText`) as string;
+  await shot("memory-pinned.png");
+  await click('button[aria-label="Unpin from every chat"]').catch(() => {});
+  check("pinButtonAndUsage", /Two parts/.test(pinnedGroup) && /Lisbon trip/.test(pinnedGroup) && /Datta/.test(pinnedGroup) && /About me/.test(pinnedGroup) && /of 32,000 characters/.test(usageText),
+    { pinnedGroup, usageText });
 
   // --- 8. Dark, and no page errors -------------------------------------------------------------------------------------
   await evaluate(`localStorage.setItem("perry.theme", "dark"); true`);

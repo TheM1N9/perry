@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { keepPreferences } from "./lib/pages";
 import { writePage } from "./pages";
 
 /**
@@ -116,8 +117,9 @@ export const writeUser = internalMutation({
     const text = args.text.trim();
     const about = await aboutPage(ctx);
     if (about) {
-      if (about.content.trim() === text) return { changed: false };
-      await writePage(ctx, about, { content: text ? `${text}\n` : "" }, { by: args.by }, { typing: args.typing });
+      const next = keepPreferences(text, about.content).trim();
+      if (about.content.trim() === next) return { changed: false };
+      await writePage(ctx, about, { content: next ? `${next}\n` : "" }, { by: args.by }, { typing: args.typing });
       return { changed: true };
     }
     return { changed: await recordUser(ctx, text, args.by, args.typing) };
@@ -158,7 +160,8 @@ export const restore = internalMutation({
     const about = row.kind === "user" ? await aboutPage(ctx) : null;
     // USER.md brought back is the About me page's words again; the page keeps the version.
     if (about) {
-      await writePage(ctx, about, { content: row.text?.trim() ? `${row.text.trim()}\n` : "" }, { by: "owner" });
+      const next = keepPreferences(row.text?.trim() ?? "", about.content).trim();
+      await writePage(ctx, about, { content: next ? `${next}\n` : "" }, { by: "owner" });
       return true;
     }
     await ctx.db.insert("persona", { kind: row.kind, text: row.text, name: row.name, personality: row.personality, by: "owner", createdAt: Date.now() });
