@@ -4,8 +4,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { timezoneOf } from "./jobs";
 import { EMBED_MODEL, embed, embedderReady, packVector, similarity, unpackVector, warmUp } from "./lib/embed";
-import { PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
-import { dropLine, memoryPage, placeFor, putLine, rewordLine, secretIn, writePage, type Author, type Standing } from "./pages";
+import { peopleIn, PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
+import { dropLine, ensurePeople, memoryPage, placeFor, putLine, rewordLine, secretIn, writePage, type Author, type Standing } from "./pages";
 import { vLineBy, vMemoryKind, vMemoryOrigin } from "./schema";
 
 /**
@@ -98,8 +98,9 @@ async function layer(ctx: QueryCtx, kind: Kind, limit?: number): Promise<Memory[
   const take = <T,>(query: { take(n: number): Promise<T[]>; collect(): Promise<T[]> }) => limit === undefined ? query.collect() : query.take(limit);
   const rows = await take(ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", kind)).order("desc"));
   // Rows from before the layers existed have no kind and count as core.
+  // An index range on a missing field may hold every row (#219): only those with no kind are legacy.
   const legacy = kind === "core"
-    ? await take(ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", undefined)).order("desc"))
+    ? (await ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", undefined)).order("desc").collect()).filter((memory) => !memory.kind)
     : [];
   const current = [...rows, ...legacy].filter((memory) => !memory.supersededBy).sort((a, b) => b.createdAt - a.createdAt);
   return limit === undefined ? current : current.slice(0, limit);
@@ -208,6 +209,8 @@ export const add = internalMutation({
     });
     if (basedOn.length) await ctx.db.patch(id, { basedOn });
     for (const old of replaced) await ctx.db.patch(old._id, { supersededBy: id });
+    // Everyone it is about has a page in People, which shows it (pages.mentionsOf); not from a chat with someone else.
+    if (place.kind !== "chat" || !(await ctx.db.get(place.conversationId))?.contactId) await ensurePeople(ctx, peopleIn(about));
     return { id, duplicate: false, superseded: replaced.length, ...linked, page: { id: page._id, title: page.title }, ...(section ? { section } : {}) };
   },
 });
