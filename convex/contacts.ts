@@ -8,6 +8,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { saveMessages } from "./lib/agent";
 import { sendMessage } from "./lib/telegram";
 import { callName, readPersona } from "./persona";
+import { linesOf, mentionsOf } from "./pages";
 
 /**
  * Perry talking with people other than the owner, on Telegram and WhatsApp:
@@ -462,34 +463,41 @@ export type PersonMemory = { id: Id<"memories">; text: string; from: "you" | "th
  */
 export const memoriesForDashboard = query({
   args: { key: v.string() },
-  handler: async (ctx, args): Promise<{ byContact: Record<string, PersonMemory[]>; others: Array<{ name: string; memories: PersonMemory[] }> }> => {
+  handler: async (ctx, args): Promise<{
+    byContact: Record<string, PersonMemory[]>;
+    /** Each contact's page in Brain → People, when a page has their name (pages.ensurePeople). */
+    pages: Record<string, Id<"notes">>;
+    others: Array<{ name: string; pageId?: Id<"notes">; memories: PersonMemory[] }>;
+  }> => {
     assertDashboardKey(args.key);
     const contacts = (await ctx.db.query("contacts").collect()).filter((contact) => contact.status !== "known");
+    const shown = new Set<string>(contacts.map((contact) => contact._id));
     const chatOf = new Map<string, Id<"contacts">>();
     for (const contact of contacts) {
       const chat = await ctx.db.query("conversations").withIndex("by_channel_external", (q) => q.eq("channel", contact.channel).eq("externalId", contact.externalId)).unique();
       if (chat) chatOf.set(chat._id, contact._id);
     }
-    const memories = (await ctx.db.query("memories").withIndex("by_created").order("desc").collect()).filter((memory) => !memory.supersededBy);
     const byContact: Record<string, PersonMemory[]> = {};
-    const others = new Map<string, { name: string; memories: PersonMemory[] }>();
-    const named = new Map(contacts.map((contact) => [contact.name.trim().toLowerCase(), contact._id]));
-    for (const memory of memories) {
+    const pages: Record<string, Id<"notes">> = {};
+    const others: Array<{ name: string; pageId?: Id<"notes">; memories: PersonMemory[] }> = [];
+    const item = (memory: { _id: Id<"memories">; text: string; createdAt: number }, from: "you" | "them"): PersonMemory => ({ id: memory._id, text: memory.text, from, createdAt: memory.createdAt });
+    // What they said in their own chat.
+    for (const memory of (await ctx.db.query("memories").withIndex("by_created").order("desc").collect())) {
       const theirs = memory.conversationId ? chatOf.get(memory.conversationId) : undefined;
-      const item: PersonMemory = { id: memory._id, text: memory.text, from: theirs ? "them" : "you", createdAt: memory.createdAt };
-      if (theirs) { (byContact[theirs] ??= []).push(item); continue; }
-      for (const name of memory.about ?? []) {
-        const key = name.trim().toLowerCase();
-        const contact = named.get(key);
-        if (contact) (byContact[contact] ??= []).push(item);
-        else {
-          const group = others.get(key) ?? { name: name.trim(), memories: [] };
-          group.memories.push(item);
-          others.set(key, group);
-        }
-      }
+      if (theirs && !memory.supersededBy) (byContact[theirs] ??= []).push(item(memory, "them"));
     }
-    return { byContact, others: [...others.values()].sort((a, b) => b.memories.length - a.memories.length) };
+    // What the owner's memories say about each person: their page in People, as Brain shows it.
+    const people = (await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", "person")).collect()).sort((a, b) => a.title.localeCompare(b.title));
+    for (const page of people) {
+      const own = (await linesOf(ctx, page._id)).map((line) => ({ _id: line._id, text: line.text, createdAt: line.createdAt }));
+      const elsewhere = (await mentionsOf(ctx, page)).map((mention) => ({ _id: mention.id, text: mention.text, createdAt: 0 }));
+      const memories = [...own, ...elsewhere].map((memory) => item(memory, "you"));
+      if (page.contactId && shown.has(page.contactId)) {
+        pages[page.contactId] = page._id;
+        (byContact[page.contactId] ??= []).push(...memories);
+      } else others.push({ name: page.title, pageId: page._id, memories });
+    }
+    return { byContact, pages, others };
   },
 });
 

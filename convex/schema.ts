@@ -728,6 +728,8 @@ export default defineSchema({
     day: v.optional(v.string()),
     /** A person's page: their name, lowercased, as the key it is found by. */
     person: v.optional(v.string()),
+    /** A person's page: the contact (WhatsApp, Telegram) of that name, when only one has it. */
+    contactId: v.optional(v.id("contacts")),
     /** The one chat a "chat" page belongs to: only that chat reads it. */
     conversationId: v.optional(v.id("conversations")),
     /**

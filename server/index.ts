@@ -105,6 +105,34 @@ export async function moveMemoriesIntoPages(runtime: Runtime): Promise<void> {
 }
 
 /**
+ * Everyone a memory names gets a page in People (pages.fixPeople, issue #218),
+ * on installs moved into pages before that: first the memories, the pages and
+ * the contacts are written to ~/.perry/backups/people-before-pages-<time>.json,
+ * then the missing pages are made. It only adds pages. Nothing once done.
+ */
+export async function givePeoplePages(runtime: Runtime): Promise<void> {
+  try {
+    const missing = (await runtime.runQuery("pages:peopleMissing", {}, { internal: true })).value as number;
+    if (!missing) return;
+    const backup = await runtime.exclusive(() => ({
+      at: new Date().toISOString(),
+      missing,
+      memories: runtime.store.all("memories"),
+      notes: runtime.store.all("notes"),
+      contacts: runtime.store.all("contacts"),
+    }));
+    const dir = join(HOME, "backups");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `people-before-pages-${backup.at.replace(/[:.]/g, "-")}.json`);
+    writeFileSync(file, JSON.stringify(backup));
+    const done = await runtime.runMutation("pages:fixPeople", {}, { internal: true }) as { made: number };
+    console.log(`[perry] gave ${done.made} people a page in Brain; backup in ${file}`);
+  } catch (error) {
+    console.error(`[perry] could not give people their pages; nothing changed: ${String(error)}`);
+  }
+}
+
+/**
  * The default engine the owner chose in `perry setup` while Perry was not
  * running, waiting in Perry's home: it becomes the default, once.
  */
@@ -149,6 +177,7 @@ export async function startBackend() {
   await runtime.runMutation("pages:indexAll", {}, { internal: true });
   // Memories from before pages move into them, after a backup.
   await moveMemoriesIntoPages(runtime);
+  await givePeoplePages(runtime);
   // The Library (issue #216): every chat file from before it, then Perry's files folder; nothing once done.
   await runtime.runMutation("library:backfill", {}, { internal: true })
     .then(() => runtime.runAction("library:sync", {}, { internal: true }))

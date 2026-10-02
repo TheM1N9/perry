@@ -5,7 +5,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { appended, editSection, headingsOf, INBOX_TITLE, noteHref, titleFrom, tooLong } from "./lib/notes";
 import type { PageKind } from "./lib/pages";
 import { timezoneOf } from "./jobs";
-import { insertPage, isPinned, linesOf, memoryPage, moveLines, removePage, secretIn, setPinned, writePage, type LineBy } from "./pages";
+import { insertPage, isPinned, linesOf, memoryPage, mentionsOf, moveLines, removePage, secretIn, setPinned, writePage, type LineBy } from "./pages";
 import { readPersona } from "./persona";
 
 /**
@@ -429,7 +429,10 @@ export const readForAgent = internalQuery({
       })) : undefined;
     // One section's words, when asked for one: its heading and body, as the page has them.
     const content = args.section ? sectionOf(note.content, args.section) ?? note.content : note.content;
-    return { ...agentNote(note, await projectNames(ctx)), content, sections: headingsOf(note.content).map((item) => item.text), ...(lines ? { lines } : {}) };
+    // A person's page: their memories that live on other pages (a journal day, someone else's page), as this chat may see them.
+    const elsewhere = note.kind === "person" ? (await mentionsOf(ctx, note, (line) => (line.conversationId ? line.conversationId === reach.chatId : !line.projectId || line.projectId === reach.projectId)))
+      .map((mention) => ({ id: mention.id, text: mention.text, page: mention.page.title, ...(mention.day ? { day: mention.day } : {}) })) : [];
+    return { ...agentNote(note, await projectNames(ctx)), content, sections: headingsOf(note.content).map((item) => item.text), ...(lines ? { lines } : {}), ...(elsewhere.length ? { alsoAbout: elsewhere } : {}) };
   },
 });
 
