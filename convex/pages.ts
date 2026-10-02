@@ -5,7 +5,8 @@ import { action, internalMutation, internalQuery, mutation, query, type Mutation
 import { assertDashboardKey } from "./lib/auth";
 import { appended, cleanTitle, CONTENT_LIMIT, editSection, MEMORY_PAGE_LIMIT, tooLong } from "./lib/notes";
 import {
-  blocksOf, itemOf, journalTitle, peopleIn, personKey, PREFERENCES_SECTION, reconcile, removeLine, replaceLine, sameKey, sectionFor, snippet, type PageKind,
+  blockMarkdown, blocksOf, dayOfHeading, itemOf, JOURNEY_TITLE, journalTitle, peopleIn, personKey, PREFERENCES_SECTION, reconcile, removeLine, replaceLine, sameKey,
+  sectionFor, snippet, type PageKind,
 } from "./lib/pages";
 import { timezoneOf } from "./jobs";
 import type { MemoryView } from "./memories";
@@ -27,7 +28,8 @@ import { savedValues } from "./vault";
  *
  * Memory is pages too (lib/pages.ts, PageKind): About me (USER.md, and how the
  * owner likes things done), Things to remember in sections, a journal page a
- * day, a page per person, and what a chat kept to itself. "remember" writes a
+ * day, a Journey per project (its running log, a heading a day), a page per
+ * person, and what a chat kept to itself. "remember" writes a
  * line into the right one (memories.add), and the owner reads and edits every
  * memory there as text. A line of a page of memory is a memory: it has a
  * layer (profile, core or daily) and is loaded and recalled as one.
@@ -42,9 +44,14 @@ export type LineBy = "owner" | "assistant" | "job";
 export type Author = { by: LineBy; from?: Id<"conversations"> };
 
 /** The layer a line of each kind of page is. */
-const LINE_KIND = { about: "profile", remember: "core", journal: "daily", person: "core", chat: "core" } as const;
+const LINE_KIND = { about: "profile", remember: "core", journal: "daily", journey: "daily", person: "core", chat: "core" } as const;
+/** A line's day: its journal page's, or in a Journey the day its heading names. */
+const dayFor = (page: Note, section?: string) => (page.kind === "journal" ? page.day : page.kind === "journey" ? dayOfHeading(section) : undefined);
 const searchOf = (title: string, content: string) => `${title}\n\n${content}`;
 const noteBy = (by: LineBy): "owner" | "assistant" => (by === "owner" ? "owner" : "assistant");
+
+/** The project a page's lines are kept to: its own, except a Journey's, which every chat of the owner's reads (syncLines). */
+export const linesProject = (page: Pick<Note, "kind" | "projectId">) => (page.kind === "journey" ? undefined : page.projectId);
 
 /** A page's lines as they stand, in order. */
 export async function linesOf(ctx: Reader, pageId: Id<"notes">): Promise<Line[]> {
@@ -55,12 +62,17 @@ export async function linesOf(ctx: Reader, pageId: Id<"notes">): Promise<Line[]>
  * Bring a page's lines up to its words, after a save by `author`. `at` is
  * when new lines count as written: now, or for a page from before lines, when
  * it was last saved. The lines it added, by their words (lib/pages.sameKey).
+ *
+ * A line is seen where its page is: in its project's chats, or its chat's.
+ * A project's Journey is the exception (issue #227): tagged with the project,
+ * but for every chat of the owner's to read, so Perry knows what is going on
+ * in each project from anywhere; its lines belong to no project.
  */
 export async function syncLines(ctx: Writer, page: Note, author: Author, at = Date.now(), hints?: Map<string, Id<"memories">>, spare?: Set<string>): Promise<Map<string, Id<"memories">>> {
   const rows = await linesOf(ctx, page._id);
   const byId = new Map(rows.map((row) => [row._id as string, row]));
   const plan = reconcile(rows.map((row) => ({ id: row._id, text: row.text, order: row.order })), blocksOf(page.content), hints);
-  const scope = { projectId: page.projectId, conversationId: page.conversationId };
+  const scope = { projectId: linesProject(page), conversationId: page.conversationId };
   const memory = Boolean(page.kind);
   const added = new Map<string, Id<"memories">>();
   let changed = false;
@@ -68,8 +80,10 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
     const row = byId.get(id)!;
     const words = row.text !== block.text;
     if (!words && row.order === order && row.section === block.section && row.projectId === scope.projectId && row.conversationId === scope.conversationId) continue;
+    // Moved under another day's heading in a Journey, it is that day's note.
+    const day = page.kind === "journey" && row.section !== block.section ? dayFor(page, block.section) : undefined;
     await ctx.db.patch(id, {
-      order, section: block.section, ...scope,
+      order, section: block.section, ...scope, ...(day ? { day } : {}),
       ...(words ? { text: block.text, editedAt: at, vector: undefined, vectorModel: undefined } : {}),
     });
     changed ||= words;
@@ -77,7 +91,7 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
   for (const { id, block, order } of plan.edit) {
     await ctx.db.patch(id, {
       // Who changed it last; the chat it came from stays unless it was changed from another.
-      text: block.text, order, section: block.section, ...scope, by: author.by, ...(author.from ? { from: author.from } : {}), editedAt: at, vector: undefined, vectorModel: undefined,
+      text: block.text, order, section: block.section, ...scope, ...(page.kind === "journey" && dayFor(page, block.section) ? { day: dayFor(page, block.section) } : {}), by: author.by, ...(author.from ? { from: author.from } : {}), editedAt: at, vector: undefined, vectorModel: undefined,
       // A memory the owner rewrote is theirs from then on, whoever wrote it first.
       ...(memory && author.by === "owner" ? { origin: "owner" as const } : {}),
     });
@@ -95,9 +109,9 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
       ...(block.section ? { section: block.section } : {}),
       by: author.by,
       ...(author.from ? { from: author.from } : {}),
-      ...(page.projectId ? { projectId: page.projectId } : {}),
+      ...(scope.projectId ? { projectId: scope.projectId } : {}),
       ...(page.conversationId ? { conversationId: page.conversationId } : {}),
-      ...(page.kind === "journal" && page.day ? { day: page.day } : {}),
+      ...(dayFor(page, block.section) ? { day: dayFor(page, block.section) } : {}),
       ...(page.kind === "person" ? { about: [page.title] } : {}),
       ...(memory && author.by !== "assistant" ? { origin: author.by === "job" ? "job" as const : "owner" as const } : {}),
     });
@@ -208,20 +222,22 @@ export async function secretIn(ctx: Reader, text: string): Promise<string | null
 export type Place =
   | { kind: "about" }
   | { kind: "remember"; projectId?: Id<"projects"> }
+  // A project's journal day is how projects kept their day notes before their Journey (issue #227): only moving back makes one now.
   | { kind: "journal"; day: string; projectId?: Id<"projects"> }
+  | { kind: "journey"; projectId: Id<"projects"> }
   | { kind: "person"; name: string }
   | { kind: "chat"; conversationId: Id<"conversations"> };
 
 /**
  * Where a memory goes: what a chat kept to itself to that chat's page; a
- * day's note to that day's journal; a standing preference to About me (a
+ * day's note to that day's journal, or in a project to the project's Journey; a standing preference to About me (a
  * project's to its Things to remember); a fact about someone else, kept for
  * every chat, to their page in People; any other fact to Things to remember,
  * the project's in a project.
  */
 export function placeFor(kind: "profile" | "core" | "daily", day: string, args: { conversationId?: Id<"conversations">; projectId?: Id<"projects">; about?: string[] }): Place {
   if (args.conversationId) return { kind: "chat", conversationId: args.conversationId };
-  if (kind === "daily") return { kind: "journal", day, ...(args.projectId ? { projectId: args.projectId } : {}) };
+  if (kind === "daily") return args.projectId ? { kind: "journey", projectId: args.projectId } : { kind: "journal", day };
   if (kind === "profile") return args.projectId ? { kind: "remember", projectId: args.projectId } : { kind: "about" };
   const person = peopleIn(args.about)[0];
   if (person && !args.projectId) return { kind: "person", name: person };
@@ -236,7 +252,7 @@ export async function findPage(ctx: Reader, place: Place): Promise<Note | null> 
   return rows.find((page) => {
     switch (place.kind) {
       case "about": return !page.projectId;
-      case "remember": case "journal": return page.projectId === place.projectId;
+      case "remember": case "journal": case "journey": return page.projectId === place.projectId;
       case "person": return page.person === personKey(place.name);
       case "chat": return page.conversationId === place.conversationId;
     }
@@ -254,6 +270,7 @@ export async function memoryPage(ctx: Writer, place: Place): Promise<Note> {
     const user = await ctx.db.query("persona").withIndex("by_kind", (q) => q.eq("kind", "user")).order("desc").first();
     content = user?.text?.trim() ? `${user.text.trim()}\n` : "";
   } else if (place.kind === "journal") title = journalTitle(place.day);
+  else if (place.kind === "journey") title = JOURNEY_TITLE;
   else if (place.kind === "person") title = place.name.replace(/\s+/g, " ").trim();
   else if (place.kind === "chat") {
     const chat = await ctx.db.get(place.conversationId);
@@ -338,7 +355,7 @@ const oneLine = (text: string) => text.trim().replace(/\n\s*\n+/g, "\n");
  */
 export const migrate = internalMutation({
   args: { again: v.optional(v.boolean()) },
-  returns: v.object({ moved: v.number(), kept: v.number(), pages: v.number(), skipped: v.boolean() }),
+  returns: v.object({ moved: v.number(), kept: v.number(), pages: v.number(), skipped: v.boolean(), journalLines: v.optional(v.number()) }),
   handler: async (ctx, args) => {
     const install = await ctx.db.query("installation").first();
     if (install?.memoriesInPages === "undone") {
@@ -346,7 +363,9 @@ export const migrate = internalMutation({
       await ctx.db.patch(install._id, { memoriesInPages: undefined });
     }
     const loose = (await ctx.db.query("memories").withIndex("by_created").collect()).filter(isLoose);
-    if (!loose.length) return { moved: 0, kept: 0, pages: 0, skipped: false };
+    // Moving in again (`perry brain move-in`) puts projects' journal days back in their Journeys too (issue #227).
+    const journals = async () => (args.again ? { journalLines: (await mergeJournals(ctx)).lines } : {});
+    if (!loose.length) return { moved: 0, kept: 0, pages: 0, skipped: false, ...await journals() };
     const timezone = await timezoneOf(ctx);
     const groups = new Map<string, { place: Place; lines: Array<{ line: Line; section?: string }> }>();
     for (const line of loose) {
@@ -354,7 +373,7 @@ export const migrate = internalMutation({
       // A day's note from before days were kept says the day it was made.
       const day = line.day ?? new Date(line.createdAt).toLocaleDateString("en-CA", { timeZone: timezone });
       const place = placeFor(kind, day, { conversationId: line.conversationId, projectId: line.projectId, about: line.about });
-      const section = kind === "profile" ? PREFERENCES_SECTION : place.kind === "remember" ? sectionFor(line.text, line.tags, line.about) : undefined;
+      const section = kind === "profile" ? PREFERENCES_SECTION : place.kind === "remember" ? sectionFor(line.text, line.tags, line.about) : place.kind === "journey" ? journalTitle(day) : undefined;
       const key = JSON.stringify(place.kind === "person" ? { kind: "person", name: personKey(place.name) } : place);
       const group = groups.get(key) ?? { place, lines: [] };
       group.lines.push({ line, section });
@@ -389,7 +408,7 @@ export const migrate = internalMutation({
       await writePage(ctx, page, { content }, { by: "owner" }, { spare });
     }
     const moved = (await ctx.db.query("memories").withIndex("by_created").collect()).filter((line) => line.migratedAt === now).length;
-    return { moved, kept: loose.length - moved, pages: made, skipped: false };
+    return { moved, kept: loose.length - moved, pages: made, skipped: false, ...await journals() };
   },
 });
 
@@ -405,8 +424,10 @@ export const migrate = internalMutation({
  */
 export const undoMigration = internalMutation({
   args: {},
-  returns: v.object({ movedBack: v.number(), pagesDeleted: v.number(), linesDropped: v.number() }),
+  returns: v.object({ movedBack: v.number(), pagesDeleted: v.number(), linesDropped: v.number(), journalLines: v.number() }),
   handler: async (ctx) => {
+    // Projects' Journeys go back to journal days of their own first (issue #227).
+    const journalLines = await splitJournals(ctx);
     const all = await ctx.db.query("memories").withIndex("by_created").collect();
     const moved = all.filter((line) => line.migratedAt);
     const byPage = new Map<string, Line[]>();
@@ -436,9 +457,160 @@ export const undoMigration = internalMutation({
     for (const page of await ctx.db.query("notes").collect()) if (page.linesAt !== undefined && !page.kind) await ctx.db.patch(page._id, { linesAt: undefined });
     const install = await ctx.db.query("installation").first();
     if (install) await ctx.db.patch(install._id, { memoriesInPages: "undone" });
-    return { movedBack: moved.length, pagesDeleted, linesDropped };
+    return { movedBack: moved.length, pagesDeleted, linesDropped, journalLines };
   },
 });
+
+// --- Projects' journal days, into their Journeys (issue #227) ---------------------------------------------
+
+/**
+ * Projects kept a journal page a day once, read only in their own chats. Now
+ * each project keeps one Journey: its running log, a heading a day, newest
+ * last, tagged with the project and read from every chat of the owner's.
+ * The move takes each project journal day's lines, in date order, into its
+ * project's Journey under that day's heading, keeping each row (its id, words,
+ * who wrote it, from which chat, when), and deletes the emptied day page. Each
+ * moved row remembers the day page it came from (journalMove), so moving back
+ * (undoMigration) makes it again as it was.
+ *
+ * Idempotent: run whenever Perry starts, after server/index.ts has written a
+ * backup, and with `perry brain move-in`; nothing once done, and nothing after
+ * the owner moved memories back out (memoriesInPages "undone").
+ */
+async function mergeJournals(ctx: Writer): Promise<{ lines: number; pages: number }> {
+  const days = (await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", "journal")).collect())
+    .filter((page) => page.kind === "journal" && page.projectId && page.day)
+    .sort((a, b) => a.day!.localeCompare(b.day!) || a.createdAt - b.createdAt);
+  const projects = new Map<string, Note[]>();
+  for (const page of days) projects.set(page.projectId!, [...(projects.get(page.projectId!) ?? []), page]);
+  const now = Date.now();
+  let lines = 0;
+  for (const [projectId, pages] of projects) {
+    const place = { kind: "journey" as const, projectId: projectId as Id<"projects"> };
+    const found = await findPage(ctx, place);
+    let journey = found ?? await memoryPage(ctx, place);
+    // A Journey the move made goes again when moving back empties it (splitJournals).
+    if (!found) await ctx.db.patch(journey._id, { migrated: true });
+    let content = journey.content;
+    const spare = new Set<string>();
+    for (let page of pages) {
+      // Lines for every block first, for a day saved before its lines were.
+      if (page.linesAt !== page.revision) {
+        await syncLines(ctx, page, { by: page.by, ...(page.from ? { from: page.from } : {}) }, page.updatedAt);
+        page = (await ctx.db.get(page._id))!;
+      }
+      const rows = (await linesOf(ctx, page._id)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      const blocks = blocksOf(page.content);
+      const heading = journalTitle(page.day!);
+      const taken = new Set<number>();
+      for (const row of rows) {
+        const at = placeOf(blocks, row, taken);
+        if (at >= 0) taken.add(at);
+        // Its Markdown as the day had it, so it reads back as the same line.
+        const words = at >= 0 ? blockMarkdown(page.content, blocks[at]) : itemOf(oneLine(row.text));
+        const placed = editSection(content, heading, words, "append");
+        content = "content" in placed ? placed.content : appended(content, words);
+        await ctx.db.patch(row._id, {
+          pageId: journey._id, order: Number.MAX_SAFE_INTEGER, section: heading, day: row.day ?? page.day,
+          journalMove: { at: now, day: page.day!, createdAt: page.createdAt, ...(row.section ? { section: row.section } : {}), ...(page.migrated ? { migrated: true } : {}), ...(page.pinned !== undefined ? { pinned: page.pinned } : {}) },
+        });
+        spare.add(row._id);
+      }
+      lines += rows.length;
+      await removePage(ctx, page._id);
+    }
+    journey = (await ctx.db.get(journey._id))!;
+    await writePage(ctx, journey, { content }, { by: "owner" }, { spare });
+  }
+  return { lines, pages: days.length };
+}
+
+/** Where a line's block is on its page: at its place, as the last save left it, else the first free block with its words; -1 with none. */
+function placeOf(blocks: ReturnType<typeof blocksOf>, line: Line, taken: Set<number>): number {
+  if (line.order !== undefined && blocks[line.order] && !taken.has(line.order) && sameKey(blocks[line.order].text) === sameKey(line.text)) return line.order;
+  return blocks.findIndex((block, index) => !taken.has(index) && sameKey(block.text) === sameKey(line.text));
+}
+
+/**
+ * Moving back (undoMigration): every Journey's lines go to their project's
+ * own page for their day, as projects kept them before, each day made again
+ * as it was (journalMove), and kept to the project's chats again; the emptied
+ * Journeys go. A Perry from before Journeys reads each project's days as it
+ * did. Returns the lines moved.
+ */
+async function splitJournals(ctx: Writer): Promise<number> {
+  const timezone = await timezoneOf(ctx);
+  let moved = 0;
+  for (const journey of (await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", "journey")).collect()).filter((page) => page.kind === "journey" && page.projectId)) {
+    const rows = (await linesOf(ctx, journey._id)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const blocks = blocksOf(journey.content);
+    const taken = new Set<number>();
+    const days = new Map<string, Array<{ line: Line; words: string }>>();
+    for (const line of rows) {
+      const at = placeOf(blocks, line, taken);
+      if (at >= 0) taken.add(at);
+      const day = line.journalMove?.day ?? line.day ?? dayOfHeading(line.section) ?? new Date(line.createdAt).toLocaleDateString("en-CA", { timeZone: timezone });
+      days.set(day, [...(days.get(day) ?? []), { line, words: at >= 0 ? blockMarkdown(journey.content, blocks[at]) : itemOf(oneLine(line.text)) }]);
+    }
+    for (const [day, items] of [...days].sort(([a], [b]) => a.localeCompare(b))) {
+      const place = { kind: "journal" as const, day, projectId: journey.projectId! };
+      const was = items.find((item) => item.line.journalMove)?.line.journalMove;
+      const found = await findPage(ctx, place);
+      let page = found ?? await memoryPage(ctx, place);
+      // Made again as it was; one no project day page was ever made for (written in the Journey since) was made by a move.
+      if (!found) await ctx.db.patch(page._id, { ...(was ? { createdAt: was.createdAt } : {}), ...(!was || was.migrated ? { migrated: true } : {}), ...(was?.pinned !== undefined ? { pinned: was.pinned } : {}) });
+      let content = page.content;
+      const spare = new Set<string>();
+      for (const { line, words } of items) {
+        const section = line.journalMove ? line.journalMove.section : undefined;
+        const placed = section ? editSection(content, section, words, "append") : null;
+        content = placed && "content" in placed ? placed.content : appended(content, words);
+        await ctx.db.patch(line._id, { pageId: page._id, order: Number.MAX_SAFE_INTEGER, section, journalMove: undefined });
+        spare.add(line._id);
+      }
+      page = (await ctx.db.get(page._id))!;
+      // Kept to the project's chats again: syncLines gives each line its page's project.
+      await writePage(ctx, page, { content }, { by: "owner" }, { spare });
+      moved += items.length;
+    }
+    await removePage(ctx, journey._id);
+  }
+  return moved;
+}
+
+/** How many project journal days wait to go into their Journeys: what moveJournals would take, after a backup (server/index.ts). */
+export const journalsWaiting = internalQuery({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    if ((await ctx.db.query("installation").first())?.memoriesInPages === "undone") return 0;
+    return (await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", "journal")).collect()).filter((page) => page.kind === "journal" && page.projectId).length;
+  },
+});
+
+export const moveJournals = internalMutation({
+  args: {},
+  returns: v.object({ lines: v.number(), pages: v.number() }),
+  handler: async (ctx) => {
+    if ((await ctx.db.query("installation").first())?.memoriesInPages === "undone") return { lines: 0, pages: 0 };
+    return await mergeJournals(ctx);
+  },
+});
+
+/**
+ * The newest entry of each project's Journey, newest first: for a "Lately"
+ * summary across projects in every chat (issue #220 may load it), since each
+ * Journey is read everywhere. Not loaded by anything yet.
+ */
+export async function latestJourneys(ctx: Reader, limit = 10): Promise<Array<{ project: string; page: Id<"notes">; day?: string; text: string; at: number }>> {
+  const names = new Map((await ctx.db.query("projects").collect()).map((project) => [project._id as string, project.name]));
+  const found: Array<{ project: string; page: Id<"notes">; day?: string; text: string; at: number }> = [];
+  for (const journey of (await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", "journey")).collect()).filter((page) => page.kind === "journey" && page.projectId)) {
+    const last = (await linesOf(ctx, journey._id)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).at(-1);
+    if (last) found.push({ project: names.get(journey.projectId!) ?? "a project", page: journey._id, ...(last.day ? { day: last.day } : {}), text: last.text, at: Math.max(last.createdAt, last.editedAt ?? 0) });
+  }
+  return found.sort((a, b) => b.at - a.at).slice(0, limit);
+}
 
 // --- People ------------------------------------------------------------------------------------------
 
@@ -575,6 +747,12 @@ export const indexAll = internalMutation({
   },
 });
 
+/** A page's title as told where it could be any project's: a Journey says whose ("Journey · Bathroom"). */
+export async function titleOf(ctx: Reader, page: Note): Promise<string> {
+  if (page.kind !== "journey" || !page.projectId) return page.title;
+  return `${page.title} · ${(await ctx.db.get(page.projectId))?.name ?? "a deleted project"}`;
+}
+
 /** The titles of pages, by id, for search results. */
 export const titles = internalQuery({
   args: { ids: v.array(v.string()) },
@@ -583,7 +761,7 @@ export const titles = internalQuery({
     for (const raw of new Set(args.ids)) {
       const id = ctx.db.normalizeId("notes", raw);
       const page = id ? await ctx.db.get(id) : null;
-      if (page) found[raw] = page.title;
+      if (page) found[raw] = await titleOf(ctx, page);
     }
     return found;
   },
@@ -599,6 +777,8 @@ export const titles = internalQuery({
  * and recall still finds it.
  */
 export const PINNED_BUDGET = 32_000;
+/** At most this many of a project's newest Journey entries go with each of its chats' turns (standingFor). */
+export const JOURNEY_LATEST = 30;
 /** Pinned: About me and Things to remember unless unpinned; anything else once pinned. */
 export const isPinned = (page: Pick<Note, "pinned" | "kind">) => page.pinned ?? (page.kind === "about" || page.kind === "remember");
 
@@ -635,7 +815,7 @@ export async function standingFor(ctx: Reader, chatId?: Id<"conversations">): Pr
   if (chat?.contactId) return none;
   const project = chat?.projectId;
   const pages = (await ctx.db.query("notes").collect())
-    .filter((page) => (page.conversationId ? page.conversationId === chat?._id : !page.projectId || page.projectId === project));
+    .filter((page) => (page.conversationId ? page.conversationId === chat?._id : !page.projectId || page.projectId === project || page.kind === "journey"));
   const timezone = await timezoneOf(ctx);
   const days = [dayAgo(timezone, 0), dayAgo(timezone, 1)];
   let left = PINNED_BUDGET;
@@ -669,11 +849,12 @@ export async function standingFor(ctx: Reader, chatId?: Id<"conversations">): Pr
     left -= text.length + 2;
     return text;
   };
-  /** A page of memory's lines, under their sections. */
-  const linesIn = async (page: Note, sections?: string[]) => {
+  /** A page of memory's lines, under their sections; `only` keeps some of them. */
+  const linesIn = async (page: Note, sections?: string[], only?: (lines: Line[]) => Line[]) => {
     const entries: Array<{ text: string; id?: string }> = [];
     let section: string | undefined;
-    for (const line of await ordered(page)) {
+    const all = await ordered(page);
+    for (const line of only ? only(all) : all) {
       if (sections && !sections.includes(line.section ?? "")) continue;
       const heading = line.section && line.section !== section ? `### ${line.section}\n` : "";
       section = line.section;
@@ -719,6 +900,13 @@ export async function standingFor(ctx: Reader, chatId?: Id<"conversations">): Pr
   const journal: Array<{ text: string; id?: string }> = [];
   for (const day of days) for (const page of pages.filter((item) => item.kind === "journal" && item.day === day)) journal.push(...await linesIn(page));
   parts.push(part("Journal, today and yesterday", journal));
+  // A project's chats: its Journey's entries of today and yesterday, as with the owner's journal, its newest
+  // JOURNEY_LATEST at most; older ones are recalled when they bear on the message, or read whole. Pinned, it goes whole below.
+  const journey = project ? pages.find((page) => page.kind === "journey" && page.projectId === project) : undefined;
+  if (journey && !isPinned(journey) && !journey.pinnedSections?.length) {
+    parts.push(part(`This project's Journey, today and yesterday (id ${journey._id}; older entries: recall, or brain_read "Journey")`,
+      await linesIn(journey, undefined, (lines) => lines.filter((line) => days.includes(line.day ?? "")).slice(-JOURNEY_LATEST)), journey));
+  }
   // Memories from before pages were all loaded before, so they come before what the owner pinned since.
   parts.push(part("Long-term memory not yet in a page", loose.filter((line) => line.kind !== "profile" && line.kind !== "daily").map((line) => ({ text: memoryLine(line), id: line._id }))));
   parts.push(part("Notes from today and yesterday not yet in a page", loose.filter((line) => line.kind === "daily" && days.includes(line.day ?? "")).map((line) => ({ text: memoryLine(line), id: line._id }))));
@@ -726,7 +914,7 @@ export async function standingFor(ctx: Reader, chatId?: Id<"conversations">): Pr
     && (isPinned(page) || page.pinnedSections?.length)).sort((a, b) => (a.pinnedAt ?? 0) - (b.pinnedAt ?? 0));
   for (const page of pinned) {
     const sections = isPinned(page) ? undefined : page.pinnedSections;
-    const title = `Pinned: ${page.title}${sections ? ` (${sections.join(", ")})` : ""}${page.kind ? "" : `, a page (id ${page._id})`}`;
+    const title = `Pinned: ${await titleOf(ctx, page)}${sections ? ` (${sections.join(", ")})` : ""}${page.kind ? "" : `, a page (id ${page._id})`}`;
     const entries = page.kind ? await linesIn(page, sections) : await wordsIn(page, sections);
     // A person's page has their memories that live elsewhere too, each once: one already sent above is not sent again.
     if (page.kind === "person" && !sections) {
@@ -783,6 +971,8 @@ export const pinnedUsage = query({
 export type MemoryPage = {
   id: Id<"notes">; kind: PageKind | "page"; title: string; day?: string; projectId?: Id<"projects">; project?: string;
   conversationId?: Id<"conversations">; lines: number; updatedAt: number; pinned: boolean; pinnedSections?: string[];
+  /** A Journey: its newest entries, newest last, to preview. */
+  latest?: Array<{ id: Id<"memories">; text: string; day?: string }>;
 };
 
 /** Every page of memory, for the Memory page: About me, Things to remember, the journal (newest day first), people, chats. */
@@ -792,16 +982,19 @@ export const memoryPages = query({
     assertDashboardKey(args.key);
     const names = new Map((await ctx.db.query("projects").collect()).map((project) => [project._id as string, project.name]));
     const pages: MemoryPage[] = [];
-    for (const kind of ["about", "remember", "journal", "person", "chat", undefined] as const) {
+    for (const kind of ["about", "remember", "journal", "journey", "person", "chat", undefined] as const) {
       // Other pages are listed here only when pinned.
       // Each page once: the kind is checked here too, as an index range on "no kind" can return every page.
       const rows = (await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", kind)).collect())
         .filter((page) => (kind ? page.kind === kind : !page.kind) && (kind || isPinned(page) || page.pinnedSections?.length));
       if (kind === "journal") rows.sort((a, b) => (b.day ?? "").localeCompare(a.day ?? ""));
       else if (kind === "person") rows.sort((a, b) => a.title.localeCompare(b.title));
+      else if (kind === "journey") rows.sort((a, b) => b.updatedAt - a.updatedAt);
       for (const page of rows) {
+        const lines = (await linesOf(ctx, page._id)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         pages.push({
-          id: page._id, kind: kind ?? "page", title: page.title, updatedAt: page.updatedAt, lines: (await linesOf(ctx, page._id)).length,
+          id: page._id, kind: kind ?? "page", title: page.title, updatedAt: page.updatedAt, lines: lines.length,
+          ...(kind === "journey" ? { latest: lines.slice(-3).map((line) => ({ id: line._id, text: line.text, ...(line.day ? { day: line.day } : {}) })) } : {}),
           pinned: isPinned(page), ...(page.pinnedSections?.length ? { pinnedSections: page.pinnedSections } : {}),
           ...(page.day ? { day: page.day } : {}),
           ...(page.projectId ? { projectId: page.projectId, project: names.get(page.projectId) ?? "a deleted project" } : {}),
@@ -861,11 +1054,12 @@ async function basedOnPages(ctx: Reader, ids: Id<"memories">[]): Promise<Array<{
 
 /**
  * Open the page of memory for a place from the dashboard (About me, Things to
- * remember, today's journal), made if need be. With a project, its own Things
- * to remember or journal day: About me is everyone's, so a project has none.
+ * remember, today's journal, a project's Journey), made if need be. With a
+ * project, its own Things to remember or its Journey: About me is everyone's,
+ * so a project has none, and the journal's days are the owner's.
  */
 export const openMemoryPage = mutation({
-  args: { key: v.string(), kind: v.union(v.literal("about"), v.literal("remember"), v.literal("journal")), projectId: v.optional(v.id("projects")) },
+  args: { key: v.string(), kind: v.union(v.literal("about"), v.literal("remember"), v.literal("journal"), v.literal("journey")), projectId: v.optional(v.id("projects")) },
   returns: v.id("notes"),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
@@ -874,7 +1068,11 @@ export const openMemoryPage = mutation({
     const scope = projectId ? { projectId } : {};
     if (args.kind === "journal") {
       const day = new Date().toLocaleDateString("en-CA", { timeZone: await timezoneOf(ctx) });
-      return (await memoryPage(ctx, { kind: "journal", day, ...scope }))._id;
+      return (await memoryPage(ctx, { kind: "journal", day }))._id;
+    }
+    if (args.kind === "journey") {
+      if (!projectId) throw new Error("A Journey is a project's.");
+      return (await memoryPage(ctx, { kind: "journey", projectId }))._id;
     }
     if (args.kind === "about") {
       if (projectId) throw new Error("About me is in every chat; a project keeps its own in Things to remember.");

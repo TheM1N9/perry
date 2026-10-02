@@ -694,8 +694,9 @@ async function brain(args: string[]): Promise<boolean> {
   const client = await backend();
   try {
     if (what === "move-back") {
-      const done = (await client.call<{ movedBack: number; pagesDeleted: number }>("pages:undoMigration")).value;
-      say(`  ${green("Done.")} ${done.movedBack} memories are back as they were; ${done.pagesDeleted} empty pages went. Perry leaves them there until ${bold("perry brain move-in")}.`);
+      const done = (await client.call<{ movedBack: number; pagesDeleted: number; journalLines?: number }>("pages:undoMigration")).value;
+      const days = done.journalLines ? ` ${done.journalLines} lines of projects' Journeys are back on their own journal days.` : "";
+      say(`  ${green("Done.")} ${done.movedBack} memories are back as they were; ${done.pagesDeleted} empty pages went.${days} Perry leaves them there until ${bold("perry brain move-in")}.`);
     } else {
       const done = (await client.call<{ moved: number; kept: number }>("pages:migrate", { again: true })).value;
       say(`  ${green("Done.")} ${done.moved} memories moved into pages${done.kept ? `; ${done.kept} kept as they were` : ""}.`);

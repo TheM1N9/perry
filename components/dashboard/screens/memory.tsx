@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookmarkIcon, CalendarDaysIcon, ChevronRightIcon, FileTextIcon, FolderIcon, MessageSquareIcon, SearchIcon, UserIcon, UserRoundIcon, XIcon } from "lucide-react";
+import { BookmarkIcon, CalendarDaysIcon, ChevronRightIcon, FileTextIcon, FolderIcon, MessageSquareIcon, RouteIcon, SearchIcon, UserIcon, UserRoundIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
@@ -176,11 +176,14 @@ export function OlderMemories() {
   );
 }
 
-const PAGE_ICONS = { about: UserIcon, remember: BookmarkIcon, journal: CalendarDaysIcon, person: UserRoundIcon, chat: MessageSquareIcon, page: FileTextIcon } as const;
-const GROUPS: Array<{ pinned?: boolean; kinds: Array<MemoryPage["kind"]>; label: string }> = [
-  { pinned: true, kinds: ["about", "remember", "journal", "person", "chat", "page"], label: "Pinned: in every chat" },
+const PAGE_ICONS = { about: UserIcon, remember: BookmarkIcon, journal: CalendarDaysIcon, journey: RouteIcon, person: UserRoundIcon, chat: MessageSquareIcon, page: FileTextIcon } as const;
+const STARTERS = { about: { Icon: UserIcon, title: "About me" }, remember: { Icon: BookmarkIcon, title: "Things to remember" }, journey: { Icon: RouteIcon, title: "Journey" } } as const;
+const GROUPS: Array<{ pinned?: boolean; kinds: Array<MemoryPage["kind"]>; label: string; project?: string }> = [
+  { pinned: true, kinds: ["about", "remember", "journal", "journey", "person", "chat", "page"], label: "Pinned: in every chat", project: "Pinned: in every chat here" },
   { kinds: ["about", "remember"], label: "Not pinned" },
   { kinds: ["journal"], label: "Journal" },
+  // Each project's running log: tagged with its project, read from every chat (convex/pages.ts).
+  { kinds: ["journey"], label: "Projects' journeys", project: "Journey" },
   { kinds: ["person"], label: "People" },
   { kinds: ["chat"], label: "Kept to one chat" },
 ];
@@ -189,10 +192,11 @@ const DAYS = 7;
 
 /**
  * Memory as pages (convex/pages.ts): About me, Things to remember, a journal
- * page a day, a page per person, and what a chat kept to itself. Each opens in
- * the page editor, where every memory is a line to read and edit as text.
- * With `projectId`, one project's own: its Things to remember, its journal
- * days and its pinned pages, which only its chats see.
+ * page a day, each project's Journey, a page per person, and what a chat kept
+ * to itself. Each opens in the page editor, where every memory is a line to
+ * read and edit as text. With `projectId`, one project's own: its Things to
+ * remember, which only its chats see, its Journey, which every chat reads,
+ * and its pinned pages.
  */
 export function MemoryPages({ filter = "", projectId }: { filter?: string; projectId?: Id<"projects"> }) {
   const { dashboardKey } = useSession();
@@ -201,7 +205,7 @@ export function MemoryPages({ filter = "", projectId }: { filter?: string; proje
   const usage = useQuery(api.pages.pinnedUsage, projectId ? "skip" : { key: dashboardKey });
   const open = useMutation(api.pages.openMemoryPage);
   const [allDays, setAllDays] = useState(false);
-  const go = (kind: "about" | "remember") => void open({ key: dashboardKey, kind, ...(projectId ? { projectId } : {}) })
+  const go = (kind: keyof typeof STARTERS) => void open({ key: dashboardKey, kind, ...(projectId ? { projectId } : {}) })
     .then((id) => router.push(noteHref(id)), (cause) => toast.error(`Couldn't open it: ${errorText(cause)}`));
   if (all === undefined) return <ListSkeleton rows={3} />;
   const pages = projectId ? all.filter((page) => page.projectId === projectId) : all;
@@ -216,29 +220,41 @@ export function MemoryPages({ filter = "", projectId }: { filter?: string; proje
           && (!filter || `${page.title} ${page.project ?? ""}`.toLocaleLowerCase().includes(filter)));
         const more = group.kinds.includes("journal") && !allDays && shown.length > DAYS ? shown.length - DAYS : 0;
         if (more) shown = shown.slice(0, DAYS);
-        const starters = group.pinned && !filter ? startable.filter((kind) => !has(kind)) : [];
+        // A project's page offers its Journey before anything is written in it.
+        const starters: Array<keyof typeof STARTERS> = filter ? [] : group.pinned ? startable.filter((kind) => !has(kind))
+          : projectId && group.kinds.includes("journey") && !has("journey") ? ["journey"] : [];
         if (!shown.length && !starters.length) return null;
-        const label = projectId && group.pinned ? "Pinned: in every chat here" : group.label;
+        const label = projectId && group.project ? group.project : group.label;
         return (
           <div key={group.label}>
             <h2 className="mb-1 text-sm font-medium text-muted-foreground">{label}</h2>
             <List label={label}>
-              {starters.map((kind) => (
-                <li key={kind} className="py-2.5">
-                  <button type="button" className="flex items-center gap-3 text-md font-medium hover:underline underline-offset-2" onClick={() => go(kind)} data-memory-page={kind}>
-                    {kind === "about" ? <UserIcon className="size-4 text-muted-foreground" /> : <BookmarkIcon className="size-4 text-muted-foreground" />}
-                    {kind === "about" ? "About me" : "Things to remember"}
-                  </button>
-                </li>
-              ))}
+              {starters.map((kind) => {
+                const { Icon, title } = STARTERS[kind];
+                return (
+                  <li key={kind} className="py-2.5">
+                    <button type="button" className="flex items-center gap-3 text-md font-medium hover:underline underline-offset-2" onClick={() => go(kind)} data-memory-page={kind}>
+                      <Icon className="size-4 text-muted-foreground" />{title}
+                    </button>
+                  </li>
+                );
+              })}
               {shown.map((page) => {
                 const Icon = PAGE_ICONS[page.kind];
                 return (
-                  <li key={page.id} className="relative flex items-center gap-3 py-2.5">
-                    <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                    <Link href={noteHref(page.id)} data-memory-page={page.kind} className="min-w-0 flex-1 truncate text-md font-medium after:absolute after:inset-0 hover:underline underline-offset-2">{page.title}</Link>
-                    {page.project && !projectId && <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><FolderIcon className="size-3" />{page.project}</span>}
-                    {!page.pinned && page.pinnedSections && <span className="shrink-0 truncate text-xs text-muted-foreground">{page.pinnedSections.join(", ")}</span>}
+                  <li key={page.id} className="relative py-2.5" data-journey={page.kind === "journey" ? page.projectId : undefined}>
+                    <div className="flex items-center gap-3">
+                      <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                      <Link href={noteHref(page.id)} data-memory-page={page.kind} className="min-w-0 flex-1 truncate text-md font-medium after:absolute after:inset-0 hover:underline underline-offset-2">{page.title}</Link>
+                      {page.project && !projectId && <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground" data-project-chip><FolderIcon className="size-3" />{page.project}</span>}
+                      {!page.pinned && page.pinnedSections && <span className="shrink-0 truncate text-xs text-muted-foreground">{page.pinnedSections.join(", ")}</span>}
+                    </div>
+                    {/* A Journey's newest entries, on its project's page. */}
+                    {projectId && page.latest && page.latest.length > 0 && (
+                      <ul className="mt-1 space-y-0.5 pl-7 text-sm text-muted-foreground" aria-label="Latest in the Journey">
+                        {page.latest.map((line) => <li key={line.id} className="truncate" data-journey-line={line.id}>{line.text}</li>)}
+                      </ul>
+                    )}
                   </li>
                 );
               })}
