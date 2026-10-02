@@ -477,7 +477,7 @@ try {
 
   // Files for a chat in a project: a PDF, a voice memo, a Markdown note, a video, a page of HTML.
   const LEASE = pdf("Lease agreement 2026");
-  const MEMO = wav(3);
+  const MEMO = wav(8);
   const files = {
     lease: await upload(inProject, "msg-proj-2", "lease.pdf", LEASE, "application/pdf"),
     memo: await upload(inProject, "msg-proj-2", "memo.wav", MEMO, "audio/wav"),
