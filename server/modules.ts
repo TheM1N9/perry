@@ -35,6 +35,7 @@ import * as lib_price from "../convex/lib/price";
 import * as lib_routing from "../convex/lib/routing";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
 import * as lib_skills from "../convex/lib/skills";
+import * as lib_steps from "../convex/lib/steps";
 import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
 import * as lib_truncate from "../convex/lib/truncate";
@@ -103,6 +104,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/routing": lib_routing,
   "lib/shortcuts": lib_shortcuts,
   "lib/skills": lib_skills,
+  "lib/steps": lib_steps,
   "lib/telegram": lib_telegram,
   "lib/telegramFormat": lib_telegramFormat,
   "lib/truncate": lib_truncate,

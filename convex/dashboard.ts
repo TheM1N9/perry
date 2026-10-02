@@ -6,7 +6,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { action, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { problemWith, resolve as resolveShortcuts, SHORTCUT_IDS, SHORTCUTS, type ShortcutId, type Shortcuts } from "./lib/shortcuts";
-import { ABSOLUTE_PATH } from "./media";
+import { ABSOLUTE_PATH, stepsKey } from "./media";
 import { defaultAccess, defaultEngine, engineFor, type Onboarding } from "./installation";
 import { callName, DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./persona";
 import { PAUSED_ERROR, type Access } from "./lib/commands";
@@ -23,6 +23,7 @@ import { OUTBOX_TTL_MS } from "./conversations";
 import { beingNamed, cancelTitle, requestTitle } from "./titles";
 import { watchProblem } from "./work";
 import { describeStep, STARTING, summarize, WAITING, WRITING, type Step } from "./lib/activity";
+import { pictureOf, stepCard, type StepCard } from "./lib/steps";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -482,7 +483,7 @@ export const getActivity = query({
 });
 
 /** A step of a run, as the chat lists it under "Worked for…". */
-export type WorkStep = Step & { status: Doc<"runSpans">["status"]; startedAt: number; durationMs?: number };
+export type WorkStep = Step & { id: Id<"runSpans">; kind: Doc<"runSpans">["kind"]; status: Doc<"runSpans">["status"]; startedAt: number; durationMs?: number };
 /** One run of a chat and every step it took, in order. */
 export type Work = { runId: Id<"runs">; status: Doc<"runs">["status"]; startedAt: number; finishedAt?: number; steps: WorkStep[] };
 /** The runs a chat lists the steps of: its latest, which covers the replies it shows. */
@@ -504,12 +505,44 @@ export const getChatWork = query({
       const spans = await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).take(500);
       const steps = spans.filter((span) => span.kind !== "reasoning").sort((a, b) => a.startedAt - b.startedAt).map((span): WorkStep => ({
         ...describeStep(span),
+        id: span._id,
+        kind: span.kind,
         status: span.status,
         startedAt: span.startedAt,
         ...(span.durationMs !== undefined ? { durationMs: span.durationMs } : {}),
       }));
       return { runId: run._id, status: run.status, startedAt: run.startedAt, ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}), steps };
     }));
+  },
+});
+
+/** A step opened in the chat or on Activity: what it ran, changed, saw or answered, live while it runs. */
+export type StepView = StepCard & { status: Doc<"runSpans">["status"] };
+
+/**
+ * One step, as a card (lib/steps.ts), with what it links to: each file it
+ * changed and the picture Perry's browser took, served by the local media
+ * server (app/api/media). Loaded only when the step is opened.
+ */
+export const getStep = query({
+  args: { key: vKey, id: v.string() },
+  handler: async (ctx, args): Promise<StepView | null> => {
+    assertDashboardKey(args.key);
+    const id = ctx.db.normalizeId("runSpans", args.id);
+    const span = id ? await ctx.db.get(id) : null;
+    const run = span ? await ctx.db.get(span.runId) : null;
+    if (!span || !run) return null;
+    const files = span.kind === "fileChange"
+      ? new Map((await ctx.db.query("chatAttachments")
+        .withIndex("by_message", (q) => q.eq("conversationId", run.conversationId).eq("messageKey", stepsKey(run._id)))
+        .collect()).flatMap((row) => row.localPath ? [[row.localPath, `/api/media/${row._id}`] as const] : []))
+      : undefined;
+    const pictureId = pictureOf(span);
+    const pictureRow = pictureId ? ctx.db.normalizeId("chatAttachments", pictureId) : null;
+    const picture = pictureRow ? await ctx.db.get(pictureRow) : null;
+    // Only a picture registered for this chat's steps, whatever id a tool's answer carried.
+    const shown = picture?.conversationId === run.conversationId && picture.messageKey === "steps" && picture.localPath ? `/api/media/${picture._id}` : undefined;
+    return { ...stepCard(span, { files, ...(shown ? { picture: shown } : {}) }), status: span.status };
   },
 });
 
