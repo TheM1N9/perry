@@ -15,7 +15,12 @@ const labels: Array<{ kind: string; question: string; text: string; ids: string[
 try {
   const server = p.start("server");
   await p.until(() => fetch(`${p.BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "start", 600);
-  await p.until(() => !(p.rows("installation")[0]?.embeddedBefore) && p.sql<{ n: number }>(`SELECT count(*) AS n FROM "doc_memories" WHERE json_extract(doc, '$.embeddedWith') IS NULL`)[0].n < 50, "embedding", 6 * 3600);
+  // Every line on the model in use: none without a vector, none on the model before.
+  await p.until(() => {
+    const install = p.rows("installation")[0];
+    if (install?.embeddedWith !== (process.env.PERRY_EMBED_MODEL ?? "onnx-community/embeddinggemma-300m-ONNX") || install.embeddedBefore) return false;
+    return p.sql<{ n: number }>(`SELECT count(*) AS n FROM "doc_memories" WHERE json_extract(doc, '$.supersededBy') IS NULL AND (json_extract(doc, '$.embeddedWith') IS NULL OR json_extract(doc, '$.embeddedWith') != ?)`, [install.embeddedWith])[0].n < 50;
+  }, "embedding", 6 * 3600);
   for (const label of labels.filter((item) => !asked.length || asked.some((q) => item.question.includes(q)))) {
     const brain = await p.call<Array<{ id: string; text: string; score: number }>>("pages:search", { key: p.KEY, query: label.question, limit: 10 });
     const words = await p.call<Array<{ id: string; text: string }>>("memories:search", { query: label.question, limit: 10, everywhere: true });
