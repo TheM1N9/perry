@@ -188,6 +188,8 @@ export default defineSchema({
    * owner, and the owner is whoever answered the code first.
    */
   installation: defineTable({
+    /** When the owner last asked from the Usage page for every plan's limits to be read again (usage.requestRefresh). */
+    usageRefreshAt: v.optional(v.number()),
     /**
      * "undone" once the owner moved memories back out of pages (pages.undoMigration, `perry brain move-back`):
      * Perry then no longer moves them in when it starts, until `perry brain move-in`.
@@ -562,6 +564,8 @@ export default defineSchema({
     engineAuth: v.optional(v.record(v.string(), vEngineAuth)),
     /** How much of each engine's plan is used, by engine, as this computer last read it (usage.ts). */
     usage: v.optional(v.record(v.string(), v.object({ limits: v.optional(vPlanLimits), hit: v.optional(vLimitHit) }))),
+    /** When this computer last read any engine's plan limits (usage.ts report), for the Usage page's refresh. */
+    usageReadAt: v.optional(v.number()),
     /**
      * Codex's state from before engines. Still written from Codex's entry in
      * `engines`, and read when a runner from before engines reports only these.

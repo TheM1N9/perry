@@ -113,7 +113,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     }
     case "account/login/cancel": return answer({});
     case "account/logout": rmSync(SIGNED_IN, { force: true }); return answer({});
-    case "account/rateLimits/read": return answer({ rateLimits: null });
+    // A plan's windows when a check has written codex-limits.json (artifacts/usage-refresh); none otherwise.
+    case "account/rateLimits/read": return answer({ rateLimits: existsSync(join(HOME, "codex-limits.json")) ? JSON.parse(readFileSync(join(HOME, "codex-limits.json"), "utf8")) : null });
     case "model/list": return answer({ data: signedIn() ? [{ model: "gpt-fake", displayName: "GPT Fake", isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "medium" }], defaultReasoningEffort: "medium" }] : [] });
     case "skills/extraRoots/set": return answer({});
     case "skills/list": return answer({ data: [] });
