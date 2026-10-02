@@ -21,7 +21,7 @@ import type { FromLayout, ToLayout } from "./layout-worker";
  */
 
 export const KIND_COLOR: Record<MapKind, string> = {
-  about: "--primary", remember: "--chart-2", journal: "--chart-4", person: "--chart-3", page: "--foreground", chat: "--success", project: "--primary",
+  about: "--primary", remember: "--chart-2", journal: "--chart-4", journey: "--success", person: "--chart-3", page: "--foreground", chat: "--chart-4", project: "--primary",
 };
 const KINDS = Object.keys(KIND_COLOR) as MapKind[];
 /** Below this zoom, journal days are drawn a month to a dot. */

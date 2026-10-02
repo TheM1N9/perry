@@ -5,7 +5,7 @@
  */
 
 /** What a node is: a page of each kind, the owner's own page, or a project its pages belong to. */
-export type MapKind = "about" | "remember" | "journal" | "person" | "chat" | "page" | "project";
+export type MapKind = "about" | "remember" | "journal" | "journey" | "person" | "chat" | "page" | "project";
 
 /**
  * Why two nodes are tied. Each comes from one source (brainMap.ts, EDGE_SOURCES), so a new kind of tie,
