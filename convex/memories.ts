@@ -4,7 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { timezoneOf } from "./jobs";
 import { EMBED_MODEL, embed, embedderReady, unload, warmUp } from "./lib/embed";
-import { dateRange, daysOf, eventIn, fuse, says, weightOf } from "./lib/recall";
+import { dateRange, daysOf, eventIn, fuse, rankRecall, says, type RecallParts } from "./lib/recall";
 import { peopleIn, PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
 import { dropLine, ensurePeople, memoryPage, placeFor, putLine, rewordLine, secretIn, writePage, type Author, type Standing } from "./pages";
 import { vLineBy, vMemoryKind, vMemoryOrigin } from "./schema";
@@ -43,8 +43,6 @@ const MAX_RESULTS = 25;
 const DAY_MS = 86_400_000;
 /** Below this cosine, a memory is not about what was asked. */
 const MIN_SIMILARITY = 0.25;
-/** How much a place among the word matches counts against the same place among the meanings. */
-const WORD_WEIGHT = 0.8;
 
 /** YYYY-MM-DD on the owner's calendar, `offset` days ago. */
 export const dayIn = (timezone: string, offset = 0) => new Date(Date.now() - offset * DAY_MS).toLocaleDateString("en-CA", { timeZone: timezone });
@@ -385,7 +383,7 @@ export const read = internalQuery({
  * may see, or with `everywhere`, all of it.
  */
 export const recall = internalAction({
-  args: { query: v.string(), limit: v.optional(v.number()), chat: vChat, everywhere: v.optional(v.boolean()), excerpts: v.optional(v.boolean()) },
+  args: { query: v.string(), limit: v.optional(v.number()), chat: vChat, everywhere: v.optional(v.boolean()), excerpts: v.optional(v.boolean()), parts: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<Array<MemoryView & { score: number; excerpt?: string[] }>> => {
     const limit = Math.min(args.limit ?? 6, MAX_RESULTS);
     const query = args.query.trim();
@@ -416,17 +414,15 @@ export const recall = internalAction({
     const pages: Record<string, string> = await ctx.runQuery(internal.pages.titles, { ids: [...known.values()].flatMap((memory) => memory.pageId ? [memory.pageId] : []) });
     for (const memory of known.values()) if (memory.pageId && pages[memory.pageId]) memory.page = { id: memory.pageId, title: pages[memory.pageId] };
 
-    // A word match can be as thin as "I" or "my", so meaning wins a tie; both together win outright.
-    const fused = fuse([
-      { ids: hits.map((memory) => memory.id), weight: meaning.length ? WORD_WEIGHT : 1 },
-      { ids: meaning.map((item) => item.id).filter((id) => known.has(id)), weight: 1 },
-      { ids: dated.map((item) => item.id).filter((id) => known.has(id)), weight: 1 },
-      { ids: mentioned.filter((id) => known.has(id)), weight: 0.5 },
-    ]);
-    const ranked = [...fused]
-      .map(([id, fusion]) => ({ ...known.get(id)!, score: fusion * weightOf(known.get(id)!, now, range) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+    const parts: RecallParts = {
+      words: hits.map((memory) => memory.id),
+      meaning: meaning.map((item) => ({ id: item.id as string, similarity: item.similarity })).filter((item) => known.has(item.id)),
+      dated: dated.map((item) => ({ id: item.id as string, similarity: item.similarity })).filter((item) => known.has(item.id)),
+      mentioned: mentioned.filter((id) => known.has(id)),
+    };
+    // For tuning the ranking against labelled questions (artifacts/brain-scale): what each way found, unranked.
+    if (args.parts) return [{ parts, lines: Object.fromEntries(known), range, now } as never];
+    const ranked = rankRecall(parts, known, now, range).slice(0, limit);
     if (!args.excerpts) return ranked;
     const around: Record<string, string[]> = await ctx.runQuery(internal.memories.excerpts, { ids: ranked.filter((memory) => memory.pageId).map((memory) => memory.id as Id<"memories">) });
     return ranked.map((memory) => (around[memory.id]?.length ? { ...memory, excerpt: around[memory.id] } : memory));
@@ -646,7 +642,8 @@ How your memory works. Nothing carries over between chats unless it is written d
 - remember kind="daily": what happened today, plans for the coming days, and anything you are not sure will last.
 - Save each fact on its own, as a sentence that makes sense later without the chat, with names and dates in full ("on 28 Sep 2026", not "today").
 - Save it, then carry on with what the owner asked; you need not say so unless they asked you to remember.
-- When something changes, remember the new version with supersedes=[old id] instead of forgetting the old one.
+- When something changes, remember the new version with supersedes=[old id] instead of forgetting the old one; extends=id when it adds to one that stays true. Something true only until a date ("exam tomorrow") gets expires.
+- recall searches by words and by meaning, in any language; it understands dates in the question ("in March 2025", "last week") and people by name or by what the owner calls them ("my sister"), and shows the lines around a page's line.
 - A plan that is also a to-do is linked to it: remember it with todoId, or pass the note's id in noteIds to add_todo or update_todo. A linked note ("follows to-do …") follows its to-do: when the to-do is moved, ticked off or deleted, the note is updated to say so, and you need not remember the change again.
 - Pinned pages are loaded into every chat, within a size budget: About me is below; Things to remember, today's and yesterday's journal, this chat's own page and whatever else the owner pinned arrive as a recalled-memory block ahead of the owner's message, sent again only when they change, so the latest block is current. Everything else (people's pages, older days, the owner's other pages) is recalled when it bears on the message: use recall for anything not loaded, and brain_read to read a page whole: a past day as "2026-10-01", a person as "People/Datta".
 - In a project's chats (a "# This project" block says when you are in one), remember saves to the project by default (scope "this project"): seen in its chats, and never in any other. Use scope "everywhere" for something about the owner that every chat should know; outside a project it is the default. Scope "this chat" keeps a fact to this one chat when the owner asks.

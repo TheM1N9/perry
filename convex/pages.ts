@@ -121,6 +121,9 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
   return added;
 }
 
+/** installation.mentionsAt once every line from before mentions were kept has been read (indexMentions). */
+const MENTIONS_DONE = Number.MAX_SAFE_INTEGER;
+
 /** A line gone for good, and what it mentioned. */
 export async function deleteLine(ctx: Writer, id: Id<"memories">): Promise<void> {
   for (const mention of await ctx.db.query("mentions").withIndex("by_line", (q) => q.eq("lineId", id)).collect()) await ctx.db.delete(mention._id);
@@ -144,8 +147,8 @@ export async function peopleByName(ctx: Reader): Promise<Map<string, string>> {
 
 /** The people a line mentions: those it is about, the person whose page it is on, and names in its words. */
 export function mentionedIn(line: Pick<Line, "text" | "about">, names: Map<string, string>, pageOf?: string): string[] {
-  const keys = new Set(names.values());
-  const found = new Set<string>((line.about ?? []).map(personKey).filter((key) => keys.has(key)));
+  // Whoever it is about, page or not yet (memories.add makes their page after the line).
+  const found = new Set<string>(peopleIn(line.about).map(personKey));
   if (pageOf) found.add(pageOf);
   const words = line.text.toLocaleLowerCase().split(/[^\p{L}\p{N}'’.-]+/u).map((word) => word.replace(/['’]s$|[.'’-]+$/u, "")).filter(Boolean);
   for (let i = 0; i < words.length; i++) {
@@ -195,7 +198,6 @@ export async function noteAliases(ctx: Writer, pageId: Id<"notes">): Promise<voi
  * where the last batch stopped (installation.mentionsAt), the next scheduled
  * until none are left. Derived from the lines, so it changes none of them.
  */
-const MENTIONS_DONE = Number.MAX_SAFE_INTEGER;
 export const indexMentions = internalMutation({
   args: {},
   returns: v.number(),
@@ -635,7 +637,13 @@ export async function mentionsOf(ctx: Reader, page: Note, seen: (line: Line) => 
   if (page.kind !== "person" || !page.person) return [];
   const titles = new Map<string, Note | null>();
   const found: Mention[] = [];
-  for (const line of await ctx.db.query("memories").withIndex("by_created").order("desc").collect()) {
+  // Once every line's mentions are kept (indexMentions), only the lines that mention them are read, not all of Brain.
+  const indexed = (await ctx.db.query("installation").first())?.mentionsAt === MENTIONS_DONE;
+  const candidates = indexed
+    ? (await Promise.all((await ctx.db.query("mentions").withIndex("by_person", (q) => q.eq("person", page.person)).collect()).map((mention) => ctx.db.get(mention.lineId))))
+      .filter((line): line is Line => Boolean(line)).sort((a, b) => b.createdAt - a.createdAt)
+    : await ctx.db.query("memories").withIndex("by_created").order("desc").collect();
+  for (const line of candidates) {
     if (line.supersededBy || line.kind === "page" || line.pageId === page._id || !line.about?.length) continue;
     if (!peopleIn(line.about).some((name) => personKey(name) === page.person) || !seen(line) || await guestOnly(ctx, line)) continue;
     if (line.pageId && !titles.has(line.pageId)) titles.set(line.pageId, await ctx.db.get(line.pageId));

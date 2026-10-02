@@ -102,12 +102,13 @@ const dayOfLine = (line: Weighed) => line.day ?? new Date(line.eventAt ?? line.c
  * again (to double at most); a line from the days asked about counts double;
  * one used in the last month a quarter more.
  */
-export function weightOf(line: Weighed, now: number, range?: DateRange | null): number {
+export function weightOf(line: Weighed, now: number, range?: DateRange | null, floor = RANKING.episodeFloor): number {
   let weight = 1;
   const type = typeOf(line);
   if (type === "episode") {
+    // Never below the floor: an old day's note that matches well must still be found; among equals the newer wins.
     const at = line.eventAt && line.eventAt < now ? line.eventAt : line.createdAt;
-    weight *= 0.5 ** (Math.max(0, now - at) / DAY_MS / HALF_LIFE_DAYS);
+    weight *= floor + (1 - floor) * 0.5 ** (Math.max(0, now - at) / DAY_MS / HALF_LIFE_DAYS);
   }
   if (type === "preference") weight *= Math.min(2, 1 + 0.15 * (line.confirmCount ?? 0));
   if (range) {
@@ -120,11 +121,43 @@ export function weightOf(line: Weighed, now: number, range?: DateRange | null): 
   return weight;
 }
 
-/** Ranked lists of ids fused by place: each list's weight over FUSION_K plus the place. */
-export function fuse(lists: Array<{ ids: string[]; weight: number }>): Map<string, number> {
+/** Ranked lists of ids fused by place: each list's weight over k plus the place. */
+export function fuse(lists: Array<{ ids: string[]; weight: number }>, k = FUSION_K): Map<string, number> {
   const fused = new Map<string, number>();
-  for (const { ids, weight } of lists) ids.forEach((id, place) => fused.set(id, (fused.get(id) ?? 0) + weight / (FUSION_K + place)));
+  for (const { ids, weight } of lists) ids.forEach((id, place) => fused.set(id, (fused.get(id) ?? 0) + weight / (k + place)));
   return fused;
+}
+
+/** What each way of searching found for a question, before ranking. */
+export type RecallParts = {
+  words: string[];
+  meaning: Array<{ id: string; similarity: number }>;
+  dated: Array<{ id: string; similarity: number }>;
+  mentioned: string[];
+};
+
+/**
+ * How the lists weigh, measured on labelled questions (artifacts/brain-scale/tune.ts): the fusion constant, each
+ * list's weight, how far below the closest a line's meaning may be and still count, and the least an old
+ * episode weighs.
+ */
+export const RANKING = { k: FUSION_K, words: 1, meaning: 1, dated: 1, mentioned: 0.5, margin: 1, episodeFloor: 0.5 };
+export type Ranking = typeof RANKING;
+
+/** The lines found, best first: lists fused by place, then each weighed by what it is (weightOf). */
+export function rankRecall<T extends Weighed>(parts: RecallParts, lines: Map<string, T>, now: number, range: DateRange | null, ranking: Ranking = RANKING): Array<T & { score: number }> {
+  // Meaning's scores bunch together for some models: only those near the closest count, so noise does not crowd out words.
+  const near = (list: Array<{ id: string; similarity: number }>) => list.filter((item) => item.similarity >= (list[0]?.similarity ?? 0) - ranking.margin).map((item) => item.id);
+  const fused = fuse([
+    { ids: parts.words, weight: ranking.words },
+    { ids: near(parts.meaning), weight: ranking.meaning },
+    { ids: near(parts.dated), weight: ranking.dated },
+    { ids: parts.mentioned, weight: ranking.mentioned },
+  ], ranking.k);
+  return [...fused]
+    .filter(([id]) => lines.has(id))
+    .map(([id, fusion]) => ({ ...lines.get(id)!, score: fusion * weightOf(lines.get(id)!, now, range, ranking.episodeFloor) }))
+    .sort((a, b) => b.score - a.score);
 }
 
 /**

@@ -13,7 +13,9 @@ import type { Runtime } from "./runtime";
  * finite) is dropped, and the line is embedded again by memories.embedMissing.
  * A superseded line's is dropped too: only current lines are searched.
  *
- * First the database is copied whole to ~/.perry/backups/perry-before-brain-
+ * It runs in the background after Perry starts (server/index.ts), so the
+ * dashboard is up at once; a line embedded again meanwhile keeps its new
+ * vector. First the database is copied whole to ~/.perry/backups/perry-before-brain-
  * index-<time>.sqlite (VACUUM INTO, a consistent copy), and the move does not
  * start unless the copy was made. It goes in batches, each one transaction,
  * so a stop halfway leaves whole rows, and the next start moves the rest:
@@ -55,7 +57,12 @@ export async function moveVectorsOut(runtime: Runtime): Promise<{ moved: number;
       runtime.sql.exec("BEGIN IMMEDIATE");
       try {
         for (const row of rows) {
-          const doc = JSON.parse(row.doc) as { vector?: string; vectorModel?: string; supersededBy?: string };
+          const doc = JSON.parse(row.doc) as { vector?: string; vectorModel?: string; supersededBy?: string; embeddedWith?: string };
+          // Embedded again already (memories.embedMissing ran while this moved): the newer vector stays.
+          if (doc.embeddedWith) {
+            runtime.store.patch(row._id, { vector: undefined, vectorModel: undefined });
+            continue;
+          }
           const floats = doc.supersededBy ? null : unpack(doc.vector);
           if (floats && doc.vectorModel) {
             runtime.store.patch(row._id, { vector: undefined, vectorModel: undefined, embedding: floats, embeddedWith: doc.vectorModel });

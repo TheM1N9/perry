@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, cpSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
@@ -118,17 +118,34 @@ function memoryOf(pid: number): number {
   return Math.round(Number(ran.stdout.trim()) / 1024 / 1024);
 }
 
-type Hit = { id: string; text: string; score: number };
+type Hit = { id: string; text: string; score: number; pageId?: string; page?: { id: string; title: string } };
 const result: Record<string, unknown> = { stage, seed: stats };
+const CHECKS = Number(flag("checks") ?? 0);
+const { sql, rows } = p;
+const backups = () => (existsSync(join(p.home, "backups")) ? readdirSync(join(p.home, "backups")) : []).filter((name) => name.startsWith("perry-before-brain-index"));
+const count = (statement: string, params: Array<string | number> = []) => sql<{ n: number }>(statement, params)[0]?.n ?? 0;
+
+let server: ReturnType<typeof p.start> | null = null;
+async function startServer() {
+  const started = Date.now();
+  server = p.start("server");
+  await until(() => fetch(`${p.BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start", 900);
+  return round((Date.now() - started) / 1000);
+}
+async function restart() {
+  p.stop(server);
+  await sleep(3_000);
+  return await startServer();
+}
+const searchFor = (query: string, chat?: string) => chat ? call<Hit[]>("memories:recall", { query, limit: 10, chat }) : call<Hit[]>("pages:search", { key: KEY, query, limit: 10 });
+const found = async (query: string, id: string, chat?: string) => (await searchFor(query, chat)).some((hit) => hit.id === id);
 
 try {
-  const started = Date.now();
-  const server = p.start("server");
-  await until(() => fetch(`${p.BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start", 900);
-  result.startSeconds = round((Date.now() - started) / 1000);
+  // What the seed holds, as main left it: vectors inside the rows.
+  const seeded = CHECKS >= 1 ? count(`SELECT count(*) AS n FROM "doc_memories" WHERE json_extract(doc, '$.vector') IS NOT NULL`) : 0;
+  result.startSeconds = await startServer();
   await call("dashboard:skipOnboarding", { key: KEY }).catch(() => {});
 
-  // Search by meaning is ready once a question that shares no word with its answer finds it.
   const chat = await call<string>("dashboard:createChat", { key: KEY });
   const chats = new Map<string, string>();
   const chatFor = async (label: Label) => {
@@ -136,6 +153,96 @@ try {
     if (!chats.has(label.project)) chats.set(label.project, await call<string>("dashboard:createChat", { key: KEY, projectId: label.project }));
     return chats.get(label.project)!;
   };
+
+  if (CHECKS >= 1) {
+    // --- Step 1: the move out of the rows, after a backup, once ------------------------------------------------------
+    const left = count(`SELECT count(*) AS n FROM "doc_memories" WHERE json_extract(doc, '$.vector') IS NOT NULL OR json_extract(doc, '$.vectorModel') IS NOT NULL`);
+    const indexed = count(`SELECT count(*) AS n FROM "_vector_memories_by_embedding"`);
+    const backedUp = backups();
+    const inBackup = backedUp.length ? spawnSync("node", ["-e", `const { DatabaseSync } = require("node:sqlite"); const db = new DatabaseSync(process.argv[1], { readOnly: true }); process.stdout.write(String(db.prepare("SELECT count(*) AS n FROM doc_memories WHERE json_extract(doc, '$.vector') IS NOT NULL").get().n));`, join(p.home, "backups", backedUp[0])], { encoding: "utf8" }).stdout : "0";
+    check("1. a backup of the whole database is written before the move, with every row as it was", backedUp.length === 1 && Number(inBackup) === seeded, { backups: backedUp, seeded, inBackup: Number(inBackup) });
+    check("1. every vector moved out of its row into the vector index, none left inside a row", left === 0 && indexed >= seeded - 5 && seeded > 0, { left, indexed, seeded });
+    const sample = sql<{ _id: string; doc: string }>(`SELECT _id, doc FROM "doc_memories" ORDER BY _id LIMIT 200`);
+    result.restartSeconds = await restart();
+    const again = sql<{ _id: string; doc: string }>(`SELECT _id, doc FROM "doc_memories" ORDER BY _id LIMIT 200`);
+    const unchanged = again.length === sample.length && sample.every((row, index) => again[index]._id === row._id && JSON.parse(again[index].doc).text === JSON.parse(row.doc).text && !JSON.parse(again[index].doc).vector);
+    const moves = (p.logs.server.match(/moved \d+ vectors/g) ?? []).length;
+    check("1. a second start moves nothing and writes no second backup", backups().length === 1 && unchanged && moves === 1, { backups: backups().length, moves });
+
+    // --- Step 1: the word index keeps up with every way a line changes ------------------------------------------------
+    const word = `zebracorn${Date.now() % 100000}`;
+    const added = await call<{ id: string }>("memories:add", { text: `The ${word} lamp is in the attic, behind the blue trunk.`, tags: [], source: "test", kind: "core", section: "Home" });
+    check("2. a line written now is found by its words at once", await found(word, added.id), { id: added.id });
+    check("2. the last word, still being typed, is found as a prefix", await found(word.slice(0, -3), added.id));
+    await call("memories:edit", { id: added.id, text: `The quokkalamp${word.slice(9)} lamp is in the garage now.` });
+    check("2. an edit: the old words no longer find it, the new ones do", !(await found(word, added.id)) && await found(`quokkalamp${word.slice(9)}`, added.id));
+    await call("memories:removeMany", { ids: [added.id] });
+    check("2. a deleted line is not found", !(await found(`quokkalamp${word.slice(9)}`, added.id)));
+    // An older Perry, or any other process, writing a row straight into SQLite: the triggers index it.
+    const outside = `seedout${Date.now().toString(36)}`;
+    sql(`INSERT INTO "_ids" (id, tbl) VALUES (?, 'memories')`, [outside]);
+    sql(`INSERT INTO "doc_memories" (_id, _creationTime, doc) VALUES (?, ?, ?)`, [outside, Date.now(), JSON.stringify({ text: `Wrote the narwhalfig plan straight into SQLite.`, tags: [], source: "test", kind: "core", createdAt: Date.now() })]);
+    check("2. a row another process writes is found by its words", await found("narwhalfig", outside));
+    // A Perry from before the index, which had no triggers: the rows it wrote are indexed when this one starts.
+    for (const trigger of ["ai", "au", "ad"]) sql(`DROP TRIGGER IF EXISTS "_search_memories_search_text_${trigger}"`);
+    const before = `seedold${Date.now().toString(36)}`;
+    sql(`INSERT INTO "_ids" (id, tbl) VALUES (?, 'memories')`, [before]);
+    sql(`INSERT INTO "doc_memories" (_id, _creationTime, doc) VALUES (?, ?, ?)`, [before, Date.now(), JSON.stringify({ text: "The axolotlpie recipe came from an older Perry.", tags: [], source: "test", kind: "core", createdAt: Date.now() })]);
+    await restart();
+    check("2. rows written without the triggers are indexed at the next start", await found("axolotlpie", before));
+
+    // --- Step 1: what a chat may see ------------------------------------------------------------------------------
+    const projectLine = sql<{ _id: string; text: string; projectId: string }>(`SELECT _id, json_extract(doc, '$.text') AS text, json_extract(doc, '$.projectId') AS projectId FROM "doc_memories" WHERE json_extract(doc, '$.projectId') IS NOT NULL AND json_extract(doc, '$.kind') = 'page' LIMIT 1`)[0];
+    if (projectLine) {
+      const inProject = await call<string>("dashboard:createChat", { key: KEY, projectId: projectLine.projectId });
+      const outsideHits = await searchFor(projectLine.text, chat);
+      const insideHits = await searchFor(projectLine.text, inProject);
+      check("3. a project's line is found from its chats and from no other", !outsideHits.some((hit) => hit.id === projectLine._id) && insideHits.some((hit) => hit.id === projectLine._id));
+    }
+    const fact = await call<{ id: string }>("memories:add", { text: "Our water purifier is an Aquaguard Ritz with a copper filter.", tags: [], source: "test", kind: "core", section: "Home" });
+    const newer = await call<{ id: string }>("memories:add", { text: "Our water purifier is now a Kent Grand Plus with a UV lamp.", tags: [], source: "test", kind: "core", section: "Home", supersedes: [fact.id] });
+    const purifier = await searchFor("which water purifier do we have");
+    const vectorOfOld = count(`SELECT count(*) AS n FROM "_vector_memories_by_embedding" WHERE id = ?`, [fact.id]);
+    check("3. a superseded line is not found, and its vector is gone; the line that updates it is found and says so", !purifier.some((hit) => hit.id === fact.id) && purifier.some((hit) => hit.id === newer.id) && vectorOfOld === 0
+      && rows("memories").find((row) => row._id === newer.id)?.relation?.how === "updates");
+
+    // --- Step 1: what a line is and when it happens ----------------------------------------------------------------
+    const exam = await call<{ id: string }>("memories:add", { text: "Kavya's maths olympiad is on 14 November 2026 at Glendale.", tags: [], source: "test", kind: "daily", type: "episode", expiresAt: Date.UTC(2026, 10, 15) });
+    const examRow = rows("memories").find((row) => row._id === exam.id)!;
+    check("7. a line keeps its type, when what it says happens, and until when it holds", examRow.type === "episode" && new Date(examRow.eventAt).toISOString().startsWith("2026-11-14") && examRow.expiresAt === Date.UTC(2026, 10, 15), { type: examRow.type, eventAt: examRow.eventAt, expiresAt: examRow.expiresAt });
+
+    // --- Step 1: re-embedding with the new model, in the background, resumable --------------------------------------
+    const install = () => rows("installation")[0] ?? {};
+    const onModel = (model: string) => count(`SELECT count(*) AS n FROM "doc_memories" WHERE json_extract(doc, '$.embeddedWith') = ?`, [model]);
+    const OLD = "Xenova/paraphrase-multilingual-MiniLM-L12-v2";
+    await until(() => Boolean(install().embeddedWith), "the model in use noted", 120);
+    const NEW = install().embeddedWith as string;
+    result.embedModel = NEW;
+    if (NEW !== OLD) {
+      await until(() => install().embeddedBefore === OLD && onModel(NEW) > 500, "re-embedding under way", 600);
+      const probe = labels.find((label) => label.kind === "meaning")!;
+      const midway = (await searchFor(probe.question)).some((hit) => probe.ids.includes(hit.id));
+      check("4. while every line is embedded again, search by meaning goes on (both models searched)", midway, { onNew: onModel(NEW), onOld: onModel(OLD) });
+      const beforeRestart = onModel(NEW);
+      await restart();
+      await sleep(5_000);
+      const afterRestart = onModel(NEW);
+      check("4. re-embedding resumes after a restart rather than starting over", afterRestart >= beforeRestart && install().embeddedBefore === OLD, { beforeRestart, afterRestart });
+      const embedStarted = Date.now();
+      await until(() => !install().embeddedBefore, "re-embedding to finish", 3600);
+      result.reembedMinutes = round((Date.now() - embedStarted) / 60000);
+      check("4. re-embedding finishes: every current line is on the new model, and the old one is no longer searched", onModel(OLD) === 0 && !install().embeddedBefore, { onNew: onModel(NEW) });
+    }
+    await until(() => (install().mentionsAt ?? 0) === Number.MAX_SAFE_INTEGER, "who each line mentions to be read", 900);
+    const sister = await searchFor("what does my sister do these days?", chat);
+    const divya = rows("notes").find((row) => row.kind === "person" && row.title === "Divya");
+    check("6. a person called what the owner calls them (\"my sister\") finds what is said of them", Boolean(divya) && sister.some((hit) => hit.pageId === divya!._id || /Divya/.test(hit.text)), { top: sister.slice(0, 3).map((hit) => hit.text) });
+    const files = readdirSync(p.home).filter((name) => /\.(sqlite|db)(-wal|-shm)?$/.test(name));
+    check("8. Brain is still one SQLite file in Perry's home", files.every((name) => name.startsWith("perry.sqlite")), { files });
+  }
+
+  // --- Measurements ------------------------------------------------------------------------------------------------
+  // Search by meaning is ready once a question that shares no word with its answer finds it.
   const readyStarted = Date.now();
   if (!LME) {
     const probe = labels.find((label) => label.kind === "meaning")!;
@@ -188,7 +295,8 @@ try {
   const context = await call<{ instructions: string; recalled: string }>("memories:context", { query: "what should I cook for Amma this weekend?", chat });
   result.turn = { instructionsChars: context.instructions.length, recalledChars: context.recalled.length, totalChars: context.instructions.length + context.recalled.length };
 
-  result.serverMemoryMB = memoryOf(server.pid!);
+  result.serverMemoryMB = memoryOf(server!.pid!);
+  result.databaseMB = Math.round(statSync(join(p.home, "perry.sqlite")).size / 1024 / 1024);
   writeFileSync(join(outDir, "measure.json"), `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify(result, null, 2));
   check("measured", true);

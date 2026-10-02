@@ -187,7 +187,6 @@ export async function startBackend() {
   box.__perry!.started = true;
   // Also brings an install from before the default engine was asked for forward: Codex, as it was, written down.
   await runtime.runMutation("installation:ensure", {}, { internal: true });
-  await updateBrainIndex(runtime);
   await engineFromSetup(runtime);
   await engineFromEnvironment(runtime);
   // A chat from before projects that kept its memory to itself becomes a project of its own.
@@ -199,8 +198,11 @@ export async function startBackend() {
   await givePeoplePages(runtime);
   await pairThisMachine(runtime).catch((error) => console.error(`[perry] could not connect this computer: ${String(error)}`));
   runtime.start();
-  // Lines without a vector from the model in use (new ones, or all of them after the model changed), in the background.
-  void runtime.runAction("memories:embedMissing", {}, { internal: true }).catch((error) => console.error(`[perry] could not embed Brain's lines: ${String(error)}`));
+  // In the background, so years of Brain never hold up the dashboard: its index brought up to date, then the lines
+  // without a vector from the model in use (new ones, or all of them after the model changed) embedded.
+  void updateBrainIndex(runtime)
+    .then(() => runtime.runAction("memories:embedMissing", {}, { internal: true }))
+    .catch((error) => console.error(`[perry] could not embed Brain's lines: ${String(error)}`));
   box.__perry!.stopTelegram = pollTelegram(runtime);
   box.__perry!.stopWhatsApp = runWhatsApp(runtime);
   box.__perry!.stopTriggers = runTriggers(runtime);
