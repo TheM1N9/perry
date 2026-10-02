@@ -9,6 +9,7 @@ import { peopleIn, PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pag
 import { dropLine, ensurePeople, memoryPage, placeFor, putLine, rewordLine, secretIn, writePage, type Author, type Standing } from "./pages";
 import { vEngine, vLineBy, vMemoryKind, vMemoryOrigin } from "./schema";
 import { pinnedBudget } from "./lib/budget";
+import { vectorKeyOf } from "./archive";
 
 /**
  * Internal data layer for memory, modelled on OpenClaw's workspace memory.
@@ -90,6 +91,8 @@ function view(memory: Memory) {
     ...(memory.type ? { type: memory.type } : {}),
     ...(memory.eventAt ? { eventAt: memory.eventAt } : {}),
     ...(memory.expiresAt ? { expiresAt: memory.expiresAt } : {}),
+    ...(memory.archivedAt ? { archivedAt: memory.archivedAt } : {}),
+    ...(memory.lastUsedAt ? { lastUsedAt: memory.lastUsedAt } : {}),
   };
 }
 export type MemoryView = ReturnType<typeof view> & { page?: { id: string; title: string } };
@@ -319,7 +322,11 @@ export async function followTodo(ctx: MutationCtx, todo: Doc<"todos">, change: T
  * Pages' lines come too, unless `memoriesOnly`.
  */
 export const search = internalQuery({
-  args: { query: v.string(), limit: v.optional(v.number()), kind: v.optional(vMemoryKind), chat: vChat, everywhere: v.optional(v.boolean()), memoriesOnly: v.optional(v.boolean()), loose: v.optional(v.boolean()) },
+  args: {
+    query: v.string(), limit: v.optional(v.number()), kind: v.optional(vMemoryKind), chat: vChat, everywhere: v.optional(v.boolean()), memoriesOnly: v.optional(v.boolean()), loose: v.optional(v.boolean()),
+    /** The archive too (archive.ts): a deep search. */
+    deep: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     const limit = Math.min(args.limit ?? 8, MAX_RESULTS);
     const query = args.query.trim();
@@ -328,9 +335,9 @@ export const search = internalQuery({
       ? args.kind
         ? await layer(ctx, args.kind, limit)
         : await ctx.db.query("memories").withIndex("by_created").order("desc").take(limit * 2)
-      : await ctx.db.query("memories").withSearchIndex("search_text", (q) => q.search("text", query)).take(limit * 2);
+      : await ctx.db.query("memories").withSearchIndex("search_text", (q) => (args.deep ? q.search("text", query) : q.search("text", query).eq("archivedAt", undefined))).take(limit * 2);
     return docs
-      .filter((memory) => !memory.supersededBy && (!args.kind || kindOf(memory) === args.kind) && !(args.memoriesOnly && isPageLine(memory)) && !(args.loose && memory.pageId) && (args.everywhere || seen(memory)))
+      .filter((memory) => !memory.supersededBy && (args.deep || !memory.archivedAt) && (!args.kind || kindOf(memory) === args.kind) && !(args.memoriesOnly && isPageLine(memory)) && !(args.loose && memory.pageId) && (args.everywhere || seen(memory)))
       .slice(0, limit)
       .map(view);
   },
@@ -351,11 +358,11 @@ export const anyEverywhere = internalQuery({
 });
 
 export const getMany = internalQuery({
-  args: { ids: v.array(v.id("memories")), chat: vChat, everywhere: v.optional(v.boolean()) },
+  args: { ids: v.array(v.id("memories")), chat: vChat, everywhere: v.optional(v.boolean()), deep: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const docs = await Promise.all(args.ids.map((id) => ctx.db.get(id)));
     const seen = args.everywhere ? () => true : await seenFrom(ctx, args.chat);
-    return docs.filter((memory): memory is Memory => Boolean(memory && !memory.supersededBy && seen(memory))).map(view);
+    return docs.filter((memory): memory is Memory => Boolean(memory && !memory.supersededBy && (args.deep || !memory.archivedAt) && seen(memory))).map(view);
   },
 });
 
@@ -388,11 +395,13 @@ export const recall = internalAction({
     query: v.string(), limit: v.optional(v.number()), chat: vChat, everywhere: v.optional(v.boolean()), excerpts: v.optional(v.boolean()), parts: v.optional(v.boolean()),
     /** Asked as of another time than now ("last week" is the week before it): for checks that replay what was asked then. */
     now: v.optional(v.number()),
+    /** The archive too (archive.ts): Perry's recall with deep, Brain's "Include archive". */
+    deep: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<Array<MemoryView & { score: number; excerpt?: string[] }>> => {
     const limit = Math.min(args.limit ?? 6, MAX_RESULTS);
     const query = args.query.trim();
-    const where = { chat: args.chat, ...(args.everywhere ? { everywhere: true } : {}) };
+    const where = { chat: args.chat, ...(args.everywhere ? { everywhere: true } : {}), ...(args.deep ? { deep: true } : {}) };
     if (!query) {
       const newest: MemoryView[] = await ctx.runQuery(internal.memories.search, { query, limit, ...where, memoriesOnly: true });
       return newest.map((memory) => ({ ...memory, score: 1 }));
@@ -404,12 +413,12 @@ export const recall = internalAction({
     const people: Array<{ key: string; name: string }> = await ctx.runQuery(internal.memories.peopleAsked, { query });
     const words = [query, ...people.filter((person) => !says(query, person.name)).map((person) => person.name)].join(" ");
     const hits: MemoryView[] = await ctx.runQuery(internal.memories.search, { query: words, limit: limit * 4, ...where });
-    const meaning = await byMeaning(ctx, query, limit * 4).catch((error) => {
+    const meaning = await byMeaning(ctx, query, limit * 4, undefined, args.deep).catch((error) => {
       console.error(`memory search by meaning failed, so by words only: ${String(error)}`);
       return [] as Ranked;
     });
     const days = range ? daysOf(range) : [];
-    const dated = days.length ? await byMeaning(ctx, query, limit * 2, days).catch(() => [] as Ranked) : [];
+    const dated = days.length ? await byMeaning(ctx, query, limit * 2, days, args.deep).catch(() => [] as Ranked) : [];
     const mentioned: string[] = people.length ? await ctx.runQuery(internal.memories.mentioning, { people: people.map((person) => person.key), limit: limit * 2, ...where }) : [];
 
     const known = new Map<string, MemoryView>(hits.map((memory) => [memory.id, memory]));
@@ -443,7 +452,7 @@ type Ranked = Array<{ id: Memory["_id"]; similarity: number }>;
  * too, and both lists are fused, so search by meaning never stops. Empty until
  * the model is ready.
  */
-async function byMeaning(ctx: ActionCtx, query: string, limit: number, days?: string[]): Promise<Ranked> {
+async function byMeaning(ctx: ActionCtx, query: string, limit: number, days?: string[], deep?: boolean): Promise<Ranked> {
   if (!await readyWithin(10_000)) return [];
   const previous: string | null = await ctx.runQuery(internal.memories.previousModel, {});
   // Within some days, the index is asked by day, not by model: while two models' vectors are about, not at all.
@@ -456,7 +465,8 @@ async function byMeaning(ctx: ActionCtx, query: string, limit: number, days?: st
     const found = await ctx.vectorSearch("memories", "by_embedding", {
       vector: wanted,
       limit: Math.min(256, days?.length ? limit * 4 : limit),
-      filter: (q) => (days?.length ? q.or(...days.map((day) => q.eq("day", day))) : q.eq("embeddedWith", model)),
+      // Live lines only, unless deep: archived ones are kept under a key of their own (archive.vectorKeyOf).
+      filter: (q) => (days?.length ? q.or(...days.map((day) => q.eq("day", day))) : deep ? q.or(q.eq("vectorKey", vectorKeyOf(model, false)!), q.eq("vectorKey", vectorKeyOf(model, true)!)) : q.eq("vectorKey", vectorKeyOf(model, false)!)),
     });
     lists.push(found.filter((item) => item._score >= MIN_SIMILARITY).map((item) => ({ id: item._id, similarity: item._score })));
   }
@@ -545,7 +555,7 @@ export const storeVectors = internalMutation({
     for (const item of args.items) {
       const memory = await ctx.db.get(item.id);
       // Edited while its vector was being made: the next pass makes a new one. Superseded meanwhile: none.
-      if (memory?.text === item.text && !memory.supersededBy) await ctx.db.patch(item.id, { embedding: item.vector, embeddedWith: EMBED_MODEL });
+      if (memory?.text === item.text && !memory.supersededBy) await ctx.db.patch(item.id, { embedding: item.vector, embeddedWith: EMBED_MODEL, vectorKey: vectorKeyOf(EMBED_MODEL, Boolean(memory.archivedAt)) });
     }
     return null;
   },
@@ -647,6 +657,7 @@ How your memory works. Nothing carries over between chats unless it is written d
 - Save each fact on its own, as a sentence that makes sense later without the chat, with names and dates in full ("on 28 Sep 2026", not "today").
 - Save it, then carry on with what the owner asked; you need not say so unless they asked you to remember.
 - When something changes, remember the new version with supersedes=[old id] instead of forgetting the old one; extends=id when it adds to one that stays true. Something true only until a date ("exam tomorrow") gets expires.
+- Lines nobody used for a few months are archived: not sent, and not found by recall unless you pass deep=true. When recall finds nothing for something the owner expects you to know, recall again with deep=true. A line you use from the archive comes back.
 - recall searches by words and by meaning, in any language; it understands dates in the question ("in March 2025", "last week") and people by name or by what the owner calls them ("my sister"), and shows the lines around a page's line.
 - A plan that is also a to-do is linked to it: remember it with todoId, or pass the note's id in noteIds to add_todo or update_todo. A linked note ("follows to-do …") follows its to-do: when the to-do is moved, ticked off or deleted, the note is updated to say so, and you need not remember the change again.
 - Pinned pages are loaded into every chat, within a share of your context window: About me is below, whole; Lately, Things to remember, today's and yesterday's journal, this chat's own page and whatever else the owner pinned arrive as a recalled-memory block ahead of the owner's message, sent again only when they change, so the latest block is current. A big section may come condensed: its summary, and the lines of it that bear on the message in a block of their own; brain_read with the page and section named there reads all of it. Everything else (people's pages, older days, the owner's other pages) is recalled when it bears on the message: use recall for anything not loaded, and brain_read to read a page whole: a past day as "2026-10-01", a person as "People/Datta".
@@ -707,6 +718,8 @@ export const context = internalAction({
       : [];
     const matching = found.filter(inCondensed).slice(0, 8);
     const relevant = found.filter((memory) => !inCondensed(memory)).slice(0, 6);
+    // Recalled into this turn: used, so not archived for a while yet (archive.ts).
+    if (matching.length || relevant.length) await ctx.runMutation(internal.archive.used, { ids: [...matching, ...relevant].map((memory) => memory.id) });
     const section = (title: string, lines: string[]) => lines.length ? `## ${title}\n${lines.join("\n")}` : "";
     const digest = await sha256(loaded.standing);
     const recalled = [

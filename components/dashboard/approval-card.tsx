@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FolderIcon, GlobeIcon, MessageCircleIcon, ShieldAlertIcon, TerminalIcon, FilePenIcon, UserPlusIcon } from "lucide-react";
+import { BrainIcon, FolderIcon, GlobeIcon, MessageCircleIcon, ShieldAlertIcon, TerminalIcon, FilePenIcon, UserPlusIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useMutation } from "@/client/react";
@@ -12,12 +12,14 @@ import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
 import { TextTip } from "./common";
 
-const KIND = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone" } as const;
-const ICON = { command: TerminalIcon, file: FilePenIcon, write: FilePenIcon, browser: GlobeIcon, contact: UserPlusIcon, message: MessageCircleIcon } as const;
+const KIND = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone", brain: "tidy Brain" } as const;
+const ICON = { command: TerminalIcon, file: FilePenIcon, write: FilePenIcon, browser: GlobeIcon, contact: UserPlusIcon, message: MessageCircleIcon, brain: BrainIcon } as const;
 
 function remaining(ms: number) {
+  if (ms > 2 * 86_400_000) return `${Math.floor(ms / 86_400_000)} days`;
   const seconds = Math.max(0, Math.round(ms / 1000));
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
@@ -36,14 +38,19 @@ export function ApprovalCard({ approval, now, showChat = true, bare }: { approva
     if (list) store.setQuery(api.approvals.pending, { key: args.key }, list.filter((item) => item.id !== args.id));
   });
   const [answering, setAnswering] = useState<"approve" | "decline" | "always" | null>(null);
+  // A change to Brain can be approved in the owner's own words: what the lines become, one per line.
+  const [editing, setEditing] = useState<string | null>(null);
+  const proposal = approval.proposal;
   const Icon = ICON[approval.kind];
   const left = approval.expiresAt - now;
 
   const answer = async (choice: "approve" | "decline" | "always") => {
     setAnswering(choice);
     try {
-      const applied = await decide({ key: dashboardKey, id: approval.id, approved: choice !== "decline", always: choice === "always" });
+      const edited = proposal && editing !== null && choice === "approve" ? editing.split("\n").map((line) => line.trim()).filter(Boolean) : undefined;
+      const applied = await decide({ key: dashboardKey, id: approval.id, approved: choice !== "decline", always: choice === "always", ...(edited ? { edited } : {}) });
       if (!applied) toast.error("That request was already answered, or it expired.");
+      else if (proposal) toast.success(choice === "approve" ? "Approved. Brain is tidied; you can undo it in Brain." : "Declined. Brain stays as it is.");
       else toast.success(choice === "always" ? "Allowed, and saved as a rule for next time." : choice === "approve" ? "Approved. It's going ahead." : "Declined. It won't run.");
     } catch (cause) {
       toast.error(`Couldn't send your answer: ${errorText(cause)}`);
@@ -68,6 +75,29 @@ export function ApprovalCard({ approval, now, showChat = true, bare }: { approva
           {remaining(left)} left
         </TextTip>
       </header>
+      {proposal ? (
+        <div className={cn("space-y-3 px-4 text-sm", bare ? "py-2.5" : "py-3.5")} data-proposal={proposal.kind}>
+          <p className="font-medium text-pretty">
+            {approval.title}
+            {proposal.page && <> · <Link href={`/brain/${proposal.page.id}`} className="font-normal text-muted-foreground underline-offset-2 hover:underline">{proposal.page.title}</Link></>}
+          </p>
+          {approval.detail && <p className="text-pretty text-muted-foreground">{approval.detail.split("\n\n")[0]}</p>}
+          <div>
+            <h3 className="text-xs font-medium text-muted-foreground">{proposal.kind === "rollup" || proposal.kind === "infer" ? "From" : "Now"}</h3>
+            <ul className="mt-1 space-y-0.5" data-before>
+              {proposal.before.map((line, index) => <li key={index} className={cn("text-pretty", proposal.kind === "merge" || proposal.kind === "condense" ? "text-muted-foreground line-through decoration-muted-foreground/50" : "text-muted-foreground")}>{line}</li>)}
+            </ul>
+          </div>
+          <div>
+            <h3 className="text-xs font-medium text-muted-foreground">{proposal.kind === "rollup" ? "Summary" : proposal.kind === "infer" ? "Adds" : "After"}</h3>
+            {editing === null ? (
+              <ul className="mt-1 space-y-0.5" data-after>{proposal.after.map((line, index) => <li key={index} className="text-pretty">{line}</li>)}</ul>
+            ) : (
+              <Textarea aria-label="What the lines become, one per line" className="mt-1 min-h-24" value={editing} onChange={(event) => setEditing(event.target.value)} />
+            )}
+          </div>
+        </div>
+      ) : (
       <div className={cn("space-y-3 px-4", bare ? "py-2.5" : "py-3.5")}>
         <pre className="flex gap-2.5 overflow-x-auto rounded-lg bg-muted px-3 py-2.5 font-mono text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
           <Icon className="mt-[3px] size-3.5 shrink-0 text-muted-foreground" aria-hidden />
@@ -92,9 +122,13 @@ export function ApprovalCard({ approval, now, showChat = true, bare }: { approva
           </p>
         )}
       </div>
+      )}
       <footer className={cn("flex flex-wrap items-center gap-2 px-4", bare ? "pb-1" : "border-t py-3")}>
         {approval.alwaysAllow && <p className="mr-auto min-w-0 text-xs text-pretty text-muted-foreground">Always allow saves a rule for {approval.alwaysAllow}.</p>}
         <div className="ml-auto flex flex-wrap gap-2">
+          {proposal && editing === null && (
+            <Button variant="ghost" disabled={answering !== null} onClick={() => setEditing(proposal.after.join("\n"))}>Edit</Button>
+          )}
           <Button variant="outline" disabled={answering !== null} onClick={() => void answer("decline")}>
             {answering === "decline" && <Spinner />}Decline
           </Button>

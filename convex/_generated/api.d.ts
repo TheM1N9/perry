@@ -5,10 +5,12 @@
 
 import type * as agentStore from "../agentStore.js";
 import type * as approvals from "../approvals.js";
+import type * as archive from "../archive.js";
 import type * as assistant from "../assistant.js";
 import type * as brain from "../brain.js";
 import type * as channels from "../channels.js";
 import type * as codex from "../codex.js";
+import type * as compaction from "../compaction.js";
 import type * as composio from "../composio.js";
 import type * as connectorAccounts from "../connectorAccounts.js";
 import type * as contacts from "../contacts.js";
@@ -84,10 +86,12 @@ import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server
 declare const fullApi: ApiFromModules<{
   agentStore: typeof agentStore;
   approvals: typeof approvals;
+  archive: typeof archive;
   assistant: typeof assistant;
   brain: typeof brain;
   channels: typeof channels;
   codex: typeof codex;
+  compaction: typeof compaction;
   composio: typeof composio;
   connectorAccounts: typeof connectorAccounts;
   contacts: typeof contacts;

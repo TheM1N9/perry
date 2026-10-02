@@ -51,7 +51,7 @@ import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, List
  * with the connectors, in Apps & skills.
  */
 const SECTIONS: Record<SettingsSection, () => ReactNode> = {
-  general: () => <><YourAssistant /><Appearance /><Updates /></>,
+  general: () => <><YourAssistant /><Appearance /><BrainArchive /><Updates /></>,
   engines: () => <><UsageMoved /><DefaultEngine /><Engines /></>,
   usage: () => <Usage />,
   computers: () => <Computers />,
@@ -428,6 +428,32 @@ function NewChatAccess() {
           })}
         </SelectContent>
       </Select>
+    </Section>
+  );
+}
+
+const ARCHIVE_AFTER = [
+  { value: "30", label: "1 month" }, { value: "90", label: "3 months" }, { value: "180", label: "6 months" },
+  { value: "365", label: "1 year" }, { value: "0", label: "Never" },
+];
+
+/** Brain's archive (archive.ts): how long a line goes unused before it leaves every chat for the archive. */
+function BrainArchive() {
+  const { dashboardKey } = useSession();
+  const days = useQuery(api.archive.getSetting, { key: dashboardKey });
+  const save = useMutation(api.archive.setSetting);
+  return (
+    <Section title="Brain" description="Lines nobody uses go to the archive. Deep search still finds them."
+      tip="Never archived: About me, and what you pinned. A line used again comes back by itself.">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm font-medium">Archive after</span>
+        <Select modal={false} items={ARCHIVE_AFTER} value={days === undefined ? undefined : String(days)} disabled={days === undefined}
+          onValueChange={(value) => { if (!value) return; void save({ key: dashboardKey, days: Number(value) }).then(() => toast.success(value === "0" ? "Nothing is archived." : `Archived after ${ARCHIVE_AFTER.find((item) => item.value === value)?.label} unused.`), (cause) => toast.error(errorText(cause))); }}>
+          <SelectTrigger aria-label="Archive after" className="w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>{ARCHIVE_AFTER.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+        </Select>
+        <span className="text-sm text-muted-foreground">unused</span>
+      </div>
     </Section>
   );
 }

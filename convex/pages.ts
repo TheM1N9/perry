@@ -73,7 +73,8 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
     if (!words && row.order === order && row.section === block.section && row.projectId === scope.projectId && row.conversationId === scope.conversationId) continue;
     await ctx.db.patch(id, {
       order, section: block.section, ...scope,
-      ...(words ? { text: block.text, editedAt: at, embedding: undefined, embeddedWith: undefined } : {}),
+      // Edited, a line is used: it leaves the archive if it was in it.
+      ...(words ? { text: block.text, editedAt: at, embedding: undefined, embeddedWith: undefined, vectorKey: undefined, archivedAt: undefined } : {}),
     });
     if (words) reworded.push(id);
     changed ||= words;
@@ -81,7 +82,7 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
   for (const { id, block, order } of plan.edit) {
     await ctx.db.patch(id, {
       // Who changed it last; the chat it came from stays unless it was changed from another.
-      text: block.text, order, section: block.section, ...scope, by: author.by, ...(author.from ? { from: author.from } : {}), editedAt: at, embedding: undefined, embeddedWith: undefined,
+      text: block.text, order, section: block.section, ...scope, by: author.by, ...(author.from ? { from: author.from } : {}), editedAt: at, embedding: undefined, embeddedWith: undefined, vectorKey: undefined, archivedAt: undefined,
       // A memory the owner rewrote is theirs from then on, whoever wrote it first.
       ...(memory && author.by === "owner" ? { origin: "owner" as const } : {}),
     });
@@ -116,6 +117,8 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
     else await deleteLine(ctx, id);
   }
   if (reworded.length) await noteMentions(ctx, reworded);
+  // A page of memory past a few hundred lines is looked over for duplicates to propose merging, at most daily.
+  if (page.kind && page.kind !== "journal" && page.kind !== "about" && rows.length >= 300) await ctx.scheduler.runAfter(0, internal.compaction.reviewIfDue, {});
   if (page.kind === "person" && (reworded.length || plan.drop.length)) await noteAliases(ctx, page._id);
   if (page.linesAt !== page.revision) await ctx.db.patch(page._id, { linesAt: page.revision });
   if (changed) await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
@@ -342,7 +345,9 @@ export async function findPage(ctx: Reader, place: Place): Promise<Note | null> 
   return rows.find((page) => {
     switch (place.kind) {
       case "about": return !page.projectId;
-      case "remember": case "journal": return page.projectId === place.projectId;
+      case "remember": return page.projectId === place.projectId;
+      // A rolled-up week starts on a day too, and is not that day's page.
+      case "journal": return page.projectId === place.projectId && !page.rollup;
       case "person": return page.person === personKey(place.name);
       case "chat": return page.conversationId === place.conversationId;
     }
@@ -797,11 +802,11 @@ export async function standingFor(ctx: Reader, chatId?: Id<"conversations">, bud
 
   /** Whether this chat may see a line: one of a page everyone reads can still be a project's, or a chat's, of its own. */
   const visible = (line: Line) => (line.conversationId ? line.conversationId === chat?._id : !line.projectId || line.projectId === project);
-  /** A page of memory's lines, by section. */
+  /** A page of memory's lines, by section; not the archived ones (archive.ts). */
   const linesIn = async (page: Note, only?: string[]): Promise<Section[]> => {
     const sections: Section[] = [];
     for (const line of await ordered(page)) {
-      if (!visible(line) || (only && !only.includes(line.section ?? ""))) continue;
+      if (line.archivedAt || !visible(line) || (only && !only.includes(line.section ?? ""))) continue;
       if (sections.at(-1)?.name !== line.section || !sections.length) sections.push({ name: line.section, entries: [] });
       sections.at(-1)!.entries.push({ text: memoryLine(line), id: line._id, at: lineAt(line) });
     }
@@ -814,6 +819,7 @@ export async function standingFor(ctx: Reader, chatId?: Id<"conversations">, bud
     const sections: Section[] = [];
     for (const block of blocksOf(page.content)) {
       if (only && !only.includes(block.section ?? "")) continue;
+      if (rows.get(sameKey(block.text))?.archivedAt) continue;
       if (sections.at(-1)?.name !== block.section || !sections.length) sections.push({ name: block.section, entries: [] });
       const row = rows.get(sameKey(block.text));
       sections.at(-1)!.entries.push({ text: lines.slice(block.start, block.end + 1).join("\n"), ...(row ? { id: row._id, at: lineAt(row) } : {}) });
@@ -1149,6 +1155,8 @@ export type Found = {
   day?: string;
   page?: { id: string; title: string };
   section?: string;
+  /** In the archive (archive.ts): found by a deep search only. */
+  archived?: boolean;
   score: number;
 };
 
@@ -1157,12 +1165,12 @@ export type Found = {
  * of pages that match by words or by meaning (memories.recall), best first.
  */
 export const search = action({
-  args: { key: v.string(), query: v.string(), limit: v.optional(v.number()) },
+  args: { key: v.string(), query: v.string(), limit: v.optional(v.number()), deep: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<Found[]> => {
     assertDashboardKey(args.key);
     const query = args.query.trim();
     if (query.length < 2) return [];
-    const hits: Array<MemoryView & { score: number }> = await ctx.runAction(internal.memories.recall, { query, limit: Math.min(args.limit ?? 10, 25), everywhere: true });
+    const hits: Array<MemoryView & { score: number }> = await ctx.runAction(internal.memories.recall, { query, limit: Math.min(args.limit ?? 10, 25), everywhere: true, ...(args.deep ? { deep: true } : {}) });
     return hits.map((hit) => ({
       id: hit.id,
       text: snippet(hit.text),
@@ -1170,6 +1178,7 @@ export const search = action({
       ...(hit.day ? { day: hit.day } : {}),
       ...(hit.page ? { page: hit.page } : {}),
       ...(hit.section ? { section: hit.section } : {}),
+      ...(hit.archivedAt ? { archived: true } : {}),
       score: hit.score,
     }));
   },

@@ -28,7 +28,7 @@ export type Route = Infer<typeof vRoute>;
 
 export const vWork = v.union(
   v.object({ kind: v.literal("chat") }),
-  v.object({ kind: v.literal("job"), builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"))), once: v.optional(v.boolean()), event: v.optional(v.boolean()) }),
+  v.object({ kind: v.literal("job"), builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"), v.literal("brain-review"))), once: v.optional(v.boolean()), event: v.optional(v.boolean()) }),
   v.object({ kind: v.literal("task"), brief: v.number() }),
 );
 const vOwnerPick = v.object({ engine: v.optional(vEngine), model: v.optional(v.string()), effort: v.optional(v.string()), stay: v.optional(v.boolean()) });

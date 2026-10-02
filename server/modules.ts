@@ -4,10 +4,12 @@
 
 import * as agentStore from "../convex/agentStore";
 import * as approvals from "../convex/approvals";
+import * as archive from "../convex/archive";
 import * as assistant from "../convex/assistant";
 import * as brain from "../convex/brain";
 import * as channels from "../convex/channels";
 import * as codex from "../convex/codex";
+import * as compaction from "../convex/compaction";
 import * as composio from "../convex/composio";
 import * as connectorAccounts from "../convex/connectorAccounts";
 import * as contacts from "../convex/contacts";
@@ -81,10 +83,12 @@ import * as work from "../convex/work";
 export const modules: Record<string, Record<string, unknown>> = {
   "agentStore": agentStore,
   "approvals": approvals,
+  "archive": archive,
   "assistant": assistant,
   "brain": brain,
   "channels": channels,
   "codex": codex,
+  "compaction": compaction,
   "composio": composio,
   "connectorAccounts": connectorAccounts,
   "contacts": contacts,
