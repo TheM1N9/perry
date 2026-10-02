@@ -247,6 +247,9 @@ export function keepPreferences(text: string, page: string): string {
   return `${text.trim()}\n\n## ${PREFERENCES_SECTION}\n\n${body}\n`;
 }
 
+/** Whether About me has USER.md in it: words outside How I like things done, which a new USER.md would replace. */
+export const hasUserMd = (about: string) => blocksOf(about).some((block) => block.section !== PREFERENCES_SECTION);
+
 /** The section of Things to remember a fact goes under when none was named. */
 export function sectionFor(text: string, tags: string[] = [], about: string[] = []): string {
   if (about.length) return "People";

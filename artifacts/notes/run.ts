@@ -325,7 +325,7 @@ try {
   const outsideRead = await tool(general, "read_note", { id: tiles });
   const outsideList = await tool(general, "list_notes", {});
   const outsideSearch = await tool(general, "search_notes", { query: "GREYHEX" });
-  check("projectNoteNotOutside", /no note with that id/.test(outsideRead?.error ?? "") && !outsideList?.notes?.some((note: Row) => note.id === tiles) && outsideSearch?.found === 0,
+  check("projectNoteNotOutside", /no (?:note|page) (?:with|by) that id/.test(outsideRead?.error ?? "") && !outsideList?.notes?.some((note: Row) => note.id === tiles) && outsideSearch?.found === 0,
     { read: outsideRead, search: outsideSearch?.found });
   // The owner edits the note: the words change, the list of notes does not, so the chat is not told the project again.
   const tileNow = noteRow(tiles)!;

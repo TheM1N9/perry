@@ -235,7 +235,6 @@ export function MemoryPages({ filter = "" }: { filter?: string }) {
                     <Link href={noteHref(page.id)} data-memory-page={page.kind} className="min-w-0 flex-1 truncate text-md font-medium after:absolute after:inset-0 hover:underline underline-offset-2">{page.title}</Link>
                     {page.project && <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><FolderIcon className="size-3" />{page.project}</span>}
                     {!page.pinned && page.pinnedSections && <span className="shrink-0 truncate text-xs text-muted-foreground">{page.pinnedSections.join(", ")}</span>}
-                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{page.lines === 1 ? "1 line" : `${page.lines} lines`}</span>
                   </li>
                 );
               })}

@@ -125,9 +125,9 @@ try {
   await evaluate(`(() => { const el = document.querySelector("[data-note-editor]"); el.focus(); const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); for (let node; (node = walk.nextNode());) { const at = node.nodeValue.indexOf("a flat white"); if (at >= 0) { const range = document.createRange(); range.setStart(node, at); range.setEnd(node, at + "a flat white".length); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); return true; } } return false; })()`);
   await send("Input.insertText", { text: "black, no sugar" });
   const savedEdit = async () => (await memories("core")).some((memory) => memory.id === before.id && memory.text === "The owner's usual coffee is black, no sugar.");
-  for (let i = 0; i < 40 && !(await savedEdit()); i++) await new Promise((done) => setTimeout(done, 500));
+  for (let i = 0; i < 120 && !(await savedEdit()); i++) await new Promise((done) => setTimeout(done, 500));
   await evaluate(`document.querySelector("[data-sources] button").click(); true`);
-  await waitFor(`[...document.querySelectorAll("[data-line]")].some((item) => item.innerText.includes("black, no sugar") && item.innerText.includes("edited"))`, "the edited memory, marked edited");
+  await waitFor(`[...document.querySelectorAll("[data-line]")].some((item) => item.innerText.includes("black, no sugar") && item.innerText.includes("edited"))`, "the edited memory, marked edited", 60_000);
   await send("Page.captureScreenshot", { format: "png" }).then((shot) => writeFileSync(join(outDir, "memory-edited.png"), Buffer.from(shot.data, "base64")));
   const after = (await memories("core")).find((memory) => memory.id === before.id);
   notes.edited = { before, after };

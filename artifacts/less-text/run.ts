@@ -274,7 +274,8 @@ try {
       })()`) as { items: string[]; bars: number; usageGroup: boolean; text: string; line: string };
       notes.accountMenu = menu;
       check("accountMenuHasNoUsage", menu.bars === 0 && !menu.usageGroup && !/% left|No limits reported|5-hour|Weekly/.test(menu.text), menu);
-      check("accountMenuItems", JSON.stringify(menu.items) === JSON.stringify(["Usage", "Theme", "Settings", "Lock dashboard"]), menu.items);
+      // Pause Perry joined the menu on main since (the pause), as settings-sections expects too.
+      check("accountMenuItems", JSON.stringify(menu.items) === JSON.stringify(["Pause Perry", "Usage", "Theme", "Settings", "Lock dashboard"]), menu.items);
       check("accountMenuKeepsNameAndPlan", /You|E2E|Sam/.test(menu.text.split("\n")[0]) && Boolean(menu.line?.trim()) && menu.text.includes(menu.line), menu);
       await click(byText("[role=menuitem]", "Usage"));
       const landed = await soon(async () => (await where()) === "/settings/usage" && await evaluate(`document.body.innerText.includes("Your plans")`), 10);

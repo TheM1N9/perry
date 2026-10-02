@@ -163,6 +163,8 @@ try {
       "[data-slot=alert][role=alert]", "article:not([data-bare])", "article pre", ".prose-chat", "[data-command-line]", "ol[aria-label=Trace]",
       "[data-pill]", "[data-slot=button]", "[data-role=user] > *", "[data-pending] > div", "[data-composer]", "[data-slot=avatar]", "[data-slot=calendar]",
       "[data-slot=time-picker]", "[data-slot=tabs-list]",
+      // The page editor's formatting bar (About me is a page now) stays on screen as it scrolls, in the page's own colour.
+      "[role=toolbar]",
     ].join(",");
     const page = getComputedStyle(document.body).backgroundColor;
     const clear = (c) => c === "transparent" || /rgba\\(\\d+, \\d+, \\d+, 0\\)/.test(c) || /\\/ 0\\)$/.test(c);
