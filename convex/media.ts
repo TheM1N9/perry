@@ -141,6 +141,7 @@ export const shareFromLibrary = internalMutation({
     const itemId = ctx.db.normalizeId("library", args.id);
     const item = itemId ? await ctx.db.get(itemId) : null;
     if (!item) throw new Error("There is no Library item with that id; library_find shows them.");
+    if (item.conversationId && (await ctx.db.get(item.conversationId))?.contactId) throw new Error("A chat with someone else has no Library.");
     const mediaKey = `codex-${job._id}`;
     const existing = await ctx.db.query("chatAttachments")
       .withIndex("by_message", (q) => q.eq("conversationId", job.conversationId).eq("messageKey", mediaKey))

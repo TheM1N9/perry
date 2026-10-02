@@ -109,8 +109,12 @@ export async function index(ctx: MutationCtx, id: Id<"chatAttachments">, hint: H
     ...(chat.taskId ? { taskId: chat.taskId } : {}),
   };
   if (existing) {
-    // Found in the files folder before the chat it came with said so: now it says where it came from.
-    if (!existing.conversationId) await ctx.db.patch(existing._id, { ...source, by: hint.by ?? (perry || look ? "perry" : "owner"), how, ...(existing.how === "folder" ? {} : { how: existing.how }) });
+    if (!existing.conversationId) {
+      // Only folder discoveries gain new provenance; attributed files just regain a chat link.
+      await ctx.db.patch(existing._id, existing.how === "folder"
+        ? { ...source, by: hint.by ?? (perry || look ? "perry" : "owner"), how }
+        : { conversationId: chat._id, messageKey: row.messageKey, projectId: chat.projectId, jobId: chat.jobId, taskId: chat.taskId });
+    }
     return;
   }
   const size = row.localPath ? sizeHere(row.localPath) : row.size;
@@ -214,16 +218,23 @@ export const addFound = internalMutation({
   },
 });
 
-/** Let go of items whose file is no longer here: deleted outside Perry, or a stored file that is gone. */
-export const dropMissing = internalMutation({
+/** The file locations to check outside a database transaction. */
+export const syncItems = internalQuery({
   args: {},
+  handler: async (ctx) => (await ctx.db.query("library").collect()).map((item) => ({
+    id: item._id, localPath: item.localPath, storageId: item.storageId,
+  })),
+});
+
+/** Let go of library rows whose files sync found missing. */
+export const dropMissing = internalMutation({
+  args: { ids: v.array(v.id("library")) },
   returns: v.number(),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     let dropped = 0;
-    for (const item of await ctx.db.query("library").collect()) {
-      const here = item.localPath ? sizeHere(item.localPath) !== null : item.storageId ? Boolean(await ctx.storage.getMetadata(item.storageId)) : false;
-      if (here) continue;
-      await ctx.db.delete(item._id);
+    for (const id of args.ids) {
+      if (!await ctx.db.get(id)) continue;
+      await ctx.db.delete(id);
       dropped++;
     }
     return dropped;
@@ -258,7 +269,12 @@ export const sync = internalAction({
     const files = walk(PATHS.files);
     let added = 0;
     for (let at = 0; at < files.length; at += 250) added += await ctx.runMutation(internal.library.addFound, { files: files.slice(at, at + 250) });
-    const dropped: number = await ctx.runMutation(internal.library.dropMissing, {});
+    const missing: Id<"library">[] = [];
+    for (const item of await ctx.runQuery(internal.library.syncItems, {})) {
+      const here = item.localPath ? sizeHere(item.localPath) !== null : item.storageId ? Boolean(await ctx.storage.getMetadata(item.storageId)) : false;
+      if (!here) missing.push(item.id);
+    }
+    const dropped: number = await ctx.runMutation(internal.library.dropMissing, { ids: missing });
     return { added, dropped };
   },
 });
@@ -436,6 +452,7 @@ export const forget = internalMutation({
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.id);
     if (!item) return null;
+    if (item.conversationId && (await ctx.db.get(item.conversationId))?.contactId) throw new Error("A chat with someone else has no Library.");
     const rows = [
       ...(item.localPath ? await ctx.db.query("chatAttachments").withIndex("by_path", (q) => q.eq("localPath", item.localPath)).collect() : []),
       ...(item.storageId ? await ctx.db.query("chatAttachments").withIndex("by_storage", (q) => q.eq("storageId", item.storageId)).collect() : []),
