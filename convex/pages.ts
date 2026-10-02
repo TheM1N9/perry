@@ -231,13 +231,13 @@ export const indexMentions = internalMutation({
     if (install.mentionsAt === undefined) for (const page of await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", "person")).collect()) await noteAliases(ctx, page._id);
     // A pass from before the cursor was a time ended at MENTIONS_DONE: the next one reads every line once more.
     const from = install.mentionsAt === undefined || install.mentionsAt === MENTIONS_DONE ? -1 : install.mentionsAt;
-    const batch = await ctx.db.query("memories").withIndex("by_creation_time", (q) => q.gt("_creationTime", from)).take(2000);
+    const taken = await ctx.db.query("memories").withIndex("by_creation_time", (q) => q.gt("_creationTime", from)).take(2000);
+    // Every line stored at the batch's last moment is in it (many are, when they were written at once), so none falls between two batches.
+    const last = taken.at(-1)?._creationTime ?? from;
+    const batch = taken.length ? [...taken.filter((line) => line._creationTime < last), ...await ctx.db.query("memories").withIndex("by_creation_time", (q) => q.eq("_creationTime", last)).collect()] : [];
     await noteMentions(ctx, batch.filter((line) => !line.supersededBy).map((line) => line._id), await peopleByName(ctx));
-    const first = batch[0]?._creationTime ?? from;
-    const last = batch.at(-1)?._creationTime ?? from;
-    // Lines stored at the same moment as the last of a batch go in the next one too; noteMentions does nothing twice.
-    const done = batch.length < 2000;
-    await ctx.db.patch(install._id, { mentionsAt: done ? Math.max(from, last) : first < last - 1 ? last - 1 : last, ...(done ? { mentionsKept: true } : {}) });
+    const done = taken.length < 2000;
+    await ctx.db.patch(install._id, { mentionsAt: Math.max(from, last), ...(done ? { mentionsKept: true } : {}) });
     if (!done) await ctx.scheduler.runAfter(0, internal.pages.indexMentions, {});
     return batch.length;
   },

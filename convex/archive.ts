@@ -105,7 +105,10 @@ export const run = internalMutation({
     const since = install.archiveSince ?? now;
     if (install.archiveSince === undefined) await ctx.db.patch(install._id, { archiveSince: now });
     const from = install.archiveCursor ?? -1;
-    const batch = await ctx.db.query("memories").withIndex("by_created", (q) => q.gt("createdAt", from)).take(BATCH);
+    const taken = await ctx.db.query("memories").withIndex("by_created", (q) => q.gt("createdAt", from)).take(BATCH);
+    // Every line of the batch's last moment is in it, so none written at the same moment falls between two batches.
+    const last = taken.at(-1)?.createdAt;
+    const batch = last === undefined ? [] : [...taken.filter((line) => line.createdAt < last), ...await ctx.db.query("memories").withIndex("by_created", (q) => q.eq("createdAt", last)).collect()];
     const pages = new Map<string, Doc<"notes"> | null>();
     let archived = 0;
     for (const line of batch) {
@@ -119,9 +122,8 @@ export const run = internalMutation({
       await ctx.db.patch(line._id, { archivedAt: now, ...(line.embeddedWith ? { vectorKey: vectorKeyOf(line.embeddedWith, true) } : {}) });
       archived++;
     }
-    const done = batch.length < BATCH;
-    const last = batch.at(-1)?.createdAt;
-    await ctx.db.patch(install._id, { archiveCursor: done || last === undefined ? undefined : batch[0].createdAt < last - 1 ? last - 1 : last });
+    const done = taken.length < BATCH;
+    await ctx.db.patch(install._id, { archiveCursor: done || last === undefined ? undefined : last });
     if (!done) await ctx.scheduler.runAfter(0, internal.archive.run, args.now ? { now: args.now } : {});
     return { archived, done };
   },
