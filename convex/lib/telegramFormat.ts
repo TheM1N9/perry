@@ -57,8 +57,9 @@ function textToHtml(text: string): string {
   const kept: string[] = [];
   const keep = (html: string) => `${kept.push(html) - 1}`;
   const set = text
+    // A link into the dashboard (a note's, /notes/…) means nothing on a phone: its words stay, as words.
     .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_match, label: string, url: string) =>
-      keep(`<a href="${escapeHtml(url).replace(/"/g, "&quot;")}">${emphasis(escapeHtml(label))}</a>`))
+      keep(url.startsWith("/") ? emphasis(escapeHtml(label)) : `<a href="${escapeHtml(url).replace(/"/g, "&quot;")}">${emphasis(escapeHtml(label))}</a>`))
     .replace(/https?:\/\/[^\s<>()]+/g, (url) => keep(escapeHtml(url)));
   const html = emphasis(escapeHtml(set)
     .replace(/^#{1,6}[ \t]+(.+?)[ \t]*#*$/gm, (_match, title: string) => `<b>${title.replace(/\*\*|__/g, "")}</b>`)

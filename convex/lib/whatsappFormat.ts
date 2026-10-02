@@ -41,7 +41,7 @@ function text(input: string): string {
   const keep = (value: string) => `\u{E000}${bold.push(value) - 1}\u{E001}`;
   return input
     .replace(/^#{1,6}[ \t]+(.+?)[ \t]*#*$/gm, (_match, title: string) => keep(`*${title.replace(/\*\*|__/g, "")}*`))
-    .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_match, label: string, url: string) => label === url ? url : `${label} (${url})`)
+    .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_match, label: string, url: string) => label === url ? url : url.startsWith("/") ? label : `${label} (${url})`)
     .replace(/\*\*(?=\S)(.+?)(?<=\S)\*\*/g, (_match, inner: string) => keep(`*${inner}*`))
     .replace(/(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)/g, (_match, inner: string) => keep(`*${inner}*`))
     .replace(/~~(?=\S)(.+?)(?<=\S)~~/g, "~$1~")

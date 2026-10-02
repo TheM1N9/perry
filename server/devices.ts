@@ -8,7 +8,7 @@ import { backend } from "./index";
  * A desktop pet on another of the owner's computers calls Perry with a key of
  * its own, made as it paired (convex/pet.ts), never the dashboard key. That key
  * opens what the pet's page (components/pet) does and nothing more: the chats,
- * to-dos and approvals it shows, its check-ins and the looks at the screen asked
+ * to-dos and approvals it shows, noting things down, its check-ins and the looks at the screen asked
  * of it. Not the keys, settings, memory, connectors or other computers, and not
  * pairing another.
  *
@@ -27,6 +27,8 @@ const PET_CALLS: Record<string, "which pet" | true> = {
   "dashboard:createChat": true, "dashboard:sendChat": true, "dashboard:stopChat": true, "dashboard:registerAttachment": true,
   "screen:asked": "which pet", "screen:fulfil": "which pet",
   "updates:status": true, "updates:update": true,
+  // Noting something down from him: "/note <words>" to the Inbox note, and a reply kept as a note. Nothing reads notes back.
+  "notes:jot": true, "notes:fromChat": true,
   // How much of each engine's plan is used, so he warns before a reply fails for it.
   "usage:limits": true,
   // His pictures of the screen, sent into a chat and shown in it (app/api/media).
