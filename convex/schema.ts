@@ -6,6 +6,16 @@ export const vChannel = v.union(v.literal("telegram"), v.literal("web"), v.liter
 export const vMessenger = v.union(v.literal("telegram"), v.literal("whatsapp"));
 /** Where the owner paused Perry: the dashboard, the desktop pet, or a phone. */
 export const vPauseSource = v.union(v.literal("web"), v.literal("pet"), v.literal("telegram"), v.literal("whatsapp"));
+/** What a Library item is, for its filter (convex/lib/library.ts). */
+export const vLibraryKind = v.union(v.literal("image"), v.literal("document"), v.literal("media"), v.literal("other"));
+/** How a Library item came to be: sent to Perry, generated, shared, written by a step, a browser screenshot, a look at the screen, added with library_add, or found in Perry's files folder. */
+export const vLibraryHow = v.union(
+  v.literal("upload"), v.literal("generated"), v.literal("shared"), v.literal("written"), v.literal("screenshot"), v.literal("look"), v.literal("added"), v.literal("folder"),
+);
+/** Where a Library item came from: a chat's app, the desktop pet, a schedule or a task, or Perry's files folder. */
+export const vLibraryFrom = v.union(
+  v.literal("web"), v.literal("telegram"), v.literal("whatsapp"), v.literal("pet"), v.literal("job"), v.literal("task"), v.literal("folder"),
+);
 /** A file the owner sent on Telegram, before it is downloaded. */
 export const vTelegramMedia = v.object({ fileId: v.string(), fileName: v.string(), contentType: v.string(), size: v.optional(v.number()) });
 export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.literal("daily"));
@@ -178,6 +188,8 @@ export default defineSchema({
    * owner, and the owner is whoever answered the code first.
    */
   installation: defineTable({
+    /** When the owner last asked from the Usage page for every plan's limits to be read again (usage.requestRefresh). */
+    usageRefreshAt: v.optional(v.number()),
     /**
      * "undone" once the owner moved memories back out of pages (pages.undoMigration, `perry brain move-back`):
      * Perry then no longer moves them in when it starts, until `perry brain move-in`.
@@ -560,6 +572,8 @@ export default defineSchema({
     engineAuth: v.optional(v.record(v.string(), vEngineAuth)),
     /** How much of each engine's plan is used, by engine, as this computer last read it (usage.ts). */
     usage: v.optional(v.record(v.string(), v.object({ limits: v.optional(vPlanLimits), hit: v.optional(vLimitHit) }))),
+    /** When this computer last read any engine's plan limits (usage.ts report), for the Usage page's refresh. */
+    usageReadAt: v.optional(v.number()),
     /**
      * Codex's state from before engines. Still written from Codex's entry in
      * `engines`, and read when a runner from before engines reports only these.
@@ -850,9 +864,49 @@ export default defineSchema({
     contentType: v.string(),
     size: v.number(),
     createdAt: v.number(),
+    /**
+     * Deleted from the Library (library.ts): the file is gone, so the row keeps only its name, and the chat
+     * says it was removed where it was. Neither storageId nor localPath is set on such a row.
+     */
+    removedAt: v.optional(v.number()),
   })
     .index("by_conversation", ["conversationId"])
-    .index("by_message", ["conversationId", "messageKey"]),
+    .index("by_message", ["conversationId", "messageKey"])
+    .index("by_path", ["localPath"])
+    .index("by_storage", ["storageId"]),
+
+  /**
+   * The Library (issue #216): one row per file the owner gave Perry or Perry made, wherever it already is.
+   * Nothing is copied: a row points at the file on this computer (localPath) or in Perry's storage
+   * (storageId), and says who made it and where it came from. Kept in step with chatAttachments as files
+   * are attached (library.index), filled from what was there before (library.backfill), and from Perry's
+   * files folder (library.sync). Never a file of a chat with someone else. See library.ts.
+   */
+  library: defineTable({
+    name: v.string(),
+    contentType: v.string(),
+    kind: vLibraryKind,
+    size: v.number(),
+    localPath: v.optional(v.string()),
+    storageId: v.optional(v.id("_storage")),
+    by: v.union(v.literal("owner"), v.literal("perry")),
+    from: vLibraryFrom,
+    /** How it came to be (lib/library.ts, HOW). */
+    how: vLibraryHow,
+    /** The chat it came in or was made in, and the message's attachment key there; unset once that chat is deleted. */
+    conversationId: v.optional(v.id("conversations")),
+    messageKey: v.optional(v.string()),
+    projectId: v.optional(v.id("projects")),
+    jobId: v.optional(v.id("jobs")),
+    taskId: v.optional(v.id("tasks")),
+    /** Its name, lowercased, for search. */
+    search: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_created", ["createdAt"])
+    .index("by_path", ["localPath"])
+    .index("by_storage", ["storageId"])
+    .index("by_conversation", ["conversationId"]),
 
   /**
    * Layered like OpenClaw's workspace memory. `profile` is USER.md: standing

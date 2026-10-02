@@ -36,9 +36,42 @@ export const report = mutation({
     // null: a turn went through, so the last hit is over.
     const hit = args.hit === null ? undefined : args.hit ? { at: args.hit.at, message: args.hit.message.slice(0, 500) } : before.hit;
     const next: EngineUsage = { ...(limits ? { limits } : {}), ...(hit ? { hit } : {}) };
-    if (JSON.stringify(next) === JSON.stringify(before)) return null;
-    await ctx.db.patch(runner._id, { usage: { ...runner.usage, [args.engine]: next } });
+    // A fresh reading counts as read even when nothing changed: the Usage page's refresh waits for it.
+    const read = args.limits ? { usageReadAt: Date.now() } : {};
+    if (JSON.stringify(next) === JSON.stringify(before)) {
+      if (args.limits) await ctx.db.patch(runner._id, read);
+      return null;
+    }
+    await ctx.db.patch(runner._id, { usage: { ...runner.usage, [args.engine]: next }, ...read });
     return null;
+  },
+});
+
+/** A refresh asked again within this is the same one: the runner is already reading. */
+const REFRESH_GAP_MS = 10_000;
+
+/** From the Usage page: read every signed-in engine's plan limits now, not at the next five minutes. */
+export const requestRefresh = mutation({
+  args: { key: v.string() },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const install = await ctx.db.query("installation").first();
+    if (!install) throw new Error("Perry isn't set up yet.");
+    const now = Date.now();
+    if (install.usageRefreshAt && now - install.usageRefreshAt < REFRESH_GAP_MS) return install.usageRefreshAt;
+    await ctx.db.patch(install._id, { usageRefreshAt: now });
+    return now;
+  },
+});
+
+/** For a runner: when the owner last asked for a refresh, so it reads every engine's limits again. */
+export const refreshAt = query({
+  args: { token: v.string() },
+  returns: v.union(v.number(), v.null()),
+  handler: async (ctx, args) => {
+    await authenticate(ctx, args.token);
+    return (await ctx.db.query("installation").first())?.usageRefreshAt ?? null;
   },
 });
 
@@ -139,7 +172,7 @@ export type EngineOverview = {
 /** Settings → Usage: each engine's limits beside Perry's share of them, and what used the most this week. */
 export const overview = query({
   args: { key: v.string() },
-  handler: async (ctx, args): Promise<{ engines: EngineOverview[]; items: ShareItem[]; since: number; computers: number }> => {
+  handler: async (ctx, args): Promise<{ engines: EngineOverview[]; items: ShareItem[]; since: number; computers: number; readAt?: number; refreshAt?: number }> => {
     assertDashboardKey(args.key);
     const now = Date.now();
     const runners = await liveRunners(ctx);
@@ -205,6 +238,9 @@ export const overview = query({
         lastAt: item.lastAt,
       };
     }));
-    return { engines, items, since, computers: runners.length };
+    // When any computer last read a plan, and when the owner last asked for it read again.
+    const readAt = Math.max(0, ...runners.map((runner) => runner.usageReadAt ?? 0)) || undefined;
+    const refreshAt = (await ctx.db.query("installation").first())?.usageRefreshAt;
+    return { engines, items, since, computers: runners.length, ...(readAt ? { readAt } : {}), ...(refreshAt ? { refreshAt } : {}) };
   },
 });

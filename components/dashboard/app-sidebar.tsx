@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, InboxIcon, ListChecksIcon, LockIcon,
+  BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, InboxIcon, LibraryIcon, ListChecksIcon, LockIcon,
   MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -106,6 +106,12 @@ export function AppSidebar() {
                 <SidebarMenuButton render={<Link href="/brain" />} isActive={pathname.startsWith("/brain")} tooltip="Brain">
                   <BrainIcon />
                   <span>Brain</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/library" />} isActive={pathname.startsWith("/library")} tooltip="Library">
+                  <LibraryIcon />
+                  <span>Library</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

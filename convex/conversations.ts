@@ -293,6 +293,7 @@ export const copyAttachments = internalMutation({
         contentType: attachment.contentType,
         size: attachment.size,
         createdAt: Date.now(),
+        ...(attachment.removedAt ? { removedAt: attachment.removedAt } : {}),
       });
     }
     return null;

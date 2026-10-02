@@ -1,18 +1,30 @@
 "use client";
 
-import { FileIcon, XIcon } from "lucide-react";
+import { FileIcon, FileXIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { bytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { AudioPlayer, VideoPlayer } from "@/components/ui/media-player";
 
-export type Attachment = { url: string; fileName: string; contentType: string };
+/** A file in a message; `removed` once it was deleted from the Library, with no address. */
+export type Attachment = { url: string; fileName: string; contentType: string; removed?: true };
 
 /** What a message carries: pictures and players inline, anything else as a file to open. */
 export function AttachmentList({ attachments, align = "start" }: { attachments: Attachment[]; align?: "start" | "end" }) {
   if (!attachments.length) return null;
   return (
     <div className={cn("mt-2 flex flex-wrap gap-2", align === "end" && "justify-end")}>
-      {attachments.map((attachment) => {
+      {attachments.map((attachment, index) => {
+        if (attachment.removed) {
+          return (
+            <span key={`removed-${index}-${attachment.fileName}`} data-removed
+              className="flex max-w-64 items-center gap-2 rounded-xl border border-dashed px-3 py-2 text-sm text-muted-foreground">
+              <FileXIcon className="size-4 shrink-0" aria-hidden />
+              <span className="truncate">{attachment.fileName}</span>
+              <span className="shrink-0 text-xs">removed</span>
+            </span>
+          );
+        }
         if (attachment.contentType.startsWith("image/")) {
           return (
             <a key={attachment.url} href={attachment.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${attachment.fileName}`}
@@ -22,10 +34,10 @@ export function AttachmentList({ attachments, align = "start" }: { attachments: 
           );
         }
         if (attachment.contentType.startsWith("video/")) {
-          return <video key={attachment.url} controls preload="metadata" src={attachment.url} aria-label={attachment.fileName} className="max-h-72 max-w-full rounded-xl border sm:max-w-md" />;
+          return <VideoPlayer key={attachment.url} src={attachment.url} name={attachment.fileName} download={attachment.url} className="max-h-72 w-full max-w-full sm:max-w-md" />;
         }
         if (attachment.contentType.startsWith("audio/")) {
-          return <audio key={attachment.url} controls src={attachment.url} aria-label={attachment.fileName} className="max-w-full" />;
+          return <AudioPlayer key={attachment.url} src={attachment.url} name={attachment.fileName} download={attachment.url} className="sm:w-80" />;
         }
         return (
           <a key={attachment.url} href={attachment.url} target="_blank" rel="noopener noreferrer"

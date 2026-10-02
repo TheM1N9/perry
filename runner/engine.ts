@@ -352,7 +352,8 @@ export interface Engine {
   /** For `quickTurns`. Throws on failure or when out of time; the error may carry the `model` it tried. */
   quickTurn?(turn: QuickTurn): Promise<{ text: string; model?: string }>;
   /** The plan's limits, read without spending any of them; null when this sign-in has none (an API key). */
-  limits?(): Promise<PlanLimits | null>;
+  /** `fresh`: read now, not a reading from the last minute (the Usage page's refresh). */
+  limits?(fresh?: boolean): Promise<PlanLimits | null>;
   /** End its processes, the whole group. Whatever runs fails; the next call starts it again. */
   kill(): void;
   /**
