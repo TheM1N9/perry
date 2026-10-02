@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
+import { noteHref } from "@/convex/lib/notes";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { EngineUpdating, EngineView } from "@/convex/engines";
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access } from "@/convex/lib/commands";
@@ -801,6 +802,7 @@ function People() {
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   {person.chatId && <Button variant="ghost" size="sm" render={<Link href={`/chat/${person.chatId}`} />}>Open chat</Button>}
+                  {remembered?.pages[person.id] && <Button variant="ghost" size="sm" render={<Link href={noteHref(remembered.pages[person.id])} />}>Page</Button>}
                   {editing !== person.id && <Button variant="ghost" size="sm" onClick={() => setEditing(person.id)}>Brief</Button>}
                   {person.status === "blocked"
                     ? <ActionButton variant="ghost" size="sm" action={() => set({ key: dashboardKey, id: person.id, status: "allowed" })} success={`Perry talks with ${person.name} again.`}>Allow</ActionButton>
@@ -822,8 +824,11 @@ function People() {
           <h3 className="mb-2 text-sm font-medium">Others you&apos;ve told Perry about</h3>
           <List label="Others you've told Perry about">
             {remembered.others.map((person) => (
-              <li key={person.name} className="py-3">
-                <p className="text-sm font-medium">{person.name}</p>
+              <li key={person.pageId ?? person.name} className="py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">{person.name}</p>
+                  {person.pageId && <Button variant="ghost" size="sm" render={<Link href={noteHref(person.pageId)} />}>Page</Button>}
+                </div>
                 <Remembered items={person.memories} />
               </li>
             ))}

@@ -239,6 +239,7 @@ function NoteEditing({ note }: { note: NoteView }) {
           ) : (
             <NoteEditor value={draft.content} label={draft.title} onChange={(content) => controller.edit({ content })} onBlur={() => void controller.flush()} />
           )}
+          {note.kind === "person" && <AlsoAbout id={note.id} name={note.title} />}
           <LineSources id={note.id} memory={memory} />
           {note.kind === "about" && (
             <Collapsible className="mt-3 border-t pt-3">
@@ -265,6 +266,29 @@ function NoteEditing({ note }: { note: NoteView }) {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+/**
+ * A person's memories that live on other pages (a journal day, someone else's
+ * page): each is one memory, kept where it was written, and shown here too.
+ */
+function AlsoAbout({ id, name }: { id: string; name: string }) {
+  const { dashboardKey } = useSession();
+  const found = useQuery(api.pages.mentions, { key: dashboardKey, id });
+  if (!found?.length) return null;
+  return (
+    <section aria-label={`Also about ${name}`} className="mt-8" data-also-about>
+      <h2 className="mb-1 text-sm font-medium text-muted-foreground">Also about {name}</h2>
+      <ul className="divide-y">
+        {found.map((mention) => (
+          <li key={mention.id} className="relative py-2" data-mention={mention.id}>
+            <Link href={noteHref(mention.page.id)} className="block text-sm after:absolute after:inset-0 hover:underline underline-offset-2">{mention.text}</Link>
+            <p className="mt-0.5 text-xs text-muted-foreground">{mention.page.title}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

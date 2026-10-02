@@ -4,8 +4,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { timezoneOf } from "./jobs";
 import { EMBED_MODEL, embed, embedderReady, packVector, similarity, unpackVector, warmUp } from "./lib/embed";
-import { PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
-import { dropLine, memoryPage, placeFor, putLine, rewordLine, secretIn, writePage, type Author, type Standing } from "./pages";
+import { peopleIn, PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
+import { dropLine, ensurePeople, memoryPage, placeFor, putLine, rewordLine, secretIn, writePage, type Author, type Standing } from "./pages";
 import { vLineBy, vMemoryKind, vMemoryOrigin } from "./schema";
 
 /**
@@ -208,6 +208,8 @@ export const add = internalMutation({
     });
     if (basedOn.length) await ctx.db.patch(id, { basedOn });
     for (const old of replaced) await ctx.db.patch(old._id, { supersededBy: id });
+    // Everyone it is about has a page in People, which shows it (pages.mentionsOf); not from a chat with someone else.
+    if (place.kind !== "chat" || !(await ctx.db.get(place.conversationId))?.contactId) await ensurePeople(ctx, peopleIn(about));
     return { id, duplicate: false, superseded: replaced.length, ...linked, page: { id: page._id, title: page.title }, ...(section ? { section } : {}) };
   },
 });

@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync
 import { join } from "node:path";
 import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 import { GUEST_TOOLS } from "../../convex/lib/engines";
-import { journalTitle as journalTitleOf } from "../../convex/lib/pages";
+import { journalTitle as journalTitleOf, peopleIn } from "../../convex/lib/pages";
 
 // bun artifacts/brain/run.ts <outDir>
 // Issue #210: Brain, where notes and memory are one place and a memory is a line in a page. Grown step by step.
@@ -79,6 +79,17 @@ import { journalTitle as journalTitleOf } from "../../convex/lib/pages";
 //  32. Perry writes a secret into a page or a memory: a value saved in Logins & secrets, or a key-shaped string.
 //  33. The instructions do not say where to write what, how pinning works, or that a chat with someone else has none of it.
 //  34. The Brain page misses a part (search, pinned, journal, people, pages) or throws, in light or dark.
+// People (issue #218), on an install shaped like the owner's: `about` with several names, comma-separated in one or
+// one by one, on daily and core memories, and WhatsApp contacts and a group:
+//  35. Someone named in a memory gets no page in People, or a name with commas becomes one page.
+//  36. A person's page misses one of their memories (one about several people, a day's note in the journal), or
+//      shows one twice; a memory is copied (two rows) or lost.
+//  37. A page is linked to the wrong contact: one of two people with the same name, or a group.
+//  38. On an install already moved into pages, the follow-up does not make the missing pages, makes no backup first,
+//      changes anything but adding pages, or runs again on the next start.
+//  39. remember about several people leaves one of them without a page.
+//  40. A pinned person's page sends a memory twice, or recall returns one twice; Settings → People and Brain → People
+//      list different people.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/brain/run.ts <outDir>");
@@ -158,6 +169,14 @@ try {
   const thread = await call<string>("agentStore:createThread", { userId: `whatsapp:${jid}`, title: "Datta" });
   const theirs = await call<string>("conversations:create", { channel: "whatsapp", externalId: jid, threadId: thread, contactId: contact._id });
   const followUp = (await call<{ added?: { id: string } }>("todos:addFromAgent", { title: "Dentist follow-up" })).added!.id;
+  // The owner's people on WhatsApp: Juhi and Vivek once each, two Aadils, and a group.
+  await call("contacts:learn", { items: [
+    { channel: "whatsapp", externalId: "15550003001@s.whatsapp.net", kind: "person", name: "Juhi" },
+    { channel: "whatsapp", externalId: "15550003002@s.whatsapp.net", kind: "person", name: "Vivek" },
+    { channel: "whatsapp", externalId: "15550003003@s.whatsapp.net", kind: "person", name: "Aadil" },
+    { channel: "whatsapp", externalId: "15550003004@s.whatsapp.net", kind: "person", name: "aadil" },
+    { channel: "whatsapp", externalId: "120363000000000001@g.us", kind: "group", name: "Manvi" },
+  ] });
   const timezone = await call<string>("jobs:ownerTimezone");
   const dayOf = (at: number) => new Date(at).toLocaleDateString("en-CA", { timeZone: timezone });
   const DAY = 86_400_000;
@@ -186,12 +205,27 @@ try {
     list: memory({ text: "Shopping list idea:\n\nmilk and bread", kind: "core" }),
     checkbox: memory({ text: "[x] Renewed the passport in May.", kind: "core" }),
     tea: memory({ text: "The owner's favourite tea is Assam.", kind: "core", vector: "AACAPw==", vectorModel: MODEL }),
+    // People as the owner's memories name them: several at once, comma-separated or one by one.
+    cricket: memory({ text: "Vivek, Juhi and Aadil run the Sunday cricket game.", kind: "core", about: ["Vivek", "Juhi", "Aadil"] }),
+    dinner: memory({ text: "Had dinner with Juhi, Aadil and Vivek.", kind: "daily", day: dayOf(now - DAY * 2), createdAt: now - DAY * 2, about: ["Juhi,Aadil,Vivek"] }),
+    hackerrank: memory({ text: "Called Manvi about the HackerRank test.", kind: "daily", day: dayOf(now - DAY), createdAt: now - DAY, about: ["Manvi"] }),
+    visit: memory({ text: "Pranav and Ishita Shree came over.", kind: "daily", day: dayOf(now - DAY * 4), createdAt: now - DAY * 4, about: ["Pranav, Ishita Shree"] }),
+    sister: memory({ text: "Manvi is the owner's sister.", kind: "core", about: ["Manvi"] }),
   };
   const old: Record<string, string> = {};
   for (const [name, doc] of Object.entries(seeds)) old[name] = seed("memories", doc);
   // A fact that was replaced: it stays as history, superseded, and is not moved in.
   seeds.acme = memory({ text: "The owner works at Acme.", kind: "core", createdAt: now - DAY * 400, supersededBy: old.globex });
   old.acme = seed("memories", seeds.acme);
+  // And memories already in pages as Brain first left them: Ravi's page holds one about Ravi and Meena, and a
+  // journal day one about Meena; Meena has no page.
+  const ravi = seed("notes", { title: "Ravi", content: "- Ravi and Meena are moving to Goa.\n", revision: 1, linesAt: 1, search: "Ravi", by: "owner", kind: "person", person: "ravi", createdAt: now - DAY * 7, updatedAt: now - DAY * 7 });
+  const oldDay = dayOf(now - DAY * 6);
+  const meenaDay = seed("notes", { title: journalTitleOf(oldDay), content: "- Meena called about the move.\n", revision: 1, linesAt: 1, search: "x", by: "owner", kind: "journal", day: oldDay, createdAt: now - DAY * 6, updatedAt: now - DAY * 6 });
+  const inPages = {
+    goa: seed("memories", memory({ text: "Ravi and Meena are moving to Goa.", kind: "core", about: ["Ravi, Meena"], pageId: ravi, order: 0, by: "assistant", createdAt: now - DAY * 7 })),
+    called: seed("memories", memory({ text: "Meena called about the move.", kind: "daily", day: oldDay, about: ["Meena"], pageId: meenaDay, order: 0, by: "assistant", createdAt: now - DAY * 6 })),
+  };
   const beforeRestart = linesOf(oldNote).length;
   p.stop(server);
   await sleep(2_000);
@@ -227,6 +261,11 @@ try {
     list: { kind: "remember" },
     checkbox: { kind: "remember" },
     tea: { kind: "remember", section: "Preferences" },
+    cricket: { kind: "person", page: "Vivek" },
+    dinner: { kind: "journal", page: journalTitleOf(dayOf(now - DAY * 2)) },
+    hackerrank: { kind: "journal", page: journalTitleOf(dayOf(now - DAY)) },
+    visit: { kind: "journal", page: journalTitleOf(dayOf(now - DAY * 4)) },
+    sister: { kind: "person", page: "Manvi" },
   };
   const misplaced = Object.entries(expect).filter(([name, want]) => Object.entries(want).some(([field, value]) => (places[name] as Record<string, unknown>)[field] !== value)).map(([name]) => ({ name, got: places[name], want: expect[name] }));
   const inContent = Object.keys(expect).filter((name) => !String(P(name)?.content ?? "").includes(String(M(name)?.text).split("\n")[0]));
@@ -248,8 +287,47 @@ try {
   const backups = existsSync(join(p.home, "backups")) ? readdirSync(join(p.home, "backups")).filter((name) => name.startsWith("memories-before-pages-")) : [];
   const backup = backups[0] ? JSON.parse(readFileSync(join(p.home, "backups", backups[0]), "utf8")) : null;
   check("backupFirst", backups.length === 1 && backup?.waiting === Object.keys(expect).length && backup.memories.length >= Object.keys(old).length
-    && backup.memories.some((row: Row) => row._id === old.acme) && backup.memories.every((row: Row) => !row.pageId || row.kind === "page") && backup.persona.some((row: Row) => row.text === userMd.trim()) && backup.notes.some((row: Row) => row._id === oldNote),
+    && backup.memories.some((row: Row) => row._id === old.acme) && backup.memories.every((row: Row) => !row.pageId || row.kind === "page" || Object.values(inPages).includes(row._id)) && backup.persona.some((row: Row) => row.text === userMd.trim()) && backup.notes.some((row: Row) => row._id === oldNote),
   { backups, waiting: backup?.waiting, rows: backup?.memories?.length });
+
+  // === People (issue #218) ==========================================================================================
+  const personPages = () => rows("notes").filter((row) => row.kind === "person");
+  const personPage = (name: string) => personPages().find((row) => row.person === name.toLocaleLowerCase());
+  const named = (name: string) => rows("memories").filter((row) => !row.supersededBy && row.kind !== "page" && peopleIn(row.about).some((who) => who.toLocaleLowerCase() === name.toLocaleLowerCase())
+    && !(row.conversationId && row.conversationId === theirs)).map((row) => row._id).sort();
+  const shownFor = async (name: string) => {
+    const page = personPage(name);
+    if (!page) return { own: [] as string[], elsewhere: [] as string[] };
+    const elsewhere = (await call<Array<{ id: string }>>("pages:mentions", { key: KEY, id: page._id })).map((mention) => mention.id);
+    return { own: rows("memories").filter((row) => row.pageId === page._id && !row.supersededBy).map((row) => row._id), elsewhere };
+  };
+  const everyone = ["Vivek", "Juhi", "Aadil", "Manvi", "Pranav", "Ishita Shree", "Ravi", "Meena", "Arjun", "Meera"];
+  const coverage: Record<string, unknown> = {};
+  let complete = true;
+  for (const name of everyone) {
+    const { own, elsewhere } = await shownFor(name);
+    const shown = [...own, ...elsewhere].sort();
+    const ok = Boolean(personPage(name)) && JSON.stringify(shown) === JSON.stringify(named(name)) && new Set(shown).size === shown.length;
+    coverage[name] = { page: personPage(name)?.title, own: own.length, elsewhere: elsewhere.length, expected: named(name).length, ok };
+    complete &&= ok;
+  }
+  const texts = ["Vivek, Juhi and Aadil run the Sunday cricket game.", "Had dinner with Juhi, Aadil and Vivek.", "Called Manvi about the HackerRank test.", "Pranav and Ishita Shree came over.", "Manvi is the owner's sister.", "Ravi and Meena are moving to Goa.", "Meena called about the move."];
+  const copies = Object.fromEntries(texts.map((text) => [text, rows("memories").filter((row) => row.text === text && !row.supersededBy).length]));
+  check("everyPersonHasAPageWithAllTheirMemories", complete && Object.values(copies).every((count) => count === 1) && !personPages().some((row) => row.title.includes(",")),
+    { coverage, copies, pages: personPages().map((row) => row.title) });
+
+  const contactOf = (externalId: string) => rows("contacts").find((row) => row.externalId === externalId)?._id;
+  check("pagesLinkedToTheirContacts", personPage("Juhi")?.contactId === contactOf("15550003001@s.whatsapp.net") && personPage("Vivek")?.contactId === contactOf("15550003002@s.whatsapp.net")
+    && !personPage("Aadil")?.contactId && !personPage("Manvi")?.contactId,
+  { juhi: Boolean(personPage("Juhi")?.contactId), vivek: Boolean(personPage("Vivek")?.contactId), aadil: personPage("Aadil")?.contactId ?? null, manvi: personPage("Manvi")?.contactId ?? null });
+
+  const peopleBackups = readdirSync(join(p.home, "backups")).filter((name) => name.startsWith("people-before-pages-"));
+  const peopleBackup = peopleBackups[0] ? JSON.parse(readFileSync(join(p.home, "backups", peopleBackups[0]), "utf8")) : null;
+  const ravisPage = rows("notes").find((row) => row._id === ravi);
+  check("followUpOnAMovedInstall", Boolean(personPage("Meena")) && peopleBackups.length === 1 && peopleBackup?.notes?.some((row: Row) => row._id === ravi) && !peopleBackup?.notes?.some((row: Row) => row.kind === "person" && row.person === "meena")
+    && ravisPage?.revision === 1 && ravisPage?.content === "- Ravi and Meena are moving to Goa.\n"
+    && rows("memories").find((row) => row._id === inPages.goa)?.pageId === ravi && rows("memories").find((row) => row._id === inPages.called)?.pageId === meenaDay,
+  { peopleBackups, missingInBackup: peopleBackup?.missing });
 
   // --- 25. A second start moves nothing, writes nothing, backs up nothing ------------------------------------------
   const stable = () => JSON.stringify({
@@ -257,12 +335,13 @@ try {
     pages: rows("notes").map((row) => [row._id, row.revision, row.content]).sort(),
   });
   const once = stable();
+  const backupCount = readdirSync(join(p.home, "backups")).length;
   p.stop(server);
   await sleep(2_000);
   await startServer();
   const twice = await call<{ moved: number }>("pages:migrate", {});
   const backupsAfter = readdirSync(join(p.home, "backups")).length;
-  check("migrationIdempotent", stable() === once && twice.moved === 0 && backupsAfter === 1, { twice, backupsAfter });
+  check("migrationIdempotent", stable() === once && twice.moved === 0 && backupsAfter === backupCount, { twice, backupsAfter });
 
   p.start("runner");
   await until(async () => (await computers()).some((item) => item.online && item.engines.some((engine) => engine.kind === "grok" && engine.signedIn)), "the runner with Grok signed in", 120);
@@ -591,6 +670,24 @@ try {
     && !OLD_NAMES.some((name) => CODEX_TOOLS.includes(name)),
   { advertised: CODEX_TOOLS.filter((name) => /brain|memor|note|recall|remember|forget|user_md/.test(name)), oldNames: OLD_NAMES });
 
+  // --- 39, 40. remember with several people; a pinned person's page and recall send each memory once; Settings agrees -------
+  const kiran = await tool(brainChat, "remember", { text: "Kiran and Juhi are starting a bakery.", kind: "core", about: ["Kiran", "Juhi"] });
+  const kiranMemory = rows("memories").find((row) => row._id === kiran?.id);
+  const juhiNow = await shownFor("Juhi");
+  await pinPage(personPage("Juhi")!._id, true);
+  const juhiFresh = await fresh();
+  await pinPage(personPage("Juhi")!._id, false);
+  const ids = [...juhiFresh.all.matchAll(/\(([a-z0-9]{20,})[;)]/g)].map((match) => match[1]);
+  const repeated = ids.filter((id, index) => ids.indexOf(id) !== index);
+  const recalled = await call<Row[]>("memories:recall", { query: "Juhi Aadil Vivek dinner cricket", limit: 25, chat: general });
+  const people = await call<{ byContact: Record<string, Row[]>; pages: Record<string, string>; others: Array<{ name: string; pageId?: string }> }>("contacts:memoriesForDashboard", { key: KEY });
+  const settingsPages = [...Object.values(people.pages), ...people.others.map((other) => other.pageId)].filter(Boolean).sort();
+  check("rememberPeopleAndNothingTwice", Boolean(personPage("Kiran")) && kiranMemory?.pageId === personPage("Kiran")?._id && juhiNow.elsewhere.includes(kiran?.id)
+    && juhiFresh.standing.includes("## Pinned: Juhi") && juhiFresh.standing.includes("Had dinner with Juhi, Aadil and Vivek.") && repeated.length === 0
+    && new Set(recalled.map((item) => item.id)).size === recalled.length
+    && JSON.stringify(settingsPages) === JSON.stringify(personPages().map((row) => row._id).sort()),
+  { kiran: kiran?.note, repeated, settings: settingsPages.length, brain: personPages().length });
+
   // --- 31. A chat with someone else gets none of it ---------------------------------------------------------------------
   const guestTries = {
     list: await call<Row>("notes:listForAgent", { chat: theirs, memory: true }),
@@ -768,6 +865,7 @@ try {
   check("noPageErrors", browser.errors.length === 0, browser.errors);
 
   // --- 26. Moving back, exactly as before; staying back on the next start; and moving in again ---------------------------
+  const backupsBeforeUndo = readdirSync(join(p.home, "backups")).length;
   const undone = await call<{ movedBack: number; pagesDeleted: number; linesDropped: number }>("pages:undoMigration");
   // The project's memories went with the project when it was deleted (4b), as a project's memory does; the rest come back.
   const alive = Object.keys(expect).filter((name) => !seeds[name].projectId);
@@ -783,8 +881,8 @@ try {
   await sleep(2_000);
   await startServer();
   const stayedBack = alive.every((name) => !M(name)?.pageId);
-  const backupsNow = readdirSync(join(p.home, "backups")).length;
-  check("undoMovesBack", undone.movedBack === alive.length && goneWithProject && notBack.length === 0 && arjunGone && pageLinesGone && flagged && stayedBack && backupsNow === 1
+  const backupsNow = readdirSync(join(p.home, "backups")).length - backupsBeforeUndo;
+  check("undoMovesBack", undone.movedBack === alive.length && goneWithProject && notBack.length === 0 && arjunGone && pageLinesGone && flagged && stayedBack && backupsNow === 0
     && latestUser?.trim() === userAfter.user.trim(),
   { undone, notBack, arjunGone, pageLinesGone, flagged, stayedBack, backupsNow });
   const redo = await call<{ moved: number }>("pages:migrate", { again: true });
