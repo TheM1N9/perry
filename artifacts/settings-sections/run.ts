@@ -224,7 +224,7 @@ try {
   };
   const byText = (selector: string, words: string) => `[...document.querySelectorAll(${JSON.stringify(selector)})].find((el) => el.offsetParent !== null && el.innerText.trim().includes(${JSON.stringify(words)}))`;
   /** The owner, last in the sidebar's footer: the account menu's button. */
-  const ACCOUNT = `[...document.querySelectorAll("[data-sidebar=footer] [data-sidebar=menu-button]")].at(-1)`;
+  const ACCOUNT = `[...document.querySelectorAll("[data-sidebar=footer] [data-sidebar=menu-button][aria-haspopup]")].at(-1)`;
   const typeText = async (words: string) => { await send("Input.insertText", { text: words }); await sleep(120); };
   const focus = (expression: string) => evaluate(`(() => { const el = ${expression}; el.focus(); return true; })()`);
   const is404 = () => evaluate(`document.body.innerText.includes("Nothing here")`) as Promise<boolean>;
@@ -394,7 +394,7 @@ try {
       const footer = [...document.querySelector("[data-sidebar=footer]").querySelectorAll("[data-sidebar=menu-button]")].map((b) => b.innerText.replace(/\\s+/g, " ").trim());
       return { top, footer };
     })()`) as { top: string[]; footer: string[] };
-    check("sidebarHasMemoryAndApps", JSON.stringify(sidebar.top) === JSON.stringify(["New chat", "Search", "Needs you", "To-dos", "Notes", "Work", "Memory", "Apps & skills"]), sidebar.top);
+    check("sidebarHasMemoryAndApps", JSON.stringify(sidebar.top) === JSON.stringify(["New chat", "Search", "To-dos", "Notes", "Work", "Memory", "Apps & skills"]), sidebar.top);
 
     // --- 17. New chat and Search, one row; stacked when the sidebar is icons ----------------------------------
     const ROW = `document.querySelector("[data-new-chat-row]")`;
@@ -466,16 +466,19 @@ try {
     const computer = (await call<{ runners: Array<{ name: string; revoked?: boolean }> }>("dashboard:getCompute", { key: KEY })).runners.find((runner) => !runner.revoked)?.name ?? "";
     const owner = (await call<{ displayName?: string }>("dashboard:getStatus", { key: KEY })).displayName ?? "You";
     // The pet's button starts with his sleeping "z", the owner's with their initial.
-    check("footerIsPetThenComputerThenYou", sidebar.footer.length === 3 && sidebar.footer[0].endsWith("Desktop pet") && sidebar.footer[1] === computer && sidebar.footer[2].includes(`${owner} ChatGPT Plus · Codex`), { footer: sidebar.footer, computer, owner });
+    // The footer is the pet, then the owner with Needs you beside the name as an inbox; the computer is in Settings → Computers only.
+    const inbox = await evaluate(`(() => { const button = document.querySelector('[data-sidebar=footer] a[href="/inbox"]'); const account = ${ACCOUNT}; if (!button || !account) return null; const a = account.getBoundingClientRect(); const b = button.getBoundingClientRect(); return { label: button.getAttribute("aria-label"), badge: button.innerText.trim(), sameRow: Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) < 6, right: b.left >= a.right - 2, chevrons: Boolean(account.querySelector("svg.lucide-chevrons-up-down")) }; })()`) as { label: string; badge: string; sameRow: boolean; right: boolean; chevrons: boolean } | null;
+    check("footerIsPetThenYouWithInbox", sidebar.footer.length === 3 && sidebar.footer[0].endsWith("Desktop pet") && sidebar.footer[1].includes(`${owner} ChatGPT Plus · Codex`) && !sidebar.footer.some((text) => text === computer)
+      && Boolean(inbox?.sameRow && inbox.right && !inbox.chevrons && /^Needs you: \d+$/.test(inbox.label) && /^\d+$/.test(inbox.badge)), { footer: sidebar.footer, computer, owner, inbox });
+    check("noComputerInSidebar", !(await evaluate(`document.querySelector("[data-sidebar=sidebar]").innerText`) as string).includes(computer), computer);
     await gather("/chat");
-    const computerButton = byText("[data-sidebar=footer] [data-sidebar=menu-button]", computer);
-    await click(computerButton);
-    const computerRow = await soon(async () => (await where()) === "/settings/computers" && Boolean(await evaluate(`${computerButton}?.hasAttribute("data-active")`)), 10);
+    await click(`document.querySelector('[data-sidebar=footer] a[href="/inbox"]')`);
+    const inboxLands = await soon(async () => (await where()) === "/inbox", 10);
     await click(byText("[data-sidebar=footer] [data-sidebar=menu-button]", "Desktop pet"));
     await waitFor(`document.querySelector("[role=menu]")`, "the pet's menu");
     await click(byText("[role=menuitem]", "Pet settings"));
     const petSettings = await soon(async () => (await where()) === "/settings/desktop-pet" && (await text()).includes("Let Perry look at the screen"), 10);
-    check("footerLandsOnItsSections", computerRow && petSettings, { computerRow, petSettings, at: await where() });
+    check("footerLandsOnItsSections", inboxLands && petSettings, { inboxLands, petSettings, at: await where() });
     await click(byText("[data-sidebar=menu-button]", "Apps & skills"));
     const apps = await soon(async () => (await where()) === "/apps/connectors", 10);
     await click(byText("[data-sidebar=menu-button]", "Memory"));

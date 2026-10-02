@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  BlocksIcon, BookUserIcon, CheckCircle2Icon, ChevronsUpDownIcon, GaugeIcon, InboxIcon, ListChecksIcon, LockIcon, MonitorIcon,
+  BlocksIcon, BookUserIcon, CheckCircle2Icon, GaugeIcon, InboxIcon, ListChecksIcon, LockIcon,
   MoreHorizontalIcon, NotebookPenIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -55,7 +55,6 @@ export function AppSidebar() {
   const pathname = usePathname();
   const palette = usePalette();
   const { setOpenMobile } = useSidebar();
-  const count = useNeedsYouCount();
   const { label } = useShortcuts();
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
   const assistant = status?.assistantName ?? "Perry";
@@ -98,17 +97,6 @@ export function AppSidebar() {
                 </Tooltip>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/inbox" />} isActive={pathname === "/inbox"} tooltip="Needs you">
-                  <InboxIcon />
-                  <span>Needs you</span>
-                </SidebarMenuButton>
-                {count > 0 && (
-                  <SidebarMenuBadge className="rounded-full bg-warning px-1.5 text-2xs font-semibold text-background peer-data-active/menu-button:text-background">
-                    {count}
-                  </SidebarMenuBadge>
-                )}
-              </SidebarMenuItem>
-              <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/todos" />} isActive={pathname === "/todos"} tooltip="To-dos">
                   <CheckCircle2Icon />
                   <span>To-dos</span>
@@ -147,7 +135,6 @@ export function AppSidebar() {
         <PauseNotice />
         <UpdateNotice />
         <DesktopPet />
-        <ComputerStatus />
         <AccountMenu />
       </SidebarFooter>
       <SidebarRail />
@@ -393,31 +380,6 @@ function DesktopPet() {
   );
 }
 
-/** Whether a computer is online to do the work: Perry can only act through one. */
-function ComputerStatus() {
-  const { dashboardKey } = useSession();
-  const pathname = usePathname();
-  const compute = useQuery(api.dashboard.getCompute, { key: dashboardKey });
-  const live = compute?.runners.filter((runner) => !runner.revoked) ?? [];
-  const online = live.filter((runner) => runner.online);
-  const label = compute === undefined ? "Checking…" : online.length ? (online.length === 1 ? online[0].name : `${online.length} computers`) : live.length ? "Computer offline" : "No computer yet";
-  return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <SidebarMenuButton render={<Link href="/settings/computers" />} isActive={pathname === "/settings/computers"} tooltip={`${label}${online.length ? " · online" : ""}`}>
-          <MonitorIcon />
-          <span className="truncate">{label}</span>
-        </SidebarMenuButton>
-        {compute !== undefined && (
-          <SidebarMenuBadge>
-            <span className={cn("size-2 rounded-full", online.length ? "bg-success" : "bg-muted-foreground/40")} aria-label={online.length ? "Online" : "Offline"} role="img" />
-          </SidebarMenuBadge>
-        )}
-      </SidebarMenuItem>
-    </SidebarMenu>
-  );
-}
-
 type SignedIn = { kind: EngineKind; label: string; account?: string };
 
 /**
@@ -462,12 +424,15 @@ function AccountMenu() {
   const line = status === undefined || engines === undefined ? " " : paused ? "Perry is paused" : pairing ? "Telegram not paired"
     : first ? (first.account ? `${first.account} · ${first.label}` : first.label) : "No engine signed in";
   const go = (href: string) => router.push(href);
+  const pathname = usePathname();
+  const count = useNeedsYouCount();
 
   return (
     <SidebarMenu>
-      <SidebarMenuItem>
+      {/* The name opens the menu; beside it, what needs you, as an inbox with its count. Stacked when the sidebar is icons. */}
+      <SidebarMenuItem className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col-reverse group-data-[collapsible=icon]:gap-0.5">
         <DropdownMenu>
-          <DropdownMenuTrigger render={<SidebarMenuButton size="lg" className="data-popup-open:bg-sidebar-accent" />}>
+          <DropdownMenuTrigger render={<SidebarMenuButton size="lg" className="min-w-0 flex-1 data-popup-open:bg-sidebar-accent group-data-[collapsible=icon]:flex-none" />}>
             <Avatar aria-hidden className="after:hidden">
               <AvatarFallback className="bg-foreground text-sm font-semibold text-background">{name.charAt(0).toUpperCase()}</AvatarFallback>
             </Avatar>
@@ -475,7 +440,6 @@ function AccountMenu() {
               <span className="truncate text-sm font-medium">{name}</span>
               <span className="truncate text-xs text-muted-foreground" data-account-line>{line}</span>
             </span>
-            <ChevronsUpDownIcon className="ml-auto text-sidebar-foreground/50" />
           </DropdownMenuTrigger>
           <DropdownMenuContent side={isMobile ? "top" : "right"} align="end" sideOffset={8} className="w-60">
             <DropdownMenuGroup>
@@ -502,6 +466,15 @@ function AccountMenu() {
             <DropdownMenuItem onClick={lock}><LockIcon />Lock dashboard</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger render={<SidebarMenuButton render={<Link href="/inbox" />} isActive={pathname === "/inbox"} aria-label={count > 0 ? `Needs you: ${count}` : "Needs you"} className="relative size-9 shrink-0 justify-center p-0" />}>
+            <InboxIcon />
+            {count > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-warning px-1 text-2xs font-semibold text-background" aria-hidden>{count}</span>
+            )}
+          </TooltipTrigger>
+          <TooltipContent side="right">Needs you{count > 0 ? ` · ${count}` : ""}</TooltipContent>
+        </Tooltip>
       </SidebarMenuItem>
     </SidebarMenu>
   );

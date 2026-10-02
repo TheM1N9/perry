@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-02T11:37:02.778Z",
+  "ranAt": "2026-10-02T11:56:02.031Z",
   "pass": true,
   "checks": {
     "everySectionHoldsWhatItShould": true,
@@ -16,7 +16,8 @@
     "newChatAndSearchShareARow": true,
     "collapsedShowsTwoStackedIcons": true,
     "chatsAreOnePlainList": true,
-    "footerIsPetThenComputerThenYou": true,
+    "footerIsPetThenYouWithInbox": true,
+    "noComputerInSidebar": true,
     "footerLandsOnItsSections": true,
     "sidebarItemsGoToTheirPages": true,
     "lineUnderTheNameIsThePlan": true,
@@ -160,7 +161,7 @@
     },
     "navIsNotABox": [],
     "navByKeyboard": {
-      "tabs": 27,
+      "tabs": 26,
       "reached": "General",
       "ring": true,
       "steps": [
@@ -180,7 +181,7 @@
     "unknownSectionIs404": 404,
     "redirectsKeepTheirQuery": {
       "filtered": {
-        "at": "/settings/activity?session=crzy9bj3v9zjedqkz9qsjgdc9k",
+        "at": "/settings/activity?session=2qqajes130nvyp5fqr1ken65zn",
         "plan": false,
         "runs": 1
       },
@@ -192,7 +193,6 @@
     "sidebarHasMemoryAndApps": [
       "New chat",
       "Search",
-      "Needs you",
       "To-dos",
       "Notes",
       "Work",
@@ -307,17 +307,25 @@
         "Coffee order"
       ]
     },
-    "footerIsPetThenComputerThenYou": {
+    "footerIsPetThenYouWithInbox": {
       "footer": [
         "z z z Desktop pet",
-        "DESKTOP-27SQLCP",
-        "Y You ChatGPT Plus · Codex"
+        "Y You ChatGPT Plus · Codex",
+        "2"
       ],
       "computer": "DESKTOP-27SQLCP",
-      "owner": "You"
+      "owner": "You",
+      "inbox": {
+        "label": "Needs you: 2",
+        "badge": "2",
+        "sameRow": true,
+        "right": true,
+        "chevrons": false
+      }
     },
+    "noComputerInSidebar": "DESKTOP-27SQLCP",
     "footerLandsOnItsSections": {
-      "computerRow": true,
+      "inboxLands": true,
       "petSettings": true,
       "at": "/settings/desktop-pet"
     },
@@ -384,10 +392,10 @@
         "set": true,
         "source": "dashboard",
         "preview": "…AbCd",
-        "updatedAt": 1790940958348
+        "updatedAt": 1790942067114
       }
     },
-    "connectorsAfterKey": "Toggle Sidebar\nApps & skills\nConnectors\nSkills\nConnectors\nRefresh\nCouldn't reach Composio\n401 {\"error\":{\"message\":\"Invalid API key: e2e**9Zq1\",\"code\":801,\"slug\":\"APIKey_InvalidAPIKey\",\"status\":401,\"request_id\":\"00eb7444-c5b9-4d63-bf98-53d4dd956700\",\"suggested_fix\":\"Please check you are using a valid API key.\"}}\nConnected\nAll apps\n\nNo app by that name\n\nClear search\nTest what Perry can do\nLook up\nCo",
+    "connectorsAfterKey": "Toggle Sidebar\nApps & skills\nConnectors\nSkills\nConnectors\nRefresh\nCouldn't reach Composio\n401 {\"error\":{\"message\":\"Invalid API key: e2e**9Zq1\",\"code\":801,\"slug\":\"APIKey_InvalidAPIKey\",\"status\":401,\"request_id\":\"4a800956-941a-4fc5-b5de-8459d5ee5ecb\",\"suggested_fix\":\"Please check you are using a valid API key.\"}}\nConnected\nAll apps\n\nNo app by that name\n\nClear search\nTest what Perry can do\nLook up\nCo",
     "composioKeySavesInConnectors": {
       "composioSaved": true,
       "noticed": true,
@@ -435,7 +443,7 @@
       "Activity log": "/settings/activity",
       "Keyboard shortcuts": "/settings/desktop-pet#shortcuts"
     },
-    "linksCrawled": 35,
+    "linksCrawled": 39,
     "noLinkGoesNowhere": {
       "dead": {},
       "palette": 15
