@@ -11,6 +11,7 @@ import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { noteHref } from "@/convex/lib/notes";
+import type { Found as BrainHit } from "@/convex/pages";
 import { useSession } from "@/lib/session";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import {
@@ -40,9 +41,14 @@ const PAGES = [
 ];
 
 type Found = { id: Id<"conversations">; title: string; snippet: string };
+type Recalled = { term: string; results: BrainHit[] };
+
+/** Where a hit from memory and notes opens: a note at its page, a memory on the Memory page. */
+const hrefOf = (hit: BrainHit) => hit.page ? noteHref(hit.page.id) : `/memory?q=${encodeURIComponent(hit.text)}`;
+const MEMORY_KIND = { profile: "Profile", core: "Long-term", daily: "Daily note", page: "Note" } as const;
 
 /**
- * Search (⌘K unless changed in Settings): every chat by title, what was said in them, notes by title and words, every page, and the few
+ * Search (⌘K unless changed in Settings): every chat by title, what was said in them, notes by title, memory and notes by words and meaning, every page, and the few
  * things you do from anywhere. Titles filter as you type; message text is
  * searched on the server once you pause.
  */
@@ -55,11 +61,24 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const notes = useQuery(api.notes.list, open ? { key: dashboardKey } : "skip");
   const createNote = useMutation(api.notes.create);
   const searchChats = useAction(api.dashboard.searchChats);
+  const searchBrain = useAction(api.pages.search);
   const [search, setSearch] = useState("");
   const [found, setFound] = useState<{ term: string; results: Found[] } | null>(null);
+  const [recalled, setRecalled] = useState<Recalled | null>(null);
   const term = search.trim();
 
-  useEffect(() => { if (!open) { setSearch(""); setFound(null); } }, [open]);
+  useEffect(() => { if (!open) { setSearch(""); setFound(null); setRecalled(null); } }, [open]);
+  // Memory and notes, one search by words and by meaning (pages.search), once typing pauses.
+  useEffect(() => {
+    if (term.length < 2) { setRecalled(null); return; }
+    let current = true;
+    const timer = window.setTimeout(() => {
+      void searchBrain({ key: dashboardKey, query: term, limit: 8 })
+        .then((results) => { if (current) setRecalled({ term, results }); })
+        .catch(() => { if (current) setRecalled({ term, results: [] }); });
+    }, 220);
+    return () => { current = false; window.clearTimeout(timer); };
+  }, [dashboardKey, searchBrain, term]);
   useEffect(() => {
     if (term.length < 2) { setFound(null); return; }
     let current = true;
@@ -75,7 +94,6 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const needle = term.toLocaleLowerCase();
   const matches = (...texts: string[]) => !needle || texts.some((text) => text.toLocaleLowerCase().includes(needle));
   const themeLabel = `Switch to ${resolvedTheme === "dark" ? "light" : "dark"} theme`;
-  const noteWords = useQuery(api.notes.search, open && term.length >= 2 ? { key: dashboardKey, query: term } : "skip");
   const actions = [
     { id: "new", label: "New chat", icon: SquarePenIcon, shortcut: shortcutLabel("newChat"), run: () => router.push("/chat") },
     { id: "note", label: "New note", icon: FilePlusIcon, run: () => void createNote({ key: dashboardKey }).then((id) => router.push(noteHref(id))) },
@@ -85,22 +103,19 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const chatHits = (chats ?? []).filter((chat) => matches(chat.title)).slice(0, needle ? 30 : 8);
   const pages = PAGES.filter((page) => matches(page.label));
   const titled = new Set((chats ?? []).map((chat) => chat.id));
-  const searching = term.length >= 2 && found?.term !== term;
+  const searching = term.length >= 2 && (found?.term !== term || recalled?.term !== term);
   const shownChats = new Set(chatHits.map((chat) => chat.id));
   const messageHits = (found?.term === term ? found.results : []).filter((item) => titled.has(item.id) && !shownChats.has(item.id));
-  // Notes by title as you type, then by their words; a note found both ways shows once, with its snippet.
-  const noteTitles = needle ? (notes ?? []).filter((note) => matches(note.title)) : [];
-  const noteHits = [
-    ...(noteWords ?? []),
-    ...noteTitles.filter((note) => !(noteWords ?? []).some((hit) => hit.id === note.id)).map((note) => ({ ...note, snippet: note.preview })),
-  ].slice(0, 8);
+  // Notes by title as you type; then what memory and notes say, by words and by meaning.
+  const noteTitles = (needle ? (notes ?? []).filter((note) => matches(note.title)) : []).slice(0, 5);
+  const brainHits = (recalled?.term === term ? recalled.results : []).slice(0, 8);
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} title="Search Perry" description="Chats, notes, pages and actions" className="sm:max-w-xl">
+    <CommandDialog open={open} onOpenChange={onOpenChange} title="Search Perry" description="Chats, memory, notes, pages and actions" className="sm:max-w-xl">
       <Command loop shouldFilter={false}>
-        <CommandInput placeholder="Search chats, notes and pages…" value={search} onValueChange={setSearch} />
+        <CommandInput placeholder="Search chats, memory, notes and pages…" value={search} onValueChange={setSearch} />
         <CommandList className="max-h-[min(60vh,420px)]">
-          <CommandEmpty>{searching ? <span className="inline-flex items-center gap-2"><Spinner />Searching messages…</span> : "Nothing matches."}</CommandEmpty>
+          <CommandEmpty>{searching ? <span className="inline-flex items-center gap-2"><Spinner />Searching…</span> : "Nothing matches."}</CommandEmpty>
           {actions.length > 0 && (
             <CommandGroup heading="Actions">
               {actions.map((action) => (
@@ -120,14 +135,25 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
               ))}
             </CommandGroup>
           )}
-          {noteHits.length > 0 && (
-            <CommandGroup heading="Notes">
-              {noteHits.map((note) => (
+          {(noteTitles.length > 0 || brainHits.length > 0) && (
+            <CommandGroup heading="Memory and notes">
+              {noteTitles.map((note) => (
                 <CommandItem key={note.id} value={`note-${note.id}`} onSelect={() => run(() => router.push(noteHref(note.id)))}>
                   <FileTextIcon />
                   <span className="grid min-w-0">
                     <span className="truncate">{note.title}</span>
-                    {note.snippet && <span className="truncate text-xs text-muted-foreground">{note.snippet}</span>}
+                    {note.preview && <span className="truncate text-xs text-muted-foreground">{note.preview}</span>}
+                  </span>
+                </CommandItem>
+              ))}
+              {brainHits.map((hit) => (
+                <CommandItem key={hit.id} value={`recalled-${hit.id}`} data-recalled={hit.kind} onSelect={() => run(() => router.push(hrefOf(hit)))}>
+                  {hit.page ? <FileTextIcon /> : <BookUserIcon />}
+                  <span className="grid min-w-0">
+                    <span className="truncate">{hit.text}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {hit.page ? `${hit.page.title}${hit.section ? ` › ${hit.section}` : ""}` : `${MEMORY_KIND[hit.kind]}${hit.day ? ` · ${hit.day}` : ""}`}
+                    </span>
                   </span>
                 </CommandItem>
               ))}
@@ -147,7 +173,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             </CommandGroup>
           )}
           {searching && (chatHits.length > 0 || actions.length > 0 || pages.length > 0) && (
-            <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground" role="status"><Spinner className="size-3" />Searching messages…</div>
+            <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground" role="status"><Spinner className="size-3" />Searching…</div>
           )}
           {pages.length > 0 && (
             <CommandGroup heading="Go to">

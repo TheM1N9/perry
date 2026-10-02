@@ -317,7 +317,9 @@ try {
   await exchange(inProject, "What tiles did we pick?");
   const told = contextOf("What tiles did we pick?");
   const readInProject = await tool(inProject, "read_note", { id: tiles });
-  check("projectNoteInProject", noteRow(tiles)?.projectId === project && told.includes("## Its notes") && told.includes(`"Tile choices" (id ${tiles})`) && !told.includes("GREYHEX-41")
+  check("projectNoteInProject", noteRow(tiles)?.projectId === project && told.includes("## Its notes") && told.includes(`"Tile choices" (id ${tiles})`)
+    // The project lists its notes by title; a note's words come only as recall, when they bear on the message (issue #210).
+    && !told.slice(told.indexOf("## Its notes"), told.indexOf("## Its memory")).includes("GREYHEX-41")
     && readInProject?.content?.includes("GREYHEX-41"), told.slice(told.indexOf("## Its notes"), told.indexOf("## Its notes") + 400));
   const outsideRead = await tool(general, "read_note", { id: tiles });
   const outsideList = await tool(general, "list_notes", {});
@@ -465,9 +467,10 @@ try {
   await key("k", "KeyK", 75, 2);
   await waitFor(`document.querySelector('[cmdk-input]')`, "the search palette");
   await typeText("oat milk");
-  await waitFor(`[...document.querySelectorAll('[cmdk-group-heading]')].some((item) => item.innerText === "Notes") && document.querySelector('[data-value^="note-"]')?.innerText.includes("Inbox")`, "Inbox found by its words", 10_000);
+  // Words inside a note are found as its lines, in one group with memory (issue #210).
+  await waitFor(`[...document.querySelectorAll('[cmdk-group-heading]')].some((item) => item.innerText === "Memory and notes") && document.querySelector('[data-recalled="page"]')?.innerText.includes("Inbox")`, "Inbox found by its words", 20_000);
   await shot("search-notes.png");
-  const byWords = await evaluate(`document.querySelector('[data-value^="note-"]').innerText`);
+  const byWords = await evaluate(`document.querySelector('[data-recalled="page"]').innerText`);
   await fill("[cmdk-input]", "Lisbon");
   await waitFor(`[...document.querySelectorAll('[data-value^="note-"]')].some((item) => item.innerText.includes("Lisbon trip"))`, "Lisbon found by title", 10_000);
   await click('[data-value^="note-"]', undefined);

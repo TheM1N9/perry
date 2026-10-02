@@ -1075,12 +1075,14 @@ export const listMemories = query({
   args: { key: vKey, query: v.optional(v.string()), kind: v.optional(vMemoryKind) },
   handler: async (ctx, args): Promise<MemoryView[]> => {
     assertDashboardKey(args.key);
-    const found: MemoryView[] = await ctx.runQuery(internal.memories.search, {
+    // Memories only: a page's lines are searched with them elsewhere (pages.search), not listed here.
+    const found = await ctx.runQuery(internal.memories.search, {
       query: args.query ?? "",
       limit: 25,
       kind: args.kind,
       everywhere: true,
-    });
+      memoriesOnly: true,
+    }) as MemoryView[];
     // A memory kept to one chat or one project says which.
     return await Promise.all(found.map(async (memory) => {
       if (memory.projectId) {

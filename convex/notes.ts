@@ -4,6 +4,7 @@ import { internalMutation, internalQuery, mutation, query, type MutationCtx, typ
 import { assertDashboardKey } from "./lib/auth";
 import { appended, cleanTitle, editSection, headingsOf, INBOX_TITLE, noteHref, titleFrom, tooLong } from "./lib/notes";
 import { timezoneOf } from "./jobs";
+import { dropLines, moveLines, syncLines, type LineBy } from "./pages";
 import { readPersona } from "./persona";
 
 /**
@@ -32,7 +33,7 @@ import { readPersona } from "./persona";
 type Note = Doc<"notes">;
 type Chat = Doc<"conversations">;
 type Reader = { db: QueryCtx["db"] };
-type Writer = { db: MutationCtx["db"] };
+type Writer = { db: MutationCtx["db"]; scheduler: MutationCtx["scheduler"] };
 type By = "owner" | "assistant";
 
 const vKey = v.string();
@@ -101,7 +102,7 @@ async function insertNote(ctx: Writer, input: { title: string; content: string; 
   if (problem) throw new Error(problem);
   const title = cleanTitle(input.title);
   const now = Date.now();
-  return await ctx.db.insert("notes", {
+  const id = await ctx.db.insert("notes", {
     title,
     content: input.content,
     revision: 1,
@@ -112,10 +113,15 @@ async function insertNote(ctx: Writer, input: { title: string; content: string; 
     createdAt: now,
     updatedAt: now,
   });
+  await syncLines(ctx, (await ctx.db.get(id))!, input.by, input.from);
+  return id;
 }
 
-/** A save of what changed, as the next revision. The caller has checked the revision it was made from. */
-async function writeNote(ctx: Writer, note: Note, patch: { title?: string; content?: string }, by: By): Promise<number> {
+/**
+ * A save of what changed, as the next revision, and its lines brought up to it (pages.syncLines): `line` says who
+ * wrote what changed, when not `by` itself (a job's run), and from which chat. The caller has checked the revision it was made from.
+ */
+async function writeNote(ctx: Writer, note: Note, patch: { title?: string; content?: string }, by: By, line?: { by: LineBy; from?: Id<"conversations"> }): Promise<number> {
   const title = patch.title === undefined ? note.title : cleanTitle(patch.title);
   const content = patch.content ?? note.content;
   const problem = tooLong(content);
@@ -123,6 +129,7 @@ async function writeNote(ctx: Writer, note: Note, patch: { title?: string; conte
   if (title === note.title && content === note.content) return note.revision;
   const revision = note.revision + 1;
   await ctx.db.patch(note._id, { title, content, search: searchOf(title, content), revision, by, updatedAt: Date.now() });
+  await syncLines(ctx, (await ctx.db.get(note._id))!, line?.by ?? by, line?.from);
   return revision;
 }
 
@@ -256,6 +263,7 @@ export const move = mutation({
     if (!note) throw new Error("This note was deleted.");
     if (args.projectId && !await ctx.db.get(args.projectId)) throw new Error("This project was deleted.");
     await ctx.db.patch(note._id, { projectId: args.projectId ?? undefined, updatedAt: Date.now() });
+    await moveLines(ctx, note._id, args.projectId ?? undefined);
     return null;
   },
 });
@@ -274,6 +282,7 @@ export const remove = mutation({
 async function removeNote(ctx: Writer, id: Id<"notes">) {
   if (!await ctx.db.get(id)) return;
   for (const job of await ctx.db.query("jobs").collect()) if (job.noteId === id) await ctx.db.patch(job._id, { noteId: undefined });
+  await dropLines(ctx, id);
   await ctx.db.delete(id);
 }
 
@@ -442,7 +451,7 @@ export const updateForAgent = internalMutation({
     } else if (args.mode === "replace_section") return { error: "replace_section needs section, the heading of the section to replace." };
     else content = appended(note.content, args.content);
     try {
-      await writeNote(ctx, note, { content, ...(args.title ? { title: args.title } : {}) }, "assistant");
+      await writeNote(ctx, note, { content, ...(args.title ? { title: args.title } : {}) }, "assistant", { by: "assistant", ...(args.chat ? { from: args.chat } : {}) });
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }
@@ -483,7 +492,7 @@ export async function appendRun(ctx: Writer, noteId: Id<"notes">, result: string
   // A note grown past its size keeps its newest runs: the oldest go from the top.
   let content = appended(note.content, entry);
   if (tooLong(content)) content = `${content.slice(content.length - 90_000).replace(/^[\s\S]*?(?=^## )/m, "")}`;
-  await writeNote(ctx, note, { content }, "assistant");
+  await writeNote(ctx, note, { content }, "assistant", { by: "job" });
   return { title: note.title };
 }
 

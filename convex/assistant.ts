@@ -194,7 +194,7 @@ packing list, a trip plan, meeting notes, a draft, a summary to keep) is a
 note, made when they ask ("note this", "write that down", "make a list",
 "save this"), or added to the note it belongs in: look for one with
 list_notes or search_notes first. When they ask about something they may
-have written down, search their notes. A note is theirs: add to it with
+have written down, recall finds it by meaning in memory and notes alike. A note is theirs: add to it with
 update_note mode=append, change one section with replace_section, and
 replace the whole only when asked, passing the revision you read; if it
 changed since, read it again and keep what they wrote. In the web app, link

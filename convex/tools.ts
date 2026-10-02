@@ -7,6 +7,7 @@ import type { Id } from "./_generated/dataModel";
 import type { SearchResult } from "./composio";
 import { installStaged, stageSkill, type Staged } from "./lib/skills";
 import * as web from "./lib/browser";
+import { noteHref } from "./lib/notes";
 import { watchProblem } from "./work";
 import type { VaultEntry } from "./vault";
 import type { ContactView } from "./contacts";
@@ -23,11 +24,14 @@ import type { ContactView } from "./contacts";
 
 // --- Memory --------------------------------------------------------------
 
-type MemoryRow = { id: string; text: string; tags: string[]; kind: "profile" | "core" | "daily"; day?: string; origin?: string; createdAt: number };
+type MemoryRow = {
+  id: string; text: string; tags: string[]; kind: "profile" | "core" | "daily" | "page"; day?: string; origin?: string; createdAt: number;
+  pageId?: string; page?: { id: string; title: string }; section?: string;
+};
 
 type RecallResult = {
   found: number;
-  memories: Array<{ id: string; text: string; tags: string[]; kind: string; day?: string; origin?: string; rememberedOn: string }>;
+  memories: Array<ReturnType<typeof shape>>;
   /** In the owner's chats, asked about someone by name: what they said about themselves in their own chat. */
   theySaid?: Array<{ who: string; text: string }>;
   note?: string;
@@ -35,20 +39,24 @@ type RecallResult = {
 
 const memoryKind = z.enum(["profile", "core", "daily"]);
 
-const shape = (m: MemoryRow) => ({
-  id: m.id,
-  text: m.text,
-  tags: m.tags,
-  kind: m.kind,
-  ...(m.day ? { day: m.day } : {}),
-  ...(m.origin ? { origin: m.origin } : {}),
-  rememberedOn: new Date(m.createdAt).toISOString().slice(0, 10),
-});
+const shape = (m: MemoryRow) => m.kind === "page"
+  // A line of one of the owner's notes: which note, and where in it, to read the rest with read_note.
+  ? { id: m.id, text: m.text, kind: "note" as const, note: { id: m.pageId ?? "", title: m.page?.title ?? "", link: noteHref(m.pageId ?? "") }, ...(m.section ? { section: m.section } : {}) }
+  : {
+    id: m.id,
+    text: m.text,
+    tags: m.tags,
+    kind: m.kind,
+    ...(m.day ? { day: m.day } : {}),
+    ...(m.origin ? { origin: m.origin } : {}),
+    rememberedOn: new Date(m.createdAt).toISOString().slice(0, 10),
+  };
 
 const recall = createTool({
   description:
-    "Search your long-term memory about the owner by meaning and keywords, " +
-    "across the profile, long-term facts and every day's notes. Use this for " +
+    "Search your long-term memory about the owner and their notes, by meaning and keywords, " +
+    "across the profile, long-term facts, every day's notes and every paragraph of the notes this chat can reach " +
+    "(kind \"note\": read the whole note with read_note). Use this for " +
     "anything older than yesterday, before saying you do not know something, " +
     "and before asking a question you may already have the answer to. An " +
     "empty query returns the most recent memories. Name someone you talk with " +
@@ -71,7 +79,7 @@ const recall = createTool({
     const chat: { contactId?: string } | null = ctx.conversationId ? await ctx.runQuery(internal.conversations.getById, { id: ctx.conversationId as Id<"conversations"> }) : null;
     const theySaid: Array<{ who: string; text: string }> = input.query.trim() && !chat?.contactId ? await ctx.runQuery(internal.contacts.theySaid, { query: input.query }) : [];
     if (results.length === 0 && theySaid.length === 0) {
-      return { found: 0, memories: [], note: "No memories matched." };
+      return { found: 0, memories: [], note: "Nothing in memory or notes matched." };
     }
 
     return { found: results.length, memories: results.map(shape), ...(theySaid.length ? { theySaid } : {}) };

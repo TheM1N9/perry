@@ -2,7 +2,8 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
-import type { MemoryView } from "./memories";
+import { isPageLine, type MemoryView } from "./memories";
+import { moveLines } from "./pages";
 import { titlesIn } from "./notes";
 
 /**
@@ -92,7 +93,7 @@ export type ProjectView = {
   instructions: string;
   updatedAt: number;
   chats: Array<{ id: Id<"conversations">; title: string; lastMessageAt: number; job: boolean; task: boolean }>;
-  memories: Array<Pick<MemoryView, "id" | "text" | "kind" | "day" | "createdAt" | "editedAt">>;
+  memories: Array<Pick<MemoryView, "id" | "text" | "day" | "createdAt" | "editedAt"> & { kind: "profile" | "core" | "daily" }>;
   /** How many notes it has (notes.list lists them). */
   notes: number;
 };
@@ -105,8 +106,8 @@ export const get = query({
     const id = ctx.db.normalizeId("projects", args.id);
     const project = id ? await ctx.db.get(id) : null;
     if (!project) return null;
-    const memories = (await ctx.db.query("memories").withIndex("by_project", (q) => q.eq("projectId", project._id)).order("desc").take(200))
-      .filter((memory) => !memory.supersededBy);
+    const memories = (await ctx.db.query("memories").withIndex("by_project", (q) => q.eq("projectId", project._id)).order("desc").take(2000))
+      .filter((memory) => !memory.supersededBy && !isPageLine(memory)).slice(0, 200);
     return {
       id: project._id,
       name: project.name,
@@ -116,7 +117,7 @@ export const get = query({
         id: chat._id, title: titleOf(chat), lastMessageAt: chat.lastMessageAt, job: Boolean(chat.jobId), task: Boolean(chat.taskId),
       })),
       memories: memories.map((memory) => ({
-        id: memory._id, text: memory.text, kind: memory.kind ?? "core", day: memory.day, createdAt: memory.createdAt, editedAt: memory.editedAt,
+        id: memory._id, text: memory.text, kind: memory.kind === "page" ? "core" : memory.kind ?? "core", day: memory.day, createdAt: memory.createdAt, editedAt: memory.editedAt,
       })),
       notes: (await titlesIn(ctx, project._id)).length,
     };
@@ -178,10 +179,14 @@ export const remove = mutation({
     if (!await ctx.db.get(args.id)) return { chats: 0, memories: 0, notes: 0 };
     const chats = await chatsIn(ctx, args.id);
     for (const chat of chats) await ctx.db.patch(chat._id, { projectId: undefined });
-    const memories = await ctx.db.query("memories").withIndex("by_project", (q) => q.eq("projectId", args.id)).collect();
+    // Its notes' lines go out with their notes, not with what Perry remembered in it.
+    const memories = (await ctx.db.query("memories").withIndex("by_project", (q) => q.eq("projectId", args.id)).collect()).filter((memory) => !isPageLine(memory));
     for (const memory of memories) await ctx.db.delete(memory._id);
     const notes = await titlesIn(ctx, args.id);
-    for (const note of notes) await ctx.db.patch(note.id, { projectId: undefined });
+    for (const note of notes) {
+      await ctx.db.patch(note.id, { projectId: undefined });
+      await moveLines(ctx, note.id, undefined);
+    }
     await ctx.db.delete(args.id);
     return { chats: chats.length, memories: memories.length, notes: notes.length };
   },
