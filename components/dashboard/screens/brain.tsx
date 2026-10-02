@@ -18,8 +18,10 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Spinner } from "@/components/ui/spinner";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { BrainMap } from "../brain-map/brain-map";
 import { EmptyState, List, ListSkeleton, Page } from "../common";
-import { MemoryPages, OlderMemories, TeachForm } from "./memory";
+import { MemoryPages, OlderMemories } from "./memory";
 import { NoteRows } from "./notes";
 
 /**
@@ -32,13 +34,19 @@ export function Brain() {
   const { dashboardKey } = useSession();
   const router = useRouter();
   const params = useSearchParams();
-  const notes = useQuery(api.notes.list, { key: dashboardKey });
+  // List or Map (issue #225), in the address so Back and a link keep it. List unless asked.
+  const map = params.get("view") === "map";
+  const notes = useQuery(api.notes.list, map ? "skip" : { key: dashboardKey });
   const create = useMutation(api.notes.create);
   const open = useMutation(api.pages.openMemoryPage);
   const [filter, setFilter] = useState(params.get("q") ?? "");
   const [deep, setDeep] = useState(false);
   const file = useRef<HTMLInputElement>(null);
   const needle = filter.trim().toLocaleLowerCase();
+  const setView = (next: string | undefined) => {
+    if (!next || (next === "map") === map) return;
+    router.replace(next === "map" ? "/brain?view=map" : "/brain");
+  };
 
   // The old About you links (/about, /memory?tab=about) open About me.
   useEffect(() => {
@@ -67,14 +75,19 @@ export function Brain() {
     <Page
       title="Brain"
       description="All of it stays on this computer."
+      wide={map ? "full" : false}
       actions={<>
+        <ToggleGroup value={[map ? "map" : "list"]} onValueChange={(value) => setView(value[0])} size="sm" spacing={0} aria-label="View">
+          <ToggleGroupItem value="list">List</ToggleGroupItem>
+          <ToggleGroupItem value="map">Map</ToggleGroupItem>
+        </ToggleGroup>
         <input ref={file} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" className="hidden" aria-label="Open a Markdown file"
           onChange={(event) => { void openFile(event.target.files?.[0]); event.target.value = ""; }} />
         <Button variant="outline" onClick={() => file.current?.click()}><FileUpIcon />Open .md</Button>
         <Button onClick={() => void newPage()}><PlusIcon />New page</Button>
       </>}
     >
-      <div className="space-y-8">
+      {map ? <BrainMap /> : <div className="space-y-8">
         <InputGroup>
           <InputGroupAddon><SearchIcon /></InputGroupAddon>
           <InputGroupInput type="search" aria-label="Search Brain" placeholder="Search Brain" value={filter} autoComplete="off" onChange={(event) => setFilter(event.target.value)} />
@@ -87,7 +100,6 @@ export function Brain() {
           </div>
         )}
         {needle.length >= 2 && <FoundLines term={filter.trim()} deep={deep} />}
-        {!needle && <TeachForm />}
         <MemoryPages filter={needle} />
         {!needle && <BrainChanges />}
         {!needle && <Archive />}
@@ -98,7 +110,7 @@ export function Brain() {
           ) : <NoteRows notes={pages} />}
         </section>
         <OlderMemories />
-      </div>
+      </div>}
     </Page>
   );
 }

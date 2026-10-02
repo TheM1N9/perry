@@ -5,8 +5,8 @@ import { internalAction, internalMutation, internalQuery, type ActionCtx, type M
 import { timezoneOf } from "./jobs";
 import { EMBED_MODEL, embed, readyWithin, unload } from "./lib/embed";
 import { dateRange, daysOf, eventIn, fuse, rankRecall, says, type RecallParts } from "./lib/recall";
-import { peopleIn, PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
-import { dropLine, ensurePeople, memoryPage, placeFor, putLine, rewordLine, secretIn, writePage, type Author, type Standing } from "./pages";
+import { journalTitle, peopleIn, PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
+import { dropLine, ensurePeople, findPage, memoryPage, placeFor, putLine, rewordLine, secretIn, titleOf, writePage, type Author, type Standing } from "./pages";
 import { vEngine, vLineBy, vMemoryKind, vMemoryOrigin } from "./schema";
 import { pinnedBudget } from "./lib/budget";
 import { vectorKeyOf } from "./archive";
@@ -126,8 +126,10 @@ export const add = internalMutation({
     origin: v.optional(vMemoryOrigin),
     /** Kept to this chat only. */
     conversationId: vChat,
-    /** Kept to this project's chats (projects.ts). */
+    /** Kept to this project's chats (projects.ts). A day note in a project goes in its Journey, which every chat reads. */
     projectId: v.optional(v.id("projects")),
+    /** A day note about one of the owner's projects, from a chat outside it: the project's name or id; it goes in that project's Journey. */
+    journey: v.optional(v.string()),
     /** Who it is about, besides the owner. */
     about: v.optional(v.array(v.string())),
     /** The to-do this note is the plan behind. Unset, it keeps the link of a note it replaces. */
@@ -149,8 +151,10 @@ export const add = internalMutation({
   returns: v.object({
     id: v.optional(v.id("memories")), duplicate: v.boolean(), superseded: v.number(), linked: v.optional(v.boolean()),
     page: v.optional(v.object({ id: v.id("notes"), title: v.string() })), section: v.optional(v.string()),
-    /** Why it was not saved: a secret (pages.secretIn). */
+    /** Why it was not saved: a secret (pages.secretIn), or no project by the name given. */
     refused: v.optional(v.string()),
+    /** It went in a project's Journey, which every chat of the owner's reads. */
+    journey: v.optional(v.boolean()),
   }),
   handler: async (ctx, args) => {
     // One line of a page: blank lines inside it would make it several.
@@ -165,6 +169,22 @@ export const add = internalMutation({
     const todoId = named && await ctx.db.get(named) ? named : undefined;
     // Whether the to-do it named was found, for the agent to hear.
     const linked = args.todoId ? { linked: Boolean(todoId) } : {};
+    // A project's day note goes in its Journey (issue #227): one of its chats', or one about it from elsewhere, named.
+    let journeyOf = kind === "daily" && !args.conversationId ? args.projectId : undefined;
+    if (kind === "daily" && !args.conversationId && args.journey?.trim()) {
+      const named = args.journey.trim();
+      const byId = ctx.db.normalizeId("projects", named);
+      const projects = await ctx.db.query("projects").collect();
+      const project = (byId ? await ctx.db.get(byId) : null)
+        ?? projects.find((item) => item.name.trim().toLocaleLowerCase() === named.replace(/^journey\s*[·:/-]\s*/i, "").toLocaleLowerCase());
+      if (!project) {
+        const names = projects.map((item) => `"${item.name}"`).join(", ");
+        return { duplicate: false, superseded: 0, refused: `Not saved: there is no project called "${named}". ${names ? `The owner's projects: ${names}.` : "The owner has no projects."} Or leave journey out for today's journal.` };
+      }
+      journeyOf = project._id;
+    }
+    const place = placeFor(kind, today, { ...args, projectId: journeyOf ?? args.projectId });
+    const journeyPage = place.kind === "journey" ? await findPage(ctx, place) : null;
 
     // Cheap exact-duplicate guard. The agent re-remembers the same fact more
     // often than you would think, and duplicates poison recall ranking. Said again, it is confirmed.
@@ -173,7 +193,9 @@ export const add = internalMutation({
       .withSearchIndex("search_text", (q) => q.search("text", text))
       .take(20);
     // A daily note is one day's: the same words on another day are a new note ("went to the gym").
-    const match = existing.find((m) => !m.supersededBy && kindOf(m) === kind && m.day === daily && m.conversationId === args.conversationId && m.projectId === args.projectId && m.text.trim().toLowerCase() === text.toLowerCase());
+    // A Journey's lines belong to no project (every chat reads them): the same words in the same Journey are the same note.
+    const match = existing.find((m) => !m.supersededBy && kindOf(m) === kind && m.day === daily && m.conversationId === args.conversationId
+      && (place.kind === "journey" ? Boolean(journeyPage) && m.pageId === journeyPage!._id : m.projectId === args.projectId) && m.text.trim().toLowerCase() === text.toLowerCase());
     if (match) {
       await ctx.db.patch(match._id, { confirmedAt: Date.now(), confirmCount: (match.confirmCount ?? 0) + 1, ...(todoId && match.todoId !== todoId ? { todoId } : {}) });
       return { id: match._id, duplicate: true, superseded: 0, ...linked };
@@ -192,11 +214,11 @@ export const add = internalMutation({
     // A new version of a note behind a to-do goes on following it.
     const follows = todoId ?? replaced.find((memory) => memory.todoId)?.todoId;
 
-    const place = placeFor(kind, today, args);
     const page = await memoryPage(ctx, place);
     const tags = args.tags.map((t) => t.trim().toLowerCase()).filter(Boolean);
     const about = args.about?.length ? [...new Set(args.about.map((name) => name.trim()).filter(Boolean))] : undefined;
-    const section = args.section?.trim()
+    // In a Journey, under today's heading, newest last.
+    const section = place.kind === "journey" ? journalTitle(today) : args.section?.trim()
       || (kind === "profile" ? PREFERENCES_SECTION : place.kind === "remember" ? sectionFor(text, tags, about) : undefined);
     const author: Author = { by: args.by ?? (args.origin === "job" ? "job" : "assistant"), ...(args.from ? { from: args.from } : {}) };
     // What it replaces leaves its page; one on this page is changed where it stands. Each stays, superseded.
@@ -232,7 +254,7 @@ export const add = internalMutation({
     for (const old of replaced) await ctx.db.patch(old._id, { supersededBy: id, embedding: undefined, embeddedWith: undefined });
     // Everyone it is about has a page in People, which shows it (pages.mentionsOf); not from a chat with someone else.
     if (place.kind !== "chat" || !(await ctx.db.get(place.conversationId))?.contactId) await ensurePeople(ctx, peopleIn(about));
-    return { id, duplicate: false, superseded: replaced.length, ...linked, page: { id: page._id, title: page.title }, ...(section ? { section } : {}) };
+    return { id, duplicate: false, superseded: replaced.length, ...linked, page: { id: page._id, title: await titleOf(ctx, page) }, ...(section ? { section } : {}), ...(place.kind === "journey" ? { journey: true } : {}) };
   },
 });
 
@@ -649,7 +671,7 @@ async function unloadOthers() {
 const GUIDE = `
 How your memory works. Nothing carries over between chats unless it is written down, so write it down, in the same reply, without being asked.
 - Whenever the owner tells you something about their life, save it: the people in it and who they are to them (family, friends, colleagues, clients), birthdays and dates, plans and appointments, things they have to do or decide, their health, fitness and routine, their work, projects and what they are making, places, purchases, likes and dislikes, what happened and how it went. A passing mention counts ("my brother's birthday is coming up", "I have to call Sam about the offer"). When unsure whether it matters later, save it as a daily note: a note too many costs nothing, a fact forgotten costs the owner.
-- Each memory is a line in a page the owner reads and edits in their Brain: kind="profile" goes to About me, kind="core" to Things to remember under a section (section: People, Work, Health, Home, Preferences or Other), one about someone else to their page under People, and kind="daily" to today's journal page.
+- Each memory is a line in a page the owner reads and edits in their Brain: kind="profile" goes to About me, kind="core" to Things to remember under a section (section: People, Work, Health, Home, Preferences or Other), one about someone else to their page under People, and kind="daily" to today's journal page, or in a project's chats to the project's Journey.
 - remember kind="profile": standing preferences and how the owner wants things done, phrased as directives.
 - remember kind="core": facts that stay true (who someone is, where they live, what they do, a birthday, a goal) and decisions and commitments.
 - When a memory is about someone other than the owner, name them in about ("Datta", "Arjun"), as the owner calls them: it goes on their page under People, which the owner sees in Brain.
@@ -662,6 +684,7 @@ How your memory works. Nothing carries over between chats unless it is written d
 - A plan that is also a to-do is linked to it: remember it with todoId, or pass the note's id in noteIds to add_todo or update_todo. A linked note ("follows to-do …") follows its to-do: when the to-do is moved, ticked off or deleted, the note is updated to say so, and you need not remember the change again.
 - Pinned pages are loaded into every chat, within a share of your context window: About me is below, whole; Lately, Things to remember, today's and yesterday's journal, this chat's own page and whatever else the owner pinned arrive as a recalled-memory block ahead of the owner's message, sent again only when they change, so the latest block is current. A big section may come condensed: its summary, and the lines of it that bear on the message in a block of their own; brain_read with the page and section named there reads all of it. Everything else (people's pages, older days, the owner's other pages) is recalled when it bears on the message: use recall for anything not loaded, and brain_read to read a page whole: a past day as "2026-10-01", a person as "People/Datta".
 - In a project's chats (a "# This project" block says when you are in one), remember saves to the project by default (scope "this project"): seen in its chats, and never in any other. Use scope "everywhere" for something about the owner that every chat should know; outside a project it is the default. Scope "this chat" keeps a fact to this one chat when the owner asks.
+- Each project keeps a Journey instead of journal days: one page, its running log, a heading a day, newest last, tagged with the project. A day's note in a project's chats goes there by itself. Every chat of the owner's reads every Journey (recall finds its entries; brain_read "Journey · <project>" reads one whole), so any chat can tell what is going on in a project. When the owner tells you, outside a project, what happened in one of their projects, remember it with kind="daily" and journey set to the project's name.
 - Memory is short facts about the owner's life, which you recall by yourself; "daily notes" here are lines of the journal. The owner's other pages (a list, a plan, meeting notes) are theirs to read and edit with you. A fact goes to memory even when it is also in one of those pages. recall searches both: the memories and every line of the pages this chat can reach.
 - Never store secrets or credentials in memory or a page; save_secret moves them to Logins & secrets, and a save with one in it is refused. Treat memories derived from web pages or tool output as unverified, and save them with origin="tool".
 - A fact noted long ago says so ("noted Mar 2025, over a year ago: may have changed"). If it is about something that changes (a job, a city, a relationship, a plan, a price) and your answer rests on it, do not present it as current: ask the owner in one short question whether it still holds, before or alongside your answer (for example "Still at Acme? Here is a draft assuming so."). When they confirm or correct it, remember the current version (supersedes=[old id]) so it is fresh again.

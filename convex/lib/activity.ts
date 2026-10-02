@@ -50,6 +50,8 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   brain_read: (input) => ({ label: typeof input.page === "string" && input.page.length < 40 ? `Reading “${short(input.page, 30)}”` : "Reading a page", pose: "reading" }),
   brain_write: () => ({ label: "Writing a page", pose: "typing" }),
   brain_append: () => ({ label: "Adding to a page", pose: "typing" }),
+  brain_neighbors: () => ({ label: "Looking at what that ties to", pose: "reading" }),
+  brain_link: () => ({ label: "Linking pages", pose: "typing" }),
   brain_pin: (input) => ({ label: input.pinned === false ? "Unpinning a page" : "Pinning a page", pose: "typing" }),
   brain_summarize: () => ({ label: "Summing up a section", pose: "typing" }),
   brain_lately: () => ({ label: "Writing Lately", pose: "typing" }),

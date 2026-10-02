@@ -10,8 +10,9 @@ import { openChat, sleep } from "../browser";
 // Text boxes grow with what is typed instead of being dragged to a size
 // (components/ui/textarea.tsx). A fresh Perry from the production build
 // (`pnpm build` first) on a free port with its own PERRY_HOME (PERRY_E2E_DIR,
-// else the temp folder), no runner, and headless Chrome on the Memory page's
-// "Teach Perry something" box and the other pages with text boxes.
+// else the temp folder), no runner, and headless Chrome on the assistant's
+// personality box in Settings → General (Brain has no box since Teach Perry
+// something went) and the other pages with text boxes.
 //
 // Ways it could fail, written down before the checks:
 //   1. A text box can still be dragged to a size: a resize handle in its corner.
@@ -79,9 +80,9 @@ try {
     writeFileSync(join(outDir, name), Buffer.from(data, "base64"));
   };
 
-  // The Memory page's box, as the owner types into it.
-  const BOX = "#memory-text";
-  await open("/memory", BOX);
+  // The personality box, as the owner types into it (it keeps 600 characters, so the long text is many short lines).
+  const BOX = "#identity-personality";
+  await open("/settings/general", BOX);
   const empty = await measure(BOX);
   check("noResizeHandle", empty.resize === "none", { resize: empty.resize });
 
@@ -91,13 +92,13 @@ try {
   const four = await measure(BOX);
   check("growsWithLines", four.height > one.height + 20 && four.scrollHeight <= four.clientHeight + 1, { one: one.height, four: four.height });
   await evaluate(`document.querySelector(${JSON.stringify(BOX)}).scrollIntoView({ block: "center" })`);
-  await shot("memory-grown.png");
+  await shot("box-grown.png");
 
-  await type(BOX, Array.from({ length: 80 }, (_, line) => `Line ${line + 1} of a very long note about the owner's mornings.`).join("\n"));
+  await type(BOX, Array.from({ length: 80 }, (_, line) => `Line ${line + 1}`).join("\n"));
   const long = await measure(BOX);
   check("stopsAtLimitThenScrolls", long.height <= long.window * 0.6 + 1 && long.scrollHeight > long.clientHeight, { height: long.height, limit: long.window * 0.6, scrollHeight: long.scrollHeight });
   await evaluate(`document.querySelector(${JSON.stringify(BOX)}).scrollIntoView({ block: "center" })`);
-  await shot("memory-long.png");
+  await shot("box-long.png");
 
   await type(BOX, "");
   const cleared = await measure(BOX);
@@ -109,7 +110,7 @@ try {
     CSS.supports = (...args) => String(args[0]).includes("field-sizing") ? false : supports(...args);
     document.addEventListener("DOMContentLoaded", () => { const style = document.createElement("style"); style.textContent = "textarea { field-sizing: fixed !important; }"; document.head.append(style); });
   })()` }) as { identifier: string };
-  await open("/memory", BOX);
+  await open("/settings/general", BOX);
   await type(BOX, "x");
   const fallbackOne = await measure(BOX);
   await type(BOX, "One\nTwo\nThree\nFour\nFive\nSix");
@@ -133,7 +134,7 @@ try {
 
   // Every text box on the pages that have them: none can be dragged to a size.
   const handles: Record<string, string[]> = {};
-  for (const [path, selector] of [["/memory", "textarea"], ["/chat", "#composer"]] as const) {
+  for (const [path, selector] of [["/settings/general", "textarea"], ["/chat", "#composer"]] as const) {
     await open(path, selector);
     handles[path] = await evaluate(`[...document.querySelectorAll("textarea")].map((box) => getComputedStyle(box).resize)`) as string[];
   }

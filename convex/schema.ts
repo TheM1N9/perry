@@ -22,7 +22,7 @@ export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.li
 /** What a line in `memories` is: a memory of one of the three layers, or a line of one of the owner's pages (pages.ts). */
 export const vLineKind = v.union(vMemoryKind, v.literal("page"));
 /** What a page of memory is (lib/pages.ts, PageKind); an ordinary page has none. */
-export const vPageKind = v.union(v.literal("about"), v.literal("remember"), v.literal("journal"), v.literal("person"), v.literal("chat"));
+export const vPageKind = v.union(v.literal("about"), v.literal("remember"), v.literal("journal"), v.literal("journey"), v.literal("person"), v.literal("chat"));
 /** Who wrote a page's line: the owner, Perry in a chat, or a scheduled job. */
 export const vLineBy = v.union(v.literal("owner"), v.literal("assistant"), v.literal("job"));
 /**
@@ -738,8 +738,8 @@ export default defineSchema({
     /** The revision its lines (memories.pageId) were last brought up to; behind, pages.indexAll does it. */
     linesAt: v.optional(v.number()),
     /**
-     * A page of memory (pages.ts): About me, Things to remember, a day of the journal, a person, or what one
-     * chat kept to itself. Its lines are memories. None for the owner's other pages.
+     * A page of memory (pages.ts): About me, Things to remember, a day of the journal, a project's Journey, a
+     * person, or what one chat kept to itself. Its lines are memories. None for the owner's other pages.
      */
     kind: v.optional(vPageKind),
     /** A journal page's day, YYYY-MM-DD on the owner's calendar. */
@@ -958,6 +958,13 @@ export default defineSchema({
      */
     migratedAt: v.optional(v.number()),
     migratedFrom: v.optional(v.string()),
+    /**
+     * A line moved from one of a project's journal days into its Journey (pages.mergeJournals, issue #227): when, the
+     * day, and what that day's page was, so moving back (pages.undoMigration) makes it again as it was.
+     */
+    journalMove: v.optional(v.object({
+      at: v.number(), day: v.string(), createdAt: v.number(), section: v.optional(v.string()), migrated: v.optional(v.boolean()), pinned: v.optional(v.boolean()),
+    })),
     /** The journal lines a lasting memory was promoted from (the nightly consolidation): where it came from. */
     basedOn: v.optional(v.array(v.id("memories"))),
     /** The one chat it belongs to, out of every other chat. With neither this nor projectId: everywhere. */
@@ -1029,6 +1036,8 @@ export default defineSchema({
     // The current lines a model has yet to embed, or embedded with another model (memories.unembedded).
     .index("by_embedded", ["supersededBy", "embeddedWith", "createdAt"])
     .index("by_archived", ["archivedAt"])
+    /** Memories that name someone (`about` set), without reading every other: Brain's map (brainMap.ts). */
+    .index("by_about", ["about"])
     .index("by_vector_key", ["vectorKey", "embeddedWith"])
     .searchIndex("search_text", { searchField: "text", filterFields: ["archivedAt"] })
     .vectorIndex("by_embedding", { vectorField: "embedding", dimensions: 768, filterFields: ["vectorKey", "day"] }),

@@ -1,0 +1,217 @@
+{
+  "ranAt": "2026-10-02T20:28:13.107Z",
+  "checks": {
+    "neighborsByName": true,
+    "neighborsTwoSteps": true,
+    "neighborsKeepToReach": true,
+    "linkRefusesAStaleRevision": true,
+    "linkOnBothPagesInRelated": true,
+    "linkOnce": true,
+    "linkOnTheMap": true,
+    "neighborsSeeTheLink": true,
+    "recallBringsInLinkedPages": true,
+    "guestGetsNone": true,
+    "instructionsSayWhenToLink": true,
+    "mapShowsTheLinkOnHover": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "neighborsByName": {
+      "page": {
+        "id": "tmvhb1dgafh4rr84qxzjq2h897",
+        "title": "Juhi"
+      },
+      "neighbors": [
+        {
+          "id": "63r1tdvqnk0zc0hjk6er726a7d",
+          "title": "Wed 30 Sept 2026",
+          "kind": "journal",
+          "steps": 1,
+          "why": [
+            "a line about Juhi"
+          ],
+          "link": "/brain/63r1tdvqnk0zc0hjk6er726a7d"
+        },
+        {
+          "id": "kc7fcq6fgzwbqs4azx37tk9cc2",
+          "title": "Wed 23 Sept 2026",
+          "kind": "journal",
+          "steps": 1,
+          "why": [
+            "a line about Juhi"
+          ],
+          "link": "/brain/kc7fcq6fgzwbqs4azx37tk9cc2"
+        }
+      ]
+    },
+    "neighborsTwoSteps": {
+      "page": {
+        "id": "9hj1vvmes2j3nkvdxwj5f41ytc",
+        "title": "Goa trip"
+      },
+      "neighbors": [
+        {
+          "id": "4fcbcbd0dpexm6ab3c6nfwbqyy",
+          "title": "Packing list",
+          "kind": "page",
+          "steps": 1,
+          "why": [
+            "a link between them"
+          ],
+          "link": "/brain/4fcbcbd0dpexm6ab3c6nfwbqyy"
+        }
+      ]
+    },
+    "linkRefusesAStaleRevision": {
+      "error": "\"Goa trip\" changed since revision 6; it is at revision 1 now. Nothing was linked. Read it again first."
+    },
+    "linkOnBothPagesInRelated": {
+      "tripContent": "## Plan\n\n- Fly on 20 Dec\n- Beach shack in Palolem\n\n## Related\n\n- [Juhi](/brain/tmvhb1dgafh4rr84qxzjq2h897): planning it together\n",
+      "juhiContent": "- Juhi is the owner's oldest friend.\n\n## Related\n\n- [Goa trip](/brain/9hj1vvmes2j3nkvdxwj5f41ytc): planning it together\n",
+      "linked": {
+        "linked": [
+          {
+            "id": "9hj1vvmes2j3nkvdxwj5f41ytc",
+            "title": "Goa trip",
+            "revision": 2,
+            "added": true
+          },
+          {
+            "id": "tmvhb1dgafh4rr84qxzjq2h897",
+            "title": "Juhi",
+            "revision": 3,
+            "added": true
+          }
+        ]
+      }
+    },
+    "linkOnce": {
+      "linked": [
+        {
+          "id": "9hj1vvmes2j3nkvdxwj5f41ytc",
+          "title": "Goa trip",
+          "revision": 2,
+          "added": false
+        },
+        {
+          "id": "tmvhb1dgafh4rr84qxzjq2h897",
+          "title": "Juhi",
+          "revision": 3,
+          "added": false
+        }
+      ]
+    },
+    "neighborsSeeTheLink": {
+      "page": {
+        "id": "tmvhb1dgafh4rr84qxzjq2h897",
+        "title": "Juhi"
+      },
+      "neighbors": [
+        {
+          "id": "9hj1vvmes2j3nkvdxwj5f41ytc",
+          "title": "Goa trip",
+          "kind": "page",
+          "steps": 1,
+          "why": [
+            "a link between them"
+          ],
+          "link": "/brain/9hj1vvmes2j3nkvdxwj5f41ytc"
+        },
+        {
+          "id": "63r1tdvqnk0zc0hjk6er726a7d",
+          "title": "Wed 30 Sept 2026",
+          "kind": "journal",
+          "steps": 1,
+          "why": [
+            "a line about Juhi"
+          ],
+          "link": "/brain/63r1tdvqnk0zc0hjk6er726a7d"
+        },
+        {
+          "id": "kc7fcq6fgzwbqs4azx37tk9cc2",
+          "title": "Wed 23 Sept 2026",
+          "kind": "journal",
+          "steps": 1,
+          "why": [
+            "a line about Juhi"
+          ],
+          "link": "/brain/kc7fcq6fgzwbqs4azx37tk9cc2"
+        }
+      ]
+    },
+    "recallBringsInLinkedPages": {
+      "related": [
+        {
+          "id": "9hj1vvmes2j3nkvdxwj5f41ytc",
+          "title": "Goa trip",
+          "kind": "page",
+          "why": [
+            "a link between them"
+          ],
+          "from": "Juhi",
+          "link": "/brain/9hj1vvmes2j3nkvdxwj5f41ytc"
+        },
+        {
+          "id": "63r1tdvqnk0zc0hjk6er726a7d",
+          "title": "Wed 30 Sept 2026",
+          "kind": "journal",
+          "why": [
+            "a line about Juhi"
+          ],
+          "from": "Juhi",
+          "link": "/brain/63r1tdvqnk0zc0hjk6er726a7d"
+        },
+        {
+          "id": "kc7fcq6fgzwbqs4azx37tk9cc2",
+          "title": "Wed 23 Sept 2026",
+          "kind": "journal",
+          "why": [
+            "a line about Juhi"
+          ],
+          "from": "Juhi",
+          "link": "/brain/kc7fcq6fgzwbqs4azx37tk9cc2"
+        }
+      ],
+      "found": 1
+    },
+    "guestGetsNone": {
+      "guestNeighbors": "Brain's pages are the owner's: a chat with someone else cannot read or write them.",
+      "guestLink": "Brain's pages are the owner's: a chat with someone else cannot read or write them."
+    },
+    "mapShowsTheLinkOnHover": {
+      "brainMap": "true",
+      "nodes": "10",
+      "edges": "7",
+      "settled": "true",
+      "drawnNodes": "10",
+      "drawnEdges": "7",
+      "view": "pages",
+      "lit": "Juhi",
+      "litNeighbours": "3"
+    },
+    "noPageErrors": [],
+    "realModelTurns": "none: every chat ran on the fake Grok agent",
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\brain-links\\perry-brain-links-CZw9Zu\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn 67y14a9xfn0e6xgb04ntakd8pw\u001b[0m",
+      "\u001b[2m  saved turn edkpk61hz4xjg6ckdfbrh5yagj\u001b[0m",
+      "\u001b[2m  saved turn 4nj67zwd0fvxpyyx2h0ya7ccmt\u001b[0m",
+      "\u001b[2m  saved turn 5j7d6awnfc3x3e9d8kn35ya0d6\u001b[0m",
+      "\u001b[2m  saved turn s8byhj9fp1j3ss2nk93fgbyz5y\u001b[0m",
+      "\u001b[2m  saved turn w55akrjshjedk199zp4jkr7k6h\u001b[0m",
+      "\u001b[2m  saved turn mt97mzk9knfqr7bat9q9a5mxvn\u001b[0m",
+      "\u001b[2m  saved turn v9va3vetsybxgpasvbxw162bct\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

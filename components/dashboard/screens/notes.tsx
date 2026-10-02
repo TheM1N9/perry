@@ -30,6 +30,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SaveStatus, type SaveState } from "../autosave";
+import { LocalMap } from "../brain-map/local-map";
 import { AboutVersions } from "./memory";
 import { EmptyState, List, ListSkeleton, Page, RelativeTime, StatusBadge, TopBar } from "../common";
 
@@ -138,7 +139,7 @@ function NoteEditing({ note }: { note: NoteView }) {
 
   // A page of memory keeps its name and place: About me and Things to remember stay too.
   const memory = Boolean(note.kind);
-  const lasting = note.kind === "about" || note.kind === "remember";
+  const lasting = note.kind === "about" || note.kind === "remember" || note.kind === "journey";
   const status: SaveState = state.status === "saving" ? { status: "saving" } : state.status === "dirty" ? { status: "editing" }
     : state.status === "error" ? { status: "error", error: state.error } : state.status === "saved" ? { status: "saved" } : { status: "idle" };
   const download = () => {
@@ -216,7 +217,8 @@ function NoteEditing({ note }: { note: NoteView }) {
             onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); (document.querySelector("[data-note-editor], #note-source") as HTMLElement | null)?.focus(); } }}
           />
           <div className="mt-1.5 mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            {note.project && <Link href={`/projects/${note.projectId}`} className="inline-flex items-center gap-1 hover:text-foreground"><FolderIcon className="size-3" />{note.project}</Link>}
+            {note.project && <Link href={`/projects/${note.projectId}`} className="inline-flex items-center gap-1 hover:text-foreground" data-project-chip><FolderIcon className="size-3" />{note.project}</Link>}
+            {note.kind === "journey" && <span data-journey-note>Every chat of yours can read it</span>}
             {note.from && <Link href={`/chat/${note.from.id}`} className="inline-flex items-center gap-1 hover:text-foreground"><MessageSquareIcon className="size-3" />From “{note.from.title}”</Link>}
             <span className="inline-flex items-center gap-1">{note.by === "assistant" ? <><SparklesIcon className="size-3" />Perry</> : "You"}, <RelativeTime at={note.updatedAt} /></span>
             {(note.pinned || note.pinnedSections?.length) && <span className="inline-flex items-center gap-1" data-pinned><PinIcon className="size-3" />{note.pinned ? "In every chat" : `${note.pinnedSections!.join(", ")} in every chat`}</span>}
@@ -240,6 +242,7 @@ function NoteEditing({ note }: { note: NoteView }) {
             <NoteEditor value={draft.content} label={draft.title} onChange={(content) => controller.edit({ content })} onBlur={() => void controller.flush()} />
           )}
           {note.kind === "person" && <AlsoAbout id={note.id} name={note.title} />}
+          <LocalMap id={note.id} />
           <LineSources id={note.id} memory={memory} />
           {note.kind === "about" && (
             <Collapsible className="mt-3 border-t pt-3">

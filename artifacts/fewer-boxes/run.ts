@@ -250,7 +250,7 @@ try {
     await collectErrors(`memory-${mode}`);
 
     // --- Project ------------------------------------------------------------------------------------------
-    await go(`/projects/${project}`, "matte green");
+    await go(`/projects/${project}`, "Things to remember");
     await shot("project");
     await measure(`project-${mode}`);
     await collectErrors(`project-${mode}`);
@@ -347,7 +347,7 @@ try {
     await size(1280, 800);
 
     // --- Autosave: project instructions, and the way out right after typing ------------------------
-    await go(`/projects/${project}`, "matte green");
+    await go(`/projects/${project}`, "Things to remember");
     const instructions = `document.querySelector("#project-instructions")`;
     const projectInstructions = async () => (await call<{ instructions: string }>("projects:get", { key: KEY, id: project })).instructions;
     await focus(instructions);
@@ -363,7 +363,7 @@ try {
     const kept = await soon(async () => (await projectInstructions()).endsWith("Never more than 200 words."), 6);
     check("leavingRightAfterTypingKeepsTheWords", kept, await projectInstructions());
     // Closing the tab while a save is still to go: the page asks, and the save goes.
-    await go(`/projects/${project}`, "matte green");
+    await go(`/projects/${project}`, "Things to remember");
     await focus(instructions);
     await typeText(" Sign off as Perry.");
     const asked = await evaluate(`(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; })()`);
@@ -473,16 +473,19 @@ try {
     check("addLoginByEnter", withName === 0 && withSecret === 1 && added && (await buttonsNamed("Save")) === 0, { withName, withSecret, added });
     await collectErrors("secrets");
 
-    // --- Brain: Remember, and editing a memory where it lives, in its page -------------------------------
+    // --- Brain: a new memory, and editing one, where they live, in their page --------------------------------
+    // Teach Perry something is gone: a memory is told to Perry in a chat, or written as a line of its page.
     await go("/brain", "Things to remember");
     const memories = () => call<Array<{ id: string; text: string; pageId?: string }>>("memories:search", { query: "", limit: 25, everywhere: true, memoriesOnly: true });
-    const empty = await buttonsNamed("Remember");
-    await focus(`document.querySelector("#memory-text")`);
-    await typeText("Sam's dentist is Dr. Rao on Linking Road.");
-    const offeredRemember = await buttonsNamed("Remember");
+    const teachForm = await evaluate(`document.querySelectorAll("#memory-text").length`) as number;
+    const trainsPage = (await memories()).find((memory) => memory.text.includes("trains to flights"))?.pageId;
+    await click(`document.querySelector('[data-memory-page] [href$="/${trainsPage}"], a[data-memory-page][href$="/${trainsPage}"]')`);
+    await waitFor(`document.querySelector("[data-note-editor]")?.innerText.includes("trains to flights")`, "Things to remember in the editor", 30);
+    await evaluate(`(() => { const el = document.querySelector("[data-note-editor]"); el.focus(); const range = document.createRange(); range.selectNodeContents(el); range.collapse(false); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); return true; })()`);
     await press("Enter");
-    const remembered = await soon(async () => (await memories()).some((memory) => memory.text === "Sam's dentist is Dr. Rao on Linking Road."), 6);
-    check("rememberByEnter", empty === 0 && offeredRemember === 1 && remembered, { empty, offeredRemember, remembered });
+    await typeText("Sam's dentist is Dr. Rao on Linking Road.");
+    const remembered = await soon(async () => (await memories()).some((memory) => memory.text === "Sam's dentist is Dr. Rao on Linking Road."), 8);
+    check("rememberInItsPage", teachForm === 0 && remembered && (await buttonsNamed("Save")) === 0, { teachForm, remembered });
     const trains = (await memories()).find((memory) => memory.text.includes("trains to flights"));
     await go(`/brain/${trains?.pageId}`, "trains to flights");
     await evaluate(`(() => { const el = document.querySelector("[data-note-editor]"); el.focus(); const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); for (let node; (node = walk.nextNode());) { const at = node.nodeValue.indexOf("under six hours."); if (at >= 0) { const range = document.createRange(); range.setStart(node, at + "under six hours.".length); range.collapse(true); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); return true; } } return false; })()`);

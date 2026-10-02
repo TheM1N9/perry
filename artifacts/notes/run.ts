@@ -508,7 +508,8 @@ try {
 
   // --- The project page, and deleting a project keeps its notes ---------------------------------------------------------------
   await go(`/projects/${project}`);
-  await waitFor(`document.querySelector('section[aria-label="Notes"]')?.innerText.includes("Tile choices")`, "the project's notes");
+  // Its pages are in its Brain, as Brain lists them (issue #226).
+  await waitFor(`document.querySelector('main section[aria-label="Brain"] ul[aria-label="Pages"]')?.innerText.includes("Tile choices")`, "the project's notes");
   await shot("project-notes.png");
   await call("projects:remove", { key: KEY, id: project });
   check("projectDeleteKeepsNotes", Boolean(noteRow(tiles)) && !noteRow(tiles)?.projectId);

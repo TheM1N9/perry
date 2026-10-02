@@ -235,17 +235,25 @@ export function removeLine(content: string, text: string): string | null {
   return tidy(lines);
 }
 
+/** One block's Markdown as the page has it, list marker and all. */
+export const blockMarkdown = (content: string, block: Block) => splitLines(content).slice(block.start, block.end + 1).join("\n");
+
 // --- Memory as pages --------------------------------------------------------------------------------
 
 /**
  * What a page is. Ordinary pages have no kind. The rest are memory:
  *   about     About me (USER.md, and how the owner likes things done)
  *   remember  Things to remember, in sections; one for everywhere, and one per project
- *   journal   one page per day, what happened (was daily notes); one per day for a project too
+ *   journal   one page per day, what happened (was daily notes): the owner's own days
+ *   journey   one page per project, its running log: what happened in it, under a heading per day, newest last
+ *             (issue #227; projects kept a journal page a day before)
  *   person    People/<name>, what Perry knows about someone in the owner's life
  *   chat      what was kept to one chat, out of every other's sight
  */
-export type PageKind = "about" | "remember" | "journal" | "person" | "chat";
+export type PageKind = "about" | "remember" | "journal" | "journey" | "person" | "chat";
+
+/** A project's Journey page's title. */
+export const JOURNEY_TITLE = "Journey";
 
 /** The sections Things to remember starts with; Perry may add others. */
 export const REMEMBER_SECTIONS = ["People", "Work", "Health", "Home", "Preferences", "Other"] as const;
@@ -284,9 +292,20 @@ export function sectionFor(text: string, tags: string[] = [], about: string[] = 
   return SECTION_WORDS.find(([, test]) => test.test(words))?.[0] ?? "Other";
 }
 
-/** A journal page's title: "Fri 2 Oct 2026". */
+/** A journal page's title, and a day's heading in a Journey: "Fri 2 Oct 2026". */
 export function journalTitle(day: string): string {
   return new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", year: "numeric" }).replace(/,/g, "");
+}
+
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+/** The day a heading names, as YYYY-MM-DD: "Fri 2 Oct 2026", "2 October 2026" or "2026-10-02"; none for any other heading. */
+export function dayOfHeading(heading?: string): string | undefined {
+  if (!heading) return undefined;
+  const iso = /\b\d{4}-\d{2}-\d{2}\b/.exec(heading);
+  if (iso) return iso[0];
+  const named = /\b(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{4})\b/.exec(heading);
+  const month = named ? MONTHS.indexOf(named[2].toLowerCase()) : -1;
+  return named && month >= 0 ? `${named[3]}-${String(month + 1).padStart(2, "0")}-${named[1].padStart(2, "0")}` : undefined;
 }
 
 /** A person's name as a page key: what "Datta" and "datta " both are. */

@@ -254,7 +254,8 @@ try {
     dentist: { kind: "journal", page: journalTitleOf(dayOf(now - DAY * 3)), project: undefined },
     alert: { kind: "journal", page: journalTitleOf(dayOf(now - DAY)) },
     kettle: { kind: "journal", page: journalTitleOf(dayOf(now - DAY * 5)) },
-    tiles: { kind: "journal", project: "project", page: journalTitleOf(dayOf(now - DAY * 2)) },
+    // A project's day note goes in its Journey, under its day (issue #227).
+    tiles: { kind: "journey", project: "project", page: "Journey", section: journalTitleOf(dayOf(now - DAY * 2)) },
     owl: { kind: "chat", chat: "general" },
     voice: { kind: "chat", chat: "theirs" },
     globex: { kind: "remember", section: "Work" },
@@ -276,7 +277,8 @@ try {
   const KEPT = ["text", "tags", "source", "origin", "createdAt", "editedAt", "about", "todoId", "day", "kind", "projectId", "conversationId", "vector", "vectorModel"];
   // A row with no vector gets one from the sentence model once Perry runs; one that had one keeps it.
   const unchanged = (name: string, field: string) => (field !== "vector" && field !== "vectorModel") || seeds[name].vector !== undefined;
-  const changed = Object.keys(expect).flatMap((name) => KEPT.filter((field) => (field !== "text" || (name !== "list" && name !== "checkbox")) && unchanged(name, field))
+  // A Journey's lines are every chat's (issue #227): the project's day note keeps all but its project, which its page has.
+  const changed = Object.keys(expect).flatMap((name) => KEPT.filter((field) => (field !== "text" || (name !== "list" && name !== "checkbox")) && unchanged(name, field) && !(name === "tiles" && field === "projectId"))
     .filter((field) => JSON.stringify(M(name)?.[field] ?? null) !== JSON.stringify(seeds[name][field] ?? null)).map((field) => `${name}.${field}`));
   check("provenanceKept", Boolean(M("profile")) && changed.length === 0 && Object.keys(expect).every((name) => typeof M(name)?.migratedAt === "number")
     && M("list")?.text === "Shopping list idea:\nmilk and bread" && M("list")?.migratedFrom === "Shopping list idea:\n\nmilk and bread"
@@ -835,7 +837,7 @@ try {
   })()`) as { entries: string[]; inPages: string[] };
   const blocks = await evaluate(`({ lists: document.querySelectorAll('section[aria-label="Memory pages"]').length, teach: document.querySelectorAll('#memory-text').length })`) as { lists: number; teach: number };
   const memoryTitles = rows("notes").filter((row) => row.kind).map((row) => String(row.title));
-  check("eachPageListedOnce", blocks.lists === 1 && blocks.teach === 1 && onBrain.entries.length > 0 && new Set(onBrain.entries).size === onBrain.entries.length && !onBrain.inPages.some((title) => memoryTitles.includes(title)),
+  check("eachPageListedOnce", blocks.lists === 1 && blocks.teach === 0 && onBrain.entries.length > 0 && new Set(onBrain.entries).size === onBrain.entries.length && !onBrain.inPages.some((title) => memoryTitles.includes(title)),
     { blocks, onBrain: onBrain.entries.length, unique: new Set(onBrain.entries).size, memoryInPages: onBrain.inPages.filter((title) => memoryTitles.includes(title)) });
   const landed: Record<string, string> = {};
   const land = async (path: string, test: string, what: string) => { await go(path); await waitFor(test, what); landed[path] = await evaluate("location.pathname + location.search") as string; };

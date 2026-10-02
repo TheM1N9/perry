@@ -134,6 +134,35 @@ export async function givePeoplePages(runtime: Runtime): Promise<void> {
 }
 
 /**
+ * Projects' journal days go into their Journeys (pages.moveJournals, issue
+ * #227): first every row of memory and every page are written to
+ * ~/.perry/backups/journals-before-journeys-<time>.json, then each project's
+ * days become dated entries of its one Journey, keeping every line's row.
+ * `perry brain move-back` undoes it. Nothing once done, or after the owner
+ * moved memory back out. A failure is said and leaves the days as they were.
+ */
+export async function moveJournalsIntoJourneys(runtime: Runtime): Promise<void> {
+  try {
+    const waiting = (await runtime.runQuery("pages:journalsWaiting", {}, { internal: true })).value as number;
+    if (!waiting) return;
+    const backup = await runtime.exclusive(() => ({
+      at: new Date().toISOString(),
+      waiting,
+      memories: runtime.store.all("memories"),
+      notes: runtime.store.all("notes"),
+    }));
+    const dir = join(HOME, "backups");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `journals-before-journeys-${backup.at.replace(/[:.]/g, "-")}.json`);
+    writeFileSync(file, JSON.stringify(backup));
+    const done = await runtime.runMutation("pages:moveJournals", {}, { internal: true }) as { lines: number; pages: number };
+    console.log(`[perry] moved ${done.pages} project journal days (${done.lines} lines) into their projects' Journeys; backup in ${file}`);
+  } catch (error) {
+    console.error(`[perry] could not move project journal days into Journeys; they stay as they were: ${String(error)}`);
+  }
+}
+
+/**
  * The default engine the owner chose in `perry setup` while Perry was not
  * running, waiting in Perry's home: it becomes the default, once.
  */
@@ -199,6 +228,7 @@ export async function startBackend() {
   // Memories from before pages move into them, after a backup.
   await moveMemoriesIntoPages(runtime);
   await givePeoplePages(runtime);
+  await moveJournalsIntoJourneys(runtime);
   // The Library (issue #216): every chat file from before it, then Perry's files folder; nothing once done.
   await runtime.runMutation("library:backfill", {}, { internal: true })
     .then(() => runtime.runAction("library:sync", {}, { internal: true }))
