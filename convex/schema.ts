@@ -972,6 +972,8 @@ export default defineSchema({
     .index("by_day", ["day", "createdAt"])
     .index("by_todo", ["todoId"])
     .index("by_project", ["projectId", "createdAt"])
+    /** Memories that name someone (`about` set), without reading every other: Brain's map (brainMap.ts). */
+    .index("by_about", ["about"])
     .searchIndex("search_text", { searchField: "text" }),
 
   /**

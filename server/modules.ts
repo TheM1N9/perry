@@ -6,6 +6,7 @@ import * as agentStore from "../convex/agentStore";
 import * as approvals from "../convex/approvals";
 import * as assistant from "../convex/assistant";
 import * as brain from "../convex/brain";
+import * as brainMap from "../convex/brainMap";
 import * as channels from "../convex/channels";
 import * as codex from "../convex/codex";
 import * as composio from "../convex/composio";
@@ -31,6 +32,7 @@ import * as lib_devices from "../convex/lib/devices";
 import * as lib_embed from "../convex/lib/embed";
 import * as lib_engines from "../convex/lib/engines";
 import * as lib_errors from "../convex/lib/errors";
+import * as lib_graph from "../convex/lib/graph";
 import * as lib_library from "../convex/lib/library";
 import * as lib_notes from "../convex/lib/notes";
 import * as lib_pages from "../convex/lib/pages";
@@ -81,6 +83,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "approvals": approvals,
   "assistant": assistant,
   "brain": brain,
+  "brainMap": brainMap,
   "channels": channels,
   "codex": codex,
   "composio": composio,
@@ -106,6 +109,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/embed": lib_embed,
   "lib/engines": lib_engines,
   "lib/errors": lib_errors,
+  "lib/graph": lib_graph,
   "lib/library": lib_library,
   "lib/notes": lib_notes,
   "lib/pages": lib_pages,
