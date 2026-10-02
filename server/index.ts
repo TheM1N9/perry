@@ -7,7 +7,8 @@ import crons from "../convex/crons";
 import http from "../convex/http";
 import schema from "../convex/schema";
 import { HOME, PATHS, readRunnerConfig, writeRunnerConfig } from "../runner/home";
-import { moveVectorsOut } from "./brainIndex";
+import { backupBeforeModelChange, moveVectorsOut } from "./brainIndex";
+import { EMBED_MODEL } from "../convex/lib/embed";
 import { modules } from "./modules";
 import { Runtime } from "./runtime";
 import { pollTelegram } from "./telegram";
@@ -199,17 +200,29 @@ async function engineFromEnvironment(runtime: Runtime) {
  * The word index builds itself when the store opens (server/db.ts). A failure
  * is said and leaves Brain searchable by words, its lines embedded again.
  */
-export async function updateBrainIndex(runtime: Runtime): Promise<void> {
+export async function updateBrainIndex(runtime: Runtime): Promise<boolean> {
+  let backedUp = false;
   try {
     const done = await moveVectorsOut(runtime);
+    backedUp = Boolean(done.backup);
     if (done.moved || done.dropped) console.log(`[perry] moved ${done.moved} vectors out of Brain's rows into its vector index (${done.dropped} to make again); backup in ${done.backup}`);
   } catch (error) {
     console.error(`[perry] could not move Brain's vectors; its lines are embedded again instead: ${String(error)}`);
+  }
+  // A new sentence model writes over every line's vector: a copy first, and without one no line is embedded again.
+  let embedding = true;
+  try {
+    const backup = await backupBeforeModelChange(runtime, EMBED_MODEL, backedUp);
+    if (backup) console.log(`[perry] Brain's lines will be embedded again with ${EMBED_MODEL}; backup in ${backup}`);
+  } catch (error) {
+    embedding = false;
+    console.error(`[perry] could not back Brain up before embedding its lines again with ${EMBED_MODEL}, so they are not, until the next start; search by words works: ${String(error)}`);
   }
   await runtime.runMutation("pages:indexMentions", {}, { internal: true }).catch((error) => console.error(`[perry] could not read who Brain's lines mention: ${String(error)}`));
   // Vectors from before the archive get their live key; then a pass of the archive (archive.ts), in batches.
   await runtime.runMutation("archive:keyVectors", {}, { internal: true }).catch((error) => console.error(`[perry] could not key Brain's vectors: ${String(error)}`));
   await runtime.runMutation("archive:run", {}, { internal: true }).catch((error) => console.error(`[perry] could not archive Brain's unused lines: ${String(error)}`));
+  return embedding;
 }
 
 /** Start the scheduler, crons, Telegram, WhatsApp, event triggers and the wake timer. Called once, from instrumentation.ts. */
@@ -240,7 +253,12 @@ export async function startBackend() {
   // The sentence model starts loading at once, so the first search is by meaning too.
   void import("../convex/lib/embed").then((embedding) => embedding.warmUp());
   void updateBrainIndex(runtime)
-    .then(() => runtime.runAction("memories:embedMissing", {}, { internal: true }))
+    .then(async (embedding) => {
+      if (!embedding) return;
+      // Until now no run embeds (memories.embedMissing), so none writes over a vector before the backup above.
+      (globalThis as { __perryBrainIndexed?: boolean }).__perryBrainIndexed = true;
+      await runtime.runAction("memories:embedMissing", {}, { internal: true });
+    })
     .catch((error) => console.error(`[perry] could not embed Brain's lines: ${String(error)}`));
   box.__perry!.stopTelegram = pollTelegram(runtime);
   box.__perry!.stopWhatsApp = runWhatsApp(runtime);

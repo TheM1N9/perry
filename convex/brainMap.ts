@@ -110,6 +110,137 @@ export async function graphOf(ctx: Reader, scope?: { page: (page: Note) => boole
 }
 
 /**
+ * Only the part of the map within `depth` steps of some pages, read from those
+ * pages outwards and never from all of Brain: what Perry's brain_neighbors and
+ * recall's one step out need (issue #230), cheap with years of pages. The same
+ * ties as graphOf, each counted once, so around() on it gives what around()
+ * on the whole map gives within that reach:
+ *   link     the links in a page's words, and the pages whose words link to it (found by the word index on the id);
+ *   about    a person's lines from the mentions index (pages.noteMentions), kept to those `about` them, as graphOf;
+ *   project  a page's project, which is a step like any other but leads nowhere further.
+ * Until every line's mentions are kept (pages.indexMentions), a person's lines are read by the by_about index.
+ */
+export async function neighbourhoodOf(ctx: Reader, seeds: string[], depth: number, scope: { page: (page: Note) => boolean; project: (id: Id<"projects">) => boolean }): Promise<BrainGraph> {
+  const pages = new Map<string, Note>();
+  const projects = new Map<string, Doc<"projects">>();
+  const persons = new Map<string, Note | null>();
+  const ties = new Map<string, Tie>();
+  const tie = (key: string, value: Tie) => { if (!ties.has(key)) ties.set(key, value); };
+  const pageOf = async (raw: string): Promise<Note | null> => {
+    if (pages.has(raw)) return pages.get(raw)!;
+    const id = ctx.db.normalizeId("notes", raw);
+    const page = id ? await ctx.db.get(id) : null;
+    if (!page || !scope.page(page)) return null;
+    pages.set(page._id, page);
+    return page;
+  };
+  const personPage = async (name: string): Promise<Note | null> => {
+    const key = personKey(name);
+    if (!persons.has(key)) {
+      const found = (await ctx.db.query("notes").withIndex("by_person", (q) => q.eq("person", key)).collect()).find((page) => page.kind === "person" && scope.page(page)) ?? null;
+      persons.set(key, found);
+      if (found) pages.set(found._id, found);
+    }
+    return persons.get(key)!;
+  };
+  const guests = new Map<string, boolean>();
+  const fromGuest = async (line: Doc<"memories">) => {
+    if (!line.conversationId) return false;
+    if (!guests.has(line.conversationId)) guests.set(line.conversationId, Boolean((await ctx.db.get(line.conversationId))?.contactId));
+    return guests.get(line.conversationId)!;
+  };
+  /** A line about people ties its page to theirs, as graphOf's people source does. */
+  const aboutTies = async (line: Doc<"memories">, home: Note, only?: string): Promise<Note[]> => {
+    if (line.supersededBy || line.kind === "page" || !line.about?.length || line.pageId !== home._id || await fromGuest(line)) return [];
+    const reached: Note[] = [];
+    for (const name of peopleIn(line.about)) {
+      if (only && personKey(name) !== only) continue;
+      const person = await personPage(name);
+      if (!person || person._id === home._id) continue;
+      tie(`${line._id} ${person._id}`, { a: home._id, b: person._id, kind: home.kind === "person" ? "also" : "about" });
+      reached.push(person);
+    }
+    return reached;
+  };
+  const mentionsKept = (await ctx.db.query("installation").first())?.mentionsAt === Number.MAX_SAFE_INTEGER;
+
+  /** Every page or project tied to this page, with the ties recorded. */
+  const expand = async (page: Note): Promise<string[]> => {
+    const next: string[] = [];
+    for (const id of linkedIds(page.content)) {
+      const other = id === page._id ? null : await pageOf(id);
+      if (other) { tie(`link ${page._id} ${other._id}`, { a: page._id, b: other._id, kind: "link" }); next.push(other._id); }
+    }
+    for (const other of await ctx.db.query("notes").withSearchIndex("search_text", (q) => q.search("search", `${page._id} `)).take(1024)) {
+      if (other._id === page._id || !scope.page(other) || !linkedIds(other.content).includes(page._id)) continue;
+      pages.set(other._id, other);
+      tie(`link ${other._id} ${page._id}`, { a: other._id, b: page._id, kind: "link" });
+      next.push(other._id);
+    }
+    // Its own lines about people.
+    for (const line of await ctx.db.query("memories").withIndex("by_page", (q) => q.eq("pageId", page._id)).collect()) {
+      for (const person of await aboutTies(line, page)) next.push(person._id);
+    }
+    // For a person, the lines about them on other pages.
+    if (page.kind === "person" && page.person) {
+      const lines = mentionsKept
+        ? (await Promise.all((await ctx.db.query("mentions").withIndex("by_person", (q) => q.eq("person", page.person)).collect()).map((mention) => ctx.db.get(mention.lineId)))).filter((line): line is Doc<"memories"> => Boolean(line))
+        : await ctx.db.query("memories").withIndex("by_about", (q) => q.gte("about", "" as unknown as string[])).collect();
+      for (const line of lines) {
+        if (!line.pageId || line.pageId === page._id || !line.about?.length) continue;
+        const home = await pageOf(line.pageId);
+        if (home && (await aboutTies(line, home, page.person)).length) next.push(home._id);
+      }
+    }
+    if (page.projectId && scope.project(page.projectId)) {
+      if (!projects.has(page.projectId)) { const project = await ctx.db.get(page.projectId); if (project) projects.set(project._id, project); }
+      if (projects.has(page.projectId)) tie(`project ${page._id}`, { a: page._id, b: page.projectId, kind: "project" });
+    }
+    return next;
+  };
+
+  const steps = new Map<string, number>();
+  let ring: string[] = [];
+  for (const seed of seeds) {
+    const page = await pageOf(seed);
+    if (page && !steps.has(page._id)) { steps.set(page._id, 0); ring.push(page._id); }
+  }
+  for (let step = 1; step <= depth && ring.length; step++) {
+    const out: string[] = [];
+    for (const id of ring) for (const to of await expand(pages.get(id)!)) if (!steps.has(to)) { steps.set(to, step); out.push(to); }
+    ring = out;
+  }
+
+  const nodes: MapNode[] = [];
+  const index = new Map<string, number>();
+  const add = (node: MapNode) => { index.set(node.id, nodes.length); nodes.push(node); };
+  for (const page of pages.values()) {
+    add({
+      id: page._id, title: page.title, kind: pageKind(page), pinned: isPinned(page) || Boolean(page.pinnedSections?.length),
+      size: page.content.length, at: page.kind === "journal" && page.day ? dayTime(page.day) : page.updatedAt,
+      ...(page.day ? { day: page.day } : {}), ...(page.projectId ? { projectId: page.projectId } : {}),
+    });
+  }
+  for (const project of projects.values()) add({ id: project._id, title: project.name, kind: "project", pinned: false, size: 0, at: project.updatedAt, projectId: project._id });
+  const weights = new Map<string, { a: number; b: number; kind: EdgeKind; weight: number }>();
+  for (const found of ties.values()) {
+    const a = index.get(found.a);
+    const b = index.get(found.b);
+    if (a === undefined || b === undefined || a === b) continue;
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    const key = `${lo} ${hi} ${found.kind}`;
+    const known = weights.get(key);
+    if (known) known.weight++;
+    else weights.set(key, { a: lo, b: hi, kind: found.kind, weight: 1 });
+  }
+  return {
+    nodes,
+    edges: [...weights.values()].map((edge) => [edge.a, edge.b, edge.kind, edge.weight]),
+    projects: [...projects.values()].map((project) => ({ id: project._id, name: project.name })),
+  };
+}
+
+/**
  * Brain's map for the dashboard: all of it, or, `around` a page, that page
  * and its neighbours `depth` steps out (1 or 2), for the page's local map.
  */

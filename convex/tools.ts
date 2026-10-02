@@ -77,12 +77,12 @@ async function recallFor(ctx: ToolCtx, input: { query: string; limit?: number; d
   // The owner may know what someone told Perry in their own chat; nobody else may (memories.seenFrom).
   const chat: { contactId?: string } | null = ctx.conversationId ? await ctx.runQuery(internal.conversations.getById, { id: ctx.conversationId as Id<"conversations"> }) : null;
   const theySaid: Array<{ who: string; text: string }> = input.query.trim() && !chat?.contactId ? await ctx.runQuery(internal.contacts.theySaid, { query: input.query }) : [];
-  // What it found was recalled into this turn: used, so not archived for a while yet.
-  if (results.length) await ctx.runMutation(internal.archive.used, { ids: results.map((memory) => memory.id) });
+  // What it found was recalled into this turn: used, so not archived for a while yet; found in the archive, it comes back.
+  if (results.length) await ctx.runMutation(internal.archive.used, { ids: results.map((memory) => memory.id), revive: true });
   if (results.length === 0 && theySaid.length === 0) {
     return { found: 0, memories: [], note: input.deep ? "Nothing in memory, notes or the archive matched." : "Nothing in memory or notes matched. The archive may have it: recall again with deep=true." };
   }
-  // One step out on the map from the pages of the three best hits (#230; #220 reworks recall and may fold this in).
+  // One step out on the map from the pages of the three best hits (#230), read from those pages only.
   const pages = [...new Set(results.map((row) => row.pageId).filter((id): id is string => Boolean(id)))].slice(0, 3);
   const related: Array<{ id: string; title: string; kind: string; why: string[]; from: string; link: string }> = pages.length && !chat?.contactId
     ? (await ctx.runQuery(internal.notes.relatedForRecall, { pages, ...chatOf(ctx) })).map(({ id, title, kind, why, from, link }: { id: string; title: string; kind: string; why: string[]; from: string; link: string }) => ({ id, title, kind, why, from, link }))
@@ -952,8 +952,8 @@ const brain_lately = createTool({
 const brain_review = createTool({
   description:
     "For the weekly Brain review: proposes merging lines that say the same thing in nearly the same words (the owner " +
-    "is asked), and lists long sections and past weeks of the journal not rolled up yet, with their lines' ids, for " +
-    "you to propose condensing or rolling up with brain_propose.",
+    "is asked), and lists long sections, past weeks of the journal not rolled up yet, and pages whose titles look like " +
+    "the same person or thing, with ids, for you to propose condensing, rolling up, splitting or merging with brain_propose.",
   inputSchema: z.object({}),
   execute: async (ctx): Promise<{ proposedMerges: number; sections: unknown[]; weeks: unknown[]; waiting: number }> => {
     const proposedMerges: number = await ctx.runMutation(internal.compaction.review, {});
@@ -968,13 +968,20 @@ const brain_propose = createTool({
     "before and after). Nothing changes until they say yes, and the old lines are kept as history. kind=merge joins " +
     "lines that say the same thing; condense rewrites a long stretch in fewer lines; rollup sums a past week of the " +
     "journal up on a page of its own (the days stay); infer adds a fact the lines together imply. Never for anything " +
-    "the owner did not say or that does not follow from what is written.",
+    "the owner did not say or that does not follow from what is written. To rearrange Brain: kind=move takes lines to a " +
+    "better page (to, toSection); split takes some lines of a page to a new page of their own (title), leaving a link; " +
+    "mergePages merges page into to when both are about the same person or thing (all its lines move, it keeps a link); " +
+    "topic makes a page (title) that says what lines from several pages add up to (with) and links to those pages. Lines " +
+    "move as they are, with their ids, and never to a page other chats read; Undo puts them back.",
   inputSchema: z.object({
-    kind: z.enum(["merge", "condense", "rollup", "infer"]),
-    page: z.string().optional().describe("The page (title or id); for rollup, leave out."),
+    kind: z.enum(["merge", "condense", "rollup", "infer", "move", "split", "mergePages", "topic"]),
+    page: z.string().optional().describe("The page (title or id); for rollup and topic, leave out. For mergePages, the page merged away."),
     section: z.string().max(200).optional().describe("The section; for rollup, the summary page's title, as \"Week of Mon 3 Mar 2025\"."),
-    replaces: z.array(z.string()).min(1).max(400).describe("Ids of the lines it changes (for infer and rollup: those it comes from)."),
-    with: z.array(z.string().max(1000)).min(1).max(20).describe("The lines that would stand instead (or be added)."),
+    replaces: z.array(z.string()).max(400).default([]).describe("Ids of the lines it changes (for infer, rollup and topic: those it comes from; for move and split: those that move; for mergePages: none)."),
+    with: z.array(z.string().max(1000)).max(20).default([]).describe("The lines that would stand instead (or be added); none for move, split and mergePages."),
+    to: z.string().optional().describe("For move and mergePages: the page (title or id) the lines go to."),
+    toSection: z.string().max(200).optional().describe("For move: the section of that page."),
+    title: z.string().max(160).optional().describe("For split and topic: the new page's title."),
     why: z.string().max(300).describe("One short sentence the owner reads first."),
   }),
   execute: async (ctx, input): Promise<{ proposed?: string; error?: string }> => {

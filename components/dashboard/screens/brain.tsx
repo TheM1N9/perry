@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Switch } from "@/components/ui/switch";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { BrainMap } from "../brain-map/brain-map";
@@ -88,6 +89,7 @@ export function Brain() {
       </>}
     >
       {map ? <BrainMap /> : <div className="space-y-8">
+        <Reembedding />
         <InputGroup>
           <InputGroupAddon><SearchIcon /></InputGroupAddon>
           <InputGroupInput type="search" aria-label="Search Brain" placeholder="Search Brain" value={filter} autoComplete="off" onChange={(event) => setFilter(event.target.value)} />
@@ -116,6 +118,26 @@ export function Brain() {
 }
 
 /**
+ * Brain's lines being embedded again with a new sentence model (memories.embedProgress): how far, while it runs. Search
+ * works meanwhile, by words and with the model before.
+ */
+function Reembedding() {
+  const { dashboardKey } = useSession();
+  const progress = useQuery(api.memories.embedProgress, { key: dashboardKey });
+  if (!progress?.total) return null;
+  const share = Math.min(100, (progress.done / progress.total) * 100);
+  const count = `${progress.done.toLocaleString()} of ${progress.total.toLocaleString()} lines`;
+  return (
+    <section aria-label="Updating search" className="space-y-2" data-reembedding>
+      <p className="text-sm text-muted-foreground">
+        {progress.finishedAt ? `Search updated: ${count}.` : `Updating search: ${count}. Search works meanwhile.`}
+      </p>
+      <Progress value={share} aria-label={`Updating search: ${count}`} />
+    </section>
+  );
+}
+
+/**
  * Changes to Brain the owner approved (compaction.ts): what Perry tidied with
  * their yes, newest first, each with Undo; and how many wait in Needs you.
  */
@@ -140,16 +162,16 @@ function BrainChanges() {
     }
   };
   return (
-    <section aria-label="Tidied" className="space-y-1">
-      <h2 className="text-sm font-medium text-muted-foreground">Tidied with your OK</h2>
+    <section aria-label="Changed with your OK" className="space-y-1">
+      <h2 className="text-sm font-medium text-muted-foreground">Changed with your OK</h2>
       {waiting > 0 && <p className="text-sm text-muted-foreground"><Link href="/inbox" className="underline-offset-2 hover:underline">{waiting} waiting in Needs you</Link></p>}
       {applied.length > 0 && (
-        <List label="Tidied">
+        <List label="Changed with your OK">
           {applied.map((change) => (
             <li key={change.id} className="flex items-center gap-3 py-2.5" data-change={change.kind}>
               <SparklesIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-md">{change.after[0]}{change.after.length > 1 ? ` (+${change.after.length - 1})` : ""}</p>
+                <p className="truncate text-md">{change.headline}</p>
                 <p className="truncate text-xs text-muted-foreground">{change.before.length} {change.before.length === 1 ? "line" : "lines"}{change.page ? ` · ${change.page.title}` : ""}</p>
               </div>
               <Button variant="ghost" size="sm" disabled={undoing !== null} onClick={() => void run(change.id)}>{undoing === change.id && <Spinner />}Undo</Button>

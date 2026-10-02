@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, internalQuery, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { assertDashboardKey } from "./lib/auth";
 import { timezoneOf } from "./jobs";
 import { EMBED_MODEL, embed, readyWithin, unload } from "./lib/embed";
 import { dateRange, daysOf, eventIn, fuse, rankRecall, says, type RecallParts } from "./lib/recall";
@@ -62,7 +63,7 @@ const visibleIn = (memory: Memory, chat?: Id<"conversations">, project?: Id<"pro
  * (contacts.ts) sees only what was saved in it: nothing of the owner's, and
  * nothing of anyone else's.
  */
-async function seenFrom(ctx: { db: QueryCtx["db"] }, chat?: Id<"conversations">): Promise<(memory: Memory) => boolean> {
+export async function seenFrom(ctx: { db: QueryCtx["db"] }, chat?: Id<"conversations">): Promise<(memory: Memory) => boolean> {
   const conversation = chat ? await ctx.db.get(chat) : null;
   if (conversation?.contactId) return (memory) => memory.conversationId === chat;
   return (memory) => visibleIn(memory, chat, conversation?.projectId);
@@ -574,11 +575,19 @@ export const storeVectors = internalMutation({
   args: { items: v.array(v.object({ id: v.id("memories"), text: v.string(), vector: v.array(v.float64()) })) },
   returns: v.null(),
   handler: async (ctx, args) => {
+    let stored = 0;
     for (const item of args.items) {
       const memory = await ctx.db.get(item.id);
       // Edited while its vector was being made: the next pass makes a new one. Superseded meanwhile: none.
-      if (memory?.text === item.text && !memory.supersededBy) await ctx.db.patch(item.id, { embedding: item.vector, embeddedWith: EMBED_MODEL, vectorKey: vectorKeyOf(EMBED_MODEL, Boolean(memory.archivedAt)) });
+      if (memory?.text === item.text && !memory.supersededBy) {
+        await ctx.db.patch(item.id, { embedding: item.vector, embeddedWith: EMBED_MODEL, vectorKey: vectorKeyOf(EMBED_MODEL, Boolean(memory.archivedAt)) });
+        stored++;
+      }
     }
+    // Counted in the row, so the dashboard's progress goes on from where it was after a stop.
+    const install = await ctx.db.query("installation").first();
+    const going = install?.reembedding;
+    if (install && going && !going.finishedAt && going.model === EMBED_MODEL) await ctx.db.patch(install._id, { reembedding: { ...going, done: going.done + stored } });
     return null;
   },
 });
@@ -589,7 +598,12 @@ export const embeddedAll = internalMutation({
   returns: v.null(),
   handler: async (ctx) => {
     const install = await ctx.db.query("installation").first();
-    if (install?.embeddedBefore) await ctx.db.patch(install._id, { embeddedBefore: undefined });
+    if (!install) return null;
+    const going = install.reembedding;
+    await ctx.db.patch(install._id, {
+      embeddedBefore: undefined,
+      ...(going && !going.finishedAt ? { reembedding: { ...going, done: Math.max(going.done, going.total), finishedAt: Date.now() } } : {}),
+    });
     return null;
   },
 });
@@ -605,7 +619,12 @@ export const noteModel = internalMutation({
     // The model the most lines are on now is the one to search with while the rest catch up.
     const other = async (range: "lt" | "gt") => (await ctx.db.query("memories").withIndex("by_embedded", (q) => range === "lt" ? q.eq("supersededBy", undefined).lt("embeddedWith", EMBED_MODEL) : q.eq("supersededBy", undefined).gt("embeddedWith", EMBED_MODEL)).first())?.embeddedWith;
     const before = install.embeddedWith ?? await other("lt") ?? await other("gt");
-    await ctx.db.patch(install._id, { embeddedWith: EMBED_MODEL, ...(before && before !== EMBED_MODEL ? { embeddedBefore: before } : {}) });
+    // Lines to embed again: every current one, counted once, for the dashboard (embedProgress).
+    const total = before && before !== EMBED_MODEL ? (await ctx.db.query("memories").withIndex("by_embedded", (q) => q.eq("supersededBy", undefined)).collect()).length : 0;
+    await ctx.db.patch(install._id, {
+      embeddedWith: EMBED_MODEL,
+      ...(before && before !== EMBED_MODEL ? { embeddedBefore: before, reembedding: { model: EMBED_MODEL, total, done: 0, startedAt: Date.now() } } : {}),
+    });
     return null;
   },
 });
@@ -629,7 +648,8 @@ export const embedMissing = internalAction({
   returns: v.null(),
   handler: async (ctx) => {
     const state = embedding.__perryEmbedding!;
-    if (state.running) return null;
+    // Not before Perry has brought Brain's index up to date and backed it up for a new model (server/index.ts).
+    if (state.running || !(globalThis as { __perryBrainIndexed?: boolean }).__perryBrainIndexed) return null;
     state.running = true;
     try {
       await ctx.runMutation(internal.memories.noteModel, {});
@@ -653,6 +673,8 @@ export const embedMissing = internalAction({
           items: pending.map((item, index) => ({ id: item.id, text: item.text, vector: vectors[index] })),
         });
         if (Date.now() - started > EMBED_RUN_MS) {
+          const progress: EmbedProgress | null = await ctx.runQuery(internal.memories.progress, {});
+          if (progress) console.log(`[perry] Brain's lines embedded with ${progress.model}: ${progress.done.toLocaleString("en-US")} of ${progress.total.toLocaleString("en-US")}`);
           await ctx.scheduler.runAfter(1_000, internal.memories.embedMissing, {});
           return null;
         }
@@ -660,6 +682,30 @@ export const embedMissing = internalAction({
     } finally {
       state.running = false;
     }
+  },
+});
+
+export type EmbedProgress = { model: string; before?: string; total: number; done: number; startedAt: number; finishedAt?: number };
+
+async function progressOf(ctx: QueryCtx): Promise<EmbedProgress | null> {
+  const install = await ctx.db.query("installation").first();
+  const going = install?.reembedding;
+  if (!going) return null;
+  return { model: going.model, ...(install?.embeddedBefore ? { before: install.embeddedBefore } : {}), total: going.total, done: Math.min(going.done, going.total), startedAt: going.startedAt, ...(going.finishedAt ? { finishedAt: going.finishedAt } : {}) };
+}
+
+export const progress = internalQuery({ args: {}, handler: async (ctx): Promise<EmbedProgress | null> => await progressOf(ctx) });
+
+/**
+ * Brain's lines being embedded again with a new model, for the dashboard: how many of how many, while it runs and
+ * for a minute after; null otherwise. Search by words, and by meaning with the model before, work meanwhile.
+ */
+export const embedProgress = query({
+  args: { key: v.string() },
+  handler: async (ctx, args): Promise<EmbedProgress | null> => {
+    assertDashboardKey(args.key);
+    const progress = await progressOf(ctx);
+    return progress && (!progress.finishedAt || Date.now() - progress.finishedAt < 60_000) ? progress : null;
   },
 });
 

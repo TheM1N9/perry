@@ -83,3 +83,28 @@ export async function moveVectorsOut(runtime: Runtime): Promise<{ moved: number;
   }
   return { moved, dropped, backup };
 }
+
+/**
+ * Before Brain's lines are embedded again with another model (memories.noteModel, then embedMissing, which writes
+ * over each line's vector), the database is copied whole, as before the move above: to ~/.perry/backups/perry-before-
+ * <model>-<time>.sqlite. Once per change of model: not when the move above has just made a copy, not when there is no
+ * vector to lose, and not again for a re-embedding already under way (it resumes from the rows). To go back: stop
+ * Perry, put the copy in place of perry.sqlite, and start Perry with PERRY_EMBED_MODEL set to the model before.
+ */
+export async function backupBeforeModelChange(runtime: Runtime, model: string, backedUp: boolean): Promise<string | null> {
+  const due = await runtime.exclusive(() => {
+    const install = runtime.sql.prepare(`SELECT doc FROM "doc_installation" LIMIT 1`).get() as { doc: string } | undefined;
+    const doc = install ? JSON.parse(install.doc) as { embeddedWith?: string; reembedding?: { model: string } } : {};
+    if (doc.embeddedWith === model || doc.reembedding?.model === model) return false;
+    // Any current line on another model: its vector would be written over.
+    const other = runtime.sql.prepare(`SELECT 1 FROM "doc_memories" WHERE json_extract(doc, '$.embeddedWith') IS NOT NULL AND json_extract(doc, '$.embeddedWith') != ? AND json_extract(doc, '$.supersededBy') IS NULL LIMIT 1`).get(model);
+    return Boolean(other);
+  });
+  if (!due || backedUp) return null;
+  const dir = join(HOME, "backups");
+  mkdirSync(dir, { recursive: true });
+  const name = model.split("/").at(-1)!.replace(/[^\w.-]+/g, "-");
+  const backup = join(dir, `perry-before-${name}-${new Date().toISOString().replace(/[:.]/g, "-")}.sqlite`);
+  await runtime.exclusive(() => runtime.sql.prepare("VACUUM INTO ?").run(backup));
+  return backup;
+}

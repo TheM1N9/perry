@@ -358,7 +358,7 @@ export async function findPage(ctx: Reader, place: Place): Promise<Note | null> 
   const rows = await ctx.db.query("notes")
     .withIndex("by_kind", (q) => (place.kind === "journal" ? q.eq("kind", "journal").eq("day", place.day) : q.eq("kind", place.kind)))
     .collect();
-  return rows.find((page) => {
+  const found = rows.find((page) => {
     switch (place.kind) {
       case "about": return !page.projectId;
       case "remember": return page.projectId === place.projectId;
@@ -369,6 +369,8 @@ export async function findPage(ctx: Reader, place: Place): Promise<Note | null> 
       case "chat": return page.conversationId === place.conversationId;
     }
   }) ?? null;
+  // A person's page the owner merged into another (compaction.ts, mergePages) passes on to it.
+  return (found?.mergedInto ? await ctx.db.get(found.mergedInto) : null) ?? found;
 }
 
 /** The page of memory for a place, made the first time something goes there. About me starts as USER.md. */

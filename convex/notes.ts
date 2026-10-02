@@ -5,7 +5,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { appended, editSection, headingsOf, INBOX_TITLE, noteHref, titleFrom, tooLong } from "./lib/notes";
 import { journalTitle, type PageKind } from "./lib/pages";
 import { around, linkedIds, type BrainGraph } from "./lib/graph";
-import { graphOf } from "./brainMap";
+import { neighbourhoodOf } from "./brainMap";
 import { timezoneOf } from "./jobs";
 import { insertPage, isPinned, linesOf, memoryPage, mentionsOf, moveLines, removePage, secretIn, setPinned, writePage, type LineBy } from "./pages";
 import { readPersona } from "./persona";
@@ -596,9 +596,12 @@ export const reachableFrom = internalQuery({
 /** A page's neighbour on the map, as Perry is told: what it is, how far, and why they are tied. */
 export type Neighbor = { id: string; title: string; kind: string; steps: number; why: string[]; via?: string; link: string };
 
-/** Brain's map (brainMap.graphOf) as a chat may see it: only the pages it reaches, and its own project. */
-async function mapFor(ctx: Reader, reach: Reach): Promise<BrainGraph> {
-  return await graphOf(ctx, { page: (page) => reaches(reach, page), project: (id) => id === reach.projectId });
+/**
+ * Brain's map as a chat may see it, only `steps` out from some pages (brainMap.neighbourhoodOf; never the whole
+ * map, which grows with every page ever written): the pages it reaches, and its own project.
+ */
+async function mapFor(ctx: Reader, reach: Reach, pages: string[], steps: number): Promise<BrainGraph> {
+  return await neighbourhoodOf(ctx, pages, steps, { page: (page) => reaches(reach, page), project: (id) => id === reach.projectId });
 }
 
 /** Why two nodes are tied, in words, from the kinds of edge between them. */
@@ -659,7 +662,7 @@ export const neighborsForAgent = internalQuery({
     const note = await findForAgent(ctx, reach, args.id);
     if (!note) return { error: NOT_HERE };
     const steps = args.steps === 2 ? 2 : 1;
-    return { page: { id: note._id, title: note.title }, neighbors: neighborsIn(await mapFor(ctx, reach), note._id, steps) };
+    return { page: { id: note._id, title: note.title }, neighbors: neighborsIn(await mapFor(ctx, reach, [note._id], steps), note._id, steps) };
   },
 });
 
@@ -669,7 +672,7 @@ export const relatedForRecall = internalQuery({
   handler: async (ctx, args): Promise<Array<Neighbor & { from: string }>> => {
     const reach = await reachOf(ctx, args.chat);
     if (reach.sealed || !args.pages.length) return [];
-    const graph = await mapFor(ctx, reach);
+    const graph = await mapFor(ctx, reach, args.pages, 1);
     const seen = new Set(args.pages);
     const found: Array<Neighbor & { from: string }> = [];
     for (const page of args.pages) {

@@ -201,6 +201,12 @@ export default defineSchema({
      */
     embeddedWith: v.optional(v.string()),
     embeddedBefore: v.optional(v.string()),
+    /**
+     * Brain's lines being embedded with the model in use (memories.embedMissing), for the dashboard's progress: how many
+     * current lines there were to do when it started, how many are done, and when it started and finished. Kept in the
+     * row, so a stop part-way resumes and the count goes on from where it was.
+     */
+    reembedding: v.optional(v.object({ model: v.string(), total: v.number(), done: v.number(), startedAt: v.number(), finishedAt: v.optional(v.number()) })),
     /** How far the lines from before mentions were kept have been read for who they mention (pages.indexMentions); done at its largest. */
     mentionsAt: v.optional(v.number()),
     /** When Brain was last looked over for duplicates to propose merging (compaction.review). */
@@ -769,6 +775,8 @@ export default defineSchema({
     lately: v.optional(v.boolean()),
     /** A week of the journal rolled up into a summary the owner approved (compaction.ts); its day is the week's first. */
     rollup: v.optional(v.boolean()),
+    /** Merged into another page with the owner's yes (compaction.ts, mergePages): it keeps a link there, and a person's page passes on to it. */
+    mergedInto: v.optional(v.id("notes")),
     /** When it, or a section of it, was pinned: what is pinned later loads after. */
     pinnedAt: v.optional(v.number()),
     /** Made by moving memories from before pages into pages (pages.migrate); moving them back deletes it if nothing else is in it. */
@@ -781,6 +789,8 @@ export default defineSchema({
     .index("by_title", ["title"])
     .index("by_kind", ["kind", "day"])
     .index("by_pinned", ["pinnedAt"])
+    // A person's page by their key, for one step out on the map (brainMap.neighbourhoodOf).
+    .index("by_person", ["person"])
     .searchIndex("search_text", { searchField: "search" }),
 
   conversations: defineTable({
@@ -1048,7 +1058,10 @@ export default defineSchema({
    * the lines it added; undone, all as it was.
    */
   brainProposals: defineTable({
-    kind: v.union(v.literal("merge"), v.literal("condense"), v.literal("rollup"), v.literal("infer")),
+    // Tidying lines (merge, condense, rollup, infer); rearranging pages (#230): move lines, split some off to a page of
+    // their own, merge one page into another, or make a topic page that gathers what is said across pages.
+    kind: v.union(v.literal("merge"), v.literal("condense"), v.literal("rollup"), v.literal("infer"),
+      v.literal("move"), v.literal("split"), v.literal("mergePages"), v.literal("topic")),
     pageId: v.id("notes"),
     section: v.optional(v.string()),
     summary: v.string(),
@@ -1062,6 +1075,15 @@ export default defineSchema({
     approvalId: v.optional(v.id("approvals")),
     added: v.optional(v.array(v.id("memories"))),
     rollupPageId: v.optional(v.id("notes")),
+    /** Rearranging: the page the lines go to (move, mergePages), or the title of the page made for them (split, topic). */
+    targetPageId: v.optional(v.id("notes")),
+    targetSection: v.optional(v.string()),
+    title: v.optional(v.string()),
+    /** Applied: where each line moved stood before, so Undo puts it back; the page made (split, topic). */
+    moved: v.optional(v.array(v.object({ id: v.id("memories"), pageId: v.id("notes"), section: v.optional(v.string()) }))),
+    madePageId: v.optional(v.id("notes")),
+    /** mergePages: the merged page's words as they were, given back by Undo. */
+    mergedContent: v.optional(v.string()),
     createdAt: v.number(),
     decidedAt: v.optional(v.number()),
     appliedAt: v.optional(v.number()),

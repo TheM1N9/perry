@@ -684,7 +684,11 @@ export type PendingApproval = {
   /** What "Always allow" would save, in words. Unset means it cannot be remembered. */
   alwaysAllow?: string;
   /** A change to Brain: the lines now, and the lines after, which the owner may edit before approving. */
-  proposal?: { kind: string; before: string[]; after: string[]; page?: { id: Id<"notes">; title: string } };
+  proposal?: {
+    kind: string; before: string[]; after: string[]; page?: { id: Id<"notes">; title: string };
+    /** Rearranging Brain: the page the lines go to and its section, or the new page's title. */
+    target?: { id: Id<"notes">; title: string }; targetSection?: string; title?: string;
+  };
   createdAt: number;
   expiresAt: number;
 };
@@ -705,6 +709,7 @@ export const pending = query({
       const chat = row.conversationId ? await ctx.db.get(row.conversationId) : null;
       const proposal = row.proposalId ? await ctx.db.get(row.proposalId) : null;
       const page = proposal ? await ctx.db.get(proposal.rollupPageId ?? proposal.pageId) : null;
+      const target = proposal?.targetPageId ? await ctx.db.get(proposal.targetPageId) : null;
       return {
         id: row._id,
         kind: row.kind,
@@ -715,7 +720,8 @@ export const pending = query({
         chat: chat ? { id: chat._id, title: chat.title ?? "Untitled chat" } : undefined,
         review: row.review,
         alwaysAllow: row.alwaysAllow ? describeRule(row.alwaysAllow, row.cwd) : undefined,
-        ...(proposal ? { proposal: { kind: proposal.kind, before: proposal.before.map((line) => line.text), after: proposal.after, ...(page ? { page: { id: page._id, title: page.title } } : {}) } } : {}),
+        ...(proposal ? { proposal: { kind: proposal.kind, before: proposal.before.map((line) => line.text), after: proposal.after, ...(page ? { page: { id: page._id, title: page.title } } : {}),
+          ...(target ? { target: { id: target._id, title: target.title } } : {}), ...(proposal.targetSection ? { targetSection: proposal.targetSection } : {}), ...(proposal.title ? { title: proposal.title } : {}) } } : {}),
         createdAt: row.createdAt,
         expiresAt: row.createdAt + ttlOf(row),
       };
