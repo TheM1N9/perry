@@ -93,8 +93,7 @@ export function OlderMemories() {
 
   return (
     <div className="space-y-8">
-      <TeachForm />
-      <MemoryPages />
+      {/* Only what is not in a page yet: Brain shows Teach Perry something and the memory pages above this, once. */}
       {/* Memories from before pages, until Perry moves them into theirs: none once moved. */}
       {(memories === undefined || memories.length > 0 || term || filter !== "all") && <section aria-label="What Perry remembers" className="space-y-3">
         <h2 className="text-md font-semibold tracking-[-0.01em]">Older memories</h2>

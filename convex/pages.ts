@@ -672,8 +672,9 @@ export const memoryPages = query({
     const pages: MemoryPage[] = [];
     for (const kind of ["about", "remember", "journal", "person", "chat", undefined] as const) {
       // Other pages are listed here only when pinned.
+      // Each page once: the kind is checked here too, as an index range on "no kind" can return every page.
       const rows = (await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", kind)).collect())
-        .filter((page) => kind || isPinned(page) || page.pinnedSections?.length);
+        .filter((page) => (kind ? page.kind === kind : !page.kind) && (kind || isPinned(page) || page.pinnedSections?.length));
       if (kind === "journal") rows.sort((a, b) => (b.day ?? "").localeCompare(a.day ?? ""));
       else if (kind === "person") rows.sort((a, b) => a.title.localeCompare(b.title));
       for (const page of rows) {

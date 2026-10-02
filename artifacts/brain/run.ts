@@ -730,6 +730,16 @@ try {
   await evaluate(`[...document.querySelectorAll("[data-sidebar=menu-button]")].find((item) => item.innerText.trim() === "Brain")?.click(); true`);
   await waitFor(`location.pathname === "/brain" && document.querySelector('section[aria-label="Memory pages"]') && document.querySelector('ul[aria-label="Pages"]')`, "Brain from the sidebar");
   await shot("brain.png");
+  // Each page once: a journal day, Things to remember or a person is onBrain in its group, never again among the owner's pages.
+  const onBrain = await evaluate(`(() => {
+    const entries = [...document.querySelectorAll('section[aria-label="Memory pages"] a[href^="/brain/"], ul[aria-label="Pages"] a[href^="/brain/"], section[aria-label="Memory pages"] a[href^="/notes/"], ul[aria-label="Pages"] a[href^="/notes/"]')].map((a) => a.getAttribute("href"));
+    const inPages = [...document.querySelectorAll('ul[aria-label="Pages"] li')].map((li) => li.innerText.split("\\n")[0].trim());
+    return { entries, inPages };
+  })()`) as { entries: string[]; inPages: string[] };
+  const blocks = await evaluate(`({ lists: document.querySelectorAll('section[aria-label="Memory pages"]').length, teach: document.querySelectorAll('#memory-text').length })`) as { lists: number; teach: number };
+  const memoryTitles = rows("notes").filter((row) => row.kind).map((row) => String(row.title));
+  check("eachPageListedOnce", blocks.lists === 1 && blocks.teach === 1 && onBrain.entries.length > 0 && new Set(onBrain.entries).size === onBrain.entries.length && !onBrain.inPages.some((title) => memoryTitles.includes(title)),
+    { blocks, onBrain: onBrain.entries.length, unique: new Set(onBrain.entries).size, memoryInPages: onBrain.inPages.filter((title) => memoryTitles.includes(title)) });
   const landed: Record<string, string> = {};
   const land = async (path: string, test: string, what: string) => { await go(path); await waitFor(test, what); landed[path] = await evaluate("location.pathname + location.search") as string; };
   const aboutPageId = pageOf("about")!._id;
