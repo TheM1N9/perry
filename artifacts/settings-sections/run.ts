@@ -394,7 +394,7 @@ try {
       const footer = [...document.querySelector("[data-sidebar=footer]").querySelectorAll("[data-sidebar=menu-button]")].map((b) => b.innerText.replace(/\\s+/g, " ").trim());
       return { top, footer };
     })()`) as { top: string[]; footer: string[] };
-    check("sidebarHasMemoryAndApps", JSON.stringify(sidebar.top) === JSON.stringify(["New chat", "Search", "Needs you", "To-dos", "Work", "Memory", "Apps & skills"]), sidebar.top);
+    check("sidebarHasMemoryAndApps", JSON.stringify(sidebar.top) === JSON.stringify(["New chat", "Search", "Needs you", "To-dos", "Notes", "Work", "Memory", "Apps & skills"]), sidebar.top);
 
     // --- 17. New chat and Search, one row; stacked when the sidebar is icons ----------------------------------
     const ROW = `document.querySelector("[data-new-chat-row]")`;
@@ -446,7 +446,7 @@ try {
     const folded = collapsed.light as Awaited<ReturnType<typeof rowShape>>;
     check("collapsedShowsTwoStackedIcons", folded.stacked && folded.sizes.every((size) => size > 0 && size <= 40), collapsed);
 
-    // --- 18. One plain list of chats: no date headings, pinned first with a pin, the rest newest first ------------------
+    // --- 18. One plain list of chats under a "Chats" heading: no date headings, pinned first with a pin, the rest newest first ------------------
     await call("dashboard:setChatPinned", { key: KEY, id: receiptsChat, pinned: true });
     await go("/chat", "New chat");
     await waitFor(`document.querySelector('[aria-label=Pinned] [aria-label=Pinned]')`, "the pinned chat", 15).catch(() => {});
@@ -459,7 +459,7 @@ try {
     const all = (await call<Array<{ id: string; title: string; pinned?: boolean; projectId?: string; lastMessageAt: number }>>("dashboard:listChats", { key: KEY })).filter((chat) => !chat.projectId);
     const wantedOrder = [...all.filter((chat) => chat.pinned), ...all.filter((chat) => !chat.pinned).sort((a, b) => b.lastMessageAt - a.lastMessageAt)].map((chat) => chat.title);
     await shot("sidebar-chats", false);
-    check("chatsAreOnePlainList", JSON.stringify(chatList.headings) === '["Projects"]' && chatList.dates.length === 0
+    check("chatsAreOnePlainList", JSON.stringify(chatList.headings) === '["Projects","Chats"]' && chatList.dates.length === 0
       && chatList.rows.length === wantedOrder.length && chatList.rows.every((row, index) => row.title.includes(wantedOrder[index])) && chatList.rows[0]?.pin === true && chatList.rows.slice(1).every((row) => !row.pin), { chatList, wantedOrder });
     await call("dashboard:setChatPinned", { key: KEY, id: receiptsChat, pinned: false });
     await collectErrors("sidebar-row");
@@ -503,7 +503,7 @@ try {
           return { items, usage, bars };
         })()`) as { items: string[]; usage: Record<string, string>; bars: string[] };
         // #197: no usage in the menu, only the item that opens it.
-        check("accountMenuItems", JSON.stringify(menu.items) === JSON.stringify(["Usage", "Theme", "Settings", "Lock dashboard"]), menu.items);
+        check("accountMenuItems", JSON.stringify(menu.items) === JSON.stringify(["Pause Perry", "Usage", "Theme", "Settings", "Lock dashboard"]), menu.items);
         check("accountMenuHasNoUsage", Object.keys(menu.usage).length === 0 && menu.bars.length === 0, menu);
         await click(byText("[role=menuitem]", "Usage"));
         const details = await soon(async () => (await where()) === "/settings/usage" && (await text()).includes("Your plans"), 10);
