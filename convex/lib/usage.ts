@@ -102,7 +102,7 @@ export function limitWarning(engine: EngineKind, usage: EngineUsage | undefined,
       title: window ? `${label}'s ${window.label.toLowerCase()} limit is used up` : `${label} hit its plan's limit`,
       detail: [
         until ? `It ${until}.` : hit ? `${label} said: “${hit.message.slice(0, 200)}”` : "",
-        "Until then, replies on it fail: pick another engine's model to keep going.",
+        "Until then, Perry moves chats and work to another signed-in engine with room, when there is one.",
       ].filter(Boolean).join(" "),
     };
   }

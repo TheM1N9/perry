@@ -7,8 +7,11 @@ import { internalAction, internalMutation, internalQuery, mutation, query, type 
 import { assertDashboardKey } from "./lib/auth";
 import { ABSOLUTE_PATH } from "./media";
 import { projectFrom } from "./projects";
-import { vEngine, vTrigger } from "./schema";
-import type { EngineKind } from "./lib/engines";
+import { vEngine, vPerryPick, vRoute, vTrigger } from "./schema";
+import { ENGINE_LABELS, isEngine, type EngineKind } from "./lib/engines";
+import { LIMIT_HIT } from "./lib/usage";
+import type { Choice } from "./lib/routing";
+import { choose, jobAsk, routeOf, type Route } from "./routing";
 
 /**
  * Proactivity: named jobs that run a prompt as a Codex turn, either on a cron
@@ -178,7 +181,7 @@ function timing(input: { schedule?: string; at?: string }, timezone: string): { 
   return { schedule: input.schedule.trim() };
 }
 
-async function insertJob(ctx: MutationCtx, job: { name: string; schedule?: string; runAt?: number; trigger?: Doc<"jobs">["trigger"]; prompt: string; builtin?: Builtin; origin?: Id<"conversations"> }): Promise<Id<"jobs">> {
+async function insertJob(ctx: MutationCtx, job: { name: string; schedule?: string; runAt?: number; trigger?: Doc<"jobs">["trigger"]; prompt: string; builtin?: Builtin; origin?: Id<"conversations">; pick?: Doc<"jobs">["pick"] }): Promise<Id<"jobs">> {
   const timezone = await timezoneOf(ctx);
   return await ctx.db.insert("jobs", {
     ...job,
@@ -207,10 +210,20 @@ export const tick = internalMutation({
       }
     }
     const timezone = await timezoneOf(ctx);
+    // A run a plan's limit stopped in the last day, that nothing has picked up yet (one from before Perry
+    // recovered them, say): it runs again where there is room, or after the reset.
+    for (const job of jobs) {
+      if (job.lastError && LIMIT_HIT.test(job.lastError) && !job.recovery && !job.waiting && (job.lastRunAt ?? 0) > Date.now() - RECOVER_WITHIN_MS) await recoverJob(ctx, job);
+    }
     for (const job of jobs) {
       if (!job.enabled || job.trigger || job.nextRunAt > Date.now()) continue;
       // A one-time job runs once and pauses, keeping its time for the record.
       const next = job.runAt ? { enabled: false } : { nextRunAt: nextRun(job.schedule!, timezone) };
+      // A run already waiting for an engine's reset covers this one too.
+      if (job.waiting && job.waiting.until > Date.now()) {
+        await ctx.db.patch(job._id, next);
+        continue;
+      }
       await ctx.db.patch(job._id, { lastRunAt: Date.now(), lastResult: undefined, lastError: undefined, ...next });
       // When it last ran, so a briefing can gather what happened since.
       await ctx.scheduler.runAfter(0, internal.jobs.run, { id: job._id, ...(job.lastRunAt ? { since: job.lastRunAt } : {}) });
@@ -257,13 +270,27 @@ export const get = internalQuery({
 });
 
 export const run = internalAction({
-  /** since: when the job last ran; alerts sent after it reach this run. event: what started it, for a job an event starts. */
-  args: { id: v.id("jobs"), since: v.optional(v.number()), event: v.optional(v.string()) },
+  /**
+   * since: when the job last ran; alerts sent after it reach this run. event: what started it, for a job an event starts.
+   * avoid: engines that just refused it for a limit. waited: it waited for an engine's reset (lib/routing.ts).
+   */
+  args: { id: v.id("jobs"), since: v.optional(v.number()), event: v.optional(v.string()), avoid: v.optional(v.array(vEngine)), waited: v.optional(v.boolean()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const found: { job: Doc<"jobs">; timezone: string } | null = await ctx.runQuery(internal.jobs.get, { id: args.id });
     if (!found) return null;
     const { job, timezone } = found;
+    // A run that waited goes ahead only while it is still waited for: pausing the job calls it off.
+    if (args.waited && !job.waiting) return null;
+    // Where it runs, on what and why; or, with no engine that has room, when it runs instead. With no engine to
+    // route to (no model of its own and no default chosen), it goes on unrouted and is refused there, asking for one.
+    const choice: Choice | null = await ctx.runQuery(internal.routing.forJob, { id: job._id, ...(args.avoid?.length ? { avoid: args.avoid } : {}) });
+    if (choice?.wait) {
+      await ctx.runMutation(internal.jobs.wait, { id: job._id, until: choice.wait.until, why: choice.wait.why, ...(args.since ? { since: args.since } : {}), ...(args.event !== undefined ? { event: args.event } : {}) });
+      return null;
+    }
+    const route = choice ? routeOf(choice) : undefined;
+    if (route) await ctx.runMutation(internal.jobs.routed, { id: job._id, route });
     // A thread is only created when the job has no chat yet; chatFor ignores it otherwise.
     const existing = job.conversationId
       ? await ctx.runQuery(internal.conversations.getWebById, { id: job.conversationId })
@@ -320,11 +347,77 @@ export const run = internalAction({
       externalId: chat.externalId,
       text: `${job.trigger ? "⚡" : "⏰"} ${job.name} (${now})\n\n${job.prompt}${context}\n\n${CONDITIONAL_DELIVERY}`,
       title: chat.title,
-      ...(job.model ? { model: job.model, engine: job.engine } : {}),
+      // Routed (lib/routing.ts); with no engine to route to (no default chosen), as before, and refused there.
+      ...(route ? { route } : job.model && job.engine ? { model: job.model, engine: job.engine } : {}),
     });
     return null;
   },
 });
+
+/** How far back a run stopped by a limit is still worth running again. */
+const RECOVER_WITHIN_MS = 24 * 60 * 60_000;
+/** Its runs give up after this many limits in a row, until one goes through: a plan that keeps refusing is not chased forever. */
+const MAX_RECOVERIES = 3;
+
+/** What its run will be given; a run that waited no longer waits. */
+export const routed = internalMutation({
+  args: { id: v.id("jobs"), route: vRoute },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (await ctx.db.get(args.id)) await ctx.db.patch(args.id, { route: args.route, waiting: undefined });
+    return null;
+  },
+});
+
+/**
+ * No engine has room for the job: its run waits for the first reset, and the
+ * owner hears of it once (a built-in job works quietly, and only the Work page says).
+ */
+export const wait = internalMutation({
+  args: { id: v.id("jobs"), until: v.number(), why: v.string(), since: v.optional(v.number()), event: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.id);
+    if (!job) return null;
+    await ctx.db.patch(job._id, { waiting: { until: args.until, why: args.why.slice(0, 500) } });
+    await ctx.scheduler.runAt(args.until, internal.jobs.run, { id: job._id, waited: true, ...(args.since ? { since: args.since } : {}), ...(args.event !== undefined ? { event: args.event } : {}) });
+    await tellOnce(ctx, job, `⏰ **${job.name}** is waiting. ${args.why}`);
+    return null;
+  },
+});
+
+/** Say what a limit did to a job, once until one of its runs goes through. */
+async function tellOnce(ctx: MutationCtx, job: Doc<"jobs">, text: string, tries = job.recovery?.tries ?? 0) {
+  const told = Boolean(job.recovery);
+  await ctx.db.patch(job._id, { recovery: { at: job.recovery?.at ?? Date.now(), tries } });
+  if (told || job.builtin) return;
+  // Through the same door as everything Perry says unprompted: quiet hours and the day's limit hold it (notify.ts).
+  await ctx.scheduler.runAfter(0, internal.notify.deliver, { text, ...(job.origin ? { origin: job.origin } : {}) });
+}
+
+/**
+ * A run of the job failed because its engine's plan ran out: it runs again on
+ * an engine with room, or when the first one resets, and the owner is told
+ * once. The refused engine is passed over, whether or not its refusal has
+ * been reported yet (codex.finishTurn, runner/index.ts).
+ */
+export async function recoverJob(ctx: MutationCtx, job: Doc<"jobs">): Promise<boolean> {
+  const tries = job.recovery?.tries ?? 0;
+  if (tries >= MAX_RECOVERIES) return false;
+  const refused = job.route?.engine;
+  const choice = await choose(ctx, await jobAsk(ctx, job, refused ? [refused] : undefined));
+  if (!choice) return false;
+  const what = `${refused ? ENGINE_LABELS[refused] : "Its engine"} refused it for its plan's limit`;
+  if (choice.wait) {
+    await ctx.db.patch(job._id, { waiting: { until: choice.wait.until, why: choice.wait.why.slice(0, 500) } });
+    await ctx.scheduler.runAt(choice.wait.until, internal.jobs.run, { id: job._id, waited: true, ...(job.lastRunAt ? { since: job.lastRunAt } : {}) });
+    await tellOnce(ctx, job, `⏰ **${job.name}** didn't run: ${what}. ${choice.wait.why}`, tries + 1);
+  } else {
+    await ctx.scheduler.runAfter(0, internal.jobs.run, { id: job._id, ...(refused ? { avoid: [refused] } : {}) });
+    await tellOnce(ctx, job, `⏰ **${job.name}** didn't run: ${what}. I moved it to ${ENGINE_LABELS[choice.engine]} and am running it again.`, tries + 1);
+  }
+  return true;
+}
 
 /** After a job's turn: remember how it went, and tell the owner if it had something to say. */
 export const finished = internalMutation({
@@ -346,7 +439,9 @@ export const finished = internalMutation({
       const thread = await ctx.db.get(id);
       if (thread && !thread.tags.includes("asked")) await ctx.db.patch(thread._id, { tags: [...thread.tags, "asked"] });
     }
-    await ctx.db.patch(job._id, { lastResult: result?.slice(0, 500), lastError: args.error?.slice(0, 500) });
+    await ctx.db.patch(job._id, { lastResult: result?.slice(0, 500), lastError: args.error?.slice(0, 500), ...(args.error ? {} : { recovery: undefined }) });
+    // Stopped by a plan's limit: it runs again where there is room, or after the reset.
+    if (args.error && LIMIT_HIT.test(args.error)) await recoverJob(ctx, (await ctx.db.get(job._id))!);
     if (result && result !== QUIET) {
       // Back to the chat it was set up in; the heartbeat and the others to the messaging channel (channels.ts).
       await ctx.scheduler.runAfter(0, internal.notify.deliver, { text: `⏰ **${job.name}**\n\n${result}`, ...(job.origin ? { origin: job.origin } : {}), from: { kind: "job", id: job._id, name: job.name } });
@@ -374,6 +469,14 @@ export type JobView = {
   model?: string;
   /** The engine `model` is one of; unset without a model, when the job runs on its chat's engine or the default. */
   engine?: EngineKind;
+  /** Kept on its engine whatever its plan: a run waits for the reset rather than moving. */
+  stay?: boolean;
+  /** Perry's own pick of tier, model or thinking level. */
+  pick?: Doc<"jobs">["pick"];
+  /** What its last run ran on, and why; where it was moved from, when it was. */
+  route?: Route;
+  /** A run waiting for an engine's reset. */
+  waiting?: Doc<"jobs">["waiting"];
   nextRunAt: number;
   lastRunAt?: number;
   lastResult?: string;
@@ -392,6 +495,10 @@ const view = (job: Doc<"jobs">): JobView => ({
   builtin: job.builtin,
   model: job.model,
   engine: job.engine,
+  ...(job.stay ? { stay: true } : {}),
+  ...(job.pick ? { pick: job.pick } : {}),
+  ...(job.route ? { route: job.route } : {}),
+  ...(job.waiting ? { waiting: job.waiting } : {}),
   nextRunAt: job.nextRunAt,
   lastRunAt: job.lastRunAt,
   lastResult: job.lastResult,
@@ -406,11 +513,11 @@ export const list = internalQuery({
 
 export const create = internalMutation({
   /** origin: the chat it is set up in, where its results go. */
-  args: { name: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()), trigger: v.optional(vTrigger), prompt: v.string(), origin: v.optional(v.id("conversations")) },
+  args: { name: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()), trigger: v.optional(vTrigger), prompt: v.string(), origin: v.optional(v.id("conversations")), pick: v.optional(vPerryPick) },
   returns: v.object({ id: v.optional(v.id("jobs")), nextRun: v.optional(v.string()), error: v.optional(v.string()) }),
   handler: async (ctx, args) => {
     const timezone = await timezoneOf(ctx);
-    const base = { name: args.name.trim().slice(0, 80), prompt: args.prompt.trim().slice(0, 4000), ...(args.origin ? { origin: args.origin } : {}) };
+    const base = { name: args.name.trim().slice(0, 80), prompt: args.prompt.trim().slice(0, 4000), ...(args.origin ? { origin: args.origin } : {}), ...(args.pick && Object.keys(args.pick).length ? { pick: args.pick } : {}) };
     if (args.trigger) {
       if (args.schedule || args.at) return { error: "A job runs on an event, a cron schedule or a time: give only one." };
       const id = await insertJob(ctx, { ...base, trigger: args.trigger });
@@ -437,6 +544,8 @@ export const update = internalMutation({
     schedule: v.optional(v.string()),
     at: v.optional(v.string()),
     enabled: v.optional(v.boolean()),
+    /** Perry's pick of tier, model or thinking level; null goes back to the tier's rule. */
+    pick: v.optional(v.union(vPerryPick, v.null())),
   },
   returns: v.object({ updated: v.boolean(), nextRun: v.optional(v.string()), error: v.optional(v.string()) }),
   handler: async (ctx, args) => {
@@ -451,7 +560,8 @@ export const update = internalMutation({
       return { updated: false, error: "A job an event starts keeps its event. To run it on a time instead, delete it and make a new one." };
     }
     const timezone = await timezoneOf(ctx);
-    const patch: Partial<Pick<Doc<"jobs">, "name" | "prompt" | "schedule" | "runAt" | "enabled" | "nextRunAt">> = {};
+    const patch: Partial<Pick<Doc<"jobs">, "name" | "prompt" | "schedule" | "runAt" | "enabled" | "nextRunAt" | "pick" | "waiting">> = {};
+    if (args.pick !== undefined) patch.pick = args.pick && Object.keys(args.pick).length ? args.pick : undefined;
     if (args.name?.trim()) patch.name = args.name.trim().slice(0, 80);
     if (args.prompt?.trim()) patch.prompt = args.prompt.trim().slice(0, 4000);
     if (args.schedule || args.at) {
@@ -466,6 +576,8 @@ export const update = internalMutation({
       // Resuming schedules from now, so a paused job does not fire for the runs it missed.
       patch.enabled = args.enabled;
       if (args.enabled) patch.nextRunAt = upcoming(job, timezone);
+      // Paused, a run waiting for an engine's reset is called off.
+      else patch.waiting = undefined;
     }
     await ctx.db.patch(job._id, patch);
     const chat = patch.name && job.conversationId ? await ctx.db.get(job.conversationId) : null;
@@ -520,7 +632,29 @@ export const setModel = mutation({
     assertDashboardKey(args.key);
     if (!(await ctx.db.get(args.id))) throw new Error("That job no longer exists.");
     const model = args.model?.trim() || undefined;
-    await ctx.db.patch(args.id, { model, engine: model ? args.engine : undefined });
+    // Automatic again: Perry picks, and moves it when its engine has no room.
+    await ctx.db.patch(args.id, { model, engine: model ? args.engine : undefined, ...(model ? {} : { stay: undefined }) });
+    return null;
+  },
+});
+
+/**
+ * Keep a job on the engine it was moved from (the Work page's "Keep on…"):
+ * pinned there, on the model it would have had, and when that engine has no
+ * room, its runs wait for the reset rather than move.
+ */
+export const keepOn = mutation({
+  args: { key: v.string(), id: v.id("jobs") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const job = await ctx.db.get(args.id);
+    if (!job) throw new Error("That job no longer exists.");
+    const from = job.route?.movedFrom;
+    const engine = from?.engine ?? (job.model ? job.engine : job.route?.engine);
+    if (!engine || !isEngine(engine)) throw new Error("This job has not run anywhere yet.");
+    const model = from?.engine === engine ? from.model : job.engine === engine ? job.model : job.route?.model;
+    await ctx.db.patch(job._id, { engine, model, stay: true });
     return null;
   },
 });

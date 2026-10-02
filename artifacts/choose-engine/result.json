@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-01T21:33:31.472Z",
+  "ranAt": "2026-10-02T00:14:11.323Z",
   "platform": "win32",
   "setupOnly": false,
   "checks": {
@@ -47,20 +47,20 @@
     "isolated": {
       "resolved": {
         "codex": [
-          "W:\\perry-tests\\choose-engine\\perry-choose-engine-7OIFvO\\world-1\\bin\\codex.cmd"
+          "W:\\perry-tests\\choose-engine\\perry-choose-engine-CqFmjA\\world-1\\bin\\codex.cmd"
         ],
         "claude": [
-          "W:\\perry-tests\\choose-engine\\perry-choose-engine-7OIFvO\\world-1\\bin\\claude.cmd"
+          "W:\\perry-tests\\choose-engine\\perry-choose-engine-CqFmjA\\world-1\\bin\\claude.cmd"
         ],
         "grok": []
       },
       "claude": {
-        "file": "W:\\perry-tests\\choose-engine\\perry-choose-engine-7OIFvO\\world-1\\bin\\claude.cmd",
+        "file": "W:\\perry-tests\\choose-engine\\perry-choose-engine-CqFmjA\\world-1\\bin\\claude.cmd",
         "command": "C:\\Users\\owner\\.bun\\bin\\bun.exe",
         "prefix": [
-          "W:\\perry-tests\\choose-engine\\perry-choose-engine-7OIFvO\\world-1\\bin\\claude-code\\cli.js"
+          "W:\\perry-tests\\choose-engine\\perry-choose-engine-CqFmjA\\world-1\\bin\\claude-code\\cli.js"
         ],
-        "sdkPath": "W:\\perry-tests\\choose-engine\\perry-choose-engine-7OIFvO\\world-1\\bin\\claude-code\\cli.js"
+        "sdkPath": "W:\\perry-tests\\choose-engine\\perry-choose-engine-CqFmjA\\world-1\\bin\\claude-code\\cli.js"
       }
     },
     "oneReadyNotTakenUnconfirmed": [
@@ -75,13 +75,13 @@
     ],
     "flagChoosesWithoutAsking": [
       "  pnpm perry start  runs Perry in the background",
-      "  dashboard key: A5V0mOuGHQAMeZ8oNskcN-UficviPnTi",
+      "  dashboard key: kJAPC5Upik3QronxkS2TzNGWTYVEO4o9",
       "",
       "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
     ],
     "envLabelChoosesNoSignInAlone": [
       "  pnpm perry start  runs Perry in the background",
-      "  dashboard key: PLdZ9d-J5BM-eSXCNMaHuUP8BWnuVtSb",
+      "  dashboard key: y1vjP7KWc_Y3T225YKf7OGyMzX7U2wD2",
       "",
       "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
     ],
@@ -118,18 +118,18 @@
       ],
       "last": [
         "  pnpm perry start  runs Perry in the background",
-        "  dashboard key: uQF-lwn_u_K5yIVaLb9GF3xnGVLYZotv",
+        "  dashboard key: 7fX5t8HNMgucAeEklPnGEZk62FNw2vgj",
         "",
         "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
       ]
     },
     "rerunKeepsChoice": [
-      "  dashboard key: uQF-lwn_u_K5yIVaLb9GF3xnGVLYZotv",
+      "  dashboard key: 7fX5t8HNMgucAeEklPnGEZk62FNw2vgj",
       "",
       "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
     ],
     "enterConfirmsTheOneReady": [
-      "  dashboard key: CuQBHPtsxkvj8oLibzX8SjIQ3ERCQvlW",
+      "  dashboard key: zoILZDGkZZe366ofFSAl78ZCsvsdvTN3",
       "",
       "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
     ],
@@ -137,17 +137,17 @@
       "second": "Antigravity",
       "last": [
         "  pnpm perry start  runs Perry in the background",
-        "  dashboard key: p4Z96m-tbWIbfX55nhQu9hKD_8yxbopT",
+        "  dashboard key: V0wbXiOF1y3SsNwJJV9ypaSl5xwIQZDp",
         "",
         "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
       ]
     },
     "newInstallHasNoDefault": {
-      "_id": "pyr7twcq7wpzyx5jmpntxbcjxv",
-      "_creationTime": 1790890223486,
+      "_id": "yvmg330g83xccfhyzab6f7d7mx",
+      "_creationTime": 1790899864809,
       "onboarding": "pending",
       "askEngine": true,
-      "createdAt": 1790890223486,
+      "createdAt": 1790899864809,
       "wake": false
     },
     "runnerOnStandIns": {
@@ -169,31 +169,31 @@
     },
     "noTurnWithoutChoice": {
       "earlyRun": {
-        "id": "6q58v7tvbfd0xc796dq052m6gw",
-        "sessionId": "mjmbxagga0amg2k8757mwq88q1",
-        "threadId": "hb9x4nz0h45gy82qb79w8hrrcj",
+        "id": "hgdhza97py6f81yrr337ykz6fh",
+        "sessionId": "k15g8ptgjyxtr6dq4at24j97sc",
+        "threadId": "ndggd45cbcdcfevj88137rms7p",
         "chatTitle": "Hello before choosing",
         "channel": "web",
         "prompt": "Hello before choosing",
         "status": "error",
         "model": "no engine",
         "error": "Perry has no default engine yet. Choose one in Settings → Engines, or pick a model for this chat, then send it again.",
-        "startedAt": 1790890225978,
-        "durationMs": 202
+        "startedAt": 1790899867414,
+        "durationMs": 163
       },
       "turns": 0,
       "heartbeatChat": {
-        "id": "4vv3p0fygf460bmrex9xns09dj",
-        "sessionId": "r9hagfsn8ye4pgvzsfjpmvfte8",
-        "threadId": "jzd1skghjcekt72vg82vhe4v3j",
+        "id": "esywfqv23b9hab9xqzgzaq5m59",
+        "sessionId": "tx8jf4gmhxfhfa7mzgbyvykf9m",
+        "threadId": "v7kwwahzx9t6fq69s5gdqn4dks",
         "chatTitle": "⏰ Heartbeat",
         "channel": "web",
-        "prompt": "⏰ Heartbeat (Thursday, 1 October 2026 at 21:31)\n\nThis is your scheduled heartbeat, not a message from the owner. Look over what could need the owner's attention now: status_report for tasks, goals and page watches, today's and yesterday's notes in memory, and connected accounts where it helps (for example today's calendar). Delivery is conditional: only if there is something they would want to know now, or a follow-up worth asking about a thread they left open, reply with a short message for them. Do not take actions that change anything.\n\nConditional delivery\nOnly when this job makes delivery conditional and there is nothing new to report, reply with exactly NOTHING and no other text. This includes results already delivered or incorporated into an earlier run; do not send an acknowledgement of that redundancy. Do not use NOTHING to omit commentary from a result that still needs delivery. Never return an empty reply; use NOTHING to intentionally deliver nothing.",
+        "prompt": "⏰ Heartbeat (Friday, 2 October 2026 at 00:12)\n\nThis is your scheduled heartbeat, not a message from the owner. Look over what could need the owner's attention now: status_report for tasks, goals and page watches, today's and yesterday's notes in memory, and connected accounts where it helps (for example today's calendar). Delivery is conditional: only if there is something they would want to know now, or a follow-up worth asking about a thread they left open, reply with a short message for them. Do not take actions that change anything.\n\nConditional delivery\nOnly when this job makes delivery conditional and there is nothing new to report, reply with exactly NOTHING and no other text. This includes results already delivered or incorporated into an earlier run; do not send an acknowledgement of that redundancy. Do not use NOTHING to omit commentary from a result that still needs delivery. Never return an empty reply; use NOTHING to intentionally deliver nothing.",
         "status": "error",
         "model": "no engine",
         "error": "Perry has no default engine yet. Choose one in Settings → Engines, or pick a model for this chat, then send it again.",
-        "startedAt": 1790890283938,
-        "durationMs": 51
+        "startedAt": 1790899924912,
+        "durationMs": 61
       }
     },
     "chatAsksForEngine": "Choose the engine Perry thinks with\nPerry doesn't pick one for you. Choose a default for every chat, or pick a model for this one in the box below.\nChoose\nPerry couldn't finish the last reply\n\nPerry has no default engine yet. Choose one in Settings → Engines, or pick a model for this chat, then send it again.\n\nTry again",
@@ -241,7 +241,7 @@
     "runnerLogNew": [
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\perry-tests\\choose-engine\\perry-choose-engine-uRndZC\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\choose-engine\\perry-choose-engine-cPkdQ5\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -250,12 +250,12 @@
       "\u001b[32m  connected.",
       "\u001b[0m",
       "\u001b[2m  named a chat \"Fake chat name\" (gpt-fake)\u001b[0m",
-      "\u001b[2m  saved turn m8gyme6d48v7q4d755z9v1paht\u001b[0m",
-      "\u001b[2m  saved turn 6xkyvymr9kv7hc0048xzn3vc8a\u001b[0m",
+      "\u001b[2m  saved turn wyh2afycredr81xqy580yx24wh\u001b[0m",
+      "\u001b[2m  saved turn cafaa7r7k4g0fr384n2mtg72g0\u001b[0m",
       "\u001b[2m  named a chat \"Fake chat name\" (gpt-fake)\u001b[0m",
-      "\u001b[2m  saved turn 3spxxra0etbtg609fjwch5v414\u001b[0m",
-      "\u001b[2m  saved turn rn0zqe16hkaptd599ndzr6680m\u001b[0m",
-      "\u001b[2m  saved turn hp28b9mgb6n09cfja9z60m6m7m\u001b[0m"
+      "\u001b[2m  saved turn 3vynj4pbf3vzdbywtcb8r72fm0\u001b[0m",
+      "\u001b[2m  saved turn hj3m99zzeg7bmz16jes5gp4k31\u001b[0m",
+      "\u001b[2m  saved turn a1z1jswc1f2e1h6fx5vfa69m6h\u001b[0m"
     ],
     "upgradeKeepsCodex": {
       "seeded": {},

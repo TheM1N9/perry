@@ -119,6 +119,8 @@ export function ChatScreen() {
   const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
   // The heads-up about the engine's limit the owner closed, until it changes.
   const [limitSeen, setLimitSeen] = useState("");
+  // The note about Perry moving the chat to another engine the owner closed, by when it moved.
+  const [movedSeen, setMovedSeen] = useState(0);
   const setChatModel = useMutation(api.dashboard.setChatModel).withOptimisticUpdate((store, args) => {
     const current = store.getQuery(api.dashboard.getChat, { key: args.key, id: args.id });
     if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, model: args.model, engine: args.engine ?? current.engine });
@@ -727,6 +729,13 @@ export function ChatScreen() {
             above={<>
               {error && <ComposerNote tone="error" onDismiss={() => setError("")}>{error}</ComposerNote>}
               {notice && <ComposerNote tone="info" onDismiss={() => setNotice("")}>{notice}</ComposerNote>}
+              {chat?.moved && movedSeen !== chat.moved.at && (chat.moved.to ?? chat.engine) && (
+                <ComposerNote tone="warning" onDismiss={() => setMovedSeen(chat.moved!.at)}>
+                  <span className="font-medium">Moved to {ENGINE_LABELS[(chat.moved.to ?? chat.engine)!]}.</span> {chat.moved.why}.{" "}
+                  {/* A chat that follows the default goes back by itself; one on an engine of its own, when the owner says. */}
+                  {chat.moved.to ? `It goes back to ${ENGINE_LABELS[chat.moved.from]} once that has room.` : `Pick a ${ENGINE_LABELS[chat.moved.from]} model to move it back.`}
+                </ComposerNote>
+              )}
               {limit && limitSeen !== limitMark && (
                 <ComposerNote tone={limit.level === "out" ? "error" : "warning"} onDismiss={() => setLimitSeen(limitMark)}>
                   <span className="font-medium">{limit.title}.</span> {limit.detail}{" "}

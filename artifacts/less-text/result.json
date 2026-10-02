@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-01T21:44:46.513Z",
+  "ranAt": "2026-10-02T00:16:27.480Z",
   "pass": true,
   "checks": {
     "accountMenuHasNoUsage": true,
@@ -168,16 +168,16 @@
         {
           "page": "work",
           "before": 118,
-          "after": 70,
-          "down": "41%",
+          "after": 73,
+          "down": "38%",
           "target": "20%",
           "ok": true
         },
         {
           "page": "work-plans",
           "before": 91,
-          "after": 43,
-          "down": "53%",
+          "after": 45,
+          "down": "51%",
           "target": "20%",
           "ok": true
         },
@@ -392,7 +392,7 @@
       ],
       "total": {
         "before": 3944,
-        "after": 2656
+        "after": 2661
       },
       "down": "33%"
     },

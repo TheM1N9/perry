@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openChat, sleep } from "../browser";
+import { modelFor } from "../../convex/lib/routing";
+import type { ModelOption } from "../../convex/lib/commands";
 
 // bun artifacts/job-models/run.ts <outDir>
 // Every turn names its Codex model, and each job (the heartbeat too) can have
@@ -13,15 +15,24 @@ import { openChat, sleep } from "../browser";
 // machine has them: ~/.codex/config.toml may name a model the account cannot
 // use (the Codex app wrote gpt-5.6-sol here), which is the case this is for.
 //
+// Since issue #189 (lib/routing.ts) a chat with no engine of its own runs on
+// the owner's default engine (another with room when its plan is out), and a job with no model picked runs
+// the tier its kind gives (the heartbeat: quick, the fast model at low); the
+// checks follow that. This run needs real engines, so it was not run again
+// for that change: only its expectations were brought up to date.
+//
 // Ways it could fail:
 //   1. A chat with no model picked runs on config.toml's model: a Telegram
-//      message must get a real reply, run on the model Codex marks default.
+//      message must get a real reply, run on the default model of the engine
+//      it was routed to.
 //   2. A chat whose pick the account no longer offers breaks: it must fall
-//      back to the default and reply.
+//      back to its engine's default and reply.
 //   3. A job's model is ignored: with the heartbeat set to another model on
-//      the dashboard, its run must use that one; cleared, the default again.
+//      the dashboard, its run must use that one (unless Codex's plan has no
+//      room, when it is moved and says so); set back to Automatic, it runs the
+//      quick tier's model again.
 //   4. The Work page does not offer it: each job row must have a model picker
-//      showing the default by name, and picking there must save.
+//      showing Automatic, and picking there must save.
 //   5. Any page throws: no uncaught errors in the browser.
 
 const [outDir] = process.argv.slice(2);
@@ -102,7 +113,7 @@ async function until(test: () => Promise<boolean> | boolean, what: string, secon
   throw new Error(`timed out: ${what}`);
 }
 type Job = { id: string; name: string; builtin?: string; model?: string; lastResult?: string; lastError?: string };
-type Run = { prompt: string; model?: string; status: string; error?: string; chatTitle: string };
+type Run = { prompt: string; model?: string; status: string; error?: string; chatTitle: string; route?: { engine: ModelOption["engine"]; model?: string; by: string; why: string; movedFrom?: { engine: string; why: string } } };
 const jobs = () => call<Job[]>("jobs:list");
 const runs = () => call<Run[]>("dashboard:listRuns", { key: KEY });
 const toOwner = (after: number) => telegram.sent.filter((message) => message.chat_id === OWNER && message.at > after);
@@ -133,32 +144,44 @@ try {
   runner = start("runner");
   await until(async () => (await call<unknown[]>("models:list")).length > 0, "the runner to report the account's models", 120);
   await until(async () => Boolean((await jobs()).find((job) => job.builtin === "heartbeat")), "the built-in jobs", 90);
-  const models = await call<Array<{ id: string; name: string; isDefault: boolean }>>("models:list");
-  const fallback = models.find((item) => item.isDefault) ?? models[0];
-  const other = models.find((item) => item.id !== fallback.id)!;
-  notes.models = models.map((item) => `${item.id}${item.isDefault ? " (default)" : ""}`);
+  const models = await call<ModelOption[]>("models:list");
+  const codex = models.filter((item) => (item.engine ?? "codex") === "codex");
+  const fallback = codex.find((item) => item.isDefault) ?? codex[0];
+  const other = codex.find((item) => item.id !== fallback.id)!;
+  notes.models = models.map((item) => `${item.engine ?? "codex"}/${item.id}${item.isDefault ? " (default)" : ""}`);
+  /** "<engine>/<id>" of the default model of the engine a run went to. */
+  const defaultOn = (run?: Run) => {
+    const engine = run?.route?.engine ?? "codex";
+    const on = models.filter((item) => (item.engine ?? "codex") === engine);
+    return `${engine}/${(on.find((item) => item.isDefault) ?? on[0])?.id}`;
+  };
 
   // 1. No model picked.
   const first = await ask("Reply with exactly the word pong.");
   notes.noPick = { reply: first.reply, model: first.run?.model, error: first.run?.error };
-  checks.noPickRunsOnAccountDefault = /pong/i.test(first.reply) && !/That broke/.test(first.reply) && first.run?.model?.includes(`codex/${fallback.id}`) === true;
+  checks.noPickRunsOnAccountDefault = /pong/i.test(first.reply) && !/That broke/.test(first.reply) && first.run?.model?.includes(defaultOn(first.run)) === true;
 
   // 2. A pick the account does not offer.
   const chat = await call<{ _id: string }>("conversations:getByExternalId", { channel: "telegram", externalId: OWNER });
   await call("conversations:setModel", { id: chat._id, model: "gpt-5.6-sol" });
   const second = await ask("Reply with exactly the word ping.");
   notes.unofferedPick = { reply: second.reply, model: second.run?.model, error: second.run?.error };
-  checks.unofferedPickFallsBack = /ping/i.test(second.reply) && !/That broke/.test(second.reply) && second.run?.model?.includes(`codex/${fallback.id}`) === true;
+  checks.unofferedPickFallsBack = /ping/i.test(second.reply) && !/That broke/.test(second.reply) && second.run?.model?.includes(defaultOn(second.run)) === true;
 
-  // 3. The heartbeat on its own model, then back on the default.
+  // 3. The heartbeat on its own model, then back on Automatic.
   const heartbeat = (await jobs()).find((job) => job.builtin === "heartbeat")!;
   await call("jobs:setModel", { key: KEY, id: heartbeat.id, model: other.id });
   const onOther = await runHeartbeat();
   await call("jobs:setModel", { key: KEY, id: heartbeat.id });
   const onDefault = await runHeartbeat();
-  notes.heartbeat = { onOther: { model: onOther?.model, status: onOther?.status, error: onOther?.error }, onDefault: { model: onDefault?.model, status: onDefault?.status, error: onDefault?.error } };
-  checks.jobModelUsed = onOther?.model?.includes(`codex/${other.id}`) === true && onOther.status !== "error";
-  checks.jobModelCleared = onDefault?.model?.includes(`codex/${fallback.id}`) === true && onDefault.status !== "error";
+  notes.heartbeat = { onOther: { model: onOther?.model, status: onOther?.status, error: onOther?.error, route: onOther?.route }, onDefault: { model: onDefault?.model, status: onDefault?.status, error: onDefault?.error, route: onDefault?.route } };
+  // Pinned, it runs the pick, unless Codex's plan has no room and it was moved, saying why.
+  checks.jobModelUsed = onOther?.status !== "error" && (onOther?.route?.movedFrom
+    ? onOther.route.movedFrom.engine === "codex"
+    : onOther?.route?.by === "owner" && onOther.model?.includes(`codex/${other.id}`) === true);
+  // Automatic, the heartbeat is quick work: the fast model of the engine it went to.
+  const quick = onDefault?.route?.engine ? modelFor(models, onDefault.route.engine, "quick")?.id : undefined;
+  checks.jobModelCleared = onDefault?.status !== "error" && onDefault?.route?.by === "auto" && Boolean(quick) && onDefault.model?.includes(`${onDefault.route.engine}/${quick}`) === true;
 
   // 4. The Work page.
   browser = await openChat(BASE, KEY);
@@ -171,7 +194,7 @@ try {
   await waitFor(`!!document.querySelector('[aria-label="Model for Heartbeat"]')`, "the heartbeat's model picker");
   const shown = await evaluate(`document.querySelector('[aria-label="Model for Heartbeat"]').innerText.trim()`) as string;
   notes.pickerShows = shown;
-  checks.pickerShowsDefaultByName = shown.includes("Default") && shown.includes(fallback.name);
+  checks.pickerShowsAutomatic = shown.includes("Automatic");
   await evaluate(`document.querySelector('[aria-label="Model for Heartbeat"]').click(); true`);
   await waitFor(`[...document.querySelectorAll('[role="option"]')].some((o) => o.innerText.trim() === ${JSON.stringify(other.name)})`, "the model options");
   await evaluate(`[...document.querySelectorAll('[role="option"]')].find((o) => o.innerText.trim() === ${JSON.stringify(other.name)}).click(); true`);

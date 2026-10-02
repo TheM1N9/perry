@@ -7,8 +7,9 @@ import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import type { JobView } from "@/convex/jobs";
-import { enginesOf, modelKey, modelsOf, parseModelKey } from "@/convex/lib/commands";
+import { enginesOf, modelKey, parseModelKey } from "@/convex/lib/commands";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
+import { PICKED_BY, routeLabel } from "@/convex/lib/routing";
 import { ago, fullDate, plural, useNow } from "@/lib/format";
 import { describeSchedule } from "@/lib/when";
 import { useSession } from "@/lib/session";
@@ -114,6 +115,7 @@ function Schedules() {
   const remove = useMutation(api.jobs.removeFromDashboard);
   const runNow = useMutation(api.jobs.runNow);
   const setModel = useMutation(api.jobs.setModel);
+  const keepOn = useMutation(api.jobs.keepOn);
   const models = useQuery(api.models.options, { key: dashboardKey })?.models;
   const preferred = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
   const several = enginesOf(models ?? []).length > 1;
@@ -132,14 +134,15 @@ function Schedules() {
     // A one-time job whose time has passed has run, or was paused past it; either way it is over.
     const over = job.runAt !== undefined && !job.enabled && job.runAt <= now;
     const readable = job.schedule ? describeSchedule(job.schedule) : null;
-    const state: { tone: Tone; label: string } | null = job.lastError ? { tone: "danger", label: "Failed" } : job.enabled ? null : { tone: "neutral", label: over ? "Done" : "Paused" };
-    // Unset runs on the default engine's own default model; a pick the account no longer offers falls back to it too.
-    // Each model is "<engine>/<id>", named with its engine once there is more than one.
-    const offered = modelsOf(models ?? [], preferred ?? undefined);
-    const fallback = offered.find((item) => item.isDefault) ?? offered[0];
+    // A run waiting for an engine's reset is not a failure, whatever the run before it said.
+    const state: { tone: Tone; label: string } | null = job.waiting ? { tone: "warning", label: "Waiting" } : job.lastError ? { tone: "danger", label: "Failed" } : job.enabled ? null : { tone: "neutral", label: over ? "Done" : "Paused" };
+    // Unset, Perry picks a model that fits the job on the default engine, or on another with room when the default
+    // has none (lib/routing.ts); a pick the account no longer offers is picked for too. Each model is
+    // "<engine>/<id>", named with its engine once there is more than one.
     const picked = job.model && job.engine ? modelKey(job.engine, job.model) : undefined;
+    const moved = job.route?.movedFrom;
     const modelItems = [
-      { value: "default", label: fallback ? `Default (${fallback.name})` : preferred === null ? "Default (no engine chosen)" : "Default model" },
+      { value: "default", label: preferred === null ? "Automatic (no engine chosen)" : "Automatic" },
       ...(models ?? []).map((item) => ({ value: modelKey(item.engine, item.id), label: several ? `${item.name} · ${ENGINE_LABELS[item.engine]}` : item.name })),
       ...(picked && models && !models.some((item) => modelKey(item.engine, item.id) === picked) ? [{ value: picked, label: `${job.model} (not offered, uses default)` }] : []),
     ];
@@ -163,7 +166,27 @@ function Schedules() {
               ? <TextTip tip={when(job.lastRunAt)} spoken={when(job.lastRunAt)}>Last ran {ago(job.lastRunAt, now)}</TextTip>
               : <span>Hasn&apos;t run yet</span>}
           </p>
-          {job.lastError && <p className="mt-2 text-sm text-pretty text-destructive">{job.lastError}</p>}
+          {job.route && (
+            <p className="mt-1 text-sm text-muted-foreground" data-route>
+              <TextTip tip={<>{PICKED_BY[job.route.by]}. {job.route.why}</>}>
+                Last run on {routeLabel(job.route)}
+              </TextTip>
+            </p>
+          )}
+          {job.waiting && <p className="mt-2 text-sm text-pretty text-warning" data-waiting>{job.waiting.why}</p>}
+          {moved && !job.stay && !job.waiting && (
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" data-moved>
+              <p className="text-pretty text-warning">Moved to {ENGINE_LABELS[job.route!.engine]}: {moved.why}.</p>
+              <ActionButton variant="outline" size="xs" action={() => keepOn({ key: dashboardKey, id: job.id })}
+                success={`It stays on ${ENGINE_LABELS[moved.engine]} now, and waits for its reset when it has no room.`}>
+                Keep on {ENGINE_LABELS[moved.engine]}
+              </ActionButton>
+            </div>
+          )}
+          {job.stay && job.model && (
+            <p className="mt-1 text-sm text-pretty text-muted-foreground" data-kept>Kept on {job.engine ? ENGINE_LABELS[job.engine] : "its engine"}. With no room, it waits for the reset.</p>
+          )}
+          {job.lastError && !job.waiting && <p className="mt-2 text-sm text-pretty text-destructive">{job.lastError}</p>}
           {!job.lastError && job.lastResult && job.lastResult.trim() !== "NOTHING" && (
             <p className="mt-2 line-clamp-3 text-sm text-pretty whitespace-pre-line text-foreground/80">{job.lastResult}</p>
           )}
@@ -171,7 +194,8 @@ function Schedules() {
         <div className="flex shrink-0 items-center gap-1">
           {job.chatId && <Button variant="ghost" size="sm" render={<Link href={`/chat/${job.chatId}`} />}><MessageSquareIcon />Results</Button>}
           <Select items={modelItems} value={picked ?? "default"} disabled={!models?.length}
-            onValueChange={(value) => void attempt(() => setModel({ key: dashboardKey, id: job.id, ...(!value || value === "default" ? {} : { model: parseModelKey(value).id, engine: parseModelKey(value).engine }) }), { success: "Model changed. It applies from the next run." })}>
+            onValueChange={(value) => void attempt(() => setModel({ key: dashboardKey, id: job.id, ...(!value || value === "default" ? {} : { model: parseModelKey(value).id, engine: parseModelKey(value).engine }) }),
+              { success: !value || value === "default" ? "Perry picks its model from the next run." : "Model changed. It applies from the next run." })}>
             <SelectTrigger size="sm" aria-label={`Model for ${job.name}`} className="max-w-44"><SelectValue /></SelectTrigger>
             <SelectContent>{modelItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
           </Select>
@@ -300,7 +324,14 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
                   Updated {ago(task.updatedAt, now)}{task.plan.length > 0 && <span className="nums"> · {done} of {task.plan.length} steps</span>}
                 </p>
                 {task.plan.length > 0 && <Progress value={(done / task.plan.length) * 100} aria-label={`${task.title}: ${done} of ${task.plan.length} steps`} className="mt-3 max-w-md" />}
-                {task.status === "queued" && line.includes(task._id) && (
+                {task.route && (
+                  <p className="mt-1 text-sm text-muted-foreground" data-route>
+                    <TextTip tip={<>{PICKED_BY[task.route.by]}. {task.route.why}</>}>On {routeLabel(task.route)}</TextTip>
+                    {task.route.movedFrom && <span className="text-warning"> · moved from {ENGINE_LABELS[task.route.movedFrom.engine]}: {task.route.movedFrom.why}</span>}
+                  </p>
+                )}
+                {task.status === "queued" && task.waiting && task.waiting.until > now && <p className="mt-1 text-sm text-pretty text-warning" data-waiting>{task.waiting.why}</p>}
+                {task.status === "queued" && line.includes(task._id) && !(task.waiting && task.waiting.until > now) && (
                   <p className="mt-1 text-sm text-muted-foreground">{line.indexOf(task._id) === 0 ? "Next in line" : `${line.indexOf(task._id) + 1} in line`}</p>
                 )}
                 {task.question && (

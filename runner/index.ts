@@ -359,18 +359,25 @@ async function main() {
     }, wait));
   };
   const readAllLimits = () => { for (const engine of engines.values()) void readLimits(engine); };
+  /** Which engines' plans have room for side work, as the server reads them (convex/routing.ts, rooms). */
+  let rooms: Partial<Record<EngineKind, "room" | "low" | "out">> = {};
+  watch(api.routing.rooms, { token }, (next) => { rooms = next ?? {}; });
   /** The owner's default engine, as the server has it; unset until chosen. */
   let defaultEngine: EngineKind | undefined;
   watch(api.engines.preferred, { token }, (engine) => { defaultEngine = engine ?? undefined; });
   /**
    * An engine for quick side turns (the reviewer, chat names): the preferred
-   * one (the chat's) when it runs them and is signed in, else the owner's
-   * default engine, else any that is.
+   * one (the chat's), else the owner's default engine, else any, among those
+   * that run them, are signed in, are not being updated and whose plan has
+   * room; with none that has room, the same order among the rest, and its own
+   * plan has the last word.
    */
   const quickEngine = (preferred?: EngineKind): Engine | undefined => {
     const ready = (engine?: Engine) => engine?.quickTurn && engine.capabilities.quickTurns && statuses.get(engine.kind)?.signedIn && !tooOld(engine.kind) && !updating.has(engine.kind) ? engine : undefined;
-    return ready(preferred ? engines.get(preferred) : undefined) ?? ready(defaultEngine ? engines.get(defaultEngine) : undefined)
-      ?? [...engines.values()].find((engine) => ready(engine));
+    const roomy = (engine?: Engine) => ready(engine) && (rooms[engine!.kind] ?? "room") === "room" ? engine : undefined;
+    const first = [preferred, defaultEngine].map((kind) => kind ? engines.get(kind) : undefined);
+    const by = (test: (engine?: Engine) => Engine | undefined) => first.map(test).find(Boolean) ?? [...engines.values()].find((engine) => test(engine));
+    return by(roomy) ?? by(ready);
   };
   /** A quick turn on an engine, counted while it runs. */
   const quickly = async <T,>(engine: Engine | undefined, work: () => Promise<T>): Promise<T> => {

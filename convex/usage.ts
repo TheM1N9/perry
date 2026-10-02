@@ -52,7 +52,7 @@ const labelled = (run: Doc<"runs">): EngineKind | undefined => {
 const engineOfRun = async (ctx: QueryCtx, run: Doc<"runs">, chat: Doc<"conversations"> | null): Promise<EngineKind | undefined> => labelled(run) ?? (chat ? await engineFor(ctx, chat) : undefined);
 
 /** Each engine's usage, the newest read across the computers it is on. */
-function usageByEngine(runners: Doc<"runners">[]): Partial<Record<EngineKind, EngineUsage>> {
+export function usageByEngine(runners: Doc<"runners">[]): Partial<Record<EngineKind, EngineUsage>> {
   const merged: Partial<Record<EngineKind, EngineUsage>> = {};
   for (const runner of runners) {
     for (const [kind, usage] of Object.entries(runner.usage ?? {})) {
@@ -67,7 +67,7 @@ function usageByEngine(runners: Doc<"runners">[]): Partial<Record<EngineKind, En
   return merged;
 }
 
-const liveRunners = async (ctx: QueryCtx) => (await ctx.db.query("runners").order("desc").take(20)).filter((runner) => !runner.revoked);
+export const liveRunners = async (ctx: QueryCtx) => (await ctx.db.query("runners").order("desc").take(20)).filter((runner) => !runner.revoked);
 
 /**
  * Perry's runs since `since` that used the plan, newest first, each with its

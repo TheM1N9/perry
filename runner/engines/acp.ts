@@ -445,16 +445,25 @@ ${line}`.slice(-4000); this.onText(line); });
     return this.learned;
   }
 
-  private learn(config: SessionConfigOption[]) {
+  /**
+   * Keep the models and efforts a session offers. Only a new session says
+   * which are the agent's defaults: one Perry has set a model or level on, or
+   * one resumed, says what it was set to, and the defaults learned before stand
+   * (Perry picks by them, convex/lib/routing.ts).
+   */
+  private learn(config: SessionConfigOption[], fresh = false) {
     const model = this.option(config, "model");
     if (!model || model.type !== "select") return;
     const effort = this.option(config, "thought_level");
     const efforts = effort?.type === "select" ? this.values(effort) : [];
+    const known = this.learnedModels();
+    const knownDefault = fresh ? undefined : known.find((item) => item.isDefault)?.id;
+    const knownEffort = fresh ? undefined : known.find((item) => item.defaultEffort)?.defaultEffort;
     const models = this.values(model).map((value): EngineModel => ({
       id: value.value,
       name: value.name,
-      isDefault: value.value === model.currentValue,
-      ...(efforts.length ? { efforts: efforts.map((item) => item.value), ...(effort?.type === "select" ? { defaultEffort: String(effort.currentValue) } : {}) } : {}),
+      isDefault: value.value === (knownDefault ?? model.currentValue),
+      ...(efforts.length ? { efforts: efforts.map((item) => item.value), ...(effort?.type === "select" ? { defaultEffort: knownEffort ?? String(effort.currentValue) } : {}) } : {}),
     }));
     if (!models.length || json(models) === json(this.learned)) return;
     this.learned = models;
@@ -489,10 +498,10 @@ ${line}`.slice(-4000); this.onText(line); });
     return [{ name: tools.name, command: tools.stdio.command, args: tools.stdio.args, env: Object.entries(tools.stdio.env).map(([name, value]) => ({ name, value })) }];
   }
 
-  private track(conn: Connection, id: string, cwd: string, response: { modes?: SessionModeState | null; configOptions?: SessionConfigOption[] | null }): Session {
+  private track(conn: Connection, id: string, cwd: string, response: { modes?: SessionModeState | null; configOptions?: SessionConfigOption[] | null }, fresh = false): Session {
     const session: Session = { id, cwd, modes: response.modes, config: response.configOptions ?? [] };
     conn.sessions.set(id, session);
-    this.learn(session.config);
+    this.learn(session.config, fresh);
     return session;
   }
 
@@ -531,7 +540,7 @@ ${line}`.slice(-4000); this.onText(line); });
 
   private async newSession(conn: Connection, cwd: string, mcpServers: McpServer[]): Promise<Session> {
     const created = await within(conn.agent.request("session/new", { cwd, mcpServers, ...this.meta }), this.options.startupMs, `${this.label}'s session/new`);
-    return this.track(conn, created.sessionId, cwd, created);
+    return this.track(conn, created.sessionId, cwd, created, true);
   }
 
   /** session/load, whose replay of the session is dropped; the prompt goes once it has been quiet a moment. */

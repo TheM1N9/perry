@@ -8,6 +8,8 @@ import { useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { RunView, SpanView } from "@/convex/dashboard";
+import { ENGINE_LABELS } from "@/convex/lib/engines";
+import { PICKED_BY, routeLabel } from "@/convex/lib/routing";
 import { plural } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -127,6 +129,7 @@ function RunRow({ run }: { run: RunView }) {
             <span className="nums mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
               <RelativeTime at={run.startedAt} />
               {run.model && <span className="font-mono">{run.model}</span>}
+              {run.route?.movedFrom && <span className="text-warning">moved from {ENGINE_LABELS[run.route.movedFrom.engine]}</span>}
               {typeof run.steps === "number" && <span>{plural(run.steps, "step")}</span>}
               {typeof run.durationMs === "number" && <span>{duration(run.durationMs)}</span>}
               {typeof run.totalTokens === "number" && <span>{run.totalTokens.toLocaleString()} tokens</span>}
@@ -140,6 +143,15 @@ function RunRow({ run }: { run: RunView }) {
               <ScrollArea className="border-l-2 border-destructive/60" viewportClassName="max-h-48">
                 <pre className="py-0.5 pl-3 font-mono text-xs whitespace-pre-wrap text-destructive [overflow-wrap:anywhere]">{run.error}</pre>
               </ScrollArea>
+            )}
+            {run.route && (
+              <div data-route>
+                <h4 className="mb-1 text-xs font-medium text-muted-foreground">Engine, model and thinking</h4>
+                <p className="text-sm">{routeLabel(run.route)} <span className="text-muted-foreground">· {run.route.tier} tier</span></p>
+                <p className="mt-0.5 max-w-3xl text-sm text-pretty text-muted-foreground">
+                  {PICKED_BY[run.route.by]}. {run.route.why}{run.route.retried ? " It ran there after its first engine refused it for a limit, before doing anything." : ""}
+                </p>
+              </div>
             )}
             {run.toolCalls && run.toolCalls.length > 0 && (
               <div>
