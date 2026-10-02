@@ -424,7 +424,7 @@ export const recall = internalAction({
     if (args.parts) return [{ parts, lines: Object.fromEntries(known), range, now } as never];
     const ranked = rankRecall(query, parts, known, now, range).slice(0, limit);
     if (!args.excerpts) return ranked;
-    const around: Record<string, string[]> = await ctx.runQuery(internal.memories.excerpts, { ids: ranked.filter((memory) => memory.pageId).map((memory) => memory.id as Id<"memories">) });
+    const around: Record<string, string[]> = await ctx.runQuery(internal.memories.excerpts, { ids: ranked.filter((memory) => memory.pageId).map((memory) => memory.id as Id<"memories">), chat: args.chat, ...(args.everywhere ? { everywhere: true } : {}) });
     return ranked.map((memory) => (around[memory.id]?.length ? { ...memory, excerpt: around[memory.id] } : memory));
   },
 });
@@ -503,14 +503,16 @@ export const mentioning = internalQuery({
 
 /** The lines just before and after each of these, in its page: what a search result came from. */
 export const excerpts = internalQuery({
-  args: { ids: v.array(v.id("memories")) },
+  args: { ids: v.array(v.id("memories")), chat: vChat, everywhere: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<Record<string, string[]>> => {
+    // Only lines the chat may see: a line of one page can belong to a project or a chat of its own.
+    const seen = args.everywhere ? () => true : await seenFrom(ctx, args.chat);
     const out: Record<string, string[]> = {};
     for (const id of args.ids) {
       const line = await ctx.db.get(id);
       if (!line?.pageId || line.order === undefined) continue;
       const near = await ctx.db.query("memories").withIndex("by_page", (q) => q.eq("pageId", line.pageId).gte("order", line.order! - 1).lte("order", line.order! + 1)).collect();
-      out[id] = near.filter((other) => !other.supersededBy).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((other) => (other._id === id ? `> ${other.text}` : other.text));
+      out[id] = near.filter((other) => !other.supersededBy && seen(other)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((other) => (other._id === id ? `> ${other.text}` : other.text));
     }
     return out;
   },
