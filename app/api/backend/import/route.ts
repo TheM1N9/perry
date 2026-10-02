@@ -1,4 +1,4 @@
-import { backend, moveMemoriesIntoPages, updateBrainIndex } from "@/server/index";
+import { backend, givePeoplePages, moveMemoriesIntoPages, updateBrainIndex } from "@/server/index";
 import { isAdmin } from "@/server/api";
 import { importConvexExport } from "@/server/importer";
 
@@ -16,6 +16,7 @@ export async function POST(request: Request) {
     await backend().runMutation("projects:migrate", {}, { internal: true });
     await backend().runMutation("pages:indexAll", {}, { internal: true });
     await moveMemoriesIntoPages(backend());
+    await givePeoplePages(backend());
     await updateBrainIndex(backend());
     return Response.json({ value });
   } catch (error) {

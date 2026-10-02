@@ -5,8 +5,8 @@ import { internalAction, internalMutation, internalQuery, type ActionCtx, type M
 import { timezoneOf } from "./jobs";
 import { EMBED_MODEL, embed, embedderReady, unload, warmUp } from "./lib/embed";
 import { dateRange, daysOf, eventIn, fuse, says, weightOf } from "./lib/recall";
-import { PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
-import { dropLine, memoryPage, placeFor, putLine, rewordLine, secretIn, writePage, type Author, type Standing } from "./pages";
+import { peopleIn, PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
+import { dropLine, ensurePeople, memoryPage, placeFor, putLine, rewordLine, secretIn, writePage, type Author, type Standing } from "./pages";
 import { vLineBy, vMemoryKind, vMemoryOrigin } from "./schema";
 
 /**
@@ -100,8 +100,9 @@ async function layer(ctx: QueryCtx, kind: Kind, limit?: number): Promise<Memory[
   const take = <T,>(query: { take(n: number): Promise<T[]>; collect(): Promise<T[]> }) => limit === undefined ? query.collect() : query.take(limit);
   const rows = await take(ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", kind)).order("desc"));
   // Rows from before the layers existed have no kind and count as core.
+  // An index range on a missing field may hold every row (#219): only those with no kind are legacy.
   const legacy = kind === "core"
-    ? await take(ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", undefined)).order("desc"))
+    ? (await ctx.db.query("memories").withIndex("by_kind", (q) => q.eq("kind", undefined)).order("desc").collect()).filter((memory) => !memory.kind)
     : [];
   const current = [...rows, ...legacy].filter((memory) => !memory.supersededBy).sort((a, b) => b.createdAt - a.createdAt);
   return limit === undefined ? current : current.slice(0, limit);
@@ -227,6 +228,8 @@ export const add = internalMutation({
     });
     // A line superseded leaves search by meaning too: its vector goes.
     for (const old of replaced) await ctx.db.patch(old._id, { supersededBy: id, embedding: undefined, embeddedWith: undefined });
+    // Everyone it is about has a page in People, which shows it (pages.mentionsOf); not from a chat with someone else.
+    if (place.kind !== "chat" || !(await ctx.db.get(place.conversationId))?.contactId) await ensurePeople(ctx, peopleIn(about));
     return { id, duplicate: false, superseded: replaced.length, ...linked, page: { id: page._id, title: page.title }, ...(section ? { section } : {}) };
   },
 });
@@ -395,7 +398,7 @@ export const recall = internalAction({
     const timezone: string = await ctx.runQuery(internal.jobs.ownerTimezone, {});
     const range = dateRange(query, now, timezone);
     // People the question names or calls what the owner does: their names join the words, and what mentions them is a list of its own.
-    const people: Array<{ key: string; name: string }> = await ctx.runQuery(internal.memories.peopleIn, { query });
+    const people: Array<{ key: string; name: string }> = await ctx.runQuery(internal.memories.peopleAsked, { query });
     const words = [query, ...people.filter((person) => !says(query, person.name)).map((person) => person.name)].join(" ");
     const hits: MemoryView[] = await ctx.runQuery(internal.memories.search, { query: words, limit: limit * 4, ...where });
     const meaning = await byMeaning(ctx, query, limit * 4).catch((error) => {
@@ -474,7 +477,7 @@ export const previousModel = internalQuery({
 });
 
 /** The people a question names, or calls what the owner calls them ("my sister", "Amma"), by their pages. */
-export const peopleIn = internalQuery({
+export const peopleAsked = internalQuery({
   args: { query: v.string() },
   handler: async (ctx, args): Promise<Array<{ key: string; name: string }>> => {
     const found: Array<{ key: string; name: string }> = [];

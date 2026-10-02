@@ -264,3 +264,20 @@ export function journalTitle(day: string): string {
 
 /** A person's name as a page key: what "Datta" and "datta " both are. */
 export const personKey = (name: string) => name.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+
+/**
+ * The people a memory is about, each once: `about` may hold names one by one
+ * or several in one, comma-separated ("Juhi, Aadil, Vivek"), as memories from
+ * before people pages do.
+ */
+export function peopleIn(about?: string[]): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const part of (about ?? []).flatMap((item) => item.split(","))) {
+    const name = part.replace(/\s+/g, " ").trim();
+    if (!name || seen.has(personKey(name))) continue;
+    seen.add(personKey(name));
+    names.push(name);
+  }
+  return names;
+}

@@ -728,6 +728,8 @@ export default defineSchema({
     person: v.optional(v.string()),
     /** A person's page: what the owner calls them besides their name ("my sister", "amma"), read from its lines. */
     aliases: v.optional(v.array(v.string())),
+    /** A person's page: the contact (WhatsApp, Telegram) of that name, when only one has it. */
+    contactId: v.optional(v.id("contacts")),
     /** The one chat a "chat" page belongs to: only that chat reads it. */
     conversationId: v.optional(v.id("conversations")),
     /**

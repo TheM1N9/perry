@@ -5,7 +5,7 @@ import { action, internalMutation, internalQuery, mutation, query, type Mutation
 import { assertDashboardKey } from "./lib/auth";
 import { appended, cleanTitle, CONTENT_LIMIT, editSection, MEMORY_PAGE_LIMIT, tooLong } from "./lib/notes";
 import {
-  blocksOf, itemOf, journalTitle, personKey, PREFERENCES_SECTION, reconcile, removeLine, replaceLine, sameKey, sectionFor, snippet, type PageKind,
+  blocksOf, itemOf, journalTitle, peopleIn, personKey, PREFERENCES_SECTION, reconcile, removeLine, replaceLine, sameKey, sectionFor, snippet, type PageKind,
 } from "./lib/pages";
 import { timezoneOf } from "./jobs";
 import { aliasesIn } from "./lib/recall";
@@ -326,7 +326,7 @@ export function placeFor(kind: "profile" | "core" | "daily", day: string, args: 
   if (args.conversationId) return { kind: "chat", conversationId: args.conversationId };
   if (kind === "daily") return { kind: "journal", day, ...(args.projectId ? { projectId: args.projectId } : {}) };
   if (kind === "profile") return args.projectId ? { kind: "remember", projectId: args.projectId } : { kind: "about" };
-  const person = args.about?.map((name) => name.trim()).find(Boolean);
+  const person = peopleIn(args.about)[0];
   if (person && !args.projectId) return { kind: "person", name: person };
   return { kind: "remember", ...(args.projectId ? { projectId: args.projectId } : {}) };
 }
@@ -543,6 +543,120 @@ export const undoMigration = internalMutation({
   },
 });
 
+// --- People ------------------------------------------------------------------------------------------
+
+/**
+ * Every person a memory names has a page in People. A memory is one row in
+ * one page: a fact about one person on theirs, about several on the first
+ * one's, a day's note in its journal. The other people's pages show it as
+ * well, computed from `about` (mentionsOf), rather than holding a copy: a
+ * copy would be a second memory to keep in step, would be sent twice when
+ * both pages are pinned, and would come back twice from recall.
+ */
+
+/** The one contact with this name, if exactly one person is called so; groups never. */
+async function contactNamed(ctx: Reader, name: string): Promise<Id<"contacts"> | undefined> {
+  const matches = (await ctx.db.query("contacts").collect()).filter((contact) => contact.kind === "person" && personKey(contact.name) === personKey(name));
+  return matches.length === 1 ? matches[0]._id : undefined;
+}
+
+/** Whether a memory belongs to a chat with someone else, whose people are theirs, not the owner's. */
+async function guestOnly(ctx: Reader, line: Line): Promise<boolean> {
+  const chat = line.conversationId ? await ctx.db.get(line.conversationId) : null;
+  return Boolean(chat?.contactId);
+}
+
+/** A page in People for each of these names that has none yet, linked to their contact; the pages made. */
+export async function ensurePeople(ctx: Writer, names: string[], options: { migrated?: boolean } = {}): Promise<number> {
+  let made = 0;
+  for (const name of names) {
+    const found = await findPage(ctx, { kind: "person", name });
+    const page = found ?? await memoryPage(ctx, { kind: "person", name });
+    if (!found) {
+      made++;
+      if (options.migrated) await ctx.db.patch(page._id, { migrated: true });
+    }
+    if (!page.contactId) {
+      const contactId = await contactNamed(ctx, name);
+      if (contactId) await ctx.db.patch(page._id, { contactId });
+    }
+  }
+  return made;
+}
+
+/** The people named in the owner's memories (not those of chats with someone else). */
+async function peopleNamed(ctx: Reader): Promise<string[]> {
+  const names = new Map<string, string>();
+  for (const line of await ctx.db.query("memories").withIndex("by_created").collect()) {
+    if (line.supersededBy || line.kind === "page" || !line.about?.length || await guestOnly(ctx, line)) continue;
+    for (const name of peopleIn(line.about)) if (!names.has(personKey(name))) names.set(personKey(name), name);
+  }
+  return [...names.values()];
+}
+
+/** How many people named in memories have no page yet: what fixPeople would make. */
+export const peopleMissing = internalQuery({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    // Memory moved back out of pages (undoMigration) stays as it is.
+    if ((await ctx.db.query("installation").first())?.memoriesInPages === "undone") return 0;
+    let missing = 0;
+    for (const name of await peopleNamed(ctx)) if (!await findPage(ctx, { kind: "person", name })) missing++;
+    return missing;
+  },
+});
+
+/**
+ * For installs moved into pages before every person got a page (issue #218):
+ * a page in People for each person a memory names, linked to their contact
+ * when one has that name alone. It adds pages and nothing else: no memory
+ * moves or changes, since each page shows the memories about its person
+ * wherever they are (mentionsOf). Run whenever Perry starts and after an
+ * import, after server/index.ts has backed up; nothing once done.
+ */
+export const fixPeople = internalMutation({
+  args: {},
+  returns: v.object({ made: v.number() }),
+  handler: async (ctx) => {
+    if ((await ctx.db.query("installation").first())?.memoriesInPages === "undone") return { made: 0 };
+    return { made: await ensurePeople(ctx, await peopleNamed(ctx), { migrated: true }) };
+  },
+});
+
+export type Mention = { id: Id<"memories">; text: string; page: { id: Id<"notes">; title: string; kind?: PageKind }; day?: string };
+
+/**
+ * The memories about a person that live on other pages (a journal day,
+ * Things to remember, another person's page): one row each, shown on theirs.
+ * From a chat, only what that chat may see.
+ */
+export async function mentionsOf(ctx: Reader, page: Note, seen: (line: Line) => boolean = () => true): Promise<Mention[]> {
+  if (page.kind !== "person" || !page.person) return [];
+  const titles = new Map<string, Note | null>();
+  const found: Mention[] = [];
+  for (const line of await ctx.db.query("memories").withIndex("by_created").order("desc").collect()) {
+    if (line.supersededBy || line.kind === "page" || line.pageId === page._id || !line.about?.length) continue;
+    if (!peopleIn(line.about).some((name) => personKey(name) === page.person) || !seen(line) || await guestOnly(ctx, line)) continue;
+    if (line.pageId && !titles.has(line.pageId)) titles.set(line.pageId, await ctx.db.get(line.pageId));
+    const home = line.pageId ? titles.get(line.pageId) : null;
+    if (!home) continue;
+    found.push({ id: line._id, text: line.text, page: { id: home._id, title: home.title, ...(home.kind ? { kind: home.kind } : {}) }, ...(line.day ? { day: line.day } : {}) });
+  }
+  return found;
+}
+
+/** A person's page's memories that live on other pages, for the page editor. */
+export const mentions = query({
+  args: { key: v.string(), id: v.string() },
+  handler: async (ctx, args): Promise<Mention[]> => {
+    assertDashboardKey(args.key);
+    const id = ctx.db.normalizeId("notes", args.id);
+    const page = id ? await ctx.db.get(id) : null;
+    return page ? await mentionsOf(ctx, page) : [];
+  },
+});
+
 // --- Start and import ---------------------------------------------------------------------------
 
 /**
@@ -716,7 +830,15 @@ export async function standingFor(ctx: Reader, chatId?: Id<"conversations">): Pr
   for (const page of pinned) {
     const sections = isPinned(page) ? undefined : page.pinnedSections;
     const title = `Pinned: ${page.title}${sections ? ` (${sections.join(", ")})` : ""}${page.kind ? "" : `, a page (id ${page._id})`}`;
-    parts.push(part(title, page.kind ? await linesIn(page, sections) : await wordsIn(page, sections), page));
+    const entries = page.kind ? await linesIn(page, sections) : await wordsIn(page, sections);
+    // A person's page has their memories that live elsewhere too, each once: one already sent above is not sent again.
+    if (page.kind === "person" && !sections) {
+      const sent = new Set(shown);
+      for (const mention of await mentionsOf(ctx, page, (line) => (line.conversationId ? line.conversationId === chat?._id : !line.projectId || line.projectId === project))) {
+        if (!sent.has(mention.id)) entries.push({ text: `- [${mention.page.title}] ${mention.text.replace(/\n/g, " ")} (${mention.id})`, id: mention.id });
+      }
+    }
+    parts.push(part(title, entries, page));
   }
   return { about, standing: parts.filter(Boolean).join("\n\n"), shown, used: PINNED_BUDGET - left, budget: PINNED_BUDGET, left: cut };
 }
