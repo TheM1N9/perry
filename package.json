@@ -45,6 +45,7 @@
     "cn": "^0.4.0",
     "convex": "^1.46.0",
     "cron-parser": "^5.10.1",
+    "d3-force": "3.0.0",
     "lucide-react": "^1.48.0",
     "motion": "13.4.3",
     "next": "16.3.6",
@@ -66,6 +67,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
+    "@types/d3-force": "^3.0.10",
     "@types/node": "^22.0.0",
     "@types/qrcode": "^1.5.6",
     "@types/react": "19.3.0",

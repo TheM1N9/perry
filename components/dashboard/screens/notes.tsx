@@ -30,6 +30,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SaveStatus, type SaveState } from "../autosave";
+import { LocalMap } from "../brain-map/local-map";
 import { AboutVersions } from "./memory";
 import { EmptyState, List, ListSkeleton, Page, RelativeTime, StatusBadge, TopBar } from "../common";
 
@@ -240,6 +241,7 @@ function NoteEditing({ note }: { note: NoteView }) {
             <NoteEditor value={draft.content} label={draft.title} onChange={(content) => controller.edit({ content })} onBlur={() => void controller.flush()} />
           )}
           {note.kind === "person" && <AlsoAbout id={note.id} name={note.title} />}
+          <LocalMap id={note.id} />
           <LineSources id={note.id} memory={memory} />
           {note.kind === "about" && (
             <Collapsible className="mt-3 border-t pt-3">
