@@ -133,6 +133,11 @@ export class NoteAutosave {
         const saved = result.note;
         const unchanged = equal(this.state.draft!, draft);
         const remote = this.state.remote && this.state.remote.revision > saved.revision ? this.state.remote : saved;
+        // Saved, and a newer note came meanwhile: with nothing typed since, it is simply shown; with words typed, they wait for the owner.
+        if (remote.revision > saved.revision && unchanged) {
+          this.publish({ note: remote, remote, draft: fields(remote), status: "saved", error: undefined });
+          return true;
+        }
         this.publish({ note: saved, remote, draft: unchanged ? fields(saved) : this.state.draft });
         const newer = remote.revision > saved.revision;
         this.publish({ status: newer ? "conflict" : this.changed ? "dirty" : "saved", error: newer ? CONFLICT : undefined });

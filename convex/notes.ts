@@ -58,7 +58,7 @@ export type NoteView = NoteSummary & {
 const searchOf = (title: string, content: string) => `${title}\n\n${content}`;
 const previewOf = (content: string) => {
   // Each line's block marker (a heading's #s, a bullet, a checkbox, a quote) and emphasis go; the words stay as written.
-  const text = content.replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)/gm, "").replace(/\*\*|__|`|\|/g, " ").replace(/\s+/g, " ").trim();
+  const text = content.replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)/gm, "").replace(/\*\*|`|\||(^|\W)_+|_+(?=\W|$)/g, "$1 ").replace(/\s+/g, " ").trim();
   return text.length > PREVIEW ? `${text.slice(0, PREVIEW - 1).trimEnd()}…` : text;
 };
 
