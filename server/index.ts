@@ -149,6 +149,10 @@ export async function startBackend() {
   await runtime.runMutation("pages:indexAll", {}, { internal: true });
   // Memories from before pages move into them, after a backup.
   await moveMemoriesIntoPages(runtime);
+  // The Library (issue #216): every chat file from before it, then Perry's files folder; nothing once done.
+  await runtime.runMutation("library:backfill", {}, { internal: true })
+    .then(() => runtime.runAction("library:sync", {}, { internal: true }))
+    .catch((error) => console.error(`[perry] could not bring the Library up to date: ${String(error)}`));
   await pairThisMachine(runtime).catch((error) => console.error(`[perry] could not connect this computer: ${String(error)}`));
   runtime.start();
   box.__perry!.stopTelegram = pollTelegram(runtime);

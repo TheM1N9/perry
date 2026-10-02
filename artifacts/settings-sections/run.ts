@@ -394,7 +394,7 @@ try {
       const footer = [...document.querySelector("[data-sidebar=footer]").querySelectorAll("[data-sidebar=menu-button]")].map((b) => b.innerText.replace(/\\s+/g, " ").trim());
       return { top, footer };
     })()`) as { top: string[]; footer: string[] };
-    check("sidebarHasMemoryAndApps", JSON.stringify(sidebar.top) === JSON.stringify(["New chat", "Search", "To-dos", "Brain", "Work", "Apps & skills"]), sidebar.top);
+    check("sidebarHasMemoryAndApps", JSON.stringify(sidebar.top) === JSON.stringify(["New chat", "Search", "To-dos", "Brain", "Library", "Work", "Apps & skills"]), sidebar.top);
 
     // --- 17. New chat and Search, one row; stacked when the sidebar is icons ----------------------------------
     const ROW = `document.querySelector("[data-new-chat-row]")`;

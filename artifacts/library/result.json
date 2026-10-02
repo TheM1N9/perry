@@ -1,0 +1,350 @@
+{
+  "ranAt": "2026-10-02T14:28:53.137Z",
+  "issue": [
+    216,
+    217
+  ],
+  "checks": {
+    "sidebarLibraryNextToBrain": true,
+    "emptyStateOnAFreshPerry": true,
+    "backfillIndexesWhatWasThere": true,
+    "backfillOncePerFile": true,
+    "secondStartAddsNothing": true,
+    "onlyFakeEngines": true,
+    "webUploadIndexed": true,
+    "eachKindOfFileIndexed": true,
+    "whatsAppFilesIndexed": true,
+    "browserScreenshotIndexed": true,
+    "stepPicturesStayWithTheirSteps": true,
+    "sharedTwiceIsOneItem": true,
+    "addedNotCopied": true,
+    "generatedFoundOnce": true,
+    "guestFilesNotInLibrary": true,
+    "nothingCopiedTwice": true,
+    "servedFromWhereItIs": true,
+    "filtersKeepToWhatTheySay": true,
+    "searchByName": true,
+    "sourceLinks": true,
+    "libraryToolsFind": true,
+    "shareFromLibraryById": true,
+    "guestHasNoLibrary": true,
+    "galleryShowsPictures": true,
+    "listShowsDetails": true,
+    "filtersByTheirMenus": true,
+    "nothingMatchesSays": true,
+    "itemShowsDetails": true,
+    "previewsByKind": true,
+    "videoPlayer": true,
+    "videoControls": true,
+    "audioPlayer": true,
+    "voiceNotesGetThePlayer": true,
+    "onlyOnePlays": true,
+    "fitsAPhone": true,
+    "deleteAsksThenDeletes": true,
+    "deleteStoredFile": true,
+    "deleteOutsideKeepsTheFile": true,
+    "deletingChatsKeepsTheLibraryConsistent": true,
+    "folderKeptInStep": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "sidebarLibraryNextToBrain": [
+      "Perry",
+      "New chat",
+      "To-dos",
+      "Brain",
+      "Library",
+      "Work",
+      "Apps & skills",
+      "New project",
+      "z\nz\nz\nDesktop pet",
+      "Y\nYou\nTelegram not paired"
+    ],
+    "media": {
+      "video": 448106,
+      "voice": 56364,
+      "voiceType": "audio/webm;codecs=opus",
+      "frames": 483
+    },
+    "backfillIndexesWhatWasThere": [],
+    "backfillOncePerFile": {
+      "plans": 1
+    },
+    "secondStartAddsNothing": {
+      "before": 10,
+      "after": 10
+    },
+    "onlyFakeEngines": [
+      {
+        "kind": "codex",
+        "signedIn": false
+      },
+      {
+        "kind": "grok",
+        "signedIn": true
+      },
+      {
+        "kind": "claude",
+        "signedIn": false
+      },
+      {
+        "kind": "antigravity",
+        "signedIn": false
+      }
+    ],
+    "webUploadIndexed": {
+      "by": "owner",
+      "from": "web",
+      "how": "upload",
+      "size": 1086
+    },
+    "eachKindOfFileIndexed": [],
+    "whatsAppFilesIndexed": [
+      {
+        "name": "photo.jpg",
+        "kind": "image",
+        "stored": true
+      },
+      {
+        "name": "voice-note.ogg",
+        "kind": "media",
+        "stored": true
+      }
+    ],
+    "browserScreenshotIndexed": {
+      "screenshotPath": "W:\\perry-tests\\library\\perry-library-ci9xMV\\files\\browser-2026-10-02T14-27-22-438Z.png",
+      "how": "screenshot"
+    },
+    "stepPicturesStayWithTheirSteps": {
+      "stepPictures": 5
+    },
+    "sharedTwiceIsOneItem": {
+      "shared1": {
+        "shared": true,
+        "fileName": "trip-plan.md",
+        "contentType": "text/markdown"
+      },
+      "shared2": {
+        "shared": true,
+        "fileName": "trip-plan.md",
+        "contentType": "text/markdown"
+      }
+    },
+    "addedNotCopied": {
+      "added": true,
+      "id": "4vjxwcbdbz4f9hj84zvh07tq2a",
+      "link": "/library/4vjxwcbdbz4f9hj84zvh07tq2a"
+    },
+    "generatedFoundOnce": "generated",
+    "servedFromWhereItIs": {
+      "receipt": 200,
+      "tg": 200,
+      "html": "application/octet-stream",
+      "pdf": "application/pdf",
+      "md": "text/plain; charset=utf-8",
+      "noKey": 401,
+      "download": "attachment",
+      "ranged": 206
+    },
+    "filtersKeepToWhatTheySay": {
+      "images": 12,
+      "media": [
+        "voice-note.ogg",
+        "voice-note.ogg",
+        "walkthrough.webm",
+        "memo.wav"
+      ],
+      "telegram": [
+        "ig_tg.png",
+        "invoice-42.pdf",
+        "voice-note.ogg",
+        "photo.jpg"
+      ],
+      "pet": [
+        "screen-2026-10-02-09-30-00.png",
+        "old-look.png",
+        "screen-2026-09-01-10-00-00.png"
+      ],
+      "jobs": [
+        "week-39.md"
+      ],
+      "project": [
+        "page.html",
+        "walkthrough.webm",
+        "shopping list.md",
+        "memo.wav",
+        "lease.pdf",
+        "tiles.pdf"
+      ],
+      "today": 20
+    },
+    "searchByName": {
+      "search": [
+        "receipt-october.png",
+        "receipt-march.png"
+      ],
+      "searchTwo": [
+        "shopping list.md"
+      ]
+    },
+    "sourceLinks": {
+      "receipt": {
+        "label": "Here is the receipt",
+        "href": "/chat/sfnfdbzj3nww6d9ebzsbxec93p"
+      },
+      "job": {
+        "label": "Weekly review",
+        "href": "/chat/gezsxzsfgc9tgdnt0t0bgn1fnd"
+      }
+    },
+    "libraryToolsFind": {
+      "listImages": 7,
+      "findReceipt": [
+        "receipt-october.png"
+      ],
+      "findVoice": [
+        "voice-note.ogg"
+      ]
+    },
+    "shareFromLibraryById": {
+      "sendBack": {
+        "shared": true,
+        "fileName": "voice-note.ogg",
+        "contentType": "audio/ogg"
+      },
+      "files": [
+        "voice-note.ogg"
+      ]
+    },
+    "guestHasNoLibrary": {
+      "guestNames": [
+        "remember",
+        "recall",
+        "read_memory",
+        "forget",
+        "tell_owner"
+      ],
+      "guestFind": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Unknown tool: library_find\"}}",
+      "guestShare": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Unknown tool: share_file\"}}"
+    },
+    "galleryShowsPictures": {
+      "tiles": 29,
+      "images": 12,
+      "imageTiles": 12,
+      "videos": 1,
+      "audio": 3
+    },
+    "listShowsDetails": "ZIP\nphotos.zip\n\n1 KB · Perry · Perry's folder\n\nnow\nig_tg.png\n\n1 KB · Perry · Telegram\n\nnow\nig_sunset.png\n\n2 KB · Perry · Web chat · TOOL share_file {\"path\":\"W:\\\\perry-tests\\\\library\\\\perry-library-ci9xMV\\\\files\\\\\n\nnow\nbrowser-2026-10-02T14-27-22-438Z.png\n\n10 KB · Perry · Web chat · TOOL share_file {\"path\":\"W:\\\\perry-tests\\\\library\\\\perry-library-ci9xMV\\\\files\\\\\n\nnow\nMD\nnotes.md\n\n1 KB · Perry · Web",
+    "filtersByTheirMenus": {
+      "filteredRows": 7,
+      "afterReload": 7,
+      "triggers": [
+        "Images",
+        "From you",
+        "Anywhere",
+        "Any time"
+      ]
+    },
+    "itemShowsDetails": {
+      "details": "Size\n1 KB · Image\nAdded\n2 Oct 2026, 19:56\nBy\nYou · Sent to Perry\nFrom\nWeb chat · Here is the receipt\nSaved in\nW:\\perry-tests\\library\\perry-library-ci9xMV\\uploads",
+      "chatLink": "/chat/sfnfdbzj3nww6d9ebzsbxec93p",
+      "downloadLink": "/api/media/library/cvdph8vgwkdx0cxh1848am054c?download=1"
+    },
+    "previewsByKind": {
+      "pdf": "/api/media/library/t9cs3d1xn707p6zpzfqjzbtvkn",
+      "markdown": "tiles",
+      "text": "Notes Perry wrote in a step.\n",
+      "none": "No preview for this kind of file."
+    },
+    "videoPlayer": {
+      "poster": {
+        "big": true,
+        "frame": true
+      },
+      "playing": true,
+      "duration": 7.977,
+      "seekedTo": 6,
+      "afterLeft": 1,
+      "afterJ": 0,
+      "afterL": 7.977
+    },
+    "videoControls": {
+      "mutedNow": true,
+      "volume": 0.9,
+      "rate": 1.25,
+      "pipButton": true,
+      "pipEnabled": true,
+      "fullscreen": true
+    },
+    "audioPlayer": {
+      "bars": 48,
+      "spread": 89,
+      "audioAt": 0.5,
+      "audioRate": 1.5,
+      "leftAt": 2.35136,
+      "resumedAt": 2.35136
+    },
+    "voiceNotesGetThePlayer": {
+      "tgVoice": [
+        "Audio: voice-note.ogg"
+      ],
+      "waVoice": [
+        "Audio: voice-note.ogg"
+      ]
+    },
+    "fitsAPhone": {
+      "overflow": 0,
+      "phoneOverflow": 0,
+      "chatOverflow": 0
+    },
+    "deleteAsksThenDeletes": {
+      "question": "Delete receipt-october.png?\n\nIt's deleted from this computer, and its chat says it was removed.\n\nKeep it\nDelete",
+      "removedText": "receipt-october.png\nremoved",
+      "served": 404,
+      "forTurn": 0
+    },
+    "deletingChatsKeepsTheLibraryConsistent": {
+      "afterSource": true,
+      "afterBranch": {
+        "chat": null
+      },
+      "label": "Chat deleted"
+    },
+    "pageErrors": [],
+    "noPageErrors": [],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\library\\perry-library-ci9xMV\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn yqtwn63swg27zmajqhc98xp21j\u001b[0m",
+      "\u001b[2m  saved turn xs6x7f6xebbg50kcbf5emvgzt2\u001b[0m",
+      "\u001b[2m  saved turn 1t22qff4ntz80nftvh8a4etsq3\u001b[0m",
+      "\u001b[2m  saved turn vh8hr691tpd65a3jzew8rp1582\u001b[0m",
+      "\u001b[2m  saved turn vjc0zg0656gfzhzwwmy6p36kwp\u001b[0m",
+      "\u001b[2m  saved turn aby8g5dx5rj5se25nwjfvxbckc\u001b[0m",
+      "\u001b[2m  saved turn 20akk0j2hcvdcgz9v0cfbekx6f\u001b[0m",
+      "\u001b[2m  saved turn 2593hj9g3t0jy6mdtkgqjcfjny\u001b[0m",
+      "\u001b[2m  saved turn kxrqfn0hfgtmk5zkn892a9zc3d\u001b[0m",
+      "\u001b[2m  saved turn 5j6xr6hapxpextk4vm5efe2vxd\u001b[0m",
+      "\u001b[2m  saved turn v7q57y9253tsqmp050c4rqp308\u001b[0m",
+      "\u001b[2m  saved turn xfx2rehctjwabmwckkq2zmxktm\u001b[0m",
+      "\u001b[2m  saved turn 3bvwm0qpppsm3y1w92zzw2mf81\u001b[0m",
+      "\u001b[2m  saved turn pc7sedx3zbzhm8jntgfzk03k3e\u001b[0m",
+      "\u001b[2m  saved turn d2r6587v31tpa7qyhxg5d1k7ka\u001b[0m",
+      "\u001b[2m  saved turn qhpnjtfx6swvsvdtdzmvc0swk7\u001b[0m",
+      "\u001b[2m  saved turn 50h2jm02j1fzfbs726zyes9wp3\u001b[0m",
+      "\u001b[2m  saved turn 7fq02jyjgwz69qs10nzvg6vgss\u001b[0m",
+      "\u001b[2m  saved turn 0mz2m283jykbbnma1naexydne0\u001b[0m",
+      "\u001b[2m  saved turn np2856e801dg4mdhwrezs5av3a\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

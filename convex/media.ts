@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
+import { index } from "./library";
 
 /**
  * Local media: chat files that stay on the owner's machine, wherever the agent
@@ -16,6 +17,11 @@ const TYPES: Record<string, string> = {
   mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime",
   mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg",
   pdf: "application/pdf", txt: "text/plain", md: "text/markdown", csv: "text/csv", json: "application/json",
+  avif: "image/avif", bmp: "image/bmp", heic: "image/heic", aac: "audio/aac", flac: "audio/flac", opus: "audio/ogg", oga: "audio/ogg",
+  log: "text/plain", html: "text/html", htm: "text/html", xml: "application/xml", rtf: "application/rtf", zip: "application/zip",
+  doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
 
 export function describePath(path: string): { fileName: string; contentType: string } {
@@ -42,7 +48,7 @@ export const forTurn = internalQuery({
     const result: Array<{ url?: string; localPath?: string; fileName: string; contentType: string }> = [];
     for (const id of args.attachmentIds as Id<"chatAttachments">[]) {
       const row = await ctx.db.get(id);
-      if (!row || row.conversationId !== args.conversationId) continue;
+      if (!row || row.conversationId !== args.conversationId || row.removedAt) continue;
       if (row.localPath) {
         result.push({ localPath: row.localPath, fileName: row.fileName, contentType: row.contentType });
         continue;
@@ -65,7 +71,11 @@ export const attachStored = internalMutation({
     size: v.number(),
   },
   returns: v.id("chatAttachments"),
-  handler: async (ctx, args) => await ctx.db.insert("chatAttachments", { ...args, createdAt: Date.now() }),
+  handler: async (ctx, args) => {
+    const id = await ctx.db.insert("chatAttachments", { ...args, createdAt: Date.now() });
+    await index(ctx, id);
+    return id;
+  },
 });
 
 /** The local media server asks this before accepting an upload. */
@@ -86,13 +96,13 @@ export const localAttachment = query({
     assertDashboardKey(args.key);
     const id = ctx.db.normalizeId("chatAttachments", args.id);
     const row = id ? await ctx.db.get(id) : null;
-    return row?.localPath ? { localPath: row.localPath, fileName: row.fileName, contentType: row.contentType } : null;
+    return row?.localPath && !row.removedAt ? { localPath: row.localPath, fileName: row.fileName, contentType: row.contentType } : null;
   },
 });
 
-/** Codex's share_file: show a file from the owner's machine in the reply to this turn. */
+/** Codex's share_file: show a file from the owner's machine in the reply to this turn. A look is the pet's picture of the screen (look_at_screen). */
 export const shareFromTurn = internalMutation({
-  args: { turnId: v.id("codexTurns"), path: v.string() },
+  args: { turnId: v.id("codexTurns"), path: v.string(), look: v.optional(v.boolean()) },
   returns: v.object({ fileName: v.string(), contentType: v.string() }),
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.turnId);
@@ -104,7 +114,7 @@ export const shareFromTurn = internalMutation({
       .withIndex("by_message", (q) => q.eq("conversationId", job.conversationId).eq("messageKey", mediaKey))
       .collect();
     if (!existing.some((row) => row.localPath === args.path)) {
-      await ctx.db.insert("chatAttachments", {
+      const id = await ctx.db.insert("chatAttachments", {
         conversationId: job.conversationId,
         messageKey: mediaKey,
         localPath: args.path,
@@ -112,9 +122,42 @@ export const shareFromTurn = internalMutation({
         size: 0,
         createdAt: Date.now(),
       });
+      await index(ctx, id, args.look ? { how: "look", from: "pet", by: "perry" } : {});
     }
     await ctx.db.patch(job._id, { mediaKey });
     return described;
+  },
+});
+
+/** share_file with a Library item's id: the item's file, wherever it is, shown in the reply to this turn. */
+export const shareFromLibrary = internalMutation({
+  args: { turnId: v.id("codexTurns"), id: v.string() },
+  returns: v.object({ fileName: v.string(), contentType: v.string() }),
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.turnId);
+    if (!job) throw new Error("This turn is gone.");
+    const chat = await ctx.db.get(job.conversationId);
+    if (!chat || chat.contactId) throw new Error("A chat with someone else has no Library.");
+    const itemId = ctx.db.normalizeId("library", args.id);
+    const item = itemId ? await ctx.db.get(itemId) : null;
+    if (!item) throw new Error("There is no Library item with that id; library_find shows them.");
+    const mediaKey = `codex-${job._id}`;
+    const existing = await ctx.db.query("chatAttachments")
+      .withIndex("by_message", (q) => q.eq("conversationId", job.conversationId).eq("messageKey", mediaKey))
+      .collect();
+    if (!existing.some((row) => (item.localPath && row.localPath === item.localPath) || (item.storageId && row.storageId === item.storageId))) {
+      await ctx.db.insert("chatAttachments", {
+        conversationId: job.conversationId,
+        messageKey: mediaKey,
+        ...(item.localPath ? { localPath: item.localPath } : { storageId: item.storageId }),
+        fileName: item.name,
+        contentType: item.contentType,
+        size: item.size,
+        createdAt: Date.now(),
+      });
+    }
+    await ctx.db.patch(job._id, { mediaKey });
+    return { fileName: item.name, contentType: item.contentType };
   },
 });
 

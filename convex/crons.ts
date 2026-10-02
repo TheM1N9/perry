@@ -38,4 +38,7 @@ crons.interval("recover turns", { minutes: 1 }, internal.recovery.sweep, {});
 // Perry's own updates: the day's check, the night's update, and how the last one went (updates.ts).
 crons.interval("keep Perry up to date", { minutes: 1 }, internal.updates.tick, {});
 
+// The Library: files Perry wrote in his files folder, and letting go of files no longer here (library.ts).
+crons.interval("keep the Library up to date", { minutes: 10 }, internal.library.sync, {});
+
 export default crons;
