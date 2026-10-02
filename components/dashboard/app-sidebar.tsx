@@ -32,7 +32,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import {
-  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader,
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
   SidebarMenu, SidebarMenuAction, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarMenuSkeleton, SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
@@ -187,17 +187,13 @@ function ChatGroups() {
   return (
     <>
       <ProjectFolders chats={all} row={row} onNewProject={() => setCreating({})} />
-      {!chats.length && (
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          <p className="px-2 py-1 text-sm text-muted-foreground">No chats yet.</p>
-        </SidebarGroup>
-      )}
-      {chats.length > 0 && (
-        <SidebarGroup className="py-1 group-data-[collapsible=icon]:hidden">
-          {pinned.length > 0 && <SidebarMenu aria-label="Pinned">{pinned.map(row)}</SidebarMenu>}
-          <SidebarMenu aria-label="Chats">{shown.map(row)}</SidebarMenu>
-        </SidebarGroup>
-      )}
+      {/* Headed like Projects above, so the chats outside a project don't read as part of the last one. */}
+      <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroupLabel>Chats</SidebarGroupLabel>
+        {!chats.length && <p className="px-2 py-1 text-sm text-muted-foreground">No chats yet.</p>}
+        {pinned.length > 0 && <SidebarMenu aria-label="Pinned">{pinned.map(row)}</SidebarMenu>}
+        {chats.length > 0 && <SidebarMenu aria-label="Chats">{shown.map(row)}</SidebarMenu>}
+      </SidebarGroup>
       {hidden > 0 && !showAll && (
         <div className="px-4 pb-3 group-data-[collapsible=icon]:hidden">
           <Button variant="link" size="sm" className="h-auto px-0 text-sidebar-foreground/70" onClick={() => setShowAll(true)}>

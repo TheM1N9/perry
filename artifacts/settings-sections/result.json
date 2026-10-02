@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-01T16:58:54.067Z",
+  "ranAt": "2026-10-02T11:37:02.778Z",
   "pass": true,
   "checks": {
     "everySectionHoldsWhatItShould": true,
@@ -21,7 +21,7 @@
     "sidebarItemsGoToTheirPages": true,
     "lineUnderTheNameIsThePlan": true,
     "accountMenuItems": true,
-    "accountMenuUsageSummary": true,
+    "accountMenuHasNoUsage": true,
     "accountMenuGoes": true,
     "appsAndSkillsTabs": true,
     "telegramTokenSavesInTelegram": true,
@@ -48,7 +48,8 @@
           "name": "Perry",
           "items": [
             "General",
-            "Engines & usage",
+            "Engines",
+            "Usage",
             "Computers"
           ],
           "shownName": true
@@ -104,7 +105,8 @@
           "name": "Perry",
           "items": [
             "General",
-            "Engines & usage",
+            "Engines",
+            "Usage",
             "Computers"
           ],
           "shownName": true
@@ -158,27 +160,27 @@
     },
     "navIsNotABox": [],
     "navByKeyboard": {
-      "tabs": 26,
+      "tabs": 27,
       "reached": "General",
       "ring": true,
       "steps": [
         "General",
-        "Engines & usage",
-        "Computers",
+        "Engines",
+        "Usage",
         "Activity log",
         "Dashboard key",
         "General",
-        "Engines & usage",
-        "Computers"
+        "Engines",
+        "Usage"
       ],
       "opened": true,
-      "at": "/settings/computers"
+      "at": "/settings/usage"
     },
     "oldAddressesRedirect": {},
     "unknownSectionIs404": 404,
     "redirectsKeepTheirQuery": {
       "filtered": {
-        "at": "/settings/activity?session=12prfa6e1p9y99kmmbaa2kt6b3",
+        "at": "/settings/activity?session=crzy9bj3v9zjedqkz9qsjgdc9k",
         "plan": false,
         "runs": 1
       },
@@ -192,6 +194,7 @@
       "Search",
       "Needs you",
       "To-dos",
+      "Notes",
       "Work",
       "Memory",
       "Apps & skills"
@@ -269,7 +272,8 @@
     "chatsAreOnePlainList": {
       "chatList": {
         "headings": [
-          "Projects"
+          "Projects",
+          "Chats"
         ],
         "rows": [
           {
@@ -323,26 +327,22 @@
     },
     "lineUnderTheNameIsThePlan": "ChatGPT Plus · Codex",
     "accountMenuItems": [
-      "Usage details",
+      "Pause Perry",
+      "Usage",
       "Theme",
       "Settings",
       "Lock dashboard"
     ],
-    "accountMenuUsageSummary": {
+    "accountMenuHasNoUsage": {
       "items": [
-        "Usage details",
+        "Pause Perry",
+        "Usage",
         "Theme",
         "Settings",
         "Lock dashboard"
       ],
-      "usage": {
-        "Codex usage": "Codex · ChatGPT Plus 5-hour 63% left · resets Fri 2 Oct, 0:39 x Weekly 16% left · resets Sun 4 Oct, 22:26 x",
-        "Claude Code usage": "Claude Code · Claude Max No limits reported yet."
-      },
-      "bars": [
-        "5-hour: 37% used",
-        "Weekly: 84% used"
-      ]
+      "usage": {},
+      "bars": []
     },
     "accountMenuGoes": {
       "details": true,
@@ -380,14 +380,14 @@
       "key": {
         "name": "TELEGRAM_BOT_TOKEN",
         "label": "Telegram bot token",
-        "hint": "From @BotFather. Perry starts listening to the new bot within a few seconds of saving it.",
+        "hint": "From @BotFather.",
         "set": true,
         "source": "dashboard",
         "preview": "…AbCd",
-        "updatedAt": 1790873873684
+        "updatedAt": 1790940958348
       }
     },
-    "connectorsAfterKey": "Toggle Sidebar\nApps & skills\nConnectors\nSkills\nConnectors\n\nLet Perry work across the apps you already use. It checks what's connected each time it acts.\n\nRefresh\nCouldn't load every connection\n401 {\"error\":{\"message\":\"Invalid API key: e2e**9Zq1\",\"code\":801,\"slug\":\"APIKey_InvalidAPIKey\",\"status\":401,\"request_id\":\"352baade-5d00-4232-8293-1276f7020535\",\"suggested_fix\":\"Please check you are using a va",
+    "connectorsAfterKey": "Toggle Sidebar\nApps & skills\nConnectors\nSkills\nConnectors\nRefresh\nCouldn't reach Composio\n401 {\"error\":{\"message\":\"Invalid API key: e2e**9Zq1\",\"code\":801,\"slug\":\"APIKey_InvalidAPIKey\",\"status\":401,\"request_id\":\"00eb7444-c5b9-4d63-bf98-53d4dd956700\",\"suggested_fix\":\"Please check you are using a valid API key.\"}}\nConnected\nAll apps\n\nNo app by that name\n\nClear search\nTest what Perry can do\nLook up\nCo",
     "composioKeySavesInConnectors": {
       "composioSaved": true,
       "noticed": true,
@@ -407,7 +407,7 @@
         "shown": "Activity log"
       },
       "listed": [
-        "Perry General Engines & usage Computers",
+        "Perry General Engines Usage Computers",
         "Permissions Access & approvals",
         "Reaching you Notifications Telegram WhatsApp",
         "Desktop pet Desktop pet",
@@ -421,22 +421,24 @@
     "palette": {
       "Needs you": "/inbox",
       "To-dos": "/todos",
+      "Notes": "/notes",
       "Work": "/work",
       "Memory": "/memory",
       "Connectors": "/apps/connectors",
       "Skills": "/apps/skills",
       "Settings": "/settings/general",
-      "Engines & usage": "/settings/engines",
+      "Engines": "/settings/engines",
+      "Usage": "/settings/usage",
       "Computers": "/settings/computers",
       "Access & approvals": "/settings/access",
       "Logins & secrets": "/settings/logins",
       "Activity log": "/settings/activity",
       "Keyboard shortcuts": "/settings/desktop-pet#shortcuts"
     },
-    "linksCrawled": 33,
+    "linksCrawled": 35,
     "noLinkGoesNowhere": {
       "dead": {},
-      "palette": 13
+      "palette": 15
     },
     "nothingThrows": {
       "exceptions": [],
