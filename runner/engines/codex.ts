@@ -298,9 +298,9 @@ export class CodexEngine implements Engine {
    * which keep the last read fresh; past a minute without one they are read
    * again. An API key has no plan limits.
    */
-  async limits(): Promise<PlanLimits | null> {
+  async limits(fresh = false): Promise<PlanLimits | null> {
     const app = await this.ensure();
-    if (Date.now() - app.rateLimitsAt > 60_000) {
+    if (fresh || Date.now() - app.rateLimitsAt > 60_000) {
       if ((await app.account()).authMode !== "chatgpt") return null;
       await app.readRateLimits();
     }

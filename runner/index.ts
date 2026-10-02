@@ -344,7 +344,7 @@ async function main() {
     readingLimits.add(engine.kind);
     limitsRead.set(engine.kind, Date.now());
     try {
-      const limits = await engine.limits();
+      const limits = await engine.limits(fresh);
       if (limits) await client.mutation(api.usage.report, { token, engine: engine.kind, limits });
     } catch (error) {
       console.log(dim(`  could not read ${engine.label}'s plan limits: ${message(error)}`));
@@ -362,6 +362,12 @@ async function main() {
     }, wait));
   };
   const readAllLimits = () => { for (const engine of engines.values()) void readLimits(engine); };
+  /** The Usage page's refresh: every engine read now. The first answer is where things stand at start, not a request. */
+  let refreshSeen: number | null | undefined;
+  watch(api.usage.refreshAt, { token }, (at) => {
+    if (refreshSeen !== undefined && at && at !== refreshSeen) for (const engine of engines.values()) void readLimits(engine, true);
+    refreshSeen = at ?? null;
+  });
   /** Which engines' plans have room for side work, as the server reads them (convex/routing.ts, rooms). */
   let rooms: Partial<Record<EngineKind, "room" | "low" | "out">> = {};
   watch(api.routing.rooms, { token }, (next) => { rooms = next ?? {}; });
