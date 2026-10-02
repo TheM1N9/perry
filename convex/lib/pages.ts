@@ -199,6 +199,33 @@ export function replaceLine(content: string, oldText: string, newText: string): 
   return tidy(lines);
 }
 
+/**
+ * The page with several lines replaced by others where the first of them
+ * stood (a merge, a section condensed), each new one a line of its own with
+ * the first one's marker; null when any old line is not on the page.
+ */
+export function replaceLines(content: string, oldTexts: string[], newTexts: string[]): string | null {
+  const blocks = blocksOf(content);
+  const used = new Set<number>();
+  const found: Block[] = [];
+  for (const text of oldTexts) {
+    const index = blocks.findIndex((block, at) => !used.has(at) && sameKey(block.text) === sameKey(text));
+    if (index < 0) return null;
+    used.add(index);
+    found.push(blocks[index]);
+  }
+  const lines = splitLines(content);
+  const first = [...found].sort((a, b) => a.start - b.start)[0];
+  const marker = /^(\s*(?:[-*+]|\d{1,9}[.)])\s+)/.exec(lines[first.start])?.[1]?.replace(/\d{1,9}([.)])/, "1$1") ?? "- ";
+  const fresh = newTexts.flatMap((text) => {
+    const [head, ...rest] = text.trim().replace(/\r\n?/g, "\n").split("\n");
+    return [`${marker}${head}`, ...rest.map((line) => (line.trim() ? `${" ".repeat(marker.length)}${line}` : ""))];
+  });
+  // From the last up, so earlier places stay where they are.
+  for (const block of [...found].sort((a, b) => b.start - a.start)) lines.splice(block.start, block.end - block.start + 1, ...(block === first ? fresh : []));
+  return tidy(lines);
+}
+
 /** The page without one line; null when no line has those words. */
 export function removeLine(content: string, text: string): string | null {
   const block = blocksOf(content).find((item) => sameKey(item.text) === sameKey(text));

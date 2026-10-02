@@ -195,6 +195,30 @@ export default defineSchema({
      * Perry then no longer moves them in when it starts, until `perry brain move-in`.
      */
     memoriesInPages: v.optional(v.literal("undone")),
+    /**
+     * The sentence model Brain's lines are embedded with (lib/embed.ts), and while they are being embedded again
+     * with a new one, the model before, which search by meaning also uses until every line has the new one's.
+     */
+    embeddedWith: v.optional(v.string()),
+    embeddedBefore: v.optional(v.string()),
+    /**
+     * Brain's lines being embedded with the model in use (memories.embedMissing), for the dashboard's progress: how many
+     * current lines there were to do when it started, how many are done, and when it started and finished. Kept in the
+     * row, so a stop part-way resumes and the count goes on from where it was.
+     */
+    reembedding: v.optional(v.object({ model: v.string(), total: v.number(), done: v.number(), startedAt: v.number(), finishedAt: v.optional(v.number()) })),
+    /** When the newest line read for who it mentions was stored (pages.indexMentions): each start reads what was stored since. */
+    mentionsAt: v.optional(v.number()),
+    /** Every line's mentions are kept (pages.indexMentions has read them all once): People and the map read the mentions index alone. */
+    mentionsKept: v.optional(v.boolean()),
+    /** When Brain was last looked over for duplicates to propose merging (compaction.review). */
+    brainReviewedAt: v.optional(v.number()),
+    /** After how many days unused a line of Brain is archived (archive.ts); 0 never. Unset: 90. */
+    archiveAfterDays: v.optional(v.number()),
+    /** When the archive began keeping when lines are used: no line counts as unused from before it (archive.run). */
+    archiveSince: v.optional(v.number()),
+    /** Where the archive's pass through Brain's lines stopped, while it goes in batches. */
+    archiveCursor: v.optional(v.number()),
     ownerChannel: v.optional(vChannel),
     ownerExternalId: v.optional(v.string()),
     ownerName: v.optional(v.string()),
@@ -732,6 +756,8 @@ export default defineSchema({
     day: v.optional(v.string()),
     /** A person's page: their name, lowercased, as the key it is found by. */
     person: v.optional(v.string()),
+    /** A person's page: what the owner calls them besides their name ("my sister", "amma"), read from its lines. */
+    aliases: v.optional(v.array(v.string())),
     /** A person's page: the contact (WhatsApp, Telegram) of that name, when only one has it. */
     contactId: v.optional(v.id("contacts")),
     /** The one chat a "chat" page belongs to: only that chat reads it. */
@@ -743,6 +769,18 @@ export default defineSchema({
     pinned: v.optional(v.boolean()),
     /** Sections (headings) of an unpinned page that are pinned on their own. */
     pinnedSections: v.optional(v.array(v.string())),
+    /**
+     * Short summaries of its big sections (none: the part above any heading), written by the nightly consolidation
+     * (brain_summarize): what a pinned page's section is sent as when it is too big to send whole (pages.standing).
+     * How many lines the section had then, and when.
+     */
+    summaries: v.optional(v.array(v.object({ section: v.optional(v.string()), text: v.string(), lines: v.number(), at: v.number() }))),
+    /** The Lately page: the last two weeks in short, kept by the nightly consolidation and sent after About me. */
+    lately: v.optional(v.boolean()),
+    /** A week of the journal rolled up into a summary the owner approved (compaction.ts); its day is the week's first. */
+    rollup: v.optional(v.boolean()),
+    /** Merged into another page with the owner's yes (compaction.ts, mergePages): it keeps a link there, and a person's page passes on to it. */
+    mergedInto: v.optional(v.id("notes")),
     /** When it, or a section of it, was pinned: what is pinned later loads after. */
     pinnedAt: v.optional(v.number()),
     /** Made by moving memories from before pages into pages (pages.migrate); moving them back deletes it if nothing else is in it. */
@@ -754,6 +792,9 @@ export default defineSchema({
     .index("by_project", ["projectId", "updatedAt"])
     .index("by_title", ["title"])
     .index("by_kind", ["kind", "day"])
+    .index("by_pinned", ["pinnedAt"])
+    // A person's page by their key, for one step out on the map (brainMap.neighbourhoodOf).
+    .index("by_person", ["person"])
     .searchIndex("search_text", { searchField: "search" }),
 
   conversations: defineTable({
@@ -813,6 +854,8 @@ export default defineSchema({
     seenAt: v.optional(v.number()),
     /** How full its Codex thread's context was after its last turn, 0 to 1, as the runner reported. */
     contextFill: v.optional(v.number()),
+    /** The context window, in tokens, the chat's engine reported with its last turn: what is pinned gets a share of it (lib/budget.ts). */
+    contextWindow: v.optional(v.number()),
     /** When memory was last checkpointed because the context filled up; cleared when Codex compacts it. */
     checkpointedAt: v.optional(v.number()),
     /**
@@ -952,9 +995,41 @@ export default defineSchema({
      * off, put back or deleted, the note is superseded by one that says so (memories.followTodo).
      */
     todoId: v.optional(v.id("todos")),
-    /** Its meaning as a vector, for search by meaning (lib/embed.ts): base64 float32, and the model that made it. */
+    /**
+     * Its meaning, for search by meaning (lib/embed.ts), and the model that made it. The server keeps the numbers
+     * out of the row, in the vector index (server/db.ts): a row read back has no embedding, only embeddedWith.
+     */
+    embedding: v.optional(v.array(v.float64())),
+    embeddedWith: v.optional(v.string()),
+    /**
+     * From before issue #220: the vector inside the row, base64 float32, and its model. Perry moves both into the
+     * vector index when it starts (server/brainIndex.ts); an older Perry reading the row finds neither and makes
+     * them again.
+     */
     vector: v.optional(v.string()),
     vectorModel: v.optional(v.string()),
+    /** What it is (lib/recall.ts weighs each its own way): a fact, a preference (strengthens when confirmed), or an episode (fades). */
+    type: v.optional(v.union(v.literal("fact"), v.literal("preference"), v.literal("episode"))),
+    /** When what it says happens, if not when it was said ("dentist on 28 Aug", said on the 14th), as a time. */
+    eventAt: v.optional(v.number()),
+    /** Until when it holds ("exam tomorrow"); past it, the line goes to the archive. */
+    expiresAt: v.optional(v.number()),
+    /** The line this one updates (replaces), extends (adds to) or derives from (an inference the owner approved). */
+    relation: v.optional(v.object({ to: v.id("memories"), how: v.union(v.literal("updates"), v.literal("extends"), v.literal("derives")) })),
+    /** How many times it was said again or confirmed (remember with the same words). */
+    confirmCount: v.optional(v.number()),
+    /** When it was last used: recalled into a turn, cited, edited, or on a page the owner opened (archive.ts). */
+    lastUsedAt: v.optional(v.number()),
+    /** Archived, unused past the owner's age or past expiresAt: out of turns and normal search, in deep search (archive.ts). */
+    archivedAt: v.optional(v.number()),
+    /** What its vector is searched under: its model, and whether it is live or archived (archive.vectorKeyOf). */
+    vectorKey: v.optional(v.string()),
+    /**
+     * Taken out of its page by a change the owner approved (compaction.ts): which, and where it stood, so undo can
+     * put it back. It stays as history, superseded by the line that replaced it.
+     */
+    compactedBy: v.optional(v.id("brainProposals")),
+    compactedFrom: v.optional(v.object({ pageId: v.id("notes"), section: v.optional(v.string()), order: v.number() })),
     /**
      * The page it is a line of (pages.ts): a paragraph, list item or other block of its Markdown, kept in step
      * with the page on every save, so one search finds it with the memories. Its place and the heading it is under.
@@ -972,9 +1047,67 @@ export default defineSchema({
     .index("by_day", ["day", "createdAt"])
     .index("by_todo", ["todoId"])
     .index("by_project", ["projectId", "createdAt"])
+    // The current lines a model has yet to embed, or embedded with another model (memories.unembedded).
+    .index("by_embedded", ["supersededBy", "embeddedWith", "createdAt"])
+    .index("by_archived", ["archivedAt"])
     /** Memories that name someone (`about` set), without reading every other: Brain's map (brainMap.ts). */
     .index("by_about", ["about"])
-    .searchIndex("search_text", { searchField: "text" }),
+    .index("by_vector_key", ["vectorKey", "embeddedWith"])
+    .searchIndex("search_text", { searchField: "text", filterFields: ["archivedAt"] })
+    .vectorIndex("by_embedding", { vectorField: "embedding", dimensions: 768, filterFields: ["vectorKey", "day"] }),
+
+  /**
+   * A change to Brain Perry proposes and the owner approves, edits or declines (compaction.ts): what kind, on which
+   * page and section, the lines it would change as they were, what would stand instead, and how it went. Applied,
+   * the lines it added; undone, all as it was.
+   */
+  brainProposals: defineTable({
+    // Tidying lines (merge, condense, rollup, infer); rearranging pages (#230): move lines, split some off to a page of
+    // their own, merge one page into another, or make a topic page that gathers what is said across pages.
+    kind: v.union(v.literal("merge"), v.literal("condense"), v.literal("rollup"), v.literal("infer"),
+      v.literal("move"), v.literal("split"), v.literal("mergePages"), v.literal("topic")),
+    pageId: v.id("notes"),
+    section: v.optional(v.string()),
+    summary: v.string(),
+    before: v.array(v.object({ id: v.id("memories"), text: v.string() })),
+    after: v.array(v.string()),
+    /** Its kind and lines, so the same is not proposed twice. */
+    key: v.string(),
+    status: v.union(v.literal("pending"), v.literal("applied"), v.literal("declined"), v.literal("expired"), v.literal("stale"), v.literal("undone")),
+    by: v.union(v.literal("review"), v.literal("assistant"), v.literal("job")),
+    edited: v.optional(v.boolean()),
+    approvalId: v.optional(v.id("approvals")),
+    added: v.optional(v.array(v.id("memories"))),
+    rollupPageId: v.optional(v.id("notes")),
+    /** Rearranging: the page the lines go to (move, mergePages), or the title of the page made for them (split, topic). */
+    targetPageId: v.optional(v.id("notes")),
+    targetSection: v.optional(v.string()),
+    title: v.optional(v.string()),
+    /** Applied: where each line moved stood before, so Undo puts it back; the page made (split, topic). */
+    moved: v.optional(v.array(v.object({ id: v.id("memories"), pageId: v.id("notes"), section: v.optional(v.string()) }))),
+    madePageId: v.optional(v.id("notes")),
+    /** mergePages: the merged page's words as they were, given back by Undo. */
+    mergedContent: v.optional(v.string()),
+    createdAt: v.number(),
+    decidedAt: v.optional(v.number()),
+    appliedAt: v.optional(v.number()),
+    undoneAt: v.optional(v.number()),
+  })
+    .index("by_status", ["status", "createdAt"])
+    .index("by_key", ["key"]),
+
+  /**
+   * Who and what a line mentions: a person (their page's key, lib/pages.personKey) or a project, so a question
+   * naming them, or calling them what the owner does ("my sister"), finds what is said of them (lib/recall.ts).
+   * Kept in step with each line when it is written (pages.syncLines).
+   */
+  mentions: defineTable({
+    lineId: v.id("memories"),
+    person: v.optional(v.string()),
+    projectId: v.optional(v.id("projects")),
+  })
+    .index("by_line", ["lineId"])
+    .index("by_person", ["person"]),
 
   /**
    * One row per agent turn: what came in, which model handled it, which tools
@@ -1034,7 +1167,7 @@ export default defineSchema({
     trigger: v.optional(vTrigger),
     prompt: v.string(),
     enabled: v.boolean(),
-    builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"))),
+    builtin: v.optional(v.union(v.literal("heartbeat"), v.literal("daily-summary"), v.literal("consolidate"), v.literal("brain-review"))),
     /** The model its runs use, picked on the Work page. Unset means the account's default. */
     model: v.optional(v.string()),
     /** The engine `model` is one of, set with it. */
@@ -1157,9 +1290,11 @@ export default defineSchema({
      * "contact": someone new wrote to Perry, or added it to a group; "message": Perry wants to write to
      * someone for the first time (contacts.ts). Allowing either lets Perry talk with them from then on.
      */
-    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message")),
+    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message"), v.literal("brain")),
     /** For "contact" and "message": who. */
     contactId: v.optional(v.id("contacts")),
+    /** For "brain": the change to Brain it asks about (compaction.ts). */
+    proposalId: v.optional(v.id("brainProposals")),
     title: v.string(),
     detail: v.optional(v.string()),
     cwd: v.optional(v.string()),

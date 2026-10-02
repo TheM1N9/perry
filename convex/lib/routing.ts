@@ -56,7 +56,7 @@ export const RESET_MARGIN_MS = 15_000;
 
 export type Work =
   | { kind: "chat" }
-  | { kind: "job"; builtin?: "heartbeat" | "daily-summary" | "consolidate"; once?: boolean; event?: boolean }
+  | { kind: "job"; builtin?: "heartbeat" | "daily-summary" | "consolidate" | "brain-review"; once?: boolean; event?: boolean }
   | { kind: "task"; brief: number }
   | { kind: "title" }
   | { kind: "review" };
@@ -74,6 +74,7 @@ export function tierOf(work: Work): { tier: Tier; why: string } {
       if (work.builtin === "heartbeat") return { tier: "quick", why: "the heartbeat, a quick look over what is going on" };
       if (work.builtin === "daily-summary") return { tier: "standard", why: "the daily summary" };
       if (work.builtin === "consolidate") return { tier: "deep", why: "the nightly memory consolidation" };
+      if (work.builtin === "brain-review") return { tier: "deep", why: "the weekly Brain review" };
       if (work.once) return { tier: "quick", why: "a reminder, run once" };
       return { tier: "standard", why: work.event ? "a job an event starts" : "a scheduled job" };
   }

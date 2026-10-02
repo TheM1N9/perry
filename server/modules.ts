@@ -4,11 +4,13 @@
 
 import * as agentStore from "../convex/agentStore";
 import * as approvals from "../convex/approvals";
+import * as archive from "../convex/archive";
 import * as assistant from "../convex/assistant";
 import * as brain from "../convex/brain";
 import * as brainMap from "../convex/brainMap";
 import * as channels from "../convex/channels";
 import * as codex from "../convex/codex";
+import * as compaction from "../convex/compaction";
 import * as composio from "../convex/composio";
 import * as connectorAccounts from "../convex/connectorAccounts";
 import * as contacts from "../convex/contacts";
@@ -26,6 +28,7 @@ import * as lib_activity from "../convex/lib/activity";
 import * as lib_agent from "../convex/lib/agent";
 import * as lib_auth from "../convex/lib/auth";
 import * as lib_browser from "../convex/lib/browser";
+import * as lib_budget from "../convex/lib/budget";
 import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
 import * as lib_devices from "../convex/lib/devices";
@@ -37,6 +40,7 @@ import * as lib_library from "../convex/lib/library";
 import * as lib_notes from "../convex/lib/notes";
 import * as lib_pages from "../convex/lib/pages";
 import * as lib_price from "../convex/lib/price";
+import * as lib_recall from "../convex/lib/recall";
 import * as lib_routing from "../convex/lib/routing";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
 import * as lib_skills from "../convex/lib/skills";
@@ -81,11 +85,13 @@ import * as work from "../convex/work";
 export const modules: Record<string, Record<string, unknown>> = {
   "agentStore": agentStore,
   "approvals": approvals,
+  "archive": archive,
   "assistant": assistant,
   "brain": brain,
   "brainMap": brainMap,
   "channels": channels,
   "codex": codex,
+  "compaction": compaction,
   "composio": composio,
   "connectorAccounts": connectorAccounts,
   "contacts": contacts,
@@ -103,6 +109,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/agent": lib_agent,
   "lib/auth": lib_auth,
   "lib/browser": lib_browser,
+  "lib/budget": lib_budget,
   "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
   "lib/devices": lib_devices,
@@ -114,6 +121,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/notes": lib_notes,
   "lib/pages": lib_pages,
   "lib/price": lib_price,
+  "lib/recall": lib_recall,
   "lib/routing": lib_routing,
   "lib/shortcuts": lib_shortcuts,
   "lib/skills": lib_skills,

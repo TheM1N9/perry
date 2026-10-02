@@ -28,7 +28,7 @@ import { libraryHref } from "./lib/library";
 
 type MemoryRow = {
   id: string; text: string; tags: string[]; kind: "profile" | "core" | "daily" | "page"; day?: string; origin?: string; createdAt: number;
-  pageId?: string; page?: { id: string; title: string }; section?: string;
+  pageId?: string; page?: { id: string; title: string }; section?: string; eventAt?: number; excerpt?: string[]; archivedAt?: number;
 };
 
 type RecallResult = {
@@ -44,8 +44,8 @@ type RecallResult = {
 const memoryKind = z.enum(["profile", "core", "daily"]);
 
 const shape = (m: MemoryRow) => m.kind === "page"
-  // A line of one of the owner's notes: which note, and where in it, to read the rest with read_note.
-  ? { id: m.id, text: m.text, kind: "note" as const, note: { id: m.pageId ?? "", title: m.page?.title ?? "", link: noteHref(m.pageId ?? "") }, ...(m.section ? { section: m.section } : {}) }
+  // A line of one of the owner's notes: which note, and where in it, to read the rest with read_note; and the lines around it.
+  ? { id: m.id, text: m.text, kind: "note" as const, note: { id: m.pageId ?? "", title: m.page?.title ?? "", link: noteHref(m.pageId ?? "") }, ...(m.section ? { section: m.section } : {}), ...(m.excerpt ? { around: m.excerpt } : {}) }
   : {
     id: m.id,
     text: m.text,
@@ -56,23 +56,33 @@ const shape = (m: MemoryRow) => m.kind === "page"
     // The page of memory it is a line of, and the section.
     ...(m.page ? { page: m.section ? `${m.page.title}, ${m.section}` : m.page.title } : {}),
     rememberedOn: new Date(m.createdAt).toISOString().slice(0, 10),
+    // When what it says happens, when that is not the day it was said.
+    ...(m.eventAt ? { happens: new Date(m.eventAt).toISOString().slice(0, 10) } : {}),
+    // The lines around it in its page, "> " before its own: where it came from.
+    ...(m.excerpt ? { around: m.excerpt } : {}),
+    // From the archive: cite it in your reply if you use it, and it comes back.
+    ...(m.archivedAt ? { archived: true } : {}),
   };
 
 /** recall, and brain_search and search_memory, which are it under other names. */
-async function recallFor(ctx: ToolCtx, input: { query: string; limit?: number }): Promise<RecallResult> {
+async function recallFor(ctx: ToolCtx, input: { query: string; limit?: number; deep?: boolean }): Promise<RecallResult> {
   const results: MemoryRow[] = await ctx.runAction(internal.memories.recall, {
     query: input.query,
     limit: input.limit,
+    excerpts: true,
+    ...(input.deep ? { deep: true } : {}),
     ...(ctx.conversationId ? { chat: ctx.conversationId } : {}),
   });
 
   // The owner may know what someone told Perry in their own chat; nobody else may (memories.seenFrom).
   const chat: { contactId?: string } | null = ctx.conversationId ? await ctx.runQuery(internal.conversations.getById, { id: ctx.conversationId as Id<"conversations"> }) : null;
   const theySaid: Array<{ who: string; text: string }> = input.query.trim() && !chat?.contactId ? await ctx.runQuery(internal.contacts.theySaid, { query: input.query }) : [];
+  // What it found was recalled into this turn: used, so not archived for a while yet; found in the archive, it comes back.
+  if (results.length) await ctx.runMutation(internal.archive.used, { ids: results.map((memory) => memory.id), revive: true });
   if (results.length === 0 && theySaid.length === 0) {
-    return { found: 0, memories: [], note: "Nothing in memory or notes matched." };
+    return { found: 0, memories: [], note: input.deep ? "Nothing in memory, notes or the archive matched." : "Nothing in memory or notes matched. The archive may have it: recall again with deep=true." };
   }
-  // One step out on the map from the pages of the three best hits (#230; #220 reworks recall and may fold this in).
+  // One step out on the map from the pages of the three best hits (#230), read from those pages only.
   const pages = [...new Set(results.map((row) => row.pageId).filter((id): id is string => Boolean(id)))].slice(0, 3);
   const related: Array<{ id: string; title: string; kind: string; why: string[]; from: string; link: string }> = pages.length && !chat?.contactId
     ? (await ctx.runQuery(internal.notes.relatedForRecall, { pages, ...chatOf(ctx) })).map(({ id, title, kind, why, from, link }: { id: string; title: string; kind: string; why: string[]; from: string; link: string }) => ({ id, title, kind, why, from, link }))
@@ -95,6 +105,7 @@ const recall = createTool({
       .string()
       .describe("What you are looking for. Empty string returns recent memories."),
     limit: z.number().int().min(1).max(25).optional(),
+    deep: z.boolean().optional().describe("Search the archive too: lines nobody used for months. Use it when a normal recall finds nothing the owner expects you to know."),
   }),
   execute: async (ctx, input): Promise<RecallResult> => await recallFor(ctx, input),
 });
@@ -129,6 +140,12 @@ const remember = createTool({
       .describe("For kind=core: the section of Things to remember it goes under: People, Work, Health, Home, Preferences or Other, or a new one when none fits. Left out, the one it fits."),
     basedOn: z.array(z.string()).optional()
       .describe("When promoting from the journal: the ids of the journal lines it comes from, so it links back to them."),
+    type: z.enum(["fact", "preference", "episode"]).optional()
+      .describe("fact (stays true), preference (how the owner likes things; grows stronger when said again) or episode (something that happened; fades). Left out, by kind."),
+    expires: z.string().optional()
+      .describe("For something true only until a time (\"exam tomorrow\", \"in Goa until Sunday\"): when it stops holding, as YYYY-MM-DD or an ISO time. After it, the line goes to the archive."),
+    extends: z.string().optional()
+      .describe("The id of a memory this one adds to, which stays true (supersedes is for one it replaces)."),
     journey: z.string().max(200).optional()
       .describe("For kind=daily about one of the owner's projects, from a chat outside it: the project's name or id. The note goes in that project's Journey, " +
         "its running log, which every chat of the owner's reads. In the project's own chats, day notes go there without it."),
@@ -169,6 +186,9 @@ const remember = createTool({
         ...(input.todoId && !sealed ? { todoId: input.todoId } : {}),
         ...(input.section ? { section: input.section } : {}),
         ...(input.basedOn?.length && !sealed ? { basedOn: input.basedOn } : {}),
+        ...(input.type ? { type: input.type } : {}),
+        ...(input.expires && Number.isFinite(Date.parse(input.expires)) ? { expiresAt: Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(input.expires) ? `${input.expires}T23:59:59Z` : input.expires) } : {}),
+        ...(input.extends ? { extends: input.extends } : {}),
         ...(input.journey?.trim() && !sealed ? { journey: input.journey } : {}),
         by: fromJob ? "job" : "assistant",
         ...(ctx.conversationId ? { from: ctx.conversationId } : {}),
@@ -908,6 +928,67 @@ const brain_pin = createTool({
   },
 });
 
+const brain_summarize = createTool({
+  description:
+    "Keep the short summaries of big pinned sections, which every chat is sent in place of a section too big to send " +
+    "whole. With no text: the sections whose summary is missing or out of date, biggest first. With page, section and " +
+    "text: that section's summary, at most about 120 words, the facts that matter most and what is still open; no ids.",
+  inputSchema: z.object({ page: z.string().optional(), section: z.string().max(200).optional(), text: z.string().max(1200).optional() }),
+  execute: async (ctx, input): Promise<{ due?: unknown[]; saved?: { page: string; section?: string }; error?: string }> => {
+    return await ctx.runMutation(internal.pages.summarizeForAgent, { ...(ctx.conversationId ? { chat: ctx.conversationId } : {}), ...input });
+  },
+});
+
+const brain_lately = createTool({
+  description:
+    "Write the Lately page whole: the owner's last two weeks in short (what happened, what is coming up, threads " +
+    "still open), at most about 200 words. It is pinned and sent right after About me in every chat.",
+  inputSchema: z.object({ text: z.string().min(20).max(2500) }),
+  execute: async (ctx, input): Promise<{ id?: string; error?: string }> => {
+    return await ctx.runMutation(internal.pages.writeLately, { ...(ctx.conversationId ? { chat: ctx.conversationId } : {}), text: input.text });
+  },
+});
+
+const brain_review = createTool({
+  description:
+    "For the weekly Brain review: proposes merging lines that say the same thing in nearly the same words (the owner " +
+    "is asked), and lists long sections, past weeks of the journal not rolled up yet, and pages whose titles look like " +
+    "the same person or thing, with ids, for you to propose condensing, rolling up, splitting or merging with brain_propose.",
+  inputSchema: z.object({}),
+  execute: async (ctx): Promise<{ proposedMerges: number; sections: unknown[]; weeks: unknown[]; waiting: number }> => {
+    const proposedMerges: number = await ctx.runMutation(internal.compaction.review, {});
+    const found: { sections: unknown[]; weeks: unknown[]; waiting: number } = await ctx.runQuery(internal.compaction.forReview, {});
+    return { proposedMerges, ...found };
+  },
+});
+
+const brain_propose = createTool({
+  description:
+    "Propose a change to Brain for the owner to approve, edit or decline (Needs you and their phone show it as a " +
+    "before and after). Nothing changes until they say yes, and the old lines are kept as history. kind=merge joins " +
+    "lines that say the same thing; condense rewrites a long stretch in fewer lines; rollup sums a past week of the " +
+    "journal up on a page of its own (the days stay); infer adds a fact the lines together imply. Never for anything " +
+    "the owner did not say or that does not follow from what is written. To rearrange Brain: kind=move takes lines to a " +
+    "better page (to, toSection); split takes some lines of a page to a new page of their own (title), leaving a link; " +
+    "mergePages merges page into to when both are about the same person or thing (all its lines move, it keeps a link); " +
+    "topic makes a page (title) that says what lines from several pages add up to (with) and links to those pages. Lines " +
+    "move as they are, with their ids, and never to a page other chats read; Undo puts them back.",
+  inputSchema: z.object({
+    kind: z.enum(["merge", "condense", "rollup", "infer", "move", "split", "mergePages", "topic"]),
+    page: z.string().optional().describe("The page (title or id); for rollup and topic, leave out. For mergePages, the page merged away."),
+    section: z.string().max(200).optional().describe("The section; for rollup, the summary page's title, as \"Week of Mon 3 Mar 2025\"."),
+    replaces: z.array(z.string()).max(400).default([]).describe("Ids of the lines it changes (for infer, rollup and topic: those it comes from; for move and split: those that move; for mergePages: none)."),
+    with: z.array(z.string().max(1000)).max(20).default([]).describe("The lines that would stand instead (or be added); none for move, split and mergePages."),
+    to: z.string().optional().describe("For move and mergePages: the page (title or id) the lines go to."),
+    toSection: z.string().max(200).optional().describe("For move: the section of that page."),
+    title: z.string().max(160).optional().describe("For split and topic: the new page's title."),
+    why: z.string().max(300).describe("One short sentence the owner reads first."),
+  }),
+  execute: async (ctx, input): Promise<{ proposed?: string; error?: string }> => {
+    return await ctx.runMutation(internal.compaction.proposeForAgent, { ...(ctx.conversationId ? { chat: ctx.conversationId } : {}), ...input });
+  },
+});
+
 const brain_neighbors = createTool({
   description:
     "See what a page is tied to on Brain's map: the pages it links to or is linked from, the people its lines are about " +
@@ -1519,6 +1600,10 @@ export const ALL_TOOLS = {
   brain_write,
   brain_append,
   brain_pin,
+  brain_summarize,
+  brain_lately,
+  brain_review,
+  brain_propose,
   brain_neighbors,
   brain_link,
   search_memory,

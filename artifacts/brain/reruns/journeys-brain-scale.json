@@ -1,0 +1,260 @@
+{
+  "ranAt": "2026-10-02T23:26:55.384Z",
+  "checks": {
+    "backupFirst": true,
+    "daysIntoTheirJourneys": true,
+    "provenanceKept": true,
+    "ownJournalUntouched": true,
+    "idempotent": true,
+    "projectNotesGoInTheJourney": true,
+    "everyOwnerChatReadsIt": true,
+    "guestSeesNone": true,
+    "projectChatsGetTheLatest": true,
+    "ownerEditKeepsProvenance": true,
+    "dashboardShowsJourneys": true,
+    "noPageErrors": true,
+    "moveBackRestoresDays": true,
+    "moveInAgain": true
+  },
+  "notes": {
+    "ownerTimezone": "Asia/Calcutta",
+    "backupFirst": {
+      "found": [
+        "journals-before-journeys-2026-10-02T23-25-49-998Z.json"
+      ],
+      "waiting": 3
+    },
+    "daysIntoTheirJourneys": {
+      "bathroom": "## Wed 30 Sept 2026\n\n- Tiles for the shower wall arrived, TILEWREN.\n\n- Chose warm grey grout.\n\n## Fri 2 Oct 2026\n\n- Ravi the plumber fixed the shower valve, VALVEHERON.\n",
+      "garden": "## Thu 1 Oct 2026\n\n- Planted basil by the south wall, BASILKITE.\n"
+    },
+    "provenanceKept": {
+      "changed": [],
+      "placed": [
+        {
+          "key": "tiles",
+          "page": true,
+          "section": "Wed 30 Sept 2026",
+          "project": null,
+          "moved": {
+            "at": 1790983550014,
+            "day": "2026-09-30",
+            "createdAt": 1790724335360
+          }
+        },
+        {
+          "key": "grout",
+          "page": true,
+          "section": "Wed 30 Sept 2026",
+          "project": null,
+          "moved": {
+            "at": 1790983550014,
+            "day": "2026-09-30",
+            "createdAt": 1790724335360,
+            "section": "Evening"
+          }
+        },
+        {
+          "key": "plumber",
+          "page": true,
+          "section": "Fri 2 Oct 2026",
+          "project": null,
+          "moved": {
+            "at": 1790983550014,
+            "day": "2026-10-02",
+            "createdAt": 1790897135360,
+            "pinned": false
+          }
+        },
+        {
+          "key": "basil",
+          "page": true,
+          "section": "Thu 1 Oct 2026",
+          "project": null,
+          "moved": {
+            "at": 1790983550014,
+            "day": "2026-10-01",
+            "createdAt": 1790810735360
+          }
+        }
+      ]
+    },
+    "ownJournalUntouched": {
+      "revision": [
+        2,
+        2
+      ]
+    },
+    "idempotent": {
+      "again": {
+        "lines": 0,
+        "pages": 0
+      },
+      "backups": 0
+    },
+    "realEnginesSignedIn": [],
+    "projectNotesGoInTheJourney": {
+      "journey": "## Wed 30 Sept 2026\n\n- Tiles for the shower wall arrived, TILEWREN.\n\n- Chose warm grey grout.\n\n## Fri 2 Oct 2026\n\n- Ravi the plumber fixed the shower valve, VALVEHERON.\n\n## Sat 3 Oct 2026\n\n- Sealed the bathtub edge with silicone, SEALPIPIT.\n\n- Booked the electrician for Monday, SPARKTERN.\n\n- The bathroom mirror was delivered cracked, MIRRORDUNLIN.\n",
+      "notes": [
+        "Stored for every chat in Journey · Bathroom, Sat 3 Oct 2026.",
+        null,
+        "Stored for every chat in Journey · Bathroom, Sat 3 Oct 2026.",
+        "Not saved: there is no project called \"Attic\". The owner's projects: \"Bathroom\", \"Garden\". Or leave journey out for today's journal.",
+        "Stored for every chat in Sat 3 Oct 2026.",
+        "Stored for this project in Things to remember, Other."
+      ]
+    },
+    "everyOwnerChatReadsIt": {
+      "recalled": [
+        "Sealed the bathtub edge with silicone, SEALPIPIT."
+      ],
+      "read": "Journey · Bathroom",
+      "listed": [
+        "Sat 3 Oct 2026",
+        "Journey · Bathroom",
+        "Journey · Garden",
+        "Fri 2 Oct 2026"
+      ],
+      "budgetOutside": [
+        "The bathroom mirror was delivered cracked, MIRRORDUNLIN.",
+        "Sealed the bathtub edge with silicone, SEALPIPIT.",
+        "Tiles for the shower wall arrived, TILEWREN."
+      ]
+    },
+    "guestSeesNone": {
+      "guestRecall": [],
+      "guestRead": "Brain's pages are the owner's: a chat with someone else cannot read or write them.",
+      "guestPrompt": "e, their plans), remember it now, with their name in about. If it asks something only the owner can answer or decide, call tell_owner now, before you reply. Never say you passed something on unless tell_owner said it was told.\nIt is now Saturday, 3 October 2026 at 04:56 in Asia/Calcutta (UTC+05:30)."
+    },
+    "projectChatsGetTheLatest": {
+      "inProject": "## This project's Journey, today and yesterday (id bg8ft6k16g5c8k8w4z1814b1yq; older entries: recall, or brain_read \"Journey\")\n- [2026-10-02] Ravi the plumber fixed the shower valve, VALVEHERON. (seed5cg73je1wtmurlcsoa)\n- [2026-10-03] Sealed the bathtub edge with silicone, SEALPIPIT. (7d3w643byb8mcs27wavrfzea1x)\n- [2026-10-03] Booked the electrician for Monday, SPARKTERN. (pasjnmm6q08aarmf1tdbr2kkfy)\n- [2026-10-03] The bathroom mirror was delivered cracked, MIRRORDUNLIN. (xa8fbkbv9cngqqqp6z5cfnhmx4)\n",
+      "outside": "",
+      "garden": "",
+      "elsewhere": [
+        "",
+        "\n## Possibly relevant, from pages not loaded above\n- [Journey · Garden, Thu 1 Oct 2026 2026-10-01] Planted basil by the south wall, BASILKITE. (seedeadw4sygpimurlcswr)\n- [Journey · Bathroom, Fri 2 Oct 2026 2026-10-02] Ravi the plumber fixed the shower valve, VALVEHERON. (seed5cg73je1wtmurlcsoa)\n- ["
+      ]
+    },
+    "ownerEditKeepsProvenance": {
+      "reworded": {
+        "same": true,
+        "by": "owner",
+        "from": true
+      },
+      "typed": {
+        "by": "owner",
+        "day": "2026-10-03",
+        "kind": "daily"
+      }
+    },
+    "dashboardShowsJourneys": {
+      "brain-light": {
+        "rows": [
+          "Journey Bathroom",
+          "Journey Garden"
+        ],
+        "chips": 2,
+        "journal": [
+          "Sat 3 Oct 2026",
+          "Fri 2 Oct 2026"
+        ]
+      },
+      "project-light": {
+        "rows": 1,
+        "latest": [
+          "Booked the electrician for Monday, SPARKTERN.",
+          "Paid the tiler, OWNERTYPED.",
+          "The bathroom mirror was delivered cracked, MIRRORDUNLIN."
+        ],
+        "journalGroup": false
+      },
+      "page-light": {
+        "chip": "Bathroom",
+        "note": "Every chat of yours can read it",
+        "readOnly": true
+      },
+      "brain-dark": {
+        "rows": [
+          "Journey Bathroom",
+          "Journey Garden"
+        ],
+        "chips": 2,
+        "journal": [
+          "Sat 3 Oct 2026",
+          "Fri 2 Oct 2026"
+        ]
+      },
+      "project-dark": {
+        "rows": 1,
+        "latest": [
+          "Booked the electrician for Monday, SPARKTERN.",
+          "Paid the tiler, OWNERTYPED.",
+          "The bathroom mirror was delivered cracked, MIRRORDUNLIN."
+        ],
+        "journalGroup": false
+      },
+      "page-dark": {
+        "chip": "Bathroom",
+        "note": "Every chat of yours can read it",
+        "readOnly": true
+      }
+    },
+    "noPageErrors": [],
+    "moveBackRestoresDays": {
+      "undone": {
+        "movedBack": 0,
+        "pagesDeleted": 0,
+        "linesDropped": 0,
+        "journalLines": 8
+      },
+      "backChecks": {
+        "journeysGone": true,
+        "d3": true,
+        "d1": true,
+        "garden": true,
+        "today": true,
+        "keptToProjects": true,
+        "sameIds": true,
+        "noMoveLeft": true
+      },
+      "stayedBack": true
+    },
+    "moveInAgain": {
+      "redo": {
+        "moved": 0,
+        "kept": 0,
+        "pages": 0,
+        "skipped": false,
+        "journalLines": 8
+      },
+      "content": "## Wed 30 Sept 2026\n\n- Tiles for the shower wall arrived, TILEWREN.\n\n- Chose warm grey grout.\n\n## Fri 2 Oct 2026\n\n- Ravi the plumber fixed the shower valve, VALVEHERON.\n\n## Sat 3 Oct 2026\n\n- Sealed the bathtub edge with white silicone, SEALPIPIT.\n\n- Booked the electrician for Monday, SPARKTERN.\n\n- Paid the tiler, OWNERTYPED.\n\n- The bathroom mirror was delivered cracked, MIRRORDUNLIN.\n"
+    },
+    "realModelTurns": "none: every chat ran on the fake Grok agent",
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\brain-220\\homes\\perry-journeys-SVMFqf\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn 5xf8r1d4x0vaenrfd3mekc8pq0\u001b[0m",
+      "\u001b[2m  saved turn d5wcvbj1rqwg8d7qzqfmd5y2bt\u001b[0m",
+      "\u001b[2m  saved turn gee7kdvz9hhwnhhxj7xcv5r8r3\u001b[0m",
+      "\u001b[2m  saved turn q5mkf40m2paq9h5dd84nm0r5sd\u001b[0m",
+      "\u001b[2m  saved turn xv936f2xrvv22s437jqwbxr133\u001b[0m",
+      "\u001b[2m  saved turn 7hnp13edb64zrs1r9z4zn733rm\u001b[0m",
+      "\u001b[2m  saved turn wpvh0qd2tns8tnq75nvz5mspdg\u001b[0m",
+      "\u001b[2m  saved turn 38awpss48s2pb3md6zwtypnq27\u001b[0m",
+      "\u001b[2m  saved turn ehxcnjtazrs7vbq21041m0b6f1\u001b[0m",
+      "\u001b[2m  saved turn fb6s0fcm2kjtbpc1adahnefnqn\u001b[0m",
+      "\u001b[2m  saved turn zjwd8csmhnrt8f06m22mwr7y8j\u001b[0m",
+      "\u001b[2m  saved turn 6a4yr2hwe7g7qxy7746b14nter\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

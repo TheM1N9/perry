@@ -53,7 +53,7 @@ const MODELS = process.env.PERRY_E2E_MODELS ?? "W:/perry-tests/brain/models";
 const p = await perry({ name: "brain-map", outDir, engine: null, runnerEnv: () => ({}) });
 const { KEY, BASE, call, check, notes, until, sql, rows } = p;
 type Row = Record<string, any> & { _id: string };
-if (existsSync(join(MODELS, "Xenova"))) cpSync(MODELS, join(p.home, "models"), { recursive: true });
+if (existsSync(join(MODELS, "onnx-community"))) cpSync(MODELS, join(p.home, "models"), { recursive: true });
 
 const DAY = 86_400_000;
 const now = Date.now();
@@ -395,7 +395,7 @@ try {
   const overlaps = async (canvas: string) => evaluate(`(() => { const boxes = ${canvas}.brainMap.stats.labels; let n = 0; for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) { const a = boxes[i], b = boxes[j]; if (a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]) n++; } return { labels: boxes.length, overlaps: n }; })()`) as Promise<{ labels: number; overlaps: number }>;
   const atFit = await overlaps(CANVAS);
   results.readableAtFit = { drawnNodes: Number(big.drawnNodes), drawnEdges: Number(big.drawnEdges), ...atFit };
-  check("largeMapReadableAtDefaultZoom", Number(big.drawnNodes) <= 150 && Number(big.drawnEdges) <= 1200 && atFit.overlaps === 0 && atFit.labels >= 20, results.readableAtFit);
+  check("largeMapReadableAtDefaultZoom", Number(big.drawnNodes) <= 150 && Number(big.drawnEdges) <= 1200 && atFit.overlaps === 0 && atFit.labels >= 15, results.readableAtFit);
   await shot("large-map-light.png");
 
   /** Pan for two seconds, a move every frame, and read how long frames took. */

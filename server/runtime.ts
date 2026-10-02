@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { getFunctionName } from "convex/server";
-import { Store, type Doc, type TableDef } from "./db";
+import { Store, type Doc, type TableDef, type VectorQuery } from "./db";
 import { ArgumentError, validateArgs } from "./validate";
 
 /**
@@ -38,7 +38,11 @@ export type FunctionDef = {
 };
 
 type Tx = { reads: Set<string>; writes: Set<string>; scheduled: boolean };
-type Schema = { tables: Record<string, { export(): { indexes: Array<{ indexDescriptor: string; fields: string[] }>; searchIndexes: Array<{ indexDescriptor: string; searchField: string; filterFields: string[] }> } }> };
+type Schema = { tables: Record<string, { export(): {
+  indexes: Array<{ indexDescriptor: string; fields: string[] }>;
+  searchIndexes: Array<{ indexDescriptor: string; searchField: string; filterFields: string[] }>;
+  vectorIndexes?: Array<{ indexDescriptor: string; vectorField: string; dimensions: number; filterFields: string[] }>;
+} }> };
 type Crons = { crons: Record<string, { name: string; args: unknown[]; schedule: { type: string; seconds?: number; minutes?: number; hours?: number } }> };
 type Router = { lookup(path: string, method: string): [FunctionDef, string, string] | null };
 
@@ -70,6 +74,7 @@ export class Runtime {
       tables[name] = {
         indexes: exported.indexes.map((index) => ({ name: index.indexDescriptor, fields: index.fields })),
         searchIndexes: exported.searchIndexes.map((index) => ({ name: index.indexDescriptor, searchField: index.searchField, filterFields: index.filterFields })),
+        vectorIndexes: (exported.vectorIndexes ?? []).map((index) => ({ name: index.indexDescriptor, vectorField: index.vectorField, dimensions: index.dimensions, filterFields: index.filterFields })),
       };
     }
     this.store = new Store(sql, tables);
@@ -148,6 +153,8 @@ export class Runtime {
   private actionCtx() {
     return {
       auth: { getUserIdentity: async () => null },
+      // As in Convex, only an action searches by vector; between transactions, so it sees what is committed.
+      vectorSearch: (table: string, index: string, query: VectorQuery) => this.exclusive(() => this.store.vectorIndex(table, index).search(query)),
       runQuery: (ref: unknown, args?: unknown) => this.runQuery(nameOf(ref), args ?? {}, { internal: true }).then((result) => result.value),
       runMutation: (ref: unknown, args?: unknown) => this.runMutation(nameOf(ref), args ?? {}, { internal: true }),
       runAction: (ref: unknown, args?: unknown) => this.runAction(nameOf(ref), args ?? {}, { internal: true }),

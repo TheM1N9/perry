@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { FAKE_AGENT, perry, REPO, sleep } from "../engine-acp/harness";
@@ -48,6 +48,9 @@ const p = await perry({
   },
 });
 const { KEY, BASE, call, check, notes, until, sql, rows, exchange, fakeLog } = p;
+// The sentence model from the shared cache (PERRY_E2E_MODELS), so the run downloads nothing.
+const MODELS = process.env.PERRY_E2E_MODELS ?? "W:/perry-tests/brain/models";
+if (existsSync(join(MODELS, "onnx-community"))) cpSync(MODELS, join(p.home, "models"), { recursive: true });
 type Row = Record<string, any> & { _id: string };
 const DAY = 86_400_000;
 const now = Date.now();

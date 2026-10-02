@@ -5,11 +5,13 @@
 
 import type * as agentStore from "../agentStore.js";
 import type * as approvals from "../approvals.js";
+import type * as archive from "../archive.js";
 import type * as assistant from "../assistant.js";
 import type * as brain from "../brain.js";
 import type * as brainMap from "../brainMap.js";
 import type * as channels from "../channels.js";
 import type * as codex from "../codex.js";
+import type * as compaction from "../compaction.js";
 import type * as composio from "../composio.js";
 import type * as connectorAccounts from "../connectorAccounts.js";
 import type * as contacts from "../contacts.js";
@@ -27,6 +29,7 @@ import type * as lib_activity from "../lib/activity.js";
 import type * as lib_agent from "../lib/agent.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_browser from "../lib/browser.js";
+import type * as lib_budget from "../lib/budget.js";
 import type * as lib_checkout from "../lib/checkout.js";
 import type * as lib_commands from "../lib/commands.js";
 import type * as lib_devices from "../lib/devices.js";
@@ -38,6 +41,7 @@ import type * as lib_library from "../lib/library.js";
 import type * as lib_notes from "../lib/notes.js";
 import type * as lib_pages from "../lib/pages.js";
 import type * as lib_price from "../lib/price.js";
+import type * as lib_recall from "../lib/recall.js";
 import type * as lib_routing from "../lib/routing.js";
 import type * as lib_shortcuts from "../lib/shortcuts.js";
 import type * as lib_skills from "../lib/skills.js";
@@ -84,11 +88,13 @@ import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server
 declare const fullApi: ApiFromModules<{
   agentStore: typeof agentStore;
   approvals: typeof approvals;
+  archive: typeof archive;
   assistant: typeof assistant;
   brain: typeof brain;
   brainMap: typeof brainMap;
   channels: typeof channels;
   codex: typeof codex;
+  compaction: typeof compaction;
   composio: typeof composio;
   connectorAccounts: typeof connectorAccounts;
   contacts: typeof contacts;
@@ -106,6 +112,7 @@ declare const fullApi: ApiFromModules<{
   "lib/agent": typeof lib_agent;
   "lib/auth": typeof lib_auth;
   "lib/browser": typeof lib_browser;
+  "lib/budget": typeof lib_budget;
   "lib/checkout": typeof lib_checkout;
   "lib/commands": typeof lib_commands;
   "lib/devices": typeof lib_devices;
@@ -117,6 +124,7 @@ declare const fullApi: ApiFromModules<{
   "lib/notes": typeof lib_notes;
   "lib/pages": typeof lib_pages;
   "lib/price": typeof lib_price;
+  "lib/recall": typeof lib_recall;
   "lib/routing": typeof lib_routing;
   "lib/shortcuts": typeof lib_shortcuts;
   "lib/skills": typeof lib_skills;

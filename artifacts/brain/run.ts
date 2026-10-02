@@ -95,7 +95,7 @@ const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/brain/run.ts <outDir>");
 mkdirSync(outDir, { recursive: true });
 const MODELS = process.env.PERRY_E2E_MODELS ?? (process.env.PERRY_E2E_DIR ? join(process.env.PERRY_E2E_DIR, "models") : "");
-const MODEL_DIR = "Xenova/paraphrase-multilingual-MiniLM-L12-v2";
+const MODEL_DIR = "onnx-community/embeddinggemma-300m-ONNX";
 const modelReady = (dir: string) => Boolean(dir) && existsSync(join(dir, MODEL_DIR, "onnx", "model_quantized.onnx"));
 
 let fakeHome = "";
@@ -197,7 +197,9 @@ try {
     spanish: memory({ text: "In this project, reply in Spanish.", kind: "profile", projectId: project }),
     dentist: memory({ text: "Dentist follow-up call on Friday.", kind: "daily", day: dayOf(now - DAY * 3), createdAt: now - DAY * 3, tags: ["open"], todoId: followUp }),
     alert: memory({ text: "Alerted the owner at 06:00: Flight moved to 7:25.", kind: "daily", day: dayOf(now - DAY), createdAt: now - DAY, tags: ["alert"], origin: "job", source: "alert" }),
-    kettle: memory({ text: "Bought a new kettle.", kind: "daily", createdAt: now - DAY * 5 }),
+    // At noon UTC: its day is worked out when it moves in, in the owner's timezone, which is UTC until the browser sets it; noon is the
+    // same day in both, so a run past midnight on the owner's clock does not move it to another day on moving in again.
+    kettle: memory({ text: "Bought a new kettle.", kind: "daily", createdAt: Math.floor((now - DAY * 5) / DAY) * DAY + DAY / 2 }),
     tiles: memory({ text: "Tiles for the bathroom arrived.", kind: "daily", day: dayOf(now - DAY * 2), createdAt: now - DAY * 2, projectId: project }),
     owl: memory({ text: "Codename for the surprise party is OWL.", kind: "core", conversationId: general }),
     voice: memory({ text: "Datta prefers WhatsApp voice notes.", kind: "core", conversationId: theirs, about: ["Datta"], origin: "tool", source: `whatsapp:${jid}` }),
@@ -274,7 +276,8 @@ try {
     && String(rows("notes").find((row) => row.kind === "about")?.content).startsWith("# About Alex"),
   { misplaced, inContent, about: rows("notes").find((row) => row.kind === "about")?.content });
 
-  const KEPT = ["text", "tags", "source", "origin", "createdAt", "editedAt", "about", "todoId", "day", "kind", "projectId", "conversationId", "vector", "vectorModel"];
+  // A vector is no longer kept inside its row (#220): it moves to the vector index, and one that is not a vector is made again.
+  const KEPT = ["text", "tags", "source", "origin", "createdAt", "editedAt", "about", "todoId", "day", "kind", "projectId", "conversationId"];
   // A row with no vector gets one from the sentence model once Perry runs; one that had one keeps it.
   const unchanged = (name: string, field: string) => (field !== "vector" && field !== "vectorModel") || seeds[name].vector !== undefined;
   // A Journey's lines are every chat's (issue #227): the project's day note keeps all but its project, which its page has.
@@ -399,7 +402,8 @@ try {
   { listed: memoryPage.map((memory) => memory.text), count, forgot });
 
   // --- The sentence model, and every line's vector -------------------------------------------------------------
-  const embedded = () => rows("memories").every((row) => row.vector || row.supersededBy);
+  // Every current line has a vector from the model in use (kept in the vector index; the row says which model, #220).
+  const embedded = () => rows("memories").every((row) => row.embeddedWith === "onnx-community/embeddinggemma-300m-ONNX" || row.supersededBy);
   for (let tries = 0; tries < 120 && !embedded(); tries++) {
     await call("memories:embedMissing", {}).catch(() => {});
     if (!embedded()) await sleep(5_000);
@@ -573,8 +577,10 @@ try {
     await exchange(chat, prompt);
     const all = contextOf(prompt);
     const from = all.indexOf("# Recalled memory");
-    const to = all.indexOf("## Possibly relevant", from);
-    return { all, standing: from >= 0 ? all.slice(from, to > from ? to : undefined) : "", instructions: from >= 0 ? all.slice(0, from) : all };
+    // What is pinned, within the budget: up to what bears on this message, recalled for it (a condensed section's lines that
+    // match it, #220, and the rest that is possibly relevant), which is sent after it and is not part of the budget.
+    const to = Math.min(...["## From pinned sections sent condensed", "## Possibly relevant"].map((head) => all.indexOf(head, from)).filter((at) => at > from), Infinity);
+    return { all, standing: from >= 0 ? all.slice(from, Number.isFinite(to) ? to : undefined) : "", instructions: from >= 0 ? all.slice(0, from) : all };
   };
   const pinPage = (id: string, pinned: boolean, section?: string) => call("pages:pin", { key: KEY, id, pinned, ...(section ? { section } : {}) });
   const dattaId = pageOf("person", (row) => row.person === "datta")!._id;
@@ -601,18 +607,19 @@ try {
   check("unpinningLasting", !unpinned.standing.includes("vegetarian") && !unpinned.all.includes("Has a cat called Miso") && unpinned.standing.includes("Passport"),
     { standing: unpinned.standing.slice(0, 800) });
 
-  // A pinned page bigger than the budget: it is cut, and says so; what comes first stays whole.
-  const big = Array.from({ length: 420 }, (_, i) => `BIGLINE ${i} of a long plan, with enough words in it to fill a line of about a hundred characters.`).join("\n\n");
+  // A pinned page bigger than the budget, a share of the engine's window (#220; Grok's here, 44,800 characters, no longer
+  // 32,000): it is sent condensed, and says where to read the rest; what comes first stays whole.
+  const big = Array.from({ length: 640 }, (_, i) => `BIGLINE ${i} of a long plan, with enough words in it to fill a line of about a hundred characters.`).join("\n\n");
   const bigPlan = await call<string>("notes:create", { key: KEY, title: "Big plan", content: `${big}\n` });
   await pinPage(bigPlan, true);
   const overBudget = await fresh();
   const usage = await call<{ used: number; budget: number; left: string[] }>("pages:pinnedUsage", { key: KEY });
   const aboutPart = overBudget.instructions.slice(overBudget.instructions.indexOf("## About me"));
   // The parts measured here carry a little more than the budget counts: the recalled block's header, and what follows About me in the instructions.
-  check("budgetKept", usage.budget === 32_000 && usage.used <= usage.budget && overBudget.standing.length <= usage.budget && overBudget.standing.length + aboutPart.length <= usage.budget + 1_500
+  check("budgetKept", usage.budget === 44_800 && usage.used <= usage.budget && overBudget.standing.length <= usage.budget && overBudget.standing.length + aboutPart.length <= usage.budget + 1_500
     && overBudget.standing.includes("blue Skoda")
-    && /more lines not loaded here/.test(overBudget.standing) && overBudget.standing.includes(`read the page (id ${bigPlan})`) && overBudget.standing.includes("BIGLINE 0 ") && !overBudget.standing.includes("BIGLINE 419 ")
-    && overBudget.standing.includes("vegetarian") && overBudget.instructions.includes("Has a cat called Miso") && usage.left.some((title) => title.startsWith("Pinned: Big plan")),
+    && /\(condensed\)/.test(overBudget.standing) && overBudget.standing.includes('brain_read page="Big plan"') && overBudget.standing.split("BIGLINE").length - 1 < 640
+    && overBudget.standing.includes("vegetarian") && overBudget.instructions.includes("Has a cat called Miso") && usage.left.some((title) => title.startsWith("Big plan")),
   { usage, standingChars: overBudget.standing.length, aboutChars: aboutPart.length });
   await pinPage(bigPlan, false);
 
@@ -819,7 +826,7 @@ try {
   const usageText = await evaluate(`document.querySelector("[data-usage]").innerText`) as string;
   await shot("memory-pinned.png");
   await click('button[aria-label="Unpin from every chat"]').catch(() => {});
-  check("pinButtonAndUsage", /Two parts/.test(pinnedGroup) && /Lisbon trip/.test(pinnedGroup) && /Datta/.test(pinnedGroup) && /About me/.test(pinnedGroup) && /of 32,000 characters/.test(usageText),
+  check("pinButtonAndUsage", /Two parts/.test(pinnedGroup) && /Lisbon trip/.test(pinnedGroup) && /Datta/.test(pinnedGroup) && /About me/.test(pinnedGroup) && /of 44,800 characters on Grok Build/.test(usageText),
     { pinnedGroup, usageText });
 
   // --- 28, 29, 34. The sidebar, old links, and the Brain page ------------------------------------------------------------

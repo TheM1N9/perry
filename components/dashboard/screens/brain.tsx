@@ -2,17 +2,22 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { BookUserIcon, FileTextIcon, FileUpIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { ArchiveIcon, BookUserIcon, ChevronRightIcon, FileTextIcon, FileUpIcon, PlusIcon, SearchIcon, SparklesIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import { noteHref } from "@/convex/lib/notes";
 import type { Found } from "@/convex/pages";
+import type { ProposalView } from "@/convex/compaction";
 import { errorText } from "@/lib/format";
 import { useSession } from "@/lib/session";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Switch } from "@/components/ui/switch";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { BrainMap } from "../brain-map/brain-map";
@@ -36,6 +41,7 @@ export function Brain() {
   const create = useMutation(api.notes.create);
   const open = useMutation(api.pages.openMemoryPage);
   const [filter, setFilter] = useState(params.get("q") ?? "");
+  const [deep, setDeep] = useState(false);
   const file = useRef<HTMLInputElement>(null);
   const needle = filter.trim().toLocaleLowerCase();
   const setView = (next: string | undefined) => {
@@ -83,13 +89,22 @@ export function Brain() {
       </>}
     >
       {map ? <BrainMap /> : <div className="space-y-8">
+        <Reembedding />
         <InputGroup>
           <InputGroupAddon><SearchIcon /></InputGroupAddon>
           <InputGroupInput type="search" aria-label="Search Brain" placeholder="Search Brain" value={filter} autoComplete="off" onChange={(event) => setFilter(event.target.value)} />
           {filter && <InputGroupAddon align="inline-end"><InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => setFilter("")}><XIcon /></InputGroupButton></InputGroupAddon>}
         </InputGroup>
-        {needle.length >= 2 && <FoundLines term={filter.trim()} />}
+        {needle.length >= 2 && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Switch id="brain-deep" checked={deep} onCheckedChange={setDeep} />
+            <label htmlFor="brain-deep">Include archive</label>
+          </div>
+        )}
+        {needle.length >= 2 && <FoundLines term={filter.trim()} deep={deep} />}
         <MemoryPages filter={needle} />
+        {!needle && <BrainChanges />}
+        {!needle && <Archive />}
         <section aria-label="Pages" className="space-y-1">
           <h2 className="text-sm font-medium text-muted-foreground">Pages</h2>
           {notes === undefined ? <ListSkeleton rows={3} /> : pages.length === 0 ? (
@@ -102,22 +117,137 @@ export function Brain() {
   );
 }
 
+/**
+ * Brain's lines being embedded again with a new sentence model (memories.embedProgress): how far, while it runs. Search
+ * works meanwhile, by words and with the model before.
+ */
+function Reembedding() {
+  const { dashboardKey } = useSession();
+  const progress = useQuery(api.memories.embedProgress, { key: dashboardKey });
+  if (!progress?.total) return null;
+  const share = Math.min(100, (progress.done / progress.total) * 100);
+  const count = `${progress.done.toLocaleString()} of ${progress.total.toLocaleString()} lines`;
+  return (
+    <section aria-label="Updating search" className="space-y-2" data-reembedding>
+      <p className="text-sm text-muted-foreground">
+        {progress.finishedAt ? `Search updated: ${count}.` : `Updating search: ${count}. Search works meanwhile.`}
+      </p>
+      <Progress value={share} aria-label={`Updating search: ${count}`} />
+    </section>
+  );
+}
+
+/**
+ * Changes to Brain the owner approved (compaction.ts): what Perry tidied with
+ * their yes, newest first, each with Undo; and how many wait in Needs you.
+ */
+function BrainChanges() {
+  const { dashboardKey } = useSession();
+  const changes = useQuery(api.compaction.list, { key: dashboardKey });
+  const undo = useMutation(api.compaction.undo);
+  const [undoing, setUndoing] = useState<string | null>(null);
+  if (!changes?.length) return null;
+  const waiting = changes.filter((change) => change.status === "pending").length;
+  const applied = changes.filter((change) => change.status === "applied").slice(0, 8);
+  const run = async (id: ProposalView["id"]) => {
+    setUndoing(id);
+    try {
+      const done = await undo({ key: dashboardKey, id });
+      if (done.undone) toast.success("Undone. The lines are back as they were.");
+      else toast.error(done.error ?? "Couldn't undo it.");
+    } catch (cause) {
+      toast.error(`Couldn't undo it: ${errorText(cause)}`);
+    } finally {
+      setUndoing(null);
+    }
+  };
+  return (
+    <section aria-label="Changed with your OK" className="space-y-1">
+      <h2 className="text-sm font-medium text-muted-foreground">Changed with your OK</h2>
+      {waiting > 0 && <p className="text-sm text-muted-foreground"><Link href="/inbox" className="underline-offset-2 hover:underline">{waiting} waiting in Needs you</Link></p>}
+      {applied.length > 0 && (
+        <List label="Changed with your OK">
+          {applied.map((change) => (
+            <li key={change.id} className="flex items-center gap-3 py-2.5" data-change={change.kind}>
+              <SparklesIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-md">{change.headline}</p>
+                <p className="truncate text-xs text-muted-foreground">{change.before.length} {change.before.length === 1 ? "line" : "lines"}{change.target ? ` · ${change.target.title}` : change.page ? ` · ${change.page.title}` : ""}</p>
+              </div>
+              <Button variant="ghost" size="sm" disabled={undoing !== null} onClick={() => void run(change.id)}>{undoing === change.id && <Spinner />}Undo</Button>
+            </li>
+          ))}
+        </List>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Brain's archive (archive.ts): lines unused for months, out of every chat
+ * and of normal search; newest first, or those with the words searched, each
+ * with Restore.
+ */
+function Archive() {
+  const { dashboardKey } = useSession();
+  const [open, setOpen] = useState(false);
+  const [words, setWords] = useState("");
+  const archived = useQuery(api.archive.list, open ? { key: dashboardKey, ...(words.trim() ? { query: words.trim() } : {}) } : "skip");
+  const restore = useMutation(api.archive.restore);
+  const bring = async (id: string) => {
+    try {
+      await restore({ key: dashboardKey, ids: [id] });
+      toast.success("Back in Brain.");
+    } catch (cause) {
+      toast.error(`Couldn't restore it: ${errorText(cause)}`);
+    }
+  };
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground" data-archive-toggle>
+        <ChevronRightIcon className={cn("size-4 transition-transform", open && "rotate-90")} aria-hidden />Archive
+      </CollapsibleTrigger>
+      <CollapsibleContent className="space-y-2 pt-2" aria-label="Archive">
+        <p className="text-xs text-muted-foreground">Lines nobody used for a while. Perry finds them only when he looks deeper.</p>
+        <InputGroup>
+          <InputGroupAddon><SearchIcon /></InputGroupAddon>
+          <InputGroupInput type="search" aria-label="Search the archive" placeholder="Search the archive" value={words} onChange={(event) => setWords(event.target.value)} />
+        </InputGroup>
+        {archived === undefined ? <ListSkeleton rows={2} /> : !archived.lines.length ? <EmptyState title={words.trim() ? "Nothing archived says that" : "Nothing archived"} /> : (
+          <List label="Archived lines">
+            {archived.lines.map((line) => (
+              <li key={line.id} className="flex items-start gap-3 py-2.5" data-archived>
+                <ArchiveIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <p className="text-md">{line.text}</p>
+                  {line.page && <p className="mt-0.5 truncate text-xs text-muted-foreground"><Link href={noteHref(line.page.id)} className="hover:underline underline-offset-2">{line.page.title}</Link>{line.section ? ` › ${line.section}` : ""}</p>}
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => void bring(line.id)}>Restore</Button>
+              </li>
+            ))}
+          </List>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 const KIND = { profile: "About me", core: "Things to remember", daily: "Journal", page: "Page" } as const;
 
 /** Lines that match the search, in memory and pages alike, by words or meaning (pages.search). */
-function FoundLines({ term }: { term: string }) {
+function FoundLines({ term, deep }: { term: string; deep?: boolean }) {
   const { dashboardKey } = useSession();
   const search = useAction(api.pages.search);
-  const [found, setFound] = useState<{ term: string; hits: Found[] } | null>(null);
+  const [found, setFound] = useState<{ term: string; deep: boolean; hits: Found[] } | null>(null);
   useEffect(() => {
     let current = true;
     const timer = window.setTimeout(() => {
-      void search({ key: dashboardKey, query: term, limit: 12 })
-        .then((hits) => { if (current) setFound({ term, hits }); }, () => { if (current) setFound({ term, hits: [] }); });
+      void search({ key: dashboardKey, query: term, limit: 12, ...(deep ? { deep: true } : {}) })
+        .then((hits) => { if (current) setFound({ term, deep: Boolean(deep), hits }); }, () => { if (current) setFound({ term, deep: Boolean(deep), hits: [] }); });
     }, 250);
     return () => { current = false; window.clearTimeout(timer); };
-  }, [dashboardKey, search, term]);
-  if (found?.term !== term) return <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><Spinner />Searching…</p>;
+  }, [dashboardKey, search, term, deep]);
+  if (found?.term !== term || found.deep !== Boolean(deep)) return <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><Spinner />Searching…</p>;
   if (!found.hits.length) return <EmptyState title="Nothing in Brain says that" />;
   return (
     <section aria-label="Found in Brain" className="space-y-1">
@@ -131,6 +261,7 @@ function FoundLines({ term }: { term: string }) {
                 ? <Link href={noteHref(hit.page.id)} className="block text-md after:absolute after:inset-0 hover:underline underline-offset-2">{hit.text}</Link>
                 : <p className="text-md">{hit.text}</p>}
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {hit.archived && <span className="mr-1.5 font-medium" data-found-archived>Archived ·</span>}
                 {hit.page ? `${hit.page.title}${hit.section ? ` › ${hit.section}` : ""}` : `${KIND[hit.kind]}, not yet in a page`}
               </p>
             </div>

@@ -1,4 +1,5 @@
 import { v, type Infer } from "convex/values";
+import { markUsed } from "./archive";
 import { TAKE_LONGER_MAX_MIN } from "./lib/turnLimits";
 import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
@@ -689,7 +690,7 @@ async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infe
   }
   // How full the chat's Codex thread is, for a memory checkpoint before Codex compacts it (brain.checkpoint).
   if (trace.context && trace.context.window > 0 && !job.checkpoint && !job.flush) {
-    await ctx.db.patch(job.conversationId, { contextFill: Math.min(1, trace.context.used / trace.context.window) });
+    await ctx.db.patch(job.conversationId, { contextFill: Math.min(1, trace.context.used / trace.context.window), contextWindow: trace.context.window });
   }
   await ctx.db.patch(run._id, {
     toolCalls,
@@ -824,6 +825,8 @@ export const finishTurn = mutation({
     const named = cited.ids.map((raw) => ctx.db.normalizeId("memories", raw)).filter((id): id is Id<"memories"> => Boolean(id));
     const memoryIds = [...new Set(named)];
     const kept = (await Promise.all(memoryIds.map((id) => ctx.db.get(id)))).flatMap((memory) => memory ? [memory._id] : []);
+    // Cited: used, and back from the archive if it was there (archive.ts).
+    if (kept.length) await markUsed(ctx, kept, { revive: true });
     await ctx.db.patch(job._id, {
       mediaKey,
       status: args.error ? "error" : "done",

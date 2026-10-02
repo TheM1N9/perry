@@ -1,0 +1,382 @@
+{
+  "ranAt": "2026-10-02T23:29:36.809Z",
+  "ownerShaped": {
+    "nodes": 25,
+    "edges": 18
+  },
+  "large": {
+    "nodes": 3136,
+    "edges": 21204,
+    "pairs": 21204,
+    "queryMs": [
+      372,
+      3983,
+      8048
+    ],
+    "lines": 27665,
+    "linesNamingSomeone": 14511
+  },
+  "readableAtFit": {
+    "drawnNodes": 150,
+    "drawnEdges": 1200,
+    "labels": 18,
+    "overlaps": 0
+  },
+  "zoomedIn": {
+    "drawnNodes": 1070,
+    "drawnEdges": 1200,
+    "labels": 21,
+    "overlaps": 0
+  },
+  "performance": {
+    "dataMs": 5875,
+    "firstDrawMs": 6006,
+    "drawAfterDataMs": 131,
+    "settledMs": 10371,
+    "whileLayingOut": {
+      "frames": 216,
+      "frameMsP50": 17,
+      "frameMsP95": 17,
+      "longestMs": 17
+    },
+    "panZoomedOut": {
+      "frames": 119,
+      "fps": 60,
+      "longFrames": 0,
+      "frameMsP50": 16.7,
+      "frameMsP95": 16.8,
+      "drawMsP50": 0.9,
+      "drawMsP95": 1.3,
+      "drawn": {
+        "nodes": 146,
+        "edges": 1200,
+        "months": true
+      }
+    },
+    "panZoomedIn": {
+      "frames": 119,
+      "fps": 60,
+      "longFrames": 0,
+      "frameMsP50": 16.7,
+      "frameMsP95": 16.8,
+      "drawMsP50": 1.1,
+      "drawMsP95": 1.7,
+      "drawn": {
+        "nodes": 675,
+        "edges": 1200,
+        "months": false
+      }
+    }
+  },
+  "checks": {
+    "everyPageAndProjectOnce": true,
+    "kindsDaysProjects": true,
+    "pinnedMarked": true,
+    "edgesMatchTheData": true,
+    "noEdgeFromSupersededOrGuestOrBrokenLinks": true,
+    "weights": true,
+    "ownerOnly": true,
+    "localGraphQuery": true,
+    "listIsTheDefault": true,
+    "toggleKeepsTheViewInTheAddress": true,
+    "smallMapNamesAllWithoutOverlap": true,
+    "canvasDrawsTheData": true,
+    "hoverNamesAndLightsNeighbours": true,
+    "dragMovesAPage": true,
+    "dragDoesNotOpen": true,
+    "clickOpensThePage": true,
+    "searchFindsAndCentres": true,
+    "filterByKind": true,
+    "filterByProject": true,
+    "filterByTime": true,
+    "unlinkedOff": true,
+    "localMapOneStep": true,
+    "localMapTwoSteps": true,
+    "localMapOpensAPage": true,
+    "noLocalMapForAPageTiedToNothing": true,
+    "darkTheme": true,
+    "queryUsesTheAboutIndex": true,
+    "largeGraphShape": true,
+    "largeCanvasDrawsTheData": true,
+    "zoomedOutJournalByMonth": true,
+    "largeMapReadableAtDefaultZoom": true,
+    "zoomedInJournalDaysComeBack": true,
+    "zoomingInRevealsMore": true,
+    "drawsSoonAfterTheData": true,
+    "panningSmooth": true,
+    "layoutOffTheMainThread": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "everyPageAndProjectOnce": {
+      "nodes": 25,
+      "pages": 24
+    },
+    "kindsDaysProjects": [
+      "journal journal 2025-08-28",
+      "journal journal 2026-08-23",
+      "person Datta",
+      "person Vivek",
+      "person Manvi",
+      "remember Things to remember",
+      "about About me",
+      "remember Kitchen Things to remember (Kitchen)",
+      "chat chat with Priya",
+      "journal journal 2026-09-20",
+      "journal journal 2026-09-24",
+      "journal journal 2026-09-27",
+      "journal journal 2026-09-29",
+      "journal journal 2026-09-30",
+      "journey Kitchen Journey (Kitchen)",
+      "journal journal 2026-10-01",
+      "person Arjun",
+      "person Juhi",
+      "person Aadil",
+      "page Packing list",
+      "page Goa trip",
+      "page Reading list",
+      "page Ideas",
+      "page Kitchen plan (Kitchen)",
+      "project project Kitchen (Kitchen)"
+    ],
+    "pinnedMarked": [
+      "About me",
+      "Goa trip",
+      "Kitchen Things to remember",
+      "Things to remember"
+    ],
+    "edgesMatchTheData": {
+      "missing": [],
+      "extra": []
+    },
+    "noEdgeFromSupersededOrGuestOrBrokenLinks": [
+      "Aadil | journal 2026-09-30 | about",
+      "Arjun | journal 2025-08-28 | about",
+      "Datta | Kitchen Journey | about",
+      "Datta | Kitchen plan | link",
+      "Datta | journal 2026-09-27 | about",
+      "Datta | journal 2026-10-01 | about",
+      "Goa trip | Juhi | link",
+      "Goa trip | Packing list | link",
+      "Goa trip | Reading list | link",
+      "Juhi | Vivek | also",
+      "Juhi | journal 2026-08-23 | about",
+      "Juhi | journal 2026-09-30 | about",
+      "Kitchen Journey | project Kitchen | project",
+      "Kitchen Things to remember | project Kitchen | project",
+      "Kitchen plan | project Kitchen | project",
+      "Manvi | journal 2026-09-24 | about",
+      "Manvi | journal 2026-10-01 | about",
+      "Vivek | journal 2026-09-30 | about"
+    ],
+    "ownerOnly": "Wrong dashboard key.",
+    "localGraphQuery": [
+      "Datta",
+      "Kitchen plan",
+      "journal 2026-10-01",
+      "journal 2026-09-27",
+      "Kitchen Journey"
+    ],
+    "smallMapNamesAllWithoutOverlap": {
+      "labels": 20,
+      "overlaps": 0
+    },
+    "canvasDrawsTheData": {
+      "canvas": {
+        "brainMap": "true",
+        "nodes": "25",
+        "edges": "18",
+        "settled": "true",
+        "drawnNodes": "25",
+        "drawnEdges": "18",
+        "view": "pages",
+        "lit": "",
+        "litNeighbours": "0"
+      },
+      "nodes": 25,
+      "pairs": 18
+    },
+    "hoverNamesAndLightsNeighbours": {
+      "lit": "Datta",
+      "neighbours": "4",
+      "expected": 4
+    },
+    "dragMovesAPage": {
+      "before": {
+        "x": 769.0229538805764,
+        "y": 606.5224597303277
+      },
+      "during": {
+        "x": 849.0229457397157,
+        "y": 656.5224615394078
+      }
+    },
+    "clickOpensThePage": "/brain/rv6yv86kwa616ce4vfwza2ca05",
+    "searchFindsAndCentres": {
+      "lit": "Manvi",
+      "at": {
+        "x": 760.5,
+        "y": 536.5
+      },
+      "centre": {
+        "x": 760.5,
+        "y": 536.5
+      }
+    },
+    "filterByKind": {
+      "noJournal": 17,
+      "journals": 8,
+      "all": 25
+    },
+    "filterByProject": {
+      "inKitchen": 5,
+      "expected": "Kitchen, its Things to remember, its journal day, Kitchen plan, and Datta they tie to"
+    },
+    "filterByTime": {
+      "week": 21,
+      "olderDays": 4
+    },
+    "unlinkedOff": {
+      "tied": 19,
+      "orphans": [
+        "Things to remember",
+        "About me",
+        "chat with Priya",
+        "journal 2026-09-20",
+        "journal 2026-09-29",
+        "Ideas"
+      ]
+    },
+    "localMapOneStep": {
+      "canvas": {
+        "brainMap": "true",
+        "nodes": "5",
+        "edges": "4",
+        "settled": "true",
+        "drawnNodes": "5",
+        "drawnEdges": "4",
+        "view": "pages",
+        "lit": "",
+        "litNeighbours": "0"
+      },
+      "nodes": 5
+    },
+    "localMapTwoSteps": {
+      "canvas": {
+        "brainMap": "true",
+        "nodes": "7",
+        "edges": "7",
+        "settled": "true",
+        "drawnNodes": "7",
+        "drawnEdges": "7",
+        "view": "pages",
+        "lit": "",
+        "litNeighbours": "0"
+      },
+      "nodes": [
+        "Datta",
+        "Kitchen plan",
+        "journal 2026-10-01",
+        "journal 2026-09-27",
+        "Kitchen Journey",
+        "project Kitchen",
+        "Manvi"
+      ]
+    },
+    "localMapOpensAPage": "/brain/m145nmsjad4nfxwwrd9v73ykkr",
+    "darkTheme": {
+      "bg": "rgb(12, 12, 14)",
+      "dark": true
+    },
+    "largeSeeded": {
+      "pages": 3103,
+      "journal": 1095,
+      "people": 400,
+      "own": 1600,
+      "lines": 27638
+    },
+    "queryUsesTheAboutIndex": "SEARCH doc_memories USING INDEX i_memories_by_about (<expr>>?)",
+    "largeGraphShape": {
+      "nodes": 3136,
+      "edges": 21204,
+      "pairs": 21204
+    },
+    "largeCanvasDrawsTheData": {
+      "canvas": {
+        "brainMap": "true",
+        "nodes": "3136",
+        "edges": "21204",
+        "settled": "true",
+        "drawnNodes": "150",
+        "drawnEdges": "1200",
+        "view": "months",
+        "lit": "",
+        "litNeighbours": "0"
+      }
+    },
+    "zoomedOutJournalByMonth": {
+      "view": "months",
+      "drawn": "150"
+    },
+    "largeMapReadableAtDefaultZoom": {
+      "drawnNodes": 150,
+      "drawnEdges": 1200,
+      "labels": 18,
+      "overlaps": 0
+    },
+    "zoomedInJournalDaysComeBack": "pages",
+    "zoomingInRevealsMore": {
+      "drawnNodes": 1070,
+      "drawnEdges": 1200,
+      "labels": 21,
+      "overlaps": 0
+    },
+    "drawsSoonAfterTheData": {
+      "dataAt": 5875,
+      "firstDraw": 6006
+    },
+    "panningSmooth": {
+      "panOut": {
+        "frames": 119,
+        "fps": 60,
+        "longFrames": 0,
+        "frameMsP50": 16.7,
+        "frameMsP95": 16.8,
+        "drawMsP50": 0.9,
+        "drawMsP95": 1.3,
+        "drawn": {
+          "nodes": 146,
+          "edges": 1200,
+          "months": true
+        }
+      },
+      "panIn": {
+        "frames": 119,
+        "fps": 60,
+        "longFrames": 0,
+        "frameMsP50": 16.7,
+        "frameMsP95": 16.8,
+        "drawMsP50": 1.1,
+        "drawMsP95": 1.7,
+        "drawn": {
+          "nodes": 675,
+          "edges": 1200,
+          "months": false
+        }
+      }
+    },
+    "layoutOffTheMainThread": {
+      "frames": 216,
+      "frameMsP50": 17,
+      "frameMsP95": 17,
+      "longestMs": 17
+    },
+    "noPageErrors": {
+      "pageErrors": [],
+      "thrown": []
+    },
+    "runnerLog": [],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

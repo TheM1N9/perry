@@ -64,6 +64,9 @@ export function NoteScreen() {
   const id = decodeURIComponent(params.id);
   const note = useQuery(api.notes.get, { key: dashboardKey, id });
   useEffect(() => { if (note) document.title = `${note.title} · Perry`; }, [note?.title]);
+  // Opened: its lines count as used, so Brain does not archive them (archive.ts).
+  const opened = useMutation(api.archive.opened);
+  useEffect(() => { void opened({ key: dashboardKey, id }).catch(() => {}); }, [dashboardKey, id, opened]);
 
   if (note === undefined) return <Page title="Page"><ListSkeleton rows={4} /></Page>;
   if (note === null) {
