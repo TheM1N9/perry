@@ -4,6 +4,7 @@ import type { Id } from "./_generated/dataModel";
 import type { EngineKind } from "./lib/engines";
 import { engineFor } from "./installation";
 import { authenticate } from "./runner";
+import { pausedAt } from "./pause";
 
 /**
  * Naming web chats. A new chat is titled with its first message straight
@@ -50,6 +51,8 @@ export const pending = query({
   args: { token: v.string() },
   handler: async (ctx, args): Promise<Array<{ id: Id<"chatTitles">; text: string; engine?: EngineKind }>> => {
     await authenticate(ctx, args.token);
+    // Naming takes a model call: paused, none is made (pause.ts).
+    if (await pausedAt(ctx)) return [];
     const rows = await ctx.db.query("chatTitles").order("asc").take(50);
     const now = Date.now();
     const waiting = rows.filter((row) => row.requestedAt > now - REQUEST_TTL_MS && (row.claimedAt ?? 0) < now - CLAIM_MS).slice(0, 10);

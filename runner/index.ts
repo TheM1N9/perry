@@ -934,7 +934,11 @@ async function main() {
         if (update) throw new Error(refusal(engine.label, update));
         // Someone else's words never reach an engine that cannot be locked down for them, whatever the server asked.
         if (job.guest && !engine.capabilities.guestLockdown) throw new Error(`${engine.label} can't be locked down for a chat with someone else, so it doesn't run one.`);
-        if (job.kind === "compact") {
+        // Stopped between its claim and its start (/stop, or Perry paused): it never reaches the engine.
+        if (stopRequested.has(job._id)) {
+          console.log(yellow("  stopped before it started, as asked"));
+          result = { stopped: true, model: label };
+        } else if (job.kind === "compact") {
           if (!job.resumeCursor) throw new Error("This chat has no session to compact yet.");
           console.log(dim(`  compacting a chat's ${engine.label} session`));
           dog = watchdog(engine, { maxMs: COMPACT_TIMEOUT_MS }, () => undefined, { end: () => endTurn(job._id) });

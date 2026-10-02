@@ -43,6 +43,9 @@ can run their own copy, and every copy is separate.
   Google Calendar, Notion and more through [Composio](https://composio.dev).
 - **"From now on, keep replies short."** Remembers who you are, what you like
   and what you told it last week.
+- **"Note this: passport renewal by May."** Keeps notes you both edit: packing
+  lists, trip plans, meeting notes, a weekly review a schedule adds to. A
+  project's notes are shared with its chats. `/note` from your phone adds a line.
 - **Hold a hotkey and talk.** An optional desktop companion sits in a corner
   of your screen with your chats, to-dos and approvals, and takes voice input
   transcribed on your machine.
@@ -116,7 +119,7 @@ stays on, like a Mac mini or a home server.
 - **Supervised or full access**, chosen per chat.
 - **Everything is logged.** Every reply has a trace of the commands, file
   changes and tool calls behind it.
-- **Your data is local.** Chats, memory and files live in `~/.perry`.
+- **Your data is local.** Chats, memory, notes and files live in `~/.perry`.
   Connected-account tokens are held by Composio, never by Perry.
 
 ## Contributing

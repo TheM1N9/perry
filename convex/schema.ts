@@ -4,6 +4,8 @@ import { v } from "convex/values";
 export const vChannel = v.union(v.literal("telegram"), v.literal("web"), v.literal("whatsapp"));
 /** The messaging apps the owner can pair; the web dashboard is always there. */
 export const vMessenger = v.union(v.literal("telegram"), v.literal("whatsapp"));
+/** Where the owner paused Perry: the dashboard, the desktop pet, or a phone. */
+export const vPauseSource = v.union(v.literal("web"), v.literal("pet"), v.literal("telegram"), v.literal("whatsapp"));
 /** A file the owner sent on Telegram, before it is downloaded. */
 export const vTelegramMedia = v.object({ fileId: v.string(), fileName: v.string(), contentType: v.string(), size: v.optional(v.number()) });
 export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.literal("daily"));
@@ -234,6 +236,12 @@ export default defineSchema({
      * rather than sent to it.
      */
     onboarding: v.optional(v.union(v.literal("pending"), v.literal("done"), v.literal("skipped"))),
+    /**
+     * Pause Perry (pause.ts): while set, nothing starts (turns, schedules,
+     * watches, the heartbeat, events, background tasks) and what was running
+     * was stopped. When, and where the owner paused it.
+     */
+    paused: v.optional(v.object({ at: v.number(), by: vPauseSource })),
     createdAt: v.number(),
   }),
 
@@ -667,6 +675,35 @@ export default defineSchema({
     updatedAt: v.number(),
   }),
 
+  /**
+   * A note: a page of Markdown the owner and Perry both read and write (a
+   * packing list, a trip plan, meeting notes, a weekly review). Every save
+   * names the revision it was made from, and one made from an older revision
+   * is refused, so a stale edit never overwrites a newer one. In a project,
+   * only its chats reach it; outside one, every chat of the owner's does. A
+   * chat with someone else never does. See notes.ts.
+   */
+  notes: defineTable({
+    title: v.string(),
+    /** Markdown. */
+    content: v.string(),
+    /** Bumped by every save; a save from an older one is refused. */
+    revision: v.number(),
+    projectId: v.optional(v.id("projects")),
+    /** Title and content together, for keyword search. */
+    search: v.string(),
+    /** Who saved it last. */
+    by: v.union(v.literal("owner"), v.literal("assistant")),
+    /** The chat it was saved from, when it was. */
+    from: v.optional(v.id("conversations")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_updated", ["updatedAt"])
+    .index("by_project", ["projectId", "updatedAt"])
+    .index("by_title", ["title"])
+    .searchIndex("search_text", { searchField: "search" }),
+
   conversations: defineTable({
     channel: vChannel,
     externalId: v.string(), // telegram chat id, or a unique web session id
@@ -891,6 +928,14 @@ export default defineSchema({
     recovery: v.optional(v.object({ at: v.number(), tries: v.number() })),
     /** The chat it was set up in, where its results go (channels.ts). Unset: the owner's messaging channel. */
     origin: v.optional(v.id("conversations")),
+    /**
+     * Runs it missed while Perry was paused (pause.ts): when the first was due,
+     * how many, whether one was stopped by the pause, and the last event that
+     * would have started it. Kept until the owner runs it or lets it go.
+     */
+    missed: v.optional(v.object({ at: v.number(), runs: v.number(), stopped: v.optional(v.boolean()), event: v.optional(v.string()) })),
+    /** A note each run's result is added to, under the date (a weekly review's log). See notes.ts. */
+    noteId: v.optional(v.id("notes")),
     nextRunAt: v.number(),
     lastRunAt: v.optional(v.number()),
     lastResult: v.optional(v.string()),

@@ -1,0 +1,287 @@
+"use client";
+
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import {
+  CodeIcon, CopyIcon, DownloadIcon, FileTextIcon, FileUpIcon, FolderIcon, FolderInputIcon, LinkIcon, MessageSquareIcon, MoreHorizontalIcon,
+  PlusIcon, SearchIcon, SparklesIcon, Trash2Icon,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { toast } from "sonner";
+import { useMutation, useQuery } from "@/client/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import { noteHref } from "@/convex/lib/notes";
+import type { NoteSummary, NoteView } from "@/convex/notes";
+import { copyText, errorText } from "@/lib/format";
+import { useSession } from "@/lib/session";
+import { NoteAutosave } from "@/components/notes/autosave";
+import { NoteEditor } from "@/components/notes/editor";
+import { inspectMarkdown } from "@/components/notes/markdown";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator,
+  DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Textarea } from "@/components/ui/textarea";
+import { SaveStatus, type SaveState } from "../autosave";
+import { EmptyState, List, ListSkeleton, Page, RelativeTime, StatusBadge, TopBar } from "../common";
+
+/**
+ * Notes (convex/notes.ts): pages you and Perry write together. The list, and
+ * one note in the editor, which saves as you type and never over a newer
+ * version: if Perry or another tab saved since, your words stay on screen
+ * until you choose.
+ */
+export function Notes() {
+  const { dashboardKey } = useSession();
+  const router = useRouter();
+  const notes = useQuery(api.notes.list, { key: dashboardKey });
+  const create = useMutation(api.notes.create);
+  const [filter, setFilter] = useState("");
+  const file = useRef<HTMLInputElement>(null);
+  const needle = filter.trim().toLocaleLowerCase();
+  const shown = (notes ?? []).filter((note) => !needle || `${note.title} ${note.preview} ${note.project ?? ""}`.toLocaleLowerCase().includes(needle));
+
+  const newNote = async (title?: string, content?: string) => {
+    try {
+      const id = await create({ key: dashboardKey, ...(title ? { title } : {}), ...(content !== undefined ? { content } : {}) });
+      router.push(noteHref(id));
+    } catch (cause) {
+      toast.error(`Couldn't make it: ${errorText(cause)}`);
+    }
+  };
+  // A Markdown file from elsewhere (one downloaded and edited by hand, say) opens as a new note.
+  const open = async (picked: File | undefined) => {
+    if (!picked) return;
+    await newNote(picked.name.replace(/\.(md|markdown|txt)$/i, ""), await picked.text());
+  };
+
+  return (
+    <Page
+      title="Notes"
+      description="Pages you and Perry write together."
+      actions={<>
+        <input ref={file} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" className="hidden" aria-label="Open a Markdown file"
+          onChange={(event) => { void open(event.target.files?.[0]); event.target.value = ""; }} />
+        <Button variant="outline" onClick={() => file.current?.click()}><FileUpIcon />Open .md</Button>
+        <Button onClick={() => void newNote()}><PlusIcon />New note</Button>
+      </>}
+    >
+      {notes === undefined ? <ListSkeleton rows={4} /> : notes.length === 0 ? (
+        <EmptyState mascot title="No notes yet">
+          Start one here, or ask Perry to write something down. /note on your phone adds to your Inbox note.
+        </EmptyState>
+      ) : (
+        <>
+          <InputGroup className="mb-4">
+            <InputGroupAddon><SearchIcon /></InputGroupAddon>
+            <InputGroupInput aria-label="Filter notes" placeholder="Filter notes" value={filter} onChange={(event) => setFilter(event.target.value)} />
+          </InputGroup>
+          {shown.length === 0 ? <EmptyState title="No note matches" /> : <NoteRows notes={shown} />}
+        </>
+      )}
+    </Page>
+  );
+}
+
+/** Notes as rows: title, where, the first words, and when last changed. */
+export function NoteRows({ notes, hideProject }: { notes: NoteSummary[]; hideProject?: boolean }) {
+  return (
+    <List label="Notes">
+      {notes.map((note) => (
+        <li key={note.id} className="relative flex items-start gap-3 py-3">
+          <FileTextIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <Link href={noteHref(note.id)} className="block truncate text-md font-medium after:absolute after:inset-0 hover:underline underline-offset-2">{note.title}</Link>
+            {note.preview && <p className="mt-0.5 truncate text-sm text-muted-foreground">{note.preview}</p>}
+          </div>
+          {!hideProject && note.project && <StatusBadge>{note.project}</StatusBadge>}
+          <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+            {note.by === "assistant" && <SparklesIcon className="size-3" aria-label="Perry changed it last" />}
+            <RelativeTime at={note.updatedAt} />
+          </span>
+        </li>
+      ))}
+    </List>
+  );
+}
+
+/** One note, from the address. */
+export function NoteScreen() {
+  const { dashboardKey } = useSession();
+  const params = useParams<{ id: string }>();
+  const id = decodeURIComponent(params.id);
+  const note = useQuery(api.notes.get, { key: dashboardKey, id });
+  useEffect(() => { if (note) document.title = `${note.title} · Perry`; }, [note?.title]);
+
+  if (note === undefined) return <Page title="Note"><ListSkeleton rows={4} /></Page>;
+  if (note === null) {
+    return (
+      <Page title="Note">
+        <EmptyState mascot title="This note isn't here" action={<Button variant="outline" size="sm" render={<Link href="/notes" />}>All notes</Button>}>
+          It may have been deleted.
+        </EmptyState>
+      </Page>
+    );
+  }
+  return <NoteEditing key={note.id} note={note} />;
+}
+
+/** The note's saves (NoteAutosave), made once for the note and fed each newer version the server sends. */
+function useNoteSaves(note: NoteView) {
+  const { dashboardKey } = useSession();
+  const save = useMutation(api.notes.save);
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const [controller] = useState(() => {
+    const made = new NoteAutosave((noteId, patch) => saveRef.current({ key: dashboardKey, id: noteId, ...patch }));
+    made.receive(note);
+    return made;
+  });
+  const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  useEffect(() => controller.receive(note), [controller, note]);
+  // Closing the tab with words still to save asks first, and saves them meanwhile.
+  useEffect(() => {
+    const leaving = (event: BeforeUnloadEvent) => {
+      if (!controller.dirty) return;
+      void controller.flush();
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", leaving);
+    return () => window.removeEventListener("beforeunload", leaving);
+  }, [controller]);
+  // Leaving by an in-app link: what is typed is saved on the way out (never over a newer note).
+  useEffect(() => () => { void controller.flush().finally(() => controller.dispose()); }, [controller]);
+  return { controller, state };
+}
+
+function NoteEditing({ note }: { note: NoteView }) {
+  const { dashboardKey } = useSession();
+  const router = useRouter();
+  const { controller, state } = useNoteSaves(note);
+  const draft = state.draft ?? { title: note.title, content: note.content };
+  // The editor shows what it can give back unchanged; anything else is edited as Markdown, so nothing is lost.
+  const fits = useMemo(() => inspectMarkdown(note.content), [note.id]);
+  const [source, setSource] = useState(!fits.supported);
+  const [removing, setRemoving] = useState(false);
+  const remove = useMutation(api.notes.remove);
+  const move = useMutation(api.notes.move);
+  const projects = useQuery(api.projects.list, { key: dashboardKey });
+
+  useEffect(() => {
+    const keys = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void controller.flush(true); }
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, [controller]);
+
+  const status: SaveState = state.status === "saving" ? { status: "saving" } : state.status === "dirty" ? { status: "editing" }
+    : state.status === "error" ? { status: "error", error: state.error } : state.status === "saved" ? { status: "saved" } : { status: "idle" };
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([draft.content], { type: "text/markdown;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${draft.title.replace(/[\\/:*?"<>|]+/g, " ").trim() || "note"}.md`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  };
+  const copy = (text: string, what: string) => void copyText(text).then(() => toast.success(`${what} copied.`), (cause) => toast.error(`Couldn't copy: ${errorText(cause)}`));
+  const moveTo = async (projectId: Id<"projects"> | null) => {
+    try {
+      await move({ key: dashboardKey, id: note.id, projectId });
+      toast.success(projectId ? "Moved. Only that project's chats can reach it now." : "Moved out. All your chats can reach it now.");
+    } catch (cause) {
+      toast.error(`Couldn't move it: ${errorText(cause)}`);
+    }
+  };
+
+  return (
+    <>
+      <TopBar actions={
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label="Note options" />}><MoreHorizontalIcon /></DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger><FolderInputIcon />Move to project</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-48">
+                <DropdownMenuRadioGroup value={note.projectId ?? "none"} onValueChange={(value) => void moveTo(value === "none" ? null : value as Id<"projects">)}>
+                  <DropdownMenuRadioItem value="none" closeOnClick>No project</DropdownMenuRadioItem>
+                  {(projects ?? []).map((project) => <DropdownMenuRadioItem key={project.id} value={project.id} closeOnClick>{project.name}</DropdownMenuRadioItem>)}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuCheckboxItem checked={source} onCheckedChange={(on) => {
+              const back = inspectMarkdown(draft.content);
+              if (!on && !back.supported) toast.info(`${back.reason} It stays as Markdown.`);
+              setSource(Boolean(on) || !back.supported);
+            }}><CodeIcon />Edit as Markdown</DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={download}><DownloadIcon />Download .md</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => copy(draft.content, "Markdown")}><CopyIcon />Copy as Markdown</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => copy(`${window.location.origin}${noteHref(note.id)}`, "Link")}><LinkIcon />Copy link</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={() => setRemoving(true)}><Trash2Icon />Delete</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      }>
+        <Link href="/notes" className="text-muted-foreground hover:text-foreground">Notes</Link>
+        <span className="text-muted-foreground/60" aria-hidden>/</span>
+        <span className="truncate">{draft.title}</span>
+      </TopBar>
+      <main id="content" tabIndex={-1} className="flex-1 outline-none">
+        <div className="mx-auto w-full max-w-3xl px-4 pb-24 pt-4 sm:px-8 sm:pt-8">
+          <input
+            aria-label="Title" value={draft.title} maxLength={160} placeholder="Untitled"
+            className="w-full bg-transparent text-2xl font-semibold tracking-[-0.02em] outline-none placeholder:text-muted-foreground/60"
+            onChange={(event) => controller.edit({ title: event.target.value })}
+            onBlur={() => void controller.flush()}
+            onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); (document.querySelector("[data-note-editor], #note-source") as HTMLElement | null)?.focus(); } }}
+          />
+          <div className="mt-1.5 mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            {note.project && <Link href={`/projects/${note.projectId}`} className="inline-flex items-center gap-1 hover:text-foreground"><FolderIcon className="size-3" />{note.project}</Link>}
+            {note.from && <Link href={`/chat/${note.from.id}`} className="inline-flex items-center gap-1 hover:text-foreground"><MessageSquareIcon className="size-3" />From “{note.from.title}”</Link>}
+            <span className="inline-flex items-center gap-1">{note.by === "assistant" ? <><SparklesIcon className="size-3" />Perry</> : "You"}, <RelativeTime at={note.updatedAt} /></span>
+            <SaveStatus state={status} onRetry={() => void controller.flush(true)} className="min-h-0" />
+          </div>
+          {state.status === "conflict" && state.remote && (
+            <div role="alert" className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm" data-conflict>
+              <p className="min-w-0 flex-1">{state.remote.by === "assistant" ? "Perry" : "Someone"} changed this note while you typed. Your words are still here.</p>
+              <Button size="sm" variant="outline" onClick={() => copy(draft.content, "Your version")}>Copy mine</Button>
+              <Button size="sm" variant="outline" onClick={() => controller.useLatest()}>Load theirs</Button>
+              <Button size="sm" onClick={() => controller.keepMine()}>Keep mine</Button>
+            </div>
+          )}
+          {!fits.supported && source && <p className="mb-3 text-xs text-muted-foreground">{fits.reason} Edit it as Markdown here.</p>}
+          {source ? (
+            <Textarea id="note-source" aria-label={`${draft.title} as Markdown`} value={draft.content} rows={20}
+              className="min-h-[50vh] font-mono text-sm leading-relaxed"
+              onChange={(event) => controller.edit({ content: event.target.value })}
+              onBlur={() => void controller.flush()} />
+          ) : (
+            <NoteEditor value={draft.content} label={draft.title} onChange={(content) => controller.edit({ content })} onBlur={() => void controller.flush()} />
+          )}
+        </div>
+      </main>
+      <AlertDialog open={removing} onOpenChange={setRemoving}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this note?</AlertDialogTitle>
+            <AlertDialogDescription>“{draft.title}” goes for good, for you and for Perry.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void remove({ key: dashboardKey, id: note.id }).then(() => { controller.dispose(); router.replace("/notes"); toast.success("Note deleted."); }, (cause) => toast.error(`Couldn't delete it: ${errorText(cause)}`))}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}

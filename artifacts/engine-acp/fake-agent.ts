@@ -23,7 +23,11 @@
  *                    nothing for that many seconds, then reply
  *   QUIET <seconds>  say nothing for that many seconds, then reply
  *   RUN <command>    an execute tool call, which asks permission unless always-approve
+ *   STEPS <json>     one of every kind of step: a command with growing output, a file edit,
+ *                    a web search, Perry's browser, another Perry tool, a failed command (steps())
  *   SLOW             a long reply, 30 chunks 400 ms apart, that stops on session/cancel
+ *   LINGER <seconds> anywhere in the message (a job's or task's prompt, after Perry's own words): a
+ *                    chunk a second for that long, that stops on session/cancel
  *   HANG             one chunk, then nothing, and session/cancel is ignored
  *   EARLY            an empty end_turn at once, then the reply as updates after it
  *   RECALL           the messages this session has had before, to show it was resumed
@@ -193,6 +197,100 @@ async function callTool(session: Saved, name: string, args: Record<string, unkno
   return /isError"\s*:\s*true/.test(out) || !out.includes('"id":2') ? `failed: ${out.slice(0, 200)}` : "ok over stdio";
 }
 
+/** One of Perry's tools over the HTTP MCP server it was given, and the text it answered (what an agent shows as the tool's result). */
+async function toolAnswer(session: Saved, name: string, args: Record<string, unknown>): Promise<{ text: string; error: boolean }> {
+  const server = session.mcpServers.find((item) => item.name === "assistant");
+  if (!server || !("url" in server)) return { text: "no Perry MCP server over HTTP was given", error: true };
+  const messages = [
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: `fake-${profile}`, version: "0" } } },
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: args } },
+  ];
+  let answer = "";
+  for (const message of messages) {
+    const response = await fetch(server.url, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...Object.fromEntries(server.headers.map((header) => [header.name, header.value])) },
+      body: JSON.stringify(message),
+    });
+    answer = await response.text();
+    if (!response.ok) return { text: `http ${response.status}: ${answer.slice(0, 200)}`, error: true };
+  }
+  const body = answer.trim().startsWith("{") ? answer : answer.split("\n").find((line) => line.startsWith("data:"))?.slice(5) ?? "{}";
+  const result = (JSON.parse(body) as { result?: { isError?: boolean; content?: Array<{ type: string; text?: string }> } }).result;
+  log({ mcp: "http", tool: name, answer: answer.slice(0, 300) });
+  return { text: (result?.content ?? []).map((part) => part.text ?? `[${part.type}]`).join("\n"), error: Boolean(result?.isError) };
+}
+
+/**
+ * STEPS <json>: one of every kind of step, a second or so apart, the way an
+ * agent reports them over ACP: a command whose output grows while it runs
+ * and is longer than the trace keeps when it ends, a file edit with its diff (the file is written
+ * too), a web search with its results, Perry's browser on two pages, another
+ * of Perry's tools, and a command that fails. `secret` (or FAKE_ACP_HOME/steps-secret) is put where a saved
+ * login could leak: in a command, its output, and a page.
+ */
+async function steps(session: Saved, text: string, update: (update: SessionUpdate) => Promise<void>, say: (chunk: string) => Promise<void>, signal: AbortSignal) {
+  const plan = JSON.parse(text.slice("STEPS ".length)) as { dir: string; page: string; secretPage: string; secret?: string; gap?: number };
+  // The saved login is read from FAKE_ACP_HOME, so the owner's message does not carry it.
+  plan.secret ??= readFileSync(join(HOME, "steps-secret"), "utf8").trim();
+  const gap = plan.gap ?? 1500;
+  const tool = (id: string, fields: Record<string, unknown>, first = false) => update({ sessionUpdate: first ? "tool_call" : "tool_call_update", toolCallId: id, ...fields } as SessionUpdate);
+  const words = (value: string) => [{ type: "content", content: { type: "text", text: value } }];
+  const stamp = Date.now().toString(36);
+
+  // A command: running, its output growing, then done with 150 lines, more than the trace keeps.
+  const command = `node scripts/check.js --token ${plan.secret}`;
+  const lines = Array.from({ length: 150 }, (_, index) => `check ${index + 1} of 150 passed`);
+  await tool(`cmd-${stamp}`, { title: `Execute \`${command}\``, kind: "execute", status: "pending", rawInput: { command, cwd: plan.dir } }, true);
+  for (let shown = 5; shown <= 20 && !signal.aborted; shown += 5) {
+    await tool(`cmd-${stamp}`, { status: "in_progress", content: words(lines.slice(0, shown).join("\n")) });
+    await sleep(gap);
+  }
+  await tool(`cmd-${stamp}`, { status: "completed", content: words(`${lines.join("\n")}\nsigned in with token ${plan.secret}\nall 150 checks passed`) });
+  await sleep(gap / 2);
+
+  // A file edit, with its diff; the file is written for its link to open.
+  const file = join(plan.dir, "notes.md");
+  writeFileSync(file, "# Notes\nPerry shows each step.\nIt keeps them after the reply.\n");
+  await tool(`edit-${stamp}`, { title: "Edit notes.md", kind: "edit", status: "in_progress", locations: [{ path: file }], rawInput: { path: file } }, true);
+  await sleep(gap / 2);
+  await tool(`edit-${stamp}`, { status: "completed", content: [{ type: "diff", path: file, oldText: "# Notes\nPerry shows one step.", newText: "# Notes\nPerry shows each step.\nIt keeps them after the reply." }] });
+  await sleep(gap / 2);
+
+  // A web search, with its results.
+  const found = [1, 2, 3, 4, 5].map((n) => ({ title: `Inline steps, part ${n}`, url: `https://example.com/steps/${n}` }));
+  await tool(`search-${stamp}`, { title: "perry inline steps", kind: "fetch", status: "in_progress", rawInput: { query: "perry inline steps" } }, true);
+  await sleep(gap / 2);
+  await tool(`search-${stamp}`, { status: "completed", content: words(`Web search results for query: "perry inline steps"\n\nLinks: ${JSON.stringify(found)}`) });
+  await sleep(gap / 2);
+
+  // Perry's browser, on a page, then on one that shows the saved login.
+  for (const [index, url] of [plan.page, plan.secretPage].entries()) {
+    const id = `browser-${index}-${stamp}`;
+    const args = { action: "open", url };
+    await tool(id, { title: "assistant__browser", kind: "other", status: "in_progress", rawInput: args }, true);
+    const answer = await toolAnswer(session, "browser", args);
+    await tool(id, { status: answer.error ? "failed" : "completed", content: words(answer.text) });
+    await sleep(gap / 2);
+  }
+
+  // Another of Perry's tools.
+  const todo = { title: `Look at the inline steps ${stamp}` };
+  await tool(`todo-${stamp}`, { title: "assistant__add_todo", kind: "other", status: "in_progress", rawInput: todo }, true);
+  const added = await toolAnswer(session, "add_todo", todo);
+  await tool(`todo-${stamp}`, { status: added.error ? "failed" : "completed", content: words(added.text) });
+  await sleep(gap / 2);
+
+  // A command that fails.
+  await tool(`fail-${stamp}`, { title: "Execute `node scripts/missing.js`", kind: "execute", status: "in_progress", rawInput: { command: "node scripts/missing.js", cwd: plan.dir } }, true);
+  await sleep(gap / 2);
+  await tool(`fail-${stamp}`, { status: "failed", content: words("Error: Cannot find module 'scripts/missing.js'\nexit code 1") });
+  await sleep(gap / 2);
+  for (const chunk of ["Done: ", "ran the checks, ", "updated notes.md ", "and looked at two pages."]) { await say(chunk); await sleep(120); }
+  return "Done: ran the checks, updated notes.md and looked at two pages.";
+}
+
 async function turn(client: AgentContext, session: Live, prompt: ContentBlock[], signal: AbortSignal): Promise<{ stopReason: "end_turn" | "cancelled" }> {
   const texts = prompt.flatMap((block) => block.type === "text" ? [block.text] : []);
   const text = texts.at(-1)?.trim() ?? "";
@@ -262,6 +360,12 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     });
     return done("end_turn");
   }
+  const linger = /\bLINGER (\d+)\b/.exec(text);
+  if (linger) {
+    log({ lingering: Number(linger[1]), prompt: text.slice(0, 80) });
+    const finished = await stream(Array.from({ length: Number(linger[1]) }, (_, index) => `second ${index + 1}. `), 1000);
+    return done(finished ? "end_turn" : "cancelled");
+  }
   if (text.startsWith("SLOW")) {
     const finished = await stream(Array.from({ length: 30 }, (_, index) => `step ${index + 1}. `), 400);
     return done(finished ? "end_turn" : "cancelled");
@@ -297,6 +401,10 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     const outcome = await callTool(session, name, rest.length ? JSON.parse(rest.join(" ")) : {}, true);
     await stream([`Called ${name}: ${outcome}.`], 10);
     return done("end_turn");
+  }
+  if (text.startsWith("STEPS ")) {
+    reply = await steps(session, text, update, say, signal);
+    return done(signal.aborted ? "cancelled" : "end_turn");
   }
   if (text.startsWith("RUN ")) {
     const command = text.slice("RUN ".length);

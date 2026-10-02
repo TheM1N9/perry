@@ -10,6 +10,7 @@ import { LIMIT_HIT } from "./lib/usage";
 import { projectFrom } from "./projects";
 import { choose, routeOf, taskAsk } from "./routing";
 import { vPerryPick, vRoute } from "./schema";
+import { pausedAt } from "./pause";
 
 /**
  * Background tasks (issue #102): work Perry takes on and carries out by
@@ -81,6 +82,8 @@ export const tick = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
+    // Paused, none starts; those queued go on in their turn once resumed (pause.ts).
+    if (await pausedAt(ctx)) return null;
     // A background task has turns from the moment it starts (its chat comes a moment later); a task opened by start_task in a chat is only tracked.
     const running = (await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "running")).collect()).filter((task) => task.turns);
     // A task a plan's limit stopped in the last day, that nothing has picked up yet: back in line.
@@ -140,6 +143,11 @@ export const work = internalAction({
   handler: async (ctx, args) => {
     const task: Doc<"tasks"> | null = await ctx.runQuery(internal.tasks.get, { id: args.id });
     if (!task || task.status !== "running") return null;
+    // Perry paused since its turn was set going: it waits for the owner instead (pause.ts).
+    if (await ctx.runQuery(internal.pause.state, {})) {
+      await ctx.runMutation(internal.pause.holdTask, { id: task._id });
+      return null;
+    }
     // Where this turn runs, on what and why; or, with no engine that has room, back in line until one has.
     // With no engine to route to (no default chosen), it goes on unrouted and is refused there, asking for one.
     const choice: Choice | null = await ctx.runQuery(internal.routing.forTask, { id: task._id });

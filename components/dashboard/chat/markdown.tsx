@@ -1,5 +1,7 @@
 "use client";
 
+import { FileTextIcon } from "lucide-react";
+import Link from "next/link";
 import { memo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -26,16 +28,25 @@ function languageOf(node: ReactNode): string | undefined {
 /**
  * Replies are GitHub-flavoured Markdown, with single line breaks kept as a
  * chat reader expects. Raw HTML stays text, since replies quote web pages and
- * email, and links open in a new tab. A checklist's boxes and a table are
+ * email, and links open in a new tab, except a link to one of the owner's
+ * notes (/notes/…), which opens it here. A checklist's boxes and a table are
  * Perry's own, read-only: ticking one would not tell Perry anything.
  */
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({ text, openNote }: {
+  text: string;
+  /** Where a note's link goes instead, in a window that is not the dashboard's (the pet's). */
+  openNote?: (href: string) => void;
+}) {
   return (
     <div className="prose-chat">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
-          a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+          a: ({ node: _node, href, children, ...props }) => href?.startsWith("/notes/")
+            ? <Link href={href} data-note-link className="inline-flex items-baseline gap-1" onClick={openNote ? (event) => { event.preventDefault(); openNote(href); } : undefined}>
+              <FileTextIcon className="size-3.5 self-center" aria-hidden />{children}
+            </Link>
+            : <a {...props} href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
           pre: ({ node: _node, children, ...props }) => {
             const language = languageOf(children);
             return (

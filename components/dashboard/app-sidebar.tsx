@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   BlocksIcon, BookUserIcon, CheckCircle2Icon, ChevronsUpDownIcon, GaugeIcon, InboxIcon, ListChecksIcon, LockIcon, MonitorIcon,
-  MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
+  MoreHorizontalIcon, NotebookPenIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
@@ -41,6 +41,7 @@ import { ChannelIcon, PerryMark } from "./common";
 import { StatusIndicator, statusLabel } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
 import { UpdateNotice } from "./updates";
+import { PauseMenuItem, PauseNotice, usePause } from "./pause";
 import { PlatypusArt } from "./platypus";
 import { MoveToProject, NewProjectDialog, ProjectFolders } from "./projects";
 import { Spinner } from "@/components/ui/spinner";
@@ -114,6 +115,12 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/notes" />} isActive={pathname.startsWith("/notes")} tooltip="Notes">
+                  <NotebookPenIcon />
+                  <span>Notes</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/work" />} isActive={pathname.startsWith("/work")} tooltip="Work">
                   <ListChecksIcon />
                   <span>Work</span>
@@ -137,6 +144,7 @@ export function AppSidebar() {
         <ChatGroups />
       </SidebarContent>
       <SidebarFooter>
+        <PauseNotice />
         <UpdateNotice />
         <DesktopPet />
         <ComputerStatus />
@@ -451,10 +459,11 @@ function AccountMenu() {
   const { isMobile } = useSidebar();
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
   const engines = useSignedIn();
+  const { paused } = usePause();
   const name = status?.displayName ?? "You";
   const pairing = Boolean(status?.telegramConfigured && !status.claimed);
   const first = engines?.[0];
-  const line = status === undefined || engines === undefined ? " " : pairing ? "Telegram not paired"
+  const line = status === undefined || engines === undefined ? " " : paused ? "Perry is paused" : pairing ? "Telegram not paired"
     : first ? (first.account ? `${first.account} · ${first.label}` : first.label) : "No engine signed in";
   const go = (href: string) => router.push(href);
 
@@ -480,6 +489,7 @@ function AccountMenu() {
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+            <PauseMenuItem />
             <DropdownMenuItem onClick={() => go("/settings/usage")}><GaugeIcon />Usage</DropdownMenuItem>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger><SunMoonIcon />Theme</DropdownMenuSubTrigger>

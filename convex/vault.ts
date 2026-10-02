@@ -156,8 +156,8 @@ async function hideInChat(ctx: MutationCtx, conversationId: Id<"conversations">,
   for (const run of runs) {
     if (run.prompt.includes(value)) { await ctx.db.patch(run._id, { prompt: scrub(run.prompt) }); changed++; }
     for (const span of await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).collect()) {
-      if (!span.input?.includes(value) && !span.output?.includes(value)) continue;
-      await ctx.db.patch(span._id, { input: span.input && scrub(span.input), output: span.output && scrub(span.output) });
+      if (!span.input?.includes(value) && !span.output?.includes(value) && !span.name.includes(value)) continue;
+      await ctx.db.patch(span._id, { name: scrub(span.name), input: span.input && scrub(span.input), output: span.output && scrub(span.output) });
       changed++;
     }
   }
@@ -185,4 +185,11 @@ export const remove = internalMutation({
     await ctx.db.delete(id);
     return true;
   },
+});
+
+/** Whether any saved value long enough to hide is in the text: a picture of it cannot be hidden, so it is not taken. */
+export const anySaved = internalQuery({
+  args: { text: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => (await savedValues(ctx)).some((value) => args.text.includes(value)),
 });
