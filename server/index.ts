@@ -111,6 +111,8 @@ export async function startBackend() {
   await engineFromEnvironment(runtime);
   // A chat from before projects that kept its memory to itself becomes a project of its own.
   await runtime.runMutation("projects:migrate", {}, { internal: true });
+  // Every note's paragraphs as lines that search finds with the memories (pages.ts); nothing once done.
+  await runtime.runMutation("pages:indexAll", {}, { internal: true });
   await pairThisMachine(runtime).catch((error) => console.error(`[perry] could not connect this computer: ${String(error)}`));
   runtime.start();
   box.__perry!.stopTelegram = pollTelegram(runtime);

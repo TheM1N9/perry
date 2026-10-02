@@ -1,0 +1,175 @@
+{
+  "ranAt": "2026-10-02T10:56:24.059Z",
+  "checks": {
+    "oldNoteIndexedOnStart": true,
+    "linesKeepProvenance": true,
+    "linesAreNotMemories": true,
+    "recallFindsBoth": true,
+    "recallByMeaning": true,
+    "scopeKept": true,
+    "turnGetsNoteParagraph": true,
+    "projectDeleteKeepsLines": true,
+    "searchFindsMemoryAndNotes": true,
+    "searchDarkAndDaily": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "oldNoteIndexedOnStart": {
+      "beforeRestart": 0,
+      "lines": [
+        {
+          "text": "Tomatoes by the south wall",
+          "section": "Beds",
+          "by": "owner"
+        },
+        {
+          "text": "Basil between them",
+          "section": "Beds",
+          "by": "owner"
+        },
+        {
+          "text": "Water at dawn in July.",
+          "section": "Beds",
+          "by": "owner"
+        }
+      ]
+    },
+    "realEnginesSignedIn": [],
+    "linesKeepProvenance": {
+      "first": [
+        "Flights on Friday, TAP 1234.",
+        "Passport",
+        "Travel adapter",
+        "Sunscreen"
+      ],
+      "second": [
+        [
+          "Flights on Friday, TAP 1234.",
+          "new"
+        ],
+        [
+          "Sunscreen",
+          "kept"
+        ],
+        [
+          "Passport",
+          "kept"
+        ],
+        [
+          "Travel adapter for the UK plugs",
+          "kept"
+        ]
+      ],
+      "swimsuit": {
+        "by": "assistant",
+        "from": true
+      }
+    },
+    "linesAreNotMemories": {
+      "listed": [
+        "Went for a long swim at the lake.",
+        "Datta flies to Lisbon on 12 Oct 2026.",
+        "The owner is vegetarian and avoids eggs."
+      ],
+      "count": 3,
+      "forgot": {
+        "deleted": 0,
+        "missing": [
+          "jvb1n8prbfysjknmzx2kw680jy"
+        ]
+      }
+    },
+    "allEmbedded": true,
+    "recallFindsBoth": [
+      [
+        "core",
+        "Datta flies to Lisbon on 12 Oct 2026."
+      ],
+      [
+        "note",
+        "Basil between them"
+      ],
+      [
+        "note",
+        "Passport"
+      ]
+    ],
+    "recallByMeaning": {
+      "memory": [
+        "The owner is vegetarian and avoids eggs.",
+        "Swimsuit for the beach",
+        "Travel adapter for the UK plugs",
+        "Went for a long swim at the lake.",
+        "Tomatoes by the south wall"
+      ],
+      "note": [
+        "Passport",
+        "Went for a long swim at the lake.",
+        "Swimsuit for the beach",
+        "Water at dawn in July.",
+        "Tomatoes by the south wall",
+        "Travel adapter for the UK plugs"
+      ]
+    },
+    "scopeKept": {
+      "outside": [],
+      "inside": [
+        "Grey hexagon tiles GREYHEX for the floor."
+      ],
+      "guest": [],
+      "guestTools": [
+        "remember",
+        "recall",
+        "read_memory",
+        "forget",
+        "tell_owner"
+      ]
+    },
+    "turnGetsNoteParagraph": {
+      "relevant": "## Possibly relevant older memories and notes\n- [note \"Lisbon trip\", section \"Packing\", v7qptqb2p1v514t66fsv67vjth] Passport\n- [note \"Lisbon trip\", section \"Packing\", v7qptqb2p1v514t66fsv67vjth] Travel adapter for the UK plugs\n- [note \"Lisbon trip\", section \"Packing\", v7qptqb2p1v514t66fsv67vjth] Swimsuit for the beach\n\n# Your own reminder\n\nNot from the owner. If their message below tells you anything about their life (a person and who they are, a date or birthday, a plan, something they have to do, their health or routine, their work and the projects, pages or channels they run, what they made",
+      "longTerms": [
+        "## Long-term memory\n- Datta flies to Lisbon on 12 Oct 2026. (yvbg4wr7ygxfsvewd7yxb09f7q)\n- The owner is vegetarian and avoids eggs. (x6dbzfbzj1nqcysw0ptfncbhms)\n",
+        "## Long-term memory\n- Datta flies to Lisbon on 12 Oct 2026. (yvbg4wr7ygxfsvewd7yxb09f7q)\n- The owner is vegetarian and avoids eggs. (x6dbzfbzj1nqcysw0ptfncbhms)\n"
+      ]
+    },
+    "projectDeleteKeepsLines": [
+      {
+        "text": "Grey hexagon tiles GREYHEX for the floor."
+      }
+    ],
+    "searchFindsMemoryAndNotes": {
+      "memoryHit": "The owner is vegetarian and avoids eggs.\nLong-term",
+      "lineHit": "Passport\nLisbon trip › Packing"
+    },
+    "searchDarkAndDaily": [
+      "page",
+      "daily",
+      "page"
+    ],
+    "noPageErrors": [],
+    "realModelTurns": "none: every chat ran on the fake Grok agent",
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\brain\\perry-brain-bEbOaQ\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn qbkqgpvp0cgv0jy22e8k9bw9s5\u001b[0m",
+      "\u001b[2m  saved turn vec19xkb248y8am085a96mzp8x\u001b[0m",
+      "\u001b[2m  saved turn 7kv4fbw0m19jg5x470vb978956\u001b[0m",
+      "\u001b[2m  saved turn 0zsd3c9nv1jz1pax8yf2227ybj\u001b[0m",
+      "\u001b[2m  saved turn rg6r25y7kesv5hqdcyb3c0x9az\u001b[0m",
+      "\u001b[2m  saved turn 1q6s3snw8a76jzcz4ss8gwxrby\u001b[0m",
+      "\u001b[2m  saved turn 34mv9wg60041tqpcmhrcvs9jpb\u001b[0m",
+      "\u001b[2m  saved turn 509dpdmwneetadsskfwaamhwfe\u001b[0m",
+      "\u001b[2m  saved turn 0675g5n3sv6y55wmefafm4crs2\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

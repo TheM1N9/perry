@@ -465,9 +465,10 @@ try {
   await key("k", "KeyK", 75, 2);
   await waitFor(`document.querySelector('[cmdk-input]')`, "the search palette");
   await typeText("oat milk");
-  await waitFor(`[...document.querySelectorAll('[cmdk-group-heading]')].some((item) => item.innerText === "Notes") && document.querySelector('[data-value^="note-"]')?.innerText.includes("Inbox")`, "Inbox found by its words", 10_000);
+  // Words inside a note are found as its lines, in one group with memory (issue #210).
+  await waitFor(`[...document.querySelectorAll('[cmdk-group-heading]')].some((item) => item.innerText === "Memory and notes") && document.querySelector('[data-recalled="page"]')?.innerText.includes("Inbox")`, "Inbox found by its words", 20_000);
   await shot("search-notes.png");
-  const byWords = await evaluate(`document.querySelector('[data-value^="note-"]').innerText`);
+  const byWords = await evaluate(`document.querySelector('[data-recalled="page"]').innerText`);
   await fill("[cmdk-input]", "Lisbon");
   await waitFor(`[...document.querySelectorAll('[data-value^="note-"]')].some((item) => item.innerText.includes("Lisbon trip"))`, "Lisbon found by title", 10_000);
   await click('[data-value^="note-"]', undefined);

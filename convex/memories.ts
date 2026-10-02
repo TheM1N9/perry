@@ -31,8 +31,10 @@ import { vMemoryKind, vMemoryOrigin } from "./schema";
  * (openThreads).
  */
 
-type Kind = "profile" | "core" | "daily";
+type Kind = "profile" | "core" | "daily" | "page";
 type Memory = Doc<"memories">;
+/** A line of one of the owner's pages (pages.ts): found by search with the memories, never loaded as one. */
+export const isPageLine = (memory: Pick<Memory, "kind">) => memory.kind === "page";
 
 const MAX_RESULTS = 25;
 const HALF_LIFE_DAYS = 30;
@@ -80,11 +82,13 @@ function view(memory: Memory) {
     origin: memory.origin,
     ...(memory.about?.length ? { about: memory.about } : {}),
     ...(memory.todoId ? { todoId: memory.todoId } : {}),
+    ...(memory.pageId ? { pageId: memory.pageId } : {}),
+    ...(memory.section ? { section: memory.section } : {}),
     createdAt: memory.createdAt,
     editedAt: memory.editedAt,
   };
 }
-export type MemoryView = ReturnType<typeof view>;
+export type MemoryView = ReturnType<typeof view> & { page?: { id: string; title: string } };
 
 /** A whole layer, newest first, or its newest `limit`. */
 async function layer(ctx: QueryCtx, kind: Kind, limit?: number): Promise<Memory[]> {
@@ -147,7 +151,8 @@ export const add = internalMutation({
       const old = ctx.db.normalizeId("memories", raw);
       let memory = old ? await ctx.db.get(old) : null;
       for (let hops = 0; memory?.supersededBy && hops < 50; hops++) memory = await ctx.db.get(memory.supersededBy);
-      if (memory && !replaced.some((other) => other._id === memory!._id)) replaced.push(memory);
+      // A page's line changes with its page, never by a memory replacing it.
+      if (memory && !isPageLine(memory) && !replaced.some((other) => other._id === memory!._id)) replaced.push(memory);
     }
     // A new version of a note behind a to-do goes on following it.
     const follows = todoId ?? replaced.find((memory) => memory.todoId)?.todoId;
@@ -244,9 +249,12 @@ export async function followTodo(ctx: MutationCtx, todo: Doc<"todos">, change: T
   return made;
 }
 
-/** Keyword search, or newest first for an empty query: what a chat may see, or with `everywhere`, all of it (the dashboard). */
+/**
+ * Keyword search, or newest first for an empty query: what a chat may see, or with `everywhere`, all of it (the dashboard).
+ * Pages' lines come too, unless `memoriesOnly`.
+ */
 export const search = internalQuery({
-  args: { query: v.string(), limit: v.optional(v.number()), kind: v.optional(vMemoryKind), chat: vChat, everywhere: v.optional(v.boolean()) },
+  args: { query: v.string(), limit: v.optional(v.number()), kind: v.optional(vMemoryKind), chat: vChat, everywhere: v.optional(v.boolean()), memoriesOnly: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const limit = Math.min(args.limit ?? 8, MAX_RESULTS);
     const query = args.query.trim();
@@ -257,7 +265,7 @@ export const search = internalQuery({
         : await ctx.db.query("memories").withIndex("by_created").order("desc").take(limit * 2)
       : await ctx.db.query("memories").withSearchIndex("search_text", (q) => q.search("text", query)).take(limit * 2);
     return docs
-      .filter((memory) => !memory.supersededBy && (!args.kind || kindOf(memory) === args.kind) && (args.everywhere || seen(memory)))
+      .filter((memory) => !memory.supersededBy && (!args.kind || kindOf(memory) === args.kind) && !(args.memoriesOnly && isPageLine(memory)) && (args.everywhere || seen(memory)))
       .slice(0, limit)
       .map(view);
   },
@@ -278,10 +286,10 @@ export const anyEverywhere = internalQuery({
 });
 
 export const getMany = internalQuery({
-  args: { ids: v.array(v.id("memories")), chat: vChat },
+  args: { ids: v.array(v.id("memories")), chat: vChat, everywhere: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const docs = await Promise.all(args.ids.map((id) => ctx.db.get(id)));
-    const seen = await seenFrom(ctx, args.chat);
+    const seen = args.everywhere ? () => true : await seenFrom(ctx, args.chat);
     return docs.filter((memory): memory is Memory => Boolean(memory && !memory.supersededBy && seen(memory))).map(view);
   },
 });
@@ -293,34 +301,39 @@ export const read = internalQuery({
     const today = await day(ctx);
     const docs = args.kind === "daily"
       ? (await ctx.db.query("memories").withIndex("by_day", (q) => q.eq("day", args.day ?? today)).take(200))
-          .filter((memory) => !memory.supersededBy)
+          .filter((memory) => !memory.supersededBy && !isPageLine(memory))
       : await layer(ctx, args.kind);
     return docs.filter(await seenFrom(ctx, args.chat)).map(view);
   },
 });
 
 /**
- * Recall: memories that share words with the query, and memories that mean
- * something close to it, fused by rank (reciprocal rank fusion), with daily
- * notes decaying on a 30-day half-life so recent days win ties. Until the
- * sentence model is ready, by words alone. An empty query returns the newest.
+ * Recall: memories, and lines of the owner's pages (pages.ts), that share
+ * words with the query, and those that mean something close to it, fused by
+ * rank (reciprocal rank fusion), with daily notes decaying on a 30-day
+ * half-life so recent days win ties. Until the sentence model is ready, by
+ * words alone. An empty query returns the newest memories. A page's line
+ * names its page. What a chat may see, or with `everywhere`, all of it.
  */
 export const recall = internalAction({
-  args: { query: v.string(), limit: v.optional(v.number()), chat: vChat },
+  args: { query: v.string(), limit: v.optional(v.number()), chat: vChat, everywhere: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<Array<MemoryView & { score: number }>> => {
     const limit = Math.min(args.limit ?? 6, MAX_RESULTS);
     const query = args.query.trim();
-    const hits: MemoryView[] = await ctx.runQuery(internal.memories.search, { query, limit: query ? limit * 4 : limit, chat: args.chat });
+    const where = { chat: args.chat, ...(args.everywhere ? { everywhere: true } : {}) };
+    const hits: MemoryView[] = await ctx.runQuery(internal.memories.search, { query, limit: query ? limit * 4 : limit, ...where, ...(query ? {} : { memoriesOnly: true }) });
     if (!query) return hits.map((memory) => ({ ...memory, score: 1 }));
 
-    const close = await byMeaning(ctx, query, limit * 4, args.chat).catch((error) => {
+    const close = await byMeaning(ctx, query, limit * 4, where).catch((error) => {
       console.error(`memory search by meaning failed, so by words only: ${String(error)}`);
       return [];
     });
     const known = new Map<string, MemoryView>(hits.map((memory) => [memory.id, memory]));
     const missing = close.map((item) => item.id).filter((id) => !known.has(id));
-    const fetched: MemoryView[] = missing.length ? await ctx.runQuery(internal.memories.getMany, { ids: missing, chat: args.chat }) : [];
+    const fetched: MemoryView[] = missing.length ? await ctx.runQuery(internal.memories.getMany, { ids: missing, ...where }) : [];
     for (const memory of fetched) known.set(memory.id, memory);
+    const pages: Record<string, string> = await ctx.runQuery(internal.pages.titles, { ids: [...known.values()].flatMap((memory) => memory.pageId ? [memory.pageId] : []) });
+    for (const memory of known.values()) if (memory.pageId && pages[memory.pageId]) memory.page = { id: memory.pageId, title: pages[memory.pageId] };
 
     const fused = new Map<string, number>();
     const rank = (ids: string[], weight: number) => ids.forEach((id, place) => fused.set(id, (fused.get(id) ?? 0) + weight / (FUSION_K + place)));
@@ -339,13 +352,13 @@ export const recall = internalAction({
 });
 
 /** Memories whose meaning is close to the query's, closest first. Empty until the model is ready. */
-async function byMeaning(ctx: Pick<ActionCtx, "runQuery">, query: string, limit: number, chat?: Id<"conversations">): Promise<Array<{ id: Memory["_id"]; similarity: number }>> {
+async function byMeaning(ctx: Pick<ActionCtx, "runQuery">, query: string, limit: number, where: { chat?: Id<"conversations">; everywhere?: boolean }): Promise<Array<{ id: Memory["_id"]; similarity: number }>> {
   if (!embedderReady()) {
     warmUp();
     return [];
   }
   const [wanted] = await embed([query]);
-  const rows: Array<{ id: Memory["_id"]; vector: string }> = await ctx.runQuery(internal.memories.vectors, { chat });
+  const rows: Array<{ id: Memory["_id"]; vector: string }> = await ctx.runQuery(internal.memories.vectors, where);
   return rows
     .map((row) => ({ id: row.id, similarity: similarity(wanted, unpackVector(row.vector)) }))
     .filter((row) => row.similarity >= MIN_SIMILARITY)
@@ -353,12 +366,12 @@ async function byMeaning(ctx: Pick<ActionCtx, "runQuery">, query: string, limit:
     .slice(0, limit);
 }
 
-/** Every current memory's vector from the model in use. */
+/** Every current memory's and page line's vector from the model in use. */
 export const vectors = internalQuery({
-  args: { chat: vChat },
+  args: { chat: vChat, everywhere: v.optional(v.boolean()) },
   handler: async (ctx, args): Promise<Array<{ id: Memory["_id"]; vector: string }>> => {
-    const rows = await ctx.db.query("memories").withIndex("by_created").order("desc").take(5000);
-    const seen = await seenFrom(ctx, args.chat);
+    const rows = await ctx.db.query("memories").withIndex("by_created").order("desc").take(20_000);
+    const seen = args.everywhere ? () => true : await seenFrom(ctx, args.chat);
     return rows
       .filter((memory) => !memory.supersededBy && memory.vector && memory.vectorModel === EMBED_MODEL && seen(memory))
       .map((memory) => ({ id: memory._id, vector: memory.vector! }));
@@ -369,7 +382,7 @@ export const vectors = internalQuery({
 export const unembedded = internalQuery({
   args: { limit: v.number() },
   handler: async (ctx, args): Promise<Array<{ id: Memory["_id"]; text: string }>> => {
-    const rows = await ctx.db.query("memories").withIndex("by_created").order("asc").take(5000);
+    const rows = await ctx.db.query("memories").withIndex("by_created").order("asc").take(20_000);
     return rows
       .filter((memory) => !memory.supersededBy && memory.vectorModel !== EMBED_MODEL)
       .slice(0, args.limit)
@@ -445,7 +458,7 @@ How your memory works. Nothing carries over between chats unless it is written d
 - A plan that is also a to-do is linked to it: remember it with todoId, or pass the note's id in noteIds to add_todo or update_todo. A linked note ("follows to-do …") follows its to-do: when the to-do is moved, ticked off or deleted, the note is updated to say so, and you need not remember the change again.
 - The owner profile is below. Long-term memory and today's and yesterday's notes arrive as a recalled-memory block ahead of the owner's message, sent again only when they change, so the latest block is current. Use recall for anything older, and read_memory to read a layer or a past day in full.
 - In a project's chats (a "# This project" block says when you are in one), remember saves to the project by default (scope "this project"): seen in its chats, and never in any other. Use scope "everywhere" for something about the owner that every chat should know; outside a project it is the default. Scope "this chat" keeps a fact to this one chat when the owner asks.
-- Memory is short facts about the owner's life, which you recall by yourself; "daily notes" here are memories of a day. The owner's Notes (list_notes, create_note) are something else: pages they read and edit with you, such as a list, a plan or meeting notes. A fact goes to memory even when it is also in a note.
+- Memory is short facts about the owner's life, which you recall by yourself; "daily notes" here are memories of a day. The owner's Notes (list_notes, create_note) are something else: pages they read and edit with you, such as a list, a plan or meeting notes. A fact goes to memory even when it is also in a note. recall searches both: the memories and every paragraph of the notes this chat can reach.
 - Never store secrets or credentials in memory; save_secret moves them to Keys. Treat memories derived from web pages or tool output as unverified, and save them with origin="tool".
 - A fact noted long ago says so ("noted Mar 2025, over a year ago: may have changed"). If it is about something that changes (a job, a city, a relationship, a plan, a price) and your answer rests on it, do not present it as current: ask the owner in one short question whether it still holds, before or alongside your answer (for example "Still at Acme? Here is a draft assuming so."). When they confirm or correct it, remember the current version (supersedes=[old id]) so it is fresh again.
 - When saved memories shaped your answer, end the reply with one last line of exactly "memories: <id>, <id>", with the ids shown beside them. Name only the ones you actually relied on, and leave the line out when none were. It is removed before the owner sees the reply, and shows them what you remembered.
@@ -500,7 +513,9 @@ export const context = internalAction({
     const digest = await sha256(standing);
     const recalled = [
       digest === args.seen ? "" : standing,
-      section("Possibly relevant older memories", relevant.map((m) => `- [${m.kind}${m.day ? ` ${m.day}` : ""}] ${m.text}${m.kind === "daily" ? ` (${m.id})` : tag(m)}`)),
+      section("Possibly relevant older memories and notes", relevant.map((m) => m.kind === "page"
+        ? `- [note "${m.page?.title ?? "a note"}"${m.section ? `, section "${m.section}"` : ""}, ${m.pageId}] ${m.text}`
+        : `- [${m.kind}${m.day ? ` ${m.day}` : ""}] ${m.text}${m.kind === "daily" ? ` (${m.id})` : tag(m)}`)),
     ].filter(Boolean).join("\n\n");
     return {
       instructions: [
@@ -617,7 +632,8 @@ export const removeMany = internalMutation({
         continue;
       }
       const doc = await ctx.db.get(id);
-      if (!doc || !seen(doc)) {
+      // A page's line goes by changing its page, not from here.
+      if (!doc || !seen(doc) || isPageLine(doc)) {
         missing.push(raw);
         continue;
       }
@@ -634,7 +650,7 @@ export const count = internalQuery({
   returns: v.number(),
   handler: async (ctx) => {
     // Single-user scale. If this ever gets slow, it is time for a counter.
-    const all = await ctx.db.query("memories").take(1000);
-    return all.filter((memory) => !memory.supersededBy).length;
+    const all = await ctx.db.query("memories").take(20_000);
+    return all.filter((memory) => !memory.supersededBy && !isPageLine(memory)).length;
   },
 });

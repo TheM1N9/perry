@@ -9,6 +9,10 @@ export const vPauseSource = v.union(v.literal("web"), v.literal("pet"), v.litera
 /** A file the owner sent on Telegram, before it is downloaded. */
 export const vTelegramMedia = v.object({ fileId: v.string(), fileName: v.string(), contentType: v.string(), size: v.optional(v.number()) });
 export const vMemoryKind = v.union(v.literal("profile"), v.literal("core"), v.literal("daily"));
+/** What a line in `memories` is: a memory of one of the three layers, or a line of one of the owner's pages (pages.ts). */
+export const vLineKind = v.union(vMemoryKind, v.literal("page"));
+/** Who wrote a page's line: the owner, Perry in a chat, or a scheduled job. */
+export const vLineBy = v.union(v.literal("owner"), v.literal("assistant"), v.literal("job"));
 /**
  * Tokens a run used, named after OpenTelemetry's gen_ai.usage.* attributes.
  * Cached input is part of input, and reasoning part of output.
@@ -696,6 +700,8 @@ export default defineSchema({
     by: v.union(v.literal("owner"), v.literal("assistant")),
     /** The chat it was saved from, when it was. */
     from: v.optional(v.id("conversations")),
+    /** The revision its lines (memories.pageId) were last brought up to; behind, pages.indexAll does it. */
+    linesAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -819,7 +825,8 @@ export default defineSchema({
     tags: v.array(v.string()),
     source: v.string(),
     createdAt: v.number(),
-    kind: v.optional(vMemoryKind),
+    /** "page" for a line of one of the owner's pages, which is never loaded as a memory layer. */
+    kind: v.optional(vLineKind),
     /** YYYY-MM-DD, for daily notes. */
     day: v.optional(v.string()),
     /** Replaced facts stay for the record and drop out of context and search. */
@@ -845,8 +852,19 @@ export default defineSchema({
     /** Its meaning as a vector, for search by meaning (lib/embed.ts): base64 float32, and the model that made it. */
     vector: v.optional(v.string()),
     vectorModel: v.optional(v.string()),
+    /**
+     * The page it is a line of (pages.ts): a paragraph, list item or other block of its Markdown, kept in step
+     * with the page on every save, so one search finds it with the memories. Its place and the heading it is under.
+     */
+    pageId: v.optional(v.id("notes")),
+    order: v.optional(v.number()),
+    section: v.optional(v.string()),
+    /** Who wrote the line last, and the chat they wrote it from. */
+    by: v.optional(vLineBy),
+    from: v.optional(v.id("conversations")),
   })
     .index("by_created", ["createdAt"])
+    .index("by_page", ["pageId", "order"])
     .index("by_kind", ["kind", "createdAt"])
     .index("by_day", ["day", "createdAt"])
     .index("by_todo", ["todoId"])
