@@ -193,6 +193,10 @@ export default defineSchema({
     mentionsAt: v.optional(v.number()),
     /** When Brain was last looked over for duplicates to propose merging (compaction.review). */
     brainReviewedAt: v.optional(v.number()),
+    /** After how many days unused a line of Brain is archived (archive.ts); 0 never. Unset: 90. */
+    archiveAfterDays: v.optional(v.number()),
+    /** Where the archive's pass through Brain's lines stopped, while it goes in batches. */
+    archiveCursor: v.optional(v.number()),
     ownerChannel: v.optional(vChannel),
     ownerExternalId: v.optional(v.string()),
     ownerName: v.optional(v.string()),
@@ -939,6 +943,12 @@ export default defineSchema({
     relation: v.optional(v.object({ to: v.id("memories"), how: v.union(v.literal("updates"), v.literal("extends"), v.literal("derives")) })),
     /** How many times it was said again or confirmed (remember with the same words). */
     confirmCount: v.optional(v.number()),
+    /** When it was last used: recalled into a turn, cited, edited, or on a page the owner opened (archive.ts). */
+    lastUsedAt: v.optional(v.number()),
+    /** Archived, unused past the owner's age or past expiresAt: out of turns and normal search, in deep search (archive.ts). */
+    archivedAt: v.optional(v.number()),
+    /** What its vector is searched under: its model, and whether it is live or archived (archive.vectorKeyOf). */
+    vectorKey: v.optional(v.string()),
     /**
      * Taken out of its page by a change the owner approved (compaction.ts): which, and where it stood, so undo can
      * put it back. It stays as history, superseded by the line that replaced it.
@@ -964,8 +974,10 @@ export default defineSchema({
     .index("by_project", ["projectId", "createdAt"])
     // The current lines a model has yet to embed, or embedded with another model (memories.unembedded).
     .index("by_embedded", ["supersededBy", "embeddedWith", "createdAt"])
-    .searchIndex("search_text", { searchField: "text" })
-    .vectorIndex("by_embedding", { vectorField: "embedding", dimensions: 384, filterFields: ["embeddedWith", "day"] }),
+    .index("by_archived", ["archivedAt"])
+    .index("by_vector_key", ["vectorKey", "embeddedWith"])
+    .searchIndex("search_text", { searchField: "text", filterFields: ["archivedAt"] })
+    .vectorIndex("by_embedding", { vectorField: "embedding", dimensions: 384, filterFields: ["vectorKey", "day"] }),
 
   /**
    * A change to Brain Perry proposes and the owner approves, edits or declines (compaction.ts): what kind, on which

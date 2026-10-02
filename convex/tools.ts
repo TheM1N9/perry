@@ -26,7 +26,7 @@ import type { ContactView } from "./contacts";
 
 type MemoryRow = {
   id: string; text: string; tags: string[]; kind: "profile" | "core" | "daily" | "page"; day?: string; origin?: string; createdAt: number;
-  pageId?: string; page?: { id: string; title: string }; section?: string; eventAt?: number; excerpt?: string[];
+  pageId?: string; page?: { id: string; title: string }; section?: string; eventAt?: number; excerpt?: string[]; archivedAt?: number;
 };
 
 type RecallResult = {
@@ -56,22 +56,27 @@ const shape = (m: MemoryRow) => m.kind === "page"
     ...(m.eventAt ? { happens: new Date(m.eventAt).toISOString().slice(0, 10) } : {}),
     // The lines around it in its page, "> " before its own: where it came from.
     ...(m.excerpt ? { around: m.excerpt } : {}),
+    // From the archive: cite it in your reply if you use it, and it comes back.
+    ...(m.archivedAt ? { archived: true } : {}),
   };
 
 /** recall, and brain_search and search_memory, which are it under other names. */
-async function recallFor(ctx: ToolCtx, input: { query: string; limit?: number }): Promise<RecallResult> {
+async function recallFor(ctx: ToolCtx, input: { query: string; limit?: number; deep?: boolean }): Promise<RecallResult> {
   const results: MemoryRow[] = await ctx.runAction(internal.memories.recall, {
     query: input.query,
     limit: input.limit,
     excerpts: true,
+    ...(input.deep ? { deep: true } : {}),
     ...(ctx.conversationId ? { chat: ctx.conversationId } : {}),
   });
 
   // The owner may know what someone told Perry in their own chat; nobody else may (memories.seenFrom).
   const chat: { contactId?: string } | null = ctx.conversationId ? await ctx.runQuery(internal.conversations.getById, { id: ctx.conversationId as Id<"conversations"> }) : null;
   const theySaid: Array<{ who: string; text: string }> = input.query.trim() && !chat?.contactId ? await ctx.runQuery(internal.contacts.theySaid, { query: input.query }) : [];
+  // What it found was recalled into this turn: used, so not archived for a while yet.
+  if (results.length) await ctx.runMutation(internal.archive.used, { ids: results.map((memory) => memory.id) });
   if (results.length === 0 && theySaid.length === 0) {
-    return { found: 0, memories: [], note: "Nothing in memory or notes matched." };
+    return { found: 0, memories: [], note: input.deep ? "Nothing in memory, notes or the archive matched." : "Nothing in memory or notes matched. The archive may have it: recall again with deep=true." };
   }
 
   return { found: results.length, memories: results.map(shape), ...(theySaid.length ? { theySaid } : {}) };
@@ -91,6 +96,7 @@ const recall = createTool({
       .string()
       .describe("What you are looking for. Empty string returns recent memories."),
     limit: z.number().int().min(1).max(25).optional(),
+    deep: z.boolean().optional().describe("Search the archive too: lines nobody used for months. Use it when a normal recall finds nothing the owner expects you to know."),
   }),
   execute: async (ctx, input): Promise<RecallResult> => await recallFor(ctx, input),
 });

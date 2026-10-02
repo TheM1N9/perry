@@ -178,6 +178,9 @@ export async function updateBrainIndex(runtime: Runtime): Promise<void> {
     console.error(`[perry] could not move Brain's vectors; its lines are embedded again instead: ${String(error)}`);
   }
   await runtime.runMutation("pages:indexMentions", {}, { internal: true }).catch((error) => console.error(`[perry] could not read who Brain's lines mention: ${String(error)}`));
+  // Vectors from before the archive get their live key; then a pass of the archive (archive.ts), in batches.
+  await runtime.runMutation("archive:keyVectors", {}, { internal: true }).catch((error) => console.error(`[perry] could not key Brain's vectors: ${String(error)}`));
+  await runtime.runMutation("archive:run", {}, { internal: true }).catch((error) => console.error(`[perry] could not archive Brain's unused lines: ${String(error)}`));
 }
 
 /** Start the scheduler, crons, Telegram, WhatsApp, event triggers and the wake timer. Called once, from instrumentation.ts. */

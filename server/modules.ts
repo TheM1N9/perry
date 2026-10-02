@@ -4,6 +4,7 @@
 
 import * as agentStore from "../convex/agentStore";
 import * as approvals from "../convex/approvals";
+import * as archive from "../convex/archive";
 import * as assistant from "../convex/assistant";
 import * as brain from "../convex/brain";
 import * as channels from "../convex/channels";
@@ -80,6 +81,7 @@ import * as work from "../convex/work";
 export const modules: Record<string, Record<string, unknown>> = {
   "agentStore": agentStore,
   "approvals": approvals,
+  "archive": archive,
   "assistant": assistant,
   "brain": brain,
   "channels": channels,
