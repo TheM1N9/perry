@@ -196,10 +196,16 @@ export async function startBackend() {
   // Memories from before pages move into them, after a backup.
   await moveMemoriesIntoPages(runtime);
   await givePeoplePages(runtime);
+  // The Library (issue #216): every chat file from before it, then Perry's files folder; nothing once done.
+  await runtime.runMutation("library:backfill", {}, { internal: true })
+    .then(() => runtime.runAction("library:sync", {}, { internal: true }))
+    .catch((error) => console.error(`[perry] could not bring the Library up to date: ${String(error)}`));
   await pairThisMachine(runtime).catch((error) => console.error(`[perry] could not connect this computer: ${String(error)}`));
   runtime.start();
   // In the background, so years of Brain never hold up the dashboard: its index brought up to date, then the lines
   // without a vector from the model in use (new ones, or all of them after the model changed) embedded.
+  // The sentence model starts loading at once, so the first search is by meaning too.
+  void import("../convex/lib/embed").then((embedding) => embedding.warmUp());
   void updateBrainIndex(runtime)
     .then(() => runtime.runAction("memories:embedMissing", {}, { internal: true }))
     .catch((error) => console.error(`[perry] could not embed Brain's lines: ${String(error)}`));

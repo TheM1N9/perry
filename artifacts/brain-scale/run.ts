@@ -203,8 +203,9 @@ try {
     const newer = await call<{ id: string }>("memories:add", { text: "Our water purifier is now a Kent Grand Plus with a UV lamp.", tags: [], source: "test", kind: "core", section: "Home", supersedes: [fact.id] });
     const purifier = await searchFor("which water purifier do we have");
     const vectorOfOld = count(`SELECT count(*) AS n FROM "_vector_memories_by_embedding" WHERE id = ?`, [fact.id]);
+    const relation = rows("memories").find((row) => row._id === newer.id)?.relation;
     check("3. a superseded line is not found, and its vector is gone; the line that updates it is found and says so", !purifier.some((hit) => hit.id === fact.id) && purifier.some((hit) => hit.id === newer.id) && vectorOfOld === 0
-      && rows("memories").find((row) => row._id === newer.id)?.relation?.how === "updates");
+      && relation?.how === "updates" && relation?.to === fact.id, { found: purifier.slice(0, 5).map((hit) => hit.text), vectorOfOld, relation });
 
     // --- Step 1: what a line is and when it happens ----------------------------------------------------------------
     const exam = await call<{ id: string }>("memories:add", { text: "Kavya's maths olympiad is on 14 November 2026 at Glendale.", tags: [], source: "test", kind: "daily", type: "episode", expiresAt: Date.UTC(2026, 10, 15) });
@@ -227,7 +228,8 @@ try {
       await restart();
       await sleep(5_000);
       const afterRestart = onModel(NEW);
-      check("4. re-embedding resumes after a restart rather than starting over", afterRestart >= beforeRestart && install().embeddedBefore === OLD, { beforeRestart, afterRestart });
+      // Resumed, or already done before the restart came (a small Brain): never fewer lines on the new model than before.
+      check("4. re-embedding resumes after a restart rather than starting over", afterRestart >= beforeRestart && (install().embeddedBefore === OLD || onModel(OLD) === 0), { beforeRestart, afterRestart });
       const embedStarted = Date.now();
       await until(() => !install().embeddedBefore, "re-embedding to finish", 3600);
       result.reembedMinutes = round((Date.now() - embedStarted) / 60000);

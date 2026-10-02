@@ -108,6 +108,9 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   update_watch: () => ({ label: "Changing a watch", pose: "typing" }),
   delete_watch: () => ({ label: "Removing a watch", pose: "typing" }),
   check_watches: () => ({ label: "Checking your watches", pose: "reading" }),
+  library_list: () => ({ label: "Looking through your Library", pose: "reading" }),
+  library_find: (input) => ({ label: typeof input.query === "string" ? `Looking for “${short(input.query, 30)}” in your Library` : "Looking in your Library", pose: "reading" }),
+  library_add: () => ({ label: "Putting a file in your Library", pose: "typing" }),
   share_file: (input) => ({ label: typeof input.path === "string" ? `Sending you ${short(baseName(input.path), 32)}` : "Sending you a file", pose: "running" }),
 };
 

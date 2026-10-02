@@ -1,0 +1,55 @@
+{
+  "ranAt": "2026-10-02T16:58:13.390Z",
+  "engine": "codex",
+  "agent": "stand-in (artifacts/choose-engine/fake-cli.ts)",
+  "checks": {
+    "standInOnly": true,
+    "notReadWithoutAsking": true,
+    "buttonAtRest": true,
+    "clickReadsNow": true,
+    "quickClicksReadOnce": true,
+    "spinnerStops": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "standInOnly": {
+      "reads": 1
+    },
+    "notReadWithoutAsking": {
+      "percents": [
+        20,
+        40
+      ],
+      "reads": 1
+    },
+    "buttonAtRest": {
+      "busy": null,
+      "spinning": false
+    },
+    "clickReadsNow": {
+      "tookMs": 2792,
+      "percents": [
+        63,
+        71
+      ]
+    },
+    "quickClicksReadOnce": {
+      "readsForClicks": 1
+    },
+    "noPageErrors": [],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\usage-run\\perry-usage-refresh-HlfwVf\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

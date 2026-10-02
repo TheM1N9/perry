@@ -11,6 +11,8 @@ import { noteHref } from "./lib/notes";
 import { watchProblem } from "./work";
 import type { VaultEntry } from "./vault";
 import type { ContactView } from "./contacts";
+import type { LibraryItem } from "./library";
+import { libraryHref } from "./lib/library";
 
 /**
  * The full tool catalogue. Which of these a given turn can reach is decided in
@@ -1035,6 +1037,8 @@ const browser = createTool({
         case "back": return await page(web.back());
         case "screenshot": {
           const path = await web.screenshot();
+          // In the Library as Perry's, from this chat (library.ts).
+          if (ctx.conversationId) await ctx.runMutation(internal.library.add, { path, how: "screenshot", by: "perry", conversationId: ctx.conversationId as Id<"conversations"> }).catch(() => {});
           return await shown({ screenshot: path }, await web.snapshot(), path);
         }
         case "close": web.closeBrowser(); return { closed: true };
@@ -1429,6 +1433,80 @@ const watch_page = createTool({
   },
 });
 
+// --- The Library (issue #216) -------------------------------------------
+
+type LibraryHit = { id: string; name: string; kind: string; madeBy: "owner" | "Perry"; from: string; chat: string; how: string; size: number; date: string; link: string; path?: string; project?: string };
+const hit = (item: LibraryItem & { path?: string }): LibraryHit => ({
+  id: item.id, name: item.name, kind: item.kind, madeBy: item.by === "owner" ? "owner" : "Perry", from: item.from, chat: item.source.label, how: item.how,
+  size: item.size, date: new Date(item.createdAt).toISOString().slice(0, 10), link: libraryHref(item.id),
+  ...(item.path ? { path: item.path } : {}), ...(item.project ? { project: item.project.name } : {}),
+});
+const libraryFilters = {
+  kind: z.enum(["image", "document", "media", "other"]).optional().describe("image, document, media (audio and video) or other."),
+  madeBy: z.enum(["owner", "perry"]).optional().describe("owner: what the owner sent you. perry: what you made or saved."),
+  from: z.enum(["web", "telegram", "whatsapp", "pet", "job", "task", "folder", "project"]).optional()
+    .describe("Where it came from: a web chat, Telegram, WhatsApp, the desktop pet, a schedule, a background task, your files folder, or any project."),
+  since: z.enum(["today", "week", "month", "year"]).optional().describe("Only what came in that long ago or since."),
+  limit: z.number().int().min(1).max(100).optional(),
+};
+type LibraryArgs = {
+  kind?: "image" | "document" | "media" | "other"; madeBy?: "owner" | "perry";
+  from?: "web" | "telegram" | "whatsapp" | "pet" | "job" | "task" | "folder" | "project"; since?: "today" | "week" | "month" | "year"; limit?: number; query?: string;
+};
+type LibraryFound = { found: number; items: LibraryHit[]; note: string } | { error: string };
+async function libraryFor(ctx: ToolCtx, input: LibraryArgs): Promise<LibraryFound> {
+  const chat: { contactId?: string } | null = ctx.conversationId ? await ctx.runQuery(internal.conversations.getById, { id: ctx.conversationId }) : null;
+  if (chat?.contactId) return { error: "A chat with someone else has no Library." };
+  const items: Array<LibraryItem & { path?: string }> = await ctx.runQuery(internal.library.find, {
+    ...(input.kind ? { kind: input.kind } : {}), ...(input.madeBy ? { by: input.madeBy } : {}), ...(input.from ? { from: input.from } : {}),
+    ...(input.since ? { since: input.since } : {}), ...(input.query ? { query: input.query } : {}), limit: input.limit ?? 20,
+    ...(ctx.conversationId ? { conversationId: ctx.conversationId } : {}),
+  });
+  return { found: items.length, items: items.map(hit), note: items.length ? "Send one with share_file and its id." : "Nothing in the Library matches." };
+}
+
+const library_list = createTool({
+  description:
+    "The owner's Library: every file they sent you (in any chat, on Telegram or WhatsApp, from the desktop pet) and every " +
+    "file you made or saved (generated images, files you shared or wrote in your files folder, browser screenshots), newest " +
+    "first, filtered by kind, who made it, where it came from and when. Each has an id to send it with share_file, and its " +
+    "path on this computer when it has one.",
+  inputSchema: z.object(libraryFilters),
+  execute: async (ctx, input): Promise<LibraryFound> => await libraryFor(ctx, input),
+});
+
+const library_find = createTool({
+  description:
+    "Find a file in the owner's Library by words in its name (the receipt they sent last week: query receipt, madeBy owner, " +
+    "since week), with the same filters as library_list. Then send it with share_file and its id.",
+  inputSchema: z.object({ query: z.string().min(1).max(200).describe("Words in the file's name."), ...libraryFilters }),
+  execute: async (ctx, input): Promise<LibraryFound> => await libraryFor(ctx, input),
+});
+
+const library_add = createTool({
+  description:
+    "Put a file on this computer in the owner's Library, so they find it there: one you made outside your files folder, " +
+    "or one they asked you to keep. It is not copied; it stays where it is, so do not move or delete it afterwards.",
+  inputSchema: z.object({
+    path: z.string().min(3).describe("Absolute path to the file on this computer."),
+    name: z.string().max(200).optional().describe("What to call it, when its file name says little."),
+    madeBy: z.enum(["owner", "perry"]).optional().describe("perry (default) for a file you made; owner for one of theirs."),
+  }),
+  execute: async (ctx, input): Promise<{ added: true; id: string; link: string } | { error: string }> => {
+    const chat: { contactId?: string } | null = ctx.conversationId ? await ctx.runQuery(internal.conversations.getById, { id: ctx.conversationId }) : null;
+    if (chat?.contactId) return { error: "A chat with someone else has no Library." };
+    try {
+      const id: string = await ctx.runMutation(internal.library.add, {
+        path: input.path, how: "added", by: input.madeBy ?? "perry", ...(input.name ? { name: input.name } : {}),
+        ...(ctx.conversationId ? { conversationId: ctx.conversationId as Id<"conversations"> } : {}),
+      });
+      return { added: true, id, link: libraryHref(id) };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+});
+
 export const ALL_TOOLS = {
   brain_list,
   brain_read,
@@ -1489,6 +1567,9 @@ export const ALL_TOOLS = {
   send_message,
   update_contact,
   tell_owner,
+  library_list,
+  library_find,
+  library_add,
 };
 
 export type ToolName = keyof typeof ALL_TOOLS;

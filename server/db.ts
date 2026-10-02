@@ -512,7 +512,9 @@ const floatsOf = (blob: Uint8Array) => new Float32Array(blob.buffer.slice(blob.b
 /**
  * One vector index: each document's vector as raw float32 in a table of its
  * own (never inside the document's JSON), and in this process a bit per
- * dimension of each (its sign), with the values of the index's filter fields.
+ * dimension of each (its sign, once the mean of all of them is taken away:
+ * sentence models put most vectors in one corner, where raw signs say little),
+ * with the values of the index's filter fields.
  * A search compares the bits with the query's first, which takes a few
  * milliseconds for 100,000 vectors, and then reads the closest few hundred in
  * full from SQLite to rank them by cosine. So memory stays small (about
@@ -532,6 +534,8 @@ export class VectorIndex {
   private filters: unknown[][] = [];
   private slots = new Map<string, number>();
   private dirty = new Set<string>();
+  /** The mean vector of each length, and how many vectors it was taken over: past twice as many, it is taken again. */
+  private means = new Map<number, { mean: Float32Array; over: number }>();
   private readonly sql: DatabaseSync;
   private readonly table: string;
   readonly def: VectorDef;
@@ -598,7 +602,22 @@ export class VectorIndex {
     this.filters[slot] = this.def.filterFields.map((_, index) => row[`f${index}`] ?? undefined);
     const base = slot * WORDS;
     this.bits.fill(0, base, base + WORDS);
-    for (let d = 0; d < floats.length; d++) if (floats[d] > 0) this.bits[base + (d >>> 5)] |= 1 << (d & 31);
+    const mean = this.means.get(floats.length)?.mean;
+    for (let d = 0; d < floats.length; d++) if (floats[d] > (mean ? mean[d] : 0)) this.bits[base + (d >>> 5)] |= 1 << (d & 31);
+  }
+
+  /** The mean of every vector of each length, in one pass over the table. */
+  private takeMeans() {
+    const sums = new Map<number, { sum: Float64Array; over: number }>();
+    for (const row of this.sql.prepare(`SELECT vec FROM ${vectorTable(this.table, this.def.name)}`).iterate() as Iterable<{ vec: Uint8Array }>) {
+      const floats = floatsOf(row.vec);
+      const entry = sums.get(floats.length) ?? { sum: new Float64Array(floats.length), over: 0 };
+      for (let d = 0; d < floats.length; d++) entry.sum[d] += floats[d];
+      entry.over++;
+      sums.set(floats.length, entry);
+    }
+    this.means.clear();
+    for (const [dims, { sum, over }] of sums) this.means.set(dims, { mean: Float32Array.from(sum, (x) => x / over), over });
   }
 
   private remove(id: string) {
@@ -612,7 +631,9 @@ export class VectorIndex {
   /** Up to date with SQLite: everything again after another process wrote, else what this one touched. */
   private fresh() {
     const version = (this.sql.prepare("PRAGMA data_version").get() as { data_version: number }).data_version;
-    if (!this.loaded || version !== this.dataVersion) {
+    const grown = [...this.means.values()].some((entry) => this.ids.length > entry.over * 2 + 1000) || (!this.means.size && this.ids.length > 1000);
+    if (!this.loaded || version !== this.dataVersion || grown) {
+      this.takeMeans();
       this.ids = []; this.rowids = []; this.filters = []; this.slots.clear(); this.dims = new Uint16Array(0); this.bits = new Uint32Array(0);
       for (const row of this.sql.prepare(this.selectRows()).iterate() as Iterable<{ rowid: number; id: string; vec: Uint8Array }>) this.place(row);
       this.loaded = true;
@@ -642,7 +663,8 @@ export class VectorIndex {
       : same(this.filters[slot][fields.indexOf(expr.field)] ?? undefined, expr.value ?? undefined);
     const words = Math.ceil(target.length / 32);
     const signs = new Uint32Array(words);
-    for (let d = 0; d < target.length; d++) if (target[d] > 0) signs[d >>> 5] |= 1 << (d & 31);
+    const mean = this.means.get(target.length)?.mean;
+    for (let d = 0; d < target.length; d++) if (target[d] > (mean ? mean[d] : 0)) signs[d >>> 5] |= 1 << (d & 31);
     // The bits first: how many signs differ, for every vector of the query's length that passes the filter.
     const distance = new Uint16Array(this.ids.length).fill(65535);
     const histogram = new Uint32Array(words * 32 + 2);

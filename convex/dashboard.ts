@@ -7,6 +7,7 @@ import { action, mutation, query, type MutationCtx, type QueryCtx } from "./_gen
 import { assertDashboardKey } from "./lib/auth";
 import { problemWith, resolve as resolveShortcuts, SHORTCUT_IDS, SHORTCUTS, type ShortcutId, type Shortcuts } from "./lib/shortcuts";
 import { ABSOLUTE_PATH, stepsKey } from "./media";
+import { chatDeleted, index as indexInLibrary, storedElsewhere } from "./library";
 import { defaultAccess, defaultEngine, engineFor, type Onboarding } from "./installation";
 import { callName, DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./persona";
 import { PAUSED_ERROR, type Access } from "./lib/commands";
@@ -45,7 +46,8 @@ export type ChatMessage = {
   role: string;
   text: string;
   createdAt: number;
-  attachments: Array<{ url: string; fileName: string; contentType: string }>;
+  /** Its files; one deleted from the Library is `removed`, with no address. */
+  attachments: Array<{ url: string; fileName: string; contentType: string; removed?: true }>;
   /** Sent, and not yet in the history: the history only gets it with its reply. */
   pending?: boolean;
   /** The memories a reply said it relied on (codex.finishTurn). */
@@ -274,9 +276,12 @@ export const deleteChat = mutation({
     const attachments = await ctx.db.query("chatAttachments")
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
       .collect();
+    // Its files stay in the Library, with another chat that has them or none (library.chatDeleted).
+    await chatDeleted(ctx, args.id);
     for (const attachment of attachments) {
-      // Local files stay where they are on the owner's machine; Convex cannot reach them.
-      if (attachment.storageId) await ctx.storage.delete(attachment.storageId);
+      // Local files stay where they are on the owner's machine, in the Library. A stored one goes with the
+      // chat, unless a branch of it still shows it.
+      if (attachment.storageId && !await storedElsewhere(ctx, attachment.storageId, args.id)) await ctx.storage.delete(attachment.storageId);
       await ctx.db.delete(attachment._id);
     }
     await ctx.runMutation(internal.codex.pruneOrphans, { conversationId: args.id });
@@ -559,8 +564,15 @@ export const getChatMessages = query({
     const attachments = await ctx.db.query("chatAttachments")
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
       .collect();
-    const attachmentMap = new Map<string, Array<{ url: string; fileName: string; contentType: string }>>();
+    const attachmentMap = new Map<string, Array<{ url: string; fileName: string; contentType: string; removed?: true }>>();
     for (const attachment of attachments) {
+      // Deleted from the Library: the chat says so where the file was.
+      if (attachment.removedAt) {
+        const list = attachmentMap.get(attachment.messageKey) ?? [];
+        list.push({ url: "", fileName: attachment.fileName, contentType: attachment.contentType, removed: true });
+        attachmentMap.set(attachment.messageKey, list);
+        continue;
+      }
       // Local media is served by the Next.js server on the owner's machine.
       const url = attachment.localPath
         ? `/api/media/${attachment._id}`
@@ -685,6 +697,8 @@ export const registerAttachment = mutation({
     fileName: v.string(),
     contentType: v.string(),
     size: v.number(),
+    /** Sent from the desktop pet, as the Library says where it came from. */
+    from: v.optional(v.literal("pet")),
   },
   returns: v.id("chatAttachments"),
   handler: async (ctx, args) => {
@@ -697,7 +711,7 @@ export const registerAttachment = mutation({
     if (args.localPath && !ABSOLUTE_PATH.test(args.localPath)) throw new Error("Local files need an absolute path.");
     const stored = args.storageId ? await ctx.storage.getMetadata(args.storageId) : null;
     if (args.storageId && !stored) throw new Error("Upload could not be found.");
-    return await ctx.db.insert("chatAttachments", {
+    const id = await ctx.db.insert("chatAttachments", {
       conversationId: args.conversationId,
       messageKey: args.messageKey,
       storageId: args.storageId,
@@ -707,6 +721,8 @@ export const registerAttachment = mutation({
       size: args.size,
       createdAt: Date.now(),
     });
+    await indexInLibrary(ctx, id, args.from ? { from: args.from } : {});
+    return id;
   },
 });
 

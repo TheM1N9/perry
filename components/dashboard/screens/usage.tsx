@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { RefreshCwIcon } from "lucide-react";
 import { useEffect } from "react";
-import { useQuery } from "@/client/react";
+import { toast } from "sonner";
+import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
 import { resetsText, standing, usedNow, WARN_PERCENT, type PlanWindow } from "@/convex/lib/usage";
@@ -11,7 +13,9 @@ import type { EngineOverview, ShareItem } from "@/convex/usage";
 import { ago, fullDate, plural, timeOf, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ChannelIcon, CommandLine, EmptyState, List, ListSkeleton, Section, StatusBadge, type Tone } from "../common";
 
 const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
@@ -29,9 +33,21 @@ export function Usage() {
   const { dashboardKey } = useSession();
   const overview = useQuery(api.usage.overview, { key: dashboardKey });
   const now = useNow(30_000);
+  const refresh = useMutation(api.usage.requestRefresh);
+  // Reading: asked for within the last half minute and no computer has read since; then it stops spinning either way.
+  const reading = Boolean(overview?.refreshAt && (overview.readAt ?? 0) < overview.refreshAt && Date.now() - overview.refreshAt < 30_000);
+  const refreshButton = overview && overview.computers > 0 && (
+    <Tooltip>
+      <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh usage" aria-busy={reading || undefined} disabled={reading}
+        onClick={() => void refresh({ key: dashboardKey }).catch(() => toast.error("Couldn't ask for a refresh."))} />}>
+        <RefreshCwIcon className={cn(reading && "animate-spin")} />
+      </TooltipTrigger>
+      <TooltipContent>{reading ? "Reading your plans…" : overview.readAt ? `Refresh · read ${ago(overview.readAt, now)}` : "Refresh"}</TooltipContent>
+    </Tooltip>
+  );
   return (
     <>
-      <Section title="Your plans" tip={`All your use of each plan counts, not only Perry's. Perry warns in the chat and on the pet from ${WARN_PERCENT}%.`}>
+      <Section title="Your plans" tip={`All your use of each plan counts, not only Perry's. Perry warns in the chat and on the pet from ${WARN_PERCENT}%.`} actions={refreshButton || undefined}>
         {overview === undefined && <ListSkeleton rows={2} />}
         {overview && overview.computers === 0 && <EmptyState title="No computer connected" action={<CommandLine>perry start</CommandLine>} />}
         {overview && overview.computers > 0 && (

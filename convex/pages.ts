@@ -1035,7 +1035,7 @@ export const pinnedUsage = query({
 
 export type MemoryPage = {
   id: Id<"notes">; kind: PageKind | "page"; title: string; day?: string; projectId?: Id<"projects">; project?: string;
-  conversationId?: Id<"conversations">; lines: number; updatedAt: number; pinned: boolean; pinnedSections?: string[];
+  conversationId?: Id<"conversations">; updatedAt: number; pinned: boolean; pinnedSections?: string[];
 };
 
 /** Every page of memory, for the Memory page: About me, Things to remember, the journal (newest day first), people, chats. */
@@ -1054,7 +1054,8 @@ export const memoryPages = query({
       else if (kind === "person") rows.sort((a, b) => a.title.localeCompare(b.title));
       for (const page of rows) {
         pages.push({
-          id: page._id, kind: kind ?? "page", title: page.title, updatedAt: page.updatedAt, lines: (await linesOf(ctx, page._id)).length,
+          // No count of lines: reading every page's lines would read all of Brain each time the list is shown.
+          id: page._id, kind: kind ?? "page", title: page.title, updatedAt: page.updatedAt,
           pinned: isPinned(page), ...(page.pinnedSections?.length ? { pinnedSections: page.pinnedSections } : {}),
           ...(page.day ? { day: page.day } : {}),
           ...(page.projectId ? { projectId: page.projectId, project: names.get(page.projectId) ?? "a deleted project" } : {}),

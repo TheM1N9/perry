@@ -11,9 +11,9 @@ import * as chrono from "chrono-node";
  * again gets stronger, a line from the days asked about counts double, and
  * one recently used a little more.
  *
- * Ideas from Supermemory (MIT, licenses/supermemory-MIT.txt): a line's type,
- * when what it says happens as against when it was said, a date filter from
- * the question, boosts by type, and people's names expanded in the query.
+ * Ideas, not code, from looking at Supermemory: a line's type, when what it
+ * says happens as against when it was said, a date filter from the question,
+ * boosts by type, and people's names expanded in the query.
  */
 
 export type LineType = "fact" | "preference" | "episode";
@@ -128,6 +128,22 @@ export function fuse(lists: Array<{ ids: string[]; weight: number }>, k = FUSION
   return fused;
 }
 
+/** Words too common in questions to tell anything: left out when asking whether a line has all of a question's words. */
+const STOP = new Set((
+  "a an and are as at be but by can could did do does for from had has have how i i'm if in is it its me my of on or our so that the their them " +
+  "they this to was we were what when where which who whom why will with would you your about any some last latest now ever still these those"
+).split(" "));
+const termsOf = (text: string) => text.toLocaleLowerCase().split(/[^\p{L}\p{N}\p{M}]+/u).filter(Boolean);
+
+/** Whether a line has every telling word of the question (the last may be the start of one): an exact match by words. */
+export function hasAllWords(query: string, text: string): boolean {
+  const wanted = termsOf(query).filter((term) => term.length >= 3 && !STOP.has(term));
+  if (!wanted.length) return false;
+  const have = termsOf(text);
+  const set = new Set(have);
+  return wanted.every((term, index) => set.has(term) || (index === wanted.length - 1 && have.some((word) => word.startsWith(term))));
+}
+
 /** What each way of searching found for a question, before ranking. */
 export type RecallParts = {
   words: string[];
@@ -138,21 +154,27 @@ export type RecallParts = {
 
 /**
  * How the lists weigh, measured on labelled questions (artifacts/brain-scale/tune.ts): the fusion constant, each
- * list's weight, how far below the closest a line's meaning may be and still count, and the least an old
- * episode weighs.
+ * list's weight, how far below the closest a line's meaning may be and still count (in cosine, for
+ * multilingual-e5-small, whose scores bunch between 0.75 and 0.9), and the least an old episode weighs.
  */
-export const RANKING = { k: FUSION_K, words: 1, meaning: 1, dated: 1, mentioned: 0.5, margin: 1, episodeFloor: 0.5 };
+export const RANKING = { k: FUSION_K, words: 0.6, exact: 1, meaning: 1, dated: 1, mentioned: 0.5, margin: 0.05, episodeFloor: 0.75 };
 export type Ranking = typeof RANKING;
 
 /** The lines found, best first: lists fused by place, then each weighed by what it is (weightOf). */
-export function rankRecall<T extends Weighed>(parts: RecallParts, lines: Map<string, T>, now: number, range: DateRange | null, ranking: Ranking = RANKING): Array<T & { score: number }> {
+export function rankRecall<T extends Weighed & { text: string }>(query: string, parts: RecallParts, lines: Map<string, T>, now: number, range: DateRange | null, ranking: Ranking = RANKING): Array<T & { score: number }> {
   // Meaning's scores bunch together for some models: only those near the closest count, so noise does not crowd out words.
   const near = (list: Array<{ id: string; similarity: number }>) => list.filter((item) => item.similarity >= (list[0]?.similarity ?? 0) - ranking.margin).map((item) => item.id);
+  // What is said of the people asked about: those close in meaning first, then the newest.
+  const closeness = new Map(parts.meaning.map((item) => [item.id, item.similarity]));
+  const mentioned = parts.mentioned.map((id, place) => ({ id, place, close: closeness.get(id) ?? -1 })).sort((a, b) => b.close - a.close || a.place - b.place).map((item) => item.id);
+  // A line with every telling word of the question is a list of its own: a code, a name, a rare word asked for.
+  const exact = parts.words.filter((id) => lines.has(id) && hasAllWords(query, lines.get(id)!.text));
   const fused = fuse([
     { ids: parts.words, weight: ranking.words },
+    { ids: exact, weight: ranking.exact },
     { ids: near(parts.meaning), weight: ranking.meaning },
     { ids: near(parts.dated), weight: ranking.dated },
-    { ids: parts.mentioned, weight: ranking.mentioned },
+    { ids: mentioned, weight: ranking.mentioned },
   ], ranking.k);
   return [...fused]
     .filter(([id]) => lines.has(id))

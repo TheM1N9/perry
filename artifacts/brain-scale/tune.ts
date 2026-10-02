@@ -15,7 +15,7 @@ const p = await perry({ name: "brain-tune", outDir: join(process.env.PERRY_E2E_D
 for (const suffix of ["", "-wal", "-shm"]) if (existsSync(join(seedHome, `perry.sqlite${suffix}`))) copyFileSync(join(seedHome, `perry.sqlite${suffix}`), join(p.home, `perry.sqlite${suffix}`));
 if (process.env.PERRY_E2E_MODELS) cpSync(process.env.PERRY_E2E_MODELS, join(p.home, "models"), { recursive: true });
 const labels: Array<{ kind: string; question: string; ids: string[] }> = JSON.parse(readFileSync(join(seedHome, "labels.json"), "utf8"));
-type Line = { id: string; createdAt: number; kind?: string; type?: "fact" | "preference" | "episode"; day?: string; eventAt?: number };
+type Line = { id: string; text: string; createdAt: number; kind?: string; type?: "fact" | "preference" | "episode"; day?: string; eventAt?: number };
 const gathered: Array<{ label: typeof labels[number]; parts: RecallParts; lines: Map<string, Line>; range: DateRange | null; now: number }> = [];
 try {
   p.start("server");
@@ -34,15 +34,15 @@ try {
 writeFileSync(out.replace(/\.json$/, "-parts.json"), JSON.stringify(gathered.map((item) => ({ ...item, lines: Object.fromEntries(item.lines) }))));
 const score = (ranking: Ranking) => {
   const ranks = gathered.map(({ label, parts, lines, range, now }) => {
-    const rank = rankRecall(parts, lines, now, range, ranking).findIndex((line) => label.ids.includes(line.id));
+    const rank = rankRecall(label.question, parts, lines, now, range, ranking).findIndex((line) => label.ids.includes(line.id));
     return rank < 0 ? Infinity : rank + 1;
   });
   const at = (k: number) => Math.round((1000 * ranks.filter((rank) => rank <= k).length) / ranks.length) / 10;
   return { at1: at(1), at5: at(5), at10: at(10) };
 };
 const results: Array<{ ranking: Ranking; recall: ReturnType<typeof score> }> = [];
-for (const k of [10, 30, 60]) for (const words of [0.8, 1, 1.5]) for (const margin of [1, 0.1, 0.05, 0.03]) for (const episodeFloor of [0, 0.25, 0.5]) for (const mentioned of [0.5, 1]) {
-  const ranking = { ...RANKING, k, words, margin, episodeFloor, mentioned };
+for (const k of [10, 30]) for (const words of [0.6, 0.8, 1]) for (const exact of [0, 0.5, 1, 2]) for (const margin of [1, 0.05, 0.03]) for (const episodeFloor of [0.5, 0.75, 0.9]) for (const mentioned of [0.5, 1]) {
+  const ranking = { ...RANKING, k, words, exact, margin, episodeFloor, mentioned };
   results.push({ ranking, recall: score(ranking) });
 }
 results.sort((a, b) => b.recall.at10 - a.recall.at10 || b.recall.at5 - a.recall.at5 || b.recall.at1 - a.recall.at1);

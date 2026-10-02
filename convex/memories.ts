@@ -3,7 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { timezoneOf } from "./jobs";
-import { EMBED_MODEL, embed, embedderReady, unload, warmUp } from "./lib/embed";
+import { EMBED_MODEL, embed, readyWithin, unload } from "./lib/embed";
 import { dateRange, daysOf, eventIn, fuse, rankRecall, says, type RecallParts } from "./lib/recall";
 import { peopleIn, PREFERENCES_SECTION, removeLine, sectionFor } from "./lib/pages";
 import { dropLine, ensurePeople, memoryPage, placeFor, putLine, rewordLine, secretIn, writePage, type Author, type Standing } from "./pages";
@@ -423,7 +423,7 @@ export const recall = internalAction({
     };
     // For tuning the ranking against labelled questions (artifacts/brain-scale): what each way found, unranked.
     if (args.parts) return [{ parts, lines: Object.fromEntries(known), range, now } as never];
-    const ranked = rankRecall(parts, known, now, range).slice(0, limit);
+    const ranked = rankRecall(query, parts, known, now, range).slice(0, limit);
     if (!args.excerpts) return ranked;
     const around: Record<string, string[]> = await ctx.runQuery(internal.memories.excerpts, { ids: ranked.filter((memory) => memory.pageId).map((memory) => memory.id as Id<"memories">) });
     return ranked.map((memory) => (around[memory.id]?.length ? { ...memory, excerpt: around[memory.id] } : memory));
@@ -440,15 +440,12 @@ type Ranked = Array<{ id: Memory["_id"]; similarity: number }>;
  * the model is ready.
  */
 async function byMeaning(ctx: ActionCtx, query: string, limit: number, days?: string[]): Promise<Ranked> {
-  if (!embedderReady()) {
-    warmUp();
-    return [];
-  }
+  if (!await readyWithin(10_000)) return [];
   const previous: string | null = await ctx.runQuery(internal.memories.previousModel, {});
   // Within some days, the index is asked by day, not by model: while two models' vectors are about, not at all.
   if (days?.length && previous) return [];
-  const models = [EMBED_MODEL, ...(previous && previous !== EMBED_MODEL && embedderReady(previous) ? [previous] : [])];
-  if (previous && !embedderReady(previous)) warmUp(previous);
+  // The model before too, while lines are still on it: waited for as the current one is, so no line drops out of reach.
+  const models = [EMBED_MODEL, ...(previous && previous !== EMBED_MODEL && await readyWithin(10_000, previous) ? [previous] : [])];
   const lists: Ranked[] = [];
   for (const model of models) {
     const [wanted] = await embed([query], "query", model);
@@ -541,8 +538,8 @@ export const storeVectors = internalMutation({
   handler: async (ctx, args) => {
     for (const item of args.items) {
       const memory = await ctx.db.get(item.id);
-      // Edited while its vector was being made: the next pass makes a new one.
-      if (memory?.text === item.text) await ctx.db.patch(item.id, { embedding: item.vector, embeddedWith: EMBED_MODEL });
+      // Edited while its vector was being made: the next pass makes a new one. Superseded meanwhile: none.
+      if (memory?.text === item.text && !memory.supersededBy) await ctx.db.patch(item.id, { embedding: item.vector, embeddedWith: EMBED_MODEL });
     }
     return null;
   },
