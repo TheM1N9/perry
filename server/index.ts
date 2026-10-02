@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -71,6 +71,40 @@ async function pairThisMachine(runtime: Runtime) {
 }
 
 /**
+ * Memories from before pages are moved into them (pages.migrate, issue #210):
+ * first every row of memory, USER.md's versions and every page are written to
+ * ~/.perry/backups/memories-before-pages-<time>.json, then each memory waiting
+ * for its page gets one. Nothing is deleted, and `perry brain move-back`
+ * undoes the move. Does nothing once done, or after the owner moved them back.
+ * A failure is said and leaves memory as it was, still loaded and recalled.
+ */
+export async function moveMemoriesIntoPages(runtime: Runtime): Promise<void> {
+  try {
+    const waiting = await runtime.exclusive(() => {
+      const undone = runtime.store.all("installation").some((row) => row.memoriesInPages === "undone");
+      const loose = runtime.store.all("memories").filter((row) => !row.pageId && !row.supersededBy && row.kind !== "page");
+      return undone ? [] : loose;
+    });
+    if (!waiting.length) return;
+    const backup = await runtime.exclusive(() => ({
+      at: new Date().toISOString(),
+      waiting: waiting.length,
+      memories: runtime.store.all("memories"),
+      persona: runtime.store.all("persona"),
+      notes: runtime.store.all("notes"),
+    }));
+    const dir = join(HOME, "backups");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `memories-before-pages-${backup.at.replace(/[:.]/g, "-")}.json`);
+    writeFileSync(file, JSON.stringify(backup));
+    const done = await runtime.runMutation("pages:migrate", {}, { internal: true }) as { moved: number; kept: number; pages: number };
+    console.log(`[perry] moved ${done.moved} memories into pages${done.kept ? ` (${done.kept} kept as they were)` : ""}; backup in ${file}`);
+  } catch (error) {
+    console.error(`[perry] could not move memories into pages; they stay as they were: ${String(error)}`);
+  }
+}
+
+/**
  * The default engine the owner chose in `perry setup` while Perry was not
  * running, waiting in Perry's home: it becomes the default, once.
  */
@@ -113,6 +147,8 @@ export async function startBackend() {
   await runtime.runMutation("projects:migrate", {}, { internal: true });
   // Every note's paragraphs as lines that search finds with the memories (pages.ts); nothing once done.
   await runtime.runMutation("pages:indexAll", {}, { internal: true });
+  // Memories from before pages move into them, after a backup.
+  await moveMemoriesIntoPages(runtime);
   await pairThisMachine(runtime).catch((error) => console.error(`[perry] could not connect this computer: ${String(error)}`));
   runtime.start();
   box.__perry!.stopTelegram = pollTelegram(runtime);

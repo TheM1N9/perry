@@ -3,9 +3,9 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
-import { appended, cleanTitle, editSection, tooLong } from "./lib/notes";
+import { appended, cleanTitle, CONTENT_LIMIT, editSection, MEMORY_PAGE_LIMIT, tooLong } from "./lib/notes";
 import {
-  blocksOf, itemOf, journalTitle, personKey, reconcile, removeLine, replaceLine, sameKey, snippet, type PageKind,
+  blocksOf, itemOf, journalTitle, personKey, PREFERENCES_SECTION, reconcile, removeLine, replaceLine, sameKey, sectionFor, snippet, type PageKind,
 } from "./lib/pages";
 import { timezoneOf } from "./jobs";
 import type { MemoryView } from "./memories";
@@ -55,7 +55,7 @@ export async function linesOf(ctx: Reader, pageId: Id<"notes">): Promise<Line[]>
  * when new lines count as written: now, or for a page from before lines, when
  * it was last saved. The lines it added, by their words (lib/pages.sameKey).
  */
-export async function syncLines(ctx: Writer, page: Note, author: Author, at = Date.now(), hints?: Map<string, Id<"memories">>): Promise<Map<string, Id<"memories">>> {
+export async function syncLines(ctx: Writer, page: Note, author: Author, at = Date.now(), hints?: Map<string, Id<"memories">>, spare?: Set<string>): Promise<Map<string, Id<"memories">>> {
   const rows = await linesOf(ctx, page._id);
   const byId = new Map(rows.map((row) => [row._id as string, row]));
   const plan = reconcile(rows.map((row) => ({ id: row._id, text: row.text, order: row.order })), blocksOf(page.content), hints);
@@ -103,7 +103,11 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
     added.set(sameKey(block.text), id);
     changed = true;
   }
-  for (const id of plan.drop) await ctx.db.delete(id);
+  for (const id of plan.drop) {
+    // A memory being moved into this page whose words did not come back as a line of it stays as it was, out of the page.
+    if (spare?.has(id)) await ctx.db.patch(id, { pageId: undefined, order: undefined, section: undefined, migratedAt: undefined });
+    else await ctx.db.delete(id);
+  }
   if (page.linesAt !== page.revision) await ctx.db.patch(page._id, { linesAt: page.revision });
   if (changed) await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
   return added;
@@ -118,7 +122,7 @@ export type NewPage = {
 
 /** A new page, and its lines. */
 export async function insertPage(ctx: Writer, input: NewPage): Promise<Id<"notes">> {
-  const problem = tooLong(input.content);
+  const problem = tooLong(input.content, input.kind ? MEMORY_PAGE_LIMIT : CONTENT_LIMIT);
   if (problem) throw new Error(problem);
   const title = cleanTitle(input.title);
   const now = Date.now();
@@ -147,14 +151,14 @@ export async function insertPage(ctx: Writer, input: NewPage): Promise<Id<"notes
  * me is USER.md too: each change is kept as a version of it (persona.ts), and
  * `typing` lets the owner's saves from one sitting be one version.
  */
-export async function writePage(ctx: Writer, page: Note, patch: { title?: string; content?: string }, author: Author, options: { typing?: boolean; hints?: Map<string, Id<"memories">> } = {}): Promise<Map<string, Id<"memories">>> {
+export async function writePage(ctx: Writer, page: Note, patch: { title?: string; content?: string }, author: Author, options: { typing?: boolean; hints?: Map<string, Id<"memories">>; spare?: Set<string> } = {}): Promise<Map<string, Id<"memories">>> {
   const title = patch.title === undefined || page.kind ? page.title : cleanTitle(patch.title);
   const content = patch.content ?? page.content;
-  const problem = tooLong(content);
+  const problem = tooLong(content, page.kind ? MEMORY_PAGE_LIMIT : CONTENT_LIMIT);
   if (problem) throw new Error(problem);
   if (title === page.title && content === page.content) return new Map();
   await ctx.db.patch(page._id, { title, content, search: searchOf(title, content), revision: page.revision + 1, by: noteBy(author.by), updatedAt: Date.now() });
-  const added = await syncLines(ctx, (await ctx.db.get(page._id))!, author, Date.now(), options.hints);
+  const added = await syncLines(ctx, (await ctx.db.get(page._id))!, author, Date.now(), options.hints, options.spare);
   // The owner's saves from one sitting are one version; anyone else's are each their own.
   if (page.kind === "about" && content !== page.content) await recordUser(ctx, content, author.by, options.typing ?? author.by === "owner");
   return added;
@@ -182,6 +186,22 @@ export type Place =
   | { kind: "journal"; day: string; projectId?: Id<"projects"> }
   | { kind: "person"; name: string }
   | { kind: "chat"; conversationId: Id<"conversations"> };
+
+/**
+ * Where a memory goes: what a chat kept to itself to that chat's page; a
+ * day's note to that day's journal; a standing preference to About me (a
+ * project's to its Things to remember); a fact about someone else, kept for
+ * every chat, to their page in People; any other fact to Things to remember,
+ * the project's in a project.
+ */
+export function placeFor(kind: "profile" | "core" | "daily", day: string, args: { conversationId?: Id<"conversations">; projectId?: Id<"projects">; about?: string[] }): Place {
+  if (args.conversationId) return { kind: "chat", conversationId: args.conversationId };
+  if (kind === "daily") return { kind: "journal", day, ...(args.projectId ? { projectId: args.projectId } : {}) };
+  if (kind === "profile") return args.projectId ? { kind: "remember", projectId: args.projectId } : { kind: "about" };
+  const person = args.about?.map((name) => name.trim()).find(Boolean);
+  if (person && !args.projectId) return { kind: "person", name: person };
+  return { kind: "remember", ...(args.projectId ? { projectId: args.projectId } : {}) };
+}
 
 /** The page of memory for a place, if there is one yet. */
 export async function findPage(ctx: Reader, place: Place): Promise<Note | null> {
@@ -263,6 +283,137 @@ export async function rewordLine(ctx: Writer, line: Line, text: string, author: 
   const now = await ctx.db.get(line._id);
   if (now && now.text !== text.trim()) await ctx.db.patch(line._id, { text: text.trim(), by: author.by, editedAt: Date.now(), vector: undefined, vectorModel: undefined });
 }
+
+// --- Memories from before pages, moved into them (issue #210, step 4) --------------------------------
+
+/**
+ * A memory from before pages: a current row with no page that is not a line of
+ * one of the owner's other pages. Perry moves each into its page when it
+ * starts (migrate), after server/index.ts has written every row to a backup
+ * file; one that cannot be moved stays as it is, and is still loaded and
+ * recalled (standingFor).
+ */
+const isLoose = (line: Line) => !line.pageId && !line.supersededBy && line.kind !== "page";
+
+/** Words that come back from a page as exactly one line: a blank line inside them would make two. */
+const oneLine = (text: string) => text.trim().replace(/\n\s*\n+/g, "\n");
+
+/**
+ * Move every memory from before pages into its page, keeping the row: its id
+ * (so citations, to-do links and asked threads hold), its words, layer, tags,
+ * people, scope, source, origin and dates stay; it gains its page, place and
+ * section, and when (migratedAt), and keeps its words as they were when they
+ * had to become one line (migratedFrom). Pages it makes say so (migrated).
+ * Lines are attached before the page is saved, so a save keeps them; one
+ * whose words did not come back is left as it was rather than lost (spare).
+ *
+ * Idempotent: run whenever Perry starts and after an import, it moves what is
+ * left, and nothing once done. Not after the owner moved them back out
+ * (undoMigration), unless `again`.
+ */
+export const migrate = internalMutation({
+  args: { again: v.optional(v.boolean()) },
+  returns: v.object({ moved: v.number(), kept: v.number(), pages: v.number(), skipped: v.boolean() }),
+  handler: async (ctx, args) => {
+    const install = await ctx.db.query("installation").first();
+    if (install?.memoriesInPages === "undone") {
+      if (!args.again) return { moved: 0, kept: 0, pages: 0, skipped: true };
+      await ctx.db.patch(install._id, { memoriesInPages: undefined });
+    }
+    const loose = (await ctx.db.query("memories").withIndex("by_created").collect()).filter(isLoose);
+    if (!loose.length) return { moved: 0, kept: 0, pages: 0, skipped: false };
+    const timezone = await timezoneOf(ctx);
+    const groups = new Map<string, { place: Place; lines: Array<{ line: Line; section?: string }> }>();
+    for (const line of loose) {
+      const kind = line.kind === "profile" || line.kind === "daily" ? line.kind : "core";
+      // A day's note from before days were kept says the day it was made.
+      const day = line.day ?? new Date(line.createdAt).toLocaleDateString("en-CA", { timeZone: timezone });
+      const place = placeFor(kind, day, { conversationId: line.conversationId, projectId: line.projectId, about: line.about });
+      const section = kind === "profile" ? PREFERENCES_SECTION : place.kind === "remember" ? sectionFor(line.text, line.tags, line.about) : undefined;
+      const key = JSON.stringify(place.kind === "person" ? { kind: "person", name: personKey(place.name) } : place);
+      const group = groups.get(key) ?? { place, lines: [] };
+      group.lines.push({ line, section });
+      groups.set(key, group);
+    }
+    const now = Date.now();
+    let made = 0;
+    for (const { place, lines } of groups.values()) {
+      const existed = Boolean(await findPage(ctx, place));
+      let page = await memoryPage(ctx, place);
+      if (!existed) {
+        await ctx.db.patch(page._id, { migrated: true });
+        made++;
+      }
+      let content = page.content;
+      const spare = new Set<string>();
+      for (const { line, section } of lines.sort((a, b) => a.line.createdAt - b.line.createdAt)) {
+        // As the line will read back from the page, so the save keeps the row as it is (a leading checkbox, say, would not).
+        const once = oneLine(line.text);
+        const read = blocksOf(itemOf(once));
+        const text = read.length === 1 ? read[0].text : once;
+        const item = itemOf(text);
+        const placed = section ? editSection(content, section, item, "append") : null;
+        content = placed && "content" in placed ? placed.content : appended(content, item);
+        await ctx.db.patch(line._id, {
+          pageId: page._id, order: Number.MAX_SAFE_INTEGER, section, migratedAt: now,
+          ...(text !== line.text ? { text, migratedFrom: line.text, vector: undefined, vectorModel: undefined } : {}),
+        });
+        spare.add(line._id);
+      }
+      page = (await ctx.db.get(page._id))!;
+      await writePage(ctx, page, { content }, { by: "owner" }, { spare });
+    }
+    const moved = (await ctx.db.query("memories").withIndex("by_created").collect()).filter((line) => line.migratedAt === now).length;
+    return { moved, kept: loose.length - moved, pages: made, skipped: false };
+  },
+});
+
+/**
+ * Move memories back out of pages, exactly as they were before (`perry brain
+ * move-back`): each moved row loses its page, place, section and migratedAt,
+ * and gets its words back; their lines leave their pages; pages the move made
+ * that are left empty are deleted. Lines of the owner's other pages, which
+ * are made from them, go too (they come back when Perry starts). Memories
+ * written in pages since stay, as the rows they are. Perry then leaves
+ * memories where they are until `perry brain move-in`. With this, a Perry from
+ * before pages reads memory as it was.
+ */
+export const undoMigration = internalMutation({
+  args: {},
+  returns: v.object({ movedBack: v.number(), pagesDeleted: v.number(), linesDropped: v.number() }),
+  handler: async (ctx) => {
+    const all = await ctx.db.query("memories").withIndex("by_created").collect();
+    const moved = all.filter((line) => line.migratedAt);
+    const byPage = new Map<string, Line[]>();
+    for (const line of moved) if (line.pageId) byPage.set(line.pageId, [...(byPage.get(line.pageId) ?? []), line]);
+    for (const line of moved) {
+      await ctx.db.patch(line._id, {
+        pageId: undefined, order: undefined, section: undefined, migratedAt: undefined,
+        ...(line.migratedFrom !== undefined ? { text: line.migratedFrom, migratedFrom: undefined, vector: undefined, vectorModel: undefined } : {}),
+      });
+    }
+    let pagesDeleted = 0;
+    for (const [pageId, lines] of byPage) {
+      const page = await ctx.db.get(pageId as Id<"notes">);
+      if (!page) continue;
+      let content = page.content;
+      for (const line of lines) content = removeLine(content, line.text) ?? content;
+      await writePage(ctx, page, { content }, { by: "owner" });
+      const left = await linesOf(ctx, page._id);
+      if (page.migrated && !left.length && !content.trim() && page.kind !== "about") {
+        await removePage(ctx, page._id);
+        pagesDeleted++;
+      }
+    }
+    // The lines of the owner's other pages: an older Perry would take them for memories.
+    let linesDropped = 0;
+    for (const line of all) if (line.kind === "page") { await ctx.db.delete(line._id); linesDropped++; }
+    for (const page of await ctx.db.query("notes").collect()) if (page.linesAt !== undefined && !page.kind) await ctx.db.patch(page._id, { linesAt: undefined });
+    const install = await ctx.db.query("installation").first();
+    if (install) await ctx.db.patch(install._id, { memoriesInPages: "undone" });
+    return { movedBack: moved.length, pagesDeleted, linesDropped };
+  },
+});
 
 // --- Start and import ---------------------------------------------------------------------------
 
