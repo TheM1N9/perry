@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-01T22:04:49.604Z",
+  "ranAt": "2026-10-02T00:10:51.397Z",
   "checks": {
     "noRealEngineSignedIn": true,
     "automaticQuickTier": true,
@@ -219,20 +219,20 @@
         "effort": "medium",
         "tier": "standard",
         "by": "auto",
-        "why": "Standard tier, for a chat: gemini-fake-pro at medium. Moved from Grok Build to Antigravity, the signed-in engine with the most of its plan left: Grok Build's 5-hour limit is used up and resets at 5:31 am.",
+        "why": "Standard tier, for a chat: gemini-fake-pro at medium. Moved from Grok Build to Antigravity, the signed-in engine with the most of its plan left: Grok Build's 5-hour limit is used up and resets at 7:37 am.",
         "movedFrom": "grok"
       },
       "chat": {
         "engine": "antigravity",
         "moved": {
           "from": "grok",
-          "why": "Grok Build's 5-hour limit is used up and resets at 5:31 am",
-          "at": 1790892099635
+          "why": "Grok Build's 5-hour limit is used up and resets at 7:37 am",
+          "at": 1790899663949
         }
       },
       "reply": "Fake antigravity reply to: grok is used up now. One two three four five six seve"
     },
-    "chatSaysItMoved": "Moved to Antigravity. Grok Build's 5-hour limit is used up and resets at 5:31 am, so this chat goes on there, with what was said so far. Pick a Grok Build model to move it back.",
+    "chatSaysItMoved": "Moved to Antigravity. Grok Build's 5-hour limit is used up and resets at 7:37 am. Pick a Grok Build model to move it back.",
     "modelsAfterMove": [
       "grok/grok-fake-fast*:medium",
       "grok/grok-fake-heavy:medium",
@@ -240,18 +240,18 @@
       "antigravity/gemini-fake-flash:medium"
     ],
     "learned": [
-      "{\n  \"models\": [\n    {\n      \"id\": \"grok-fake-fast\",\n      \"name\": \"grok-fake-fast\",\n      \"isDefault\": true,\n      \"efforts\": [\n        \"low\",\n        \"medium\",\n        \"high\"\n      ],\n      \"defaultEffort\": \"medium\"\n    },\n    {\n      \"id\": \"grok-fake-heavy\",\n      \"name\": \"grok-fake-heavy\",\n      \"isDefault\": false,\n      \"efforts\": [\n        \"low\",\n        \"medium\",\n        \"high\"\n      ],\n      \"defaultEffort\": \"medium\"\n    }\n  ],\n  \"updatedAt\": 1790892018285\n}",
+      "{\n  \"models\": [\n    {\n      \"id\": \"grok-fake-fast\",\n      \"name\": \"grok-fake-fast\",\n      \"isDefault\": true,\n      \"efforts\": [\n        \"low\",\n        \"medium\",\n        \"high\"\n      ],\n      \"defaultEffort\": \"medium\"\n    },\n    {\n      \"id\": \"grok-fake-heavy\",\n      \"name\": \"grok-fake-heavy\",\n      \"isDefault\": false,\n      \"efforts\": [\n        \"low\",\n        \"medium\",\n        \"high\"\n      ],\n      \"defaultEffort\": \"medium\"\n    }\n  ],\n  \"updatedAt\": 1790899594166\n}",
       "{\"models\":[{\"id\":\"gemini-fake-pro\",\"name\":\"gemini-fake-pro\",\"isDefault\":true,\"efforts\":[\"low\",\"medium\",\"high\"],\"defaultEffort\":\"medium\"},{\"id\":\"gemini-fake-flash\",\"name\":\"gemini-fake-flash\",\"isDefault\":false,\"efforts\":[\"low\",\"medium\",\"high\"],\"defaultEffort\":\"medium\"}]}"
     ],
     "allLimited": {
       "waiting": {
-        "until": 1790892187626,
-        "why": "No engine has room: Grok Build's 5-hour limit is used up and resets at 3:33 am; Antigravity's 5-hour limit is used up and resets at 3:32 am. It runs at 3:33 am, when Antigravity has room again."
+        "until": 1790899750141,
+        "why": "No engine has room: Grok Build's 5-hour limit is used up and resets at 5:39 am; Antigravity's 5-hour limit is used up and resets at 5:38 am. It runs at 5:39 am, when Antigravity has room again."
       },
       "ranEarly": false,
       "run": {
-        "startedAt": 1790892187643,
-        "resetAt": 1790892172626,
+        "startedAt": 1790899750147,
+        "resetAt": 1790899735141,
         "status": "ok",
         "route": {
           "engine": "grok",
@@ -263,7 +263,7 @@
         }
       },
       "told": [
-        "⏰ **Morning briefing** is waiting. No engine has room: Grok Build's 5-hour limit is used up and resets at 3:33 am; Antigravity's 5-hour limit is used up and resets at 3:32 am. It runs at 3:33 am, when Antigravity has room again."
+        "⏰ **Morning briefing** is waiting. No engine has room: Grok Build's 5-hour limit is used up and resets at 5:39 am; Antigravity's 5-hour limit is used up and resets at 5:38 am. It runs at 5:39 am, when Antigravity has room again."
       ]
     },
     "midTurn": {
@@ -311,8 +311,8 @@
         }
       },
       "waiting": {
-        "until": 1790892270414,
-        "why": "No engine has room: Antigravity's 5-hour limit is used up and resets at 3:34 am. It runs at 3:34 am, when Antigravity has room again."
+        "until": 1790899832924,
+        "why": "No engine has room: Antigravity's 5-hour limit is used up and resets at 5:40 am. It runs at 5:40 am, when Antigravity has room again."
       },
       "rerun": {
         "engine": "antigravity",
@@ -326,20 +326,20 @@
       "runs": [
         {
           "status": "error",
-          "startedAt": 1790892195457
+          "startedAt": 1790899757966
         },
         {
           "status": "ok",
-          "startedAt": 1790892270434
+          "startedAt": 1790899832930
         }
       ],
-      "sweepReset": 1790892255414,
+      "sweepReset": 1790899817924,
       "told": [
-        "⏰ **Inbox sweep** didn't run: Grok Build refused it for its plan's limit. No engine has room: Antigravity's 5-hour limit is used up and resets at 3:34 am. It runs at 3:34 am, when Antigravity has room again."
+        "⏰ **Inbox sweep** didn't run: Grok Build refused it for its plan's limit. No engine has room: Antigravity's 5-hour limit is used up and resets at 5:40 am. It runs at 5:40 am, when Antigravity has room again."
       ]
     },
     "workPage": {
-      "movedRow": "Inbox sweep\n\nEvery day at 6:00\nNext in 2 hr\n(2 Oct 2026, 06:00)\nLast ran 1 min ago\n(2 Oct 2026, 03:33)\n\nLast run on Antigravity · gemini-fake-pro at medium\n\nMoved to Antigravity: Grok Build refused a reply for its plan's limit.\n\nKeep on Grok Build\n\nFake antigravity reply to: ⏰ Inbox sweep (Friday, 2 October 2026 at 03:34)\n\nSweep the owner's inbox and say what needs a reply.\n\nConditional delive. One two three four five six seven eight nine ten.\n\nResults\nAutomatic\nRun now",
+      "movedRow": "Inbox sweep\n\nEvery day at 6:00\nNext in 19 min\n(2 Oct 2026, 06:00)\nLast ran 1 min ago\n(2 Oct 2026, 05:39)\n\nLast run on Antigravity · gemini-fake-pro at medium\n\nMoved to Antigravity: Grok Build refused a reply for its plan's limit.\n\nKeep on Grok Build\n\nFake antigravity reply to: ⏰ Inbox sweep (Friday, 2 October 2026 at 05:40)\n\nSweep the owner's inbox and say what needs a reply.\n\nConditional delive. One two three four five six seven eight nine ten.\n\nResults\nAutomatic\nRun now",
       "kept": {
         "engine": "grok",
         "model": "grok-fake-fast",
@@ -355,7 +355,7 @@
     "runnerLog": [
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\perry-tests\\auto-routing\\perry-auto-routing-HD7Eg8\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\auto-routing\\perry-auto-routing-kJpFxI\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -363,36 +363,36 @@
       "\u001b[0m",
       "\u001b[32m  connected.",
       "\u001b[0m",
-      "\u001b[2m  saved turn wwa8m5g7q935xaq5we03wedhcd\u001b[0m",
-      "\u001b[2m  saved turn ppqzzfafzky9aqs11ghb15njmm\u001b[0m",
-      "\u001b[2m  saved turn ht3j4a41j7bdxpw7rardbbx1qp\u001b[0m",
-      "\u001b[2m  saved turn b4h38h0gzjpbw6frd3y4wa2tya\u001b[0m",
-      "\u001b[2m  saved turn 96pst4nsy6j511g5hxz8em4n0x\u001b[0m",
-      "\u001b[2m  saved turn 7y64ax5dkpaq2ge8pgt2bbwh08\u001b[0m",
-      "\u001b[2m  saved turn 5e6y3jg3yedkpaf2d2rkr8bf9e\u001b[0m",
-      "\u001b[2m  saved turn zryesym72kfkj8x8hx2xdbmpvw\u001b[0m",
-      "\u001b[2m  saved turn 051ey1be8r9e2cg18dhmtbthfq\u001b[0m",
-      "\u001b[2m  saved turn 0t259x9pwe0wzbjtt45nh30pfb\u001b[0m",
-      "\u001b[2m  saved turn 9d9bg9x060jaxcq2mqzczv4ce6\u001b[0m",
-      "\u001b[2m  saved turn 369h0sbc6a1d96q8ybfz34jmta\u001b[0m",
-      "\u001b[2m  saved turn 0jc36shgapq7fzsk7xrkkn4eqb\u001b[0m",
-      "\u001b[2m  saved turn 200ct8d18eknkqmysvvnpxteg8\u001b[0m",
-      "\u001b[2m  saved turn j9d65s68xd1sr3x4rqyqvq0fjj\u001b[0m",
-      "\u001b[2m  saved turn arymdzp6g4cr8amg45k28mh6wx\u001b[0m",
-      "\u001b[2m  saved turn przpr5s984h98q3bs8karh3btw\u001b[0m",
-      "\u001b[2m  saved turn q16787tqs8xmz7amkg3h2kp4jn\u001b[0m",
-      "\u001b[2m  saved turn 57s8g3gfcfq27726b6wg2vh9gg\u001b[0m",
-      "\u001b[2m  saved turn wszv0gwrz39p1kk4jsyq96ypej\u001b[0m",
-      "\u001b[2m  saved turn 8mbrybwsht26zn41nvat16efve\u001b[0m",
-      "\u001b[2m  saved turn 1a6esdbf71rq8hg5hk9x8ha44n\u001b[0m",
-      "\u001b[2m  saved turn 8b1cwnz1fngwx6x2n1qpshrv7v\u001b[0m",
-      "\u001b[2m  saved turn 69vdtj8n6jqxzjtp7qkztzbzjp\u001b[0m",
-      "\u001b[2m  saved turn fqmm2r0fbg9nycrz835t2eya16\u001b[0m",
+      "\u001b[2m  saved turn wck0khefep301eny7m45gxassf\u001b[0m",
+      "\u001b[2m  saved turn s48n27r30hterjzqgcf32qt4nv\u001b[0m",
+      "\u001b[2m  saved turn 9tknx32f5d8zvety3ggs81mjk8\u001b[0m",
+      "\u001b[2m  saved turn qw8hd3bmx7ewd6ab5s1jr761vp\u001b[0m",
+      "\u001b[2m  saved turn g62nqzsx74sekhyhyzxs0hzsgn\u001b[0m",
+      "\u001b[2m  saved turn dr7qd8dxgjzzh7hhf9zg9deh0h\u001b[0m",
+      "\u001b[2m  saved turn c1dbctc4wmq52ztbh74amf1jxq\u001b[0m",
+      "\u001b[2m  saved turn 9yy236ewqxt1qbfpnkvf3873bj\u001b[0m",
+      "\u001b[2m  saved turn zyfkn89tht79vq5p22bmsrqvf1\u001b[0m",
+      "\u001b[2m  saved turn pak48r9q50h4r6qwaeyq2hxt74\u001b[0m",
+      "\u001b[2m  saved turn nq5fhws0e4p4wst1vrc45jnnse\u001b[0m",
+      "\u001b[2m  saved turn tx8k3cfet5qzxekb0zcb9pey7w\u001b[0m",
+      "\u001b[2m  saved turn 0nxsrq1rgnv5ja2cymm3y2cekj\u001b[0m",
+      "\u001b[2m  saved turn g4rtqxe1h6rj726fp8sdj4bhpy\u001b[0m",
+      "\u001b[2m  saved turn 4w5nf1vszbkdd2mqt67dezvsv6\u001b[0m",
+      "\u001b[2m  saved turn 6xkd2m176yx75fkc4y4vdcd759\u001b[0m",
+      "\u001b[2m  saved turn nqv959zs5zfa18r7jxe1ces5tg\u001b[0m",
+      "\u001b[2m  saved turn 85069qpghykd9qwpxf00vbh127\u001b[0m",
+      "\u001b[2m  saved turn 2tqdtxhncznxzdey3bsqwj6pj2\u001b[0m",
+      "\u001b[2m  saved turn vzpqaxa155dgvac19exc43jyev\u001b[0m",
+      "\u001b[2m  saved turn dhxac8w8qq1v2ynnaeag14nfbx\u001b[0m",
+      "\u001b[2m  saved turn tgf3cmp0yzrx6bhnzbqaha6txa\u001b[0m",
+      "\u001b[2m  saved turn yhbfctdkt90pddya9124bsmb3b\u001b[0m",
+      "\u001b[2m  saved turn 7cdadbb4aj1bcqxjvc15428sy5\u001b[0m",
+      "\u001b[2m  saved turn a0qkmzhf4pff9w17fqmfyrnz6x\u001b[0m",
       "\u001b[33m  Grok Build refused the turn for your plan's limit\u001b[0m",
-      "\u001b[2m  saved turn m63rw176r5yg101pr5wd2qrhn4\u001b[0m",
-      "\u001b[2m  saved turn ec03ayds39433w2z0w6xtqcm3k\u001b[0m",
+      "\u001b[2m  saved turn 3fngcmpycgkm1xh2k98yh9stnw\u001b[0m",
+      "\u001b[2m  saved turn 68p2t87xb8z01fccpg066ss59n\u001b[0m",
       "\u001b[33m  Grok Build refused the turn for your plan's limit\u001b[0m",
-      "\u001b[2m  saved turn afjjcvt19yanrct7gjv5vnes4k\u001b[0m"
+      "\u001b[2m  saved turn mjd4bqeca8yrm2vjgmmfhjpy68\u001b[0m"
     ],
     "tempHomeRemoved": true
   },
