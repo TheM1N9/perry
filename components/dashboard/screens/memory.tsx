@@ -205,7 +205,7 @@ export function MemoryPages({ filter = "", projectId }: { filter?: string; proje
     .then((id) => router.push(noteHref(id)), (cause) => toast.error(`Couldn't open it: ${errorText(cause)}`));
   if (all === undefined) return <ListSkeleton rows={3} />;
   const pages = projectId ? all.filter((page) => page.projectId === projectId) : all;
-  const has = (kind: MemoryPage["kind"]) => pages.some((page) => page.kind === kind && (projectId ? true : !page.projectId));
+  const has = (kind: MemoryPage["kind"]) => pages.some((page) => page.kind === kind && (Boolean(projectId) || !page.projectId));
   // A project has no About me of its own: what it should always know is in its Things to remember.
   const startable = projectId ? (["remember"] as const) : (["about", "remember"] as const);
   return (

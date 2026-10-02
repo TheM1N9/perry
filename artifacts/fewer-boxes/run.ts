@@ -250,7 +250,7 @@ try {
     await collectErrors(`memory-${mode}`);
 
     // --- Project ------------------------------------------------------------------------------------------
-    await go(`/projects/${project}`, "matte green");
+    await go(`/projects/${project}`, "Things to remember");
     await shot("project");
     await measure(`project-${mode}`);
     await collectErrors(`project-${mode}`);
@@ -347,7 +347,7 @@ try {
     await size(1280, 800);
 
     // --- Autosave: project instructions, and the way out right after typing ------------------------
-    await go(`/projects/${project}`, "matte green");
+    await go(`/projects/${project}`, "Things to remember");
     const instructions = `document.querySelector("#project-instructions")`;
     const projectInstructions = async () => (await call<{ instructions: string }>("projects:get", { key: KEY, id: project })).instructions;
     await focus(instructions);
@@ -363,7 +363,7 @@ try {
     const kept = await soon(async () => (await projectInstructions()).endsWith("Never more than 200 words."), 6);
     check("leavingRightAfterTypingKeepsTheWords", kept, await projectInstructions());
     // Closing the tab while a save is still to go: the page asks, and the save goes.
-    await go(`/projects/${project}`, "matte green");
+    await go(`/projects/${project}`, "Things to remember");
     await focus(instructions);
     await typeText(" Sign off as Perry.");
     const asked = await evaluate(`(() => { const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; })()`);
@@ -478,7 +478,8 @@ try {
     await go("/brain", "Things to remember");
     const memories = () => call<Array<{ id: string; text: string; pageId?: string }>>("memories:search", { query: "", limit: 25, everywhere: true, memoriesOnly: true });
     const teachForm = await evaluate(`document.querySelectorAll("#memory-text").length`) as number;
-    await click(`document.querySelector('[data-memory-page="remember"]')`);
+    const trainsPage = (await memories()).find((memory) => memory.text.includes("trains to flights"))?.pageId;
+    await click(`document.querySelector('[data-memory-page] [href$="/${trainsPage}"], a[data-memory-page][href$="/${trainsPage}"]')`);
     await waitFor(`document.querySelector("[data-note-editor]")?.innerText.includes("trains to flights")`, "Things to remember in the editor", 30);
     await evaluate(`(() => { const el = document.querySelector("[data-note-editor]"); el.focus(); const range = document.createRange(); range.selectNodeContents(el); range.collapse(false); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); return true; })()`);
     await press("Enter");

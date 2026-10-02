@@ -294,14 +294,14 @@ try {
   await shot("chat-in-project.png");
 
   // --- 16. The project's Brain, listed as Brain lists everyone's ------------------------------------------------------
-  // A day's note in the project, a page of its own, a pinned one, and a page of everyone's that must stay off it.
+  // A day's note in the project (KESTRELBRIDGE, remembered above, is one too), a page of its own, a pinned one,
+  // and a page of everyone's that must stay off it. Nothing went to its Things to remember yet: Brain offers to start it.
   await call("memories:add", { text: "Recorded the intro for episode 11, PLOVERDAY.", tags: [], source: "test", kind: "daily", origin: "owner", projectId: project });
   const planPage = await call<string>("notes:create", { key: KEY, title: "Episode 12 plan", content: "Open on the sponsor read, LARKPLAN.", projectId: project });
   const stylePage = await call<string>("notes:create", { key: KEY, title: "House style", content: "No jargon, ever. TERNSTYLE.", projectId: project });
   await call("pages:pin", { key: KEY, id: stylePage, pinned: true });
   await call<string>("notes:create", { key: KEY, title: "Groceries everywhere", content: "Milk." });
   const projectRows = rows("notes").filter((row) => row.projectId === project);
-  const remember = projectRows.find((row) => row.kind === "remember");
   const journal = projectRows.find((row) => row.kind === "journal");
   await go(`/projects/${project}`);
   await waitFor(`document.querySelector('main section[aria-label="Brain"] [data-memory-page="remember"]') && document.querySelector('main section[aria-label="Brain"] ul[aria-label="Pages"]')`, "the project's Brain");
@@ -313,15 +313,24 @@ try {
     return { groups, pages, buttons, forget: buttons.filter((b) => b === "Forget").length, oldList: document.querySelectorAll('main [aria-label^="What Perry remembers in"]').length, text: document.querySelector("main").innerText };
   })()`) as { groups: Array<{ group: string; rows: Array<{ title: string; href: string; kind: string }> }>; pages: Array<{ title: string; href: string }>; buttons: string[]; forget: number; oldList: number; text: string };
   const inGroup = (group: RegExp, href: string) => brainSide.groups.some((item) => group.test(item.group) && item.rows.some((row) => row.href.endsWith(`/${href}`)));
-  check("projectBrainAsPages", Boolean(remember && journal) && inGroup(/^Pinned/, remember!._id) && inGroup(/^Pinned/, stylePage) && inGroup(/^Journal$/, journal!._id)
+  const starter = await evaluate(`document.querySelector('main section[aria-label="Brain"] button[data-memory-page="remember"]')?.innerText.trim() ?? ""`) as string;
+  check("projectBrainAsPages", Boolean(journal) && starter === "Things to remember" && inGroup(/^Pinned/, stylePage) && inGroup(/^Journal$/, journal!._id)
     && brainSide.pages.some((page) => page.href.endsWith(`/${planPage}`)) && !brainSide.pages.some((page) => page.href.endsWith(`/${stylePage}`))
     && !brainSide.text.includes("Groceries everywhere") && !brainSide.text.includes("About me") && !brainSide.text.includes("KESTRELBRIDGE"),
-    { groups: brainSide.groups.map((item) => ({ group: item.group, rows: item.rows.map((row) => row.title) })), pages: brainSide.pages.map((page) => page.title) });
+    { starter, groups: brainSide.groups.map((item) => ({ group: item.group, rows: item.rows.map((row) => row.title) })), pages: brainSide.pages.map((page) => page.title) });
   check("noOldMemoryRows", brainSide.forget === 0 && brainSide.oldList === 0 && !brainSide.buttons.includes("Save"), { buttons: brainSide.buttons });
   await shot("project-page.png");
+  // Things to remember starts from there, the project's own, in the editor; then it is listed with the pinned pages.
+  await click('main section[aria-label="Brain"] button[data-memory-page="remember"]');
+  await waitFor(`/^\\/(brain|notes)\\/[a-z0-9]+$/.test(location.pathname) && document.querySelector("[data-note-editor]")`, "the project's Things to remember in the editor", 20_000);
+  const rememberId = (await path()).split("/").pop()!;
+  const remember = rows("notes").find((row) => row._id === rememberId);
+  await go(`/projects/${project}`);
+  const listed = await waitFor(`document.querySelector('main section[aria-label="Brain"] ul[aria-label^="Pinned"] a[href$="/${rememberId}"]')`, "Things to remember listed", 20_000).then(() => true, () => false);
+  check("thingsToRememberStartsInTheProject", remember?.kind === "remember" && remember?.projectId === project && listed, { kind: remember?.kind, projectId: remember?.projectId, listed });
   // Each row opens in the page editor, with what was remembered or written in it.
   const opens: Record<string, boolean> = {};
-  for (const [name, id, words] of [["thingsToRemember", remember?._id, "KESTRELBRIDGE"], ["journalDay", journal?._id, "PLOVERDAY"], ["pinnedPage", stylePage, "TERNSTYLE"], ["ownPage", planPage, "LARKPLAN"]] as const) {
+  for (const [name, id, words] of [["journalDay", journal?._id, "KESTRELBRIDGE"], ["pinnedPage", stylePage, "TERNSTYLE"], ["ownPage", planPage, "LARKPLAN"]] as const) {
     await go(`/projects/${project}`);
     await waitFor(`document.querySelector('main section[aria-label="Brain"] a[href$="/${id}"]')`, `the ${name} row`);
     await click(`main section[aria-label="Brain"] a[href$="/${id}"]`);
@@ -354,12 +363,12 @@ try {
     await go(`/projects/${project}`);
     await waitFor(`document.documentElement.classList.contains("dark") === ${scheme === "dark"} && document.querySelector('main section[aria-label="Brain"] [data-memory-page="remember"]')`, `the project's page, ${scheme}`);
     await sleep(500);
-    await masked(`after-project-${scheme}.png`);
+    await masked(`project-page-${scheme}.png`);
     await go("/brain");
     await waitFor(`document.documentElement.classList.contains("dark") === ${scheme === "dark"} && document.querySelector('section[aria-label="Memory pages"]') && document.querySelector('ul[aria-label="Pages"]')`, `Brain, ${scheme}`);
     await sleep(500);
     teach[scheme] = await evaluate(`document.querySelectorAll('#memory-text, form[aria-label="Teach Perry something"]').length + (document.body.innerText.includes("Teach Perry something") ? 1 : 0)`) as number;
-    await masked(`after-brain-${scheme}.png`);
+    await masked(`brain-${scheme}.png`);
   }
   await evaluate(`localStorage.setItem("perry.theme", "light"); true`);
   check("noTeachFormOnBrain", teach.light === 0 && teach.dark === 0, teach);
