@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-02T14:26:13.870Z",
+  "ranAt": "2026-10-02T14:44:12.527Z",
   "pass": true,
   "checks": {
     "everySectionHoldsWhatItShould": true,
@@ -181,7 +181,7 @@
     "unknownSectionIs404": 404,
     "redirectsKeepTheirQuery": {
       "filtered": {
-        "at": "/settings/activity?session=7r44y58xs51pkajwtvky83h5ew",
+        "at": "/settings/activity?session=ktxby8ezr6zbz0dnew1caax2t3",
         "plan": false,
         "runs": 1
       },
@@ -392,10 +392,10 @@
         "set": true,
         "source": "dashboard",
         "preview": "…AbCd",
-        "updatedAt": 1790951045423
+        "updatedAt": 1790952118294
       }
     },
-    "connectorsAfterKey": "Toggle Sidebar\nApps & skills\nConnectors\nSkills\nConnectors\nRefresh\nCouldn't reach Composio\n401 {\"error\":{\"message\":\"Invalid API key: e2e**9Zq1\",\"code\":801,\"slug\":\"APIKey_InvalidAPIKey\",\"status\":401,\"request_id\":\"1727f05e-427b-41b5-b98d-53326e912f5f\",\"suggested_fix\":\"Please check you are using a valid API key.\"}}\nConnected\nAll apps\n\nNo app by that name\n\nClear search\nTest what Perry can do\nLook up\nCo",
+    "connectorsAfterKey": "Toggle Sidebar\nApps & skills\nConnectors\nSkills\nConnectors\nRefresh\nCouldn't reach Composio\n401 {\"error\":{\"message\":\"Invalid API key: e2e**9Zq1\",\"code\":801,\"slug\":\"APIKey_InvalidAPIKey\",\"status\":401,\"request_id\":\"300f5452-5c39-406b-9377-acabf64946fc\",\"suggested_fix\":\"Please check you are using a valid API key.\"}}\nConnected\nAll apps\n\nNo app by that name\n\nClear search\nTest what Perry can do\nLook up\nCo",
     "composioKeySavesInConnectors": {
       "composioSaved": true,
       "noticed": true,

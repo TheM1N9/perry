@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-02T14:22:46.622Z",
+  "ranAt": "2026-10-02T14:40:21.395Z",
   "pass": true,
   "checks": {
     "accountMenuHasNoUsage": true,
@@ -204,8 +204,8 @@
         {
           "page": "memory",
           "before": 150,
-          "after": 107,
-          "down": "29%",
+          "after": 67,
+          "down": "55%",
           "target": "20%",
           "ok": true
         },
@@ -396,9 +396,9 @@
       ],
       "total": {
         "before": 3944,
-        "after": 2654
+        "after": 2614
       },
-      "down": "33%"
+      "down": "34%"
     },
     "wordsDownOnEveryPage": [],
     "nothingThrows": {

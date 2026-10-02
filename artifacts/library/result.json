@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-02T14:28:53.137Z",
+  "ranAt": "2026-10-02T14:34:30.353Z",
   "issue": [
     216,
     217
@@ -61,8 +61,8 @@
       "Y\nYou\nTelegram not paired"
     ],
     "media": {
-      "video": 448106,
-      "voice": 56364,
+      "video": 446413,
+      "voice": 57330,
       "voiceType": "audio/webm;codecs=opus",
       "frames": 483
     },
@@ -112,7 +112,7 @@
       }
     ],
     "browserScreenshotIndexed": {
-      "screenshotPath": "W:\\perry-tests\\library\\perry-library-ci9xMV\\files\\browser-2026-10-02T14-27-22-438Z.png",
+      "screenshotPath": "W:\\perry-tests\\library\\perry-library-B0bSFA\\files\\browser-2026-10-02T14-32-39-650Z.png",
       "how": "screenshot"
     },
     "stepPicturesStayWithTheirSteps": {
@@ -132,8 +132,8 @@
     },
     "addedNotCopied": {
       "added": true,
-      "id": "4vjxwcbdbz4f9hj84zvh07tq2a",
-      "link": "/library/4vjxwcbdbz4f9hj84zvh07tq2a"
+      "id": "ghdwhvh3ne4k3f8km56yqpkxg5",
+      "link": "/library/ghdwhvh3ne4k3f8km56yqpkxg5"
     },
     "generatedFoundOnce": "generated",
     "servedFromWhereItIs": {
@@ -190,11 +190,11 @@
     "sourceLinks": {
       "receipt": {
         "label": "Here is the receipt",
-        "href": "/chat/sfnfdbzj3nww6d9ebzsbxec93p"
+        "href": "/chat/8cdmk3d38xe9x892zej7tyvf3d"
       },
       "job": {
         "label": "Weekly review",
-        "href": "/chat/gezsxzsfgc9tgdnt0t0bgn1fnd"
+        "href": "/chat/z9vajzvsy5wdba22qf11kezv9h"
       }
     },
     "libraryToolsFind": {
@@ -234,7 +234,7 @@
       "videos": 1,
       "audio": 3
     },
-    "listShowsDetails": "ZIP\nphotos.zip\n\n1 KB · Perry · Perry's folder\n\nnow\nig_tg.png\n\n1 KB · Perry · Telegram\n\nnow\nig_sunset.png\n\n2 KB · Perry · Web chat · TOOL share_file {\"path\":\"W:\\\\perry-tests\\\\library\\\\perry-library-ci9xMV\\\\files\\\\\n\nnow\nbrowser-2026-10-02T14-27-22-438Z.png\n\n10 KB · Perry · Web chat · TOOL share_file {\"path\":\"W:\\\\perry-tests\\\\library\\\\perry-library-ci9xMV\\\\files\\\\\n\nnow\nMD\nnotes.md\n\n1 KB · Perry · Web",
+    "listShowsDetails": "ZIP\nphotos.zip\n\n1 KB · Perry · Perry's folder\n\nnow\nig_tg.png\n\n1 KB · Perry · Telegram\n\nnow\nig_sunset.png\n\n2 KB · Perry · Web chat · TOOL share_file {\"path\":\"W:\\\\perry-tests\\\\library\\\\perry-library-B0bSFA\\\\files\\\\\n\nnow\nbrowser-2026-10-02T14-32-39-650Z.png\n\n10 KB · Perry · Web chat · TOOL share_file {\"path\":\"W:\\\\perry-tests\\\\library\\\\perry-library-B0bSFA\\\\files\\\\\n\nnow\nMD\nnotes.md\n\n1 KB · Perry · Web",
     "filtersByTheirMenus": {
       "filteredRows": 7,
       "afterReload": 7,
@@ -246,12 +246,12 @@
       ]
     },
     "itemShowsDetails": {
-      "details": "Size\n1 KB · Image\nAdded\n2 Oct 2026, 19:56\nBy\nYou · Sent to Perry\nFrom\nWeb chat · Here is the receipt\nSaved in\nW:\\perry-tests\\library\\perry-library-ci9xMV\\uploads",
-      "chatLink": "/chat/sfnfdbzj3nww6d9ebzsbxec93p",
-      "downloadLink": "/api/media/library/cvdph8vgwkdx0cxh1848am054c?download=1"
+      "details": "Size\n1 KB · Image\nAdded\n2 Oct 2026, 20:02\nBy\nYou · Sent to Perry\nFrom\nWeb chat · Here is the receipt\nSaved in\nW:\\perry-tests\\library\\perry-library-B0bSFA\\uploads",
+      "chatLink": "/chat/8cdmk3d38xe9x892zej7tyvf3d",
+      "downloadLink": "/api/media/library/xcfk8wn0j1y1f6kj8s7t7mykq7?download=1"
     },
     "previewsByKind": {
-      "pdf": "/api/media/library/t9cs3d1xn707p6zpzfqjzbtvkn",
+      "pdf": "/api/media/library/8qjqt0ge4ebxcsra48qxtn2vgw",
       "markdown": "tiles",
       "text": "Notes Perry wrote in a step.\n",
       "none": "No preview for this kind of file."
@@ -262,11 +262,11 @@
         "frame": true
       },
       "playing": true,
-      "duration": 7.977,
+      "duration": 7.97,
       "seekedTo": 6,
       "afterLeft": 1,
       "afterJ": 0,
-      "afterL": 7.977
+      "afterL": 7.97
     },
     "videoControls": {
       "mutedNow": true,
@@ -281,8 +281,8 @@
       "spread": 89,
       "audioAt": 0.5,
       "audioRate": 1.5,
-      "leftAt": 2.35136,
-      "resumedAt": 2.35136
+      "leftAt": 2.381985,
+      "resumedAt": 2.381985
     },
     "voiceNotesGetThePlayer": {
       "tgVoice": [
@@ -315,7 +315,7 @@
     "runnerLog": [
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\perry-tests\\library\\perry-library-ci9xMV\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\library\\perry-library-B0bSFA\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -323,26 +323,26 @@
       "\u001b[0m",
       "\u001b[32m  connected.",
       "\u001b[0m",
-      "\u001b[2m  saved turn yqtwn63swg27zmajqhc98xp21j\u001b[0m",
-      "\u001b[2m  saved turn xs6x7f6xebbg50kcbf5emvgzt2\u001b[0m",
-      "\u001b[2m  saved turn 1t22qff4ntz80nftvh8a4etsq3\u001b[0m",
-      "\u001b[2m  saved turn vh8hr691tpd65a3jzew8rp1582\u001b[0m",
-      "\u001b[2m  saved turn vjc0zg0656gfzhzwwmy6p36kwp\u001b[0m",
-      "\u001b[2m  saved turn aby8g5dx5rj5se25nwjfvxbckc\u001b[0m",
-      "\u001b[2m  saved turn 20akk0j2hcvdcgz9v0cfbekx6f\u001b[0m",
-      "\u001b[2m  saved turn 2593hj9g3t0jy6mdtkgqjcfjny\u001b[0m",
-      "\u001b[2m  saved turn kxrqfn0hfgtmk5zkn892a9zc3d\u001b[0m",
-      "\u001b[2m  saved turn 5j6xr6hapxpextk4vm5efe2vxd\u001b[0m",
-      "\u001b[2m  saved turn v7q57y9253tsqmp050c4rqp308\u001b[0m",
-      "\u001b[2m  saved turn xfx2rehctjwabmwckkq2zmxktm\u001b[0m",
-      "\u001b[2m  saved turn 3bvwm0qpppsm3y1w92zzw2mf81\u001b[0m",
-      "\u001b[2m  saved turn pc7sedx3zbzhm8jntgfzk03k3e\u001b[0m",
-      "\u001b[2m  saved turn d2r6587v31tpa7qyhxg5d1k7ka\u001b[0m",
-      "\u001b[2m  saved turn qhpnjtfx6swvsvdtdzmvc0swk7\u001b[0m",
-      "\u001b[2m  saved turn 50h2jm02j1fzfbs726zyes9wp3\u001b[0m",
-      "\u001b[2m  saved turn 7fq02jyjgwz69qs10nzvg6vgss\u001b[0m",
-      "\u001b[2m  saved turn 0mz2m283jykbbnma1naexydne0\u001b[0m",
-      "\u001b[2m  saved turn np2856e801dg4mdhwrezs5av3a\u001b[0m"
+      "\u001b[2m  saved turn gemthekbm2xdhsz1c5yhvkvqyh\u001b[0m",
+      "\u001b[2m  saved turn 1zwa32j1jqqxv4w0m3nwt01pez\u001b[0m",
+      "\u001b[2m  saved turn avcy8kxpht5g7fppd9yn6mkr0c\u001b[0m",
+      "\u001b[2m  saved turn 80d07nk9xhm0s4z7xz8fj98n43\u001b[0m",
+      "\u001b[2m  saved turn j10c9yqqavyn486gb8qk6jyt6g\u001b[0m",
+      "\u001b[2m  saved turn jzx4qdaqmdkxywyxwxmp088y4v\u001b[0m",
+      "\u001b[2m  saved turn 1acm587kg735xzc90b4v38hgwr\u001b[0m",
+      "\u001b[2m  saved turn 75m5ws8nq0hfw9q2exfp79tfdk\u001b[0m",
+      "\u001b[2m  saved turn 4ebss77dem2212fwp4xp16qkys\u001b[0m",
+      "\u001b[2m  saved turn wz4wj6kxe6z46sfarbz01jffx1\u001b[0m",
+      "\u001b[2m  saved turn ahbxhvvnez9rhz39xe9g4syzqx\u001b[0m",
+      "\u001b[2m  saved turn 5578j8kn6q8ekbvwhzb67951vt\u001b[0m",
+      "\u001b[2m  saved turn xc3vjdysda8jbnv1t23cwn65ac\u001b[0m",
+      "\u001b[2m  saved turn 0gejkaw0zjzqzc2fytzf18ae8d\u001b[0m",
+      "\u001b[2m  saved turn a02kev6hagf0asqt48ss7v5c6s\u001b[0m",
+      "\u001b[2m  saved turn 5fb3yy57y5747r3236gnenq20n\u001b[0m",
+      "\u001b[2m  saved turn 1d239cbexmfsj31z428z484sbb\u001b[0m",
+      "\u001b[2m  saved turn e2940ndt01dkrtz3h5eygxm77q\u001b[0m",
+      "\u001b[2m  saved turn xvsnmn9e51rs7wm8cxbc06sc2p\u001b[0m",
+      "\u001b[2m  saved turn pwvqt7za18bcz71akmg2tam5wa\u001b[0m"
     ],
     "tempHomeRemoved": true
   },
