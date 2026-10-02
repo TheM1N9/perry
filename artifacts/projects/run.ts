@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 
@@ -38,6 +39,11 @@ import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 //  14. A job set up in a project's chat works outside it; the day's summary reads project chats;
 //      the heartbeat, whose chat is outside every project, is given a project's open threads.
 //  15. The dashboard throws, or the sidebar does not show projects as folders with their chats.
+//  16. The project's page still lists its memory the old way (a flat list of rows with Forget), or misses
+//      some of its Brain: its Things to remember, a journal day, a pinned page, a page of its own; or lists
+//      another project's or everyone's pages; or a row does not open in the page editor; or New page makes a
+//      page outside the project; or the instructions stop saving themselves. Brain still shows the Teach
+//      Perry something form. Either page throws, light or dark.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/projects/run.ts <outDir>");
@@ -287,9 +293,87 @@ try {
   await sleep(500);
   await shot("chat-in-project.png");
 
+  // --- 16. The project's Brain, listed as Brain lists everyone's ------------------------------------------------------
+  // A day's note in the project (KESTRELBRIDGE, remembered above, is one too), a page of its own, a pinned one,
+  // and a page of everyone's that must stay off it. Nothing went to its Things to remember yet: Brain offers to start it.
+  await call("memories:add", { text: "Recorded the intro for episode 11, PLOVERDAY.", tags: [], source: "test", kind: "daily", origin: "owner", projectId: project });
+  const planPage = await call<string>("notes:create", { key: KEY, title: "Episode 12 plan", content: "Open on the sponsor read, LARKPLAN.", projectId: project });
+  const stylePage = await call<string>("notes:create", { key: KEY, title: "House style", content: "No jargon, ever. TERNSTYLE.", projectId: project });
+  await call("pages:pin", { key: KEY, id: stylePage, pinned: true });
+  await call<string>("notes:create", { key: KEY, title: "Groceries everywhere", content: "Milk." });
+  const projectRows = rows("notes").filter((row) => row.projectId === project);
+  const journal = projectRows.find((row) => row.kind === "journal");
   await go(`/projects/${project}`);
-  await waitFor(`document.body.innerText.includes("KESTRELBRIDGE")`, "the project's page with its memory");
+  await waitFor(`document.querySelector('main section[aria-label="Brain"] [data-memory-page="remember"]') && document.querySelector('main section[aria-label="Brain"] ul[aria-label="Pages"]')`, "the project's Brain");
+  const brainSide = await evaluate(`(() => {
+    const brain = document.querySelector('main section[aria-label="Brain"]');
+    const groups = [...brain.querySelectorAll('section[aria-label="Memory pages"] ul')].map((ul) => ({ group: ul.getAttribute("aria-label"), rows: [...ul.querySelectorAll("li a")].map((a) => ({ title: a.innerText.trim(), href: a.getAttribute("href"), kind: a.dataset.memoryPage })) }));
+    const pages = [...brain.querySelectorAll('ul[aria-label="Pages"] li a')].map((a) => ({ title: a.innerText.trim(), href: a.getAttribute("href") }));
+    const buttons = [...document.querySelectorAll("main button")].map((b) => b.innerText.trim()).filter(Boolean);
+    return { groups, pages, buttons, forget: buttons.filter((b) => b === "Forget").length, oldList: document.querySelectorAll('main [aria-label^="What Perry remembers in"]').length, text: document.querySelector("main").innerText };
+  })()`) as { groups: Array<{ group: string; rows: Array<{ title: string; href: string; kind: string }> }>; pages: Array<{ title: string; href: string }>; buttons: string[]; forget: number; oldList: number; text: string };
+  const inGroup = (group: RegExp, href: string) => brainSide.groups.some((item) => group.test(item.group) && item.rows.some((row) => row.href.endsWith(`/${href}`)));
+  const starter = await evaluate(`document.querySelector('main section[aria-label="Brain"] button[data-memory-page="remember"]')?.innerText.trim() ?? ""`) as string;
+  check("projectBrainAsPages", Boolean(journal) && starter === "Things to remember" && inGroup(/^Pinned/, stylePage) && inGroup(/^Journal$/, journal!._id)
+    && brainSide.pages.some((page) => page.href.endsWith(`/${planPage}`)) && !brainSide.pages.some((page) => page.href.endsWith(`/${stylePage}`))
+    && !brainSide.text.includes("Groceries everywhere") && !brainSide.text.includes("About me") && !brainSide.text.includes("KESTRELBRIDGE"),
+    { starter, groups: brainSide.groups.map((item) => ({ group: item.group, rows: item.rows.map((row) => row.title) })), pages: brainSide.pages.map((page) => page.title) });
+  check("noOldMemoryRows", brainSide.forget === 0 && brainSide.oldList === 0 && !brainSide.buttons.includes("Save"), { buttons: brainSide.buttons });
   await shot("project-page.png");
+  // Things to remember starts from there, the project's own, in the editor; then it is listed with the pinned pages.
+  await click('main section[aria-label="Brain"] button[data-memory-page="remember"]');
+  await waitFor(`/^\\/(brain|notes)\\/[a-z0-9]+$/.test(location.pathname) && document.querySelector("[data-note-editor]")`, "the project's Things to remember in the editor", 20_000);
+  const rememberId = (await path()).split("/").pop()!;
+  const remember = rows("notes").find((row) => row._id === rememberId);
+  await go(`/projects/${project}`);
+  const listed = await waitFor(`document.querySelector('main section[aria-label="Brain"] ul[aria-label^="Pinned"] a[href$="/${rememberId}"]')`, "Things to remember listed", 20_000).then(() => true, () => false);
+  check("thingsToRememberStartsInTheProject", remember?.kind === "remember" && remember?.projectId === project && listed, { kind: remember?.kind, projectId: remember?.projectId, listed });
+  // Each row opens in the page editor, with what was remembered or written in it.
+  const opens: Record<string, boolean> = {};
+  for (const [name, id, words] of [["journalDay", journal?._id, "KESTRELBRIDGE"], ["pinnedPage", stylePage, "TERNSTYLE"], ["ownPage", planPage, "LARKPLAN"]] as const) {
+    await go(`/projects/${project}`);
+    await waitFor(`document.querySelector('main section[aria-label="Brain"] a[href$="/${id}"]')`, `the ${name} row`);
+    await click(`main section[aria-label="Brain"] a[href$="/${id}"]`);
+    opens[name] = await waitFor(`location.pathname.endsWith("/${id}") && document.querySelector("[data-note-editor]")?.innerText.includes(${JSON.stringify(words)})`, `${name} in the editor`, 20_000).then(() => true, () => false);
+  }
+  check("rowsOpenInTheEditor", Object.values(opens).every(Boolean), opens);
+  // New page, from the project's Brain, makes a page in the project and opens it.
+  await go(`/projects/${project}`);
+  await waitFor(`document.querySelector('main section[aria-label="Brain"]')`, "the project's Brain again");
+  await click('main section[aria-label="Brain"] button', "New page");
+  await waitFor(`/^\\/(brain|notes)\\/[a-z0-9]+$/.test(location.pathname) && document.querySelector("[data-note-editor]")`, "the new page in the editor", 20_000);
+  const fresh = (await path()).split("/").pop()!;
+  check("newPageInTheProject", rows("notes").find((row) => row._id === fresh)?.projectId === project, { projectId: rows("notes").find((row) => row._id === fresh)?.projectId });
+  await call("notes:remove", { key: KEY, id: fresh }).catch(() => {});
+  // The instructions still save themselves, here among the rest.
+  await go(`/projects/${project}`);
+  await waitFor(`document.querySelector("#project-instructions")`, "the instructions editor, a third time");
+  await type("#project-instructions", "Scripts for the Hackonomics YouTube channel. Short punchy sentences. Sign off every script with STAYBOLD-9. Keep it under ten minutes.");
+  await saved("the edited instructions to say Saved");
+  check("instructionsStillAutosave", await until(async () => (await call<{ instructions: string } | null>("projects:get", { key: KEY, id: project }))?.instructions.includes("under ten minutes") ?? false, "the instructions to save again", 20).then(() => true, () => false));
+  // Light and dark, the project's page and Brain, with this computer's name masked.
+  const machine = hostname();
+  const masked = async (name: string) => {
+    if (machine.length > 1) await evaluate(`(() => { const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); for (let node; (node = walk.nextNode());) node.nodeValue = node.nodeValue.split(${JSON.stringify(machine)}).join("THIS-PC"); return true; })()`);
+    await shot(name);
+  };
+  const teach: Record<string, number> = {};
+  for (const scheme of ["light", "dark"] as const) {
+    await evaluate(`localStorage.setItem("perry.theme", ${JSON.stringify(scheme)}); true`);
+    await go(`/projects/${project}`);
+    await waitFor(`document.documentElement.classList.contains("dark") === ${scheme === "dark"} && document.querySelector('main section[aria-label="Brain"] [data-memory-page="remember"]')`, `the project's page, ${scheme}`);
+    await sleep(500);
+    await masked(`project-page-${scheme}.png`);
+    await go("/brain");
+    await waitFor(`document.documentElement.classList.contains("dark") === ${scheme === "dark"} && document.querySelector('section[aria-label="Memory pages"]') && document.querySelector('ul[aria-label="Pages"]')`, `Brain, ${scheme}`);
+    await sleep(500);
+    teach[scheme] = await evaluate(`document.querySelectorAll('#memory-text, form[aria-label="Teach Perry something"]').length + (document.body.innerText.includes("Teach Perry something") ? 1 : 0)`) as number;
+    await masked(`brain-${scheme}.png`);
+  }
+  await evaluate(`localStorage.setItem("perry.theme", "light"); true`);
+  check("noTeachFormOnBrain", teach.light === 0 && teach.dark === 0, teach);
+  await go(`/projects/${project}`);
+  await waitFor(`[...document.querySelectorAll("main li")].some((item) => item.innerText.includes("MARMOTLANTERN"))`, "the moved chat on the project's page");
   await evaluate(`(() => { const row = [...document.querySelectorAll("main li")].find((item) => item.innerText.includes("MARMOTLANTERN")); [...row.querySelectorAll("button")].find((button) => button.innerText.includes("Take out")).setAttribute("data-take-out", "yes"); return true; })()`);
   await click('button[data-take-out="yes"]');
   await until(async () => !(await conversation(outside)).projectId, "the chat to be taken out", 20);
@@ -309,9 +393,10 @@ try {
   await shot("sidebar-projects.png");
   check("sidebarShowsFolders", sidebar.folders.includes("Hackonomics scripts") && sidebar.folders.includes("Kitchen renovation")
     && sidebar.inFolder.some((title) => title.includes("ZEPHYRQUILL")) && !sidebar.listed.includes(`/chat/${chatA}`) && sidebar.listed.includes(`/chat/${outside}`), sidebar);
+  // Brain lists the project's Things to remember with everyone's, saying which project it is.
   await go("/memory");
-  await waitFor(`document.body.innerText.includes("KESTRELBRIDGE")`, "the Memory page");
-  const label = await evaluate(`document.body.innerText.includes("Only in Hackonomics scripts")`);
+  await waitFor(`location.pathname === "/brain" && document.querySelector('section[aria-label="Memory pages"]')`, "Brain");
+  const label = await evaluate(`[...document.querySelectorAll('section[aria-label="Memory pages"] li')].some((li) => li.querySelector('[data-memory-page="remember"]') && li.innerText.includes("Hackonomics scripts"))`);
   await shot("memory-page.png");
   check("memoryPageSaysWhichProject", label === true);
 

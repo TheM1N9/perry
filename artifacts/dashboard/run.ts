@@ -301,18 +301,11 @@ try {
   await p.waitFor(`document.body.innerText.includes("Leica Q3 back in stock")`, "the watches tab");
   check("each Work tab shows its own", true);
 
-  // 10. Memory.
+  // 10. Memory is Brain (issue #210): a memory is told in a chat or written as a line of its page; there is no form to teach one.
   await p.go(`${BASE}/memory`);
-  await heading("Memory");
-  await p.click(`document.getElementById("memory-text")`);
-  await p.type("Sam prefers window seats on flights.");
-  await p.press("Enter");
-  await p.waitFor(`[...document.querySelectorAll('[aria-label="Memories"] li')].some((li) => li.innerText.includes("window seats"))`, "the new memory to appear");
-  await p.click(`[...[...document.querySelectorAll('[aria-label="Memories"] li')].find((li) => li.innerText.includes("window seats")).querySelectorAll("button")].find((b) => b.innerText.trim() === "Forget")`);
-  await p.waitFor(byRole("button", "Forget"), "the confirmation");
-  await p.click(`[...document.querySelectorAll("[role=alertdialog] button")].find((b) => b.innerText.trim() === "Forget")`);
-  await p.waitFor(`![...document.querySelectorAll('[aria-label="Memories"] li')].some((li) => li.innerText.includes("window seats"))`, "the memory to go");
-  check("a memory can be added and forgotten", !(await pub<Array<{ text: string }>>("dashboard:listMemories", { query: "window seats" })).some((memory) => memory.text.includes("window seats")));
+  await heading("Brain");
+  await p.waitFor(`document.querySelector('[data-memory-page="remember"]')`, "Things to remember");
+  check("Brain has no Teach Perry something form", await p.evaluate(`document.querySelectorAll("#memory-text").length === 0`) === true);
 
   // 11. Sending.
   await p.go(`${BASE}/chat`);

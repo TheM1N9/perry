@@ -248,7 +248,7 @@ export function DeleteProjectDialog({ project, onClose }: { project: { id: Proje
   const remove = useMutation(api.projects.remove);
   const [deleting, setDeleting] = useState(false);
   const chats = view?.chats.length ?? 0;
-  const memories = view?.memories.length ?? 0;
+  const memories = view?.memories ?? 0;
   const notes = view?.notes ?? 0;
 
   const confirm = async () => {
@@ -276,7 +276,7 @@ export function DeleteProjectDialog({ project, onClose }: { project: { id: Proje
             {memories
               ? `What Perry remembered for “${project?.name}” (${memories === 1 ? "one memory" : `${memories} memories`}) is deleted with it, so none of it reaches your other chats.`
               : `“${project?.name}” and its instructions go for good.`}
-            {notes ? ` Its ${notes === 1 ? "note stays" : `${notes} notes stay`} in Notes, where all your chats can reach ${notes === 1 ? "it" : "them"}.` : ""}
+            {notes ? ` Its ${notes === 1 ? "page stays" : `${notes} pages stay`} in Brain, where all your chats can reach ${notes === 1 ? "it" : "them"}.` : ""}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
 import { EmptyState, List, ListSkeleton, Page } from "../common";
-import { MemoryPages, OlderMemories, TeachForm } from "./memory";
+import { MemoryPages, OlderMemories } from "./memory";
 import { NoteRows } from "./notes";
 
 /**
@@ -76,7 +76,6 @@ export function Brain() {
           {filter && <InputGroupAddon align="inline-end"><InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => setFilter("")}><XIcon /></InputGroupButton></InputGroupAddon>}
         </InputGroup>
         {needle.length >= 2 && <FoundLines term={filter.trim()} />}
-        {!needle && <TeachForm />}
         <MemoryPages filter={needle} />
         <section aria-label="Pages" className="space-y-1">
           <h2 className="text-sm font-medium text-muted-foreground">Pages</h2>

@@ -19,7 +19,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -27,13 +26,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from "../chat/markdown";
 import { SaveStatus, useAutosave, type SaveState } from "../autosave";
-import { ActionButton, EmptyState, InfoTip, List, ListSkeleton, RelativeTime, Section, TextTip } from "../common";
+import { ActionButton, EmptyState, List, ListSkeleton, RelativeTime, Section, TextTip } from "../common";
 
 type Kind = MemoryView["kind"];
-const KINDS: Array<{ kind: Kind; label: string; hint: string }> = [
-  { kind: "profile", label: "About me", hint: "How you like things done. In every chat." },
-  { kind: "core", label: "Things to remember", hint: "Facts that stay true, in their section. In every chat." },
-  { kind: "daily", label: "Today's journal", hint: "What happened. Today and yesterday are in every chat; older days are recalled." },
+const KINDS: Array<{ kind: Kind; label: string }> = [
+  { kind: "profile", label: "About me" },
+  { kind: "core", label: "Things to remember" },
+  { kind: "daily", label: "Today's journal" },
 ];
 const ORIGINS = { owner: "From you", tool: "From a chat", job: "From a schedule" } as const;
 /** The list shows at most this many; a search finds the rest. */
@@ -93,7 +92,6 @@ export function OlderMemories() {
 
   return (
     <div className="space-y-8">
-      {/* Only what is not in a page yet: Brain shows Teach Perry something and the memory pages above this, once. */}
       {/* Memories from before pages, until Perry moves them into theirs: none once moved. */}
       {(memories === undefined || memories.length > 0 || term || filter !== "all") && <section aria-label="What Perry remembers" className="space-y-3">
         <h2 className="text-md font-semibold tracking-[-0.01em]">Older memories</h2>
@@ -193,17 +191,23 @@ const DAYS = 7;
  * Memory as pages (convex/pages.ts): About me, Things to remember, a journal
  * page a day, a page per person, and what a chat kept to itself. Each opens in
  * the page editor, where every memory is a line to read and edit as text.
+ * With `projectId`, one project's own: its Things to remember, its journal
+ * days and its pinned pages, which only its chats see.
  */
-export function MemoryPages({ filter = "" }: { filter?: string }) {
+export function MemoryPages({ filter = "", projectId }: { filter?: string; projectId?: Id<"projects"> }) {
   const { dashboardKey } = useSession();
   const router = useRouter();
-  const pages = useQuery(api.pages.memoryPages, { key: dashboardKey });
-  const usage = useQuery(api.pages.pinnedUsage, { key: dashboardKey });
+  const all = useQuery(api.pages.memoryPages, { key: dashboardKey });
+  const usage = useQuery(api.pages.pinnedUsage, projectId ? "skip" : { key: dashboardKey });
   const open = useMutation(api.pages.openMemoryPage);
   const [allDays, setAllDays] = useState(false);
-  const go = (kind: "about" | "remember" | "journal") => void open({ key: dashboardKey, kind }).then((id) => router.push(noteHref(id)), (cause) => toast.error(`Couldn't open it: ${errorText(cause)}`));
-  if (pages === undefined) return <ListSkeleton rows={3} />;
-  const has = (kind: MemoryPage["kind"]) => pages.some((page) => page.kind === kind && !page.projectId);
+  const go = (kind: "about" | "remember") => void open({ key: dashboardKey, kind, ...(projectId ? { projectId } : {}) })
+    .then((id) => router.push(noteHref(id)), (cause) => toast.error(`Couldn't open it: ${errorText(cause)}`));
+  if (all === undefined) return <ListSkeleton rows={3} />;
+  const pages = projectId ? all.filter((page) => page.projectId === projectId) : all;
+  const has = (kind: MemoryPage["kind"]) => pages.some((page) => page.kind === kind && (Boolean(projectId) || !page.projectId));
+  // A project has no About me of its own: what it should always know is in its Things to remember.
+  const startable = projectId ? (["remember"] as const) : (["about", "remember"] as const);
   return (
     <section aria-label="Memory pages" className="space-y-6">
       {GROUPS.map((group) => {
@@ -212,12 +216,13 @@ export function MemoryPages({ filter = "" }: { filter?: string }) {
           && (!filter || `${page.title} ${page.project ?? ""}`.toLocaleLowerCase().includes(filter)));
         const more = group.kinds.includes("journal") && !allDays && shown.length > DAYS ? shown.length - DAYS : 0;
         if (more) shown = shown.slice(0, DAYS);
-        const starters = group.pinned && !filter ? (["about", "remember"] as const).filter((kind) => !has(kind)) : [];
+        const starters = group.pinned && !filter ? startable.filter((kind) => !has(kind)) : [];
         if (!shown.length && !starters.length) return null;
+        const label = projectId && group.pinned ? "Pinned: in every chat here" : group.label;
         return (
           <div key={group.label}>
-            <h2 className="mb-1 text-sm font-medium text-muted-foreground">{group.label}</h2>
-            <List label={group.label}>
+            <h2 className="mb-1 text-sm font-medium text-muted-foreground">{label}</h2>
+            <List label={label}>
               {starters.map((kind) => (
                 <li key={kind} className="py-2.5">
                   <button type="button" className="flex items-center gap-3 text-md font-medium hover:underline underline-offset-2" onClick={() => go(kind)} data-memory-page={kind}>
@@ -232,7 +237,7 @@ export function MemoryPages({ filter = "" }: { filter?: string }) {
                   <li key={page.id} className="relative flex items-center gap-3 py-2.5">
                     <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                     <Link href={noteHref(page.id)} data-memory-page={page.kind} className="min-w-0 flex-1 truncate text-md font-medium after:absolute after:inset-0 hover:underline underline-offset-2">{page.title}</Link>
-                    {page.project && <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><FolderIcon className="size-3" />{page.project}</span>}
+                    {page.project && !projectId && <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><FolderIcon className="size-3" />{page.project}</span>}
                     {!page.pinned && page.pinnedSections && <span className="shrink-0 truncate text-xs text-muted-foreground">{page.pinnedSections.join(", ")}</span>}
                   </li>
                 );
@@ -248,55 +253,6 @@ export function MemoryPages({ filter = "" }: { filter?: string }) {
         );
       })}
     </section>
-  );
-}
-
-export function TeachForm() {
-  const { dashboardKey } = useSession();
-  const addMemory = useMutation(api.dashboard.addMemory);
-  const [draft, setDraft] = useState("");
-  const [kind, setKind] = useState<Kind>("core");
-  const [refused, setRefused] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const add = async (event: FormEvent) => {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text || saving) return;
-    setSaving(true);
-    setRefused("");
-    try {
-      // A full layer refuses the memory; it stays in the box to be shortened or saved later.
-      const reason = await addMemory({ key: dashboardKey, text, kind });
-      if (reason) setRefused(reason);
-      else { setDraft(""); toast.success("Remembered. Perry uses it from the next message."); }
-    } catch (cause) {
-      setRefused(errorText(cause));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <form onSubmit={(event) => void add(event)} aria-label="Teach Perry something">
-      <Field data-invalid={Boolean(refused) || undefined}>
-        <FieldLabel htmlFor="memory-text">Teach Perry something</FieldLabel>
-        <Textarea id="memory-text" rows={2} value={draft} placeholder="I take my coffee black."
-          aria-invalid={Boolean(refused) || undefined} className="min-h-14 resize-none"
-          onChange={(event) => { setDraft(event.target.value); setRefused(""); }}
-          onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
-        {refused && <FieldError>{refused}</FieldError>}
-      </Field>
-      <div className="mt-2 flex min-h-7 flex-wrap items-center gap-2">
-        <Select items={KINDS.map((item) => ({ value: item.kind, label: item.label }))} value={kind} onValueChange={(value) => { if (value) setKind(value as Kind); }}>
-          <SelectTrigger aria-label="Where to keep it" size="sm"><SelectValue /></SelectTrigger>
-          <SelectContent>{KINDS.map((item) => <SelectItem key={item.kind} value={item.kind}>{item.label}</SelectItem>)}</SelectContent>
-        </Select>
-        <InfoTip>{KINDS.find((item) => item.kind === kind)?.hint ?? ""}</InfoTip>
-        <span className="flex-1" />
-        {(draft.trim() || saving) && <Button type="submit" size="sm" disabled={saving} aria-busy={saving || undefined}>{saving && <Spinner />}Remember</Button>}
-      </div>
-    </form>
   );
 }
 

@@ -1,0 +1,20 @@
+{
+  "ranAt": "2026-10-02T17:17:00.958Z",
+  "label": "after",
+  "checks": {
+    "bothPagesShow": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "bothPagesShow": {
+      "brain-light": true,
+      "project-light": true,
+      "brain-dark": true,
+      "project-dark": true
+    },
+    "noPageErrors": [],
+    "runnerLog": [],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}
