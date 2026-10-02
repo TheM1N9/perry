@@ -142,7 +142,7 @@ export function PageInPage({ children }: { children: ReactNode }) {
 
 /** A page: its top bar, then a readable column with a title. */
 export function Page({ title, description, actions, children, wide }: {
-  title: string; description?: ReactNode; actions?: ReactNode; children: ReactNode; wide?: boolean;
+  title: string; description?: ReactNode; actions?: ReactNode; children: ReactNode; wide?: boolean | "full";
 }) {
   const inPage = useContext(InPage);
   if (inPage) {
@@ -164,7 +164,7 @@ export function Page({ title, description, actions, children, wide }: {
     <>
       <TopBar />
       <main id="content" tabIndex={-1} className="flex-1 outline-none">
-        <div className={cn("mx-auto w-full px-4 pb-24 pt-4 sm:px-8 sm:pt-8", wide ? "max-w-5xl" : "max-w-3xl")}>
+        <div className={cn("mx-auto w-full px-4 pb-24 pt-4 sm:px-8 sm:pt-8", wide === "full" ? "max-w-none" : wide ? "max-w-5xl" : "max-w-3xl")}>
           <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold tracking-[-0.02em] text-balance">{title}</h1>
