@@ -147,7 +147,9 @@ try {
   const name = (id: string) => {
     const row = byId.get(id);
     if (!row) return id === kitchen ? "project Kitchen" : id;
-    if (row.kind === "journal") return `${row.projectId ? "Kitchen " : ""}journal ${row.day}`;
+    if (row.kind === "journal") return `journal ${row.day}`;
+    // A project's day notes go to its Journey (#229), not a journal day of its own.
+    if (row.kind === "journey") return "Kitchen Journey";
     if (row.kind === "remember") return row.projectId ? "Kitchen Things to remember" : "Things to remember";
     if (row.kind === "chat") return "chat with Priya";
     return row.title;
@@ -166,9 +168,9 @@ try {
     edgeKey(`journal ${dayOf(2)}`, "Juhi", "about"), edgeKey(`journal ${dayOf(2)}`, "Aadil", "about"), edgeKey(`journal ${dayOf(2)}`, "Vivek", "about"),
     edgeKey(`journal ${dayOf(5)}`, "Datta", "about"), edgeKey(`journal ${dayOf(8)}`, "Manvi", "about"),
     edgeKey(`journal ${dayOf(40)}`, "Juhi", "about"), edgeKey(`journal ${dayOf(400)}`, "Arjun", "about"),
-    edgeKey(`Kitchen journal ${dayOf(2)}`, "Datta", "about"),
+    edgeKey("Kitchen Journey", "Datta", "about"),
     edgeKey("Vivek", "Juhi", "also"),
-    edgeKey("Kitchen Things to remember", "project Kitchen", "project"), edgeKey(`Kitchen journal ${dayOf(2)}`, "project Kitchen", "project"), edgeKey("Kitchen plan", "project Kitchen", "project"),
+    edgeKey("Kitchen Things to remember", "project Kitchen", "project"), edgeKey("Kitchen Journey", "project Kitchen", "project"), edgeKey("Kitchen plan", "project Kitchen", "project"),
   ].sort();
   const actual = edgesOf(graph, name);
   check("edgesMatchTheData", JSON.stringify(actual) === JSON.stringify(expected), { missing: expected.filter((edge) => !actual.includes(edge)), extra: actual.filter((edge) => !expected.includes(edge)) });
@@ -178,7 +180,7 @@ try {
   const keyless = await fetch(`${BASE}/api/backend/call`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "brainMap:graph", args: { key: "wrong" } }) }).then((r) => r.json() as Promise<{ error?: string; value?: unknown }>);
   check("ownerOnly", Boolean(keyless.error) && keyless.value === undefined && GUEST_TOOLS.every((tool) => !/map|graph|brain/i.test(tool)), keyless.error?.slice(0, 120));
   const local = await call<BrainGraph>("brainMap:graph", { key: KEY, around: person("Datta")._id, depth: 1 });
-  check("localGraphQuery", JSON.stringify(local.nodes.map((item) => name(item.id)).sort()) === JSON.stringify(["Datta", `journal ${dayOf(1)}`, `journal ${dayOf(5)}`, `Kitchen journal ${dayOf(2)}`, "Kitchen plan"].sort()), local.nodes.map((item) => name(item.id)));
+  check("localGraphQuery", JSON.stringify(local.nodes.map((item) => name(item.id)).sort()) === JSON.stringify(["Datta", `journal ${dayOf(1)}`, `journal ${dayOf(5)}`, "Kitchen Journey", "Kitchen plan"].sort()), local.nodes.map((item) => name(item.id)));
   results.ownerShaped = { nodes: graph.nodes.length, edges: graph.edges.length };
 
   // --- The map on screen -------------------------------------------------------------------------
@@ -425,11 +427,14 @@ try {
     };
   };
   const panOut = await pan();
-  // Zoom in on the person met most until days are pages again, and pan there too.
+  // Zoom in on the person met most (the middle of the people and the timeline) until days are pages again, and pan there.
   const largeDegree = new Map<number, number>();
   for (const [a, b] of large.edges) { largeDegree.set(a, (largeDegree.get(a) ?? 0) + 1); largeDegree.set(b, (largeDegree.get(b) ?? 0) + 1); }
   const most = large.nodes.map((item, i) => ({ item, n: largeDegree.get(i) ?? 0 })).filter(({ item }) => item.kind === "person").sort((a, b) => b.n - a.n)[0].item;
-  const box = (await pointOf(CANVAS, most.id))!;
+  const rect = await evaluate(`(() => { const r = ${CANVAS}.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: Math.min(r.bottom, innerHeight) }; })()`) as { left: number; top: number; right: number; bottom: number };
+  const target = await pointOf(CANVAS, most.id);
+  const box = target && target.x > rect.left && target.x < rect.right && target.y > rect.top && target.y < rect.bottom
+    ? target : { x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2 };
   for (let i = 0; i < 40 && (await data(CANVAS)).view === "months"; i++) { await send("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: -240 }); await sleep(60); }
   await sleep(300);
   const zoomed = await data(CANVAS);

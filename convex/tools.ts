@@ -36,6 +36,8 @@ type RecallResult = {
   memories: Array<ReturnType<typeof shape>>;
   /** In the owner's chats, asked about someone by name: what they said about themselves in their own chat. */
   theySaid?: Array<{ who: string; text: string }>;
+  /** Pages one step from the pages of the best hits on Brain's map (issue #230): a person's trip, the days they were met. */
+  related?: Array<{ id: string; title: string; kind: string; why: string[]; from: string; link: string }>;
   note?: string;
 };
 
@@ -70,8 +72,13 @@ async function recallFor(ctx: ToolCtx, input: { query: string; limit?: number })
   if (results.length === 0 && theySaid.length === 0) {
     return { found: 0, memories: [], note: "Nothing in memory or notes matched." };
   }
+  // One step out on the map from the pages of the three best hits (#230; #220 reworks recall and may fold this in).
+  const pages = [...new Set(results.map((row) => row.pageId).filter((id): id is string => Boolean(id)))].slice(0, 3);
+  const related: Array<{ id: string; title: string; kind: string; why: string[]; from: string; link: string }> = pages.length && !chat?.contactId
+    ? (await ctx.runQuery(internal.notes.relatedForRecall, { pages, ...chatOf(ctx) })).map(({ id, title, kind, why, from, link }: { id: string; title: string; kind: string; why: string[]; from: string; link: string }) => ({ id, title, kind, why, from, link }))
+    : [];
 
-  return { found: results.length, memories: results.map(shape), ...(theySaid.length ? { theySaid } : {}) };
+  return { found: results.length, memories: results.map(shape), ...(theySaid.length ? { theySaid } : {}), ...(related.length ? { related } : {}) };
 }
 
 const recall = createTool({
@@ -901,6 +908,34 @@ const brain_pin = createTool({
   },
 });
 
+const brain_neighbors = createTool({
+  description:
+    "See what a page is tied to on Brain's map: the pages it links to or is linked from, the people its lines are about " +
+    "(or, for a person, the days and pages that mention them), other people named with them, and its project; steps=2 " +
+    "goes one further. Each comes with why. Use it to gather what bears on a person, trip or project before answering " +
+    "or planning, and to check before brain_link.",
+  inputSchema: z.object({ page: pageRef, steps: z.union([z.literal(1), z.literal(2)]).optional().describe("1 (default) or 2.") }),
+  execute: async (ctx, input): Promise<{ page?: { id: string; title: string }; neighbors?: Array<{ id: string; title: string; kind: string; steps: number; why: string[]; via?: string; link: string }>; error?: string }> => {
+    return await ctx.runQuery(internal.notes.neighborsForAgent, { ...chatOf(ctx), id: input.page, ...(input.steps ? { steps: input.steps } : {}) });
+  },
+});
+
+const brain_link = createTool({
+  description:
+    "Tie two pages of the owner's Brain: a link to each in the other's \"Related\" section (made when missing), which the " +
+    "owner sees and can edit, and Brain's map draws. Link pages that belong together: the same trip, the same project, a " +
+    "person and the plans or pages involving them, a topic page and what it gathers. A page already linking the other is " +
+    "left as it is. why is a few words the owner reads beside the link. Pass the revisions you read to be sure neither changed.",
+  inputSchema: z.object({
+    a: pageRef, b: pageRef,
+    why: z.string().max(200).optional().describe("Why they belong together, in a few words (\"planning the Goa trip\")."),
+    revisionA: z.number().int().positive().optional(), revisionB: z.number().int().positive().optional(),
+  }),
+  execute: async (ctx, input): Promise<{ linked?: Array<{ id: string; title: string; revision: number; added: boolean }>; error?: string }> => {
+    return await ctx.runMutation(internal.notes.linkForAgent, { ...chatOf(ctx), ...input });
+  },
+});
+
 /** search_memory: recall, under the name some engines reach for. */
 const search_memory = createTool({
   description: brain_search.description,
@@ -1484,6 +1519,8 @@ export const ALL_TOOLS = {
   brain_write,
   brain_append,
   brain_pin,
+  brain_neighbors,
+  brain_link,
   search_memory,
   recall,
   remember,

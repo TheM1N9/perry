@@ -67,10 +67,13 @@ const EDGE_SOURCES: Source[] = [links, people, projects];
 
 const pageKind = (page: Note): MapKind => page.kind ?? "page";
 
-/** The whole map: every page and project, and every tie, each pair and kind once with how many make it. */
-export async function graphOf(ctx: Reader): Promise<BrainGraph> {
-  const pages = await ctx.db.query("notes").collect();
-  const projectRows = await ctx.db.query("projects").collect();
+/**
+ * The whole map: every page and project, and every tie, each pair and kind once with how many make it. With
+ * `scope`, only the pages and projects it keeps (what a chat may reach: Perry's brain_neighbors and recall).
+ */
+export async function graphOf(ctx: Reader, scope?: { page: (page: Note) => boolean; project: (id: Id<"projects">) => boolean }): Promise<BrainGraph> {
+  const pages = (await ctx.db.query("notes").collect()).filter((page) => !scope || scope.page(page));
+  const projectRows = (await ctx.db.query("projects").collect()).filter((project) => !scope || scope.project(project._id));
   const nodes: MapNode[] = [];
   const index = new Map<string, number>();
   const add = (node: MapNode) => { index.set(node.id, nodes.length); nodes.push(node); };
