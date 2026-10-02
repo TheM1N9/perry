@@ -46,7 +46,7 @@ function host(url: unknown): string {
 const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   recall: () => ({ label: "Checking what I remember", pose: "remembering" }),
   remember: () => ({ label: "Noting that down", pose: "remembering" }),
-  read_memory: () => ({ label: "Reading my notes", pose: "remembering" }),
+  read_memory: () => ({ label: "Reading my memory", pose: "remembering" }),
   forget: () => ({ label: "Forgetting that", pose: "remembering" }),
   update_user_md: () => ({ label: "Updating what I know about you", pose: "remembering" }),
   update_identity: () => ({ label: "Changing how I come across", pose: "remembering" }),
@@ -64,6 +64,11 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   list_todos: () => ({ label: "Looking at your to-dos", pose: "reading" }),
   update_todo: () => ({ label: "Updating a to-do", pose: "typing" }),
   delete_todo: () => ({ label: "Removing a to-do", pose: "typing" }),
+  list_notes: () => ({ label: "Looking through your notes", pose: "reading" }),
+  read_note: () => ({ label: "Reading a note", pose: "reading" }),
+  search_notes: () => ({ label: "Searching your notes", pose: "searching" }),
+  create_note: (input) => ({ label: typeof input.title === "string" ? `Writing “${short(input.title, 30)}”` : "Writing a note", pose: "typing" }),
+  update_note: () => ({ label: "Updating a note", pose: "typing" }),
   read_page: (input) => ({ label: `Reading ${host(input.url)}`, pose: "reading" }),
   browser: (input) => {
     switch (input.action) {

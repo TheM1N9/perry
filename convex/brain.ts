@@ -40,6 +40,7 @@ Your private assistant.
   /access   ask, auto or full: whether it asks before acting
   /stop     stop the reply I am writing
   /compact  shrink what I carry of this chat, keep the chat
+  /note     /note <words> adds them to your Inbox note; /note alone saves my last reply as a note
   /status   plumbing and recent errors
   /reset    save this chat to memory, then start a fresh one
   /help     this
@@ -128,6 +129,17 @@ async function runCommand(
 
     case "/reset":
       return await reset(ctx, conversation);
+
+    // Noting something down from the phone without a turn: instant, and no engine needed (notes.ts).
+    case "/note": {
+      const words = text.trim().replace(/^\S+\s*/, "");
+      if (words) {
+        const noted: { title: string } = await ctx.runMutation(internal.notes.jotFromPhone, { text: words });
+        return `Added to your ${noted.title} note.`;
+      }
+      const saved: { title: string } | null = await ctx.runMutation(internal.notes.lastReplyFromPhone, { conversationId: conversation._id });
+      return saved ? `Saved my last reply as the note “${saved.title}”.` : "There's no reply of mine here to save. /note <words> adds them to your Inbox note.";
+    }
 
     default:
       return `Don't know ${command}. /help lists what I do know.`;

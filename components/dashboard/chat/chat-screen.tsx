@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  ActivityIcon, ArrowDownIcon, CopyIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
+  ActivityIcon, ArrowDownIcon, CopyIcon, FilePlusIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
   SquarePenIcon, Trash2Icon, TriangleAlertIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -16,6 +16,7 @@ import {
   modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, typingSkill, type Access,
 } from "@/convex/lib/commands";
 import { ENGINE_LABELS, type EngineKind } from "@/convex/lib/engines";
+import { noteHref } from "@/convex/lib/notes";
 import { limitWarning } from "@/convex/lib/usage";
 import { copyText, errorText, useNow } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -59,6 +60,7 @@ const COMMANDS = [
   { command: "/stop", hint: "Stop the reply being written" },
   { command: "/compact", hint: "Shrink what Perry carries of this chat; the messages stay" },
   { command: "/reset", hint: "Save this chat to memory, then start it afresh" },
+  { command: "/note", hint: "/note <words> adds them to your Inbox note; alone, saves the last reply as a note" },
 ];
 
 function greeting(name?: string) {
@@ -112,6 +114,8 @@ export function ChatScreen() {
   const rewindChat = useAction(api.dashboard.rewindChat);
   const resetChat = useAction(api.dashboard.resetChat);
   const setPinned = useMutation(api.dashboard.setChatPinned);
+  const noteFromChat = useMutation(api.notes.fromChat);
+  const jotNote = useMutation(api.notes.jot);
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
@@ -299,6 +303,16 @@ export function ChatScreen() {
   const limit = chat?.contact || !engine ? null : limitWarning(engine, engineUsage, now);
   const limitMark = limit ? `${engine}:${limit.level}:${limit.title}` : "";
   const fail = (cause: unknown) => setError(errorText(cause));
+  /** A note made from this chat: one reply, or with no message the whole chat; said with a way to open it. */
+  const saveAsNote = async (messageId?: string) => {
+    if (!selectedId) return;
+    try {
+      const made = await noteFromChat({ key: dashboardKey, conversationId: selectedId, ...(messageId ? { messageId } : {}) });
+      toast.success(`Saved as the note “${made.title}”.`, { action: { label: "Open", onClick: () => router.push(noteHref(made.id)) } });
+    } catch (cause) {
+      toast.error(`Couldn't save it: ${errorText(cause)}`);
+    }
+  };
 
   /** Pick a model by its "<engine>/<id>" key; another engine's moves the chat there. */
   function applyModel(key: string) {
@@ -445,6 +459,21 @@ export function ChatScreen() {
       try { setNotice(await resetChat({ key: dashboardKey, id: selectedId })); } catch (cause) { setNotice(""); fail(cause); }
       return true;
     }
+    if (command === "/note" || command.startsWith("/note ")) {
+      setDraft("");
+      const words = trimmed.slice(5).trim();
+      if (words) {
+        try {
+          const noted = await jotNote({ key: dashboardKey, text: words });
+          toast.success(`Added to your ${noted.title} note.`, { action: { label: "Open", onClick: () => router.push(noteHref(noted.id)) } });
+        } catch (cause) { setNotice(errorText(cause)); }
+        return true;
+      }
+      const last = saved.filter((message) => message.role === "assistant").at(-1);
+      if (!last) { setNotice("No reply here to save yet. /note <words> adds them to your Inbox note."); return true; }
+      await saveAsNote(last.id);
+      return true;
+    }
     if (command === "/compact") {
       setDraft("");
       try {
@@ -575,6 +604,7 @@ export function ChatScreen() {
           onCopyId={() => void copyText(summary.id).then(() => toast.success("Session ID copied."), fail)}
           activityHref={`/settings/activity?session=${summary.id}`}
           onDelete={summary.channel === "web" ? () => setRemoving(true) : undefined}
+          onSaveNote={() => void saveAsNote()}
           move={summary.channel === "web" ? <MoveToProject chat={summary} onNewProject={() => setCreatingProject(true)} /> : null}
         />
       ) : !selectedId ? null : undefined}>
@@ -658,6 +688,7 @@ export function ChatScreen() {
                   onEdit={(text) => void rewind(message.id, text)}
                   onRegenerate={() => void rewind(message.id)}
                   onBranch={() => void branch(message.id)}
+                  onSaveNote={() => void saveAsNote(message.id)}
                 />
               ))}
               {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
@@ -771,8 +802,8 @@ export function ChatScreen() {
   );
 }
 
-function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, move }: {
-  pinned: boolean; onPin: () => void; onRename: () => void; onCopyId: () => void; activityHref: string; onDelete?: () => void;
+function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, onSaveNote, move }: {
+  pinned: boolean; onPin: () => void; onRename: () => void; onCopyId: () => void; activityHref: string; onDelete?: () => void; onSaveNote: () => void;
   /** Moving it into or out of a project, for a chat that can be in one. */
   move: ReactNode;
 }) {
@@ -790,6 +821,7 @@ function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, m
           <DropdownMenuItem onClick={onPin}>{pinned ? <PinOffIcon /> : <PinIcon />}{pinned ? "Unpin" : "Pin"}</DropdownMenuItem>
           <DropdownMenuItem onClick={onRename}><PencilIcon />Rename</DropdownMenuItem>
           {move}
+          <DropdownMenuItem onClick={onSaveNote}><FilePlusIcon />Save chat as note</DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push(activityHref)}><ActivityIcon />View activity</DropdownMenuItem>
           <DropdownMenuItem onClick={onCopyId}><CopyIcon />Copy session ID</DropdownMenuItem>
           {onDelete && <>

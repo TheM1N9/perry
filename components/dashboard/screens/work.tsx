@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon, ZapIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, FileTextIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon, ZapIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -9,6 +9,7 @@ import type { Doc } from "@/convex/_generated/dataModel";
 import type { JobView } from "@/convex/jobs";
 import { enginesOf, modelKey, parseModelKey } from "@/convex/lib/commands";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
+import { noteHref } from "@/convex/lib/notes";
 import { PICKED_BY, routeLabel } from "@/convex/lib/routing";
 import { ago, fullDate, plural, useNow } from "@/lib/format";
 import { describeSchedule } from "@/lib/when";
@@ -118,6 +119,7 @@ function Schedules() {
   const keepOn = useMutation(api.jobs.keepOn);
   const models = useQuery(api.models.options, { key: dashboardKey })?.models;
   const preferred = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
+  const notes = useQuery(api.notes.list, { key: dashboardKey });
   const several = enginesOf(models ?? []).length > 1;
   const now = useNow();
   const { ask, dialog } = useConfirm();
@@ -165,6 +167,11 @@ function Schedules() {
             {job.lastRunAt
               ? <TextTip tip={when(job.lastRunAt)} spoken={when(job.lastRunAt)}>Last ran {ago(job.lastRunAt, now)}</TextTip>
               : <span>Hasn&apos;t run yet</span>}
+            {job.noteId && (
+              <Link href={noteHref(job.noteId)} className="inline-flex items-center gap-1 hover:text-foreground" data-job-note>
+                <FileTextIcon className="size-3.5" aria-hidden />Adds to {notes?.find((note) => note.id === job.noteId)?.title ?? "a note"}
+              </Link>
+            )}
           </p>
           {job.route && (
             <p className="mt-1 text-sm text-muted-foreground" data-route>

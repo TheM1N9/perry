@@ -5,3 +5,10 @@ This product includes code, prompts and text adapted from eve
 licensed under the Apache License, Version 2.0 (see licenses/eve-LICENSE).
 Files that contain adapted material say so in a comment naming the eve source
 file, and were modified for Perry.
+
+Portions adapted from CopilotKit/OpenDots (https://github.com/CopilotKit/OpenDots),
+Copyright (c) Atai Barkai, licensed under the MIT License (see
+licenses/opendots-LICENSE): the notes store's revision-checked saves, Perry's
+note tools, and the note editor (TipTap, Markdown, slash commands, autosave).
+Files that contain adapted material say so in a comment naming the OpenDots
+source file, and were modified for Perry.

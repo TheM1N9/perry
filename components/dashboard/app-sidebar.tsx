@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   BlocksIcon, BookUserIcon, CheckCircle2Icon, ChevronsUpDownIcon, GaugeIcon, InboxIcon, ListChecksIcon, LockIcon, MonitorIcon,
-  MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
+  MoreHorizontalIcon, NotebookPenIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
@@ -111,6 +111,12 @@ export function AppSidebar() {
                 <SidebarMenuButton render={<Link href="/todos" />} isActive={pathname === "/todos"} tooltip="To-dos">
                   <CheckCircle2Icon />
                   <span>To-dos</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/notes" />} isActive={pathname.startsWith("/notes")} tooltip="Notes">
+                  <NotebookPenIcon />
+                  <span>Notes</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

@@ -31,6 +31,7 @@ import * as lib_devices from "../convex/lib/devices";
 import * as lib_embed from "../convex/lib/embed";
 import * as lib_engines from "../convex/lib/engines";
 import * as lib_errors from "../convex/lib/errors";
+import * as lib_notes from "../convex/lib/notes";
 import * as lib_price from "../convex/lib/price";
 import * as lib_routing from "../convex/lib/routing";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
@@ -46,6 +47,7 @@ import * as mcp from "../convex/mcp";
 import * as media from "../convex/media";
 import * as memories from "../convex/memories";
 import * as models from "../convex/models";
+import * as notes from "../convex/notes";
 import * as notify from "../convex/notify";
 import * as persona from "../convex/persona";
 import * as pet from "../convex/pet";
@@ -99,6 +101,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/embed": lib_embed,
   "lib/engines": lib_engines,
   "lib/errors": lib_errors,
+  "lib/notes": lib_notes,
   "lib/price": lib_price,
   "lib/routing": lib_routing,
   "lib/shortcuts": lib_shortcuts,
@@ -114,6 +117,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "media": media,
   "memories": memories,
   "models": models,
+  "notes": notes,
   "notify": notify,
   "persona": persona,
   "pet": pet,
