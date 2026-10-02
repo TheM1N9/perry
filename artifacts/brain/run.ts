@@ -67,6 +67,18 @@ import { journalTitle as journalTitleOf } from "../../convex/lib/pages";
 //      leaves the lines of the owner's other pages an older Perry would read as memories, or Perry moves them in again
 //      on the next start; moving in again does not put them back where they were.
 //  27. Memories moved in are no longer loaded or listed: the Memory page loses them, or turns are not sent them.
+// Step 5, one Brain:
+//  28. The sidebar still has Memory or Notes, or Brain is missing or goes elsewhere.
+//  29. An old link (/memory, /memory?q=, /memory?tab=about, /about, /notes, /notes/<id>, a reply's /notes/ link) lands
+//      nowhere, or on the wrong page.
+//  30. The brain_* family is missing or wrong: brain_list leaves out pages of memory, brain_read does not find a page by
+//      its name, brain_write, brain_append and brain_pin do nothing, brain_search misses memory or pages; or a name from
+//      before (read_memory, search_memory, list_notes, read_note, search_notes, create_note, update_note,
+//      update_user_md) no longer works.
+//  31. A chat with someone else is given, or reaches, any brain_* tool or the owner's pages.
+//  32. Perry writes a secret into a page or a memory: a value saved in Logins & secrets, or a key-shaped string.
+//  33. The instructions do not say where to write what, how pinning works, or that a chat with someone else has none of it.
+//  34. The Brain page misses a part (search, pinned, journal, people, pages) or throws, in light or dark.
 
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/brain/run.ts <outDir>");
@@ -115,6 +127,7 @@ const onGrok = (id: string) => call("dashboard:setChatModel", { key: KEY, id, mo
 const lines = (): Row[] => rows("memories").filter((row) => row.kind === "page");
 const linesOf = (page: string) => lines().filter((row) => row.pageId === page).sort((a, b) => a.order - b.order);
 const noteRow = (id: string) => rows("notes").find((row) => row._id === id);
+const isPinnedRow = (page?: Row) => Boolean(page) && (page!.pinned ?? (page!.kind === "about" || page!.kind === "remember")) === true;
 /** Insert a document as an older Perry would have left it, with its id recorded as the store does. */
 function seed(table: string, doc: Record<string, unknown>, id = `seed${Math.random().toString(36).slice(2, 12)}${Date.now().toString(36)}`): string {
   sql(`INSERT INTO "_ids" (id, tbl) VALUES (?, ?)`, [id, table]);
@@ -319,7 +332,7 @@ try {
   const byMeaningMemory = await tool(general, "recall", { query: "what food should I not cook for the owner" });
   const byMeaningNote = await tool(general, "recall", { query: "documents I need at the airport" });
   check("recallFindsBoth", kinds(byWords).includes("core") && kinds(byWords).includes("note")
-    && byWords.memories.some((item: any) => item.kind === "note" && item.note?.title === "Lisbon trip" && item.note?.link === `/notes/${lisbon}`),
+    && byWords.memories.some((item: any) => item.kind === "note" && item.note?.title === "Lisbon trip" && item.note?.link === `/brain/${lisbon}`),
   byWords?.memories?.map((item: any) => [item.kind, item.text]));
   check("recallByMeaning", notes.allEmbedded === true
     && byMeaningMemory?.memories?.[0]?.text === "The owner is vegetarian and avoids eggs."
@@ -533,6 +546,80 @@ try {
   { inside: insideProject.standing.slice(0, 800), guest: guestText.slice(-600) });
   await pinPage(tiles, false);
 
+  // === Step 5: one Brain ============================================================================================
+  // --- 30. The brain_* family, and the names from before ---------------------------------------------------------------
+  // A chat of its own: the harness counts a chat's replies on its newest page of messages, which the general chat has filled.
+  const brainChat = await call<string>("dashboard:createChat", { key: KEY });
+  await onGrok(brainChat);
+  const { CODEX_TOOLS, OLD_NAMES } = await import("../../convex/mcp");
+  const listedAll = await tool(brainChat, "brain_list", {});
+  const kindsListed = (listedAll?.notes ?? []).map((page: any) => page.kind ?? "page");
+  const readRemember = await tool(brainChat, "brain_read", { page: "Things to remember" });
+  const readDatta = await tool(brainChat, "brain_read", { page: "People/Datta" });
+  const readToday = await tool(brainChat, "brain_read", { page: "today" });
+  const readSection = await tool(brainChat, "brain_read", { page: "Things to remember", section: "Health" });
+  const made = await tool(brainChat, "brain_write", { mode: "create", title: "Packing for Goa", content: "## Things\n\n- Sunscreen\n" });
+  const goa = made?.created?.id as string;
+  await tool(brainChat, "brain_append", { page: "Packing for Goa", section: "Clothes", content: "- Linen shirt" });
+  const goaRead = await tool(brainChat, "brain_read", { page: goa });
+  const replacedGoa = await tool(brainChat, "brain_write", { mode: "replace_section", page: goa, section: "Clothes", content: "- Two linen shirts", expectedRevision: goaRead?.revision });
+  const pinnedGoa = await tool(brainChat, "brain_pin", { page: "Packing for Goa", pinned: true });
+  const goaFresh = await fresh();
+  await pinPage(goa, false);
+  const searched = await tool(brainChat, "brain_search", { query: "linen shirts" });
+  check("brainTools", ["About me", "Things to remember", "journal", "person", "page"].every((kind) => kindsListed.includes(kind))
+    && /vegetarian/.test(readRemember?.content ?? "") && (readRemember?.lines ?? []).some((line: any) => /vegetarian/.test(line.text) && line.id && line.section === "Health")
+    && readDatta?.title === "Datta" && readToday?.day === dayOf(Date.now()) && /^## Health/.test(readSection?.content ?? "") && !/## Work/.test(readSection?.content ?? "")
+    && made?.created?.link === `/brain/${goa}` && /## Clothes\n\n- Two linen shirts/.test(String(noteRow(goa)?.content)) && Boolean(replacedGoa?.updated)
+    && pinnedGoa?.pinned?.pinned === true && goaFresh.standing.includes("## Pinned: Packing for Goa")
+    && (searched?.memories ?? []).some((item: any) => /linen shirts/.test(item.text)),
+  { kindsListed, made: made?.created, goa: noteRow(goa)?.content, replaced: replacedGoa?.error, pinned: pinnedGoa, searched: searched?.memories?.map((item: any) => item.text) });
+
+  const oldMemory = await tool(brainChat, "read_memory", { kind: "core" });
+  const oldSearch = await tool(brainChat, "search_memory", { query: "vegetarian" });
+  const oldList = await tool(brainChat, "list_notes", {});
+  const oldRead = await tool(brainChat, "read_note", { id: "Lisbon trip" });
+  const oldNotes = await tool(brainChat, "search_notes", { query: "Passport" });
+  const oldCreate = await tool(brainChat, "create_note", { title: "Old habits", content: "Made with an old name." });
+  const oldUpdate = await tool(brainChat, "update_note", { id: oldCreate?.created?.id, mode: "append", content: "And added to." });
+  const aboutNow = String(pageOf("about")?.content ?? "").trim();
+  const oldUser = await tool(brainChat, "update_user_md", { text: `${aboutNow}\n- Plays the guitar.\n` });
+  check("oldNamesStillWork", (oldMemory?.memories ?? []).some((item: any) => /vegetarian/.test(item.text)) && (oldSearch?.memories ?? []).some((item: any) => /vegetarian/.test(item.text))
+    && (oldList?.notes ?? []).some((page: any) => page.title === "Lisbon trip") && oldRead?.title === "Lisbon trip" && oldNotes?.found > 0
+    && Boolean(oldCreate?.created) && /And added to/.test(String(noteRow(oldCreate?.created?.id)?.content)) && oldUser?.saved === true && /Plays the guitar/.test(String(pageOf("about")?.content))
+    && ["brain_search", "brain_read", "brain_write", "brain_append", "brain_pin", "brain_list", "remember", "recall", "forget"].every((name) => CODEX_TOOLS.includes(name as never))
+    && !OLD_NAMES.some((name) => CODEX_TOOLS.includes(name)),
+  { advertised: CODEX_TOOLS.filter((name) => /brain|memor|note|recall|remember|forget|user_md/.test(name)), oldNames: OLD_NAMES });
+
+  // --- 31. A chat with someone else gets none of it ---------------------------------------------------------------------
+  const guestTries = {
+    list: await call<Row>("notes:listForAgent", { chat: theirs, memory: true }),
+    read: await call<Row>("notes:readForAgent", { chat: theirs, id: "Things to remember" }),
+    write: await call<Row>("notes:createForAgent", { chat: theirs, title: "GUESTPAGE", content: "x" }),
+    append: await call<Row>("notes:updateForAgent", { chat: theirs, id: "About me", mode: "append", content: "GUESTLINE" }),
+    pin: await call<Row>("notes:pinForAgent", { chat: theirs, id: "Things to remember", pinned: false }),
+  };
+  const guestTools: readonly string[] = GUEST_TOOLS;
+  check("guestHasNoBrain", Object.values(guestTries).every((answer) => /cannot read or write them/.test(String(answer.error))) && guestTries.list.notes.length === 0
+    && !guestTools.some((name) => name.startsWith("brain_") || OLD_NAMES.includes(name as never) && name !== "read_memory")
+    && !rows("notes").some((row) => /GUESTPAGE|GUESTLINE/.test(`${row.title} ${row.content}`)) && isPinnedRow(pageOf("remember", (row) => !row.projectId)),
+  { errors: Object.fromEntries(Object.entries(guestTries).map(([name, answer]) => [name, answer.error])), guestTools });
+
+  // --- 32. No secrets in pages or memory --------------------------------------------------------------------------------
+  await call("vault:save", { label: "Netflix", url: "https://netflix.com", username: "alex@example.com", value: "Tr0ub4dor-SECRET-77", by: "owner" });
+  const savedSecret = await tool(brainChat, "remember", { text: "The owner's Netflix password is Tr0ub4dor-SECRET-77.", kind: "core" });
+  const keyShaped = await tool(brainChat, "brain_append", { page: "Packing for Goa", content: "- API key sk-proj-ABCDEFGHIJKLMNOPQRSTUVWX1234" });
+  const notedPassword = await tool(brainChat, "create_note", { title: "Wifi", content: "The wifi password is hunter2-house" });
+  const leaked = rows("memories").some((row) => /Tr0ub4dor|sk-proj-ABCD|hunter2-house/.test(row.text)) || rows("notes").some((row) => /Tr0ub4dor|sk-proj-ABCD|hunter2-house/.test(row.content));
+  check("noSecretsInPages", savedSecret?.stored === false && /Logins & secrets/.test(savedSecret?.note ?? "") && /save_secret/.test(keyShaped?.error ?? "") && /save_secret/.test(notedPassword?.error ?? "") && !leaked,
+    { savedSecret: savedSecret?.note, keyShaped: keyShaped?.error, notedPassword: notedPassword?.error, leaked });
+
+  // --- 33. What Perry is told ---------------------------------------------------------------------------------------------
+  const told = (await fresh()).instructions;
+  check("instructionsSayWhere", told.includes("their Brain") && told.includes("A memory is a line in a page") && told.includes("brain_pin") && told.includes("A chat with someone else has none of this")
+    && told.includes("About me") && !told.includes("update_user_md") && !told.includes("list_notes"),
+  told.slice(told.indexOf("Everything you know"), told.indexOf("Everything you know") + 1200));
+
   // --- 4b. Deleting the project keeps its notes, and their lines move out with them ---------------------------------
   await call("projects:remove", { key: KEY, id: project });
   const moved = linesOf(tiles);
@@ -573,19 +660,19 @@ try {
 
   await evaluate(`localStorage.setItem("perry.theme", "light"); true`);
   await palette("eggs");
-  await waitFor(`${groupHas("Memory and notes")} && document.querySelector('[data-recalled="core"]')?.innerText.includes("vegetarian")`, "a memory in search", 20_000);
+  await waitFor(`${groupHas("Brain")} && document.querySelector('[data-recalled="core"]')?.innerText.includes("vegetarian")`, "a memory in search", 20_000);
   const memoryHit = await evaluate(`document.querySelector('[data-recalled="core"]').innerText`);
   await fill("[cmdk-input]", "passport");
   await waitFor(`document.querySelector('[data-recalled="page"]')?.innerText.includes("Passport")`, "a note's line in search", 20_000);
   await shot("search-memory-and-notes.png");
   const lineHit = await evaluate(`document.querySelector('[data-recalled="page"]').innerText`);
   await click('[data-recalled="page"]');
-  await waitFor(`location.pathname === ${JSON.stringify(`/notes/${lisbon}`)}`, "the note to open from its line");
+  await waitFor(`location.pathname === ${JSON.stringify(`/brain/${lisbon}`)}`, "the note to open from its line");
   await palette("eggs");
   await waitFor(`document.querySelector('[data-recalled="core"]')`, "the memory again", 20_000);
   await click('[data-recalled="core"]');
   // A memory is a line of its page now (step 2): it opens there.
-  await waitFor(`location.pathname === ${JSON.stringify(`/notes/${pageOf("remember", (row) => !row.projectId)?._id}`)}`, "the memory to open in its page");
+  await waitFor(`location.pathname === ${JSON.stringify(`/brain/${pageOf("remember", (row) => !row.projectId)?._id}`)}`, "the memory to open in its page");
   check("searchFindsMemoryAndNotes", /vegetarian/.test(memoryHit) && /Things to remember › Health/.test(memoryHit) && /Passport/.test(lineHit) && /Lisbon trip › Packing/.test(lineHit), { memoryHit, lineHit });
 
   // --- 15, 13. The Memory page lists the pages; a page of memory in the editor ------------------------------------------
@@ -597,7 +684,7 @@ try {
   await go(`/notes/${rememberPage._id}`);
   await waitFor(`document.querySelector("[data-note-editor]")?.innerText.includes("Allergic to penicillin")`, "Things to remember in the editor");
   const locked = await evaluate(`({ readOnly: document.querySelector('input[aria-label="Title"]').readOnly, crumb: document.querySelector("header a, nav a")?.innerText })`);
-  await click('[aria-label="Note options"]');
+  await click('[aria-label="Page options"]');
   const menu = await evaluate(`[...document.querySelectorAll('[role="menuitem"], [role="menuitemradio"]')].map((item) => item.innerText.trim())`) as string[];
   await key("Escape", "Escape", 27);
   // Where each memory came from.
@@ -636,6 +723,30 @@ try {
   check("pinButtonAndUsage", /Two parts/.test(pinnedGroup) && /Lisbon trip/.test(pinnedGroup) && /Datta/.test(pinnedGroup) && /About me/.test(pinnedGroup) && /of 32,000 characters/.test(usageText),
     { pinnedGroup, usageText });
 
+  // --- 28, 29, 34. The sidebar, old links, and the Brain page ------------------------------------------------------------
+  await go("/chat");
+  await waitFor(`document.querySelectorAll("[data-sidebar=menu-button]").length > 3`, "the sidebar");
+  const sidebarItems = await evaluate(`[...document.querySelectorAll("[data-sidebar=menu-button]")].map((item) => item.innerText.trim()).filter(Boolean)`) as string[];
+  await evaluate(`[...document.querySelectorAll("[data-sidebar=menu-button]")].find((item) => item.innerText.trim() === "Brain")?.click(); true`);
+  await waitFor(`location.pathname === "/brain" && document.querySelector('section[aria-label="Memory pages"]') && document.querySelector('ul[aria-label="Pages"]')`, "Brain from the sidebar");
+  await shot("brain.png");
+  const landed: Record<string, string> = {};
+  const land = async (path: string, test: string, what: string) => { await go(path); await waitFor(test, what); landed[path] = await evaluate("location.pathname + location.search") as string; };
+  const aboutPageId = pageOf("about")!._id;
+  await land("/memory", `location.pathname === "/brain"`, "/memory to Brain");
+  await land("/memory?q=vegetarian", `location.pathname === "/brain" && document.querySelector('[data-found]')?.innerText.includes("vegetarian")`, "a memory found from an old link");
+  await shot("brain-search.png");
+  await land("/memory?tab=about", `location.pathname === ${JSON.stringify(`/brain/${aboutPageId}`)}`, "About you to About me");
+  await land("/about", `location.pathname === ${JSON.stringify(`/brain/${aboutPageId}`)} && document.querySelector("[data-note-editor]")`, "/about to About me");
+  // Its earlier versions, opened.
+  await evaluate(`[...document.querySelectorAll("button")].find((item) => item.innerText.trim() === "Earlier versions")?.click(); true`);
+  await waitFor(`document.querySelector("[data-about-versions]")`, "About me's versions");
+  await shot("about-me.png");
+  await land("/notes", `location.pathname === "/brain"`, "/notes to Brain");
+  await land(`/notes/${lisbon}`, `location.pathname === ${JSON.stringify(`/brain/${lisbon}`)} && document.querySelector("[data-note-editor]")?.innerText.includes("Passport")`, "an old note link");
+  check("sidebarAndOldLinks", sidebarItems.includes("Brain") && !sidebarItems.includes("Memory") && !sidebarItems.includes("Notes") && Object.keys(landed).length === 6,
+    { sidebarItems, landed });
+
   // --- 8. Dark, and no page errors -------------------------------------------------------------------------------------
   await evaluate(`localStorage.setItem("perry.theme", "dark"); true`);
   await palette("swim");
@@ -649,6 +760,9 @@ try {
   await go(`/notes/${pageOf("about")!._id}`);
   await waitFor(`document.querySelector("[data-note-editor]")?.innerText.includes("Miso")`, "dark About me");
   await shot("about-me-dark.png");
+  await go("/brain");
+  await waitFor(`document.documentElement.classList.contains("dark") && document.querySelector('ul[aria-label="Pages"]')`, "dark Brain");
+  await shot("brain-dark.png");
   await evaluate(`localStorage.setItem("perry.theme", "light"); true`);
   check("searchDarkAndDaily", swim.includes("daily") && swim.includes("page"), swim);
   check("noPageErrors", browser.errors.length === 0, browser.errors);
@@ -683,6 +797,9 @@ try {
   notes.realModelTurns = "none: every chat ran on the fake Grok agent";
 } catch (error) {
   notes.stoppedAt = String(error instanceof Error ? error.stack ?? error.message : error);
+  // What the engine and the server were doing when it stopped.
+  notes.fakeLogTail = log().slice(-12).map((entry) => JSON.stringify(entry).slice(0, 600));
+  notes.serverLogTail = p.logs.server.split("\n").slice(-40);
   check("completed", false);
 }
 process.exit(await p.finish() ? 0 : 1);

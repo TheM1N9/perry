@@ -54,8 +54,8 @@ import { seed, startPerry, type Perry } from "./seed";
 //      a cleared field has no Save at all.
 //  10. Adding a login or a memory still says Save, shows its button while
 //      there is nothing to add, or ignores Enter.
-//  11. Editing a memory in place: Enter does not save, Esc does not cancel (or
-//      saves anyway), or the buttons are filled ones.
+//  11. Editing a memory where it lives (a line of its page in Brain, issue #210)
+//      does not change the memory, or needs a Save button.
 //  12. A primary button sits greyed out at rest on a checked screen.
 //  13. Anything throws or logs an error on a checked page, in either theme.
 //  14. A picture proves nothing: a screen is shot before its seeded content
@@ -238,11 +238,11 @@ try {
     }
     if (!BEFORE && mode === "light") check("setLoginRowsHaveNoPill", Object.values(keyPills).every((pills) => (pills as string[]).length === 0) && Object.keys(keyPills).length === 3, keyPills);
 
-    // --- Memory, both tabs ---------------------------------------------------------------------------
-    await go("/memory", "coffee black");
+    // --- Memory, now Brain (issue #210): its page, and About me ---------------------------------------
+    await go("/brain", "Things to remember");
     await shot("memory");
     await measure(`memory-${mode}`);
-    await go("/memory?tab=about", "USER.md");
+    await go("/about", "coffee black");
     await shot("memory-about");
     await measure(`memory-about-${mode}`);
     await collectErrors(`memory-${mode}`);
@@ -397,22 +397,27 @@ try {
     const named = await soon(async () => (await persona()).name === "Pip", 6);
     const identityStatus = await status(`document.querySelector("#identity-personality").closest("section").querySelector("[data-save]")`);
     check("nameAndPersonalitySaveThemselves", personality && named && identityStatus?.text === "Saved" && (await buttonsNamed("Save")) === 0, { personality, named, identityStatus, persona: await persona() });
-    await go("/memory?tab=about", "USER.md");
+    // About me is USER.md, written in the page editor: it saves as it is typed, a sitting as one version.
+    await go("/about", "coffee black");
     const before = (await call<unknown[]>("dashboard:personaHistory", { key: KEY, kind: "user" })).length;
-    await click(byText("main button", "Write it"));
-    await waitFor(`document.querySelector("#user-md")`, "the USER.md editor");
-    await typeText("# About Sam\n\nWorks on design systems.");
-    await soon(async () => (await persona()).user.includes("design systems"), 6);
-    await typeText("\n\nGym before work, weekdays.");
-    await soon(async () => (await persona()).user.includes("Gym before work"), 6);
-    await typeText("\n\nCall him Sam.");
-    const userSaved = await soon(async () => (await persona()).user.endsWith("Call him Sam."), 6);
-    const userStatus = await status(`document.querySelector("#user-md").closest("section").querySelector("[data-save]")`);
+    await evaluate(`(() => { const el = document.querySelector("[data-note-editor]"); el.focus(); const range = document.createRange(); range.selectNodeContents(el); range.collapse(false); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); return true; })()`);
+    await press("Enter");
+    await typeText("Works on design systems.");
+    await soon(async () => (await persona()).user.includes("design systems"), 8);
+    await press("Enter");
+    await typeText("Gym before work, weekdays.");
+    await soon(async () => (await persona()).user.includes("Gym before work"), 8);
+    await press("Enter");
+    await typeText("Call him Sam.");
+    const userSaved = await soon(async () => (await persona()).user.includes("Call him Sam."), 8);
+    const userStatus = await status(`document.querySelector("[data-save]")`);
     const versions = (await call<unknown[]>("dashboard:personaHistory", { key: KEY, kind: "user" })).length;
     await shot("autosave-user-md");
     check("userMdSavesItselfAsOneVersion", userSaved && userStatus?.text === "Saved" && versions === before + 1 && (await buttonsNamed("Save")) === 0, { userSaved, userStatus, before, versions });
-    await press("Escape");
-    const reading = await soon(() => evaluate(`!document.querySelector("#user-md") && document.querySelector('article[aria-label="USER.md"]')?.innerText.includes("Call him Sam.")`), 4);
+    // Leaving by a link keeps what was typed: a fresh visit shows it.
+    await go("/brain", "Things to remember");
+    await go("/about", "Call him Sam.");
+    const reading = await soon(() => evaluate(`document.querySelector("[data-note-editor]")?.innerText.includes("Call him Sam.")`), 4);
     check("escapeLeavesTheEditorSaved", reading);
     await collectErrors("autosave-about");
 
@@ -466,9 +471,9 @@ try {
     check("addLoginByEnter", withName === 0 && withSecret === 1 && added && (await buttonsNamed("Save")) === 0, { withName, withSecret, added });
     await collectErrors("secrets");
 
-    // --- Memory: Remember, and editing in place with Enter and Esc --------------------------------------
-    await go("/memory", "coffee black");
-    const memories = () => call<Array<{ id: string; text: string }>>("dashboard:listMemories", { key: KEY, query: "" });
+    // --- Brain: Remember, and editing a memory where it lives, in its page -------------------------------
+    await go("/brain", "Things to remember");
+    const memories = () => call<Array<{ id: string; text: string; pageId?: string }>>("memories:search", { query: "", limit: 25, everywhere: true, memoriesOnly: true });
     const empty = await buttonsNamed("Remember");
     await focus(`document.querySelector("#memory-text")`);
     await typeText("Sam's dentist is Dr. Rao on Linking Road.");
@@ -476,21 +481,13 @@ try {
     await press("Enter");
     const remembered = await soon(async () => (await memories()).some((memory) => memory.text === "Sam's dentist is Dr. Rao on Linking Road."), 6);
     check("rememberByEnter", empty === 0 && offeredRemember === 1 && remembered, { empty, offeredRemember, remembered });
-    const row = byText("main li", "trains to flights");
-    await click(`[...${row}.querySelectorAll("button")].find((b) => b.innerText.trim() === "Edit")`);
-    await waitFor(`document.querySelector('textarea[id^="memory-edit-"]')`, "the memory editor");
-    const editButtons = await evaluate(`[...document.querySelector('textarea[id^="memory-edit-"]').closest("form").querySelectorAll("button")].map((b) => ({ text: b.innerText.trim(), fill: getComputedStyle(b).backgroundColor }))`) as Array<{ text: string; fill: string }>;
+    const trains = (await memories()).find((memory) => memory.text.includes("trains to flights"));
+    await go(`/brain/${trains?.pageId}`, "trains to flights");
+    await evaluate(`(() => { const el = document.querySelector("[data-note-editor]"); el.focus(); const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); for (let node; (node = walk.nextNode());) { const at = node.nodeValue.indexOf("under six hours."); if (at >= 0) { const range = document.createRange(); range.setStart(node, at + "under six hours.".length); range.collapse(true); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); return true; } } return false; })()`);
     await typeText(" Even overnight.");
-    await press("Enter");
-    const edited = await soon(async () => (await memories()).some((memory) => memory.text.endsWith("under six hours. Even overnight.")), 6);
-    await click(`[...${byText("main li", "Even overnight")}.querySelectorAll("button")].find((b) => b.innerText.trim() === "Edit")`);
-    await waitFor(`document.querySelector('textarea[id^="memory-edit-"]')`, "the memory editor again");
-    await typeText(" NOT THIS.");
-    await press("Escape");
-    await sleep(800);
-    const escaped = await evaluate(`!document.querySelector('textarea[id^="memory-edit-"]')`);
-    const unchanged = !(await memories()).some((memory) => memory.text.includes("NOT THIS"));
-    check("editMemoryEnterAndEscape", edited && escaped === true && unchanged && editButtons.length >= 2 && editButtons.every((button) => /rgba\(0, 0, 0, 0\)/.test(button.fill)), { edited, escaped, unchanged, editButtons });
+    const edited = await soon(async () => (await memories()).some((memory) => memory.id === trains?.id && memory.text.endsWith("under six hours. Even overnight.")), 8);
+    const editButtons = await buttonsNamed("Save");
+    check("editMemoryEnterAndEscape", edited && editButtons === 0, { edited, editButtons });
     await collectErrors("memory-edit");
 
     check("noBoxes", Object.keys(boxesFound).length === 0, boxesFound);

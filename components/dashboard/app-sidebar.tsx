@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  BlocksIcon, BookUserIcon, CheckCircle2Icon, GaugeIcon, InboxIcon, ListChecksIcon, LockIcon,
-  MoreHorizontalIcon, NotebookPenIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
+  BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, InboxIcon, ListChecksIcon, LockIcon,
+  MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
@@ -103,21 +103,15 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/notes" />} isActive={pathname.startsWith("/notes")} tooltip="Notes">
-                  <NotebookPenIcon />
-                  <span>Notes</span>
+                <SidebarMenuButton render={<Link href="/brain" />} isActive={pathname.startsWith("/brain")} tooltip="Brain">
+                  <BrainIcon />
+                  <span>Brain</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/work" />} isActive={pathname.startsWith("/work")} tooltip="Work">
                   <ListChecksIcon />
                   <span>Work</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/memory" />} isActive={pathname.startsWith("/memory")} tooltip="Memory">
-                  <BookUserIcon />
-                  <span>Memory</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

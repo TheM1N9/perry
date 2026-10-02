@@ -216,11 +216,12 @@ try {
   await evaluate(`localStorage.setItem("perry.theme", "light"); true`);
 
   // --- 1. A note made and written on the Notes page, saved as it is typed ---------------------------------
+  // Notes are pages in Brain now (issue #210); /notes still lands there.
   await go("/notes");
-  await waitFor(`document.body.innerText.includes("No notes yet")`, "the empty Notes page");
+  await waitFor(`location.pathname === "/brain" && document.body.innerText.includes("No pages yet")`, "the empty Brain page");
   await shot("notes-empty.png");
-  await click("main button", "New note");
-  await waitFor(`/^\\/notes\\/[a-z0-9]+$/.test(location.pathname) && document.querySelector("[data-note-editor]")`, "the new note's editor");
+  await click("main button", "New page");
+  await waitFor(`/^\\/brain\\/[a-z0-9]+$/.test(location.pathname) && document.querySelector("[data-note-editor]")`, "the new note's editor");
   const lisbon = (await path()).split("/").pop()!;
   await fill('input[aria-label="Title"]', "Lisbon trip");
   await editorEnd();
@@ -285,7 +286,7 @@ try {
   const listed = await tool(general, "list_notes", {});
   const found = await tool(general, "search_notes", { query: "sunscreen" });
   const read = await tool(general, "read_note", { id: lisbon });
-  check("toolsListSearchRead", listed?.notes?.some((note: Row) => note.id === lisbon && note.link === `/notes/${lisbon}`)
+  check("toolsListSearchRead", listed?.notes?.some((note: Row) => note.id === lisbon && note.link === `/brain/${lisbon}`)
     && found?.notes?.some((note: Row) => note.id === lisbon && /sunscreen/i.test(note.snippet))
     && read?.content?.includes("Passport") && read?.sections?.includes("Packing") && read?.revision === noteRow(lisbon)!.revision,
     { listed: listed?.notes?.map((note: Row) => note.title), found: found?.found, sections: read?.sections, revision: read?.revision });
@@ -307,7 +308,7 @@ try {
   const madeArgs = { title: "Book ideas", content: "## Fiction\n\n- The Overstory BOOKWREN" };
   const made = await tool(general, "create_note", madeArgs);
   const book = made?.created?.id as string;
-  check("createNote", noteRow(book)?.by === "assistant" && noteRow(book)?.from === general && !noteRow(book)?.projectId && made?.created?.link === `/notes/${book}`, made);
+  check("createNote", noteRow(book)?.by === "assistant" && noteRow(book)?.from === general && !noteRow(book)?.projectId && made?.created?.link === `/brain/${book}`, made);
 
   // --- 4. A project's notes reach its chats, and only them -----------------------------------------------------
   const project = await call<string>("projects:create", { key: KEY, name: "Kitchen renovation" });
@@ -468,13 +469,13 @@ try {
   await waitFor(`document.querySelector('[cmdk-input]')`, "the search palette");
   await typeText("oat milk");
   // Words inside a note are found as its lines, in one group with memory (issue #210).
-  await waitFor(`[...document.querySelectorAll('[cmdk-group-heading]')].some((item) => item.innerText === "Memory and notes") && document.querySelector('[data-recalled="page"]')?.innerText.includes("Inbox")`, "Inbox found by its words", 20_000);
+  await waitFor(`[...document.querySelectorAll('[cmdk-group-heading]')].some((item) => item.innerText === "Brain") && document.querySelector('[data-recalled="page"]')?.innerText.includes("Inbox")`, "Inbox found by its words", 20_000);
   await shot("search-notes.png");
   const byWords = await evaluate(`document.querySelector('[data-recalled="page"]').innerText`);
   await fill("[cmdk-input]", "Lisbon");
   await waitFor(`[...document.querySelectorAll('[data-value^="note-"]')].some((item) => item.innerText.includes("Lisbon trip"))`, "Lisbon found by title", 10_000);
   await click('[data-value^="note-"]', undefined);
-  await waitFor(`location.pathname === ${JSON.stringify(`/notes/${lisbon}`)}`, "the note to open from search");
+  await waitFor(`location.pathname === ${JSON.stringify(`/brain/${lisbon}`)}`, "the note to open from search");
   check("searchFindsNotes", byWords.includes("TGJOT") || byWords.includes("oat milk"), byWords);
 
   // --- 10. A link to a note in a reply -----------------------------------------------------------------------------------
@@ -482,15 +483,16 @@ try {
   await go(`/chat/${general}`);
   await waitFor(`document.querySelector('a[data-note-link]')`, "the note link in the reply");
   await click("a[data-note-link]");
-  await waitFor(`location.pathname === ${JSON.stringify(`/notes/${lisbon}`)}`, "the note link to open the note");
+  // A link from before Brain (/notes/<id>) still opens the page, at its new address.
+  await waitFor(`location.pathname === ${JSON.stringify(`/brain/${lisbon}`)}`, "the note link to open the note");
   check("noteLinkOpensNote", true);
 
   // --- 11. Download as .md, and a .md file opened as a new note ---------------------------------------------------------------
   const downloads = join(p.home, "downloads");
   mkdirSync(downloads, { recursive: true });
   await send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
-  await waitFor(`document.querySelector('[aria-label="Note options"]')`, "the note's menu");
-  await click('[aria-label="Note options"]');
+  await waitFor(`document.querySelector('[aria-label="Page options"]')`, "the note's menu");
+  await click('[aria-label="Page options"]');
   await click('[role="menuitem"]', "Download .md");
   await until(() => existsSync(join(downloads, "Lisbon trip.md")), "the download", 15);
   const file = readFileSync(join(downloads, "Lisbon trip.md"), "utf8");
@@ -513,8 +515,8 @@ try {
 
   // --- 12. Deleting a note from its page ---------------------------------------------------------------------------------------
   await go(`/notes/${reviews}`);
-  await waitFor(`document.querySelector('[aria-label="Note options"]')`, "the note to delete");
-  await click('[aria-label="Note options"]');
+  await waitFor(`document.querySelector('[aria-label="Page options"]')`, "the note to delete");
+  await click('[aria-label="Page options"]');
   await click('[role="menuitem"]', "Delete");
   await waitFor(`document.querySelector('[role="alertdialog"]')`, "the delete dialog");
   await click('[role="alertdialog"] button', "Delete");
@@ -524,16 +526,17 @@ try {
 
   // --- 13. What Perry is told about notes and memory ------------------------------------------------------------------------------
   const instructions = String(turnsOf(general).at(-1)?.instructions ?? "");
-  check("instructionsDrawTheLine", instructions.includes("The owner keeps notes with you") && instructions.includes("is memory, saved with remember") && instructions.includes("The owner's Notes (list_notes, create_note) are something else"),
-    instructions.slice(instructions.indexOf("The owner keeps notes"), instructions.indexOf("The owner keeps notes") + 300));
+  // Notes and memory are one place, Brain (issue #210): the instructions say where each goes.
+  check("instructionsDrawTheLine", instructions.includes("their Brain") && instructions.includes("A memory is a line in a page") && instructions.includes("brain_write mode=create"),
+    instructions.slice(instructions.indexOf("Everything you know"), instructions.indexOf("Everything you know") + 400));
 
   // --- 14. Light and dark, and no page errors --------------------------------------------------------------------------------------
   await go("/notes");
-  await waitFor(`!document.documentElement.classList.contains("dark") && document.querySelector('ul[aria-label="Notes"]')`, "the notes list, light");
+  await waitFor(`!document.documentElement.classList.contains("dark") && document.querySelector('ul[aria-label="Pages"]')`, "the notes list, light");
   await shot("notes-list.png");
   await evaluate(`localStorage.setItem("perry.theme", "dark"); true`);
   await go("/notes");
-  await waitFor(`document.documentElement.classList.contains("dark") && document.querySelector('ul[aria-label="Notes"]')`, "dark Notes");
+  await waitFor(`document.documentElement.classList.contains("dark") && document.querySelector('ul[aria-label="Pages"]')`, "dark Notes");
   await shot("notes-list-dark.png");
   await go(`/notes/${lisbon}`);
   await waitFor(`document.querySelector("[data-note-editor]")?.innerText.includes("Passport")`, "dark note");

@@ -394,7 +394,7 @@ try {
       const footer = [...document.querySelector("[data-sidebar=footer]").querySelectorAll("[data-sidebar=menu-button]")].map((b) => b.innerText.replace(/\\s+/g, " ").trim());
       return { top, footer };
     })()`) as { top: string[]; footer: string[] };
-    check("sidebarHasMemoryAndApps", JSON.stringify(sidebar.top) === JSON.stringify(["New chat", "Search", "To-dos", "Notes", "Work", "Memory", "Apps & skills"]), sidebar.top);
+    check("sidebarHasMemoryAndApps", JSON.stringify(sidebar.top) === JSON.stringify(["New chat", "Search", "To-dos", "Brain", "Work", "Apps & skills"]), sidebar.top);
 
     // --- 17. New chat and Search, one row; stacked when the sidebar is icons ----------------------------------
     const ROW = `document.querySelector("[data-new-chat-row]")`;
@@ -481,8 +481,9 @@ try {
     check("footerLandsOnItsSections", inboxLands && petSettings, { inboxLands, petSettings, at: await where() });
     await click(byText("[data-sidebar=menu-button]", "Apps & skills"));
     const apps = await soon(async () => (await where()) === "/apps/connectors", 10);
-    await click(byText("[data-sidebar=menu-button]", "Memory"));
-    const memory = await soon(async () => (await where()) === "/memory", 10);
+    // Memory and Notes are one entry, Brain (issue #210).
+    await click(byText("[data-sidebar=menu-button]", "Brain"));
+    const memory = await soon(async () => (await where()) === "/brain", 10);
     check("sidebarItemsGoToTheirPages", apps && memory, { apps, memory });
     await collectErrors("sidebar");
 

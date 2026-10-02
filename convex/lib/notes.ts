@@ -11,7 +11,7 @@ export const CONTENT_LIMIT = 100_000;
 export const INBOX_TITLE = "Inbox";
 
 /** Where a note opens in the dashboard; Perry links it so in a web chat. */
-export const noteHref = (id: string) => `/notes/${id}`;
+export const noteHref = (id: string) => `/brain/${id}`;
 
 export function cleanTitle(title: string): string {
   return title.replace(/\s+/g, " ").trim().slice(0, TITLE_LIMIT) || "Untitled";

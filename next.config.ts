@@ -16,7 +16,11 @@ const config: NextConfig = {
   async redirects() {
     return [
       { source: "/tasks", destination: "/work", permanent: false },
-      { source: "/about", destination: "/memory?tab=about", permanent: false },
+      { source: "/about", destination: "/brain?open=about", permanent: false },
+      // Memory and Notes became Brain (issue #210): a page, a search, and the old About you all land there.
+      { source: "/memory", destination: "/brain", permanent: false },
+      { source: "/notes", destination: "/brain", permanent: false },
+      { source: "/notes/:id", destination: "/brain/:id", permanent: false },
       { source: "/profile", destination: "/settings/general", permanent: false },
       { source: "/keys", destination: "/settings/logins", permanent: false },
       { source: "/setup", destination: "/settings/telegram", permanent: false },

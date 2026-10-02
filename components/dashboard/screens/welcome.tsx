@@ -263,7 +263,7 @@ export function Welcome() {
                 <>
                   <Heading ref={heading} title="Your USER.md">What {assistant} knows about you in every chat. Edit anything.</Heading>
                   {persona.user && (
-                    <Alert variant="quiet"><AlertTitle>This replaces your current USER.md</AlertTitle><AlertDescription>The old one stays in its history under Memory, so you can restore it.</AlertDescription></Alert>
+                    <Alert variant="quiet"><AlertTitle>This replaces About me</AlertTitle><AlertDescription>The old one stays in its history under Brain, so you can restore it. How you like things done stays.</AlertDescription></Alert>
                   )}
                   <Field>
                     <FieldLabel htmlFor={`${id}-md`}>USER.md</FieldLabel>
