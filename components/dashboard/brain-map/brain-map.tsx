@@ -24,7 +24,7 @@ import { GraphView, KIND_COLOR } from "./graph-view";
  */
 
 export const KIND_LABEL: Record<MapKind, string> = {
-  about: "About me", remember: "To remember", journal: "Journal", person: "People", page: "Pages", chat: "Chats", project: "Projects",
+  about: "About me", remember: "To remember", journal: "Journal", journey: "Journeys", person: "People", page: "Pages", chat: "Chats", project: "Projects",
 };
 const KINDS = Object.keys(KIND_LABEL) as MapKind[];
 const DAY = 86_400_000;
