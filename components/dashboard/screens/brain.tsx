@@ -54,7 +54,8 @@ export function Brain() {
     if (!picked) return;
     await newPage(picked.name.replace(/\.(md|markdown|txt)$/i, ""), await picked.text());
   };
-  const pages = (notes ?? []).filter((note) => !note.pinned && !note.pinnedSections?.length
+  // Your own pages only: About me, Things to remember, journal days and people are listed above, in their groups.
+  const pages = (notes ?? []).filter((note) => !note.kind && !note.pinned && !note.pinnedSections?.length
     && (!needle || `${note.title} ${note.preview} ${note.project ?? ""}`.toLocaleLowerCase().includes(needle)));
 
   return (

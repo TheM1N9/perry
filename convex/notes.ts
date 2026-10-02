@@ -52,14 +52,15 @@ export type NoteSummary = {
   /** Loaded into every chat that may read it (pages.isPinned), whole or by sections. */
   pinned: boolean;
   pinnedSections?: string[];
+  /** A page of memory (pages.ts): what it is. Brain lists these in their own groups, not among the owner's pages. */
+  kind?: PageKind;
 };
 export type NoteView = NoteSummary & {
   content: string;
   revision: number;
   createdAt: number;
   from?: { id: Id<"conversations">; title: string };
-  /** A page of memory (pages.ts): what it is, and a journal page's day. */
-  kind?: PageKind;
+  /** A journal page's day. */
   day?: string;
 };
 
@@ -83,6 +84,7 @@ function summary(note: Note, names: Map<string, string>): NoteSummary {
     updatedAt: note.updatedAt,
     pinned: isPinned(note),
     ...(note.pinnedSections?.length ? { pinnedSections: note.pinnedSections } : {}),
+    ...(note.kind ? { kind: note.kind } : {}),
   };
 }
 
