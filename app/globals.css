@@ -221,6 +221,42 @@
   .prose-chat img { @apply max-h-96 rounded-lg; }
 }
 
+/* A note in its editor (components/notes): the chat's prose, a little roomier, and TipTap's own parts. */
+@layer components {
+  .prose-note {
+    @apply text-md leading-[1.75] text-foreground [overflow-wrap:anywhere];
+  }
+  .prose-note > * + * { @apply mt-3; }
+  .prose-note h1, .prose-note h2, .prose-note h3 { @apply mt-7 font-semibold tracking-tight first:mt-0; }
+  .prose-note h1 { @apply text-xl; }
+  .prose-note h2 { @apply text-lg; }
+  .prose-note h3 { @apply text-base; }
+  .prose-note ul { @apply list-disc pl-5; }
+  .prose-note ol { @apply list-decimal pl-5; }
+  .prose-note li + li { @apply mt-1; }
+  .prose-note li > p { @apply m-0; }
+  .prose-note a { @apply link; }
+  .prose-note strong { @apply font-semibold; }
+  .prose-note blockquote { @apply border-l-2 pl-4 text-muted-foreground; }
+  .prose-note hr { @apply my-6 border-border; }
+  .prose-note :not(pre) > code { @apply rounded-[5px] bg-muted px-[0.35em] py-[0.1em] font-mono text-[0.86em]; }
+  .prose-note pre { @apply overflow-x-auto rounded-xl border bg-muted/50 p-4 font-mono text-sm leading-relaxed; }
+  .prose-note ul[data-type="taskList"] { @apply list-none pl-0; }
+  .prose-note ul[data-type="taskList"] li { @apply flex items-start gap-2; }
+  .prose-note ul[data-type="taskList"] li > label { @apply mt-[0.3em] shrink-0; }
+  .prose-note ul[data-type="taskList"] li > label input { @apply size-4 accent-primary; }
+  .prose-note ul[data-type="taskList"] li > div { @apply min-w-0 flex-1; }
+  .prose-note ul[data-type="taskList"] li[data-checked="true"] > div { @apply text-muted-foreground line-through; }
+  .prose-note table { @apply w-full border-collapse overflow-hidden text-sm; }
+  .prose-note th, .prose-note td { @apply border px-3 py-1.5 text-left align-top; }
+  .prose-note th { @apply bg-muted/50 font-semibold; }
+  .prose-note .selectedCell { @apply bg-primary/10; }
+  .prose-note p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    @apply pointer-events-none float-left h-0 text-muted-foreground/70;
+  }
+}
+
 /* The shimmer on "Thinking", swept once a second and a half; still for those who ask for less motion. */
 @keyframes shimmer {
   from { background-position: 150% 0; }

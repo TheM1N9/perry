@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { FolderOutputIcon, MessageSquareIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
+import { noteHref } from "@/convex/lib/notes";
 import type { ProjectView } from "@/convex/projects";
+import { errorText } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -15,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SaveStatus, useAutosave } from "../autosave";
 import { ActionButton, EmptyState, List, ListSkeleton, Page, RelativeTime, Section, StatusBadge } from "../common";
 import { DeleteProjectDialog, RenameProjectDialog, useMoveChat } from "../projects";
+import { NoteRows } from "./notes";
 
 const KINDS = { profile: "Profile", core: "Long-term", daily: "Daily note" } as const;
 
@@ -59,6 +63,9 @@ export function ProjectScreen() {
       <Section title="Instructions" tip="Every chat in the project follows them, from your next message.">
         <Instructions project={project} />
       </Section>
+      <Section title="Notes" tip="Its chats are told each note's title, and Perry reads one when it matters. Chats outside the project can't reach them." actions={<NewNote project={project} />}>
+        <Notes project={project} />
+      </Section>
       <Section title="Chats" tip="They know of each other and can read each other. Chats outside the project can't.">
         <Chats project={project} />
       </Section>
@@ -86,6 +93,25 @@ function Instructions({ project }: { project: ProjectView }) {
       <SaveStatus state={instructions.state} idle="Saves as you type." onRetry={() => void instructions.flush()} />
     </Field>
   );
+}
+
+function NewNote({ project }: { project: ProjectView }) {
+  const { dashboardKey } = useSession();
+  const router = useRouter();
+  const create = useMutation(api.notes.create);
+  return (
+    <Button variant="outline" size="sm" onClick={() => void create({ key: dashboardKey, projectId: project.id }).then((id) => router.push(noteHref(id)), (cause) => toast.error(`Couldn't make it: ${errorText(cause)}`))}>
+      <PlusIcon />New note
+    </Button>
+  );
+}
+
+function Notes({ project }: { project: ProjectView }) {
+  const { dashboardKey } = useSession();
+  const notes = useQuery(api.notes.list, { key: dashboardKey, projectId: project.id });
+  if (notes === undefined) return <ListSkeleton rows={2} />;
+  if (!notes.length) return <EmptyState title="No notes yet">A plan or a list every chat here should be able to read.</EmptyState>;
+  return <NoteRows notes={notes} hideProject />;
 }
 
 function Chats({ project }: { project: ProjectView }) {

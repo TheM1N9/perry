@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowUpIcon, ChevronDownIcon, ExternalLinkIcon, PlusIcon, ScanEyeIcon, SquareIcon, XIcon } from "lucide-react";
+import { ArrowUpIcon, ChevronDownIcon, ExternalLinkIcon, FilePlusIcon, PlusIcon, ScanEyeIcon, SquareIcon, XIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { noteHref } from "@/convex/lib/notes";
 import { errorText } from "@/lib/format";
 import { useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -83,7 +84,11 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   const stopChat = useMutation(api.dashboard.stopChat);
   const markSeen = useMutation(api.dashboard.markChatSeen);
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
+  const jot = useMutation(api.notes.jot);
+  const fromChat = useMutation(api.notes.fromChat);
   const [error, setError] = useState("");
+  /** What a note just saved says: where it went, with a way to open it. */
+  const [noted, setNoted] = useState<{ text: string; id: Id<"notes"> } | null>(null);
   const [sending, setSending] = useState(false);
   /** What scrolls: the ScrollArea's viewport, kept at the newest message. */
   const scroller = useRef<HTMLDivElement>(null);
@@ -107,7 +112,22 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   const send = async () => {
     const text = draft.trim();
     if ((!text && !picture) || sending) return;
+    // "/note <words>": into the Inbox note at once, with no reply to wait for.
+    if (!picture && /^\/note(\s|$)/i.test(text)) {
+      const words = text.slice(5).trim();
+      setError("");
+      if (!words) { setError("Say what to note: /note <words>."); return; }
+      try {
+        const made = await jot({ key, text: words });
+        onDraft("");
+        setNoted({ text: `Added to your ${made.title} note.`, id: made.id });
+      } catch (cause) {
+        setError(errorText(cause));
+      }
+      return;
+    }
     setSending(true);
+    setNoted(null);
     setError("");
     try {
       const id = chatId ?? await createChat({ key });
@@ -211,7 +231,17 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
             )}
           </div>
         ) : (
-          <div key={message.id}><Markdown text={message.text} /></div>
+          <div key={message.id} className="group/reply">
+            <Markdown text={message.text} openNote={open} />
+            {!message.pending && chatId && (
+              <PetTip label="Save as note">
+                <Button variant="ghost" size="icon-xs" aria-label="Save as note" className="-ml-1 text-muted-foreground opacity-0 group-hover/reply:opacity-100 focus-visible:opacity-100"
+                  onClick={() => void fromChat({ key, conversationId: chatId, messageId: message.id }).then((made) => setNoted({ text: `Saved as the note “${made.title}”.`, id: made.id }), (cause) => setError(errorText(cause)))}>
+                  <FilePlusIcon />
+                </Button>
+              </PetTip>
+            )}
+          </div>
         ))}
         {running && (chat?.streaming
           ? <div className="opacity-90"><Markdown text={chat.streaming} /></div>
@@ -288,6 +318,12 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
           </p>
         )}
         {(error || voice?.error) && <p className="mt-1 px-1 text-xs text-destructive">{error || voice?.error}</p>}
+        {noted && !error && (
+          <p className="mt-1 px-1 text-xs text-muted-foreground" role="status" data-noted>
+            {noted.text}{" "}
+            <button type="button" className="font-medium underline underline-offset-2 hover:text-foreground" onClick={() => open(noteHref(noted.id))}>Open</button>
+          </p>
+        )}
       </form>
     </div>
   );

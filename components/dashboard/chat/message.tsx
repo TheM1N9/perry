@@ -1,6 +1,6 @@
 "use client";
 
-import { BrainIcon, CheckIcon, CopyIcon, GitBranchIcon, PencilIcon, PuzzleIcon, RefreshCwIcon } from "lucide-react";
+import { BrainIcon, CheckIcon, CopyIcon, FilePlusIcon, GitBranchIcon, PencilIcon, PuzzleIcon, RefreshCwIcon } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useState, type ReactNode } from "react";
 import type { Work } from "@/convex/dashboard";
@@ -65,7 +65,7 @@ function CopyAction({ text }: { text: string }) {
  * width of the column, unboxed, since that is what you read. The actions show
  * on hover and focus, and always on the newest reply.
  */
-export function MessageRow({ message, work, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch }: {
+export function MessageRow({ message, work, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch, onSaveNote }: {
   message: ChatMessage;
   /** The run that wrote this reply, when it took steps: "Worked for 46s" above it. */
   work?: Work;
@@ -81,6 +81,8 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
   onEdit: (text: string) => void;
   onRegenerate: () => void;
   onBranch: () => void;
+  /** Keep this reply as a note of its own. */
+  onSaveNote?: () => void;
 }) {
   const mine = message.role === "user";
   // Not in the history until its reply saves it, so there is nothing yet to edit or branch from.
@@ -135,6 +137,7 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
         {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={() => setEditing(message.text)}><PencilIcon /></Action>}
         {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={onRegenerate}><RefreshCwIcon /></Action>}
         {saved && canBranch && <Action label="Branch into a new chat" disabled={busy} onClick={onBranch}><GitBranchIcon /></Action>}
+        {!mine && saved && onSaveNote && <Action label="Save as note" onClick={onSaveNote}><FilePlusIcon /></Action>}
         {!mine && (
           <time className="nums ml-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
             {timeOf(message.createdAt)}
