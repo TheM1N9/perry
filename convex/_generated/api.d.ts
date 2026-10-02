@@ -26,6 +26,7 @@ import type * as lib_activity from "../lib/activity.js";
 import type * as lib_agent from "../lib/agent.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_browser from "../lib/browser.js";
+import type * as lib_budget from "../lib/budget.js";
 import type * as lib_checkout from "../lib/checkout.js";
 import type * as lib_commands from "../lib/commands.js";
 import type * as lib_devices from "../lib/devices.js";
@@ -102,6 +103,7 @@ declare const fullApi: ApiFromModules<{
   "lib/agent": typeof lib_agent;
   "lib/auth": typeof lib_auth;
   "lib/browser": typeof lib_browser;
+  "lib/budget": typeof lib_budget;
   "lib/checkout": typeof lib_checkout;
   "lib/commands": typeof lib_commands;
   "lib/devices": typeof lib_devices;

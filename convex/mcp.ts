@@ -24,7 +24,7 @@ import { ALL_TOOLS, type ToolName } from "./tools";
  */
 
 export const CODEX_TOOLS: readonly ToolName[] = [
-  "brain_search", "brain_read", "brain_write", "brain_append", "brain_pin", "brain_list", "recall", "remember", "forget",
+  "brain_search", "brain_read", "brain_write", "brain_append", "brain_pin", "brain_list", "brain_summarize", "brain_lately", "recall", "remember", "forget",
   "save_secret", "list_secrets", "use_secret", "update_identity", "review_skill", "install_skill", "search_chats", "read_chat", "read_page", "browser",
   "list_connectors", "find_action", "run_action",
   "status_report", "start_task", "queue_task", "resume_task", "set_plan", "finish_task", "set_goal", "update_goal",

@@ -739,6 +739,14 @@ export default defineSchema({
     pinned: v.optional(v.boolean()),
     /** Sections (headings) of an unpinned page that are pinned on their own. */
     pinnedSections: v.optional(v.array(v.string())),
+    /**
+     * Short summaries of its big sections (none: the part above any heading), written by the nightly consolidation
+     * (brain_summarize): what a pinned page's section is sent as when it is too big to send whole (pages.standing).
+     * How many lines the section had then, and when.
+     */
+    summaries: v.optional(v.array(v.object({ section: v.optional(v.string()), text: v.string(), lines: v.number(), at: v.number() }))),
+    /** The Lately page: the last two weeks in short, kept by the nightly consolidation and sent after About me. */
+    lately: v.optional(v.boolean()),
     /** When it, or a section of it, was pinned: what is pinned later loads after. */
     pinnedAt: v.optional(v.number()),
     /** Made by moving memories from before pages into pages (pages.migrate); moving them back deletes it if nothing else is in it. */
@@ -750,6 +758,7 @@ export default defineSchema({
     .index("by_project", ["projectId", "updatedAt"])
     .index("by_title", ["title"])
     .index("by_kind", ["kind", "day"])
+    .index("by_pinned", ["pinnedAt"])
     .searchIndex("search_text", { searchField: "search" }),
 
   conversations: defineTable({
@@ -809,6 +818,8 @@ export default defineSchema({
     seenAt: v.optional(v.number()),
     /** How full its Codex thread's context was after its last turn, 0 to 1, as the runner reported. */
     contextFill: v.optional(v.number()),
+    /** The context window, in tokens, the chat's engine reported with its last turn: what is pinned gets a share of it (lib/budget.ts). */
+    contextWindow: v.optional(v.number()),
     /** When memory was last checkpointed because the context filled up; cleared when Codex compacts it. */
     checkpointedAt: v.optional(v.number()),
     /**
