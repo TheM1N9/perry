@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { parseTarget } from "./lib/price";
+import { pausedAt } from "./pause";
 
 /**
  * Tasks, goals and monitors: the things that outlive a single message.
@@ -309,6 +310,8 @@ export const listMonitors = internalQuery({
 export const dueMonitors = internalQuery({
   args: {},
   handler: async (ctx): Promise<Doc<"monitors">[]> => {
+    // Paused, no watch is checked; they carry on from their next check once resumed (pause.ts).
+    if (await pausedAt(ctx)) return [];
     const now = Date.now();
     const due = await ctx.db
       .query("monitors")

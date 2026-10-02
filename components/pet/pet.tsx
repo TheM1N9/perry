@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlatypusArt } from "@/components/dashboard/platypus";
 import { updateReady, useUpdates } from "@/components/dashboard/updates";
+import { usePause } from "@/components/dashboard/pause";
 import { QuickAdd, StreakBadge, TodoRows } from "@/components/todos/todos";
 import { PetChat, keepPicture, type PetChatId, type Shot, type TakenShot } from "./chat";
 import { Empty } from "./empty";
@@ -214,6 +215,10 @@ function Pet() {
   const decide = useMutation(api.approvals.decide);
   const setTimezone = useMutation(api.jobs.setTimezone);
   const { view: updates, update } = useUpdates();
+  // Perry paused (convex/pause.ts): he naps, says so once until the next pause, and resumes with a click.
+  const { view: pauseView, setPaused } = usePause("pet");
+  const pausedAt = pauseView?.paused?.at;
+  const [pauseHidden, setPauseHidden] = useState<number | null>(null);
   const now = useNow(1000);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("chat");
@@ -330,6 +335,9 @@ function Pet() {
     window.localStorage.setItem(LIMIT_STORAGE, JSON.stringify([...seen, limit.mark].slice(-20)));
     setLimitNews({ mark: limit.mark, until: Date.now() + LIMIT_SHOWS_MS });
   }, [limit?.mark]);
+  const resume = useCallback(() => {
+    void setPaused(false).then(() => say("I'm back on", undefined, 2500), (cause) => say("I couldn't resume", errorText(cause), 6000));
+  }, [setPaused, say]);
   const updateNow = useCallback(() => {
     setUpdateNews(null);
     void update().then((text) => say("See you in a few minutes", text, 6000), (cause) => say("I couldn't update", errorText(cause), 6000));
@@ -571,6 +579,12 @@ function Pet() {
   if (said && said.until > now) {
     const onOpen = said.onOpen;
     bubble = <Bubble title={said.title} detail={said.detail} onClose={() => setSaid(null)} onOpen={onOpen && (() => { setSaid(null); onOpen(); })} />;
+  } else if (pausedAt && pauseHidden !== pausedAt) {
+    bubble = (
+      <Bubble id="paused" title="I'm paused" detail="Nothing runs until you resume." onClose={() => setPauseHidden(pausedAt)}>
+        <BubbleButton primary onClick={resume}>Resume</BubbleButton>
+      </Bubble>
+    );
   } else if (asking.length) {
     const ask = asking[asking.length - 1];
     urgent = true;
@@ -657,9 +671,14 @@ function Pet() {
     lastBusy.current = now;
     cheerSeen.current = cheer;
   }
-  const asleep = !onDuty && now - lastBusy.current >= NAP_AFTER_MS;
+  // Paused, he is off duty whatever else goes on, unless something needs the owner now.
+  const asleep = pausedAt ? !urgent && !open : !onDuty && now - lastBusy.current >= NAP_AFTER_MS;
   // Under his name: what he is doing, what waits on you, or a new version of him, a click away.
-  const status: ReactNode = petChat?.isRunning ? `${step?.label ?? "Working on it"}…`
+  const status: ReactNode = pausedAt ? (
+    <>Paused ·{" "}
+      <Button variant="link" className="h-auto p-0 text-xs" onClick={resume}>Resume</Button>
+    </>
+  ) : petChat?.isRunning ? `${step?.label ?? "Working on it"}…`
     : needs ? `${plural(needs, "thing")} waiting on you`
       : limit ? (
         <Button variant="link" className={cn("h-auto p-0 text-xs font-normal", limit.level === "out" ? "text-destructive" : "text-warning")} onClick={() => openPath("/settings/usage")}>

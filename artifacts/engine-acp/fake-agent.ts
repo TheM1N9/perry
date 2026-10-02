@@ -24,6 +24,8 @@
  *   QUIET <seconds>  say nothing for that many seconds, then reply
  *   RUN <command>    an execute tool call, which asks permission unless always-approve
  *   SLOW             a long reply, 30 chunks 400 ms apart, that stops on session/cancel
+ *   LINGER <seconds> anywhere in the message (a job's or task's prompt, after Perry's own words): a
+ *                    chunk a second for that long, that stops on session/cancel
  *   HANG             one chunk, then nothing, and session/cancel is ignored
  *   EARLY            an empty end_turn at once, then the reply as updates after it
  *   RECALL           the messages this session has had before, to show it was resumed
@@ -261,6 +263,12 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
       log({ lateReplySent: reply.trim() });
     });
     return done("end_turn");
+  }
+  const linger = /\bLINGER (\d+)\b/.exec(text);
+  if (linger) {
+    log({ lingering: Number(linger[1]), prompt: text.slice(0, 80) });
+    const finished = await stream(Array.from({ length: Number(linger[1]) }, (_, index) => `second ${index + 1}. `), 1000);
+    return done(finished ? "end_turn" : "cancelled");
   }
   if (text.startsWith("SLOW")) {
     const finished = await stream(Array.from({ length: 30 }, (_, index) => `step ${index + 1}. `), 400);

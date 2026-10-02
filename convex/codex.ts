@@ -7,6 +7,7 @@ import { CAPTION_LIMIT, UPLOAD_LIMIT, deleteMessage, editDraft, finishDraft, sen
 import { COMPACTED, runLabel, type Access } from "./lib/commands";
 import { ENGINE_LABELS, NO_ENGINE, refusal, type EngineKind } from "./lib/engines";
 import { engineFor } from "./installation";
+import { assertRunning, pausedAt } from "./pause";
 import { authenticate } from "./runner";
 import { ABSOLUTE_PATH } from "./media";
 import { QUIET } from "./jobs";
@@ -159,6 +160,8 @@ export const enqueueTurn = internalMutation({
   },
   returns: v.union(v.id("codexTurns"), v.id("codexSteers")),
   handler: async (ctx, args) => {
+    // Paused, nothing new is queued or joins a reply: it would only run later, by surprise (pause.ts).
+    await assertRunning(ctx);
     const conversation = await ctx.db.get(args.conversationId);
     if (!conversation) throw new Error("This chat was deleted.");
     const running = await ctx.db.query("codexTurns")
@@ -234,7 +237,9 @@ export async function noRunner(ctx: MutationCtx, conversation: Doc<"conversation
  * A steer that could not join its turn becomes an ordinary turn of its own,
  * queued behind it; one the owner stopped along with its turn ends at once.
  */
-export async function queueSteer(ctx: MutationCtx, steer: Doc<"codexSteers">, outcome: { error?: string; stopped?: boolean } = {}) {
+export async function queueSteer(ctx: MutationCtx, steer: Doc<"codexSteers">, given: { error?: string; stopped?: boolean } = {}) {
+  // Paused, it would run on resume: it ends with its turn instead, as when the owner stops it.
+  const outcome = !given.stopped && await pausedAt(ctx) ? { ...given, stopped: true } : given;
   const queuedTurnId = await ctx.db.insert("codexTurns", {
     engine: steer.engine,
     runnerId: steer.runnerId,
@@ -263,6 +268,8 @@ export const queuedTurns = query({
   args: { token: v.string() },
   handler: async (ctx, args) => {
     const runner = await authenticate(ctx, args.token);
+    // Paused, the runner is given nothing to start.
+    if (await pausedAt(ctx)) return [];
     return await ctx.db.query("codexTurns")
       .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "queued"))
       .order("asc").take(20);
@@ -360,29 +367,32 @@ export const ackSteer = mutation({
 export const requestStop = internalMutation({
   args: { conversationId: v.id("conversations") },
   returns: v.number(),
-  handler: async (ctx, args) => {
-    let stopped = 0;
-    for (const status of ["running", "queued"] as const) {
-      const turns = await ctx.db.query("codexTurns")
-        .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.conversationId).eq("status", status))
-        .collect();
-      for (const job of turns) {
-        // A /compact is not a reply, and Codex finishes it quickly on its own.
-        if (job.kind === "compact") continue;
-        if (status === "running") {
-          await ctx.db.patch(job._id, { stopRequested: true });
-          // A message sent into the reply stops with it, but stays in the chat.
-          for (const steer of await pendingSteersOf(ctx, job._id)) await queueSteer(ctx, steer, { stopped: true });
-        } else {
-          await ctx.db.patch(job._id, { status: "done", stopped: true, finishedAt: Date.now() });
-          await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: job._id });
-        }
-        stopped += 1;
-      }
-    }
-    return stopped;
-  },
+  handler: async (ctx, args) => await stopTurns(ctx, args.conversationId),
 });
+
+/** /stop for one chat, and Pause Perry for every chat (pause.ts). How many turns it stopped. */
+export async function stopTurns(ctx: MutationCtx, conversationId: Id<"conversations">): Promise<number> {
+  let stopped = 0;
+  for (const status of ["running", "queued"] as const) {
+    const turns = await ctx.db.query("codexTurns")
+      .withIndex("by_conversation_status", (q) => q.eq("conversationId", conversationId).eq("status", status))
+      .collect();
+    for (const job of turns) {
+      // A /compact is not a reply, and Codex finishes it quickly on its own.
+      if (job.kind === "compact") continue;
+      if (status === "running") {
+        await ctx.db.patch(job._id, { stopRequested: true });
+        // A message sent into the reply stops with it, but stays in the chat.
+        for (const steer of await pendingSteersOf(ctx, job._id)) await queueSteer(ctx, steer, { stopped: true });
+      } else {
+        await ctx.db.patch(job._id, { status: "done", stopped: true, finishedAt: Date.now() });
+        await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: job._id });
+      }
+      stopped += 1;
+    }
+  }
+  return stopped;
+}
 
 /**
  * /compact: ask the chat's engine to summarise its session so it carries less
@@ -393,6 +403,7 @@ export const requestCompact = internalMutation({
   args: { conversationId: v.id("conversations") },
   returns: v.union(v.null(), v.id("codexTurns")),
   handler: async (ctx, args) => {
+    await assertRunning(ctx);
     const conversation = await ctx.db.get(args.conversationId);
     if (!conversation) throw new Error("This chat was deleted.");
     const engine = await engineFor(ctx, conversation);
@@ -435,6 +446,8 @@ export const claimTurn = mutation({
     const job = await ctx.db.get(args.id);
     const engine = job?.engine;
     if (!job || !engine || job.runnerId !== runner._id || job.status !== "queued" || !engineReady(runner, engine)) return null;
+    // Paused: nothing starts. A turn claimed just before the pause is running, and the pause stops it.
+    if (await pausedAt(ctx)) return null;
     const conversation = await ctx.db.get(job.conversationId);
     if (!conversation) return null;
     const running = await ctx.db.query("codexTurns")
@@ -820,6 +833,8 @@ export const retryOn = internalMutation({
     const turn = await ctx.db.get(args.id);
     const conversation = turn ? await ctx.db.get(turn.conversationId) : null;
     if (!turn || !conversation || !turn.retrying || turn.finalizedAt) return false;
+    // Paused, it is not tried again: the refusal stands.
+    if (await pausedAt(ctx)) return false;
     const engine = args.route.engine;
     await moveChat(ctx, conversation, { engine, ...(args.route.model ? { model: args.route.model } : {}) }, args.route.movedFrom ? { from: args.route.movedFrom.engine, why: args.route.movedFrom.why } : undefined);
     const moved = (await ctx.db.get(conversation._id))!;
@@ -1102,7 +1117,10 @@ export const finalizeTurn = internalAction({
     }
     if (conversation.jobId) {
       if (!job.reportedAt) {
-        await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, result: job.response, error: job.error });
+        // A run stopped part-way (/stop, Pause Perry) has no result to send; what it wrote stays in its chat.
+        await ctx.runMutation(internal.jobs.finished, job.stopped && !job.error
+          ? { id: conversation.jobId, error: "Stopped before it finished." }
+          : { id: conversation.jobId, result: job.response, error: job.error });
         await done("reportedAt");
       }
       // A job with nothing to say leaves no trace in its chat.
@@ -1244,7 +1262,7 @@ export const outwardAllowed = internalQuery({
  */
 export const mcpAccess = internalQuery({
   args: { token: v.string(), threads: v.optional(v.array(v.string())), chat: v.optional(v.string()) },
-  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean; conversationId: Id<"conversations">; guest: boolean; unknown?: true } | null> => {
+  handler: async (ctx, args): Promise<{ turnId: Id<"codexTurns">; userId: string; threadId: string; fromJob: boolean; conversationId: Id<"conversations">; guest: boolean; unknown?: true; paused?: true } | null> => {
     const runner = await authenticate(ctx, args.token).catch(() => null);
     if (!runner) return null;
     const running = await ctx.db.query("codexTurns")
@@ -1260,6 +1278,8 @@ export const mcpAccess = internalQuery({
     const { job, conversation } = turn;
     return {
       ...(named || only ? {} : { unknown: true as const }),
+      // Paused, a turn still winding down acts on nothing more (mcp.ts).
+      ...(await pausedAt(ctx) ? { paused: true as const } : {}),
       turnId: job._id,
       userId: conversation.channel === "web" ? "web:dashboard" : `${conversation.channel}:${conversation.externalId}`,
       threadId: conversation.threadId,

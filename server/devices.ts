@@ -27,6 +27,7 @@ const PET_CALLS: Record<string, "which pet" | true> = {
   "dashboard:createChat": true, "dashboard:sendChat": true, "dashboard:stopChat": true, "dashboard:registerAttachment": true,
   "screen:asked": "which pet", "screen:fulfil": "which pet",
   "updates:status": true, "updates:update": true,
+  "pause:status": true, "pause:set": true,
   // How much of each engine's plan is used, so he warns before a reply fails for it.
   "usage:limits": true,
   // His pictures of the screen, sent into a chat and shown in it (app/api/media).

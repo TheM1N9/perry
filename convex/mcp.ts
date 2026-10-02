@@ -3,6 +3,7 @@ import { z } from "zod";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { describeError, errorText } from "./lib/errors";
+import { PAUSED_ERROR } from "./lib/commands";
 import { GUEST_TOOLS as GUEST_TOOL_NAMES } from "./lib/engines";
 import { LOOK_WAIT_MS } from "./screen";
 import { TAKE_LONGER_MAX_MIN, TURN_IDLE_MIN, TURN_MAX_MIN } from "./lib/turnLimits";
@@ -167,6 +168,9 @@ export const handle = httpAction(async (ctx, request) => {
   if (access.unknown && message.method === "tools/call") {
     return fail(message.id, -32603, "Perry is running several chats at once and cannot tell which one this call is from. Try again.");
   }
+
+  // Paused, a turn still winding down does nothing more: the owner's pause holds mid-turn too (pause.ts).
+  if (access.paused && message.method === "tools/call") return toolError(message.id, new Error(PAUSED_ERROR));
 
   const tools = access.guest ? GUEST_TOOLS : CODEX_TOOLS;
   switch (message.method) {
