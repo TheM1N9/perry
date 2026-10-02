@@ -27,6 +27,7 @@ const PET_CALLS: Record<string, "which pet" | true> = {
   "dashboard:createChat": true, "dashboard:sendChat": true, "dashboard:stopChat": true, "dashboard:registerAttachment": true,
   "screen:asked": "which pet", "screen:fulfil": "which pet",
   "updates:status": true, "updates:update": true,
+  "pause:status": true, "pause:set": true,
   // Noting something down from him: "/note <words>" to the Inbox note, and a reply kept as a note. Nothing reads notes back.
   "notes:jot": true, "notes:fromChat": true,
   // How much of each engine's plan is used, so he warns before a reply fails for it.

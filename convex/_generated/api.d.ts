@@ -50,6 +50,7 @@ import type * as memories from "../memories.js";
 import type * as models from "../models.js";
 import type * as notes from "../notes.js";
 import type * as notify from "../notify.js";
+import type * as pause from "../pause.js";
 import type * as persona from "../persona.js";
 import type * as pet from "../pet.js";
 import type * as projects from "../projects.js";
@@ -122,6 +123,7 @@ declare const fullApi: ApiFromModules<{
   models: typeof models;
   notes: typeof notes;
   notify: typeof notify;
+  pause: typeof pause;
   persona: typeof persona;
   pet: typeof pet;
   projects: typeof projects;

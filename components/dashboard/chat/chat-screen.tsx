@@ -34,6 +34,7 @@ import { APPS, ChannelIcon, EmptyState, PerryMark, TopBar } from "../common";
 import { MoveToProject, NewProjectDialog } from "../projects";
 import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
+import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
 import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { MessageRow, PendingRow, ReplyInProgress } from "./message";
@@ -58,6 +59,8 @@ const COMMANDS = [
   { command: "/think", hint: "List the thinking levels, or /think <level>" },
   { command: "/access", hint: "Ask, Auto or Full access: whether it asks before acting" },
   { command: "/stop", hint: "Stop the reply being written" },
+  { command: "/pause", hint: "Pause Perry: stop everything, start nothing new" },
+  { command: "/resume", hint: "Start Perry again" },
   { command: "/compact", hint: "Shrink what Perry carries of this chat; the messages stay" },
   { command: "/reset", hint: "Save this chat to memory, then start it afresh" },
   { command: "/note", hint: "/note <words> adds them to your Inbox note; alone, saves the last reply as a note" },
@@ -104,6 +107,7 @@ export function ChatScreen() {
 
   const createChat = useMutation(api.dashboard.createChat);
   const sendChat = useMutation(api.dashboard.sendChat);
+  const { setPaused } = usePause();
   const stopChat = useMutation(api.dashboard.stopChat);
   const compactChat = useAction(api.dashboard.compactChat);
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
@@ -407,7 +411,7 @@ export function ChatScreen() {
           ? choices(ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
           : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
               key: item.command, label: item.command, hint: item.hint,
-              apply: () => { setDraft(["/stop", "/compact", "/reset"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },
+              apply: () => { setDraft(["/stop", "/compact", "/reset", "/pause", "/resume"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },
             }));
   const completing = skillSuggestions.length
     ? "skill" as const
@@ -450,6 +454,14 @@ export function ChatScreen() {
       setDraft("");
       if (selectedId && waiting) await stopChat({ key: dashboardKey, id: selectedId });
       setNotice(selectedId && waiting ? "Stopping." : "Nothing is running.");
+      return true;
+    }
+    if (command === "/pause" || command === "/resume") {
+      setDraft("");
+      try {
+        await setPaused(command === "/pause");
+        setNotice(command === "/pause" ? PAUSED_TOAST : "Perry is back on.");
+      } catch (cause) { fail(cause); }
       return true;
     }
     if (command === "/reset") {

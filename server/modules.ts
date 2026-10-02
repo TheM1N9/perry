@@ -49,6 +49,7 @@ import * as memories from "../convex/memories";
 import * as models from "../convex/models";
 import * as notes from "../convex/notes";
 import * as notify from "../convex/notify";
+import * as pause from "../convex/pause";
 import * as persona from "../convex/persona";
 import * as pet from "../convex/pet";
 import * as projects from "../convex/projects";
@@ -119,6 +120,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "models": models,
   "notes": notes,
   "notify": notify,
+  "pause": pause,
   "persona": persona,
   "pet": pet,
   "projects": projects,

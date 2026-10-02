@@ -251,3 +251,34 @@ export function typingSkill(before: string): { start: number; typed: string } | 
   const match = before.match(/(?:^|[^\w$])\$([a-z0-9-]*)$/);
   return match ? { start: before.length - match[1].length - 1, typed: match[1] } : null;
 }
+
+// --- Pause (/pause, /resume) ------------------------------------------------
+
+/** Why something was not started: Perry is paused (convex/pause.ts). */
+export const PAUSED_ERROR = "Perry is paused. Resume him to start this.";
+/** What anyone else hears from Perry while he is paused. */
+export const PAUSED_REPLY = "Perry is paused.";
+/** What the owner hears on the phone while he is paused: the same, and how to resume. */
+export const PAUSED_OWNER = "Perry is paused, so nothing runs. Send /resume to start again.";
+
+/** A schedule that missed runs while Perry was paused; `when` is its first missed time on the owner's clock. */
+export type MissedRun<Id extends string = string> = { id: Id; name: string; at: number; when: string; runs: number; stopped?: boolean };
+
+/** The missed schedules, numbered for /run, with how to run them or let them go. */
+export function describeMissed(missed: MissedRun[]): string {
+  if (!missed.length) return "Nothing was missed.";
+  return [
+    `While paused, ${missed.length === 1 ? "1 schedule" : `${missed.length} schedules`} didn't run:`,
+    ...missed.map((item, index) => `${index + 1}. ${item.name}, ${item.stopped ? `stopped ${item.when}` : `due ${item.when}`}${item.runs > 1 ? ` (${item.runs} times)` : ""}`),
+    "",
+    "None will run unless you say so. Send /run 1 to run one, /run all for all, or /skip to let them go.",
+  ].join("\n");
+}
+
+/** "/run <n>", "/run all"; "/skip", "/skip <n>" (and "/run@botname" on Telegram). Numbers are those describeMissed gave. */
+export function parseMissedCommand(text: string): { action: "run" | "skip"; which?: "all" | number } | null {
+  const match = text.trim().match(/^\/(run|skip)(?:@\S+)?(?:\s+(all|\d+))?\s*$/i);
+  if (!match) return null;
+  const which = match[2]?.toLowerCase();
+  return { action: match[1].toLowerCase() as "run" | "skip", ...(which ? { which: which === "all" ? "all" as const : Number(which) } : {}) };
+}

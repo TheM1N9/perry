@@ -6,8 +6,9 @@ import { internalAction, type ActionCtx } from "./_generated/server";
 import { INSTRUCTIONS } from "./assistant";
 import { ownerClock, ownerNow, QUIET } from "./jobs";
 import {
-  ACCESS_LABELS, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, parseAccessCommand, parseModelCommand,
-  parseThinkCommand, pickAccess, pickEffort, pickModel, runLabel, turnEffort, type ModelOption,
+  ACCESS_LABELS, chatModel, currentModel, describeAccess, describeEfforts, describeMissed, describeModels, effortUnused, parseAccessCommand,
+  parseMissedCommand, parseModelCommand, parseThinkCommand, PAUSED_ERROR, PAUSED_OWNER, PAUSED_REPLY, pickAccess, pickEffort, pickModel, runLabel,
+  turnEffort, type MissedRun, type ModelOption,
 } from "./lib/commands";
 import { ENGINE_LABELS, type EngineKind } from "./lib/engines";
 import type { Choice } from "./lib/routing";
@@ -39,6 +40,8 @@ Your private assistant.
   /think    list the thinking levels; /think <level> sets this chat's
   /access   ask, auto or full: whether it asks before acting
   /stop     stop the reply I am writing
+  /pause    stop everything I am doing, and start nothing new
+  /resume   start again; /run and /skip settle what was missed
   /compact  shrink what I carry of this chat, keep the chat
   /note     /note <words> adds them to your Inbox note; /note alone saves my last reply as a note
   /status   plumbing and recent errors
@@ -77,6 +80,9 @@ async function runCommand(
     return picked.reply;
   }
 
+  const missedCommand = parseMissedCommand(text);
+  if (missedCommand) return await settleMissed(ctx, missedCommand);
+
   const accessCommand = parseAccessCommand(text);
   if (accessCommand) {
     if (!accessCommand.mode) return describeAccess(conversation.access ?? "supervised");
@@ -85,10 +91,29 @@ async function runCommand(
     return reply;
   }
 
+  // Paused, nothing that starts a turn goes ahead (pause.ts): /reset would start the chat afresh without saving it.
+  const paused = await ctx.runQuery(internal.pause.state, {});
+  if (paused && (command === "/compact" || command === "/reset")) return PAUSED_OWNER;
+
   switch (command) {
     case "/start":
     case "/help":
       return HELP;
+
+    case "/pause": {
+      const done: { changed: boolean; stopped: number } = await ctx.runMutation(internal.pause.pauseFrom, { by: conversation.channel === "whatsapp" ? "whatsapp" : "telegram" });
+      if (!done.changed) return PAUSED_OWNER;
+      return `Paused. ${done.stopped ? "I stopped what I was doing, and nothing" : "Nothing"} runs until you send /resume. Approvals waiting on you stay.`;
+    }
+
+    case "/resume": {
+      const done: { changed: boolean; missed: MissedRun[] } = await ctx.runMutation(internal.pause.resumeFrom, {});
+      const head = done.changed ? "Back on." : "I'm not paused.";
+      return done.missed.length ? `${head}\n\n${describeMissed(done.missed)}` : head;
+    }
+
+    case "/missed":
+      return describeMissed(await ctx.runQuery(internal.pause.missed, {}));
 
     case "/status": {
       const stats = await ctx.runQuery(internal.conversations.stats, {
@@ -100,6 +125,7 @@ async function runCommand(
       const effort = turnEffort(models, conversation.model, conversation.effort, engine);
       const unused = model && effortUnused(model, conversation.effort) ? ` (${conversation.effort} is not one ${model.name} takes)` : "";
       const lines = [
+        ...(paused ? ["paused    yes: /resume starts me again"] : []),
         `model     ${!engine ? "none: Perry has no default engine yet" : conversation.model && model?.id === conversation.model ? `${engine}/${conversation.model}` : `${engine} default${model ? ` (${model.id})` : ""}`}`,
         `thinking  ${conversation.effort && !unused ? conversation.effort : `default${effort ? ` (${effort})` : ""}${unused}`}`,
         `access    ${ACCESS_LABELS[conversation.access ?? "supervised"]}`,
@@ -144,6 +170,25 @@ async function runCommand(
     default:
       return `Don't know ${command}. /help lists what I do know.`;
   }
+}
+
+/** /run <n>, /run all, /skip, /skip <n>: the schedules missed while paused, numbered as describeMissed lists them. */
+async function settleMissed(ctx: ActionCtx, command: { action: "run" | "skip"; which?: "all" | number }): Promise<string> {
+  const missed: MissedRun<Id<"jobs">>[] = await ctx.runQuery(internal.pause.missed, {});
+  if (!missed.length) return "Nothing was missed.";
+  const which = command.which ?? (command.action === "skip" ? "all" : undefined);
+  if (which === undefined) return describeMissed(missed);
+  const picked = which === "all" ? missed : missed[which - 1] ? [missed[which - 1]] : [];
+  if (!picked.length) return `There is no ${which} on the list.\n\n${describeMissed(missed)}`;
+  if (command.action === "skip") {
+    const skipped: number = which === "all"
+      ? await ctx.runMutation(internal.pause.skipMissedFrom, {})
+      : await ctx.runMutation(internal.pause.skipMissedFrom, { id: picked[0].id });
+    return skipped === 1 ? `Let ${picked[0].name} go.` : `Let ${skipped} go.`;
+  }
+  if (await ctx.runQuery(internal.pause.state, {})) return PAUSED_OWNER;
+  const ran: number = await ctx.runMutation(internal.pause.runMissedFrom, { ids: picked.map((item) => item.id) });
+  return ran === 1 ? `Running ${picked[0].name} now.` : `Running ${ran} now.`;
 }
 
 /**
@@ -361,6 +406,8 @@ export const checkpointIfFull = internalAction({
     const conversation = await ctx.runQuery(internal.conversations.getById, { id: args.id });
     // A chat with someone else keeps no memory of the owner's kind to write down (contacts.ts).
     if (!conversation || conversation.jobId || conversation.contactId || conversation.checkpointedAt || (conversation.contextFill ?? 0) < CHECKPOINT_AT) return null;
+    // Paused, no turn starts (pause.ts); the chat is checkpointed after the next reply instead.
+    if (await ctx.runQuery(internal.pause.state, {})) return null;
     await ctx.runMutation(internal.conversations.markCheckpointed, { id: conversation._id });
     await checkpoint(ctx, conversation);
     return null;
@@ -499,7 +546,16 @@ export const handleTurn = internalAction({
 
     let delegated = false;
     try {
-      if (!guest && channel !== "web" && !args.fromWeb && args.text.startsWith("/") && !args.telegramMedia?.length && !args.storedMedia?.length) {
+      const command = !guest && channel !== "web" && !args.fromWeb && args.text.startsWith("/") && !args.telegramMedia?.length && !args.storedMedia?.length;
+      // Paused (pause.ts): a schedule's or task's turn on its way is held for the owner; a message from the phone is
+      // answered that Perry is paused, the owner's with how to resume; commands still work, /resume among them.
+      // The web app's own messages go on to be refused where the turn is queued, and the chat shows why.
+      if (!command && (channel !== "web" || conversation.jobId || conversation.taskId) && await ctx.runQuery(internal.pause.state, {})) {
+        if (conversation.jobId || conversation.taskId) await ctx.runMutation(internal.pause.held, { conversationId: conversation._id });
+        else if (!args.fromWeb) await say(guest ? PAUSED_REPLY : PAUSED_OWNER);
+        return null;
+      }
+      if (command) {
         await say(await runCommand(ctx, conversation, args.text));
         return null;
       }
@@ -626,8 +682,11 @@ export const handleTurn = internalAction({
         const message = error instanceof Error ? error.message : String(error);
         console.error(`turn failed: ${message}`);
         await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access, settings.engine), error: message.slice(0, 1000) });
-        if (conversation.jobId) await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, error: message });
-        if (conversation.taskId) await ctx.runMutation(internal.tasks.afterTurn, { id: conversation.taskId, error: message });
+        // Paused while it was on its way: a job has missed a run and a task waits, rather than failing (pause.ts).
+        const paused = message === PAUSED_ERROR;
+        if (paused && (conversation.jobId || conversation.taskId)) await ctx.runMutation(internal.pause.held, { conversationId: conversation._id });
+        else if (conversation.jobId) await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, error: message });
+        else if (conversation.taskId) await ctx.runMutation(internal.tasks.afterTurn, { id: conversation.taskId, error: message });
         // The message stays in the chat with the error under it, as a turn would have saved it: the owner's
         // (in any channel, so the dashboard shows what failed) and a job's prompt alike. It never became a turn.
         if (!args.hidden) {
@@ -636,7 +695,7 @@ export const handleTurn = internalAction({
         }
         // Someone else never hears why: what broke is the owner's business, and the dashboard shows it.
         if (channel !== "web" && !guest) {
-          await say(`That broke: ${message.slice(0, 300)}`)
+          await say(paused ? PAUSED_OWNER : `That broke: ${message.slice(0, 300)}`)
             .catch((sendError) => console.error(`could not report failure: ${String(sendError)}`));
         }
         // No engine could take it: the owner's phone hears why once, not at every message.

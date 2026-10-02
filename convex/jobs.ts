@@ -13,6 +13,7 @@ import { ENGINE_LABELS, isEngine, type EngineKind } from "./lib/engines";
 import { LIMIT_HIT } from "./lib/usage";
 import type { Choice } from "./lib/routing";
 import { choose, jobAsk, routeOf, type Route } from "./routing";
+import { assertRunning, missedPatch, pausedAt } from "./pause";
 
 /**
  * Proactivity: named jobs that run a prompt as a Codex turn, either on a cron
@@ -211,15 +212,22 @@ export const tick = internalMutation({
       }
     }
     const timezone = await timezoneOf(ctx);
+    // Paused, nothing starts: a run that comes due is noted as missed, for the owner to run or let go (pause.ts).
+    const paused = await pausedAt(ctx);
     // A run a plan's limit stopped in the last day, that nothing has picked up yet (one from before Perry
     // recovered them, say): it runs again where there is room, or after the reset.
     for (const job of jobs) {
+      if (paused) break;
       if (job.lastError && LIMIT_HIT.test(job.lastError) && !job.recovery && !job.waiting && (job.lastRunAt ?? 0) > Date.now() - RECOVER_WITHIN_MS) await recoverJob(ctx, job);
     }
     for (const job of jobs) {
       if (!job.enabled || job.trigger || job.nextRunAt > Date.now()) continue;
       // A one-time job runs once and pauses, keeping its time for the record.
       const next = job.runAt ? { enabled: false } : { nextRunAt: nextRun(job.schedule!, timezone) };
+      if (paused) {
+        await ctx.db.patch(job._id, { ...next, ...missedPatch(job) });
+        continue;
+      }
       // A run already waiting for an engine's reset covers this one too.
       if (job.waiting && job.waiting.until > Date.now()) {
         await ctx.db.patch(job._id, next);
@@ -283,6 +291,11 @@ export const run = internalAction({
     const { job, timezone } = found;
     // A run that waited goes ahead only while it is still waited for: pausing the job calls it off.
     if (args.waited && !job.waiting) return null;
+    // Perry paused since it was started: it is missed, not run (pause.ts).
+    if (await ctx.runQuery(internal.pause.state, {})) {
+      await ctx.runMutation(internal.pause.missedJob, { id: job._id, ...(args.event !== undefined ? { event: args.event } : {}) });
+      return null;
+    }
     // Where it runs, on what and why; or, with no engine that has room, when it runs instead. With no engine to
     // route to (no model of its own and no default chosen), it goes on unrouted and is refused there, asking for one.
     const choice: Choice | null = await ctx.runQuery(internal.routing.forJob, { id: job._id, ...(args.avoid?.length ? { avoid: args.avoid } : {}) });
@@ -741,6 +754,7 @@ export const trigger = internalMutation({
   handler: async (ctx, args) => {
     const id = ctx.db.normalizeId("jobs", args.id);
     if (!id || !(await ctx.db.get(id))) return false;
+    await assertRunning(ctx);
     await ctx.db.patch(id, { lastRunAt: Date.now(), lastResult: undefined, lastError: undefined });
     await ctx.scheduler.runAfter(0, internal.jobs.run, { id });
     return true;
@@ -790,11 +804,17 @@ export const onEvent = internalMutation({
   handler: async (ctx, args) => {
     const ids = new Set(args.instanceIds ?? []);
     const now = Date.now();
+    // Paused, an event starts nothing: each job it belongs to has missed a run, with the event kept for it (pause.ts).
+    const paused = await pausedAt(ctx);
     let ran = 0;
     for (const job of await ctx.db.query("jobs").collect()) {
       const trigger = job.trigger;
       if (!job.enabled || !trigger) continue;
       const mine = trigger.kind === "app" ? ids.has(trigger.instanceId) : args.folder !== undefined && samePath(trigger.path, args.folder);
+      if (mine && paused) {
+        await ctx.db.patch(job._id, missedPatch(job, { event: args.event }));
+        continue;
+      }
       if (!mine || (job.lastRunAt ?? 0) > now - EVENT_COOLDOWN_MS) continue;
       await ctx.db.patch(job._id, { lastRunAt: now, lastResult: undefined, lastError: undefined });
       await ctx.scheduler.runAfter(0, internal.jobs.run, { id: job._id, event: args.event });

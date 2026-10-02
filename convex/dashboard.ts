@@ -9,7 +9,8 @@ import { problemWith, resolve as resolveShortcuts, SHORTCUT_IDS, SHORTCUTS, type
 import { ABSOLUTE_PATH, stepsKey } from "./media";
 import { defaultAccess, defaultEngine, engineFor, type Onboarding } from "./installation";
 import { callName, DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./persona";
-import type { Access } from "./lib/commands";
+import { PAUSED_ERROR, type Access } from "./lib/commands";
+import { assertRunning } from "./pause";
 import type { EngineKind } from "./lib/engines";
 import type { CatalogApp, ConnectedAccount } from "./composio";
 import { policyOf, type Policy } from "./runner";
@@ -734,6 +735,8 @@ export const sendChat = mutation({
     const chat = ownerChat(await ctx.db.get(args.id));
     // What is written here would reach them as Perry's; the owner tells Perry what to say in their own chat.
     if (chat.contactId) throw new Error("This is Perry's chat with someone else. To have Perry tell them something, ask in your own chat.");
+    // Paused, the message is not sent; it stays in the box for when he is back (pause.ts).
+    await assertRunning(ctx);
     const messageKey = args.messageKey?.trim() || crypto.randomUUID();
     const attachments = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
     if (attachments.some((attachment) => !attachment || attachment.conversationId !== args.id || attachment.messageKey !== messageKey)) {
@@ -1538,6 +1541,7 @@ export const checkMonitorsNow = action({
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
+    if (await ctx.runQuery(internal.pause.state, {})) throw new Error(PAUSED_ERROR);
     await ctx.runAction(internal.web.checkMonitors, {});
     return null;
   },
