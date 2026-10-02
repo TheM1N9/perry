@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CopyButton, EmptyState, List, ListSkeleton, Page, RelativeTime, StatusBadge, useSearchParam, type Tone } from "../common";
+import { StepDetail } from "../chat/step-card";
 
 /** Runs shown at a time; the rest are a click away. */
 const PAGE = 20;
@@ -229,10 +230,8 @@ function Trace({ run }: { run: RunView }) {
                 </span>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <div className="my-1 grid gap-2 pl-1">
-                  {span.input && <ScrollArea className="rounded-md border bg-background" viewportClassName="max-h-48"><pre className="p-2 font-mono text-2xs whitespace-pre-wrap [overflow-wrap:anywhere]">{span.input}</pre></ScrollArea>}
-                  {span.output && <ScrollArea className="rounded-md border bg-background" viewportClassName="max-h-48"><pre className="p-2 font-mono text-2xs whitespace-pre-wrap [overflow-wrap:anywhere]">{span.output}</pre></ScrollArea>}
-                </div>
+                {/* The same card a step opens to in the chat. */}
+                <div className="my-1 pl-1"><StepDetail id={span.id} /></div>
               </CollapsibleContent>
             </Collapsible>
           </li>

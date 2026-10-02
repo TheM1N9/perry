@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { Work, WorkStep } from "@/convex/dashboard";
 import { plural } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { StepDetail } from "./step-card";
 
 export type { Work };
 
@@ -43,25 +44,35 @@ export function Spinner() {
 /**
  * Each step of a run, in the order it took them: done, failed or declined,
  * and while the run goes, the one still running, with how long it has taken.
+ * A step opens, by a click, to what it did (StepDetail).
  */
 export function WorkSteps({ steps, live = false, now = 0 }: { steps: WorkStep[]; live?: boolean; now?: number }) {
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (id: string) => setOpen((was) => { const next = new Set(was); if (!next.delete(id)) next.add(id); return next; });
   return (
     <ol className="space-y-1" data-work-steps>
-      {steps.map((step, index) => {
+      {steps.map((step) => {
         // A step a stopped run left open is over, not running.
         const running = live && step.status === "running";
         const failed = step.status === "error" || step.status === "declined";
         const time = running ? took(now - step.startedAt) : step.durationMs !== undefined ? took(step.durationMs) : "";
+        const opened = open.has(step.id);
         return (
-          <li key={`${step.startedAt}-${index}`} className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground"
-            data-step={step.label} data-status={running ? "running" : step.status}>
-            {running
-              ? <Spinner />
-              : failed
-                ? <XIcon className="size-3.5 shrink-0 text-destructive" aria-label={step.status === "declined" ? "Declined" : "Failed"} />
-                : <CheckIcon className="size-3.5 shrink-0 text-primary" aria-hidden />}
-            <span className={cn("min-w-0 truncate", running && "shimmer")}>{step.label}</span>
-            {time && <span className="nums shrink-0 text-xs text-muted-foreground/70">{time}</span>}
+          <li key={step.id} className="min-w-0 text-sm text-muted-foreground"
+            data-step={step.label} data-status={running ? "running" : step.status} data-kind={step.kind}>
+            <button type="button" aria-expanded={opened} onClick={() => toggle(step.id)}
+              className="group/step flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
+              {running
+                ? <Spinner />
+                : failed
+                  ? <XIcon className="size-3.5 shrink-0 text-destructive" aria-label={step.status === "declined" ? "Declined" : "Failed"} />
+                  : <CheckIcon className="size-3.5 shrink-0 text-primary" aria-hidden />}
+              <span className={cn("min-w-0 truncate", running && "shimmer")}>{step.label}</span>
+              {time && <span className="nums shrink-0 text-xs text-muted-foreground/70">{time}</span>}
+              <ChevronRightIcon aria-hidden className={cn("size-3.5 shrink-0 opacity-0 transition group-hover/step:opacity-100 group-focus-visible/step:opacity-100 motion-reduce:transition-none",
+                opened && "rotate-90 opacity-100")} />
+            </button>
+            {opened && <div className="mt-1 mb-2 ml-5.5"><StepDetail id={step.id} /></div>}
           </li>
         );
       })}

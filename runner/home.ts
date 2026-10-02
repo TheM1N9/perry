@@ -13,6 +13,7 @@ import { join } from "node:path";
  *   codex-instructions/  what each Codex thread was last told to follow (instructions.ts)
  *   uploads/        files the owner attached in chat
  *   files/          the agent's own folder for what it makes, organised as it sees fit
+ *   steps/          small pictures of Perry's browser for the chat's steps; the newest are kept
  *   skills/         the agent's skills, one folder each with a SKILL.md, found by Codex
  *   logs/           the runner's output when it runs as a background service
  *   claude-models.json  the models Claude Code last said this account has
@@ -31,6 +32,7 @@ export const PATHS = {
   codexInstructions: join(HOME, "codex-instructions"),
   uploads: join(HOME, "uploads"),
   files: join(HOME, "files"),
+  steps: join(HOME, "steps"),
   /** An empty folder a chat with someone else runs in: nothing of the owner's is in it. */
   guest: join(HOME, "guest"),
   skills: join(HOME, "skills"),

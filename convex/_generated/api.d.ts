@@ -37,6 +37,7 @@ import type * as lib_price from "../lib/price.js";
 import type * as lib_routing from "../lib/routing.js";
 import type * as lib_shortcuts from "../lib/shortcuts.js";
 import type * as lib_skills from "../lib/skills.js";
+import type * as lib_steps from "../lib/steps.js";
 import type * as lib_telegram from "../lib/telegram.js";
 import type * as lib_telegramFormat from "../lib/telegramFormat.js";
 import type * as lib_truncate from "../lib/truncate.js";
@@ -108,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   "lib/routing": typeof lib_routing;
   "lib/shortcuts": typeof lib_shortcuts;
   "lib/skills": typeof lib_skills;
+  "lib/steps": typeof lib_steps;
   "lib/telegram": typeof lib_telegram;
   "lib/telegramFormat": typeof lib_telegramFormat;
   "lib/truncate": typeof lib_truncate;

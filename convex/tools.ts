@@ -809,6 +809,9 @@ const read_page = createTool({
 const RISKY = /\b(buy|pay|purchase|place (your |my )?order|order now|checkout|check out|subscribe|donate|send|post|publish|tweet|share|reply|submit|confirm|transfer|delete|remove|cancel (my |your )?(order|subscription|account)|book|reserve|sign up|register|apply)\b/i;
 const APPROVAL_POLL_MS = 1_000;
 
+/** A browser step's result, with the id of a picture of the page when one was taken. */
+type Shown<T> = T & { preview?: string };
+
 const browser = createTool({
   description:
     "Perry's own browser: a real Chrome with a profile of its own (never the owner's), running in the background. " +
@@ -830,8 +833,25 @@ const browser = createTool({
     usernameRef: z.number().int().positive().optional(),
     passwordRef: z.number().int().positive().optional(),
   }),
-  execute: async (ctx, input): Promise<web.Snapshot | { screenshot: string } | { closed: true } | { declined: true; note: string } | { error: string }> => {
+  execute: async (ctx, input): Promise<Shown<web.Snapshot> | Shown<{ screenshot: string }> | { closed: true } | { declined: true; note: string } | { error: string }> => {
     const needRef = () => { if (input.ref === undefined) throw new Error(`${input.action} needs ref, an element's number from the last look.`); return input.ref; };
+    /**
+     * What a step returns, with a small picture of the page first, for the
+     * chat to show with the step (its id in Perry's media; the trace keeps the
+     * start of a result). None where a saved login could be in it: the trace
+     * hides saved values in text, but cannot in a picture.
+     */
+    const shown = async <T extends object>(result: T, page: web.Snapshot, picture?: string): Promise<Shown<T>> => {
+      if (!ctx.conversationId) return result;
+      try {
+        if (await ctx.runQuery(internal.vault.anySaved, { text: `${input.text ?? ""}\n${JSON.stringify(page)}` })) return result;
+        const preview: string = await ctx.runMutation(internal.media.attachPreview, { conversationId: ctx.conversationId as Id<"conversations">, path: picture ?? await web.preview() });
+        return { preview, ...result };
+      } catch {
+        return result;
+      }
+    };
+    const page = async (step: Promise<web.Snapshot>) => { const found = await step; return await shown(found, found); };
     /** Ask the owner before a step like this; true once they said yes. */
     const allowed = async (title: string, detail: string): Promise<boolean> => {
       const asked: { id: Id<"approvals">; status: string } = await ctx.runMutation(internal.approvals.askForBrowser, {
@@ -849,17 +869,20 @@ const browser = createTool({
       switch (input.action) {
         case "open": {
           if (!input.url) return { error: "open needs url." };
-          return await web.open(input.url);
+          return await page(web.open(input.url));
         }
-        case "look": return await web.snapshot();
-        case "back": return await web.back();
-        case "screenshot": return { screenshot: await web.screenshot() };
+        case "look": return await page(web.snapshot());
+        case "back": return await page(web.back());
+        case "screenshot": {
+          const path = await web.screenshot();
+          return await shown({ screenshot: path }, await web.snapshot(), path);
+        }
         case "close": web.closeBrowser(); return { closed: true };
         case "click": {
           const ref = needRef();
           const element = await web.describe(ref);
           if (RISKY.test(element.label) && !(await allowed(`Click “${element.label}”`, `on ${element.url}`))) return declined;
-          return await web.click(ref);
+          return await page(web.click(ref));
         }
         case "type": {
           const ref = needRef();
@@ -869,11 +892,11 @@ const browser = createTool({
           // Pressing Enter sends the form, which is its button's step: a search is fine, "Send" or "Pay" is asked.
           const sends = input.submit && !element.search && RISKY.test(element.submitLabel ?? element.label);
           if (sends && !(await allowed(`Type into “${element.label}” and press ${element.submitLabel ? `“${element.submitLabel}”` : "Enter"}`, `“${input.text.slice(0, 300)}” on ${element.url}`))) return declined;
-          return await web.type(ref, input.text, input.submit === true);
+          return await page(web.type(ref, input.text, input.submit === true));
         }
         case "choose": {
           if (!input.option) return { error: "choose needs option." };
-          return await web.choose(needRef(), input.option);
+          return await page(web.choose(needRef(), input.option));
         }
         case "sign_in": {
           if (!input.secretId || input.passwordRef === undefined) return { error: "sign_in needs secretId and passwordRef (and usernameRef for the name box)." };

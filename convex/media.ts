@@ -117,3 +117,27 @@ export const shareFromTurn = internalMutation({
     return described;
   },
 });
+
+/** The message key of the files a run's steps link to: kept apart from every message's. */
+export const stepsKey = (runId: string) => `steps-${runId}`;
+
+/**
+ * A picture of Perry's browser for a step in the chat (tools.ts, browser),
+ * registered so the local media server serves it; its id goes in the step's
+ * result. Kept apart from the reply's own files.
+ */
+export const attachPreview = internalMutation({
+  args: { conversationId: v.id("conversations"), path: v.string() },
+  returns: v.id("chatAttachments"),
+  handler: async (ctx, args) => {
+    if (!ABSOLUTE_PATH.test(args.path)) throw new Error("Give the picture's absolute path.");
+    return await ctx.db.insert("chatAttachments", {
+      conversationId: args.conversationId,
+      messageKey: "steps",
+      localPath: args.path,
+      ...describePath(args.path),
+      size: 0,
+      createdAt: Date.now(),
+    });
+  },
+});

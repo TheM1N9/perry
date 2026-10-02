@@ -32,7 +32,7 @@ function args(span: Span): Record<string, unknown> {
 }
 
 /** The command inside a shell wrapper: `powershell.exe -Command "git status"` is `git status`. */
-function innerCommand(command: string): string {
+export function innerCommand(command: string): string {
   const inner = /(?:powershell|pwsh)(?:\.exe)?"?\s+(?:-\w+\s+)*?-Command\s+([\s\S]+)$/i.exec(command)?.[1]
     ?? /(?:^|\/)(?:ba|z)?sh\s+-l?c\s+([\s\S]+)$/.exec(command)?.[1];
   return (inner ?? command).trim().replace(/^(["'])([\s\S]*)\1$/, "$2");
@@ -70,6 +70,19 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   create_note: (input) => ({ label: typeof input.title === "string" ? `Writing “${short(input.title, 30)}”` : "Writing a note", pose: "typing" }),
   update_note: () => ({ label: "Updating a note", pose: "typing" }),
   read_page: (input) => ({ label: `Reading ${host(input.url)}`, pose: "reading" }),
+  browser: (input) => {
+    switch (input.action) {
+      case "open": return { label: `Opening ${host(input.url)}`, pose: "reading" };
+      case "click": return { label: "Clicking on the page", pose: "typing" };
+      case "type": return { label: "Typing on the page", pose: "typing" };
+      case "choose": return { label: "Picking an option", pose: "typing" };
+      case "sign_in": return { label: "Signing in", pose: "typing" };
+      case "screenshot": return { label: "Taking a picture of the page", pose: "reading" };
+      case "back": return { label: "Going back a page", pose: "reading" };
+      case "close": return { label: "Closing the browser", pose: "running" };
+      default: return { label: "Looking at the page", pose: "reading" };
+    }
+  },
   list_connectors: () => ({ label: "Checking your connected apps", pose: "reading" }),
   find_action: (input) => {
     const toolkit = Array.isArray(input.toolkits) && typeof input.toolkits[0] === "string" ? input.toolkits[0] : undefined;
