@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
-import { isPageLine, type MemoryView } from "./memories";
+import { isPageLine } from "./memories";
 import { moveLines, removePage } from "./pages";
 import { titlesIn } from "./notes";
 
@@ -93,12 +93,13 @@ export type ProjectView = {
   instructions: string;
   updatedAt: number;
   chats: Array<{ id: Id<"conversations">; title: string; lastMessageAt: number; job: boolean; task: boolean }>;
-  memories: Array<Pick<MemoryView, "id" | "text" | "day" | "createdAt" | "editedAt"> & { kind: "profile" | "core" | "daily" }>;
-  /** How many notes it has (notes.list lists them). */
+  /** How many memories it keeps (its pages of memory list them: pages.memoryPages), deleted with it. */
+  memories: number;
+  /** How many of the owner's pages it has (notes.list lists them), which outlive it. */
   notes: number;
 };
 
-/** A project's page: its instructions, its chats and what Perry remembers in it. Null once deleted. */
+/** A project's page: its instructions, its chats, and how much it keeps. Null once deleted. */
 export const get = query({
   args: { key: vKey, id: v.string() },
   handler: async (ctx, args): Promise<ProjectView | null> => {
@@ -106,8 +107,8 @@ export const get = query({
     const id = ctx.db.normalizeId("projects", args.id);
     const project = id ? await ctx.db.get(id) : null;
     if (!project) return null;
-    const memories = (await ctx.db.query("memories").withIndex("by_project", (q) => q.eq("projectId", project._id)).order("desc").take(2000))
-      .filter((memory) => !memory.supersededBy && !isPageLine(memory)).slice(0, 200);
+    const memories = (await ctx.db.query("memories").withIndex("by_project", (q) => q.eq("projectId", project._id)).collect())
+      .filter((memory) => !memory.supersededBy && !isPageLine(memory)).length;
     return {
       id: project._id,
       name: project.name,
@@ -116,9 +117,7 @@ export const get = query({
       chats: (await chatsIn(ctx, project._id)).map((chat) => ({
         id: chat._id, title: titleOf(chat), lastMessageAt: chat.lastMessageAt, job: Boolean(chat.jobId), task: Boolean(chat.taskId),
       })),
-      memories: memories.map((memory) => ({
-        id: memory._id, text: memory.text, kind: memory.kind === "page" ? "core" : memory.kind ?? "core", day: memory.day, createdAt: memory.createdAt, editedAt: memory.editedAt,
-      })),
+      memories,
       notes: (await titlesIn(ctx, project._id)).length,
     };
   },

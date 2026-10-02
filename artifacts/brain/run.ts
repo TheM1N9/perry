@@ -835,7 +835,7 @@ try {
   })()`) as { entries: string[]; inPages: string[] };
   const blocks = await evaluate(`({ lists: document.querySelectorAll('section[aria-label="Memory pages"]').length, teach: document.querySelectorAll('#memory-text').length })`) as { lists: number; teach: number };
   const memoryTitles = rows("notes").filter((row) => row.kind).map((row) => String(row.title));
-  check("eachPageListedOnce", blocks.lists === 1 && blocks.teach === 1 && onBrain.entries.length > 0 && new Set(onBrain.entries).size === onBrain.entries.length && !onBrain.inPages.some((title) => memoryTitles.includes(title)),
+  check("eachPageListedOnce", blocks.lists === 1 && blocks.teach === 0 && onBrain.entries.length > 0 && new Set(onBrain.entries).size === onBrain.entries.length && !onBrain.inPages.some((title) => memoryTitles.includes(title)),
     { blocks, onBrain: onBrain.entries.length, unique: new Set(onBrain.entries).size, memoryInPages: onBrain.inPages.filter((title) => memoryTitles.includes(title)) });
   const landed: Record<string, string> = {};
   const land = async (path: string, test: string, what: string) => { await go(path); await waitFor(test, what); landed[path] = await evaluate("location.pathname + location.search") as string; };

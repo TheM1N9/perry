@@ -859,17 +859,28 @@ async function basedOnPages(ctx: Reader, ids: Id<"memories">[]): Promise<Array<{
   return [...pages].map(([id, title]) => ({ id: id as Id<"notes">, title }));
 }
 
-/** Open the page of memory for a place from the dashboard (About me, Things to remember, today's journal), made if need be. */
+/**
+ * Open the page of memory for a place from the dashboard (About me, Things to
+ * remember, today's journal), made if need be. With a project, its own Things
+ * to remember or journal day: About me is everyone's, so a project has none.
+ */
 export const openMemoryPage = mutation({
-  args: { key: v.string(), kind: v.union(v.literal("about"), v.literal("remember"), v.literal("journal")) },
+  args: { key: v.string(), kind: v.union(v.literal("about"), v.literal("remember"), v.literal("journal")), projectId: v.optional(v.id("projects")) },
   returns: v.id("notes"),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
+    const projectId = args.projectId;
+    if (projectId && !await ctx.db.get(projectId)) throw new Error("This project was deleted.");
+    const scope = projectId ? { projectId } : {};
     if (args.kind === "journal") {
       const day = new Date().toLocaleDateString("en-CA", { timeZone: await timezoneOf(ctx) });
-      return (await memoryPage(ctx, { kind: "journal", day }))._id;
+      return (await memoryPage(ctx, { kind: "journal", day, ...scope }))._id;
     }
-    return (await memoryPage(ctx, { kind: args.kind }))._id;
+    if (args.kind === "about") {
+      if (projectId) throw new Error("About me is in every chat; a project keeps its own in Things to remember.");
+      return (await memoryPage(ctx, { kind: "about" }))._id;
+    }
+    return (await memoryPage(ctx, { kind: "remember", ...scope }))._id;
   },
 });
 

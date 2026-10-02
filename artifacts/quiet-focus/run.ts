@@ -86,8 +86,8 @@ try {
     check(name, clicked.focused && clicked.border === rest.border && clicked.shadow === rest.shadow, { rest, clicked });
   };
 
-  await quiet("textareaQuiet", "/memory", "#memory-text");
-  await quiet("inputGroupSearchQuiet", "/memory", "input[aria-label='Search memories']");
+  await quiet("textareaQuiet", "/settings/general", "#identity-personality");
+  await quiet("inputGroupSearchQuiet", "/brain", "input[aria-label='Search Brain']");
   await quiet("todoQuickAddQuiet", "/todos", "input[aria-label='Add a to-do']");
   const todoShot = await send("Page.captureScreenshot", { format: "png" });
   writeFileSync(join(outDir, "todo-clicked.png"), Buffer.from(todoShot.data, "base64"));

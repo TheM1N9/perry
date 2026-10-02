@@ -206,7 +206,7 @@ try {
     // Memory is Brain now (issue #210): its page, and About me, where the owner's preferences are.
     { name: "memory", path: "/brain", wait: "Things to remember" },
     { name: "memory-about", path: "/about", wait: "coffee black" },
-    { name: "project", path: `/projects/${project}`, wait: "matte green" },
+    { name: "project", path: `/projects/${project}`, wait: "Things to remember" },
     { name: "apps-connectors", path: "/apps/connectors", wait: "Composio key" },
     { name: "apps-skills", path: "/apps/skills", wait: "weekly-review" },
     { name: "settings-general", path: "/settings/general", wait: "Update on his own at night" },
@@ -361,13 +361,12 @@ try {
       { name: "usageCountsAllYourUse", path: "/settings/usage", wait: "Perry's share this week", find: /all your Codex use/ },
       { name: "remindersAlwaysGo", path: "/settings/notifications", wait: "Quiet hours", find: /Due reminders always go/ },
       { name: "deleteChatConsequence", path: `/chat/${planChat}`, wait: "Call Sam about Saturday", open: `document.querySelector('button[aria-label="Chat options"]')|Delete`, dialog: true, find: /go for good[\s\S]*memory from it stays/ },
-      { name: "forgetMemoryConsequence", path: `/projects/${project}`, wait: "matte green", open: `${byText("main li", "matte green")}?.querySelector("button:last-of-type")`, dialog: true, find: /is deleted, and Perry won.t recall it again/ },
       { name: "revokeComputerConsequence", path: "/settings/computers", wait: "a-long-folder-name", open: byText("main button", "Revoke"), dialog: true, find: /next request is refused/ },
       { name: "signOutEngineConsequence", path: "/settings/engines", wait: "Gemini API key", open: byText("main button", "Sign out"), dialog: true, find: /can't use Codex on this computer until you sign in again/ },
       { name: "blockPersonConsequence", path: "/settings/people", wait: "Datta", open: byText("main button", "Block"), dialog: true, find: /stops answering them/ },
       { name: "deleteLoginConsequence", path: "/settings/logins", wait: "Netflix", open: byText("main li button", "Delete"), dialog: true, find: /cannot be undone/ },
       { name: "removeSkillConsequence", path: "/apps/skills", wait: "weekly-review", open: byText("main li button", "Remove"), dialog: true, find: /folder is deleted from this computer/ },
-      { name: "deleteProjectConsequence", path: `/projects/${project}`, wait: "matte green", open: `document.querySelector('button[aria-label="Project options"]')|Delete`, dialog: true, find: /deleted with it/ },
+      { name: "deleteProjectConsequence", path: `/projects/${project}`, wait: "Things to remember", open: `document.querySelector('button[aria-label="Project options"]')|Delete`, dialog: true, find: /deleted with it/ },
       { name: "cancelPlanConsequence", path: "/work?tab=plans", wait: "Compare three flats", open: byText("main li button", "Cancel"), dialog: true, find: /What it already did stays done/ },
       { name: "deleteRuleOrRequestsRecorded", path: "/settings/access", wait: "git push origin main", find: /Declined/ },
     ];
