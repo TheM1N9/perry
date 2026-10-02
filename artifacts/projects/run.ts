@@ -29,6 +29,8 @@ import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 //   9. What Perry remembers in a project's chat is seen outside it (recalled, searched), or not
 //      in the project's other chats; or something saved "everywhere" from a project stays in it; or
 //      correcting, in a project's chat, a fact every chat knows takes it away from the other chats.
+//      A day's note goes in the project's Journey (issue #227), which every chat of the owner's reads:
+//      it is not found outside, or it lands in the owner's journal instead.
 //  10. A chat with someone else can be put in a project, or sees project content even when
 //      its row says it is in one.
 //  11. An old project chat (issue #106) is not migrated at startup: no project named after it,
@@ -37,10 +39,11 @@ import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 //      project; taking it out does not tell it, and it keeps seeing project memory.
 //  13. Deleting a project deletes its chats, or leaves its memories to leak everywhere.
 //  14. A job set up in a project's chat works outside it; the day's summary reads project chats;
-//      the heartbeat, whose chat is outside every project, is given a project's open threads.
+//      the heartbeat, whose chat is outside every project, misses a project's open threads, which
+//      are day notes in its Journey, read from every chat (issue #227).
 //  15. The dashboard throws, or the sidebar does not show projects as folders with their chats.
 //  16. The project's page still lists its memory the old way (a flat list of rows with Forget), or misses
-//      some of its Brain: its Things to remember, a journal day, a pinned page, a page of its own; or lists
+//      some of its Brain: its Things to remember, its Journey, a pinned page, a page of its own; or lists
 //      another project's or everyone's pages; or a row does not open in the page editor; or New page makes a
 //      page outside the project; or the instructions stop saving themselves. Brain still shows the Teach
 //      Perry something form. Either page throws, light or dark.
@@ -245,7 +248,10 @@ try {
     { found: fromOutside?.results?.map((hit: { chat: string }) => hit.chat), read: readFromOutside });
 
   // --- 9. Memory ------------------------------------------------------------------------------------------------------
-  await exchange(chatA, "REMEMBER Every Hackonomics outro ends with KESTRELBRIDGE.");
+  // A lasting fact, kept to the project; and a day's note, which goes in its Journey, read from every chat.
+  const kestrelArgs = { text: "Every Hackonomics outro ends with KESTRELBRIDGE.", kind: "core" };
+  await tool(chatA, "remember", kestrelArgs);
+  await exchange(chatA, "REMEMBER Filmed the Hackonomics teaser today, SKUAREEL.");
   const everywhereArgs = { text: "The owner drinks oolong tea every morning, OOLONGWREN.", kind: "core", scope: "everywhere" };
   await tool(chatA, "remember", everywhereArgs);
   const thisChatArgs = { text: "Only the second chat knows HERONVAULT.", scope: "this chat" };
@@ -266,11 +272,17 @@ try {
   const inB = contextOf("What should I know before writing?");
   const inOutside = contextOf("Anything new for my hike?");
   const recallOutside = await tool(outside, "recall", { query: "KESTRELBRIDGE outro" });
+  const skua = memoryRows().find((row) => String(row.text).includes("SKUAREEL"));
+  const skuaPage = rows("notes").find((row) => row._id === skua?.pageId);
+  const journeyOutside = await tool(outside, "recall", { query: "SKUAREEL teaser" });
+  check("dayNoteInTheJourneyForEveryChat", skuaPage?.kind === "journey" && skuaPage?.projectId === project && !skua?.projectId && await seenFrom(outside, "SKUAREEL")
+    && JSON.stringify(journeyOutside ?? {}).includes("SKUAREEL") && !rows("notes").some((row) => row.kind === "journal" && String(row.content).includes("SKUAREEL")),
+    { page: skuaPage && { kind: skuaPage.kind, title: skuaPage.title, projectId: skuaPage.projectId === project }, lineProject: skua?.projectId ?? null, recalledOutside: JSON.stringify(journeyOutside ?? {}).includes("SKUAREEL") });
   check("projectMemorySeenOnlyInProject", inB.includes("KESTRELBRIDGE") && inB.includes("GREENWREN") && !inOutside.includes("KESTRELBRIDGE") && inOutside.includes("GREENWREN")
     && !JSON.stringify(recallOutside ?? {}).includes("KESTRELBRIDGE") && !(await seenFrom(chatA, "HERONVAULT")) && await seenFrom(chatB, "HERONVAULT"),
     { inProject: inB.includes("KESTRELBRIDGE"), outside: inOutside.includes("KESTRELBRIDGE"), everywhereOutside: inOutside.includes("GREENWREN"), recallOutside: recallOutside?.found });
   // The first chat is told again, now that the project has a second chat.
-  const retold = contextOf("REMEMBER Every Hackonomics outro ends with KESTRELBRIDGE.");
+  const retold = contextOf(`TOOL remember ${JSON.stringify(kestrelArgs)}`);
   check("toldAgainWhenTheProjectChanges", retold.includes("# This project") && retold.includes(`id ${chatB}`), retold.slice(retold.indexOf("## Its other chats"), retold.indexOf("## Its other chats") + 300));
 
   // --- 12. Moving a chat in, from its menu, and out, from the project's page ------------------------------------------
@@ -294,15 +306,15 @@ try {
   await shot("chat-in-project.png");
 
   // --- 16. The project's Brain, listed as Brain lists everyone's ------------------------------------------------------
-  // A day's note in the project (KESTRELBRIDGE, remembered above, is one too), a page of its own, a pinned one,
-  // and a page of everyone's that must stay off it. Nothing went to its Things to remember yet: Brain offers to start it.
+  // A day's note in the project (SKUAREEL, remembered above, is one too), a page of its own, a pinned one,
+  // and a page of everyone's that must stay off it. KESTRELBRIDGE went to its Things to remember, which is pinned here.
   await call("memories:add", { text: "Recorded the intro for episode 11, PLOVERDAY.", tags: [], source: "test", kind: "daily", origin: "owner", projectId: project });
   const planPage = await call<string>("notes:create", { key: KEY, title: "Episode 12 plan", content: "Open on the sponsor read, LARKPLAN.", projectId: project });
   const stylePage = await call<string>("notes:create", { key: KEY, title: "House style", content: "No jargon, ever. TERNSTYLE.", projectId: project });
   await call("pages:pin", { key: KEY, id: stylePage, pinned: true });
   await call<string>("notes:create", { key: KEY, title: "Groceries everywhere", content: "Milk." });
   const projectRows = rows("notes").filter((row) => row.projectId === project);
-  const journal = projectRows.find((row) => row.kind === "journal");
+  const journal = projectRows.find((row) => row.kind === "journey");
   await go(`/projects/${project}`);
   await waitFor(`document.querySelector('main section[aria-label="Brain"] [data-memory-page="remember"]') && document.querySelector('main section[aria-label="Brain"] ul[aria-label="Pages"]')`, "the project's Brain");
   const brainSide = await evaluate(`(() => {
@@ -313,24 +325,34 @@ try {
     return { groups, pages, buttons, forget: buttons.filter((b) => b === "Forget").length, oldList: document.querySelectorAll('main [aria-label^="What Perry remembers in"]').length, text: document.querySelector("main").innerText };
   })()`) as { groups: Array<{ group: string; rows: Array<{ title: string; href: string; kind: string }> }>; pages: Array<{ title: string; href: string }>; buttons: string[]; forget: number; oldList: number; text: string };
   const inGroup = (group: RegExp, href: string) => brainSide.groups.some((item) => group.test(item.group) && item.rows.some((row) => row.href.endsWith(`/${href}`)));
-  const starter = await evaluate(`document.querySelector('main section[aria-label="Brain"] button[data-memory-page="remember"]')?.innerText.trim() ?? ""`) as string;
-  check("projectBrainAsPages", Boolean(journal) && starter === "Things to remember" && inGroup(/^Pinned/, stylePage) && inGroup(/^Journal$/, journal!._id)
+  const projectRemember = projectRows.find((row) => row.kind === "remember");
+  const starter = await evaluate(`document.querySelector('main section[aria-label="Brain"] button[data-memory-page]')?.innerText.trim() ?? ""`) as string;
+  check("projectBrainAsPages", Boolean(journal) && Boolean(projectRemember) && !starter && inGroup(/^Pinned/, projectRemember!._id) && inGroup(/^Pinned/, stylePage) && inGroup(/^Journey$/, journal!._id)
     && brainSide.pages.some((page) => page.href.endsWith(`/${planPage}`)) && !brainSide.pages.some((page) => page.href.endsWith(`/${stylePage}`))
     && !brainSide.text.includes("Groceries everywhere") && !brainSide.text.includes("About me") && !brainSide.text.includes("KESTRELBRIDGE"),
     { starter, groups: brainSide.groups.map((item) => ({ group: item.group, rows: item.rows.map((row) => row.title) })), pages: brainSide.pages.map((page) => page.title) });
   check("noOldMemoryRows", brainSide.forget === 0 && brainSide.oldList === 0 && !brainSide.buttons.includes("Save"), { buttons: brainSide.buttons });
   await shot("project-page.png");
-  // Things to remember starts from there, the project's own, in the editor; then it is listed with the pinned pages.
-  await click('main section[aria-label="Brain"] button[data-memory-page="remember"]');
-  await waitFor(`/^\\/(brain|notes)\\/[a-z0-9]+$/.test(location.pathname) && document.querySelector("[data-note-editor]")`, "the project's Things to remember in the editor", 20_000);
-  const rememberId = (await path()).split("/").pop()!;
-  const remember = rows("notes").find((row) => row._id === rememberId);
-  await go(`/projects/${project}`);
-  const listed = await waitFor(`document.querySelector('main section[aria-label="Brain"] ul[aria-label^="Pinned"] a[href$="/${rememberId}"]')`, "Things to remember listed", 20_000).then(() => true, () => false);
-  check("thingsToRememberStartsInTheProject", remember?.kind === "remember" && remember?.projectId === project && listed, { kind: remember?.kind, projectId: remember?.projectId, listed });
+  // A project with nothing in it yet: its page offers to start its Things to remember and its Journey, each the project's
+  // own, in the editor; then each is listed, Things to remember with the pinned pages.
+  const spare = await call<string>("projects:create", { key: KEY, name: "Spare room" });
+  const started: Record<string, { kind?: string; mine: boolean; listed: boolean }> = {};
+  for (const [kind, group] of [["remember", "Pinned"], ["journey", "Journey"]] as const) {
+    await go(`/projects/${spare}`);
+    await waitFor(`document.querySelector('main section[aria-label="Brain"] button[data-memory-page="${kind}"]')`, `the ${kind} starter`);
+    await click(`main section[aria-label="Brain"] button[data-memory-page="${kind}"]`);
+    await waitFor(`/^\\/(brain|notes)\\/[a-z0-9]+$/.test(location.pathname) && document.querySelector("[data-note-editor]")`, `the spare project's ${kind} in the editor`, 20_000);
+    const id = (await path()).split("/").pop()!;
+    const made = rows("notes").find((row) => row._id === id);
+    await go(`/projects/${spare}`);
+    const listed = await waitFor(`document.querySelector('main section[aria-label="Brain"] ul[aria-label^="${group}"] a[href$="/${id}"]')`, `the ${kind} listed`, 20_000).then(() => true, () => false);
+    started[kind] = { kind: made?.kind, mine: made?.projectId === spare, listed };
+  }
+  check("thingsToRememberStartsInTheProject", started.remember.kind === "remember" && started.journey.kind === "journey" && Object.values(started).every((item) => item.mine && item.listed), started);
+  await call("projects:remove", { key: KEY, id: spare });
   // Each row opens in the page editor, with what was remembered or written in it.
   const opens: Record<string, boolean> = {};
-  for (const [name, id, words] of [["journalDay", journal?._id, "KESTRELBRIDGE"], ["pinnedPage", stylePage, "TERNSTYLE"], ["ownPage", planPage, "LARKPLAN"]] as const) {
+  for (const [name, id, words] of [["journey", journal?._id, "PLOVERDAY"], ["pinnedPage", stylePage, "TERNSTYLE"], ["ownPage", planPage, "LARKPLAN"]] as const) {
     await go(`/projects/${project}`);
     await waitFor(`document.querySelector('main section[aria-label="Brain"] a[href$="/${id}"]')`, `the ${name} row`);
     await click(`main section[aria-label="Brain"] a[href$="/${id}"]`);
@@ -431,7 +453,8 @@ try {
   await call("jobs:remove", { id: job.id }).catch(() => {});
   await tool(chatA, "remember", { text: "The owner has to call the sponsor about episode 12, OPENPIKE.", kind: "daily", tags: ["open"] });
   const openThreads = await call<Array<{ text: string }>>("memories:openThreads", {});
-  check("heartbeatLeavesProjectThreads", memoryRows().some((row) => String(row.text).includes("OPENPIKE") && row.projectId === project) && !openThreads.some((thread) => thread.text.includes("OPENPIKE")),
+  const openPike = memoryRows().find((row) => String(row.text).includes("OPENPIKE"));
+  check("heartbeatFollowsProjectThreads", rows("notes").find((row) => row._id === openPike?.pageId)?.kind === "journey" && !openPike?.projectId && openThreads.some((thread) => thread.text.includes("OPENPIKE")),
     openThreads.map((thread) => thread.text));
 
   // --- 13. Deleting a project keeps its chats and drops its memory ---------------------------------------------------
