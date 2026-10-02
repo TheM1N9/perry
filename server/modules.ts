@@ -25,6 +25,7 @@ import * as lib_activity from "../convex/lib/activity";
 import * as lib_agent from "../convex/lib/agent";
 import * as lib_auth from "../convex/lib/auth";
 import * as lib_browser from "../convex/lib/browser";
+import * as lib_budget from "../convex/lib/budget";
 import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
 import * as lib_devices from "../convex/lib/devices";
@@ -101,6 +102,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/agent": lib_agent,
   "lib/auth": lib_auth,
   "lib/browser": lib_browser,
+  "lib/budget": lib_budget,
   "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
   "lib/devices": lib_devices,

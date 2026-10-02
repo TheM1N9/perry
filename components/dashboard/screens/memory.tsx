@@ -9,6 +9,7 @@ import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { MemoryView } from "@/convex/dashboard";
+import { ENGINE_LABELS, isEngine } from "@/convex/lib/engines";
 import { noteHref } from "@/convex/lib/notes";
 import type { MemoryPage } from "@/convex/pages";
 import { errorText } from "@/lib/format";
@@ -240,7 +241,7 @@ export function MemoryPages({ filter = "" }: { filter?: string }) {
             </List>
             {group.pinned && usage && (
               <p className="mt-1 text-xs text-muted-foreground" data-usage>
-                {usage.used.toLocaleString()} of {usage.budget.toLocaleString()} characters{usage.left.length ? `. Over: ${usage.left.join(", ")} not all sent.` : "."}
+                {usage.used.toLocaleString()} of {usage.budget.toLocaleString()} characters{usage.engine && isEngine(usage.engine) ? ` on ${ENGINE_LABELS[usage.engine]}` : ""}{usage.left.length ? `. Sent as summaries: ${usage.left.join(", ")}.` : "."}
               </p>
             )}
             {more > 0 && <Button variant="ghost" size="xs" className="mt-1 text-muted-foreground" onClick={() => setAllDays(true)}>{more} more {more === 1 ? "day" : "days"}</Button>}

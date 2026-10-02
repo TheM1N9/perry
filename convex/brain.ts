@@ -208,6 +208,9 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
     query,
     chat: conversation._id,
     seen: fresh ? undefined : conversation.recallDigest,
+    // What is pinned goes within a share of this engine's context window, as it reported it for this chat if it did.
+    ...(engine ? { engine } : {}),
+    ...(conversation.contextWindow ? { window: conversation.contextWindow } : {}),
   }).catch((error) => { console.error(`Memory context unavailable: ${String(error)}`); return null; });
   const history = fresh ? await historyOf(ctx, conversation) : undefined;
   // Codex knows the date but not the time, and "remind me in an hour" needs both.

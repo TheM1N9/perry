@@ -142,7 +142,7 @@ const found = async (query: string, id: string, chat?: string) => (await searchF
 
 try {
   // What the seed holds, as main left it: vectors inside the rows.
-  const seeded = CHECKS >= 1 ? count(`SELECT count(*) AS n FROM "doc_memories" WHERE json_extract(doc, '$.vector') IS NOT NULL`) : 0;
+  const seeded = CHECKS >= 1 && !flag("only") ? count(`SELECT count(*) AS n FROM "doc_memories" WHERE json_extract(doc, '$.vector') IS NOT NULL`) : 0;
   result.startSeconds = await startServer();
   await call("dashboard:skipOnboarding", { key: KEY }).catch(() => {});
 
@@ -154,7 +154,10 @@ try {
     return chats.get(label.project)!;
   };
 
-  if (CHECKS >= 1) {
+  // --only <n>: the checks of one step alone (on a seed already brought up to date, say).
+  const ONLY = flag("only") ? Number(flag("only")) : 0;
+  const stepOn = (n: number) => (ONLY ? ONLY === n : CHECKS >= n);
+  if (stepOn(1)) {
     // --- Step 1: the move out of the rows, after a backup, once ------------------------------------------------------
     const left = count(`SELECT count(*) AS n FROM "doc_memories" WHERE json_extract(doc, '$.vector') IS NOT NULL OR json_extract(doc, '$.vectorModel') IS NOT NULL`);
     const indexed = count(`SELECT count(*) AS n FROM "_vector_memories_by_embedding"`);
@@ -252,6 +255,49 @@ try {
     check("6. a person called what the owner calls them (\"my sister\") finds what is said of them", Boolean(divya) && sister.some((hit) => hit.pageId === divya!._id || /Divya/.test(hit.text)), { top: sister.slice(0, 3).map((hit) => hit.text) });
     const files = readdirSync(p.home).filter((name) => /\.(sqlite|db)(-wal|-shm)?$/.test(name));
     check("8. Brain is still one SQLite file in Perry's home", files.every((name) => name.startsWith("perry.sqlite")), { files });
+  }
+
+  if (stepOn(2)) {
+    // --- Step 2: what a message carries, per engine ---------------------------------------------------------------
+    type Context = { instructions: string; recalled: string; digest: string };
+    const ENGINES = ["codex", "claude", "grok", "antigravity"] as const;
+    const budgetOf = (engine: string) => Math.round(Math.min(24_000, Math.max(6_000, ({ codex: 272_000, claude: 200_000, grok: 256_000, antigravity: 1_000_000 } as Record<string, number>)[engine] * 0.05)) * 3.5);
+    const sizes: Record<string, unknown> = {};
+    let withinAll = true;
+    for (const engine of ENGINES) {
+      const sent = await call<Context>("memories:context", { query: "when is the Hetzner quote from?", chat, engine });
+      const pinned = sent.recalled.split("\n## From pinned sections sent condensed")[0].split("\n## Possibly relevant")[0];
+      const aboutLen = sent.instructions.length;
+      sizes[engine] = { instructions: sent.instructions.length, recalled: sent.recalled.length, pinned: pinned.length, budget: budgetOf(engine) };
+      // About me rides with the instructions and counts against the budget; the rest of what is pinned must fit with it.
+      if (pinned.length > budgetOf(engine) + 2_000 || aboutLen === 0) withinAll = false;
+    }
+    result.messageSizePerEngine = sizes;
+    const codex = await call<Context>("memories:context", { query: "when is the Hetzner quote from?", chat, engine: "codex" });
+    const pinnedOf = (engine: string) => (sizes[engine] as { pinned: number }).pinned;
+    check("9. a message is sized to its engine's window, not 32,000 characters: within each engine's share, most of it used, and more on a bigger window", withinAll && pinnedOf("codex") >= 0.6 * budgetOf("codex") && pinnedOf("antigravity") > pinnedOf("codex") && pinnedOf("codex") > pinnedOf("claude"), sizes);
+    const aboutPage = rows("notes").find((row) => row.kind === "about" && !row.projectId);
+    const aboutLines = aboutPage ? (aboutPage.content as string).split("\n").map((line: string) => line.replace(/^[-*]\s+/, "").trim()).filter((line: string) => line && !line.startsWith("#")) : [];
+    check("10. About me goes whole", aboutLines.length > 0 && aboutLines.every((line: string) => codex.instructions.includes(line)), { lines: aboutLines.length });
+    check("10. big sections are sent condensed, saying so and where to read the rest", /\(condensed\)/.test(codex.recalled) && /brain_read page="[^"]+" section="[^"]+"/.test(codex.recalled));
+    const again = await call<Context>("memories:context", { query: "what did Kavya eat yesterday?", chat, engine: "codex" });
+    check("11. the pinned block is the same from message to message when nothing pinned changed (prompt caching)", again.digest === codex.digest);
+    const matching = codex.recalled.split("## From pinned sections sent condensed")[1]?.split("\n## ")[0] ?? "";
+    check("11. a line of a condensed section that bears on the message is sent with it", /Hetzner/.test(matching), { matching: matching.slice(0, 400) });
+    const due = await call<{ due?: Array<{ page: string; section?: string; lines: number }> }>("pages:summarizeForAgent", {});
+    const first = due.due?.find((item) => item.section);
+    check("12. the sections due a summary are listed for the nightly consolidation", Boolean(first), { due: due.due?.slice(0, 5) });
+    if (first) {
+      const summary = `Work in short: Tidewell's clients pay net 45; ${first.lines} lines of decisions, retainers and who owns what.`;
+      const saved = await call<{ saved?: unknown; error?: string }>("pages:summarizeForAgent", { page: first.page, section: first.section, text: summary });
+      const after = await call<Context>("memories:context", { query: "when is the Hetzner quote from?", chat, engine: "codex" });
+      check("12. a written summary is what its section is sent as, and changes the pinned block once", Boolean(saved.saved) && after.recalled.includes(summary.slice(0, 40)) && after.digest !== codex.digest);
+    }
+    await call("pages:writeLately", { text: "Lately: Kavya's olympiad prep, the Hetzner move at Tidewell, Amma's knee physio twice a week." });
+    const lately = await call<Context>("memories:context", { query: "anything new?", chat, engine: "codex" });
+    const latelyAt = lately.recalled.indexOf("## Lately");
+    const rememberAt = lately.recalled.indexOf("## Things to remember");
+    check("12. the Lately page comes right after About me, before Things to remember", latelyAt >= 0 && (rememberAt < 0 || latelyAt < rememberAt));
   }
 
   // --- Measurements ------------------------------------------------------------------------------------------------

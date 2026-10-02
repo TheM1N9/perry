@@ -51,6 +51,8 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   brain_write: () => ({ label: "Writing a page", pose: "typing" }),
   brain_append: () => ({ label: "Adding to a page", pose: "typing" }),
   brain_pin: (input) => ({ label: input.pinned === false ? "Unpinning a page" : "Pinning a page", pose: "typing" }),
+  brain_summarize: () => ({ label: "Summing up a section", pose: "typing" }),
+  brain_lately: () => ({ label: "Writing Lately", pose: "typing" }),
   recall: () => ({ label: "Checking what I remember", pose: "remembering" }),
   remember: () => ({ label: "Noting that down", pose: "remembering" }),
   read_memory: () => ({ label: "Reading my memory", pose: "remembering" }),

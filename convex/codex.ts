@@ -689,7 +689,7 @@ async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infe
   }
   // How full the chat's Codex thread is, for a memory checkpoint before Codex compacts it (brain.checkpoint).
   if (trace.context && trace.context.window > 0 && !job.checkpoint && !job.flush) {
-    await ctx.db.patch(job.conversationId, { contextFill: Math.min(1, trace.context.used / trace.context.window) });
+    await ctx.db.patch(job.conversationId, { contextFill: Math.min(1, trace.context.used / trace.context.window), contextWindow: trace.context.window });
   }
   await ctx.db.patch(run._id, {
     toolCalls,

@@ -910,6 +910,27 @@ const brain_pin = createTool({
   },
 });
 
+const brain_summarize = createTool({
+  description:
+    "Keep the short summaries of big pinned sections, which every chat is sent in place of a section too big to send " +
+    "whole. With no text: the sections whose summary is missing or out of date, biggest first. With page, section and " +
+    "text: that section's summary, at most about 120 words, the facts that matter most and what is still open; no ids.",
+  inputSchema: z.object({ page: z.string().optional(), section: z.string().max(200).optional(), text: z.string().max(1200).optional() }),
+  execute: async (ctx, input): Promise<{ due?: unknown[]; saved?: { page: string; section?: string }; error?: string }> => {
+    return await ctx.runMutation(internal.pages.summarizeForAgent, { ...(ctx.conversationId ? { chat: ctx.conversationId } : {}), ...input });
+  },
+});
+
+const brain_lately = createTool({
+  description:
+    "Write the Lately page whole: the owner's last two weeks in short (what happened, what is coming up, threads " +
+    "still open), at most about 200 words. It is pinned and sent right after About me in every chat.",
+  inputSchema: z.object({ text: z.string().min(20).max(2500) }),
+  execute: async (ctx, input): Promise<{ id?: string; error?: string }> => {
+    return await ctx.runMutation(internal.pages.writeLately, { ...(ctx.conversationId ? { chat: ctx.conversationId } : {}), text: input.text });
+  },
+});
+
 /** search_memory: recall, under the name some engines reach for. */
 const search_memory = createTool({
   description: brain_search.description,
@@ -1493,6 +1514,8 @@ export const ALL_TOOLS = {
   brain_write,
   brain_append,
   brain_pin,
+  brain_summarize,
+  brain_lately,
   search_memory,
   recall,
   remember,
