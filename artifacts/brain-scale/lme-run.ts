@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node
 import { join } from "node:path";
 import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 
-// bun artifacts/brain-scale/lme-run.ts <lme.json> <outDir> --stage <label> [--batch 10] [--from 0] [--to 100]
+// bun artifacts/brain-scale/lme-run.ts <lme.json> <outDir> --stage <label> [--batch 10] [--from 0] [--to 100] [--backdate] [--asof]
 //
 // LongMemEval-S retrieval against Brain's own search (issue #220), for main and after each step. lme.json comes
 // from longmemeval.ts (MemoryBench's loader; a fixed random sample of 100 answerable questions, seed 220).
@@ -17,6 +17,11 @@ import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 // an evidence session, answer_session_ids). Retrieval only: no answering model and no judge, so these numbers
 // are not answer accuracy, and not comparable with the accuracy vendors publish. Fake engines only; the
 // sentence model is local (PERRY_E2E_MODELS).
+//
+// --backdate: each line carries the day its session happened, as a line imported from an older Perry or a Convex
+// export carries the time it was first written (its createdAt, as server/importer.ts keeps it), set in SQLite
+// after the page is written: a test-only path, so dates in a question can be weighed. --asof: the question is
+// asked as of its own date (memories:recall's `now`), so "last week" means the week before it was asked.
 
 const args = process.argv.slice(2);
 const [file, outDir] = args;
@@ -24,6 +29,13 @@ const flag = (name: string) => { const at = args.indexOf(`--${name}`); return at
 if (!file || !outDir) throw new Error("usage: bun artifacts/brain-scale/lme-run.ts <lme.json> <outDir> --stage <label>");
 const STAGE = flag("stage") ?? "unnamed";
 const BATCH = Number(flag("batch") ?? 10);
+const BACKDATE = args.includes("--backdate");
+const ASOF = args.includes("--asof");
+/** LongMemEval's dates, "2023/05/30 (Tue) 23:40", as a time. */
+const timeOf = (text?: string) => {
+  const match = /(\d{4})\/(\d{2})\/(\d{2})\s*\([^)]*\)\s*(\d{2}):(\d{2})/.exec(text ?? "");
+  return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5])) : undefined;
+};
 const MODELS = process.env.PERRY_E2E_MODELS ?? "";
 mkdirSync(outDir, { recursive: true });
 
@@ -113,6 +125,8 @@ for (let start = 0; start < questions.length; start += BATCH) {
           if (!made.created) { console.error(`${question.id} ${session.id}: ${made.error}`); continue; }
           pages++;
           const rows = sql<{ _id: string; order: number }>(`SELECT _id, json_extract(doc, '$.order') AS "order" FROM "doc_memories" WHERE json_extract(doc, '$.pageId') = ? ORDER BY json_extract(doc, '$.order')`, [made.created.id]);
+          const said = session.date ? Date.parse(session.date) : undefined;
+          if (BACKDATE && said) sql(`UPDATE "doc_memories" SET doc = json_set(doc, '$.createdAt', ?) WHERE json_extract(doc, '$.pageId') = ?`, [said, made.created.id]);
           // One line per message, in order; a page that read back differently is counted as it is.
           rows.forEach((row, at) => {
             const line = part[at];
@@ -132,9 +146,11 @@ for (let start = 0; start < questions.length; start += BATCH) {
     console.log(`embedded ${embedded()} of ${total} in ${Math.round((Date.now() - embedStarted) / 1000)} s`);
     for (const question of batch) {
       const { chat, lines, count, pages } = where.get(question.id)!;
-      await call("memories:recall", { query: question.question, limit: 20, chat });
+      const asked = ASOF ? timeOf(question.date) : undefined;
+      const ask = { query: question.question, limit: 20, chat, ...(asked ? { now: asked } : {}) };
+      await call("memories:recall", ask);
       const at = performance.now();
-      const hits = await call<Array<{ id: string }>>("memories:recall", { query: question.question, limit: 20, chat });
+      const hits = await call<Array<{ id: string }>>("memories:recall", ask);
       const ms = performance.now() - at;
       const turn = hits.findIndex((hit) => lines.get(hit.id)?.answer);
       const session = hits.findIndex((hit) => lines.get(hit.id)?.evidence);

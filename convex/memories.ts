@@ -383,7 +383,11 @@ export const read = internalQuery({
  * may see, or with `everywhere`, all of it.
  */
 export const recall = internalAction({
-  args: { query: v.string(), limit: v.optional(v.number()), chat: vChat, everywhere: v.optional(v.boolean()), excerpts: v.optional(v.boolean()), parts: v.optional(v.boolean()) },
+  args: {
+    query: v.string(), limit: v.optional(v.number()), chat: vChat, everywhere: v.optional(v.boolean()), excerpts: v.optional(v.boolean()), parts: v.optional(v.boolean()),
+    /** Asked as of another time than now ("last week" is the week before it): for checks that replay what was asked then. */
+    now: v.optional(v.number()),
+  },
   handler: async (ctx, args): Promise<Array<MemoryView & { score: number; excerpt?: string[] }>> => {
     const limit = Math.min(args.limit ?? 6, MAX_RESULTS);
     const query = args.query.trim();
@@ -392,7 +396,7 @@ export const recall = internalAction({
       const newest: MemoryView[] = await ctx.runQuery(internal.memories.search, { query, limit, ...where, memoriesOnly: true });
       return newest.map((memory) => ({ ...memory, score: 1 }));
     }
-    const now = Date.now();
+    const now = args.now ?? Date.now();
     const timezone: string = await ctx.runQuery(internal.jobs.ownerTimezone, {});
     const range = dateRange(query, now, timezone);
     // People the question names or calls what the owner does: their names join the words, and what mentions them is a list of its own.
@@ -628,7 +632,7 @@ export const embedMissing = internalAction({
 
 /** The model before, once no line needs it. */
 async function unloadOthers() {
-  for (const model of ["Xenova/paraphrase-multilingual-MiniLM-L12-v2", "Xenova/multilingual-e5-small", "Xenova/bge-m3"]) if (model !== EMBED_MODEL) await unload(model);
+  for (const model of ["onnx-community/embeddinggemma-300m-ONNX", "Xenova/paraphrase-multilingual-MiniLM-L12-v2", "Xenova/multilingual-e5-small", "Xenova/bge-m3"]) if (model !== EMBED_MODEL) await unload(model);
 }
 
 const GUIDE = `

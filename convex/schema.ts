@@ -998,7 +998,7 @@ export default defineSchema({
     // The current lines a model has yet to embed, or embedded with another model (memories.unembedded).
     .index("by_embedded", ["supersededBy", "embeddedWith", "createdAt"])
     .searchIndex("search_text", { searchField: "text" })
-    .vectorIndex("by_embedding", { vectorField: "embedding", dimensions: 384, filterFields: ["embeddedWith", "day"] }),
+    .vectorIndex("by_embedding", { vectorField: "embedding", dimensions: 768, filterFields: ["embeddedWith", "day"] }),
 
   /**
    * Who and what a line mentions: a person (their page's key, lib/pages.personKey) or a project, so a question

@@ -175,7 +175,9 @@ try {
     check("2. a line written now is found by its words at once", await found(word, added.id), { id: added.id });
     check("2. the last word, still being typed, is found as a prefix", await found(word.slice(0, -3), added.id));
     await call("memories:edit", { id: added.id, text: `The quokkalamp${word.slice(9)} lamp is in the garage now.` });
-    check("2. an edit: the old words no longer find it, the new ones do", !(await found(word, added.id)) && await found(`quokkalamp${word.slice(9)}`, added.id));
+    const oldWords = (await searchFor(word)).map((hit) => hit.text.slice(0, 60));
+    const newWords = (await searchFor(`quokkalamp${word.slice(9)}`)).map((hit) => `${hit.id === added.id ? "*" : ""}${hit.text.slice(0, 60)}`);
+    check("2. an edit: the old words no longer find it, the new ones do", !(await found(word, added.id)) && await found(`quokkalamp${word.slice(9)}`, added.id), { oldWords: oldWords.slice(0, 3), newWords: newWords.slice(0, 3) });
     await call("memories:removeMany", { ids: [added.id] });
     check("2. a deleted line is not found", !(await found(`quokkalamp${word.slice(9)}`, added.id)));
     // An older Perry, or any other process, writing a row straight into SQLite: the triggers index it.
@@ -221,9 +223,18 @@ try {
     result.embedModel = NEW;
     if (NEW !== OLD) {
       await until(() => install().embeddedBefore === OLD && onModel(NEW) > 500, "re-embedding under way", 600);
-      const probe = labels.find((label) => label.kind === "meaning")!;
-      const midway = (await searchFor(probe.question)).some((hit) => probe.ids.includes(hit.id));
-      check("4. while every line is embedded again, search by meaning goes on (both models searched)", midway, { onNew: onModel(NEW), onOld: onModel(OLD) });
+      // Midway, every labelled question once: how many answers are found, and how many of those are lines still on the old model.
+      const lineModel = new Map(sql<{ _id: string; m: string }>(`SELECT _id, json_extract(doc, '$.embeddedWith') AS m FROM "doc_memories"`).map((row) => [row._id, row.m]));
+      let foundMidway = 0;
+      let onOldFound = 0;
+      for (const label of labels) {
+        const hits = await searchFor(label.question, chat);
+        const hit = hits.find((item) => label.ids.includes(item.id));
+        if (hit) { foundMidway++; if (lineModel.get(hit.id) === OLD) onOldFound++; }
+      }
+      result.midwayRecallAt10 = round((100 * foundMidway) / labels.length);
+      notes.midway = { onNew: onModel(NEW), onOld: onModel(OLD), found: foundMidway, onOldFound };
+      check("4. while every line is embedded again, search goes on, by meaning on the old model's lines too", onOldFound > 0, notes.midway);
       const beforeRestart = onModel(NEW);
       await restart();
       await sleep(5_000);
@@ -297,6 +308,10 @@ try {
   const context = await call<{ instructions: string; recalled: string }>("memories:context", { query: "what should I cook for Amma this weekend?", chat });
   result.turn = { instructionsChars: context.instructions.length, recalledChars: context.recalled.length, totalChars: context.instructions.length + context.recalled.length };
 
+  if (typeof result.midwayRecallAt10 === "number") {
+    const final = (result.chatRecall as { recall: { at10: number } }).recall.at10;
+    check("4. midway through re-embedding, recall@10 is at least 60% of what it is once done", (result.midwayRecallAt10 as number) >= 0.6 * final, { midway: result.midwayRecallAt10, final });
+  }
   result.serverMemoryMB = memoryOf(server!.pid!);
   result.databaseMB = Math.round(statSync(join(p.home, "perry.sqlite")).size / 1024 / 1024);
   writeFileSync(join(outDir, "measure.json"), `${JSON.stringify(result, null, 2)}\n`);
