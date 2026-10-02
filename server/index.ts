@@ -7,6 +7,7 @@ import crons from "../convex/crons";
 import http from "../convex/http";
 import schema from "../convex/schema";
 import { HOME, PATHS, readRunnerConfig, writeRunnerConfig } from "../runner/home";
+import { moveVectorsOut } from "./brainIndex";
 import { modules } from "./modules";
 import { Runtime } from "./runtime";
 import { pollTelegram } from "./telegram";
@@ -134,6 +135,23 @@ async function engineFromEnvironment(runtime: Runtime) {
     .catch((error) => console.error(`[perry] PERRY_ENGINE=${named} is not an engine Perry can use: ${String(error)}`));
 }
 
+/**
+ * Brain's index brought up to date (issue #220): vectors from inside the rows
+ * moved to the vector index, after a backup (server/brainIndex.ts); who each
+ * line mentions read for lines from before (pages.indexMentions, in batches).
+ * The word index builds itself when the store opens (server/db.ts). A failure
+ * is said and leaves Brain searchable by words, its lines embedded again.
+ */
+export async function updateBrainIndex(runtime: Runtime): Promise<void> {
+  try {
+    const done = await moveVectorsOut(runtime);
+    if (done.moved || done.dropped) console.log(`[perry] moved ${done.moved} vectors out of Brain's rows into its vector index (${done.dropped} to make again); backup in ${done.backup}`);
+  } catch (error) {
+    console.error(`[perry] could not move Brain's vectors; its lines are embedded again instead: ${String(error)}`);
+  }
+  await runtime.runMutation("pages:indexMentions", {}, { internal: true }).catch((error) => console.error(`[perry] could not read who Brain's lines mention: ${String(error)}`));
+}
+
 /** Start the scheduler, crons, Telegram, WhatsApp, event triggers and the wake timer. Called once, from instrumentation.ts. */
 export async function startBackend() {
   const runtime = backend();
@@ -141,6 +159,7 @@ export async function startBackend() {
   box.__perry!.started = true;
   // Also brings an install from before the default engine was asked for forward: Codex, as it was, written down.
   await runtime.runMutation("installation:ensure", {}, { internal: true });
+  await updateBrainIndex(runtime);
   await engineFromSetup(runtime);
   await engineFromEnvironment(runtime);
   // A chat from before projects that kept its memory to itself becomes a project of its own.
@@ -151,6 +170,8 @@ export async function startBackend() {
   await moveMemoriesIntoPages(runtime);
   await pairThisMachine(runtime).catch((error) => console.error(`[perry] could not connect this computer: ${String(error)}`));
   runtime.start();
+  // Lines without a vector from the model in use (new ones, or all of them after the model changed), in the background.
+  void runtime.runAction("memories:embedMissing", {}, { internal: true }).catch((error) => console.error(`[perry] could not embed Brain's lines: ${String(error)}`));
   box.__perry!.stopTelegram = pollTelegram(runtime);
   box.__perry!.stopWhatsApp = runWhatsApp(runtime);
   box.__perry!.stopTriggers = runTriggers(runtime);

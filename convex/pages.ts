@@ -8,6 +8,7 @@ import {
   blocksOf, itemOf, journalTitle, personKey, PREFERENCES_SECTION, reconcile, removeLine, replaceLine, sameKey, sectionFor, snippet, type PageKind,
 } from "./lib/pages";
 import { timezoneOf } from "./jobs";
+import { aliasesIn } from "./lib/recall";
 import type { MemoryView } from "./memories";
 import { recordUser } from "./persona";
 import { savedValues } from "./vault";
@@ -64,23 +65,26 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
   const memory = Boolean(page.kind);
   const added = new Map<string, Id<"memories">>();
   let changed = false;
+  const reworded: Array<Id<"memories">> = [];
   for (const { id, block, order } of plan.keep) {
     const row = byId.get(id)!;
     const words = row.text !== block.text;
     if (!words && row.order === order && row.section === block.section && row.projectId === scope.projectId && row.conversationId === scope.conversationId) continue;
     await ctx.db.patch(id, {
       order, section: block.section, ...scope,
-      ...(words ? { text: block.text, editedAt: at, vector: undefined, vectorModel: undefined } : {}),
+      ...(words ? { text: block.text, editedAt: at, embedding: undefined, embeddedWith: undefined } : {}),
     });
+    if (words) reworded.push(id);
     changed ||= words;
   }
   for (const { id, block, order } of plan.edit) {
     await ctx.db.patch(id, {
       // Who changed it last; the chat it came from stays unless it was changed from another.
-      text: block.text, order, section: block.section, ...scope, by: author.by, ...(author.from ? { from: author.from } : {}), editedAt: at, vector: undefined, vectorModel: undefined,
+      text: block.text, order, section: block.section, ...scope, by: author.by, ...(author.from ? { from: author.from } : {}), editedAt: at, embedding: undefined, embeddedWith: undefined,
       // A memory the owner rewrote is theirs from then on, whoever wrote it first.
       ...(memory && author.by === "owner" ? { origin: "owner" as const } : {}),
     });
+    reworded.push(id);
     changed = true;
   }
   for (const { block, order } of plan.add) {
@@ -102,17 +106,116 @@ export async function syncLines(ctx: Writer, page: Note, author: Author, at = Da
       ...(memory && author.by !== "assistant" ? { origin: author.by === "job" ? "job" as const : "owner" as const } : {}),
     });
     added.set(sameKey(block.text), id);
+    reworded.push(id);
     changed = true;
   }
   for (const id of plan.drop) {
     // A memory being moved into this page whose words did not come back as a line of it stays as it was, out of the page.
     if (spare?.has(id)) await ctx.db.patch(id, { pageId: undefined, order: undefined, section: undefined, migratedAt: undefined });
-    else await ctx.db.delete(id);
+    else await deleteLine(ctx, id);
   }
+  if (reworded.length) await noteMentions(ctx, reworded);
+  if (page.kind === "person" && (reworded.length || plan.drop.length)) await noteAliases(ctx, page._id);
   if (page.linesAt !== page.revision) await ctx.db.patch(page._id, { linesAt: page.revision });
   if (changed) await ctx.scheduler.runAfter(0, internal.memories.embedMissing, {});
   return added;
 }
+
+/** A line gone for good, and what it mentioned. */
+export async function deleteLine(ctx: Writer, id: Id<"memories">): Promise<void> {
+  for (const mention of await ctx.db.query("mentions").withIndex("by_line", (q) => q.eq("lineId", id)).collect()) await ctx.db.delete(mention._id);
+  if (await ctx.db.get(id)) await ctx.db.delete(id);
+}
+
+/** People who have a page, by every name a line may call them: the page's title, and a first name only one of them has. */
+export async function peopleByName(ctx: Reader): Promise<Map<string, string>> {
+  const pages = await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", "person")).collect();
+  const names = new Map<string, string>();
+  const firsts = new Map<string, string[]>();
+  for (const page of pages) {
+    if (!page.person) continue;
+    names.set(page.title.toLocaleLowerCase(), page.person);
+    const first = page.title.split(/\s+/)[0].toLocaleLowerCase();
+    if (first.length > 2) firsts.set(first, [...(firsts.get(first) ?? []), page.person]);
+  }
+  for (const [first, keys] of firsts) if (keys.length === 1 && !names.has(first)) names.set(first, keys[0]);
+  return names;
+}
+
+/** The people a line mentions: those it is about, the person whose page it is on, and names in its words. */
+export function mentionedIn(line: Pick<Line, "text" | "about">, names: Map<string, string>, pageOf?: string): string[] {
+  const keys = new Set(names.values());
+  const found = new Set<string>((line.about ?? []).map(personKey).filter((key) => keys.has(key)));
+  if (pageOf) found.add(pageOf);
+  const words = line.text.toLocaleLowerCase().split(/[^\p{L}\p{N}'’.-]+/u).map((word) => word.replace(/['’]s$|[.'’-]+$/u, "")).filter(Boolean);
+  for (let i = 0; i < words.length; i++) {
+    const two = i + 1 < words.length ? names.get(`${words[i]} ${words[i + 1]}`) : undefined;
+    if (two) { found.add(two); i++; continue; }
+    const one = names.get(words[i]);
+    if (one) found.add(one);
+  }
+  return [...found];
+}
+
+/** Bring who these lines mention up to their words (memories.recall finds by it). */
+export async function noteMentions(ctx: Writer, ids: Array<Id<"memories">>, names?: Map<string, string>): Promise<void> {
+  const people = names ?? await peopleByName(ctx);
+  const pageKeys = new Map<string, string | undefined>();
+  for (const id of ids) {
+    const line = await ctx.db.get(id);
+    if (!line) continue;
+    let pageOf: string | undefined;
+    if (line.pageId) {
+      if (!pageKeys.has(line.pageId)) {
+        const page = await ctx.db.get(line.pageId);
+        pageKeys.set(line.pageId, page?.kind === "person" ? page.person : undefined);
+      }
+      pageOf = pageKeys.get(line.pageId);
+    }
+    const want = new Set(mentionedIn(line, people, pageOf));
+    for (const mention of await ctx.db.query("mentions").withIndex("by_line", (q) => q.eq("lineId", id)).collect()) {
+      if (mention.person && want.has(mention.person)) want.delete(mention.person);
+      else await ctx.db.delete(mention._id);
+    }
+    for (const person of want) await ctx.db.insert("mentions", { lineId: id, person });
+  }
+}
+
+/** What the owner calls someone, read from their page's lines ("Divya is my younger sister"). */
+export async function noteAliases(ctx: Writer, pageId: Id<"notes">): Promise<void> {
+  const page = await ctx.db.get(pageId);
+  if (!page || page.kind !== "person") return;
+  const aliases = aliasesIn(page.title, (await linesOf(ctx, pageId)).map((line) => line.text));
+  if (JSON.stringify(aliases) !== JSON.stringify(page.aliases ?? [])) await ctx.db.patch(pageId, { aliases: aliases.length ? aliases : undefined });
+}
+
+/**
+ * Who every line mentions, and what each person is called, for lines from
+ * before mentions were kept (issue #220): a batch of lines oldest first after
+ * where the last batch stopped (installation.mentionsAt), the next scheduled
+ * until none are left. Derived from the lines, so it changes none of them.
+ */
+const MENTIONS_DONE = Number.MAX_SAFE_INTEGER;
+export const indexMentions = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const install = await ctx.db.query("installation").first();
+    if (!install || install.mentionsAt === MENTIONS_DONE) return 0;
+    if (install.mentionsAt === undefined) for (const page of await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", "person")).collect()) await noteAliases(ctx, page._id);
+    const from = install.mentionsAt ?? -1;
+    const batch = await ctx.db.query("memories").withIndex("by_created", (q) => q.gt("createdAt", from)).take(2000);
+    await noteMentions(ctx, batch.filter((line) => !line.supersededBy).map((line) => line._id), await peopleByName(ctx));
+    const first = batch[0]?.createdAt ?? 0;
+    const last = batch.at(-1)?.createdAt ?? 0;
+    // Lines written at the same moment as the last of a batch go in the next one too; noteMentions does nothing twice.
+    const done = batch.length < 2000;
+    await ctx.db.patch(install._id, { mentionsAt: done ? MENTIONS_DONE : first < last - 1 ? last - 1 : last });
+    if (!done) await ctx.scheduler.runAfter(0, internal.pages.indexMentions, {});
+    return batch.length;
+  },
+});
+
 
 // --- Writing pages ------------------------------------------------------------------------------
 
@@ -169,7 +272,7 @@ export async function writePage(ctx: Writer, page: Note, patch: { title?: string
 export async function removePage(ctx: Writer, id: Id<"notes">): Promise<void> {
   if (!await ctx.db.get(id)) return;
   for (const job of await ctx.db.query("jobs").collect()) if (job.noteId === id) await ctx.db.patch(job._id, { noteId: undefined });
-  for (const line of await ctx.db.query("memories").withIndex("by_page", (q) => q.eq("pageId", id)).collect()) await ctx.db.delete(line._id);
+  for (const line of await ctx.db.query("memories").withIndex("by_page", (q) => q.eq("pageId", id)).collect()) await deleteLine(ctx, line._id);
   await ctx.db.delete(id);
 }
 
@@ -297,7 +400,7 @@ export async function dropLine(ctx: Writer, line: Line, author: Author): Promise
   const page = line.pageId ? await ctx.db.get(line.pageId) : null;
   const content = page ? removeLine(page.content, line.text) : null;
   if (page && content !== null) await writePage(ctx, page, { content }, author);
-  if (await ctx.db.get(line._id)) await ctx.db.delete(line._id);
+  if (await ctx.db.get(line._id)) await deleteLine(ctx, line._id);
 }
 
 /** A line's words changed where it stands, keeping its row (an edit, a to-do's news). */
@@ -306,7 +409,7 @@ export async function rewordLine(ctx: Writer, line: Line, text: string, author: 
   const content = page ? replaceLine(page.content, line.text, text) : null;
   if (page && content !== null) await writePage(ctx, page, { content }, author, { hints: new Map([[sameKey(text), line._id]]) });
   const now = await ctx.db.get(line._id);
-  if (now && now.text !== text.trim()) await ctx.db.patch(line._id, { text: text.trim(), by: author.by, editedAt: Date.now(), vector: undefined, vectorModel: undefined });
+  if (now && now.text !== text.trim()) await ctx.db.patch(line._id, { text: text.trim(), by: author.by, editedAt: Date.now(), embedding: undefined, embeddedWith: undefined });
 }
 
 // --- Memories from before pages, moved into them (issue #210, step 4) --------------------------------
@@ -381,7 +484,7 @@ export const migrate = internalMutation({
         content = placed && "content" in placed ? placed.content : appended(content, item);
         await ctx.db.patch(line._id, {
           pageId: page._id, order: Number.MAX_SAFE_INTEGER, section, migratedAt: now,
-          ...(text !== line.text ? { text, migratedFrom: line.text, vector: undefined, vectorModel: undefined } : {}),
+          ...(text !== line.text ? { text, migratedFrom: line.text, embedding: undefined, embeddedWith: undefined } : {}),
         });
         spare.add(line._id);
       }
@@ -414,7 +517,7 @@ export const undoMigration = internalMutation({
     for (const line of moved) {
       await ctx.db.patch(line._id, {
         pageId: undefined, order: undefined, section: undefined, migratedAt: undefined,
-        ...(line.migratedFrom !== undefined ? { text: line.migratedFrom, migratedFrom: undefined, vector: undefined, vectorModel: undefined } : {}),
+        ...(line.migratedFrom !== undefined ? { text: line.migratedFrom, migratedFrom: undefined, embedding: undefined, embeddedWith: undefined } : {}),
       });
     }
     let pagesDeleted = 0;

@@ -183,6 +183,14 @@ export default defineSchema({
      * Perry then no longer moves them in when it starts, until `perry brain move-in`.
      */
     memoriesInPages: v.optional(v.literal("undone")),
+    /**
+     * The sentence model Brain's lines are embedded with (lib/embed.ts), and while they are being embedded again
+     * with a new one, the model before, which search by meaning also uses until every line has the new one's.
+     */
+    embeddedWith: v.optional(v.string()),
+    embeddedBefore: v.optional(v.string()),
+    /** How far the lines from before mentions were kept have been read for who they mention (pages.indexMentions); done at its largest. */
+    mentionsAt: v.optional(v.number()),
     ownerChannel: v.optional(vChannel),
     ownerExternalId: v.optional(v.string()),
     ownerName: v.optional(v.string()),
@@ -718,6 +726,8 @@ export default defineSchema({
     day: v.optional(v.string()),
     /** A person's page: their name, lowercased, as the key it is found by. */
     person: v.optional(v.string()),
+    /** A person's page: what the owner calls them besides their name ("my sister", "amma"), read from its lines. */
+    aliases: v.optional(v.array(v.string())),
     /** The one chat a "chat" page belongs to: only that chat reads it. */
     conversationId: v.optional(v.id("conversations")),
     /**
@@ -889,9 +899,29 @@ export default defineSchema({
      * off, put back or deleted, the note is superseded by one that says so (memories.followTodo).
      */
     todoId: v.optional(v.id("todos")),
-    /** Its meaning as a vector, for search by meaning (lib/embed.ts): base64 float32, and the model that made it. */
+    /**
+     * Its meaning, for search by meaning (lib/embed.ts), and the model that made it. The server keeps the numbers
+     * out of the row, in the vector index (server/db.ts): a row read back has no embedding, only embeddedWith.
+     */
+    embedding: v.optional(v.array(v.float64())),
+    embeddedWith: v.optional(v.string()),
+    /**
+     * From before issue #220: the vector inside the row, base64 float32, and its model. Perry moves both into the
+     * vector index when it starts (server/brainIndex.ts); an older Perry reading the row finds neither and makes
+     * them again.
+     */
     vector: v.optional(v.string()),
     vectorModel: v.optional(v.string()),
+    /** What it is (lib/recall.ts weighs each its own way): a fact, a preference (strengthens when confirmed), or an episode (fades). */
+    type: v.optional(v.union(v.literal("fact"), v.literal("preference"), v.literal("episode"))),
+    /** When what it says happens, if not when it was said ("dentist on 28 Aug", said on the 14th), as a time. */
+    eventAt: v.optional(v.number()),
+    /** Until when it holds ("exam tomorrow"); past it, the line goes to the archive. */
+    expiresAt: v.optional(v.number()),
+    /** The line this one updates (replaces), extends (adds to) or derives from (an inference the owner approved). */
+    relation: v.optional(v.object({ to: v.id("memories"), how: v.union(v.literal("updates"), v.literal("extends"), v.literal("derives")) })),
+    /** How many times it was said again or confirmed (remember with the same words). */
+    confirmCount: v.optional(v.number()),
     /**
      * The page it is a line of (pages.ts): a paragraph, list item or other block of its Markdown, kept in step
      * with the page on every save, so one search finds it with the memories. Its place and the heading it is under.
@@ -909,7 +939,23 @@ export default defineSchema({
     .index("by_day", ["day", "createdAt"])
     .index("by_todo", ["todoId"])
     .index("by_project", ["projectId", "createdAt"])
-    .searchIndex("search_text", { searchField: "text" }),
+    // The current lines a model has yet to embed, or embedded with another model (memories.unembedded).
+    .index("by_embedded", ["supersededBy", "embeddedWith", "createdAt"])
+    .searchIndex("search_text", { searchField: "text" })
+    .vectorIndex("by_embedding", { vectorField: "embedding", dimensions: 384, filterFields: ["embeddedWith", "day"] }),
+
+  /**
+   * Who and what a line mentions: a person (their page's key, lib/pages.personKey) or a project, so a question
+   * naming them, or calling them what the owner does ("my sister"), finds what is said of them (lib/recall.ts).
+   * Kept in step with each line when it is written (pages.syncLines).
+   */
+  mentions: defineTable({
+    lineId: v.id("memories"),
+    person: v.optional(v.string()),
+    projectId: v.optional(v.id("projects")),
+  })
+    .index("by_line", ["lineId"])
+    .index("by_person", ["person"]),
 
   /**
    * One row per agent turn: what came in, which model handled it, which tools

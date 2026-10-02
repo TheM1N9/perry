@@ -35,6 +35,7 @@ import type * as lib_errors from "../lib/errors.js";
 import type * as lib_notes from "../lib/notes.js";
 import type * as lib_pages from "../lib/pages.js";
 import type * as lib_price from "../lib/price.js";
+import type * as lib_recall from "../lib/recall.js";
 import type * as lib_routing from "../lib/routing.js";
 import type * as lib_shortcuts from "../lib/shortcuts.js";
 import type * as lib_skills from "../lib/skills.js";
@@ -110,6 +111,7 @@ declare const fullApi: ApiFromModules<{
   "lib/notes": typeof lib_notes;
   "lib/pages": typeof lib_pages;
   "lib/price": typeof lib_price;
+  "lib/recall": typeof lib_recall;
   "lib/routing": typeof lib_routing;
   "lib/shortcuts": typeof lib_shortcuts;
   "lib/skills": typeof lib_skills;

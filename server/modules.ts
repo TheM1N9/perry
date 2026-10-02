@@ -34,6 +34,7 @@ import * as lib_errors from "../convex/lib/errors";
 import * as lib_notes from "../convex/lib/notes";
 import * as lib_pages from "../convex/lib/pages";
 import * as lib_price from "../convex/lib/price";
+import * as lib_recall from "../convex/lib/recall";
 import * as lib_routing from "../convex/lib/routing";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
 import * as lib_skills from "../convex/lib/skills";
@@ -107,6 +108,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/notes": lib_notes,
   "lib/pages": lib_pages,
   "lib/price": lib_price,
+  "lib/recall": lib_recall,
   "lib/routing": lib_routing,
   "lib/shortcuts": lib_shortcuts,
   "lib/skills": lib_skills,

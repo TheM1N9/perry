@@ -26,7 +26,7 @@ import type { ContactView } from "./contacts";
 
 type MemoryRow = {
   id: string; text: string; tags: string[]; kind: "profile" | "core" | "daily" | "page"; day?: string; origin?: string; createdAt: number;
-  pageId?: string; page?: { id: string; title: string }; section?: string;
+  pageId?: string; page?: { id: string; title: string }; section?: string; eventAt?: number; excerpt?: string[];
 };
 
 type RecallResult = {
@@ -40,8 +40,8 @@ type RecallResult = {
 const memoryKind = z.enum(["profile", "core", "daily"]);
 
 const shape = (m: MemoryRow) => m.kind === "page"
-  // A line of one of the owner's notes: which note, and where in it, to read the rest with read_note.
-  ? { id: m.id, text: m.text, kind: "note" as const, note: { id: m.pageId ?? "", title: m.page?.title ?? "", link: noteHref(m.pageId ?? "") }, ...(m.section ? { section: m.section } : {}) }
+  // A line of one of the owner's notes: which note, and where in it, to read the rest with read_note; and the lines around it.
+  ? { id: m.id, text: m.text, kind: "note" as const, note: { id: m.pageId ?? "", title: m.page?.title ?? "", link: noteHref(m.pageId ?? "") }, ...(m.section ? { section: m.section } : {}), ...(m.excerpt ? { around: m.excerpt } : {}) }
   : {
     id: m.id,
     text: m.text,
@@ -52,6 +52,10 @@ const shape = (m: MemoryRow) => m.kind === "page"
     // The page of memory it is a line of, and the section.
     ...(m.page ? { page: m.section ? `${m.page.title}, ${m.section}` : m.page.title } : {}),
     rememberedOn: new Date(m.createdAt).toISOString().slice(0, 10),
+    // When what it says happens, when that is not the day it was said.
+    ...(m.eventAt ? { happens: new Date(m.eventAt).toISOString().slice(0, 10) } : {}),
+    // The lines around it in its page, "> " before its own: where it came from.
+    ...(m.excerpt ? { around: m.excerpt } : {}),
   };
 
 /** recall, and brain_search and search_memory, which are it under other names. */
@@ -59,6 +63,7 @@ async function recallFor(ctx: ToolCtx, input: { query: string; limit?: number })
   const results: MemoryRow[] = await ctx.runAction(internal.memories.recall, {
     query: input.query,
     limit: input.limit,
+    excerpts: true,
     ...(ctx.conversationId ? { chat: ctx.conversationId } : {}),
   });
 
@@ -120,6 +125,12 @@ const remember = createTool({
       .describe("For kind=core: the section of Things to remember it goes under: People, Work, Health, Home, Preferences or Other, or a new one when none fits. Left out, the one it fits."),
     basedOn: z.array(z.string()).optional()
       .describe("When promoting from the journal: the ids of the journal lines it comes from, so it links back to them."),
+    type: z.enum(["fact", "preference", "episode"]).optional()
+      .describe("fact (stays true), preference (how the owner likes things; grows stronger when said again) or episode (something that happened; fades). Left out, by kind."),
+    expires: z.string().optional()
+      .describe("For something true only until a time (\"exam tomorrow\", \"in Goa until Sunday\"): when it stops holding, as YYYY-MM-DD or an ISO time. After it, the line goes to the archive."),
+    extends: z.string().optional()
+      .describe("The id of a memory this one adds to, which stays true (supersedes is for one it replaces)."),
   }),
   execute: async (
     ctx,
@@ -157,6 +168,9 @@ const remember = createTool({
         ...(input.todoId && !sealed ? { todoId: input.todoId } : {}),
         ...(input.section ? { section: input.section } : {}),
         ...(input.basedOn?.length && !sealed ? { basedOn: input.basedOn } : {}),
+        ...(input.type ? { type: input.type } : {}),
+        ...(input.expires && Number.isFinite(Date.parse(input.expires)) ? { expiresAt: Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(input.expires) ? `${input.expires}T23:59:59Z` : input.expires) } : {}),
+        ...(input.extends ? { extends: input.extends } : {}),
         by: fromJob ? "job" : "assistant",
         ...(ctx.conversationId ? { from: ctx.conversationId } : {}),
       },
