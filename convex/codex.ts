@@ -826,7 +826,7 @@ export const finishTurn = mutation({
     }
     // The memories the reply relied on, named on its last line: kept, and the line taken off.
     // A turn that broke off (the runner restarting) keeps what it had streamed, as recovery.sweep does.
-    const cited = citedMemories(args.response ?? (args.error ? job.partial : undefined));
+    const cited = citedMemories(args.error && !args.response?.trim() ? job.partial ?? args.response : args.response);
     // Finished with nothing to show is not a reply: the chat says so, instead of keeping the owner's message alone.
     const silent = !args.error && !args.stopped && !job.checkpoint && !job.flush && job.kind !== "compact"
       && !cited.text?.trim() && !mediaKey;

@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { hostname, platform, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -7,18 +7,21 @@ import { fileURLToPath } from "node:url";
 import { openChat, sleep } from "../browser";
 
 // bun artifacts/turn-endings/run.ts <outDir>   (PERRY_E2E_ROOT: where the temp home goes)
-// Needs `pnpm build` first. A fresh Perry in a temp folder, served by `next start`; the runner is
-// played by its own calls, so no engine runs. Each case is a chat of its own.
+// Needs `pnpm build` first. A fresh Perry in a temp folder, served by `next start`. The runner is
+// played by its own calls, with the token the server paired it with, so no engine runs; for the
+// restart, the real runner is then started on that token and its startup recovery ends the turn.
+// Each case is a chat of its own.
 //
 // Ways a turn's ending could go wrong, and the check that catches each:
-//   1. The runner restarts mid-reply and the streamed text is thrown away   â†’ restartKeepsPartial
-//   2. That restart is told with the old "Gateway fallback" line, or not at all â†’ restartSaysWhatHappened
-//   3. A turn finishes with no text and no files, and the chat shows nothing â†’ emptyReplyIsAnError
-//   4. A reply that is only the line naming memories counts as an answer    â†’ memoriesLineAloneIsEmpty
-//   5. An ordinary reply is mistaken for an empty one                        â†’ ordinaryReplyUntouched
-//   6. A turn stopped before it wrote anything is called a failure           â†’ stoppedEmptyIsNotAnError
-//   7. Finalizing again saves the messages twice                             â†’ nothingRepeats
-//   8. The dashboard does not show it: no error banner, no kept text, or a page error â†’ shown in the chat
+//   1. The runner restarts mid-reply and the streamed text is thrown away    -> restartKeepsPartial
+//   2. That restart is told with the old "Gateway fallback" line, or not at all -> restartSaysWhatHappened
+//   3. A runner sends an error with an empty response, which hides the streamed text -> blankErrorKeepsPartial
+//   4. A turn finishes with no text and no files, and the chat shows nothing -> emptyReplyIsAnError
+//   5. A reply that is only the line naming memories counts as an answer     -> memoriesLineAloneIsEmpty
+//   6. An ordinary reply is mistaken for an empty one                         -> ordinaryReplyUntouched
+//   7. A turn stopped before it wrote anything is called a failure            -> stoppedEmptyIsNotAnError
+//   8. Finalizing again saves the messages twice, or fails                    -> nothingRepeats
+//   9. The dashboard does not show it: no error banner, no kept text, or a page error -> shown in the chat
 const [outDir] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/turn-endings/run.ts <outDir>");
 mkdirSync(outDir, { recursive: true });
@@ -43,10 +46,12 @@ const check = (name: string, pass: boolean, detail?: unknown) => {
 
 const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex", TEMP: temp, TMP: temp };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("TELEGRAM") || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE") delete env[name];
-let serverLog = "";
+const logs = { server: "", runner: "" };
 const server: ChildProcess = spawn("node", [join(REPO, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)], { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-server.stdout?.on("data", (chunk: Buffer) => { serverLog += chunk; });
-server.stderr?.on("data", (chunk: Buffer) => { serverLog += chunk; });
+server.stdout?.on("data", (chunk: Buffer) => { logs.server += chunk; });
+server.stderr?.on("data", (chunk: Buffer) => { logs.server += chunk; });
+let runner: ChildProcess | null = null;
+const end = (child: ChildProcess | null) => { if (child?.pid) spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" }); };
 async function call<T>(path: string, args: object = {}): Promise<T> {
   const response = await fetch(`${BASE}/api/backend/admin`, { method: "POST", headers: { "content-type": "application/json", "x-perry-key": KEY }, body: JSON.stringify({ path, args }) });
   const body = await response.json() as { value?: T; error?: string };
@@ -63,9 +68,11 @@ async function until(test: () => Promise<boolean> | boolean, what: string, secon
 
 type Chat = { isRunning: boolean; lastError?: string };
 type Message = { role: string; text: string };
-const token = `turn-endings-${NONCE}`;
+let token = "";
 const getChat = (id: string) => call<Chat>("dashboard:getChat", { key: KEY, id });
 const messages = async (id: string) => (await call<{ page: Message[] }>("dashboard:getChatMessages", { key: KEY, id, paginationOpts: { numItems: 20, cursor: null } })).page;
+const reply = (list: Message[]) => list.find((message) => message.role === "assistant")?.text ?? "";
+const STREAMED = "1\n2\n3\n4\n5\n6\n7\n8";
 
 /** A chat with one message, its turn claimed by the pretend runner: what the runner then does is up to the case. */
 async function turnFor(text: string): Promise<{ chat: string; turn: string }> {
@@ -80,8 +87,8 @@ async function turnFor(text: string): Promise<{ chat: string; turn: string }> {
   return { chat, turn: turn!._id };
 }
 /** The chat once its turn is finalized: no longer running, and its messages saved. */
-async function settled(chat: string) {
-  await until(async () => !(await getChat(chat)).isRunning, "the turn to finish", 30);
+async function settled(chat: string, seconds = 30) {
+  await until(async () => !(await getChat(chat)).isRunning, "the turn to finish", seconds);
   await sleep(1500);
   return { chat: await getChat(chat), messages: await messages(chat) };
 }
@@ -90,26 +97,22 @@ let browser: Awaited<ReturnType<typeof openChat>> | null = null;
 try {
   await until(() => fetch(`${BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start", 90);
   await call("dashboard:skipOnboarding", { key: KEY }).catch(() => {});
-  await call("runner:createToken", { name: "E2E runner", token });
+  // The runner the server paired this computer with, as `perry run` would start it.
+  token = (JSON.parse(readFileSync(join(home, "runner.json"), "utf8")) as { token: string }).token;
   await call("runner:checkIn", { token, platform: platform(), hostname: hostname(), workdir: home });
   await call("engines:report", { token, engines: [{
     kind: "codex", installed: true, version: "999.0.0", signedIn: true, auth: { type: "chatgpt", label: "ChatGPT" },
     models: [{ id: "gpt-e2e", name: "GPT E2E", isDefault: true, efforts: ["low"], defaultEffort: "low" }],
   }] });
 
-  // 1â€“2. Streaming, then the runner restarts: on start it ends the turn with only an error (runner/index.ts, recoverTurns).
-  const restart = await turnFor(`Count to fifty ${NONCE}`);
-  const streamed = "1\n2\n3\n4\n5\n6\n7\n8";
-  await call("codex:streamTurn", { token, id: restart.turn, text: streamed });
-  const running = await call<Array<{ _id: string }>>("codex:runningTurns", { token });
-  const RESTARTED = "Perry restarted during this reply, so it ended early. Send the message again to finish it.";
-  for (const job of running) await call("codex:finishTurn", { token, id: job._id, error: RESTARTED });
-  const restartEnd = await settled(restart.chat);
-  const restartReply = restartEnd.messages.find((message) => message.role === "assistant")?.text ?? "";
-  check("restartKeepsPartial", restartReply.startsWith(streamed), restartEnd);
-  check("restartSaysWhatHappened", restartEnd.chat.lastError === RESTARTED && !/gateway/i.test(restartEnd.chat.lastError ?? ""));
+  // 3. An error with an empty response, after streaming.
+  const blank = await turnFor(`Count to ten ${NONCE}`);
+  await call("codex:streamTurn", { token, id: blank.turn, text: STREAMED });
+  await call("codex:finishTurn", { token, id: blank.turn, response: "", error: "The engine crashed." });
+  const blankEnd = await settled(blank.chat);
+  check("blankErrorKeepsPartial", reply(blankEnd.messages).startsWith(STREAMED) && blankEnd.chat.lastError === "The engine crashed.", blankEnd);
 
-  // 3. Done, with nothing to show.
+  // 4. Done, with nothing to show.
   const empty = await turnFor(`Say something ${NONCE}`);
   await call("codex:finishTurn", { token, id: empty.turn, response: "" });
   const emptyEnd = await settled(empty.chat);
@@ -117,32 +120,45 @@ try {
     && emptyEnd.messages.filter((message) => message.role === "user").length === 1
     && !emptyEnd.messages.some((message) => message.role === "assistant"), emptyEnd);
 
-  // 4. Only the line naming memories, which finishTurn takes off.
+  // 5. Only the line naming memories, which finishTurn takes off.
   const cited = await turnFor(`Recall something ${NONCE}`);
   await call("codex:finishTurn", { token, id: cited.turn, response: "\nmemories: abc123" });
   const citedEnd = await settled(cited.chat);
   check("memoriesLineAloneIsEmpty", /without writing a reply/.test(citedEnd.chat.lastError ?? ""), citedEnd);
 
-  // 5. An ordinary reply.
+  // 6. An ordinary reply.
   const ordinary = await turnFor(`Say pong ${NONCE}`);
   await call("codex:finishTurn", { token, id: ordinary.turn, response: "pong" });
   const ordinaryEnd = await settled(ordinary.chat);
   check("ordinaryReplyUntouched", !ordinaryEnd.chat.lastError
     && ordinaryEnd.messages.some((message) => message.role === "assistant" && message.text === "pong"), ordinaryEnd);
 
-  // 6. Stopped by the owner before it wrote anything.
+  // 7. Stopped by the owner before it wrote anything.
   const stopped = await turnFor(`Start something long ${NONCE}`);
   await call("codex:finishTurn", { token, id: stopped.turn, stopped: true });
   const stoppedEnd = await settled(stopped.chat);
   check("stoppedEmptyIsNotAnError", !stoppedEnd.chat.lastError, stoppedEnd);
 
-  // 7. Finalizing the restarted and the empty turns again saves nothing more.
-  for (const turn of [restart.turn, empty.turn]) await call("codex:finalizeTurn", { id: turn }).catch((error) => { notes.refinalize = String(error); });
+  // 1-2. Streaming when the runner went away; the real runner starts, and its startup recovery ends the turn
+  // (runner/index.ts, recoverTurns). Last, so it finds no other turn to take, and ended as soon as it has.
+  const restart = await turnFor(`Count to fifty ${NONCE}`);
+  await call("codex:streamTurn", { token, id: restart.turn, text: STREAMED });
+  runner = spawn(process.execPath, [join(REPO, "runner", "index.ts")], { cwd: REPO, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  runner.stdout?.on("data", (chunk: Buffer) => { logs.runner += chunk; });
+  runner.stderr?.on("data", (chunk: Buffer) => { logs.runner += chunk; });
+  const restartEnd = await settled(restart.chat, 90);
+  end(runner);
+  runner = null;
+  check("restartKeepsPartial", reply(restartEnd.messages).startsWith(STREAMED), restartEnd);
+  check("restartSaysWhatHappened", /^Perry restarted during this reply/.test(restartEnd.chat.lastError ?? "") && !/gateway/i.test(restartEnd.chat.lastError ?? ""));
+
+  // 8. Finalizing the restarted and the empty turns again saves nothing more, and does not fail.
+  for (const turn of [restart.turn, empty.turn]) await call("codex:finalizeTurn", { id: turn });
   await sleep(2000);
   check("nothingRepeats", (await messages(restart.chat)).length === restartEnd.messages.length
     && (await messages(empty.chat)).length === emptyEnd.messages.length);
 
-  // 8. What the dashboard shows for each.
+  // 9. What the dashboard shows for each.
   browser = await openChat(BASE, KEY);
   const { evaluate, send } = browser;
   const look = async (chat: string, file: string) => {
@@ -160,10 +176,12 @@ try {
   check("noPageErrors", browser.errors.length === 0, browser.errors);
 } catch (error) {
   check("ran", false, String(error));
-  notes.serverLog = serverLog.slice(-4000);
+  notes.serverLog = logs.server.slice(-4000);
+  notes.runnerLog = logs.runner.slice(-4000);
 } finally {
   browser?.close();
-  if (server.pid) spawnSync("taskkill", ["/PID", String(server.pid), "/T", "/F"], { stdio: "ignore" });
+  end(runner);
+  end(server);
   await sleep(1500);
   for (let attempt = 0; attempt < 10; attempt++) {
     try { rmSync(home, { recursive: true, force: true }); break; } catch { await sleep(1000); }
