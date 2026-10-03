@@ -617,7 +617,7 @@ async function main() {
       if (result || markIncomplete) {
         await client.mutation(api.codex.finishTurn, {
           token, id: job._id,
-          ...(result ?? { error: "Runner stopped during this turn. Gateway fallback will handle it." }),
+          ...(result ?? { error: "Perry restarted during this reply, so it ended early. Send the message again to finish it." }),
         });
       }
     }
