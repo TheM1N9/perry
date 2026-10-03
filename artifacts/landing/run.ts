@@ -27,6 +27,8 @@ import { sleep } from "../browser";
 //   eyes must follow the pointer, and the closing one must say hello when it
 //   scrolls into view.
 // - A wrong URL shows a bare error: the 404 page must be Perry's own.
+// - The film costs every visitor 5.7 MB: nothing of it may be requested
+//   before it is scrolled to.
 // - The film is a still: when public/film/perry.mp4 is there, it must play by
 //   itself (muted, as browsers require) once on screen, even with reduced
 //   motion, and play with sound and controls when asked.
@@ -201,6 +203,12 @@ await send("Emulation.setFocusEmulationEnabled", { enabled: true });
 await viewport(1440, 900);
 await motion("no-preference");
 await load();
+// The film is 5.7 MB, most of what the site sends: a visit that stays at the top must not fetch it.
+if (await evaluate(`!!document.getElementById("perry-film")`)) {
+  await sleep(2000);
+  check("film: nothing of it loads before it is scrolled to", !requests.some((url) => url.includes("/film/") && url.endsWith(".mp4")),
+    requests.filter((url) => url.includes("/film/")));
+}
 
 const fonts = await evaluate(`(() => {
   const first = (el) => getComputedStyle(el).fontFamily.split(",")[0].replace(/["']/g, "").trim();

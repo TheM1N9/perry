@@ -1,12 +1,19 @@
 {
   "pass": true,
-  "at": "2026-09-26T00:45:49.519Z",
+  "at": "2026-10-03T23:38:45.236Z",
   "performance": {
-    "lcpMs": 816,
-    "lcpElement": "P.absolute -right-32 top-1/2 hid",
-    "jsKb": 189
+    "lcpMs": 1504,
+    "lcpElement": "SPAN.inline-block whitespace-pre",
+    "jsKb": 193
   },
   "checks": [
+    {
+      "name": "film: nothing of it loads before it is scrolled to",
+      "pass": true,
+      "detail": [
+        "http://127.0.0.1:4675/film/poster.jpg"
+      ]
+    },
     {
       "name": "the body's font (Inter Tight) is loaded from the site",
       "pass": true,
@@ -43,7 +50,7 @@
       "detail": {
         "paused": false,
         "muted": true,
-        "t": 0.069796,
+        "t": 0.024752,
         "error": null
       }
     },
@@ -100,8 +107,8 @@
       "pass": true,
       "detail": {
         "centred": "100",
-        "right": "103.85374650545403",
-        "left": "96.13243842165954"
+        "right": "103.85395761606836",
+        "left": "96.133147780435"
       }
     },
     {
