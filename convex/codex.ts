@@ -825,7 +825,12 @@ export const finishTurn = mutation({
       return null;
     }
     // The memories the reply relied on, named on its last line: kept, and the line taken off.
-    const cited = citedMemories(args.response);
+    // A turn that broke off (the runner restarting) keeps what it had streamed, as recovery.sweep does.
+    const cited = citedMemories(args.response ?? (args.error ? job.partial : undefined));
+    // Finished with nothing to show is not a reply: the chat says so, instead of keeping the owner's message alone.
+    const silent = !args.error && !args.stopped && !job.checkpoint && !job.flush && job.kind !== "compact"
+      && !cited.text?.trim() && !mediaKey;
+    const error = args.error ?? (silent ? EMPTY_REPLY : undefined);
     const named = cited.ids.map((raw) => ctx.db.normalizeId("memories", raw)).filter((id): id is Id<"memories"> => Boolean(id));
     const memoryIds = [...new Set(named)];
     const kept = (await Promise.all(memoryIds.map((id) => ctx.db.get(id)))).flatMap((memory) => memory ? [memory._id] : []);
@@ -833,11 +838,11 @@ export const finishTurn = mutation({
     if (kept.length) await markUsed(ctx, kept, { revive: true });
     await ctx.db.patch(job._id, {
       mediaKey,
-      status: args.error ? "error" : "done",
+      status: error ? "error" : "done",
       ...(args.stopped ? { stopped: true } : {}),
       ...(kept.length ? { memoryIds: kept } : {}),
       response: cited.text?.slice(0, 100_000),
-      error: args.error?.slice(0, 2000),
+      error: error?.slice(0, 2000),
       model: args.model,
       finishedAt: Date.now(),
     });
@@ -1089,6 +1094,9 @@ async function tell(ctx: ActionCtx, conversation: { channel: "web" | "telegram" 
     await ctx.runMutation(internal.whatsapp.send, { to: conversation.externalId, text });
   }
 }
+
+/** What a turn that finished with no text and no files is shown as. */
+const EMPTY_REPLY = "The engine finished without writing a reply. Send the message again, or ask what it got done.";
 
 /** A reply's last line naming memories ("memories: a1b2, c3d4"), taken off; the ids it named. */
 const CITED = /\n?[ \t]*memories:[ \t]*([a-z0-9][a-z0-9, \t]*)\s*$/i;

@@ -1,0 +1,136 @@
+{
+  "ranAt": "2026-10-03T16:06:41.804Z",
+  "passed": true,
+  "checks": {
+    "restartKeepsPartial": true,
+    "restartSaysWhatHappened": true,
+    "emptyReplyIsAnError": true,
+    "memoriesLineAloneIsEmpty": true,
+    "ordinaryReplyUntouched": true,
+    "stoppedEmptyIsNotAnError": true,
+    "nothingRepeats": true,
+    "restartShownInChat": true,
+    "emptyShownInChat": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "home": "W:\\Developer-w\\.tmp\\perry-turn-endings-UJcVXE",
+    "restartKeepsPartial": {
+      "chat": {
+        "channel": "web",
+        "engine": "codex",
+        "access": "supervised",
+        "title": "Count to fifty e2e-musl37fj",
+        "isRunning": false,
+        "lastError": "Perry restarted during this reply, so it ended early. Send the message again to finish it."
+      },
+      "messages": [
+        {
+          "id": "yd8404yc1j74ekmq7cs3m5emye",
+          "role": "assistant",
+          "text": "1\n2\n3\n4\n5\n6\n7\n8",
+          "createdAt": 1791043566651.001,
+          "attachments": []
+        },
+        {
+          "id": "wp6raswnvatfh0pr7d5maxkgz8",
+          "role": "user",
+          "text": "Count to fifty e2e-musl37fj",
+          "createdAt": 1791043566651,
+          "attachments": []
+        }
+      ]
+    },
+    "emptyReplyIsAnError": {
+      "chat": {
+        "channel": "web",
+        "engine": "codex",
+        "access": "supervised",
+        "title": "Say something e2e-musl37fj",
+        "isRunning": false,
+        "lastError": "The engine finished without writing a reply. Send the message again, or ask what it got done."
+      },
+      "messages": [
+        {
+          "id": "we285rrh0qc7d8m6p4nr0cw03f",
+          "role": "user",
+          "text": "Say something e2e-musl37fj",
+          "createdAt": 1791043578504,
+          "attachments": []
+        }
+      ]
+    },
+    "memoriesLineAloneIsEmpty": {
+      "chat": {
+        "channel": "web",
+        "engine": "codex",
+        "access": "supervised",
+        "title": "Recall something e2e-musl37fj",
+        "isRunning": false,
+        "lastError": "The engine finished without writing a reply. Send the message again, or ask what it got done."
+      },
+      "messages": [
+        {
+          "id": "tpte4q82xbv1b9ywzqq0wzvjdv",
+          "role": "user",
+          "text": "Recall something e2e-musl37fj",
+          "createdAt": 1791043580856,
+          "attachments": []
+        }
+      ]
+    },
+    "ordinaryReplyUntouched": {
+      "chat": {
+        "channel": "web",
+        "engine": "codex",
+        "access": "supervised",
+        "title": "Say pong e2e-musl37fj",
+        "isRunning": false
+      },
+      "messages": [
+        {
+          "id": "29ww1afvghq8j42k7h0c3vq4zw",
+          "role": "assistant",
+          "text": "pong",
+          "createdAt": 1791043582916.001,
+          "attachments": []
+        },
+        {
+          "id": "deqpdht3yj97zh2mhzrvzwk9hq",
+          "role": "user",
+          "text": "Say pong e2e-musl37fj",
+          "createdAt": 1791043582916,
+          "attachments": []
+        }
+      ]
+    },
+    "stoppedEmptyIsNotAnError": {
+      "chat": {
+        "channel": "web",
+        "engine": "codex",
+        "access": "supervised",
+        "title": "Start something long e2e-musl37fj",
+        "isRunning": false
+      },
+      "messages": [
+        {
+          "id": "wrbk4n17sqazmrmj56rycf8849",
+          "role": "assistant",
+          "text": "_Stopped._",
+          "createdAt": 1791043585481.001,
+          "attachments": []
+        },
+        {
+          "id": "540weefcxg49sxj01qya700qfg",
+          "role": "user",
+          "text": "Start something long e2e-musl37fj",
+          "createdAt": 1791043585481,
+          "attachments": []
+        }
+      ]
+    },
+    "restartShownInChat": "Perry couldn't finish the last reply\n\nPerry restarted during this reply, so it ended early. Send the message again to finish it.\n\nTry again",
+    "emptyShownInChat": "Perry couldn't finish the last reply\n\nThe engine finished without writing a reply. Send the message again, or ask what it got done.\n\nTry again",
+    "noPageErrors": []
+  }
+}
