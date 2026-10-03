@@ -73,7 +73,12 @@ export async function deleteMessages(ctx: Writer, messageIds: string[]): Promise
 
 /** What a tool's execute receives: the backend's context, plus who and which chat the call is for. */
 /** conversationId: the chat the turn is in, so what a tool sets up can report back there. */
-export type ToolCtx = ActionCtx & { userId?: string; threadId?: string; fromJob?: boolean; conversationId?: Id<"conversations"> };
+/**
+ * What a tool call is made with (mcp.ts): who, which chat, whether a scheduled job's turn, and `outside`, whether
+ * the turn read something from outside before it (a web page, an app's data, someone else's message), so what it
+ * writes to Brain is marked as from outside and cannot instruct later turns (issue #136).
+ */
+export type ToolCtx = ActionCtx & { userId?: string; threadId?: string; fromJob?: boolean; conversationId?: Id<"conversations">; outside?: boolean };
 
 /**
  * A tool the assistant can call: a description, a zod input schema and an

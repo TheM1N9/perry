@@ -156,6 +156,8 @@ const remember = createTool({
   ): Promise<{ id?: string; stored: boolean; superseded: number; page?: string; note: string }> => {
     // What a scheduled job saves is the job's, whatever the call says; see mcp.ts.
     const fromJob = "fromJob" in ctx && ctx.fromJob === true;
+    // After the turn read something from outside, what it saves is from outside, whatever the call says (issue #136).
+    const outside = ctx.outside === true;
     const chat: { projectId?: Id<"projects">; contactId?: string } | null = ctx.conversationId ? await ctx.runQuery(internal.conversations.getById, { id: ctx.conversationId }) : null;
     // A chat with someone else keeps what it learns to itself, always, and none of it is the owner's word.
     const sealed = Boolean(chat?.contactId);
@@ -171,7 +173,7 @@ const remember = createTool({
       : chat?.projectId && (scope === "this project" || fromJob) ? { projectId: chat.projectId }
       : fromJob ? {}
       : { conversationId: ctx.conversationId };
-    const result: { id?: string; duplicate: boolean; superseded: number; linked?: boolean; page?: { id: string; title: string }; section?: string; refused?: string; journey?: boolean } = await ctx.runMutation(
+    const result: { id?: string; duplicate: boolean; superseded: number; linked?: boolean; page?: { id: string; title: string }; section?: string; refused?: string; journey?: boolean; leftOut?: string; proposed?: string } = await ctx.runMutation(
       internal.memories.add,
       {
         text: input.text,
@@ -179,7 +181,7 @@ const remember = createTool({
         source: ctx.userId ?? "unknown",
         kind: input.kind,
         supersedes: input.supersedes,
-        origin: fromJob ? "job" : sealed ? "tool" : input.origin ?? "owner",
+        origin: sealed || outside ? "tool" : fromJob ? "job" : input.origin ?? "owner",
         ...place,
         ...(input.about?.length ? { about: input.about } : {}),
         // The owner's to-dos are no business of a chat with someone else.
@@ -194,7 +196,7 @@ const remember = createTool({
         ...(ctx.conversationId ? { from: ctx.conversationId } : {}),
       },
     );
-    if (result.refused) return { stored: false, superseded: 0, note: result.refused };
+    if (result.refused) return { stored: false, superseded: 0, note: [result.refused, result.leftOut].filter(Boolean).join(" ") };
     const unlinked = result.linked === false ? " There is no to-do with that id, so it is not linked; list_todos shows them." : "";
     // A project's Journey is read from every chat of the owner's, whichever chat wrote in it.
     const where = result.journey ? "for every chat" : place.projectId ? "for this project" : place.conversationId ? "for this chat only" : "for every chat";
@@ -204,7 +206,7 @@ const remember = createTool({
       stored: Boolean(result.id) && !result.duplicate,
       superseded: result.superseded,
       ...(page ? { page } : {}),
-      note: `${result.duplicate ? "Already remembered; noted as confirmed." : `Stored ${where}${page ? ` in ${page}` : ""}.`}${unlinked}`,
+      note: `${result.duplicate ? "Already remembered; noted as confirmed." : `Stored ${where}${page ? ` in ${page}` : ""}.`}${unlinked}${result.leftOut ? ` ${result.leftOut}` : ""}${outside && !sealed ? " It came after something from outside, so it is kept as from outside: data, not the owner's word." : ""}`,
     };
   },
 });
@@ -765,6 +767,8 @@ const delete_todo = createTool({
 // notes from its own chats only, and nothing from a chat with someone else (whose tools leave these out anyway).
 type NoteRow = { id: string; title: string; project?: string; revision: number; updated: string; chars: number; link: string };
 const chatOf = (ctx: ToolCtx) => (ctx.conversationId ? { chat: ctx.conversationId } : {});
+/** For a write: the chat, and whether the turn read something from outside first (issue #136). */
+const writerOf = (ctx: ToolCtx) => ({ ...chatOf(ctx), ...(ctx.outside ? { outside: true } : {}) });
 
 const list_notes = createTool({
   description:
@@ -809,8 +813,8 @@ const create_note = createTool({
     project: z.enum(["this project", "none"]).optional()
       .describe("In a project's chat: \"this project\" (the default) keeps it to the project's chats; \"none\" lets every chat reach it."),
   }),
-  execute: async (ctx, input): Promise<{ created?: NoteRow; error?: string }> => {
-    return await ctx.runMutation(internal.notes.createForAgent, { ...chatOf(ctx), ...input });
+  execute: async (ctx, input): Promise<{ created?: NoteRow; error?: string; note?: string }> => {
+    return await ctx.runMutation(internal.notes.createForAgent, { ...writerOf(ctx), ...input });
   },
 });
 
@@ -829,8 +833,8 @@ const update_note = createTool({
     expectedRevision: z.number().int().positive().optional().describe("The revision you read. Needed to replace; optional to append."),
     title: z.string().min(1).max(160).optional().describe("A new title."),
   }),
-  execute: async (ctx, input): Promise<{ updated?: NoteRow; error?: string; current?: NoteRow & { content: string }; sections?: string[] }> => {
-    return await ctx.runMutation(internal.notes.updateForAgent, { ...chatOf(ctx), ...input });
+  execute: async (ctx, input): Promise<{ updated?: NoteRow; error?: string; current?: NoteRow & { content: string }; sections?: string[]; note?: string }> => {
+    return await ctx.runMutation(internal.notes.updateForAgent, { ...writerOf(ctx), ...input });
   },
 });
 
@@ -889,14 +893,14 @@ const brain_write = createTool({
     expectedRevision: z.number().int().positive().optional(),
     project: z.enum(["this project", "none"]).optional().describe("For create in a project's chat: \"none\" lets every chat reach it."),
   }),
-  execute: async (ctx, input): Promise<{ created?: PageRow; updated?: PageRow; error?: string; current?: PageRow & { content: string }; sections?: string[] }> => {
+  execute: async (ctx, input): Promise<{ created?: PageRow; updated?: PageRow; error?: string; current?: PageRow & { content: string }; sections?: string[]; note?: string }> => {
     if (input.mode === "create") {
       if (!input.title) return { error: "create needs a title." };
-      return await ctx.runMutation(internal.notes.createForAgent, { ...chatOf(ctx), title: input.title, content: input.content, ...(input.project ? { project: input.project } : {}) });
+      return await ctx.runMutation(internal.notes.createForAgent, { ...writerOf(ctx), title: input.title, content: input.content, ...(input.project ? { project: input.project } : {}) });
     }
     if (!input.page) return { error: `${input.mode} needs page, the page to change.` };
     return await ctx.runMutation(internal.notes.updateForAgent, {
-      ...chatOf(ctx), id: input.page, mode: input.mode, content: input.content,
+      ...writerOf(ctx), id: input.page, mode: input.mode, content: input.content,
       ...(input.section ? { section: input.section } : {}), ...(input.expectedRevision ? { expectedRevision: input.expectedRevision } : {}),
     });
   },
@@ -912,8 +916,8 @@ const brain_append = createTool({
     section: z.string().max(200).optional(),
     content: z.string().min(1).max(100_000).describe("Markdown to add."),
   }),
-  execute: async (ctx, input): Promise<{ updated?: PageRow; error?: string; sections?: string[] }> => {
-    return await ctx.runMutation(internal.notes.updateForAgent, { ...chatOf(ctx), id: input.page, mode: "append", content: input.content, ...(input.section ? { section: input.section } : {}) });
+  execute: async (ctx, input): Promise<{ updated?: PageRow; error?: string; sections?: string[]; note?: string }> => {
+    return await ctx.runMutation(internal.notes.updateForAgent, { ...writerOf(ctx), id: input.page, mode: "append", content: input.content, ...(input.section ? { section: input.section } : {}) });
   },
 });
 
@@ -934,7 +938,7 @@ const brain_summarize = createTool({
     "whole. With no text: the sections whose summary is missing or out of date, biggest first. With page, section and " +
     "text: that section's summary, at most about 120 words, the facts that matter most and what is still open; no ids.",
   inputSchema: z.object({ page: z.string().optional(), section: z.string().max(200).optional(), text: z.string().max(1200).optional() }),
-  execute: async (ctx, input): Promise<{ due?: unknown[]; saved?: { page: string; section?: string }; error?: string }> => {
+  execute: async (ctx, input): Promise<{ due?: unknown[]; saved?: { page: string; section?: string }; error?: string; note?: string }> => {
     return await ctx.runMutation(internal.pages.summarizeForAgent, { ...(ctx.conversationId ? { chat: ctx.conversationId } : {}), ...input });
   },
 });
@@ -944,7 +948,7 @@ const brain_lately = createTool({
     "Write the Lately page whole: the owner's last two weeks in short (what happened, what is coming up, threads " +
     "still open), at most about 200 words. It is pinned and sent right after About me in every chat.",
   inputSchema: z.object({ text: z.string().min(20).max(2500) }),
-  execute: async (ctx, input): Promise<{ id?: string; error?: string }> => {
+  execute: async (ctx, input): Promise<{ id?: string; error?: string; note?: string }> => {
     return await ctx.runMutation(internal.pages.writeLately, { ...(ctx.conversationId ? { chat: ctx.conversationId } : {}), text: input.text });
   },
 });
@@ -984,7 +988,7 @@ const brain_propose = createTool({
     title: z.string().max(160).optional().describe("For split and topic: the new page's title."),
     why: z.string().max(300).describe("One short sentence the owner reads first."),
   }),
-  execute: async (ctx, input): Promise<{ proposed?: string; error?: string }> => {
+  execute: async (ctx, input): Promise<{ proposed?: string; error?: string; note?: string }> => {
     return await ctx.runMutation(internal.compaction.proposeForAgent, { ...(ctx.conversationId ? { chat: ctx.conversationId } : {}), ...input });
   },
 });

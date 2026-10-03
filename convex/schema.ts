@@ -1065,7 +1065,9 @@ export default defineSchema({
     // Tidying lines (merge, condense, rollup, infer); rearranging pages (#230): move lines, split some off to a page of
     // their own, merge one page into another, or make a topic page that gathers what is said across pages.
     kind: v.union(v.literal("merge"), v.literal("condense"), v.literal("rollup"), v.literal("infer"),
-      v.literal("move"), v.literal("split"), v.literal("mergePages"), v.literal("topic")),
+      v.literal("move"), v.literal("split"), v.literal("mergePages"), v.literal("topic"),
+      // Lines read from outside that would instruct Perry or set a preference, waiting for the owner (issue #136).
+      v.literal("outside")),
     pageId: v.id("notes"),
     section: v.optional(v.string()),
     summary: v.string(),

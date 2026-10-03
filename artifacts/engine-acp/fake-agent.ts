@@ -19,6 +19,8 @@
  * What a message makes it do (the last text block of the prompt):
  *   REMEMBER <text>  call Perry's `remember` tool through the MCP server it was given
  *   TOOL <name> <json>  call any of Perry's tools with those arguments, and log what it answered
+ *   TOOLS <json>     several of Perry's tools in one turn, in order: [["read_page", {...}], ["remember", {...}]];
+ *                    also on a line of its own anywhere in the message (a job's prompt, after Perry's own words)
  *   LONGER <minutes> <seconds>  call Perry's `take_longer` for that many minutes, then say
  *                    nothing for that many seconds, then reply
  *   QUIET <seconds>  say nothing for that many seconds, then reply
@@ -393,6 +395,15 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     const result = await remember(session, note);
     await tool(id, { status: result.startsWith("remembered") ? "completed" : "failed", content: [{ type: "content", content: { type: "text", text: result } }] }, false);
     await stream([`Saved it: ${result}.`], 10);
+    return done("end_turn");
+  }
+  const toolsLine = text.split("\n").map((line) => line.trim()).find((line) => line.startsWith("TOOLS "));
+  if (toolsLine) {
+    // One turn, several calls: what a turn that reads something and then writes does (artifacts/security-fixes).
+    const calls = JSON.parse(toolsLine.slice("TOOLS ".length)) as Array<[string, Record<string, unknown>]>;
+    const outcomes: string[] = [];
+    for (const [name, args] of calls) outcomes.push(`${name}: ${await callTool(session, name, args, true)}`);
+    await stream([`Called ${outcomes.join("; ")}.`], 10);
     return done("end_turn");
   }
   if (text.startsWith("TOOL ")) {

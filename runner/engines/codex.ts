@@ -181,7 +181,7 @@ export class CodexEngine implements Engine {
     // A skill named in a message goes as a `skill` item of its input.
     skills: true,
     // A guest turn: no shell, apps, plugins, images, computer or browser (NO_TOOLS), a read-only sandbox on an empty
-    // folder, approvals never asked, no AGENTS.md and no skills (runTurn).
+    // folder, approvals never asked, no AGENTS.md, and every skill turned off for its thread (runTurn).
     guestLockdown: true,
   };
 
@@ -391,6 +391,10 @@ export class CodexEngine implements Engine {
     const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments, guest, skills } = input;
     const app = await this.ensure();
     const broken = guest ? [] : await app.reloadSkills(cwd).catch(() => []);
+    // A chat with someone else gets none of the skills Codex would find, Perry's or the owner's own (issue #163): Codex
+    // loads one whose "$name" is in a message by itself, so each is turned off for the thread. Not knowing which
+    // there are, the turn does not run.
+    const hidden = guest ? await app.skillPaths(cwd).catch((error) => { throw new Error(`Could not list Codex's skills to keep them out of this chat: ${message(error)}`); }) : [];
     const machine = describeMachine();
     // The owner's OS and shell, so commands, paths and "open it" requests fit this machine.
     const home = [
@@ -446,8 +450,8 @@ export class CodexEngine implements Engine {
       // Naming a plugin that is not installed does nothing. Its computer use for other apps stays.
       "plugins.browser@openai-bundled.enabled": false,
       "plugins.unified-computer-use@openai-bundled.enabled": false,
-      // A chat with someone else: no shell, apps, plugins, images or computer, and no AGENTS.md from anywhere.
-      ...(guest ? { ...NO_TOOLS, "tools.view_image": false, project_doc_max_bytes: 0 } : {}),
+      // A chat with someone else: no shell, apps, plugins, images or computer, no AGENTS.md from anywhere, and no skills.
+      ...(guest ? { ...NO_TOOLS, "tools.view_image": false, project_doc_max_bytes: 0, "skills.config": hidden.map((path) => ({ path, enabled: false })) } : {}),
     };
     const start = { cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions, serviceName: "perry" };
     const spare = threadId ? null : await this.takeSpare(app, start);
@@ -535,6 +539,9 @@ export class CodexEngine implements Engine {
       }
     } finally {
       this.turns.delete(id);
+      // A thread Codex still has loaded keeps the skills it was resumed with, so a skill added since would be
+      // found in a chat with someone else: its thread is let go after each turn, and resumed afresh with the next.
+      if (guest) void app.request("thread/unsubscribe", { threadId: id }).catch(() => {});
       app.off("item/agentMessage/delta", onDelta);
       app.off("item/started", onItemStarted);
       app.off("item/completed", onItemCompleted);
@@ -556,7 +563,14 @@ export class CodexEngine implements Engine {
   }
 
   async compact(cursor: string, cwd: string): Promise<void> {
-    await (await this.ensure()).compact(cursor, cwd);
+    const app = await this.ensure();
+    try {
+      await app.compact(cursor, cwd);
+    } finally {
+      // Compacting loads the thread with none of its turn's settings; let go, the next turn resumes it with its own
+      // (a chat with someone else keeps its lockdown and no skills, issue #163).
+      await app.request("thread/unsubscribe", { threadId: cursor }).catch(() => {});
+    }
     forget(cursor);
   }
 

@@ -8,7 +8,7 @@ import { appended, cleanTitle, editSection, noteHref } from "./lib/notes";
 import { blockMarkdown, blocksOf, itemOf, journalTitle, removeLine, replaceLines, sameKey } from "./lib/pages";
 import { timezoneOf } from "./jobs";
 import { seenFrom } from "./memories";
-import { isPinned, linesOf, linesProject, removePage, secretIn, setPinned, writePage, insertPage } from "./pages";
+import { isPinned, linesOf, linesProject, removePage, scrubbed, secretIn, setPinned, writePage, insertPage } from "./pages";
 
 /**
  * Brain tidied with the owner's yes (issue #220, the owner's idea): Perry
@@ -45,6 +45,8 @@ const DECLINED_FOR_MS = 90 * DAY_MS;
 export const vProposalKind = v.union(
   v.literal("merge"), v.literal("condense"), v.literal("rollup"), v.literal("infer"),
   v.literal("move"), v.literal("split"), v.literal("mergePages"), v.literal("topic"),
+  // Lines read from outside that would instruct Perry or set a preference (issue #136): Perry never proposes these itself.
+  v.literal("outside"),
 );
 type Kind = Proposal["kind"];
 const VERB: Record<"merge" | "condense" | "rollup" | "infer", string> = { merge: "Merge", condense: "Condense", rollup: "Roll up", infer: "Add what follows from" };
@@ -64,6 +66,7 @@ function describe(proposal: Pick<Proposal, "kind" | "before" | "after" | "summar
     case "split": return { title: `Move ${plural(count)} from ${where} to a new page, ${proposal.title}`, detail: [proposal.summary, `Lines:\n${list(proposal.before.map((line) => line.text))}`].filter(Boolean).join("\n\n") };
     case "mergePages": return { title: `Merge the page ${where} into ${to}`, detail: [proposal.summary, count ? `Its lines:\n${list(proposal.before.map((line) => line.text))}` : ""].filter(Boolean).join("\n\n") };
     case "topic": return { title: `Make a topic page, ${proposal.title}, from ${plural(count)}`, detail: [proposal.summary, `From:\n${list(proposal.before.map((line) => line.text))}`, `It says:\n${list(proposal.after)}`].filter(Boolean).join("\n\n") };
+    case "outside": return { title: `Save ${plural(proposal.after.length)} from outside to ${where}`, detail: [proposal.summary, `Adds:\n${list(proposal.after)}`].filter(Boolean).join("\n\n") };
     default: {
       const title = `${VERB[proposal.kind]} ${plural(count)} in ${where}`;
       const detail = [
@@ -143,11 +146,13 @@ async function checkRearrange(ctx: MutationCtx, input: { kind: Kind; targetPageI
 export async function propose(ctx: MutationCtx, input: {
   kind: Kind; pageId: Id<"notes">; section?: string; before: string[]; after: string[]; summary: string; by: Proposal["by"];
   targetPageId?: Id<"notes">; targetSection?: string; title?: string;
-}): Promise<{ id?: Id<"brainProposals">; error?: string }> {
+}): Promise<{ id?: Id<"brainProposals">; error?: string; note?: string }> {
   const page = await ctx.db.get(input.pageId);
   if (!page) return { error: "No such page." };
-  const after = input.after.map((text) => text.replace(/\s+/g, " ").trim()).filter(Boolean);
-  if (!after.length && !MOVES.includes(input.kind)) return { error: "Say what the lines become." };
+  // What would stand instead never holds a secret (issue #137): each is left out of it.
+  const cleaned = await Promise.all(input.after.map((text) => scrubbed(ctx, text.replace(/\s+/g, " ").trim())));
+  const after = cleaned.filter((line) => !line.empty).map((line) => line.text).filter(Boolean);
+  if (!after.length && !MOVES.includes(input.kind)) return { error: cleaned.find((line) => line.note)?.note ?? "Say what the lines become." };
   const rearranging = await checkRearrange(ctx, input, page);
   if (rearranging.error) return { error: rearranging.error };
   const target = rearranging.target;
@@ -165,12 +170,13 @@ export async function propose(ctx: MutationCtx, input: {
     if (input.kind === "rollup" && (await ctx.db.get(line.pageId!))?.kind !== "journal") return { error: `Line ${raw} is not in the journal.` };
     before.push({ id: line._id, text: line.text });
   }
-  if (before.length < (input.kind === "merge" || input.kind === "topic" ? 2 : input.kind === "mergePages" ? 0 : 1)) {
+  if (before.length < (input.kind === "merge" || input.kind === "topic" ? 2 : input.kind === "mergePages" || input.kind === "outside" ? 0 : 1)) {
     return { error: input.kind === "merge" ? "A merge needs two lines or more." : input.kind === "topic" ? "A topic page gathers two lines or more." : "Name the lines it comes from." };
   }
-  const secret = await secretIn(ctx, [...after, input.title ?? ""].join("\n"));
+  const secret = input.title ? await secretIn(ctx, input.title) : null;
   if (secret) return { error: secret };
-  const key = keyOf(input.kind, input.kind === "mergePages" ? [page._id] : before.map((line) => line.id), target?._id ?? input.title?.trim().toLocaleLowerCase());
+  // Lines from outside are told apart by their words, as they have no lines of their own yet.
+  const key = keyOf(input.kind, input.kind === "mergePages" ? [page._id] : input.kind === "outside" ? after.map(sameKey) : before.map((line) => line.id), input.kind === "outside" ? page._id : target?._id ?? input.title?.trim().toLocaleLowerCase());
   for (const other of await ctx.db.query("brainProposals").withIndex("by_key", (q) => q.eq("key", key)).collect()) {
     if (other.status === "pending") return { error: "That is already waiting for the owner." };
     if (other.status === "declined" && Date.now() - (other.decidedAt ?? 0) < DECLINED_FOR_MS) return { error: "The owner declined that lately." };
@@ -183,7 +189,20 @@ export async function propose(ctx: MutationCtx, input: {
   const where = input.kind === "rollup" ? `the journal, ${input.section ?? page.title}` : input.kind === "topic" ? "Brain" : `${page.title}${input.section ? ` › ${input.section}` : ""}`;
   const approvalId = await askAboutBrain(ctx, { proposalId: id, ...describe(proposal, where, target?.title) });
   if (approvalId) await ctx.db.patch(id, { approvalId });
-  return { id };
+  const note = cleaned.find((line) => line.note)?.note;
+  return { id, ...(note ? { note } : {}) };
+}
+
+/**
+ * Lines Perry read from outside (a web page, an app's data, someone else's message) that would instruct it or set
+ * a preference (issue #136): never written by Perry, only proposed. The owner's yes makes them the owner's, added
+ * where they were meant to go; a no leaves Brain as it was.
+ */
+export async function proposeFromOutside(ctx: MutationCtx, input: { pageId: Id<"notes">; section?: string; lines: string[]; by: "assistant" | "job" }): Promise<{ id?: Id<"brainProposals">; error?: string }> {
+  return await propose(ctx, {
+    kind: "outside", pageId: input.pageId, ...(input.section ? { section: input.section } : {}), before: [], after: input.lines, by: input.by,
+    summary: "Perry read this in a web page, an app or someone else's message, not from you. It reads like an instruction or a preference, so it is saved only if you say yes.",
+  });
 }
 
 /** The owner's answer, from wherever they gave it (approvals.settleRow): applied, or left as it was. */
@@ -249,8 +268,8 @@ async function apply(ctx: MutationCtx, proposal: Proposal) {
     await ctx.db.patch(proposal._id, { status: "stale", decidedAt: now });
     return;
   }
-  // An inferred fact is added beside what it comes from; the rest replace their lines where the first one stood.
-  const content = proposal.kind === "infer"
+  // An inferred fact, or what the owner let in from outside, is added; the rest replace their lines where the first one stood.
+  const content = proposal.kind === "infer" || proposal.kind === "outside"
     ? (() => {
       const placed = proposal.section ? editSection(page.content, proposal.section, proposal.after.map(itemOf).join("\n"), "append") : null;
       return placed && "content" in placed ? placed.content : appended(page.content, proposal.after.map(itemOf).join("\n"));
@@ -261,7 +280,7 @@ async function apply(ctx: MutationCtx, proposal: Proposal) {
     return;
   }
   // The old lines leave the page as rows of their own first, so the save cannot take one for the new words.
-  if (proposal.kind !== "infer") {
+  if (proposal.kind !== "infer" && proposal.kind !== "outside") {
     for (const line of lines) {
       await ctx.db.patch(line._id, {
         pageId: undefined, order: undefined, compactedBy: proposal._id,
@@ -273,8 +292,8 @@ async function apply(ctx: MutationCtx, proposal: Proposal) {
   const made = await writePage(ctx, (await ctx.db.get(page._id))!, { content }, { by: "owner" });
   const wanted = new Set(proposal.after.map(sameKey));
   const added = [...made].filter(([key]) => wanted.has(key)).map(([, id]) => id);
-  for (const id of added) await ctx.db.patch(id, { basedOn: lines.map((line) => line._id), relation: { to: lines[0]._id, how: proposal.kind === "infer" ? "derives" as const : "updates" as const } });
-  if (proposal.kind !== "infer") for (const line of lines) await ctx.db.patch(line._id, { supersededBy: added[0] ?? line._id });
+  if (lines.length) for (const id of added) await ctx.db.patch(id, { basedOn: lines.map((line) => line._id), relation: { to: lines[0]._id, how: proposal.kind === "infer" ? "derives" as const : "updates" as const } });
+  if (proposal.kind !== "infer" && proposal.kind !== "outside") for (const line of lines) await ctx.db.patch(line._id, { supersededBy: added[0] ?? line._id });
   await ctx.db.patch(proposal._id, { status: "applied", decidedAt: now, appliedAt: now, added });
 }
 
@@ -403,7 +422,7 @@ export async function undoProposal(ctx: MutationCtx, id: Id<"brainProposals">): 
       if (block) content = content.replace(/\r\n?/g, "\n").split("\n").filter((_, at) => at < block.start || at > block.end).join("\n");
     }
   }
-  if (proposal.kind !== "infer") {
+  if (proposal.kind !== "infer" && proposal.kind !== "outside") {
     // The old ones come back where they were, as the same rows: on the page before the save, so it keeps them.
     for (const item of [...proposal.before].reverse()) {
       const line = await ctx.db.get(item.id);
@@ -566,9 +585,11 @@ export const proposeForAgent = internalMutation({
     replaces: v.array(v.string()), with: v.array(v.string()), why: v.string(),
     to: v.optional(v.string()), toSection: v.optional(v.string()), title: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<{ proposed?: string; error?: string }> => {
+  handler: async (ctx, args): Promise<{ proposed?: string; error?: string; note?: string }> => {
     const chat = args.chat ? await ctx.db.get(args.chat) : null;
     if (chat?.contactId) return { error: "Not from a chat with someone else." };
+    // Lines from outside are proposed by Perry's writes themselves (memories.add, notes.updateForAgent), never by name.
+    if (args.kind === "outside") return { error: "Not a kind you can propose." };
     let pageId: Id<"notes"> | null = null;
     const named = async (raw: string) => {
       const id = ctx.db.normalizeId("notes", raw.trim());
@@ -597,7 +618,7 @@ export const proposeForAgent = internalMutation({
       kind: args.kind, pageId, ...(args.section ? { section: args.section } : {}), before: args.replaces, after: args.with, summary: args.why, by: "assistant",
       ...(to ? { targetPageId: to._id } : {}), ...(args.toSection?.trim() ? { targetSection: args.toSection } : {}), ...(args.title?.trim() ? { title: args.title } : {}),
     });
-    return done.id ? { proposed: `Waiting for the owner's OK (${done.id}).` } : { error: done.error };
+    return done.id ? { proposed: `Waiting for the owner's OK (${done.id}).`, ...(done.note ? { note: done.note } : {}) } : { error: done.error };
   },
 });
 

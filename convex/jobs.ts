@@ -376,6 +376,8 @@ export const run = internalAction({
       externalId: chat.externalId,
       text: `${job.trigger ? "⚡" : "⏰"} ${job.name} (${now})\n\n${job.prompt}${context}\n\n${CONDITIONAL_DELIVERY}`,
       title: chat.title,
+      // An event's details came from outside: the run starts as having read them, so they cannot plant anything lasting (#136).
+      ...(args.event !== undefined && job.trigger ? { outside: true } : {}),
       // Routed (lib/routing.ts); with no engine to route to (no default chosen), as before, and refused there.
       ...(route ? { route } : job.model && job.engine ? { model: job.model, engine: job.engine } : {}),
     });

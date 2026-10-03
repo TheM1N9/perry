@@ -1,7 +1,7 @@
 import { v, type Infer } from "convex/values";
 import { markUsed } from "./archive";
 import { TAKE_LONGER_MAX_MIN } from "./lib/turnLimits";
-import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { createThread, saveMessages } from "./lib/agent";
 import { CAPTION_LIMIT, UPLOAD_LIMIT, deleteMessage, editDraft, finishDraft, sendDraft, sendFile, sendMessage } from "./lib/telegram";
@@ -159,6 +159,8 @@ export const enqueueTurn = internalMutation({
     access: v.optional(vAccess),
     attachments: v.optional(v.array(vTurnAttachment)),
     policy: v.optional(v.union(v.literal("steer"), v.literal("queue"))),
+    /** What starts it came from outside (an event's email or file): it starts as having read outside content (mcp.ts). */
+    outside: v.optional(v.boolean()),
   },
   returns: v.union(v.id("codexTurns"), v.id("codexSteers")),
   handler: async (ctx, args) => {
@@ -206,7 +208,9 @@ export const enqueueTurn = internalMutation({
     }
     const runnerId = await pickRunner(ctx, conversation, engine);
     if (!runnerId) throw new Error(await noRunner(ctx, conversation, engine));
-    const id = await ctx.db.insert("codexTurns", { ...message, runnerId, status: "queued" });
+    // A memory checkpoint or flush saves what the chat said so far: when the chat read something from outside, so did it (#136).
+    const outside = args.outside || ((args.checkpoint || args.flush) && await readOutside(ctx, args.conversationId));
+    const id = await ctx.db.insert("codexTurns", { ...message, runnerId, status: "queued", ...(outside ? { outsideAt: Date.now() } : {}) });
     await takeFromOutbox(ctx, await ctx.db.get(args.conversationId), args.prompt);
     return id;
   },
@@ -1253,6 +1257,12 @@ export const pruneOrphans = internalMutation({
     return deleted;
   },
 });
+
+/** Whether any turn of a chat read something from outside (outsideAt): what a memory checkpoint of it saves is from outside too. */
+async function readOutside(ctx: Pick<QueryCtx, "db">, conversationId: Id<"conversations">): Promise<boolean> {
+  const turns = await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", conversationId)).collect();
+  return turns.some((turn) => turn.outsideAt !== undefined);
+}
 
 /** Who may use the MCP endpoint: a runner, while it has a Codex turn running. */
 /** The turn read something from outside (mcp.ts): from now on, acting outward waits for the owner. */

@@ -17,8 +17,10 @@ export async function POST(request: Request) {
     await backend().runMutation("pages:indexAll", {}, { internal: true });
     await moveMemoriesIntoPages(backend());
     await givePeoplePages(backend());
+    // What came in is kept as Perry's own writes are: every secret left out (issue #137).
+    const secretsLeftOut = await backend().runMutation("pages:scrubAll", {}, { internal: true });
     await updateBrainIndex(backend());
-    return Response.json({ value });
+    return Response.json({ value: { ...value, secretsLeftOut } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
   }
