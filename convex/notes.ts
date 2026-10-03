@@ -3,11 +3,15 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { appended, editSection, headingsOf, INBOX_TITLE, noteHref, titleFrom, tooLong } from "./lib/notes";
-import { journalTitle, type PageKind } from "./lib/pages";
+import { blocksOf, journalTitle, type PageKind } from "./lib/pages";
+import { HELD_FOR_OWNER, standingLike, WAITS_FOR_OWNER } from "./lib/provenance";
+import { SECRET_NAMES, secretsIn } from "./lib/secrets";
+import { keptSecrets } from "./vault";
+import { proposeFromOutside } from "./compaction";
 import { around, linkedIds, type BrainGraph } from "./lib/graph";
 import { neighbourhoodOf } from "./brainMap";
 import { timezoneOf } from "./jobs";
-import { insertPage, isPinned, linesOf, memoryPage, mentionsOf, moveLines, removePage, secretIn, setPinned, writePage, type LineBy } from "./pages";
+import { insertPage, isPinned, linesOf, memoryPage, mentionsOf, moveLines, removePage, scrubbed, secretIn, setPinned, writePage, type LineBy } from "./pages";
 import { readPersona } from "./persona";
 
 /**
@@ -64,6 +68,8 @@ export type NoteView = NoteSummary & {
   from?: { id: Id<"conversations">; title: string };
   /** A journal page's day. */
   day?: string;
+  /** What looks like a secret in it ("a password"), for the editor to warn of (issue #137): the owner's to keep, but sent with the page. */
+  secrets?: string[];
 };
 
 const previewOf = (content: string) => {
@@ -100,7 +106,14 @@ async function view(ctx: Reader, note: Note): Promise<NoteView> {
     ...(chat ? { from: { id: chat._id, title: chat.title ?? "Untitled chat" } } : {}),
     ...(note.kind ? { kind: note.kind } : {}),
     ...(note.day ? { day: note.day } : {}),
+    ...await secretsOf(ctx, note.content),
   };
+}
+
+/** The kinds of secret in a page's words, once each, by name. */
+async function secretsOf(ctx: Reader, content: string): Promise<{ secrets?: string[] }> {
+  const found = secretsIn(content, await keptSecrets(ctx));
+  return found.length ? { secrets: [...new Set(found.map((secret) => SECRET_NAMES[secret.kind]))] } : {};
 }
 
 /** Every note, newest first, without the pages of memory (pages.ts), which the Memory page lists. A few hundred at most, so read whole. */
@@ -111,15 +124,15 @@ async function getNote(ctx: Reader, raw: string): Promise<Note | null> {
   return id ? await ctx.db.get(id) : null;
 }
 
-async function insertNote(ctx: Writer, input: { title: string; content: string; by: By; projectId?: Id<"projects">; from?: Id<"conversations"> }): Promise<Id<"notes">> {
-  return await insertPage(ctx, { title: input.title, content: input.content, author: { by: input.by, ...(input.from ? { from: input.from } : {}) }, ...(input.projectId ? { projectId: input.projectId } : {}) });
+async function insertNote(ctx: Writer, input: { title: string; content: string; by: By; projectId?: Id<"projects">; from?: Id<"conversations">; outside?: boolean }): Promise<Id<"notes">> {
+  return await insertPage(ctx, { title: input.title, content: input.content, author: { by: input.by, ...(input.from ? { from: input.from } : {}), ...(input.outside ? { outside: true } : {}) }, ...(input.projectId ? { projectId: input.projectId } : {}) });
 }
 
 /**
  * A save of what changed, as the next revision, and its lines brought up to it (pages.writePage): `line` says who
  * wrote what changed, when not `by` itself (a job's run), and from which chat. The caller has checked the revision it was made from.
  */
-async function writeNote(ctx: Writer, note: Note, patch: { title?: string; content?: string }, by: By, line?: { by: LineBy; from?: Id<"conversations"> }): Promise<number> {
+async function writeNote(ctx: Writer, note: Note, patch: { title?: string; content?: string }, by: By, line?: { by: LineBy; from?: Id<"conversations">; outside?: boolean }): Promise<number> {
   await writePage(ctx, note, patch, line ?? { by });
   return (await ctx.db.get(note._id))!.revision;
 }
@@ -481,16 +494,19 @@ export const searchForAgent = internalQuery({
 });
 
 export const createForAgent = internalMutation({
-  args: { chat: vChat, title: v.string(), content: v.string(), project: v.optional(v.union(v.literal("this project"), v.literal("none"))) },
-  handler: async (ctx, args): Promise<{ created?: AgentNote; error?: string }> => {
+  args: { chat: vChat, title: v.string(), content: v.string(), project: v.optional(v.union(v.literal("this project"), v.literal("none"))), outside: v.optional(v.boolean()) },
+  handler: async (ctx, args): Promise<{ created?: AgentNote; error?: string; note?: string }> => {
     const reach = await reachOf(ctx, args.chat);
     if (reach.sealed) return { error: SEALED };
-    const secret = await secretIn(ctx, `${args.title}\n${args.content}`);
-    if (secret) return { error: secret };
+    // No secret goes into a page (issue #137): each is left out, and Perry is told.
+    const title = await scrubbed(ctx, args.title);
+    const content = await scrubbed(ctx, args.content);
+    if (content.empty) return { error: content.note };
+    const note = [title.note, content.note].find(Boolean);
     const projectId = args.project === "none" ? undefined : reach.projectId;
     try {
-      const id = await insertNote(ctx, { title: args.title, content: args.content, by: "assistant", ...(projectId ? { projectId } : {}), ...(args.chat ? { from: args.chat } : {}) });
-      return { created: agentNote((await ctx.db.get(id))!, await projectNames(ctx)) };
+      const id = await insertNote(ctx, { title: title.text, content: content.text, by: "assistant", ...(projectId ? { projectId } : {}), ...(args.chat ? { from: args.chat } : {}), ...(args.outside ? { outside: true } : {}) });
+      return { created: agentNote((await ctx.db.get(id))!, await projectNames(ctx)), ...(note ? { note } : {}) };
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }
@@ -512,8 +528,10 @@ export const updateForAgent = internalMutation({
     section: v.optional(v.string()),
     title: v.optional(v.string()),
     expectedRevision: v.optional(v.number()),
+    /** The turn read something from outside before this (mcp.ts, issue #136). */
+    outside: v.optional(v.boolean()),
   },
-  handler: async (ctx, args): Promise<{ updated?: AgentNote; error?: string; current?: AgentNote & { content: string }; sections?: string[] }> => {
+  handler: async (ctx, args): Promise<{ updated?: AgentNote; error?: string; current?: AgentNote & { content: string }; sections?: string[]; note?: string }> => {
     const reach = await reachOf(ctx, args.chat);
     if (reach.sealed) return { error: SEALED };
     const name = args.id.replace(/\s+/g, " ").trim().toLocaleLowerCase();
@@ -524,8 +542,25 @@ export const updateForAgent = internalMutation({
     if (!note) return { error: NOT_HERE };
     // Added to a Journey, it goes under today's date, newest last.
     if (note.kind === "journey" && args.mode === "append") args = { ...args, section: journalTitle(dayAgo(await timezoneOf(ctx), 0)) };
-    const secret = await secretIn(ctx, `${args.title ?? ""}\n${args.content}`);
-    if (secret) return { error: secret };
+    // No secret goes into a page (issue #137): each is left out of what Perry writes, and Perry is told.
+    const title = args.title === undefined ? null : await scrubbed(ctx, args.title);
+    const words = await scrubbed(ctx, args.content);
+    if (words.empty) return { error: words.note };
+    const left = [title?.note, words.note].find(Boolean);
+    args = { ...args, content: words.text, ...(title ? { title: title.text } : {}) };
+    // After something from outside (issue #136), About me and what every chat is given (a pinned page or section)
+    // change only on the owner's yes: an addition that instructs or sets a preference, or any to About me, is
+    // proposed to them; replacing words there waits for them to ask.
+    if (args.outside) {
+      const pinnedHere = isPinned(note) || Boolean(args.section && note.pinnedSections?.some((item) => item.toLocaleLowerCase() === args.section!.trim().toLocaleLowerCase()));
+      if ((note.kind === "about" || pinnedHere) && args.mode !== "append") return { error: HELD_FOR_OWNER(`change "${note.title}", which every chat is given`) };
+      // A page of memory (the journal, a person, a Journey) is memory too: an instruction there waits like one from remember.
+      if (note.kind === "about" || ((pinnedHere || Boolean(note.kind)) && standingLike(args.content))) {
+        const lines = blocksOf(args.content).map((block) => block.text).filter(Boolean);
+        const proposed = await proposeFromOutside(ctx, { pageId: note._id, ...(args.section ? { section: args.section } : {}), lines, by: "assistant" });
+        return { error: proposed.error ?? WAITS_FOR_OWNER };
+      }
+    }
     const names = await projectNames(ctx);
     if (args.mode !== "append" && args.expectedRevision === undefined) {
       return { error: "Replacing words needs expectedRevision, the revision read_note gave: read the note first." };
@@ -545,11 +580,11 @@ export const updateForAgent = internalMutation({
     } else if (args.mode === "replace_section") return { error: "replace_section needs section, the heading of the section to replace." };
     else content = appended(note.content, args.content);
     try {
-      await writeNote(ctx, note, { content, ...(args.title ? { title: args.title } : {}) }, "assistant", { by: "assistant", ...(args.chat ? { from: args.chat } : {}) });
+      await writeNote(ctx, note, { content, ...(args.title ? { title: args.title } : {}) }, "assistant", { by: "assistant", ...(args.chat ? { from: args.chat } : {}), ...(args.outside ? { outside: true } : {}) });
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }
-    return { updated: agentNote((await ctx.db.get(note._id))!, names) };
+    return { updated: agentNote((await ctx.db.get(note._id))!, names), ...(left ? { note: left } : {}) };
   },
 });
 

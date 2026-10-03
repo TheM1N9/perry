@@ -104,7 +104,7 @@ export function ApprovalCard({ approval, now, showChat = true, bare }: { approva
             </div>
           ) : (
           <div>
-            <h3 className="text-xs font-medium text-muted-foreground">{proposal.kind === "rollup" ? "Summary" : proposal.kind === "infer" ? "Adds" : proposal.kind === "topic" ? `A new page, ${proposal.title ?? ""}` : "After"}</h3>
+            <h3 className="text-xs font-medium text-muted-foreground">{proposal.kind === "rollup" ? "Summary" : proposal.kind === "infer" || proposal.kind === "outside" ? "Adds" : proposal.kind === "topic" ? `A new page, ${proposal.title ?? ""}` : "After"}</h3>
             {editing === null ? (
               <ul className="mt-1 space-y-0.5" data-after>{proposal.after.map((line, index) => <li key={index} className="text-pretty">{line}</li>)}</ul>
             ) : (

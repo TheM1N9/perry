@@ -1,0 +1,323 @@
+{
+  "ranAt": "2026-10-03T01:10:38.455Z",
+  "checks": {
+    "searchWorksWhileReembedding": true,
+    "reembeddingResumes": true,
+    "progressShown": true,
+    "migrationBacksUpFirst": true,
+    "migrationKeepsEveryLine": true,
+    "dashboardUpAtOnce": true,
+    "reembeddingFinishes": true,
+    "firstStartArchivesNothing": true,
+    "turnSizedToEngine": true,
+    "latelyRightAfterAboutMe": true,
+    "proposalsWaitInNeedsYou": true,
+    "nothingChangesBeforeYes": true,
+    "proposalsRefusedWhenUnsafe": true,
+    "declineChangesNothing": true,
+    "moveKeepsTheRow": true,
+    "splitMakesAPageAndLinks": true,
+    "mergePagesKeepsRowsAndPassesOn": true,
+    "topicPageGathers": true,
+    "condenseKeepsOriginals": true,
+    "undoPutsItAllBack": true,
+    "undoKeepsMergedPageWords": true,
+    "expiredLineArchived": true,
+    "archivesOnlyWhatIsUnused": true,
+    "archivedNotSentWithTurns": true,
+    "deepRecallFindsAndRevives": true,
+    "guestNeverSeesTheArchive": true,
+    "openingAPageUsesItsLines": true,
+    "brainSearchIncludesArchive": true,
+    "restoreBringsBack": true,
+    "neighbourhoodMatchesTheMap": true,
+    "recallReadsOnlyTheNeighbourhood": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "mainBrain": {
+      "lines": 2731,
+      "current": 2731,
+      "withVector": 2731,
+      "seeded": 2727,
+      "pages": 908
+    },
+    "mainLog": [
+      "[perry] connected this computer (THIS-PC) to the local backend",
+      "[perry] backend ready: 533 functions, data in W:\\perry-tests\\security-reruns\\perry-brain-220-Tcy7Fb"
+    ],
+    "searchWorksWhileReembedding": {
+      "words": 24,
+      "meaning": 1,
+      "asked": 1,
+      "first": {
+        "model": "onnx-community/embeddinggemma-300m-ONNX",
+        "before": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+        "total": 2731,
+        "done": 64,
+        "startedAt": 1790989507578
+      },
+      "whileAsked": {
+        "model": "onnx-community/embeddinggemma-300m-ONNX",
+        "before": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+        "total": 2731,
+        "done": 192,
+        "startedAt": 1790989507578
+      }
+    },
+    "reembeddingResumes": {
+      "atStop": {
+        "model": "onnx-community/embeddinggemma-300m-ONNX",
+        "before": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+        "total": 2731,
+        "done": 224,
+        "startedAt": 1790989507578
+      },
+      "doneAtStop": 224,
+      "resumed": {
+        "model": "onnx-community/embeddinggemma-300m-ONNX",
+        "before": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+        "total": 2731,
+        "done": 224,
+        "startedAt": 1790989507578
+      },
+      "backups": [
+        "perry-before-brain-index-2026-10-03T01-05-02-693Z.sqlite"
+      ]
+    },
+    "progressShown": {
+      "shown": [
+        "Updating search: 864 of 2,731 lines. Search works meanwhile.\n\nx",
+        "Updating search: 1,024 of 2,731 lines. Search works meanwhile.\n\nx"
+      ],
+      "seen": {
+        "model": "onnx-community/embeddinggemma-300m-ONNX",
+        "before": "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+        "total": 2731,
+        "done": 1056,
+        "startedAt": 1790989507578
+      }
+    },
+    "migrationBacksUpFirst": {
+      "backups": [
+        "perry-before-brain-index-2026-10-03T01-05-02-693Z.sqlite"
+      ],
+      "inBackup": 2731,
+      "withVector": 2731
+    },
+    "migrationKeepsEveryLine": {
+      "changed": [],
+      "lines": 2731,
+      "leftInRows": 0
+    },
+    "dashboardUpAtOnce": {
+      "startMs": 6445,
+      "brainOpensMs": 35,
+      "restartMs": 1816,
+      "reembedMs": 75676,
+      "linesPerSecond": 36,
+      "wholeMapMs": 38,
+      "neighbourhoodMs": 12
+    },
+    "reembeddingFinishes": {
+      "left": 0,
+      "vectors": 2731,
+      "current": 2731,
+      "install": {
+        "embeddedWith": "onnx-community/embeddinggemma-300m-ONNX",
+        "reembedding": {
+          "model": "onnx-community/embeddinggemma-300m-ONNX",
+          "total": 2731,
+          "done": 2731,
+          "startedAt": 1790989507578,
+          "finishedAt": 1790989583074
+        }
+      }
+    },
+    "firstStartArchivesNothing": {
+      "archiveSince": 1790989507507
+    },
+    "turnSizedToEngine": {
+      "budget": 44800,
+      "used": 3848,
+      "smallUsed": 1893,
+      "condensed": 2
+    },
+    "latelyRightAfterAboutMe": {
+      "lately": {
+        "id": "m0r5myg5fwskywptv15qrgd64j"
+      },
+      "latelyAt": 252,
+      "rememberAt": 445
+    },
+    "proposalsWaitInNeedsYou": {
+      "proposed": {
+        "move": {
+          "proposed": "Waiting for the owner's OK (0hyqe2t6yczg21et16aycr4vxc)."
+        },
+        "split": {
+          "proposed": "Waiting for the owner's OK (75y4j75ggjc6xyhy8rag11ddqy)."
+        },
+        "mergePages": {
+          "proposed": "Waiting for the owner's OK (ms3nyjcyx926savps4yhzfenh5)."
+        },
+        "topic": {
+          "proposed": "Waiting for the owner's OK (hvdtf9pcva0ycqcwq66c9dfnzn)."
+        },
+        "condense": {
+          "proposed": "Waiting for the owner's OK (vp5kre39n0p7n76qmsbvge947z)."
+        }
+      },
+      "merges": 1,
+      "pending": [
+        "merge",
+        "condense",
+        "topic",
+        "mergePages",
+        "split",
+        "move"
+      ]
+    },
+    "proposalsRefusedWhenUnsafe": {
+      "crossScope": {
+        "error": "Line seedf0a7wanyvwmurovxym is not one this chat may see."
+      },
+      "guest": {
+        "error": "Not from a chat with someone else."
+      },
+      "again": {
+        "error": "That is already waiting for the owner."
+      }
+    },
+    "splitMakesAPageAndLinks": {
+      "content": "## Work\n\n- The owner works at Globex on the design system.\n\n- Globex's design review is every Thursday.\n\n- The owner's manager at Globex is Farah.\n\n- Globex pays on the last working day of the month.\n\n- The owner leads the Globex icon refresh.\n\n- Globex's office is in Koramangala.\n"
+    },
+    "mergePagesKeepsRowsAndPassesOn": {
+      "merged": "Merged into [Juhi](/brain/5bq4pmb8sd0h3qywfzdrczqvng).\n"
+    },
+    "topicPageGathers": {
+      "content": "- Goa trip with Juhi, planned for December 2026.\n- Staying at a beach shack in Palolem.\n\n## Related\n\n- [Wed 30 Sept 2026](/brain/9v0abcxy4gah5fvgymat1b9ney)\n- [Thu 1 Oct 2026](/brain/1vbd6zdw2ggykh5d15xr1brqbr)\n"
+    },
+    "condenseKeepsOriginals": {
+      "condensedNew": "cxh5rcj7tn2xc8df9gcmrbkb44"
+    },
+    "undoPutsItAllBack": {
+      "undone": {
+        "condense": {
+          "undone": true
+        },
+        "topic": {
+          "undone": true
+        },
+        "mergePages": {
+          "undone": true
+        },
+        "split": {
+          "undone": true
+        },
+        "move": {
+          "undone": true
+        }
+      },
+      "notBack": [],
+      "headlines": [
+        "The owner had a check-up in March (all fine); blood group O positive.",
+        "Made Goa trip",
+        "Merged Juhi Sharma into Juhi",
+        "Moved 6 lines to a new page, Work at Globex",
+        "Moved 1 line to Datta"
+      ]
+    },
+    "archivesOnlyWhatIsUnused": {
+      "archivedCount": 2441,
+      "profile": "5egk0rfmr58cv14w2m6qk1qfgp"
+    },
+    "archivedNotSentWithTurns": {
+      "umbrella": false,
+      "skoda": false,
+      "skodaArchived": true,
+      "size": 1260
+    },
+    "deepRecallFindsAndRevives": {
+      "shallow": "Nothing in memory or notes matched. The archive may have it: recall again with deep=true.",
+      "deep": [
+        "The owner keeps the spare umbrella in the car boot.",
+        "The owner's car is a blue Skoda."
+      ]
+    },
+    "guestNeverSeesTheArchive": {
+      "guestDeep": []
+    },
+    "brainSearchIncludesArchive": {
+      "without": false
+    },
+    "archiveList": {
+      "newest": 50
+    },
+    "neighbourhoodMatchesTheMap": [
+      {
+        "pageId": "5bq4pmb8sd0h3qywfzdrczqvng",
+        "fromMap": 47,
+        "fromNeighbors": 40
+      },
+      {
+        "pageId": "11e62bqder32kn6q8mr3swnjw9",
+        "fromMap": 30,
+        "fromNeighbors": 30
+      },
+      {
+        "pageId": "5egk0rfmr58cv14w2m6qk1qfgp",
+        "fromMap": 0,
+        "fromNeighbors": 0
+      },
+      {
+        "pageId": "txncwrdf2nd1qtpc6qgwrk8q5k",
+        "fromMap": 1,
+        "fromNeighbors": 1
+      }
+    ],
+    "recallReadsOnlyTheNeighbourhood": {
+      "wholeMapMs": 38,
+      "neighbourhoodMs": 12,
+      "near": 4
+    },
+    "noPageErrors": [],
+    "timings": {
+      "startMs": 6445,
+      "brainOpensMs": 35,
+      "restartMs": 1816,
+      "reembedMs": 75676,
+      "linesPerSecond": 36,
+      "wholeMapMs": 38,
+      "neighbourhoodMs": 12
+    },
+    "realModelTurns": "none: main's Perry ran no turn, and every chat of this one ran on the fake Grok agent",
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\security-reruns\\perry-brain-220-Tcy7Fb\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn 81ryk9b5aftpavrkk23398wsfw\u001b[0m",
+      "\u001b[2m  saved turn 52yd35rt9pa8f14qtfwpvxrm1y\u001b[0m",
+      "\u001b[2m  saved turn sb77422pzg32msa6jr0xrkq5tx\u001b[0m",
+      "\u001b[2m  saved turn ymwzap2be5sdkgrj4n9arcx4nv\u001b[0m",
+      "\u001b[2m  saved turn 7af566e4ffkpg35ch7f3efegfr\u001b[0m",
+      "\u001b[2m  saved turn 0wkbnt39505pefm3mwerrhq24p\u001b[0m",
+      "\u001b[2m  saved turn fq3qdxeadx38c14hejr5bpv2dd\u001b[0m",
+      "\u001b[2m  saved turn r71h7aj3brtjfpa4sacmckh1qg\u001b[0m",
+      "\u001b[2m  saved turn zq4d8qp662eapygj9m96nmsdvh\u001b[0m",
+      "\u001b[2m  saved turn 67qv8hrze7rb1ngqz6j6b6652d\u001b[0m",
+      "\u001b[2m  saved turn 479h7mtephrmg09zd0t150qced\u001b[0m",
+      "\u001b[2m  saved turn v8zdqv8hjgprs09y1mjfxrdghj\u001b[0m",
+      "\u001b[2m  saved turn mt8jww2hn59xnxqdvm1130sjm0\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

@@ -59,7 +59,7 @@ import { ENGINE_LABELS, ENGINES, refusal, updateOf, versionIn } from "../convex/
 import { effortFor, modelFor } from "../convex/lib/routing";
 import { skillsNamedIn } from "../convex/lib/skills";
 import {
-  optionOf, skillNote, type Access, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type NamedSkill, type PerryTools,
+  defuse, optionOf, skillNote, type Access, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type NamedSkill, type PerryTools,
   type TurnHandle, type TurnResult, type TurnSink,
 } from "./engine";
 import { createEngines } from "./engines";
@@ -741,6 +741,9 @@ async function main() {
     }
   }));
 
+  /** A file someone else sent is named in the message by the name they gave it: defused like their words. */
+  const guestFiles = <T extends { fileName: string }>(files: T[], guest?: boolean): T[] => guest ? files.map((file) => ({ ...file, fileName: defuse(file.fileName) })) : files;
+
   /** Where a chat with someone else runs: an empty folder, so nothing of the owner's is at hand. */
   const guestDir = () => { mkdirSync(PATHS.guest, { recursive: true }); return PATHS.guest; };
 
@@ -748,10 +751,12 @@ async function main() {
    * The skills a message of the owner's names ("$weekly-review", from the web
    * app, Telegram or WhatsApp alike), for its engine: as input of their own
    * where it takes them, else named after the message with where each
-   * SKILL.md is. Someone else's message names none of the owner's skills.
+   * SKILL.md is. Someone else's message names none of the owner's skills, and
+   * its mentions are defused, so the engine finds none by itself either (#163).
    */
   const withSkills = (engine: Engine, prompt: string, guest?: boolean): { prompt: string; skills?: NamedSkill[] } => {
-    const skills = guest ? [] : skillsNamedIn(prompt);
+    if (guest) return { prompt: defuse(prompt) };
+    const skills = skillsNamedIn(prompt);
     if (!skills.length) return { prompt };
     console.log(dim(`  using ${skills.map((skill) => `$${skill.name}`).join(", ")}`));
     return engine.capabilities.skills ? { prompt, skills } : { prompt: `${prompt}\n\n${skillNote(skills)}` };
@@ -875,7 +880,7 @@ async function main() {
         try {
           const mode = engine.capabilities.steer;
           if (!engine.steer || (mode !== "native" && mode !== "concurrent-prompt")) throw new Error(`${engine.label} takes one message at a time`);
-          await engine.steer(handle, { ...withSkills(engine, steer.prompt, turn.guest), attachments: await localise(steer.attachments) });
+          await engine.steer(handle, { ...withSkills(engine, steer.prompt, turn.guest), attachments: guestFiles(await localise(steer.attachments), turn.guest) });
           console.log(dim(`  steered the ${engine.label} turn with a new message`));
           await client.mutation(api.codex.ackSteer, { token, id: steer._id, applied: true });
         } catch (error) {
@@ -987,10 +992,11 @@ async function main() {
           const outcome: TurnResult = await unlessGivenUp(engine.runTurn({
             resumeCursor: job.resumeCursor,
             instructions: job.instructions,
-            history: job.history,
-            recalled: job.recalled,
+            // In a chat with someone else, what they wrote (and what was kept from it) reaches the engine defused, like the message.
+            history: job.guest && job.history ? defuse(job.history) : job.history,
+            recalled: job.guest && job.recalled ? defuse(job.recalled) : job.recalled,
             ...withSkills(engine, job.prompt, job.guest),
-            attachments: await localise(job.attachments),
+            attachments: guestFiles(await localise(job.attachments), job.guest),
             cwd: job.guest ? guestDir() : workdir,
             model: job.requestedModel,
             effort: job.requestedEffort,

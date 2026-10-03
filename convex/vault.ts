@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
+import type { SavedValue } from "./lib/secrets";
 
 /**
  * The owner's logins and secrets, for Perry to sign in to websites with
@@ -60,6 +61,16 @@ export function hide(text: string, values: string[]): string {
 /** Every saved value long enough to hide on sight, for hiding it in whatever is about to be kept. */
 export async function savedValues(ctx: Pick<QueryCtx, "db">): Promise<string[]> {
   return (await ctx.db.query("vault").collect()).map((row) => row.value).filter((value) => value.length >= HIDE_EVERYWHERE);
+}
+
+/**
+ * Every value kept in Logins & secrets, and every service key, with what it is called there: what never goes
+ * into memory or a page (pages.scrubbed, lib/secrets.ts). As long as savedValues' are, so a PIN is not found in every year.
+ */
+export async function keptSecrets(ctx: Pick<QueryCtx, "db">): Promise<SavedValue[]> {
+  const logins = (await ctx.db.query("vault").collect()).map((row) => ({ value: row.value, label: row.label }));
+  const keys = (await ctx.db.query("secrets").collect()).map((row) => ({ value: row.value, label: row.name }));
+  return [...logins, ...keys].filter((item) => item.value.length >= HIDE_EVERYWHERE);
 }
 
 export const list = internalQuery({

@@ -162,6 +162,8 @@ export class CodexAppServer extends EventEmitter {
   private fileChanges = new Map<string, FileChange[]>();
   /** Per working folder, what the skill folders held when Codex last scanned them, and what failed to load then. */
   private skillScans = new Map<string, { signature: string; broken: string[] }>();
+  /** Per working folder, what the skill folders held when every skill there was last listed, and their SKILL.md paths. */
+  private skillLists = new Map<string, { signature: string; paths: string[] }>();
   private child?: ChildProcessWithoutNullStreams;
   closed = false;
   /** The CLI's version, from the userAgent initialize answers with. */
@@ -450,6 +452,20 @@ export class CodexAppServer extends EventEmitter {
     const broken = [...new Set(errors)];
     this.skillScans.set(cwd, { signature, broken });
     return broken;
+  }
+
+  /**
+   * Every skill Codex takes for a folder, by its SKILL.md: Perry's, the owner's own, the system's. A chat with
+   * someone else turns each of them off for its thread (issue #163). Listed again only when a SKILL.md changed.
+   */
+  async skillPaths(cwd: string): Promise<string[]> {
+    const signature = skillsSignature(cwd);
+    const listed = this.skillLists.get(cwd);
+    if (listed?.signature === signature) return listed.paths;
+    const result = await this.request<{ data?: Array<{ skills?: Array<{ path?: string }> }> }>("skills/list", { cwds: [cwd], forceReload: true });
+    const paths = [...new Set((result.data ?? []).flatMap((entry) => entry.skills ?? []).map((skill) => skill.path).filter((path): path is string => Boolean(path)))];
+    this.skillLists.set(cwd, { signature, paths });
+    return paths;
   }
 
   /** Ask Codex to stop a turn. It ends as interrupted, keeping what it produced. */

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ChevronRightIcon, CodeIcon, CopyIcon, PinIcon, DownloadIcon, FileTextIcon, FolderIcon, FolderInputIcon, LinkIcon, MessageSquareIcon, MoreHorizontalIcon,
-  SparklesIcon, Trash2Icon,
+  ShieldAlertIcon, SparklesIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
@@ -56,6 +56,9 @@ export function NoteRows({ notes, hideProject }: { notes: NoteSummary[]; hidePro
     </List>
   );
 }
+
+/** "a password and an API key". */
+const listOf = (items: string[]) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
 
 /** One note, from the address. */
 export function NoteScreen() {
@@ -235,6 +238,15 @@ function NoteEditing({ note }: { note: NoteView }) {
               <Button size="sm" onClick={() => controller.keepMine()}>Keep mine</Button>
             </div>
           )}
+          {note.secrets?.length ? (
+            <div role="status" className="mb-6 flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm" data-secret-warning>
+              <ShieldAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+              <p className="min-w-0 flex-1 text-pretty">
+                This page has what looks like {listOf(note.secrets)}. Perry reads it {note.pinned || note.pinnedSections?.length ? "in every chat" : "when it bears on a chat"}.
+                {" "}Keep passwords and keys in <Link href="/settings/logins" className="underline underline-offset-2">Logins & secrets</Link> instead.
+              </p>
+            </div>
+          ) : null}
           {!fits.supported && source && <p className="mb-3 text-xs text-muted-foreground">{fits.reason} Edit it as Markdown here.</p>}
           {source ? (
             <Textarea id="note-source" aria-label={`${draft.title} as Markdown`} value={draft.content} rows={20}

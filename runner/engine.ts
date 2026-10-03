@@ -261,6 +261,19 @@ export function skillNote(skills: NamedSkill[]): string {
   return `The owner named ${skills.length === 1 ? "a skill" : "skills"} for this message. Before anything else, read ${skills.length === 1 ? "its SKILL.md" : "each SKILL.md"} and follow it:\n${list}`;
 }
 
+/** An invisible word joiner: what follows it is still read, but no longer starts a mention. */
+const JOINER = "\u2060";
+
+/**
+ * Words from someone other than the owner, as a guest turn hands them to its engine (issue #163). Engines read
+ * mentions in a message by themselves: Codex loads the skill a "$name" names, and Claude Code reads the file an
+ * "@path" names into the turn, with no tool call at all. So every "$", and every "@" that starts a word (not the
+ * one inside an email address), gets a word joiner after it: it reads the same to the model, and names nothing.
+ */
+export function defuse(text: string): string {
+  return text.replace(/\$/g, () => `$${JOINER}`).replace(/(^|[^\p{L}\p{N}._%+-])@/gu, (_, before: string) => `${before}@${JOINER}`);
+}
+
 export type TurnInput = {
   /** The chat's session; unset starts one. */
   resumeCursor?: string;

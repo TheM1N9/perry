@@ -518,6 +518,8 @@ export const handleTurn = internalAction({
     guest: v.optional(v.id("contacts")),
     /** What led up to it in a group, sent with the message. */
     guestContext: v.optional(v.string()),
+    /** It carries something from outside (an event that started a job: an email, a file): the turn starts as having read it (issue #136). */
+    outside: v.optional(v.boolean()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -675,7 +677,8 @@ export const handleTurn = internalAction({
           ...(args.hidden ? { hidden: true } : {}),
           ...(guest ? { guest: true } : {}),
           // The owner's message joins a reply that is running; a job's prompt waits its turn.
-          policy: conversation.jobId || conversation.taskId ? "queue" : "steer",
+          policy: conversation.jobId || conversation.taskId || args.outside ? "queue" : "steer",
+          ...(args.outside ? { outside: true } : {}),
         });
         delegated = true;
         if (guest) await ctx.runMutation(internal.routing.guestsStuck, { why: null });

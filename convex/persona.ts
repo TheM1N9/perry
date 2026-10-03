@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { keepPreferences } from "./lib/pages";
-import { writePage } from "./pages";
+import { scrubbed, writePage } from "./pages";
 
 /**
  * Who the owner is and who the assistant is, the way OpenClaw keeps USER.md
@@ -114,7 +114,8 @@ export const writeUser = internalMutation({
   args: { text: v.string(), by: vBy, typing: v.optional(v.boolean()) },
   returns: v.object({ changed: v.boolean() }),
   handler: async (ctx, args) => {
-    const text = args.text.trim();
+    // What Perry or a job writes there never holds a secret (issue #137); the owner's own words are theirs.
+    const text = args.by === "owner" ? args.text.trim() : (await scrubbed(ctx, args.text.trim())).text;
     const about = await aboutPage(ctx);
     if (about) {
       const next = keepPreferences(text, about.content).trim();
@@ -133,7 +134,8 @@ export const writeIdentity = internalMutation({
   handler: async (ctx, args) => {
     const now = await readPersona(ctx);
     const name = (args.name ?? now.name).trim().slice(0, 40) || DEFAULT_NAME;
-    const personality = (args.personality ?? now.personality).trim().slice(0, 600);
+    const said = args.by === "owner" || args.personality === undefined ? args.personality : (await scrubbed(ctx, args.personality)).text;
+    const personality = (said ?? now.personality).trim().slice(0, 600);
     if (name === now.name && personality === now.personality) return { changed: false };
     await write(ctx, { kind: "identity", name, personality, by: args.by, ...(args.typing ? { typing: true } : {}), createdAt: Date.now() }, await latest(ctx, "identity"));
     return { changed: true };

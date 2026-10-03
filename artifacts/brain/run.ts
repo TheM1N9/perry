@@ -717,8 +717,9 @@ try {
   const keyShaped = await tool(brainChat, "brain_append", { page: "Packing for Goa", content: "- API key sk-proj-ABCDEFGHIJKLMNOPQRSTUVWX1234" });
   const notedPassword = await tool(brainChat, "create_note", { title: "Wifi", content: "The wifi password is hunter2-house" });
   const leaked = rows("memories").some((row) => /Tr0ub4dor|sk-proj-ABCD|hunter2-house/.test(row.text)) || rows("notes").some((row) => /Tr0ub4dor|sk-proj-ABCD|hunter2-house/.test(row.content));
-  check("noSecretsInPages", savedSecret?.stored === false && /Logins & secrets/.test(savedSecret?.note ?? "") && /save_secret/.test(keyShaped?.error ?? "") && /save_secret/.test(notedPassword?.error ?? "") && !leaked,
-    { savedSecret: savedSecret?.note, keyShaped: keyShaped?.error, notedPassword: notedPassword?.error, leaked });
+  // Since #137 a secret is left out of what is saved, the rest kept, and Perry is told (artifacts/security-fixes).
+  check("noSecretsInPages", /left out/.test(savedSecret?.note ?? "") && /Logins & secrets/.test(savedSecret?.note ?? "") && /save_secret/.test(keyShaped?.note ?? "") && /save_secret/.test(notedPassword?.note ?? "") && !leaked,
+    { savedSecret: savedSecret?.note, keyShaped: keyShaped?.note ?? keyShaped?.error, notedPassword: notedPassword?.note ?? notedPassword?.error, leaked });
 
   // --- 33. What Perry is told ---------------------------------------------------------------------------------------------
   const told = (await fresh()).instructions;
