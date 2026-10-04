@@ -3,14 +3,15 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { sleep } from "../browser";
+import { FILM_CDN } from "../../site/lib/film";
 
 // bun artifacts/landing/run.ts [outDir]
 // Builds site/ for production, serves it with `next start`, and drives
 // headless Chrome over it the way a visitor would.
 //
 // Ways the landing page could fail, and what this checks for each:
-// - It asks another server for something (fonts, analytics, a CDN), which the
-//   footer says it never does: every request must be to the page's own origin.
+// - It asks another server for something (fonts, analytics, a CDN): every
+//   request must be to the page's own origin, but the film's from jsDelivr.
 // - A self-hosted font is missing and the page falls back to system fonts: the
 //   body's and the mono font's first family must both be loaded.
 // - The hero has no Perry: the mascot must be there, above the headline.
@@ -27,8 +28,8 @@ import { sleep } from "../browser";
 //   eyes must follow the pointer, and the closing one must say hello when it
 //   scrolls into view.
 // - A wrong URL shows a bare error: the 404 page must be Perry's own.
-// - The film costs every visitor 5.7 MB: nothing of it may be requested
-//   before it is scrolled to.
+// - The film's 5.7 MB come from the site: it must load with the page from
+//   jsDelivr (site/lib/film.ts), and never from the site.
 // - The film is a still: when public/film/perry.mp4 is there, it must play by
 //   itself (muted, as browsers require) once on screen, even with reduced
 //   motion, and play with sound and controls when asked.
@@ -203,11 +204,12 @@ await send("Emulation.setFocusEmulationEnabled", { enabled: true });
 await viewport(1440, 900);
 await motion("no-preference");
 await load();
-// The film is 5.7 MB, most of what the site sends: a visit that stays at the top must not fetch it.
+// The film is 5.7 MB, most of what the site would send: it loads with the page, from jsDelivr, never from the site.
 if (await evaluate(`!!document.getElementById("perry-film")`)) {
   await sleep(2000);
-  check("film: nothing of it loads before it is scrolled to", !requests.some((url) => url.includes("/film/") && url.endsWith(".mp4")),
-    requests.filter((url) => url.includes("/film/")));
+  const films = requests.filter((url) => url.endsWith(".mp4"));
+  check("film: it loads with the page from jsDelivr, never from the site",
+    films.length > 0 && films.every((url) => url.startsWith(FILM_CDN)), films);
 }
 
 const fonts = await evaluate(`(() => {
@@ -366,8 +368,8 @@ await evaluate(`scrollTo({ top: 0, behavior: "instant" }); true`);
 await sleep(400);
 await shot("mobile-full", true);
 
-const foreign = [...new Set(requests)].filter((url) => !url.startsWith(base) && !url.startsWith("data:"));
-check("every request stays on the page's own origin", foreign.length === 0, foreign);
+const foreign = [...new Set(requests)].filter((url) => !url.startsWith(base) && !url.startsWith("data:") && url !== FILM_CDN);
+check("every request stays on the page's own origin, but the film's", foreign.length === 0, foreign);
 check("no page errors or hydration mismatches", errors.length === 0, errors);
 
 const pass = checks.every((c) => c.pass);

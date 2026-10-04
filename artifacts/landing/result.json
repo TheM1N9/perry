@@ -1,17 +1,17 @@
 {
   "pass": true,
-  "at": "2026-10-03T23:38:45.236Z",
+  "at": "2026-10-04T00:03:06.740Z",
   "performance": {
-    "lcpMs": 1504,
+    "lcpMs": 1388,
     "lcpElement": "SPAN.inline-block whitespace-pre",
     "jsKb": 193
   },
   "checks": [
     {
-      "name": "film: nothing of it loads before it is scrolled to",
+      "name": "film: it loads with the page from jsDelivr, never from the site",
       "pass": true,
       "detail": [
-        "http://127.0.0.1:4675/film/poster.jpg"
+        "https://cdn.jsdelivr.net/gh/TheM1N9/perry@21404fd50b1b76c445704347bd21ca6589c8f8b7/site/public/film/perry.mp4"
       ]
     },
     {
@@ -50,7 +50,7 @@
       "detail": {
         "paused": false,
         "muted": true,
-        "t": 0.024752,
+        "t": 0.059347,
         "error": null
       }
     },
@@ -107,8 +107,8 @@
       "pass": true,
       "detail": {
         "centred": "100",
-        "right": "103.85395761606836",
-        "left": "96.133147780435"
+        "right": "103.8553848095742",
+        "left": "96.13232258363625"
       }
     },
     {
@@ -198,7 +198,7 @@
       "detail": []
     },
     {
-      "name": "every request stays on the page's own origin",
+      "name": "every request stays on the page's own origin, but the film's",
       "pass": true,
       "detail": []
     },

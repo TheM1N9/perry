@@ -8,8 +8,8 @@ import type { FilmFile } from "@/lib/film";
  * The film, right on the page. It plays by itself, muted (the only way
  * browsers allow a video to start on its own), and pauses while it's off
  * screen; "Play with sound" starts it over with audio and the browser's own
- * controls. Nothing of it loads until it first comes into view: the poster
- * stands in, so a visit that never scrolls this far never fetches the video.
+ * controls. It loads with the page, from jsDelivr (lib/film.ts), so it is
+ * ready when it comes into view and costs the site nothing to send.
  */
 export function FilmSection({ film }: { film: FilmFile | null }) {
   const box = useRef<HTMLDivElement>(null);
@@ -47,10 +47,11 @@ export function FilmSection({ film }: { film: FilmFile | null }) {
             ref={video}
             src={film.src}
             poster={film.poster}
+            autoPlay
             muted
             loop
             playsInline
-            preload="none"
+            preload="auto"
             className="block aspect-video w-full"
           />
           {sound ? null : (
