@@ -400,25 +400,6 @@ export function runWhatsApp(runtime: Runtime): () => void {
           if (event.type !== "notify") return;
           for (const message of event.messages) void handle(message, wanted.mode);
         });
-        if ((current as any).call?.ev?.on) {
-          const callEv = (current as any).call.ev;
-          callEv.on("offer", (call: any) => {
-            lastEvent = Date.now();
-            void runtime.runMutation("whatsapp:callOffer", { call }, internal).catch(() => {});
-          });
-          callEv.on("accept", (call: any) => {
-            lastEvent = Date.now();
-            void runtime.runMutation("whatsapp:callAccept", { call }, internal).catch(() => {});
-          });
-          callEv.on("update", (call: any) => {
-            lastEvent = Date.now();
-            void runtime.runMutation("whatsapp:callUpdate", { call }, internal).catch(() => {});
-          });
-          callEv.on("terminate", (call: any) => {
-            lastEvent = Date.now();
-            void runtime.runMutation("whatsapp:callTerminate", { call }, internal).catch(() => {});
-          });
-        }
         dropped = () => closed("dropped");
         // Unlinked from the dashboard, or quiet for too long: end this connection.
         const watch = setInterval(() => {

@@ -1,87 +1,135 @@
-import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { internalMutation, internalQuery } from "./_generated/server";
 
-const ALLOWED_NAMES = new Set([
+/**
+ * Where Assistant's service keys live.
+ *
+ * Every key is read here rather than straight from `process.env`, and the
+ * database wins over the environment. That single rule is what lets the
+ * dashboard change a key without a terminal, while one set in .env.local keeps
+ * working untouched.
+ *
+ * Keys are write-and-forget: they go in, and nothing ever reads one back out
+ * to a browser. The dashboard sees whether a key is set, where it came from,
+ * and its last four characters. That is enough to tell two keys apart and not
+ * enough to use one.
+ */
+
+export const SECRET_NAMES = [
   "TELEGRAM_BOT_TOKEN",
-  "OPENAI_API_KEY",
-  "ANTHROPIC_API_KEY",
   "COMPOSIO_API_KEY",
   "GEMINI_API_KEY",
-  "PERRY_CARTESIA_API_KEY",
-  "PERRY_OPENAI_API_KEY",
-  "PERRY_VOICE_PROVIDER",
-  "PERRY_WHATSAPP_DRIVER",
-  "PERRY_WHATSAPP_CONTROL",
-]);
+] as const;
 
-export const has = query({
+export type SecretName = (typeof SECRET_NAMES)[number];
+
+export function isSecretName(value: string): value is SecretName {
+  return (SECRET_NAMES as readonly string[]).includes(value);
+}
+
+export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> = {
+  TELEGRAM_BOT_TOKEN: {
+    label: "Telegram bot token",
+    hint: "From @BotFather. Perry starts listening to the new bot within a few seconds of saving it.",
+  },
+  COMPOSIO_API_KEY: {
+    label: "Composio key",
+    hint: "Gmail, Calendar, Notion and the rest. Without it no accounts can be connected.",
+  },
+  GEMINI_API_KEY: {
+    label: "Gemini API key",
+    hint: "For Antigravity (Settings → General → Engines), from aistudio.google.com/apikey. Only Antigravity's server on your computer gets it.",
+  },
+};
+
+/**
+ * Resolve one key. Database first, environment second.
+ *
+ * Everything that needs a key goes through here, so there is one place to look
+ * when a key appears to be wrong.
+ */
+export const get = internalQuery({
   args: { name: v.string() },
-  handler: async (ctx, { name }) => {
-  
-    const key = name.toUpperCase();
-    const value = process.env[key];
-    return { exists: Boolean(value && value.length > 0) };
+  handler: async (ctx, args): Promise<string | null> => {
+    const row = await ctx.db
+      .query("secrets")
+      .withIndex("by_name", (q) => q.eq("name", args.name))
+      .unique();
+
+    if (row && row.value.length > 0) return row.value;
+    return process.env[args.name] ?? null;
   },
 });
 
-export const get = query({
-  args: { name: v.string() },
-  handler: async (ctx, { name }) => {
-    const key = name.toUpperCase();
-    const value = process.env[key];
-    return { value: value && value.length > 0 ? value : null };
-  },
-});
+export type SecretStatus = {
+  name: string;
+  label: string;
+  hint: string;
+  set: boolean;
+  source: "dashboard" | "environment" | "none";
+  preview?: string;
+  updatedAt?: number;
+};
 
-export const status = query({
+/** What the dashboard is allowed to know: set or not, from where, last four. */
+export const status = internalQuery({
   args: {},
-  handler: async () => {
-    return {
-      keys: Array.from(ALLOWED_NAMES).filter((k) => Boolean(process.env[k])),
-    };
+  handler: async (ctx): Promise<SecretStatus[]> => {
+    const rows = await ctx.db.query("secrets").collect();
+    const stored = new Map(rows.map((r) => [r.name, r]));
+
+    return SECRET_NAMES.map((name) => {
+      const row = stored.get(name);
+      const fromDb = row && row.value.length > 0;
+      const value = fromDb ? row.value : (process.env[name] ?? "");
+
+      return {
+        name,
+        label: SECRET_LABELS[name].label,
+        hint: SECRET_LABELS[name].hint,
+        set: value.length > 0,
+        source: fromDb ? "dashboard" : value.length > 0 ? "environment" : "none",
+        preview: value.length > 0 ? `…${value.slice(-4)}` : undefined,
+        updatedAt: row?.updatedAt,
+      };
+    });
   },
 });
 
-export const list = query({
-  args: {},
-  handler: async () => {
-    return {
-      keys: Array.from(ALLOWED_NAMES).filter((k) => Boolean(process.env[k])),
-    };
-  },
-});
-
-export const set = mutation({
+export const set = internalMutation({
   args: { name: v.string(), value: v.string() },
-  handler: async (ctx, { name, value }) => {
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (!isSecretName(args.name)) return null;
 
-    const key = name.toUpperCase();
-    if (!ALLOWED_NAMES.has(key) && !key.startsWith("PERRY_")) {
-      return { error: "Secret not allowed" };
+    const value = args.value.trim();
+    const existing = await ctx.db
+      .query("secrets")
+      .withIndex("by_name", (q) => q.eq("name", args.name))
+      .unique();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, { value, updatedAt: Date.now() });
+    } else {
+      await ctx.db.insert("secrets", { name: args.name, value, updatedAt: Date.now() });
     }
-    // Secrets are managed via deployment env; do not mutate process.env here.
-    return { ok: true, key };
+    return null;
   },
 });
 
-export const save = mutation({
-  args: { name: v.string(), value: v.string() },
-  handler: async (ctx, { name, value }) => {
-
-    const key = name.toUpperCase();
-    if (!ALLOWED_NAMES.has(key) && !key.startsWith("PERRY_")) {
-      return { error: "Secret not allowed" };
-    }
-    // Do not persist runtime secret; set via deployment environment variables.
-    return { ok: false, key, error: "Set secret via deployment environment variables" };
-  },
-});
-
-export const clear = mutation({
+/**
+ * Drop the stored value. If the deployment still has an environment variable
+ * of the same name, that takes over again rather than leaving nothing.
+ */
+export const clear = internalMutation({
   args: { name: v.string() },
-  handler: async (ctx, { name }) => {
-
-    const key = name.toUpperCase();
-    return { ok: true, key };
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("secrets")
+      .withIndex("by_name", (q) => q.eq("name", args.name))
+      .unique();
+    if (existing) await ctx.db.delete(existing._id);
+    return null;
   },
 });

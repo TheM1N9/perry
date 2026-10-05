@@ -1,7 +1,7 @@
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
-import { getUserId } from "./lib/auth";
 
 export const start = mutation({
   args: {
@@ -14,7 +14,7 @@ export const start = mutation({
     userId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
-    const userId = args.userId ?? (await getUserId(ctx));
+    const userId = args.userId ?? null;
     const now = Date.now();
     const id = await ctx.db.insert("calls", {
       conversationId: args.conversationId,
