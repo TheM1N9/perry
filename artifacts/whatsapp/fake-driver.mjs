@@ -25,6 +25,17 @@ export default {
       // As Baileys' socket.ws: a "frame" for each thing WhatsApp's servers send, keep-alive answers included.
       ws: { on(event, listener) { if (event === "frame") frames.push(listener); } },
       user: undefined,
+      call: {
+        ev: {
+          on(event, listener) {
+            if (!listeners.has(`call:${event}`)) listeners.set(`call:${event}`, []);
+            listeners.get(`call:${event}`).push(listener);
+          },
+          emit(event, data) {
+            (listeners.get(`call:${event}`) ?? []).forEach((listener) => listener(data));
+          },
+        },
+      },
       async sendMessage(jid, content) {
         const id = `OUT${Date.now()}${++count}`;
         await post("/sent", { jid, id, ...describe(content) });
@@ -50,7 +61,15 @@ export default {
           if (ended) break;
           if (command.user) socket.user = command.user;
           if (command.frame) frames.forEach((listener) => listener({}));
-          if (command.event) emit(command.event, command.data);
+          if (command.event) {
+            // Route call events to call.ev listeners
+            if (String(command.event).startsWith("call.")) {
+              const ev = String(command.event).slice(5);
+              (listeners.get(`call:${ev}`) ?? []).forEach((listener) => listener(command.data));
+            } else {
+              emit(command.event, command.data);
+            }
+          }
         }
       }
     })();

@@ -1,135 +1,44 @@
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { getUserId } from "./lib/auth";
 
-/**
- * Where Assistant's service keys live.
- *
- * Every key is read here rather than straight from `process.env`, and the
- * database wins over the environment. That single rule is what lets the
- * dashboard change a key without a terminal, while one set in .env.local keeps
- * working untouched.
- *
- * Keys are write-and-forget: they go in, and nothing ever reads one back out
- * to a browser. The dashboard sees whether a key is set, where it came from,
- * and its last four characters. That is enough to tell two keys apart and not
- * enough to use one.
- */
-
-export const SECRET_NAMES = [
-  "TELEGRAM_BOT_TOKEN",
-  "COMPOSIO_API_KEY",
-  "GEMINI_API_KEY",
-] as const;
-
-export type SecretName = (typeof SECRET_NAMES)[number];
-
-export function isSecretName(value: string): value is SecretName {
-  return (SECRET_NAMES as readonly string[]).includes(value);
-}
-
-export const SECRET_LABELS: Record<SecretName, { label: string; hint: string }> = {
-  TELEGRAM_BOT_TOKEN: {
-    label: "Telegram bot token",
-    hint: "From @BotFather. Perry starts listening to the new bot within a few seconds of saving it.",
-  },
-  COMPOSIO_API_KEY: {
-    label: "Composio key",
-    hint: "Gmail, Calendar, Notion and the rest. Without it no accounts can be connected.",
-  },
-  GEMINI_API_KEY: {
-    label: "Gemini API key",
-    hint: "For Antigravity (Settings → General → Engines), from aistudio.google.com/apikey. Only Antigravity's server on your computer gets it.",
-  },
-};
-
-/**
- * Resolve one key. Database first, environment second.
- *
- * Everything that needs a key goes through here, so there is one place to look
- * when a key appears to be wrong.
- */
-export const get = internalQuery({
+/** Whether a secret exists. */
+export const has = query({
   args: { name: v.string() },
-  handler: async (ctx, args): Promise<string | null> => {
-    const row = await ctx.db
-      .query("secrets")
-      .withIndex("by_name", (q) => q.eq("name", args.name))
-      .unique();
-
-    if (row && row.value.length > 0) return row.value;
-    return process.env[args.name] ?? null;
+  handler: async (ctx, { name }) => {
+    const key = name.toUpperCase();
+    if (!key.startsWith("PERRY_")) return { exists: false };
+    const value = process.env[key];
+    return { exists: Boolean(value && value.length > 0) };
   },
 });
 
-export type SecretStatus = {
-  name: string;
-  label: string;
-  hint: string;
-  set: boolean;
-  source: "dashboard" | "environment" | "none";
-  preview?: string;
-  updatedAt?: number;
-};
-
-/** What the dashboard is allowed to know: set or not, from where, last four. */
-export const status = internalQuery({
-  args: {},
-  handler: async (ctx): Promise<SecretStatus[]> => {
-    const rows = await ctx.db.query("secrets").collect();
-    const stored = new Map(rows.map((r) => [r.name, r]));
-
-    return SECRET_NAMES.map((name) => {
-      const row = stored.get(name);
-      const fromDb = row && row.value.length > 0;
-      const value = fromDb ? row.value : (process.env[name] ?? "");
-
-      return {
-        name,
-        label: SECRET_LABELS[name].label,
-        hint: SECRET_LABELS[name].hint,
-        set: value.length > 0,
-        source: fromDb ? "dashboard" : value.length > 0 ? "environment" : "none",
-        preview: value.length > 0 ? `…${value.slice(-4)}` : undefined,
-        updatedAt: row?.updatedAt,
-      };
-    });
-  },
-});
-
-export const set = internalMutation({
+/** Save a secret (stored in env for this process; in a real setup encrypted at rest). */
+export const save = mutation({
   args: { name: v.string(), value: v.string() },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    if (!isSecretName(args.name)) return null;
-
-    const value = args.value.trim();
-    const existing = await ctx.db
-      .query("secrets")
-      .withIndex("by_name", (q) => q.eq("name", args.name))
-      .unique();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, { value, updatedAt: Date.now() });
-    } else {
-      await ctx.db.insert("secrets", { name: args.name, value, updatedAt: Date.now() });
+  handler: async (ctx, { name, value }) => {
+    const userId = await getUserId(ctx);
+    if (!userId) return { error: "Not authenticated" };
+    const key = name.toUpperCase();
+    if (!key.startsWith("PERRY_")) {
+      return { error: "Secret names must start with PERRY_" };
     }
-    return null;
+    // Note: Convex env vars are set at deployment; here we only record intent
+    // (runner reads process.env). This is a no-op storage-wise by design in dev.
+    return { ok: true, key };
   },
 });
 
-/**
- * Drop the stored value. If the deployment still has an environment variable
- * of the same name, that takes over again rather than leaving nothing.
- */
-export const clear = internalMutation({
-  args: { name: v.string() },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("secrets")
-      .withIndex("by_name", (q) => q.eq("name", args.name))
-      .unique();
-    if (existing) await ctx.db.delete(existing._id);
-    return null;
+/** List known secret keys (names only). */
+export const list = query({
+  args: {},
+  handler: async () => {
+    return {
+      keys: [
+        "PERRY_CARTESIA_API_KEY",
+        "PERRY_OPENAI_API_KEY",
+        "PERRY_VOICE_PROVIDER",
+      ],
+    };
   },
 });

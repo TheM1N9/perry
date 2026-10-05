@@ -929,6 +929,29 @@ export default defineSchema({
     .index("by_runner_status", ["runnerId", "status"])
     .index("by_conversation_status", ["conversationId", "status"]),
 
+  calls: defineTable({
+    conversationId: v.optional(v.id("conversations")),
+    channelId: v.optional(v.string()),
+    waCallId: v.optional(v.string()),
+    status: v.union(v.literal("ringing"), v.literal("active"), v.literal("ended"), v.literal("failed")),
+    direction: v.optional(v.union(v.literal("inbound"), v.literal("outbound"))),
+    from: v.optional(v.string()),
+    to: v.optional(v.string()),
+    startedAt: v.number(),
+    answeredAt: v.optional(v.number()),
+    endedAt: v.optional(v.number()),
+    durationMs: v.optional(v.number()),
+    endedReason: v.optional(v.string()),
+    hasTranscript: v.boolean(),
+    audioId: v.optional(v.id("_storage")),
+    summary: v.optional(v.string()),
+    error: v.optional(v.string()),
+    userId: v.optional(v.id("users")),
+  })
+    .index("by_conversation", ["conversationId", "startedAt"])
+    .index("by_status", ["status", "startedAt"])
+    .index("by_waCallId", ["waCallId"]),
+
   /**
    * A message the owner sent while a reply was running. It joins that turn
    * through Codex's turn/steer; one that cannot (the turn ended, or Codex

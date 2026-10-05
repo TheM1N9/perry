@@ -71,12 +71,17 @@ const control = createServer((request: IncomingMessage, response: ServerResponse
       case "/connect": wa.connects += 1; return done();
       case "/logout": wa.logouts += 1; return done();
       case "/code-requested": wa.codeRequested.push(data.phone); return done();
+      case "/call": wa.commands.push({ event: "call", data }); return done();
       default: return done(false);
     }
   });
 });
 await new Promise<void>((done) => control.listen(0, "127.0.0.1", done));
 const push = (...commands: object[]) => wa.commands.push(...commands);
+const incomingCall = (from: string, to: string, callId = `CALL${Date.now()}`) => push({
+  event: "call.offer",
+  data: { id: callId, from, to, isGroup: false, isVideo: false },
+});
 let messageId = 0;
 const incoming = (remoteJid: string, text: string, extra: { fromMe?: boolean; message?: object; fakeBytes?: string } = {}) => push({
   event: "messages.upsert",
