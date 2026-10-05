@@ -1,3 +1,12 @@
+import { v } from "convex/values";
+import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { assertDashboardKey } from "./lib/auth";
+import { chunkWhatsApp, toWhatsApp } from "./lib/whatsappFormat";
+import { callsBy, whatsappHandle } from "./contacts";
+import { readPersona } from "./persona";
+
 // --- Calls (WhatsApp voice) ---
 
 export const callOffer = internalMutation({
@@ -10,18 +19,18 @@ export const callOffer = internalMutation({
     if (!id) return null;
     const existing = await ctx.db
       .query("calls")
-      .withIndex("by_waCallId", (q) => q.eq("waCallId", String(id)))
+      .withIndex("by_waCallId", (q: any) => q.eq("waCallId", String(id)))
       .first();
     if (existing) return null;
-    const owner = await install(ctx);
+    const owner = await ctx.db.query("installation").first();
     let conversationId: Id<"conversations"> | undefined;
     if (from) {
-      const bare = bareJid(String(from));
+      const bareFrom = bareJid(String(from));
       const conv = await ctx.db
         .query("conversations")
-        .withIndex("by_channel_external", (q) => q.eq("channel", "whatsapp").eq("externalId", bare))
+        .withIndex("by_channel_external", (q: any) => q.eq("channel", "whatsapp").eq("externalId", bare))
         .first();
-        conversationId = conv?._id;
+      conversationId = conv?._id;
     }
     await ctx.db.insert("calls", {
       conversationId,
@@ -46,7 +55,7 @@ export const callAccept = internalMutation({
     if (!id) return null;
     const existing = await ctx.db
       .query("calls")
-      .withIndex("by_waCallId", (q) => q.eq("waCallId", String(id)))
+      .withIndex("by_waCallId", (q: any) => q.eq("waCallId", String(id)))
       .first();
     if (!existing) return null;
     if (existing.status === "active") return null;
@@ -73,7 +82,7 @@ export const callTerminate = internalMutation({
     if (!id) return null;
     const existing = await ctx.db
       .query("calls")
-      .withIndex("by_waCallId", (q) => q.eq("waCallId", String(id)))
+      .withIndex("by_waCallId", (q: any) => q.eq("waCallId", String(id)))
       .first();
     if (!existing) return null;
     if (existing.status === "ended" || existing.status === "failed") return null;
