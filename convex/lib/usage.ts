@@ -133,7 +133,7 @@ export function describeUsage(
   engine: EngineKind | undefined,
   usage: EngineUsage | undefined,
   now: number,
-  options: { timeZone?: string; share?: { tokens: number; turns: number }; readAt?: number } = {},
+  options: { timeZone?: string; share?: { tokens: number; turns: number } } = {},
 ): string {
   if (!engine) return "Perry has no default engine yet. Pick a model for this chat with /model <name>, or choose the default in Settings → Engines.";
   const label = ENGINE_LABELS[engine];
@@ -158,7 +158,7 @@ export function describeUsage(
   else if (level === "low") lines.push("", `${label} is running low.`);
 
   if (options.share) lines.push("", `Perry's share this week: ${options.share.turns} ${options.share.turns === 1 ? "turn" : "turns"}, ${compact(options.share.tokens)} tokens.`);
-  lines.push("", `${USAGE_REPORTS[engine].note}${limits ? ` Read ${ago(options.readAt ?? limits.at, now)}.` : ""}`);
+  lines.push("", `${USAGE_REPORTS[engine].note}${limits ? ` Read ${ago(limits.at, now)}.` : ""}`);
   return lines.join("\n");
 }
 

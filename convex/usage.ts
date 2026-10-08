@@ -141,16 +141,14 @@ export const limits = query({
   },
 });
 
-/** For /usage: one engine's limits as last read, when, and Perry's share of it this week. */
+/** For /usage: one engine's limits as last read, and Perry's share of it this week. */
 export const forEngine = internalQuery({
   args: { engine: vEngine },
-  handler: async (ctx, args): Promise<{ usage?: EngineUsage; readAt?: number; timeZone?: string; share: { tokens: number; turns: number } }> => {
+  handler: async (ctx, args): Promise<{ usage?: EngineUsage; timeZone?: string; share: { tokens: number; turns: number } }> => {
     const runners = await liveRunners(ctx);
     const mine = (await runsSince(ctx, Date.now() - SHARE_MS)).filter((item) => item.engine === args.engine);
-    const readAt = Math.max(0, ...runners.map((runner) => runner.usageReadAt ?? 0)) || undefined;
     return {
       usage: usageByEngine(runners)[args.engine],
-      ...(readAt ? { readAt } : {}),
       timeZone: (await ctx.db.query("installation").first())?.timezone,
       share: { tokens: mine.reduce((sum, item) => sum + item.tokens, 0), turns: mine.length },
     };

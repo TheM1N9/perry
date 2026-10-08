@@ -17,7 +17,7 @@ import {
 } from "@/convex/lib/commands";
 import { ENGINE_LABELS, type EngineKind } from "@/convex/lib/engines";
 import { noteHref } from "@/convex/lib/notes";
-import { limitWarning } from "@/convex/lib/usage";
+import { describeUsage, limitWarning } from "@/convex/lib/usage";
 import { copyText, errorText, useNow } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
@@ -451,6 +451,11 @@ export function ChatScreen() {
       return true;
     }
     const command = trimmed.toLowerCase();
+    if (command === "/usage") {
+      setDraft("");
+      setNotice(describeUsage(engine, engineUsage, Date.now()));
+      return true;
+    }
     if (command === "/stop") {
       setDraft("");
       if (selectedId && waiting) await stopChat({ key: dashboardKey, id: selectedId });

@@ -121,7 +121,7 @@ async function runCommand(
     case "/usage": {
       if (!engine) return describeUsage(undefined, undefined, Date.now());
       const read = await ctx.runQuery(internal.usage.forEngine, { engine });
-      return describeUsage(engine, read.usage, Date.now(), { timeZone: read.timeZone, share: read.share, readAt: read.readAt });
+      return describeUsage(engine, read.usage, Date.now(), { timeZone: read.timeZone, share: read.share });
     }
 
     case "/status": {
