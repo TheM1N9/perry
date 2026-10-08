@@ -58,6 +58,7 @@ const COMMANDS = [
   { command: "/model", hint: "List the models, or /model <name> to switch this chat" },
   { command: "/think", hint: "List the thinking levels, or /think <level>" },
   { command: "/access", hint: "Ask, Auto or Full access: whether it asks before acting" },
+  { command: "/usage", hint: "How much of this chat's model plan is used, and what is left" },
   { command: "/stop", hint: "Stop the reply being written" },
   { command: "/pause", hint: "Pause Perry: stop everything, start nothing new" },
   { command: "/resume", hint: "Start Perry again" },

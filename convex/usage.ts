@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, type QueryCtx } from "./_generated/server";
+import { internalQuery, mutation, query, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
 import { ENGINE_LABELS, ENGINES, isEngine, RUNNABLE_ENGINES, type EngineKind } from "./lib/engines";
@@ -137,6 +137,22 @@ export const limits = query({
     return {
       engines: ENGINES.flatMap((kind) => merged[kind] ? [{ kind, usage: merged[kind] }] : []),
       used: [...used],
+    };
+  },
+});
+
+/** For /usage: one engine's limits as last read, when, and Perry's share of it this week. */
+export const forEngine = internalQuery({
+  args: { engine: vEngine },
+  handler: async (ctx, args): Promise<{ usage?: EngineUsage; readAt?: number; timeZone?: string; share: { tokens: number; turns: number } }> => {
+    const runners = await liveRunners(ctx);
+    const mine = (await runsSince(ctx, Date.now() - SHARE_MS)).filter((item) => item.engine === args.engine);
+    const readAt = Math.max(0, ...runners.map((runner) => runner.usageReadAt ?? 0)) || undefined;
+    return {
+      usage: usageByEngine(runners)[args.engine],
+      ...(readAt ? { readAt } : {}),
+      timeZone: (await ctx.db.query("installation").first())?.timezone,
+      share: { tokens: mine.reduce((sum, item) => sum + item.tokens, 0), turns: mine.length },
     };
   },
 });
