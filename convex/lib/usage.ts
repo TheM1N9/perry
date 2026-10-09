@@ -114,6 +114,54 @@ export function limitWarning(engine: EngineKind, usage: EngineUsage | undefined,
   };
 }
 
+/** "1.2M", "340K", "812": a token count short enough for a chat line. */
+const compact = (tokens: number) => tokens >= 1e6 ? `${(tokens / 1e6).toFixed(1)}M` : tokens >= 1e3 ? `${Math.round(tokens / 1e3)}K` : String(tokens);
+
+/** "just now", "4 min ago", "2 h ago". */
+const ago = (at: number, now: number) => {
+  const minutes = Math.max(0, Math.round((now - at) / 60_000));
+  return minutes < 1 ? "just now" : minutes < 60 ? `${minutes} min ago` : `${Math.round(minutes / 60)} h ago`;
+};
+
+/**
+ * The reply to "/usage": how much of the chat's engine's plan is used and what
+ * is left, window by window, as the engine reported it, with Perry's own share
+ * of it. An engine that reports no limits says so, and what it said when it
+ * last refused a turn for one.
+ */
+export function describeUsage(
+  engine: EngineKind | undefined,
+  usage: EngineUsage | undefined,
+  now: number,
+  options: { timeZone?: string; share?: { tokens: number; turns: number } } = {},
+): string {
+  if (!engine) return "Perry has no default engine yet. Pick a model for this chat with /model <name>, or choose the default in Settings → Engines.";
+  const label = ENGINE_LABELS[engine];
+  const limits = usage?.limits;
+  const { level, hit } = standing(usage, now);
+  const lines: string[] = [`${label} usage${limits?.plan ? ` (${limits.plan})` : ""}`, ""];
+
+  if (limits?.windows.length) {
+    for (const window of limits.windows) {
+      const used = Math.round(usedNow(window, now));
+      const until = resetsText(window, now, options.timeZone);
+      lines.push(`• ${window.label}: ${used}% used, ${Math.max(0, 100 - used)}% left${until ? `, ${until}` : ""}`);
+    }
+  } else if (!USAGE_REPORTS[engine].limits) {
+    lines.push(`${label} doesn't report its plan's limits, so there is no balance to show.`);
+  } else {
+    lines.push(`No reading of ${label}'s limits yet. Perry reads them every few minutes while its runner is online and ${label} is signed in; try again shortly.`);
+  }
+
+  if (level === "out" && hit) lines.push("", `${label} refused a reply for its limit: “${hit.message.slice(0, 200)}”`);
+  else if (level === "out") lines.push("", `${label}'s limit is used up. Perry moves chats to another signed-in engine with room, when there is one.`);
+  else if (level === "low") lines.push("", `${label} is running low.`);
+
+  if (options.share) lines.push("", `Perry's share this week: ${options.share.turns} ${options.share.turns === 1 ? "turn" : "turns"}, ${compact(options.share.tokens)} tokens.`);
+  lines.push("", `${USAGE_REPORTS[engine].note}${limits ? ` Read ${ago(limits.at, now)}.` : ""}`);
+  return lines.join("\n");
+}
+
 /**
  * What each engine can tell about its plan, said in a line on Settings → Usage.
  * `limits`: it reports its plan's windows; `hits`: it only says when a limit

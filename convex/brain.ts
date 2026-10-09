@@ -10,6 +10,7 @@ import {
   parseMissedCommand, parseModelCommand, parseThinkCommand, PAUSED_ERROR, PAUSED_OWNER, PAUSED_REPLY, pickAccess, pickEffort, pickModel, runLabel,
   turnEffort, type MissedRun, type ModelOption,
 } from "./lib/commands";
+import { describeUsage } from "./lib/usage";
 import { ENGINE_LABELS, type EngineKind } from "./lib/engines";
 import type { Choice } from "./lib/routing";
 import { DOWNLOAD_LIMIT, downloadFile, sendMessage, sendTyping } from "./lib/telegram";
@@ -39,6 +40,7 @@ Your private assistant.
   /model    list the models; /model <name> switches this chat
   /think    list the thinking levels; /think <level> sets this chat's
   /access   ask, auto or full: whether it asks before acting
+  /usage    how much of this chat's model plan is used, and what is left
   /stop     stop the reply I am writing
   /pause    stop everything I am doing, and start nothing new
   /resume   start again; /run and /skip settle what was missed
@@ -114,6 +116,13 @@ async function runCommand(
 
     case "/missed":
       return describeMissed(await ctx.runQuery(internal.pause.missed, {}));
+
+    // Read-only, so it works while paused: what the chat's engine last reported about its plan (usage.ts).
+    case "/usage": {
+      if (!engine) return describeUsage(undefined, undefined, Date.now());
+      const read = await ctx.runQuery(internal.usage.forEngine, { engine });
+      return describeUsage(engine, read.usage, Date.now(), { timeZone: read.timeZone, share: read.share });
+    }
 
     case "/status": {
       const stats = await ctx.runQuery(internal.conversations.stats, {
