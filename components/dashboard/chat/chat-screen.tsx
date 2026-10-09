@@ -38,7 +38,7 @@ import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
 import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { MessageRow, PendingRow, ReplyInProgress } from "./message";
-import { LANDING_MS, SAVED_BEFORE_END_MS, together, type Work } from "./work";
+import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
 
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
@@ -237,7 +237,7 @@ export function ChatScreen() {
   const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
   // Every step Perry takes: listed as they come while a reply is on its way, and kept with the reply after.
   const work = useQuery(api.dashboard.getChatWork, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
-  const { workOf, liveWork } = useMemo(() => {
+  const { workOf, liveWork, failedWork } = useMemo(() => {
     const runs = work ?? [];
     const replies = messages.filter((message) => message.role === "assistant" && !message.pending);
     // Each message is a run of its own, and one sent while a reply works joins that reply's turn: several runs
@@ -258,7 +258,10 @@ export function ChatScreen() {
     // from different reads, a moment apart, and the steps would blink out in between.
     const paired = new Set([...groups.values()].flat());
     const landing = runs.filter((run) => run.status === "ok" && run.steps.length && !paired.has(run) && now - (run.finishedAt ?? 0) < LANDING_MS);
-    return { workOf, liveWork: together([...runs.filter((run) => run.status === "running"), ...landing]) };
+    // A turn that failed before it could reply has no reply to sit above: its steps stay where its reply would have been.
+    const lastReply = replies.at(-1)?.createdAt ?? 0;
+    const failed = runs.filter((run) => run.status !== "ok" && run.status !== "running" && run.steps.length && !paired.has(run) && run.startedAt > lastReply);
+    return { workOf, liveWork: together([...runs.filter((run) => run.status === "running"), ...landing]), failedWork: together(failed) };
   }, [work, messages, now]);
 
   // Scrolling: a chat opens at its newest message; after that, new content only scrolls into view for a reader already at the bottom.
@@ -665,6 +668,7 @@ export function ChatScreen() {
               <h2 className="mt-5 text-3xl font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
             </div>
           ) : (
+            <WorkFolds>
             <div className="space-y-8 pt-6 pb-10" aria-busy={loading || undefined}>
               {loading && (
                 <div className="space-y-8" role="status" aria-label="Loading the conversation">
@@ -704,8 +708,9 @@ export function ChatScreen() {
                 />
               ))}
               {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
-              {(waiting || liveWork) && !here.length && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} />}
+              {(waiting || liveWork) && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} approving={here.length > 0} />}
               {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
+              {failedWork && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed" /></div>}
               {chat?.lastError && !chat.isRunning && !waiting && (
                 <Alert variant="destructive">
                   <TriangleAlertIcon />
@@ -725,6 +730,7 @@ export function ChatScreen() {
                 </Alert>
               )}
             </div>
+            </WorkFolds>
           )}
         </div>
       </div>

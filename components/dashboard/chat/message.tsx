@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useCopy } from "../common";
 import { AttachmentList, type Attachment } from "./attachments";
 import { Markdown } from "./markdown";
-import { Spinner, WorkSteps, WorkSummary } from "./work";
+import { Spinner, WorkSummary, type WorkState } from "./work";
 
 export type ChatMessage = { id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; memories?: Array<{ id: string; text: string }> };
 
@@ -118,7 +118,7 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
         </div>
       ) : (
         <div className="w-full min-w-0">
-          {work && <WorkSummary work={work} />}
+          {work && <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} />}
           <Markdown text={message.text} />
           <AttachmentList attachments={message.attachments} />
           {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
@@ -191,13 +191,15 @@ export function PendingRow({ text, attachments, sent, skills }: { text: string; 
  * (dashboard.getChatWork), so none goes by unseen; then what has streamed of
  * the words, or "Thinking" while nothing else is going on.
  */
-export function ReplyInProgress({ streaming, work, now }: { streaming?: string; work?: Work; now: number }) {
+export function ReplyInProgress({ streaming, work, now, approving = false }: { streaming?: string; work?: Work; now: number; approving?: boolean }) {
   const steps = work?.steps ?? [];
-  // Over (its reply on its way to the page), or on a step: either way, not thinking.
-  const busy = work?.finishedAt !== undefined || steps.some((step) => step.status === "running");
+  // Over (its reply on its way to the page), on a step, or held for the owner's approval: either way, not thinking.
+  const over = work?.finishedAt !== undefined;
+  const busy = over || approving || steps.some((step) => step.status === "running");
+  const state: WorkState = over ? (work?.status === "ok" ? "done" : "failed") : approving ? "waiting" : "working";
   return (
     <div className="min-w-0 space-y-2" data-role="assistant" {...(streaming ? { "data-streaming": true } : { "data-thinking": true })}>
-      {steps.length > 0 && <WorkSteps steps={steps} live now={now} />}
+      {work && <WorkSummary work={work} state={state} now={now} />}
       {streaming ? (
         <div>
           <Markdown text={streaming} />
