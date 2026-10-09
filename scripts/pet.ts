@@ -112,12 +112,31 @@ function stopStartingAtLogin() {
   else rmSync(autostartFile()!, { force: true });
 }
 
-/** Run Electron on the pet, detached: a new pet, or a word (--quit, --reload) to the one running. */
-function launch(program: string, args: string[] = []) {
+/**
+ * Run Electron on the pet, detached: a new pet, or a word (--quit, --reload) to the one running.
+ * `app` is another folder for Electron to run instead, as artifacts/screen-look/look.ts does.
+ *
+ * On a Mac a pet that stays (a new one, or one taking over with --restart) is
+ * opened as an app, through `open`, as at login (launchd) — not as a program
+ * of this terminal's. macOS asks about, and remembers, permissions such as
+ * Screen Recording for the app that started a program: started from here,
+ * that would be Terminal (or whichever app runs `perry`), not Electron; the
+ * owner would allow one, and after the next login the other would be asking.
+ * `open` passes only what it is given of the environment: Perry's own settings.
+ */
+export function launch(program: string, args: string[] = [], app = PET) {
   const env: NodeJS.ProcessEnv = { ...process.env, PERRY_PORT: String(PORT) };
   // Set, Electron would run as plain Node and never open a window.
   delete env.ELECTRON_RUN_AS_NODE;
-  spawn(program, [PET, ...args], { cwd: PET, env, detached: true, stdio: "ignore", windowsHide: false }).unref();
+  const bundle = program.match(/^(.*\.app)\/Contents\/MacOS\//)?.[1];
+  if (process.platform === "darwin" && bundle && (!args.length || args.includes("--restart"))) {
+    const passed = Object.entries(env).filter(([name, value]) => value !== undefined && (name.startsWith("PERRY_") || name === "DASHBOARD_KEY"));
+    // -n: a new one even while another app on this Electron runs; -g: without taking the focus.
+    const opening = ["-n", "-g", "-a", bundle, ...passed.flatMap(([name, value]) => ["--env", `${name}=${value}`]), "--args", app, ...args];
+    spawn("open", opening, { cwd: app, env, detached: true, stdio: "ignore" }).unref();
+    return;
+  }
+  spawn(program, [app, ...args], { cwd: app, env, detached: true, stdio: "ignore", windowsHide: false }).unref();
 }
 
 /**
@@ -131,7 +150,7 @@ async function step(text: string): Promise<Spinner> {
 }
 
 /** Electron's own program, downloaded by its package the first time it is asked for. */
-async function electron(): Promise<{ path?: string; error?: string }> {
+export async function electron(): Promise<{ path?: string; error?: string }> {
   const asked = await run(nodePath(), ["-e", "process.stdout.write('\\n' + require('electron'))"], { cwd: PET });
   const path = asked.code === 0 ? asked.output.trim().split(/\r?\n/).pop()?.trim() : undefined;
   if (!path || !existsSync(path)) return { error: tail(asked.output, 3) || "Electron's package gave no program." };
@@ -144,16 +163,16 @@ async function installPackages(): Promise<{ code: number | null; output: string 
   return await run(command, args, { cwd: REPO });
 }
 
-/** Whether his page has checked in with Perry, which it does as it opens. */
+/** Whether his page on this computer has checked in with Perry, which it does as it opens; not a pet on another computer. */
 async function onScreen(): Promise<boolean> {
   try {
     const response = await fetch(`http://127.0.0.1:${PORT}/api/backend/call`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "dashboard:getShortcuts", args: { key: process.env.DASHBOARD_KEY ?? readEnvFile().DASHBOARD_KEY ?? "" } }),
+      body: JSON.stringify({ path: "pet:status", args: { key: process.env.DASHBOARD_KEY ?? readEnvFile().DASHBOARD_KEY ?? "" } }),
     });
-    const body = await response.json() as { value?: { pet: { running: boolean } } };
-    return Boolean(body.value?.pet.running);
+    const body = await response.json() as { value?: { running: boolean } };
+    return Boolean(body.value?.running);
   } catch {
     return false;
   }
@@ -193,6 +212,7 @@ async function on(): Promise<boolean> {
   }
   say(dim(`  Click him for your chats, to-dos and what needs you; drag him anywhere. Ctrl+Shift+Space talks to him.`));
   if (atLogin) say(dim(`  He starts with your computer from now on; ${bold("perry pet off")} stops that.`));
+  if (process.platform === "darwin") say(dim(`  The first time he looks at your screen, macOS asks you to allow ${bold("Electron")} (the app he runs in) to record it; restart him from his tray icon after.`));
   say("");
   return true;
 }

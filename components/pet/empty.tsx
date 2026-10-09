@@ -7,8 +7,8 @@ export function Empty({ title, children, awake, className }: { title: string; ch
   return (
     <div className={cn("flex flex-col items-center px-8 pt-6 pb-3 text-center", className)}>
       <PlatypusArt head asleep={!awake} hat={Boolean(awake)} className="size-12 rounded-full bg-brand-soft" />
-      <p className="mt-3 text-[14px] font-semibold tracking-[-0.005em]">{title}</p>
-      {children && <p className="mt-1 text-[12.5px] leading-relaxed text-pretty text-muted-foreground">{children}</p>}
+      <p className="mt-3 text-sm font-semibold tracking-[-0.005em]">{title}</p>
+      {children && <p className="mt-1 text-xs leading-relaxed text-pretty text-muted-foreground">{children}</p>}
     </div>
   );
 }

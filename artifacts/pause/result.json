@@ -1,0 +1,230 @@
+{
+  "ranAt": "2026-10-02T07:53:25.804Z",
+  "engine": "fake Grok Build (artifacts/engine-acp/fake-agent.ts)",
+  "checks": {
+    "onlyFakeEngines": true,
+    "pauseStopsAReplyWaitingOnApproval": true,
+    "pauseStopsAJob": true,
+    "stoppedJobListedAsMissed": true,
+    "pauseStopsATask": true,
+    "stoppedTaskWaitsForTheOwner": true,
+    "pauseStopsAReply": true,
+    "pausedFromTelegram": true,
+    "approvalsStayPending": true,
+    "eventHeld": true,
+    "watchHeld": true,
+    "webMessageRefused": true,
+    "runNowRefused": true,
+    "ownerToldHowToResume": true,
+    "othersToldOnlyPaused": true,
+    "strangerStillUnanswered": true,
+    "nothingStartsWhilePaused": true,
+    "dashboardShowsPaused": true,
+    "petShowsPaused": true,
+    "pauseSurvivesRestart": true,
+    "resumedFromWeb": true,
+    "missedListedOnPhone": true,
+    "resumeRunsNothingMissed": true,
+    "dashboardListsMissed": true,
+    "runningOneRunsOnlyIt": true,
+    "skipFromPhone": true,
+    "pausedFromWeb": true,
+    "resumedFromPet": true,
+    "pauseAndResumeFromWhatsApp": true,
+    "runsAgainAfterResume": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "onlyFakeEngines": [
+      "grok"
+    ],
+    "pauseStopsAReplyWaitingOnApproval": {
+      "status": "done",
+      "stopped": true
+    },
+    "pauseStopsAJob": {
+      "status": "done",
+      "stopped": true
+    },
+    "stoppedJobListedAsMissed": [
+      {
+        "id": "tnpaxn27rh1yxn32xw662bz0te",
+        "name": "Long job",
+        "at": 1790927420239,
+        "when": "Fri 13:20",
+        "runs": 1,
+        "stopped": true
+      }
+    ],
+    "pauseStopsATask": {
+      "status": "done",
+      "stopped": true
+    },
+    "stoppedTaskWaitsForTheOwner": {
+      "status": "blocked",
+      "question": "Perry was paused while this ran. Answer to carry on."
+    },
+    "pauseReply": [
+      "Paused. I stopped what I was doing, and nothing runs until you send /resume. Approvals waiting on you stay."
+    ],
+    "pauseStopsAReply": {
+      "status": "done",
+      "stopped": true
+    },
+    "pausedFromTelegram": {
+      "paused": {
+        "at": 1790927427277,
+        "by": "telegram"
+      },
+      "said": [
+        "Paused. I stopped what I was doing, and nothing runs until you send /resume. Approvals waiting on you stay."
+      ]
+    },
+    "approvalsStayPending": {
+      "pending": [
+        {
+          "kind": "command",
+          "title": "echo pause-test"
+        },
+        {
+          "kind": "contact",
+          "title": "Sam · +15557770000 wrote to Perry on WhatsApp: \"Hi, I'm Sam,"
+        }
+      ],
+      "commandRightAfterPause": "pending",
+      "commandNow": "pending"
+    },
+    "eventHeld": {
+      "at": 1790927431897,
+      "runs": 1,
+      "event": "A new file arrived: W:\\perry-tests\\pause\\run-1790927411345\\inbox-folder\\invoice-0420.pdf"
+    },
+    "webMessageRefused": "dashboard:sendChat: Perry is paused. Resume him to start this.",
+    "runNowRefused": "jobs:runNow: Perry is paused. Resume him to start this.",
+    "ownerToldHowToResume": {
+      "telegram": [
+        "Perry is paused, so nothing runs. Send /resume to start again.",
+        "🔐 <b>Perry wants to talk with someone new</b>\n\n<pre>Rando · id 5555 wrote to Perry on Telegram: \"hi, who is this?\"</pre>\n\nAllow, and Perry talks with them from now on, in a chat of its own that knows nothing of yours but what you let it share. Decline, and they are blocked.",
+        "🔐 <b>Perry wants to talk with someone new</b>\n\n<pre>Sam · +15557770000 wrote to Perry on WhatsApp: \"Hi, I'm Sam, Mani's brother. Are you his assistant?\"</pre>\n\nAllow, and Perry talks with them from now on, in a chat of its own that knows nothing of yours but what you let it share. Decline, and they are blocked.\n\n<b>Approved in the dashboard.</b>"
+      ],
+      "whatsapp": [
+        "Perry is paused, so nothing runs. Send /resume to start again."
+      ]
+    },
+    "othersToldOnlyPaused": [
+      "Perry is paused.",
+      "Perry is paused."
+    ],
+    "nothingStartsWhilePaused": {
+      "prompts": [],
+      "turns": [],
+      "missed": [
+        {
+          "id": "tnpaxn27rh1yxn32xw662bz0te",
+          "name": "Long job",
+          "at": 1790927420239,
+          "when": "Fri 13:20",
+          "runs": 1,
+          "stopped": true
+        },
+        {
+          "id": "y5qmqqqsh360f96teag00fasa8",
+          "name": "New file",
+          "at": 1790927431897,
+          "when": "Fri 13:20",
+          "runs": 1
+        },
+        {
+          "id": "ve85f1qkm6mhjwntc6mdvz04f0",
+          "name": "Every minute",
+          "at": 1790927472088,
+          "when": "Fri 13:21",
+          "runs": 1
+        },
+        {
+          "id": "tj765hkekre57wtne81x3v7760",
+          "name": "Heartbeat",
+          "at": 1790927472088,
+          "when": "Fri 13:21",
+          "runs": 1
+        }
+      ]
+    },
+    "dashboardShowsPaused": {
+      "sidebar": "Perry is paused\n\nNothing runs until you resume.\n\nResume",
+      "accountLine": "Perry is paused"
+    },
+    "petShowsPaused": "I'm paused\n\nNothing runs until you resume.\n\nResume\nz\nz\nz\n4",
+    "pauseSurvivesRestart": {
+      "paused": {
+        "at": 1790927427277,
+        "by": "telegram"
+      },
+      "refusedAfterRestart": "dashboard:sendChat: Perry is paused. Resume him to start this."
+    },
+    "resumedFromWeb": {
+      "composerSaid": true
+    },
+    "missedListedOnPhone": "Perry is back on.\n\nWhile paused, 4 schedules didn't run:\n1. Long job, stopped Fri 13:20\n2. New file, due Fri 13:20\n3. Every minute, due Fri 13:21\n4. Heartbeat, due Fri 13:21\n\nNone will run unless you say so. Send /run 1 to run one, /run all for all, or /skip to let them go.",
+    "resumeRunsNothingMissed": {
+      "turns": [],
+      "task": "blocked"
+    },
+    "dashboardListsMissed": "Missed while paused\n\nLong job · Fri 13:20\nRun\nSkip\nNew file · Fri 13:20\nRun\nSkip\nEvery minute · Fri 13:21\nRun\nSkip\nHeartbeat · Fri 13:21\nRun\nSkip\nSkip all",
+    "runningOneRunsOnlyIt": {
+      "ran": [
+        "⏰ Every minute (Friday, 2 October 2026 at 13:22)\n\nSay hello."
+      ],
+      "leftOver": [
+        "Long job",
+        "New file",
+        "Heartbeat"
+      ]
+    },
+    "skipFromPhone": [
+      "Let 3 go."
+    ],
+    "pauseAndResumeFromWhatsApp": [
+      "Paused. Nothing runs until you send /resume. Approvals waiting on you stay.",
+      "Back on."
+    ],
+    "noPageErrors": {
+      "exceptions": [],
+      "console": []
+    },
+    "serverLog": [
+      "[perry] dashboard:sendChat failed: Error: Perry is paused. Resume him to start this.",
+      "[perry] jobs:runNow failed: Error: Perry is paused. Resume him to start this.",
+      "[perry] dashboard:sendChat failed: Error: Perry is paused. Resume him to start this."
+    ],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\pause\\run-1790927411345\\home\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[1m  Assistant wants to run:\u001b[0m",
+      "    \u001b[36mecho pause-test\u001b[0m",
+      "\u001b[2m    in W:\\perry-tests\\pause\\run-1790927411345\\home\\workspace\u001b[0m",
+      "\u001b[2m    The owner asked for it\u001b[0m",
+      "\u001b[2m    approve or decline it in the dashboard or on Telegram\u001b[0m",
+      "\u001b[33m  stopping the Grok Build turn, as asked\u001b[0m",
+      "\u001b[2m  saved turn b334wcmxr72wpjc2senzbezp8g\u001b[0m",
+      "\u001b[33m  stopping the Grok Build turn, as asked\u001b[0m",
+      "\u001b[2m  saved turn 04sm0hw5kz7htb6zhf1rxfe65c\u001b[0m",
+      "\u001b[33m  stopping the Grok Build turn, as asked\u001b[0m",
+      "\u001b[2m  saved turn 9p8j4r3t0cjfk4xwf20tg5ct5n\u001b[0m",
+      "\u001b[33m  stopping the Grok Build turn, as asked\u001b[0m",
+      "\u001b[2m  saved turn t393hbhp2gmpp91jca2mbjrvsv\u001b[0m",
+      "\u001b[2m  saved turn 11d1vap6zk27g8qh3faxvaaapx\u001b[0m",
+      "\u001b[2m  saved turn 7ftdr2w063mndcb2brpp1asrz0\u001b[0m"
+    ],
+    "workRemoved": true
+  },
+  "passed": true
+}

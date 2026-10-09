@@ -6,11 +6,13 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { action, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { problemWith, resolve as resolveShortcuts, SHORTCUT_IDS, SHORTCUTS, type ShortcutId, type Shortcuts } from "./lib/shortcuts";
-import { ABSOLUTE_PATH } from "./media";
-import { defaultAccess, type Onboarding } from "./installation";
+import { ABSOLUTE_PATH, stepsKey } from "./media";
+import { chatDeleted, index as indexInLibrary, storedElsewhere } from "./library";
+import { defaultAccess, defaultEngine, engineFor, type Onboarding } from "./installation";
 import { callName, DEFAULT_NAME, readPersona, type Persona, type PersonaVersion } from "./persona";
-import type { Access } from "./lib/commands";
-import { engineOf, type EngineKind } from "./lib/engines";
+import { PAUSED_ERROR, type Access } from "./lib/commands";
+import { assertRunning } from "./pause";
+import type { EngineKind } from "./lib/engines";
 import type { CatalogApp, ConnectedAccount } from "./composio";
 import { policyOf, type Policy } from "./runner";
 import { vAccess, vEngine, vMemoryKind, vPolicy } from "./schema";
@@ -22,6 +24,7 @@ import { OUTBOX_TTL_MS } from "./conversations";
 import { beingNamed, cancelTitle, requestTitle } from "./titles";
 import { watchProblem } from "./work";
 import { describeStep, STARTING, summarize, WAITING, WRITING, type Step } from "./lib/activity";
+import { pictureOf, stepCard, type StepCard } from "./lib/steps";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -43,7 +46,8 @@ export type ChatMessage = {
   role: string;
   text: string;
   createdAt: number;
-  attachments: Array<{ url: string; fileName: string; contentType: string }>;
+  /** Its files; one deleted from the Library is `removed`, with no address. */
+  attachments: Array<{ url: string; fileName: string; contentType: string; removed?: true }>;
   /** Sent, and not yet in the history: the history only gets it with its reply. */
   pending?: boolean;
   /** The memories a reply said it relied on (codex.finishTurn). */
@@ -136,6 +140,8 @@ export type ChatSummary = {
   unseen: boolean;
   /** A runner is naming it; its title is the first message until then (titles.ts). */
   naming: boolean;
+  /** The project it is in, whose folder the sidebar shows it in (projects.ts). */
+  projectId?: Id<"projects">;
 };
 
 /** A reply after the owner last looked. A job's quiet NOTHING is not one; a chat never opened only counts for jobs. */
@@ -176,6 +182,7 @@ export const listChats = query({
         jobId: chat.jobId,
         unseen: isUnseen(chat, chat.jobId ? jobs.get(chat.jobId) : undefined),
         naming: naming.has(chat._id),
+        ...(chat.projectId ? { projectId: chat.projectId } : {}),
       };
     }));
     // Pinned first, most recently pinned on top; the rest stay newest first.
@@ -211,17 +218,23 @@ export const markChatSeen = mutation({
 });
 
 export const createChat = mutation({
-  args: { key: vKey },
+  /** projectId: started inside a project, the chat is in it from its first message. */
+  args: { key: vKey, projectId: v.optional(v.id("projects")) },
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
+    if (args.projectId && !await ctx.db.get(args.projectId)) throw new Error("This project was deleted.");
     const threadId = await createThread(ctx, { userId: "web:dashboard", title: "New chat" });
+    const engine = await defaultEngine(ctx);
     return await ctx.db.insert("conversations", {
       channel: WEB_CHANNEL,
       externalId: `session:${threadId}`,
       threadId,
       title: "New chat",
+      // On the owner's default engine, kept when that changes; with none chosen yet, it is set at the first turn.
+      ...(engine ? { engine } : {}),
       access: await defaultAccess(ctx),
       lastMessageAt: Date.now(),
+      ...(args.projectId ? { projectId: args.projectId } : {}),
     });
   },
 });
@@ -263,9 +276,12 @@ export const deleteChat = mutation({
     const attachments = await ctx.db.query("chatAttachments")
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
       .collect();
+    // Its files stay in the Library, with another chat that has them or none (library.chatDeleted).
+    await chatDeleted(ctx, args.id);
     for (const attachment of attachments) {
-      // Local files stay where they are on the owner's machine; Convex cannot reach them.
-      if (attachment.storageId) await ctx.storage.delete(attachment.storageId);
+      // Local files stay where they are on the owner's machine, in the Library. A stored one goes with the
+      // chat, unless a branch of it still shows it.
+      if (attachment.storageId && !await storedElsewhere(ctx, attachment.storageId, args.id)) await ctx.storage.delete(attachment.storageId);
       await ctx.db.delete(attachment._id);
     }
     await ctx.runMutation(internal.codex.pruneOrphans, { conversationId: args.id });
@@ -372,7 +388,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine: EngineKind; project: boolean; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean } }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean } }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
@@ -387,10 +403,14 @@ export const getChat = query({
         .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.id).eq("status", "running"))
         .first()
       : null;
+    const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
     return {
       channel: conversation.channel,
-      engine: engineOf(conversation),
-      project: Boolean(conversation.project),
+      // Its own, else the default it follows; unset while there is neither.
+      engine: await engineFor(ctx, conversation),
+      // Perry moved it to this engine because its own had no room (routing.moveChat).
+      ...(conversation.moved ? { moved: conversation.moved } : {}),
+      ...(project ? { project: { id: project._id, name: project.name } } : {}),
       model: conversation.model,
       effort: conversation.effort,
       access: conversation.access ?? "supervised",
@@ -467,6 +487,70 @@ export const getActivity = query({
   },
 });
 
+/** A step of a run, as the chat lists it under "Worked for…". */
+export type WorkStep = Step & { id: Id<"runSpans">; kind: Doc<"runSpans">["kind"]; status: Doc<"runSpans">["status"]; startedAt: number; durationMs?: number };
+/** One run of a chat and every step it took, in order. */
+export type Work = { runId: Id<"runs">; status: Doc<"runs">["status"]; startedAt: number; finishedAt?: number; steps: WorkStep[] };
+/** The runs a chat lists the steps of: its latest, which covers the replies it shows. */
+const WORK_RUNS = 50;
+
+/**
+ * What each of a chat's latest runs did, step by step, oldest first, for the
+ * chat to show with its reply: as a list that grows while the run goes, and
+ * folded into "Worked for 46s" once the reply is in. Reasoning is left out;
+ * its time is in the run's.
+ */
+export const getChatWork = query({
+  args: { key: vKey, id: v.id("conversations") },
+  handler: async (ctx, args): Promise<Work[]> => {
+    assertDashboardKey(args.key);
+    ownerChat(await ctx.db.get(args.id));
+    const runs = await ctx.db.query("runs").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).order("desc").take(WORK_RUNS);
+    return await Promise.all(runs.reverse().map(async (run): Promise<Work> => {
+      const spans = await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).take(500);
+      const steps = spans.filter((span) => span.kind !== "reasoning").sort((a, b) => a.startedAt - b.startedAt).map((span): WorkStep => ({
+        ...describeStep(span),
+        id: span._id,
+        kind: span.kind,
+        status: span.status,
+        startedAt: span.startedAt,
+        ...(span.durationMs !== undefined ? { durationMs: span.durationMs } : {}),
+      }));
+      return { runId: run._id, status: run.status, startedAt: run.startedAt, ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}), steps };
+    }));
+  },
+});
+
+/** A step opened in the chat or on Activity: what it ran, changed, saw or answered, live while it runs. */
+export type StepView = StepCard & { status: Doc<"runSpans">["status"] };
+
+/**
+ * One step, as a card (lib/steps.ts), with what it links to: each file it
+ * changed and the picture Perry's browser took, served by the local media
+ * server (app/api/media). Loaded only when the step is opened.
+ */
+export const getStep = query({
+  args: { key: vKey, id: v.string() },
+  handler: async (ctx, args): Promise<StepView | null> => {
+    assertDashboardKey(args.key);
+    const id = ctx.db.normalizeId("runSpans", args.id);
+    const span = id ? await ctx.db.get(id) : null;
+    const run = span ? await ctx.db.get(span.runId) : null;
+    if (!span || !run) return null;
+    const files = span.kind === "fileChange"
+      ? new Map((await ctx.db.query("chatAttachments")
+        .withIndex("by_message", (q) => q.eq("conversationId", run.conversationId).eq("messageKey", stepsKey(run._id)))
+        .collect()).flatMap((row) => row.localPath ? [[row.localPath, `/api/media/${row._id}`] as const] : []))
+      : undefined;
+    const pictureId = pictureOf(span);
+    const pictureRow = pictureId ? ctx.db.normalizeId("chatAttachments", pictureId) : null;
+    const picture = pictureRow ? await ctx.db.get(pictureRow) : null;
+    // Only a picture registered for this chat's steps, whatever id a tool's answer carried.
+    const shown = picture?.conversationId === run.conversationId && picture.messageKey === "steps" && picture.localPath ? `/api/media/${picture._id}` : undefined;
+    return { ...stepCard(span, { files, ...(shown ? { picture: shown } : {}) }), status: span.status };
+  },
+});
+
 export const getChatMessages = query({
   args: { key: vKey, id: v.id("conversations"), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
@@ -480,8 +564,15 @@ export const getChatMessages = query({
     const attachments = await ctx.db.query("chatAttachments")
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
       .collect();
-    const attachmentMap = new Map<string, Array<{ url: string; fileName: string; contentType: string }>>();
+    const attachmentMap = new Map<string, Array<{ url: string; fileName: string; contentType: string; removed?: true }>>();
     for (const attachment of attachments) {
+      // Deleted from the Library: the chat says so where the file was.
+      if (attachment.removedAt) {
+        const list = attachmentMap.get(attachment.messageKey) ?? [];
+        list.push({ url: "", fileName: attachment.fileName, contentType: attachment.contentType, removed: true });
+        attachmentMap.set(attachment.messageKey, list);
+        continue;
+      }
       // Local media is served by the Next.js server on the owner's machine.
       const url = attachment.localPath
         ? `/api/media/${attachment._id}`
@@ -606,6 +697,8 @@ export const registerAttachment = mutation({
     fileName: v.string(),
     contentType: v.string(),
     size: v.number(),
+    /** Sent from the desktop pet, as the Library says where it came from. */
+    from: v.optional(v.literal("pet")),
   },
   returns: v.id("chatAttachments"),
   handler: async (ctx, args) => {
@@ -618,7 +711,7 @@ export const registerAttachment = mutation({
     if (args.localPath && !ABSOLUTE_PATH.test(args.localPath)) throw new Error("Local files need an absolute path.");
     const stored = args.storageId ? await ctx.storage.getMetadata(args.storageId) : null;
     if (args.storageId && !stored) throw new Error("Upload could not be found.");
-    return await ctx.db.insert("chatAttachments", {
+    const id = await ctx.db.insert("chatAttachments", {
       conversationId: args.conversationId,
       messageKey: args.messageKey,
       storageId: args.storageId,
@@ -628,6 +721,8 @@ export const registerAttachment = mutation({
       size: args.size,
       createdAt: Date.now(),
     });
+    await indexInLibrary(ctx, id, args.from ? { from: args.from } : {});
+    return id;
   },
 });
 
@@ -656,6 +751,8 @@ export const sendChat = mutation({
     const chat = ownerChat(await ctx.db.get(args.id));
     // What is written here would reach them as Perry's; the owner tells Perry what to say in their own chat.
     if (chat.contactId) throw new Error("This is Perry's chat with someone else. To have Perry tell them something, ask in your own chat.");
+    // Paused, the message is not sent; it stays in the box for when he is back (pause.ts).
+    await assertRunning(ctx);
     const messageKey = args.messageKey?.trim() || crypto.randomUUID();
     const attachments = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
     if (attachments.some((attachment) => !attachment || attachment.conversationId !== args.id || attachment.messageKey !== messageKey)) {
@@ -678,7 +775,7 @@ export const sendChat = mutation({
       ...(web ? { pendingTurns: (chat.pendingTurns ?? 0) + 1 } : {}),
       // Shown in the chat from now, until a turn or the history has it (conversations.takeFromOutbox).
       outbox: [...(chat.outbox ?? []).filter((entry) => entry.at > Date.now() - OUTBOX_TTL_MS), { text: prompt, at: Date.now() }],
-      ...(args.model !== undefined ? pickPatch(chat, args.model, args.engine) : {}),
+      ...(args.model !== undefined ? pickPatch(chat, args.model, args.engine, await engineFor(ctx, chat)) : {}),
       ...(args.effort !== undefined ? { effort: args.effort.trim() || undefined } : {}),
       ...(args.access !== undefined ? { access: args.access } : {}),
     });
@@ -807,7 +904,7 @@ export const setChatModel = mutation({
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
     const chat = ownerChat(await ctx.db.get(args.id));
-    await ctx.db.patch(args.id, pickPatch(chat, args.model, args.engine));
+    await ctx.db.patch(args.id, pickPatch(chat, args.model, args.engine, await engineFor(ctx, chat)));
     return null;
   },
 });
@@ -839,21 +936,24 @@ export const setChatAccess = mutation({
 
 /** The access new chats start with, for Settings and the composer of a chat not yet sent. */
 /**
- * A new chat starts on the model and thinking level of the chat written in
- * last, so a pick carries over without a setting of its own. A scheduled job's
- * chat has its own model, and is passed over.
+ * A new chat starts on the owner's default engine, with the model and
+ * thinking level of the chat on it written in last, so a pick carries over
+ * without a setting of its own. A scheduled job's chat has its own model, and
+ * is passed over. No engine while the owner has not chosen one.
  */
 export const getLastPicks = query({
   args: { key: vKey },
   handler: async (ctx, args): Promise<{ engine?: EngineKind; model?: string; effort?: string }> => {
     assertDashboardKey(args.key);
+    const engine = await defaultEngine(ctx);
+    if (!engine) return {};
     const recent = await ctx.db.query("conversations")
       .withIndex("by_channel_last", (q) => q.eq("channel", WEB_CHANNEL))
       .order("desc")
       .take(20);
     // A chat sent from the composer always has its model; the welcome chat and the like leave it unset.
-    const last = recent.find((chat) => !chat.jobId && chat.model);
-    return { engine: last ? engineOf(last) : undefined, model: last?.model, effort: last?.effort };
+    const last = recent.find((chat) => !chat.jobId && chat.model && chat.engine === engine);
+    return { engine, model: last?.model, effort: last?.effort };
   },
 });
 
@@ -878,18 +978,6 @@ export const setManners = mutation({
   },
 });
 
-/** A project chat: what Perry remembers there stays there, and other chats cannot read it. */
-export const setChatProject = mutation({
-  args: { key: vKey, id: v.id("conversations"), project: v.boolean() },
-  returns: v.null(),
-  handler: async (ctx, args): Promise<null> => {
-    assertDashboardKey(args.key);
-    ownerChat(await ctx.db.get(args.id));
-    await ctx.db.patch(args.id, { project: args.project || undefined });
-    return null;
-  },
-});
-
 export const getDefaultAccess = query({
   args: { key: vKey },
   handler: async (ctx, args): Promise<Access> => {
@@ -908,12 +996,35 @@ export const setDefaultAccess = mutation({
   },
 });
 
+/** The engine Perry uses unless a chat or job picks another, for the welcome page, Settings and the composer. Null until chosen. */
+export const getDefaultEngine = query({
+  args: { key: vKey },
+  handler: async (ctx, args): Promise<EngineKind | null> => {
+    assertDashboardKey(args.key);
+    return (await defaultEngine(ctx)) ?? null;
+  },
+});
+
+/** The owner chose the default engine: new chats start on it, and chats that follow it move to it from their next turn. */
+export const setDefaultEngine = mutation({
+  args: { key: vKey, engine: vEngine },
+  returns: v.null(),
+  handler: async (ctx, args): Promise<null> => {
+    assertDashboardKey(args.key);
+    await ctx.runMutation(internal.installation.setDefaultEngine, { engine: args.engine });
+    return null;
+  },
+});
+
 // --- Keyboard shortcuts ----------------------------------------------------
 
 export type ShortcutsView = {
   shortcuts: Shortcuts;
-  /** The desktop pet, as it last checked in: whether it is running, and each of its global shortcuts' standing, by id. */
-  pet: { running: boolean; keys: Partial<Record<string, { hotkey?: string; error?: string }>> };
+  /**
+   * The desktop pet, as it last checked in: whether it is running, and each of its global shortcuts' standing, by id;
+   * for Talk, why its keys can only be tapped (`hold`), where holding them does not work.
+   */
+  pet: { running: boolean; keys: Partial<Record<string, { hotkey?: string; error?: string; hold?: string }>> };
 };
 
 export const getShortcuts = query({
@@ -921,10 +1032,12 @@ export const getShortcuts = query({
   handler: async (ctx, args): Promise<ShortcutsView> => {
     assertDashboardKey(args.key);
     const install = await ctx.db.query("installation").first();
-    const pet = await ctx.db.query("petPresence").first();
+    // The pet on Perry's own computer while it runs; otherwise the one heard from last, on another computer.
+    const pets = (await ctx.db.query("petPresence").collect()).sort((a, b) => b.seenAt - a.seenAt);
+    const pet = pets.find((row) => !row.device && Date.now() - row.seenAt < 150_000) ?? pets[0];
     return {
       shortcuts: resolveShortcuts(install?.shortcuts),
-      pet: { running: Boolean(pet && Date.now() - pet.seenAt < 150_000), keys: { talk: { hotkey: pet?.hotkey, error: pet?.hotkeyError }, ...pet?.keys } },
+      pet: { running: Boolean(pet && Date.now() - pet.seenAt < 150_000), keys: { talk: { hotkey: pet?.hotkey, error: pet?.hotkeyError, hold: pet?.hotkeyHold }, ...pet?.keys } },
     };
   },
 });
@@ -966,23 +1079,34 @@ export type MemoryView = {
   origin?: "owner" | "tool" | "job";
   createdAt: number;
   editedAt?: number;
-  /** A project chat's own memory: the chat it stays in, and its title. */
+  /** Kept to one chat: that chat, and its title. */
   chatId?: string;
   chat?: string;
+  /** Kept to a project: that project, and its name. */
+  projectId?: string;
+  project?: string;
 };
 
 export const listMemories = query({
   args: { key: vKey, query: v.optional(v.string()), kind: v.optional(vMemoryKind) },
   handler: async (ctx, args): Promise<MemoryView[]> => {
     assertDashboardKey(args.key);
-    const found: MemoryView[] = await ctx.runQuery(internal.memories.search, {
+    // Memories only: a page's lines are searched with them elsewhere (pages.search), not listed here.
+    const found = await ctx.runQuery(internal.memories.search, {
       query: args.query ?? "",
       limit: 25,
       kind: args.kind,
       everywhere: true,
-    });
-    // A project chat's own memory says which chat it stays in.
+      memoriesOnly: true,
+      // Older memories, from before they were lines in pages; those are read and edited in their pages.
+      loose: true,
+    }) as MemoryView[];
+    // A memory kept to one chat or one project says which.
     return await Promise.all(found.map(async (memory) => {
+      if (memory.projectId) {
+        const project = await ctx.db.get(memory.projectId as Id<"projects">);
+        return { ...memory, project: project?.name ?? "a deleted project" };
+      }
       if (!memory.chatId) return memory;
       const chat = await ctx.db.get(memory.chatId as Id<"conversations">);
       return { ...memory, chat: chat ? titleOf(chat) : "a deleted chat" };
@@ -1005,6 +1129,7 @@ export const addMemory = mutation({
       source: "dashboard",
       kind: args.kind,
       origin: "owner",
+      by: "owner",
     });
     return null;
   },
@@ -1044,6 +1169,8 @@ export type RunView = {
   steps?: number;
   toolCalls?: string[];
   model?: string;
+  /** What it ran on, who chose it and why (lib/routing.ts). */
+  route?: Doc<"runs">["route"];
   totalTokens?: number;
   usage?: Doc<"runs">["usage"];
   error?: string;
@@ -1115,6 +1242,8 @@ export const getStatus = query({
     telegramConfigured: boolean;
     onboarding: Onboarding;
     assistantName: string;
+    /** Unset until the owner chooses one: the welcome page asks first. */
+    defaultEngine?: EngineKind;
   }> => {
     assertDashboardKey(args.key);
 
@@ -1142,6 +1271,7 @@ export const getStatus = query({
       telegramConfigured: Boolean(telegramToken),
       onboarding: install.onboarding,
       assistantName: persona.name,
+      ...(install.defaultEngine ? { defaultEngine: install.defaultEngine } : {}),
     };
   },
 });
@@ -1185,11 +1315,13 @@ async function startWelcomeChat(
   options: { title: string; prompt: string; label: string },
 ): Promise<Id<"conversations">> {
   const threadId = await createThread(ctx, { userId: "web:dashboard", title: options.title });
+  const engine = await defaultEngine(ctx);
   const id = await ctx.db.insert("conversations", {
     channel: WEB_CHANNEL,
     externalId: `session:${threadId}`,
     threadId,
     title: options.title,
+    ...(engine ? { engine } : {}),
     access: await defaultAccess(ctx),
     lastMessageAt: Date.now(),
     pendingTurns: 1,
@@ -1223,21 +1355,23 @@ export const personaHistory = query({
   },
 });
 
+/** USER.md from the About you page, saved as the owner types: the same words again change nothing, and a sitting's saves are one version. */
 export const saveUserMd = mutation({
   args: { key: vKey, text: v.string() },
   returns: v.object({ changed: v.boolean() }),
   handler: async (ctx, args): Promise<{ changed: boolean }> => {
     assertDashboardKey(args.key);
-    return await ctx.runMutation(internal.persona.writeUser, { text: args.text, by: "owner" });
+    return await ctx.runMutation(internal.persona.writeUser, { text: args.text, by: "owner", typing: true });
   },
 });
 
+/** The assistant's name, its personality or both, saved as typed like USER.md; what is not given stays as it is. */
 export const saveIdentity = mutation({
-  args: { key: vKey, name: v.string(), personality: v.string() },
+  args: { key: vKey, name: v.optional(v.string()), personality: v.optional(v.string()) },
   returns: v.object({ changed: v.boolean() }),
   handler: async (ctx, args): Promise<{ changed: boolean }> => {
     assertDashboardKey(args.key);
-    return await ctx.runMutation(internal.persona.writeIdentity, { name: args.name, personality: args.personality, by: "owner" });
+    return await ctx.runMutation(internal.persona.writeIdentity, { name: args.name, personality: args.personality, by: "owner", typing: true });
   },
 });
 
@@ -1428,6 +1562,7 @@ export const checkMonitorsNow = action({
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
+    if (await ctx.runQuery(internal.pause.state, {})) throw new Error(PAUSED_ERROR);
     await ctx.runAction(internal.web.checkMonitors, {});
     return null;
   },
@@ -1625,7 +1760,7 @@ export const getConnectedAccounts = action({
   },
 });
 
-/** Every app that can be connected, for the Connectors page to search. */
+/** Every app that can be connected, for Apps & skills → Connectors to search. */
 export const getCatalog = action({
   args: { key: vKey },
   handler: async (ctx, args): Promise<{ apps: CatalogApp[]; error?: string }> => {

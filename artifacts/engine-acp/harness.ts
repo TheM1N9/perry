@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openChat, sleep } from "../browser";
@@ -14,6 +14,12 @@ import { openChat, sleep } from "../browser";
  * PERRY_<ENGINE>_COMMAND, this machine's real Codex beside it on the same
  * runner, headless Chrome for Settings, and ways to read Perry's documents and
  * the fake agent's log. Nothing touches the owner's own Perry.
+ *
+ * A new Perry asks its owner for a default engine (issue #190), so this one is
+ * given it: `engine` names it; unset, it is Grok Build when the runner drives
+ * the fake agent as Grok with Codex taken away (an empty CODEX_HOME), else
+ * Codex, which every chat left without a model ran on before Perry asked;
+ * null leaves the choice to the test.
  */
 
 export { sleep };
@@ -21,22 +27,37 @@ export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export const FAKE_AGENT = join(REPO, "artifacts", "engine-acp", "fake-agent.ts");
 /** An email address, as a signed-in account shows one; never written into an artifact. */
 export const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+/** This machine's name and the owner's account on it, as the runner's log and its paths show them; never written into an artifact either. */
+const account = (() => { try { return userInfo().username; } catch { return ""; } })();
+const MACHINE = ([[hostname(), "THIS-PC"], [account, "owner"]] as Array<[string, string]>)
+  .filter(([real]) => real.length > 1)
+  .map(([real, stand]): [RegExp, string] => [new RegExp(`\\b${real.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"), stand]);
+export const redact = (text: string) => MACHINE.reduce((out, [real, stand]) => out.replace(real, stand), text.replace(EMAIL, "owner@example.com"));
 export type Row = Record<string, any> & { _id: string };
 
 const freePort = () => new Promise<number>((done) => { const probe = createServer().listen(0, "127.0.0.1", () => { const { port } = probe.address() as { port: number }; probe.close(() => done(port)); }); });
 
-export async function perry(options: { name: string; outDir: string; runnerEnv: (home: string) => Record<string, string> }) {
+export async function perry(options: {
+  name: string; outDir: string; runnerEnv: (home: string) => Record<string, string>; engine?: "codex" | "claude" | "grok" | "antigravity" | null;
+  /** For the server and the runner both, set after the owner's own are taken out: stand-ins for Telegram or WhatsApp. */
+  env?: Record<string, string>;
+}) {
   mkdirSync(options.outDir, { recursive: true });
   const PORT = await freePort();
   const BASE = `http://127.0.0.1:${PORT}`;
   const KEY = `${options.name}-e2e-key`;
-  const home = mkdtempSync(join(tmpdir(), `perry-${options.name}-`));
+  const home = mkdtempSync(join(process.env.PERRY_E2E_DIR ?? tmpdir(), `perry-${options.name}-`));
   const checks: Record<string, boolean> = {};
   const notes: Record<string, unknown> = {};
   const check = (name: string, ok: boolean, note?: unknown) => { checks[name] = ok; if (note !== undefined) notes[name] = note; console.log(`${ok ? "ok  " : "FAIL"} ${name}`); };
 
   const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
-  for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("TELEGRAM") || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE") delete env[name];
+  for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("TELEGRAM") || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE" || name === "PERRY_ENGINE") delete env[name];
+  // The server takes PERRY_ENGINE as the default of an install with none chosen (server/index.ts).
+  const drives = options.runnerEnv(home);
+  const engine = options.engine !== undefined ? options.engine : drives.PERRY_GROK_COMMAND && drives.CODEX_HOME ? "grok" : "codex";
+  if (engine) env.PERRY_ENGINE = engine;
+  Object.assign(env, options.env ?? {});
   const logs = { server: "", runner: "" };
   const children: ChildProcess[] = [];
   const start = (name: "server" | "runner"): ChildProcess => {
@@ -73,7 +94,7 @@ export async function perry(options: { name: string; outDir: string; runnerEnv: 
 const statement = db.prepare(process.argv[2]); const params = JSON.parse(process.argv[3]);
 process.stdout.write(JSON.stringify(/^\\s*select/i.test(process.argv[2]) ? statement.all(...params) : (statement.run(...params), [])));`;
   function sql<T>(statement: string, params: Array<string | number> = []): T[] {
-    const ran = spawnSync("node", ["-e", SQL, join(home, "perry.sqlite"), statement, JSON.stringify(params)], { encoding: "utf8", windowsHide: true });
+    const ran = spawnSync("node", ["-e", SQL, join(home, "perry.sqlite"), statement, JSON.stringify(params)], { encoding: "utf8", windowsHide: true, maxBuffer: 512 * 1024 * 1024 });
     if (ran.status !== 0) throw new Error(`sqlite: ${ran.stderr}`);
     return JSON.parse(ran.stdout || "[]");
   }
@@ -129,7 +150,7 @@ process.stdout.write(JSON.stringify(/^\\s*select/i.test(process.argv[2]) ? state
   };
   const settingsText = async () => {
     if (!browser) return "";
-    await browser.send("Page.navigate", { url: `${BASE}/settings` });
+    await browser.send("Page.navigate", { url: `${BASE}/settings/engines` });
     await until(() => browser!.evaluate(`Boolean(document.querySelector('section[aria-label="Engines"]'))`), "Settings' Engines section", 30);
     return await browser.evaluate(`document.querySelector('section[aria-label="Engines"]').innerText`) as string;
   };
@@ -143,7 +164,7 @@ process.stdout.write(JSON.stringify(/^\\s*select/i.test(process.argv[2]) ? state
     try { rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }); } catch {}
     notes.tempHomeRemoved = !existsSync(home);
     const result = { ranAt: new Date().toISOString(), ...extra, checks, notes, passed: Object.values(checks).every(Boolean) };
-    writeFileSync(join(options.outDir, "result.json"), `${JSON.stringify(result, null, 2).replace(EMAIL, "owner@example.com")}\n`);
+    writeFileSync(join(options.outDir, "result.json"), `${redact(JSON.stringify(result, null, 2))}\n`);
     console.log(JSON.stringify({ checks, passed: result.passed, stoppedAt: notes.stoppedAt }, null, 2));
     return result.passed;
   }

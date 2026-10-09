@@ -7,6 +7,7 @@ import { Agent, fetch } from "undici";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
+import { render, type Guard } from "./lib/browser";
 import { describeError, UNSAFE_DESTINATION } from "./lib/errors";
 import { firstPrice, formatPrice, parseTarget } from "./lib/price";
 import { truncateHead } from "./lib/truncate";
@@ -24,6 +25,13 @@ import { ownerClock } from "./jobs";
  * JavaScript-rendered page is not an error, it is a confidently empty page. The
  * tool reports how much text it found so the agent can notice.
  *
+ * When a site turns the fetch away (a 403, a bot check, a dropped connection)
+ * or sends a near-empty page that only a script fills in, read_page reads it
+ * again in Perry's own browser (lib/browser.ts) and says so (`via: "browser"`).
+ * When that fails too, the error says both were tried, so the agent tells the
+ * owner the page could not be read instead of writing from search snippets
+ * (issue #158). A paywall is not a block: its page is returned as it is.
+ *
  * Node, not Convex's default runtime, because the address checks need to see
  * DNS answers and choose the socket's address, which only undici and node:dns
  * allow.
@@ -33,6 +41,15 @@ const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_REDIRECTS = 10;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+/** Launching the browser, loading the page and waiting out a bot check that clears itself. */
+const BROWSER_TIMEOUT_MS = 30_000;
+
+/**
+ * One local site, as host:port, read as if it were public, so an end-to-end
+ * test can stand in for the web (artifacts/read-page-browser). Never set
+ * otherwise; every other local address is refused as always.
+ */
+const TEST_SITE = process.env.PERRY_WEB_TEST_SITE;
 
 /** Watches fingerprint the first this-many characters, as they always have. */
 const MONITOR_TEXT_CHARS = 30_000;
@@ -155,6 +172,37 @@ function publicLookup(): LookupFunction {
   };
 }
 
+/**
+ * The same checks for the browser, which resolves names itself: a request is
+ * refused unless its name resolves only to public addresses, and an answer
+ * from an address that is not public (a name that changed its answer in
+ * between) spoils the whole read. Names are looked up once per page.
+ */
+function browserGuard(): Guard {
+  const checked = new Map<string, Promise<void>>();
+  const check = async (url: URL) => {
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw unsafeDestination();
+    assertPublicHostname(url.hostname);
+    const host = normaliseAddress(url.hostname);
+    if (isIP(host) !== 0) return;
+    const addresses = await new Promise<Array<{ address: string }>>((resolve, reject) =>
+      lookup(host, { all: true, verbatim: true }, (error, found) => (error ? reject(error) : resolve(found))));
+    for (const { address } of addresses) assertPublicAddress(address);
+  };
+  return {
+    request: async (raw) => {
+      const url = new URL(raw);
+      if (url.host === TEST_SITE) return;
+      const key = `${url.protocol}//${url.hostname}`;
+      if (!checked.has(key)) checked.set(key, check(url));
+      await checked.get(key);
+    },
+    address: (raw, ip) => {
+      if (new URL(raw).host !== TEST_SITE) assertPublicAddress(ip);
+    },
+  };
+}
+
 // --- Fetching --------------------------------------------------------------
 
 /**
@@ -184,7 +232,7 @@ type RawPage = { url: string; status: number; contentType: string; body: string;
 // Adapted from vercel/eve (Apache-2.0): packages/eve/src/execution/web-fetch/request.ts
 /** One request, no redirects followed, the body read up to the size cap. */
 async function requestOnce(url: URL, userAgent: string, signal: AbortSignal): Promise<RawPage & { location: string | null }> {
-  assertPublicHostname(url.hostname);
+  if (url.host !== TEST_SITE) assertPublicHostname(url.hostname);
   // A dispatcher per request, so no pooled socket outlives the check that opened it.
   const dispatcher = new Agent({ connect: { lookup: publicLookup() } });
   try {
@@ -332,18 +380,110 @@ export type FetchedPage = {
   text?: string;
   chars?: number;
   truncated?: boolean;
+  /** "browser" when Perry's browser read it, after the plain fetch was turned away. */
+  via?: "browser";
   note?: string;
   error?: string;
   hint?: string;
 };
+
+// --- When the fetch is turned away -------------------------------------------
+
+/** Fewer characters than this, from a page with scripts, is a page a script fills in. */
+const NEAR_EMPTY_CHARS = 120;
+
+/**
+ * What a bot check shows instead of the page: Cloudflare's "Just a moment",
+ * Akamai's "Access Denied", PerimeterX's press-and-hold, DataDome, Imperva, and
+ * the wording they share. Looked for only on small pages, as a check page is,
+ * so an article that mentions one is not taken for one.
+ */
+const BOT_CHECK = /<title[^>]*>\s*(just a moment|attention required|access denied|pardon our interruption|are you a (robot|human)|verify(ing)? you are (a )?human|security check|one more step)|\/cdn-cgi\/challenge-platform\/|cf-browser-verification|cf_chl_opt|px-captcha|captcha-delivery\.com|_Incapsula_Resource|errors\.edgesuite\.net|enable javascript and cookies to continue|checking (if the site connection is secure|your browser)/i;
+const CHECK_PAGE_MAX_CHARS = 150_000;
+const isBotCheck = (html: string) => html.length < CHECK_PAGE_MAX_CHARS && BOT_CHECK.test(html);
+
+/** A refusal a real browser may get past: 401 or 403, or a bot check at any status (a 429 or 503 one, or a 200). */
+function turnedAway(page: RawPage): boolean {
+  return page.status === 401 || page.status === 403 || page.challenged || (isHtml(page) && isBotCheck(page.body));
+}
+
+/**
+ * What went wrong, when a failed fetch is one a real browser may get past: a
+ * connection dropped or left hanging, or a handshake Node would not finish,
+ * which is how some bot checks turn away what does not look like a browser.
+ * Null for a refused address, a name that does not exist, a refused
+ * connection, or the page's own limits.
+ */
+function blockedFetch(error: unknown): string | null {
+  const chain: Array<{ name?: unknown; code?: unknown; message?: unknown }> = [];
+  for (let link = error; link && typeof link === "object" && chain.length < 10; link = (link as { cause?: unknown }).cause) {
+    chain.push(link as { name?: unknown; code?: unknown; message?: unknown });
+  }
+  if (chain.some((link) => link.name === UNSAFE_DESTINATION || ["ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED"].includes(String(link.code)))) return null;
+  const top = chain[0];
+  if (top?.name === "TimeoutError") return "A plain fetch timed out";
+  if (top?.message !== "fetch failed" && top?.message !== "terminated") return null;
+  const code = chain.map((link) => link.code).find((value) => typeof value === "string");
+  return `A plain fetch failed (${code ?? top.message})`;
+}
+
+/** The page again, in Perry's browser; `why` says what went wrong with the fetch. Throws what went wrong there. */
+async function inBrowser(raw: string, why: string): Promise<FetchedPage> {
+  const page = await render(parseUrl(raw).toString(), {
+    guard: browserGuard(),
+    timeoutMs: BROWSER_TIMEOUT_MS,
+    maxChars: MAX_RESPONSE_BYTES,
+    checking: isBotCheck,
+  });
+  if (isBotCheck(page.html)) throw new Error("The site's bot check did not let it through.");
+  if (page.status !== 0 && (page.status < 200 || page.status >= 300)) throw new Error(`The site returned ${page.status} to it too.`);
+  const read = readable(page.url, page.html, true, page.title);
+  const empty = read.chars < NEAR_EMPTY_CHARS ? " Almost no text came back even so: the site may have shown the browser an error instead of the page." : "";
+  return { ...read, via: "browser", note: `${why}, so this is the page as Perry's browser showed it.${empty}` };
+}
+
+/** Both tried, neither read it: said plainly, so the agent does not carry on as if it had. */
+function bothFailed(raw: string, why: string, error: unknown): FetchedPage {
+  const { id, message, hint } = describeError(error);
+  return {
+    url: raw,
+    error: `Could not read the page, with either a plain fetch or Perry's browser. ${why}. Perry's browser: ${message}`,
+    // A refused address keeps its own advice: not to look for another way there.
+    hint: id === "unsafe-destination" && hint ? hint
+      : "Tell the owner this page could not be read, and do not write as if you had read it: search snippets and other coverage are not the page.",
+  };
+}
+
+/** A page's body as the agent reads it: Markdown, the first 2000 lines or 50 KB. */
+function readable(url: string, body: string, html: boolean, title = html ? extractText(body).title : ""): FetchedPage & { chars: number } {
+  const markdown = html ? toMarkdown(body) : body.trim();
+  const { output, truncated, outputLines, totalLines } = truncateHead(markdown);
+  return {
+    url,
+    title,
+    text: truncated
+      ? `${output}\n\n[page truncated: showing the first ${outputLines} of ${totalLines} lines]`
+      : output,
+    chars: markdown.length,
+    truncated,
+  };
+}
 
 export async function fetchPage(raw: string): Promise<FetchedPage> {
   let page: RawPage;
   try {
     page = await fetchPublic(raw);
   } catch (error) {
+    const blocked = blockedFetch(error);
+    if (blocked) return await inBrowser(raw, blocked).catch((failed) => bothFailed(raw, blocked, failed));
     const { message, hint } = describeError(error);
     return { error: message, ...(hint ? { hint } : {}) };
+  }
+
+  if (turnedAway(page)) {
+    const check = page.challenged || (isHtml(page) && isBotCheck(page.body));
+    const why = `A plain fetch was turned away (${page.status}${check ? ", a bot check" : ""})`;
+    return await inBrowser(raw, why).catch((failed) => bothFailed(page.url, why, failed));
   }
 
   if (page.status < 200 || page.status >= 300) {
@@ -351,23 +491,20 @@ export async function fetchPage(raw: string): Promise<FetchedPage> {
   }
 
   const html = isHtml(page);
-  const title = html ? extractText(page.body).title : "";
-  const markdown = html ? toMarkdown(page.body) : page.body.trim();
-  const { output, truncated, outputLines, totalLines } = truncateHead(markdown);
-
+  const read = readable(page.url, page.body, html);
+  // The tell for a JavaScript-rendered page: HTTP 200, almost no text. The browser runs the script.
+  if (read.chars < NEAR_EMPTY_CHARS && html && /<script/i.test(page.body)) {
+    try {
+      return await inBrowser(raw, "Almost no text came back without JavaScript");
+    } catch (error) {
+      return { ...read, note: `Almost no text came back. The page probably renders with JavaScript, and Perry's browser could not read it either: ${describeError(error).message}` };
+    }
+  }
   return {
-    url: page.url,
-    title,
-    text: truncated
-      ? `${output}\n\n[page truncated: showing the first ${outputLines} of ${totalLines} lines]`
-      : output,
-    chars: markdown.length,
-    truncated,
-    // The tell for a JavaScript-rendered page: HTTP 200, almost no text.
-    note:
-      markdown.length < 120
-        ? "Almost no text came back. The page probably renders with JavaScript, which this cannot run."
-        : undefined,
+    ...read,
+    note: read.chars < NEAR_EMPTY_CHARS
+      ? "Almost no text came back. The page probably renders with JavaScript, which this cannot run."
+      : undefined,
   };
 }
 

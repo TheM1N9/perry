@@ -5,23 +5,30 @@ import {
   PaletteIcon, PencilIcon, SearchIcon, TerminalIcon, XIcon, type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { catchError, type ErrorInfo } from "next/error";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { Activity } from "@/convex/dashboard";
-import type { Pose } from "@/convex/lib/activity";
+import { shownStep, type Pose } from "@/convex/lib/activity";
+import { limitWarning } from "@/convex/lib/usage";
 import type { Board, TodoView } from "@/convex/todos";
 import { errorText, plural, useNow } from "@/lib/format";
 import { KEY_STORAGE, SessionContext, useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { countdown, dueLabel } from "@/lib/when";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlatypusArt } from "@/components/dashboard/platypus";
 import { updateReady, useUpdates } from "@/components/dashboard/updates";
+import { usePause } from "@/components/dashboard/pause";
 import { QuickAdd, StreakBadge, TodoRows } from "@/components/todos/todos";
 import { PetChat, keepPicture, type PetChatId, type Shot, type TakenShot } from "./chat";
 import { Empty } from "./empty";
 import { PetNeedsYou } from "./needs-you";
+import { PetTip } from "./tip";
 import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
 
 /**
@@ -30,9 +37,10 @@ import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
  * with all he knows; your to-dos; and what is waiting on you, answered right
  * there. He speaks up for what matters now: a computer waiting for your yes,
  * a to-do coming due (at 15 and 10 minutes, then a countdown held for the
- * last five until it is done or pushed back), a reply you have not read, a
- * chat with something new. Talk to him with a hotkey from anywhere, or his
- * mic button; what you say goes into his chat (voice.tsx, pet/voice.js).
+ * last five until it is done or pushed back), a reply you have not read (a
+ * while, then it is left in his chat), a chat with something new. Talk to
+ * him with a hotkey from anywhere, or his mic button; what you say goes into
+ * his chat (voice.tsx, pet/voice.js).
  * With nothing going on he naps, hat off. He tells the server when the owner
  * is away, and the phone gets the reminders instead (convex/todos.ts).
  *
@@ -46,8 +54,10 @@ import { useVoice, type HotkeyState, type VoiceBridge } from "./voice";
 type Bridge = VoiceBridge & {
   /** Whether the pointer is over something to click; elsewhere clicks pass through. */
   solid: (on: boolean) => void;
-  /** Where the window's top-left corner goes, in screen points. */
+  /** Where he goes: his spot, the window's top-left corner with him in its bottom-right one, in screen points. */
   moveTo: (x: number, y: number) => void;
+  /** Where he stands in the window, now and each time that changes. Absent in a pet window from before, which keeps him in its corner. */
+  onPlace?: (listener: (place: Place) => void) => () => void;
   /** A drag of him starts (with where his body's middle is in the window) and ends; dropped on the circle it shows, he hides. */
   dragStart: (bodyX: number, bodyY: number) => void;
   dragEnd: () => void;
@@ -56,8 +66,8 @@ type Bridge = VoiceBridge & {
   idleSeconds: () => Promise<number>;
   /** A page of the dashboard (a path), opened unlocked in the browser. */
   openDashboard: (path?: string) => void;
-  /** Showing him the screen (pet/look.js): a picture now; one taken with the Look hotkey; which keys that is on. Absent in a pet window from before. */
-  look?: () => Promise<TakenShot>;
+  /** Showing him the screen (pet/look.js): a picture now, for the owner (`byOwner`) or for Perry; one taken with the Look hotkey; which keys that is on. Absent in a pet window from before. */
+  look?: (byOwner?: boolean) => Promise<TakenShot>;
   onLook?: (listener: (shot: TakenShot) => void) => () => void;
   setLookHotkey?: (accelerator: string) => Promise<HotkeyState>;
 };
@@ -76,8 +86,15 @@ const HEADS_UP_SHOWS_MS = 12_000;
 const UPDATE_SHOWS_MS = 20_000;
 /** The newest change he last mentioned, so each new version is mentioned once. */
 const UPDATE_STORAGE = "perry.pet.update";
+/** An engine near or at its plan's limit is mentioned once per limit and level, for this long; it stays under his name while it lasts. */
+const LIMIT_SHOWS_MS = 20_000;
+/** The limits he last mentioned, so each is mentioned once. */
+const LIMIT_STORAGE = "perry.pet.limits";
 /** How long a dashboard tab already open has to take a page he opens, before he opens a new tab. */
 const TAB_CLAIMS_MS = 1_500;
+/** A reply held up goes by itself once it has been up this long, and a little longer for each letter of it. */
+const REPLY_SHOWS_MS = 8_000;
+const REPLY_MS_PER_LETTER = 60;
 
 export function PetScreen() {
   const [key, setKey] = useState<string | null>(null);
@@ -105,19 +122,48 @@ export function PetScreen() {
   useClickThrough();
 
   if (!ready) return null;
-  if (!session) {
-    return (
-      <Stage bubble={<Bubble title="I'm locked out." detail="Start me with perry pet, and I'll have the key." />}>
-        <Body mood="idle" asleep={false} onClick={() => {}} />
-      </Stage>
-    );
-  }
+  if (!session) return <LockedOut />;
   return (
     <SessionContext.Provider value={session}>
-      <Pet />
+      <PetErrorBoundary>
+        <Pet />
+      </PetErrorBoundary>
     </SessionContext.Provider>
   );
 }
+
+function LockedOut({ detail = "Start me with perry pet on Perry's computer, or pair me from its Settings → Desktop pet, and I'll have the key." }: { detail?: string }) {
+  return (
+    <Stage bubble={<Bubble title="I'm locked out." detail={detail} />}>
+      <Body mood="idle" asleep={false} onClick={() => {}} />
+    </Stage>
+  );
+}
+
+/**
+ * A query that fails throws while he renders. His key refused (the dashboard
+ * key changed, or this computer was removed from Perry's Settings): he says
+ * so, and stays out of the way. Anything else, he says what, and tries again
+ * in a moment.
+ */
+function PetErrorFallback(_props: object, { error, reset }: ErrorInfo) {
+  const message = errorText(error);
+  const locked = /dashboard key|DASHBOARD_KEY|removed from Perry|cannot call/i.test(message);
+  useEffect(() => {
+    if (locked) return;
+    const timer = window.setTimeout(reset, 15_000);
+    return () => window.clearTimeout(timer);
+  }, [locked, reset]);
+  // What his key may not do is said as it is: Perry serves this page and that list together, so it is a gap to report.
+  if (locked) return <LockedOut detail={/removed from Perry|cannot call/.test(message) ? message : undefined} />;
+  return (
+    <Stage bubble={<Bubble title="Something went wrong" detail={message.slice(0, 200)} />}>
+      <Body mood="idle" asleep={false} onClick={reset} />
+    </Stage>
+  );
+}
+
+const PetErrorBoundary = catchError(PetErrorFallback);
 
 /**
  * Only what is marked data-solid takes the pointer. The window hears the
@@ -147,14 +193,18 @@ type Tab = "chat" | "todos" | "needs";
 type Said = { title: string; detail?: string; until: number; onOpen?: () => void };
 /** The chat the pet last had open, so he picks up where you left off. */
 const CHAT_STORAGE = "perry.pet.chat";
-const ASKS = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone" } as const;
+const ASKS = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone", brain: "tidy Brain" } as const;
 /** A step that has taken this long shows its time. */
 const STEP_TIMER_MS = 5_000;
-/** A step that finished between two reports is held up this long. */
-const STEP_HOLD_MS = 2_500;
 
 function Pet() {
   const key = useDashboardKey();
+  /**
+   * On another of the owner's computers, paired with a key of its own (its prefix,
+   * PET_KEY_PREFIX in convex/lib/devices.ts), never the dashboard key. The server
+   * lets that key call only what such a pet needs (server/devices.ts).
+   */
+  const paired = key.startsWith("pet_");
   const board = useQuery(api.todos.board, { key });
   const approvals = useQuery(api.approvals.pending, { key });
   const inbox = useQuery(api.dashboard.getInbox, { key });
@@ -165,6 +215,10 @@ function Pet() {
   const decide = useMutation(api.approvals.decide);
   const setTimezone = useMutation(api.jobs.setTimezone);
   const { view: updates, update } = useUpdates();
+  // Perry paused (convex/pause.ts): he naps, says so once until the next pause, and resumes with a click.
+  const { view: pauseView, setPaused } = usePause("pet");
+  const pausedAt = pauseView?.paused?.at;
+  const [pauseHidden, setPauseHidden] = useState<number | null>(null);
   const now = useNow(1000);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("chat");
@@ -178,6 +232,9 @@ function Pet() {
   const { results: newest } = usePaginatedQuery(api.dashboard.getChatMessages, chatId ? { key, id: chatId } : "skip", { initialNumItems: 2 });
   const [said, setSaid] = useState<Said | null>(null);
   const [reply, setReply] = useState<{ id: Id<"conversations">; since: number; streamed: string } | null>(null);
+  const dropReply = useCallback(() => setReply(null), []);
+  /** The reply whose bubble the pointer is on, which holds it up. */
+  const [pointerOn, setPointerOn] = useState<string | null>(null);
   const [cheer, setCheer] = useState(0);
   const lastBusy = useRef(Date.now());
   const cheerSeen = useRef(0);
@@ -226,19 +283,21 @@ function Pet() {
    * A page of the dashboard, in the browser, unlocked: in a dashboard tab
    * already open, which takes it (components/dashboard/shell.tsx), or, when
    * none does in a moment, a new one. He claims it himself to open it, so it
-   * is one or the other, never both.
+   * is one or the other, never both. On another computer, always a new one there:
+   * the tabs open elsewhere may be on Perry's computer, across the room.
    */
   const openPath = useCallback((path: string) => {
     const openNew = () => {
       if (window.perryPet) window.perryPet.openDashboard(path);
       else window.open(path, "_blank");
     };
+    if (paired) return openNew();
     void (async () => {
       const request = await askToOpen({ key, path });
       await new Promise((resolve) => window.setTimeout(resolve, TAB_CLAIMS_MS));
       if (await claimOpen({ key, request })) openNew();
     })().catch(openNew);
-  }, [key, askToOpen, claimOpen]);
+  }, [key, paired, askToOpen, claimOpen]);
   /** A chat in his panel, maybe with something already typed. */
   const openChat = useCallback((id: PetChatId, text?: string) => {
     setChatId(id);
@@ -258,17 +317,42 @@ function Pet() {
     window.localStorage.setItem(UPDATE_STORAGE, sha);
     setUpdateNews(Date.now() + UPDATE_SHOWS_MS);
   }, [updates]);
+  // The engines he works with, near or at their plan's limit: said before a reply fails for it, not after.
+  const planLimits = useQuery(api.usage.limits, { key });
+  const limits = (planLimits?.engines ?? [])
+    .filter((engine) => planLimits!.used.includes(engine.kind))
+    .flatMap((engine) => {
+      const warning = limitWarning(engine.kind, engine.usage, now);
+      return warning ? [{ ...warning, mark: `${engine.kind}:${warning.level}:${warning.title}` }] : [];
+    })
+    .sort((a, b) => (a.level === "out" ? 0 : 1) - (b.level === "out" ? 0 : 1));
+  const limit = limits[0];
+  const [limitNews, setLimitNews] = useState<{ mark: string; until: number } | null>(null);
+  useEffect(() => {
+    if (!limit) return;
+    const seen: string[] = JSON.parse(window.localStorage.getItem(LIMIT_STORAGE) ?? "[]");
+    if (seen.includes(limit.mark)) return;
+    window.localStorage.setItem(LIMIT_STORAGE, JSON.stringify([...seen, limit.mark].slice(-20)));
+    setLimitNews({ mark: limit.mark, until: Date.now() + LIMIT_SHOWS_MS });
+  }, [limit?.mark]);
+  const resume = useCallback(() => {
+    void setPaused(false).then(() => say("I'm back on", undefined, 2500), (cause) => say("I couldn't resume", errorText(cause), 6000));
+  }, [setPaused, say]);
   const updateNow = useCallback(() => {
     setUpdateNews(null);
     void update().then((text) => say("See you in a few minutes", text, 6000), (cause) => say("I couldn't update", errorText(cause), 6000));
   }, [update, say]);
 
-  // Scheduled things run in the owner's timezone, which only this computer knows.
+  // Scheduled things run in the owner's timezone, which only this computer knows: Perry's own, not a laptop taken abroad.
   useEffect(() => {
+    if (paired) return;
     void setTimezone({ key, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {});
-  }, [key, setTimezone]);
+  }, [key, paired, setTimezone]);
 
   // How long the owner has been away, once a minute, for the server, which then sends reminders to the phone.
+  // Refused (this computer removed from Perry's Settings, or the key changed), he is locked out from then on.
+  const [refused, setRefused] = useState<string | null>(null);
+  if (refused) throw new Error(refused);
   useEffect(() => {
     const bridge = window.perryPet;
     if (!bridge) return;
@@ -278,7 +362,15 @@ function Pet() {
       idleNow.current = seconds;
       if (Date.now() - lastReport >= 60_000) {
         lastReport = Date.now();
-        void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current, lookKeyNow.current) }).catch(() => {});
+        // Holding the Talk keys can start working meanwhile: on a Mac, once he is given Accessibility.
+        const talk = await bridge.hotkey().catch(() => null);
+        if (talk && (talk.hold ?? null) !== (hotkeyNow.current.hold ?? null)) {
+          hotkeyNow.current = { ...hotkeyNow.current, hold: talk.hold };
+          setHotkey(hotkeyNow.current);
+        }
+        void presence({ key, idleSeconds: seconds, ...reported(hotkeyNow.current, lookKeyNow.current) }).catch((error: unknown) => {
+          if (/dashboard key|removed from Perry/i.test(errorText(error))) setRefused(errorText(error));
+        });
       }
     };
     void check();
@@ -317,7 +409,7 @@ function Pet() {
     unseen.current = current;
   }, [chats, say, openChat, chatId]);
 
-  // His own chat's reply, finished while you were not reading it: he holds it up until you do.
+  // His own chat's reply, finished while you were not reading it: he holds it up until you do, or for a while (below).
   useEffect(() => {
     if (!petChat || !chatId) return;
     if (petChat.isRunning) {
@@ -348,31 +440,39 @@ function Pet() {
   }, [board, now]);
 
   // Talking: the mic button, or the hotkey from anywhere, which opens his chat already listening.
+  // His window keeps whether the hotkey has him listening; when the page stops on its own (its buttons, Esc in
+  // the page, a microphone that would not open), it says so at once (voiceDone), so the next press starts again.
+  // Not when the hotkey stopped him: by the time what was said is written down, a press may have started him again.
   const { start: listen, stop: stopListening, cancel: cancelListening } = voice;
   const talk = useCallback((sends: boolean) => {
     talkSends.current = sends;
     setTab("chat");
     setOpen(true);
-    void listen();
+    void listen().then((on) => { if (!on && sends) window.perryPet?.voiceDone(); });
   }, [listen]);
-  const heard = useCallback(async () => {
+  const heard = useCallback(async (byKeys = false) => {
+    const sends = talkSends.current;
+    if (!byKeys) window.perryPet?.voiceDone();
     const text = await stopListening();
-    window.perryPet?.voiceDone();
     if (!text) return;
     setDraft((previous) => (previous.trim() ? `${previous.trimEnd()} ${text}` : text));
-    if (talkSends.current) setSendSignal((count) => count + 1);
+    if (sends) setSendSignal((count) => count + 1);
   }, [stopListening]);
-  const stopTalking = useCallback(() => {
+  const stopTalking = useCallback((byKeys = false) => {
     cancelListening();
-    window.perryPet?.voiceDone();
+    if (!byKeys) window.perryPet?.voiceDone();
   }, [cancelListening]);
+  const listeningNow = useRef(false);
+  listeningNow.current = voice.state === "listening";
   useEffect(() => {
     const bridge = window.perryPet;
     if (!bridge) return;
     return bridge.onVoice((type) => {
-      if (type === "start") talk(true);
-      else if (type === "stop") void heard();
-      else stopTalking();
+      // Listening from the mic button, which his window knew nothing of: the hotkey is pressed to finish.
+      if (type === "start" && listeningNow.current) void heard();
+      else if (type === "start") talk(true);
+      else if (type === "stop") void heard(true);
+      else stopTalking(true);
     });
   }, [talk, heard, stopTalking]);
   // New keys in Settings: he moves to them, and says at once how that went, for Settings to show.
@@ -400,7 +500,8 @@ function Pet() {
 
   // A picture of the screen: his chat opens with it in the box, ready for the question.
   const showShot = useCallback((taken: TakenShot) => {
-    if (!taken.window && !taken.screen) return say("I couldn't see the screen", taken.error, 8000);
+    // What to allow on a Mac, and where, takes a while to read: it stays up longer.
+    if (!taken.window && !taken.screen) return say("I couldn't see the screen", taken.error, taken.needs ? 30_000 : 8000);
     setShot({ ...taken, use: taken.window ? "window" : "screen" });
     setTab("chat");
     setOpen(true);
@@ -420,6 +521,8 @@ function Pet() {
           if (!window.perryPet?.look) throw new Error("This desktop pet is from before Perry could look at the screen; ask the owner to restart it (Quit from its tray icon, then turn it on again).");
           const taken = await window.perryPet.look();
           const picture = taken[request.which] ?? taken.screen ?? taken.window;
+          // Perry is told, and says so in the chat; the owner may be looking at him instead, so he says it too.
+          if (!picture && taken.needs) say("I couldn't see the screen", taken.error, 30_000);
           if (!picture) throw new Error(taken.error ?? "The desktop pet could not take the picture.");
           const kept = await keepPicture(picture.image);
           await fulfilLook({ key, id: request.id, path: kept.path, name: picture.name });
@@ -431,13 +534,14 @@ function Pet() {
     }
   }, [lookRequests, key, fulfilLook, say]);
   const lookNow = useCallback(async () => {
-    const taken = await window.perryPet?.look?.().catch((error: unknown) => ({ error: String(error) }));
+    const taken = await window.perryPet?.look?.(true).catch((error: unknown) => ({ error: String(error) }));
     if (taken) showShot(taken);
   }, [showShot]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      // An Esc that closed a menu or a tip in his panel did only that.
+      if (event.key !== "Escape" || event.defaultPrevented) return;
       if (busy.current) stopTalking();
       else setOpen(false);
     };
@@ -463,19 +567,24 @@ function Pet() {
   const late = timed.filter((todo) => todo.dueAt! <= now);
   const next = timed.find((todo) => todo.dueAt! > now);
   const working = Boolean(petChat?.isRunning) && !reading;
-  // The step he is on; between steps, the one that just finished, held up a moment, so a quick one is seen at all.
-  const stepOf = (of?: Activity | null) => !of?.running || !of.step ? undefined
-    : of.step.live || !of.recent || now - of.recent.endedAt > STEP_HOLD_MS ? of.step : of.recent;
-  const step = working ? stepOf(activity) : undefined;
+  const step = working ? shownStep(activity, now) : undefined;
   const away = !petChat?.isRunning && elsewhere?.running && elsewhere.conversationId !== chatId ? elsewhere : undefined;
-  const awayStep = stepOf(away);
+  const awayStep = shownStep(away, now);
   // How long the step has taken, once that is worth saying.
   const took = (since?: number) => since !== undefined && now - since >= STEP_TIMER_MS ? countdown(now - since) : undefined;
   let bubble: ReactNode = null;
   let urgent = false;
+  /** The reply's bubble, when that is what he is holding up, and for how long it stays. */
+  let replyUp: { key: string; ms: number } | null = null;
   if (said && said.until > now) {
     const onOpen = said.onOpen;
     bubble = <Bubble title={said.title} detail={said.detail} onClose={() => setSaid(null)} onOpen={onOpen && (() => { setSaid(null); onOpen(); })} />;
+  } else if (pausedAt && pauseHidden !== pausedAt) {
+    bubble = (
+      <Bubble id="paused" title="I'm paused" detail="Nothing runs until you resume." onClose={() => setPauseHidden(pausedAt)}>
+        <BubbleButton primary onClick={resume}>Resume</BubbleButton>
+      </Bubble>
+    );
   } else if (asking.length) {
     const ask = asking[asking.length - 1];
     urgent = true;
@@ -510,7 +619,11 @@ function Pet() {
     const saved = reply.id === chatId ? newest.find((message) => message.role === "assistant" && message.createdAt >= reply.since) : undefined;
     // Under the reply, what it took: "Ran 3 commands · read 2 pages".
     const did = reply.id === chatId && activity && !activity.running ? activity.summary : "";
-    bubble = <Bubble title="Perry" detail={excerpt(saved?.text || reply.streamed || "…")} note={did || undefined} onOpen={() => openChat(reply.id)} onClose={() => setReply(null)} />;
+    const words = excerpt(saved?.text || reply.streamed || "…");
+    const key = `${reply.id}:${reply.since}`;
+    replyUp = { key, ms: REPLY_SHOWS_MS + (words.length + did.length) * REPLY_MS_PER_LETTER };
+    bubble = <Bubble title="Perry" detail={words} note={did || undefined} onOpen={() => openChat(reply.id)} onClose={() => setReply(null)}
+      onPointer={(on) => setPointerOn(on ? key : null)} />;
   } else if (working) {
     const writing = step?.label === "Writing the reply" && petChat?.streaming;
     bubble = <Bubble id="working" title={step?.label ?? "On it…"} detail={writing ? excerpt(petChat!.streaming!, true) : took(step?.since)} onOpen={() => openChat(chatId)} />;
@@ -528,6 +641,14 @@ function Pet() {
       }
     }
   }
+  if (!bubble && limit && limitNews?.mark === limit.mark && limitNews.until > now) {
+    bubble = (
+      <Bubble id="limit" tone={limit.level === "out" ? "late" : "soon"} title={limit.title} detail={limit.detail} onClose={() => setLimitNews(null)}>
+        <BubbleButton primary onClick={() => { setLimitNews(null); openPath("/settings/usage"); }}>See usage</BubbleButton>
+        <BubbleButton onClick={() => setLimitNews(null)}>OK</BubbleButton>
+      </Bubble>
+    );
+  }
   if (!bubble && updateNews && updateNews > now && updates && updateReady(updates)) {
     bubble = (
       <Bubble id="update" title="A new version of me is ready" detail={`${plural(updates.behind, "change")} · ${updates.latest?.title ?? ""}`} onClose={() => setUpdateNews(null)}>
@@ -537,21 +658,38 @@ function Pet() {
     );
   }
 
+  // The reply goes by itself once it has been up a while, counted while it shows and the pointer is not on it; it stays in
+  // his chat. What waits on the owner (a yes, something late or about to be) has no such end.
+  const shown = open ? null : replyUp;
+  const shownKey = shown?.key ?? null;
+  useEffect(() => { if (!shownKey) setPointerOn(null); }, [shownKey]);
+  useGoesBy(shownKey, shown?.ms ?? 0, pointerOn !== shownKey, dropReply);
+
   // Off duty, as in the show: with nothing going on he naps, hat off; anything at all and the fedora goes back on.
   const onDuty = Boolean(bubble) || open || urgent || Boolean(petChat?.isRunning) || voice.state !== "idle" || cheer !== cheerSeen.current;
   if (onDuty) {
     lastBusy.current = now;
     cheerSeen.current = cheer;
   }
-  const asleep = !onDuty && now - lastBusy.current >= NAP_AFTER_MS;
+  // Paused, he is off duty whatever else goes on, unless something needs the owner now.
+  const asleep = pausedAt ? !urgent && !open : !onDuty && now - lastBusy.current >= NAP_AFTER_MS;
   // Under his name: what he is doing, what waits on you, or a new version of him, a click away.
-  const status: ReactNode = petChat?.isRunning ? `${step?.label ?? "Working on it"}…`
+  const status: ReactNode = pausedAt ? (
+    <>Paused ·{" "}
+      <Button variant="link" className="h-auto p-0 text-xs" onClick={resume}>Resume</Button>
+    </>
+  ) : petChat?.isRunning ? `${step?.label ?? "Working on it"}…`
     : needs ? `${plural(needs, "thing")} waiting on you`
+      : limit ? (
+        <Button variant="link" className={cn("h-auto p-0 text-xs font-normal", limit.level === "out" ? "text-destructive" : "text-warning")} onClick={() => openPath("/settings/usage")}>
+          {limit.title}
+        </Button>
+      )
       : updates?.state === "updating" ? "Updating myself; back in a few minutes"
         : updates?.state === "waiting" ? "Updating once I'm done"
           : updateReady(updates) ? (
             <>A new version is ready ·{" "}
-              <button type="button" onClick={updateNow} className="cursor-pointer font-medium text-primary hover:underline">Update</button>
+              <Button variant="link" className="h-auto p-0 text-xs" onClick={updateNow}>Update</Button>
             </>
           ) : "Here when you need him";
   const panel = (
@@ -559,8 +697,8 @@ function Pet() {
       status={status} busy={Boolean(petChat?.isRunning)}>
       {tab === "chat" ? (
         <PetChat chatId={chatId} onChatId={setChatId} draft={draft} onDraft={setDraft} open={openPath}
-          voice={window.perryPet ? voice : undefined} hotkey={hotkey.hotkey} byHotkey={talkSends.current} sendSignal={sendSignal}
-          onTalk={() => talk(false)} onTalkSend={() => void heard()} onTalkCancel={stopTalking}
+          voice={window.perryPet ? voice : undefined} hotkey={hotkey.hotkey} hold={hotkey.hold ?? null} byHotkey={talkSends.current} sendSignal={sendSignal}
+          onTalk={() => talk(false)} onTalkSend={() => void heard()} onTalkCancel={() => stopTalking()}
           shot={shot} onShot={setShot} onLook={window.perryPet?.look ? () => void lookNow() : undefined} lookKeys={lookKey.hotkey} />
       )
         : tab === "needs" ? <PetNeedsYou now={now} onChat={openChat} open={openPath} />
@@ -577,11 +715,11 @@ function Pet() {
   );
 }
 
-/** The hotkeys' standing, as presence reports it: the keys held, and why not the ones asked for. */
+/** The hotkeys' standing, as presence reports it: the keys held, why not the ones asked for, and why the Talk keys can only be tapped. */
 const standing = (state: HotkeyState) => ({ ...(state.hotkey ? { hotkey: state.hotkey } : {}), ...(state.error ? { error: state.error } : {}) });
 const reported = (talk: HotkeyState, look: HotkeyState) => {
   const { hotkey, error } = standing(talk);
-  return { ...(hotkey ? { hotkey } : {}), ...(error ? { hotkeyError: error } : {}), keys: { look: standing(look) } };
+  return { ...(hotkey ? { hotkey } : {}), ...(error ? { hotkeyError: error } : {}), ...(talk.hold ? { hotkeyHold: talk.hold } : {}), keys: { look: standing(look) } };
 };
 
 /** A line or two of a reply, for a bubble: its start, or while it is being written, its end. */
@@ -591,74 +729,119 @@ function excerpt(text: string, end = false): string {
   return end ? `…${plain.slice(-140)}` : `${plain.slice(0, 140)}…`;
 }
 
-/** The window's contents: the panel or a bubble above, and him in the bottom corner. */
+/**
+ * Calls `onGone` once what `id` names has been up `ms` in all, counting only
+ * while `counting`. Another id starts again from nothing; none, nothing counts.
+ */
+function useGoesBy(id: string | null, ms: number, counting: boolean, onGone: () => void) {
+  const spent = useRef({ id, ms: 0 });
+  if (spent.current.id !== id) spent.current = { id, ms: 0 };
+  useEffect(() => {
+    if (!id || !counting) return;
+    const up = spent.current;
+    const from = Date.now();
+    const timer = window.setTimeout(onGone, Math.max(0, ms - up.ms));
+    return () => {
+      window.clearTimeout(timer);
+      up.ms += Date.now() - from;
+    };
+  }, [id, ms, counting, onGone]);
+}
+
+/**
+ * Where he stands in his window (pet/main.js): how far up and left of its
+ * bottom-right corner, and whether his bubble and panel open below him. The
+ * window is kept wholly on screen, and moves round him near an edge.
+ */
+type Place = { x: number; y: number; below: boolean };
+const CORNER: Place = { x: 0, y: 0, below: false };
+const PlaceContext = createContext<Place>(CORNER);
+
+/**
+ * The window's contents: him, in its bottom-right corner or where the window
+ * says he is, and the panel or a bubble above him, or below him near the top
+ * of the screen. A bubble points at him; near the left edge, rather than
+ * leave the window, it goes over to his right.
+ */
 function Stage({ bubble, children }: { bubble: ReactNode; children: ReactNode }) {
+  const [place, setPlace] = useState(CORNER);
+  useEffect(() => window.perryPet?.onPlace?.(setPlace), []);
   return (
-    <main className="fixed inset-0 flex select-none flex-col items-end justify-end gap-1 overflow-hidden p-3 pr-4">
-      <AnimatePresence mode="wait">{bubble}</AnimatePresence>
-      {children}
-    </main>
+    <PlaceContext.Provider value={place}>
+      <main className="fixed inset-0 grid select-none overflow-hidden p-3" style={{ gridTemplateRows: `minmax(0, 1fr) auto ${-place.y}px` }}>
+        <div className={cn("flex min-h-0 justify-end", place.below ? "row-start-3 items-start pt-2.5" : "row-start-1 items-end pb-1")}>
+          <AnimatePresence mode="wait">{bubble}</AnimatePresence>
+          {/* From the bubble's right edge to his, given up as far as it takes to keep the bubble in the window. */}
+          <span aria-hidden className="min-w-0 shrink" style={{ flexBasis: 28 - place.x }} />
+        </div>
+        <div className="row-start-2 justify-self-end" style={{ marginRight: 4 - place.x }}>{children}</div>
+      </main>
+    </PlaceContext.Provider>
   );
 }
 
 type Tone = "late" | "soon" | "ask";
 
 /** Something he says. With onOpen, a click on it opens what it is about. */
-function Bubble({ id, title, detail, note, code, tone, onClose, onOpen, children }: {
+function Bubble({ id, title, detail, note, code, tone, onClose, onOpen, onPointer, children }: {
   /** Keeps it the same bubble while its words change, as a step does. */
   id?: string;
   title: string; detail?: string;
   /** A quiet last line, like what a reply took. */
   note?: string;
-  code?: string; tone?: Tone; onClose?: () => void; onOpen?: () => void; children?: ReactNode;
+  code?: string; tone?: Tone; onClose?: () => void; onOpen?: () => void;
+  /** The pointer comes onto it, and goes. */
+  onPointer?: (on: boolean) => void;
+  children?: ReactNode;
 }) {
+  const { x, below } = useContext(PlaceContext);
+  // Its point, over him (a little to his left), wherever the bubble had to go to stay in the window (Stage).
+  const point = `max(14px, min(calc(100% - 54px), calc(100vw - ${106 - x}px)))`;
+  const rise = below ? -1 : 1;
   return (
     <motion.div
       key={id ?? `${title}:${tone ?? ""}`}
       data-solid
       role="status"
-      initial={{ opacity: 0, y: 10, scale: 0.92 }}
+      initial={{ opacity: 0, y: 10 * rise, scale: 0.92 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 6, scale: 0.96 }}
+      exit={{ opacity: 0, y: 6 * rise, scale: 0.96 }}
       transition={{ type: "spring", stiffness: 420, damping: 28 }}
-      style={{ transformOrigin: "85% 100%" }}
+      style={{ transformOrigin: `calc(${point} + 7px) ${below ? "0%" : "100%"}` }}
       onClick={onOpen}
+      onPointerEnter={onPointer && (() => onPointer(true))}
+      onPointerLeave={onPointer && (() => onPointer(false))}
       className={cn(
-        "group/bubble relative mr-6 w-max min-w-[176px] max-w-[300px] rounded-2xl border bg-popover px-3.5 py-3 text-popover-foreground shadow-[0_12px_32px_-8px_rgb(0_0_0/0.35)]",
+        "group/bubble relative w-max min-w-[176px] max-w-[300px] shrink-0 rounded-2xl border bg-popover px-3.5 py-3 text-popover-foreground shadow-overlay",
         tone === "late" && "border-destructive/45",
         tone === "ask" && "border-warning/55",
         onOpen && "cursor-pointer",
       )}
     >
-      <span aria-hidden className={cn("absolute right-10 -bottom-[7px] size-3.5 rotate-45 rounded-br-[3px] border-r border-b bg-popover",
+      <span aria-hidden style={{ left: point }} className={cn("absolute size-3.5 rotate-45 bg-popover",
+        below ? "-top-[7px] rounded-tl-[3px] border-t border-l" : "-bottom-[7px] rounded-br-[3px] border-r border-b",
         tone === "late" && "border-destructive/45", tone === "ask" && "border-warning/55")} />
       {onClose && (
-        <button type="button" aria-label="Hide" onClick={(event) => { event.stopPropagation(); onClose(); }}
-          className="absolute top-1.5 right-1.5 grid size-5 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-muted">
-          <XIcon className="size-3" aria-hidden />
-        </button>
+        <Button variant="ghost" size="icon-xs" className="absolute top-1.5 right-1.5 size-5 rounded-full text-muted-foreground" aria-label="Hide"
+          onClick={(event) => { event.stopPropagation(); onClose(); }}>
+          <XIcon />
+        </Button>
       )}
-      <p className={cn("text-[14px] font-semibold leading-snug tracking-[-0.005em]", onClose && "pr-5", onOpen && "group-hover/bubble:text-primary")}>{title}</p>
-      {code && <pre className="mt-1.5 max-h-16 overflow-hidden rounded-md bg-muted px-2 py-1 font-mono text-[11.5px] whitespace-pre-wrap [overflow-wrap:anywhere]">{code.slice(0, 160)}</pre>}
-      {detail && <p className={cn("mt-0.5 text-[12.5px] text-pretty nums", tone === "late" ? "font-medium text-destructive" : tone === "soon" ? "font-medium text-warning" : "text-muted-foreground")}>{detail}</p>}
-      {note && <p className="mt-1.5 text-[11.5px] text-muted-foreground/80">{note}</p>}
+      <p className={cn("text-sm font-semibold leading-snug tracking-[-0.005em]", onClose && "pr-5", onOpen && "group-hover/bubble:text-primary")}>{title}</p>
+      {code && <pre className="mt-1.5 max-h-16 overflow-hidden rounded-md bg-muted px-2 py-1 font-mono text-2xs whitespace-pre-wrap [overflow-wrap:anywhere]">{code.slice(0, 160)}</pre>}
+      {detail && <p className={cn("mt-0.5 text-xs text-pretty nums", tone === "late" ? "font-medium text-destructive" : tone === "soon" ? "font-medium text-warning" : "text-muted-foreground")}>{detail}</p>}
+      {note && <p className="mt-1.5 text-2xs text-muted-foreground/80">{note}</p>}
       {children && <div className="mt-2.5 flex gap-1.5">{children}</div>}
     </motion.div>
   );
 }
 
+/** A bubble's answer: the one it is for, filled; the rest outlined. A click answers, and does not open what the bubble is about. */
 function BubbleButton({ primary, onClick, children }: { primary?: boolean; onClick: () => void; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={(event) => { event.stopPropagation(); onClick(); }}
-      className={cn(
-        "h-7 cursor-pointer rounded-lg px-3 text-[12.5px] font-medium transition-colors",
-        primary ? "bg-primary text-primary-foreground hover:bg-primary/90" : "border bg-background text-foreground hover:bg-muted",
-      )}
-    >
+    <Button variant={primary ? "default" : "outline"} size="sm" className="px-3" onClick={(event) => { event.stopPropagation(); onClick(); }}>
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -692,6 +875,8 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
   // Held over the circle that hides him, he looks down at it, worried.
   const [armed, setArmed] = useState(false);
   useEffect(() => window.perryPet?.onArmed(setArmed), []);
+  // Dragged, he goes from his spot, which is where the window is only while he stands in its corner.
+  const place = useContext(PlaceContext);
 
   useEffect(() => {
     const move = (event: PointerEvent) => {
@@ -749,7 +934,7 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
     if (event.button !== 0) return;
     onTouch?.();
     event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { x: event.screenX, y: event.screenY, left: window.screenX, top: window.screenY, moved: false };
+    drag.current = { x: event.screenX, y: event.screenY, left: window.screenX + place.x, top: window.screenY + place.y, moved: false };
     // Letting go ends the drag wherever the pointer is, even if something took the capture from him on the way.
     const release = () => { window.removeEventListener("pointerup", release, true); if (drag.current) up(); };
     window.addEventListener("pointerup", release, true);
@@ -806,7 +991,7 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
           hatLift={tip ? 16 : mood === "listening" ? 6 + level * 12 : 0}
           asleep={asleep}
           hat={!asleep}
-          className="pointer-events-none h-auto w-full drop-shadow-[0_8px_10px_rgb(0_0_0/0.22)]"
+          className="pointer-events-none h-auto w-full drop-shadow-mascot"
         />
       </motion.button>
       </motion.div>
@@ -814,7 +999,7 @@ function Body({ mood, pose, level = 0, asleep, cheer = 0, badge = 0, onClick, on
         {pose && !asleep && <Prop key={pose} pose={pose} reduced={Boolean(reduced)} />}
       </AnimatePresence>
       {badge > 0 && (
-        <span className="pointer-events-none absolute top-1 right-0 grid h-5 min-w-5 place-items-center rounded-full bg-warning px-1.5 text-[11px] font-bold text-background shadow" aria-hidden>
+        <span className="pointer-events-none absolute top-1 right-0 grid h-5 min-w-5 place-items-center rounded-full bg-warning px-1.5 text-2xs font-bold text-background shadow" aria-hidden>
           {badge}
         </span>
       )}
@@ -844,7 +1029,7 @@ function Prop({ pose, reduced }: { pose: Pose; reduced: boolean }) {
           : { scale: [1, 1.12, 1], transition: { duration: 1.4, repeat: Infinity, ease: "easeInOut" as const } };
   return (
     <motion.span
-      role="img" aria-label={label} title={label} data-pose={pose}
+      role="img" aria-label={label} data-pose={pose}
       initial={{ opacity: 0, scale: 0.4, y: 6 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.4 }}
       transition={{ type: "spring", stiffness: 500, damping: 26 }}
       className="pointer-events-none absolute bottom-6 -left-1 grid size-8 place-items-center rounded-full border bg-popover text-primary shadow-md"
@@ -862,17 +1047,19 @@ function Panel({ tab, onTab, needs, status, busy, onClose, onOpenApp, children }
   onClose: () => void; onOpenApp: () => void; children: ReactNode;
 }) {
   const tabs: Array<[Tab, string, typeof MessageCircleIcon]> = [["chat", "Chat", MessageCircleIcon], ["todos", "To-dos", ListTodoIcon], ["needs", "Needs you", InboxIcon]];
+  // Above him, or below him near the top of the screen; shorter where there is less room.
+  const { below } = useContext(PlaceContext);
   return (
     <motion.section
       key="panel"
       data-solid
       aria-label="Perry"
-      initial={{ opacity: 0, y: 12, scale: 0.96 }}
+      initial={{ opacity: 0, y: below ? -12 : 12, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 8, scale: 0.97 }}
+      exit={{ opacity: 0, y: below ? -8 : 8, scale: 0.97 }}
       transition={{ type: "spring", stiffness: 420, damping: 30 }}
-      style={{ transformOrigin: "85% 100%" }}
-      className="flex h-[480px] w-[372px] flex-col overflow-hidden rounded-[20px] border bg-background text-foreground shadow-[0_24px_56px_-12px_rgb(0_0_0/0.4)]"
+      style={{ transformOrigin: below ? "85% 0%" : "85% 100%" }}
+      className="flex h-[480px] max-h-full w-[372px] shrink-0 flex-col overflow-hidden rounded-[20px] border bg-background text-foreground shadow-overlay"
     >
       <header className="flex items-center gap-2.5 px-3.5 pt-3 pb-2.5">
         <span className="relative shrink-0">
@@ -880,30 +1067,28 @@ function Panel({ tab, onTab, needs, status, busy, onClose, onOpenApp, children }
           <span className={cn("absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-background", busy ? "animate-pulse bg-primary" : "bg-success")} aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[14.5px] leading-tight font-semibold tracking-[-0.01em]">Perry</p>
-          <p className="truncate text-[12px] leading-tight text-muted-foreground" aria-live="polite">{status}</p>
+          <p className="text-sm leading-tight font-semibold tracking-[-0.01em]">Perry</p>
+          <p className="truncate text-xs leading-tight text-muted-foreground" aria-live="polite">{status}</p>
         </div>
-        <button type="button" onClick={onOpenApp} aria-label="Open Perry" title="Open Perry"
-          className="grid size-8 cursor-pointer place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
-          <ExternalLinkIcon className="size-4" aria-hidden />
-        </button>
-        <button type="button" onClick={onClose} aria-label="Close" title="Close"
-          className="grid size-8 cursor-pointer place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
-          <XIcon className="size-4" aria-hidden />
-        </button>
+        <PetTip label="Open Perry" side="bottom">
+          <Button variant="ghost" size="icon" className="text-muted-foreground" aria-label="Open Perry" onClick={onOpenApp}><ExternalLinkIcon /></Button>
+        </PetTip>
+        <PetTip label="Close" side="bottom">
+          <Button variant="ghost" size="icon" className="text-muted-foreground" aria-label="Close" onClick={onClose}><XIcon /></Button>
+        </PetTip>
       </header>
-      <div role="tablist" aria-label="Perry" className="mx-3 mb-2.5 grid grid-cols-3 gap-0.5 rounded-xl bg-muted p-[3px]">
-        {tabs.map(([value, label, Icon]) => (
-          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => onTab(value)}
-            className={cn("flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-[9px] text-[12.5px] font-medium transition-colors",
-              tab === value ? "bg-background text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08),0_0_0_1px_var(--border)]" : "text-muted-foreground hover:text-foreground")}>
-            <Icon className="size-3.5" aria-hidden />
-            {label}
-            {value === "needs" && needs > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-warning px-1 text-[10.5px] font-bold text-background nums">{needs}</span>}
-          </button>
-        ))}
-      </div>
-      {children}
+      <Tabs value={tab} onValueChange={(value) => onTab(value as Tab)} className="min-h-0 flex-1 gap-0">
+        <TabsList aria-label="Perry" className="mx-3 mb-2.5 grid h-9! w-auto grid-cols-3 rounded-xl">
+          {tabs.map(([value, label, Icon]) => (
+            <TabsTrigger key={value} value={value} className="rounded-[9px] text-xs">
+              <Icon className="size-3.5" aria-hidden />
+              {label}
+              {value === "needs" && needs > 0 && <span className="grid h-4 min-w-4 place-items-center rounded-full bg-warning px-1 text-2xs font-bold text-background nums">{needs}</span>}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value={tab} className="flex min-h-0 flex-col">{children}</TabsContent>
+      </Tabs>
     </motion.section>
   );
 }
@@ -925,15 +1110,14 @@ function PetTodos({ board, now, onDone, onAdded }: {
   return (
     <>
       <QuickAdd autoFocus onAdded={onAdded} className="px-3" />
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1">
-        {board === undefined ? <p className="px-2.5 py-3 text-[13px] text-muted-foreground">Loading…</p>
+      <ScrollArea className="min-h-0 flex-1">
+      <div className="px-1.5 pb-1">
+        {board === undefined ? <div className="space-y-2 px-2.5 py-3" role="status" aria-label="Loading"><Skeleton className="h-5 w-3/4" /><Skeleton className="h-5 w-2/3" /><Skeleton className="h-5 w-1/2" /></div>
           : board.open.length === 0 ? (
-            <Empty title={board.doneToday.length ? "All done for now" : "Nothing on your list"}>
-              Type one above, like “stretch every day at 11”, or tell Perry in a chat.
-            </Empty>
+            <Empty title={board.doneToday.length ? "All done for now" : "Nothing on your list"} />
           ) : (<>
             <div className="flex items-center gap-2 px-2.5 pt-1 pb-0.5">
-              <p className="flex-1 text-[11.5px] font-medium tracking-wide text-muted-foreground uppercase">
+              <p className="flex-1 text-2xs font-medium tracking-wide text-muted-foreground uppercase">
                 {leftToday ? `${leftToday} left today` : `${board.open.length} to do`}
               </p>
               <StreakBadge days={board.streak} />
@@ -942,14 +1126,14 @@ function PetTodos({ board, now, onDone, onAdded }: {
           </>)}
         {board && board.doneToday.length > 0 && (
           <div className="px-1 pt-1.5">
-            <button type="button" onClick={() => setShowDone((value) => !value)} aria-expanded={showDone}
-              className="flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] font-medium text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="xs" className="px-1.5 text-muted-foreground" onClick={() => setShowDone((value) => !value)} aria-expanded={showDone}>
               <CheckIcon className="size-3.5 text-success" aria-hidden />{board.doneToday.length} done today
-            </button>
+            </Button>
             {showDone && <TodoRows todos={board.doneToday} now={now} compact />}
           </div>
         )}
       </div>
+      </ScrollArea>
       {leftToday > 0 && (
         <footer className="flex h-11 items-center gap-1.5 border-t bg-muted/30 px-3">
           {ending ? (
@@ -957,13 +1141,12 @@ function PetTodos({ board, now, onDone, onAdded }: {
               <BubbleButton primary onClick={() => { void endDay({ key, action: "move" }); setEnding(false); }}>Move {leftToday} to tomorrow</BubbleButton>
               <BubbleButton onClick={() => { void endDay({ key, action: "clear" }); setEnding(false); }}>Clear</BubbleButton>
               <span className="flex-1" />
-              <button type="button" onClick={() => setEnding(false)} className="cursor-pointer text-[12px] text-muted-foreground hover:text-foreground">Cancel</button>
+              <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setEnding(false)}>Cancel</Button>
             </>
           ) : (
-            <button type="button" onClick={() => setEnding(true)}
-              className="flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-1 text-[12.5px] font-medium text-muted-foreground hover:text-foreground">
-              <MoonIcon className="size-3.5" aria-hidden />End the day · {leftToday} left
-            </button>
+            <Button variant="ghost" size="sm" className="-ml-1.5 px-1.5 text-muted-foreground" onClick={() => setEnding(true)}>
+              <MoonIcon aria-hidden />End the day · {leftToday} left
+            </Button>
           )}
         </footer>
       )}

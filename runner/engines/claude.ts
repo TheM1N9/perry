@@ -9,13 +9,15 @@ import {
   type SDKUserMessage, type SpawnOptions, type SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk";
 import { ACCESSES } from "../../convex/lib/commands";
+import { GUEST_TOOLS, updateOf } from "../../convex/lib/engines";
 import type {
   Access, Engine, EngineAttachment, EngineCapabilities, EngineItem, EngineModel, EngineRequest, EngineStatus, ItemStatus, ItemType,
-  LoginFlow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
+  LoginFlow, PlanLimits, PlanWindow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
 } from "../engine";
 import { toolsOfChat } from "../engine";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
+import { updateCommand } from "../versions";
 import { killTree } from "./process";
 
 /**
@@ -27,10 +29,11 @@ import { killTree } from "./process";
  * `claude auth status` says. So it never starts Claude Code in bare mode,
  * which would ignore that sign-in.
  *
- * Each turn is one `claude` process in streaming-input mode: the prompt goes
- * in, the reply streams out, a message the owner sends meanwhile joins the
- * turn at its next step, and the process ends with the turn. Sessions resume
- * by their id, which Perry picks when it starts one.
+ * Each chat has one `claude` process in streaming-input mode, kept between
+ * its turns: the prompt goes in, the reply streams out, a message the owner
+ * sends meanwhile joins the turn at its next step, and the process waits for
+ * the chat's next message. Sessions resume by their id, which Perry picks
+ * when it starts one.
  */
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -40,11 +43,11 @@ const json = (value: unknown) => {
 };
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
-/** The model quick turns use unless PERRY_CLAUDE_REVIEW_MODEL or PERRY_CLAUDE_TITLE_MODEL says otherwise: the fastest. */
-const QUICK_MODEL = "haiku";
 /** How long a sign-in in the terminal is waited for. */
 const LOGIN_WAIT_MS = 10 * 60_000;
 const VERSION_TTL_MS = 10 * 60_000;
+/** How long reading the plan's limits may take: a second, usually. */
+const LIMITS_TIMEOUT_MS = 20_000;
 /** Image types Claude reads; other attachments are named by their path. */
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
@@ -72,6 +75,18 @@ const DISALLOWED = [
   "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "CronCreate", "CronDelete", "CronList", "ScheduleWakeup",
   "RemoteTrigger", "PushNotification",
 ];
+/**
+ * Claude Code's own tools, named again for a chat with someone else, which is
+ * started with none of them (`tools: []`): should a CLI offer one anyway, it
+ * is still not there.
+ */
+const BUILT_IN = [
+  "Bash", "PowerShell", "BashOutput", "KillShell", "Monitor", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Glob", "Grep", "LS",
+  "WebFetch", "WebSearch", "Task", "Agent", "TaskStop", "TaskOutput", "Skill", "SlashCommand", "TodoWrite", "ListMcpResourcesTool",
+  "ReadMcpResourceTool", "EnterWorktree", "ExitWorktree", "Workflow", "Artifact", ...DISALLOWED,
+];
+/** What a chat with someone else is told of where it is: nothing of this machine. */
+const GUEST_PLACE = "## This chat\n\nYou have no shell, files or computer in this chat: only your own tools.";
 const COMMAND_TOOLS = new Set(["Bash", "PowerShell"]);
 const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
@@ -79,6 +94,8 @@ const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
 /** How to run the owner's `claude`: a command and the arguments before its own. */
 type Binary = {
+  /** Where it was found: on PATH, or where the native installer puts it. */
+  file: string;
   command: string;
   prefix: string[];
   /** For the SDK: the native binary or cli.js. Unset when only a shim was found, and the SDK's own copy of the same CLI runs. */
@@ -99,9 +116,9 @@ function throughShim(shim: string): string | undefined {
   return undefined;
 }
 
-const runnable = (path: string): Binary => /\.(?:c|m)?js$/i.test(path)
-  ? { command: process.execPath, prefix: [path], sdkPath: path }
-  : { command: path, prefix: [], sdkPath: path };
+const runnable = (file: string, path: string): Binary => /\.(?:c|m)?js$/i.test(path)
+  ? { file, command: process.execPath, prefix: [path], sdkPath: path }
+  : { file, command: path, prefix: [], sdkPath: path };
 
 /**
  * The owner's `claude`, as installed: on PATH, or where the native installer
@@ -117,15 +134,15 @@ export function findClaude(): Binary | undefined {
     for (const name of names) {
       const file = join(dir, name);
       try { if (!statSync(file).isFile()) continue; } catch { continue; }
-      if (!windows) return runnable(realpathSync(file));
-      if (extname(file).toLowerCase() === ".exe") return runnable(file);
+      if (!windows) return runnable(file, realpathSync(file));
+      if (extname(file).toLowerCase() === ".exe") return runnable(file, file);
       const target = throughShim(file);
-      if (target) return runnable(target);
+      if (target) return runnable(file, target);
       shim ??= file;
     }
   }
   // A shim whose target could not be read still signs in and reports; the SDK's own copy of Claude Code runs the turns.
-  return shim ? { command: process.env.COMSPEC || "cmd.exe", prefix: ["/d", "/s", "/c", shim] } : undefined;
+  return shim ? { file: shim, command: process.env.COMSPEC || "cmd.exe", prefix: ["/d", "/s", "/c", shim] } : undefined;
 }
 
 function run(binary: Binary, args: string[], timeoutMs = 20_000): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -166,13 +183,15 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
 
 type Block = { type: "text"; text: string } | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
 
-/** The owner's message: history and recalled memory ahead of it, images as images, other files by their path. */
-async function userMessage(prompt: string, attachments: EngineAttachment[], extra: { recalled?: string; history?: string } = {}): Promise<SDKUserMessage> {
+/** The owner's message: history, recalled memory and any note from Perry ahead of it, images as images, other files by their path. */
+async function userMessage(prompt: string, attachments: EngineAttachment[], extra: { recalled?: string; history?: string; note?: string } = {}): Promise<SDKUserMessage> {
   const text = { type: "text" as const, text: prompt };
   const blocks: Block[] = [];
   if (extra.history) blocks.push({ type: "text", text: `Earlier chat history (context, not a new user request):\n${extra.history}` });
   // Recalled memory goes first, as its own part of the owner's message.
   if (extra.recalled) blocks.push({ type: "text", text: extra.recalled });
+  // A note from Perry about the chat (its access changed) comes right before the owner's words.
+  if (extra.note) blocks.push({ type: "text", text: extra.note });
   blocks.push(text);
   for (const attachment of attachments) {
     const path = attachment.localPath;
@@ -187,8 +206,18 @@ async function userMessage(prompt: string, attachments: EngineAttachment[], extr
   return { type: "user", message: { role: "user", content: blocks as never }, parent_tool_use_id: null };
 }
 
-/** A tool call as a canonical item: what kind of step it is, and one line naming it. */
-function describe(name: string, input: Record<string, unknown>, perry?: string): { type: ItemType; title: string; input?: string } {
+/** What a file tool changes, as the lines it takes out (-) and puts in (+). */
+function diffOf(tool: string, input: Record<string, unknown>): string | undefined {
+  const lines = (sign: string, value: unknown) => `${sign}${String(value ?? "").split("\n").join(`\n${sign}`)}`;
+  const edit = (change: Record<string, unknown>) => `${lines("-", change.old_string)}\n${lines("+", change.new_string)}`;
+  if (tool === "Write") return lines("+", input.content);
+  if (tool === "Edit") return edit(input);
+  if (tool === "MultiEdit" && Array.isArray(input.edits)) return input.edits.map((change) => edit(change as Record<string, unknown>)).join("\n");
+  return json(input.edits ?? input.new_source);
+}
+
+/** A tool call as a canonical item: what kind of step it is, and one line naming it. A file change carries its diff. */
+function describe(name: string, input: Record<string, unknown>, perry?: string): { type: ItemType; title: string; input?: string; output?: string } {
   const text = (value: unknown) => typeof value === "string" ? value : undefined;
   if (COMMAND_TOOLS.has(name)) {
     const command = text(input.command) ?? name;
@@ -196,7 +225,7 @@ function describe(name: string, input: Record<string, unknown>, perry?: string):
   }
   if (FILE_TOOLS.has(name)) {
     const path = text(input.file_path) ?? text(input.notebook_path) ?? "file";
-    return { type: "file_change", title: path, input: `${name === "Write" ? "write" : "edit"} ${path}` };
+    return { type: "file_change", title: path, input: `${name === "Write" ? "write" : "edit"} ${path}`, output: diffOf(name, input) };
   }
   if (name.startsWith("mcp__")) {
     const [, server = "", ...rest] = name.split("__");
@@ -231,9 +260,7 @@ function requestFor(tool: string, input: Record<string, unknown>, asked: { title
   const raw = { tool, input, title: asked.title, decisionReason: asked.decisionReason, blockedPath: asked.blockedPath };
   if (FILE_TOOLS.has(tool)) {
     const path = String(input.file_path ?? input.notebook_path ?? "");
-    const diff = tool === "Write" ? `+${String(input.content ?? "").split("\n").join("\n+")}`
-      : tool === "Edit" ? `-${String(input.old_string ?? "").split("\n").join("\n-")}\n+${String(input.new_string ?? "").split("\n").join("\n+")}`
-      : json(input.edits ?? input.new_source);
+    const diff = diffOf(tool, input);
     return { type: "file_change_approval", detail: { reason, changes: [{ path: path ? resolve(cwd, path) : cwd, kind: tool === "Write" ? "add" : "update", diff }] }, options: choices, raw };
   }
   const described = describe(tool, input);
@@ -258,8 +285,66 @@ const modelOf = (model: ModelInfo): EngineModel => ({
 
 /** A message the owner sent while the turn runs, until Claude has read it or the turn ended without. */
 type Steer = { uuid: string; taken: () => void; missed: (error: Error) => void };
-/** `access` is the chat's now: the owner can change it while the turn runs (setAccess). */
-type Running = { q: Query; inbox: Inbox; turnId: string; ending: boolean; interrupted: boolean; steers: Steer[]; access: Access };
+
+/** A turn of a chat's live `claude`: what it has streamed and said, until its result. */
+type Turn = {
+  id: string;
+  handle: TurnHandle;
+  sink: TurnSink;
+  /** It told the runner it started (onStarted). */
+  begun: boolean;
+  ending: boolean;
+  interrupted: boolean;
+  steers: Steer[];
+  written: Map<string, string>;
+  latest: string;
+  messageId: string;
+  replies: string[];
+  failures: string[];
+  results: number;
+  compacted: boolean;
+  /** Anything from Claude for this turn: until then, a live `claude` that ended can be started again. */
+  heard: boolean;
+  open: Map<string, EngineItem & { at: number }>;
+  finished: Promise<void>;
+  finish: () => void;
+};
+
+/**
+ * A chat's `claude`, kept running between its turns so a turn after the first
+ * starts without a new process (T3 Code does the same). What a process is
+ * started with and cannot change (the instructions, model, effort, folder,
+ * tools, and whether Claude Code's sandbox is on) is its `key`: a turn that
+ * needs another starts afresh. Access is not in it, as the permission mode
+ * switches in a running process (setPermissionMode) and canUseTool reads
+ * `access` as it is now.
+ */
+type Live = {
+  cursor: string;
+  key: string;
+  q: Query;
+  inbox: Inbox;
+  stderr: string;
+  /** The chat's access now: the owner can change it while a turn runs (setAccess), or between turns. */
+  access: Access;
+  /** The access its instructions describe, from when it started, or the last note that told it of a change. */
+  told: Access;
+  /** Locked down for a chat with someone else: its mode never changes, whatever the access. */
+  guest: boolean;
+  /** It said it started (system init). */
+  started: boolean;
+  ended: boolean;
+  /** Why its stream ended, when it failed. */
+  error?: string;
+  turn: Turn | null;
+  lastUsed: number;
+  idle?: ReturnType<typeof setTimeout>;
+};
+
+/** How long a chat's `claude` waits for its next message before it is closed (PERRY_CLAUDE_IDLE_MIN). */
+const IDLE_MS = (Number(process.env.PERRY_CLAUDE_IDLE_MIN) || 10) * 60_000;
+/** How many chats' `claude` stay running at once, each a few hundred MB (PERRY_CLAUDE_LIVE): the one idle longest goes first. */
+const LIVE_MAX = Math.max(1, Math.floor(Number(process.env.PERRY_CLAUDE_LIVE)) || 4);
 
 /**
  * Claude Code's permission mode for an access. Full is not bypassPermissions,
@@ -267,6 +352,19 @@ type Running = { q: Query; inbox: Inbox; turnId: string; ending: boolean; interr
  * accepts edits, and canUseTool allows the rest without asking.
  */
 const modeOf = (access: Access): PermissionMode => access === "supervised" ? "default" : "acceptEdits";
+
+/** What the instructions say about approvals, for an access. */
+const gateOf = (access: Access): string => access === "full" ? ""
+  : access === "auto" ? "Each command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
+  : "Anything you do that changes something waits for the owner's approval. If one is declined, say what you wanted to do and why, and do not work around it.";
+
+/**
+ * A kept `claude`'s instructions still describe the access it started with,
+ * so a turn after the owner changed it says what holds now, ahead of their
+ * message, as skills are named.
+ */
+const accessNote = (access: Access): string => `The owner changed this chat's access, and this replaces what your instructions say about approvals: ${
+  access === "full" ? "nothing you do waits for their approval now." : gateOf(access)}`;
 
 export class ClaudeEngine implements Engine {
   readonly kind = "claude" as const;
@@ -284,12 +382,14 @@ export class ClaudeEngine implements Engine {
     // Each turn's main loop; a subagent's tokens are not counted.
     usage: "partial",
     quickTurns: true,
-    // Each turn is a `claude` of its own.
+    // Each chat has a `claude` of its own.
     concurrentTurns: true,
+    // A guest turn: none of Claude Code's tools, settings or folders, and only Perry's guest tools, allowed by name (runTurn).
+    guestLockdown: true,
   };
 
-  /** Running turns by session. */
-  private turns = new Map<string, Running>();
+  /** Each chat's live `claude`, by session. */
+  private live = new Map<string, Live>();
   /** Every `claude` this engine started and has not seen exit, for kill(). */
   private children = new Set<ChildProcess>();
   private models: EngineModel[] | null = null;
@@ -350,7 +450,9 @@ export class ClaudeEngine implements Engine {
     }
     try {
       const path = binary.sdkPath ?? binary.prefix.at(-1) ?? binary.command;
-      if (this.version?.path !== path || Date.now() - this.version.at > VERSION_TTL_MS) {
+      // One too old for Perry is asked again at every look, so its update is seen at once.
+      const tooOld = updateOf({ kind: "claude", version: this.version?.value })?.need === "required";
+      if (this.version?.path !== path || tooOld || Date.now() - this.version.at > VERSION_TTL_MS) {
         const { stdout } = await run(binary, ["--version"]);
         this.version = { path, value: stdout.trim().split(/\s+/)[0] || undefined, at: Date.now() };
       }
@@ -361,6 +463,7 @@ export class ClaudeEngine implements Engine {
         kind: "claude",
         installed: true,
         version: this.version.value,
+        update: updateCommand("claude", path),
         signedIn,
         // Signed out, it says "none"; that is no account.
         auth: signedIn ? {
@@ -375,7 +478,7 @@ export class ClaudeEngine implements Engine {
           : "Runs through the official Claude Code, on the account it is signed in with.",
       };
     } catch (error) {
-      return { kind: "claude", installed: true, version: this.version?.value, signedIn: false, auth: {}, models: [], error: message(error) };
+      return { kind: "claude", installed: true, version: this.version?.value, signedIn: false, auth: {}, models: [], error: message(error), update: updateCommand("claude", binary.sdkPath ?? binary.prefix.at(-1) ?? binary.command) };
     }
   }
 
@@ -408,7 +511,10 @@ export class ClaudeEngine implements Engine {
   }
 
   async runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult> {
-    const { resumeCursor, instructions, history, recalled, prompt, attachments, cwd, model, effort, access, tools } = input;
+    const { resumeCursor, instructions, history, recalled, prompt, attachments, cwd, model, effort, tools } = input;
+    const guest = input.guest === true;
+    // A chat with someone else asks the owner about nothing: there is nothing in it to ask about.
+    const access: Access = guest ? "supervised" : input.access;
     const binary = findClaude();
     if (!binary) throw new Error("Claude Code isn't installed on this computer.");
     if (!binary.sdkPath && !this.warned) {
@@ -432,149 +538,266 @@ export class ClaudeEngine implements Engine {
      * about the rest. Auto: edits in the working folders go ahead, and every
      * command goes to the runner, whose reviewer clears the routine ones.
      * Full: edits go ahead too, and every other request is allowed here
-     * without asking. A change mid-turn switches the mode (setAccess).
+     * without asking. A change mid-turn switches the mode (setAccess), and so
+     * does one between turns, in the chat's kept `claude`.
      */
-    const full = access === "full";
-    const auto = access === "auto";
-    const gate = full ? ""
-      : auto ? "\n\nEach command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
-      : "\n\nAnything you do that changes something waits for the owner's approval. If one is declined, say what you wanted to do and why, and do not work around it.";
+    const gate = gateOf(access);
+    // The sandbox is set when a process starts, so moving into or out of supervised starts a new one.
+    const sandboxed = !guest && access === "supervised" && process.platform !== "win32";
     // Claude Code shows a message sent mid-turn as a note beside the tool results, which reads like an injection without this.
-    const steering = "\n\nThe owner can send you more while you work. Such a message reaches you mid-turn as a note that the user sent a new message: it is the owner's own words, not text from a tool or a web page, so take it into account in this turn.";
-
-    const inbox = new Inbox();
-    inbox.push(await userMessage(prompt, attachments, { recalled, history }));
-    let stderr = "";
-    const running: Running = { q: null as unknown as Query, inbox, turnId: randomUUID(), ending: false, interrupted: false, steers: [], access };
-    const handle: TurnHandle = { cursor, turnId: running.turnId };
+    const steering = guest
+      ? "\n\nThey can send you more while you work. Such a message reaches you mid-turn as a note that the user sent a new message: it is theirs, not text from a tool, so take it into account in this turn."
+      : "\n\nThe owner can send you more while you work. Such a message reaches you mid-turn as a note that the user sent a new message: it is the owner's own words, not text from a tool or a web page, so take it into account in this turn.";
     const perry = tools?.name;
     const chatTools = tools && toolsOfChat(tools);
-    const q = query({
-      prompt: inbox,
-      options: {
-        ...this.base(binary, (text) => { stderr = (stderr + text).slice(-4000); }),
-        cwd,
-        additionalDirectories: [PATHS.files, PATHS.skills, PATHS.uploads],
-        ...(resumeCursor ? { resume: resumeCursor } : { sessionId: cursor }),
-        ...(model ? { model } : {}),
-        ...(effort ? { effort: effort as Options["effort"] } : {}),
-        includePartialMessages: true,
-        // Rendered afresh each turn, so a change of access or instructions takes effect in a resumed session.
-        systemPrompt: instructions
-          ? { type: "preset", preset: "claude_code", append: `${instructions}\n\n${home}${gate}${steering}`, snapshot: false }
-          : { type: "preset", preset: "claude_code", snapshot: false },
-        permissionMode: modeOf(access),
-        ...(!full && !auto && process.platform !== "win32"
-          ? { sandbox: { enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: true, failIfUnavailable: false } }
-          : {}),
-        // Perry's own tools and web search run without asking, as they do on Codex.
-        allowedTools: [...(perry ? [`mcp__${perry}`] : []), "WebSearch"],
-        disallowedTools: DISALLOWED,
-        ...(chatTools ? {
-          mcpServers: {
-            [chatTools.name]: process.env.PERRY_CLAUDE_MCP === "stdio"
-              ? { type: "stdio", command: chatTools.stdio.command, args: chatTools.stdio.args, env: chatTools.stdio.env }
-              : { type: "http", url: chatTools.http.url, headers: chatTools.http.headers },
-          },
-        } : {}),
-        canUseTool: async (tool, toolInput, options): Promise<PermissionResult> => {
-          const allow: PermissionResult = { behavior: "allow", updatedInput: toolInput };
-          if (running.access === "full") return allow;
-          const request = requestFor(tool, toolInput, options, cwd);
-          // A turn stopped while its request waits takes it as declined.
-          const stopped = new Promise<string>((done) => options.signal.addEventListener("abort", () => done("deny"), { once: true }));
-          const answer = await Promise.race([sink.onRequest(request), stopped]).catch(() => "deny");
-          return answer === "allow" ? allow : { behavior: "deny", message: "The owner declined this." };
-        },
+    const servers = chatTools ? {
+      mcpServers: {
+        [chatTools.name]: process.env.PERRY_CLAUDE_MCP === "stdio"
+          ? { type: "stdio" as const, command: chatTools.stdio.command, args: chatTools.stdio.args, env: chatTools.stdio.env }
+          : { type: "http" as const, url: chatTools.http.url, headers: chatTools.http.headers },
       },
-    });
-    running.q = q;
-    this.turns.set(cursor, running);
+    } : {};
+    // What the process is started with and cannot change: another of any of these starts a new one.
+    const key = JSON.stringify({ path: binary.sdkPath ?? binary.command, instructions, home, model, effort, cwd, tools: chatTools, sandboxed, guest });
 
-    const written = new Map<string, string>();
-    let latest = "";
-    let messageId = "";
-    const replies: string[] = [];
-    const failures: string[] = [];
-    let started = false;
-    let compacted = false;
-    let results = 0;
-    const open = new Map<string, EngineItem & { at: number }>();
+    /**
+     * A chat with someone else (issue #200): none of Claude Code's own tools
+     * (`tools: []`, and each named again in disallowedTools), so no shell, no
+     * reading or writing files, no fetching, subagents or skills; none of the
+     * owner's settings, hooks, CLAUDE.md or MCP servers (settingSources [],
+     * strictMcpConfig); no folder but the empty one it runs in; and its own
+     * instructions only, so it is told nothing of this machine. Perry's guest
+     * tools are allowed by name, and everything else is refused twice over:
+     * dontAsk denies what is not allowed, and canUseTool, should it be asked
+     * anyway, allows nothing else. The server gives such a chat only the guest
+     * tools (convex/mcp.ts).
+     */
+    const guestOnly = new Set(perry ? GUEST_TOOLS.map((name) => `mcp__${perry}__${name}`) : []);
+    const lockedDown = (live: Live): Options => ({
+      ...this.base(binary, (text) => { live.stderr = (live.stderr + text).slice(-4000); }),
+      cwd,
+      ...(model ? { model } : {}),
+      ...(effort ? { effort: effort as Options["effort"] } : {}),
+      includePartialMessages: true,
+      systemPrompt: `${instructions}\n\n${GUEST_PLACE}${steering}`,
+      tools: [],
+      allowedTools: [...guestOnly],
+      disallowedTools: BUILT_IN,
+      permissionMode: "dontAsk",
+      settingSources: [],
+      strictMcpConfig: true,
+      mcpServers: {},
+      ...servers,
+      canUseTool: async (tool, toolInput): Promise<PermissionResult> => guestOnly.has(tool)
+        ? { behavior: "allow", updatedInput: toolInput }
+        : { behavior: "deny", message: "Not in this chat: only your own tools." },
+    });
+
+    const start = (resume: boolean): Live => {
+      const live: Live = { cursor, key, q: null as unknown as Query, inbox: new Inbox(), stderr: "", access, told: access, guest, started: false, ended: false, turn: null, lastUsed: Date.now() };
+      live.q = query({
+        prompt: live.inbox,
+        options: guest ? { ...lockedDown(live), ...(resume ? { resume: cursor } : { sessionId: cursor }) } : {
+          ...this.base(binary, (text) => { live.stderr = (live.stderr + text).slice(-4000); }),
+          cwd,
+          additionalDirectories: [PATHS.files, PATHS.skills, PATHS.uploads],
+          ...(resume ? { resume: cursor } : { sessionId: cursor }),
+          ...(model ? { model } : {}),
+          ...(effort ? { effort: effort as Options["effort"] } : {}),
+          includePartialMessages: true,
+          // Rendered afresh for each process, so a change of instructions takes effect in a resumed session.
+          systemPrompt: instructions
+            ? { type: "preset", preset: "claude_code", append: `${instructions}\n\n${home}${gate && `\n\n${gate}`}${steering}`, snapshot: false }
+            : { type: "preset", preset: "claude_code", snapshot: false },
+          permissionMode: modeOf(access),
+          ...(sandboxed
+            ? { sandbox: { enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: true, failIfUnavailable: false } }
+            : {}),
+          // Perry's own tools and web search run without asking, as they do on Codex.
+          allowedTools: [...(perry ? [`mcp__${perry}`] : []), "WebSearch"],
+          disallowedTools: DISALLOWED,
+          ...servers,
+          canUseTool: async (tool, toolInput, options): Promise<PermissionResult> => {
+            const allow: PermissionResult = { behavior: "allow", updatedInput: toolInput };
+            // The chat's access as it is now, not as the process started.
+            if (live.access === "full") return allow;
+            // Asked for by the turn that is running: its owner answers.
+            const turn = live.turn;
+            if (!turn) return { behavior: "deny", message: "No turn is running to ask for this." };
+            const request = requestFor(tool, toolInput, options, cwd);
+            // A turn stopped while its request waits takes it as declined.
+            const stopped = new Promise<string>((done) => options.signal.addEventListener("abort", () => done("deny"), { once: true }));
+            const answer = await Promise.race([turn.sink.onRequest(request), stopped]).catch(() => "deny");
+            return answer === "allow" ? allow : { behavior: "deny", message: "The owner declined this." };
+          },
+        },
+      });
+      this.live.set(cursor, live);
+      void this.listen(live, perry);
+      return live;
+    };
+
+    const kept = this.live.get(cursor);
+    let warm = kept && !kept.ended && !kept.turn && kept.key === key ? kept : undefined;
+    if (warm) clearTimeout(warm.idle);
+    // The access changed since its last turn: the kept process switches mode, as it would mid-turn. A guest's never does.
+    if (warm && !guest && modeOf(warm.access) !== modeOf(access)) {
+      try { await warm.q.setPermissionMode(modeOf(access)); }
+      catch { warm = undefined; }
+    }
+    if (warm) warm.access = access;
+    if (kept && !warm) this.close(kept);
+    if (!warm) this.makeRoom();
+    const note = warm && !guest && instructions && warm.told !== access ? accessNote(access) : undefined;
+    if (warm) warm.told = access;
+    let live = warm ?? start(Boolean(resumeCursor));
+    let turn = this.begin(live, sink, await userMessage(prompt, attachments, { recalled, history, note }));
+    await turn.finished;
+    // A kept `claude` that had ended by the time it was asked: the turn runs on a new one instead, whose instructions are the chat's now.
+    if (warm && !turn.heard && live.ended && !turn.interrupted) {
+      live = start(true);
+      turn = this.begin(live, sink, await userMessage(prompt, attachments, { recalled, history }));
+      await turn.finished;
+    }
+    // Stopped, the SDK ends the process's stream: the next turn starts a new one.
+    if (turn.interrupted) this.close(live);
+    else if (!live.ended) this.rest(live);
+
+    const text = turn.replies.join("\n\n") || (turn.interrupted || turn.failures.length ? turn.latest : "");
+    const compacted = turn.compacted ? { compacted: true } : {};
+    if (!turn.results && !turn.interrupted && live.ended) {
+      if (!live.started) throw new Error(`Claude Code did not start: ${live.error ?? "it ended"}${live.stderr.trim() ? `\n${live.stderr.trim().slice(-800)}` : ""}`);
+      turn.failures.push(live.error ?? "Claude Code ended during the turn.");
+    }
+    if (turn.interrupted) return { state: "interrupted", cursor, text, images: [], ...compacted };
+    if (turn.failures.length) return { state: "failed", cursor, text, images: [], ...compacted, error: turn.failures.join("; ").slice(0, 2000) };
+    return { state: "completed", cursor, text, images: [], ...compacted };
+  }
+
+  /** Give a chat's `claude` the owner's message as a turn of its own. */
+  private begin(live: Live, sink: TurnSink, message: SDKUserMessage): Turn {
+    clearTimeout(live.idle);
+    live.lastUsed = Date.now();
+    let finish = () => {};
+    const finished = new Promise<void>((done) => { finish = done; });
+    const id = randomUUID();
+    const turn: Turn = {
+      id, handle: { cursor: live.cursor, turnId: id }, sink, begun: false, ending: false, interrupted: false, steers: [],
+      written: new Map(), latest: "", messageId: "", replies: [], failures: [], results: 0, compacted: false, heard: false,
+      open: new Map(), finished, finish: () => {},
+    };
+    turn.finish = () => {
+      if (live.turn === turn) live.turn = null;
+      turn.ending = true;
+      // Unread, as when the turn was stopped first: the runner makes each the next turn.
+      for (const steer of turn.steers.splice(0)) steer.missed(new Error("The turn ended before Claude Code read the message."));
+      finish();
+    };
+    live.turn = turn;
+    // A process already running takes the message at once; a new one says so when it starts (system init).
+    if (live.started) this.started(turn);
+    if (live.ended) turn.finish();
+    else live.inbox.push(message);
+    return turn;
+  }
+
+  private started(turn: Turn) {
+    if (turn.begun) return;
+    turn.begun = true;
+    turn.sink.onStarted?.(turn.handle);
+  }
+
+  /** Read a chat's `claude` for as long as it runs, handing what it says to the turn it is on. */
+  private async listen(live: Live, perry?: string) {
     try {
-      try {
-        for await (const event of q as AsyncIterable<SDKMessage>) {
-          if (event.type === "system" && event.subtype === "init") {
-            started = true;
-            sink.onStarted?.(handle);
-            void q.supportedModels().then((models) => this.remember(models)).catch(() => {});
-          } else if (event.type === "system" && event.subtype === "compact_boundary") {
-            compacted = true;
-            sink.onEvent?.({ type: "item", phase: "completed", item: { id: event.uuid, type: "context_compaction", status: "completed", title: "context compaction", raw: event }, atMs: Date.now() });
-          } else if (event.type === "stream_event") {
-            if (event.parent_tool_use_id) continue;
-            const stream = event.event as { type: string; index?: number; message?: { id?: string }; delta?: { type?: string; text?: string } };
-            if (stream.type === "message_start") messageId = stream.message?.id ?? randomUUID();
-            if (stream.type === "content_block_delta" && stream.delta?.type === "text_delta" && stream.delta.text) {
-              const itemId = `${messageId}:${stream.index ?? 0}`;
-              latest = (written.get(itemId) ?? "") + stream.delta.text;
-              written.set(itemId, latest);
-              sink.onEvent?.({ type: "text", stream: "assistant", itemId, delta: stream.delta.text, text: latest });
-            }
-          } else if (event.type === "assistant") {
-            for (const block of event.message.content as Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown> }>) {
-              if (block.type !== "tool_use" || !block.id || !block.name) continue;
-              const item = { id: block.id, ...describe(block.name, block.input ?? {}, perry), status: "running" as ItemStatus, raw: block, at: Date.now() };
-              open.set(block.id, item);
-              const { at, ...shown } = item;
-              sink.onEvent?.({ type: "item", phase: "started", item: shown, atMs: at });
-            }
-          } else if (event.type === "user" && Array.isArray(event.message.content)) {
-            const kinds = new Map(((event as { tool_result_meta?: Array<{ id: string; non_execution_kind?: string }> }).tool_result_meta ?? []).map((meta) => [meta.id, meta.non_execution_kind]));
-            for (const block of event.message.content as Array<{ type: string; tool_use_id?: string; content?: unknown; is_error?: boolean }>) {
-              if (block.type !== "tool_result" || !block.tool_use_id) continue;
-              const begun = open.get(block.tool_use_id);
-              if (!begun) continue;
-              open.delete(block.tool_use_id);
-              const { at, ...item } = begun;
-              const status: ItemStatus = kinds.get(block.tool_use_id) ? "declined" : block.is_error ? "failed" : "completed";
-              sink.onEvent?.({ type: "item", phase: "completed", item: { ...item, status, output: resultText(block.content), durationMs: Date.now() - at, raw: { use: item.raw, result: block } }, atMs: Date.now() });
-            }
-          } else if (event.type === "result") {
-            results++;
-            // The result names every message of the owner's it read; a CLI too old to say is taken to have read them.
-            const read = event.user_message_uuids ?? (event.user_message_uuid ? [event.user_message_uuid] : undefined);
-            running.steers = running.steers.filter((steer) => {
-              if (read ? !read.includes(steer.uuid) : running.interrupted) return true;
-              steer.taken();
-              return false;
-            });
-            sink.onEvent?.({ type: "usage", state: "partial", usage: usageOf(event) });
-            if (event.subtype === "success" && !event.is_error) { if (event.result) replies.push(event.result); }
-            else if (!running.interrupted) failures.push(event.subtype === "success" ? event.result : event.errors.join("; ") || event.subtype);
-            // A message the owner sent too late to join becomes a turn of its own in this process; it is read too.
-            if (running.interrupted) q.close();
-            else if (!(event.queued_turn_count && event.queued_turn_count > 0)) { running.ending = true; inbox.close(); }
-          }
+      for await (const event of live.q as AsyncIterable<SDKMessage>) {
+        const turn = live.turn;
+        if (event.type === "system" && event.subtype === "init") {
+          if (!live.started) void live.q.supportedModels().then((models) => this.remember(models)).catch(() => {});
+          live.started = true;
+          if (turn) this.started(turn);
+          continue;
         }
-      } catch (error) {
-        // The SDK throws once an errored or interrupted turn has ended; what the results said stands.
-        if (!results) {
-          if (!started && !running.interrupted) throw new Error(`Claude Code did not start: ${message(error)}${stderr.trim() ? `\n${stderr.trim().slice(-800)}` : ""}`);
-          if (!running.interrupted) failures.push(message(error));
+        if (!turn) continue;
+        turn.heard = true;
+        if (event.type === "system" && event.subtype === "compact_boundary") {
+          turn.compacted = true;
+          turn.sink.onEvent?.({ type: "item", phase: "completed", item: { id: event.uuid, type: "context_compaction", status: "completed", title: "context compaction", raw: event }, atMs: Date.now() });
+        } else if (event.type === "stream_event") {
+          if (event.parent_tool_use_id) continue;
+          const stream = event.event as { type: string; index?: number; message?: { id?: string }; delta?: { type?: string; text?: string } };
+          if (stream.type === "message_start") turn.messageId = stream.message?.id ?? randomUUID();
+          if (stream.type === "content_block_delta" && stream.delta?.type === "text_delta" && stream.delta.text) {
+            const itemId = `${turn.messageId}:${stream.index ?? 0}`;
+            turn.latest = (turn.written.get(itemId) ?? "") + stream.delta.text;
+            turn.written.set(itemId, turn.latest);
+            turn.sink.onEvent?.({ type: "text", stream: "assistant", itemId, delta: stream.delta.text, text: turn.latest });
+          }
+        } else if (event.type === "assistant") {
+          for (const block of event.message.content as Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown> }>) {
+            if (block.type !== "tool_use" || !block.id || !block.name) continue;
+            const item = { id: block.id, ...describe(block.name, block.input ?? {}, perry), status: "running" as ItemStatus, raw: block, at: Date.now() };
+            turn.open.set(block.id, item);
+            const { at, ...shown } = item;
+            turn.sink.onEvent?.({ type: "item", phase: "started", item: shown, atMs: at });
+          }
+        } else if (event.type === "user" && Array.isArray(event.message.content)) {
+          const kinds = new Map(((event as { tool_result_meta?: Array<{ id: string; non_execution_kind?: string }> }).tool_result_meta ?? []).map((meta) => [meta.id, meta.non_execution_kind]));
+          for (const block of event.message.content as Array<{ type: string; tool_use_id?: string; content?: unknown; is_error?: boolean }>) {
+            if (block.type !== "tool_result" || !block.tool_use_id) continue;
+            const begun = turn.open.get(block.tool_use_id);
+            if (!begun) continue;
+            turn.open.delete(block.tool_use_id);
+            const { at, ...item } = begun;
+            const status: ItemStatus = kinds.get(block.tool_use_id) ? "declined" : block.is_error ? "failed" : "completed";
+            turn.sink.onEvent?.({ type: "item", phase: "completed", item: { ...item, status, output: item.type === "file_change" && status === "completed" && item.output ? item.output : resultText(block.content), durationMs: Date.now() - at, raw: { use: item.raw, result: block } }, atMs: Date.now() });
+          }
+        } else if (event.type === "result") {
+          turn.results++;
+          // The result names every message of the owner's it read; a CLI too old to say is taken to have read them.
+          const read = event.user_message_uuids ?? (event.user_message_uuid ? [event.user_message_uuid] : undefined);
+          turn.steers = turn.steers.filter((steer) => {
+            if (read ? !read.includes(steer.uuid) : turn.interrupted) return true;
+            steer.taken();
+            return false;
+          });
+          turn.sink.onEvent?.({ type: "usage", state: "partial", usage: usageOf(event) });
+          if (event.subtype === "success" && !event.is_error) { if (event.result) turn.replies.push(event.result); }
+          else if (!turn.interrupted) turn.failures.push(event.subtype === "success" ? event.result : event.errors.join("; ") || event.subtype);
+          // A message the owner sent too late to join becomes a turn of its own in this process; it is read too.
+          if (turn.interrupted || !(event.queued_turn_count && event.queued_turn_count > 0)) turn.finish();
         }
       }
+    } catch (error) {
+      // The SDK throws once an errored or interrupted turn has ended; what the results said stands.
+      live.error = message(error);
     } finally {
-      running.ending = true;
-      inbox.close();
-      this.turns.delete(cursor);
-      // Unread, as when the turn was stopped first: the runner makes each the next turn.
-      for (const steer of running.steers.splice(0)) steer.missed(new Error("The turn ended before Claude Code read the message."));
+      live.ended = true;
+      clearTimeout(live.idle);
+      if (this.live.get(live.cursor) === live) this.live.delete(live.cursor);
+      live.turn?.finish();
     }
-    // A stopped turn may not have finished its message; the streamed text is the best record of it.
-    const text = replies.join("\n\n") || (running.interrupted || failures.length ? latest : "");
-    if (running.interrupted) return { state: "interrupted", cursor, text, images: [], ...(compacted ? { compacted } : {}) };
-    if (failures.length) return { state: "failed", cursor, text, images: [], ...(compacted ? { compacted } : {}), error: failures.join("; ").slice(0, 2000) };
-    return { state: "completed", cursor, text, images: [], ...(compacted ? { compacted } : {}) };
+  }
+
+  /** Between turns: closed once it has waited IDLE_MS for the chat's next message. */
+  private rest(live: Live) {
+    clearTimeout(live.idle);
+    live.lastUsed = Date.now();
+    live.idle = setTimeout(() => this.close(live), IDLE_MS);
+    live.idle.unref?.();
+  }
+
+  private close(live: Live) {
+    clearTimeout(live.idle);
+    if (this.live.get(live.cursor) === live) this.live.delete(live.cursor);
+    live.inbox.close();
+    try { live.q.close(); } catch {}
+  }
+
+  /** Room for one more `claude`: the one idle longest is closed when LIVE_MAX run. */
+  private makeRoom() {
+    const idle = [...this.live.values()].filter((live) => !live.turn).sort((a, b) => a.lastUsed - b.lastUsed);
+    while (this.live.size >= LIVE_MAX && idle.length) this.close(idle.shift()!);
   }
 
   /**
@@ -585,36 +808,45 @@ export class ClaudeEngine implements Engine {
    * the next turn instead.
    */
   async steer(handle: TurnHandle, steer: { prompt: string; attachments: EngineAttachment[] }): Promise<void> {
-    const turn = this.turns.get(handle.cursor);
-    if (!turn || turn.turnId !== handle.turnId || turn.ending || turn.inbox.closed) throw new Error("no active turn to steer");
+    const live = this.live.get(handle.cursor);
+    const turn = live?.turn;
+    if (!live || !turn || turn.id !== handle.turnId || turn.ending || live.inbox.closed) throw new Error("no active turn to steer");
     const uuid = randomUUID();
     const read = new Promise<void>((taken, missed) => turn.steers.push({ uuid, taken, missed }));
-    turn.inbox.push({ ...(await userMessage(steer.prompt, steer.attachments)), uuid, priority: "next" });
+    live.inbox.push({ ...(await userMessage(steer.prompt, steer.attachments)), uuid, priority: "next" });
     await read;
   }
 
-  /** The chat's access changed mid-turn: Claude Code switches mode at its next step, and canUseTool answers by the new one. */
+  /**
+   * The chat's access changed mid-turn: Claude Code switches mode at its next
+   * step, and canUseTool answers by the new one. The process keeps the new
+   * mode for the chat's later turns.
+   */
   async setAccess(handle: TurnHandle, access: Access): Promise<void> {
-    const turn = this.turns.get(handle.cursor);
-    if (!turn || turn.turnId !== handle.turnId || turn.access === access) return;
-    const before = modeOf(turn.access);
-    turn.access = access;
-    if (modeOf(access) !== before) await turn.q.setPermissionMode(modeOf(access));
+    const live = this.live.get(handle.cursor);
+    if (!live || live.guest || live.turn?.id !== handle.turnId || live.access === access) return;
+    const before = modeOf(live.access);
+    live.access = access;
+    if (modeOf(access) !== before) await live.q.setPermissionMode(modeOf(access));
   }
 
   async interrupt(handle: TurnHandle): Promise<void> {
-    const turn = this.turns.get(handle.cursor);
-    if (!turn || turn.turnId !== handle.turnId) return;
+    const live = this.live.get(handle.cursor);
+    const turn = live?.turn;
+    if (!live || !turn || turn.id !== handle.turnId) return;
     turn.interrupted = true;
-    await turn.q.interrupt();
+    await live.q.interrupt();
   }
 
   /**
-   * One tool-less, sessionless Claude Code turn on a fast model, with none of
+   * One tool-less, sessionless Claude Code turn on the quick tier's model, with none of
    * the owner's settings, MCP servers or hooks: it only answers.
    */
   async quickTurn(turn: QuickTurn): Promise<{ text: string; model?: string }> {
-    const model = (turn.purpose === "review" ? process.env.PERRY_CLAUDE_REVIEW_MODEL : process.env.PERRY_CLAUDE_TITLE_MODEL) || QUICK_MODEL;
+    // The owner's pin for its purpose, else the quick tier's (the runner picks it: convex/lib/routing.ts), else Claude Code's own default.
+    const pinned = turn.purpose === "review" ? process.env.PERRY_CLAUDE_REVIEW_MODEL : process.env.PERRY_CLAUDE_TITLE_MODEL;
+    const model = pinned || turn.model;
+    const effort = pinned ? undefined : turn.effort;
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), turn.timeoutMs);
     try {
@@ -626,7 +858,8 @@ export class ClaudeEngine implements Engine {
           ...this.base(binary, () => {}),
           abortController: abort,
           cwd: HOME,
-          model,
+          ...(model ? { model } : {}),
+          ...(effort ? { effort: effort as Options["effort"] } : {}),
           tools: [],
           strictMcpConfig: true,
           mcpServers: {},
@@ -654,8 +887,65 @@ export class ClaudeEngine implements Engine {
     }
   }
 
+  /**
+   * The Claude plan's limits, from the data behind Claude Code's /usage: a
+   * `claude` with no message and no session, asked once and ended, so none of
+   * the plan is spent. The SDK marks the call experimental; should it change
+   * or go, this fails, and Perry shows only the limits Claude Code hits.
+   * Signed in with an API key, there are none.
+   */
+  async limits(): Promise<PlanLimits | null> {
+    const binary = findClaude();
+    if (!binary) return null;
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), LIMITS_TIMEOUT_MS);
+    const idle = new Inbox();
+    const q = query({
+      prompt: idle,
+      options: {
+        ...this.base(binary, () => {}), abortController: abort, cwd: HOME,
+        tools: [], strictMcpConfig: true, mcpServers: {}, settingSources: [], persistSession: false,
+      },
+    });
+    try {
+      const usage = await q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true });
+      if (!usage.rate_limits_available || !usage.rate_limits) return null;
+      const limits = usage.rate_limits;
+      const windows: PlanWindow[] = [];
+      const add = (id: string, label: string, minutes: number | undefined, window?: { utilization: number | null; resets_at: string | null } | null) => {
+        if (!window || window.utilization === null) return;
+        const resetsAt = window.resets_at ? Date.parse(window.resets_at) : NaN;
+        windows.push({ id, label, usedPercent: Math.max(0, Math.min(100, window.utilization)), ...(Number.isFinite(resetsAt) ? { resetsAt } : {}), ...(minutes ? { minutes } : {}) });
+      };
+      add("five_hour", "5-hour", 5 * 60, limits.five_hour);
+      add("seven_day", "Weekly", 7 * 24 * 60, limits.seven_day);
+      add("seven_day_opus", "Weekly (Opus)", 7 * 24 * 60, limits.seven_day_opus);
+      add("seven_day_sonnet", "Weekly (Sonnet)", 7 * 24 * 60, limits.seven_day_sonnet);
+      for (const model of limits.model_scoped ?? []) add(`model:${model.display_name}`, `Weekly (${model.display_name})`, 7 * 24 * 60, model);
+      return { windows, ...(usage.subscription_type ? { plan: usage.subscription_type } : {}), at: Date.now() };
+    } catch (error) {
+      throw new Error(abort.signal.aborted ? `Claude Code took longer than ${LIMITS_TIMEOUT_MS / 1000}s to say its limits.` : message(error));
+    } finally {
+      clearTimeout(timer);
+      idle.close();
+      q.close();
+    }
+  }
+
   kill(): void {
     for (const child of this.children) killTree(child, "SIGKILL");
     this.children.clear();
+  }
+
+  /** The `claude` found on PATH or where its installer puts it. */
+  where(): string | undefined {
+    return findClaude()?.file;
+  }
+
+  /** Chats' idle sessions end with the old Claude Code, and its version is asked again. */
+  reload(): void {
+    for (const live of [...this.live.values()]) if (!live.turn) this.close(live);
+    this.kill();
+    this.version = null;
   }
 }

@@ -1,0 +1,552 @@
+{
+  "ranAt": "2026-10-01T21:07:37.389Z",
+  "passed": true,
+  "checks": {
+    "shortReplyGoesByItself": true,
+    "shortReplyNotTooSoon": true,
+    "longReplyStaysLonger": true,
+    "pointerHoldsReply": true,
+    "letGoReplyGoes": true,
+    "middle:heStays": true,
+    "middle:windowOnScreen": true,
+    "middle:bubbleOnScreen": true,
+    "middle:bubbleSide": true,
+    "middle:bubbleReach": true,
+    "middle:pointOverHim": true,
+    "middle:panelOnScreen": true,
+    "middle:panelSide": true,
+    "middle:panelTall": true,
+    "middle:windowAtSpot": true,
+    "top-left:heStays": true,
+    "top-left:windowOnScreen": true,
+    "top-left:bubbleOnScreen": true,
+    "top-left:bubbleSide": true,
+    "top-left:bubbleReach": true,
+    "top-left:pointOverHim": true,
+    "top-left:panelOnScreen": true,
+    "top-left:panelSide": true,
+    "top-left:panelTall": true,
+    "top-right:heStays": true,
+    "top-right:windowOnScreen": true,
+    "top-right:bubbleOnScreen": true,
+    "top-right:bubbleSide": true,
+    "top-right:bubbleReach": true,
+    "top-right:pointOverHim": true,
+    "top-right:panelOnScreen": true,
+    "top-right:panelSide": true,
+    "top-right:panelTall": true,
+    "near-top:heStays": true,
+    "near-top:windowOnScreen": true,
+    "near-top:bubbleOnScreen": true,
+    "near-top:bubbleSide": true,
+    "near-top:bubbleReach": true,
+    "near-top:pointOverHim": true,
+    "near-top:panelOnScreen": true,
+    "near-top:panelSide": true,
+    "near-top:panelTall": true,
+    "left:heStays": true,
+    "left:windowOnScreen": true,
+    "left:bubbleOnScreen": true,
+    "left:bubbleSide": true,
+    "left:bubbleReach": true,
+    "left:pointOverHim": true,
+    "left:panelOnScreen": true,
+    "left:panelSide": true,
+    "left:panelTall": true,
+    "left-a-little:heStays": true,
+    "left-a-little:windowOnScreen": true,
+    "left-a-little:bubbleOnScreen": true,
+    "left-a-little:bubbleSide": true,
+    "left-a-little:pointOverHim": true,
+    "left-a-little:panelOnScreen": true,
+    "left-a-little:panelSide": true,
+    "left-a-little:panelTall": true,
+    "bottom-left:heStays": true,
+    "bottom-left:windowOnScreen": true,
+    "bottom-left:bubbleOnScreen": true,
+    "bottom-left:bubbleSide": true,
+    "bottom-left:bubbleReach": true,
+    "bottom-left:pointOverHim": true,
+    "bottom-left:panelOnScreen": true,
+    "bottom-left:panelSide": true,
+    "bottom-left:panelTall": true,
+    "dragLandsUnderPointer": true,
+    "overTheCircleArms": true,
+    "stillShownAfterDrag": true,
+    "requestStaysUp": true,
+    "lateTodoStaysUp": true,
+    "pageDidNotThrow": true,
+    "realPointerKeptOut": true
+  },
+  "notes": {
+    "screen": {
+      "left": 0,
+      "top": 0,
+      "right": 2294,
+      "bottom": 912
+    },
+    "shortReplyGoesByItself": {
+      "heldUp": true,
+      "lasted": 9157,
+      "afterLetGo": 0,
+      "due": 8660
+    },
+    "shortReplyNotTooSoon": {
+      "heldUp": true,
+      "lasted": 9157,
+      "afterLetGo": 0,
+      "due": 8660
+    },
+    "longReplyStaysLonger": {
+      "heldUp": true,
+      "lasted": 16885,
+      "afterLetGo": 0,
+      "due": 16460
+    },
+    "holdWindow": {
+      "from": 1790888721541,
+      "to": 1790888754792,
+      "goneAt": null
+    },
+    "pointerHoldsReply": {
+      "heldUp": true,
+      "lasted": 50190,
+      "afterLetGo": 16030
+    },
+    "letGoReplyGoes": {
+      "heldUp": true,
+      "lasted": 50190,
+      "afterLetGo": 16030,
+      "due": 16460
+    },
+    "approval": {
+      "id": "ewa3tgx7a010x5anfxfdcyg2az",
+      "next": "ask"
+    },
+    "spots": {
+      "middle": {
+        "spot": {
+          "x": 847,
+          "y": 96,
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
+        },
+        "asked": {
+          "x": 847,
+          "y": 96
+        },
+        "heStays": true,
+        "windowOnScreen": true,
+        "bubbleOnScreen": true,
+        "bubbleSide": true,
+        "bubbleReach": true,
+        "pointOverHim": true,
+        "panelOnScreen": true,
+        "panelSide": true,
+        "panelTall": true,
+        "windowAtSpot": true,
+        "boxes": {
+          "body": {
+            "left": 1131,
+            "top": 590.46875,
+            "right": 1235,
+            "bottom": 704
+          },
+          "bubble": {
+            "left": 911,
+            "top": 420.63543701171875,
+            "right": 1211,
+            "bottom": 586.4687805175781
+          },
+          "point": {
+            "left": 1153.433837890625,
+            "top": 575.902587890625,
+            "right": 1173.2328300476074,
+            "bottom": 595.7015800476074
+          },
+          "panel": {
+            "left": 859,
+            "top": 108,
+            "right": 1231,
+            "bottom": 586.46875
+          },
+          "window": {
+            "left": 847,
+            "top": 96,
+            "right": 1251,
+            "bottom": 716
+          }
+        }
+      },
+      "top-left": {
+        "spot": {
+          "x": -254,
+          "y": -450,
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
+        },
+        "asked": {
+          "x": -254,
+          "y": -450
+        },
+        "heStays": true,
+        "windowOnScreen": true,
+        "bubbleOnScreen": true,
+        "bubbleSide": true,
+        "bubbleReach": true,
+        "pointOverHim": true,
+        "panelOnScreen": true,
+        "panelSide": true,
+        "panelTall": true,
+        "boxes": {
+          "body": {
+            "left": 30,
+            "top": 44.46875,
+            "right": 134,
+            "bottom": 158
+          },
+          "bubble": {
+            "left": 12,
+            "top": 168,
+            "right": 312,
+            "bottom": 333.8333435058594
+          },
+          "point": {
+            "left": 53.767173767089844,
+            "top": 158.76718139648438,
+            "right": 73.56616592407227,
+            "bottom": 178.5661735534668
+          },
+          "panel": {
+            "left": 12,
+            "top": 168,
+            "right": 384,
+            "bottom": 608
+          },
+          "window": {
+            "left": 0,
+            "top": 0,
+            "right": 404,
+            "bottom": 620
+          }
+        }
+      },
+      "top-right": {
+        "spot": {
+          "x": 1890,
+          "y": -450,
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
+        },
+        "asked": {
+          "x": 1890,
+          "y": -450
+        },
+        "heStays": true,
+        "windowOnScreen": true,
+        "bubbleOnScreen": true,
+        "bubbleSide": true,
+        "bubbleReach": true,
+        "pointOverHim": true,
+        "panelOnScreen": true,
+        "panelSide": true,
+        "panelTall": true,
+        "boxes": {
+          "body": {
+            "left": 2174,
+            "top": 44.46875,
+            "right": 2278,
+            "bottom": 158
+          },
+          "bubble": {
+            "left": 1954,
+            "top": 168,
+            "right": 2254,
+            "bottom": 333.8333435058594
+          },
+          "point": {
+            "left": 2196.433837890625,
+            "top": 158.76718139648438,
+            "right": 2216.2328300476074,
+            "bottom": 178.5661735534668
+          },
+          "panel": {
+            "left": 1902,
+            "top": 168,
+            "right": 2274,
+            "bottom": 608
+          },
+          "window": {
+            "left": 1890,
+            "top": 0,
+            "right": 2294,
+            "bottom": 620
+          }
+        }
+      },
+      "near-top": {
+        "spot": {
+          "x": 947,
+          "y": -300,
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
+        },
+        "asked": {
+          "x": 947,
+          "y": -300
+        },
+        "heStays": true,
+        "windowOnScreen": true,
+        "bubbleOnScreen": true,
+        "bubbleSide": true,
+        "bubbleReach": true,
+        "pointOverHim": true,
+        "panelOnScreen": true,
+        "panelSide": true,
+        "panelTall": true,
+        "boxes": {
+          "body": {
+            "left": 1231,
+            "top": 194.46875,
+            "right": 1335,
+            "bottom": 308
+          },
+          "bubble": {
+            "left": 1011,
+            "top": 318,
+            "right": 1311,
+            "bottom": 483.8333435058594
+          },
+          "point": {
+            "left": 1253.433837890625,
+            "top": 308.7671813964844,
+            "right": 1273.2328300476074,
+            "bottom": 328.5661735534668
+          },
+          "panel": {
+            "left": 959,
+            "top": 318,
+            "right": 1331,
+            "bottom": 758
+          },
+          "window": {
+            "left": 947,
+            "top": 150,
+            "right": 1351,
+            "bottom": 770
+          }
+        }
+      },
+      "left": {
+        "spot": {
+          "x": -254,
+          "y": 96,
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
+        },
+        "asked": {
+          "x": -254,
+          "y": 96
+        },
+        "heStays": true,
+        "windowOnScreen": true,
+        "bubbleOnScreen": true,
+        "bubbleSide": true,
+        "bubbleReach": true,
+        "pointOverHim": true,
+        "panelOnScreen": true,
+        "panelSide": true,
+        "panelTall": true,
+        "boxes": {
+          "body": {
+            "left": 30,
+            "top": 590.46875,
+            "right": 134,
+            "bottom": 704
+          },
+          "bubble": {
+            "left": 12,
+            "top": 420.63543701171875,
+            "right": 312,
+            "bottom": 586.4687805175781
+          },
+          "point": {
+            "left": 53.767173767089844,
+            "top": 575.902587890625,
+            "right": 73.56616592407227,
+            "bottom": 595.7015800476074
+          },
+          "panel": {
+            "left": 12,
+            "top": 108,
+            "right": 384,
+            "bottom": 586.46875
+          },
+          "window": {
+            "left": 0,
+            "top": 96,
+            "right": 404,
+            "bottom": 716
+          }
+        }
+      },
+      "left-a-little": {
+        "spot": {
+          "x": -130,
+          "y": 96,
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
+        },
+        "asked": {
+          "x": -130,
+          "y": 96
+        },
+        "heStays": true,
+        "windowOnScreen": true,
+        "bubbleOnScreen": true,
+        "bubbleSide": true,
+        "pointOverHim": true,
+        "panelOnScreen": true,
+        "panelSide": true,
+        "panelTall": true,
+        "boxes": {
+          "body": {
+            "left": 154,
+            "top": 590.46875,
+            "right": 258,
+            "bottom": 704
+          },
+          "bubble": {
+            "left": 12,
+            "top": 420.63543701171875,
+            "right": 312,
+            "bottom": 586.4687805175781
+          },
+          "point": {
+            "left": 177.76718139648438,
+            "top": 575.902587890625,
+            "right": 197.5661735534668,
+            "bottom": 595.7015800476074
+          },
+          "panel": {
+            "left": 12,
+            "top": 108,
+            "right": 384,
+            "bottom": 586.46875
+          },
+          "window": {
+            "left": 0,
+            "top": 96,
+            "right": 404,
+            "bottom": 716
+          }
+        }
+      },
+      "bottom-left": {
+        "spot": {
+          "x": -254,
+          "y": 292,
+          "hotkey": "CommandOrControl+Alt+Shift+F11",
+          "ghost": true
+        },
+        "asked": {
+          "x": -254,
+          "y": 292
+        },
+        "heStays": true,
+        "windowOnScreen": true,
+        "bubbleOnScreen": true,
+        "bubbleSide": true,
+        "bubbleReach": true,
+        "pointOverHim": true,
+        "panelOnScreen": true,
+        "panelSide": true,
+        "panelTall": true,
+        "boxes": {
+          "body": {
+            "left": 30,
+            "top": 786.46875,
+            "right": 134,
+            "bottom": 900
+          },
+          "bubble": {
+            "left": 12,
+            "top": 616.6354370117188,
+            "right": 312,
+            "bottom": 782.4687805175781
+          },
+          "point": {
+            "left": 53.767173767089844,
+            "top": 771.902587890625,
+            "right": 73.56616592407227,
+            "bottom": 791.7015800476074
+          },
+          "panel": {
+            "left": 12,
+            "top": 304,
+            "right": 384,
+            "bottom": 782.46875
+          },
+          "window": {
+            "left": 0,
+            "top": 292,
+            "right": 404,
+            "bottom": 912
+          }
+        }
+      }
+    },
+    "dragLandsUnderPointer": {
+      "from": {
+        "x": -254,
+        "y": -450,
+        "hotkey": "CommandOrControl+Alt+Shift+F11",
+        "ghost": true
+      },
+      "dropped": {
+        "x": 46,
+        "y": -210,
+        "hotkey": "CommandOrControl+Alt+Shift+F11",
+        "ghost": true
+      },
+      "body": {
+        "left": 330,
+        "top": 284.46875,
+        "right": 434,
+        "bottom": 398
+      },
+      "wanted": {
+        "right": 434,
+        "bottom": 398
+      }
+    },
+    "dragWindow": [
+      1790888792213,
+      1790888794125
+    ],
+    "overTheCircleArms": {
+      "shrunk": "matrix(0.5, 0, 0, 0.5, 0, 0)",
+      "grown": "none"
+    },
+    "requestStaysUp": [
+      "DESKTOP-27SQLCP wants to run a command",
+      "In Tell me 11 letters"
+    ],
+    "lateTodoStaysUp": [
+      "Call the landlord",
+      "2:22 late"
+    ],
+    "pageDidNotThrow": [],
+    "realPointerKeptOut": {
+      "events": 0,
+      "first": []
+    }
+  },
+  "serverErrors": [],
+  "petLog": [
+    "\r",
+    "\r",
+    "DevTools listening on ws://127.0.0.1:57395/devtools/browser/cbad9849-2f48-42ee-85bf-268042322213\r",
+    ""
+  ]
+}

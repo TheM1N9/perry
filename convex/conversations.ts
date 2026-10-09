@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { defaultAccess } from "./installation";
+import { defaultAccess, engineFor } from "./installation";
 import { vAccess, vChannel, vEngine } from "./schema";
 import { deleteThread } from "./lib/agent";
 import { FORGET_SESSION, pickPatch } from "./engines";
@@ -42,7 +42,7 @@ export const setModel = internalMutation({
   handler: async (ctx, args) => {
     const chat = await ctx.db.get(args.id);
     if (!chat) return null;
-    await ctx.db.patch(args.id, pickPatch(chat, args.model, args.engine));
+    await ctx.db.patch(args.id, pickPatch(chat, args.model, args.engine, await engineFor(ctx, chat)));
     return null;
   },
 });
@@ -72,9 +72,9 @@ export const setAccess = internalMutation({
 export const activeSince = internalQuery({
   args: { since: v.number() },
   handler: async (ctx, args) => (await ctx.db.query("conversations").collect())
-    // A project chat keeps its own memory, so the day's summary into everyone's notes leaves it out; and a chat with
-    // someone else is theirs, not the owner's life, and what they say must never become the owner's memory.
-    .filter((chat) => chat.lastMessageAt >= args.since && !chat.jobId && !chat.project && !chat.contactId)
+    // A project's chats keep their memory to the project, so the day's summary into everyone's notes leaves them out; and
+    // a chat with someone else is theirs, not the owner's life, and what they say must never become the owner's memory.
+    .filter((chat) => chat.lastMessageAt >= args.since && !chat.jobId && !chat.projectId && !chat.project && !chat.contactId)
     .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
     .slice(0, 40)
     .map((chat) => ({ id: chat._id, title: chat.title ?? "Untitled chat", channel: chat.channel })),
@@ -252,6 +252,8 @@ export const createBranch = internalMutation({
       channel: "web",
       externalId: `session:${args.threadId}`,
       threadId: args.threadId,
+      // On the parent's engine, as its model is one of that engine's.
+      ...(parent.engine ? { engine: parent.engine } : {}),
       model: parent.model,
       effort: parent.effort,
       access: parent.access,
@@ -259,6 +261,8 @@ export const createBranch = internalMutation({
       lastMessageAt: Date.now(),
       parentConversationId: parent._id,
       branchedFromMessageId: args.messageId,
+      // A branch of a project's chat is in the project too.
+      ...(parent.projectId ? { projectId: parent.projectId } : {}),
     });
   },
 });
@@ -289,6 +293,7 @@ export const copyAttachments = internalMutation({
         contentType: attachment.contentType,
         size: attachment.size,
         createdAt: Date.now(),
+        ...(attachment.removedAt ? { removedAt: attachment.removedAt } : {}),
       });
     }
     return null;

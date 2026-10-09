@@ -21,7 +21,7 @@ function PageErrorFallback({ onLock }: { onLock: () => void }, { error, reset }:
       <main className="mx-auto w-full max-w-xl px-6 py-16" role="alert">
         <TriangleAlertIcon className="size-6 text-destructive" aria-hidden />
         <h1 className="mt-4 text-xl font-semibold tracking-tight">{keyProblem ? "That key was rejected" : "This page couldn't load"}</h1>
-        <p className="mt-2 text-[15px] text-pretty text-muted-foreground">
+        <p className="mt-2 text-md text-pretty text-muted-foreground">
           {keyProblem
             ? "The dashboard key in this browser doesn't match this Perry any more. Unlock again with the current key."
             : stale

@@ -1,0 +1,421 @@
+{
+  "pass": true,
+  "at": "2026-10-01T20:17:54.499Z",
+  "production": {
+    "scripts": [
+      {
+        "src": "/_vercel/insights/script.js",
+        "host": "127.0.0.1:54606",
+        "sdkn": "@vercel/analytics/next",
+        "defer": true
+      },
+      {
+        "src": "/_vercel/speed-insights/script.js",
+        "host": "127.0.0.1:54606",
+        "sdkn": "@vercel/speed-insights/next",
+        "defer": true
+      }
+    ],
+    "events": [
+      [
+        "CTA click",
+        {
+          "cta": "get_perry",
+          "from": "nav"
+        }
+      ],
+      [
+        "CTA click",
+        {
+          "cta": "get_perry",
+          "from": "hero"
+        }
+      ],
+      [
+        "CTA click",
+        {
+          "cta": "see_day",
+          "from": "hero"
+        }
+      ],
+      [
+        "CTA click",
+        {
+          "cta": "get_perry",
+          "from": "close"
+        }
+      ],
+      [
+        "GitHub click",
+        {
+          "link": "repo"
+        }
+      ],
+      [
+        "GitHub click",
+        {
+          "link": "install_guide"
+        }
+      ],
+      [
+        "Copy command",
+        {
+          "command": "install",
+          "os": "unix",
+          "copied": true
+        }
+      ],
+      [
+        "Copy command",
+        {
+          "command": "install",
+          "os": "windows",
+          "copied": true
+        }
+      ],
+      [
+        "Copy command",
+        {
+          "command": "run",
+          "os": "windows",
+          "copied": true
+        }
+      ],
+      [
+        "Copy command",
+        {
+          "command": "install",
+          "os": "windows",
+          "copied": false
+        }
+      ]
+    ],
+    "browserLogsFromVercel": [
+      "[Vercel Web Analytics] Failed to load script from /_vercel/insights/script.js. Be sure to enable Web Analytics for your project and deploy again. See https://vercel.com/docs/analytics/quickstart for more information.",
+      "[Vercel Speed Insights] Failed to load script from /_vercel/speed-insights/script.js. Please check if any content blockers are enabled and try again."
+    ]
+  },
+  "development": {
+    "scripts": [
+      "https://va.vercel-scripts.com/v1/script.debug.js",
+      "https://va.vercel-scripts.com/v1/speed-insights/script.debug.js"
+    ],
+    "browserLogsFromVercel": [
+      "[Vercel Speed Insights] Debug mode is enabled by default in development. No requests will be sent to the server.",
+      "[Vercel Web Analytics] Debug mode is enabled by default in development. No requests will be sent to the server.",
+      "[Vercel Web Analytics] Running queued event pageview {\"route\":\"/\",\"path\":\"/\"}",
+      "[Vercel Web Analytics] Running queued event pageview {\"route\":\"/\",\"path\":\"/\"}",
+      "[Vercel Web Analytics] [view] http://127.0.0.1:58077/ {\"o\":\"http://127.0.0.1:58077/\",\"sv\":\"0.1.3\",\"sdkn\":\"@vercel/analytics/next\",\"sdkv\":\"2.0.1\",\"ts\":\"1790885870472\"} /_vercel/insights/view",
+      "[Vercel Web Analytics] [view] http://127.0.0.1:58077/ {\"o\":\"http://127.0.0.1:58077/\",\"sv\":\"0.1.3\",\"sdkn\":\"@vercel/analytics/next\",\"sdkv\":\"2.0.1\",\"ts\":\"1790885870473\"} /_vercel/insights/view",
+      "[Vercel Speed Insights] [vitals] {\"speed\":\"4g\",\"metrics\":\"Array(3)\",\"scriptVersion\":\"0.1.3\",\"sdkName\":\"@vercel/speed-insights/next\",\"sdkVersion\":\"2.0.0\"} /_vercel/speed-insights/vitals",
+      "[Vercel Web Analytics] [event] CTA click {\"o\":\"http://127.0.0.1:58077/\",\"sv\":\"0.1.3\",\"sdkn\":\"@vercel/analytics/next\",\"sdkv\":\"2.0.1\",\"ts\":\"1790885872764\"} /_vercel/insights/event"
+    ]
+  },
+  "checks": [
+    {
+      "name": "next build succeeds",
+      "pass": true,
+      "detail": "\n> perry-site@0.1.0 build W:\\perry-tests\\wt-196\\site\n> next build\n\n▲ Next.js 16.3.6 (Turbopack)\n✓ Running next.config.ts took 71ms\n\n  Creating an optimized production build ...\n✓ Compiled successfully in 1736ms\n  Running TypeScript ...\n  Finished TypeScript in 1989ms ...\n  Collecting page data using 8 workers ...\n  Generating static pages using 8 workers (0/7) ...\n  Generating static pages using 8 workers (1/7) \r\n  Generating static pages using 8 workers (3/7) \r\n  Generating static pages using 8 workers (5/7) \r\n✓ Generating static pages using 8 workers (7/7) in 1828ms\n  Finalizing page optimization ...\n\nRoute (app)\n┌ ○ /\n├ ○ /_not-found\n├ ○ /icon.svg\n├ ○ /opengraph-image\n├ ○ /robots.txt\n└ ○ /sitemap.xml\n\n\n○  (Static)  prerendered as static content\n\n"
+    },
+    {
+      "name": "next build prints no errors or warnings",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "the served HTML holds neither script (they're added on the client)",
+      "pass": true
+    },
+    {
+      "name": "production: one Web Analytics script, from the site's own /_vercel/insights",
+      "pass": true,
+      "detail": [
+        {
+          "src": "/_vercel/insights/script.js",
+          "host": "127.0.0.1:54606",
+          "sdkn": "@vercel/analytics/next",
+          "defer": true
+        },
+        {
+          "src": "/_vercel/speed-insights/script.js",
+          "host": "127.0.0.1:54606",
+          "sdkn": "@vercel/speed-insights/next",
+          "defer": true
+        }
+      ]
+    },
+    {
+      "name": "production: one Speed Insights script, from the site's own /_vercel/speed-insights",
+      "pass": true,
+      "detail": [
+        {
+          "src": "/_vercel/insights/script.js",
+          "host": "127.0.0.1:54606",
+          "sdkn": "@vercel/analytics/next",
+          "defer": true
+        },
+        {
+          "src": "/_vercel/speed-insights/script.js",
+          "host": "127.0.0.1:54606",
+          "sdkn": "@vercel/speed-insights/next",
+          "defer": true
+        }
+      ]
+    },
+    {
+      "name": "production: no debug script and nothing else from Vercel",
+      "pass": true,
+      "detail": [
+        {
+          "src": "/_vercel/insights/script.js",
+          "host": "127.0.0.1:54606",
+          "sdkn": "@vercel/analytics/next",
+          "defer": true
+        },
+        {
+          "src": "/_vercel/speed-insights/script.js",
+          "host": "127.0.0.1:54606",
+          "sdkn": "@vercel/speed-insights/next",
+          "defer": true
+        }
+      ]
+    },
+    {
+      "name": "production: the visit queues exactly one page view, for /",
+      "pass": true,
+      "detail": [
+        {
+          "route": "/",
+          "path": "/"
+        }
+      ]
+    },
+    {
+      "name": "nav Get Perry sends CTA click {cta: get_perry, from: nav}",
+      "pass": true,
+      "detail": [
+        [
+          "CTA click",
+          {
+            "cta": "get_perry",
+            "from": "nav"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "hero Get Perry sends CTA click {cta: get_perry, from: hero}",
+      "pass": true,
+      "detail": [
+        [
+          "CTA click",
+          {
+            "cta": "get_perry",
+            "from": "hero"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "hero See a day sends CTA click {cta: see_day, from: hero}",
+      "pass": true,
+      "detail": [
+        [
+          "CTA click",
+          {
+            "cta": "see_day",
+            "from": "hero"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "closing Get Perry sends CTA click {cta: get_perry, from: close}",
+      "pass": true,
+      "detail": [
+        [
+          "CTA click",
+          {
+            "cta": "get_perry",
+            "from": "close"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "footer GitHub sends GitHub click {link: repo}",
+      "pass": true,
+      "detail": [
+        [
+          "GitHub click",
+          {
+            "link": "repo"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "the GitHub link still opens the repo in a new tab",
+      "pass": true,
+      "detail": {
+        "href": "https://github.com/TheM1N9/perry",
+        "rel": "noopener noreferrer"
+      }
+    },
+    {
+      "name": "footer Install guide sends GitHub click {link: install_guide}",
+      "pass": true,
+      "detail": [
+        [
+          "GitHub click",
+          {
+            "link": "install_guide"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "Copy on the unix installer sends Copy command {command: install, os: unix, copied: true}",
+      "pass": true,
+      "detail": [
+        [
+          "Copy command",
+          {
+            "command": "install",
+            "os": "unix",
+            "copied": true
+          }
+        ]
+      ]
+    },
+    {
+      "name": "the unix installer is still what's copied",
+      "pass": true,
+      "detail": "curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh"
+    },
+    {
+      "name": "Copy on the windows installer sends Copy command {command: install, os: windows, copied: true}",
+      "pass": true,
+      "detail": [
+        [
+          "Copy command",
+          {
+            "command": "install",
+            "os": "windows",
+            "copied": true
+          }
+        ]
+      ]
+    },
+    {
+      "name": "the windows installer is still what's copied",
+      "pass": true,
+      "detail": "iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"
+    },
+    {
+      "name": "Copy on the run commands sends Copy command {command: run, os: windows, copied: true}",
+      "pass": true,
+      "detail": [
+        [
+          "Copy command",
+          {
+            "command": "run",
+            "os": "windows",
+            "copied": true
+          }
+        ]
+      ]
+    },
+    {
+      "name": "a refused copy sends Copy command {copied: false}",
+      "pass": true,
+      "detail": [
+        [
+          "Copy command",
+          {
+            "command": "install",
+            "os": "windows",
+            "copied": false
+          }
+        ]
+      ]
+    },
+    {
+      "name": "a refused copy still shows Select to copy",
+      "pass": true
+    },
+    {
+      "name": "production: every request stays on the page's own origin",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "production: no page errors or console errors",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "production: no new tab was opened (links were held for the check)",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "next start prints nothing after its startup banner",
+      "pass": true,
+      "detail": {
+        "banner": "▲ Next.js 16.3.6\n- Local:         http://127.0.0.1:54606\n- Network:       http://127.0.0.1:54606\n✓ Ready in 179ms\n✓ Running next.config.ts took 44ms\n",
+        "after": []
+      }
+    },
+    {
+      "name": "development: the page is served",
+      "pass": true
+    },
+    {
+      "name": "development: only the debug scripts load",
+      "pass": true,
+      "detail": [
+        "https://va.vercel-scripts.com/v1/script.debug.js",
+        "https://va.vercel-scripts.com/v1/speed-insights/script.debug.js"
+      ]
+    },
+    {
+      "name": "development: the debug script prints the event to the console",
+      "pass": true,
+      "detail": [
+        "[Vercel Speed Insights] Debug mode is enabled by default in development. No requests will be sent to the server.",
+        "[Vercel Web Analytics] Debug mode is enabled by default in development. No requests will be sent to the server.",
+        "[Vercel Web Analytics] Running queued event pageview {\"route\":\"/\",\"path\":\"/\"}",
+        "[Vercel Web Analytics] Running queued event pageview {\"route\":\"/\",\"path\":\"/\"}",
+        "[Vercel Web Analytics] [view] http://127.0.0.1:58077/ {\"o\":\"http://127.0.0.1:58077/\",\"sv\":\"0.1.3\",\"sdkn\":\"@vercel/analytics/next\",\"sdkv\":\"2.0.1\",\"ts\":\"1790885870472\"} /_vercel/insights/view",
+        "[Vercel Web Analytics] [view] http://127.0.0.1:58077/ {\"o\":\"http://127.0.0.1:58077/\",\"sv\":\"0.1.3\",\"sdkn\":\"@vercel/analytics/next\",\"sdkv\":\"2.0.1\",\"ts\":\"1790885870473\"} /_vercel/insights/view",
+        "[Vercel Speed Insights] [vitals] {\"speed\":\"4g\",\"metrics\":\"Array(3)\",\"scriptVersion\":\"0.1.3\",\"sdkName\":\"@vercel/speed-insights/next\",\"sdkVersion\":\"2.0.0\"} /_vercel/speed-insights/vitals",
+        "[Vercel Web Analytics] [event] CTA click {\"o\":\"http://127.0.0.1:58077/\",\"sv\":\"0.1.3\",\"sdkn\":\"@vercel/analytics/next\",\"sdkv\":\"2.0.1\",\"ts\":\"1790885872764\"} /_vercel/insights/event"
+      ]
+    },
+    {
+      "name": "development: both debug scripts say no requests will be sent",
+      "pass": true,
+      "detail": [
+        "[Vercel Speed Insights] Debug mode is enabled by default in development. No requests will be sent to the server.",
+        "[Vercel Web Analytics] Debug mode is enabled by default in development. No requests will be sent to the server.",
+        "[Vercel Web Analytics] Running queued event pageview {\"route\":\"/\",\"path\":\"/\"}",
+        "[Vercel Web Analytics] Running queued event pageview {\"route\":\"/\",\"path\":\"/\"}",
+        "[Vercel Web Analytics] [view] http://127.0.0.1:58077/ {\"o\":\"http://127.0.0.1:58077/\",\"sv\":\"0.1.3\",\"sdkn\":\"@vercel/analytics/next\",\"sdkv\":\"2.0.1\",\"ts\":\"1790885870472\"} /_vercel/insights/view",
+        "[Vercel Web Analytics] [view] http://127.0.0.1:58077/ {\"o\":\"http://127.0.0.1:58077/\",\"sv\":\"0.1.3\",\"sdkn\":\"@vercel/analytics/next\",\"sdkv\":\"2.0.1\",\"ts\":\"1790885870473\"} /_vercel/insights/view",
+        "[Vercel Speed Insights] [vitals] {\"speed\":\"4g\",\"metrics\":\"Array(3)\",\"scriptVersion\":\"0.1.3\",\"sdkName\":\"@vercel/speed-insights/next\",\"sdkVersion\":\"2.0.0\"} /_vercel/speed-insights/vitals",
+        "[Vercel Web Analytics] [event] CTA click {\"o\":\"http://127.0.0.1:58077/\",\"sv\":\"0.1.3\",\"sdkn\":\"@vercel/analytics/next\",\"sdkv\":\"2.0.1\",\"ts\":\"1790885872764\"} /_vercel/insights/event"
+      ]
+    },
+    {
+      "name": "development: nothing is sent to Vercel (only the two debug scripts are fetched)",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "development: no page errors",
+      "pass": true,
+      "detail": []
+    }
+  ]
+}

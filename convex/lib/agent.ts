@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import { internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import type { MessagePage, StoredMessage } from "../agentStore";
 
@@ -15,6 +15,19 @@ type Writer = Pick<ActionCtx, "runQuery" | "runMutation">;
 
 export async function createThread(ctx: Writer, args: { userId?: string; title?: string }): Promise<string> {
   return await ctx.runMutation(internal.agentStore.createThread, args);
+}
+
+/** A fresh engine session's view of the chat so far: its last messages, as lines. */
+export async function historyOf(ctx: Runner, conversation: Pick<Doc<"conversations">, "threadId">): Promise<string | undefined> {
+  const page = await listMessages(ctx, {
+    threadId: conversation.threadId,
+    excludeToolMessages: true,
+    paginationOpts: { cursor: null, numItems: 60 },
+  });
+  const lines = page.page.reverse()
+    .filter((item) => item.message?.role === "user" || item.message?.role === "assistant")
+    .map((item) => `${item.message?.role}: ${item.text ?? ""}`);
+  return lines.join("\n\n").slice(-24_000) || undefined;
 }
 
 export async function listMessages(
@@ -60,7 +73,12 @@ export async function deleteMessages(ctx: Writer, messageIds: string[]): Promise
 
 /** What a tool's execute receives: the backend's context, plus who and which chat the call is for. */
 /** conversationId: the chat the turn is in, so what a tool sets up can report back there. */
-export type ToolCtx = ActionCtx & { userId?: string; threadId?: string; fromJob?: boolean; conversationId?: Id<"conversations"> };
+/**
+ * What a tool call is made with (mcp.ts): who, which chat, whether a scheduled job's turn, and `outside`, whether
+ * the turn read something from outside before it (a web page, an app's data, someone else's message), so what it
+ * writes to Brain is marked as from outside and cannot instruct later turns (issue #136).
+ */
+export type ToolCtx = ActionCtx & { userId?: string; threadId?: string; fromJob?: boolean; conversationId?: Id<"conversations">; outside?: boolean };
 
 /**
  * A tool the assistant can call: a description, a zod input schema and an

@@ -79,7 +79,7 @@ const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const check = (name: string, ok: boolean, note?: unknown) => { checks[name] = ok; if (note !== undefined) notes[name] = note; console.log(`${ok ? "ok  " : "FAIL"} ${name}`); };
 
 // --- Perry ----------------------------------------------------------------------
-const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
+const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("TELEGRAM") || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE") delete env[name];
 const logs = { server: "", runner: "", off: "" };
 function start(name: keyof typeof logs, extra: Record<string, string> = {}): ChildProcess {
@@ -386,7 +386,7 @@ try {
   };
   // Tall enough for the Engines section of three rows and the sign-in steps, set before the page lays out.
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 1150, deviceScaleFactor: 1, mobile: false });
-  await send("Page.navigate", { url: `${BASE}/settings` });
+  await send("Page.navigate", { url: `${BASE}/settings/engines` });
   await until(() => evaluate(`(document.querySelector('section[aria-label="Engines"]')?.innerText ?? "").includes("Signed-out computer")`), "Settings' Engines section", 30);
   const offRowSelector = `[aria-label="Claude Code on Signed-out computer"]`;
   await evaluate(`(() => { const button = [...document.querySelector('${offRowSelector}').querySelectorAll("button")].find((item) => /Sign in with Claude/.test(item.innerText)); button?.click(); return Boolean(button); })()`);

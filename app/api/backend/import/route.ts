@@ -1,4 +1,4 @@
-import { backend } from "@/server/index";
+import { backend, givePeoplePages, moveMemoriesIntoPages, updateBrainIndex } from "@/server/index";
 import { isAdmin } from "@/server/api";
 import { importConvexExport } from "@/server/importer";
 
@@ -11,7 +11,16 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as { path?: string; replace?: boolean };
   if (!body.path) return Response.json({ error: "Give the export's path." }, { status: 400 });
   try {
-    return Response.json({ value: await importConvexExport(backend(), body.path, { replace: body.replace }) });
+    const value = await importConvexExport(backend(), body.path, { replace: body.replace });
+    // Its chats that kept their memory to themselves become projects, as when Perry starts.
+    await backend().runMutation("projects:migrate", {}, { internal: true });
+    await backend().runMutation("pages:indexAll", {}, { internal: true });
+    await moveMemoriesIntoPages(backend());
+    await givePeoplePages(backend());
+    // What came in is kept as Perry's own writes are: every secret left out (issue #137).
+    const secretsLeftOut = await backend().runMutation("pages:scrubAll", {}, { internal: true });
+    await updateBrainIndex(backend());
+    return Response.json({ value: { ...value, secretsLeftOut } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
   }

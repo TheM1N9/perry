@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ActivityIcon, BookUserIcon, CableIcon, CheckCircle2Icon, ChevronsUpDownIcon, InboxIcon, ListChecksIcon, LockIcon, MonitorIcon,
+  BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, InboxIcon, LibraryIcon, ListChecksIcon, LockIcon,
   MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -12,7 +12,8 @@ import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { ChatSummary } from "@/convex/dashboard";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
-import { dayGroup, errorText } from "@/lib/format";
+import type { EngineKind } from "@/convex/lib/engines";
+import { errorText } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useShortcuts } from "@/hooks/use-shortcuts";
 import { toast } from "sonner";
@@ -20,6 +21,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -36,11 +38,14 @@ import {
 } from "@/components/ui/sidebar";
 import { usePalette } from "./command-palette";
 import { ChannelIcon, PerryMark } from "./common";
-import { StatusIndicator } from "./status-indicator";
+import { StatusIndicator, statusLabel } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
 import { UpdateNotice } from "./updates";
+import { PauseMenuItem, PauseNotice, usePause } from "./pause";
 import { PlatypusArt } from "./platypus";
+import { MoveToProject, NewProjectDialog, ProjectFolders } from "./projects";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /** How many chats show before "Show all", so a long history stays scannable. */
 const CHAT_PAGE = 25;
@@ -50,7 +55,6 @@ export function AppSidebar() {
   const pathname = usePathname();
   const palette = usePalette();
   const { setOpenMobile } = useSidebar();
-  const count = useNeedsYouCount();
   const { label } = useShortcuts();
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
   const assistant = status?.assistantName ?? "Perry";
@@ -65,7 +69,7 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" render={<Link href="/chat" />} tooltip={assistant} className="gap-2.5">
               <PerryMark className="size-8" />
-              <span className="truncate text-[15px] font-semibold tracking-[-0.01em]" translate="no">{assistant}</span>
+              <span className="truncate text-md font-semibold tracking-[-0.01em]" translate="no">{assistant}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -74,32 +78,23 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu className="gap-0.5">
-              <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/chat" />} isActive={pathname === "/chat"} tooltip="New chat">
-                  <SquarePenIcon />
-                  <span>New chat</span>
-                </SidebarMenuButton>
-                <SidebarMenuBadge className="opacity-0 transition-opacity max-md:hidden group-hover/menu-item:opacity-100">
-                  <Kbd className="h-5">{label("newChat")}</Kbd>
-                </SidebarMenuBadge>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton onClick={palette.open} tooltip="Search" aria-keyshortcuts="Control+K Meta+K">
-                  <SearchIcon />
-                  <span>Search</span>
-                </SidebarMenuButton>
-                <SidebarMenuBadge className="max-md:hidden"><Kbd className="h-5">{label("palette")}</Kbd></SidebarMenuBadge>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/inbox" />} isActive={pathname === "/inbox"} tooltip="Needs you">
-                  <InboxIcon />
-                  <span>Needs you</span>
-                </SidebarMenuButton>
-                {count > 0 && (
-                  <SidebarMenuBadge className="rounded-full bg-warning px-1.5 text-[11px] font-semibold text-background peer-data-active/menu-button:text-background">
-                    {count}
+              {/* New chat and Search share a row: New chat the most of it, Search an icon beside it; stacked when the sidebar is icons. */}
+              <SidebarMenuItem className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-0.5" data-new-chat-row>
+                <div className="relative min-w-0 flex-1 group-data-[collapsible=icon]:flex-none">
+                  <SidebarMenuButton render={<Link href="/chat" />} isActive={pathname === "/chat"} tooltip="New chat">
+                    <SquarePenIcon />
+                    <span>New chat</span>
+                  </SidebarMenuButton>
+                  <SidebarMenuBadge className="opacity-0 transition-opacity max-md:hidden group-hover/menu-item:opacity-100">
+                    <Kbd className="h-5">{label("newChat")}</Kbd>
                   </SidebarMenuBadge>
-                )}
+                </div>
+                <Tooltip>
+                  <TooltipTrigger render={<SidebarMenuButton onClick={palette.open} aria-label="Search" aria-keyshortcuts="Control+K Meta+K" className="w-11 shrink-0 justify-center" />}>
+                    <SearchIcon />
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Search · {label("palette")}</TooltipContent>
+                </Tooltip>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/todos" />} isActive={pathname === "/todos"} tooltip="To-dos">
@@ -108,9 +103,27 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/brain" />} isActive={pathname.startsWith("/brain")} tooltip="Brain">
+                  <BrainIcon />
+                  <span>Brain</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/library" />} isActive={pathname.startsWith("/library")} tooltip="Library">
+                  <LibraryIcon />
+                  <span>Library</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
                 <SidebarMenuButton render={<Link href="/work" />} isActive={pathname.startsWith("/work")} tooltip="Work">
                   <ListChecksIcon />
                   <span>Work</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/apps/connectors" />} isActive={pathname.startsWith("/apps")} tooltip="Apps & skills">
+                  <BlocksIcon />
+                  <span>Apps &amp; skills</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -119,9 +132,9 @@ export function AppSidebar() {
         <ChatGroups />
       </SidebarContent>
       <SidebarFooter>
+        <PauseNotice />
         <UpdateNotice />
         <DesktopPet />
-        <ComputerStatus />
         <AccountMenu />
       </SidebarFooter>
       <SidebarRail />
@@ -131,54 +144,43 @@ export function AppSidebar() {
 
 function ChatGroups() {
   const { dashboardKey } = useSession();
-  const chats = useQuery(api.dashboard.listChats, { key: dashboardKey });
+  const all = useQuery(api.dashboard.listChats, { key: dashboardKey });
   const [showAll, setShowAll] = useState(false);
   const [renaming, setRenaming] = useState<ChatSummary | null>(null);
   const [removing, setRemoving] = useState<ChatSummary | null>(null);
+  /** A project being made, and the chat that moves into it, if any. */
+  const [creating, setCreating] = useState<{ chat?: ChatSummary["id"] } | null>(null);
+  const row = (chat: ChatSummary) => (
+    <ChatRow key={chat.id} chat={chat} onRename={() => setRenaming(chat)} onDelete={() => setRemoving(chat)} onNewProject={() => setCreating({ chat: chat.id })} />
+  );
+  // A project's chats are in its folder, not in the list.
+  const chats = useMemo(() => all?.filter((chat) => !chat.projectId), [all]);
 
-  const groups = useMemo(() => {
-    if (!chats) return [];
-    const pinned = chats.filter((chat) => chat.pinned);
-    const rest = chats.filter((chat) => !chat.pinned);
-    const shown = showAll ? rest : rest.slice(0, CHAT_PAGE);
-    const byDay = new Map<string, ChatSummary[]>();
-    const now = Date.now();
-    for (const chat of shown) {
-      const label = dayGroup(chat.lastMessageAt, now);
-      byDay.set(label, [...(byDay.get(label) ?? []), chat]);
-    }
-    return [
-      ...(pinned.length ? [{ label: "Pinned", chats: pinned }] : []),
-      ...[...byDay].map(([label, items]) => ({ label, chats: items })),
-    ];
+  // One plain list, newest first, with the pinned ones on top; a pin marks them, not a heading.
+  const { pinned, shown } = useMemo(() => {
+    const newest = [...(chats ?? [])].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+    const rest = newest.filter((chat) => !chat.pinned);
+    return { pinned: newest.filter((chat) => chat.pinned), shown: showAll ? rest : rest.slice(0, CHAT_PAGE) };
   }, [chats, showAll]);
   const hidden = chats ? chats.filter((chat) => !chat.pinned).length - CHAT_PAGE : 0;
 
   if (chats === undefined) {
     return (
       <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel>Chats</SidebarGroupLabel>
         <SidebarMenu>{Array.from({ length: 6 }, (_, index) => <SidebarMenuItem key={index}><SidebarMenuSkeleton /></SidebarMenuItem>)}</SidebarMenu>
-      </SidebarGroup>
-    );
-  }
-  if (!chats.length) {
-    return (
-      <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-        <p className="px-2 py-1 text-sm text-muted-foreground">Your chats will show up here.</p>
       </SidebarGroup>
     );
   }
   return (
     <>
-      {groups.map((group) => (
-        <SidebarGroup key={group.label} className="py-1 group-data-[collapsible=icon]:hidden">
-          <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-          <SidebarMenu aria-label={group.label}>
-            {group.chats.map((chat) => <ChatRow key={chat.id} chat={chat} onRename={() => setRenaming(chat)} onDelete={() => setRemoving(chat)} />)}
-          </SidebarMenu>
-        </SidebarGroup>
-      ))}
+      <ProjectFolders chats={all} row={row} onNewProject={() => setCreating({})} />
+      {/* Headed like Projects above, so the chats outside a project don't read as part of the last one. */}
+      <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroupLabel>Chats</SidebarGroupLabel>
+        {!chats.length && <p className="px-2 py-1 text-sm text-muted-foreground">No chats yet.</p>}
+        {pinned.length > 0 && <SidebarMenu aria-label="Pinned">{pinned.map(row)}</SidebarMenu>}
+        {chats.length > 0 && <SidebarMenu aria-label="Chats">{shown.map(row)}</SidebarMenu>}
+      </SidebarGroup>
       {hidden > 0 && !showAll && (
         <div className="px-4 pb-3 group-data-[collapsible=icon]:hidden">
           <Button variant="link" size="sm" className="h-auto px-0 text-sidebar-foreground/70" onClick={() => setShowAll(true)}>
@@ -188,11 +190,12 @@ function ChatGroups() {
       )}
       <RenameDialog chat={renaming} onClose={() => setRenaming(null)} />
       <DeleteDialog chat={removing} onClose={() => setRemoving(null)} />
+      <NewProjectDialog open={creating !== null} chat={creating?.chat} onClose={() => setCreating(null)} />
     </>
   );
 }
 
-function ChatRow({ chat, onRename, onDelete }: { chat: ChatSummary; onRename: () => void; onDelete: () => void }) {
+function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary; onRename: () => void; onDelete: () => void; onNewProject: () => void }) {
   const { dashboardKey } = useSession();
   const pathname = usePathname();
   const active = pathname === `/chat/${chat.id}`;
@@ -203,14 +206,26 @@ function ChatRow({ chat, onRename, onDelete }: { chat: ChatSummary; onRename: ()
   const pin = () => void setPinned({ key: dashboardKey, id: chat.id, pinned: !chat.pinned })
     .catch((cause) => toast.error(`Couldn't ${chat.pinned ? "unpin" : "pin"} it: ${errorText(cause)}`));
 
+  // The dot gives way to the options button under the pointer, so on hover or focus the row says what the dot meant.
+  const said = statusLabel(chat.status, chat.unseen && !active);
+  const row = (
+    <SidebarMenuButton render={<Link href={`/chat/${chat.id}`} />} isActive={active}
+      className={cn(chat.unseen && !active && "font-semibold")}
+      aria-current={active ? "page" : undefined}>
+      {chat.pinned && <PinIcon role="img" aria-label="Pinned" className="text-muted-foreground" />}
+      <ChannelIcon channel={chat.channel} />
+      <span className={cn("pr-4", chat.naming && "shimmer")} aria-busy={chat.naming || undefined}>{chat.title}</span>
+    </SidebarMenuButton>
+  );
+
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton render={<Link href={`/chat/${chat.id}`} />} isActive={active}
-        className={cn(chat.unseen && !active && "font-semibold")}
-        aria-current={active ? "page" : undefined}>
-        <ChannelIcon channel={chat.channel} />
-        <span className={cn("pr-4", chat.naming && "shimmer")} aria-busy={chat.naming || undefined}>{chat.title}</span>
-      </SidebarMenuButton>
+      {said ? (
+        <Tooltip>
+          <TooltipTrigger render={row} />
+          <TooltipContent side="right">{said}</TooltipContent>
+        </Tooltip>
+      ) : row}
       <StatusIndicator status={chat.status} unseen={chat.unseen && !active}
         className="pointer-events-none absolute top-1/2 right-8 -translate-y-1/2 transition-opacity md:right-1.5 md:group-focus-within/menu-item:opacity-0 md:group-hover/menu-item:opacity-0" />
       <DropdownMenu>
@@ -222,6 +237,7 @@ function ChatRow({ chat, onRename, onDelete }: { chat: ChatSummary; onRename: ()
           <DropdownMenuItem onClick={onRename}><PencilIcon />Rename</DropdownMenuItem>
           {/* A Telegram or WhatsApp chat goes on as long as the app is paired; its messages are already on the phone. */}
           {chat.channel === "web" && <>
+            <MoveToProject chat={chat} onNewProject={onNewProject} />
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={onDelete}><Trash2Icon />Delete</DropdownMenuItem>
           </>}
@@ -259,10 +275,10 @@ export function RenameDialog({ chat, onClose }: { chat: { id: ChatSummary["id"];
       <DialogContent className="sm:max-w-sm">
         <DialogHeader><DialogTitle>Rename chat</DialogTitle></DialogHeader>
         <form onSubmit={(event) => { event.preventDefault(); void save(); }} className="contents">
-          <Input aria-label="Chat name" value={title} maxLength={100} autoFocus onChange={(event) => setTitle(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
+          <Input aria-label="Chat name" value={title} maxLength={100} autoFocus required onChange={(event) => setTitle(event.target.value)} onFocus={(event) => event.currentTarget.select()} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={!title.trim() || saving}>Save</Button>
+            <Button type="submit" disabled={saving} aria-busy={saving || undefined}>{saving && <Spinner />}Rename</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -342,7 +358,7 @@ function DesktopPet() {
               <DropdownMenuLabel className="font-normal">
                 <span className="block text-sm font-medium text-foreground">{state}</span>
                 {pet && <span className="block text-xs text-pretty text-muted-foreground">
-                  {failed ? pet.setup?.error?.split("\n")[0] : pet.running ? `On ${pet.host}, and he starts with it.` : `He'd appear on ${pet.host}, the computer Perry runs on.`}
+                  {failed ? pet.setup?.error?.split("\n")[0] : pet.running ? `On ${pet.host}` : `He'd appear on ${pet.host}`}
                 </span>}
               </DropdownMenuLabel>
             </DropdownMenuGroup>
@@ -350,7 +366,7 @@ function DesktopPet() {
             {pet?.running
               ? <DropdownMenuItem disabled={working} onClick={() => start(turnOff)}><PowerOffIcon />Turn him off</DropdownMenuItem>
               : <DropdownMenuItem disabled={working || pet === undefined} onClick={() => start(turnOn)}><PowerIcon />{failed ? "Try again" : "Turn him on"}</DropdownMenuItem>}
-            <DropdownMenuItem onClick={() => router.push("/settings?tab=general")}><SettingsIcon />Pet settings</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/settings/desktop-pet")}><SettingsIcon />Pet settings</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         {pet !== undefined && (
@@ -364,69 +380,77 @@ function DesktopPet() {
   );
 }
 
-/** Whether a computer is online to do the work: Perry can only act through one. */
-function ComputerStatus() {
+type SignedIn = { kind: EngineKind; label: string; account?: string };
+
+/**
+ * The engines signed in on a computer that is online, the owner's default
+ * first, each with the account it uses as its maker names it: "ChatGPT Plus".
+ */
+function useSignedIn(): SignedIn[] | undefined {
   const { dashboardKey } = useSession();
-  const pathname = usePathname();
-  const compute = useQuery(api.dashboard.getCompute, { key: dashboardKey });
-  const live = compute?.runners.filter((runner) => !runner.revoked) ?? [];
-  const online = live.filter((runner) => runner.online);
-  const label = compute === undefined ? "Checking…" : online.length ? (online.length === 1 ? online[0].name : `${online.length} computers`) : live.length ? "Computer offline" : "No computer yet";
-  return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <SidebarMenuButton render={<Link href="/computer" />} isActive={pathname === "/computer"} tooltip={`${label}${online.length ? " · online" : ""}`}>
-          <MonitorIcon />
-          <span className="truncate">{label}</span>
-        </SidebarMenuButton>
-        {compute !== undefined && (
-          <SidebarMenuBadge>
-            <span className={cn("size-2 rounded-full", online.length ? "bg-success" : "bg-muted-foreground/40")} aria-label={online.length ? "Online" : "Offline"} role="img" />
-          </SidebarMenuBadge>
-        )}
-      </SidebarMenuItem>
-    </SidebarMenu>
-  );
+  const computers = useQuery(api.engines.list, { key: dashboardKey });
+  const preferred = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
+  return useMemo(() => {
+    if (!computers) return undefined;
+    const found = new Map<EngineKind, SignedIn>();
+    for (const computer of computers.filter((item) => item.online)) {
+      for (const engine of computer.engines) {
+        if (!engine.signedIn || found.has(engine.kind)) continue;
+        const plan = engine.auth.plan ? `${engine.auth.plan[0].toUpperCase()}${engine.auth.plan.slice(1)}` : "";
+        found.set(engine.kind, { kind: engine.kind, label: engine.label, account: [engine.auth.label, plan].filter(Boolean).join(" ") || undefined });
+      }
+    }
+    return [...found.values()].sort((a, b) => Number(b.kind === preferred) - Number(a.kind === preferred));
+  }, [computers, preferred]);
 }
 
+/**
+ * The owner, at the foot of the sidebar: under the name, the plan and engine
+ * Perry thinks with (or Telegram waiting to be paired). Open, the same two
+ * lines, then Usage (Settings → Usage), the theme, Settings and locking the
+ * dashboard. How much of each plan is left is on the usage page, not here.
+ */
 function AccountMenu() {
   const { dashboardKey, lock } = useSession();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { isMobile } = useSidebar();
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
+  const engines = useSignedIn();
+  const { paused } = usePause();
   const name = status?.displayName ?? "You";
   const pairing = Boolean(status?.telegramConfigured && !status.claimed);
+  const first = engines?.[0];
+  const line = status === undefined || engines === undefined ? " " : paused ? "Perry is paused" : pairing ? "Telegram not paired"
+    : first ? (first.account ? `${first.account} · ${first.label}` : first.label) : "No engine signed in";
   const go = (href: string) => router.push(href);
+  const pathname = usePathname();
+  const count = useNeedsYouCount();
 
   return (
     <SidebarMenu>
-      <SidebarMenuItem>
+      {/* The name opens the menu; beside it, what needs you, as an inbox with its count. Stacked when the sidebar is icons. */}
+      <SidebarMenuItem className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col-reverse group-data-[collapsible=icon]:gap-0.5">
         <DropdownMenu>
-          <DropdownMenuTrigger render={<SidebarMenuButton size="lg" className="data-popup-open:bg-sidebar-accent" />}>
-            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-foreground text-[13px] font-semibold text-background" aria-hidden>
-              {name.charAt(0).toUpperCase()}
-            </span>
+          <DropdownMenuTrigger render={<SidebarMenuButton size="lg" className="min-w-0 flex-1 data-popup-open:bg-sidebar-accent group-data-[collapsible=icon]:flex-none" />}>
+            <Avatar aria-hidden className="after:hidden">
+              <AvatarFallback className="bg-foreground text-sm font-semibold text-background">{name.charAt(0).toUpperCase()}</AvatarFallback>
+            </Avatar>
             <span className="grid min-w-0 flex-1 text-left leading-tight">
               <span className="truncate text-sm font-medium">{name}</span>
-              <span className="truncate text-xs text-muted-foreground">
-                {status === undefined ? " " : pairing ? "Telegram not paired" : `${status.memories} ${status.memories === 1 ? "memory" : "memories"}`}
-              </span>
+              <span className="truncate text-xs text-muted-foreground" data-account-line>{line}</span>
             </span>
-            <ChevronsUpDownIcon className="ml-auto text-sidebar-foreground/50" />
           </DropdownMenuTrigger>
           <DropdownMenuContent side={isMobile ? "top" : "right"} align="end" sideOffset={8} className="w-60">
             <DropdownMenuGroup>
-              <DropdownMenuLabel>{name}</DropdownMenuLabel>
-            </DropdownMenuGroup>
-            <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => go("/memory")}><BookUserIcon />Memory</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => go("/connectors")}><CableIcon />Connectors</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => go("/activity")}><ActivityIcon />Activity</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => go("/computer")}><MonitorIcon />Computer</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => go("/settings")}><SettingsIcon />Settings</DropdownMenuItem>
+              <DropdownMenuLabel className="grid font-normal">
+                <span className="truncate text-sm font-medium text-foreground">{name}</span>
+                <span className="truncate text-xs text-muted-foreground">{line}</span>
+              </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+            <PauseMenuItem />
+            <DropdownMenuItem onClick={() => go("/settings/usage")}><GaugeIcon />Usage</DropdownMenuItem>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger><SunMoonIcon />Theme</DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
@@ -437,10 +461,20 @@ function AccountMenu() {
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            <DropdownMenuItem onClick={() => go("/settings/general")}><SettingsIcon />Settings</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={lock}><LockIcon />Lock dashboard</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger render={<SidebarMenuButton render={<Link href="/inbox" />} isActive={pathname === "/inbox"} aria-label={count > 0 ? `Needs you: ${count}` : "Needs you"} className="relative size-9 shrink-0 justify-center p-0" />}>
+            <InboxIcon />
+            {count > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-warning px-1 text-2xs font-semibold text-background" aria-hidden>{count}</span>
+            )}
+          </TooltipTrigger>
+          <TooltipContent side="right">Needs you{count > 0 ? ` · ${count}` : ""}</TooltipContent>
+        </Tooltip>
       </SidebarMenuItem>
     </SidebarMenu>
   );

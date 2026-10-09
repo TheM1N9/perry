@@ -2,7 +2,7 @@
 
 import { CheckIcon, CopyIcon, EyeIcon, EyeOffIcon, InfoIcon, MessageCircleIcon, SendIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ago, copyText, errorText, fullDate, useNow } from "@/lib/format";
@@ -67,6 +67,33 @@ export function InfoTip({ children, className }: { children: string; className?:
   );
 }
 
+/**
+ * Words that say more on hover or focus: a time's full date, a cron behind its
+ * reading, the rest of a cut-off path. The tip is in the words for screen
+ * readers too (`spoken`, when it adds to them). Its popup is data-solid, for
+ * the pet's window, which takes the pointer only there.
+ */
+export function TextTip({ tip, spoken, children, className }: { tip: ReactNode; spoken?: string; children: ReactNode; className?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span tabIndex={0} />} className={cn("min-w-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50", className)}>
+        {children}{spoken && <span className="sr-only">{` (${spoken})`}</span>}
+      </TooltipTrigger>
+      <TooltipContent data-solid className="max-w-80 text-pretty [overflow-wrap:anywhere]">{tip}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** A code to read off the screen and type elsewhere (a sign-in or pairing code): big, spaced monospace, and a button that copies it. */
+export function CodeDisplay({ children, label, className, ...props }: { children: string; label?: string; className?: string } & ComponentProps<"span">) {
+  return (
+    <span className={cn("inline-flex items-center gap-2", className)}>
+      <span translate="no" aria-label={label} className="font-mono text-2xl font-semibold tracking-[0.2em] sm:text-3xl" {...props}>{children}</span>
+      <CopyButton value={children} label="Copy code" />
+    </span>
+  );
+}
+
 export function CopyButton({ value, label = "Copy", className, size = "icon-sm" }: {
   value: string; label?: string; className?: string; size?: "icon-xs" | "icon-sm" | "icon";
 }) {
@@ -102,19 +129,46 @@ export function TopBar({ children, actions }: { children?: ReactNode; actions?: 
   );
 }
 
+const InPage = createContext(false);
+
+/**
+ * A screen shown inside another page, as a section of Settings or a tab of
+ * Apps & skills: its Page is then its words and rows, without a top bar, a
+ * column or a title of its own, since the page around it has them.
+ */
+export function PageInPage({ children }: { children: ReactNode }) {
+  return <InPage.Provider value>{children}</InPage.Provider>;
+}
+
 /** A page: its top bar, then a readable column with a title. */
 export function Page({ title, description, actions, children, wide }: {
-  title: string; description?: ReactNode; actions?: ReactNode; children: ReactNode; wide?: boolean;
+  title: string; description?: ReactNode; actions?: ReactNode; children: ReactNode; wide?: boolean | "full";
 }) {
+  const inPage = useContext(InPage);
+  if (inPage) {
+    return (
+      <div className="[&>section:first-of-type]:mt-0">
+        {/* The page around it says where you are; the title stays for a screen reader. */}
+        <h2 className="sr-only">{title}</h2>
+        {(description || actions) && (
+          <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+            {description && <p className="min-w-0 max-w-prose flex-1 text-sm text-pretty text-muted-foreground">{description}</p>}
+            {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+          </div>
+        )}
+        {children}
+      </div>
+    );
+  }
   return (
     <>
       <TopBar />
       <main id="content" tabIndex={-1} className="flex-1 outline-none">
-        <div className={cn("mx-auto w-full px-4 pb-24 pt-4 sm:px-8 sm:pt-8", wide ? "max-w-5xl" : "max-w-3xl")}>
+        <div className={cn("mx-auto w-full px-4 pb-24 pt-4 sm:px-8 sm:pt-8", wide === "full" ? "max-w-none" : wide ? "max-w-5xl" : "max-w-3xl")}>
           <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold tracking-[-0.02em] text-balance">{title}</h1>
-              {description && <p className="mt-1.5 max-w-prose text-[15px] text-pretty text-muted-foreground">{description}</p>}
+              {description && <p className="mt-1.5 max-w-prose text-md text-pretty text-muted-foreground">{description}</p>}
             </div>
             {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
           </div>
@@ -125,15 +179,18 @@ export function Page({ title, description, actions, children, wide }: {
   );
 }
 
-/** A titled group of rows on a page. */
-export function Section({ title, description, actions, children, className }: {
-  title: string; description?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string;
+/**
+ * A titled group of rows on a page. A `description` is one short line at most;
+ * what is worth knowing but not worth a line goes in `tip`, an ⓘ by the title.
+ */
+export function Section({ title, description, tip, actions, children, className, id }: {
+  title: string; description?: ReactNode; tip?: string; actions?: ReactNode; children: ReactNode; className?: string; id?: string;
 }) {
   return (
-    <section className={cn("mt-10 first:mt-0", className)} aria-label={title}>
+    <section id={id} className={cn("mt-10 scroll-mt-16 first:mt-0", className)} aria-label={title}>
       <div className="mb-3 flex items-end justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
+          <h2 className="flex items-center gap-1.5 text-md font-semibold tracking-[-0.01em]">{title}{tip && <InfoTip>{tip}</InfoTip>}</h2>
           {description && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{description}</p>}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -143,27 +200,49 @@ export function Section({ title, description, actions, children, className }: {
   );
 }
 
-/** Rows in one bordered block, divided by hairlines. */
+/**
+ * Rows on the page, divided by hairlines and nothing else: no box around them,
+ * so each row lines up with the section's title above it.
+ */
 export function List({ children, className, label }: { children: ReactNode; className?: string; label?: string }) {
-  return <ul aria-label={label} className={cn("divide-y overflow-hidden rounded-xl border bg-card", className)}>{children}</ul>;
+  return <ul aria-label={label} className={cn("divide-y *:px-0", className)}>{children}</ul>;
 }
 
-/** Nothing here yet: a sentence, and the one thing to do about it. */
+/**
+ * Nothing here yet: what is missing in a few words, and the one thing to do
+ * about it, laid on the page like the rest. With `mascot`, for a page that is
+ * empty as a whole: Perry, centred, as the pet's empty tabs have him.
+ */
 export function EmptyState({ title, children, action, mascot }: { title: string; children?: ReactNode; action?: ReactNode; mascot?: boolean }) {
+  if (mascot) {
+    return (
+      <div className="flex flex-col items-center px-6 py-12 text-center" data-empty>
+        <PerryMark className="mb-4 size-14" />
+        <p className="text-md font-medium">{title}</p>
+        {children && <p className="mt-1 max-w-sm text-sm text-pretty text-muted-foreground">{children}</p>}
+        {action && <div className="mt-4">{action}</div>}
+      </div>
+    );
+  }
   return (
-    <div className="flex flex-col items-center rounded-xl border border-dashed px-6 py-12 text-center">
-      {mascot && <PerryMark className="mb-4 size-14" />}
-      <p className="text-[15px] font-medium">{title}</p>
-      {children && <p className="mt-1 max-w-sm text-sm text-pretty text-muted-foreground">{children}</p>}
-      {action && <div className="mt-4">{action}</div>}
+    <div className="py-1" data-empty>
+      <p className="text-sm font-medium">{title}</p>
+      {children && <p className="mt-0.5 max-w-prose text-sm text-pretty text-muted-foreground">{children}</p>}
+      {action && <div className="mt-3 max-w-md">{action}</div>}
     </div>
   );
 }
 
-/** A secret field: hidden until asked, never autofilled. */
-export function SecretInput({ value, onChange, id, placeholder, autoFocus, invalid, describedBy, name }: {
+/**
+ * A secret field: hidden until asked, never autofilled. With `save`, it keeps
+ * its own quiet Save inside, there only once something is typed: a key is
+ * stored when you say so (that or Enter, which submits its form), never half
+ * typed.
+ */
+export function SecretInput({ value, onChange, id, placeholder, autoFocus, invalid, describedBy, name, save }: {
   value: string; onChange: (value: string) => void; id?: string; placeholder?: string; autoFocus?: boolean;
   invalid?: boolean; describedBy?: string; name?: string;
+  save?: { label?: string; busy?: boolean };
 }) {
   const [shown, setShown] = useState(false);
   return (
@@ -180,12 +259,17 @@ export function SecretInput({ value, onChange, id, placeholder, autoFocus, inval
         spellCheck={false}
         aria-invalid={invalid || undefined}
         aria-describedby={describedBy}
-        className="font-mono text-[13px]"
+        className="font-mono text-sm"
       />
       <InputGroupAddon align="inline-end">
         <InputGroupButton size="icon-xs" aria-label={shown ? "Hide" : "Show"} aria-pressed={shown} onClick={() => setShown(!shown)}>
           {shown ? <EyeOffIcon /> : <EyeIcon />}
         </InputGroupButton>
+        {save && (value.trim() || save.busy) && (
+          <InputGroupButton type="submit" size="xs" className="text-primary hover:text-primary" disabled={save.busy} aria-busy={save.busy || undefined}>
+            {save.busy && <Spinner />}{save.label ?? "Save"}
+          </InputGroupButton>
+        )}
       </InputGroupAddon>
     </InputGroup>
   );
@@ -194,7 +278,7 @@ export function SecretInput({ value, onChange, id, placeholder, autoFocus, inval
 /** A shell command to copy, in the monospace it will be typed in. */
 export function CommandLine({ children }: { children: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border bg-muted/60 py-1 pr-1 pl-3 font-mono text-[13px]">
+    <div className="flex items-center gap-2 rounded-lg border bg-muted/60 py-1 pr-1 pl-3 font-mono text-sm" data-command-line>
       <span className="select-none text-muted-foreground">$</span>
       <code className="min-w-0 flex-1 truncate">{children}</code>
       <CopyButton value={children} label="Copy command" size="icon-xs" />
@@ -223,10 +307,18 @@ const TONES: Record<Tone, string> = {
   info: "bg-brand-soft text-primary",
 };
 
-/** A short state in a tinted pill: Active, Paused, Needs you. */
+/**
+ * A short state. Only what wants a look gets a tinted pill: a warning, a
+ * failure, something that needs you, or work going on now (`pulse`). Anything
+ * else (Paused, Signed in, a plan's name) is a few muted words, and a row that
+ * is simply fine is better off saying nothing.
+ */
 export function StatusBadge({ tone = "neutral", children, pulse }: { tone?: Tone; children: ReactNode; pulse?: boolean }) {
+  if (!pulse && tone !== "warning" && tone !== "danger") {
+    return <span className="shrink-0 text-xs whitespace-nowrap text-muted-foreground" data-status={tone}>{children}</span>;
+  }
   return (
-    <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium whitespace-nowrap", TONES[tone])}>
+    <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium whitespace-nowrap", TONES[tone])} data-status={tone} data-pill>
       {pulse && <span className="size-1.5 rounded-full bg-current motion-safe:animate-pulse" aria-hidden />}
       {children}
     </span>
@@ -304,7 +396,7 @@ export function TabCount({ children, count }: { children: ReactNode; count?: num
   return (
     <>
       {children}
-      {count !== undefined && count > 0 && <span className="nums rounded-full bg-foreground/8 px-1.5 text-[11px] font-medium text-muted-foreground">{count}</span>}
+      {count !== undefined && count > 0 && <span className="nums font-normal text-muted-foreground">{count}</span>}
     </>
   );
 }
@@ -312,9 +404,9 @@ export function TabCount({ children, count }: { children: ReactNode; count?: num
 /** Rows standing in for a list that is still loading. */
 export function ListSkeleton({ rows = 3 }: { rows?: number }) {
   return (
-    <div className="divide-y rounded-xl border" role="status" aria-label="Loading">
+    <div className="divide-y" role="status" aria-label="Loading">
       {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="space-y-2 px-4 py-4">
+        <div key={index} className="space-y-2 py-4">
           <Skeleton className="h-4 w-1/3" />
           <Skeleton className="h-3 w-1/2" />
         </div>

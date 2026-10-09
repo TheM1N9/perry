@@ -46,7 +46,7 @@ const checks: Record<string, boolean> = {};
 const notes: Record<string, unknown> = {};
 const check = (name: string, ok: boolean, note?: unknown) => { checks[name] = ok; if (note !== undefined) notes[name] = note; };
 
-const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
+const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("TELEGRAM") || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE") delete env[name];
 let serverLog = "";
 const server = spawn("node", [join(REPO, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)], { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
@@ -235,10 +235,10 @@ try {
 
   // --- 7, 9. The path, query and all; and only the dashboard's own ---------------------------------
   {
-    await call<string>("pet:askToOpen", { key: KEY, path: "/settings?tab=shortcuts" });
-    await until(async () => (await shown.where()) === "/settings?tab=shortcuts", "the settings page", 5).catch(() => {});
+    await call<string>("pet:askToOpen", { key: KEY, path: "/settings/activity?status=error" });
+    await until(async () => (await shown.where()) === "/settings/activity?status=error", "the activity log", 5).catch(() => {});
     const now = await shown.where();
-    check("pathWithQueryKept", now === "/settings?tab=shortcuts" && (await hidden.where()) === "/memory", { now });
+    check("pathWithQueryKept", now === "/settings/activity?status=error" && (await hidden.where()) === "/memory", { now });
     await shown.goTo("/todos");
     const bad = ["//evil.example/x", "/\\evil.example", "javascript:alert(1)", "https://evil.example/", ""];
     const stored: string[] = [];

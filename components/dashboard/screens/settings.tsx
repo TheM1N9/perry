@@ -1,108 +1,171 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { ExternalLinkIcon, MessageCircleIcon, MonitorIcon, MoonIcon, RefreshCwIcon, SendIcon, ShieldAlertIcon, ShieldCheckIcon, SmartphoneIcon, SunIcon, UserIcon } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { ChevronRightIcon, ExternalLinkIcon, LockIcon, MessageCircleIcon, MonitorIcon, MoonIcon, RefreshCwIcon, SendIcon, ShieldAlertIcon, ShieldCheckIcon, SmartphoneIcon, SunIcon, UserIcon } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
+import { noteHref } from "@/convex/lib/notes";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { EngineView } from "@/convex/engines";
+import type { EngineUpdating, EngineView } from "@/convex/engines";
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, type Access } from "@/convex/lib/commands";
-import { SIGN_IN_LABELS, type LoginInteraction } from "@/convex/lib/engines";
+import { ENGINE_LABELS, SIGN_IN_LABELS, type EngineKind, type EngineUpdate, type LoginInteraction } from "@/convex/lib/engines";
 import type { PetTheme } from "@/convex/pet";
+import type { SecretName } from "@/convex/secrets";
+import type { SettingsSection } from "@/lib/settings";
 import { ago, errorText, useNow } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TimePicker } from "@/components/ui/time-picker";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ACCESS_ICONS } from "../chat/composer";
 import { PetControl } from "../pet-control";
+import { PetDevices } from "../pet-devices";
 import { Shortcuts } from "../shortcuts";
 import { Updates } from "../updates";
-import { ActionButton, CommandLine, CopyButton, EmptyState, InfoTip, List, ListSkeleton, Page, SecretInput, Section, StatusBadge, useTab, type Tone } from "../common";
+import { Activity } from "./activity";
+import { ApprovalRules, Computers, RecentRequests } from "./computer";
+import { YourAssistant } from "./memory";
+import { Usage, UsageMoved } from "./usage";
+import { SaveStatus, useAutosave } from "../autosave";
+import { EngineChoice, useEngineChoices } from "../default-engine";
+import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, ListSkeleton, SecretInput, Section, StatusBadge, type Tone } from "../common";
 
-const TABS = ["general", "keys", "people", "shortcuts", "telegram", "whatsapp"] as const;
+/**
+ * What each section of Settings holds (lib/settings.ts names them and puts
+ * them in groups). Each key sits beside what it unlocks; the Composio key is
+ * with the connectors, in Apps & skills.
+ */
+const SECTIONS: Record<SettingsSection, () => ReactNode> = {
+  general: () => <><YourAssistant /><Appearance /><BrainArchive /><Updates /></>,
+  engines: () => <><UsageMoved /><DefaultEngine /><Engines /></>,
+  usage: () => <Usage />,
+  computers: () => <Computers />,
+  access: () => <><NewChatAccess /><ApprovalRules /><RecentRequests /></>,
+  notifications: () => <><Manners /><AwayChannel /></>,
+  telegram: () => <Telegram />,
+  whatsapp: () => <WhatsApp />,
+  "desktop-pet": () => <><DesktopPet /><Shortcuts /></>,
+  people: () => <People />,
+  activity: () => <Activity />,
+  logins: () => <Logins />,
+  security: () => <Security />,
+};
 
-export function Settings() {
-  const [tab, setTab] = useTab(TABS, "general");
+/** One section of Settings, inside the page and its nav (settings-shell.tsx). */
+export function SettingsSectionScreen({ section }: { section: SettingsSection }) {
+  const Content = SECTIONS[section];
+  return <Content />;
+}
+
+/**
+ * The engine Perry uses unless a chat or job picks another, chosen by the
+ * owner and changed here. New web chats start on it; phone, schedule and task
+ * chats without one of their own move to it from their next turn; a web chat
+ * already started keeps its own. Unset, Perry asks before any turn.
+ */
+function DefaultEngine() {
+  const { dashboardKey } = useSession();
+  const current = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
+  const reported = useEngineChoices();
+  const setDefault = useMutation(api.dashboard.setDefaultEngine).withOptimisticUpdate((store, args) => {
+    store.setQuery(api.dashboard.getDefaultEngine, { key: args.key }, args.engine);
+  });
+  const choose = (engine: EngineKind) => void setDefault({ key: dashboardKey, engine })
+    .then(() => toast.success(`Perry now uses ${ENGINE_LABELS[engine]} by default.`), (cause) => toast.error(errorText(cause)));
+  // The default stays listed while no connected computer reports it.
+  const engines = reported && current && !reported.some((engine) => engine.kind === current)
+    ? [...reported, { kind: current, label: ENGINE_LABELS[current], ready: false, detail: "No connected computer has it right now." }]
+    : reported;
   return (
-    <Page title="Settings" description="How Perry thinks, what it may do on its own, and the keys it uses.">
-      <Tabs value={tab} onValueChange={(value) => setTab(value as (typeof TABS)[number])}>
-        <TabsList variant="line" className="mb-6 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="keys">Keys</TabsTrigger>
-          <TabsTrigger value="people">People</TabsTrigger>
-          <TabsTrigger value="shortcuts">Keyboard shortcuts</TabsTrigger>
-          <TabsTrigger value="telegram">Telegram</TabsTrigger>
-          <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
-        </TabsList>
-        <TabsContent value="general"><Engines /><NewChatAccess /><Manners /><Updates /><DesktopPet /><Appearance /></TabsContent>
-        <TabsContent value="keys"><Keys /></TabsContent>
-        <TabsContent value="people"><People /></TabsContent>
-        <TabsContent value="shortcuts"><Shortcuts /></TabsContent>
-        <TabsContent value="telegram"><Telegram /></TabsContent>
-        <TabsContent value="whatsapp"><WhatsApp /></TabsContent>
-      </Tabs>
-    </Page>
+    <Section title="Default engine" description="For new chats, your phone, schedules and tasks." tip="A chat or schedule with a model of its own keeps it. Chats you already started keep their engine.">
+      {current === undefined || engines === undefined ? <ListSkeleton rows={1} />
+        : engines.length === 0 ? (
+          <EmptyState title="No engines to choose from yet" action={<CommandLine>perry start</CommandLine>} />
+        ) : (
+          <div className="grid gap-3">
+            {current === null && (
+              <Alert variant="quiet">
+                <AlertTitle>Choose one to start chatting</AlertTitle>
+                <AlertDescription>Until you do, Perry asks instead of answering.</AlertDescription>
+              </Alert>
+            )}
+            <EngineChoice engines={engines} value={current ?? undefined} current={current ?? undefined} onChange={choose} />
+          </div>
+        )}
+    </Section>
   );
 }
 
 /**
  * Perry thinks with a coding agent on a connected computer, signed in with the
  * owner's own subscription: each computer's engines, and signing them in and out.
+ * The Gemini API key, Antigravity's way in, is entered here too.
  */
 function Engines() {
   const { dashboardKey } = useSession();
   const computers = useQuery(api.engines.list, { key: dashboardKey });
 
   return (
-    <Section title="Engines" description="Perry thinks with a coding agent on your computer, signed in with your own subscription. The sign-in stays on that computer.">
+    <Section title="Engines" tip="Coding agents on your computers, signed in with your own subscriptions. Each sign-in stays on its computer.">
       {computers === undefined && <ListSkeleton rows={1} />}
-      {computers?.length === 0 && (
-        <EmptyState title="No computer connected" action={<div className="w-[min(360px,80vw)]"><CommandLine>perry start</CommandLine></div>}>
-          Start Perry on the computer that will do the work, then sign in to an engine here.
-        </EmptyState>
-      )}
+      {computers?.length === 0 && <EmptyState title="No computer connected" action={<CommandLine>perry start</CommandLine>} />}
       {computers && computers.length > 0 && (
-        <List label="Engines">
+        <div className="space-y-6">
           {computers.map((computer) => (
-            <li key={computer.id} className="px-4 py-4">
-              <div className="flex flex-wrap items-center gap-2">
+            <div key={computer.id} aria-label={computer.name} role="group">
+              <div className="flex flex-wrap items-baseline gap-2">
                 <h3 className="font-medium">{computer.name}</h3>
-                <StatusBadge tone={computer.online ? "success" : "neutral"}>{computer.online ? "Online" : "Offline"}</StatusBadge>
+                <StatusBadge>{computer.online ? "Online" : "Offline"}</StatusBadge>
               </div>
               {!computer.online && <p className="mt-0.5 text-sm text-muted-foreground">This computer is offline. Start Perry on it.</p>}
               {computer.online && computer.engines.length === 0 && <Waiting>Waiting for this computer to say which engines it has…</Waiting>}
-              <div className="mt-2 divide-y">
-                {computer.engines.map((engine) => <EngineRow key={engine.kind} runnerId={computer.id} computer={computer.name} online={computer.online} engine={engine} />)}
-              </div>
-            </li>
+              <List label={`Engines on ${computer.name}`} className="mt-1">
+                {computer.engines.map((engine) => <li key={engine.kind} className="py-4"><EngineRow runnerId={computer.id} computer={computer.name} online={computer.online} engine={engine} /></li>)}
+              </List>
+            </div>
           ))}
-        </List>
+        </div>
       )}
+      <KeyRow name="GEMINI_API_KEY" className="mt-4 border-t" />
     </Section>
   );
 }
 
-/** One engine on one computer: whether it is there and signed in, and signing it in or out. */
-function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runners">; computer: string; online: boolean; engine: EngineView }) {
+/** One engine on one computer: whether it is there and signed in, and signing it in or out. The welcome page shows it too. */
+export function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runners">; computer: string; online: boolean; engine: EngineView }) {
   const { dashboardKey } = useSession();
   const requestAuth = useMutation(api.engines.requestAuth);
+  const requestUpdate = useMutation(api.engineUpdates.request);
   const request = engine.request;
+  const updating = engine.updating;
+  const updatingNow = updating?.status === "queued" || updating?.status === "waiting" || updating?.status === "running";
   const pending = request?.status === "queued" || request?.status === "running";
   const unavailable = !online ? "This computer is offline." : !engine.installed ? `${engine.label} isn't installed or can't start on this computer.` : null;
+  // Too old for Perry: it is updated before it is signed in.
+  const outdated = engine.update?.need === "required";
   const state: { tone: Tone; label: string } = !online ? { tone: "neutral", label: "Offline" }
     : !engine.installed ? { tone: "danger", label: `${engine.label} unavailable` }
     : engine.signedIn ? { tone: "success", label: "Signed in" } : { tone: "warning", label: "Signed out" };
+  const update: { tone: Tone; label: string } | null = online && engine.update
+    ? engine.update.need === "required" ? { tone: "danger", label: "Update required" } : { tone: "info", label: "Update available" }
+    : null;
+  // One pill at most, for what needs you first; everything else is said in words beside it.
+  const pill = update?.tone === "danger" ? update : state.tone === "danger" || state.tone === "warning" ? state : null;
   const plan = engine.auth.plan ? ` ${engine.auth.plan[0].toUpperCase()}${engine.auth.plan.slice(1)}` : "";
   const account = engine.signedIn
     ? `${engine.auth.label ?? "Signed in"}${plan}${engine.auth.email ? ` · ${engine.auth.email}` : ""}`
@@ -112,14 +175,15 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
   // Antigravity is experimental: a Gemini API key is the way in, and Google's own sign-in comes with Google's warning.
   const experimental = engine.kind === "antigravity";
   return (
-    <div className="py-3 first:pt-1 last:pb-0" aria-label={`${engine.label} on ${computer}`}>
+    <div aria-label={`${engine.label} on ${computer}`}>
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-sm font-medium">{engine.label}</span>
-            {experimental && <StatusBadge tone="warning">Experimental</StatusBadge>}
-            <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
-            {engine.version && <span className="text-xs text-muted-foreground">{engine.version}</span>}
+            {pill && <StatusBadge tone={pill.tone}>{pill.label}</StatusBadge>}
+            <span className="text-xs text-muted-foreground">
+              {[experimental && "Experimental", pill !== state && state.label, update && pill !== update && update.label, engine.version].filter(Boolean).join(" · ")}
+            </span>
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">{account}{unavailable && ` · ${unavailable}`}</p>
           {engine.message && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{engine.message}</p>}
@@ -128,21 +192,30 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
           ? <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={Boolean(unavailable) || pending}
               action={() => ask("logout")}
               confirm={{ title: `Sign out of ${engine.label} on ${computer}?`, body: `Perry can't use ${engine.label} on this computer until you sign in again.`, label: "Sign out" }}>Sign out</ActionButton>
+          // Signing in shows only when it can happen: offline, missing or too old, the line above says why instead.
+          : unavailable || pending || outdated ? null
           : experimental
             ? (
               <div className="flex flex-wrap gap-2">
-                <ActionButton size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login", "gemini-api-key")}>Use Gemini API key</ActionButton>
-                <ActionButton variant="outline" size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login", "oauth-personal")}
+                <ActionButton size="sm" action={() => ask("login", "gemini-api-key")}>Use Gemini API key</ActionButton>
+                <ActionButton variant="outline" size="sm" action={() => ask("login", "oauth-personal")}
                   confirm={{ title: "Sign in with Google? (Experimental)", body: <GoogleWarning />, label: "Sign in anyway" }}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>
               </div>
             )
-            : <ActionButton size="sm" disabled={Boolean(unavailable) || pending} action={() => ask("login")}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>}
+            : <ActionButton size="sm" action={() => ask("login")}>{SIGN_IN_LABELS[engine.kind]}</ActionButton>}
       </div>
       {experimental && !engine.signedIn && (
         <p className="mt-2 text-sm text-pretty text-muted-foreground">
-          Perry runs Google&apos;s own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved in the Keys tab. Signing in with Google also works, at your own risk: <GoogleWarning inline />
+          Perry runs Google&apos;s own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved below. Signing in with Google also works, at your own risk: <GoogleWarning inline />
         </p>
       )}
+      {updatingNow
+        ? <UpdateProgress engine={engine.label} computer={computer} updating={updating} />
+        : online && engine.update && (
+          <UpdateSteps engine={engine.label} computer={computer} update={engine.update} last={updating}
+            onUpdate={() => requestUpdate({ key: dashboardKey, runnerId, engine: engine.kind })} />
+        )}
+      {updating?.status === "done" && <Updated engine={engine.label} updating={updating} />}
       {engine.error && <p className="mt-2 text-sm text-destructive">{engine.error}</p>}
       {request?.status === "queued" && <Waiting>Waiting for the computer to pick this up…</Waiting>}
       {request?.status === "running" && request.kind === "logout" && <Waiting>Signing out…</Waiting>}
@@ -150,35 +223,134 @@ function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id<"runne
       {interaction && <LoginSteps engine={engine.label} interaction={interaction} />}
       {request?.status === "error" && request.error && (request.kind === "logout"
         ? <p className="mt-2 text-sm text-pretty text-destructive">Sign-out didn&apos;t finish: {request.error}.</p>
-        : <p className="mt-2 text-sm text-pretty text-destructive">Sign-in didn&apos;t finish: {request.error}. Try again; each code works for a few minutes.</p>)}
+        : <p className="mt-2 text-sm text-pretty text-destructive">Didn&apos;t finish: {request.error?.replace(/\.+$/, "")}. Try again.</p>)}
     </div>
+  );
+}
+
+/**
+ * An engine whose CLI should be updated. Too old for Perry, it takes no new
+ * replies until it is; otherwise it is only a newer release. Update has that
+ * computer's Perry run the command (convex/engineUpdates.ts); the command is
+ * folded away beneath it, for the owner who would rather run it there, and
+ * Perry notices that by himself too. One that needs admin rights Perry leaves
+ * to the owner, with the command in plain sight; one that failed says what it
+ * printed.
+ */
+function UpdateSteps({ engine, computer, update, last, onUpdate }: {
+  engine: string; computer: string; update: EngineUpdate; last?: EngineUpdating; onUpdate: () => Promise<unknown>;
+}) {
+  const required = update.need === "required";
+  // How the last try went, while it is still this version to update from.
+  const tried = last?.from === update.version ? last : undefined;
+  const elevate = tried?.status === "elevate" && tried.command;
+  const failed = tried?.status === "error";
+  return (
+    <div className={cn("mt-3 border-l-2 pl-3", required && "border-destructive")} role={required ? "alert" : "status"} data-engine-update={tried?.status ?? "none"}>
+      <p className={cn("text-sm font-medium", required && "text-destructive")}>{required ? `Update ${engine} to keep using it` : `${engine} ${update.latest} is out`}</p>
+      {!elevate && (
+        <ActionButton size="sm" className="mt-2" variant={required ? "default" : "outline"} action={onUpdate}>{failed ? "Try again" : "Update"}</ActionButton>
+      )}
+      {(required || elevate) && (
+        <p className="mt-2 text-sm text-pretty text-muted-foreground">
+          {required && `${computer} has ${update.version}; Perry needs ${update.minimum} or newer and won't start replies with it until then.`}
+          {elevate && ` ${tried?.error ?? ""} Run this yourself in a terminal with those rights:`}
+        </p>
+      )}
+      {failed && <p className="mt-2 text-sm text-pretty text-destructive">The update didn&apos;t work. {tried?.error}</p>}
+      {failed && tried?.output && <Folded label="What it said"><Printed output={tried.output} /></Folded>}
+      {elevate
+        ? <div className="mt-3 max-w-md"><CommandLine>{elevate}</CommandLine></div>
+        : (
+          <Folded label="Or run it yourself">
+            <div className="max-w-md"><CommandLine>{update.command}</CommandLine></div>
+          </Folded>
+        )}
+    </div>
+  );
+}
+
+/** An update on its way: asked for, waiting for that engine's replies to end, or running, with the last of what it prints. */
+function UpdateProgress({ engine, computer, updating }: { engine: string; computer: string; updating: EngineUpdating }) {
+  const output = updating.output?.trim() ?? "";
+  // A few lines at most, so a long log doesn't move the page as it runs; all of it is folded beneath.
+  const lines = output.split("\n");
+  return (
+    <div className="mt-3 border-l-2 border-primary/60 pl-3" role="status" data-engine-update={updating.status}>
+      <p className="flex items-center gap-2 text-sm font-medium"><Spinner className="size-3.5" />{updating.status === "waiting" ? "Update waiting" : `Updating ${engine}…`}</p>
+      {updating.status !== "running" && (
+        <p className="mt-0.5 text-sm text-pretty text-muted-foreground">
+          {updating.status === "queued" ? `Waiting for ${computer} to pick this up…`
+            : updating.waitingFor
+              ? `Starts once ${updating.waitingFor} ${/^a /.test(updating.waitingFor) ? "is" : "are"} done. New replies on ${engine} wait.`
+              : "Getting ready…"}
+        </p>
+      )}
+      {updating.status === "running" && output && (
+        <pre className="mt-2 line-clamp-3 font-mono text-xs whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]" aria-label="What the update prints">{lines.slice(-3).join("\n")}</pre>
+      )}
+      {updating.status === "running" && lines.length > 3 && <Folded label="What it said"><Printed output={output} /></Folded>}
+    </div>
+  );
+}
+
+/** An update that worked, for a while after it did. */
+function Updated({ engine, updating }: { engine: string; updating: EngineUpdating }) {
+  const now = useNow();
+  if (!updating.finishedAt || now - updating.finishedAt > 30 * 60_000) return null;
+  const at = ago(updating.finishedAt, now);
+  return (
+    <div className="mt-2" data-engine-update="done">
+      <p className="text-sm text-muted-foreground" role="status">Updated {engine}{updating.from ? ` from ${updating.from}` : ""} to {updating.to}, {at === "now" ? "just now" : at}.</p>
+      {updating.output && <Folded label="What it said"><Printed output={updating.output} /></Folded>}
+    </div>
+  );
+}
+
+/** Something more, folded away behind a quiet line until it is asked for. */
+function Folded({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Collapsible className="mt-2">
+      <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1 rounded-md text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+        <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" aria-hidden />{label}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-2">{children}</CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+/** What an update printed. */
+function Printed({ output }: { output: string }) {
+  return (
+    <ScrollArea className="border-l-2 border-muted" viewportClassName="max-h-64">
+      <pre className="py-1 pr-3 pl-3 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{output}</pre>
+    </ScrollArea>
   );
 }
 
 /** What the owner does to finish signing in: a code to enter, a page to open, or a command to run on the computer. */
 function LoginSteps({ engine, interaction }: { engine: string; interaction: LoginInteraction }) {
   return (
-    <div className="mt-3 rounded-xl border bg-muted/40 p-4" role="status">
+    <div className="mt-3 border-l-2 border-primary/60 pl-3" role="status">
       <p className="text-sm font-medium">Finish signing in</p>
       {interaction.type === "deviceCode" && (
         <>
-          <p className="mt-0.5 text-sm text-muted-foreground">Open the sign-in page, sign in, and enter this code. This page updates by itself.</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">Enter this code on the sign-in page.</p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            <span className="rounded-lg border bg-background px-3 py-1.5 font-mono text-2xl font-semibold tracking-[0.15em]" translate="no">{interaction.userCode}</span>
-            <CopyButton value={interaction.userCode} label="Copy code" />
+            <CodeDisplay>{interaction.userCode}</CodeDisplay>
             <Button size="sm" render={<a href={interaction.verificationUrl} target="_blank" rel="noopener noreferrer" />}>Open sign-in page<ExternalLinkIcon /></Button>
           </div>
         </>
       )}
       {interaction.type === "browser" && (
         <>
-          <p className="mt-0.5 text-sm text-muted-foreground">Open the sign-in page and sign in to {engine}. This page updates by itself.</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">Sign in to {engine} on the sign-in page.</p>
           <Button size="sm" className="mt-3" render={<a href={interaction.url} target="_blank" rel="noopener noreferrer" />}>Open sign-in page<ExternalLinkIcon /></Button>
         </>
       )}
       {interaction.type === "terminal" && (
         <>
-          <p className="mt-0.5 text-sm text-muted-foreground">Run this in a terminal on that computer, and follow what it says. This page updates by itself.</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">Run this in a terminal on that computer.</p>
           <div className="mt-3 max-w-md"><CommandLine>{interaction.command}</CommandLine></div>
         </>
       )}
@@ -191,7 +363,7 @@ function LoginSteps({ engine, interaction }: { engine: string; interaction: Logi
 function GoogleWarning({ inline }: { inline?: boolean }) {
   const quote = (
     <>
-      Google&apos;s <a className="underline underline-offset-2" href="https://antigravity.google/docs/faq/" target="_blank" rel="noopener noreferrer">Antigravity FAQ</a> says
+      Google&apos;s <a className="link" href="https://antigravity.google/docs/faq/" target="_blank" rel="noopener noreferrer">Antigravity FAQ</a> says
       “Using third party software, tools, or services to access Antigravity is a violation of our Terms of Service … may be grounds for suspension or termination of your account.”
     </>
   );
@@ -211,26 +383,21 @@ function Waiting({ children }: { children: ReactNode }) {
 /** A choice among a few, as cards you pick one of. */
 function ChoiceCards<T extends string>({ label, value, options, onChange, disabled }: {
   label: string; value: T | undefined; disabled?: boolean;
-  options: Array<{ value: T; title: string; body: string; icon: ReactNode; warning?: boolean }>;
+  options: Array<{ value: T; title: string; body?: string; icon: ReactNode; warning?: boolean }>;
   onChange: (value: T) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="grid gap-2 sm:grid-cols-2">
-      {options.map((option) => {
-        const checked = value === option.value;
-        return (
-          <button key={option.value} type="button" role="radio" aria-checked={checked} disabled={disabled} onClick={() => onChange(option.value)}
-            className={cn("flex items-start gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-muted/40 disabled:opacity-60",
-              checked && (option.warning ? "border-warning/60 ring-1 ring-warning/40" : "border-primary/60 ring-1 ring-primary/40"))}>
-            <span className={cn("mt-0.5 shrink-0 [&>svg]:size-4", option.warning ? "text-warning" : "text-muted-foreground", checked && !option.warning && "text-primary")}>{option.icon}</span>
-            <span className="grid gap-0.5">
-              <span className="text-sm font-medium">{option.title}</span>
-              <span className="text-sm text-pretty text-muted-foreground">{option.body}</span>
-            </span>
-          </button>
-        );
-      })}
-    </div>
+    <RadioGroup aria-label={label} value={value ?? null} disabled={disabled} onValueChange={(next) => onChange(next as T)} className="gap-2 sm:grid-cols-2">
+      {options.map((option) => (
+        <RadioGroupCard key={option.value} value={option.value} tone={option.warning ? "warning" : "default"}>
+          <span className={cn("mt-0.5 shrink-0 [&>svg]:size-4", option.warning ? "text-warning" : "text-muted-foreground group-data-checked/radio-card:text-primary")}>{option.icon}</span>
+          <span className="grid gap-0.5">
+            <span className="text-sm font-medium">{option.title}</span>
+            {option.body && <span className="text-sm text-pretty text-muted-foreground">{option.body}</span>}
+          </span>
+        </RadioGroupCard>
+      ))}
+    </RadioGroup>
   );
 }
 
@@ -245,7 +412,7 @@ function NewChatAccess() {
     .then(() => toast.success(`New chats start on ${ACCESS_LABELS[access]}.`), (cause) => toast.error(errorText(cause)));
   const Icon = current ? ACCESS_ICONS[current] : ShieldCheckIcon;
   return (
-    <Section title="Access for new chats" description="What Perry may do without asking in chats you start. Change any chat from its composer, or with /access.">
+    <Section title="Access for new chats" tip="What Perry may do without asking in a chat you start. Change any chat from its composer, or with /access.">
       <Select modal={false} items={ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode] }))} value={current ?? null} onValueChange={(value) => { if (value) choose(value as Access); }} disabled={current === undefined}>
         <SelectTrigger aria-label="Access for new chats" className={cn("w-56", current === "full" && "text-warning")}><Icon className="size-4" /><SelectValue /></SelectTrigger>
         <SelectContent className="w-56">
@@ -265,6 +432,32 @@ function NewChatAccess() {
   );
 }
 
+const ARCHIVE_AFTER = [
+  { value: "30", label: "1 month" }, { value: "90", label: "3 months" }, { value: "180", label: "6 months" },
+  { value: "365", label: "1 year" }, { value: "0", label: "Never" },
+];
+
+/** Brain's archive (archive.ts): how long a line goes unused before it leaves every chat for the archive. */
+function BrainArchive() {
+  const { dashboardKey } = useSession();
+  const days = useQuery(api.archive.getSetting, { key: dashboardKey });
+  const save = useMutation(api.archive.setSetting);
+  return (
+    <Section title="Brain" description="Lines nobody uses go to the archive. Deep search still finds them."
+      tip="Never archived: About me, and what you pinned. A line used again comes back by itself.">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm font-medium">Archive after</span>
+        <Select modal={false} items={ARCHIVE_AFTER} value={days === undefined ? undefined : String(days)} disabled={days === undefined}
+          onValueChange={(value) => { if (!value) return; void save({ key: dashboardKey, days: Number(value) }).then(() => toast.success(value === "0" ? "Nothing is archived." : `Archived after ${ARCHIVE_AFTER.find((item) => item.value === value)?.label} unused.`), (cause) => toast.error(errorText(cause))); }}>
+          <SelectTrigger aria-label="Archive after" className="w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>{ARCHIVE_AFTER.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+        </Select>
+        <span className="text-sm text-muted-foreground">unused</span>
+      </div>
+    </Section>
+  );
+}
+
 const LIMITS = [
   { value: "none", label: "No limit" },
   ...[3, 5, 8, 12].map((n) => ({ value: String(n), label: `${n} a day` })),
@@ -278,31 +471,36 @@ function Manners() {
   const { dashboardKey } = useSession();
   const manners = useQuery(api.dashboard.getManners, { key: dashboardKey });
   const save = useMutation(api.dashboard.setManners);
-  const [quiet, setQuiet] = useState({ on: false, start: "22:00", end: "07:00" });
+  const [quiet, setQuietState] = useState({ on: false, start: "22:00", end: "07:00" });
+  // The latest hours, kept as they change: a time field can still change as focus leaves it, in the same event as the blur that saves.
+  const latest = useRef(quiet);
+  const setQuiet = (next: typeof quiet) => { latest.current = next; setQuietState(next); };
   useEffect(() => {
-    if (manners) setQuiet({ on: Boolean(manners.quietHours), start: manners.quietHours?.start ?? "22:00", end: manners.quietHours?.end ?? "07:00" });
+    if (!manners) return;
+    latest.current = { on: Boolean(manners.quietHours), start: manners.quietHours?.start ?? "22:00", end: manners.quietHours?.end ?? "07:00" };
+    setQuietState(latest.current);
   }, [manners]);
   const store = (next: { quietHours?: { start: string; end: string }; dailyLimit?: number }, success: string) =>
     void save({ key: dashboardKey, ...next }).then(() => toast.success(success), (cause) => toast.error(errorText(cause)));
   const limit = manners?.dailyLimit;
-  const hours = (on: boolean, start = quiet.start, end = quiet.end) => on ? { quietHours: { start, end } } : {};
+  const hours = (on: boolean, start = latest.current.start, end = latest.current.end) => on ? { quietHours: { start, end } } : {};
+  const saveHours = () => { const { on, start, end } = latest.current; if (on) store({ ...hours(true, start, end), dailyLimit: limit }, `Quiet from ${start} to ${end}.`); };
   return (
-    <Section title="Messages Perry sends on his own" description="Schedules, page watches and the heartbeat. What arrives in quiet hours or past the day's limit waits, and comes as one message when it may. Due reminders always go.">
+    <Section title="Messages Perry sends on his own" description="Schedules, watches and the heartbeat. Due reminders always go."
+      tip="What comes in quiet hours or past the day's limit waits, then arrives as one message.">
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm font-medium">
             <Switch checked={quiet.on} disabled={!manners} aria-label="Quiet hours"
-              onCheckedChange={(on) => { setQuiet({ ...quiet, on }); store({ ...hours(on), dailyLimit: limit }, on ? `Quiet from ${quiet.start} to ${quiet.end}.` : "Quiet hours off."); }} />
+              onCheckedChange={(on) => { setQuiet({ ...latest.current, on }); store({ ...hours(on), dailyLimit: limit }, on ? `Quiet from ${latest.current.start} to ${latest.current.end}.` : "Quiet hours off."); }} />
             Quiet hours
           </label>
           <span className="text-sm text-muted-foreground">from</span>
-          <Input type="time" aria-label="Quiet from" className="w-28" value={quiet.start} disabled={!quiet.on}
-            onChange={(event) => setQuiet({ ...quiet, start: event.target.value })}
-            onBlur={() => quiet.on && store({ ...hours(true), dailyLimit: limit }, `Quiet from ${quiet.start} to ${quiet.end}.`)} />
+          <TimePicker aria-label="Quiet from" value={quiet.start} disabled={!quiet.on}
+            onValueChange={(start) => setQuiet({ ...latest.current, start })} onBlur={saveHours} />
           <span className="text-sm text-muted-foreground">to</span>
-          <Input type="time" aria-label="Quiet until" className="w-28" value={quiet.end} disabled={!quiet.on}
-            onChange={(event) => setQuiet({ ...quiet, end: event.target.value })}
-            onBlur={() => quiet.on && store({ ...hours(true), dailyLimit: limit }, `Quiet from ${quiet.start} to ${quiet.end}.`)} />
+          <TimePicker aria-label="Quiet until" value={quiet.end} disabled={!quiet.on}
+            onValueChange={(end) => setQuiet({ ...latest.current, end })} onBlur={saveHours} />
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium">At most</span>
@@ -313,7 +511,6 @@ function Manners() {
           </Select>
           {manners && manners.waiting > 0 && <StatusBadge tone="info">{manners.waiting} waiting</StatusBadge>}
         </div>
-        <p className="text-sm text-muted-foreground">When you let three messages from the same schedule or watch go unanswered, Perry asks once whether to pause it.</p>
       </div>
     </Section>
   );
@@ -330,14 +527,14 @@ function DesktopPet() {
   const [picked, setPicked] = useState<PetTheme | null>(null);
   const theme = picked ?? pet?.theme;
   return (
-    <Section title="Desktop pet" description="Perry as a platypus on your screen, with your chats, to-dos and what needs you a click away. Talk to him from anywhere with the Talk shortcut.">
+    <Section title="Desktop pet">
       <PetControl />
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
         <ThemeChoice<PetTheme> label="Pet theme" value={theme} onChange={(value) => {
           setPicked(value);
           void setTheme({ key: dashboardKey, theme: value }).catch((cause) => { setPicked(null); toast.error(errorText(cause)); });
         }} />
-        <p className="text-sm text-muted-foreground">His light or dark look, kept in <code className="font-mono text-[0.9em]">pet.json</code>. He changes at once.</p>
+        <p className="text-sm text-muted-foreground">On this computer. Others follow their system.</p>
       </div>
       <div className="mt-4 flex items-start gap-3">
         <Switch id="screen-look" checked={screenLook ?? true} disabled={screenLook === undefined} className="mt-0.5"
@@ -346,9 +543,10 @@ function DesktopPet() {
             (cause) => toast.error(errorText(cause)))} />
         <div className="text-sm">
           <label htmlFor="screen-look" className="font-medium">Let Perry look at the screen when he needs to</label>
-          <p className="mt-0.5 text-pretty text-muted-foreground">In a chat, when your question is about something on screen. What he saw shows in the chat, and he says so on the pet. Never in scheduled jobs or background work.</p>
+          <p className="mt-0.5 text-pretty text-muted-foreground">Only in chats, never in scheduled or background work. What he saw shows in the chat.</p>
         </div>
       </div>
+      <PetDevices />
     </Section>
   );
 }
@@ -358,7 +556,7 @@ function Appearance() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   return (
-    <Section title="Appearance" description="Follows your system unless you pick one. Remembered in this browser.">
+    <Section title="Appearance">
       <ThemeChoice label="Theme" value={mounted ? (theme ?? "system") : undefined} onChange={setTheme} />
     </Section>
   );
@@ -370,108 +568,101 @@ const THEMES = [
   { value: "dark", label: "Dark", icon: MoonIcon },
 ] as const;
 
-/** System, Light or Dark; none checked while the value is not known yet. */
+/** System, Light or Dark; none pressed while the value is not known yet. Pressing the one pressed keeps it. */
 function ThemeChoice<Value extends string>({ label, value, onChange }: { label: string; value: string | undefined; onChange: (value: Value) => void }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg border bg-muted/50 p-0.5">
-      {THEMES.map((option) => {
-        const checked = value === option.value;
-        return (
-          <button key={option.value} type="button" role="radio" aria-checked={checked} onClick={() => onChange(option.value as Value)}
-            className={cn("flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
-              checked && "bg-background text-foreground shadow-sm")}>
-            <option.icon className="size-4" />{option.label}
-          </button>
-        );
-      })}
-    </div>
+    <ToggleGroup aria-label={label} value={value ? [value] : []} onValueChange={(next) => { if (next[0]) onChange(next[0] as Value); }}
+      spacing={0.5} className="rounded-lg border bg-muted/50 p-0.5">
+      {THEMES.map((option) => (
+        <ToggleGroupItem key={option.value} value={option.value} className="rounded-md px-3 text-muted-foreground hover:bg-transparent aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm">
+          <option.icon />{option.label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   );
 }
 
 const SOURCE = { dashboard: "Saved here", environment: "From .env.local", none: "Not set" } as const;
 
 /**
- * Service keys. A key entered here is write-only: it is saved on this
- * computer, and nothing reads one back to the page. You see whether it is set,
- * where it came from, and its last four characters.
+ * One service key, entered beside what it unlocks: the Telegram bot token in
+ * Telegram, the Gemini API key with the engines, the Composio key with the
+ * connectors. A key entered here is write-only: it is saved on this computer,
+ * and nothing reads one back to the page. You see whether it is set, where it
+ * came from, and its last four characters. One saved here overrides one in
+ * .env.local; clearing it falls back to that one.
  */
-function Keys() {
+export function KeyRow({ name, className }: { name: SecretName; className?: string }) {
   const { dashboardKey } = useSession();
-  const keys = useQuery(api.dashboard.getKeys, { key: dashboardKey });
+  const entry = useQuery(api.dashboard.getKeys, { key: dashboardKey })?.find((item) => item.name === name);
   const setKey = useMutation(api.dashboard.setKey);
   const clearKey = useMutation(api.dashboard.clearKey);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-  if (keys === undefined) return <ListSkeleton />;
+  if (!entry) return <div className={className}><ListSkeleton rows={1} /></div>;
+  const id = `key-${name}`;
 
-  const save = async (event: FormEvent, name: string) => {
+  const save = async (event: FormEvent) => {
     event.preventDefault();
-    const value = (drafts[name] ?? "").trim();
+    const value = draft.trim();
     if (!value || saving) return;
-    setSaving(name);
-    setErrors((current) => ({ ...current, [name]: "" }));
+    setSaving(true);
+    setError("");
     try {
       await setKey({ key: dashboardKey, name, value });
-      setDrafts((current) => ({ ...current, [name]: "" }));
+      setDraft("");
       toast.success(name.startsWith("TELEGRAM") ? "Saved. Perry listens to this bot within a few seconds." : "Saved. It takes effect on the next message.");
     } catch (cause) {
-      setErrors((current) => ({ ...current, [name]: errorText(cause) }));
+      setError(errorText(cause));
     } finally {
-      setSaving(null);
+      setSaving(false);
     }
   };
 
   return (
+    <div className={cn("py-4", className)} data-key={name}>
+      <form onSubmit={(event) => void save(event)}>
+        <Field data-invalid={Boolean(error) || undefined}>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <FieldLabel htmlFor={id}>{entry.label}</FieldLabel>
+              <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{entry.hint}</p>
+            </div>
+            {/* Not set is said once, in the line under the field. */}
+            {entry.set && <StatusBadge tone="success"><span translate="no">Set{entry.preview ? ` · ${entry.preview}` : ""}</span></StatusBadge>}
+          </div>
+          <SecretInput id={id} name={name} value={draft} placeholder={entry.set ? "Paste a new value to replace it" : "Paste the key"}
+            invalid={Boolean(error)} describedBy={error ? `${id}-error` : undefined} save={{ busy: saving }}
+            onChange={(value) => { setDraft(value); setError(""); }} />
+          {error && <FieldError id={`${id}-error`}>{error}</FieldError>}
+        </Field>
+      </form>
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+        <span>{SOURCE[entry.source]}{entry.source === "environment" ? ". Saving here overrides it." : entry.source === "dashboard" ? ", never shown again." : ""}</span>
+        {entry.source === "dashboard" && (
+          <ActionButton variant="link" size="xs" className="h-auto px-0 text-xs text-destructive" action={() => clearKey({ key: dashboardKey, name })} success={`${entry.label} cleared.`}
+            confirm={{ title: `Clear the ${entry.label}?`, body: "Perry falls back to .env.local if it has one. Otherwise anything that needs this key stops working.", label: "Clear" }}>
+            Clear
+          </ActionButton>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Settings → Dashboard key: the key that guards the dashboard, and locking this browser. */
+function Security() {
+  const { lock } = useSession();
+  return (
     <>
-      <p className="mb-4 text-sm text-pretty text-muted-foreground">
-        Saved on this computer and never shown again. A key saved here overrides one in <code className="font-mono text-xs">.env.local</code>; clearing it falls back to that one.
-      </p>
-      <List label="Service keys">
-        {keys.map((entry) => {
-          const id = `key-${entry.name}`;
-          const error = errors[entry.name];
-          return (
-            <li key={entry.name} className="px-4 py-4">
-              <form onSubmit={(event) => void save(event, entry.name)}>
-                <Field data-invalid={Boolean(error) || undefined}>
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <FieldLabel htmlFor={id}>{entry.label}</FieldLabel>
-                      <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{entry.hint}</p>
-                    </div>
-                    {entry.set
-                      ? <StatusBadge tone="success"><span translate="no">Set{entry.preview ? ` · ${entry.preview}` : ""}</span></StatusBadge>
-                      : <StatusBadge>Not set</StatusBadge>}
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="min-w-0 flex-1">
-                      <SecretInput id={id} name={entry.name} value={drafts[entry.name] ?? ""} placeholder={entry.set ? "Paste a new value to replace it" : "Paste the key"}
-                        invalid={Boolean(error)} describedBy={error ? `${id}-error` : undefined}
-                        onChange={(value) => { setDrafts((current) => ({ ...current, [entry.name]: value })); setErrors((current) => ({ ...current, [entry.name]: "" })); }} />
-                    </div>
-                    <Button type="submit" className="h-10" disabled={!(drafts[entry.name] ?? "").trim() || saving !== null}>{saving === entry.name && <Spinner />}Save</Button>
-                  </div>
-                  {error && <FieldError id={`${id}-error`}>{error}</FieldError>}
-                </Field>
-              </form>
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
-                <span>{SOURCE[entry.source]}{entry.source === "environment" ? ". Saving here overrides it." : ""}</span>
-                {entry.source === "dashboard" && (
-                  <ActionButton variant="link" size="xs" className="h-auto px-0 text-xs text-destructive" action={() => clearKey({ key: dashboardKey, name: entry.name })} success={`${entry.label} cleared.`}
-                    confirm={{ title: `Clear the ${entry.label}?`, body: "Perry falls back to .env.local if it has one. Otherwise anything that needs this key stops working.", label: "Clear" }}>
-                    Clear
-                  </ActionButton>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </List>
-      <Logins />
-      <Section title="Dashboard key" description="The key that guards this page can't be changed from behind it, which keeps a lockout recoverable. Change DASHBOARD_KEY in .env.local in Perry's folder, then restart Perry:">
+      <Section title="Dashboard key" description="Change DASHBOARD_KEY in .env.local in Perry's folder, then restart Perry:"
+        tip="It can't be changed from here, so a mistake can't lock you out.">
         <CommandLine>perry stop && perry start</CommandLine>
+      </Section>
+      <Section title="Lock this browser" description="This browser asks for the key again.">
+        <Button variant="outline" onClick={lock}><LockIcon />Lock dashboard</Button>
       </Section>
     </>
   );
@@ -496,6 +687,9 @@ function Logins() {
   const [error, setError] = useState("");
 
   const edit = (field: keyof typeof NO_LOGIN, value: string) => { setDraft((current) => ({ ...current, [field]: value })); setError(""); };
+  const ready = Boolean(draft.label.trim() && draft.value.trim());
+  // The same name and username is a login already saved, which this replaces.
+  const replacing = logins?.some((login) => login.label === draft.label.trim() && (login.username ?? "") === draft.username.trim());
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (!draft.label.trim() || !draft.value.trim() || saving) return;
@@ -503,7 +697,7 @@ function Logins() {
     try {
       await saveLogin({ key: dashboardKey, label: draft.label, url: draft.url || undefined, username: draft.username || undefined, value: draft.value });
       setDraft(NO_LOGIN);
-      toast.success("Saved. Perry can sign in with it from the next message.");
+      toast.success(`${draft.label.trim()} added. Perry can sign in with it from the next message.`);
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -512,13 +706,12 @@ function Logins() {
   };
 
   return (
-    <Section title="Logins and secrets" description="For Perry to sign in to websites with computer use. Send one in a chat and Perry moves it here, out of the chat. Passwords are never shown again.">
-      {logins === undefined ? <ListSkeleton /> : logins.length === 0 ? (
-        <EmptyState title="No logins saved">Add one below, or send it to Perry in a chat.</EmptyState>
-      ) : (
-        <List label="Logins and secrets">
+    <Section title="Logins & secrets" description="For Perry to sign in to websites. Passwords are never shown again."
+      tip="Send one in a chat and Perry moves it here, out of the chat.">
+      {logins === undefined ? <ListSkeleton /> : logins.length === 0 ? <EmptyState title="No logins saved" /> : (
+        <List label="Logins & secrets">
           {logins.map((login) => (
-            <li key={login.id} className="flex flex-wrap items-start justify-between gap-2 px-4 py-3">
+            <li key={login.id} className="flex flex-wrap items-start justify-between gap-2 py-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{login.label}</p>
                 <p className="truncate text-sm text-muted-foreground">
@@ -542,7 +735,8 @@ function Logins() {
           ))}
         </List>
       )}
-      <form onSubmit={(event) => void save(event)} className="mt-3 rounded-xl border bg-card p-4">
+      <form onSubmit={(event) => void save(event)} className="mt-6" aria-label="Add a login">
+        <h3 className="mb-3 text-sm font-medium">Add a login</h3>
         <Field data-invalid={Boolean(error) || undefined}>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
@@ -565,12 +759,33 @@ function Logins() {
           </div>
           {error && <FieldError id="login-error">{error}</FieldError>}
         </Field>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <p className="min-w-0 flex-1 text-xs text-muted-foreground">The same name and username replaces a saved one.</p>
-          <Button type="submit" size="sm" disabled={!draft.label.trim() || !draft.value.trim() || saving}>{saving && <Spinner />}Save</Button>
+        <div className="mt-3 flex min-h-7 flex-wrap items-center gap-2">
+          <span className="flex-1" />
+          {(ready || saving) && <Button type="submit" variant="outline" size="sm" disabled={saving} aria-busy={saving || undefined}>{saving && <Spinner />}{replacing ? "Replace login" : "Add login"}</Button>}
         </div>
       </form>
     </Section>
+  );
+}
+
+/** What Perry remembers about one person: from the owner's chats, and from theirs, each forgettable. */
+function Remembered({ items }: { items?: Array<{ id: Id<"memories">; text: string; from: "you" | "them" }> }) {
+  const { dashboardKey } = useSession();
+  const forget = useMutation(api.dashboard.deleteMemory);
+  if (!items?.length) return null;
+  return (
+    <ul className="mt-2 grid gap-1 border-l pl-3">
+      {items.map((item) => (
+        <li key={item.id} className="group flex items-start justify-between gap-2 text-sm">
+          <p className="min-w-0 text-pretty">
+            <span className="text-foreground">{item.text}</span>
+            <span className="ml-1.5 text-xs text-muted-foreground">{item.from === "you" ? "from your chats" : "from their chat"}</span>
+          </p>
+          <ActionButton variant="ghost" size="sm" className="h-6 shrink-0 px-2 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            action={() => forget({ key: dashboardKey, id: item.id })} success="Forgotten.">Forget</ActionButton>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -585,33 +800,17 @@ const PEOPLE_STATUS = { allowed: { label: "Talks with Perry", tone: "success" },
 function People() {
   const { dashboardKey } = useSession();
   const people = useQuery(api.contacts.listForDashboard, { key: dashboardKey });
+  const remembered = useQuery(api.contacts.memoriesForDashboard, { key: dashboardKey });
   const set = useMutation(api.contacts.setForDashboard);
   const now = useNow();
-  const [editing, setEditing] = useState<{ id: Id<"contacts">; brief: string } | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const saveBrief = async () => {
-    if (!editing || saving) return;
-    setSaving(true);
-    try {
-      await set({ key: dashboardKey, id: editing.id, brief: editing.brief });
-      setEditing(null);
-      toast.success("Saved. Perry uses it from their next message.");
-    } catch (cause) {
-      toast.error(errorText(cause));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const [editing, setEditing] = useState<Id<"contacts"> | null>(null);
 
   return (
-    <Section title="People" description="Who Perry talks with for you on WhatsApp and Telegram. You are asked the first time: when someone new writes to Perry, and before Perry first writes to someone. Each has a chat of their own that knows nothing of yours but their brief.">
-      {people === undefined ? <ListSkeleton /> : people.length === 0 ? (
-        <EmptyState title="Nobody yet">Ask Perry to message someone (&ldquo;tell Datta I&apos;m running late&rdquo;), or share Perry&apos;s WhatsApp or Telegram with someone.</EmptyState>
-      ) : (
+    <Section title="People" tip="What Perry remembers about someone from your chats is used only in yours, and from theirs only in theirs. You're asked before Perry first talks with anyone.">
+      {people === undefined ? <ListSkeleton /> : people.length === 0 && !remembered?.others.length ? <EmptyState title="Nobody yet" /> : (
         <List label="People">
           {people.map((person) => (
-            <li key={person.id} className="px-4 py-3">
+            <li key={person.id} className="py-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -621,7 +820,7 @@ function People() {
                   <p className="truncate text-sm text-muted-foreground">
                     {[person.kind === "group" ? "Group" : person.handle, person.channel === "whatsapp" ? "WhatsApp" : "Telegram"].filter(Boolean).join(" · ")} · {ago(person.updatedAt, now)}
                   </p>
-                  {editing?.id !== person.id && (
+                  {editing !== person.id && (
                     <p className="mt-1 text-sm text-pretty text-muted-foreground">
                       {person.brief ? <>Perry may share: <span className="text-foreground">{person.brief}</span></> : "Perry shares nothing about you with them."}
                     </p>
@@ -629,28 +828,57 @@ function People() {
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   {person.chatId && <Button variant="ghost" size="sm" render={<Link href={`/chat/${person.chatId}`} />}>Open chat</Button>}
-                  {editing?.id !== person.id && <Button variant="ghost" size="sm" onClick={() => setEditing({ id: person.id, brief: person.brief ?? "" })}>Brief</Button>}
+                  {remembered?.pages[person.id] && <Button variant="ghost" size="sm" render={<Link href={noteHref(remembered.pages[person.id])} />}>Page</Button>}
+                  {editing !== person.id && <Button variant="ghost" size="sm" onClick={() => setEditing(person.id)}>Brief</Button>}
                   {person.status === "blocked"
                     ? <ActionButton variant="ghost" size="sm" action={() => set({ key: dashboardKey, id: person.id, status: "allowed" })} success={`Perry talks with ${person.name} again.`}>Allow</ActionButton>
                     : <ActionButton variant="ghost" size="sm" className="text-destructive" action={() => set({ key: dashboardKey, id: person.id, status: "blocked" })} success={`${person.name} is blocked.`}
                         confirm={{ title: `Block ${person.name}?`, body: "Perry stops answering them and will not write to them. You can allow them again here.", label: "Block" }}>Block</ActionButton>}
                 </div>
               </div>
-              {editing?.id === person.id && (
-                <div className="mt-2 grid gap-2">
-                  <Textarea value={editing.brief} rows={3} placeholder={`What Perry may know and share with ${person.name}. "He can know my gym times."`}
-                    onChange={(event) => setEditing({ id: person.id, brief: event.target.value })} />
-                  <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>Cancel</Button>
-                    <Button size="sm" disabled={saving} onClick={() => void saveBrief()}>{saving && <Spinner />}Save</Button>
-                  </div>
-                </div>
+              <Remembered items={remembered?.byContact[person.id]} />
+              {editing === person.id && (
+                <Brief name={person.name} brief={person.brief ?? ""} onDone={() => setEditing(null)}
+                  save={(brief) => set({ key: dashboardKey, id: person.id, brief })} />
               )}
             </li>
           ))}
         </List>
       )}
+      {remembered && remembered.others.length > 0 && (
+        <div className="mt-4">
+          <h3 className="mb-2 text-sm font-medium">Others you&apos;ve told Perry about</h3>
+          <List label="Others you've told Perry about">
+            {remembered.others.map((person) => (
+              <li key={person.pageId ?? person.name} className="py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">{person.name}</p>
+                  {person.pageId && <Button variant="ghost" size="sm" render={<Link href={noteHref(person.pageId)} />}>Page</Button>}
+                </div>
+                <Remembered items={person.memories} />
+              </li>
+            ))}
+          </List>
+        </div>
+      )}
     </Section>
+  );
+}
+
+/** What Perry may share with one person, saved as you type; Done or Esc puts it away once it is saved. */
+function Brief({ name, brief, save, onDone }: { name: string; brief: string; save: (brief: string) => Promise<unknown>; onDone: () => void }) {
+  const text = useAutosave({ saved: brief, save });
+  const done = () => void text.flush().then((ok) => { if (ok) onDone(); });
+  return (
+    <div className="mt-2 grid gap-1.5">
+      <Textarea value={text.value} rows={3} autoFocus aria-label={`What Perry may share with ${name}`} placeholder={`What Perry may know and share with ${name}. "He can know my gym times."`} {...text.field}
+        onChange={(event) => text.change(event.target.value)}
+        onKeyDown={(event) => { if (event.key === "Escape" || (event.key === "Enter" && (event.metaKey || event.ctrlKey))) { event.preventDefault(); done(); } }} />
+      <div className="flex items-center gap-3">
+        <SaveStatus state={text.state} idle="Saves as you type." onRetry={() => void text.flush()} className="flex-1" />
+        <Button variant="ghost" size="sm" onClick={done}>Done</Button>
+      </div>
+    </div>
   );
 }
 
@@ -659,7 +887,7 @@ const countdown = (ms: number) => {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 };
 
-/** Pairing: Perry answers nobody on Telegram until someone claims it with a code. */
+/** Telegram: the bot token, then pairing. Perry answers nobody there until someone claims it with a code. */
 function Telegram() {
   const { dashboardKey } = useSession();
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
@@ -676,16 +904,16 @@ function Telegram() {
   return (
     <>
       {!status.telegramConfigured && (
-        <Alert className="mb-6">
+        <Alert variant="quiet" className="mb-6">
           <AlertTitle>Telegram isn&apos;t set up</AlertTitle>
-          <AlertDescription>Telegram is optional. To talk to Perry there, add a bot token under Keys first.</AlertDescription>
+          <AlertDescription>Add a bot token from @BotFather below.</AlertDescription>
         </Alert>
       )}
       {status.telegramPaired ? (
-        <div className="flex flex-wrap items-start gap-4 rounded-xl border bg-card p-5">
+        <div className="flex flex-wrap items-start gap-4">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2"><h2 className="font-semibold">Paired</h2><StatusBadge tone="success">Working for {status.ownerName ?? "you"}</StatusBadge></div>
-            <p className="mt-1 text-sm text-pretty text-muted-foreground">Messages from anyone else are ignored. Unpair to move Perry to another Telegram account.</p>
+            <div className="flex items-baseline gap-2"><h2 className="font-semibold">Paired</h2><StatusBadge tone="success">Working for {status.ownerName ?? "you"}</StatusBadge></div>
+            <p className="mt-1 text-sm text-pretty text-muted-foreground">Messages from anyone else are ignored.</p>
           </div>
           <ActionButton variant="outline" action={() => unclaim({ key: dashboardKey })} success="Unpaired. Generate a code to pair again."
             confirm={{ title: "Unpair Perry?", body: `Perry stops answering ${status.ownerName ?? "you"} on Telegram until someone pairs it again with a new code.`, label: "Unpair" }}>
@@ -693,39 +921,39 @@ function Telegram() {
           </ActionButton>
         </div>
       ) : (
-        <div className="rounded-xl border bg-card p-5">
+        <div>
           <div className="flex items-center gap-2"><h2 className="font-semibold">Pair with Telegram</h2><StatusBadge tone="warning">Not paired</StatusBadge></div>
           <p className="mt-1 text-sm text-pretty text-muted-foreground">Send the code to your Perry bot. Whoever sends it first owns this Perry.</p>
           {live ? (
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <span className="rounded-xl border bg-muted/40 px-4 py-2 font-mono text-3xl font-semibold tracking-[0.2em]" translate="no" aria-label={`Pairing code ${status.pairingCode!.split("").join(" ")}`}>{status.pairingCode}</span>
-              <CopyButton value={status.pairingCode!} label="Copy code" />
+              <CodeDisplay label={`Pairing code ${status.pairingCode!.split("").join(" ")}`}>{status.pairingCode!}</CodeDisplay>
               {remaining !== undefined && <span className="nums text-sm text-muted-foreground">Expires in {countdown(remaining)}</span>}
             </div>
-          ) : <p className="mt-4 text-sm text-muted-foreground">{status.pairingCode ? "That code expired." : "Generate a code, then send it to your bot."}</p>}
+          ) : status.pairingCode ? <p className="mt-4 text-sm text-muted-foreground">That code expired.</p> : null}
           <ActionButton className="mt-4" variant={live ? "outline" : "default"} action={() => startPairing({ key: dashboardKey })} success={live ? "New code ready. The old one no longer works." : undefined}>
             <RefreshCwIcon />{live ? "New code" : "Generate code"}
           </ActionButton>
         </div>
       )}
-      {status.telegramConfigured && (
-        <Section title="Bot" description="Perry asks Telegram for new messages while it runs, so nothing here has to be reachable from the internet.">
-          <div className="flex flex-wrap items-center gap-3">
+      <Section title="Bot" tip="Perry asks Telegram for new messages, so nothing here has to be reachable from the internet.">
+        <KeyRow name="TELEGRAM_BOT_TOKEN" className="pt-0" />
+        {status.telegramConfigured && (
+          <div className="mt-2 flex flex-wrap items-center gap-3">
             <ActionButton variant="outline" size="sm" action={async () => {
               const result = await checkBot({ key: dashboardKey });
               setBot(result.ok ? { ok: true, text: `Listening as @${result.bot}. Message it on Telegram.` } : { ok: false, text: `The bot isn't working: ${result.error}` });
             }}>Check the bot</ActionButton>
             {bot && <p role="status" className={cn("text-sm", bot.ok ? "text-success" : "text-destructive")}>{bot.text}</p>}
           </div>
-        </Section>
-      )}
+        )}
+      </Section>
     </>
   );
 }
 
 const WHATSAPP_MODES: Array<{ value: "separate" | "self"; title: string; body: string; icon: ReactNode; warning?: boolean }> = [
-  { value: "separate", title: "A separate number", body: "A spare SIM or eSIM just for Perry. You message it like a contact; a ban would only take that number.", icon: <SmartphoneIcon /> },
-  { value: "self", title: "My own number", body: "Perry links to your WhatsApp, and you talk in your “Message yourself” chat. A ban would take your own WhatsApp with it.", icon: <UserIcon />, warning: true },
+  { value: "separate", title: "A separate number", body: "A spare SIM for Perry. A ban would only take that number.", icon: <SmartphoneIcon /> },
+  { value: "self", title: "My own number", body: "You talk in “Message yourself”. A ban would take your own WhatsApp.", icon: <UserIcon />, warning: true },
 ];
 
 /**
@@ -739,7 +967,6 @@ function WhatsApp() {
   const startLinking = useMutation(api.whatsapp.startLinking);
   const unlink = useMutation(api.whatsapp.unlink);
   const newCode = useMutation(api.whatsapp.newPairingCode);
-  const setHome = useMutation(api.whatsapp.setHomeChannel);
   /** Picked here, else the way it was linked before, else a separate number. */
   const [picked, setMode] = useState<"separate" | "self" | null>(null);
   const now = useNow(1000);
@@ -766,21 +993,21 @@ function WhatsApp() {
 
   return (
     <>
-      <Alert className="mb-6">
+      <Alert variant="quiet" className="mb-6">
         <ShieldAlertIcon />
         <AlertTitle>WhatsApp may ban the number</AlertTitle>
-        <AlertDescription>WhatsApp doesn&apos;t allow automating an account, so Perry links as a device, like WhatsApp Web. It only ever talks to you, which keeps the risk down, but a ban is possible.</AlertDescription>
+        <AlertDescription>Perry links as a device, like WhatsApp Web, which WhatsApp doesn&apos;t allow. A ban is possible.</AlertDescription>
       </Alert>
 
       {!state.wanted && (
         <form onSubmit={(event) => void link(event)} className="space-y-4">
-          {state.status === "expired" && <Alert><AlertTitle>The code ran out</AlertTitle><AlertDescription>Nobody linked it in time, so Perry stopped making new ones. Get a new code when your phone is ready.</AlertDescription></Alert>}
+          {state.status === "expired" && <Alert variant="quiet"><AlertTitle>The code ran out</AlertTitle><AlertDescription>Get a new code when your phone is ready.</AlertDescription></Alert>}
           {state.status === "logged-out" && <Alert variant="destructive"><AlertTitle>Unlinked</AlertTitle><AlertDescription>{state.error ?? "WhatsApp was unlinked on the phone."} Link it again below.</AlertDescription></Alert>}
           <ChoiceCards label="Which number Perry uses" value={mode} options={WHATSAPP_MODES} onChange={setMode} />
-          <div className="rounded-xl border bg-card p-4">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={byCode} onChange={(event) => setByCode(event.target.checked)} className="size-4 accent-primary" />
-              Link with a code typed on the phone instead of scanning a QR
+          <div>
+            <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+              <Checkbox checked={byCode} onCheckedChange={setByCode} />
+              Link with a code instead of a QR
             </label>
             {byCode && (
               <Field className="mt-3 max-w-xs" data-invalid={Boolean(error) || undefined}>
@@ -795,8 +1022,8 @@ function WhatsApp() {
       )}
 
       {linking && (
-        <div className="rounded-xl border bg-card p-5">
-          <div className="flex items-center gap-2"><h2 className="font-semibold">Link {state.mode === "self" ? "your WhatsApp" : "Perry's number"}</h2><StatusBadge tone="info">Waiting for the phone</StatusBadge></div>
+        <div>
+          <div className="flex items-baseline gap-2"><h2 className="font-semibold">Link {state.mode === "self" ? "your WhatsApp" : "Perry's number"}</h2><StatusBadge tone="info">Waiting for the phone</StatusBadge></div>
           {state.status === "qr" && state.qr && (
             <div className="mt-4 flex flex-wrap items-start gap-6">
               {/* eslint-disable-next-line @next/next/no-img-element -- a QR made on this computer */}
@@ -804,19 +1031,19 @@ function WhatsApp() {
               <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
                 <li>On {phoneOf} phone, open WhatsApp.</li>
                 <li>Settings › Linked devices › Link a device.</li>
-                <li>Scan this code. It changes every 20 seconds or so, as on WhatsApp Web; scan the one showing.</li>
+                <li>Scan this code. It changes every 20 seconds or so.</li>
               </ol>
               {refreshed && <p className="basis-full text-xs text-muted-foreground" role="status">{refreshed}</p>}
             </div>
           )}
           {state.status === "code" && state.code && (
             <div className="mt-4 space-y-3">
-              <span className="inline-block rounded-xl border bg-muted/40 px-4 py-2 font-mono text-3xl font-semibold tracking-[0.2em]" translate="no">{state.code}</span>
+              <CodeDisplay>{state.code}</CodeDisplay>
               <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
                 <li>On {phoneOf} phone: WhatsApp › Settings › Linked devices › Link a device.</li>
                 <li>Tap &ldquo;Link with phone number instead&rdquo;, then type this code.</li>
               </ol>
-              <p className="text-xs text-muted-foreground" role="status">A new code comes every couple of minutes until you use one; type the one showing.{refreshed ? ` ${refreshed}.` : ""}</p>
+              <p className="text-xs text-muted-foreground" role="status">It changes every couple of minutes.{refreshed ? ` ${refreshed}.` : ""}</p>
             </div>
           )}
           {state.status === "starting" && <Waiting>Starting WhatsApp…</Waiting>}
@@ -826,10 +1053,10 @@ function WhatsApp() {
       )}
 
       {linked && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-start gap-4 rounded-xl border bg-card p-5">
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-start gap-4">
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-baseline gap-2">
                 <h2 className="font-semibold">{state.mode === "self" ? "Your WhatsApp" : "Perry's number"}{state.number ? ` · ${state.number}` : ""}</h2>
                 {state.status === "connected"
                   ? <StatusBadge tone={state.paired ? "success" : "warning"}>{state.paired ? "Linked" : "Linked, waiting for you"}</StatusBadge>
@@ -848,12 +1075,11 @@ function WhatsApp() {
             </ActionButton>
           </div>
           {state.mode === "separate" && !state.paired && (
-            <div className="rounded-xl border bg-card p-5">
+            <div>
               <h3 className="font-medium">Send this from your own WhatsApp to {state.number ?? "Perry's number"}</h3>
               {state.pairingCode ? (
                 <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <span className="rounded-xl border bg-muted/40 px-4 py-2 font-mono text-3xl font-semibold tracking-[0.2em]" translate="no">{state.pairingCode}</span>
-                  <CopyButton value={state.pairingCode} label="Copy code" />
+                  <CodeDisplay>{state.pairingCode}</CodeDisplay>
                 </div>
               ) : <p className="mt-2 text-sm text-muted-foreground">That code expired.</p>}
               <ActionButton className="mt-3" variant="outline" size="sm" action={() => newCode({ key: dashboardKey })}><RefreshCwIcon />New code</ActionButton>
@@ -862,16 +1088,34 @@ function WhatsApp() {
         </div>
       )}
 
-      {state.paired && state.telegramPaired && (
-        <Section title="When you're away" description="Replies always go where you wrote. Perry's own messages, like the heartbeat and alerts, go to one app.">
-          <ChoiceCards label="Where Perry reaches you" value={state.homeChannel}
-            options={[
-              { value: "telegram", title: "Telegram", body: "Background messages and approvals go to Telegram.", icon: <SendIcon /> },
-              { value: "whatsapp", title: "WhatsApp", body: "Background messages and approvals go to WhatsApp.", icon: <MessageCircleIcon /> },
-            ]}
-            onChange={(channel) => void setHome({ key: dashboardKey, channel }).then(() => toast.success(`Perry will reach you on ${channel === "telegram" ? "Telegram" : "WhatsApp"}.`), (cause) => toast.error(errorText(cause)))} />
-        </Section>
-      )}
     </>
+  );
+}
+
+/**
+ * Where Perry's own messages go when you're away: one app, chosen here once
+ * both Telegram and WhatsApp are paired. Replies always go where you wrote.
+ */
+function AwayChannel() {
+  const { dashboardKey } = useSession();
+  const state = useQuery(api.whatsapp.status, { key: dashboardKey });
+  const setHome = useMutation(api.whatsapp.setHomeChannel);
+  return (
+    <Section title="When you're away" tip="Replies always go where you wrote. Perry's own messages, like the heartbeat and alerts, go to one app.">
+      {!state ? <ListSkeleton rows={1} /> : state.paired && state.telegramPaired ? (
+        <ChoiceCards label="Where Perry reaches you" value={state.homeChannel}
+          options={[
+            { value: "telegram", title: "Telegram", icon: <SendIcon /> },
+            { value: "whatsapp", title: "WhatsApp", icon: <MessageCircleIcon /> },
+          ]}
+          onChange={(channel) => void setHome({ key: dashboardKey, channel }).then(() => toast.success(`Perry will reach you on ${channel === "telegram" ? "Telegram" : "WhatsApp"}.`), (cause) => toast.error(errorText(cause)))} />
+      ) : (
+        <p className="text-sm text-pretty text-muted-foreground">
+          {state.paired || state.telegramPaired ? `They go to ${state.paired ? "WhatsApp" : "Telegram"}, the one you've paired. Pair both ` : "Pair "}
+          <Link href="/settings/telegram" className="link">Telegram</Link>{state.paired || state.telegramPaired ? " and " : " or "}<Link href="/settings/whatsapp" className="link">WhatsApp</Link>
+          {state.paired || state.telegramPaired ? " to choose." : " to get them on your phone."}
+        </p>
+      )}
+    </Section>
   );
 }

@@ -14,7 +14,7 @@ import { AcpEngine, modelsOr, type AcpLaunch } from "./acp";
  * dl.google.com only when the owner turns Antigravity on in Settings.
  *
  * Two ways in:
- *   - A Gemini API key (recommended): saved in Settings → Keys and given to
+ *   - A Gemini API key (recommended): saved in Settings → Engines and given to
  *     the server as GEMINI_API_KEY in its environment only (`gemini-api-key`).
  *   - Signing in with Google (`oauth-personal`), marked Experimental: the
  *     server opens Google's sign-in page in a browser on this computer and
@@ -156,7 +156,7 @@ export class AntigravityEngine extends AcpEngine {
     for (const [name, value] of Object.entries(process.env)) if (value !== undefined && !STRIPPED.has(name.toUpperCase())) env[name] = value;
     if (state.method === "gemini-api-key") {
       const key = await this.secret("GEMINI_API_KEY");
-      if (!key) throw new Error("Antigravity needs your Gemini API key: save it in Settings → Keys.");
+      if (!key) throw new Error("Antigravity needs your Gemini API key: save it in Settings → Engines.");
       env.GEMINI_API_KEY = key;
     }
     // Its temp folder is emptied before each start: a server that was ended leaves ~1 GB there.
@@ -196,10 +196,12 @@ export class AntigravityEngine extends AcpEngine {
       try {
         mkdirSync(DIRS.download, { recursive: true });
         this.progress = "Downloading Google's Antigravity server…";
-        const response = await fetch(asset.url);
+        // Uncompressed: dl.google.com gzips the zip when asked, and the length it then declares is the gzipped one.
+        const response = await fetch(asset.url, { headers: { "accept-encoding": "identity" } });
         if (!response.ok || !response.body) throw new Error(`The download failed (${response.status}).`);
         const hash = createHash("sha256");
-        const declared = Number(response.headers.get("content-length"));
+        // A compressed transfer declares its compressed length; then only the bytes and the checksum below count.
+        const declared = response.headers.get("content-encoding") ? 0 : Number(response.headers.get("content-length"));
         if (declared && declared !== asset.size) throw new Error(`The download is not the size Perry expects (${declared} bytes), so it was not taken.`);
         const file = createWriteStream(zip);
         let bytes = 0;
@@ -259,19 +261,19 @@ export class AntigravityEngine extends AcpEngine {
       signedIn,
       auth: signedIn ? (state.method === "gemini-api-key" ? { type: "gemini-api-key", label: "Gemini API key" } : { type: "oauth-personal", label: "Google account (experimental)" }) : {},
       models: signedIn ? modelsOr(this.learnedModels(), this.label) : [],
-      message: this.progress ?? (signedIn ? "Experimental." : state.method === "gemini-api-key" ? "Save your Gemini API key in Settings → Keys." : "Experimental. Use a Gemini API key (recommended), or sign in with Google."),
+      message: this.progress ?? (signedIn ? "Experimental." : state.method === "gemini-api-key" ? "Save your Gemini API key in Settings → Engines." : "Experimental. Use a Gemini API key (recommended), or sign in with Google."),
     };
   }
 
   /**
    * Turn Antigravity on: the download (once), then the way in the owner
-   * picked: the Gemini API key from Settings → Keys (the default), or
+   * picked: the Gemini API key from Settings → Engines (the default), or
    * signing in with Google in a browser on this computer.
    */
   async login(method?: string): Promise<LoginFlow> {
     const way: Method = method === "oauth-personal" ? "oauth-personal" : "gemini-api-key";
     if (way === "gemini-api-key" && !await this.secret("GEMINI_API_KEY")) {
-      throw new Error("Save your Gemini API key in Settings → Keys first (from aistudio.google.com/apikey), then try again");
+      throw new Error("Save your Gemini API key in Settings → Engines first (from aistudio.google.com/apikey), then try again");
     }
     const downloading = !this.installed();
     const before = this.state();

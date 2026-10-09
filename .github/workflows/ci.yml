@@ -1,5 +1,5 @@
 # Install, typecheck and smoke-test the runner on each OS Perry supports.
-# Needs no secrets: the smoke test (scripts/smoke.ts) uses no server and no Codex.
+# Needs no secrets: the smoke test (scripts/smoke.ts) uses no server and no engine.
 name: CI
 
 on:
@@ -27,6 +27,30 @@ jobs:
       - run: pnpm exec tsc --noEmit
       # On Windows the runner is disposable, so the smoke test also has Task Scheduler read the task it would install.
       - run: bun scripts/smoke.ts ${{ runner.os == 'Windows' && '--register' || '' }}
+      # perry setup never picks the default engine (issue #190): it refuses with no one to answer and no --engine,
+      # takes --engine or PERRY_ENGINE without asking, and asks with scripted answers. Stand-in CLIs only, nothing
+      # installed for real (artifacts/choose-engine).
+      - run: bun artifacts/choose-engine/run.ts "${{ runner.temp }}/choose-engine" --setup-only
+        env:
+          PERRY_E2E_DIR: ${{ runner.temp }}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: choose-engine-${{ runner.os }}
+          path: ${{ runner.temp }}/choose-engine
+          if-no-files-found: ignore
+      # The desktop pet looking at the screen on a Mac (issue #152), with no Screen Recording permission: what he
+      # says to allow, the window in front, and how `perry pet` starts him (artifacts/screen-look/look.ts).
+      - if: runner.os == 'macOS'
+        run: pnpm install --dir pet --frozen-lockfile
+      - if: runner.os == 'macOS'
+        run: bun artifacts/screen-look/look.ts "$RUNNER_TEMP/screen-look"
+      - if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: screen-look-macos
+          path: ${{ runner.temp }}/screen-look
+          if-no-files-found: ignore
 
   # The landing page in site/ is a separate Next.js app with its own lockfile.
   site:

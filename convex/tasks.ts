@@ -1,9 +1,16 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, internalQuery, mutation } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, type MutationCtx } from "./_generated/server";
 import { createThread } from "./lib/agent";
 import { assertDashboardKey } from "./lib/auth";
+import { ENGINE_LABELS } from "./lib/engines";
+import type { Choice } from "./lib/routing";
+import { LIMIT_HIT } from "./lib/usage";
+import { projectFrom } from "./projects";
+import { choose, routeOf, taskAsk } from "./routing";
+import { vPerryPick, vRoute } from "./schema";
+import { pausedAt } from "./pause";
 
 /**
  * Background tasks (issue #102): work Perry takes on and carries out by
@@ -25,6 +32,10 @@ import { assertDashboardKey } from "./lib/auth";
 const MAX_TURNS = 6;
 /** Tasks that run at once: the runner's other turns (runner/index.ts MAX_TURNS) stay free for chats and jobs. */
 const RUNNING_TASKS = 2;
+/** How far back a task stopped by a limit is still worth starting again. */
+const RECOVER_WITHIN_MS = 24 * 60 * 60_000;
+/** A task stopped by a plan's limit is started again at most this many times before it is let fail. */
+const MAX_RECOVERIES = 3;
 
 /** The owner's words and the task's, for a turn of it. */
 function promptFor(task: Doc<"tasks">): string {
@@ -42,7 +53,8 @@ function promptFor(task: Doc<"tasks">): string {
 
 /** Queue a task. It starts when nothing else is running. */
 export const queue = internalMutation({
-  args: { title: v.string(), prompt: v.string(), goalId: v.optional(v.id("goals")), origin: v.optional(v.id("conversations")) },
+  /** pick: Perry's own tier, model or thinking level for it (queue_task); unset, the tier's rule picks (lib/routing.ts). */
+  args: { title: v.string(), prompt: v.string(), goalId: v.optional(v.id("goals")), origin: v.optional(v.id("conversations")), pick: v.optional(vPerryPick) },
   returns: v.id("tasks"),
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -50,6 +62,7 @@ export const queue = internalMutation({
       title: args.title.trim().slice(0, 160),
       prompt: args.prompt.trim().slice(0, 12000),
       status: "queued",
+      ...(args.pick && Object.keys(args.pick).length ? { pick: args.pick } : {}),
       ...(args.goalId ? { goalId: args.goalId } : {}),
       ...(args.origin ? { origin: args.origin } : {}),
       plan: [],
@@ -69,12 +82,22 @@ export const tick = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
+    // Paused, none starts; those queued go on in their turn once resumed (pause.ts).
+    if (await pausedAt(ctx)) return null;
     // A background task has turns from the moment it starts (its chat comes a moment later); a task opened by start_task in a chat is only tracked.
     const running = (await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "running")).collect()).filter((task) => task.turns);
+    // A task a plan's limit stopped in the last day, that nothing has picked up yet: back in line.
+    const failed = await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "failed")).collect();
+    for (const task of failed) {
+      if (task.error && LIMIT_HIT.test(task.error) && task.conversationId && !task.recovery && task.updatedAt > Date.now() - RECOVER_WITHIN_MS) await recoverTask(ctx, task);
+    }
     if (running.length >= RUNNING_TASKS) return null;
-    const queued = (await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "queued")).collect()).sort((a, b) => a.createdAt - b.createdAt);
+    // One waiting for an engine's reset (lib/routing.ts) keeps its place until then.
+    const queued = (await ctx.db.query("tasks").withIndex("by_status", (q) => q.eq("status", "queued")).collect())
+      .filter((task) => !task.waiting || task.waiting.until <= Date.now())
+      .sort((a, b) => a.createdAt - b.createdAt);
     for (const next of queued.slice(0, RUNNING_TASKS - running.length)) {
-      await ctx.db.patch(next._id, { status: "running", turns: (next.turns ?? 0) + 1, question: undefined, updatedAt: Date.now() });
+      await ctx.db.patch(next._id, { status: "running", turns: (next.turns ?? 0) + 1, question: undefined, waiting: undefined, updatedAt: Date.now() });
       await ctx.scheduler.runAfter(0, internal.tasks.work, { id: next._id });
     }
     return null;
@@ -105,6 +128,8 @@ export const chatFor = internalMutation({
       taskId: task._id,
       access: install?.defaultAccess,
       lastMessageAt: Date.now(),
+      // Started from a project's chat, it works in the project: its instructions, its chats and its memory.
+      ...await projectFrom(ctx, task.origin),
     });
     await ctx.db.patch(task._id, { conversationId });
     return { externalId: `session:${args.threadId}`, title };
@@ -118,15 +143,85 @@ export const work = internalAction({
   handler: async (ctx, args) => {
     const task: Doc<"tasks"> | null = await ctx.runQuery(internal.tasks.get, { id: args.id });
     if (!task || task.status !== "running") return null;
+    // Perry paused since its turn was set going: it waits for the owner instead (pause.ts).
+    if (await ctx.runQuery(internal.pause.state, {})) {
+      await ctx.runMutation(internal.pause.holdTask, { id: task._id });
+      return null;
+    }
+    // Where this turn runs, on what and why; or, with no engine that has room, back in line until one has.
+    // With no engine to route to (no default chosen), it goes on unrouted and is refused there, asking for one.
+    const choice: Choice | null = await ctx.runQuery(internal.routing.forTask, { id: task._id });
+    if (choice?.wait) {
+      await ctx.runMutation(internal.tasks.wait, { id: task._id, until: choice.wait.until, why: choice.wait.why });
+      return null;
+    }
+    const route = choice ? routeOf(choice) : undefined;
+    if (route) await ctx.runMutation(internal.tasks.routed, { id: task._id, route });
     const existing = task.conversationId ? await ctx.runQuery(internal.conversations.getWebById, { id: task.conversationId }) : null;
     const threadId = existing?.threadId ?? await createThread(ctx, { userId: "web:dashboard", title: `🧩 ${task.title}` });
     const chat = await ctx.runMutation(internal.tasks.chatFor, { id: task._id, threadId });
     if (!chat) return null;
     await ctx.runMutation(internal.tasks.clearAnswer, { id: task._id });
-    await ctx.scheduler.runAfter(0, internal.brain.handleTurn, { channel: "web", externalId: chat.externalId, text: promptFor(task), title: chat.title });
+    await ctx.scheduler.runAfter(0, internal.brain.handleTurn, { channel: "web", externalId: chat.externalId, text: promptFor(task), title: chat.title, ...(route ? { route } : {}) });
     return null;
   },
 });
+
+export const routed = internalMutation({
+  args: { id: v.id("tasks"), route: vRoute },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (await ctx.db.get(args.id)) await ctx.db.patch(args.id, { route: args.route, waiting: undefined });
+    return null;
+  },
+});
+
+/** Say what a limit did to a task, once until one of its turns goes through. */
+async function tellOnce(ctx: MutationCtx, task: Doc<"tasks">, text: string, tries = task.recovery?.tries ?? 0) {
+  const told = Boolean(task.recovery);
+  await ctx.db.patch(task._id, { recovery: { at: task.recovery?.at ?? Date.now(), tries } });
+  if (!told) await ctx.scheduler.runAfter(0, internal.notify.deliver, { text, ...(task.origin ? { origin: task.origin } : {}) });
+}
+
+/** Back in line until `until`, with the turn it did not take given back. */
+async function requeue(ctx: MutationCtx, task: Doc<"tasks">, waiting?: { until: number; why: string }) {
+  await ctx.db.patch(task._id, {
+    status: "queued", turns: Math.max(0, (task.turns ?? 1) - 1), error: undefined, updatedAt: Date.now(),
+    waiting: waiting ? { until: waiting.until, why: waiting.why.slice(0, 500) } : undefined,
+  });
+  if (waiting) await ctx.scheduler.runAt(waiting.until, internal.tasks.tick, {});
+  else await ctx.scheduler.runAfter(0, internal.tasks.tick, {});
+}
+
+/** No engine has room for its next turn: it waits in line for the first reset, and the owner hears once. */
+export const wait = internalMutation({
+  args: { id: v.id("tasks"), until: v.number(), why: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.id);
+    if (!task || task.status !== "running") return null;
+    await requeue(ctx, task, { until: args.until, why: args.why });
+    await tellOnce(ctx, task, `🧩 **${task.title}** is waiting. ${args.why}`);
+    return null;
+  },
+});
+
+/**
+ * A turn of the task failed because its engine's plan ran out: it goes back in
+ * line for an engine with room, or for the first reset, and the owner is told
+ * once. False when it has been stopped too often, and fails.
+ */
+export async function recoverTask(ctx: MutationCtx, task: Doc<"tasks">): Promise<boolean> {
+  const tries = task.recovery?.tries ?? 0;
+  if (tries >= MAX_RECOVERIES) return false;
+  const refused = task.route?.engine;
+  const choice = await choose(ctx, await taskAsk(ctx, task, refused ? [refused] : undefined));
+  if (!choice) return false;
+  const what = `${refused ? ENGINE_LABELS[refused] : "Its engine"} refused it for its plan's limit`;
+  await requeue(ctx, task, choice.wait);
+  await tellOnce(ctx, task, `🧩 **${task.title}** stopped: ${what}. ${choice.wait ? choice.wait.why : `It carries on on ${ENGINE_LABELS[choice.engine]}.`}`, tries + 1);
+  return true;
+}
 
 export const clearAnswer = internalMutation({
   args: { id: v.id("tasks") },
@@ -148,6 +243,9 @@ export const afterTurn = internalMutation({
     const task = await ctx.db.get(args.id);
     if (!task) return null;
     let status = task.status;
+    // Stopped by a plan's limit: back in line for an engine with room, or the reset.
+    if (status === "running" && args.error && LIMIT_HIT.test(args.error) && await recoverTask(ctx, task)) return null;
+    if (status === "running" && !args.error && task.recovery) await ctx.db.patch(task._id, { recovery: undefined });
     if (status === "running" && args.error) {
       await ctx.db.patch(task._id, { status: "failed", error: `It could not run: ${args.error}`.slice(0, 2000), updatedAt: Date.now() });
       status = "failed";

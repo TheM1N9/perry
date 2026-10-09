@@ -11,7 +11,7 @@ import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ApprovalCard } from "../approval-card";
-import { ActionButton, EmptyState, ListSkeleton, Page, RelativeTime, Section, attempt } from "../common";
+import { ActionButton, EmptyState, List, ListSkeleton, Page, RelativeTime, Section, attempt } from "../common";
 
 type Dismissable = Exclude<InboxItem, { kind: "question" }>;
 
@@ -45,23 +45,23 @@ export function Inbox() {
   const empty = !loading && live.length === 0 && inbox.length === 0;
 
   return (
-    <Page title="Needs you" description="What's waiting on you. Answer here, or in the chat it came from."
+    <Page title="Needs you"
       actions={dismissable.length > 1 && <ActionButton variant="outline" size="sm" action={() => clear(dismissable)} success="Cleared.">Clear all</ActionButton>}>
       {loading && <ListSkeleton rows={2} />}
-      {empty && <EmptyState mascot title="You're all caught up">Approvals, questions and anything that failed land here, as it happens.</EmptyState>}
+      {empty && <EmptyState mascot title="You're all caught up" />}
       {live.length > 0 && (
-        <Section title="Approvals" description="A computer is waiting to do this. Unanswered requests are declined after ten minutes.">
+        <Section title="Approvals" description="Unanswered requests are declined after ten minutes.">
           <div className="space-y-3">{live.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} />)}</div>
         </Section>
       )}
       {inbox && inbox.length > 0 && (
         <Section title="Updates">
-          <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Updates">
+          <List label="Updates">
             {inbox.map((item) => (
               <InboxRow key={`${item.kind}-${item.id}`} item={item}
                 onDismiss={item.kind === "question" ? undefined : () => void attempt(() => clear([item]))} />
             ))}
-          </ul>
+          </List>
         </Section>
       )}
     </Page>
@@ -83,7 +83,7 @@ function InboxRow({ item, onDismiss }: { item: InboxItem; onDismiss?: () => void
     action = <Button size="sm" variant="outline" render={<Link href="/work?tab=plans" />}>See plan</Button>;
   }
   return (
-    <li className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start">
+    <li className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start">
       <Icon className={cn("mt-0.5 size-4 shrink-0 max-sm:hidden", kind.tone)} aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="text-xs text-muted-foreground">{kind.label} · <RelativeTime at={item.at} /></p>

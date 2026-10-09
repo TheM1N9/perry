@@ -61,7 +61,7 @@ const close = (statusCode: number) => push({ event: "connection.update", data: {
 
 const env: NodeJS.ProcessEnv = {
   ...process.env,
-  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   PERRY_WHATSAPP_DRIVER: join(REPO, "artifacts", "whatsapp", "fake-driver.mjs"),
   PERRY_WHATSAPP_CONTROL: `http://127.0.0.1:${(control.address() as { port: number }).port}`,
   PERRY_WHATSAPP_LINK_MINUTES: "0.25",
@@ -106,7 +106,7 @@ try {
   const { evaluate, send } = browser;
   const shownQr = () => evaluate(`document.querySelector('img[alt="WhatsApp link QR code"]')?.getAttribute("src") ?? null`) as Promise<string | null>;
   const pageText = () => evaluate(`document.querySelector("main")?.innerText ?? ""`) as Promise<string>;
-  await send("Page.navigate", { url: `${BASE}/settings?tab=whatsapp` });
+  await send("Page.navigate", { url: `${BASE}/settings/whatsapp` });
   await until(async () => (await pageText()).includes("Link WhatsApp"), "the WhatsApp tab");
 
   // 1. A new QR, in place.

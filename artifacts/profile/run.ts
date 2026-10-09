@@ -78,7 +78,7 @@ try {
   checks.tasksIsTopLevel = await evaluate(`!document.querySelector(".breadcrumb a[href='/profile']") && document.querySelector("nav[aria-label=Main] a[href='/tasks']").getAttribute("aria-current") === "page"`);
 
   // 5. A direct link still works.
-  await send("Page.navigate", { url: `${base}/connectors` });
+  await send("Page.navigate", { url: `${base}/apps/connectors` });
   await waitFor(`document.querySelector(".page-head h1")?.innerText === "Connectors"`, "/connectors did not render");
   checks.directLinkStillWorks = true;
   await shot("connectors-crumb.png");

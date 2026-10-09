@@ -170,7 +170,7 @@ try {
 
   // --- 1–4. Not under perry run: a server started by hand ------------------------------------
   mark("A: a server started by hand");
-  server = start("server-a", ["node", join(checkout, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)], { PERRY_HOME: homeA, NODE_ENV: "production" });
+  server = start("server-a", ["node", join(checkout, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)], { PERRY_HOME: homeA, NODE_ENV: "production", PERRY_ENGINE: "codex" });
   await until(up, "the hand-started server", 90);
   let view = await checkNow();
   check("upToDateOffersNothing", view.behind === 0 && !view.problem && Boolean(view.checkedAt), view);
@@ -207,7 +207,7 @@ try {
   // --- 5–9. Under perry run: the night's update ----------------------------------------------
   mark("C: perry run");
   writeFileSync(join(checkout, "notes.txt"), "the owner's own file, not in git\n");
-  perry = start("perry", [process.execPath, join(checkout, "scripts", "perry.ts"), "run"], { PERRY_HOME: homeB });
+  perry = start("perry", [process.execPath, join(checkout, "scripts", "perry.ts"), "run"], { PERRY_HOME: homeB, PERRY_ENGINE: "codex" });
   const supervisor = perry.pid;
   await until(up, "perry run's dashboard", 120);
   const upAt = Date.now();
@@ -283,7 +283,7 @@ try {
   browser = await openChat(BASE, KEY);
   const sidebar = await browser.evaluate(`document.querySelector('[data-sidebar="footer"], [data-slot="sidebar-footer"]')?.innerText ?? document.body.innerText`) as string;
   check("sidebarShowsUpdate", /Update available/.test(sidebar) && /1 change/.test(sidebar), sidebar.slice(0, 300));
-  await browser.send("Page.navigate", { url: `${BASE}/settings` });
+  await browser.send("Page.navigate", { url: `${BASE}/settings/general` });
   await until(() => browser!.evaluate(`Boolean(document.querySelector('[data-update-state]'))`), "the Updates section", 30).catch(() => {});
   await sleep(1_500);
   const section = await browser.evaluate(`(() => { const box = document.querySelector('[data-update-state]'); box?.scrollIntoView({ block: 'center' }); return box?.closest('section')?.innerText ?? box?.parentElement?.parentElement?.innerText ?? ''; })()`) as string;
@@ -306,7 +306,7 @@ try {
   perry = null;
   await until(async () => !(await up()), "perry run to stop", 30);
   // This test's own PID stands in for a `perry run` that is alive but never reads the request.
-  server = start("server-f", ["node", join(checkout, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)], { PERRY_HOME: homeB, NODE_ENV: "production", PERRY_SUPERVISOR: String(process.pid) });
+  server = start("server-f", ["node", join(checkout, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)], { PERRY_HOME: homeB, NODE_ENV: "production", PERRY_SUPERVISOR: String(process.pid), PERRY_ENGINE: "codex" });
   await until(up, "the server that believes it is supervised", 90);
   await call("updates:update", { key: KEY });
   await until(() => existsSync(requestFile(homeB)), "the request to be written", 30);

@@ -16,7 +16,8 @@ export const MAX_FILES = 10;
 export const MAX_BYTES = 50 * 1024 * 1024;
 const ACCEPT = "image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json";
 
-export type Suggestion = { key: string; label: string; hint: string; apply: () => void };
+/** `typed`: already typed out in full, so Enter sends the message rather than picking it. */
+export type Suggestion = { key: string; label: string; hint: string; apply: () => void; typed?: boolean };
 
 /** How the composer names a thinking level: Codex's own ids, capitalised. */
 export const levelName = (level: string) => level === "xhigh" ? "Extra high" : `${level[0]?.toUpperCase() ?? ""}${level.slice(1)}`;
@@ -38,13 +39,15 @@ type Pickers = {
 };
 
 export function Composer({
-  ref, assistant, draft, onDraftChange, onSubmit, onStop, waiting, busy, uploading, files, onAddFiles, onRemoveFile,
-  suggestions, completing, pickers, above,
+  ref, assistant, draft, onDraftChange, onCaret, onSubmit, onStop, waiting, busy, uploading, files, onAddFiles, onRemoveFile,
+  suggestions, suggesting = "Commands", completing, pickers, above,
 }: {
   ref?: Ref<HTMLTextAreaElement>;
   assistant: string;
   draft: string;
   onDraftChange: (draft: string) => void;
+  /** Where the caret is, as it moves: a $name is completed where it is typed. */
+  onCaret?: (position: number) => void;
   onSubmit: () => void;
   onStop?: () => void;
   waiting: boolean;
@@ -54,8 +57,10 @@ export function Composer({
   onAddFiles: (files: File[]) => void;
   onRemoveFile: (file: File) => void;
   suggestions: Suggestion[];
-  /** What Enter finishes instead of sending: a half-typed command name, or a half-typed choice ("/think hi"). */
-  completing: "command" | "choice" | null;
+  /** What the suggestions are, for screen readers: commands, or skills. */
+  suggesting?: string;
+  /** What Enter finishes instead of sending: a half-typed command name, a half-typed choice ("/think hi"), or a half-typed $skill. */
+  completing: "command" | "choice" | "skill" | null;
   pickers: Pickers;
   above?: ReactNode;
 }) {
@@ -65,7 +70,8 @@ export function Composer({
   const [dismissed, setDismissed] = useState(false);
   const [dragging, setDragging] = useState(false);
   useEffect(() => { setHighlight(0); setArrowed(false); }, [draft]);
-  useEffect(() => { if (!draft.startsWith("/")) setDismissed(false); }, [draft]);
+  // Escape hides the list until there is nothing to suggest: a command or $name finished, or taken back.
+  useEffect(() => { if (!suggestions.length) setDismissed(false); }, [suggestions.length]);
 
   const shown = dismissed ? [] : suggestions;
   const index = Math.min(highlight, Math.max(0, shown.length - 1));
@@ -75,22 +81,24 @@ export function Composer({
   return (
     <div className="relative">
       {above}
+      {/* The Command menu's look, kept by hand: cmdk gives its list and items ids of its own and runs Enter itself, and
+          here the box keeps the focus (aria-activedescendant names the option) and a command typed out in full runs as typed. */}
       {shown.length > 0 && (
-        <div role="listbox" id="chat-commands" aria-label="Commands"
-          className="absolute inset-x-0 bottom-full z-10 mb-2 max-h-72 overflow-y-auto rounded-xl border bg-popover p-1 shadow-lg">
+        <div role="listbox" id="chat-commands" aria-label={suggesting}
+          className="absolute inset-x-0 bottom-full z-10 mb-2 max-h-72 overflow-y-auto rounded-xl bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
           {shown.map((item, position) => (
             <button type="button" key={item.key} id={`chat-command-${position}`} role="option" aria-selected={position === index} tabIndex={-1}
               onMouseMove={() => setHighlight(position)} onMouseDown={(event) => { event.preventDefault(); item.apply(); }}
-              className="flex w-full items-baseline gap-3 rounded-lg px-3 py-2 text-left text-sm aria-selected:bg-muted">
+              className="flex w-full cursor-default items-baseline gap-3 rounded-lg px-3 py-2 text-left text-sm outline-none select-none aria-selected:bg-muted aria-selected:text-foreground">
               <span className="shrink-0 font-mono font-medium">{item.label}</span>
               <span className="min-w-0 truncate text-muted-foreground">{item.hint}</span>
             </button>
           ))}
         </div>
       )}
-      <div
+      <div data-composer
         className={cn(
-          "rounded-3xl border bg-background shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_-12px_rgb(0_0_0/0.12)] transition-[border-color,box-shadow] focus-within:border-ring/60 dark:bg-card",
+          "rounded-3xl border bg-background shadow-float transition-[border-color,box-shadow] dark:bg-card",
           dragging && "border-primary ring-3 ring-primary/20",
         )}
         onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } }}
@@ -110,8 +118,9 @@ export function Composer({
           aria-controls={shown.length ? "chat-commands" : undefined}
           aria-autocomplete="list"
           aria-activedescendant={shown.length ? `chat-command-${index}` : undefined}
-          className="block max-h-[40vh] min-h-[52px] w-full resize-none bg-transparent px-5 pt-4 pb-1 text-base leading-relaxed outline-none sm:text-[15px] field-sizing-content placeholder:text-muted-foreground"
-          onChange={(event) => onDraftChange(event.target.value)}
+          className="block max-h-[40vh] min-h-[52px] w-full resize-none bg-transparent px-5 pt-4 pb-1 text-base leading-relaxed outline-none sm:text-md field-sizing-content placeholder:text-muted-foreground"
+          onChange={(event) => { onDraftChange(event.target.value); onCaret?.(event.target.selectionStart); }}
+          onSelect={(event) => onCaret?.(event.currentTarget.selectionStart)}
           onPaste={(event) => { const pasted = Array.from(event.clipboardData.files); if (pasted.length) { event.preventDefault(); onAddFiles(pasted); } }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing) return;
@@ -120,8 +129,9 @@ export function Composer({
               if (event.key === "ArrowUp") { event.preventDefault(); setArrowed(true); setHighlight((index - 1 + shown.length) % shown.length); return; }
               if (event.key === "Tab") { event.preventDefault(); shown[index].apply(); return; }
               if (event.key === "Escape") { event.preventDefault(); setDismissed(true); return; }
-              // Enter takes a suggestion you arrowed to, or finishes a half-typed command; anything typed out in full runs as typed.
-              if (event.key === "Enter" && !event.shiftKey && (arrowed || completing === "choice" || (completing === "command" && shown[index].label.trim() !== draft.trim()))) {
+              // Enter takes a suggestion you arrowed to, or finishes a half-typed command or $name; anything typed out in full runs as typed.
+              if (event.key === "Enter" && !event.shiftKey && (arrowed || completing === "choice" || (completing === "command" && shown[index].label.trim() !== draft.trim())
+                || (completing === "skill" && !shown[index].typed))) {
                 event.preventDefault(); shown[index].apply(); return;
               }
             }
@@ -145,7 +155,8 @@ export function Composer({
               <SquareIcon className="size-3.5 fill-current" />
             </Button>
           ) : (
-            <Button type="button" size="icon" className="size-9 rounded-full" aria-label={waiting ? "Send into the reply" : "Send message"}
+            // Nothing to send yet: a quiet grey circle, not a greyed-out teal one.
+            <Button type="button" size="icon" variant={empty ? "secondary" : "default"} className={cn("size-9 rounded-full", empty && "text-muted-foreground disabled:opacity-100")} aria-label={waiting ? "Send into the reply" : "Send message"}
               onClick={onSubmit} disabled={empty || busy || Boolean(uploading)}>
               {uploading ? <Spinner /> : <ArrowUpIcon className="size-[18px]" />}
             </Button>
@@ -156,7 +167,7 @@ export function Composer({
   );
 }
 
-const pill = "h-8 gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-[13px] font-medium text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-popup-open:bg-muted dark:bg-transparent dark:hover:bg-muted [&>svg:last-child]:hidden sm:[&>svg:last-child]:block";
+const pill = "h-8 gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-sm font-medium text-muted-foreground shadow-none hover:bg-muted hover:text-foreground data-popup-open:bg-muted dark:bg-transparent dark:hover:bg-muted [&>svg:last-child]:hidden sm:[&>svg:last-child]:block";
 
 /**
  * Which model, how hard it thinks, and what it may do on your computer. The
@@ -166,7 +177,7 @@ const pill = "h-8 gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-[13px
  */
 function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, access, onAccess, accessDisabled }: Pickers) {
   const efforts = modelInfo?.efforts ?? [];
-  const keyOf = (item: ModelOption) => modelKey(item.engine ?? "codex", item.id);
+  const keyOf = (item: ModelOption) => modelKey(item.engine, item.id);
   const engines = enginesOf(models ?? []);
   const modelItems = (models ?? []).map((item) => ({ value: keyOf(item), label: item.name }));
   const modelItem = (item: ModelOption) => (
@@ -233,13 +244,13 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
   );
 }
 
-/** A dismissible line above the composer: a command's answer, or why something failed. */
-export function ComposerNote({ tone, children, onDismiss }: { tone: "info" | "error"; children: ReactNode; onDismiss: () => void }) {
+/** A dismissible line above the composer: a command's answer, why something failed, or a heads-up (an engine near its limit). */
+export function ComposerNote({ tone, children, onDismiss }: { tone: "info" | "warning" | "error"; children: ReactNode; onDismiss: () => void }) {
   return (
     <div role={tone === "error" ? "alert" : "status"}
-      className={cn("mb-2 flex items-start gap-2 rounded-2xl border px-4 py-2.5 text-sm",
-        tone === "error" ? "border-destructive/30 bg-destructive/5 text-destructive" : "bg-muted/60")}>
-      <div className={cn("min-w-0 flex-1 leading-relaxed whitespace-pre-wrap", tone === "info" && "font-mono text-[12.5px]")}>{children}</div>
+      className={cn("mb-2 flex items-start gap-2 text-sm",
+        tone === "error" ? "rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-2.5 text-destructive" : tone === "warning" ? "rounded-2xl border border-warning/40 bg-warning-soft px-4 py-2.5 text-warning" : "px-4 text-muted-foreground")}>
+      <div className={cn("min-w-0 flex-1 leading-relaxed whitespace-pre-wrap", tone === "info" && "font-mono text-xs")}>{children}</div>
       <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss} className="-mr-1 shrink-0"><XIcon /></Button>
     </div>
   );

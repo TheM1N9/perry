@@ -55,9 +55,11 @@ import { getFunctionName, type FunctionArgs, type FunctionReference, type Functi
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { ACCESS_LABELS, runLabel } from "../convex/lib/commands";
-import { ENGINE_LABELS } from "../convex/lib/engines";
+import { ENGINE_LABELS, ENGINES, refusal, updateOf, versionIn } from "../convex/lib/engines";
+import { effortFor, modelFor } from "../convex/lib/routing";
+import { skillsNamedIn } from "../convex/lib/skills";
 import {
-  optionOf, type Access, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type PerryTools,
+  defuse, optionOf, skillNote, type Access, type Engine, type EngineKind, type EngineRequest, type EngineStatus, type GeneratedImage, type NamedSkill, type PerryTools,
   type TurnHandle, type TurnResult, type TurnSink,
 } from "./engine";
 import { createEngines } from "./engines";
@@ -65,7 +67,9 @@ import { review } from "./review";
 import { nameChat } from "./title";
 import { ensureHome, HOME, PATHS, readRunnerConfig, writeRunnerConfig, type RunnerConfig } from "./home";
 import { TurnTrace } from "./trace";
+import { runUpdate, updatePlan, withVersions } from "./versions";
 import { TURN_IDLE_MIN, TURN_MAX_MIN } from "../convex/lib/turnLimits";
+import { LIMIT_HIT, LIMITS_EVERY_MS } from "../convex/lib/usage";
 
 const CONFIG_DIR = HOME;
 /** Finished turns not yet delivered. The folder keeps its name from before engines, so none is lost on update. */
@@ -267,18 +271,46 @@ async function main() {
 
   const engines = createEngines({
     warn: (line) => console.log(yellow(`  ${line}`)),
-    // A key from Settings → Keys an engine needs on this computer (Antigravity's Gemini API key).
+    // A key from Settings → Engines an engine needs on this computer (Antigravity's Gemini API key).
     secret: async (name) => name === "GEMINI_API_KEY" ? (await client.query(api.engines.secret, { token, name })) ?? undefined : undefined,
   });
   // However the runner ends (stopped, a crash, its console closed), the agents it started end with it.
   process.on("exit", () => { for (const engine of engines.values()) engine.kill(); });
   /** What each engine's last probe found. */
   const statuses = new Map<EngineKind, EngineStatus>();
+  /** Engines with an update from Settings taken on (handleUpdate): no new turn starts on them here until it is done. */
+  const updating = new Set<EngineKind>();
+  /** Engines whose CLI is being replaced right now: not looked at, so nothing starts the old one or a half-installed one meanwhile. */
+  const replacing = new Set<EngineKind>();
+  /** Quick turns (the reviewer, chat names) running, by engine: an update waits for them as for a reply. */
+  const quickRunning = new Map<EngineKind, number>();
+  /** The engine of a turn being claimed (pumpTurns), not yet among those running: an update waits for it too. */
+  let claiming: EngineKind | null = null;
   const probeEngines = async () => {
-    const found = await Promise.all([...engines.values()].map((engine) => engine.status()
-      .catch((error): EngineStatus => ({ kind: engine.kind, installed: false, signedIn: false, auth: {}, models: [], error: message(error) }))));
-    for (const status of found) statuses.set(status.kind, status);
+    const found = await Promise.all([...engines.values()].map((engine) => {
+      const kept = replacing.has(engine.kind) ? statuses.get(engine.kind) : undefined;
+      if (kept) return Promise.resolve(kept);
+      return engine.status()
+        .catch((error): EngineStatus => ({ kind: engine.kind, installed: false, signedIn: false, auth: {}, models: [], error: message(error) }))
+        // With the newest release known and the command that updates it; never waiting to look it up.
+        .then(withVersions)
+        // Whether chats with other people may run on it (runner/engine.ts): the server sends them only to those that can.
+        .then((status): EngineStatus => ({ ...status, guestLockdown: engine.capabilities.guestLockdown }));
+    }));
+    for (const status of found) {
+      // Said here once, when an engine is found too old for Perry; Settings says it until it is updated.
+      const update = updateOf(status);
+      const before = statuses.get(status.kind);
+      if (update?.need === "required" && (!before || updateOf(before)?.need !== "required")) console.log(yellow(`  ${refusal(ENGINE_LABELS[status.kind], update)}`));
+      statuses.set(status.kind, status);
+    }
     await client.mutation(api.engines.report, { token, engines: found });
+  };
+  /** An engine older than Perry works with, as its last probe found: it takes no turns until it is updated. */
+  const tooOld = (kind: EngineKind) => {
+    const status = statuses.get(kind);
+    const update = status && updateOf(status);
+    return update?.need === "required" ? update : undefined;
   };
   let probing: Promise<void> | null = null;
   /**
@@ -297,13 +329,82 @@ async function main() {
       .finally(() => { probing = null; });
     return probing;
   };
+  /** When each engine's plan limits were last read, those being read, and reads waiting their minute. */
+  const limitsRead = new Map<EngineKind, number>();
+  const readingLimits = new Set<EngineKind>();
+  const limitsLater = new Map<EngineKind, ReturnType<typeof setTimeout>>();
   /**
-   * An engine for quick side turns (the reviewer, chat names): the preferred
-   * one when it runs them and is signed in, else any that is.
+   * Read how much of an engine's plan is used and report it (convex/usage.ts):
+   * every LIMITS_EVERY_MS while it is signed in, or now (`fresh`), for an
+   * engine that can say. None of the plan is spent reading it.
+   */
+  const readLimits = async (engine: Engine, fresh = false) => {
+    if (!engine.limits || !statuses.get(engine.kind)?.signedIn || readingLimits.has(engine.kind) || replacing.has(engine.kind)) return;
+    if (!fresh && Date.now() - (limitsRead.get(engine.kind) ?? 0) < LIMITS_EVERY_MS) return;
+    readingLimits.add(engine.kind);
+    limitsRead.set(engine.kind, Date.now());
+    try {
+      const limits = await engine.limits(fresh);
+      if (limits) await client.mutation(api.usage.report, { token, engine: engine.kind, limits });
+    } catch (error) {
+      console.log(dim(`  could not read ${engine.label}'s plan limits: ${message(error)}`));
+    } finally {
+      readingLimits.delete(engine.kind);
+    }
+  };
+  /** After a turn, its engine's limits are read again: at once, or when a minute has passed since the last read. */
+  const readLimitsSoon = (engine: Engine) => {
+    if (!engine.limits || limitsLater.has(engine.kind)) return;
+    const wait = Math.max(0, (limitsRead.get(engine.kind) ?? 0) + 60_000 - Date.now());
+    limitsLater.set(engine.kind, setTimeout(() => {
+      limitsLater.delete(engine.kind);
+      void readLimits(engine, true);
+    }, wait));
+  };
+  const readAllLimits = () => { for (const engine of engines.values()) void readLimits(engine); };
+  /** The Usage page's refresh: every engine read now. The first answer is where things stand at start, not a request. */
+  let refreshSeen: number | null | undefined;
+  watch(api.usage.refreshAt, { token }, (at) => {
+    if (refreshSeen !== undefined && at && at !== refreshSeen) for (const engine of engines.values()) void readLimits(engine, true);
+    refreshSeen = at ?? null;
+  });
+  /** Which engines' plans have room for side work, as the server reads them (convex/routing.ts, rooms). */
+  let rooms: Partial<Record<EngineKind, "room" | "low" | "out">> = {};
+  watch(api.routing.rooms, { token }, (next) => { rooms = next ?? {}; });
+  /** The owner's default engine, as the server has it; unset until chosen. */
+  let defaultEngine: EngineKind | undefined;
+  watch(api.engines.preferred, { token }, (engine) => { defaultEngine = engine ?? undefined; });
+  /** How much of each engine's plan is used, as the server reads it (convex/routing.ts, used). */
+  let used: Partial<Record<EngineKind, number>> = {};
+  watch(api.routing.used, { token }, (next) => { used = next ?? {}; });
+  /**
+   * An engine for quick side turns (the reviewer, chat names), as routing
+   * would have it: the preferred one (the chat's), else the owner's default
+   * engine, else the one with the most of its plan left, among those that run
+   * them, are signed in, are not being updated and whose plan has room; with
+   * none that has room, the same order among the rest, and its own plan has
+   * the last word.
    */
   const quickEngine = (preferred?: EngineKind): Engine | undefined => {
-    const ready = (engine?: Engine) => engine?.quickTurn && engine.capabilities.quickTurns && statuses.get(engine.kind)?.signedIn ? engine : undefined;
-    return ready(preferred ? engines.get(preferred) : undefined) ?? [...engines.values()].find((engine) => ready(engine));
+    const ready = (engine?: Engine) => engine?.quickTurn && engine.capabilities.quickTurns && statuses.get(engine.kind)?.signedIn && !tooOld(engine.kind) && !updating.has(engine.kind) ? engine : undefined;
+    const roomy = (engine?: Engine) => ready(engine) && (rooms[engine!.kind] ?? "room") === "room" ? engine : undefined;
+    const first = [preferred, defaultEngine].map((kind) => kind ? engines.get(kind) : undefined);
+    const rest = [...engines.values()].sort((a, b) => (used[a.kind] ?? 50) - (used[b.kind] ?? 50) || ENGINES.indexOf(a.kind) - ENGINES.indexOf(b.kind));
+    const by = (test: (engine?: Engine) => Engine | undefined) => first.map(test).find(Boolean) ?? rest.find((engine) => test(engine));
+    return by(roomy) ?? by(ready);
+  };
+  /** The quick tier's model and thinking level on an engine, from the models it offers (convex/lib/routing.ts). */
+  const quickPick = (engine: Engine): { model?: string; effort?: string } => {
+    const model = modelFor((statuses.get(engine.kind)?.models ?? []).map((item) => ({ ...item, engine: engine.kind })), engine.kind, "quick");
+    const effort = effortFor(model, "quick");
+    return { ...(model ? { model: model.id } : {}), ...(effort ? { effort } : {}) };
+  };
+  /** A quick turn on an engine, counted while it runs. */
+  const quickly = async <T,>(engine: Engine | undefined, work: () => Promise<T>): Promise<T> => {
+    if (!engine) return work();
+    quickRunning.set(engine.kind, (quickRunning.get(engine.kind) ?? 0) + 1);
+    try { return await work(); }
+    finally { quickRunning.set(engine.kind, (quickRunning.get(engine.kind) ?? 1) - 1); }
   };
   /** Until when each running turn may go past its limits, by turn: the agent asked (take_longer). */
   let patience: Record<string, number> = {};
@@ -393,14 +494,15 @@ async function main() {
     }
     if (next === "review") {
       // The chat's own engine reviews when it can; with none here that can, the owner is asked.
-      const verdict = await review(quickEngine(engine), {
+      const reviewer = quickEngine(engine);
+      const verdict = await quickly(reviewer, () => review(reviewer, {
         kind: request.kind,
         title: request.what,
         cwd: request.cwd,
         workdir,
         paths: request.paths,
         detail: [request.detail, request.evidence].filter(Boolean).join("\n\n") || undefined,
-      });
+      }, reviewer && quickPick(reviewer)));
       const run = await client.mutation(api.approvals.reviewed, { token, id, ...verdict });
       if (run) {
         console.log(`${cyan("  reviewed")} ${request.what} ${dim(`(${verdict.reason})`)}`);
@@ -492,7 +594,9 @@ async function main() {
 
   const checkInAndShare = async () => { await checkIn(); };
   await client.mutation(api.engines.recoverAuth, { token });
+  await client.mutation(api.engineUpdates.recover, { token });
   await refreshEngines();
+  readAllLimits();
   mkdirSync(TURN_RESULTS, { recursive: true });
   const resultPath = (id: string) => join(TURN_RESULTS, `${id}.json`);
   const savedResult = (id: string): TurnRecord | null => {
@@ -513,7 +617,7 @@ async function main() {
       if (result || markIncomplete) {
         await client.mutation(api.codex.finishTurn, {
           token, id: job._id,
-          ...(result ?? { error: "Runner stopped during this turn. Gateway fallback will handle it." }),
+          ...(result ?? { error: "Perry restarted during this reply, so it ended early. Send the message again to finish it." }),
         });
       }
     }
@@ -532,7 +636,7 @@ async function main() {
 
   const heartbeat = setInterval(() => {
     void checkInAndShare();
-    void refreshEngines();
+    void refreshEngines().then(readAllLimits);
     void recoverTurns(false).catch((error) => console.error(red(`  turn delivery retry failed: ${message(error)}`)));
   }, CHECKIN_MS);
   console.log(green("  connected.\n"));
@@ -546,6 +650,8 @@ async function main() {
     try {
       const engine = engines.get(request.engine);
       if (!engine) throw new Error(`${ENGINE_LABELS[request.engine]} is not on this computer's runner yet. Update Perry here.`);
+      // Its CLI may be half replaced, and its processes are ended as it is.
+      if (updating.has(request.engine)) throw new Error(`${engine.label} is being updated on this computer. Sign in once that's done`);
       if (request.kind === "logout") {
         await engine.logout();
       } else {
@@ -635,8 +741,26 @@ async function main() {
     }
   }));
 
+  /** A file someone else sent is named in the message by the name they gave it: defused like their words. */
+  const guestFiles = <T extends { fileName: string }>(files: T[], guest?: boolean): T[] => guest ? files.map((file) => ({ ...file, fileName: defuse(file.fileName) })) : files;
+
   /** Where a chat with someone else runs: an empty folder, so nothing of the owner's is at hand. */
   const guestDir = () => { mkdirSync(PATHS.guest, { recursive: true }); return PATHS.guest; };
+
+  /**
+   * The skills a message of the owner's names ("$weekly-review", from the web
+   * app, Telegram or WhatsApp alike), for its engine: as input of their own
+   * where it takes them, else named after the message with where each
+   * SKILL.md is. Someone else's message names none of the owner's skills, and
+   * its mentions are defused, so the engine finds none by itself either (#163).
+   */
+  const withSkills = (engine: Engine, prompt: string, guest?: boolean): { prompt: string; skills?: NamedSkill[] } => {
+    if (guest) return { prompt: defuse(prompt) };
+    const skills = skillsNamedIn(prompt);
+    if (!skills.length) return { prompt };
+    console.log(dim(`  using ${skills.map((skill) => `$${skill.name}`).join(", ")}`));
+    return engine.capabilities.skills ? { prompt, skills } : { prompt: `${prompt}\n\n${skillNote(skills)}` };
+  };
 
   /** Perry's tools for a turn: over HTTP with this runner's token, or through the stdio bridge. */
   const toolsFor =(mcpUrl: string | undefined, chat: string): PerryTools | undefined => {
@@ -651,12 +775,14 @@ async function main() {
   };
 
   /** Compact a chat's session the way its engine can: a command it takes as a prompt runs on the chat's model. */
-  const compact = async (engine: Engine, cursor: string, access: Doc<"codexTurns">["access"], model?: string) => {
+  const compact = async (engine: Engine, cursor: string, access: Doc<"codexTurns">["access"], model?: string, guest?: boolean) => {
     const how = engine.capabilities.compaction;
-    if (how.type === "native" && engine.compact) return await engine.compact(cursor, workdir);
+    // A chat with someone else's session is compacted where it runs, locked down as its turns are.
+    const cwd = guest ? guestDir() : workdir;
+    if (how.type === "native" && engine.compact) return await engine.compact(cursor, cwd);
     if (how.type === "slash-command") {
       const done = await engine.runTurn(
-        { resumeCursor: cursor, instructions: "", prompt: how.command, attachments: [], cwd: workdir, model, access: access ?? "supervised" },
+        { resumeCursor: cursor, instructions: "", prompt: how.command, attachments: [], cwd, model, access: access ?? "supervised", ...(guest ? { guest: true } : {}) },
         { onSession: async () => {}, onRequest: async (request) => optionOf(request, "decline") },
       );
       if (done.state !== "completed") throw new Error(done.error ?? `${engine.label} did not compact.`);
@@ -685,6 +811,8 @@ async function main() {
     access?: Access;
     /** Stop waiting for the turn, which its engine may still be running. */
     abandon?: () => void;
+    /** A chat with someone else, whose messages name none of the owner's skills. */
+    guest?: boolean;
   };
   const active = new Map<string, Active>();
   let turnQueue: Doc<"codexTurns">[] = [];
@@ -752,7 +880,7 @@ async function main() {
         try {
           const mode = engine.capabilities.steer;
           if (!engine.steer || (mode !== "native" && mode !== "concurrent-prompt")) throw new Error(`${engine.label} takes one message at a time`);
-          await engine.steer(handle, { prompt: steer.prompt, attachments: await localise(steer.attachments) });
+          await engine.steer(handle, { ...withSkills(engine, steer.prompt, turn.guest), attachments: guestFiles(await localise(steer.attachments), turn.guest) });
           console.log(dim(`  steered the ${engine.label} turn with a new message`));
           await client.mutation(api.codex.ackSteer, { token, id: steer._id, applied: true });
         } catch (error) {
@@ -812,11 +940,20 @@ async function main() {
       let dog: ReturnType<typeof watchdog> | undefined;
       try {
         if (!engine) throw new Error(`${ENGINE_LABELS[kind]} is not on this computer's runner. Update Perry here, or pick another engine's model.`);
-        if (job.kind === "compact") {
+        // Refused before it starts, rather than failing half-way in ways an old CLI would.
+        const update = tooOld(kind);
+        if (update) throw new Error(refusal(engine.label, update));
+        // Someone else's words never reach an engine that cannot be locked down for them, whatever the server asked.
+        if (job.guest && !engine.capabilities.guestLockdown) throw new Error(`${engine.label} can't be locked down for a chat with someone else, so it doesn't run one.`);
+        // Stopped between its claim and its start (/stop, or Perry paused): it never reaches the engine.
+        if (stopRequested.has(job._id)) {
+          console.log(yellow("  stopped before it started, as asked"));
+          result = { stopped: true, model: label };
+        } else if (job.kind === "compact") {
           if (!job.resumeCursor) throw new Error("This chat has no session to compact yet.");
           console.log(dim(`  compacting a chat's ${engine.label} session`));
           dog = watchdog(engine, { maxMs: COMPACT_TIMEOUT_MS }, () => undefined, { end: () => endTurn(job._id) });
-          await unlessGivenUp(compact(engine, job.resumeCursor, job.access, job.requestedModel)).finally(dog.done);
+          await unlessGivenUp(compact(engine, job.resumeCursor, job.access, job.requestedModel, job.guest)).finally(dog.done);
           result = { response: "Compacted.", compacted: true, model: runLabel(undefined, undefined, undefined, kind) };
         } else {
           const sink: TurnSink = {
@@ -855,10 +992,11 @@ async function main() {
           const outcome: TurnResult = await unlessGivenUp(engine.runTurn({
             resumeCursor: job.resumeCursor,
             instructions: job.instructions,
-            history: job.history,
-            recalled: job.recalled,
-            prompt: job.prompt,
-            attachments: await localise(job.attachments),
+            // In a chat with someone else, what they wrote (and what was kept from it) reaches the engine defused, like the message.
+            history: job.guest && job.history ? defuse(job.history) : job.history,
+            recalled: job.guest && job.recalled ? defuse(job.recalled) : job.recalled,
+            ...withSkills(engine, job.prompt, job.guest),
+            attachments: guestFiles(await localise(job.attachments), job.guest),
             cwd: job.guest ? guestDir() : workdir,
             model: job.requestedModel,
             effort: job.requestedEffort,
@@ -898,6 +1036,13 @@ async function main() {
       await Promise.all(steers.map(([, steer]) => steer.done));
       for (const [id] of steers) steered.delete(id);
       saveResult(job._id, result);
+      // Where the engine's plan stands after the turn: a limit it refused the turn for, or, as it went through, none.
+      if (engine && job.kind !== "compact") {
+        const hit = result.error && LIMIT_HIT.test(result.error) ? { at: Date.now(), message: result.error } : result.error || result.stopped ? undefined : null;
+        if (hit !== undefined) void client.mutation(api.usage.report, { token, engine: kind, hit }).catch(() => {});
+        if (hit) console.log(yellow(`  ${engine.label} refused the turn for your plan's limit`));
+        readLimitsSoon(engine);
+      }
       // The trace's last report goes before the turn ends; Convex takes reports only while it runs.
       trace.drain(Date.now());
       await report();
@@ -922,13 +1067,17 @@ async function main() {
           if (active.size >= MAX_TURNS) break;
           if (active.has(next._id) || held.has(next.conversationId)) continue;
           held.add(next.conversationId);
-          const engine = engines.get(next.engine ?? "codex");
+          // An engine being updated here starts nothing new until it is done (handleUpdate).
+          if (next.engine && updating.has(next.engine)) continue;
+          const engine = next.engine ? engines.get(next.engine) : undefined;
           if (engine && !engine.capabilities.concurrentTurns && [...active.values()].some((turn) => turn.engine === engine)) continue;
+          claiming = next.engine ?? null;
           const job = await client.mutation(api.codex.claimTurn, { token, id: next._id })
             .catch((error) => { console.error(red(`  could not claim a turn: ${message(error)}`)); return null; });
-          if (!job) continue;
-          const turn: Active = { jobId: job._id, conversationId: job.conversationId, engine: engines.get(job.engine), asking: 0, access: job.access ?? "supervised" };
+          if (!job) { claiming = null; continue; }
+          const turn: Active = { jobId: job._id, conversationId: job.conversationId, engine: engines.get(job.engine), asking: 0, access: job.access ?? "supervised", ...(job.guest ? { guest: true } : {}) };
           active.set(job._id, turn);
+          claiming = null;
           void runJob(job, turn)
             .catch((error) => console.error(red(`  turn failed: ${message(error)}`)))
             .finally(async () => {
@@ -962,6 +1111,110 @@ async function main() {
     steerIfAsked();
   });
 
+  // --- Updating an engine's CLI, as asked in Settings -----------------------------
+
+  /** How long an update may run (PERRY_ENGINE_UPDATE_MS): past it, it is ended, and said to have failed. */
+  const UPDATE_MS = Number(process.env.PERRY_ENGINE_UPDATE_MS) || 10 * 60_000;
+  /** What runs on an engine here: its turns (a reply, a compaction) and quick turns. An update waits for all of them. */
+  const busyOn = (kind: EngineKind) =>
+    [...active.values()].filter((turn) => turn.engine?.kind === kind).length + (quickRunning.get(kind) ?? 0) + (claiming === kind ? 1 : 0);
+  /**
+   * Update an engine's CLI the way it was installed here (versions.ts,
+   * updatePlan), and look at it again. Never while anything runs on it: from
+   * the moment it is taken on no new turn starts on that engine (pumpTurns),
+   * and it waits for the ones running, saying so. One that would need admin
+   * rights is not run: the owner is shown the command to run themselves.
+   */
+  const handleUpdate = async (request: { id: Id<"engineUpdates">; engine: EngineKind }) => {
+    if (updating.has(request.engine)) return;
+    if (!await client.mutation(api.engineUpdates.claim, { token, id: request.id }).catch(() => false)) return;
+    const kind = request.engine;
+    const engine = engines.get(kind);
+    const label = ENGINE_LABELS[kind];
+    // One report at a time, in order, so what it printed last is never overwritten by what came before.
+    // How it ended is tried again for a while: lost, Settings would say it was still updating.
+    let reporting = Promise.resolve();
+    const progress = (payload: Omit<FunctionArgs<typeof api.engineUpdates.progress>, "token" | "id">) => (reporting = reporting.then(async () => {
+      for (let tries = payload.status === "waiting" || payload.status === "running" ? 1 : 10; tries > 0; tries--) {
+        try {
+          await client.mutation(api.engineUpdates.progress, { token, id: request.id, ...payload });
+          return;
+        } catch (error) {
+          if (tries === 1) console.error(red(`  could not report ${label}'s update: ${message(error)}`));
+          else await new Promise((resolve) => setTimeout(resolve, 3_000));
+        }
+      }
+    }));
+    updating.add(kind);
+    try {
+      const where = engine?.where?.();
+      const plan = where ? updatePlan(kind, where) : undefined;
+      if (!engine || !plan) throw new Error(`${label} can't be updated from Perry on this computer.`);
+      if (plan.locked.length) {
+        console.log(yellow(`  ${label}'s update needs admin rights here (it writes to ${plan.locked.join(", ")}), so it was not run`));
+        await progress({
+          status: "elevate", command: plan.elevated,
+          error: `Updating ${label} here writes to ${plan.locked.join(" and ")}, which needs ${process.platform === "win32" ? "administrator rights" : "sudo"}. Perry doesn't run anything with those.`,
+        });
+        return;
+      }
+      for (let said = "", busy = busyOn(kind); busy; busy = busyOn(kind)) {
+        const waitingFor = `${busy === 1 ? "a reply" : `${busy} replies`} on ${label}`;
+        if (waitingFor !== said) {
+          said = waitingFor;
+          console.log(dim(`  ${label}'s update waits for ${waitingFor} to finish`));
+          await progress({ status: "waiting", waitingFor });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+      // A look at the engines already under way ends first; after it, nothing looks at this one until it is done.
+      await refreshEngines();
+      const before = versionIn(statuses.get(kind)?.version);
+      console.log(dim(`  updating ${label}: ${plan.command}`));
+      // Its processes hold the old CLI's files: they end first.
+      replacing.add(kind);
+      engine.reload?.();
+      await progress({ status: "running", command: plan.command, output: "" });
+      let sent = 0;
+      let later: ReturnType<typeof setTimeout> | undefined;
+      let latest = "";
+      const ran = await runUpdate(plan, UPDATE_MS, (output) => {
+        latest = output;
+        // What it prints goes to Settings about twice a second.
+        later ??= setTimeout(() => { later = undefined; sent = Date.now(); void progress({ status: "running", output: latest }); }, Math.max(0, sent + 500 - Date.now()));
+      });
+      clearTimeout(later);
+      engine.reload?.();
+      replacing.delete(kind);
+      await refreshEngines(true);
+      const after = versionIn(statuses.get(kind)?.version);
+      if (ran.timedOut || ran.code !== 0) {
+        const limit = UPDATE_MS >= 120_000 ? `${Math.round(UPDATE_MS / 60_000)} minutes` : `${Math.round(UPDATE_MS / 1000)} seconds`;
+        const why = ran.timedOut ? `It didn't finish within ${limit}, so Perry stopped it.` : ran.code === null ? "It couldn't start." : `It stopped with exit code ${ran.code}.`;
+        console.log(yellow(`  ${label}'s update failed: ${why}`));
+        await progress({ status: "error", output: ran.output, error: why });
+      } else if (!after || after === before) {
+        console.log(yellow(`  ${label}'s update finished, but it is still ${after ?? "not answering"}`));
+        await progress({ status: "error", output: ran.output, error: after ? `It finished, but ${label} still says ${after}.` : `It finished, but ${label} doesn't answer now.` });
+      } else {
+        console.log(green(`  updated ${label} from ${before ?? "?"} to ${after}`));
+        await progress({ status: "done", output: ran.output, to: after });
+      }
+    } catch (error) {
+      await progress({ status: "error", error: message(error) });
+    } finally {
+      if (replacing.delete(kind)) {
+        engine?.reload?.();
+        void refreshEngines(true);
+      }
+      updating.delete(kind);
+      void pumpTurns();
+    }
+  };
+  watch(api.engineUpdates.queued, { token }, (requests) => {
+    for (const request of requests ?? []) void handleUpdate(request);
+  });
+
   // New web chats to name, beside whatever turn is running, by the chat's own
   // engine when it is signed in here. A failure leaves the chat titled with its
   // first message; so does a computer with no engine that runs quick turns,
@@ -973,18 +1226,19 @@ async function main() {
       const namer = quickEngine(request.engine);
       if (!namer) return;
       naming.add(request.id);
-      void (async () => {
+      // Counted from here, so an update of its engine waits for the whole of it.
+      void quickly(namer, async () => {
         if (!await client.mutation(api.titles.claim, { token, id: request.id })) return;
         let title: string | undefined;
         try {
-          const named = await nameChat(namer, request.text);
+          const named = await nameChat(namer, request.text, quickPick(namer));
           title = named.title;
           console.log(dim(`  named a chat "${title}" (${named.model ?? `${namer.label} default`})`));
         } catch (error) {
           console.log(yellow(`  could not name a chat: ${message(error)}`));
         }
         await client.mutation(api.titles.finish, { token, id: request.id, title });
-      })()
+      })
         .catch((error) => console.error(red(`  Could not save a chat's name: ${message(error)}`)))
         .finally(() => naming.delete(request.id));
     }

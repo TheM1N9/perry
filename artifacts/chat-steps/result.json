@@ -1,0 +1,172 @@
+{
+  "ranAt": "2026-10-01T22:02:20.982Z",
+  "checks": {
+    "stepsShowNotThinking": true,
+    "noRawNames": true,
+    "stepInView": true,
+    "stepsStayInOrder": true,
+    "nothingLingers": true,
+    "replyLands": true,
+    "workedForAboveReply": true,
+    "opensToStepsInOrder": true,
+    "keptAfterReload": true,
+    "midReplyStepsStay": true,
+    "midReplyWorkedFor": true,
+    "earlierReplyKeepsItsWork": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "engine": "claude",
+    "seen": [
+      {
+        "t": 0,
+        "thinking": null,
+        "streaming": null,
+        "steps": [],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 342,
+        "thinking": "Thinking",
+        "streaming": null,
+        "steps": [
+          "Thinking"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 6031,
+        "thinking": null,
+        "streaming": 6,
+        "steps": [],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 7154,
+        "thinking": null,
+        "streaming": 92,
+        "steps": [
+          "Using ToolSearch"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 8711,
+        "thinking": null,
+        "streaming": 114,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 9179,
+        "thinking": null,
+        "streaming": 169,
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ],
+        "inView": true,
+        "replies": 0
+      },
+      {
+        "t": 20832,
+        "thinking": null,
+        "streaming": null,
+        "steps": [],
+        "inView": true,
+        "replies": 1
+      }
+    ],
+    "stepsShowNotThinking": [
+      "Thinking",
+      "Using ToolSearch",
+      "Reading example.com",
+      "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+    ],
+    "nothingLingers": {
+      "at": 1790892106349,
+      "thinking": null,
+      "streaming": null,
+      "steps": [],
+      "inView": true,
+      "replies": 1
+    },
+    "wordsStreamed": true,
+    "workedForAboveReply": {
+      "label": "Worked for 20s · 3 steps",
+      "open": false,
+      "above": true,
+      "steps": []
+    },
+    "opensToStepsInOrder": {
+      "label": "Worked for 20s · 3 steps",
+      "open": true,
+      "above": true,
+      "steps": [
+        {
+          "label": "Using ToolSearch",
+          "status": "ok"
+        },
+        {
+          "label": "Reading example.com",
+          "status": "ok"
+        },
+        {
+          "label": "Running Start-Sleep -Seconds 8; Write-Output perry-…",
+          "status": "ok"
+        }
+      ]
+    },
+    "keptAfterReload": {
+      "label": "Worked for 20s · 3 steps",
+      "open": false,
+      "above": true,
+      "steps": []
+    },
+    "midReplyLive": [
+      [
+        "Running Start-Sleep -Seconds 4; Write-Output one"
+      ],
+      [
+        "Running Start-Sleep -Seconds 4; Write-Output one",
+        "Running Start-Sleep -Seconds 4; Write-Output two"
+      ],
+      [
+        "Running Start-Sleep -Seconds 4; Write-Output one",
+        "Running Start-Sleep -Seconds 4; Write-Output two",
+        "Running Start-Sleep -Seconds 4; Write-Output three"
+      ]
+    ],
+    "midReplyAfter": [
+      {
+        "text": "The page heading from https://example.com is \"Example Domain",
+        "worked": "Worked for 20s · 3 steps",
+        "steps": [
+          "Using ToolSearch",
+          "Reading example.com",
+          "Running Start-Sleep -Seconds 8; Write-Output perry-…"
+        ]
+      },
+      {
+        "text": "Done. 2 + 2 = 4.",
+        "worked": "Worked for 25s · 3 steps",
+        "steps": [
+          "Running Start-Sleep -Seconds 4; Write-Output one",
+          "Running Start-Sleep -Seconds 4; Write-Output two",
+          "Running Start-Sleep -Seconds 4; Write-Output three"
+        ]
+      }
+    ],
+    "noPageErrors": []
+  },
+  "passed": true
+}

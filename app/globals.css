@@ -50,6 +50,18 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* Two steps Tailwind's type scale lacks: small print (counts, badges) and the reading size of chat and lists.
+     T-shirt names, so class merging (cn) knows them for font sizes and not colours. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: calc(1 / 0.6875);
+  --text-md: 0.9375rem;
+  --text-md--line-height: 1.5;
+  /* Perry's shadows: a control resting on the page, a card that floats above it, and what floats over everything
+     (the pet's bubble and panel). And the one under the platypus, wherever he stands. */
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.05);
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.04), 0 12px 32px -16px rgb(0 0 0 / 0.16);
+  --shadow-overlay: 0 16px 40px -12px rgb(0 0 0 / 0.38);
+  --drop-shadow-mascot: 0 10px 12px rgb(0 0 0 / 0.16);
 }
 
 /* Perry's palette: the landing page's ink and teal, on white by day and near-black by night. */
@@ -153,10 +165,28 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* A link in running text, everywhere: Perry's teal, underlined lightly until hovered. */
+@utility link {
+  font-weight: 500;
+  color: var(--primary);
+  text-decoration-line: underline;
+  text-decoration-color: color-mix(in oklab, var(--primary) 30%, transparent);
+  text-underline-offset: 2px;
+  border-radius: 2px;
+  cursor: pointer;
+  &:hover {
+    text-decoration-color: var(--primary);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
 /* The chat's Markdown: readable prose at chat size, without a typography plugin. */
 @layer components {
   .prose-chat {
-    @apply text-[15px] leading-[1.7] text-foreground [overflow-wrap:anywhere];
+    @apply text-md leading-[1.7] text-foreground [overflow-wrap:anywhere];
   }
   .prose-chat > * + * {
     @apply mt-3;
@@ -172,10 +202,13 @@
   .prose-chat h3,
   .prose-chat h4 { @apply text-base; }
   .prose-chat ul { @apply list-disc pl-5; }
+  /* A checklist: Perry's checks in place of the bullets. */
+  .prose-chat ul.contains-task-list { @apply list-none pl-0; }
+  .prose-chat .contains-task-list .contains-task-list { @apply pl-6; }
   .prose-chat ol { @apply list-decimal pl-5; }
   .prose-chat li + li { @apply mt-1; }
   .prose-chat li > p { @apply m-0; }
-  .prose-chat a { @apply font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary; }
+  .prose-chat a { @apply link; }
   .prose-chat strong { @apply font-semibold; }
   .prose-chat blockquote { @apply border-l-2 pl-4 text-muted-foreground; }
   .prose-chat hr { @apply my-5 border-border; }
@@ -183,13 +216,45 @@
     @apply rounded-[5px] bg-muted px-[0.35em] py-[0.1em] font-mono text-[0.86em];
   }
   .prose-chat pre {
-    @apply overflow-x-auto p-4 font-mono text-[13px] leading-relaxed;
+    @apply overflow-x-auto p-4 font-mono text-sm leading-relaxed;
   }
-  .prose-chat table { @apply w-full border-collapse text-sm; }
-  .prose-chat th,
-  .prose-chat td { @apply border-b px-3 py-2 text-left align-top; }
-  .prose-chat th { @apply font-semibold; }
   .prose-chat img { @apply max-h-96 rounded-lg; }
+}
+
+/* A note in its editor (components/notes): the chat's prose, a little roomier, and TipTap's own parts. */
+@layer components {
+  .prose-note {
+    @apply text-md leading-[1.75] text-foreground [overflow-wrap:anywhere];
+  }
+  .prose-note > * + * { @apply mt-3; }
+  .prose-note h1, .prose-note h2, .prose-note h3 { @apply mt-7 font-semibold tracking-tight first:mt-0; }
+  .prose-note h1 { @apply text-xl; }
+  .prose-note h2 { @apply text-lg; }
+  .prose-note h3 { @apply text-base; }
+  .prose-note ul { @apply list-disc pl-5; }
+  .prose-note ol { @apply list-decimal pl-5; }
+  .prose-note li + li { @apply mt-1; }
+  .prose-note li > p { @apply m-0; }
+  .prose-note a { @apply link; }
+  .prose-note strong { @apply font-semibold; }
+  .prose-note blockquote { @apply border-l-2 pl-4 text-muted-foreground; }
+  .prose-note hr { @apply my-6 border-border; }
+  .prose-note :not(pre) > code { @apply rounded-[5px] bg-muted px-[0.35em] py-[0.1em] font-mono text-[0.86em]; }
+  .prose-note pre { @apply overflow-x-auto rounded-xl border bg-muted/50 p-4 font-mono text-sm leading-relaxed; }
+  .prose-note ul[data-type="taskList"] { @apply list-none pl-0; }
+  .prose-note ul[data-type="taskList"] li { @apply flex items-start gap-2; }
+  .prose-note ul[data-type="taskList"] li > label { @apply mt-[0.3em] shrink-0; }
+  .prose-note ul[data-type="taskList"] li > label input { @apply size-4 accent-primary; }
+  .prose-note ul[data-type="taskList"] li > div { @apply min-w-0 flex-1; }
+  .prose-note ul[data-type="taskList"] li[data-checked="true"] > div { @apply text-muted-foreground line-through; }
+  .prose-note table { @apply w-full border-collapse overflow-hidden text-sm; }
+  .prose-note th, .prose-note td { @apply border px-3 py-1.5 text-left align-top; }
+  .prose-note th { @apply bg-muted/50 font-semibold; }
+  .prose-note .selectedCell { @apply bg-primary/10; }
+  .prose-note p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    @apply pointer-events-none float-left h-0 text-muted-foreground/70;
+  }
 }
 
 /* The shimmer on "Thinking", swept once a second and a half; still for those who ask for less motion. */

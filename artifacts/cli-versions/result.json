@@ -1,0 +1,242 @@
+{
+  "ranAt": "2026-10-02T01:12:18.076Z",
+  "latest": {
+    "@openai/codex": "0.159.1",
+    "@anthropic-ai/claude-code": "2.1.285",
+    "@xai-official/grok": "1.0.44"
+  },
+  "checks": {
+    "offlineStillRefusesTooOld": true,
+    "offlineLookUpRecorded": true,
+    "offlineMessageRefused": true,
+    "hangingRegistryHoldsNothingUp": true,
+    "newestReleasesReported": true,
+    "newestReleasesKept": true,
+    "commandFitsInstall": true,
+    "settingsSaysWhatToUpdate": true,
+    "tooOldCannotSignIn": true,
+    "chatShowsRefusal": true,
+    "claudeRefused": true,
+    "phoneGetsAllOfIt": true,
+    "petShowsRefusal": true,
+    "doctorBefore": true,
+    "setupStopsOnTooOld": true,
+    "updateNoticed": true,
+    "settingsAfterUpdate": true,
+    "replyAfterUpdate": true,
+    "doctorAfter": true,
+    "setupRecommendsNewer": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "offlineStillRefusesTooOld": {
+      "reportedMs": 1522,
+      "codex": {
+        "need": "required",
+        "version": "0.120.0",
+        "minimum": "0.136.0",
+        "command": "npm install -g @openai/codex@latest"
+      },
+      "claude": {
+        "need": "required",
+        "version": "2.1.100",
+        "minimum": "2.1.111",
+        "command": "claude update"
+      },
+      "grok": null
+    },
+    "offlineLookUpRecorded": {
+      "cache": {
+        "codex": {
+          "at": 1790903424392,
+          "found": false
+        },
+        "claude": {
+          "at": 1790903424536,
+          "found": false
+        },
+        "grok": {
+          "at": 1790903424884,
+          "found": false
+        }
+      },
+      "hits": 3
+    },
+    "offlineMessageRefused": {
+      "refusal": "Codex 0.120.0 on THIS-PC is too old for Perry, which needs 0.136.0 or newer. Update it on that computer: npm install -g @openai/codex@latest",
+      "turnsQueued": 0
+    },
+    "hangingRegistryHoldsNothingUp": {
+      "hangReportMs": 1752,
+      "replyMs": 2782,
+      "hungLookUps": 3,
+      "reply": "Fake grok reply to: Hello Grok while npm hangs. One two three four five six seve"
+    },
+    "newestReleasesReported": {
+      "codex": {
+        "need": "required",
+        "version": "0.120.0",
+        "minimum": "0.136.0",
+        "latest": "0.159.1",
+        "command": "npm install -g @openai/codex@latest"
+      },
+      "claude": {
+        "need": "required",
+        "version": "2.1.100",
+        "minimum": "2.1.111",
+        "latest": "2.1.285",
+        "command": "claude update"
+      },
+      "grok": {
+        "need": "available",
+        "version": "1.0.42-fake",
+        "latest": "1.0.44",
+        "command": "grok update"
+      }
+    },
+    "newestReleasesKept": {
+      "cache": {
+        "codex": {
+          "latest": "0.159.1",
+          "at": 1790903437831,
+          "found": true
+        },
+        "claude": {
+          "latest": "2.1.285",
+          "at": 1790903437991,
+          "found": true
+        },
+        "grok": {
+          "latest": "1.0.44",
+          "at": 1790903438340,
+          "found": true
+        }
+      },
+      "lookUpsWhileUp": 3
+    },
+    "commandFitsInstall": {
+      "codex": "npm install -g @openai/codex@latest",
+      "claude": "claude update",
+      "grok": "grok update"
+    },
+    "settingsSaysWhatToUpdate": "Engines\nDESKTOP-27SQLCP\nOnline\nCodex\nUpdate required\nSigned in · 0.120.0\n\nChatGPT Plus · owner@example.com\n\nSign out\n\nUpdate Codex to keep using it\n\nUpdate\n\nDESKTOP-27SQLCP has 0.120.0; Perry needs 0.136.0 or newer and won't start replies with it until then.\n\nOr run it yourself\nGrok Build\nSigned in · Update available · 1.0.42-fake\n\nGrok account\n\nGrok has no sandbox on Windows: on Ask, each command and edit waits for your approval.\n\nSign out\n\nGrok Build 1.0.44 is out\n\nUpdate\nOr run it yourself\nClaude Code\nUpdate required\nSigned in · 2.1.100\n\nClaude Max · owner@example.com\n\nRuns on your own Claude subscription through the official Claude Code; its use counts against your plan's limits.\n\nSign out\n\nUpdate Claude Code to keep using it\n\nUpdate\n\nDESKTOP-27SQLCP has 2.1.100; Perry needs 2.1.111 or newer and won't start replies with it until then.\n\nOr run it yourself\nAntigravity\nSigned out\nExperimental\n\nNot signed in\n\nExperimental. Not turned on: turning it on downloads Google's own Antigravity ACP server (about 119 MB, about 1 GB unpacked) into Perry's folder.\n\nUse Gemini API key\nSign in with Google\n\nPerry runs Google's own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved below. Signing in with Google also works, at your own risk: Google's Antigravity FAQ says “Using third party software, tools, or services ",
+    "tooOldCannotSignIn": "engines:requestAuth: Codex 0.120.0 on THIS-PC is too old for Perry, which needs 0.136.0 or newer. Update it on that computer: npm install -g @openai/codex@latest",
+    "chatShowsRefusal": "Perry couldn't finish the last reply\n\nUpdate it with the command below, then try again. Settings → Engines shows it too.\n\nCodex 0.120.0 on THIS-PC is too old for Perry, which needs 0.136.0 or newer. Update it on that computer: npm install -g @openai/codex@latest\n\nTry again",
+    "claudeRefused": "Claude Code 2.1.100 on THIS-PC is too old for Perry, which needs 2.1.111 or newer. Update it on that computer: claude update",
+    "phoneGetsAllOfIt": {
+      "codex": 148,
+      "claude": 132
+    },
+    "petShowsRefusal": {
+      "petText": "Codex 0.120.0 on THIS-PC is too old for Perry, which needs 0.136.0 or newer. Update it on that computer: npm install -g @openai/codex@latest",
+      "turnsQueued": 0
+    },
+    "doctorBefore": [
+      "fail  codex  0.120.0 is too old for Perry, which needs 0.136.0 or newer. Update it: npm install -g @openai/codex@latest",
+      "ok    codex sign-in  Logged in using ChatGPT",
+      "fail  claude code  2.1.100 is too old for Perry, which needs 2.1.111 or newer. Update it: claude update",
+      "warn  grok build  1.0.42-fake; 1.0.44 is out. Update it: grok update"
+    ],
+    "setupStopsOnTooOld": [
+      "  Bot token, or Enter to skip: ",
+      "  No bot: talk to Perry from the dashboard. Add one in Settings → Telegram any time.",
+      "  Codex 0.120.0 is too old for Perry, which needs 0.136.0 or newer. Update it with: npm install -g @openai/codex@latest",
+      "  Then run setup again."
+    ],
+    "updateNoticed": {
+      "noticedMs": 11741,
+      "codex": {
+        "need": "available",
+        "version": "0.150.0",
+        "latest": "0.159.1",
+        "command": "npm install -g @openai/codex@latest"
+      },
+      "claude": null
+    },
+    "settingsAfterUpdate": "Engines\nDESKTOP-27SQLCP\nOnline\nCodex\nSigned in · Update available · 0.150.0\n\nChatGPT Plus · owner@example.com\n\nSign out\n\nCodex 0.159.1 is out\n\nUpdate\nOr run it yourself\nGrok Build\nSigned in · Update available · 1.0.42-fake\n\nGrok account\n\nGrok has no sandbox on Windows: on Ask, each command and edit waits for your approval.\n\nSign out\n\nGrok Build 1.0.44 is out\n\nUpdate\nOr run it yourself\nClaude Code\nSigned in · 2.1.285\n\nClaude Max · owner@example.com\n\nRuns on your own Claude subscription through the official Claude Code; its use counts against your plan's limits.\n\nSign out\nAntigravity\nSigned out\nExperimental\n\nNot signed in\n\nExperimental. Not turned on: turning it on downloads Google's own Antigravity ACP server (about 119 MB, about 1 GB unpacked) into Perry's folder.\n\nUse Gemini API key\nSign in with Google\n\nPerry runs Google's own Antigravity ACP server on this computer, downloaded only when you turn it on. The recommended way in is a Gemini API key, saved below. Signing in with Google also works, at your own risk: Google's Antigravity FAQ says “Using third party software, tools, or services to access Antigravity is a violation of our Terms of Service … may be grounds for suspension o",
+    "replyAfterUpdate": {
+      "reply": "Fake Codex 0.150.0 reply to: Hello after the update",
+      "turnsStarted": [
+        "0.150.0"
+      ]
+    },
+    "doctorAfter": [
+      "warn  codex  0.150.0; 0.159.1 is out. Update it: npm install -g @openai/codex@latest",
+      "ok    codex sign-in  Logged in using ChatGPT",
+      "ok    claude code  2.1.285",
+      "warn  grok build  1.0.42-fake; 1.0.44 is out. Update it: grok update",
+      "Perry looks healthy."
+    ],
+    "setupRecommendsNewer": [
+      "  Codex 0.159.1 is out. To update: npm install -g @openai/codex@latest",
+      "  ✔ default engine Codex, 0.150.0, signed in with ChatGPT Plus",
+      "",
+      "Next",
+      "  pnpm perry start  runs Perry in the background",
+      "  dashboard key: VqgO0dbWIaixDkPNPdEJQjhRRpmEsF_N",
+      "",
+      "  (also saved in .env.local; `pnpm perry doctor` checks everything)"
+    ],
+    "noPageErrors": [],
+    "registryLookUps": [
+      "down /@openai/codex/latest",
+      "down /@anthropic-ai/claude-code/latest",
+      "down /@xai-official/grok/latest",
+      "hang /@openai/codex/latest",
+      "hang /@anthropic-ai/claude-code/latest",
+      "hang /@xai-official/grok/latest",
+      "up /@openai/codex/latest",
+      "up /@anthropic-ai/claude-code/latest",
+      "up /@xai-official/grok/latest"
+    ],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\no-hardcoded\\cli-versions\\perry-cli-versions-H8R2LC\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[33m  Codex 0.120.0 is too old for Perry, which needs 0.136.0 or newer. Update it: npm install -g @openai/codex@latest\u001b[0m",
+      "\u001b[33m  Claude Code 2.1.100 is too old for Perry, which needs 2.1.111 or newer. Update it: claude update\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  could not read Codex's plan limits: fake codex does not play account/rateLimits/read\u001b[0m",
+      "\u001b[2m  could not read Claude Code's plan limits: Claude Code process exited with code 2\u001b[0m",
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\no-hardcoded\\cli-versions\\perry-cli-versions-H8R2LC\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[33m  Codex 0.120.0 is too old for Perry, which needs 0.136.0 or newer. Update it: npm install -g @openai/codex@latest\u001b[0m",
+      "\u001b[33m  Claude Code 2.1.100 is too old for Perry, which needs 2.1.111 or newer. Update it: claude update\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  could not read Codex's plan limits: fake codex does not play account/rateLimits/read\u001b[0m",
+      "\u001b[2m  could not read Claude Code's plan limits: Claude Code process exited with code 2\u001b[0m",
+      "\u001b[2m  saved turn vvvgkmmyjrp9qag5hw3pgn5kdv\u001b[0m",
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\no-hardcoded\\cli-versions\\perry-cli-versions-H8R2LC\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[33m  Codex 0.120.0 is too old for Perry, which needs 0.136.0 or newer. Update it: npm install -g @openai/codex@latest\u001b[0m",
+      "\u001b[33m  Claude Code 2.1.100 is too old for Perry, which needs 2.1.111 or newer. Update it: claude update\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  could not read Codex's plan limits: fake codex does not play account/rateLimits/read\u001b[0m",
+      "\u001b[2m  could not read Claude Code's plan limits: Claude Code process exited with code 2\u001b[0m",
+      "\u001b[2m  saved turn 2rrr81rv6pt2p5p4e1wqxfq8kv\u001b[0m",
+      "\u001b[2m  could not read Codex's plan limits: fake codex does not play account/rateLimits/read\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

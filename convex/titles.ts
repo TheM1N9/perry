@@ -1,8 +1,10 @@
 import { v } from "convex/values";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { engineOf, type EngineKind } from "./lib/engines";
+import type { EngineKind } from "./lib/engines";
+import { engineFor } from "./installation";
 import { authenticate } from "./runner";
+import { pausedAt } from "./pause";
 
 /**
  * Naming web chats. A new chat is titled with its first message straight
@@ -39,15 +41,22 @@ export async function beingNamed(ctx: QueryCtx): Promise<Set<Id<"conversations">
   return new Set(rows.filter((row) => (row.claimedAt ?? 0) >= now - CLAIM_MS).map((row) => row.conversationId));
 }
 
-/** Chats waiting for a name, for any runner to take, with the engine each chat is on, which names it when it can. */
+/**
+ * Chats waiting for a name, for any runner to take, with the engine each chat
+ * is on (its own, or the default it follows), which names it when it can.
+ * Unset for a chat with no engine yet: the runner then uses the default, or
+ * any engine of its own that can (runner/index.ts, quickEngine).
+ */
 export const pending = query({
   args: { token: v.string() },
-  handler: async (ctx, args): Promise<Array<{ id: Id<"chatTitles">; text: string; engine: EngineKind }>> => {
+  handler: async (ctx, args): Promise<Array<{ id: Id<"chatTitles">; text: string; engine?: EngineKind }>> => {
     await authenticate(ctx, args.token);
+    // Naming takes a model call: paused, none is made (pause.ts).
+    if (await pausedAt(ctx)) return [];
     const rows = await ctx.db.query("chatTitles").order("asc").take(50);
     const now = Date.now();
     const waiting = rows.filter((row) => row.requestedAt > now - REQUEST_TTL_MS && (row.claimedAt ?? 0) < now - CLAIM_MS).slice(0, 10);
-    return await Promise.all(waiting.map(async (row) => ({ id: row._id, text: row.text, engine: engineOf(await ctx.db.get(row.conversationId)) })));
+    return await Promise.all(waiting.map(async (row) => ({ id: row._id, text: row.text, engine: await engineFor(ctx, await ctx.db.get(row.conversationId)) })));
   },
 });
 

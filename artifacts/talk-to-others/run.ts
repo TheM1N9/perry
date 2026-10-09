@@ -127,7 +127,7 @@ const tgTo = (chat: number, after: number) => telegram.sent.filter((message) => 
 
 const env: NodeJS.ProcessEnv = {
   ...process.env,
-  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   TELEGRAM_BOT_TOKEN: "123456:talk-to-others",
   TELEGRAM_API_BASE: `http://127.0.0.1:${(stub.address() as { port: number }).port}`,
   PERRY_WHATSAPP_DRIVER: join(REPO, "artifacts", "whatsapp", "fake-driver.mjs"),
@@ -329,7 +329,7 @@ try {
 
   // --- 13. Settings → People -----------------------------------------------------------------------------------------------
   browser = await openChat(BASE, KEY);
-  await browser.send("Page.navigate", { url: `${BASE}/settings?tab=people` });
+  await browser.send("Page.navigate", { url: `${BASE}/settings/people` });
   await until(async () => Boolean(await browser!.evaluate(`document.body.innerText.includes("Datta") && document.body.innerText.includes("gym times")`)), "People to list Datta and his brief", 30).catch(() => {});
   const shown = String(await browser.evaluate("document.body.innerText"));
   const shot = await browser.send("Page.captureScreenshot", { format: "png" }) as { data: string };

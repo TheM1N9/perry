@@ -10,13 +10,17 @@ import { join } from "node:path";
  *
  *   runner.json     how this machine's runner connects
  *   codex-results/  finished Codex turns not yet delivered
+ *   codex-instructions/  what each Codex thread was last told to follow (instructions.ts)
  *   uploads/        files the owner attached in chat
  *   files/          the agent's own folder for what it makes, organised as it sees fit
+ *   steps/          small pictures of Perry's browser for the chat's steps; the newest are kept
  *   skills/         the agent's skills, one folder each with a SKILL.md, found by Codex
  *   logs/           the runner's output when it runs as a background service
  *   claude-models.json  the models Claude Code last said this account has
+ *   engine-versions.json  the newest release of each engine's CLI, as last looked up
  *   update-request.json  an update the dashboard asked for, for `perry run` to do
  *   update-result.json   how the last one went, for the dashboard to show
+ *   default-engine.json  the default engine `perry setup` chose while Perry was not running, for its server to take when it starts
  *
  * PERRY_HOME moves the whole thing.
  */
@@ -25,15 +29,19 @@ export const HOME = process.env.PERRY_HOME ?? join(homedir(), ".perry");
 export const PATHS = {
   runnerConfig: join(HOME, "runner.json"),
   codexResults: join(HOME, "codex-results"),
+  codexInstructions: join(HOME, "codex-instructions"),
   uploads: join(HOME, "uploads"),
   files: join(HOME, "files"),
+  steps: join(HOME, "steps"),
   /** An empty folder a chat with someone else runs in: nothing of the owner's is in it. */
   guest: join(HOME, "guest"),
   skills: join(HOME, "skills"),
   logs: join(HOME, "logs"),
   claudeModels: join(HOME, "claude-models.json"),
+  engineVersions: join(HOME, "engine-versions.json"),
   updateRequest: join(HOME, "update-request.json"),
   updateResult: join(HOME, "update-result.json"),
+  engineChoice: join(HOME, "default-engine.json"),
 };
 
 export function ensureHome() {

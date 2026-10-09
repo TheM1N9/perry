@@ -1,0 +1,405 @@
+{
+  "ranAt": "2026-10-02T00:16:27.480Z",
+  "pass": true,
+  "checks": {
+    "accountMenuHasNoUsage": true,
+    "accountMenuItems": true,
+    "accountMenuKeepsNameAndPlan": true,
+    "menuUsageOpensUsage": true,
+    "usageIsASectionBesideEngines": true,
+    "oldUsageTabRedirects": true,
+    "oldUsageAnchorRedirects": true,
+    "enginesStaysWithoutTheAnchor": true,
+    "composerSeeUsageOpensUsage": true,
+    "safetyTextKept": true,
+    "fullAccessWarningKept": true,
+    "petSeeUsageOpensUsage": true,
+    "wordsDownOnEveryPage": true,
+    "nothingThrows": true
+  },
+  "notes": {
+    "accountMenu": {
+      "items": [
+        "Usage",
+        "Theme",
+        "Settings",
+        "Lock dashboard"
+      ],
+      "bars": 0,
+      "usageGroup": false,
+      "text": "You\nChatGPT Plus · Codex\nUsage\nTheme\nSettings\nLock dashboard",
+      "line": "ChatGPT Plus · Codex"
+    },
+    "accountMenuHasNoUsage": {
+      "items": [
+        "Usage",
+        "Theme",
+        "Settings",
+        "Lock dashboard"
+      ],
+      "bars": 0,
+      "usageGroup": false,
+      "text": "You\nChatGPT Plus · Codex\nUsage\nTheme\nSettings\nLock dashboard",
+      "line": "ChatGPT Plus · Codex"
+    },
+    "accountMenuItems": [
+      "Usage",
+      "Theme",
+      "Settings",
+      "Lock dashboard"
+    ],
+    "accountMenuKeepsNameAndPlan": {
+      "items": [
+        "Usage",
+        "Theme",
+        "Settings",
+        "Lock dashboard"
+      ],
+      "bars": 0,
+      "usageGroup": false,
+      "text": "You\nChatGPT Plus · Codex\nUsage\nTheme\nSettings\nLock dashboard",
+      "line": "ChatGPT Plus · Codex"
+    },
+    "menuUsageOpensUsage": "/settings/usage",
+    "usageIsASectionBesideEngines": [
+      "General",
+      "Engines",
+      "Usage",
+      "Computers",
+      "Access & approvals",
+      "Notifications",
+      "Telegram",
+      "WhatsApp",
+      "Desktop pet",
+      "People",
+      "Logins & secrets",
+      "Dashboard key",
+      "Activity log"
+    ],
+    "oldUsageTabRedirects": {
+      "status": 307,
+      "location": "/settings/usage"
+    },
+    "oldUsageAnchorRedirects": "/settings/usage",
+    "enginesStaysWithoutTheAnchor": "/settings/engines",
+    "composerSeeUsageOpensUsage": {
+      "seeUsage": "/settings/usage",
+      "at": "/settings/usage"
+    },
+    "kept": {
+      "whatsappBanWarning": true,
+      "whatsappOwnNumberRisk": true,
+      "whatsappSeparateNumberRisk": true,
+      "telegramWhoeverPairsOwnsIt": true,
+      "approvalsExpire": true,
+      "chatErrorStays": true,
+      "lowPlanWarningStays": true,
+      "failedUpdateSaysWhy": true,
+      "passwordsNeverShownAgain": true,
+      "composioHoldsSignIns": true,
+      "memoryStaysHere": true,
+      "nothingSharedByDefault": true,
+      "peopleKeptApart": true,
+      "dashboardKeyHowToChange": true,
+      "computersUnreachable": true,
+      "screenLookLimits": true,
+      "petLoopbackOrPairingWarning": true,
+      "usageCountsAllYourUse": true,
+      "remindersAlwaysGo": true,
+      "deleteChatConsequence": true,
+      "forgetMemoryConsequence": true,
+      "revokeComputerConsequence": true,
+      "signOutEngineConsequence": true,
+      "blockPersonConsequence": true,
+      "deleteLoginConsequence": true,
+      "removeSkillConsequence": true,
+      "deleteProjectConsequence": true,
+      "cancelPlanConsequence": true,
+      "deleteRuleOrRequestsRecorded": true
+    },
+    "safetyTextKept": {},
+    "petSeeUsageOpensUsage": {
+      "opened": [
+        "/settings/usage"
+      ]
+    },
+    "words": {
+      "table": [
+        {
+          "page": "chat-new",
+          "before": 59,
+          "after": 47,
+          "down": "20%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "chat-reply",
+          "before": 138,
+          "after": 131,
+          "down": "5%",
+          "target": "3%",
+          "ok": true
+        },
+        {
+          "page": "chat-alert",
+          "before": 75,
+          "after": 59,
+          "down": "21%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "inbox",
+          "before": 89,
+          "after": 69,
+          "down": "22%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "todos",
+          "before": 57,
+          "after": 42,
+          "down": "26%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "work",
+          "before": 118,
+          "after": 73,
+          "down": "38%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "work-plans",
+          "before": 91,
+          "after": 45,
+          "down": "51%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "work-goals",
+          "before": 62,
+          "after": 37,
+          "down": "40%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "work-watches",
+          "before": 67,
+          "after": 27,
+          "down": "60%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "memory",
+          "before": 150,
+          "after": 120,
+          "down": "20%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "memory-about",
+          "before": 130,
+          "after": 43,
+          "down": "67%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "project",
+          "before": 178,
+          "after": 74,
+          "down": "58%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "apps-connectors",
+          "before": 69,
+          "after": 46,
+          "down": "33%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "apps-skills",
+          "before": 59,
+          "after": 31,
+          "down": "47%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "settings-general",
+          "before": 154,
+          "after": 96,
+          "down": "38%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "settings-engines",
+          "before": 375,
+          "after": 269,
+          "down": "28%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "settings-computers",
+          "before": 87,
+          "after": 33,
+          "down": "62%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "settings-access",
+          "before": 115,
+          "after": 53,
+          "down": "54%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "settings-notifications",
+          "before": 119,
+          "after": 61,
+          "down": "49%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "settings-telegram",
+          "before": 119,
+          "after": 68,
+          "down": "43%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "settings-whatsapp",
+          "before": 125,
+          "after": 86,
+          "down": "31%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "settings-desktop-pet",
+          "before": 294,
+          "after": 165,
+          "down": "44%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "settings-people",
+          "before": 89,
+          "after": 41,
+          "down": "54%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "settings-logins",
+          "before": 95,
+          "after": 66,
+          "down": "31%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "settings-security",
+          "before": 77,
+          "after": 53,
+          "down": "31%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "settings-activity",
+          "before": 418,
+          "after": 407,
+          "down": "3%",
+          "target": "0%",
+          "ok": true
+        },
+        {
+          "page": "welcome-1",
+          "before": 145,
+          "after": 136,
+          "down": "6%",
+          "target": "5%",
+          "ok": true
+        },
+        {
+          "page": "welcome-2",
+          "before": 154,
+          "after": 96,
+          "down": "38%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "welcome-3",
+          "before": 45,
+          "after": 30,
+          "down": "33%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "account-menu",
+          "before": 26,
+          "after": 9,
+          "down": "65%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "pet-chat",
+          "before": 57,
+          "after": 40,
+          "down": "30%",
+          "target": "20%",
+          "ok": true
+        },
+        {
+          "page": "pet-needs",
+          "before": 65,
+          "after": 65,
+          "down": "0%",
+          "target": "0%",
+          "ok": true
+        },
+        {
+          "page": "pet-todos",
+          "before": 43,
+          "after": 43,
+          "down": "0%",
+          "target": "0%",
+          "ok": true
+        }
+      ],
+      "total": {
+        "before": 3944,
+        "after": 2661
+      },
+      "down": "33%"
+    },
+    "wordsDownOnEveryPage": [],
+    "nothingThrows": {
+      "exceptions": [],
+      "consoleErrors": []
+    }
+  }
+}

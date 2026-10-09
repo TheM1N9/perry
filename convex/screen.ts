@@ -3,6 +3,7 @@ import { internalMutation, internalQuery, mutation, query } from "./_generated/s
 import type { Doc, Id } from "./_generated/dataModel";
 import { resolve, sep } from "node:path";
 import { assertDashboardKey } from "./lib/auth";
+import { runningPets } from "./todos";
 import { PATHS } from "../runner/home";
 
 /**
@@ -11,13 +12,12 @@ import { PATHS } from "../runner/home";
  * as its Look hotkey does (pet/look.js) and saves it, and the tool hands it
  * to Codex and shows it in the chat, so the owner sees whatever he saw. Only
  * with the pet running, only in a chat with the owner, and never once they
- * turned it off in Settings.
+ * turned it off in Settings. With pets on more than one computer, the one
+ * the owner touched last is asked: the screen they are at.
  */
 
 /** A request the pet has not taken by then is dropped: the tool has stopped waiting. */
 export const LOOK_WAIT_MS = 30_000;
-/** The pet checks in every minute (todos.presence); longer than this and it is not running. */
-const PET_GONE_MS = 150_000;
 
 export type LookRequest = { id: Id<"screenLooks">; which: "window" | "screen"; why: string };
 
@@ -27,13 +27,13 @@ export const ask = internalMutation({
   returns: v.union(v.object({ id: v.id("screenLooks") }), v.object({ error: v.string() })),
   handler: async (ctx, args) => {
     const install = await ctx.db.query("installation").first();
-    if (install?.screenLook === false) return { error: "The owner turned off letting you look at the screen (Settings → General → Desktop pet). Ask them to show you with the Look hotkey instead." };
+    if (install?.screenLook === false) return { error: "The owner turned off letting you look at the screen (Settings → Desktop pet). Ask them to show you with the Look hotkey instead." };
     const chat = await ctx.db.get(args.conversationId);
     // A background task works in a chat of its own (taskId, once background tasks are in); the owner is not reading it either.
     if (!chat || chat.jobId || (chat as { taskId?: unknown }).taskId) return { error: "You can look at the screen only in a chat with the owner, not in a scheduled job or a background task." };
-    const pet = await ctx.db.query("petPresence").first();
-    if (!pet || Date.now() - pet.seenAt > PET_GONE_MS) return { error: "The desktop pet is not running, and it is what sees the screen. Ask the owner to turn it on (Settings → General), or to paste a screenshot." };
-    const id = await ctx.db.insert("screenLooks", { conversationId: args.conversationId, which: args.which, why: args.why.slice(0, 200), status: "asked", createdAt: Date.now() });
+    const [pet] = await runningPets(ctx);
+    if (!pet) return { error: "The desktop pet is not running, and it is what sees the screen. Ask the owner to turn it on (Settings → Desktop pet), or to paste a screenshot." };
+    const id = await ctx.db.insert("screenLooks", { conversationId: args.conversationId, which: args.which, why: args.why.slice(0, 200), status: "asked", createdAt: Date.now(), device: pet.device });
     return { id };
   },
 });
@@ -54,24 +54,28 @@ export const giveUp = internalMutation({
   },
 });
 
-/** For the pet: the pictures Perry is waiting for now. */
+/**
+ * For each pet: the pictures Perry is waiting for from it now. `device`, set
+ * by the server from a paired pet's key, is which pet; none is the one on
+ * Perry's own computer.
+ */
 export const asked = query({
-  args: { key: v.string() },
+  args: { key: v.string(), device: v.optional(v.id("petDevices")) },
   handler: async (ctx, args): Promise<LookRequest[]> => {
     assertDashboardKey(args.key);
     const rows = await ctx.db.query("screenLooks").withIndex("by_status", (q) => q.eq("status", "asked").gt("createdAt", Date.now() - LOOK_WAIT_MS)).collect();
-    return rows.map((row) => ({ id: row._id, which: row.which, why: row.why }));
+    return rows.filter((row) => row.device === args.device).map((row) => ({ id: row._id, which: row.which, why: row.why }));
   },
 });
 
-/** The pet took the picture and saved it (or could not, and says why). */
+/** The pet took the picture and saved it (or could not, and says why). Only the pet asked can answer. */
 export const fulfil = mutation({
-  args: { key: v.string(), id: v.id("screenLooks"), path: v.optional(v.string()), name: v.optional(v.string()), error: v.optional(v.string()) },
+  args: { key: v.string(), id: v.id("screenLooks"), path: v.optional(v.string()), name: v.optional(v.string()), error: v.optional(v.string()), device: v.optional(v.id("petDevices")) },
   returns: v.null(),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const row = await ctx.db.get(args.id);
-    if (!row || row.status !== "asked") return null;
+    if (!row || row.status !== "asked" || row.device !== args.device) return null;
     // The tool reads the picture from here and hands it to Codex, so it must be one the pet just saved, in the uploads folder.
     if (args.path && !resolve(args.path).startsWith(resolve(PATHS.uploads) + sep)) throw new Error("The picture must be saved in Perry's uploads folder.");
     await ctx.db.patch(row._id, args.path

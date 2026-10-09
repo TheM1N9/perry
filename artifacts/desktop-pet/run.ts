@@ -162,7 +162,7 @@ const toOwner = (after: number) => telegram.sent.filter((message) => message.cha
 
 const env: NodeJS.ProcessEnv = {
   ...process.env,
-  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   TELEGRAM_BOT_TOKEN: "123456:desktop-pet-e2e",
   TELEGRAM_API_BASE: `http://127.0.0.1:${(stub.address() as { port: number }).port}`,
   PERRY_PET_DEVTOOLS_PORT: String(DEVTOOLS),
@@ -748,7 +748,7 @@ try {
     };
     const recorder = (label: string) => dashboard.evaluate(`document.querySelector('button[aria-label^=${JSON.stringify(`${label}:`)}]')?.click() ?? false`);
     const paletteOpen = () => dashboard.evaluate(`Boolean(document.querySelector('[role=dialog] input[placeholder^="Search chats"]'))`) as Promise<boolean>;
-    await dashboard.send("Page.navigate", { url: `${BASE}/settings?tab=shortcuts` });
+    await dashboard.send("Page.navigate", { url: `${BASE}/settings/desktop-pet` });
     await check("shortcutsPage", async () => /Talk to Perry[\s\S]*Search and commands[\s\S]*New chat/.test(await main()), 30);
     await check("petHotkeyShownWorking", async () => (await main()).includes("Working in the desktop pet"), 20);
     const settingsShot = await dashboard.send("Page.captureScreenshot", { format: "png" });

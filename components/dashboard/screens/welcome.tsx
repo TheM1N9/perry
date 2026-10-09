@@ -6,33 +6,45 @@ import { CheckIcon, RefreshCwIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type Ref } from "react";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
+import type { EngineKind } from "@/convex/lib/engines";
 import { errorText } from "@/lib/format";
 import { EMPTY_ANSWERS, HELP, PERSONALITIES, REPLY_STYLES, composeUserMd, type Answers } from "@/lib/persona";
+import { hasUserMd } from "@/convex/lib/pages";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { PerryMark } from "../common";
+import { EngineChoice, useEngineChoices } from "../default-engine";
 import { Platypus } from "../platypus";
+import { EngineRow } from "./settings";
 
 const STEPS = ["Meet your assistant", "About you", "Review"] as const;
+/** First, when Perry has no default engine yet: it never picks one for the owner. */
+const ENGINE_STEP = "Choose an engine";
+type Step = typeof ENGINE_STEP | (typeof STEPS)[number];
 
 /**
- * Getting to know each other, before the first chat: name the assistant, set
- * its personality, answer a few questions, and review the USER.md written
- * from them. Every answer is optional, and "just chat" asks the same
- * questions in the chat instead.
+ * Getting to know each other, before the first chat: choose the engine Perry
+ * thinks with when none is chosen yet, name the assistant, set its
+ * personality, answer a few questions, and review the USER.md written from
+ * them. Every answer is optional, and "just chat" asks the same questions in
+ * the chat instead.
  */
 export function Welcome() {
   const { dashboardKey } = useSession();
   const router = useRouter();
   const persona = useQuery(api.dashboard.getPersona, { key: dashboardKey });
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
+  const engines = useEngineChoices();
+  const computers = useQuery(api.engines.list, { key: dashboardKey });
+  const chooseEngine = useMutation(api.dashboard.setDefaultEngine);
   const finish = useMutation(api.dashboard.finishOnboarding);
   const skip = useMutation(api.dashboard.skipOnboarding);
   const id = useId();
@@ -40,13 +52,16 @@ export function Welcome() {
   const heading = useRef<HTMLHeadingElement>(null);
 
   const [step, setStep] = useState(0);
+  // Whether this visit asks for the engine, settled once, so choosing one does not move the steps under the owner.
+  const [steps, setSteps] = useState<readonly Step[]>();
+  const [engine, setEngine] = useState<EngineKind>();
   const [name, setName] = useState("");
   const [preset, setPreset] = useState<string>(PERSONALITIES[0].id);
   const [custom, setCustom] = useState("");
   const [answers, setAnswers] = useState<Answers>(EMPTY_ANSWERS);
   const [userMd, setUserMd] = useState("");
   const [edited, setEdited] = useState(false);
-  const [busy, setBusy] = useState<"" | "save" | "chat" | "skip">("");
+  const [busy, setBusy] = useState<"" | "save" | "chat" | "skip" | "engine">("");
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const timezone = typeof Intl === "undefined" ? "" : Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -59,11 +74,18 @@ export function Welcome() {
     if (known) setPreset(known.id);
     else if (persona.personality) { setPreset("custom"); setCustom(persona.personality); }
     setAnswers((current) => ({ ...current, call: status.displayName ?? "" }));
+    setSteps(status.defaultEngine ? STEPS : [ENGINE_STEP, ...STEPS]);
     setLoaded(true);
   }, [loaded, persona, status]);
   useEffect(() => { if (loaded) heading.current?.focus(); }, [step, loaded]);
+  // With exactly one engine ready to answer, it is picked to begin with; the owner still confirms it.
+  const ready = engines?.filter((item) => item.ready) ?? [];
+  const onlyReady = ready.length === 1 ? ready[0].kind : undefined;
+  useEffect(() => {
+    if (engine === undefined && onlyReady) setEngine(onlyReady);
+  }, [engine, onlyReady]);
 
-  if (!loaded || !persona) {
+  if (!loaded || !persona || !steps) {
     return <main className="grid min-h-dvh place-items-center"><Spinner className="size-5 text-muted-foreground" /></main>;
   }
 
@@ -88,12 +110,21 @@ export function Welcome() {
       setBusy("");
     }
   };
+  const at = steps[step];
+  const picked = engines?.find((item) => item.kind === engine);
   const next = (event: FormEvent) => {
     event.preventDefault();
-    if (step === 0) setStep(1);
-    else if (step === 1) { if (!edited) setUserMd(composeUserMd(answers, timezone)); setStep(2); }
-    else void run("save");
+    if (at === ENGINE_STEP) {
+      if (!engine) return setError("Choose the engine Perry should use.");
+      setBusy("engine");
+      setError("");
+      void chooseEngine({ key: dashboardKey, engine }).then(() => { setBusy(""); setStep(step + 1); }, (cause) => { setError(errorText(cause)); setBusy(""); });
+    } else if (at === "Meet your assistant") setStep(step + 1);
+    else if (at === "About you") { if (!edited) setUserMd(composeUserMd(answers, timezone)); setStep(step + 1); }
+    // An emptied USER.md is no page about you: Perry asks in the chat instead.
+    else void run(userMd.trim() ? "save" : "chat");
   };
+  const last = step === steps.length - 1;
 
   return (
     <main className="min-h-dvh bg-muted/40 px-4 py-10 sm:py-16">
@@ -101,20 +132,20 @@ export function Welcome() {
         <div className="mb-8 flex items-center justify-between gap-4">
           <PerryMark className="size-10" />
           <ol className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-label="Steps">
-            {STEPS.map((label, index) => (
+            {steps.map((label, index) => (
               <li key={label} aria-current={index === step ? "step" : undefined} className="flex items-center gap-1.5">
-                <span className={cn("grid size-5 place-items-center rounded-full border text-[11px] font-medium",
+                <span className={cn("grid size-5 place-items-center rounded-full border text-2xs font-medium",
                   index < step && "border-primary bg-primary text-primary-foreground", index === step && "border-foreground text-foreground")}>
                   {index < step ? <CheckIcon className="size-3" /> : index + 1}
                 </span>
                 <span className={cn("max-sm:sr-only", index === step && "font-medium text-foreground")}>{index < step && <span className="sr-only">Done: </span>}{label}</span>
-                {index < STEPS.length - 1 && <span className="mx-1 h-px w-4 bg-border" aria-hidden />}
+                {index < steps.length - 1 && <span className="mx-1 h-px w-4 bg-border" aria-hidden />}
               </li>
             ))}
           </ol>
         </div>
 
-        <div className="rounded-2xl border bg-card p-6 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_16px_40px_-24px_rgb(0_0_0/0.2)] sm:p-8">
+        <div className="rounded-2xl border bg-card p-6 shadow-float sm:p-8">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div key={step}
               initial={reduce ? false : { opacity: 0, x: 16 }}
@@ -122,24 +153,46 @@ export function Welcome() {
               exit={reduce ? { opacity: 0 } : { opacity: 0, x: -16 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
               className="space-y-6">
-              {step === 0 && (
+              {at === ENGINE_STEP && (
                 <>
-                  <Heading ref={heading} title="Meet your assistant">Give it a name and a way of talking. You can change both later, under Memory.</Heading>
+                  <Heading ref={heading} title="Choose an engine">You can change it later in Settings.</Heading>
+                  {engines === undefined ? <Spinner className="size-5 text-muted-foreground" />
+                    : engines.length === 0 ? (
+                      <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><Spinner className="size-3" />Waiting for your computer to say which engines it has…</p>
+                    ) : <EngineChoice engines={engines} value={engine} onChange={(kind) => { setEngine(kind); setError(""); }} disabled={busy === "engine"} />}
+                  {picked && !picked.ready && (
+                    <div className="rounded-xl border p-4" role="group" aria-label={`Sign in to ${picked.label}`}>
+                      <p className="text-sm font-medium">{picked.label} isn&apos;t ready yet</p>
+                      <p className="mt-0.5 text-sm text-pretty text-muted-foreground">Perry answers once it&apos;s installed and signed in.</p>
+                      <ul className="mt-1 divide-y">
+                        {computers?.flatMap((computer) => computer.engines.filter((item) => item.kind === picked.kind)
+                          .map((item) => <li key={computer.id}><EngineRow runnerId={computer.id} computer={computer.name} online={computer.online} engine={item} /></li>))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {at === "Meet your assistant" && (
+                <>
+                  <Heading ref={heading} title="Meet your assistant">You can change both later in Settings.</Heading>
                   <Field>
                     <FieldLabel htmlFor={`${id}-name`}>Name</FieldLabel>
                     <Input id={`${id}-name`} value={name} maxLength={40} autoComplete="off" placeholder={persona.defaultName} onChange={(event) => setName(event.target.value)} className="h-10 max-w-xs" />
                   </Field>
                   <FieldSet>
                     <FieldLegend variant="label">Personality</FieldLegend>
-                    <div role="radiogroup" aria-label="Personality" className="grid gap-2">
+                    <RadioGroup aria-label="Personality" value={preset} onValueChange={(value) => setPreset(value as string)} className="gap-3">
                       {[...PERSONALITIES, { id: "custom", label: "Something else", text: "Describe it in your own words." }].map((item) => (
-                        <button type="button" role="radio" aria-checked={preset === item.id} key={item.id} onClick={() => setPreset(item.id)}
-                          className={cn("rounded-xl border px-4 py-3 text-left transition-colors hover:bg-muted/40", preset === item.id && "border-primary/60 bg-brand-soft/40 ring-1 ring-primary/40")}>
-                          <span className="block text-sm font-medium">{item.label}</span>
-                          <span className="block text-sm text-pretty text-muted-foreground">{item.text}</span>
-                        </button>
+                        <label key={item.id} className="flex cursor-pointer items-start gap-3">
+                          <RadioGroupItem value={item.id} className="mt-0.5" />
+                          <span className="grid gap-0.5">
+                            <span className="text-sm font-medium">{item.label}</span>
+                            <span className="text-sm text-pretty text-muted-foreground">{item.text}</span>
+                          </span>
+                        </label>
                       ))}
-                    </div>
+                    </RadioGroup>
                   </FieldSet>
                   {preset === "custom" && (
                     <Field>
@@ -151,7 +204,7 @@ export function Welcome() {
                   {sample && (
                     <figure className="flex items-start gap-3" aria-label="How it might sound">
                       <PerryMark className="size-8" />
-                      <blockquote className="rounded-2xl rounded-tl-md bg-muted px-4 py-2.5 text-[15px] text-pretty">
+                      <blockquote className="rounded-2xl rounded-tl-md bg-muted px-4 py-2.5 text-md text-pretty">
                         <span className="mb-0.5 block text-xs font-medium text-muted-foreground">{assistant}</span>
                         {sample}
                       </blockquote>
@@ -160,19 +213,19 @@ export function Welcome() {
                 </>
               )}
 
-              {step === 1 && (
+              {at === "About you" && (
                 <>
-                  <Heading ref={heading} title="About you">{assistant} reads this before every reply. Answer what you like and skip the rest; you can always tell it more in a chat.</Heading>
+                  <Heading ref={heading} title="About you">All optional.</Heading>
                   <Question id={`${id}-call`} label="What should I call you?">
                     <Input id={`${id}-call`} value={answers.call} autoComplete="given-name" onChange={(event) => set("call", event.target.value)} className="h-10 max-w-xs" />
                   </Question>
-                  <Question id={`${id}-work`} label="What do you do?" hint="Your work, study, or what fills your time.">
+                  <Question id={`${id}-work`} label="What do you do?">
                     <Textarea id={`${id}-work`} rows={2} value={answers.work} onChange={(event) => set("work", event.target.value)} />
                   </Question>
                   <Question id={`${id}-day`} label="What does a typical day look like?" hint={timezone ? `Your timezone, ${timezone}, is saved too.` : undefined}>
                     <Textarea id={`${id}-day`} rows={2} value={answers.day} placeholder="Up at 7, gym before work, deep work in the mornings" onChange={(event) => set("day", event.target.value)} />
                   </Question>
-                  <Question id={`${id}-people`} label="Who matters to you?" hint="Family, partner, team, friends: whoever you might mention by name.">
+                  <Question id={`${id}-people`} label="Who matters to you?">
                     <Textarea id={`${id}-people`} rows={2} value={answers.people} onChange={(event) => set("people", event.target.value)} />
                   </Question>
                   <Field>
@@ -183,7 +236,7 @@ export function Welcome() {
                     </ToggleGroup>
                     {answers.replies && <FieldDescription>{REPLY_STYLES.find((style) => style.id === answers.replies)?.text}</FieldDescription>}
                   </Field>
-                  <Question id={`${id}-language`} label="Language" hint="Leave it empty to be answered in whatever you write in.">
+                  <Question id={`${id}-language`} label="Language" hint="Empty: whatever you write in.">
                     <Input id={`${id}-language`} value={answers.language} autoComplete="off" placeholder="English" onChange={(event) => set("language", event.target.value)} className="h-10 max-w-xs" />
                   </Question>
                   <FieldSet>
@@ -201,21 +254,21 @@ export function Welcome() {
                     </div>
                     <Textarea aria-label="Anything else" rows={2} value={answers.helpOther} placeholder="Anything else, one per line" onChange={(event) => set("helpOther", event.target.value)} />
                   </FieldSet>
-                  <Question id={`${id}-boundaries`} label="Anything I should never do?" hint="Topics to avoid, people not to contact, things to always ask about first.">
+                  <Question id={`${id}-boundaries`} label="Anything I should never do?">
                     <Textarea id={`${id}-boundaries`} rows={2} value={answers.boundaries} onChange={(event) => set("boundaries", event.target.value)} />
                   </Question>
                 </>
               )}
 
-              {step === 2 && (
+              {at === "Review" && (
                 <>
-                  <Heading ref={heading} title="Your USER.md">This is what {assistant} will know about you, in every chat. Edit anything; {assistant} keeps it current as you talk, and every version is kept.</Heading>
-                  {persona.user && (
-                    <Alert><AlertTitle>This replaces your current USER.md</AlertTitle><AlertDescription>The old one stays in its history under Memory, so you can restore it.</AlertDescription></Alert>
+                  <Heading ref={heading} title="Your USER.md">What {assistant} knows about you in every chat. Edit anything.</Heading>
+                  {hasUserMd(persona.user) && (
+                    <Alert variant="quiet"><AlertTitle>This replaces About me</AlertTitle><AlertDescription>The old one stays in its history under Brain, so you can restore it.</AlertDescription></Alert>
                   )}
                   <Field>
                     <FieldLabel htmlFor={`${id}-md`}>USER.md</FieldLabel>
-                    <Textarea id={`${id}-md`} value={userMd} spellCheck className="min-h-80 font-mono text-[13px] leading-relaxed" onChange={(event) => { setUserMd(event.target.value); setEdited(true); }} />
+                    <Textarea id={`${id}-md`} value={userMd} spellCheck className="min-h-80 font-mono text-sm leading-relaxed" onChange={(event) => { setUserMd(event.target.value); setEdited(true); }} />
                     {edited && (
                       <Button type="button" variant="ghost" size="sm" className="w-fit" onClick={() => { setUserMd(composeUserMd(answers, timezone)); setEdited(false); }}>
                         <RefreshCwIcon />Rebuild from my answers
@@ -231,16 +284,17 @@ export function Welcome() {
 
           <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6">
             <div>{step > 0 && <Button type="button" variant="ghost" disabled={Boolean(busy)} onClick={() => setStep(step - 1)}>Back</Button>}</div>
-            <Button type="submit" size="lg" className="h-10 px-5" disabled={Boolean(busy) || (step === 2 && !userMd.trim())} aria-busy={busy === "save" || undefined}>
-              {busy === "save" && <Spinner />}{step === 2 ? `Save and meet ${assistant}` : "Continue"}
+            <Button type="submit" size="lg" className="h-10 px-5" disabled={Boolean(busy) || (at === ENGINE_STEP && !engine)} aria-busy={busy === "save" || busy === "engine" || undefined}>
+              {(busy === "save" || busy === "engine" || (last && busy === "chat")) && <Spinner />}{last ? `Save and meet ${assistant}` : "Continue"}
             </Button>
           </div>
         </div>
 
-        {step === 0 && (
+        {(at === ENGINE_STEP || at === "Meet your assistant") && (
           <div className="mt-6 flex flex-col items-center gap-4">
             <div className="flex flex-wrap justify-center gap-2">
-              <Button type="button" variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void run("chat")}>{busy === "chat" && <Spinner />}I&apos;d rather just chat</Button>
+              {/* Chatting needs an engine; skipping does not, and the chat page asks for one then. */}
+              {at === "Meet your assistant" && <Button type="button" variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void run("chat")}>{busy === "chat" && <Spinner />}I&apos;d rather just chat</Button>}
               <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" disabled={Boolean(busy)} onClick={() => void run("skip")}>{busy === "skip" && <Spinner />}Skip for now</Button>
             </div>
             <div className="hidden w-40 sm:block"><Platypus greeting={`Hi. I'm ${assistant}.`} /></div>
@@ -255,7 +309,7 @@ function Heading({ ref, title, children }: { ref: Ref<HTMLHeadingElement>; title
   return (
     <div>
       <h1 ref={ref} tabIndex={-1} className="text-2xl font-semibold tracking-[-0.02em] outline-none">{title}</h1>
-      <p className="mt-1.5 text-[15px] text-pretty text-muted-foreground">{children}</p>
+      <p className="mt-1.5 text-md text-pretty text-muted-foreground">{children}</p>
     </div>
   );
 }

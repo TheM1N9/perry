@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { HOME, PATHS } from "../../runner/home";
+import { skillMentions } from "./commands";
 
 /**
  * Importing a skill (issue #110) from a URL or a folder, safely. Agent Skills
@@ -16,6 +17,8 @@ import { HOME, PATHS } from "../../runner/home";
 
 /** Where skills wait for the owner's yes: in Perry's home, outside the skills folder Codex reads. */
 const REVIEW = join(HOME, "skills-review");
+/** A skill name as Codex takes it. */
+const NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const MAX_FILES = 60;
 const MAX_BYTES = 2 * 1024 * 1024;
 /** What of each file the review shows the agent. */
@@ -147,7 +150,7 @@ export async function stageSkill(source: string): Promise<Staged> {
   if (!skillFile) throw new Error("There is no SKILL.md there, so it is not a skill (a skill is a folder with a SKILL.md at its top).");
   const skill = skillFile.bytes.toString("utf8");
   const { name, description } = frontmatter(skill);
-  if (!name || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(name)) throw new Error("Its SKILL.md has no usable name in its frontmatter (lowercase letters, digits and hyphens), so Codex would ignore it.");
+  if (!name || !NAME.test(name)) throw new Error("Its SKILL.md has no usable name in its frontmatter (lowercase letters, digits and hyphens), so Codex would ignore it.");
   if (!description) throw new Error("Its SKILL.md has no description in its frontmatter, so Codex would ignore it.");
   const reviewId = randomUUID().slice(0, 8);
   const folder = join(REVIEW, reviewId);
@@ -174,7 +177,7 @@ export function installStaged(reviewId: string, replace: boolean): { name: strin
   if (!/^[0-9a-f]{8}$/.test(reviewId)) throw new Error("No skill is waiting with that review id; review it again with review_skill.");
   const folder = join(REVIEW, reviewId);
   if (!existsSync(join(folder, "review.json"))) throw new Error("No skill is waiting with that review id; review it again with review_skill.");
-  const { name } = JSON.parse(readFileSync(join(folder, "review.json"), "utf8")) as { name: string };
+  const { name, source } = JSON.parse(readFileSync(join(folder, "review.json"), "utf8")) as { name: string; source: string };
   const target = join(PATHS.skills, name);
   if (existsSync(target)) {
     if (!replace) throw new Error(`There is already a skill called ${name}. Ask the owner whether to replace it, then pass replace.`);
@@ -187,5 +190,99 @@ export function installStaged(reviewId: string, replace: boolean): { name: strin
     cpSync(join(folder, "skill"), target, { recursive: true });
   }
   rmSync(folder, { recursive: true, force: true });
+  // Written after the move, so a file of that name in the skill itself cannot say where it came from.
+  writeFileSync(join(target, ORIGIN), JSON.stringify({ source, installedAt: Date.now() }));
   return { name, path: target };
+}
+
+// --- The skills installed -------------------------------------------------------------
+
+/** What installing a skill from elsewhere leaves in its folder: where it came from, and when. */
+const ORIGIN = ".perry-source.json";
+/** The most of a SKILL.md Apps & skills → Skills shows. */
+const SHOWN_READ = 200_000;
+
+export type InstalledSkill = {
+  /** Its folder in the skills folder, which removing it deletes. */
+  folder: string;
+  /** Its name as the engines read it, which "$name" in a message uses: its SKILL.md's, else its folder's. */
+  name: string;
+  description: string;
+  /** Where it was imported from (install_skill). Unset: Perry wrote it, or it was put in the folder by hand. */
+  source?: string;
+  /** When it was installed, or its SKILL.md first written. */
+  addedAt: number;
+  /** Why the engines pass it over: a SKILL.md with no usable name or description. */
+  problem?: string;
+};
+
+/** A folder in the skills folder by its name alone, so nothing outside it can be read or removed. */
+function skillFolder(folder: string): string {
+  if (!folder || folder.startsWith(".") || /[\\/:]/.test(folder)) throw new Error("That is not a skill's folder.");
+  const path = join(PATHS.skills, folder);
+  if (!existsSync(join(path, "SKILL.md"))) throw new Error(`There is no skill in ${folder} any more.`);
+  return path;
+}
+
+function describe(folder: string): InstalledSkill {
+  const path = join(PATHS.skills, folder);
+  const { name, description } = frontmatter(readFileSync(join(path, "SKILL.md"), "utf8"));
+  let origin: { source?: unknown; installedAt?: unknown } = {};
+  try { origin = JSON.parse(readFileSync(join(path, ORIGIN), "utf8")); } catch {}
+  const usable = Boolean(name && NAME.test(name));
+  return {
+    folder,
+    name: usable ? name! : folder,
+    description: description ?? "",
+    ...(typeof origin.source === "string" ? { source: origin.source } : {}),
+    addedAt: typeof origin.installedAt === "number" ? origin.installedAt : statSync(join(path, "SKILL.md")).birthtimeMs,
+    ...(!usable ? { problem: "Its SKILL.md names no skill (lowercase letters, digits and hyphens), so the engines pass it over." }
+      : !description ? { problem: "Its SKILL.md has no description, so the engines pass it over." } : {}),
+  };
+}
+
+/** Every skill in the skills folder, by name: one folder each, with a SKILL.md at its top. */
+export function listSkills(): InstalledSkill[] {
+  let entries;
+  try { entries = readdirSync(/*turbopackIgnore: true*/ PATHS.skills, { withFileTypes: true }); } catch { return []; }
+  return entries
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && existsSync(join(PATHS.skills, entry.name, "SKILL.md")))
+    .map((entry) => describe(entry.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** One skill, with its SKILL.md and the files beside it, for the owner to read. */
+export function readSkill(folder: string): InstalledSkill & { path: string; skill: string; files: Array<{ path: string; bytes: number }> } {
+  const root = skillFolder(folder);
+  const files: Array<{ path: string; bytes: number }> = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (SKIP.has(entry.name) || entry.name === ORIGIN || files.length >= MAX_FILES) continue;
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.isFile()) files.push({ path: relative(root, path).split(sep).join("/"), bytes: statSync(path).size });
+    }
+  };
+  walk(root);
+  const skill = readFileSync(join(root, "SKILL.md"), "utf8");
+  return { ...describe(folder), path: join(root, "SKILL.md"), skill: skill.slice(0, SHOWN_READ), files: files.sort((a, b) => a.path.localeCompare(b.path)) };
+}
+
+/** Delete a skill, its whole folder. The engines stop seeing it from their next message. */
+export function removeSkill(folder: string): { name: string } {
+  const root = skillFolder(folder);
+  const { name } = describe(folder);
+  rmSync(root, { recursive: true, force: true });
+  return { name };
+}
+
+/** The installed skills a message names with "$name", each with the SKILL.md its engine is to read. */
+export function skillsNamedIn(text: string): Array<{ name: string; path: string }> {
+  const named = skillMentions(text);
+  if (!named.length) return [];
+  const usable = listSkills().filter((skill) => !skill.problem);
+  return named.flatMap((name) => {
+    const skill = usable.find((item) => item.name === name);
+    return skill ? [{ name, path: join(PATHS.skills, skill.folder, "SKILL.md") }] : [];
+  });
 }

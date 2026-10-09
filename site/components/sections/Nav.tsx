@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { TrackLink } from "@/components/fx/TrackLink";
 import { PlatypusHead } from "@/components/mascot/PlatypusHead";
 
 /** Perry and Get Perry. A full-width bar at the top of the page; once you scroll, a floating pill of frosted glass, 85% as wide. */
@@ -35,9 +36,14 @@ export function Nav() {
           <PlatypusHead className="size-8 transition-transform duration-200 group-hover:-rotate-[10deg]" ring={false} />
           Perry
         </a>
-        <a href="#setup" className="inline-flex h-9 items-center rounded-full bg-teal px-4 text-[14px] font-semibold text-white transition-colors hover:bg-[#0a6a61]">
+        <TrackLink
+          href="#setup"
+          event="CTA click"
+          data={{ cta: "get_perry", from: "nav" }}
+          className="inline-flex h-9 items-center rounded-full bg-teal px-4 text-[14px] font-semibold text-white transition-colors hover:bg-[#0a6a61]"
+        >
           Get Perry
-        </a>
+        </TrackLink>
       </div>
     </header>
   );

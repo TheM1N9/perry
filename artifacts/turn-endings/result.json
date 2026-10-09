@@ -1,0 +1,163 @@
+{
+  "ranAt": "2026-10-03T16:35:39.469Z",
+  "passed": true,
+  "checks": {
+    "blankErrorKeepsPartial": true,
+    "emptyReplyIsAnError": true,
+    "memoriesLineAloneIsEmpty": true,
+    "ordinaryReplyUntouched": true,
+    "stoppedEmptyIsNotAnError": true,
+    "restartKeepsPartial": true,
+    "restartSaysWhatHappened": true,
+    "nothingRepeats": true,
+    "restartShownInChat": true,
+    "emptyShownInChat": true,
+    "noPageErrors": true
+  },
+  "notes": {
+    "home": "W:\\Developer-w\\.tmp\\perry-turn-endings-kvli0V",
+    "blankErrorKeepsPartial": {
+      "chat": {
+        "channel": "web",
+        "engine": "codex",
+        "access": "supervised",
+        "title": "Count to ten e2e-musm4cah",
+        "isRunning": false,
+        "lastError": "The engine crashed."
+      },
+      "messages": [
+        {
+          "id": "zm6t117xggvep48c7ykb264g1y",
+          "role": "assistant",
+          "text": "1\n2\n3\n4\n5\n6\n7\n8",
+          "createdAt": 1791045299157,
+          "attachments": []
+        },
+        {
+          "id": "b5se6ezxnzx515kxjgs4hknr3b",
+          "role": "user",
+          "text": "Count to ten e2e-musm4cah",
+          "createdAt": 1791045299156,
+          "attachments": []
+        }
+      ]
+    },
+    "emptyReplyIsAnError": {
+      "chat": {
+        "channel": "web",
+        "engine": "codex",
+        "access": "supervised",
+        "title": "Say something e2e-musm4cah",
+        "isRunning": false,
+        "lastError": "The engine finished without writing a reply. Send the message again, or ask what it got done."
+      },
+      "messages": [
+        {
+          "id": "pdtjs4m43vm1qzm024nvg06tnr",
+          "role": "user",
+          "text": "Say something e2e-musm4cah",
+          "createdAt": 1791045310995,
+          "attachments": []
+        }
+      ]
+    },
+    "memoriesLineAloneIsEmpty": {
+      "chat": {
+        "channel": "web",
+        "engine": "codex",
+        "access": "supervised",
+        "title": "Recall something e2e-musm4cah",
+        "isRunning": false,
+        "lastError": "The engine finished without writing a reply. Send the message again, or ask what it got done."
+      },
+      "messages": [
+        {
+          "id": "tmnty6rcs0786e2z4hxb5vjwft",
+          "role": "user",
+          "text": "Recall something e2e-musm4cah",
+          "createdAt": 1791045314164,
+          "attachments": []
+        }
+      ]
+    },
+    "ordinaryReplyUntouched": {
+      "chat": {
+        "channel": "web",
+        "engine": "codex",
+        "access": "supervised",
+        "title": "Say pong e2e-musm4cah",
+        "isRunning": false
+      },
+      "messages": [
+        {
+          "id": "vamg9yxasttr0th5sxqw6hyjad",
+          "role": "assistant",
+          "text": "pong",
+          "createdAt": 1791045316216.001,
+          "attachments": []
+        },
+        {
+          "id": "gh65gwtf17qw7wct7t6r329ecv",
+          "role": "user",
+          "text": "Say pong e2e-musm4cah",
+          "createdAt": 1791045316216,
+          "attachments": []
+        }
+      ]
+    },
+    "stoppedEmptyIsNotAnError": {
+      "chat": {
+        "channel": "web",
+        "engine": "codex",
+        "access": "supervised",
+        "title": "Start something long e2e-musm4cah",
+        "isRunning": false
+      },
+      "messages": [
+        {
+          "id": "jtpgxhttz78tnp55h2a21j1rdt",
+          "role": "assistant",
+          "text": "_Stopped._",
+          "createdAt": 1791045318775.001,
+          "attachments": []
+        },
+        {
+          "id": "xme9834cqxgghrd1p2ea5x5p4h",
+          "role": "user",
+          "text": "Start something long e2e-musm4cah",
+          "createdAt": 1791045318775,
+          "attachments": []
+        }
+      ]
+    },
+    "restartKeepsPartial": {
+      "chat": {
+        "channel": "web",
+        "engine": "codex",
+        "access": "supervised",
+        "title": "Count to fifty e2e-musm4cah",
+        "isRunning": false,
+        "lastError": "Perry restarted during this reply, so it ended early. Send the message again to finish it."
+      },
+      "messages": [
+        {
+          "id": "mwzng0rt7rashjh7vx0d1af0zm",
+          "role": "assistant",
+          "text": "1\n2\n3\n4\n5\n6\n7\n8",
+          "createdAt": 1791045322561,
+          "attachments": []
+        },
+        {
+          "id": "2fg2n0gynyxgmanhxbs9346azh",
+          "role": "user",
+          "text": "Count to fifty e2e-musm4cah",
+          "createdAt": 1791045322560,
+          "attachments": []
+        }
+      ]
+    },
+    "restartShownInChat": "Perry couldn't finish the last reply\n\nPerry restarted during this reply, so it ended early. Send the message again to finish it.\n\nTry again",
+    "emptyShownInChat": "Perry couldn't finish the last reply\n\nThe engine finished without writing a reply. Send the message again, or ask what it got done.\n\nTry again",
+    "noPageErrors": []
+  }
+}

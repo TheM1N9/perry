@@ -1,16 +1,18 @@
 import { v, type Infer } from "convex/values";
 import { internal } from "./_generated/api";
-import { mutation, query, type MutationCtx } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
-import { ENGINE_LABELS, engineOf, type EngineKind, type LoginInteraction } from "./lib/engines";
+import { ENGINE_LABELS, LOCKED_DOWN_BEFORE, refusal, updateOf, type EngineKind, type EngineUpdate, type LoginInteraction } from "./lib/engines";
+import { defaultEngine } from "./installation";
 import { authenticate } from "./runner";
 import { vEngine, vEngineStatus, vLoginInteraction } from "./schema";
 
 /**
  * The engines on each connected computer, as the runner reports them, and
  * signing them in and out from Settings. A chat's turns go to a runner whose
- * engine for that chat is installed and signed in (codex.ts, pickRunner).
+ * engine for that chat is installed, signed in and not older than Perry works
+ * with (codex.ts, pickRunner; the versions are in lib/engines.ts).
  *
  * Only account metadata and what the owner must do to sign in (a code, a page,
  * a command) cross this server. An engine's tokens never leave its own CLI.
@@ -45,6 +47,24 @@ export function statusesOf(runner: Doc<"runners">): Reported[] {
 export const engineReady = (runner: Doc<"runners">, engine: EngineKind) =>
   statusesOf(runner).some((status) => status.kind === engine && status.installed && status.signedIn);
 
+/** The engine's CLI on this runner is older than Perry works with, and how to update it: it is given no new turns. */
+export function tooOld(runner: Doc<"runners">, engine: EngineKind): EngineUpdate | undefined {
+  const status = statusesOf(runner).find((item) => item.kind === engine);
+  const update = status && updateOf(status);
+  return update?.need === "required" ? update : undefined;
+}
+
+/** Ready, and recent enough for Perry: a new turn may go to this runner's engine. */
+export const engineUsable = (runner: Doc<"runners">, engine: EngineKind) => engineReady(runner, engine) && !tooOld(runner, engine);
+
+/**
+ * This runner's engine can be locked down for a chat with someone else (no
+ * shell, files or computer: runner/engine.ts, guestLockdown), as the runner
+ * says. A runner from before it said locked down only LOCKED_DOWN_BEFORE.
+ */
+export const engineLockable = (runner: Doc<"runners">, engine: EngineKind) =>
+  statusesOf(runner).some((status) => status.kind === engine && (status.guestLockdown ?? status.kind === LOCKED_DOWN_BEFORE));
+
 /**
  * Keep what the runner found. A model list that came back empty while signed
  * in (a listing that failed for a moment) keeps the one from before.
@@ -56,6 +76,8 @@ export async function recordEngines(ctx: MutationCtx, runner: Doc<"runners">, re
     ...status,
     message: status.message?.slice(0, 500),
     error: status.error?.slice(0, 500),
+    latest: status.latest?.slice(0, 50),
+    update: status.update?.slice(0, 300),
     models: status.models.length ? status.models : before.find((item) => item.kind === status.kind)?.models ?? [],
     updatedAt: now,
   }));
@@ -78,9 +100,14 @@ export async function recordEngines(ctx: MutationCtx, runner: Doc<"runners">, re
 
 export type Resume = { engine: EngineKind; cursor: string; version: number };
 
-/** Where the chat's engine session resumes. A chat from before engines has its Codex thread instead. */
-export function resumeOf(chat: Doc<"conversations">): Resume | undefined {
-  const engine = engineOf(chat);
+/**
+ * Where the chat's engine session resumes, for a turn on `engine`: the chat's
+ * own, or for a chat that follows the default, the default's. A chat from
+ * before `resume` has its Codex thread instead. None on another engine than
+ * the session's: that turn starts afresh with the chat so far.
+ */
+export function resumeOf(chat: Doc<"conversations">, engine: EngineKind | undefined): Resume | undefined {
+  if (!engine) return undefined;
   if (chat.resume?.engine === engine) return chat.resume;
   if (engine === "codex" && chat.codexThreadId) return { engine, cursor: chat.codexThreadId, version: 1 };
   return undefined;
@@ -90,15 +117,18 @@ export function resumeOf(chat: Doc<"conversations">): Resume | undefined {
 export const FORGET_SESSION = { resume: undefined, codexThreadId: undefined } as const;
 
 /**
- * The change to a chat for a model picked for it. Another engine's model
- * moves the chat to that engine, which starts afresh with the chat's history,
- * and hears the recalled memory again.
+ * The change to a chat for a model picked for it, which sets the chat on that
+ * model's engine. Another engine than the one it was on (`current`: its own,
+ * or the default it followed) starts afresh with the chat's history, and
+ * hears the recalled memory again.
  */
-export function pickPatch(chat: Doc<"conversations">, model: string | undefined, engine?: EngineKind) {
-  const switching = engine !== undefined && engine !== engineOf(chat);
+export function pickPatch(chat: Doc<"conversations">, model: string | undefined, engine: EngineKind | undefined, current: EngineKind | undefined) {
+  const switching = engine !== undefined && engine !== current;
   return {
     model: model?.trim() || undefined,
-    ...(switching ? { engine, ...FORGET_SESSION, recallDigest: undefined } : {}),
+    ...(engine !== undefined && engine !== chat.engine ? { engine } : {}),
+    // The owner's own move ends what Perry said about moving it (routing.moveChat).
+    ...(switching ? { ...FORGET_SESSION, recallDigest: undefined, moved: undefined } : {}),
   };
 }
 
@@ -116,7 +146,19 @@ export const report = mutation({
 });
 
 /**
- * The key an engine needs from Settings → Keys, for this runner only: the
+ * The owner's default engine, for the runner's quick turns (chat names, the
+ * reviewer) when the chat's own engine cannot take them. Null until chosen.
+ */
+export const preferred = query({
+  args: { token: v.string() },
+  handler: async (ctx, args): Promise<EngineKind | null> => {
+    await authenticate(ctx, args.token);
+    return (await defaultEngine(ctx)) ?? null;
+  },
+});
+
+/**
+ * The key an engine needs from Settings → Engines, for this runner only: the
  * Gemini API key Antigravity takes. It goes into that engine's environment
  * on the computer and nowhere else.
  */
@@ -211,9 +253,26 @@ export type EngineView = {
   auth: EngineStatus["auth"];
   message?: string;
   error?: string;
+  /** Its CLI should be updated: it is older than Perry works with, or a newer release is out. */
+  update?: EngineUpdate;
   updatedAt: number;
   request?: { kind: "login" | "logout"; status: "queued" | "running" | "done" | "error"; interaction?: LoginInteraction; error?: string };
+  /** Its last update from Settings (engineUpdates.ts): how it is going, or how it went. */
+  updating?: EngineUpdating;
 };
+
+export type EngineUpdating = Pick<Doc<"engineUpdates">, "status" | "command" | "waitingFor" | "from" | "to" | "output" | "error" | "requestedAt" | "finishedAt">;
+
+/** Each engine's last update from Settings on a computer. */
+async function updatesOf(ctx: QueryCtx, runnerId: Id<"runners">): Promise<Partial<Record<EngineKind, EngineUpdating>>> {
+  const latest: Partial<Record<EngineKind, EngineUpdating>> = {};
+  for (const row of await ctx.db.query("engineUpdates").withIndex("by_runner_engine", (q) => q.eq("runnerId", runnerId)).collect()) {
+    if ((latest[row.engine]?.requestedAt ?? 0) > row.requestedAt) continue;
+    const { status, command, waitingFor, from, to, output, error, requestedAt, finishedAt } = row;
+    latest[row.engine] = { status, command, waitingFor, from, to, output, error, requestedAt, finishedAt };
+  }
+  return latest;
+}
 
 /** Every connected computer and its engines, for Settings. */
 export const list = query({
@@ -221,25 +280,32 @@ export const list = query({
   handler: async (ctx, args): Promise<Array<{ id: Doc<"runners">["_id"]; name: string; online: boolean; engines: EngineView[] }>> => {
     assertDashboardKey(args.key);
     const runners = await ctx.db.query("runners").order("desc").take(20);
-    return runners.filter((runner) => !runner.revoked).map((runner) => ({
-      id: runner._id,
-      name: runner.name,
-      online: isOnline(runner),
-      engines: statusesOf(runner).map((status) => {
-        const request = runner.engineAuth?.[status.kind];
-        return {
-          kind: status.kind,
-          label: ENGINE_LABELS[status.kind],
-          installed: status.installed,
-          version: status.version,
-          signedIn: status.signedIn,
-          auth: status.auth,
-          message: status.message,
-          error: status.error,
-          updatedAt: status.updatedAt,
-          ...(request ? { request: { kind: request.kind, status: request.status, interaction: request.interaction, error: request.error } } : {}),
-        };
-      }),
+    return Promise.all(runners.filter((runner) => !runner.revoked).map(async (runner) => {
+      const updates = await updatesOf(ctx, runner._id);
+      return {
+        id: runner._id,
+        name: runner.name,
+        online: isOnline(runner),
+        engines: statusesOf(runner).map((status) => {
+          const request = runner.engineAuth?.[status.kind];
+          const update = updateOf(status);
+          const updating = updates[status.kind];
+          return {
+            ...(update ? { update } : {}),
+            ...(updating ? { updating } : {}),
+            kind: status.kind,
+            label: ENGINE_LABELS[status.kind],
+            installed: status.installed,
+            version: status.version,
+            signedIn: status.signedIn,
+            auth: status.auth,
+            message: status.message,
+            error: status.error,
+            updatedAt: status.updatedAt,
+            ...(request ? { request: { kind: request.kind, status: request.status, interaction: request.interaction, error: request.error } } : {}),
+          };
+        }),
+      };
     }));
   },
 });
@@ -254,6 +320,9 @@ export const requestAuth = mutation({
     const label = ENGINE_LABELS[args.engine];
     if (!runner || !isOnline(runner)) throw new Error(`Start Perry on this computer before connecting ${label}.`);
     const status = statusesOf(runner).find((item) => item.kind === args.engine);
+    // An engine too old for Perry is updated first: signing it in would lead nowhere.
+    const old = tooOld(runner, args.engine);
+    if (old && args.kind === "login") throw new Error(refusal(label, old, runner.name));
     if (!status?.installed) throw new Error(status?.error || status?.message || `${label} isn't installed on this computer.`);
     const current = runner.engineAuth?.[args.engine];
     if (current?.status === "queued" || current?.status === "running") throw new Error(`A ${label} sign-in is already in progress.`);

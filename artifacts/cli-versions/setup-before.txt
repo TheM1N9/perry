@@ -1,0 +1,7 @@
+
+Perry setup
+  Telegram is optional. For a bot: message @BotFather, send /newbot, and paste its token.
+  Bot token, or Enter to skip: 
+  No bot: talk to Perry from the dashboard. Add one in Settings → Telegram any time.
+  Codex 0.120.0 is too old for Perry, which needs 0.136.0 or newer. Update it with: npm install -g @openai/codex@latest
+  Then run setup again.

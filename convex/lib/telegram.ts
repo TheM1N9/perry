@@ -38,7 +38,7 @@ const MAX_RETRY_AFTER_S = 30;
 function requireToken(token: string | null): string {
   if (!token) {
     throw new Error(
-      "No Telegram bot token. Set one on the Keys page, or run: " +
+      "No Telegram bot token. Set one in Settings → Telegram, or run: " +
         "pnpm exec convex env set TELEGRAM_BOT_TOKEN <token>",
     );
   }

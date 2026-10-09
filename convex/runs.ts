@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
-import { vUsage } from "./schema";
+import { vRoute, vUsage } from "./schema";
 
 /** When a chat's last run that ended well started, or null. */
 export const lastOk = internalQuery({
@@ -37,6 +37,7 @@ export const recent = internalQuery({
       steps: r.steps,
       toolCalls: r.toolCalls,
       model: r.model,
+      route: r.route,
       totalTokens: r.usage?.totalTokens,
       usage: r.usage,
       error: r.error,
@@ -70,12 +71,15 @@ export const start = internalMutation({
   args: {
     conversationId: v.id("conversations"),
     prompt: v.string(),
+    /** What it runs on and why (lib/routing.ts). */
+    route: v.optional(vRoute),
   },
   returns: v.id("runs"),
   handler: async (ctx, args) => {
     return await ctx.db.insert("runs", {
       conversationId: args.conversationId,
       prompt: args.prompt.slice(0, 2000),
+      ...(args.route ? { route: args.route } : {}),
       status: "running",
       startedAt: Date.now(),
     });

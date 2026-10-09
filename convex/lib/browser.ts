@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HOME, PATHS } from "../../runner/home";
 
@@ -23,7 +23,9 @@ const TEXT_CAP = 12_000;
 const ELEMENTS_CAP = 150;
 
 type Pending = { resolve: (value: any) => void; reject: (error: Error) => void };
-type Tab = { child: ChildProcess; ws: WebSocket; next: number; pending: Map<number, Pending>; listeners: Set<(method: string, params: any) => void>; idle: ReturnType<typeof setTimeout> | null };
+/** A DevTools connection to one tab. */
+type Session = { ws: WebSocket; next: number; pending: Map<number, Pending>; listeners: Set<(method: string, params: any) => void> };
+type Tab = Session & { child: ChildProcess; port: number; idle: ReturnType<typeof setTimeout> | null };
 
 /** Kept on globalThis, so every tool call in this server process drives the same browser. */
 const box = globalThis as { __perryBrowser?: Promise<Tab> | null };
@@ -62,29 +64,36 @@ async function launch(): Promise<Tab> {
   const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as Array<{ type: string; webSocketDebuggerUrl: string }>;
   const page = targets.find((target) => target.type === "page");
   if (!page) { child.kill(); throw new Error("Perry's browser opened no tab."); }
-  const ws = new WebSocket(page.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => { ws.addEventListener("open", resolve, { once: true }); ws.addEventListener("error", () => reject(new Error("Could not reach Perry's browser.")), { once: true }); });
-  const tab: Tab = { child, ws, next: 0, pending: new Map(), listeners: new Set(), idle: null };
-  ws.addEventListener("message", (event) => {
-    const message = JSON.parse(String(event.data)) as { id?: number; result?: unknown; error?: { message: string }; method?: string; params?: unknown };
-    if (message.id !== undefined) {
-      const waiting = tab.pending.get(message.id);
-      tab.pending.delete(message.id);
-      if (message.error) waiting?.reject(new Error(message.error.message));
-      else waiting?.resolve(message.result);
-    } else if (message.method) {
-      for (const listener of tab.listeners) listener(message.method, message.params);
-    }
-  });
+  const session = await connect(page.webSocketDebuggerUrl).catch((error) => { child.kill(); throw error; });
+  const tab: Tab = Object.assign(session, { child, port, idle: null });
   const gone = () => { box.__perryBrowser = null; for (const waiting of tab.pending.values()) waiting.reject(new Error("Perry's browser closed.")); };
-  ws.addEventListener("close", gone);
+  tab.ws.addEventListener("close", gone);
   child.on("exit", gone);
   await send(tab, "Page.enable");
   await send(tab, "Runtime.enable");
   return tab;
 }
 
-function send(tab: Tab, method: string, params: object = {}): Promise<any> {
+async function connect(url: string): Promise<Session> {
+  const ws = new WebSocket(url);
+  await new Promise((resolve, reject) => { ws.addEventListener("open", resolve, { once: true }); ws.addEventListener("error", () => reject(new Error("Could not reach Perry's browser.")), { once: true }); });
+  const session: Session = { ws, next: 0, pending: new Map(), listeners: new Set() };
+  ws.addEventListener("message", (event) => {
+    const message = JSON.parse(String(event.data)) as { id?: number; result?: unknown; error?: { message: string }; method?: string; params?: unknown };
+    if (message.id !== undefined) {
+      const waiting = session.pending.get(message.id);
+      session.pending.delete(message.id);
+      if (message.error) waiting?.reject(new Error(message.error.message));
+      else waiting?.resolve(message.result);
+    } else if (message.method) {
+      for (const listener of session.listeners) listener(message.method, message.params);
+    }
+  });
+  ws.addEventListener("close", () => { for (const waiting of session.pending.values()) waiting.reject(new Error("Perry's browser closed.")); });
+  return session;
+}
+
+function send(tab: Session, method: string, params: object = {}): Promise<any> {
   return new Promise((resolve, reject) => {
     const id = ++tab.next;
     tab.pending.set(id, { resolve, reject });
@@ -106,7 +115,7 @@ export function closeBrowser() {
   void current?.then((open) => { open.ws.close(); open.child.kill(); }, () => {});
 }
 
-async function evaluate<T>(open: Tab, expression: string): Promise<T> {
+async function evaluate<T>(open: Session, expression: string): Promise<T> {
   const result = await send(open, "Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
   if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
   return result.result.value as T;
@@ -275,6 +284,23 @@ export async function screenshot(): Promise<string> {
   return path;
 }
 
+/** Pictures kept for the chat's steps; older ones are deleted, and their steps show none. */
+const PREVIEWS_KEPT = 300;
+
+/**
+ * A small picture of the tab (half size, JPEG), for the step in the chat that
+ * shows what the browser did. Saved in Perry's steps folder; returns its path.
+ */
+export async function preview(): Promise<string> {
+  const shot = await send(await tab(), "Page.captureScreenshot", { format: "jpeg", quality: 60, optimizeForSpeed: true, clip: { x: 0, y: 0, width: 1280, height: 900, scale: 0.5 } }) as { data: string };
+  mkdirSync(PATHS.steps, { recursive: true });
+  const path = join(PATHS.steps, `browser-${new Date().toISOString().replace(/[:.]/g, "-")}-${Math.random().toString(36).slice(2, 6)}.jpg`);
+  writeFileSync(path, Buffer.from(shot.data, "base64"));
+  const kept = readdirSync(PATHS.steps).filter((name) => name.startsWith("browser-")).sort();
+  for (const old of kept.slice(0, Math.max(0, kept.length - PREVIEWS_KEPT))) rmSync(join(PATHS.steps, old), { force: true });
+  return path;
+}
+
 /** Whether `url` is on the site a saved login is for: the same host, or one under it. */
 export function onSite(url: string, site: string): boolean {
   try {
@@ -283,5 +309,106 @@ export function onSite(url: string, site: string): boolean {
     return here === there || here.endsWith(`.${there}`);
   } catch {
     return false;
+  }
+}
+
+// --- Reading a page for read_page -------------------------------------------------------------------
+
+/**
+ * The checks read_page makes on its own fetches, made on every request the browser sends for it:
+ * `request` before it goes (throwing refuses it), `address` on the address that answered.
+ */
+export type Guard = { request: (url: string) => Promise<void>; address: (url: string, ip: string) => void };
+export type Rendered = { url: string; status: number; title: string; html: string };
+/** How long a loaded page may keep drawing before it is read as it stands. */
+const SETTLE_MS = 4_000;
+
+/**
+ * One page as the browser shows it, for read_page when a plain fetch was turned away (issue #158). It
+ * gets a tab of its own, closed after, so a task going step by step in the browser's tab stays where
+ * it was. The browser itself starts only now, the first time it is needed.
+ *
+ * Every request the page makes (the page, a redirect, a script's fetch) goes through `guard` before it
+ * is sent, and an answer from an address that is not public spoils the read, so the browser reaches no
+ * further than read_page's own fetch. A bot check that clears itself (a script that sets a cookie and
+ * reloads) is waited out, up to `timeoutMs`; one that wants a person is still there at the end, which
+ * the caller sees with `checking`. The HTML comes back for read_page to turn into text, the same way
+ * as a fetched page, and is refused over `maxChars`.
+ */
+export async function render(url: string, options: { guard: Guard; timeoutMs: number; maxChars: number; checking: (html: string) => boolean }): Promise<Rendered> {
+  const { guard, timeoutMs, maxChars, checking } = options;
+  const deadline = Date.now() + timeoutMs;
+  const opened: { port?: number; id?: string; session?: Session } = {};
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Perry's browser did not finish loading it in ${Math.round(timeoutMs / 1000)} seconds.`)), timeoutMs);
+  });
+  const reading = (async (): Promise<Rendered> => {
+    opened.port = (await tab()).port;
+    const target = await (await fetch(`http://127.0.0.1:${opened.port}/json/new?about:blank`, { method: "PUT" })).json() as { id: string; webSocketDebuggerUrl: string };
+    opened.id = target.id;
+    const open = opened.session = await connect(target.webSocketDebuggerUrl);
+    const main = (await send(open, "Page.getFrameTree") as { frameTree: { frame: { id: string } } }).frameTree.frame.id;
+    let refused: Error | null = null;
+    let status = 0;
+    open.listeners.add((method, params) => {
+      if (method === "Fetch.requestPaused") {
+        guard.request(params.request.url).then(
+          () => send(open, "Fetch.continueRequest", { requestId: params.requestId }),
+          (error: Error) => {
+            if (params.resourceType === "Document" && params.frameId === main) refused ??= error;
+            return send(open, "Fetch.failRequest", { requestId: params.requestId, errorReason: "AccessDenied" });
+          },
+        ).catch(() => {});
+      }
+      // A redirect's answer arrives with the request it leads to; every other answer on its own.
+      const answer = method === "Network.requestWillBeSent" ? params.redirectResponse : method === "Network.responseReceived" ? params.response : undefined;
+      if (answer?.remoteIPAddress) {
+        try { guard.address(answer.url, answer.remoteIPAddress); } catch (error) { refused ??= error as Error; }
+      }
+      if (method === "Network.responseReceived" && params.type === "Document" && params.frameId === main) status = params.response.status;
+    });
+    await send(open, "Page.enable");
+    await send(open, "Network.enable");
+    // A service worker's own fetches would pass the checks by, so the page asks the network directly.
+    await send(open, "Network.setBypassServiceWorker", { bypass: true });
+    if (process.env.PERRY_BROWSER_HEADED !== "1") {
+      // Headless Chrome calls itself HeadlessChrome, which bot checks turn away on sight. It is Chrome.
+      const agent = await evaluate<string>(open, "navigator.userAgent");
+      await send(open, "Network.setUserAgentOverride", { userAgent: agent.replace("HeadlessChrome", "Chrome"), acceptLanguage: "en-US,en;q=0.9" });
+    }
+    await send(open, "Fetch.enable", { patterns: [{ urlPattern: "*" }] });
+    const navigated = await send(open, "Page.navigate", { url }) as { errorText?: string };
+    if (refused) throw refused;
+    if (navigated.errorText) throw new Error(`Perry's browser could not open it either (${navigated.errorText}).`);
+
+    // Until the page has loaded, is no longer a bot check, and its text has stopped growing; or, once it
+    // is past a bot check and parsed, a few seconds more at most: a page with live prices never stops
+    // drawing, and one full of ads may never finish loading.
+    let chars = -1;
+    let settled = Infinity;
+    while (Date.now() < Math.min(deadline - 1_500, settled)) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (refused) throw refused;
+      const seen = await evaluate<{ state: string; chars: number; html: string }>(open,
+        "({ state: document.readyState, chars: document.body ? document.body.innerText.length : 0, html: document.documentElement.outerHTML.slice(0, 200000) })").catch(() => null);
+      if (!seen || seen.state === "loading" || checking(seen.html)) { chars = -1; settled = Infinity; continue; }
+      settled = Math.min(settled, Date.now() + SETTLE_MS);
+      if (seen.state === "complete" && seen.chars > 0 && seen.chars === chars) break;
+      chars = seen.chars;
+    }
+    if (refused) throw refused;
+    const page = await evaluate<{ url: string; title: string; html: string | null }>(open,
+      `({ url: location.href, title: document.title, html: document.documentElement.outerHTML.length > ${maxChars} ? null : document.documentElement.outerHTML })`);
+    if (page.html === null) throw new Error("The page is over the 5 MB limit.");
+    return { url: page.url, status, title: page.title, html: page.html };
+  })();
+  reading.catch(() => {});
+  try {
+    return await Promise.race([reading, late]);
+  } finally {
+    clearTimeout(timer);
+    opened.session?.ws.close();
+    if (opened.id) await fetch(`http://127.0.0.1:${opened.port}/json/close/${opened.id}`).catch(() => {});
   }
 }

@@ -55,14 +55,24 @@
  *   Tools      Perry's own tools are an MCP server. `tools` offers it over
  *               HTTP (url and bearer header) and as a stdio command
  *               (runner/mcp-bridge.ts), for engines that ignore HTTP MCP.
+ *   limits()    Optional. How much of the owner's plan is used and when each
+ *               of its windows resets, as the vendor says (Codex's
+ *               account/rateLimits/read, Claude Code's /usage data), without
+ *               spending any of it. The runner reads it every few minutes
+ *               and after the engine's turns; an engine without it only
+ *               ever shows the limits it hits (convex/lib/usage.ts).
  *   kill()      Ends the engine's processes, the whole group. The runner's
  *               watchdog interrupts a turn that runs too long, then kills.
+ *   where(), reload()  Optional. Where the engine's CLI is, and starting afresh
+ *               once it is updated: the runner updates it from Settings when
+ *               no turn runs on it (convex/engineUpdates.ts).
  */
 
 import type { Access } from "../convex/lib/commands";
 import type { EngineKind, LoginInteraction } from "../convex/lib/engines";
+import type { PlanLimits, PlanWindow } from "../convex/lib/usage";
 
-export type { Access, EngineKind, LoginInteraction };
+export type { Access, EngineKind, LoginInteraction, PlanLimits, PlanWindow };
 
 /** How a message the owner sends while a turn runs reaches it. */
 export type SteerMode =
@@ -96,10 +106,26 @@ export type EngineCapabilities = {
   /** It can run quick, tool-less side turns (the reviewer, chat names). */
   quickTurns: boolean;
   /**
+   * It can be locked down for a chat with someone other than the owner
+   * (TurnInput.guest): no shell, no reading or writing files, no computer or
+   * browser, nothing of the owner's settings or skills, and no tools but
+   * Perry's guest tools (convex/lib/engines.ts, GUEST_TOOLS) and a web search
+   * that runs at the vendor, however the model asks. Only an engine that can make sure of that by its own options,
+   * whatever the model tries, says true; the server sends such chats only to
+   * those, and the runner refuses them on any other.
+   */
+  guestLockdown: boolean;
+  /**
    * It runs turns of different chats side by side, and one stuck turn can be
    * given up on while the others go on. Unset: one turn at a time.
    */
   concurrentTurns?: boolean;
+  /**
+   * It takes the skills the owner names in a message ("$name") as input of
+   * their own (Codex's `skill` items), in TurnInput.skills. Unset: the runner
+   * names each skill's SKILL.md in the message instead (skillNote).
+   */
+  skills?: boolean;
 };
 
 /** A model an engine offers, with the reasoning efforts it takes. */
@@ -116,6 +142,11 @@ export type EngineStatus = {
   /** What the owner should do next, such as "Run `grok login` on this computer". */
   message?: string;
   error?: string;
+  /** The newest release of its CLI, as last looked up, and the command that updates it here (runner/versions.ts adds both). */
+  latest?: string;
+  update?: string;
+  /** capabilities.guestLockdown, as the runner reports it with the status. */
+  guestLockdown?: boolean;
 };
 
 export type LoginFlow = {
@@ -221,6 +252,28 @@ export function optionOf(request: EngineRequest, kind: "accept" | "decline"): st
 /** Where a running turn is, for interrupting and steering it. */
 export type TurnHandle = { cursor: string; turnId: string };
 
+/** A skill the owner named in a message, "$name", and the SKILL.md in Perry's skills folder it stands for. */
+export type NamedSkill = { name: string; path: string };
+
+/** For an engine without `capabilities.skills`: what goes after the message, so it reads the skills named. */
+export function skillNote(skills: NamedSkill[]): string {
+  const list = skills.map((skill) => `- $${skill.name}: ${skill.path}`).join("\n");
+  return `The owner named ${skills.length === 1 ? "a skill" : "skills"} for this message. Before anything else, read ${skills.length === 1 ? "its SKILL.md" : "each SKILL.md"} and follow it:\n${list}`;
+}
+
+/** An invisible word joiner: what follows it is still read, but no longer starts a mention. */
+const JOINER = "\u2060";
+
+/**
+ * Words from someone other than the owner, as a guest turn hands them to its engine (issue #163). Engines read
+ * mentions in a message by themselves: Codex loads the skill a "$name" names, and Claude Code reads the file an
+ * "@path" names into the turn, with no tool call at all. So every "$", and every "@" that starts a word (not the
+ * one inside an email address), gets a word joiner after it: it reads the same to the model, and names nothing.
+ */
+export function defuse(text: string): string {
+  return text.replace(/\$/g, () => `$${JOINER}`).replace(/(^|[^\p{L}\p{N}._%+-])@/gu, (_, before: string) => `${before}@${JOINER}`);
+}
+
 export type TurnInput = {
   /** The chat's session; unset starts one. */
   resumeCursor?: string;
@@ -240,9 +293,12 @@ export type TurnInput = {
   tools?: PerryTools;
   /**
    * A chat with someone other than the owner (convex/contacts.ts): the engine gets no shell, files,
-   * images or computer, only Perry's guest tools and web search, in an empty folder.
+   * images or computer, only Perry's guest tools (and Codex its web search, which runs at OpenAI and
+   * touches nothing here), in an empty folder. Only for an engine with `capabilities.guestLockdown`.
    */
   guest?: boolean;
+  /** The skills the message names, for an engine with `capabilities.skills`. */
+  skills?: NamedSkill[];
 };
 
 export type TurnSink = {
@@ -280,6 +336,9 @@ export type QuickTurn = {
   /** JSON Schema the answer must match. */
   outputSchema?: object;
   timeoutMs: number;
+  /** The model and thinking level, as routing's quick tier gives them (convex/lib/routing.ts). Unset leaves the engine's own default. */
+  model?: string;
+  effort?: string;
 };
 
 export interface Engine {
@@ -292,7 +351,7 @@ export interface Engine {
   logout(): Promise<void>;
   runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult>;
   /** For `steer` "native" and "concurrent-prompt". */
-  steer?(handle: TurnHandle, message: { prompt: string; attachments: EngineAttachment[] }): Promise<void>;
+  steer?(handle: TurnHandle, message: { prompt: string; attachments: EngineAttachment[]; skills?: NamedSkill[] }): Promise<void>;
   /**
    * The chat's access changed while the turn runs: act on it from the turn's
    * next step. Without it, the access the turn started with holds, except
@@ -305,6 +364,22 @@ export interface Engine {
   compact?(cursor: string, cwd: string): Promise<void>;
   /** For `quickTurns`. Throws on failure or when out of time; the error may carry the `model` it tried. */
   quickTurn?(turn: QuickTurn): Promise<{ text: string; model?: string }>;
+  /** The plan's limits, read without spending any of them; null when this sign-in has none (an API key). */
+  /** `fresh`: read now, not a reading from the last minute (the Usage page's refresh). */
+  limits?(fresh?: boolean): Promise<PlanLimits | null>;
   /** End its processes, the whole group. Whatever runs fails; the next call starts it again. */
   kill(): void;
+  /**
+   * Where its CLI is, as a path or a name looked up on PATH, for updating it
+   * from Settings (runner/versions.ts, updatePlan). Unset for an engine whose
+   * CLI Perry downloads and pins itself.
+   */
+  where?(): string | undefined;
+  /**
+   * Its CLI is about to be updated, or just was: end its processes, as kill()
+   * does, and forget what it knew of the CLI (its version, an app-server it
+   * would not start again for a while), so the next status() looks afresh.
+   * Called with no turn running on it.
+   */
+  reload?(): void;
 }

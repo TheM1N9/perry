@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon, ZapIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, FileTextIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon, ZapIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import type { JobView } from "@/convex/jobs";
-import { enginesOf, modelKey, modelsOf, parseModelKey } from "@/convex/lib/commands";
+import { enginesOf, modelKey, parseModelKey } from "@/convex/lib/commands";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
+import { noteHref } from "@/convex/lib/notes";
+import { PICKED_BY, routeLabel } from "@/convex/lib/routing";
 import { ago, fullDate, plural, useNow } from "@/lib/format";
 import { describeSchedule } from "@/lib/when";
 import { useSession } from "@/lib/session";
@@ -24,9 +26,9 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ActionButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCount, attempt, useTab, type Tone } from "../common";
+import { ActionButton, EmptyState, List, ListSkeleton, Page, StatusBadge, TabCount, TextTip, attempt, useTab, type Tone } from "../common";
 import { GoalDialog, ScheduleDialog, TaskDialog, WatchDialog, type Editing } from "./work-forms";
-import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 
 const TABS = ["schedules", "plans", "goals", "watches"] as const;
 type Tab = (typeof TABS)[number];
@@ -44,7 +46,7 @@ export function Work() {
   const active = work?.tasks.filter((task) => task.status === "running" || task.status === "blocked" || task.status === "queued").length;
 
   return (
-    <Page title="Work" description="What Perry does without you in the chat. Set it up here, or ask for it in a chat." wide>
+    <Page title="Work" wide>
       <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)}>
         <TabsList variant="line" className="mb-5 w-full justify-start gap-4 border-b pb-0 [&>button]:flex-none [&>button]:px-0 [&>button]:pb-2.5">
           <TabsTrigger value="schedules"><TabCount count={jobs?.jobs.filter((job) => !job.builtin).length}>Schedules</TabCount></TabsTrigger>
@@ -61,8 +63,8 @@ export function Work() {
   );
 }
 
-/** A tab's explanation, with its New button beside it. */
-function Intro({ children, action }: { children: ReactNode; action: ReactNode }) {
+/** A tab's New button, and a line beside it when there is something it must say. */
+function Intro({ children, action }: { children?: ReactNode; action: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="max-w-2xl text-sm text-muted-foreground">{children}</p>
@@ -72,7 +74,7 @@ function Intro({ children, action }: { children: ReactNode; action: ReactNode })
 }
 
 function Row({ children, className }: { children: ReactNode; className?: string }) {
-  return <li className={cn("flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:gap-4", className)}>{children}</li>;
+  return <li className={cn("flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:gap-4", className)}>{children}</li>;
 }
 
 /** A small menu for a row's quieter actions, so the one you want most stays a button. */
@@ -114,7 +116,10 @@ function Schedules() {
   const remove = useMutation(api.jobs.removeFromDashboard);
   const runNow = useMutation(api.jobs.runNow);
   const setModel = useMutation(api.jobs.setModel);
+  const keepOn = useMutation(api.jobs.keepOn);
   const models = useQuery(api.models.options, { key: dashboardKey })?.models;
+  const preferred = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
+  const notes = useQuery(api.notes.list, { key: dashboardKey });
   const several = enginesOf(models ?? []).length > 1;
   const now = useNow();
   const { ask, dialog } = useConfirm();
@@ -131,33 +136,64 @@ function Schedules() {
     // A one-time job whose time has passed has run, or was paused past it; either way it is over.
     const over = job.runAt !== undefined && !job.enabled && job.runAt <= now;
     const readable = job.schedule ? describeSchedule(job.schedule) : null;
-    const tone: Tone = job.lastError ? "danger" : job.enabled ? "success" : "neutral";
-    // Unset runs on the account's default; a pick the account no longer offers falls back to it too.
-    // Each model is "<engine>/<id>", named with its engine once there is more than one.
-    const fallback = modelsOf(models ?? [], "codex").find((item) => item.isDefault) ?? models?.[0];
-    const picked = job.model ? modelKey(job.engine, job.model) : undefined;
+    // A run waiting for an engine's reset is not a failure, whatever the run before it said.
+    const state: { tone: Tone; label: string } | null = job.waiting ? { tone: "warning", label: "Waiting" } : job.lastError ? { tone: "danger", label: "Failed" } : job.enabled ? null : { tone: "neutral", label: over ? "Done" : "Paused" };
+    // Unset, Perry picks a model that fits the job on the default engine, or on another with room when the default
+    // has none (lib/routing.ts); a pick the account no longer offers is picked for too. Each model is
+    // "<engine>/<id>", named with its engine once there is more than one.
+    const picked = job.model && job.engine ? modelKey(job.engine, job.model) : undefined;
+    const moved = job.route?.movedFrom;
     const modelItems = [
-      { value: "default", label: fallback ? `Default (${fallback.name})` : "Default model" },
-      ...(models ?? []).map((item) => ({ value: modelKey(item.engine ?? "codex", item.id), label: several ? `${item.name} · ${ENGINE_LABELS[item.engine ?? "codex"]}` : item.name })),
-      ...(picked && models && !models.some((item) => modelKey(item.engine ?? "codex", item.id) === picked) ? [{ value: picked, label: `${job.model} (not offered, uses default)` }] : []),
+      { value: "default", label: preferred === null ? "Automatic (no engine chosen)" : "Automatic" },
+      ...(models ?? []).map((item) => ({ value: modelKey(item.engine, item.id), label: several ? `${item.name} · ${ENGINE_LABELS[item.engine]}` : item.name })),
+      ...(picked && models && !models.some((item) => modelKey(item.engine, item.id) === picked) ? [{ value: picked, label: `${job.model} (not offered, uses default)` }] : []),
     ];
     return (
       <Row key={job.id}>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-baseline gap-2">
             <h3 className="font-medium">{job.name}</h3>
-            <StatusBadge tone={tone}>{job.lastError ? "Failed" : job.enabled ? "Active" : over ? "Done" : "Paused"}</StatusBadge>
+            {state && <StatusBadge tone={state.tone}>{state.label}</StatusBadge>}
           </div>
           <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
             {job.trigger
               ? <span className="inline-flex items-center gap-1"><ZapIcon className="size-3.5" aria-hidden />{job.trigger.label}</span>
               : job.runAt !== undefined
                 ? <span>Once, {when(job.runAt)}</span>
-                : <span title={job.schedule}>{readable ?? <code className="font-mono text-xs">{job.schedule}</code>}</span>}
-            {job.enabled && job.runAt === undefined && !job.trigger && <span title={when(job.nextRunAt)}>Next {ago(job.nextRunAt, now)}</span>}
-            <span title={job.lastRunAt ? when(job.lastRunAt) : undefined}>{job.lastRunAt ? `Last ran ${ago(job.lastRunAt, now)}` : "Hasn't run yet"}</span>
+                : readable
+                  ? <TextTip tip={<code className="font-mono">{job.schedule}</code>}>{readable}</TextTip>
+                  : <code className="font-mono text-xs">{job.schedule}</code>}
+            {job.enabled && job.runAt === undefined && !job.trigger && <TextTip tip={when(job.nextRunAt)} spoken={when(job.nextRunAt)}>Next {ago(job.nextRunAt, now)}</TextTip>}
+            {job.lastRunAt
+              ? <TextTip tip={when(job.lastRunAt)} spoken={when(job.lastRunAt)}>Last ran {ago(job.lastRunAt, now)}</TextTip>
+              : <span>Hasn&apos;t run yet</span>}
+            {job.noteId && (
+              <Link href={noteHref(job.noteId)} className="inline-flex items-center gap-1 hover:text-foreground" data-job-note>
+                <FileTextIcon className="size-3.5" aria-hidden />Adds to {notes?.find((note) => note.id === job.noteId)?.title ?? "a note"}
+              </Link>
+            )}
           </p>
-          {job.lastError && <p className="mt-2 text-sm text-pretty text-destructive">{job.lastError}</p>}
+          {job.route && (
+            <p className="mt-1 text-sm text-muted-foreground" data-route>
+              <TextTip tip={<>{PICKED_BY[job.route.by]}. {job.route.why}</>}>
+                Last run on {routeLabel(job.route)}
+              </TextTip>
+            </p>
+          )}
+          {job.waiting && <p className="mt-2 text-sm text-pretty text-warning" data-waiting>{job.waiting.why}</p>}
+          {moved && !job.stay && !job.waiting && (
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" data-moved>
+              <p className="text-pretty text-warning">Moved to {ENGINE_LABELS[job.route!.engine]}: {moved.why}.</p>
+              <ActionButton variant="outline" size="xs" action={() => keepOn({ key: dashboardKey, id: job.id })}
+                success={`It stays on ${ENGINE_LABELS[moved.engine]} now, and waits for its reset when it has no room.`}>
+                Keep on {ENGINE_LABELS[moved.engine]}
+              </ActionButton>
+            </div>
+          )}
+          {job.stay && job.model && (
+            <p className="mt-1 text-sm text-pretty text-muted-foreground" data-kept>Kept on {job.engine ? ENGINE_LABELS[job.engine] : "its engine"}. With no room, it waits for the reset.</p>
+          )}
+          {job.lastError && !job.waiting && <p className="mt-2 text-sm text-pretty text-destructive">{job.lastError}</p>}
           {!job.lastError && job.lastResult && job.lastResult.trim() !== "NOTHING" && (
             <p className="mt-2 line-clamp-3 text-sm text-pretty whitespace-pre-line text-foreground/80">{job.lastResult}</p>
           )}
@@ -165,7 +201,8 @@ function Schedules() {
         <div className="flex shrink-0 items-center gap-1">
           {job.chatId && <Button variant="ghost" size="sm" render={<Link href={`/chat/${job.chatId}`} />}><MessageSquareIcon />Results</Button>}
           <Select items={modelItems} value={picked ?? "default"} disabled={!models?.length}
-            onValueChange={(value) => void attempt(() => setModel({ key: dashboardKey, id: job.id, ...(!value || value === "default" ? {} : { model: parseModelKey(value).id, engine: parseModelKey(value).engine }) }), { success: "Model changed. It applies from the next run." })}>
+            onValueChange={(value) => void attempt(() => setModel({ key: dashboardKey, id: job.id, ...(!value || value === "default" ? {} : { model: parseModelKey(value).id, engine: parseModelKey(value).engine }) }),
+              { success: !value || value === "default" ? "Perry picks its model from the next run." : "Model changed. It applies from the next run." })}>
             <SelectTrigger size="sm" aria-label={`Model for ${job.name}`} className="max-w-44"><SelectValue /></SelectTrigger>
             <SelectContent>{modelItems.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
           </Select>
@@ -197,15 +234,15 @@ function Schedules() {
   return (
     <div className="space-y-6">
       <Intro action={<Button size="sm" onClick={() => setEditing({})}><PlusIcon />New schedule</Button>}>
-        Prompts Perry runs on a schedule, like a morning briefing; once, like a reminder; or when something happens, like a new email or a file landing in a folder. Times are in <span className="font-medium text-foreground">{data.timezone}</span>.
+        Times are in <span className="font-medium text-foreground">{data.timezone}</span>.
       </Intro>
       <Wake timezone={data.timezone} />
       {yours.length === 0
-        ? <EmptyState title="Nothing scheduled yet">Make one here, or ask in a chat: &ldquo;Every weekday at 8am, send me a summary of my calendar.&rdquo;</EmptyState>
+        ? <EmptyState title="Nothing scheduled yet" />
         : <List label="Your schedules">{yours.map(row)}</List>}
       {builtins.length > 0 && (
         <Collapsible>
-          <CollapsibleTrigger className="group flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+          <CollapsibleTrigger className="group flex cursor-pointer items-center gap-2 rounded-md text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
             <ChevronRightIcon className="size-4 transition-transform group-data-panel-open:rotate-90" />
             Built in <span className="nums font-normal">({builtins.length})</span>
             <span className="font-normal">· Heartbeat, daily summary and memory upkeep</span>
@@ -232,7 +269,7 @@ function Wake({ timezone }: { timezone: string }) {
       : wake.at ? `Next: ${fullDate(wake.at - 60_000, timezone)}, a minute before ${wake.what ?? "the next job"} (${ago(wake.at, now)}).`
         : "Nothing is due, so no wake is set.";
   return (
-    <div className="flex items-start gap-3 rounded-xl border px-4 py-3">
+    <div className="flex items-start gap-3">
       <Switch id="wake-computer" checked={wake.enabled} className="mt-0.5"
         onCheckedChange={(enabled) => void attempt(() => set({ key: dashboardKey, enabled }), { success: enabled ? "Perry wakes this computer for what is due." : "Perry no longer wakes this computer." })} />
       <div className="min-w-0 text-sm">
@@ -267,14 +304,12 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
   // Queued tasks run oldest first, one at a time.
   const line = tasks.filter((task) => task.status === "queued").sort((a, b) => a.createdAt - b.createdAt).map((task) => task._id);
   const intro = (
-    <Intro action={<Button size="sm" onClick={() => setAdding({})}><PlusIcon />New task</Button>}>
-      Work Perry does by himself, a few tasks at once, each in a chat of its own. Its plan shows here as it goes; a question comes to you.
-    </Intro>
+    <Intro action={<Button size="sm" onClick={() => setAdding({})}><PlusIcon />New task</Button>} />
   );
   if (!tasks.length) return (
     <div className="space-y-4">
       {intro}
-      <EmptyState title="No plans yet">Hand Perry a task here, or ask for something that takes a few steps in a chat, and its plan shows up here as it works.</EmptyState>
+      <EmptyState title="No plans yet" />
       <TaskDialog open={adding !== null} goals={goals} onClose={() => setAdding(null)} />
     </div>
   );
@@ -296,28 +331,41 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
                   Updated {ago(task.updatedAt, now)}{task.plan.length > 0 && <span className="nums"> · {done} of {task.plan.length} steps</span>}
                 </p>
                 {task.plan.length > 0 && <Progress value={(done / task.plan.length) * 100} aria-label={`${task.title}: ${done} of ${task.plan.length} steps`} className="mt-3 max-w-md" />}
-                {task.status === "queued" && line.includes(task._id) && (
+                {task.route && (
+                  <p className="mt-1 text-sm text-muted-foreground" data-route>
+                    <TextTip tip={<>{PICKED_BY[task.route.by]}. {task.route.why}</>}>On {routeLabel(task.route)}</TextTip>
+                    {task.route.movedFrom && <span className="text-warning"> · moved from {ENGINE_LABELS[task.route.movedFrom.engine]}: {task.route.movedFrom.why}</span>}
+                  </p>
+                )}
+                {task.status === "queued" && task.waiting && task.waiting.until > now && <p className="mt-1 text-sm text-pretty text-warning" data-waiting>{task.waiting.why}</p>}
+                {task.status === "queued" && line.includes(task._id) && !(task.waiting && task.waiting.until > now) && (
                   <p className="mt-1 text-sm text-muted-foreground">{line.indexOf(task._id) === 0 ? "Next in line" : `${line.indexOf(task._id) + 1} in line`}</p>
                 )}
                 {task.question && (
-                  <div className="mt-3 rounded-lg bg-warning-soft px-3 py-2 text-sm text-pretty">
-                    <span className="font-medium text-warning">Needs you: </span>{task.question}
+                  <div className="mt-3 text-sm text-pretty">
+                    <p><span className="font-medium text-warning">Needs you: </span>{task.question}</p>
                     {task.status === "blocked" && task.conversationId && (
-                      <form className="mt-2 flex gap-2" onSubmit={(event) => {
+                      <form className="mt-2 max-w-md" onSubmit={(event) => {
                         event.preventDefault();
                         const answer = answers[task._id]?.trim();
                         if (answer) void attempt(() => answerTask({ key: dashboardKey, id: task._id, answer }), { success: "Answered. It carries on." }).then((ok) => { if (ok) setAnswers((all) => ({ ...all, [task._id]: "" })); });
                       }}>
-                        <Input aria-label={`Answer for ${task.title}`} placeholder="Your answer" value={answers[task._id] ?? ""} className="h-8 bg-background"
-                          onChange={(event) => setAnswers((all) => ({ ...all, [task._id]: event.target.value }))} />
-                        <Button type="submit" size="sm" disabled={!answers[task._id]?.trim()}>Answer</Button>
+                        <InputGroup>
+                          <InputGroupInput aria-label={`Answer for ${task.title}`} placeholder="Your answer" value={answers[task._id] ?? ""}
+                            onChange={(event) => setAnswers((all) => ({ ...all, [task._id]: event.target.value }))} />
+                          {answers[task._id]?.trim() && (
+                            <InputGroupAddon align="inline-end">
+                              <InputGroupButton type="submit" size="xs" className="text-primary hover:text-primary">Answer</InputGroupButton>
+                            </InputGroupAddon>
+                          )}
+                        </InputGroup>
                       </form>
                     )}
                   </div>
                 )}
                 {task.plan.length > 0 && (
                   <Collapsible defaultOpen={live} className="mt-3">
-                    <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+                    <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1.5 rounded-md text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
                       <ChevronRightIcon className="size-3.5 transition-transform group-data-panel-open:rotate-90" />Steps
                     </CollapsibleTrigger>
                     <CollapsibleContent>
@@ -364,22 +412,21 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
 
 function Goals({ goals }: { goals: Doc<"goals">[] }) {
   const [editing, setEditing] = useState<Editing<Doc<"goals">>>(null);
-  const tone: Record<Doc<"goals">["status"], Tone> = { active: "info", paused: "neutral", done: "success" };
   return (
     <div className="space-y-4">
       <Intro action={<Button size="sm" onClick={() => setEditing({})}><PlusIcon />New goal</Button>}>
-        Outcomes you&apos;re working toward, with milestones. Perry keeps them in mind in every chat.
+        Perry keeps them in mind in every chat.
       </Intro>
-      {!goals.length ? <EmptyState title="No goals yet">Make one here, or tell Perry about something you&apos;re working toward.</EmptyState> : (
+      {!goals.length ? <EmptyState title="No goals yet" /> : (
         <List label="Goals">
           {goals.map((goal) => {
             const reached = goal.milestones.filter((milestone) => milestone.done).length;
             return (
               <Row key={goal._id}>
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-baseline gap-2">
                     <h3 className="font-medium">{goal.title}</h3>
-                    <StatusBadge tone={tone[goal.status]}>{goal.status[0].toUpperCase() + goal.status.slice(1)}</StatusBadge>
+                    {goal.status !== "active" && <StatusBadge>{goal.status === "done" ? "Done" : "Paused"}</StatusBadge>}
                   </div>
                   {goal.description && <p className="mt-1 text-sm text-pretty text-muted-foreground">{goal.description}</p>}
                   {goal.milestones.length > 0 && (
@@ -435,19 +482,17 @@ function Watches({ monitors }: { monitors: Doc<"monitors">[] }) {
           </ActionButton>
         )}
         <Button size="sm" onClick={() => setEditing({})}><PlusIcon />New watch</Button>
-      </>}>
-        Pages Perry checks on an interval. A new watch records a baseline first and stays quiet until its condition is met.
-      </Intro>
+      </>} />
       {monitors.length === 0
-        ? <EmptyState title="Nothing watched">Watch one here, or ask Perry: &ldquo;Tell me when this is back in stock.&rdquo;</EmptyState>
+        ? <EmptyState title="Nothing watched" />
         : (
           <List label="Watches">
             {monitors.map((monitor) => (
               <Row key={monitor._id}>
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-baseline gap-2">
                     <h3 className="font-medium">{monitor.title}</h3>
-                    <StatusBadge tone={monitor.active ? "success" : "neutral"}>{monitor.active ? "Watching" : "Paused"}</StatusBadge>
+                    {!monitor.active && <StatusBadge>Paused</StatusBadge>}
                     {monitor.failures > 0 && <StatusBadge tone="warning">{plural(monitor.failures, "failed check")}</StatusBadge>}
                   </div>
                   <a href={monitor.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex max-w-full items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground">

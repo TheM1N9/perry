@@ -1,5 +1,5 @@
 /**
- * Keyboard shortcuts the owner can change, on the dashboard's Settings page.
+ * Keyboard shortcuts the owner can change, in the dashboard's Settings → Desktop pet.
  * Pure functions with no server imports: the dashboard, the desktop pet's page
  * and the backend all use them.
  *
@@ -11,25 +11,25 @@
 export const SHORTCUTS = {
   talk: {
     label: "Talk to Perry",
-    description: "Anywhere on this computer, with the desktop pet running: hold, speak and let go, or tap, speak and tap again.",
+    description: "Anywhere, with the desktop pet on: hold, speak, let go.",
     default: "CommandOrControl+Shift+Space",
     global: true,
   },
   look: {
     label: "Show Perry the screen",
-    description: "Anywhere on this computer, with the desktop pet running: a picture of the window you're in goes into his chat, for you to check and ask about.",
+    description: "Anywhere, with the desktop pet on: the window you're in goes to his chat.",
     default: "CommandOrControl+Alt+Shift+Space",
     global: true,
   },
   palette: {
     label: "Search and commands",
-    description: "On the dashboard: chats, pages and actions.",
+    description: "Chats, pages and actions.",
     default: "CommandOrControl+K",
     global: false,
   },
   newChat: {
     label: "New chat",
-    description: "On the dashboard.",
+    description: "",
     default: "CommandOrControl+Shift+O",
     global: false,
   },
@@ -123,6 +123,17 @@ export function keysOf(accelerator: string, mac: boolean): string[] {
 
 export function describe(accelerator: string, mac: boolean): string {
   return keysOf(accelerator, mac).join(mac ? "" : "+");
+}
+
+/**
+ * Why the Talk keys can only be tapped, as the desktop pet reports it
+ * (pet/voice.js, hold()): holding needs his window to hear the keys come up.
+ * Null while holding works, or from a pet that does not say.
+ */
+export function holdProblem(hold: string | null | undefined): string | null {
+  if (hold === "access") return "Holding them needs Accessibility for Perry: in System Settings → Privacy & Security → Accessibility, turn on Electron (his window).";
+  if (hold) return "Holding them doesn't work on this computer: his window can't hear keys come up here.";
+  return null;
 }
 
 /** The shortcuts in force: the owner's, where set, over the defaults. */

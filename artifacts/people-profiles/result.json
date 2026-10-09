@@ -1,0 +1,42 @@
+{
+  "ranAt": "2026-09-29T21:17:27.311Z",
+  "model": "gpt-6-luna",
+  "checks": {
+    "keptFromAPassingMention": false,
+    "broughtBackByName": false,
+    "keptAboutSomeoneWeTalkWith": false,
+    "completed": false
+  },
+  "notes": {
+    "keptFromAPassingMention": {
+      "aboutArjun": "",
+      "reply": "That broke: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Oct 4th, 2026 3:01 AM",
+      "memories": [
+        "Mani's home address is 12 Secret Lane, Indiranagar. []"
+      ]
+    },
+    "broughtBackByName": {
+      "reply": "That broke: You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Oct 4th, 2026 3:01 AM."
+    },
+    "keptAboutSomeoneWeTalkWith": "",
+    "stoppedAt": "Error: timed out: Datta to be answered",
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    DESKTOP-27SQLCP (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\perry-people-profiles-bjCrkZ\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn 7c0qvbdgxjk1cgy6d1ww9q74we\u001b[0m",
+      "\u001b[2m  saved turn fkjeeqez7bw9nmrqaazphjyfak\u001b[0m",
+      "\u001b[2m  saved turn kmphnrvzn85wxq262tnhanza6f\u001b[0m",
+      "\u001b[2m  saved turn 42gy5w6ax9a4qynn82eeqbwn9s\u001b[0m"
+    ],
+    "serverErrors": []
+  },
+  "passed": false
+}

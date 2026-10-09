@@ -1,0 +1,164 @@
+{
+  "ranAt": "2026-10-02T15:11:18.847Z",
+  "pass": true,
+  "checks": {
+    "healthyEngineHasNoPill": true,
+    "onlineComputerHasNoPill": true,
+    "setLoginRowsHaveNoPill": true,
+    "runningScheduleHasNoPill": true,
+    "tabCountsArePlain": true,
+    "taskQuestionIsALabelAndAnInlineForm": true,
+    "watchedPageHasNoPill": true,
+    "completedRunHasNoPill": true,
+    "expandedRunIsUnboxed": true,
+    "summaryIsAPlainRow": true,
+    "emptyStatesAreUnboxed": true,
+    "instructionsSaveThemselves": true,
+    "leavingRightAfterTypingKeepsTheWords": true,
+    "closingTheTabAsksAndSaves": true,
+    "failedSaveSaysSoAndRetries": true,
+    "nameAndPersonalitySaveThemselves": true,
+    "userMdSavesItselfAsOneVersion": true,
+    "escapeLeavesTheEditorSaved": true,
+    "briefSavesItself": true,
+    "secretsSaveOnlyWhenAsked": true,
+    "addLoginByEnter": true,
+    "rememberByEnter": true,
+    "editMemoryEnterAndEscape": true,
+    "noBoxes": true,
+    "onlyPillsThatWantALook": true,
+    "noGreyedPrimaryButtons": true,
+    "nothingThrows": true
+  },
+  "notes": {
+    "setLoginRowsHaveNoPill": {
+      "engines": [],
+      "telegram": [],
+      "logins": []
+    },
+    "tabCountsArePlain": false,
+    "taskQuestionIsALabelAndAnInlineForm": {
+      "label": true,
+      "fill": "rgba(0, 0, 0, 0)",
+      "answer": true,
+      "button": false
+    },
+    "expandedRunIsUnboxed": {
+      "fill": "rgba(0, 0, 0, 0)",
+      "tools": "shell, apply_patch",
+      "chips": 0
+    },
+    "summaryIsAPlainRow": {
+      "border": "0px",
+      "fill": "rgba(0, 0, 0, 0)"
+    },
+    "emptyStatesAreUnboxed": {
+      "dashed": 0,
+      "emptyBoxes": [
+        "0px rgba(0, 0, 0, 0)",
+        "0px rgba(0, 0, 0, 0)",
+        "0px rgba(0, 0, 0, 0)"
+      ]
+    },
+    "instructionsSaveThemselves": {
+      "saved": true,
+      "shown": {
+        "state": "saved",
+        "text": "Saved"
+      },
+      "value": "Warm, plain words. Quote prices in euros."
+    },
+    "leavingRightAfterTypingKeepsTheWords": "Warm, plain words. Quote prices in euros. Never more than 200 words.",
+    "closingTheTabAsksAndSaves": {
+      "asked": true,
+      "went": true
+    },
+    "failedSaveSaysSoAndRetries": {
+      "failed": {
+        "state": "error",
+        "text": "Couldn't save: Failed to fetch Try again"
+      },
+      "stillThere": true,
+      "notSaved": true,
+      "retried": true,
+      "after": {
+        "state": "saved",
+        "text": "Saved"
+      }
+    },
+    "nameAndPersonalitySaveThemselves": {
+      "personality": true,
+      "named": true,
+      "identityStatus": {
+        "state": "saved",
+        "text": "Saved"
+      },
+      "persona": {
+        "user": "## How I like things done\n\n- Sam takes their coffee black, no sugar.\n",
+        "name": "Pip",
+        "personality": "Dry wit, straight talk.",
+        "defaultName": "Perry"
+      }
+    },
+    "userMdSavesItselfAsOneVersion": {
+      "userSaved": true,
+      "userStatus": {
+        "state": "saved",
+        "text": "Saved"
+      },
+      "before": 1,
+      "versions": 2
+    },
+    "briefSavesItself": {
+      "briefed": true,
+      "briefStatus": {
+        "state": "saved",
+        "text": "Saved"
+      }
+    },
+    "secretsSaveOnlyWhenAsked": {
+      "atRest": false,
+      "half": {
+        "name": "GEMINI_API_KEY",
+        "label": "Gemini API key",
+        "hint": "For Antigravity, from aistudio.google.com/apikey. Only Antigravity's server on your computer gets it.",
+        "set": false,
+        "source": "none"
+      },
+      "offered": true,
+      "byEnter": true,
+      "afterEnter": {
+        "name": "GEMINI_API_KEY",
+        "label": "Gemini API key",
+        "hint": "For Antigravity, from aistudio.google.com/apikey. Only Antigravity's server on your computer gets it.",
+        "set": true,
+        "source": "dashboard",
+        "preview": "…7Q2x",
+        "updatedAt": 1790953865678
+      },
+      "cleared": true,
+      "byClick": true
+    },
+    "addLoginByEnter": {
+      "withName": 0,
+      "withSecret": 1,
+      "added": true
+    },
+    "rememberByEnter": {
+      "empty": 0,
+      "offeredRemember": 1,
+      "remembered": true
+    },
+    "editMemoryEnterAndEscape": {
+      "edited": true,
+      "editButtons": 0
+    },
+    "noBoxes": {},
+    "onlyPillsThatWantALook": {},
+    "noGreyedPrimaryButtons": {},
+    "nothingThrows": {
+      "exceptions": [],
+      "consoleErrors": []
+    }
+  }
+}

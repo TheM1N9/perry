@@ -72,7 +72,7 @@ function check(name: string, ok: boolean, detail?: unknown) {
   console.log(`${ok ? "✓" : "✗"} ${name}${!ok && detail !== undefined ? ` ${JSON.stringify(detail).slice(0, 400)}` : ""}`);
 }
 
-const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
+const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("NEXT_PUBLIC_CONVEX") || name === "TELEGRAM_BOT_TOKEN") delete env[name];
 let log = "";
 const server: ChildProcess = spawn("node", [join(REPO, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)], { cwd: REPO, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
@@ -125,10 +125,10 @@ const ROUTES: Array<{ path: string; heading: string; name: string }> = [
   { path: "/inbox", heading: "Needs you", name: "inbox" },
   { path: "/work", heading: "Work", name: "work" },
   { path: "/memory", heading: "Memory", name: "memory" },
-  { path: "/connectors", heading: "Connectors", name: "connectors" },
-  { path: "/computer", heading: "Computer", name: "computer" },
-  { path: "/activity", heading: "Activity", name: "activity" },
-  { path: "/settings", heading: "Settings", name: "settings" },
+  { path: "/apps/connectors", heading: "Apps & skills", name: "connectors" },
+  { path: "/settings/computers", heading: "Settings", name: "computer" },
+  { path: "/settings/activity", heading: "Settings", name: "activity" },
+  { path: "/settings/general", heading: "Settings", name: "settings" },
 ];
 
 let page: Awaited<ReturnType<typeof launch>> | null = null;
@@ -175,7 +175,7 @@ try {
   await p.go(`${BASE}/nowhere`);
   try { await heading("Nothing here"); } catch { missing.push("/nowhere (404)"); }
   check("every route renders its heading", missing.length === 0, missing);
-  const redirects: Record<string, string> = { "/tasks": "/work", "/about": "/memory?tab=about", "/profile": "/settings", "/keys": "/settings?tab=keys", "/setup": "/settings?tab=telegram" };
+  const redirects: Record<string, string> = { "/tasks": "/work", "/about": "/memory?tab=about", "/profile": "/settings/general", "/keys": "/settings/access", "/setup": "/settings/telegram", "/connectors": "/apps/connectors", "/skills": "/apps/skills", "/computer": "/settings/computers", "/activity": "/settings/activity" };
   const wrong: Record<string, string | null> = {};
   for (const [from, to] of Object.entries(redirects)) {
     const response = await fetch(`${BASE}${from}`, { redirect: "manual" });
@@ -301,18 +301,11 @@ try {
   await p.waitFor(`document.body.innerText.includes("Leica Q3 back in stock")`, "the watches tab");
   check("each Work tab shows its own", true);
 
-  // 10. Memory.
+  // 10. Memory is Brain (issue #210): a memory is told in a chat or written as a line of its page; there is no form to teach one.
   await p.go(`${BASE}/memory`);
-  await heading("Memory");
-  await p.click(`document.getElementById("memory-text")`);
-  await p.type("Sam prefers window seats on flights.");
-  await p.press("Enter");
-  await p.waitFor(`[...document.querySelectorAll('[aria-label="Memories"] li')].some((li) => li.innerText.includes("window seats"))`, "the new memory to appear");
-  await p.click(`[...[...document.querySelectorAll('[aria-label="Memories"] li')].find((li) => li.innerText.includes("window seats")).querySelectorAll("button")].find((b) => b.innerText.trim() === "Forget")`);
-  await p.waitFor(byRole("button", "Forget"), "the confirmation");
-  await p.click(`[...document.querySelectorAll("[role=alertdialog] button")].find((b) => b.innerText.trim() === "Forget")`);
-  await p.waitFor(`![...document.querySelectorAll('[aria-label="Memories"] li')].some((li) => li.innerText.includes("window seats"))`, "the memory to go");
-  check("a memory can be added and forgotten", !(await pub<Array<{ text: string }>>("dashboard:listMemories", { query: "window seats" })).some((memory) => memory.text.includes("window seats")));
+  await heading("Brain");
+  await p.waitFor(`document.querySelector('[data-memory-page="remember"]')`, "Things to remember");
+  check("Brain has no Teach Perry something form", await p.evaluate(`document.querySelectorAll("#memory-text").length === 0`) === true);
 
   // 11. Sending.
   await p.go(`${BASE}/chat`);
@@ -369,23 +362,25 @@ try {
 
   // 12. Theme.
   await p.scheme("dark");
-  await p.go(`${BASE}/settings`);
+  await p.go(`${BASE}/settings/general`);
   await heading("Settings");
   check("the system's dark theme applies", await p.evaluate(`document.documentElement.classList.contains("dark")`));
   await p.scheme("light");
-  await p.click(byRole("radio", "Dark"));
+  // The app's theme, not the pet's (Settings has both): System, Light and Dark toggle buttons in the group named Theme.
+  const theme = (name: string) => `[...document.querySelectorAll('[role=group][aria-label="Theme"] button')].find((b) => b.innerText.trim() === ${JSON.stringify(name)})`;
+  await p.click(theme("Dark"));
   await p.waitFor(`document.documentElement.classList.contains("dark")`, "dark to apply");
-  await p.go(`${BASE}/settings`);
+  await p.go(`${BASE}/settings/general`);
   await heading("Settings");
   check("a theme picked in Settings sticks", await p.evaluate(`localStorage.getItem("perry.theme") === "dark" && document.documentElement.classList.contains("dark")`));
-  await p.click(byRole("radio", "System"));
+  await p.click(theme("System"));
   await p.waitFor(`!document.documentElement.classList.contains("dark")`, "the system theme to return");
 
   // 13, 14. Every page at four widths, in both themes: overflow, contrast, screenshots.
   const overflow: Record<string, number> = {};
   const contrast: Record<string, unknown> = {};
   let texts = 0;
-  const pages = [...ROUTES, { path: `/chat/${seeded.pinnedChat}`, heading: "", name: "chat" }, { path: "/settings?tab=keys", heading: "Settings", name: "keys" }, { path: "/settings?tab=telegram", heading: "Settings", name: "telegram" }, { path: "/memory?tab=about", heading: "Memory", name: "about" }, { path: "/welcome", heading: "Meet your assistant", name: "welcome" }];
+  const pages = [...ROUTES, { path: `/chat/${seeded.pinnedChat}`, heading: "", name: "chat" }, { path: "/settings/access", heading: "Settings", name: "keys" }, { path: "/settings/telegram", heading: "Settings", name: "telegram" }, { path: "/memory?tab=about", heading: "Memory", name: "about" }, { path: "/welcome", heading: "Meet your assistant", name: "welcome" }];
   for (const [width, height, mobile] of [[1440, 900, false], [1280, 800, false], [768, 1024, true], [375, 812, true]] as const) {
     await p.viewport(width, height, mobile);
     for (const scheme of ["light", "dark"] as const) {

@@ -111,7 +111,7 @@ await new Promise<void>((done) => stub.listen(0, "127.0.0.1", done));
 
 const env: NodeJS.ProcessEnv = {
   ...process.env,
-  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   TELEGRAM_BOT_TOKEN: "123456:whatsapp-e2e",
   TELEGRAM_API_BASE: `http://127.0.0.1:${(stub.address() as { port: number }).port}`,
   PERRY_WHATSAPP_DRIVER: join(REPO, "artifacts", "whatsapp", "fake-driver.mjs"),
@@ -196,7 +196,7 @@ try {
   browser = await openChat(BASE, KEY);
   const { evaluate, send } = browser;
   const shoot = (name: string) => send("Page.captureScreenshot", { format: "png" }).then((shot) => writeFileSync(join(outDir, name), Buffer.from(shot.data, "base64")));
-  await send("Page.navigate", { url: `${BASE}/settings?tab=whatsapp` });
+  await send("Page.navigate", { url: `${BASE}/settings/whatsapp` });
   await until(async () => Boolean(await evaluate(`!!document.querySelector('img[alt="WhatsApp link QR code"]')`)), "the QR on the dashboard", 30);
   await shoot("whatsapp-qr.png");
 
@@ -277,7 +277,7 @@ try {
   await sleep(8_000);
   const out = await view();
   checks.loggedOutHandled = !out.wanted && !out.paired && wa.connects === connectsBefore && !existsSync(join(home, "whatsapp", "auth"));
-  await send("Page.navigate", { url: `${BASE}/settings?tab=whatsapp` });
+  await send("Page.navigate", { url: `${BASE}/settings/whatsapp` });
   await until(async () => Boolean(await evaluate(`document.body.innerText.includes("Unlinked")`)), "the dashboard to say unlinked", 20).catch(() => {});
 
   // 9. Self mode.

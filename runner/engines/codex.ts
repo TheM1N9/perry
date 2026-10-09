@@ -1,21 +1,26 @@
 import { resolve } from "node:path";
 import { ACCESSES } from "../../convex/lib/commands";
+import { updateOf, versionIn } from "../../convex/lib/engines";
 import {
   ASSISTANT_MCP, CodexAppServer, TurnFailed, WINDOWS_SANDBOX, sandboxMode, sandboxPolicy, userInput,
-  type ItemEvent, type RpcMessage, type SandboxMode, type TokenUsage as CodexUsage, type TokenUsageEvent, type TurnItem,
+  type ItemEvent, type RateLimitSnapshot, type RpcMessage, type SandboxMode, type TokenUsage as CodexUsage, type TokenUsageEvent, type TurnItem,
 } from "../codex";
 import {
   optionOf, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineRequest, type EngineStatus,
-  type ItemStatus, type LoginFlow, type QuickTurn, type TokenUsage, type TurnHandle, type TurnInput, type TurnResult, type TurnSink,
+  type ItemStatus, type LoginFlow, type NamedSkill, type PlanLimits, type PlanWindow, type QuickTurn, type TokenUsage, type TurnHandle,
+  type TurnInput, type TurnResult, type TurnSink,
 } from "../engine";
+import { windowLabel } from "../../convex/lib/usage";
 import { HOME, PATHS } from "../home";
+import { forget, gave, givenTo, instructionsInFull, instructionsUpdate } from "../instructions";
 import { describeMachine } from "../shell";
+import { runCli } from "./process";
 
 /**
  * Codex, over its app-server (runner/codex.ts), signed in with the owner's
  * ChatGPT plan. Everything that is Codex's own lives here: how Perry's access
  * becomes Codex's sandbox and approval policy, what its approval requests and
- * items look like, its quick-turn models, and its sign-in by device code.
+ * items look like, its quick turns, and its sign-in by device code.
  */
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -28,34 +33,16 @@ const NO_TOOLS = Object.fromEntries([
   "shell_tool", "unified_exec", "apps", "plugins", "multi_agent", "image_generation", "computer_use", "browser_use",
 ].map((feature) => [`features.${feature}`, false]));
 
-type ListedModel = { model: string; description?: string; hidden?: boolean; isDefault?: boolean; supportedReasoningEfforts?: Array<{ reasoningEffort: string }> };
 type ModelChoice = { model?: string; effort?: string };
 
-/** The owner's pick for chat names. PERRY_TITLE_MODEL picks another by id. */
-const TITLE_MODEL = "gpt-6-luna";
-
 /**
- * Which model a quick turn uses, from what the subscription offers. The
- * reviewer: PERRY_REVIEW_MODEL, else the first listed as fast, else the
- * default. Chat names: Luna, as the owner asked (PERRY_TITLE_MODEL), else the
- * first Luna listed, else a fast model, else the default.
+ * Which model a quick turn uses: the one the owner pinned for its purpose
+ * (PERRY_REVIEW_MODEL, PERRY_TITLE_MODEL), else the quick tier's, which the
+ * runner picks from what the subscription offers (convex/lib/routing.ts).
  */
-const QUICK_MODELS: Record<QuickTurn["purpose"], { wanted: () => string | undefined; pick: (all: ListedModel[], listed: ListedModel[], wanted?: string) => ListedModel | undefined }> = {
-  review: {
-    wanted: () => process.env.PERRY_REVIEW_MODEL,
-    pick: (all, listed, wanted) => (wanted ? all.find((item) => item.model === wanted) : undefined)
-      ?? listed.find((item) => /\bfast\b/i.test(item.description ?? ""))
-      ?? listed.find((item) => item.isDefault)
-      ?? listed[0],
-  },
-  title: {
-    wanted: () => process.env.PERRY_TITLE_MODEL || TITLE_MODEL,
-    pick: (all, listed, wanted) => all.find((item) => item.model === wanted)
-      ?? listed.find((item) => /luna/i.test(item.model))
-      ?? listed.find((item) => /\bfast\b/i.test(item.description ?? ""))
-      ?? listed.find((item) => item.isDefault)
-      ?? listed[0],
-  },
+const PINNED: Record<QuickTurn["purpose"], () => string | undefined> = {
+  review: () => process.env.PERRY_REVIEW_MODEL,
+  title: () => process.env.PERRY_TITLE_MODEL,
 };
 
 /** Codex's item statuses: CommandExecutionStatus, PatchApplyStatus, McpToolCallStatus. */
@@ -147,6 +134,30 @@ const usageOf = (last: CodexUsage): TokenUsage => ({
   totalTokens: last.totalTokens ?? 0,
 });
 
+/**
+ * The plan's limits as Perry's: each bucket's 5-hour (primary) and weekly
+ * (secondary) windows. The "codex" bucket is the plan's own; another is a
+ * model's, and says which.
+ */
+export function limitsOf(buckets: Map<string, RateLimitSnapshot>, at: number): PlanLimits {
+  const windows: PlanWindow[] = [];
+  for (const [id, bucket] of buckets) {
+    const own = id === "codex" ? "" : ` (${bucket.limitName || bucket.normalModelSlug || id})`;
+    for (const [which, window] of [["primary", bucket.primary], ["secondary", bucket.secondary]] as const) {
+      if (!window) continue;
+      windows.push({
+        id: `${id}:${which}`,
+        label: `${windowLabel(window.windowDurationMins)}${own}`,
+        usedPercent: Math.max(0, Math.min(100, window.usedPercent)),
+        ...(window.resetsAt ? { resetsAt: window.resetsAt * 1000 } : {}),
+        ...(window.windowDurationMins ? { minutes: window.windowDurationMins } : {}),
+      });
+    }
+  }
+  const plan = buckets.get("codex")?.planType ?? [...buckets.values()].find((bucket) => bucket.planType)?.planType;
+  return { windows, ...(plan ? { plan } : {}), at };
+}
+
 /** A thread started before any chat asked for it; its id, or null if it failed to start. */
 type Spare = { app: CodexAppServer; id: Promise<string | null> };
 /** How many spare threads are kept: one per distinct way of starting a chat (a web chat, a job's, a phone's). */
@@ -167,6 +178,11 @@ export class CodexEngine implements Engine {
     quickTurns: true,
     // One app-server runs any number of threads' turns.
     concurrentTurns: true,
+    // A skill named in a message goes as a `skill` item of its input.
+    skills: true,
+    // A guest turn: no shell, apps, plugins, images, computer or browser (NO_TOOLS), a read-only sandbox on an empty
+    // folder, approvals never asked, no AGENTS.md, and every skill turned off for its thread (runTurn).
+    guestLockdown: true,
   };
 
   private app: CodexAppServer | null = null;
@@ -176,8 +192,6 @@ export class CodexEngine implements Engine {
   private turns = new Map<string, { sink: TurnSink; cwd: string }>();
   /** Threads quick turns started. Any request Codex makes from one is refused. */
   private quickThreads = new Set<string>();
-  /** A quick-turn model per app-server and purpose, picked once. */
-  private picks = new WeakMap<CodexAppServer, Map<string, Promise<ModelChoice>>>();
   /** Threads started ahead of a new chat's first message, by what they were started with (takeSpare). */
   private spares = new Map<string, Spare>();
 
@@ -194,10 +208,9 @@ export class CodexEngine implements Engine {
       const app = new CodexAppServer();
       try {
         await app.start();
-        // Without them Codex still works, just without the agent's own skills.
-        await app.useSkills().catch((error) => this.warn(/unknown variant/.test(message(error))
-          ? "Perry's skills are unavailable: this Codex is too old to load them. Update it: npm install -g @openai/codex"
-          : `skills unavailable: ${message(error)}`));
+        // A Codex without them ("unknown variant") is too old for Perry, which the runner says: it is
+        // started only to tell its version, and takes no turns.
+        await app.useSkills().catch((error) => { if (!/unknown variant/.test(message(error))) this.warn(`skills unavailable: ${message(error)}`); });
         app.on("serverRequest", (request: RpcMessage) => {
           void this.answer(app, request).catch((error) => app.rejectRequest(request.id, message(error)));
         });
@@ -217,7 +230,7 @@ export class CodexEngine implements Engine {
       const app = await this.ensure();
       const account = await app.account();
       const signedIn = account.authMode === "chatgpt";
-      return {
+      const status: EngineStatus = {
         kind: "codex",
         installed: true,
         version: app.version,
@@ -225,9 +238,39 @@ export class CodexEngine implements Engine {
         auth: { type: account.authMode, label: signedIn ? "ChatGPT" : account.authMode, email: account.email, plan: account.planType },
         models: signedIn ? await app.models().catch(() => []) : [],
       };
+      await this.followUpdates(app);
+      return status;
     } catch (error) {
-      return { kind: "codex", installed: false, signedIn: false, auth: {}, models: [], error: message(error) };
+      // An app-server that will not start still says its version, which may be why.
+      const printed = await runCli({ command: "codex", args: [] }, ["--version"], 10_000).catch(() => null);
+      const version = printed?.code === 0 ? versionIn(printed.stdout) : undefined;
+      return { kind: "codex", installed: false, signedIn: false, auth: {}, models: [], error: message(error), ...(version ? { version } : {}) };
     }
+  }
+
+  /** When the Codex on PATH was last compared with the running app-server's. */
+  private comparedAt = 0;
+
+  /**
+   * The app-server keeps running the Codex it was started with, so an update
+   * would go unseen, and on Windows could not replace its files. One too old
+   * for Perry takes no turns, so it is ended after each look, and the next
+   * starts whatever is installed then. Any other is compared with the Codex on
+   * PATH every five minutes, and started again between turns once it differs.
+   */
+  private async followUpdates(app: CodexAppServer) {
+    if (this.turns.size) return;
+    let restart = updateOf({ kind: "codex", version: app.version })?.need === "required";
+    if (!restart && Date.now() - this.comparedAt > 5 * 60_000) {
+      this.comparedAt = Date.now();
+      const printed = await runCli({ command: "codex", args: [] }, ["--version"], 10_000).catch(() => null);
+      const installed = printed?.code === 0 ? versionIn(printed.stdout) : undefined;
+      restart = Boolean(installed && app.version && installed !== app.version);
+    }
+    if (!restart || this.turns.size || this.app !== app) return;
+    this.app = null;
+    this.lastAttempt = 0;
+    app.close();
   }
 
   /** ChatGPT's device code: the owner opens a page, signs in and types the code. */
@@ -248,6 +291,20 @@ export class CodexEngine implements Engine {
 
   async logout(): Promise<void> {
     await (await this.ensure()).request("account/logout", {});
+  }
+
+  /**
+   * The ChatGPT plan's limits. Codex sends updates of them as its turns run,
+   * which keep the last read fresh; past a minute without one they are read
+   * again. An API key has no plan limits.
+   */
+  async limits(fresh = false): Promise<PlanLimits | null> {
+    const app = await this.ensure();
+    if (fresh || Date.now() - app.rateLimitsAt > 60_000) {
+      if ((await app.account()).authMode !== "chatgpt") return null;
+      await app.readRateLimits();
+    }
+    return limitsOf(app.rateLimits, app.rateLimitsAt);
   }
 
   /**
@@ -331,9 +388,13 @@ export class CodexEngine implements Engine {
   }
 
   async runTurn(input: TurnInput, sink: TurnSink): Promise<TurnResult> {
-    const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments, guest } = input;
+    const { resumeCursor: threadId, instructions, history, recalled, prompt, cwd, model, effort, access, tools, attachments, guest, skills } = input;
     const app = await this.ensure();
     const broken = guest ? [] : await app.reloadSkills(cwd).catch(() => []);
+    // A chat with someone else gets none of the skills Codex would find, Perry's or the owner's own (issue #163): Codex
+    // loads one whose "$name" is in a message by itself, so each is turned off for the thread. Not knowing which
+    // there are, the turn does not run.
+    const hidden = guest ? await app.skillPaths(cwd).catch((error) => { throw new Error(`Could not list Codex's skills to keep them out of this chat: ${message(error)}`); }) : [];
     const machine = describeMachine();
     // The owner's OS and shell, so commands, paths and "open it" requests fit this machine.
     const home = [
@@ -365,11 +426,11 @@ export class CodexEngine implements Engine {
         "A command that fails with a network, connection or permission error was blocked by the sandbox. When the task needs it, " +
         "do not report the failure or work around it: run the same command again with sandbox_permissions \"require_escalated\" " +
         "and a one-line justification, and the owner is asked. Ask this way only for what the task needs.";
+    // What the thread is to follow; a fresh one also gets the chat so far, once.
     // A chat with someone else is told nothing of this machine, and has nothing to run on it.
-    const place = guest ? "\n\nYou have no shell, files or computer in this chat: only your own tools and web search." : `\n\n${home}${sandboxed}`;
-    const fullInstructions = history
-      ? `${instructions}${place}\n\nEarlier chat history (context, not a new user request):\n${history}`
-      : `${instructions}${place}`;
+    const place = guest ? "## This chat\n\nYou have no shell, files or computer in this chat: only your own tools and web search." : `## This computer\n\n${home}${sandboxed}`;
+    const current = `${instructions}\n\n${place}`;
+    const fullInstructions = history ? `${current}\n\nEarlier chat history (context, not a new user request):\n${history}` : current;
     const policy = guest ? "never" : full || auto ? "untrusted" : "on-request";
     const sandbox: SandboxMode = guest ? "read-only" : full || auto ? "danger-full-access" : sandboxMode();
     // Perry's own tools (convex/mcp.ts): memory, connected accounts, the web, jobs, tasks and the rest. Codex takes them over HTTP.
@@ -389,8 +450,8 @@ export class CodexEngine implements Engine {
       // Naming a plugin that is not installed does nothing. Its computer use for other apps stays.
       "plugins.browser@openai-bundled.enabled": false,
       "plugins.unified-computer-use@openai-bundled.enabled": false,
-      // A chat with someone else: no shell, apps, plugins, images or computer, and no AGENTS.md from anywhere.
-      ...(guest ? { ...NO_TOOLS, "tools.view_image": false, project_doc_max_bytes: 0 } : {}),
+      // A chat with someone else: no shell, apps, plugins, images or computer, no AGENTS.md from anywhere, and no skills.
+      ...(guest ? { ...NO_TOOLS, "tools.view_image": false, project_doc_max_bytes: 0, "skills.config": hidden.map((path) => ({ path, enabled: false })) } : {}),
     };
     const start = { cwd, approvalPolicy: policy, sandbox, config, developerInstructions: fullInstructions, serviceName: "perry" };
     const spare = threadId ? null : await this.takeSpare(app, start);
@@ -400,9 +461,15 @@ export class CodexEngine implements Engine {
     const id = thread.thread?.id;
     if (!id) throw new Error("Codex did not return a thread ID.");
     if (!threadId) await sink.onSession(id);
+    const untold = threadId ? await this.updateInstructions(app, id, current) : null;
+    if (!threadId) gave(id, current);
     // The next new chat is most likely started the same way (the same instructions, access and folder): have its thread ready.
     if (!threadId && !history) this.keepSpare(app, start);
-    const turnInput = userInput(prompt, attachments, recalled);
+    // What changed that could not go into the thread's history on its own goes ahead of the message instead.
+    const turnInput = [
+      ...(untold ? [{ type: "text", text: `<perry-instructions>\n${untold}\n</perry-instructions>`, text_elements: [] }] : []),
+      ...userInput(prompt, attachments, recalled, skills),
+    ];
     // Deltas can arrive before turn/start answers, so match them by thread.
     const written = new Map<string, string>();
     let latest = "";
@@ -455,19 +522,26 @@ export class CodexEngine implements Engine {
       }, 30_000);
       if (!started.turn?.id) throw new Error("Codex did not start a turn.");
       turnId = started.turn.id;
+      // Taken with the message, the change is in the thread's history now.
+      if (untold) gave(id, current);
       for (const replay of early.splice(0)) replay();
       sink.onStarted?.({ cursor: id, turnId });
       try {
         // No timeout of its own: the runner's watchdog keeps the time.
         const { text, images, interrupted, compacted } = await app.waitForTurn(turnId, 0);
+        if (compacted) forget(id);
         // A stopped turn may not have finished its message; the streamed text is the best record of it.
         return { state: interrupted ? "interrupted" : "completed", cursor: id, text: text || (interrupted ? latest : ""), images, ...(compacted ? { compacted } : {}) };
       } catch (error) {
         if (!(error instanceof TurnFailed)) throw error;
+        if (error.partial.compacted) forget(id);
         return { state: "failed", cursor: id, text: error.partial.text || latest, images: error.partial.images, ...(error.partial.compacted ? { compacted: true } : {}), error: error.message };
       }
     } finally {
       this.turns.delete(id);
+      // A thread Codex still has loaded keeps the skills it was resumed with, so a skill added since would be
+      // found in a chat with someone else: its thread is let go after each turn, and resumed afresh with the next.
+      if (guest) void app.request("thread/unsubscribe", { threadId: id }).catch(() => {});
       app.off("item/agentMessage/delta", onDelta);
       app.off("item/started", onItemStarted);
       app.off("item/completed", onItemCompleted);
@@ -480,8 +554,8 @@ export class CodexEngine implements Engine {
    * Fails with "no active turn to steer" once the turn has ended, and when the
    * turn is no longer the active one.
    */
-  async steer(handle: TurnHandle, steer: { prompt: string; attachments: EngineAttachment[] }): Promise<void> {
-    await (await this.ensure()).steer(handle.cursor, handle.turnId, steer.prompt, steer.attachments);
+  async steer(handle: TurnHandle, steer: { prompt: string; attachments: EngineAttachment[]; skills?: NamedSkill[] }): Promise<void> {
+    await (await this.ensure()).steer(handle.cursor, handle.turnId, steer.prompt, steer.attachments, steer.skills);
   }
 
   async interrupt(handle: TurnHandle): Promise<void> {
@@ -489,7 +563,15 @@ export class CodexEngine implements Engine {
   }
 
   async compact(cursor: string, cwd: string): Promise<void> {
-    await (await this.ensure()).compact(cursor, cwd);
+    const app = await this.ensure();
+    try {
+      await app.compact(cursor, cwd);
+    } finally {
+      // Compacting loads the thread with none of its turn's settings; let go, the next turn resumes it with its own
+      // (a chat with someone else keeps its lockdown and no skills, issue #163).
+      await app.request("thread/unsubscribe", { threadId: cursor }).catch(() => {});
+    }
+    forget(cursor);
   }
 
   /** One ephemeral, read-only Codex turn with no tools, on a model picked for its purpose. */
@@ -497,7 +579,8 @@ export class CodexEngine implements Engine {
     const started = Date.now();
     const left = () => Math.max(1, turn.timeoutMs - (Date.now() - started));
     const app = await this.ensure();
-    const choice = await this.quickModel(app, turn.purpose);
+    const pinned = PINNED[turn.purpose]();
+    const choice: ModelChoice = pinned ? { model: pinned } : { model: turn.model, effort: turn.effort };
     let running: TurnHandle | undefined;
     try {
       const thread = await app.request<{ thread?: { id?: string } }>("thread/start", {
@@ -531,26 +614,6 @@ export class CodexEngine implements Engine {
     }
   }
 
-  /** A model from what the subscription offers, picked once per app-server and purpose, at low effort where it has it. */
-  private quickModel(app: CodexAppServer, purpose: QuickTurn["purpose"]): Promise<ModelChoice> {
-    let picks = this.picks.get(app);
-    if (!picks) this.picks.set(app, picks = new Map());
-    let choice = picks.get(purpose);
-    if (!choice) {
-      const rule = QUICK_MODELS[purpose];
-      const wanted = rule.wanted();
-      choice = (async () => {
-        const { data = [] } = await app.request<{ data?: ListedModel[] }>("model/list", { limit: 100 });
-        const model = rule.pick(data, data.filter((item) => !item.hidden), wanted);
-        const effort = model?.supportedReasoningEfforts?.some((option) => option.reasoningEffort === "low") ? "low" : undefined;
-        return { model: model?.model ?? wanted, effort };
-      })();
-      choice.catch(() => picks.delete(purpose));
-      picks.set(purpose, choice);
-    }
-    return choice;
-  }
-
   /**
    * A new Codex thread spends two seconds or more getting ready (its MCP
    * servers, its tools, its environment) before it takes the first message,
@@ -581,7 +644,48 @@ export class CodexEngine implements Engine {
     this.spares.set(key, { app, id });
   }
 
+  /**
+   * A thread keeps the instructions it started with: Codex saves them in its
+   * history and ignores new ones on thread/resume, even from another
+   * app-server. So what changed since it was last told (the owner's profile,
+   * USER.md, the chat's access) goes into its history as a developer message
+   * of its own before the turn, where it stays. A thread from before Perry
+   * kept track is told all of its instructions, once.
+   *
+   * When Codex will not take it (a CLI without thread/inject_items, a hiccup),
+   * the update is returned, for the turn to carry ahead of the message: the
+   * reply follows the current instructions either way, and the chat is not
+   * held up by it.
+   */
+  private async updateInstructions(app: CodexAppServer, thread: string, current: string): Promise<string | null> {
+    const before = givenTo(thread);
+    const update = before === undefined ? instructionsInFull(current) : instructionsUpdate(before, current);
+    if (!update) return null;
+    try {
+      await app.request("thread/inject_items", { threadId: thread, items: [{ type: "message", role: "developer", content: [{ type: "input_text", text: update }] }] }, 30_000);
+      gave(thread, current);
+      return null;
+    } catch (error) {
+      this.warn(`could not tell a Codex thread its instructions changed on their own, so they go with the message: ${message(error)}`);
+      return update;
+    }
+  }
+
   kill(): void {
     this.app?.close("SIGKILL");
+  }
+
+  /** Codex is run as `codex` from PATH. */
+  where(): string {
+    return "codex";
+  }
+
+  /** The app-server holds the old Codex's files open: it is ended, and the next look starts the one installed then, at once. */
+  reload(): void {
+    const app = this.app;
+    this.app = null;
+    this.lastAttempt = 0;
+    this.comparedAt = 0;
+    app?.close("SIGKILL");
   }
 }

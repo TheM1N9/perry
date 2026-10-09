@@ -61,7 +61,7 @@ const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const check = (name: string, ok: boolean, note?: unknown) => { checks[name] = ok; if (note !== undefined) notes[name] = note; console.log(`${ok ? "ok  " : "FAIL"} ${name}`); };
 
 // --- Perry ----------------------------------------------------------------------
-const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
+const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name.startsWith("TELEGRAM") || name === "COMPOSIO_API_KEY" || name === "ELECTRON_RUN_AS_NODE") delete env[name];
 const logs = { server: "", runner: "" };
 function start(name: "server" | "runner"): ChildProcess {
@@ -181,7 +181,7 @@ try {
     const image = await send("Page.captureScreenshot", { format: "png" }) as { data: string };
     writeFileSync(join(outDir, name), Buffer.from(image.data, "base64"));
   };
-  await send("Page.navigate", { url: `${BASE}/settings` });
+  await send("Page.navigate", { url: `${BASE}/settings/engines` });
   await until(() => evaluate(`Boolean(document.querySelector('section[aria-label="Engines"]'))`), "Settings' Engines section", 30);
   await until(() => evaluate(`document.querySelector('section[aria-label="Engines"]').innerText.includes("Signed in")`), "Codex signed in on Settings", 30).catch(() => {});
   const settingsText = await evaluate(`document.querySelector('section[aria-label="Engines"]').innerText`) as string;
@@ -378,7 +378,7 @@ try {
     { doc: { engines: oldDoc.engines ?? null, codexAuthMode: oldDoc.codexAuthMode, codexModels: oldDoc.codexModels }, settings: listedOld?.engines, models: oldModels, claimed: oldClaim?.engine ?? null });
 
   // Settings with every kind of computer: this one, another engine, and a runner from before engines.
-  await send("Page.navigate", { url: `${BASE}/settings` });
+  await send("Page.navigate", { url: `${BASE}/settings/engines` });
   await until(() => evaluate(`(document.querySelector('section[aria-label="Engines"]')?.innerText ?? "").includes("Claude Code")`), "Settings to show every engine", 30).catch(() => {});
   await shot("settings-engines-all.png");
   notes.settingsAll = await evaluate(`document.querySelector('section[aria-label="Engines"]').innerText`);

@@ -1,12 +1,13 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
+import type { SavedValue } from "./lib/secrets";
 
 /**
  * The owner's logins and secrets, for Perry to sign in to websites with
- * computer use: the Keys page's second half.
+ * computer use: Settings → Logins & secrets.
  *
- * The owner adds one on the Keys page, or sends it in a chat and the agent
+ * The owner adds one in Settings → Logins & secrets, or sends it in a chat and the agent
  * moves it here with save_secret. Moving means the value also leaves the chat:
  * it is replaced in that chat's history, its turns and its trace, so the only
  * copy Perry keeps is this row.
@@ -39,7 +40,7 @@ const entry = (row: Doc<"vault">): VaultEntry => ({
   ...(row.lastUsedAt ? { lastUsedAt: row.lastUsedAt } : {}),
 });
 
-export const HIDDEN = "[saved in Keys]";
+export const HIDDEN = "[saved in Logins & secrets]";
 
 /**
  * Saved values shorter than this are not hidden everywhere: a four-digit PIN
@@ -60,6 +61,16 @@ export function hide(text: string, values: string[]): string {
 /** Every saved value long enough to hide on sight, for hiding it in whatever is about to be kept. */
 export async function savedValues(ctx: Pick<QueryCtx, "db">): Promise<string[]> {
   return (await ctx.db.query("vault").collect()).map((row) => row.value).filter((value) => value.length >= HIDE_EVERYWHERE);
+}
+
+/**
+ * Every value kept in Logins & secrets, and every service key, with what it is called there: what never goes
+ * into memory or a page (pages.scrubbed, lib/secrets.ts). As long as savedValues' are, so a PIN is not found in every year.
+ */
+export async function keptSecrets(ctx: Pick<QueryCtx, "db">): Promise<SavedValue[]> {
+  const logins = (await ctx.db.query("vault").collect()).map((row) => ({ value: row.value, label: row.label }));
+  const keys = (await ctx.db.query("secrets").collect()).map((row) => ({ value: row.value, label: row.name }));
+  return [...logins, ...keys].filter((item) => item.value.length >= HIDE_EVERYWHERE);
 }
 
 export const list = internalQuery({
@@ -156,8 +167,8 @@ async function hideInChat(ctx: MutationCtx, conversationId: Id<"conversations">,
   for (const run of runs) {
     if (run.prompt.includes(value)) { await ctx.db.patch(run._id, { prompt: scrub(run.prompt) }); changed++; }
     for (const span of await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).collect()) {
-      if (!span.input?.includes(value) && !span.output?.includes(value)) continue;
-      await ctx.db.patch(span._id, { input: span.input && scrub(span.input), output: span.output && scrub(span.output) });
+      if (!span.input?.includes(value) && !span.output?.includes(value) && !span.name.includes(value)) continue;
+      await ctx.db.patch(span._id, { name: scrub(span.name), input: span.input && scrub(span.input), output: span.output && scrub(span.output) });
       changed++;
     }
   }
@@ -185,4 +196,11 @@ export const remove = internalMutation({
     await ctx.db.delete(id);
     return true;
   },
+});
+
+/** Whether any saved value long enough to hide is in the text: a picture of it cannot be hidden, so it is not taken. */
+export const anySaved = internalQuery({
+  args: { text: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => (await savedValues(ctx)).some((value) => args.text.includes(value)),
 });

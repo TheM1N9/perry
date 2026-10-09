@@ -3,19 +3,21 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  ActivityIcon, ArrowDownIcon, CopyIcon, FolderLockIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
+  ActivityIcon, ArrowDownIcon, CopyIcon, FilePlusIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
   SquarePenIcon, Trash2Icon, TriangleAlertIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
   ACCESS_HINTS, ACCESS_LABELS, ACCESSES, COMPACTED, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
-  modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, type Access,
+  modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, typingSkill, type Access,
 } from "@/convex/lib/commands";
 import { ENGINE_LABELS, type EngineKind } from "@/convex/lib/engines";
+import { noteHref } from "@/convex/lib/notes";
+import { limitWarning } from "@/convex/lib/usage";
 import { copyText, errorText, useNow } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
@@ -24,14 +26,19 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApprovalCard } from "../approval-card";
 import { DeleteDialog, RenameDialog } from "../app-sidebar";
-import { APPS, ChannelIcon, PerryMark, TopBar } from "../common";
+import { APPS, ChannelIcon, EmptyState, PerryMark, TopBar } from "../common";
+import { MoveToProject, NewProjectDialog } from "../projects";
+import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
+import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
 import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { MessageRow, PendingRow, ReplyInProgress } from "./message";
+import { LANDING_MS, SAVED_BEFORE_END_MS, together, type Work } from "./work";
 
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
@@ -52,8 +59,11 @@ const COMMANDS = [
   { command: "/think", hint: "List the thinking levels, or /think <level>" },
   { command: "/access", hint: "Ask, Auto or Full access: whether it asks before acting" },
   { command: "/stop", hint: "Stop the reply being written" },
+  { command: "/pause", hint: "Pause Perry: stop everything, start nothing new" },
+  { command: "/resume", hint: "Start Perry again" },
   { command: "/compact", hint: "Shrink what Perry carries of this chat; the messages stay" },
   { command: "/reset", hint: "Save this chat to memory, then start it afresh" },
+  { command: "/note", hint: "/note <words> adds them to your Inbox note; alone, saves the last reply as a note" },
 ];
 
 function greeting(name?: string) {
@@ -97,6 +107,7 @@ export function ChatScreen() {
 
   const createChat = useMutation(api.dashboard.createChat);
   const sendChat = useMutation(api.dashboard.sendChat);
+  const { setPaused } = usePause();
   const stopChat = useMutation(api.dashboard.stopChat);
   const compactChat = useAction(api.dashboard.compactChat);
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
@@ -107,10 +118,17 @@ export function ChatScreen() {
   const rewindChat = useAction(api.dashboard.rewindChat);
   const resetChat = useAction(api.dashboard.resetChat);
   const setPinned = useMutation(api.dashboard.setChatPinned);
-  const setProject = useMutation(api.dashboard.setChatProject);
+  const noteFromChat = useMutation(api.notes.fromChat);
+  const jotNote = useMutation(api.notes.jot);
   const modelOptions = useQuery(api.models.options, { key: dashboardKey });
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
+  const defaultEngine = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
+  const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
+  // The heads-up about the engine's limit the owner closed, until it changes.
+  const [limitSeen, setLimitSeen] = useState("");
+  // The note about Perry moving the chat to another engine the owner closed, by when it moved.
+  const [movedSeen, setMovedSeen] = useState(0);
   const setChatModel = useMutation(api.dashboard.setChatModel).withOptimisticUpdate((store, args) => {
     const current = store.getQuery(api.dashboard.getChat, { key: args.key, id: args.id });
     if (current) store.setQuery(api.dashboard.getChat, { key: args.key, id: args.id }, { ...current, model: args.model, engine: args.engine ?? current.engine });
@@ -133,6 +151,10 @@ export function ChatScreen() {
   const [draftEffort, setDraftEffort] = useState<string>();
   const [draftAccess, setDraftAccess] = useState<Access>();
   const [draft, setDraft] = useState("");
+  /** Where the caret is in the draft; unset puts it at the end. */
+  const [caret, setCaret] = useState<number>();
+  const { skills, refresh: refreshSkills } = useSkills();
+  const skillNames = useMemo(() => new Set((skills ?? []).filter((skill) => !skill.problem).map((skill) => skill.name)), [skills]);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState<Pending[]>([]);
@@ -143,6 +165,8 @@ export function ChatScreen() {
   const [busy, setBusy] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [removing, setRemoving] = useState(false);
+  /** A new project is being made for this chat to move into. */
+  const [creatingProject, setCreatingProject] = useState(false);
   const composer = useRef<HTMLTextAreaElement>(null);
   const compactionStatus = useQuery(api.dashboard.getCompaction, compaction ? { key: dashboardKey, id: compaction } : "skip");
 
@@ -155,7 +179,11 @@ export function ChatScreen() {
     if (!paramId) window.setTimeout(() => composer.current?.focus(), 0);
   }, [paramId]);
   // Needs you starts an answer here with ?draft=, which is taken in, then out of the address.
-  const handed = useSearchParams().get("draft");
+  const search = useSearchParams();
+  const handed = search.get("draft");
+  // A new chat started inside a project (?project=) is in it from its first message.
+  const inProject = paramId ? null : search.get("project");
+  const newIn = useQuery(api.projects.get, inProject ? { key: dashboardKey, id: inProject } : "skip");
   useEffect(() => {
     if (!handed) return;
     setDraft(handed);
@@ -207,6 +235,31 @@ export function ChatScreen() {
 
   const shownPending = pending.filter((item) => item.id === selectedId);
   const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
+  // Every step Perry takes: listed as they come while a reply is on its way, and kept with the reply after.
+  const work = useQuery(api.dashboard.getChatWork, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
+  const { workOf, liveWork } = useMemo(() => {
+    const runs = work ?? [];
+    const replies = messages.filter((message) => message.role === "assistant" && !message.pending);
+    // Each message is a run of its own, and one sent while a reply works joins that reply's turn: several runs
+    // can go with one reply. A turn saves its reply before it ends its runs, so a finished run goes with the
+    // last reply saved while it ran; a message that waited for a turn of its own then gets that turn's reply.
+    const groups = new Map<string, Work[]>();
+    for (const run of runs) {
+      if (run.status === "running" || run.finishedAt === undefined) continue;
+      const reply = [...replies].reverse().find((message) => message.createdAt >= run.startedAt && message.createdAt <= run.finishedAt! + SAVED_BEFORE_END_MS);
+      if (reply) groups.set(reply.id, [...groups.get(reply.id) ?? [], run]);
+    }
+    const workOf = new Map<string, Work>();
+    for (const [id, group] of groups) {
+      const merged = together(group);
+      if (merged?.steps.length) workOf.set(id, merged);
+    }
+    // A run that ended well and whose reply is not in the chat yet stays up until it is: the two come
+    // from different reads, a moment apart, and the steps would blink out in between.
+    const paired = new Set([...groups.values()].flat());
+    const landing = runs.filter((run) => run.status === "ok" && run.steps.length && !paired.has(run) && now - (run.finishedAt ?? 0) < LANDING_MS);
+    return { workOf, liveWork: together([...runs.filter((run) => run.status === "running"), ...landing]) };
+  }, [work, messages, now]);
 
   // Scrolling: a chat opens at its newest message; after that, new content only scrolls into view for a reader already at the bottom.
   const scroller = useRef<HTMLDivElement>(null);
@@ -230,7 +283,7 @@ export function ChatScreen() {
     } else if (stick.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, here.length]);
+  }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, liveWork?.steps.length, here.length]);
   const jumpToLatest = () => {
     stick.current = true;
     setAtBottom(true);
@@ -238,8 +291,10 @@ export function ChatScreen() {
   };
 
   const models = modelOptions?.models;
-  // The chat's engine; a chat not sent yet takes the last chat's, like its model.
-  const engine: EngineKind = (selectedId ? chat?.engine : draftEngine ?? lastPicks?.engine) ?? "codex";
+  // The chat's engine; a chat not sent yet is on the owner's default, unless a model was picked for it. None while there is neither.
+  const engine: EngineKind | undefined = selectedId ? chat?.engine : draftEngine ?? lastPicks?.engine;
+  // Perry never picks an engine for the owner: with none for this chat and no default, it asks (below).
+  const noEngine = defaultEngine === null && !engine && !chat?.contact && (!selectedId || chat !== undefined);
   const model = (selectedId ? chat?.model : draftModel ?? lastPicks?.model) || currentModel(models ?? [], undefined, engine);
   // The thinking levels are the model's own; a level it does not take is kept but unused.
   const modelInfo = chatModel(models ?? [], model, engine);
@@ -247,15 +302,32 @@ export function ChatScreen() {
   const pickedEffort = (selectedId ? chat?.effort : draftEffort ?? lastPicks?.effort) || undefined;
   const effort = modelInfo && effortUnused(modelInfo, pickedEffort) ? undefined : pickedEffort;
   const access: Access = (selectedId ? chat?.access : draftAccess) ?? defaultAccess ?? "supervised";
+  // The chat's engine near or at its plan's limit, said before a reply fails for it.
+  const engineUsage = planLimits?.engines.find((item) => item.kind === engine)?.usage;
+  const limit = chat?.contact || !engine ? null : limitWarning(engine, engineUsage, now);
+  const limitMark = limit ? `${engine}:${limit.level}:${limit.title}` : "";
   const fail = (cause: unknown) => setError(errorText(cause));
+  /** A note made from this chat: one reply, or with no message the whole chat; said with a way to open it. */
+  const saveAsNote = async (messageId?: string) => {
+    if (!selectedId) return;
+    try {
+      const made = await noteFromChat({ key: dashboardKey, conversationId: selectedId, ...(messageId ? { messageId } : {}) });
+      toast.success(`Saved as the note “${made.title}”.`, { action: { label: "Open", onClick: () => router.push(noteHref(made.id)) } });
+    } catch (cause) {
+      toast.error(`Couldn't save it: ${errorText(cause)}`);
+    }
+  };
 
   /** Pick a model by its "<engine>/<id>" key; another engine's moves the chat there. */
   function applyModel(key: string) {
-    const next = parseModelKey(key);
-    const picked = models?.find((item) => (item.engine ?? "codex") === next.engine && item.id === next.id);
+    const parsed = parseModelKey(key);
+    // A bare id is one of the chat's own engine's models.
+    const next = { id: parsed.id, engine: parsed.engine ?? engine };
+    if (!next.engine) return;
+    const picked = models?.find((item) => item.engine === next.engine && item.id === next.id);
     if (picked && pickedEffort && effortUnused(picked, pickedEffort)) {
       setNotice(`${picked.name} doesn't take the ${pickedEffort} thinking level, so it thinks at its default here.`);
-    } else if (selectedId && next.engine !== engine) {
+    } else if (selectedId && engine && next.engine !== engine) {
       setNotice(`This chat moves to ${ENGINE_LABELS[next.engine]}, which picks up from the chat so far.`);
     }
     if (!selectedId) {
@@ -298,12 +370,33 @@ export function ChatScreen() {
     options.filter((option) => !typed || option.value.startsWith(typed)).map((option) => ({
       key: option.value, label: option.label, hint: option.hint, apply: () => void runCommand(`${command} ${option.value}`),
     }));
+  // Skills: a $ starts one's name where the caret is, and picking one puts "$name " there.
+  const mention = draft.startsWith("/") ? null : typingSkill(draft.slice(0, Math.min(caret ?? draft.length, draft.length)));
+  const mentioning = mention !== null;
+  // A skill Perry wrote a moment ago is listed too.
+  useEffect(() => { if (mentioning) void refreshSkills(); }, [mentioning, refreshSkills]);
+  function pickSkill(name: string) {
+    if (!mention) return;
+    const end = mention.start + 1 + mention.typed.length;
+    // The rest of a name the caret was inside is replaced too.
+    const after = draft.slice(end).replace(/^[a-z0-9-]*/, "");
+    const inserted = `$${name}${after.startsWith(" ") ? "" : " "}`;
+    const position = mention.start + inserted.length + (after.startsWith(" ") ? 1 : 0);
+    setDraft(draft.slice(0, mention.start) + inserted + after);
+    setCaret(position);
+    window.setTimeout(() => { composer.current?.focus(); composer.current?.setSelectionRange(position, position); }, 0);
+  }
+  const skillSuggestions: Suggestion[] = !mention ? [] : (skills ?? [])
+    .filter((skill) => !skill.problem && skill.name.includes(mention.typed))
+    .sort((a, b) => Number(b.name.startsWith(mention.typed)) - Number(a.name.startsWith(mention.typed)))
+    .map((skill) => ({ key: skill.folder, label: `$${skill.name}`, hint: skill.description, typed: skill.name === mention.typed, apply: () => pickSkill(skill.name) }));
+
   const suggestions: Suggestion[] = !draft.startsWith("/")
-    ? []
+    ? skillSuggestions
     : typedModel && choosing
       ? (typedModel.name ? findModel(models ?? [], typedModel.name, engine).matches : models ?? []).map((item) => {
-          const key = modelKey(item.engine ?? "codex", item.id);
-          const current = (item.engine ?? "codex") === engine && item.id === model;
+          const key = modelKey(item.engine, item.id);
+          const current = item.engine === engine && item.id === model;
           return {
             key, label: item.name, hint: `${key}${current ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
             apply: () => void runCommand(`/model ${key}`),
@@ -318,13 +411,15 @@ export function ChatScreen() {
           ? choices(ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
           : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
               key: item.command, label: item.command, hint: item.hint,
-              apply: () => { setDraft(["/stop", "/compact", "/reset"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },
+              apply: () => { setDraft(["/stop", "/compact", "/reset", "/pause", "/resume"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },
             }));
-  const completing = draft.startsWith("/") && !choosing
-    ? "command" as const
-    : choosing && !typedModel && suggestions.length > 0 && !suggestions.some((item) => item.key === (typedThink?.level ?? typedAccess?.mode))
-      ? "choice" as const
-      : null;
+  const completing = skillSuggestions.length
+    ? "skill" as const
+    : draft.startsWith("/") && !choosing
+      ? "command" as const
+      : choosing && !typedModel && suggestions.length > 0 && !suggestions.some((item) => item.key === (typedThink?.level ?? typedAccess?.mode))
+        ? "choice" as const
+        : null;
 
   /** Commands never become messages: they change this chat, then say what they did. */
   async function runCommand(text: string): Promise<boolean> {
@@ -334,7 +429,7 @@ export function ChatScreen() {
       if (!modelCommand.name) { setDraft(""); setNotice(describeModels(models ?? [], model, engine)); return true; }
       const picked = pickModel(models ?? [], modelCommand.name, pickedEffort, engine);
       // A name that matched nothing, or several models, stays in the box to be fixed.
-      if (picked.model) { applyModel(modelKey(picked.model.engine ?? "codex", picked.model.id)); setDraft(""); }
+      if (picked.model) { applyModel(modelKey(picked.model.engine, picked.model.id)); setDraft(""); }
       setNotice(picked.reply);
       return true;
     }
@@ -361,11 +456,34 @@ export function ChatScreen() {
       setNotice(selectedId && waiting ? "Stopping." : "Nothing is running.");
       return true;
     }
+    if (command === "/pause" || command === "/resume") {
+      setDraft("");
+      try {
+        await setPaused(command === "/pause");
+        setNotice(command === "/pause" ? PAUSED_TOAST : "Perry is back on.");
+      } catch (cause) { fail(cause); }
+      return true;
+    }
     if (command === "/reset") {
       setDraft("");
       if (!selectedId) { setNotice("Nothing to reset yet."); return true; }
       setNotice("Saving this chat to memory and starting it afresh…");
       try { setNotice(await resetChat({ key: dashboardKey, id: selectedId })); } catch (cause) { setNotice(""); fail(cause); }
+      return true;
+    }
+    if (command === "/note" || command.startsWith("/note ")) {
+      setDraft("");
+      const words = trimmed.slice(5).trim();
+      if (words) {
+        try {
+          const noted = await jotNote({ key: dashboardKey, text: words });
+          toast.success(`Added to your ${noted.title} note.`, { action: { label: "Open", onClick: () => router.push(noteHref(noted.id)) } });
+        } catch (cause) { setNotice(errorText(cause)); }
+        return true;
+      }
+      const last = saved.filter((message) => message.role === "assistant").at(-1);
+      if (!last) { setNotice("No reply here to save yet. /note <words> adds them to your Inbox note."); return true; }
+      await saveAsNote(last.id);
       return true;
     }
     if (command === "/compact") {
@@ -390,7 +508,7 @@ export function ChatScreen() {
     if (!id) {
       setBusy(true);
       try {
-        id = await createChat({ key: dashboardKey });
+        id = await createChat({ key: dashboardKey, ...(newIn ? { projectId: newIn.id } : {}) });
         setCreatedId(id);
         // The chat has its own address from now, so a reload while it sends comes back to it.
         router.replace(`/chat/${id}`);
@@ -486,6 +604,7 @@ export function ChatScreen() {
   const title = summary?.title ?? (selectedId ? chat?.title ?? "" : "New chat");
   // A Telegram or WhatsApp chat: written in here too, but what is on the phone cannot be taken back.
   const app = chat && chat.channel !== "web" ? APPS[chat.channel] : null;
+  const project = selectedId ? chat?.project : newIn ? { id: newIn.id, name: newIn.name } : undefined;
 
   return (
     <div className="flex h-dvh min-h-0 flex-col">
@@ -495,16 +614,21 @@ export function ChatScreen() {
           onPin={() => void setPinned({ key: dashboardKey, id: summary.id, pinned: !summary.pinned }).catch(fail)}
           onRename={() => setRenaming(true)}
           onCopyId={() => void copyText(summary.id).then(() => toast.success("Session ID copied."), fail)}
-          activityHref={`/activity?session=${summary.id}`}
+          activityHref={`/settings/activity?session=${summary.id}`}
           onDelete={summary.channel === "web" ? () => setRemoving(true) : undefined}
-          project={Boolean(chat?.project)}
-          onProject={() => void setProject({ key: dashboardKey, id: summary.id, project: !chat?.project })
-            .then(() => toast.success(chat?.project ? "Memories from here are shared again from now on." : "What Perry remembers here now stays in this chat."), fail)}
+          onSaveNote={() => void saveAsNote()}
+          move={summary.channel === "web" ? <MoveToProject chat={summary} onNewProject={() => setCreatingProject(true)} /> : null}
         />
       ) : !selectedId ? null : undefined}>
+        {/* A project's chat says which, and leads to the project's page. */}
+        {project && <>
+          <Link href={`/projects/${project.id}`} className="flex min-w-0 shrink items-center gap-1.5 truncate text-muted-foreground hover:text-foreground">
+            <FolderIcon className="size-4 shrink-0" aria-hidden /><span className="truncate">{project.name}</span>
+          </Link>
+          <span className="text-muted-foreground/60" aria-hidden>/</span>
+        </>}
         {chat && <ChannelIcon channel={chat.channel} />}
         <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer")} aria-busy={summary?.naming || undefined}>{title}</h1>
-        {chat?.project && <span className="inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs text-muted-foreground" title="What Perry remembers here stays in this chat, and other chats cannot read it."><FolderLockIcon className="size-3" aria-hidden />Project</span>}
         {summary && <StatusIndicator status={summary.status} />}
         {parent && (
           <Link href={`/chat/${parent.id}`} className="hidden min-w-0 items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground sm:flex">
@@ -515,10 +639,19 @@ export function ChatScreen() {
 
       <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]" id="content" tabIndex={-1}>
         <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
+          {noEngine && (
+            <Alert variant="quiet" className="mt-4" role="alert">
+              <AlertTitle>Choose the engine {assistant} thinks with</AlertTitle>
+              <AlertDescription>{assistant} doesn&apos;t pick one for you. Choose a default for every chat, or pick a model for this one in the box below.</AlertDescription>
+              <AlertAction>
+                <Button size="sm" render={<Link href="/settings/engines" />}>Choose</Button>
+              </AlertAction>
+            </Alert>
+          )}
           {status?.onboarding === "offer" && (
-            <Alert className="mt-4">
+            <Alert variant="quiet" className="mt-4">
               <AlertTitle>Tell {assistant} about yourself</AlertTitle>
-              <AlertDescription>A name, a personality, and a page about you that {assistant} reads before every reply. About two minutes.</AlertDescription>
+              <AlertDescription>About two minutes.</AlertDescription>
               <AlertAction className="flex gap-2">
                 <Button size="sm" variant="ghost" onClick={() => void skipOnboarding({ key: dashboardKey }).catch(fail)}>Not now</Button>
                 <Button size="sm" onClick={() => void redoOnboarding({ key: dashboardKey }).then(() => router.push("/welcome"), fail)}>Start</Button>
@@ -529,8 +662,7 @@ export function ChatScreen() {
           {!selectedId ? (
             <div className="flex min-h-[calc(100dvh-16rem)] flex-col items-center justify-center py-12 text-center">
               <PerryMark className="size-14" />
-              <h2 className="mt-5 text-[28px] font-semibold tracking-[-0.025em] text-balance">{greeting(status?.displayName)}</h2>
-              <p className="mt-1.5 text-[15px] text-muted-foreground">What should {assistant} pick up?</p>
+              <h2 className="mt-5 text-3xl font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
             </div>
           ) : (
             <div className="space-y-8 pt-6 pb-10" aria-busy={loading || undefined}>
@@ -541,11 +673,9 @@ export function ChatScreen() {
                 </div>
               )}
               {missing && (
-                <Alert>
-                  <AlertTitle>This chat isn&apos;t here</AlertTitle>
-                  <AlertDescription>It may have been deleted. Start a new one, or pick another from the sidebar.</AlertDescription>
-                  <AlertAction><Button size="sm" render={<Link href="/chat" />}>New chat</Button></AlertAction>
-                </Alert>
+                <EmptyState mascot title="This chat isn't here" action={<Button size="sm" render={<Link href="/chat" />}>New chat</Button>}>
+                  It may have been deleted.
+                </EmptyState>
               )}
               {messageStatus === "CanLoadMore" && (
                 <div className="flex justify-center">
@@ -559,27 +689,33 @@ export function ChatScreen() {
                 <MessageRow
                   key={message.id}
                   message={message}
+                  work={workOf.get(message.id)}
                   assistant={assistant}
                   latest={message.id === lastMessage?.id}
                   canEdit={!waiting && !app}
                   canRegenerate={message.id === lastMessage?.id && !waiting && !app}
                   canBranch={!app}
                   busy={busy}
+                  skills={skillNames}
                   onEdit={(text) => void rewind(message.id, text)}
                   onRegenerate={() => void rewind(message.id)}
                   onBranch={() => void branch(message.id)}
+                  onSaveNote={() => void saveAsNote(message.id)}
                 />
               ))}
-              {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} />)}
-              {waiting && !here.length && <ReplyInProgress streaming={chat?.streaming} />}
+              {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
+              {(waiting || liveWork) && !here.length && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} />}
               {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
               {chat?.lastError && !chat.isRunning && !waiting && (
                 <Alert variant="destructive">
                   <TriangleAlertIcon />
                   <AlertTitle>{assistant} couldn&apos;t finish the last reply</AlertTitle>
                   <AlertDescription>
-                    <p>{/runner|offline|computer/i.test(chat.lastError) ? "Your computer may be offline. Start Perry on it, then try again." : "Try again, or open Activity for the full run."}</p>
-                    <p className="mt-1 font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
+                    {/too old for Perry|runner|offline|computer/i.test(chat.lastError) && (
+                      <p className="mb-1">{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings → Engines shows it too."
+                        : "Your computer may be offline. Start Perry on it, then try again."}</p>
+                    )}
+                    <p className="font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
                   </AlertDescription>
                   {lastUser && !app && (
                     <AlertAction>
@@ -604,11 +740,11 @@ export function ChatScreen() {
         <div className="mx-auto w-full max-w-3xl">
           <p className="sr-only" role="status" aria-live="polite">{waiting ? `${assistant} is replying` : ""}</p>
           {chat?.contact ? (
-            <div className="rounded-xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            <div className="px-1 pb-1 text-sm text-muted-foreground" role="note">
               <p className="font-medium text-foreground">{assistant}&apos;s chat with {chat.contact.name}{chat.contact.group ? " (a group)" : ""}</p>
               <p className="mt-1 text-pretty">
-                You can read it, but not write in it: what you write would reach them. To have {assistant} tell them something, ask in your own chat.
-                {" "}What {assistant} may share with them is under <Link href="/settings?tab=people" className="underline underline-offset-2 hover:text-foreground">Settings → People</Link>.
+                Read only: what you write would reach them. Ask in your own chat to tell them something.
+                {" "}<Link href="/settings/people" className="link">What {assistant} may share</Link>
               </p>
             </div>
           ) : (<>
@@ -617,6 +753,7 @@ export function ChatScreen() {
             assistant={assistant}
             draft={draft}
             onDraftChange={setDraft}
+            onCaret={setCaret}
             onSubmit={() => void submit()}
             onStop={selectedId ? stop : undefined}
             waiting={waiting}
@@ -626,14 +763,28 @@ export function ChatScreen() {
             onAddFiles={addFiles}
             onRemoveFile={(file) => setFiles((items) => items.filter((item) => item !== file))}
             suggestions={suggestions}
+            suggesting={mention ? "Skills" : "Commands"}
             completing={completing}
             pickers={{
-              models, model: model ? modelKey(engine, model) : undefined, onModel: applyModel, modelInfo, effort, onEffort: applyEffort, access, onAccess: applyAccess,
+              models, model: engine && model ? modelKey(engine, model) : undefined, onModel: applyModel, modelInfo, effort, onEffort: applyEffort, access, onAccess: applyAccess,
               accessDisabled: selectedId ? chat === undefined : defaultAccess === undefined,
             }}
             above={<>
               {error && <ComposerNote tone="error" onDismiss={() => setError("")}>{error}</ComposerNote>}
               {notice && <ComposerNote tone="info" onDismiss={() => setNotice("")}>{notice}</ComposerNote>}
+              {chat?.moved && movedSeen !== chat.moved.at && (chat.moved.to ?? chat.engine) && (
+                <ComposerNote tone="warning" onDismiss={() => setMovedSeen(chat.moved!.at)}>
+                  <span className="font-medium">Moved to {ENGINE_LABELS[(chat.moved.to ?? chat.engine)!]}.</span> {chat.moved.why}.{" "}
+                  {/* A chat that follows the default goes back by itself; one on an engine of its own, when the owner says. */}
+                  {chat.moved.to ? `It goes back to ${ENGINE_LABELS[chat.moved.from]} once that has room.` : `Pick a ${ENGINE_LABELS[chat.moved.from]} model to move it back.`}
+                </ComposerNote>
+              )}
+              {limit && limitSeen !== limitMark && (
+                <ComposerNote tone={limit.level === "out" ? "error" : "warning"} onDismiss={() => setLimitSeen(limitMark)}>
+                  <span className="font-medium">{limit.title}.</span> {limit.detail}{" "}
+                  <Link href="/settings/usage" className="link">See usage</Link>
+                </ComposerNote>
+              )}
               {!selectedId && !draft && files.length === 0 && (
                 <div className="mb-3 flex flex-wrap justify-center gap-2">
                   {STARTERS.map((text) => (
@@ -650,7 +801,7 @@ export function ChatScreen() {
               ? <span className="text-warning">Full access: {assistant} acts on this computer without asking. Every command still shows in Activity.</span>
               : app
                 ? <>Your {app} chat. What you write here, and {assistant}&apos;s reply, also go to {app}.</>
-                : <>Type <kbd className="font-mono">/</kbd> for commands. Drop or paste files to attach them.</>}
+                : <>Type <Kbd className="font-mono">/</Kbd> for commands, <Kbd className="font-mono">$</Kbd> for skills.</>}
           </p>
           </>)}
         </div>
@@ -658,14 +809,15 @@ export function ChatScreen() {
 
       {summary && <RenameDialog chat={renaming ? summary : null} onClose={() => setRenaming(false)} />}
       {summary && <DeleteDialog chat={removing ? summary : null} onClose={() => setRemoving(false)} />}
+      {summary && <NewProjectDialog open={creatingProject} chat={summary.id} onClose={() => setCreatingProject(false)} />}
     </div>
   );
 }
 
-function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, project, onProject }: {
-  pinned: boolean; onPin: () => void; onRename: () => void; onCopyId: () => void; activityHref: string; onDelete?: () => void;
-  /** A project chat keeps its memory to itself. */
-  project: boolean; onProject: () => void;
+function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, onSaveNote, move }: {
+  pinned: boolean; onPin: () => void; onRename: () => void; onCopyId: () => void; activityHref: string; onDelete?: () => void; onSaveNote: () => void;
+  /** Moving it into or out of a project, for a chat that can be in one. */
+  move: ReactNode;
 }) {
   const router = useRouter();
   return (
@@ -680,7 +832,8 @@ function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, p
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem onClick={onPin}>{pinned ? <PinOffIcon /> : <PinIcon />}{pinned ? "Unpin" : "Pin"}</DropdownMenuItem>
           <DropdownMenuItem onClick={onRename}><PencilIcon />Rename</DropdownMenuItem>
-          <DropdownMenuItem onClick={onProject}><FolderLockIcon />{project ? "Share memories again" : "Keep memories in this chat"}</DropdownMenuItem>
+          {move}
+          <DropdownMenuItem onClick={onSaveNote}><FilePlusIcon />Save chat as note</DropdownMenuItem>
           <DropdownMenuItem onClick={() => router.push(activityHref)}><ActivityIcon />View activity</DropdownMenuItem>
           <DropdownMenuItem onClick={onCopyId}><CopyIcon />Copy session ID</DropdownMenuItem>
           {onDelete && <>

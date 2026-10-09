@@ -104,12 +104,12 @@ const OUTPUT_SCHEMA = {
 };
 
 /**
- * One quick, tool-less turn with a structured answer, on a fast model the
- * engine picks (for Codex: PERRY_REVIEW_MODEL, else one listed as fast, else
- * the default). Never throws; failure, or no engine that can review, is a
+ * One quick, tool-less turn with a structured answer, on the quick tier's
+ * model (`pick`: convex/lib/routing.ts) unless the owner pinned one
+ * (PERRY_REVIEW_MODEL, PERRY_CLAUDE_REVIEW_MODEL). Never throws; failure, or no engine that can review, is a
  * verdict of "error", which asks the owner.
  */
-export async function review(engine: Engine | undefined, action: ReviewedAction): Promise<Verdict> {
+export async function review(engine: Engine | undefined, action: ReviewedAction, pick: { model?: string; effort?: string } = {}): Promise<Verdict> {
   const started = Date.now();
   let model: string | undefined;
   try {
@@ -122,6 +122,7 @@ export async function review(engine: Engine | undefined, action: ReviewedAction)
       text: `Review this action:\n${input}`,
       outputSchema: OUTPUT_SCHEMA,
       timeoutMs: REVIEW_TIMEOUT_MS - (Date.now() - started),
+      ...pick,
     }).catch((error) => { model = (error as { model?: string }).model; throw error; });
     model = answered.model;
     const text = answered.text;

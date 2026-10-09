@@ -10,7 +10,7 @@ import { statusesOf } from "./engines";
  * from the most recently seen runner where it is signed in, because a
  * subscription's catalogue is only visible from the engine's own CLI.
  */
-async function engineModels(ctx: QueryCtx): Promise<ModelOption[]> {
+export async function engineModels(ctx: QueryCtx): Promise<ModelOption[]> {
   const runners = (await ctx.db.query("runners").order("desc").take(20))
     .filter((item) => !item.revoked)
     .sort((a, b) => (b.lastSeenAt ?? 0) - (a.lastSeenAt ?? 0));

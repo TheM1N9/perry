@@ -5,16 +5,24 @@
  * Reports only. It changes nothing, so it is safe to run when you are not sure
  * what state an install is in.
  *
- * `pnpm run doctor -- --machine` checks only this machine (Bun, Codex, the
- * runner and its service), for a second machine with no .env.local.
+ * `pnpm run doctor -- --machine` checks only this machine (Bun, the engines'
+ * CLIs, the runner and its service), for a second machine with no .env.local.
+ * Every engine is optional, and checked where it is installed; none at all
+ * fails, as Perry would have nothing to think with here. An engine's CLI
+ * older than Perry works with fails, and one behind its newest release warns,
+ * with the command that updates it. With the server running, it also says
+ * which engine the owner chose as the default, and warns when none is.
  */
 
-import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { platform, release, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { ENGINE_LABELS, updateOf, versionIn, type EngineKind } from "../convex/lib/engines";
+import { antigravityDirs } from "../runner/engines/antigravity";
 import { sandboxMode } from "../runner/codex";
 import { HOME, readRunnerConfig } from "../runner/home";
-import { dim, green, INSTALL_HINTS, red, run, runCodex, yellow } from "./lib";
+import { latestVersionNow, updateCommand } from "../runner/versions";
+import { dim, green, INSTALL_COMMANDS, red, run, runCodex, runOnPath, yellow } from "./lib";
 import { serviceState } from "./service";
 
 const ENV_FILE = resolve(process.cwd(), ".env.local");
@@ -37,7 +45,10 @@ function note(label: string, detail = "") {
 
 const lastLine = (text: string) => text.trim().split(/\r?\n/).at(-1) ?? "";
 
-/** This machine: what the runner and Codex need here, on any OS. */
+/** The engines installed on this machine, as checkMachine found them. */
+const installedHere = new Set<EngineKind>();
+
+/** This machine: what the runner and its engines need here, on any OS. */
 async function checkMachine() {
   note("machine", `${platform()} ${release()}`);
   ok("bun", process.versions.bun ?? process.version);
@@ -48,14 +59,31 @@ async function checkMachine() {
   else if (major > 22 || (major === 22 && minor >= 13)) ok("node", node.output.trim());
   else bad("node", `${node.output.trim()} is too old: Perry's server needs 22.13 or newer, for its built-in SQLite`);
 
+  // Each engine's newest release, looked up at once while the rest is checked; offline, what was found last.
+  const latest = { codex: latestVersionNow("codex"), claude: latestVersionNow("claude"), grok: latestVersionNow("grok") };
+  /**
+   * An engine's CLI against the versions Perry knows: one older than Perry
+   * works with fails, one behind the newest release warns, each with the
+   * command that updates it on this computer.
+   */
+  const checkVersion = async (kind: keyof typeof latest, label: string, printed: string) => {
+    const version = versionIn(printed);
+    const update = version ? updateOf({ kind, version, latest: await latest[kind], update: updateCommand(kind) }) : undefined;
+    if (update?.need === "required") bad(label, `${version} is too old for Perry, which needs ${update.minimum} or newer. Update it: ${update.command}`);
+    else if (update?.need === "available") warn(label, `${version}; ${update.latest} is out. Update it: ${update.command}`);
+    else ok(label, version ?? printed);
+  };
+
+  // Every engine is optional, and checked only where it is installed; Perry needs one of them.
   const codex = await runCodex(["--version"]);
-  if (codex.code !== 0) {
-    bad("codex", `not found on PATH. Install it: ${INSTALL_HINTS.codex}`);
+  if (codex.code !== 0 || !versionIn(codex.output)) {
+    note("codex", `not installed (optional). To use it: ${INSTALL_COMMANDS.codex}`);
   } else {
-    ok("codex", lastLine(codex.output));
+    installedHere.add("codex");
+    await checkVersion("codex", "codex", lastLine(codex.output));
     const login = await runCodex(["login", "status"]);
     if (login.code === 0) ok("codex sign-in", lastLine(login.output));
-    else warn("codex sign-in", "not signed in. Connect the runner, then sign in on the dashboard's Settings page");
+    else warn("codex sign-in", "not signed in. Connect the runner, then sign in on the dashboard's Settings → Engines");
 
     // Windows's sandbox is set up by Codex itself on first use; elsewhere a real sandboxed write shows it works.
     if (process.platform !== "win32") {
@@ -63,12 +91,25 @@ async function checkMachine() {
       const sandboxed = await runCodex(["sandbox", "-P", ":workspace", "-C", probe, "--", "/bin/sh", "-c", "echo ok > probe.txt"]);
       const how = process.platform === "darwin" ? "Seatbelt" : "bubblewrap";
       if (sandboxed.code === 0 && existsSync(join(probe, "probe.txt"))) ok("codex sandbox", `workspace-write works (${how})`);
-      // Codex 0.106, for one, has no -P; Perry still runs on it, without its skills.
-      else if (/unexpected argument/.test(sandboxed.output)) warn("codex sandbox", `this Codex is too old to check. Update it: ${INSTALL_HINTS.codex}`);
+      // Codex 0.106, for one, has no -P; it is also too old for Perry, which is said above.
+      else if (/unexpected argument/.test(sandboxed.output)) warn("codex sandbox", `this Codex is too old to check. Update it: ${INSTALL_COMMANDS.codex}`);
       else warn("codex sandbox", `a sandboxed command failed: ${lastLine(sandboxed.output)}. See INSTALL.md, "Codex's sandbox"`);
       rmSync(probe, { recursive: true, force: true });
     }
   }
+  for (const [kind, label] of [["claude", "claude code"], ["grok", "grok build"]] as const) {
+    const ran = await runOnPath(kind, ["--version"]);
+    if (ran.code === 0 && versionIn(ran.output)) {
+      installedHere.add(kind);
+      await checkVersion(kind, label, lastLine(ran.output));
+    } else note(label, `not installed (optional). To use it: ${INSTALL_COMMANDS[kind]}`);
+  }
+  // Antigravity is Google's server, downloaded into Perry's folder when it is turned on in Settings.
+  const antigravity = existsSync(antigravityDirs.server) && readdirSync(antigravityDirs.server).length > 0;
+  if (antigravity) { installedHere.add("antigravity"); ok("antigravity", "turned on (experimental)"); }
+  else note("antigravity", "not turned on (optional, experimental; Settings → Engines)");
+  if (!installedHere.size) bad("engines", "none installed here, so Perry has nothing to think with. Run perry setup to choose one and install it");
+
   try {
     const mode = sandboxMode();
     if (mode !== "workspace-write") warn("PERRY_CODEX_SANDBOX", `Codex runs ${mode}`);
@@ -118,7 +159,7 @@ async function main() {
   // Telegram, which Perry polls: a webhook left from before stops that until the server removes it.
   const token = env.TELEGRAM_BOT_TOKEN;
   if (!token) {
-    ok("telegram", "not set up; Perry is used from the dashboard (a bot saved on the Keys page is not checked here)");
+    ok("telegram", "not set up; Perry is used from the dashboard (a bot token saved in Settings → Telegram is not checked here)");
   } else {
     const me = await fetch(`https://api.telegram.org/bot${token}/getMe`).then((r) => r.json(), () => null);
     if (me?.ok) ok("telegram bot", `@${me.result.username}`);
@@ -134,11 +175,18 @@ async function main() {
       method: "POST",
       headers: { "content-type": "application/json", "x-perry-key": env.DASHBOARD_KEY },
       body: JSON.stringify({ path: "installation:status", args: {} }),
-    }).then((r) => r.json(), () => null) as { value?: { claimed: boolean; pairingCode?: string } } | null;
+    }).then((r) => r.json(), () => null) as { value?: { claimed: boolean; pairingCode?: string; defaultEngine?: EngineKind } } | null;
     if (!status?.value) warn("ownership", "could not read");
     else if (status.value.claimed) ok("ownership", "claimed");
     else if (!token) ok("ownership", "the dashboard key; there is no bot to claim");
     else warn("ownership", status.value.pairingCode ? `unclaimed. Send ${status.value.pairingCode} to your bot.` : "unclaimed. Run: perry pair");
+
+    // The engine Perry thinks with unless a chat picks another: the owner's choice, never assumed.
+    const chosen = status?.value?.defaultEngine;
+    if (!status?.value) warn("default engine", "could not read");
+    else if (!chosen) warn("default engine", "none chosen yet, so Perry asks before answering. Choose one in Settings → Engines, or run: perry setup");
+    else if (!installedHere.has(chosen)) warn("default engine", `${ENGINE_LABELS[chosen]}, which is not installed on this computer. Run perry setup to install it, or choose another in Settings → Engines`);
+    else ok("default engine", ENGINE_LABELS[chosen]);
   }
 
   finish();

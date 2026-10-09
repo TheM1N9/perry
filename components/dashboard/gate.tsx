@@ -36,14 +36,14 @@ export function Gate({ onUnlock }: { onUnlock: (key: string) => void }) {
   };
 
   return (
-    <main className="grid min-h-dvh place-items-center bg-muted/40 px-4 py-12">
+    <main className="grid min-h-dvh place-items-center px-4 py-12">
       <div className="w-full max-w-[400px]">
         <div className="flex flex-col items-center text-center">
           <PerryMark className="size-16" />
           <h1 className="mt-5 text-2xl font-semibold tracking-[-0.02em]">Unlock Perry</h1>
-          <p className="mt-1.5 text-[15px] text-muted-foreground">Enter this installation&apos;s dashboard key. It stays in this browser.</p>
+          <p className="mt-1.5 text-md text-muted-foreground">Enter this installation&apos;s dashboard key. It stays in this browser.</p>
         </div>
-        <form onSubmit={(event) => void submit(event)} noValidate className="mt-8 rounded-2xl border bg-card p-6 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.12)]">
+        <form onSubmit={(event) => void submit(event)} noValidate className="mt-8">
           <Field data-invalid={Boolean(error) || undefined}>
             <FieldLabel htmlFor="dashboard-key">Dashboard key</FieldLabel>
             <SecretInput id="dashboard-key" name="dashboard-key" value={value} autoFocus placeholder="Paste your key"

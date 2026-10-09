@@ -3,9 +3,10 @@
  * `perry` — Perry's one command.
  *
  *   perry setup     set Perry up, or check it, and leave it running: your bot
- *                   and Codex, the dashboard built, Perry running in the
- *                   background from login on, and the dashboard opened,
- *                   already unlocked
+ *                   and the engine you choose to think with (--engine names
+ *                   it where there is no one to ask), the dashboard built,
+ *                   Perry running in the background from login on, and the
+ *                   dashboard opened, already unlocked
  *   perry start     start Perry in the background (installing the service if need be)
  *   perry stop      stop it
  *   perry status    whether it is running, and where the dashboard is
@@ -19,7 +20,7 @@
  *   perry run       run Perry in this terminal instead of the background
  *   perry uninstall stop Perry starting at login, keeping its files or removing them from this computer
  *
- * The runner (Codex on this machine) and the dashboard (a production build of
+ * The runner (the engines on this machine) and the dashboard (a production build of
  * the Next.js app, on PERRY_PORT, 7377 unless set) run together under `perry
  * run`, which restarts either if it dies, and does the updates the dashboard
  * asks for (selfUpdate). The service installed at login runs
@@ -30,10 +31,11 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, hostname, networkInterfaces } from "node:os";
+import { homedir, hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { standing, type UpdateRequest, type UpdateResult } from "../convex/lib/checkout";
+import { reachableAddresses } from "../convex/lib/devices";
 import { HOME, PATHS, readRunnerConfig, writeRunnerConfig } from "../runner/home";
 import { bold, dim, done, green, red, run, spinner, tail, yellow } from "./lib";
 
@@ -83,26 +85,28 @@ export function readEnvFile(): Record<string, string> {
   return values;
 }
 
+/**
+ * Where the dashboard listens. By default on every address this computer
+ * has, as Next.js does, so a phone, and another computer's runner or desktop
+ * pet, can reach it over the local network or Tailscale, each with its own
+ * key. PERRY_HOST (in .env.local, or the environment) narrows it:
+ * 127.0.0.1 for this computer alone. Perry's own runner and pet reach it at
+ * 127.0.0.1, so that, or 0.0.0.0, are the two that make sense.
+ */
+const HOST = process.env.PERRY_HOST ?? readEnvFile().PERRY_HOST;
+const loopbackOnly = () => /^(127\.0\.0\.1|localhost|::1)$/.test(HOST ?? "");
+
 const dashboardUrl = (host = "localhost") => `http://${host}:${PORT}`;
 
 /**
  * The dashboard on this machine's other addresses, for opening it from a phone
- * or another computer: its LAN addresses, and its Tailscale one (100.64.0.0/10)
- * marked as such. The dashboard listens on all of them.
+ * or another computer: its Tailscale one (100.64.0.0/10) marked as such, and
+ * its LAN addresses. The dashboard listens on all of them, unless PERRY_HOST
+ * has it listen on this computer alone.
  */
 function networkUrls(): string[] {
-  const urls: string[] = [];
-  for (const [name, addresses] of Object.entries(networkInterfaces())) {
-    // Adapters only this machine can reach: Hyper-V and WSL, Docker, VirtualBox, VMware, and bridges.
-    if (/^(vEthernet|docker|br-|veth|virbr|vboxnet|VirtualBox|VMware)/i.test(name)) continue;
-    for (const address of addresses ?? []) {
-      if (address.family !== "IPv4" || address.internal || address.address.startsWith("169.254.")) continue;
-      const [a, b] = address.address.split(".").map(Number);
-      const tailscale = a === 100 && b >= 64 && b <= 127;
-      urls.push(`${dashboardUrl(address.address)}${tailscale ? dim(" (Tailscale)") : ""}`);
-    }
-  }
-  return urls;
+  if (loopbackOnly()) return [];
+  return reachableAddresses().map(({ address, tailscale }) => `${dashboardUrl(address)}${tailscale ? dim(" (Tailscale)") : ""}`);
 }
 
 /** Where the dashboard is: on this machine, then its other addresses on one line, for a phone or another computer. */
@@ -205,7 +209,7 @@ async function runForeground() {
     { name: "runner", argv: [process.execPath, join(REPO, "runner", "index.ts")], env: childEnv, failures: 0, startedAt: 0 },
     // PERRY_BUN: the dashboard can start `perry pet` itself (Settings → Desktop pet), and Bun runs it.
     // PERRY_SUPERVISOR: this process, which does the updates the dashboard asks for (convex/updates.ts).
-    { name: "dashboard", argv: [nodePath(), NEXT_CLI, "start", "-p", String(PORT)], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT), PERRY_BUN: process.execPath, PERRY_SUPERVISOR: String(process.pid) }, failures: 0, startedAt: 0 },
+    { name: "dashboard", argv: [nodePath(), NEXT_CLI, "start", "-p", String(PORT), ...(HOST ? ["-H", HOST] : [])], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT), PERRY_BUN: process.execPath, PERRY_SUPERVISOR: String(process.pid) }, failures: 0, startedAt: 0 },
   ];
   let stopping = false;
   // Stopped for an update: not started again until it is done.
@@ -675,6 +679,35 @@ async function backend() {
   return new BackendClient(`http://127.0.0.1:${PORT}`, { adminKey: readEnvFile().DASHBOARD_KEY });
 }
 
+/**
+ * Memories and pages (issue #210): move-back puts every memory moved into a
+ * page back as it was before, for going back to a Perry from before pages;
+ * move-in moves them into pages again. Perry must be running.
+ */
+async function brain(args: string[]): Promise<boolean> {
+  const [what] = args;
+  if (what !== "move-back" && what !== "move-in") {
+    say("  perry brain move-back   put memories back as they were before pages");
+    say("  perry brain move-in     move them into pages again");
+    return what === undefined;
+  }
+  const client = await backend();
+  try {
+    if (what === "move-back") {
+      const done = (await client.call<{ movedBack: number; pagesDeleted: number; journalLines?: number }>("pages:undoMigration")).value;
+      const days = done.journalLines ? ` ${done.journalLines} lines of projects' Journeys are back on their own journal days.` : "";
+      say(`  ${green("Done.")} ${done.movedBack} memories are back as they were; ${done.pagesDeleted} empty pages went.${days} Perry leaves them there until ${bold("perry brain move-in")}.`);
+    } else {
+      const done = (await client.call<{ moved: number; kept: number }>("pages:migrate", { again: true })).value;
+      say(`  ${green("Done.")} ${done.moved} memories moved into pages${done.kept ? `; ${done.kept} kept as they were` : ""}.`);
+    }
+    return true;
+  } catch (error) {
+    say(`  ${red("Couldn't:")} ${error instanceof Error ? error.message : String(error)}. Is Perry running? ${bold("perry start")}`);
+    return false;
+  }
+}
+
 /** With a bot nobody has claimed, a code to claim it with, from the running server. */
 async function pairTelegram() {
   const env = readEnvFile();
@@ -689,8 +722,9 @@ async function pairTelegram() {
   say(`\n      ${bold(green(code))}\n`);
 }
 
-async function setup() {
-  const configured = exec(bunScript("setup.ts", ["--from-perry"]));
+/** `args` go on to setup.ts: `--engine <kind>` names the default engine without asking. */
+async function setup(args: string[]) {
+  const configured = exec(bunScript("setup.ts", ["--from-perry", ...args]));
   if (configured.code !== 0) process.exit(configured.code);
 
   if (!(await build())) process.exit(1);
@@ -709,7 +743,7 @@ ${bold("Your data on Convex")}`);
     else say(dim(`  Skipped. ${bold("perry migrate")} brings them over whenever you like.`));
   }
 
-  // Codex not being signed in was said by setup.ts, where it was checked.
+  // An engine not signed in was said by setup.ts, where it was checked.
   link();
   await open();
   say(dim(`  perry status | logs | stop | start | open | update | doctor\n`));
@@ -760,9 +794,10 @@ async function update() {
 }
 
 const HELP = `
-  ${bold("perry")} setup | start | stop | status | logs [-f] | open | update | migrate | doctor | pair | pet | run | uninstall
+  ${bold("perry")} setup | start | stop | status | logs [-f] | open | update | migrate | doctor | pair | pet | brain | run | uninstall
 
-  ${bold("setup")}      set Perry up (or check it), start it in the background, open the dashboard
+  ${bold("setup")}      set Perry up (or check it), start it in the background, open the dashboard;
+             ${bold("--engine")} codex|claude|grok|antigravity picks the default engine without asking
   ${bold("start")}      start Perry in the background, from now on at every login
   ${bold("stop")}       stop it
   ${bold("status")}     whether it is running, and where
@@ -773,6 +808,7 @@ const HELP = `
   ${bold("doctor")}     check this machine and Perry's server
   ${bold("pair")}       a new code to claim Perry on Telegram
   ${bold("pet")}        Perry on your desktop, with your to-dos; ${bold("pet off")} to stop him
+  ${bold("brain")}      ${bold("brain move-back")} puts memories back as they were before pages; ${bold("brain move-in")} moves them in again
   ${bold("run")}        run Perry in this terminal instead of the background
   ${bold("uninstall")}  stop Perry; keep its files, or remove them from this computer
 `;
@@ -780,7 +816,7 @@ const HELP = `
 async function main() {
   const [command = "help", ...rest] = process.argv.slice(2);
   switch (command) {
-    case "setup": return setup();
+    case "setup": return setup(rest);
     case "start": return process.exit((await start()) ? 0 : 1);
     case "stop": return stop();
     case "status": return status();
@@ -791,6 +827,7 @@ async function main() {
     case "pair": return process.exit(exec(bunScript("pair.ts")).code);
     case "migrate": return process.exit(exec(bunScript("migrate.ts", rest)).code);
     case "pet": return process.exit((await (await import("./pet")).pet(rest)) ? 0 : 1);
+    case "brain": return process.exit((await brain(rest)) ? 0 : 1);
     case "run": return runForeground();
     case "link": return process.exit(link() ? 0 : 1);
     case "uninstall": return process.exit((await uninstall(rest)) ? 0 : 1);

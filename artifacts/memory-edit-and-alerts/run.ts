@@ -15,8 +15,9 @@ import { openChat, sleep } from "../browser";
 // the end.
 //
 // "Read, edit or wipe any of it": ways editing a memory could fail
-//   1. There is no way to edit: the Memory page must offer Edit, and saving
-//      must change the memory's words, with "Edited" shown after.
+//   1. There is no way to edit: a memory is a line of its page (issue #210),
+//      and changing its words in the page editor must change the memory's
+//      words, with "edited" shown where the page says where each came from.
 //   2. Editing changes what it should not: the memory keeps its kind, day and
 //      first date, and becomes the owner's (origin owner).
 //   3. Editing gets around the budget: a profile memory edited past its
@@ -68,7 +69,7 @@ await new Promise<void>((done) => stub.listen(0, "127.0.0.1", done));
 
 const env: NodeJS.ProcessEnv = {
   ...process.env,
-  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production",
+  PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex",
   TELEGRAM_BOT_TOKEN: "123456:memory-alerts-e2e",
   TELEGRAM_API_BASE: `http://127.0.0.1:${(stub.address() as { port: number }).port}`,
 };
@@ -95,7 +96,8 @@ async function until(test: () => Promise<boolean> | boolean, what: string, secon
   throw new Error(`timed out: ${what}`);
 }
 type Memory = { id: string; text: string; kind: string; day?: string; origin?: string; createdAt: number; editedAt?: number; tags: string[] };
-const memories = (kind?: string) => call<Memory[]>("dashboard:listMemories", { key: KEY, query: "", ...(kind ? { kind } : {}) });
+// Every memory, in pages or not (memories.search, everywhere).
+const memories = (kind?: string) => call<Memory[]>("memories:search", { query: "", limit: 25, everywhere: true, memoriesOnly: true, ...(kind ? { kind } : {}) }, true);
 const runPrompts = async () => (await call<Array<{ prompt: string; chatTitle: string }>>("dashboard:listRuns", { key: KEY }));
 
 let browser: Awaited<ReturnType<typeof openChat>> | null = null;
@@ -113,17 +115,19 @@ try {
   browser = await openChat(BASE, KEY);
   const { evaluate, send } = browser;
   const waitFor = (test: string, what: string, ms = 20_000) => evaluate(`new Promise((resolve, reject) => { const start = Date.now(); const tick = () => (${test}) ? resolve(true) : Date.now() - start > ${ms} ? reject(new Error(${JSON.stringify(what)})) : setTimeout(tick, 150); tick(); })`);
-  const type = (selector: string, value: string) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
-  const row = `[...document.querySelectorAll("li")].find((item) => item.innerText.includes("flat white") || item.querySelector("textarea"))`;
-
-  await send("Page.navigate", { url: `${BASE}/memory` });
-  await waitFor(`!!(${row})`, "the memory on the Memory page");
-  checks.editIsOffered = await evaluate(`[...(${row}).querySelectorAll("button")].some((b) => b.innerText.trim() === "Edit")`);
-  await evaluate(`[...(${row}).querySelectorAll("button")].find((b) => b.innerText.trim() === "Edit").click(); true`);
-  await waitFor(`!!document.querySelector("li textarea")`, "the edit box");
-  await type("li textarea", "The owner's usual coffee is black, no sugar.");
-  await evaluate(`[...document.querySelectorAll("li button")].find((b) => b.innerText.trim() === "Save").click(); true`);
-  await waitFor(`[...document.querySelectorAll("li")].some((item) => item.innerText.includes("black, no sugar") && item.innerText.includes("Edited"))`, "the edited memory, marked Edited");
+  // The memory is a line of Things to remember: open it there and change its words in the editor.
+  const pages = await call<Array<{ id: string; kind: string }>>("pages:memoryPages", { key: KEY });
+  const remember = pages.find((page) => page.kind === "remember")!;
+  await send("Page.navigate", { url: `${BASE}/notes/${remember.id}` });
+  await waitFor(`document.querySelector("[data-note-editor]")?.innerText.includes("flat white")`, "the memory in its page");
+  checks.editIsOffered = await evaluate(`document.querySelector("[data-note-editor]").isContentEditable`);
+  // Select "a flat white" where it stands and type over it, as the owner would.
+  await evaluate(`(() => { const el = document.querySelector("[data-note-editor]"); el.focus(); const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); for (let node; (node = walk.nextNode());) { const at = node.nodeValue.indexOf("a flat white"); if (at >= 0) { const range = document.createRange(); range.setStart(node, at); range.setEnd(node, at + "a flat white".length); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); return true; } } return false; })()`);
+  await send("Input.insertText", { text: "black, no sugar" });
+  const savedEdit = async () => (await memories("core")).some((memory) => memory.id === before.id && memory.text === "The owner's usual coffee is black, no sugar.");
+  for (let i = 0; i < 120 && !(await savedEdit()); i++) await new Promise((done) => setTimeout(done, 500));
+  await evaluate(`document.querySelector("[data-sources] button").click(); true`);
+  await waitFor(`[...document.querySelectorAll("[data-line]")].some((item) => item.innerText.includes("black, no sugar") && item.innerText.includes("edited"))`, "the edited memory, marked edited", 60_000);
   await send("Page.captureScreenshot", { format: "png" }).then((shot) => writeFileSync(join(outDir, "memory-edited.png"), Buffer.from(shot.data, "base64")));
   const after = (await memories("core")).find((memory) => memory.id === before.id);
   notes.edited = { before, after };

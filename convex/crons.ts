@@ -23,6 +23,9 @@ crons.interval("run due jobs", { minutes: 1 }, internal.jobs.tick, {});
 // The owner's to-dos: reminders on the phone for what comes due while they are away from the pet.
 crons.interval("remind of to-dos", { minutes: 1 }, internal.todos.tick, {});
 
+// Brain's archive: lines unused past the owner's age, or past the time they held until (archive.ts).
+crons.interval("archive unused lines", { hours: 6 }, internal.archive.run, {});
+
 // Search by meaning: vectors for memories that have none yet (memories.embedMissing).
 crons.interval("embed memories", { minutes: 10 }, internal.memories.embedMissing, {});
 
@@ -37,5 +40,8 @@ crons.interval("recover turns", { minutes: 1 }, internal.recovery.sweep, {});
 
 // Perry's own updates: the day's check, the night's update, and how the last one went (updates.ts).
 crons.interval("keep Perry up to date", { minutes: 1 }, internal.updates.tick, {});
+
+// The Library: files Perry wrote in his files folder, and letting go of files no longer here (library.ts).
+crons.interval("keep the Library up to date", { minutes: 10 }, internal.library.sync, {});
 
 export default crons;

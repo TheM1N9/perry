@@ -4,16 +4,20 @@
 
 import * as agentStore from "../convex/agentStore";
 import * as approvals from "../convex/approvals";
+import * as archive from "../convex/archive";
 import * as assistant from "../convex/assistant";
 import * as brain from "../convex/brain";
+import * as brainMap from "../convex/brainMap";
 import * as channels from "../convex/channels";
 import * as codex from "../convex/codex";
+import * as compaction from "../convex/compaction";
 import * as composio from "../convex/composio";
 import * as connectorAccounts from "../convex/connectorAccounts";
 import * as contacts from "../convex/contacts";
 import * as conversations from "../convex/conversations";
 import * as crons from "../convex/crons";
 import * as dashboard from "../convex/dashboard";
+import * as engineUpdates from "../convex/engineUpdates";
 import * as engines from "../convex/engines";
 import * as history from "../convex/history";
 import * as http from "../convex/http";
@@ -24,36 +28,56 @@ import * as lib_activity from "../convex/lib/activity";
 import * as lib_agent from "../convex/lib/agent";
 import * as lib_auth from "../convex/lib/auth";
 import * as lib_browser from "../convex/lib/browser";
+import * as lib_budget from "../convex/lib/budget";
 import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
+import * as lib_devices from "../convex/lib/devices";
 import * as lib_embed from "../convex/lib/embed";
 import * as lib_engines from "../convex/lib/engines";
 import * as lib_errors from "../convex/lib/errors";
+import * as lib_graph from "../convex/lib/graph";
+import * as lib_library from "../convex/lib/library";
+import * as lib_notes from "../convex/lib/notes";
+import * as lib_pages from "../convex/lib/pages";
 import * as lib_price from "../convex/lib/price";
+import * as lib_provenance from "../convex/lib/provenance";
+import * as lib_recall from "../convex/lib/recall";
+import * as lib_routing from "../convex/lib/routing";
+import * as lib_secrets from "../convex/lib/secrets";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
 import * as lib_skills from "../convex/lib/skills";
+import * as lib_steps from "../convex/lib/steps";
 import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
 import * as lib_truncate from "../convex/lib/truncate";
 import * as lib_turnLimits from "../convex/lib/turnLimits";
+import * as lib_usage from "../convex/lib/usage";
 import * as lib_whatsappFormat from "../convex/lib/whatsappFormat";
+import * as library from "../convex/library";
 import * as mcp from "../convex/mcp";
 import * as media from "../convex/media";
 import * as memories from "../convex/memories";
 import * as models from "../convex/models";
+import * as notes from "../convex/notes";
 import * as notify from "../convex/notify";
+import * as pages from "../convex/pages";
+import * as pause from "../convex/pause";
 import * as persona from "../convex/persona";
 import * as pet from "../convex/pet";
+import * as projects from "../convex/projects";
 import * as recovery from "../convex/recovery";
+import * as routing from "../convex/routing";
 import * as runner from "../convex/runner";
 import * as runs from "../convex/runs";
 import * as screen from "../convex/screen";
 import * as secrets from "../convex/secrets";
+import * as skills from "../convex/skills";
 import * as tasks from "../convex/tasks";
 import * as titles from "../convex/titles";
 import * as todos from "../convex/todos";
 import * as tools from "../convex/tools";
 import * as updates from "../convex/updates";
+import * as usage from "../convex/usage";
 import * as vault from "../convex/vault";
 import * as wake from "../convex/wake";
 import * as web from "../convex/web";
@@ -63,16 +87,20 @@ import * as work from "../convex/work";
 export const modules: Record<string, Record<string, unknown>> = {
   "agentStore": agentStore,
   "approvals": approvals,
+  "archive": archive,
   "assistant": assistant,
   "brain": brain,
+  "brainMap": brainMap,
   "channels": channels,
   "codex": codex,
+  "compaction": compaction,
   "composio": composio,
   "connectorAccounts": connectorAccounts,
   "contacts": contacts,
   "conversations": conversations,
   "crons": crons,
   "dashboard": dashboard,
+  "engineUpdates": engineUpdates,
   "engines": engines,
   "history": history,
   "http": http,
@@ -83,36 +111,56 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/agent": lib_agent,
   "lib/auth": lib_auth,
   "lib/browser": lib_browser,
+  "lib/budget": lib_budget,
   "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
+  "lib/devices": lib_devices,
   "lib/embed": lib_embed,
   "lib/engines": lib_engines,
   "lib/errors": lib_errors,
+  "lib/graph": lib_graph,
+  "lib/library": lib_library,
+  "lib/notes": lib_notes,
+  "lib/pages": lib_pages,
   "lib/price": lib_price,
+  "lib/provenance": lib_provenance,
+  "lib/recall": lib_recall,
+  "lib/routing": lib_routing,
+  "lib/secrets": lib_secrets,
   "lib/shortcuts": lib_shortcuts,
   "lib/skills": lib_skills,
+  "lib/steps": lib_steps,
   "lib/telegram": lib_telegram,
   "lib/telegramFormat": lib_telegramFormat,
   "lib/truncate": lib_truncate,
   "lib/turnLimits": lib_turnLimits,
+  "lib/usage": lib_usage,
   "lib/whatsappFormat": lib_whatsappFormat,
+  "library": library,
   "mcp": mcp,
   "media": media,
   "memories": memories,
   "models": models,
+  "notes": notes,
   "notify": notify,
+  "pages": pages,
+  "pause": pause,
   "persona": persona,
   "pet": pet,
+  "projects": projects,
   "recovery": recovery,
+  "routing": routing,
   "runner": runner,
   "runs": runs,
   "screen": screen,
   "secrets": secrets,
+  "skills": skills,
   "tasks": tasks,
   "titles": titles,
   "todos": todos,
   "tools": tools,
   "updates": updates,
+  "usage": usage,
   "vault": vault,
   "wake": wake,
   "web": web,

@@ -6,8 +6,14 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { ABSOLUTE_PATH } from "./media";
-import { vEngine, vTrigger } from "./schema";
-import { engineOf, type EngineKind } from "./lib/engines";
+import { appendRun } from "./notes";
+import { projectFrom } from "./projects";
+import { vEngine, vPerryPick, vRoute, vTrigger } from "./schema";
+import { ENGINE_LABELS, isEngine, type EngineKind } from "./lib/engines";
+import { LIMIT_HIT } from "./lib/usage";
+import type { Choice } from "./lib/routing";
+import { choose, jobAsk, routeOf, type Route } from "./routing";
+import { assertRunning, missedPatch, pausedAt } from "./pause";
 
 /**
  * Proactivity: named jobs that run a prompt as a Codex turn, either on a cron
@@ -34,7 +40,41 @@ const ASKED = "asked:";
 /** At the end of a line, on its own or after the question: models put it either way. */
 const ASKED_LINE = /[ \t]*\basked:[ \t]*([a-z0-9]+)[ \t]*$/gim;
 
-type Builtin = "heartbeat" | "daily-summary" | "consolidate";
+/** A thread the owner left open (memories.openThreads), and a to-do as it stands (todos.forFollowUps). */
+type Thread = { id: string; day?: string; text: string; todo?: string };
+/** waiting: due later than now, or done, so there is nothing to ask about it yet, or any more. */
+type TodoState = { title: string; state: string; waiting: boolean };
+
+/** Short words that say nothing of what a plan is about. */
+const FILLER = new Set(["the", "and", "for", "with", "about", "from", "into", "onto", "owner", "plan", "plans", "planned", "will", "need", "needs", "some", "more", "get", "got", "his", "her", "their", "them", "they", "this", "that", "today", "tomorrow", "tonight", "around"]);
+const wordsOf = (text: string) => (text.toLowerCase().match(/\p{L}{3,}/gu) ?? []).filter((word) => !FILLER.has(word));
+/**
+ * How surely a note is about a to-do: how many words of the to-do's that carry meaning it has, or 0
+ * when it lacks one of them, give or take an ending ("restocking" for "restock").
+ */
+function about(note: string, title: string): number {
+  const said = wordsOf(note);
+  const wanted = wordsOf(title);
+  return wanted.every((word) => said.some((other) => other.startsWith(word.slice(0, 5)) || word.startsWith(other.slice(0, 5)))) ? wanted.length : 0;
+}
+
+/**
+ * What the to-do list says of a thread: its own to-do, for one linked to it
+ * (openThreads leaves out one still to come or done), or else a to-do it looks
+ * to be about, so an old note the owner has since moved is weighed by the move.
+ * skip: it is surely about to-dos that are all due later or done (two words of
+ * a title or more, so a "Gym" to-do does not hide every note about the gym),
+ * and the heartbeat is not given it to ask about.
+ */
+function onTheList(thread: Thread, todos: TodoState[]): { says: string; skip: boolean } {
+  if (thread.todo) return { says: ` (its to-do: ${thread.todo})`, skip: false };
+  const same = todos.map((todo) => ({ todo, words: about(thread.text, todo.title) })).filter((match) => match.words > 0);
+  const skip = same.length > 0 && same.every((match) => match.todo.waiting && match.words >= 2);
+  const says = same.length ? ` (looks like the to-do ${same.slice(0, 2).map(({ todo }) => `"${todo.title}": ${todo.state}`).join("; or ")})` : "";
+  return { says, skip };
+}
+
+type Builtin = "heartbeat" | "daily-summary" | "consolidate" | "brain-review";
 
 /**
  * Jobs every install has. The daily summary and consolidation keep memory
@@ -59,12 +99,26 @@ const BUILTINS: Array<{ builtin: Builtin; name: string; schedule: string; prompt
     schedule: "30 22 * * *",
     prompt: [
       "This is your scheduled daily summary, not a message from the owner.",
-      "Read the conversations listed below with read_chat, only what was said in them since the time given, and the notes of the days they cover with read_memory.",
+      "Read the conversations listed below with read_chat, only what was said in them since the time given, and the journal of the days they cover with brain_read (\"today\", or a day as YYYY-MM-DD).",
       "Then write down everything the owner told you about their life that is not in memory yet, with remember: the people they mentioned and who they are to them, dates and birthdays, plans and appointments, things they have to do or decide, their health, routine, work and projects, what they made or did, and how things went. What stays true goes to kind=core; what happened and plans go to kind=daily. One self-contained note per fact, with names and dates in full; skip only what memory already says and small talk (\"yo\", \"continue\").",
-      "A thread left open is something the owner was going to do, hear back about or decide (a call, an interview, an offer): save each with tags [\"open\"], saying when it happens if they said. When today's conversations settle a thread an earlier open note holds, remember how it turned out as a daily note without the tag, superseding that note.",
+      "A thread left open is something the owner was going to do, hear back about or decide (a call, an interview, an offer): save each with tags [\"open\"], saying when it happens if they said, and when it is also on the to-do list (list_todos), with that to-do's id as todoId, so the note follows the to-do as it moves or is done. When today's conversations settle a thread an earlier open note holds, remember how it turned out as a daily note without the tag, superseding that note.",
       "Standing preferences and durable facts can also go straight to kind=profile or kind=core, superseding what they replace.",
-      "USER.md is left to the nightly consolidation.",
+      "About me is left to the nightly consolidation.",
       `This job never delivers anything to the owner: when done, deliver nothing by replying with exactly ${QUIET}.`,
+    ].join(" "),
+  },
+  {
+    builtin: "brain-review",
+    name: "Brain review",
+    schedule: "0 4 * * 0",
+    prompt: [
+      "This is your weekly Brain review, not a message from the owner. Nothing in Brain changes without the owner's yes: you only propose.",
+      "Call brain_review. It has already proposed merging lines that say the same thing in nearly the same words. It lists long sections and past weeks of the journal not rolled up yet.",
+      "For each long section, read it with brain_read and, where several lines say the same thing in different words or have gone stale, propose with brain_propose kind=merge or kind=condense: replaces = their ids, with = the lines that would stand instead, keeping every name, date and number, why = one short sentence.",
+      "For each week listed, propose kind=rollup: replaces = the ids of its journal lines that matter, with = a summary of that week in 3 to 8 lines, why = the week.",
+      "Where several lines together clearly imply a fact not written anywhere, you may propose kind=infer with page and section, replaces = those lines, with = the fact. Never invent.",
+      "Then look at how Brain is arranged, and propose only what clearly helps: for each pair in samePages, read both and, when they are about the same person or thing, propose kind=mergePages (page = the one to merge away, to = the one to keep). Lines plainly on the wrong page (about one person but on another's page, about a project but in Things to remember) go with kind=move. A section that has grown into a subject of its own goes with kind=split and a title. A trip, project or subject spread over several pages that has no page yet gets kind=topic: title, replaces = the lines it comes from, with = what they add up to in a few lines. Use brain_neighbors to see what is tied together.",
+      `This job never delivers anything to the owner: when done, reply with exactly ${QUIET}.`,
     ].join(" "),
   },
   {
@@ -73,11 +127,12 @@ const BUILTINS: Array<{ builtin: Builtin; name: string; schedule: string; prompt
     schedule: "0 3 * * *",
     prompt: [
       "This is your scheduled memory consolidation, not a message from the owner.",
-      "Read the daily notes of the last seven days with read_memory (kind=daily and each day), and the owner profile and long-term memory.",
-      "Promote only what proved durable: standing preferences and relationships to kind=profile, phrased as directives; lasting facts, decisions and commitments to kind=core. When a new memory replaces an older one, pass the old id in supersedes.",
-      "Keep them tidy: merge entries that say the same thing into one that supersedes them, and supersede what is outdated.",
+      "Read the journal of the last seven days with brain_read (each day as YYYY-MM-DD), and About me and Things to remember.",
+      "Promote only what proved durable into Things to remember: standing preferences and relationships to kind=profile, phrased as directives; lasting facts, decisions and commitments to kind=core, in the section they fit. Pass basedOn, the ids of the journal lines it comes from, so it links back to them. When a new memory replaces an older one, pass the old id in supersedes.",
+      "Keep them tidy: supersede what is outdated; where entries say the same thing, propose merging them with brain_propose kind=merge rather than merging them yourself, as the owner decides.",
       "Leave one-off chatter, anything already known, secrets, and anything that came from web pages, email or other tool output rather than from the owner.",
-      "Then check USER.md, at the end of your instructions, against the week: if the owner said something lasting about who they are that it lacks or contradicts (their work, routine, people, how they like replies), save it with update_user_md, passing the whole document with only those changes. Keep the owner's own wording and headings, add only what they said themselves, and leave it alone when nothing changed.",
+      "Then keep what every chat is sent short: brain_summarize with no text lists the big pinned sections whose summary is missing or out of date; read each with brain_read and write its summary with brain_summarize. Then write the Lately page with brain_lately: the last 14 days in short, from the journal.",
+      "Then check About me, near the end of your instructions, against the week: if the owner said something lasting about who they are that it lacks or contradicts (their work, routine, people, how they like replies), change that section with brain_write page=\"About me\" mode=replace_section. Keep the owner's own wording and headings, add only what they said themselves, and leave it alone when nothing changed.",
       `This job never delivers anything to the owner: when done, deliver nothing by replying with exactly ${QUIET}.`,
     ].join(" "),
   },
@@ -143,7 +198,7 @@ function timing(input: { schedule?: string; at?: string }, timezone: string): { 
   return { schedule: input.schedule.trim() };
 }
 
-async function insertJob(ctx: MutationCtx, job: { name: string; schedule?: string; runAt?: number; trigger?: Doc<"jobs">["trigger"]; prompt: string; builtin?: Builtin; origin?: Id<"conversations"> }): Promise<Id<"jobs">> {
+async function insertJob(ctx: MutationCtx, job: { name: string; schedule?: string; runAt?: number; trigger?: Doc<"jobs">["trigger"]; prompt: string; builtin?: Builtin; origin?: Id<"conversations">; pick?: Doc<"jobs">["pick"]; noteId?: Id<"notes"> }): Promise<Id<"jobs">> {
   const timezone = await timezoneOf(ctx);
   return await ctx.db.insert("jobs", {
     ...job,
@@ -172,10 +227,27 @@ export const tick = internalMutation({
       }
     }
     const timezone = await timezoneOf(ctx);
+    // Paused, nothing starts: a run that comes due is noted as missed, for the owner to run or let go (pause.ts).
+    const paused = await pausedAt(ctx);
+    // A run a plan's limit stopped in the last day, that nothing has picked up yet (one from before Perry
+    // recovered them, say): it runs again where there is room, or after the reset.
+    for (const job of jobs) {
+      if (paused) break;
+      if (job.lastError && LIMIT_HIT.test(job.lastError) && !job.recovery && !job.waiting && (job.lastRunAt ?? 0) > Date.now() - RECOVER_WITHIN_MS) await recoverJob(ctx, job);
+    }
     for (const job of jobs) {
       if (!job.enabled || job.trigger || job.nextRunAt > Date.now()) continue;
       // A one-time job runs once and pauses, keeping its time for the record.
       const next = job.runAt ? { enabled: false } : { nextRunAt: nextRun(job.schedule!, timezone) };
+      if (paused) {
+        await ctx.db.patch(job._id, { ...next, ...missedPatch(job) });
+        continue;
+      }
+      // A run already waiting for an engine's reset covers this one too.
+      if (job.waiting && job.waiting.until > Date.now()) {
+        await ctx.db.patch(job._id, next);
+        continue;
+      }
       await ctx.db.patch(job._id, { lastRunAt: Date.now(), lastResult: undefined, lastError: undefined, ...next });
       // When it last ran, so a briefing can gather what happened since.
       await ctx.scheduler.runAfter(0, internal.jobs.run, { id: job._id, ...(job.lastRunAt ? { since: job.lastRunAt } : {}) });
@@ -205,6 +277,8 @@ export const chatFor = internalMutation({
       jobId: job._id,
       pendingTurns: 1,
       lastMessageAt: Date.now(),
+      // Set up in a project's chat, it works in the project: its instructions, its chats and its memory.
+      ...await projectFrom(ctx, job.origin),
     });
     await ctx.db.patch(job._id, { conversationId });
     return { externalId: `session:${args.threadId}`, title };
@@ -220,13 +294,32 @@ export const get = internalQuery({
 });
 
 export const run = internalAction({
-  /** since: when the job last ran; alerts sent after it reach this run. event: what started it, for a job an event starts. */
-  args: { id: v.id("jobs"), since: v.optional(v.number()), event: v.optional(v.string()) },
+  /**
+   * since: when the job last ran; alerts sent after it reach this run. event: what started it, for a job an event starts.
+   * avoid: engines that just refused it for a limit. waited: it waited for an engine's reset (lib/routing.ts).
+   */
+  args: { id: v.id("jobs"), since: v.optional(v.number()), event: v.optional(v.string()), avoid: v.optional(v.array(vEngine)), waited: v.optional(v.boolean()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const found: { job: Doc<"jobs">; timezone: string } | null = await ctx.runQuery(internal.jobs.get, { id: args.id });
     if (!found) return null;
     const { job, timezone } = found;
+    // A run that waited goes ahead only while it is still waited for: pausing the job calls it off.
+    if (args.waited && !job.waiting) return null;
+    // Perry paused since it was started: it is missed, not run (pause.ts).
+    if (await ctx.runQuery(internal.pause.state, {})) {
+      await ctx.runMutation(internal.pause.missedJob, { id: job._id, ...(args.event !== undefined ? { event: args.event } : {}) });
+      return null;
+    }
+    // Where it runs, on what and why; or, with no engine that has room, when it runs instead. With no engine to
+    // route to (no model of its own and no default chosen), it goes on unrouted and is refused there, asking for one.
+    const choice: Choice | null = await ctx.runQuery(internal.routing.forJob, { id: job._id, ...(args.avoid?.length ? { avoid: args.avoid } : {}) });
+    if (choice?.wait) {
+      await ctx.runMutation(internal.jobs.wait, { id: job._id, until: choice.wait.until, why: choice.wait.why, ...(args.since ? { since: args.since } : {}), ...(args.event !== undefined ? { event: args.event } : {}) });
+      return null;
+    }
+    const route = choice ? routeOf(choice) : undefined;
+    if (route) await ctx.runMutation(internal.jobs.routed, { id: job._id, route });
     // A thread is only created when the job has no chat yet; chatFor ignores it otherwise.
     const existing = job.conversationId
       ? await ctx.runQuery(internal.conversations.getWebById, { id: job.conversationId })
@@ -249,12 +342,20 @@ export const run = internalAction({
     }
     // The heartbeat and a briefing follow up on what the owner left open, the way a friend asks how it went.
     if (job.builtin === "heartbeat" || (job.schedule && !job.builtin)) {
-      const threads: Array<{ id: string; day?: string; text: string }> = await ctx.runQuery(internal.memories.openThreads, {});
+      // A note can be older than the owner's latest word on it: the to-do list is kept as they move and tick things off.
+      const todos: TodoState[] = await ctx.runQuery(internal.todos.forFollowUps, {});
+      const left: Thread[] = await ctx.runQuery(internal.memories.openThreads, {});
+      const threads = left.map((thread) => ({ thread, list: onTheList(thread, todos) })).filter(({ list }) => !list.skip);
       if (threads.length) {
-        context += `\n\nThreads the owner left open, from your notes:\n${threads.map((thread) => `- [${thread.day ?? "?"}] ${thread.text} (${thread.id})`).join("\n")}\n` +
+        context += `\n\nThreads the owner left open, from your notes:\n${threads.map(({ thread, list }) => `- [${thread.day ?? "?"}] ${thread.text} (${thread.id})${list.says}`).join("\n")}\n` +
           "If the moment for one has passed and nothing since says how it went, ask about it: one short, warm question, the way a friend would (\"How did the dentist call go?\"), about one thread at most. " +
           "Leave alone what has not happened yet, and anything they would rather not be asked about. " +
           `When you ask, end your reply with a last line of exactly "${ASKED} <its id>", which is removed before they see it.`;
+      }
+      if (todos.length) {
+        context += `\n\nThe owner's to-do list as it stands now. It changes as they move and tick things off, so it is their latest word on any plan on it, and a note in memory can be out of date:\n${todos.map((todo) => `- ${todo.title}: ${todo.state}`).join("\n")}\n` +
+          "When a thread or a note is about something on this list, go by the to-do, whatever time the note gave: one due later than now has not happened yet, and one that is done is settled, so do not ask about either. " +
+          "The to-do list reminds them of each to-do when it is due; do not remind them of to-dos here.";
       }
     }
     // A recurring job of the owner's may be their briefing: it hears about what Perry alerted them to since
@@ -275,11 +376,79 @@ export const run = internalAction({
       externalId: chat.externalId,
       text: `${job.trigger ? "⚡" : "⏰"} ${job.name} (${now})\n\n${job.prompt}${context}\n\n${CONDITIONAL_DELIVERY}`,
       title: chat.title,
-      ...(job.model ? { model: job.model, engine: engineOf(job) } : {}),
+      // An event's details came from outside: the run starts as having read them, so they cannot plant anything lasting (#136).
+      ...(args.event !== undefined && job.trigger ? { outside: true } : {}),
+      // Routed (lib/routing.ts); with no engine to route to (no default chosen), as before, and refused there.
+      ...(route ? { route } : job.model && job.engine ? { model: job.model, engine: job.engine } : {}),
     });
     return null;
   },
 });
+
+/** How far back a run stopped by a limit is still worth running again. */
+const RECOVER_WITHIN_MS = 24 * 60 * 60_000;
+/** Its runs give up after this many limits in a row, until one goes through: a plan that keeps refusing is not chased forever. */
+const MAX_RECOVERIES = 3;
+
+/** What its run will be given; a run that waited no longer waits. */
+export const routed = internalMutation({
+  args: { id: v.id("jobs"), route: vRoute },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (await ctx.db.get(args.id)) await ctx.db.patch(args.id, { route: args.route, waiting: undefined });
+    return null;
+  },
+});
+
+/**
+ * No engine has room for the job: its run waits for the first reset, and the
+ * owner hears of it once (a built-in job works quietly, and only the Work page says).
+ */
+export const wait = internalMutation({
+  args: { id: v.id("jobs"), until: v.number(), why: v.string(), since: v.optional(v.number()), event: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.id);
+    if (!job) return null;
+    await ctx.db.patch(job._id, { waiting: { until: args.until, why: args.why.slice(0, 500) } });
+    await ctx.scheduler.runAt(args.until, internal.jobs.run, { id: job._id, waited: true, ...(args.since ? { since: args.since } : {}), ...(args.event !== undefined ? { event: args.event } : {}) });
+    await tellOnce(ctx, job, `⏰ **${job.name}** is waiting. ${args.why}`);
+    return null;
+  },
+});
+
+/** Say what a limit did to a job, once until one of its runs goes through. */
+async function tellOnce(ctx: MutationCtx, job: Doc<"jobs">, text: string, tries = job.recovery?.tries ?? 0) {
+  const told = Boolean(job.recovery);
+  await ctx.db.patch(job._id, { recovery: { at: job.recovery?.at ?? Date.now(), tries } });
+  if (told || job.builtin) return;
+  // Through the same door as everything Perry says unprompted: quiet hours and the day's limit hold it (notify.ts).
+  await ctx.scheduler.runAfter(0, internal.notify.deliver, { text, ...(job.origin ? { origin: job.origin } : {}) });
+}
+
+/**
+ * A run of the job failed because its engine's plan ran out: it runs again on
+ * an engine with room, or when the first one resets, and the owner is told
+ * once. The refused engine is passed over, whether or not its refusal has
+ * been reported yet (codex.finishTurn, runner/index.ts).
+ */
+export async function recoverJob(ctx: MutationCtx, job: Doc<"jobs">): Promise<boolean> {
+  const tries = job.recovery?.tries ?? 0;
+  if (tries >= MAX_RECOVERIES) return false;
+  const refused = job.route?.engine;
+  const choice = await choose(ctx, await jobAsk(ctx, job, refused ? [refused] : undefined));
+  if (!choice) return false;
+  const what = `${refused ? ENGINE_LABELS[refused] : "Its engine"} refused it for its plan's limit`;
+  if (choice.wait) {
+    await ctx.db.patch(job._id, { waiting: { until: choice.wait.until, why: choice.wait.why.slice(0, 500) } });
+    await ctx.scheduler.runAt(choice.wait.until, internal.jobs.run, { id: job._id, waited: true, ...(job.lastRunAt ? { since: job.lastRunAt } : {}) });
+    await tellOnce(ctx, job, `⏰ **${job.name}** didn't run: ${what}. ${choice.wait.why}`, tries + 1);
+  } else {
+    await ctx.scheduler.runAfter(0, internal.jobs.run, { id: job._id, ...(refused ? { avoid: [refused] } : {}) });
+    await tellOnce(ctx, job, `⏰ **${job.name}** didn't run: ${what}. I moved it to ${ENGINE_LABELS[choice.engine]} and am running it again.`, tries + 1);
+  }
+  return true;
+}
 
 /** After a job's turn: remember how it went, and tell the owner if it had something to say. */
 export const finished = internalMutation({
@@ -301,10 +470,16 @@ export const finished = internalMutation({
       const thread = await ctx.db.get(id);
       if (thread && !thread.tags.includes("asked")) await ctx.db.patch(thread._id, { tags: [...thread.tags, "asked"] });
     }
-    await ctx.db.patch(job._id, { lastResult: result?.slice(0, 500), lastError: args.error?.slice(0, 500) });
+    await ctx.db.patch(job._id, { lastResult: result?.slice(0, 500), lastError: args.error?.slice(0, 500), ...(args.error ? {} : { recovery: undefined }) });
+    // Stopped by a plan's limit: it runs again where there is room, or after the reset.
+    if (args.error && LIMIT_HIT.test(args.error)) await recoverJob(ctx, (await ctx.db.get(job._id))!);
     if (result && result !== QUIET) {
+      // Kept in its note too, under the day: a weekly review's log grows a section a week. A deleted note is let go.
+      const kept = job.noteId && !args.error ? await appendRun(ctx, job.noteId, result) : null;
+      if (job.noteId && !args.error && !kept) await ctx.db.patch(job._id, { noteId: undefined });
+      const noted = kept ? `\n\n_Added to your note “${kept.title}”._` : "";
       // Back to the chat it was set up in; the heartbeat and the others to the messaging channel (channels.ts).
-      await ctx.scheduler.runAfter(0, internal.notify.deliver, { text: `⏰ **${job.name}**\n\n${result}`, ...(job.origin ? { origin: job.origin } : {}), from: { kind: "job", id: job._id, name: job.name } });
+      await ctx.scheduler.runAfter(0, internal.notify.deliver, { text: `⏰ **${job.name}**\n\n${result}${noted}`, ...(job.origin ? { origin: job.origin } : {}), from: { kind: "job", id: job._id, name: job.name } });
       // The heartbeat only speaks when something needs the owner: that is an alert, for the next brief too.
       if (job.builtin === "heartbeat") {
         await ctx.runMutation(internal.memories.noteAlert, { text: result, at: ownerClock(await timezoneOf(ctx)) });
@@ -327,12 +502,23 @@ export type JobView = {
   enabled: boolean;
   builtin?: string;
   model?: string;
-  engine: EngineKind;
+  /** The engine `model` is one of; unset without a model, when the job runs on its chat's engine or the default. */
+  engine?: EngineKind;
+  /** Kept on its engine whatever its plan: a run waits for the reset rather than moving. */
+  stay?: boolean;
+  /** Perry's own pick of tier, model or thinking level. */
+  pick?: Doc<"jobs">["pick"];
+  /** What its last run ran on, and why; where it was moved from, when it was. */
+  route?: Route;
+  /** A run waiting for an engine's reset. */
+  waiting?: Doc<"jobs">["waiting"];
   nextRunAt: number;
   lastRunAt?: number;
   lastResult?: string;
   lastError?: string;
   chatId?: Id<"conversations">;
+  /** The note each run's result is added to. */
+  noteId?: Id<"notes">;
 };
 
 const view = (job: Doc<"jobs">): JobView => ({
@@ -345,12 +531,17 @@ const view = (job: Doc<"jobs">): JobView => ({
   enabled: job.enabled,
   builtin: job.builtin,
   model: job.model,
-  engine: engineOf(job),
+  engine: job.engine,
+  ...(job.stay ? { stay: true } : {}),
+  ...(job.pick ? { pick: job.pick } : {}),
+  ...(job.route ? { route: job.route } : {}),
+  ...(job.waiting ? { waiting: job.waiting } : {}),
   nextRunAt: job.nextRunAt,
   lastRunAt: job.lastRunAt,
   lastResult: job.lastResult,
   lastError: job.lastError,
   chatId: job.conversationId,
+  ...(job.noteId ? { noteId: job.noteId } : {}),
 });
 
 export const list = internalQuery({
@@ -360,11 +551,14 @@ export const list = internalQuery({
 
 export const create = internalMutation({
   /** origin: the chat it is set up in, where its results go. */
-  args: { name: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()), trigger: v.optional(vTrigger), prompt: v.string(), origin: v.optional(v.id("conversations")) },
+  args: { name: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()), trigger: v.optional(vTrigger), prompt: v.string(), origin: v.optional(v.id("conversations")), pick: v.optional(vPerryPick), noteId: v.optional(v.id("notes")) },
   returns: v.object({ id: v.optional(v.id("jobs")), nextRun: v.optional(v.string()), error: v.optional(v.string()) }),
   handler: async (ctx, args) => {
     const timezone = await timezoneOf(ctx);
-    const base = { name: args.name.trim().slice(0, 80), prompt: args.prompt.trim().slice(0, 4000), ...(args.origin ? { origin: args.origin } : {}) };
+    const base = {
+      name: args.name.trim().slice(0, 80), prompt: args.prompt.trim().slice(0, 4000), ...(args.origin ? { origin: args.origin } : {}),
+      ...(args.pick && Object.keys(args.pick).length ? { pick: args.pick } : {}), ...(args.noteId ? { noteId: args.noteId } : {}),
+    };
     if (args.trigger) {
       if (args.schedule || args.at) return { error: "A job runs on an event, a cron schedule or a time: give only one." };
       const id = await insertJob(ctx, { ...base, trigger: args.trigger });
@@ -391,6 +585,10 @@ export const update = internalMutation({
     schedule: v.optional(v.string()),
     at: v.optional(v.string()),
     enabled: v.optional(v.boolean()),
+    /** Perry's pick of tier, model or thinking level; null goes back to the tier's rule. */
+    pick: v.optional(v.union(vPerryPick, v.null())),
+    /** The note its runs are added to; null stops that. */
+    noteId: v.optional(v.union(v.id("notes"), v.null())),
   },
   returns: v.object({ updated: v.boolean(), nextRun: v.optional(v.string()), error: v.optional(v.string()) }),
   handler: async (ctx, args) => {
@@ -405,7 +603,9 @@ export const update = internalMutation({
       return { updated: false, error: "A job an event starts keeps its event. To run it on a time instead, delete it and make a new one." };
     }
     const timezone = await timezoneOf(ctx);
-    const patch: Partial<Pick<Doc<"jobs">, "name" | "prompt" | "schedule" | "runAt" | "enabled" | "nextRunAt">> = {};
+    const patch: Partial<Pick<Doc<"jobs">, "name" | "prompt" | "schedule" | "runAt" | "enabled" | "nextRunAt" | "pick" | "waiting" | "noteId">> = {};
+    if (args.noteId !== undefined) patch.noteId = args.noteId ?? undefined;
+    if (args.pick !== undefined) patch.pick = args.pick && Object.keys(args.pick).length ? args.pick : undefined;
     if (args.name?.trim()) patch.name = args.name.trim().slice(0, 80);
     if (args.prompt?.trim()) patch.prompt = args.prompt.trim().slice(0, 4000);
     if (args.schedule || args.at) {
@@ -420,6 +620,8 @@ export const update = internalMutation({
       // Resuming schedules from now, so a paused job does not fire for the runs it missed.
       patch.enabled = args.enabled;
       if (args.enabled) patch.nextRunAt = upcoming(job, timezone);
+      // Paused, a run waiting for an engine's reset is called off.
+      else patch.waiting = undefined;
     }
     await ctx.db.patch(job._id, patch);
     const chat = patch.name && job.conversationId ? await ctx.db.get(job.conversationId) : null;
@@ -474,7 +676,29 @@ export const setModel = mutation({
     assertDashboardKey(args.key);
     if (!(await ctx.db.get(args.id))) throw new Error("That job no longer exists.");
     const model = args.model?.trim() || undefined;
-    await ctx.db.patch(args.id, { model, engine: model ? args.engine : undefined });
+    // Automatic again: Perry picks, and moves it when its engine has no room.
+    await ctx.db.patch(args.id, { model, engine: model ? args.engine : undefined, ...(model ? {} : { stay: undefined }) });
+    return null;
+  },
+});
+
+/**
+ * Keep a job on the engine it was moved from (the Work page's "Keep on…"):
+ * pinned there, on the model it would have had, and when that engine has no
+ * room, its runs wait for the reset rather than move.
+ */
+export const keepOn = mutation({
+  args: { key: v.string(), id: v.id("jobs") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const job = await ctx.db.get(args.id);
+    if (!job) throw new Error("That job no longer exists.");
+    const from = job.route?.movedFrom;
+    const engine = from?.engine ?? (job.model ? job.engine : job.route?.engine);
+    if (!engine || !isEngine(engine)) throw new Error("This job has not run anywhere yet.");
+    const model = from?.engine === engine ? from.model : job.engine === engine ? job.model : job.route?.model;
+    await ctx.db.patch(job._id, { engine, model, stay: true });
     return null;
   },
 });
@@ -490,6 +714,8 @@ export const saveFromDashboard = mutation({
     key: v.string(), id: v.optional(v.id("jobs")), name: v.string(), prompt: v.string(), schedule: v.optional(v.string()), at: v.optional(v.string()),
     /** Run it when a file lands in this folder on this computer. */
     folder: v.optional(v.string()),
+    /** The note its runs are added to; null for none. */
+    noteId: v.optional(v.union(v.id("notes"), v.null())),
   },
   returns: v.id("jobs"),
   handler: async (ctx, args): Promise<Id<"jobs">> => {
@@ -501,7 +727,7 @@ export const saveFromDashboard = mutation({
     if (folder && !ABSOLUTE_PATH.test(folder)) throw new Error("Give the folder's full path, such as C:\\Users\\you\\Downloads or /home/you/Downloads.");
     if (!args.id) {
       const made: { id?: Id<"jobs">; error?: string } = await ctx.runMutation(internal.jobs.create, {
-        name: args.name, prompt: args.prompt, ...(folder ? { trigger: folderTrigger(folder) } : when),
+        name: args.name, prompt: args.prompt, ...(folder ? { trigger: folderTrigger(folder) } : when), ...(args.noteId ? { noteId: args.noteId } : {}),
       });
       if (!made.id) throw new Error(made.error ?? "Could not save it.");
       return made.id;
@@ -511,7 +737,7 @@ export const saveFromDashboard = mutation({
     // A job an event starts keeps its event; a folder can move to another folder.
     if (job.trigger) {
       if (folder && job.trigger.kind === "folder" && folder !== job.trigger.path) await ctx.db.patch(job._id, { trigger: folderTrigger(folder) });
-      const changed: { updated: boolean; error?: string } = await ctx.runMutation(internal.jobs.update, { id: args.id, name: args.name, prompt: args.prompt });
+      const changed: { updated: boolean; error?: string } = await ctx.runMutation(internal.jobs.update, { id: args.id, name: args.name, prompt: args.prompt, ...(args.noteId !== undefined ? { noteId: args.noteId } : {}) });
       if (!changed.updated) throw new Error(changed.error ?? "Could not save it.");
       return args.id;
     }
@@ -521,6 +747,7 @@ export const saveFromDashboard = mutation({
       id: args.id,
       ...(job.builtin ? {} : { name: args.name, prompt: args.prompt }),
       ...(moved ? when : {}),
+      ...(args.noteId !== undefined ? { noteId: args.noteId } : {}),
     });
     if (!changed.updated) throw new Error(changed.error ?? "Could not save it.");
     return args.id;
@@ -544,6 +771,7 @@ export const trigger = internalMutation({
   handler: async (ctx, args) => {
     const id = ctx.db.normalizeId("jobs", args.id);
     if (!id || !(await ctx.db.get(id))) return false;
+    await assertRunning(ctx);
     await ctx.db.patch(id, { lastRunAt: Date.now(), lastResult: undefined, lastError: undefined });
     await ctx.scheduler.runAfter(0, internal.jobs.run, { id });
     return true;
@@ -593,11 +821,17 @@ export const onEvent = internalMutation({
   handler: async (ctx, args) => {
     const ids = new Set(args.instanceIds ?? []);
     const now = Date.now();
+    // Paused, an event starts nothing: each job it belongs to has missed a run, with the event kept for it (pause.ts).
+    const paused = await pausedAt(ctx);
     let ran = 0;
     for (const job of await ctx.db.query("jobs").collect()) {
       const trigger = job.trigger;
       if (!job.enabled || !trigger) continue;
       const mine = trigger.kind === "app" ? ids.has(trigger.instanceId) : args.folder !== undefined && samePath(trigger.path, args.folder);
+      if (mine && paused) {
+        await ctx.db.patch(job._id, missedPatch(job, { event: args.event }));
+        continue;
+      }
       if (!mine || (job.lastRunAt ?? 0) > now - EVENT_COOLDOWN_MS) continue;
       await ctx.db.patch(job._id, { lastRunAt: now, lastResult: undefined, lastError: undefined });
       await ctx.scheduler.runAfter(0, internal.jobs.run, { id: job._id, event: args.event });

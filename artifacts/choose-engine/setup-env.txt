@@ -1,0 +1,15 @@
+
+Perry setup
+  Telegram is optional. For a bot: message @BotFather, send /newbot, and paste its token.
+  Bot token, or Enter to skip: 
+  No bot: talk to Perry from the dashboard. Add one in Settings → Telegram any time.
+  Claude Code isn't signed in. Sign in now? [Y/n] 
+  ✔ default engine Claude Code
+  Claude Code isn't signed in, so Perry can't answer yet. Sign in from the dashboard's Settings → Engines.
+
+Next
+  pnpm perry start  runs Perry in the background
+  dashboard key: (this run's own)
+
+  (also saved in .env.local; `pnpm perry doctor` checks everything)
+

@@ -81,7 +81,7 @@ const shopServer = createServer((request: IncomingMessage, response: ServerRespo
 await new Promise<void>((done) => shopServer.listen(0, "127.0.0.1", done));
 const SHOP = `http://127.0.0.1:${(shopServer.address() as { port: number }).port}`;
 
-const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production" };
+const env: NodeJS.ProcessEnv = { ...process.env, PERRY_HOME: home, PERRY_PORT: String(PORT), DASHBOARD_KEY: KEY, NODE_ENV: "production", PERRY_ENGINE: "codex" };
 for (const name of Object.keys(env)) if (name.startsWith("CONVEX") || name === "NEXT_PUBLIC_CONVEX_URL" || name.startsWith("TELEGRAM")) delete env[name];
 const logs = { server: "", runner: "" };
 function start(name: "server" | "runner"): ChildProcess {
@@ -151,8 +151,8 @@ try {
   const type = (selector: string, value: string) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
   const pageHas = (text: string) => evaluate(`document.body.innerText.includes(${JSON.stringify(text)})`) as Promise<boolean>;
   const openKeys = async () => {
-    await send("Page.navigate", { url: `${BASE}/settings?tab=keys` });
-    await until(() => pageHas("Logins and secrets"), "the Keys tab", 30);
+    await send("Page.navigate", { url: `${BASE}/settings/logins` });
+    await until(() => pageHas("Logins & secrets"), "the Keys tab", 30);
     await sleep(1_000);
   };
 

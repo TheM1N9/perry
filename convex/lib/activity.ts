@@ -32,7 +32,7 @@ function args(span: Span): Record<string, unknown> {
 }
 
 /** The command inside a shell wrapper: `powershell.exe -Command "git status"` is `git status`. */
-function innerCommand(command: string): string {
+export function innerCommand(command: string): string {
   const inner = /(?:powershell|pwsh)(?:\.exe)?"?\s+(?:-\w+\s+)*?-Command\s+([\s\S]+)$/i.exec(command)?.[1]
     ?? /(?:^|\/)(?:ba|z)?sh\s+-l?c\s+([\s\S]+)$/.exec(command)?.[1];
   return (inner ?? command).trim().replace(/^(["'])([\s\S]*)\1$/, "$2");
@@ -44,13 +44,26 @@ function host(url: unknown): string {
 
 /** Perry's own tools (convex/tools.ts), as the owner would say what it is doing. */
 const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
+  brain_search: () => ({ label: "Checking what I remember", pose: "remembering" }),
+  search_memory: () => ({ label: "Checking what I remember", pose: "remembering" }),
+  brain_list: () => ({ label: "Looking through your pages", pose: "reading" }),
+  brain_read: (input) => ({ label: typeof input.page === "string" && input.page.length < 40 ? `Reading “${short(input.page, 30)}”` : "Reading a page", pose: "reading" }),
+  brain_write: () => ({ label: "Writing a page", pose: "typing" }),
+  brain_append: () => ({ label: "Adding to a page", pose: "typing" }),
+  brain_neighbors: () => ({ label: "Looking at what that ties to", pose: "reading" }),
+  brain_link: () => ({ label: "Linking pages", pose: "typing" }),
+  brain_pin: (input) => ({ label: input.pinned === false ? "Unpinning a page" : "Pinning a page", pose: "typing" }),
+  brain_summarize: () => ({ label: "Summing up a section", pose: "typing" }),
+  brain_lately: () => ({ label: "Writing Lately", pose: "typing" }),
+  brain_review: () => ({ label: "Looking over your Brain", pose: "reading" }),
+  brain_propose: () => ({ label: "Proposing a tidy-up", pose: "typing" }),
   recall: () => ({ label: "Checking what I remember", pose: "remembering" }),
   remember: () => ({ label: "Noting that down", pose: "remembering" }),
-  read_memory: () => ({ label: "Reading my notes", pose: "remembering" }),
+  read_memory: () => ({ label: "Reading my memory", pose: "remembering" }),
   forget: () => ({ label: "Forgetting that", pose: "remembering" }),
   update_user_md: () => ({ label: "Updating what I know about you", pose: "remembering" }),
   update_identity: () => ({ label: "Changing how I come across", pose: "remembering" }),
-  save_secret: () => ({ label: "Putting that in Keys", pose: "typing" }),
+  save_secret: () => ({ label: "Putting that in Logins & secrets", pose: "typing" }),
   list_secrets: () => ({ label: "Looking through your logins", pose: "reading" }),
   use_secret: () => ({ label: "Getting a saved login", pose: "reading" }),
   search_chats: () => ({ label: "Looking through your chats", pose: "searching" }),
@@ -64,7 +77,25 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   list_todos: () => ({ label: "Looking at your to-dos", pose: "reading" }),
   update_todo: () => ({ label: "Updating a to-do", pose: "typing" }),
   delete_todo: () => ({ label: "Removing a to-do", pose: "typing" }),
+  list_notes: () => ({ label: "Looking through your notes", pose: "reading" }),
+  read_note: () => ({ label: "Reading a note", pose: "reading" }),
+  search_notes: () => ({ label: "Searching your notes", pose: "searching" }),
+  create_note: (input) => ({ label: typeof input.title === "string" ? `Writing “${short(input.title, 30)}”` : "Writing a note", pose: "typing" }),
+  update_note: () => ({ label: "Updating a note", pose: "typing" }),
   read_page: (input) => ({ label: `Reading ${host(input.url)}`, pose: "reading" }),
+  browser: (input) => {
+    switch (input.action) {
+      case "open": return { label: `Opening ${host(input.url)}`, pose: "reading" };
+      case "click": return { label: "Clicking on the page", pose: "typing" };
+      case "type": return { label: "Typing on the page", pose: "typing" };
+      case "choose": return { label: "Picking an option", pose: "typing" };
+      case "sign_in": return { label: "Signing in", pose: "typing" };
+      case "screenshot": return { label: "Taking a picture of the page", pose: "reading" };
+      case "back": return { label: "Going back a page", pose: "reading" };
+      case "close": return { label: "Closing the browser", pose: "running" };
+      default: return { label: "Looking at the page", pose: "reading" };
+    }
+  },
   list_connectors: () => ({ label: "Checking your connected apps", pose: "reading" }),
   find_action: (input) => {
     const toolkit = Array.isArray(input.toolkits) && typeof input.toolkits[0] === "string" ? input.toolkits[0] : undefined;
@@ -81,6 +112,9 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   update_watch: () => ({ label: "Changing a watch", pose: "typing" }),
   delete_watch: () => ({ label: "Removing a watch", pose: "typing" }),
   check_watches: () => ({ label: "Checking your watches", pose: "reading" }),
+  library_list: () => ({ label: "Looking through your Library", pose: "reading" }),
+  library_find: (input) => ({ label: typeof input.query === "string" ? `Looking for “${short(input.query, 30)}” in your Library` : "Looking in your Library", pose: "reading" }),
+  library_add: () => ({ label: "Putting a file in your Library", pose: "typing" }),
   share_file: (input) => ({ label: typeof input.path === "string" ? `Sending you ${short(baseName(input.path), 32)}` : "Sending you a file", pose: "running" }),
 };
 
@@ -107,6 +141,21 @@ export function describeStep(span: Span): Step {
 export const WAITING: Step = { label: "Waiting for you to approve", pose: "waiting" };
 export const WRITING: Step = { label: "Writing the reply", pose: "typing" };
 export const STARTING: Step = { label: "Thinking", pose: "thinking" };
+
+/** A step that finished between two reports is held up this long. */
+const STEP_HOLD_MS = 2_500;
+
+type Shown = { running: boolean; step?: Step & { since: number; live: boolean }; recent?: Step & { since: number; endedAt: number } };
+
+/**
+ * The step to show for a turn (dashboard.getActivity): the one it is on, or
+ * between steps the one that just finished, held up a moment so a quick one
+ * is seen at all. Nothing once the turn is over.
+ */
+export function shownStep(of: Shown | null | undefined, now: number) {
+  return !of?.running || !of.step ? undefined
+    : of.step.live || !of.recent || now - of.recent.endedAt > STEP_HOLD_MS ? of.step : of.recent;
+}
 
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 

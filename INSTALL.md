@@ -14,13 +14,32 @@ iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
 
 The installer adds what is missing: Git (Windows, through winget), Node.js 20.9
 or newer (winget on Windows; on macOS and Linux, Node's own build in
-`~/.perry/node`, checked against its published checksum), pnpm, Bun and the
-Codex CLI. On macOS and Linux nothing it installs needs sudo. It clones Perry
-into `~/perry` (`PERRY_DIR` changes that), installs the packages, and runs
-`perry setup`, which walks the steps below, connects this computer, builds the
+`~/.perry/node`, checked against its published checksum), pnpm and Bun. No
+engine: `perry setup` asks which one Perry thinks with and installs that one.
+On macOS and Linux nothing it installs needs sudo. It clones Perry into
+`~/perry` (`PERRY_DIR` changes that), installs the packages, and runs `perry
+setup`, which walks the steps below, connects this computer, builds the
 dashboard, starts Perry in the background, and opens the dashboard already
 unlocked. Run the installer again to update; `perry update` does the same from
 then on.
+
+Where nobody can answer questions (a server, CI, a script), name the default
+engine, and setup goes on without asking; without one it stops rather than
+pick for you:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh -s -- --engine claude
+```
+
+```powershell
+$env:PERRY_ENGINE='claude'; iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
+```
+
+`perry setup --engine <name>` and `PERRY_ENGINE` do the same in a clone. The
+names are `codex`, `claude`, `grok` and `antigravity`. `PERRY_ENGINE` in the
+environment Perry's server starts in also becomes the default of an install
+with none chosen yet (one already chosen stays); the end-to-end checks in
+`artifacts/` start their test Perrys this way.
 
 In a clone of your own, the same without the installer:
 
@@ -34,7 +53,9 @@ Perry runs on macOS, Linux and Windows:
 | | macOS | Linux | Windows |
 |---|---|---|---|
 | Bun | `curl -fsSL https://bun.sh/install \| bash` | `curl -fsSL https://bun.sh/install \| bash` | `powershell -c "irm bun.sh/install.ps1 \| iex"` |
-| Codex CLI | `brew install --cask codex` or `npm i -g @openai/codex` | `npm i -g @openai/codex` or `curl -fsSL https://chatgpt.com/codex/install.sh \| sh` | `npm i -g @openai/codex` |
+| Codex, if you choose it | `npm i -g @openai/codex` or `brew install --cask codex` | `npm i -g @openai/codex` or `curl -fsSL https://chatgpt.com/codex/install.sh \| sh` | `npm i -g @openai/codex` |
+| Claude Code, if you choose it | `curl -fsSL https://claude.ai/install.sh \| bash` | `curl -fsSL https://claude.ai/install.sh \| bash` | `irm https://claude.ai/install.ps1 \| iex` |
+| Grok Build, if you choose it | `npm i -g @xai-official/grok` | `npm i -g @xai-official/grok` | `npm i -g @xai-official/grok` |
 | Codex's sandbox | Seatbelt, built in | bubblewrap, shipped with Codex; needs user namespaces | a restricted token, set up by Codex |
 | Background service | launchd agent | systemd user unit | Task Scheduler task at logon |
 
@@ -63,13 +84,13 @@ starts at every login and restarts either one if it crashes. From then on:
 | `perry uninstall` | stop it starting at login, then pick: keep everything (`~/perry`, and `~/.perry` with all Perry knows), or remove both from this computer, which deletes your chats and memory for good (back up `~/.perry` first to keep them). `--keep-files` or `--remove-files` answers without asking |
 
 The `perry` command is a small launcher in `~/.perry/bin`, added to your PATH,
-that runs the CLI from your checkout whatever folder you are in. Codex works in
-`~/.perry/workspace` unless you connected with another folder.
+that runs the CLI from your checkout whatever folder you are in. The engines
+work in `~/.perry/workspace` unless you connected with another folder.
 
 ## What the wizard does
 
-No account is needed but Codex's: Perry keeps everything on this computer, in
-`~/.perry`.
+No account is needed but the one of the engine you choose: Perry keeps
+everything on this computer, in `~/.perry`.
 
 1. **Telegram bot, optional.** To talk to Perry on Telegram as well as in the
    dashboard, message [@BotFather](https://t.me/BotFather), send `/newbot`,
@@ -79,12 +100,21 @@ No account is needed but Codex's: Perry keeps everything on this computer, in
    page, then pair it from **Setup**. Without a bot, job results and page-watch
    alerts stay in the dashboard (a job's results in its own chat) rather than
    reaching you as messages.
-2. **Codex.** Perry thinks with your ChatGPT subscription, through the
-   [Codex CLI](https://github.com/openai/codex) on your machine, so it signs
-   you in now, before the first chat needs it: `codex login` in the browser,
-   or a device code where there is no browser (a server, or over SSH). If
-   you are already signed in, it says so and moves on. Setup stops if Codex
-   is not installed. The dashboard's Settings page can sign in too.
+2. **The default engine.** Perry thinks with a coding agent on your own
+   subscription, and which one is yours to choose: Codex (ChatGPT), Claude
+   Code (Claude), Grok Build (Grok) or Antigravity (Google, experimental). The
+   wizard lists each with whether it is installed and signed in here, and asks
+   which Perry should use by default; with exactly one ready, Enter picks it,
+   and it still asks. It then offers to install the one you chose, if it is
+   missing, and to sign in to it with its own sign-in (`codex login`, `claude
+   auth login`, `grok login`; a device code where there is no browser).
+   Antigravity is turned on later from Settings, where its Gemini API key is
+   kept. Setup stops if the engine is missing and you'd rather install it
+   yourself, or if it is too old for Perry. Run again, it keeps the engine
+   already chosen; `--engine` changes it. Change it any time in Settings →
+   Engines, where each engine can be signed in too, and pick another
+   model, on any engine, for a single chat. An install from before this
+   choice existed ran on Codex, and keeps Codex as its chosen default.
 3. **Saving it.** Generates a dashboard key and writes it, with the bot token,
    to a gitignored `.env.local`.
 
@@ -133,10 +163,11 @@ it in `.env.local`, in Perry's folder, then `perry stop && perry start`.
 
 ## Connecting your machine
 
-Perry thinks and works through Codex on your machine. The computer Perry is
-installed on is connected by its server as it starts; nothing to do. Open
-Settings in the dashboard to see the Codex account, or sign in there; the runner
-reports which Codex models your subscription offers. Perry answers while the
+Perry thinks and works through the engine you chose, on your machine. The
+computer Perry is installed on is connected by its server as it starts;
+nothing to do. Open Settings → Engines in the dashboard to see each
+engine's account, sign in, or change the default engine; the runner reports
+which models each subscription offers. Perry answers while the
 computer is on: a message sent while the runner is not running fails with a
 clear error, and one sent on Telegram while the computer is off is answered when
 it wakes.
@@ -151,22 +182,27 @@ pnpm run connect -- --url <address> --token <token> --dir <folder> --service
 
 What Codex wants to do beyond its sandbox is asked in the runner's terminal, in
 the dashboard and, if you own Perry from Telegram, as a Telegram message with
-Approve, Decline and Always allow buttons. Turn Telegram prompts off on the
-Computer page.
+Approve, Decline and Always allow buttons. Turn Telegram prompts off in Settings
+→ Access & approvals, where the requests answered with Always allow are listed
+too.
 
-Each machine has a policy, set on the Computer page or when starting it:
+Each machine has a policy, set when starting it:
 
 ```bash
 pnpm run runner -- --policy review   # ask | review | trust; --auto means trust
 ```
 
-With `review`, a quick Codex turn on your subscription looks at each request
-first and runs the routine ones; the rest are asked. `PERRY_REVIEW_MODEL`
-picks its model (by default the first model Codex lists as fast).
+With `review`, a quick turn on your subscription looks at each request first
+and runs the routine ones; the rest are asked. It runs on the chat's own
+engine, or on your default engine when that one can't take quick turns (Grok
+Build can't), else on any engine signed in here that can. On Codex,
+`PERRY_REVIEW_MODEL` picks its model (by default the first model Codex lists
+as fast).
 
-New web chats are named the same way: the first message titles the chat at
-once, and a quick turn on `gpt-6-luna` (or the first Luna Codex lists) replaces
-it with a short name. `PERRY_TITLE_MODEL` picks another model.
+New web chats are named the same way, by the same engine: the first message
+titles the chat at once, and a quick turn replaces it with a short name (on
+Codex, `gpt-6-luna` or the first Luna it lists; `PERRY_TITLE_MODEL` picks
+another model).
 
 Codex is told which OS and shell it is on (PowerShell on Windows, your login
 shell such as zsh or bash elsewhere), so its commands, paths and "open this"
@@ -228,7 +264,7 @@ on macOS and Linux to show the sandbox works.
 
 All of this is for **Supervised** chats, the default. A chat set to **Full
 access** (in its composer, with `/access full`, or by the default for new chats
-in Settings) runs every turn with `danger-full-access` whatever
+in Settings → Access & approvals) runs every turn with `danger-full-access` whatever
 `PERRY_CODEX_SANDBOX` says: no sandbox, and nothing waits for you. Codex still
 sends each command to the runner, which lets it through at once, so that a
 chat put back on Ask or Auto while a reply runs is asked or reviewed from its
@@ -247,7 +283,7 @@ both.
 
 - **Signing in.** Perry never signs Claude Code in and never reads, copies or
   stores its credentials. Install Claude Code, then run `claude auth login` in a
-  terminal on that computer; Settings shows what it says (for example "Claude
+  terminal on that computer; Settings → Engines shows what it says (for example "Claude
   Max · you@example.com") and the command to run while it is signed out. Perry
   doesn't sign it out either, since that would sign you out of Claude Code in
   your terminal too: run `claude auth logout` for that.
@@ -314,34 +350,72 @@ that point in a separate thread. Each chat shows a stable session ID in the
 sidebar and header; the header copies the full ID. Older messages load on demand. Web chats share
 Perry's saved memories with Telegram while keeping their histories separate.
 
-The sidebar holds your chats, Search, and Tasks: scheduled jobs, Perry's plans,
-goals, and watched pages. Everything else opens from your name at the bottom of
-the sidebar: Memory, Connectors, Activity, Computer, Settings, Keys, and Setup.
-Settings shows the Codex account on each connected machine; Activity is a run
-log with session filters, tools, tokens, errors, and a link back to each web
-chat.
+The sidebar holds New chat, Search, Needs you, To-dos, Work (scheduled jobs,
+Perry's plans, goals, and watched pages), Memory, Apps & skills (connected
+accounts and skills), your projects and your chats. At the bottom are the
+desktop pet, the computer Perry works on, and your name, which opens Usage (how
+much of each engine's plan is left), the theme, Settings and Lock dashboard. Settings
+puts everything else in sections down its left: General, Engines, Usage,
+Computers, Access & approvals, Notifications, Telegram, WhatsApp, Desktop pet,
+People, Logins & secrets, Dashboard key and Activity log. Each key is entered
+beside what it unlocks: the Telegram bot token in Telegram, the Gemini API key
+in Engines, and the Composio key in Apps & skills. Engines shows the default engine,
+and each engine's account on each connected machine; the activity log lists every run with session filters,
+tools, tokens, errors, and a link back to each web chat.
 
 The key is a bearer token for one person, not a login system. Localhost does
 not bypass it, because a dashboard that can read your memory should not be open
 to anything else running on your machine.
+
+Perry's server listens on every address the computer has, as Next.js does, so
+a phone or another computer on your network, or on your Tailscale, can open it
+with the key; nothing is opened to the internet, and Perry never forwards a
+port. To keep it to this computer alone, put `PERRY_HOST=127.0.0.1` in
+`.env.local` and restart Perry. Over Tailscale the traffic is encrypted; on a
+local network it is plain HTTP, so use one you trust.
+
+### The desktop pet on another computer
+
+`perry pet` puts him on the computer Perry runs on. For a laptop beside it:
+Settings → Desktop pet → **Add a computer** makes a pairing code, good once and
+for ten minutes, and shows a line to paste in a terminal there. It installs
+only the pet (Git, Node.js and pnpm if missing, the `pet/` folder of this repo
+into `~/perry-pet`, and Electron), trades the code for that computer's own key,
+and starts him there, and at every login:
+
+```powershell
+$env:PERRY_PET='http://192.168.1.20:7377 ABCD-EFGH'; iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | PERRY_PET='http://192.168.1.20:7377 ABCD-EFGH' sh
+```
+
+That key opens only what the pet shows (chats, to-dos, what needs you, his
+check-ins), not the rest of the dashboard; opened from him there, the dashboard
+asks for its own key. Each computer is listed in Settings → Desktop pet with when it was last
+heard from; **Remove** takes its key away at once. Reminders go to your phone
+only when every pet has seen you gone, and Perry looks at the screen you were
+at last. `node ~/perry-pet/pet/connect.js off` stops him there; running the
+line again with a new code pairs him again and updates him.
 
 ## Other commands
 
 | Command | What it does |
 |---|---|
 | `pnpm run doctor` | Checks every moving part and names the broken one. Changes nothing. |
-| `pnpm run doctor -- --machine` | Only this machine: Bun, Codex and its sign-in and sandbox, the runner, the service. |
+| `pnpm run doctor -- --machine` | Only this machine: Bun, each engine's CLI (with Codex's sign-in and sandbox), the runner, the service. |
 | `pnpm run service <command>` | The runner as a background service: `install`, `uninstall`, `start`, `stop`, `status`, `logs`. `--dry-run` shows what it would do. |
-| `pnpm run smoke` | The runner's parts on this OS, with no server or Codex. CI runs it on all three. |
+| `pnpm run smoke` | The runner's parts on this OS, with no server or engine. CI runs it on all three, along with a `perry setup` that has no one to ask. |
 | `pnpm run pair` | Fresh pairing code, for an expired one or a new chat. |
 | `perry migrate` | Bring chats, memory and files over from a Convex install. |
 | `pnpm run codegen` | After adding or removing a file in `convex/`: its types and the server's list of functions. |
 
 `pnpm run doctor` is the first thing to run when something seems wrong. It
-checks this machine (Bun, the Codex CLI, its sign-in and sandbox, the runner and
-its service), the local env file, Perry's server and its database, the bot
-token and whether Telegram is being polled, and whether anyone has claimed the
-install.
+checks this machine (Bun, each engine's CLI, Codex's sign-in and sandbox, the
+runner and its service), the local env file, Perry's server and its database,
+the bot token and whether Telegram is being polled, whether anyone has claimed
+the install, and which default engine is chosen.
 
 ## Giving Perry to someone else
 
@@ -363,9 +437,13 @@ pairing code. If Perry's server is not answering, `perry start`, and
 **"That broke: ..." in chat.** Perry reports failures instead of swallowing
 them. The full error is in `perry logs` and in the Activity tab.
 
-**"The Codex runner for this chat is offline" in chat.** Every reply comes from
-Codex on a connected machine. Start Perry with `perry start` (or the runner on
-the other machine) and check the Codex account on the Settings page.
+**"Perry has no default engine yet" in chat.** Perry never picks an engine for
+you. Choose one in Settings → Engines, or pick a model for that chat,
+and send the message again.
+
+**"The runner for this chat is offline" in chat.** Every reply comes from an
+engine on a connected machine. Start Perry with `perry start` (or the runner on
+the other machine) and check the engine's account in Settings → Engines.
 
 **Codex's commands all fail on Linux.** Its sandbox needs user namespaces; see
 "Codex's sandbox" above, and run `pnpm run doctor -- --machine`.
