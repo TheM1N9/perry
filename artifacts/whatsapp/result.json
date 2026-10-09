@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-09-26T10:48:13.752Z",
+  "ranAt": "2026-10-09T05:12:48.641Z",
   "checks": {
     "linkByCode": true,
     "linkByQr": true,
@@ -10,6 +10,8 @@
     "knowsItIsWhatsApp": true,
     "whatsappFormatting": true,
     "approvalOnWhatsApp": true,
+    "callsKept": true,
+    "callNotAnsweredAsAMessage": true,
     "jobReportsFormatted": true,
     "homeChannelChoice": true,
     "voiceNoteAttached": true,
@@ -26,12 +28,47 @@
       "pairingCode": true
     },
     "where": {
-      "reply": "You’re talking to me on *WhatsApp*.",
+      "reply": "You’re talking to me in *WhatsApp*.",
       "typing": true
     },
     "approvalPrompt": "🔐 *DESKTOP-27SQLCP wants to run* · _WhatsApp · Mani_\n\n```Remove-Item -Recurse .\\dist```\n\n📁 `C:\\work\\site`\n\nReply *1* to approve, *2* to decline, *3* to always allow (this exact command in C:\\work\\site).",
+    "calls": {
+      "rang": {
+        "_id": "jt7dwvtfntc83n8xc0692y91me",
+        "_creationTime": 1791522714112,
+        "waCallId": "CALL1791522713643",
+        "from": "919876543210@s.whatsapp.net",
+        "status": "ringing",
+        "startedAt": 1791522714112,
+        "conversationId": "x5brndbxe88jt807zah1e8nqgj"
+      },
+      "ended": {
+        "_id": "jt7dwvtfntc83n8xc0692y91me",
+        "_creationTime": 1791522714112,
+        "waCallId": "CALL1791522713643",
+        "from": "919876543210@s.whatsapp.net",
+        "status": "ended",
+        "startedAt": 1791522714112,
+        "conversationId": "x5brndbxe88jt807zah1e8nqgj",
+        "answeredAt": 1791522714625,
+        "endedAt": 1791522716172,
+        "endedReason": "terminate",
+        "durationMs": 1547
+      },
+      "missed": {
+        "_id": "xa81aqt0x1jg5k7tcr5zsnnnyt",
+        "_creationTime": 1791522716675,
+        "waCallId": "MISSED1791522716398",
+        "from": "15550001111@s.whatsapp.net",
+        "status": "ended",
+        "startedAt": 1791522716674,
+        "endedAt": 1791522716675,
+        "endedReason": "timeout",
+        "durationMs": 1
+      }
+    },
     "report": "⏰ *Water*\n\nTime to drink *water*.\n\n```Glass  ml\n─────  ───\nOne    250```\n\n• sip slowly",
-    "voiceReply": "I can’t listen to the voice note here because no speech-to-text tool is available.",
+    "voiceReply": "I received your voice note, but I can’t listen to or transcribe it yet. Could you send it as text?",
     "selfReply": "🤖 pong",
     "pageErrors": [],
     "whatsappSent": [
@@ -41,7 +78,7 @@
       },
       {
         "jid": "919876543210@s.whatsapp.net",
-        "text": "You’re talking to me on *WhatsApp*."
+        "text": "You’re talking to me in *WhatsApp*."
       },
       {
         "jid": "919876543210@s.whatsapp.net",
@@ -61,7 +98,7 @@
       },
       {
         "jid": "919876543210@s.whatsapp.net",
-        "text": "I can’t listen to the voice note here because no speech-to-text tool is available."
+        "text": "I received your voice note, but I can’t listen to or transcribe it yet. Could you send it as text?"
       },
       {
         "jid": "919876543210@s.whatsapp.net",

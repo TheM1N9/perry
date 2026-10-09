@@ -395,3 +395,52 @@ export const receive = internalAction({
     return null;
   },
 });
+
+// --- Calls ------------------------------------------------------------------------------
+
+/** What Baileys says of a call (its WACallEvent's status), as the server passes it on. */
+const vCallStatus = v.union(
+  v.literal("offer"), v.literal("ringing"), v.literal("preaccept"), v.literal("transport"), v.literal("relaylatency"),
+  v.literal("timeout"), v.literal("reject"), v.literal("accept"), v.literal("terminate"),
+);
+
+/**
+ * A call on the linked WhatsApp (server/whatsapp.ts, its "call" event): kept
+ * in `calls`, one row a call, ringing, then answered, then ended, with the chat
+ * it came from when Perry has one. Nothing answers or speaks yet; this is the
+ * record a voice bridge will build on.
+ */
+export const callEvent = internalMutation({
+  args: { id: v.string(), from: v.string(), chatId: v.string(), status: vCallStatus, isVideo: v.optional(v.boolean()), isGroup: v.optional(v.boolean()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const call = await ctx.db.query("calls").withIndex("by_waCallId", (q) => q.eq("waCallId", args.id)).first();
+    if (args.status === "offer" || args.status === "ringing") {
+      if (call) return null;
+      const chat = await ctx.db.query("conversations")
+        .withIndex("by_channel_external", (q) => q.eq("channel", "whatsapp").eq("externalId", bareJid(args.chatId)))
+        .first();
+      await ctx.db.insert("calls", {
+        waCallId: args.id, from: bareJid(args.from), status: "ringing", startedAt: now,
+        ...(chat ? { conversationId: chat._id } : {}),
+        ...(args.isVideo ? { isVideo: true } : {}), ...(args.isGroup ? { isGroup: true } : {}),
+      });
+      return null;
+    }
+    // An update for a call that rang before Perry was listening, or one already over: nothing to keep.
+    if (!call || call.status === "ended") return null;
+    if (args.status === "accept") {
+      if (call.status === "ringing") await ctx.db.patch(call._id, { status: "active", answeredAt: now });
+    } else if (args.status === "reject" || args.status === "timeout" || args.status === "terminate") {
+      await ctx.db.patch(call._id, { status: "ended", endedAt: now, endedReason: args.status, durationMs: Math.max(0, now - (call.answeredAt ?? call.startedAt)) });
+    }
+    return null;
+  },
+});
+
+/** A call by WhatsApp's id for it. */
+export const callOf = internalQuery({
+  args: { waCallId: v.string() },
+  handler: async (ctx, args): Promise<Doc<"calls"> | null> => await ctx.db.query("calls").withIndex("by_waCallId", (q) => q.eq("waCallId", args.waCallId)).first(),
+});

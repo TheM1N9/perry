@@ -1438,6 +1438,28 @@ export default defineSchema({
     .index("by_runner_status", ["runnerId", "status"])
     .index("by_conversation_status", ["conversationId", "status"]),
 
+  /** A call on the linked WhatsApp, from its first ring to its end (whatsapp.callEvent). */
+  calls: defineTable({
+    /** WhatsApp's id for the call. */
+    waCallId: v.string(),
+    /** The chat it came from, when Perry has one with the caller. */
+    conversationId: v.optional(v.id("conversations")),
+    /** Who called. */
+    from: v.string(),
+    status: v.union(v.literal("ringing"), v.literal("active"), v.literal("ended")),
+    isVideo: v.optional(v.boolean()),
+    isGroup: v.optional(v.boolean()),
+    startedAt: v.number(),
+    answeredAt: v.optional(v.number()),
+    endedAt: v.optional(v.number()),
+    /** From answer to end, or from the first ring when it was never answered. */
+    durationMs: v.optional(v.number()),
+    /** How it ended, as WhatsApp said: reject, timeout or terminate. */
+    endedReason: v.optional(v.string()),
+  })
+    .index("by_conversation", ["conversationId", "startedAt"])
+    .index("by_waCallId", ["waCallId"]),
+
   /**
    * A message the owner sent while a reply was running. It joins that turn
    * through Codex's turn/steer; one that cannot (the turn ended, or Codex
