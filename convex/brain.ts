@@ -41,7 +41,7 @@ Your private assistant.
   /think    list the thinking levels; /think <level> sets this chat's
   /access   ask, auto or full: whether it asks before acting
   /usage    how much of this chat's model plan is used, and what is left
-  /stop    stop the reply I am writing
+  /stop     stop the reply I am writing
   /pause    stop everything I am doing, and start nothing new
   /resume   start again; /run and /skip settle what was missed
   /compact  shrink what I carry of this chat, keep the chat
