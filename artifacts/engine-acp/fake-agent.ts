@@ -397,6 +397,27 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     await stream([`Saved it: ${result}.`], 10);
     return done("end_turn");
   }
+  // A background task's outcome, back in the chat that queued it (convex/tasks.ts, handOff): answer the owner from its report.
+  if (text.startsWith("🧩 A background task you queued here came back")) {
+    const report = /----- task report -----\n([^\n]*)/.exec(text)?.[1] ?? "";
+    log({ handoff: text.slice(0, 2000) });
+    await stream([`Back from the task: `, report], 30);
+    return done("end_turn");
+  }
+  // A background task's turn (convex/tasks.ts, promptFor): "FINISH <outcome> <summary>" on a line of its prompt calls
+  // finish_task; answered, it finishes done with the answer. "THEN-LIMITED" after it: from then on every turn hits the limit.
+  const taskId = /\(task id (\w+)\)/.exec(text)?.[1];
+  const answered = /The owner answered your question: "([^"]*)"/.exec(text)?.[1];
+  const finish = text.split("\n").map((line) => line.trim()).find((line) => line.startsWith("FINISH "));
+  if (taskId && (answered !== undefined || finish)) {
+    const [, outcome = "done", ...rest] = answered !== undefined ? ["FINISH", "done", `Carried on with ${answered}.`] : finish!.split(" ");
+    const summary = rest.join(" ").replace(/\s*THEN-LIMITED$/, "");
+    const outcomeText = await callTool(session, "finish_task", { taskId, outcome, summary }, true);
+    log({ finished: { taskId, outcome, summary, outcomeText } });
+    if (finish?.endsWith("THEN-LIMITED")) writeFileSync(join(HOME, `${profile}-limited`), "yes");
+    await stream([`Finished the task: ${outcome}.`], 10);
+    return done("end_turn");
+  }
   const toolsLine = text.split("\n").map((line) => line.trim()).find((line) => line.startsWith("TOOLS "));
   if (toolsLine) {
     // One turn, several calls: what a turn that reads something and then writes does (artifacts/security-fixes).

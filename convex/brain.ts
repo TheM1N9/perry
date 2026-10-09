@@ -567,7 +567,7 @@ export const handleTurn = internalAction({
       // The web app's own messages go on to be refused where the turn is queued, and the chat shows why.
       if (!command && (channel !== "web" || conversation.jobId || conversation.taskId) && await ctx.runQuery(internal.pause.state, {})) {
         if (conversation.jobId || conversation.taskId) await ctx.runMutation(internal.pause.held, { conversationId: conversation._id });
-        else if (!args.fromWeb) await say(guest ? PAUSED_REPLY : PAUSED_OWNER);
+        else if (!args.fromWeb && !args.hidden) await say(guest ? PAUSED_REPLY : PAUSED_OWNER);
         return null;
       }
       if (command) {
@@ -710,7 +710,8 @@ export const handleTurn = internalAction({
             .catch((saveError) => console.error(`could not keep the message: ${String(saveError)}`));
         }
         // Someone else never hears why: what broke is the owner's business, and the dashboard shows it.
-        if (channel !== "web" && !guest) {
+        // A turn of Perry's own (a task's outcome coming back, tasks.handOff) is tried again by what started it, quietly.
+        if (channel !== "web" && !guest && !args.hidden) {
           await say(paused ? PAUSED_OWNER : `That broke: ${message.slice(0, 300)}`)
             .catch((sendError) => console.error(`could not report failure: ${String(sendError)}`));
         }

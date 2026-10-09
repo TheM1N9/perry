@@ -366,11 +366,38 @@ export default defineSchema({
     waiting: v.optional(vWaiting),
     /** A limit stopped it and Perry is getting it going again: told once, cleared when a turn goes through. */
     recovery: v.optional(v.object({ at: v.number(), tries: v.number() })),
+    /** The outcome last reported (its status and words, hashed): a later turn in its chat that ends the same way does not report it again. */
+    reported: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_status", ["status"])
     .index("by_updated", ["updatedAt"]),
+
+  /**
+   * A background task's outcome on its way back to the chat that queued it
+   * (issue #271): Perry reads it there in a turn of its own and tells the owner,
+   * rather than the task's words going to the owner as they are. Kept until
+   * that turn has gone through; after HANDOFF_TRIES failed tries (no engine has
+   * room, the runner is away) the owner gets the task's own notice instead.
+   */
+  taskHandoffs: defineTable({
+    taskId: v.id("tasks"),
+    /** The chat that queued the task: Perry's turn there reads it. */
+    conversationId: v.id("conversations"),
+    outcome: v.union(v.literal("done"), v.literal("blocked"), v.literal("failed")),
+    /** What the owner gets if Perry cannot take it: the task's own notice. */
+    notice: v.string(),
+    /** What its turn is listed as in Activity, and found by. */
+    label: v.string(),
+    state: v.union(v.literal("pending"), v.literal("answered"), v.literal("fallback")),
+    tries: v.number(),
+    triedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    settledAt: v.optional(v.number()),
+  })
+    .index("by_task", ["taskId"])
+    .index("by_state", ["state"]),
 
   /**
    * The owner's own to-do list: things they mean to do, where tasks are work
