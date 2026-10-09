@@ -1311,13 +1311,13 @@ const start_task = createTool({
 });
 
 /** A background task runs apart from this turn and takes a while: waiting for it here would hold the reply up. */
-const NO_WAIT = "It runs by itself, apart from this reply; its result, or a question, comes back to this chat. Do not wait for it or check on it now: tell the owner it is under way and end your reply.";
+const NO_WAIT = "It runs by itself, apart from this reply; its result, or a question, comes back to you in this chat, and you tell the owner what came of it. Do not wait for it or check on it now: tell the owner it is under way and end your reply.";
 
 const queue_task = createTool({
   description:
     "Take on a piece of work to do by yourself in the background, apart from this chat: research, " +
     "writing, sorting files, a comparison. It runs beside other work (a few tasks at once; more wait their turn), in a chat " +
-    "of its own, and its result, or a question if it gets stuck, comes back here. Use it when the owner " +
+    "of its own, and its result, or a question if it gets stuck, comes back to you here to tell the owner. Use it when the owner " +
     "asks for something that takes a while and they need not watch, or asks you to queue it. Returns the task id.",
   inputSchema: z.object({
     title: z.string().min(2).max(160).describe("A short name, e.g. 'Compare three flats near work'."),
