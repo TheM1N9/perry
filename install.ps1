@@ -1,6 +1,8 @@
-# Perry installer for Windows.
+# Perry installer for Windows. The same line works in Command Prompt and in PowerShell:
 #
-#   iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
+#   powershell -c "irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"
+#
+# It runs in a PowerShell of its own, so when it is done, open a new terminal for the perry command.
 #
 # Uses the Git, Node.js, pnpm and Bun you already have, wherever they are
 # installed, and installs only what is missing. A Node older than Perry needs
@@ -16,7 +18,7 @@
 # fetches. PERRY_ENGINE (codex, claude, grok or antigravity) chooses the
 # default engine without asking, for an install with no one to answer:
 #
-#   $env:PERRY_ENGINE='claude'; iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
+#   powershell -c "Set-Item Env:PERRY_ENGINE claude; irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"
 #
 # PERRY_NO_SETUP=1 stops after installing, with the perry command linked.
 #
@@ -24,7 +26,7 @@
 # (its Settings → Desktop pet → Add a computer shows this line, with its own
 # address and a pairing code):
 #
-#   $env:PERRY_PET='http://192.168.1.20:7377 ABCD-EFGH'; iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
+#   powershell -c "Set-Item Env:PERRY_PET 'http://192.168.1.20:7377 ABCD-EFGH'; irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"
 #
 # That needs only Git, Node.js and pnpm, gets only the pet's folder of Perry
 # into ~\perry-pet, installs Electron there, and pairs it (pet\connect.js).
@@ -41,7 +43,13 @@
   $tools = [System.Collections.Generic.List[string]]::new()
   function Found($text) { $tools.Add($text) }
   function Added($text) { $tools.Add("$text (new)") }
-  function Has($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }
+  # npm puts a .ps1 beside each command it installs (npm itself, pnpm, a Bun from npm), and PowerShell runs that one
+  # first, which Windows' default execution policy refuses. These run the .cmd or .exe beside it, which any policy runs.
+  function Native($name) { Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Where-Object { $_.Extension } | Select-Object -First 1 }
+  function npm { & (Native npm) @args }
+  function pnpm { & (Native pnpm) @args }
+  function bun { & (Native bun) @args }
+  function Has($name) { [bool](Native $name) }
   # Runs a step with its output held back, shown only if it fails. Stderr is output here, not an error:
   # git and npm write their progress there.
   function Quietly($what, [scriptblock]$work) {

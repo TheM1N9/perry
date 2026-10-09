@@ -7,7 +7,7 @@ import { trackEvent } from "@/lib/analytics";
 // The one-line installers from the README.
 const INSTALL = {
   unix: { label: "macOS & Linux", prompt: "$", command: "curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh" },
-  windows: { label: "Windows", prompt: "PS>", command: "iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex" },
+  windows: { label: "Windows", prompt: ">", command: "powershell -c \"irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex\"" },
 } as const;
 type Os = keyof typeof INSTALL;
 

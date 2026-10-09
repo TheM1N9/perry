@@ -146,8 +146,8 @@ function PairingPanel({ code, server, addresses, address, onPick, onCancel }: {
             </div>
           )}
           <p className="mt-4 text-sm font-medium">On the other computer, paste this in a terminal</p>
-          <p className="mt-1 mb-1.5 text-xs text-muted-foreground">Windows, in PowerShell:</p>
-          <CommandLine>{`$env:PERRY_PET='${pet}'; iwr -useb ${INSTALLER}/install.ps1 | iex`}</CommandLine>
+          <p className="mt-1 mb-1.5 text-xs text-muted-foreground">Windows, in Command Prompt or PowerShell:</p>
+          <CommandLine>{`powershell -c "Set-Item Env:PERRY_PET '${pet}'; irm ${INSTALLER}/install.ps1 | iex"`}</CommandLine>
           <p className="mt-2 mb-1.5 text-xs text-muted-foreground">macOS or Linux:</p>
           <CommandLine>{`curl -fsSL ${INSTALLER}/install.sh | PERRY_PET='${pet}' sh`}</CommandLine>
           <p className="mt-3 text-xs text-pretty text-muted-foreground">
