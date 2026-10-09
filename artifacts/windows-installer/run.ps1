@@ -8,6 +8,8 @@
 #   4. PERRY_DIR and PERRY_NO_SETUP do not reach the PowerShell the line starts.
 #   5. It says it installed, but nothing is there: no packages, no perry command.
 #   6. The Set-Item Env: form, for PERRY_ENGINE and PERRY_PET, does not set the variable in one of the shells.
+#   7. On a new computer, with no Git, winget is never reached: a function of the installer's own named like it
+#      (PowerShell's names ignore case) calls itself until PowerShell gives up (call depth overflow).
 param([string]$OutDir = $PSScriptRoot)
 $ErrorActionPreference = 'Continue'
 $root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
@@ -53,6 +55,23 @@ foreach ($shell in 'cmd', 'powershell') {
   }
 }
 
+# A new computer, as far as Git goes: a copy of the installer that finds no Git, and a stand-in winget,
+# first on PATH, that only writes down what it was asked. Git is really here, so the install goes on after it.
+$fakeBin = Join-Path $work 'fake-bin'
+New-Item -ItemType Directory -Force $fakeBin | Out-Null
+$wingetLog = Join-Path $work 'winget.log'
+"@echo %*>>`"$wingetLog`"" | Out-File -Encoding ascii (Join-Path $fakeBin 'winget.cmd')
+$noGit = Join-Path $work 'install-no-git.ps1'
+$installer = Get-Content -Raw (Join-Path $root 'install.ps1')
+# Without a byte order mark, as the published one is: irm would read one as text before the first line.
+[IO.File]::WriteAllText($noGit, $installer.Replace('if (Has git) { Found', 'if ($false) { Found'), [Text.UTF8Encoding]::new($false))
+$path = $env:Path
+$env:Path = "$fakeBin;$path"
+$env:PERRY_DIR = Join-Path $work 'perry-powershell'
+$newPc = Typed powershell ($line.Replace($published, 'file:///' + ($noGit -replace '\\', '/'))) 'install-without-git'
+$env:Path = $path
+$asked = @(Get-Content $wingetLog -ErrorAction SilentlyContinue | ForEach-Object { "$_" })
+
 # Set-Item Env: before the irm, with a stand-in installer that only says what it was given.
 $probe = Join-Path $work 'probe.ps1'
 "Write-Output ('engine=' + `$env:PERRY_ENGINE + ' pet=' + `$env:PERRY_PET)" | Out-File -Encoding ascii $probe
@@ -75,10 +94,14 @@ $checks = [ordered]@{
   engineSetFromPowerShell = $variables.powershell.engine -eq 'engine=claude pet='
   petSetFromCmd = $variables.cmd.pet -eq 'engine= pet=http://192.168.1.20:7377 ABCD-EFGH'
   petSetFromPowerShell = $variables.powershell.pet -eq 'engine= pet=http://192.168.1.20:7377 ABCD-EFGH'
+  missingGitAsksWingetOnce = $asked.Count -eq 1 -and $asked[0] -like 'install --id Git.Git -e --source winget *'
+  missingGitDoesNotLoop = $newPc.output -notmatch 'call depth|installing --id'
+  missingGitStillInstalls = $newPc.output -match 'Installed\.'
 }
 $result = [ordered]@{
   ranAt = (Get-Date).ToString('o'); line = $line; policy = 'Restricted'; checks = $checks
   oldLineInCmd = $old.output.Trim(); installs = $installs; variables = $variables
+  withoutGit = [ordered]@{ wingetAsked = $asked; output = $newPc.output.Trim() }
   passed = -not ($checks.Values -contains $false)
 }
 $result | ConvertTo-Json -Depth 4 | Out-File -Encoding utf8 (Join-Path $OutDir 'result.json')
