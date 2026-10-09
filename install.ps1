@@ -82,7 +82,8 @@
     $env:Path = $path -join ';'
   }
   function Check($what) { if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)." } }
-  function Winget($id, $what) {
+  # Not named Winget: PowerShell's names ignore case, so a function by that name is what `winget` inside it would call.
+  function FromWinget($id, $what) {
     if (-not (Has winget)) { throw "$what is not installed, and winget is not here to install it. Install $what, then run this again." }
     Quietly "installing $what" { winget install --id $id -e --source winget --accept-package-agreements --accept-source-agreements --silent }
     Refresh-Path
@@ -102,14 +103,14 @@
     if ($pet -and $pet.Count -ne 2) { throw "PERRY_PET is Perry's address and a pairing code, as its Settings → Desktop pet → Add a computer shows them." }
     Refresh-Path
     if (Has git) { Found "git $((git --version) -replace 'git version ', '')" }
-    else { Winget 'Git.Git' 'Git'; Added "git $((git --version) -replace 'git version ', '')" }
+    else { FromWinget 'Git.Git' 'Git'; Added "git $((git --version) -replace 'git version ', '')" }
     if (NodeVersionOk) { Found "node $(node --version)" }
     elseif (Has node) {
       # Your Node is yours: Perry does not upgrade it behind your back.
       throw "Perry needs Node.js 22.13 or newer, and this machine has $(node --version). Update it (winget upgrade OpenJS.NodeJS.LTS, or your version manager), then run this again."
     } else {
-      Winget 'OpenJS.NodeJS.LTS' 'Node.js'
-      if (-not (NodeVersionOk)) { throw 'Node.js did not install. Install Node.js 20.9 or newer, then run this again.' }
+      FromWinget 'OpenJS.NodeJS.LTS' 'Node.js'
+      if (-not (NodeVersionOk)) { throw 'Node.js did not install. Install Node.js 22.13 or newer, then run this again.' }
       Added "node $(node --version)"
     }
     if (Has pnpm) { Found "pnpm $(pnpm --version)" }
