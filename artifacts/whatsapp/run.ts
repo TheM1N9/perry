@@ -71,17 +71,14 @@ const control = createServer((request: IncomingMessage, response: ServerResponse
       case "/connect": wa.connects += 1; return done();
       case "/logout": wa.logouts += 1; return done();
       case "/code-requested": wa.codeRequested.push(data.phone); return done();
-      case "/call": wa.commands.push({ event: "call", data }); return done();
       default: return done(false);
     }
   });
 });
 await new Promise<void>((done) => control.listen(0, "127.0.0.1", done));
 const push = (...commands: object[]) => wa.commands.push(...commands);
-const incomingCall = (from: string, to: string, callId = `CALL${Date.now()}`) => push({
-  event: "call.offer",
-  data: { id: callId, from, to, isGroup: false, isVideo: false },
-});
+/** A call's update, as Baileys' "call" event carries it (a WACallEvent). */
+const callUpdate = (id: string, from: string, status: string) => push({ event: "call", data: [{ id, from, chatId: from, status, date: new Date().toISOString(), offline: false }] });
 let messageId = 0;
 const incoming = (remoteJid: string, text: string, extra: { fromMe?: boolean; message?: object; fakeBytes?: string } = {}) => push({
   event: "messages.upsert",
@@ -242,6 +239,32 @@ try {
   await until(() => sentTo(OWNER, at).some((message) => message.text === "Approved."), "the approval to be answered", 20);
   const settled = await call<{ status: string; decidedBy?: string }>("approvals:view", { id: approval.id });
   checks.approvalOnWhatsApp = prompt.includes("*") && prompt.includes("```") && settled.status === "approved" && settled.decidedBy === "whatsapp" && telegram.sent.length === telegramBefore;
+
+  // 5b. Calls: rung, answered and hung up, kept as one call in the owner's chat; an update twice is kept once.
+  type Call = { status: string; conversationId?: string; answeredAt?: number; endedAt?: number; durationMs?: number; endedReason?: string };
+  const callOf = (id: string) => call<Call | null>("whatsapp:callOf", { waCallId: id });
+  const CALL = `CALL${Date.now()}`;
+  const callsAt = Date.now();
+  callUpdate(CALL, "919876543210:7@s.whatsapp.net", "offer");
+  callUpdate(CALL, "919876543210:7@s.whatsapp.net", "offer");
+  await until(async () => (await callOf(CALL))?.status === "ringing", "the call to ring", 20);
+  const rang = await callOf(CALL);
+  callUpdate(CALL, OWNER, "accept");
+  await until(async () => (await callOf(CALL))?.status === "active", "the call to be answered", 20);
+  await sleep(1_200);
+  callUpdate(CALL, OWNER, "terminate");
+  await until(async () => (await callOf(CALL))?.status === "ended", "the call to end", 20);
+  const ended = (await callOf(CALL))!;
+  const MISSED = `MISSED${Date.now()}`;
+  callUpdate(MISSED, "15550001111@s.whatsapp.net", "offer");
+  callUpdate(MISSED, "15550001111@s.whatsapp.net", "timeout");
+  await until(async () => (await callOf(MISSED))?.status === "ended", "the missed call to end", 20);
+  const missed = (await callOf(MISSED))!;
+  notes.calls = { rang, ended, missed };
+  checks.callsKept = rang?.conversationId === chat && ended.endedReason === "terminate" && (ended.durationMs ?? 0) >= 1_000 && ended.answeredAt !== undefined
+    && missed.endedReason === "timeout" && missed.answeredAt === undefined && missed.conversationId === undefined;
+  // Kept, not answered: no turn runs and nothing is sent for a call.
+  checks.callNotAnsweredAsAMessage = wa.sent.filter((message) => message.at > callsAt).length === 0;
 
   // 6. Reports.
   const job = await call<{ id: string }>("jobs:create", { name: "Water", at: new Date(Date.now() + 3_600_000).toISOString(), prompt: "Remind me to drink water.", origin: chat });

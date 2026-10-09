@@ -394,6 +394,15 @@ export function runWhatsApp(runtime: Runtime): () => void {
           }));
         current.ev.on("contacts.upsert", (list: never[]) => people(list));
         current.ev.on("messaging-history.set", (history: { contacts?: never[] }) => people(history.contacts ?? []));
+        // Calls ringing, answered and ended, kept as they happen (convex/whatsapp.ts, callEvent).
+        current.ev.on("call", (calls: Array<{ id: string; from: string; chatId: string; status: string; isVideo?: boolean; isGroup?: boolean }>) => {
+          lastEvent = Date.now();
+          for (const call of calls) {
+            void runtime.runMutation("whatsapp:callEvent", {
+              id: call.id, from: call.from, chatId: call.chatId, status: call.status, ...(call.isVideo ? { isVideo: true } : {}), ...(call.isGroup ? { isGroup: true } : {}),
+            }, internal).catch((error) => console.error(`[perry] WhatsApp: could not keep a call: ${String(error)}`));
+          }
+        });
         current.ev.on("messages.upsert", (event: { type: string; messages: Array<Record<string, any>> }) => {
           lastEvent = Date.now();
           // "append" is history caught up after a reconnect: read, not answered (as OpenClaw does).
