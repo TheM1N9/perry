@@ -17,7 +17,7 @@ import {
 } from "@/convex/lib/commands";
 import { ENGINE_LABELS, type EngineKind } from "@/convex/lib/engines";
 import { noteHref } from "@/convex/lib/notes";
-import { limitWarning } from "@/convex/lib/usage";
+import { describeUsage, limitWarning } from "@/convex/lib/usage";
 import { copyText, errorText, useNow } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
@@ -58,6 +58,7 @@ const COMMANDS = [
   { command: "/model", hint: "List the models, or /model <name> to switch this chat" },
   { command: "/think", hint: "List the thinking levels, or /think <level>" },
   { command: "/access", hint: "Ask, Auto or Full access: whether it asks before acting" },
+  { command: "/usage", hint: "How much of this chat's model plan is used, and what is left" },
   { command: "/stop", hint: "Stop the reply being written" },
   { command: "/pause", hint: "Pause Perry: stop everything, start nothing new" },
   { command: "/resume", hint: "Start Perry again" },
@@ -450,6 +451,11 @@ export function ChatScreen() {
       return true;
     }
     const command = trimmed.toLowerCase();
+    if (command === "/usage") {
+      setDraft("");
+      setNotice(describeUsage(engine, engineUsage, Date.now()));
+      return true;
+    }
     if (command === "/stop") {
       setDraft("");
       if (selectedId && waiting) await stopChat({ key: dashboardKey, id: selectedId });

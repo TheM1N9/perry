@@ -1,0 +1,47 @@
+{
+  "ranAt": "2026-10-08T16:28:21.588Z",
+  "checks": {
+    "answeredAsACommand": true,
+    "noRunStarted": true,
+    "noReadingSaysSo": true,
+    "namesEngineAndPlan": true,
+    "fiveHourWindow": true,
+    "weeklyWindowRounded": true,
+    "resetWindowCountsAsUnused": true,
+    "everyWindowShown": true,
+    "readingAgeIsTheEnginesOwn": true,
+    "perrysShareShown": true,
+    "answersWhilePaused": true,
+    "switchedToGrok": true,
+    "otherEngineIsNamed": true,
+    "noLimitsSaysNoBalance": true,
+    "limitHitShown": true,
+    "inHelp": true
+  },
+  "notes": {
+    "noReading": "Claude Code usage\n\nNo reading of Claude Code's limits yet. Perry reads them every few minutes while its runner is online and Claude Code is signed in; try again shortly.\n\nPerry's share this week: 0 turns, 0 tokens.\n\nCounts all your Claude use. Subagents' tokens aren't in Perry's share.",
+    "withReading": "Claude Code usage (Max 5x)\n\n• 5-hour: 42% used, 58% left, resets at 11:32 pm\n• Weekly: 83% used, 17% left, resets Sun, 11 Oct, 9:57 pm\n• Weekly (Opus): 0% used, 100% left\n\nClaude Code is running low.\n\nPerry's share this week: 0 turns, 0 tokens.\n\nCounts all your Claude use. Subagents' tokens aren't in Perry's share. Read 2 h ago.",
+    "whilePaused": "Claude Code usage (Max 5x)\n\n• 5-hour: 42% used, 58% left, resets at 11:32 pm\n• Weekly: 83% used, 17% left, resets Sun, 11 Oct, 9:57 pm\n• Weekly (Opus): 0% used, 100% left\n\nClaude Code is running low.\n\nPerry's share this week: 0 turns, 0 tokens.\n\nCounts all your Claude use. Subagents' tokens aren't in Perry's share. Read 2 h ago.",
+    "grokModel": "grok-fake-fast",
+    "switched": "This chat now uses grok-fake-fast (grok-fake-fast). It moves to Grok Build, which picks up from the chat so far.",
+    "grok": "Grok Build usage\n\nGrok Build doesn't report its plan's limits, so there is no balance to show.\n\nPerry's share this week: 0 turns, 0 tokens.\n\nGrok Build doesn't report its limits. Perry says so here when it refuses a reply for one.",
+    "grokHit": "Grok Build usage\n\nGrok Build doesn't report its plan's limits, so there is no balance to show.\n\nGrok Build refused a reply for its limit: “You've hit your usage limit. Try again later.”\n\nPerry's share this week: 0 turns, 0 tokens.\n\nGrok Build doesn't report its limits. Perry says so here when it refuses a reply for one.",
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (linux)\u001b[0m",
+      "\u001b[2m  directory  /tmp/perry-usage-command-o8mmZl/workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m",
+      "  runner stopped. Assistant has no hands here now.",
+      "\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}
