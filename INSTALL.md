@@ -8,8 +8,8 @@ account on someone else's system, and nothing in this repo phones home.
 curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh    # macOS, Linux, WSL
 ```
 
-```powershell
-iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex   # Windows
+```bat
+powershell -c "irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"   # Windows: Command Prompt or PowerShell
 ```
 
 The installer adds what is missing: Git (Windows, through winget), Node.js 20.9
@@ -21,7 +21,8 @@ On macOS and Linux nothing it installs needs sudo. It clones Perry into
 setup`, which walks the steps below, connects this computer, builds the
 dashboard, starts Perry in the background, and opens the dashboard already
 unlocked. Run the installer again to update; `perry update` does the same from
-then on.
+then on. On Windows the installer runs in a PowerShell of its own, so open a new
+terminal afterwards for the `perry` command.
 
 Where nobody can answer questions (a server, CI, a script), name the default
 engine, and setup goes on without asking; without one it stops rather than
@@ -31,8 +32,8 @@ pick for you:
 curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh -s -- --engine claude
 ```
 
-```powershell
-$env:PERRY_ENGINE='claude'; iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
+```bat
+powershell -c "Set-Item Env:PERRY_ENGINE claude; irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"
 ```
 
 `perry setup --engine <name>` and `PERRY_ENGINE` do the same in a clone. The
@@ -383,8 +384,8 @@ only the pet (Git, Node.js and pnpm if missing, the `pet/` folder of this repo
 into `~/perry-pet`, and Electron), trades the code for that computer's own key,
 and starts him there, and at every login:
 
-```powershell
-$env:PERRY_PET='http://192.168.1.20:7377 ABCD-EFGH'; iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
+```bat
+powershell -c "Set-Item Env:PERRY_PET 'http://192.168.1.20:7377 ABCD-EFGH'; irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"
 ```
 
 ```bash

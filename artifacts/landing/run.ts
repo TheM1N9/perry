@@ -311,7 +311,7 @@ check("mascot: the closing one says hello when it comes into view", await evalua
 await evaluate(`const write = navigator.clipboard.writeText.bind(navigator.clipboard); navigator.clipboard.writeText = (t) => { window.copied = t; return write(t); }; true`);
 for (const [os, command] of [
   ["unix", "curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh"],
-  ["windows", "iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"],
+  ["windows", 'powershell -c "irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"'],
 ] as const) {
   await click(`[data-os="${os}"]`);
   await click(`[data-copy="install"]`);

@@ -65,10 +65,10 @@ macOS or Linux:
 curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh
 ```
 
-Windows (PowerShell):
+Windows (Command Prompt or PowerShell):
 
-```powershell
-iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex
+```bat
+powershell -c "irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"
 ```
 
 The installer adds anything missing (Node.js, pnpm, Bun), puts Perry in
@@ -80,7 +80,7 @@ computer. Change the engine any time in Settings → Engines.
 
 Installing where nobody can answer questions, such as a server or CI? Name
 the engine: `sh -s -- --engine claude` after the `curl ... |`, or
-`$env:PERRY_ENGINE='claude'` before the PowerShell line. Without it, setup
+`Set-Item Env:PERRY_ENGINE claude;` before the `irm` in the Windows line. Without it, setup
 stops rather than guess.
 
 Already cloned the repo? Run `pnpm install` and then `pnpm perry setup`.

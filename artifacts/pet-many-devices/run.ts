@@ -266,7 +266,7 @@ try {
   const windowsLine = lines.find((line) => line.includes("install.ps1")) ?? "";
   const unixLine = lines.find((line) => line.includes("install.sh")) ?? "";
   notes.linesShown = [windowsLine, unixLine];
-  checks.lineHasAddressAndCode = windowsLine.includes(`$env:PERRY_PET='${LAN} ${code}'`) && unixLine.includes(`PERRY_PET='${LAN} ${code}'`);
+  checks.lineHasAddressAndCode = windowsLine.includes(`Set-Item Env:PERRY_PET '${LAN} ${code}'`) && unixLine.includes(`PERRY_PET='${LAN} ${code}'`);
   await scrollTo("On your other computers");
   await shot("settings-add-a-computer.png");
 

@@ -219,7 +219,7 @@ await expectEvent("footer Install guide sends GitHub click {link: install_guide}
 
 const installers = {
   unix: "curl -fsSL https://raw.githubusercontent.com/TheM1N9/perry/main/install.sh | sh",
-  windows: "iwr -useb https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex",
+  windows: 'powershell -c "irm https://raw.githubusercontent.com/TheM1N9/perry/main/install.ps1 | iex"',
 } as const;
 for (const os of ["unix", "windows"] as const) {
   await click(page, `[data-os="${os}"]`);
