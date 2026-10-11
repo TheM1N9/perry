@@ -61,6 +61,9 @@ import { KEY as STAND_IN_KEY, startStandIn } from "./stand-in";
 //      field must sit below every section of the Connectors page.
 //  17. A real failure is hidden along with "no key": with a key Composio
 //      refuses (stand-in only), the page must say it couldn't reach Composio.
+//  18. Composio's GitHub is still offered or shown: GitHub connects with a
+//      token now (artifacts/github-token), so a GitHub connection at Composio
+//      (the stand-in has one) must not be a card, nor GitHub in the catalogue.
 
 const [outDir, given] = process.argv.slice(2);
 if (!outDir) throw new Error("usage: bun artifacts/connector-accounts/run.ts <outDir> [composio key | --stand-in]");
@@ -169,8 +172,10 @@ try {
     standIn.set("ca_gmail_sam", "EXPIRED");
     standIn.set("ca_cal_old", "EXPIRED");
   }
-  const expected = await truth();
-  notes.composio = expected.map((item) => `${item.toolkit.slug} ${item.status}`);
+  const atComposio = await truth();
+  // Composio's GitHub is retired (18): every other connection is expected on the page.
+  const expected = atComposio.filter((item) => item.toolkit.slug !== "github");
+  notes.composio = atComposio.map((item) => `${item.toolkit.slug} ${item.status}`);
   const now = await call<{ accounts: Account[] }>("dashboard:getConnectedAccounts", { key: KEY });
   for (const item of [...first.accounts, ...now.accounts]) alias(item.account);
   notes.accounts = now.accounts.map((item) => `${item.name} | ${item.status} | ${item.account ?? "-"}`);
@@ -316,6 +321,11 @@ try {
     // 12. The catalogue: Gmail has one working account (signed in twice) and one expired.
     notes.catalogue = { gmail: await catalogueNote("Popular apps", "Gmail"), calendar: await catalogueNote("Popular apps", "Google Calendar"), notion: await catalogueNote("Popular apps", "Notion") };
     checks.catalogueCountsAccounts = JSON.stringify(notes.catalogue) === JSON.stringify({ gmail: "Connected", calendar: "Connected", notion: "" });
+    // 18. The stand-in has a GitHub connection and GitHub in its catalogue; neither shows.
+    const listedApps = await evaluate(`[...document.querySelectorAll('[aria-label="Popular apps"] > li, [aria-label="All apps"] > li')].map((li) => li.innerText.split("\\n")[0])`) as string[];
+    checks.composioGitHubRetired = atComposio.some((item) => item.toolkit.slug === "github") && !names.includes("GitHub") && listedApps.length > 0 && !listedApps.includes("GitHub")
+      && !now.accounts.some((item) => item.toolkit === "github");
+    notes.listedApps = listedApps;
     await shoot("connectors-page.png");
 
     // 11. Search by app and by address.

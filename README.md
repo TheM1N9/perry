@@ -40,7 +40,8 @@ can run their own copy, and every copy is separate.
 - **"Clean up my Downloads folder."** Works on your computer, with a shell and
   your files, asking before anything outside its sandbox.
 - **"What's on my calendar? Draft a reply to that email."** Connects to Gmail,
-  Google Calendar, Notion and more through [Composio](https://composio.dev).
+  Google Calendar, Notion and more through [Composio](https://composio.dev),
+  and to GitHub with a token you make there.
 - **"From now on, keep replies short."** Remembers who you are, what you like
   and what you told it last week.
 - **"Note this: passport renewal by May."** Keeps notes you both edit: packing
@@ -120,7 +121,8 @@ stays on, like a Mac mini or a home server.
 - **Everything is logged.** Every reply has a trace of the commands, file
   changes and tool calls behind it.
 - **Your data is local.** Chats, memory, notes and files live in `~/.perry`.
-  Connected-account tokens are held by Composio, never by Perry.
+  Connected-account tokens are held by Composio, never by Perry, except a
+  GitHub token you paste, which stays in `~/.perry` and is never shown again.
 
 ## Contributing
 

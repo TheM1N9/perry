@@ -118,6 +118,27 @@ export const set = internalMutation({
 });
 
 /**
+ * A token a connection keeps (github.ts). Not a key: it is not in SECRET_NAMES, so no key field lists or saves it,
+ * and only its connection writes it, after the service has said whose it is. An empty value drops it.
+ */
+export const keepToken = internalMutation({
+  args: { name: v.literal("PERRY_GITHUB_TOKEN"), value: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("secrets").withIndex("by_name", (q) => q.eq("name", args.name)).unique();
+    const value = args.value.trim();
+    if (!value) {
+      if (existing) await ctx.db.delete(existing._id);
+    } else if (existing) {
+      await ctx.db.patch(existing._id, { value, updatedAt: Date.now() });
+    } else {
+      await ctx.db.insert("secrets", { name: args.name, value, updatedAt: Date.now() });
+    }
+    return null;
+  },
+});
+
+/**
  * Drop the stored value. If the deployment still has an environment variable
  * of the same name, that takes over again rather than leaving nothing.
  */
