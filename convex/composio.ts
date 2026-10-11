@@ -405,8 +405,11 @@ export const connectWithToken = internalAction({
       const composio = client(apiKey);
       const slug = args.toolkit.toLowerCase().trim();
 
+      // Matched on name too, not just authScheme: otherwise an unrelated auth
+      // config the owner made by hand (or Composio's own) that happens to
+      // share the scheme would get silently reused and mutated.
       const existing = (await composio.authConfigs.list({ toolkit: slug })).items.find(
-        (config) => config.authScheme === args.mode,
+        (config) => config.authScheme === args.mode && config.name === `${slug} (token)`,
       );
       // A custom auth config the agent's tool-router session can't see is
       // connected only on paper: the dashboard shows it, but search/execute

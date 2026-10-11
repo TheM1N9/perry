@@ -425,7 +425,7 @@ function TokenConnectDialog({ app, onClose, getOptions, onSubmit, onConnected }:
       if (cancelled) return;
       setOptions(result.options);
       setError(result.options.length === 0 ? (result.error ?? `${app.name} only offers signing in, not a pasted token.`) : null);
-    }, (cause) => { if (!cancelled) setError(errorText(cause)); });
+    }, (cause) => { if (!cancelled) { setOptions([]); setError(errorText(cause)); } });
     return () => { cancelled = true; };
   }, [app, getOptions]);
 
