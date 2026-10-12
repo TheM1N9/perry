@@ -679,7 +679,7 @@ export function ChatScreen() {
               <AlertTitle>Choose the engine {assistant} thinks with</AlertTitle>
               <AlertDescription>{assistant} doesn&apos;t pick one for you. Choose a default for every chat, or pick a model for this one in the box below.</AlertDescription>
               <AlertAction>
-                <Button size="sm" render={<Link href="/settings/engines" />}>Choose</Button>
+                <Button size="sm" nativeButton={false} render={<Link href="/settings/engines" />}>Choose</Button>
               </AlertAction>
             </Alert>
           )}
@@ -709,7 +709,7 @@ export function ChatScreen() {
                 </div>
               )}
               {missing && (
-                <EmptyState mascot title="This chat isn't here" action={<Button size="sm" render={<Link href="/chat" />}>New chat</Button>}>
+                <EmptyState mascot title="This chat isn't here" action={<Button size="sm" nativeButton={false} render={<Link href="/chat" />}>New chat</Button>}>
                   It may have been deleted.
                 </EmptyState>
               )}
@@ -862,7 +862,7 @@ function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, o
   const router = useRouter();
   return (
     <>
-      <Button variant="ghost" size="icon-sm" className="text-muted-foreground md:hidden" aria-label="New chat" render={<Link href="/chat" />}>
+      <Button variant="ghost" size="icon-sm" className="text-muted-foreground md:hidden" aria-label="New chat" nativeButton={false} render={<Link href="/chat" />}>
         <SquarePenIcon />
       </Button>
       <DropdownMenu>
