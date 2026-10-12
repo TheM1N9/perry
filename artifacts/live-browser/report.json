@@ -1,9 +1,8 @@
 {
-  "at": "2026-10-12T20:26:23.841Z",
+  "at": "2026-10-12T20:33:29.700Z",
   "platform": "darwin",
   "browser": "Installed Chromium, disposable profile",
   "cookieSource": "Reviewed Firefox schema 17 SQLite fixture (not an installed-profile compatibility check)",
-  "scratch": "/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-browser-e2e-k8z2oM",
   "checks": [
     {
       "name": "owner auth, same-origin, insecure remote, and unknown chat denied",
