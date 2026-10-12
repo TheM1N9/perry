@@ -4,18 +4,18 @@
 
 ▲ Next.js 16.3.6 (Turbopack)
 - Environments: .env.local
-✓ Running next.config.ts took 14ms
+✓ Running next.config.ts took 204ms
 
   Creating an optimized production build ...
-✓ Compiled successfully in 1604ms
+✓ Compiled successfully in 4.8s
   Running TypeScript ...
-  Finished TypeScript in 2.5s ...
+  Finished TypeScript in 4.8s ...
   Collecting page data using 9 workers ...
   Generating static pages using 9 workers (0/33) ...
   Generating static pages using 9 workers (8/33)
   Generating static pages using 9 workers (16/33)
   Generating static pages using 9 workers (24/33)
-✓ Generating static pages using 9 workers (33/33) in 295ms
+✓ Generating static pages using 9 workers (33/33) in 963ms
 Turbopack build encountered 3 warnings:
 ./convex/lib/browser.ts:53:17
 Warning: Dynamic filesystem access causes tracing of the whole project

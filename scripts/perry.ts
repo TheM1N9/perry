@@ -208,6 +208,16 @@ async function runForeground(background = false) {
     say(`\n${red("Perry is not set up yet.")} Run ${bold("perry setup")} first.\n`);
     process.exit(1);
   }
+  const pidFile = process.env.PERRY_SERVICE_PID_FILE;
+  if (background && pidFile) {
+    // Wait for the native launcher to assign this process to its job before creating any descendants.
+    const deadline = Date.now() + 10_000;
+    while (true) {
+      try { if (readFileSync(pidFile, "utf8").startsWith(`${process.pid} `)) break; } catch {}
+      if (Date.now() >= deadline) throw new Error("The Windows launcher did not establish process ownership within 10 seconds");
+      await new Promise((done) => setTimeout(done, 25));
+    }
+  }
   // One supervisor per home, including foreground/debug launches. Never stop another instance implicitly.
   mkdirSync(HOME, { recursive: true });
   const lock = join(HOME, "perry.pid");
@@ -234,7 +244,6 @@ async function runForeground(background = false) {
     process.exit(1);
   }
   // The Windows service stops this process by the PID it notes here; the runner must not note its own.
-  const pidFile = process.env.PERRY_SERVICE_PID_FILE;
   const childEnv = { ...process.env };
   delete childEnv.PERRY_SERVICE_PID_FILE;
   // The native Windows launcher records both PID and process creation time before this script starts.

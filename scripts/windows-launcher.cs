@@ -104,6 +104,8 @@ class PerryLauncher
                     };
                     foreach (XmlNode variable in config.SelectNodes("/Launcher/Environment/Variable"))
                         start.EnvironmentVariables[variable.Attributes["name"].Value] = variable.InnerText;
+                    string pidFile = start.EnvironmentVariables["PERRY_SERVICE_PID_FILE"];
+                    if (!String.IsNullOrEmpty(pidFile)) File.Delete(pidFile);
                     Log("[launcher] starting Perry");
                     using (var child = Process.Start(start))
                     using (var job = new SafeFileHandle(CreateJobObject(IntPtr.Zero, null), true))
@@ -117,7 +119,6 @@ class PerryLauncher
                             child.Kill();
                             throw new Win32Exception(error, "Could not manage Perry's process tree");
                         }
-                        string pidFile = start.EnvironmentVariables["PERRY_SERVICE_PID_FILE"];
                         if (!String.IsNullOrEmpty(pidFile)) File.WriteAllText(pidFile, child.Id + " " + child.StartTime.ToUniversalTime().Ticks);
                         child.StandardInput.Close();
                         var stdout = Task.Factory.StartNew(() => Drain(child.StandardOutput));

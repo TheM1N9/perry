@@ -38,6 +38,11 @@ try {
 } catch (error) {
   if (error instanceof Error && error.message.startsWith("Port")) throw error;
 }
+const handoff = spawnSync(process.execPath, [join(repo, "scripts", "perry.ts"), "run", "--background"], {
+  cwd: repo, env: { ...env, PERRY_SERVICE_PID_FILE: join(home, "unclaimed.pid") }, encoding: "utf8", windowsHide: true, timeout: 15_000,
+});
+expect(handoff.status === 1 && handoff.stderr.includes("did not establish process ownership"), "missing native ownership handoff fails within 10 seconds");
+expect(!existsSync(join(home, "runner.json")), "failed handoff starts no runner");
 const supervisor = spawn(process.execPath, [join(repo, "scripts", "perry.ts"), "run", "--background"], { cwd: repo, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 let log = "";
 supervisor.stdout.on("data", (chunk) => { log += chunk; });
