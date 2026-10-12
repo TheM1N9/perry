@@ -9,6 +9,7 @@ import type * as archive from "../archive.js";
 import type * as assistant from "../assistant.js";
 import type * as brain from "../brain.js";
 import type * as brainMap from "../brainMap.js";
+import type * as browserView from "../browserView.js";
 import type * as channels from "../channels.js";
 import type * as codex from "../codex.js";
 import type * as compaction from "../compaction.js";
@@ -96,6 +97,7 @@ declare const fullApi: ApiFromModules<{
   assistant: typeof assistant;
   brain: typeof brain;
   brainMap: typeof brainMap;
+  browserView: typeof browserView;
   channels: typeof channels;
   codex: typeof codex;
   compaction: typeof compaction;
