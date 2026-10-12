@@ -187,6 +187,20 @@ if (!app.requestSingleInstanceLock({ argv })) {
 } else {
   let win = null;
   let tray = null;
+  const healthStartedAt = Date.now();
+  let healthLabel = "Starting Perry…";
+  const refreshHealth = () => {
+    if (PAIRED) return;
+    let label = Date.now() - healthStartedAt > 90_000 ? "Perry is unavailable — open logs" : "Starting Perry…";
+    try {
+      const status = JSON.parse(readFileSync(join(HOME, "service", "status.json"), "utf8"));
+      if (Date.now() - status.at < 15_000 && Number.isSafeInteger(status.pid) && status.pid > 0) {
+        process.kill(status.pid, 0);
+        label = status.state === "ready" ? "Perry is ready" : status.state === "starting" ? "Starting Perry…" : "Perry is unavailable — open logs";
+      } else label = "Perry is unavailable — open logs";
+    } catch { if (existsSync(join(HOME, "service", "status.json"))) label = "Perry is unavailable — open logs"; }
+    if (label !== healthLabel) { healthLabel = label; refreshMenu(); }
+  };
   /** Ghost: every click goes through him, even on him. */
   let ghost = Boolean(readState().ghost);
   /** Whether his page last said the pointer is on him (pet:solid): his window takes clicks then. */
@@ -389,8 +403,13 @@ if (!app.requestSingleInstanceLock({ argv })) {
 
   function refreshMenu() {
     if (!tray) return;
+    tray.setToolTip(PAIRED ? "Perry" : healthLabel);
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: "Perry", enabled: false },
+      ...(!PAIRED ? [
+        { label: healthLabel, enabled: false },
+        { label: "Open logs", click: () => { mkdirSync(join(HOME, "logs"), { recursive: true }); void shell.openPath(join(HOME, "logs")); } },
+      ] : []),
       wanted ? { label: "Hide", click: hide } : { label: "Show", click: show },
       { label: "Let clicks through him", type: "checkbox", checked: ghost, click: (item) => {
         ghost = item.checked;
@@ -574,6 +593,8 @@ if (!app.requestSingleInstanceLock({ argv })) {
     tray.on("click", () => (wanted ? hide() : show()));
     refreshMenu();
 
+    refreshHealth();
+    setInterval(refreshHealth, 3000);
     void load();
   });
 

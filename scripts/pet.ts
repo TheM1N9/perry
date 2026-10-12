@@ -136,7 +136,7 @@ export function launch(program: string, args: string[] = [], app = PET) {
     spawn("open", opening, { cwd: app, env, detached: true, stdio: "ignore" }).unref();
     return;
   }
-  spawn(program, [app, ...args], { cwd: app, env, detached: true, stdio: "ignore", windowsHide: false }).unref();
+  spawn(program, [app, ...args], { cwd: app, env, detached: true, stdio: "ignore", windowsHide: true }).unref();
 }
 
 /**

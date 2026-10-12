@@ -1,0 +1,192 @@
+
+> perry@0.1.0 build /Users/rishabh/Documents/ChatGPT/Perry/.worktrees/issue-284
+> next build
+
+▲ Next.js 16.3.6 (Turbopack)
+- Environments: .env.local
+✓ Running next.config.ts took 14ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 1604ms
+  Running TypeScript ...
+  Finished TypeScript in 2.5s ...
+  Collecting page data using 9 workers ...
+  Generating static pages using 9 workers (0/33) ...
+  Generating static pages using 9 workers (8/33)
+  Generating static pages using 9 workers (16/33)
+  Generating static pages using 9 workers (24/33)
+✓ Generating static pages using 9 workers (33/33) in 295ms
+Turbopack build encountered 3 warnings:
+./convex/lib/browser.ts:53:17
+Warning: Dynamic filesystem access causes tracing of the whole project
+  [90m51 |[0m   mkdirSync([33mPROFILE[0m, { recursive: [36mtrue[0m });
+  [90m52 |[0m   rmSync(join([33mPROFILE[0m, [32m"DevToolsActivePort"[0m), { force: [36mtrue[0m });
+[33m[1m>[0m [90m53 |[0m   [36mconst[0m child = spawn(path, [
+  [90m   |[0m                 [33m[1m^^^^^^^^^^^^[0m
+[33m[1m>[0m [90m54 |[0m     [32m`--user-data-dir=[0m${[33mPROFILE[0m[32m}`[0m, [32m"--remote-debugging-port=0"[0m, [32m"--no-first-run"[0m, [32m"--no-def...[0m
+  [90m   |[0m [33m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[33m[1m>[0m [90m55 |[0m     [32m"--window-size=1280,900"[0m, ...(process.env.[33mPERRY_BROWSER_HEADED[0m === [32m"1"[0m ? [] : [[32m"--head...[0m
+  [90m   |[0m [33m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[33m[1m>[0m [90m56 |[0m   ], { stdio: [32m"ignore"[0m, windowsHide: [36mtrue[0m });
+  [90m   |[0m [33m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m57 |[0m   child.on([32m"error"[0m, () => {});
+  [90m58 |[0m   [36mlet[0m port = [35m0[0m;
+  [90m59 |[0m   [36mfor[0m ([36mlet[0m i = [35m0[0m; i < [35m100[0m && !port; i++) {
+
+Static analysis determined that this filesystem access causes the whole project to be traced and included in the output.
+This is usually unintentional and leads to all source files (including the public folder) to be deployed as part of the server code.
+This can slow down deployments or lead to failures when size limits are exceeded.
+To resolve this, you can
+- make sure the path is statically scoped to some subfolder, for example path.join(process.cwd(), 'data', bar), or
+- only use them in development, or
+- opt out by adding an ignore comment to the highlighted call: child_process.spawn(/*turbopackIgnore: true*/ ...), or
+- remove them.
+
+Import traces:
+  #1 [App Route]:
+    ./convex/lib/browser.ts
+    ./server/wake.ts
+    ./server/index.ts
+    ./app/api/backend/events/route.ts
+
+  #2 [App Route]:
+    ./convex/lib/browser.ts
+    ./server/modules.ts
+    ./server/index.ts
+    ./app/api/backend/storage/[id]/route.ts
+
+  #3 [Instrumentation]:
+    ./convex/lib/browser.ts
+    ./server/modules.ts
+    ./server/index.ts
+    ./instrumentation.ts
+
+
+./convex/pet.ts:139:19
+Warning: Dynamic filesystem access causes tracing of the whole project
+  [90m137 |[0m   [36mconst[0m repo = process.cwd();
+  [90m138 |[0m   [36mreturn[0m [36mnew[0m [33mPromise[0m((resolve) => {
+[33m[1m>[0m [90m139 |[0m     [36mconst[0m child = spawn(process.env.[33mPERRY_BUN[0m || [32m"bun"[0m, [join(repo, [32m"scripts"[0m, [32m"perry.ts"[0m...
+  [90m    |[0m                   [33m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[33m[1m>[0m [90m140 |[0m       cwd: repo,
+  [90m    |[0m [33m[1m^^^^^^^^^^^^^^^^[0m
+[33m[1m>[0m [90m141 |[0m       env: { ...process.env, [33mPERRY_PROGRESS[0m: [32m"1"[0m },
+  [90m    |[0m [33m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[33m[1m>[0m [90m142 |[0m       stdio: [[32m"ignore"[0m, [32m"pipe"[0m, [32m"pipe"[0m],
+  [90m    |[0m [33m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[33m[1m>[0m [90m143 |[0m       windowsHide: [36mtrue[0m,
+  [90m    |[0m [33m[1m^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[33m[1m>[0m [90m144 |[0m     });
+  [90m    |[0m [33m[1m^^^^^^[0m
+  [90m145 |[0m     [36mlet[0m output = [32m""[0m;
+  [90m146 |[0m     [36mlet[0m partial = [32m""[0m;
+  [90m147 |[0m     child.stdout.on([32m"data"[0m, (chunk: [33mBuffer[0m) => {
+
+Static analysis determined that this filesystem access causes the whole project to be traced and included in the output.
+This is usually unintentional and leads to all source files (including the public folder) to be deployed as part of the server code.
+This can slow down deployments or lead to failures when size limits are exceeded.
+To resolve this, you can
+- make sure the path is statically scoped to some subfolder, for example path.join(process.cwd(), 'data', bar), or
+- only use them in development, or
+- opt out by adding an ignore comment to the highlighted call: child_process.spawn(/*turbopackIgnore: true*/ ...), or
+- remove them.
+
+Import traces:
+  #1 [App Route]:
+    ./convex/pet.ts
+    ./server/wake.ts
+    ./server/index.ts
+    ./app/api/backend/events/route.ts
+
+  #2 [App Route]:
+    ./convex/pet.ts
+    ./server/modules.ts
+    ./server/index.ts
+    ./app/api/backend/http/[...path]/route.ts
+
+  #3 [Instrumentation]:
+    ./convex/pet.ts
+    ./server/modules.ts
+    ./server/index.ts
+    ./instrumentation.ts
+
+
+./server/wake.ts:97:19
+Warning: Dynamic filesystem access causes tracing of the whole project
+  [90m 95 |[0m ...md-inhibit[32m", ["[0m--what=sleep:idle[32m", "[0m--who=[33mPerry[0m[32m", "[0m--why=[33mPerry[0m is working on something[32m...[0m
+  [90m 96 |[0m ...
+[33m[1m>[0m [90m 97 |[0m ...[32m = spawn(command, args, { windowsHide: true, stdio: ["[0mpipe[32m", "[0mignore[32m", "[0mignore[32m"] });[0m
+  [90m    |[0m       [33m[1m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  [90m 98 |[0m ...rror[32m", () => {});[0m
+  [90m 99 |[0m ...[32m?.on("[0merror[32m", () => {});[0m
+  [90m100 |[0m ...[32md;[0m
+
+Static analysis determined that this filesystem access causes the whole project to be traced and included in the output.
+This is usually unintentional and leads to all source files (including the public folder) to be deployed as part of the server code.
+This can slow down deployments or lead to failures when size limits are exceeded.
+To resolve this, you can
+- make sure the path is statically scoped to some subfolder, for example path.join(process.cwd(), 'data', bar), or
+- only use them in development, or
+- opt out by adding an ignore comment to the highlighted call: child_process.spawn(/*turbopackIgnore: true*/ ...), or
+- remove them.
+
+Import traces:
+  #1 [App Route]:
+    ./server/wake.ts
+    ./server/index.ts
+    ./app/api/backend/http/[...path]/route.ts
+
+  #2 [Instrumentation]:
+    ./server/wake.ts
+    ./server/index.ts
+    ./instrumentation.ts
+
+  #3 [App Route]:
+    ./server/wake.ts
+    ./server/wake.ts
+    ./server/index.ts
+    ./app/api/backend/events/route.ts
+
+
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/backend/admin
+├ ƒ /api/backend/call
+├ ƒ /api/backend/events
+├ ƒ /api/backend/http/[...path]
+├ ƒ /api/backend/import
+├ ƒ /api/backend/storage/[id]
+├ ƒ /api/backend/storage/upload
+├ ƒ /api/media
+├ ƒ /api/media/[id]
+├ ƒ /api/media/library/[id]
+├ ○ /apps/connectors
+├ ○ /apps/skills
+├ ○ /brain
+├ ƒ /brain/[id]
+├ ○ /chat
+├ ƒ /chat/[id]
+├ ○ /icon.svg
+├ ○ /inbox
+├ ○ /library
+├ ƒ /library/[id]
+├ ○ /pet
+├ ƒ /projects/[id]
+├   /settings/[section]
+│ ├ ● /settings/general
+│ ├ ● /settings/engines
+│ ├ ● /settings/usage
+│ └ ● [+10 more paths]
+├ ○ /todos
+├ ○ /welcome
+└ ○ /work
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+●  (SSG)      prerendered as static HTML (uses generateStaticParams)
+ƒ  (Dynamic)  server-rendered on demand

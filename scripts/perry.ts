@@ -34,6 +34,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync
 import { homedir, hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 import { standing, type UpdateRequest, type UpdateResult } from "../convex/lib/checkout";
 import { reachableAddresses } from "../convex/lib/devices";
 import { HOME, PATHS, readRunnerConfig, writeRunnerConfig } from "../runner/home";
@@ -130,11 +131,31 @@ export async function dashboardUp(): Promise<boolean> {
 }
 
 export async function waitFor(check: () => Promise<boolean>, seconds: number): Promise<boolean> {
-  for (let i = 0; i < seconds; i++) {
+  const deadline = Date.now() + seconds * 1000;
+  while (Date.now() < deadline) {
     if (await check()) return true;
     await new Promise((r) => setTimeout(r, 1000));
   }
-  return check();
+  return false;
+}
+
+const runnerHealth = z.object({ value: z.array(z.object({ token: z.string(), revoked: z.boolean(), lastSeenAt: z.number().optional() })) });
+
+/** A responding backend and a recent check-in from this home's live runner, rather than just an HTTP page. */
+export async function runnerReady(): Promise<boolean> {
+  const config = readRunnerConfig();
+  if (!config.token || !runnerHeldBy(config.token)) return false;
+  try {
+    const response = await fetch(`http://127.0.0.1:${PORT}/api/backend/admin`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-perry-key": readEnvFile().DASHBOARD_KEY ?? "" },
+      body: JSON.stringify({ path: "runner:listRunners", args: {} }),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!response.ok) return false;
+    const body = runnerHealth.safeParse(await response.json());
+    return body.success && body.data.value.some((runner) => runner.token === config.token && !runner.revoked && (runner.lastSeenAt ?? 0) > Date.now() - 90_000);
+  } catch { return false; }
 }
 
 /** The runner already running with this token, if another process holds its lock. */
@@ -182,16 +203,42 @@ export function killTree(pid: number) {
   else try { process.kill(pid, "SIGTERM"); } catch {}
 }
 
-async function runForeground() {
+async function runForeground(background = false) {
   if (!readEnvFile().DASHBOARD_KEY) {
     say(`\n${red("Perry is not set up yet.")} Run ${bold("perry setup")} first.\n`);
+    process.exit(1);
+  }
+  // One supervisor per home, including foreground/debug launches. Never stop another instance implicitly.
+  mkdirSync(HOME, { recursive: true });
+  const lock = join(HOME, "perry.pid");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      writeFileSync(lock, String(process.pid), { flag: "wx" });
+      process.on("exit", () => { try { if (readFileSync(lock, "utf8") === String(process.pid)) rmSync(lock); } catch {} });
+      break;
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
+      const pid = Number(readFileSync(lock, "utf8"));
+      let alive = false;
+      try { if (Number.isSafeInteger(pid) && pid > 0) { process.kill(pid, 0); alive = true; } } catch {}
+      if (alive || attempt === 1) {
+        say("Perry is already running. Use perry stop before perry run for foreground debugging.");
+        process.exit(1);
+      }
+      rmSync(lock, { force: true });
+    }
+  }
+  const config = readRunnerConfig();
+  if (config.token && runnerHeldBy(config.token)) {
+    say("This runner is already running. Stop it before perry run for foreground debugging.");
     process.exit(1);
   }
   // The Windows service stops this process by the PID it notes here; the runner must not note its own.
   const pidFile = process.env.PERRY_SERVICE_PID_FILE;
   const childEnv = { ...process.env };
   delete childEnv.PERRY_SERVICE_PID_FILE;
-  if (pidFile) {
+  // The native Windows launcher records both PID and process creation time before this script starts.
+  if (pidFile && !background) {
     mkdirSync(dirname(pidFile), { recursive: true });
     writeFileSync(pidFile, String(process.pid));
   }
@@ -204,30 +251,56 @@ async function runForeground() {
     writeRunnerConfig({ ...runnerConfig, url: here });
   }
 
-  const stamp = () => new Date().toISOString().slice(11, 19);
+  const stamp = () => new Date().toISOString();
+  const head = exec(tool("git", ["rev-parse", "--short", "HEAD"]), { quiet: true });
+  const node = nodePath();
+  const nodeVersion = exec([node, "--version"], { quiet: true });
+  process.stdout.write(`${stamp()} [perry] version ${head.code === 0 ? head.output : "unknown"}; Bun ${process.versions.bun}; Node ${nodeVersion.code === 0 ? nodeVersion.output : "unavailable"}\n`);
   const children: Managed[] = [
     { name: "runner", argv: [process.execPath, join(REPO, "runner", "index.ts")], env: childEnv, failures: 0, startedAt: 0 },
     // PERRY_BUN: the dashboard can start `perry pet` itself (Settings → Desktop pet), and Bun runs it.
     // PERRY_SUPERVISOR: this process, which does the updates the dashboard asks for (convex/updates.ts).
-    { name: "dashboard", argv: [nodePath(), NEXT_CLI, "start", "-p", String(PORT), ...(HOST ? ["-H", HOST] : [])], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT), PERRY_BUN: process.execPath, PERRY_SUPERVISOR: String(process.pid) }, failures: 0, startedAt: 0 },
+    { name: "dashboard", argv: [node, NEXT_CLI, "start", "-p", String(PORT), ...(HOST ? ["-H", HOST] : [])], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT), PERRY_BUN: process.execPath, PERRY_SUPERVISOR: String(process.pid) }, failures: 0, startedAt: 0 },
   ];
   let stopping = false;
   // Stopped for an update: not started again until it is done.
   let paused = false;
   let updating = false;
+  const statusFile = join(HOME, "service", "status.json");
+  mkdirSync(dirname(statusFile), { recursive: true });
+  let lastState = "";
+  const report = (state: "starting" | "ready" | "failed" | "stopped", detail: string) => {
+    writeFileSync(statusFile, JSON.stringify({ pid: process.pid, at: Date.now(), state, detail }));
+    if (`${state}: ${detail}` !== lastState) process.stdout.write(`${stamp()} [perry] ${state}: ${detail}\n`);
+    lastState = `${state}: ${detail}`;
+  };
+  report("starting", "Waiting for the dashboard and local runner");
 
   const launch = (child: Managed) => {
     child.startedAt = Date.now();
     const proc = spawn(child.argv[0], child.argv.slice(1), { cwd: REPO, env: child.env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     child.proc = proc;
     const prefix = (chunk: Buffer) => chunk.toString("utf8").split(/\r?\n/).filter((line) => line.trim()).map((line) => `${stamp()} [${child.name}] ${line}\n`).join("");
-    proc.stdout?.on("data", (chunk: Buffer) => process.stdout.write(prefix(chunk)));
-    proc.stderr?.on("data", (chunk: Buffer) => process.stdout.write(prefix(chunk)));
+    // Runner output includes private chat titles, command arguments and approvals. Detailed output is explicit: perry run.
+    let warned = false;
+    proc.stdout?.on("data", (chunk: Buffer) => { if (!background) process.stdout.write(prefix(chunk)); });
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      if (!background) process.stdout.write(prefix(chunk));
+      else if (!warned) {
+        warned = true;
+        process.stdout.write(`${stamp()} [${child.name}] wrote to stderr; use perry stop then perry run for details\n`);
+      }
+    });
     proc.on("error", (error) => process.stdout.write(`${stamp()} [${child.name}] could not start: ${error.message}\n`));
-    proc.on("exit", (code) => {
+    proc.on("close", (code) => {
       if (stopping || paused) return;
       // One that ran a while and then died starts again at once; one that keeps dying backs off, to 5 minutes.
       child.failures = Date.now() - child.startedAt > 60_000 ? 0 : child.failures + 1;
+      report("failed", `${child.name} exited (${code ?? "signal"})`);
+      if (child.failures >= 10) {
+        process.stdout.write(`${stamp()} [perry] ${child.name} failed 10 times; use perry stop then perry start to retry\n`);
+        return;
+      }
       const wait = Math.min(300, 2 ** child.failures) * 1000;
       process.stdout.write(`${stamp()} [perry] ${child.name} exited (${code ?? "signal"}); starting it again in ${wait / 1000}s\n`);
       child.retry = setTimeout(() => { if (!stopping && !paused) launch(child); }, wait);
@@ -269,6 +342,7 @@ async function runForeground() {
   const stop = () => {
     if (stopping) return;
     stopping = true;
+    report("stopped", "Perry was stopped");
     process.stdout.write(`${stamp()} [perry] stopping\n`);
     for (const child of children) if (child.proc?.pid && child.proc.exitCode === null) killTree(child.proc.pid);
     if (pidFile) rmSync(pidFile, { force: true });
@@ -279,6 +353,20 @@ async function runForeground() {
 
   process.stdout.write(`${stamp()} [perry] starting the runner and the dashboard on ${dashboardUrl()}\n`);
   for (const child of children) launch(child);
+  let checking = false;
+  const startedAt = Date.now();
+  setInterval(async () => {
+    if (checking || stopping) return;
+    checking = true;
+    try {
+      const ready = !paused && children.every((child) => child.proc?.exitCode === null && child.proc?.signalCode === null) && await runnerReady();
+      if (stopping) return;
+      if (paused) report("starting", "Updating Perry");
+      else if (ready) report("ready", "Dashboard and local runner connected");
+      else if (lastState.startsWith("failed:") || Date.now() - startedAt > 90_000) report("failed", "Dashboard or local runner is unavailable; open logs for diagnostics");
+      else report("starting", "Waiting for the dashboard and local runner");
+    } finally { checking = false; }
+  }, 3000);
 }
 
 // --- Updates Perry does on himself ---------------------------------------------
@@ -648,12 +736,15 @@ async function start({ pet = true } = {}): Promise<boolean> {
   if (!existsSync(BUILD_ID) && !(await build())) return false;
   const ctx = serviceContext();
   const state = serviceState(ctx);
-  const ok = state.installed ? state.running || runSteps(servicePlan(ctx).start, false) : install();
+  // Replace the old PowerShell launcher when an existing Windows install is next started/updated.
+  const legacy = ctx.platform === "win32" && !existsSync(join(HOME, "service", "runner.exe"));
+  const ok = state.installed && state.running && !legacy ? true
+    : ctx.platform === "win32" || !state.installed ? install() : runSteps(servicePlan(ctx).start, false);
   if (!ok) return false;
   const waiting = await spinner("Starting Perry…");
-  const up = await waitFor(dashboardUp, 90);
+  const up = await waitFor(runnerReady, 90);
   if (!up) {
-    waiting.fail(yellow(`Started, but the dashboard is not answering yet. ${bold("perry logs")} says why.`));
+    waiting.fail(yellow(`The dashboard or local runner did not become ready. ${bold("perry logs")} says why.`));
     return false;
   }
   waiting.succeed(`running at ${dashboardUrl()}${state.installed ? "" : dim(", and from every login on")}`);
@@ -828,7 +919,7 @@ async function main() {
     case "migrate": return process.exit(exec(bunScript("migrate.ts", rest)).code);
     case "pet": return process.exit((await (await import("./pet")).pet(rest)) ? 0 : 1);
     case "brain": return process.exit((await brain(rest)) ? 0 : 1);
-    case "run": return runForeground();
+    case "run": return runForeground(rest.includes("--background"));
     case "link": return process.exit(link() ? 0 : 1);
     case "uninstall": return process.exit((await uninstall(rest)) ? 0 : 1);
     case "help": case "--help": case "-h": return say(HELP);

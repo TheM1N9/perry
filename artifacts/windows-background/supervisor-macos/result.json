@@ -1,0 +1,27 @@
+{
+  "platform": "darwin",
+  "home": "/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/Perry background ü PYdV19",
+  "port": 7384,
+  "production build exists": true,
+  "initialStatus": {
+    "pid": 14501,
+    "at": 1791835360941,
+    "state": "ready",
+    "detail": "Dashboard and local runner connected"
+  },
+  "dashboard and live runner become ready": true,
+  "foreground refuses an existing supervisor": true,
+  "repeated launch preserves one runner": true,
+  "crashStatus": {
+    "pid": 14501,
+    "at": 1791835361190,
+    "state": "failed",
+    "detail": "runner exited (signal)"
+  },
+  "runner crash is reported and recovers": true,
+  "private detailed child stdout is omitted in background": true,
+  "lifecycle log contains version and readiness": true,
+  "shutdown reports stopped and releases supervisor lock": true,
+  "foreground exposes detailed child output": true,
+  "pass": true
+}

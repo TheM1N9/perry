@@ -22,7 +22,8 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { dirname, join, posix, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,7 +35,7 @@ export const UNIT = "perry-runner.service";
 export const TASK = "Perry runner";
 
 /** Settings a service does not inherit from the shell it was installed from. */
-const CARRIED_ENV = ["PERRY_HOME", "PERRY_PORT", "PERRY_CODEX_SANDBOX", "PERRY_CODEX_WINDOWS_SANDBOX", "CODEX_HOME"];
+const CARRIED_ENV = ["PERRY_HOME", "PERRY_PORT", "PERRY_HOST", "PERRY_CODEX_SANDBOX", "PERRY_CODEX_WINDOWS_SANDBOX", "CODEX_HOME"];
 
 type Step = { argv: string[]; mayFail?: boolean; retries?: number };
 export type ServiceFile = { path: string; content: string; encoding?: "utf8" | "utf16le" };
@@ -89,8 +90,6 @@ const unitWord = (s: string, exec = false) => {
   const quoted = `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`;
   return exec ? quoted.replace(/\$/g, "$$$$") : quoted;
 };
-/** A batch-file string: % is the only character a quoted path cannot hold as it is. */
-const batch = (s: string) => `"${s.replace(/%/g, "%%")}"`;
 
 export function servicePlan(ctx: ServiceContext): ServicePlan {
   // The target OS's separators, so a plan for any OS can be built and checked on any other.
@@ -144,27 +143,29 @@ ${env}
 
   if (ctx.platform === "win32") {
     const dir = join(ctx.home, "service");
-    const launcher = join(dir, "runner.cmd");
+    const launcher = join(dir, "runner.exe");
     const taskXml = join(dir, "task.xml");
     // Ending a task does not end the processes it started, so `perry run` notes its PID for `perry stop`.
     const env = { ...ctx.env, PERRY_SERVICE_PID_FILE: join(dir, "runner.pid") };
-    const envLines = Object.entries(env).map(([k, v]) => `set "${k}=${v.replace(/%/g, "%%")}"`);
-    // PowerShell only hides the console window; the launcher does the rest.
-    const psArgs = `-NoProfile -NonInteractive -WindowStyle Hidden -Command "& '${launcher.replace(/'/g, "''")}'"`;
+    const mutex = `Local\\Perry-${createHash("sha256").update(ctx.home.toLowerCase()).digest("hex").slice(0, 24)}`;
     return {
       manager: "Task Scheduler",
       files: [
         {
-          path: launcher,
-          content: [
-            "@echo off",
-            `rem Perry, its runner and dashboard, started at logon by the "${TASK}" task. Written by perry start.`,
-            "chcp 65001 >nul",
-            ...envLines,
-            `cd /d ${batch(ctx.repo)}`,
-            `${[ctx.bun, ...args].map(batch).join(" ")} >> ${batch(ctx.logFile)} 2>&1`,
-            "",
-          ].join("\r\n"),
+          path: join(dir, "runner.xml"),
+          // Direct CreateProcess arguments: no cmd/PowerShell expansion of %, &, $ or Unicode paths.
+          content: `<?xml version="1.0" encoding="UTF-8"?>
+<Launcher>
+  <Program>${xml(ctx.bun)}</Program>
+  <Arguments>${xml(`"${args[0]}" run --background`)}</Arguments>
+  <WorkingDirectory>${xml(ctx.repo)}</WorkingDirectory>
+  <LogFile>${xml(ctx.logFile)}</LogFile>
+  <Mutex>${xml(mutex)}</Mutex>
+  <Environment>
+${Object.entries(env).map(([k, v]) => `    <Variable name="${xml(k)}">${xml(v)}</Variable>`).join("\n")}
+  </Environment>
+</Launcher>
+`,
         },
         {
           path: taskXml,
@@ -209,8 +210,7 @@ ${env}
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>powershell.exe</Command>
-      <Arguments>${xml(psArgs)}</Arguments>
+      <Command>${xml(launcher)}</Command>
       <WorkingDirectory>${xml(ctx.repo)}</WorkingDirectory>
     </Exec>
   </Actions>
@@ -275,11 +275,20 @@ function exec(argv: string[], quiet = true) {
 }
 
 /** The Windows service's `perry run`, if it is alive, by the PID its launcher asked it to write. */
-function servicePid(): number | null {
+function servicePid(ctx = serviceContext()): number | null {
   try {
-    const pid = Number(readFileSync(join(HOME, "service", "runner.pid"), "utf8"));
-    process.kill(pid, 0);
-    return pid > 0 ? pid : null;
+    const record = readFileSync(join(ctx.home, "service", "runner.pid"), "utf8").trim();
+    const parts = /^(\d+)(?: (\d+))?$/.exec(record);
+    if (!parts) return null;
+    const pid = Number(parts[1]);
+    if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+    // A stale/reused PID must never kill an unrelated terminal. Check the executable and script first.
+    const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+    // WMI's creation timestamp has microsecond precision; StartTime's FILETIME has 100 ns precision.
+    const created = parts[2] ? ` -and [Math]::Abs($p.CreationDate.ToUniversalTime().Ticks - [Int64]${parts[2]}) -lt 10` : "";
+    const script = `$p = Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}'; if ($p.ExecutablePath -eq ${quote(ctx.bun)} -and $p.CommandLine.Contains(${quote(win32.join(ctx.repo, "scripts", "perry.ts"))}) -and $p.CommandLine -match '(?:^|\\s)"?run"?(?:\\s|$)'${created}) { '${pid}' }`;
+    const found = exec(["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")]);
+    return found.code === 0 && found.output === String(pid) ? pid : null;
   } catch {
     return null;
   }
@@ -299,7 +308,7 @@ export function serviceState(ctx = serviceContext()): ServiceState {
   if (ctx.platform === "win32") {
     const registered = exec(["schtasks", "/Query", "/TN", TASK]).code === 0;
     // schtasks words its status in the system language; the runner's PID file does not.
-    const pid = servicePid();
+    const pid = servicePid(ctx);
     return {
       installed: registered,
       running: registered && pid !== null,
@@ -352,6 +361,27 @@ export function install({ dryRun = false } = {}): boolean {
   // the first time the service starts it (server/index.ts, pairThisMachine), and the runner waits for it.
   const plan = servicePlan(ctx);
   if (dryRun) console.log(`\n${bold(`Installing Perry as a ${plan.manager} service`)}${dim("  (dry run: nothing is written or run)")}`);
+  if (ctx.platform === "win32") {
+    const dir = join(ctx.home, "service");
+    const compiled = join(dir, "runner-next.exe");
+    const compiler = join(process.env.SystemRoot ?? "C:\\Windows", "Microsoft.NET", "Framework", "v4.0.30319", "csc.exe");
+    if (!dryRun) mkdirSync(dir, { recursive: true });
+    // Compile first: a missing/disabled compiler leaves the existing service and configuration intact.
+    if (!runSteps([{ argv: [compiler, "/nologo", "/target:winexe", `/out:${compiled}`, join(ctx.repo, "scripts", "windows-launcher.cs")] }], dryRun)) return false;
+    if (!dryRun) {
+      endServiceProcess();
+      runSteps(plan.stop, false);
+      // Task Scheduler may return from /End just before the old executable's handle closes.
+      for (let retry = 0; ; retry++) {
+        try { renameSync(compiled, join(dir, "runner.exe")); break; }
+        catch (error) {
+          if (retry === 20) throw error;
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+        }
+      }
+      rmSync(join(dir, "runner.cmd"), { force: true });
+    }
+  }
   for (const file of plan.files) {
     if (dryRun) {
       console.log(dim(`  write ${file.path}`));
@@ -364,7 +394,6 @@ export function install({ dryRun = false } = {}): boolean {
   }
   if (!dryRun) {
     mkdirSync(dirname(ctx.logFile), { recursive: true });
-    if (ctx.platform === "win32") endServiceProcess();
   }
   if (!runSteps(plan.install, dryRun)) return false;
   if (dryRun) return true;
@@ -390,6 +419,9 @@ export function uninstall({ dryRun = false } = {}): boolean {
     else rmSync(file.path, { force: true });
   }
   if (!dryRun && ctx.platform === "win32") endServiceProcess();
+  if (!dryRun && ctx.platform === "win32") {
+    for (const name of ["runner.exe", "runner-next.exe", "runner.cmd", "runner.pid"]) rmSync(join(ctx.home, "service", name), { force: true });
+  }
   if (!dryRun && ctx.platform === "linux") exec(["systemctl", "--user", "daemon-reload"]);
   return true;
 }
