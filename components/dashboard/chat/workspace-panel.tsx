@@ -15,6 +15,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 
+const fileKind = z.enum(["", "image", "media", "document", "other"]);
+
 const preferences = z.object({
   mode: z.enum(["tree", "gallery"]).default("tree"), selected: z.string().optional(),
   expanded: z.record(z.string(), z.boolean()).default({}),
@@ -72,7 +74,7 @@ export function WorkspacePanel({ conversationId, project, open, onOpenChange, br
   const content = <WorkspaceBoundary key={conversationId ?? "new"} onRetry={() => client.refresh()} onClose={() => onOpenChange(false)}><PanelContent conversationId={conversationId} project={project} browser={browser} onClose={() => onOpenChange(false)} /></WorkspaceBoundary>;
   if (mobile) return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent showCloseButton={false} className="w-full max-w-full gap-0 sm:max-w-full"><SheetTitle className="sr-only">Chat workspace</SheetTitle><SheetDescription className="sr-only">Files and work associated with this chat.</SheetDescription>{content}</SheetContent></Sheet>;
   if (!open) return null;
-  return <aside aria-label="Chat workspace" className="relative flex h-full min-h-0 shrink-0 flex-col border-l bg-background" style={{ width: `min(${width}px, 50vw)` }}>
+  return <aside aria-label="Chat workspace" className="relative flex h-full min-h-0 shrink-0 flex-col border-l bg-background" style={{ width: `min(${width}px, 50%)` }}>
     <div role="separator" aria-label="Resize workspace" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={640} aria-valuenow={width} tabIndex={0}
       className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize focus-visible:bg-primary/20"
       onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); resize(width + (event.key === "ArrowLeft" ? 20 : -20)); } }}
@@ -118,7 +120,7 @@ function Files({ conversationId, scope, scopeId }: { conversationId: Id<"convers
   const [prefs, save] = usePreferences(`perry.workspace.${scope}.${scopeId}`);
   const [working, setWorking] = useState(false);
   const [hidden, setHidden] = useState(false);
-  const [kind, setKind] = useState("");
+  const [kind, setKind] = useState<z.infer<typeof fileKind>>("");
   const [cursor, setCursor] = useState<string | null>(null);
   const [cursors, setCursors] = useState<Array<string | null>>([]);
   const [attaching, setAttaching] = useState(false);
@@ -142,7 +144,7 @@ function Files({ conversationId, scope, scopeId }: { conversationId: Id<"convers
       <div className="flex shrink-0 flex-wrap items-center gap-2 p-3">
         <Button size="icon-sm" variant={prefs.mode === "tree" ? "secondary" : "ghost"} aria-label="Tree view" aria-pressed={prefs.mode === "tree"} onClick={() => save({ mode: "tree" })}><ListTreeIcon /></Button>
         <Button size="icon-sm" variant={prefs.mode === "gallery" ? "secondary" : "ghost"} aria-label="Gallery view" aria-pressed={prefs.mode === "gallery"} onClick={() => save({ mode: "gallery" })}><Grid2X2Icon /></Button>
-        <select aria-label="File type" value={kind} onChange={(event) => { setKind(event.target.value); resetPage(); }} className="min-w-0 flex-1 rounded-md border bg-background p-1.5 text-xs"><option value="">All file types</option><option value="image">Images</option><option value="media">Audio and video</option><option value="document">Documents and source</option><option value="other">Other</option></select>
+        <select aria-label="File type" value={kind} onChange={(event) => { setKind(fileKind.parse(event.target.value)); resetPage(); }} className="min-w-0 flex-1 rounded-md border bg-background p-1.5 text-xs"><option value="">All file types</option><option value="image">Images</option><option value="media">Audio and video</option><option value="document">Documents and source</option><option value="other">Other</option></select>
         <Button size="icon-sm" variant="ghost" aria-label="Attach from Library" onClick={() => setAttaching(true)}><PlusIcon /></Button>
         <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" checked={working} onChange={(event) => { setWorking(event.target.checked); resetPage(); }} />Working files</label>
         <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" checked={hidden} onChange={(event) => { setHidden(event.target.checked); resetPage(); }} />Show hidden</label>
@@ -213,7 +215,7 @@ function FilePreview({ item, onBack }: { item: WorkspaceFile | null | undefined;
           : item.preview === "image" ? <img key={retry} src={item.url} alt={item.name} className="w-full rounded-lg" onError={() => setError("This image is unavailable. Retry after restoring the file.")} />
           : item.preview === "video" ? <video key={retry} src={item.url} controls playsInline className="w-full rounded-lg" onError={() => setError("This video is unavailable.")} />
           : item.preview === "audio" ? <audio key={retry} src={item.url} controls className="w-full" onError={() => setError("This audio is unavailable.")} />
-          : item.preview === "pdf" ? <iframe title={item.name} src={item.url} sandbox="" className="h-[60vh] w-full rounded-lg border" />
+          : item.preview === "pdf" ? <iframe key={retry} title={item.name} src={item.url} sandbox="" className="h-[60vh] w-full rounded-lg border" />
           : item.preview === "text" || item.preview === "markdown" ? <pre className="overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap break-words">{text ?? "Loading preview…"}</pre>
           : <p className="text-sm text-muted-foreground">Preview is unavailable for this format. Download it to open it.</p>}
       </div>

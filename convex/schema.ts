@@ -981,6 +981,7 @@ export default defineSchema({
     sourceConversationId: v.id("conversations"),
     projectId: v.optional(v.id("projects")),
     libraryId: v.id("library"),
+    kind: vLibraryKind,
     role: v.union(v.literal("input"), v.literal("output"), v.literal("working")),
     provenance: v.union(v.literal("uploaded"), v.literal("produced"), v.literal("attached")),
     messageKey: v.optional(v.string()),
@@ -992,6 +993,8 @@ export default defineSchema({
     .index("by_project", ["projectId", "createdAt"])
     .index("by_conversation_role", ["conversationId", "role", "createdAt"])
     .index("by_project_role", ["projectId", "role", "createdAt"])
+    .index("by_conversation_kind", ["conversationId", "kind", "createdAt"])
+    .index("by_project_kind", ["projectId", "kind", "createdAt"])
     .index("by_item", ["conversationId", "libraryId"])
     .index("by_task", ["taskId"])
     .index("by_run", ["runId"])

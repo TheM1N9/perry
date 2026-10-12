@@ -10,6 +10,7 @@ import { associate, workspaceSafe } from "./lib/workspace";
 import { HOME } from "../runner/home";
 import { APPROVAL_TTL_MS, BRAIN_TTL_MS } from "./approvals";
 import { describeStep } from "./lib/activity";
+import { vLibraryKind } from "./schema";
 
 const scopeArgs = { key: v.string(), conversationId: v.id("conversations"), scope: v.union(v.literal("chat"), v.literal("project")) };
 type ScopeArgs = { key: string; conversationId: Id<"conversations">; scope: "chat" | "project" };
@@ -53,7 +54,9 @@ async function fileView(ctx: QueryCtx, item: Doc<"library">, association: Doc<"w
   const task = association.taskId ? await ctx.db.get(association.taskId) : null;
   let available = false;
   if (item.localPath) { try { available = statSync(item.localPath).isFile(); } catch {} }
-  else if (item.storageId) available = Boolean(await ctx.storage.getMetadata(item.storageId));
+  else if (item.storageId && await ctx.storage.getMetadata(item.storageId)) {
+    try { available = statSync(join(HOME, "storage", item.storageId)).isFile(); } catch {}
+  }
   const next = await ctx.db.query("library").withIndex("by_version", (q) => q.eq("versionOf", item._id)).first();
   const params = new URLSearchParams({ conversation: args.conversationId, scope: args.scope });
   return {
@@ -70,12 +73,18 @@ async function fileView(ctx: QueryCtx, item: Doc<"library">, association: Doc<"w
 
 /** Indexed membership pages. Filters never fall back to global Library or filesystem discovery. */
 export const files = query({
-  args: { ...scopeArgs, paginationOpts: paginationOptsValidator, working: v.boolean(), hidden: v.boolean(), kind: v.optional(v.string()) },
+  args: { ...scopeArgs, paginationOpts: paginationOptsValidator, working: v.boolean(), hidden: v.boolean(), kind: v.optional(vLibraryKind) },
   handler: async (ctx, args): Promise<{ page: WorkspaceFile[]; isDone: boolean; continueCursor: string }> => {
     const { chat, key } = await scopeOf(ctx, args);
-    const rows = args.scope === "project"
-      ? ctx.db.query("workspaceFiles").withIndex("by_project", (q) => q.eq("projectId", chat.projectId))
-      : ctx.db.query("workspaceFiles").withIndex("by_conversation", (q) => q.eq("conversationId", chat._id));
+    const kind = args.kind;
+    let rows = kind
+      ? args.scope === "project"
+        ? ctx.db.query("workspaceFiles").withIndex("by_project_kind", (q) => q.eq("projectId", chat.projectId).eq("kind", kind))
+        : ctx.db.query("workspaceFiles").withIndex("by_conversation_kind", (q) => q.eq("conversationId", chat._id).eq("kind", kind))
+      : args.scope === "project"
+        ? ctx.db.query("workspaceFiles").withIndex("by_project", (q) => q.eq("projectId", chat.projectId))
+        : ctx.db.query("workspaceFiles").withIndex("by_conversation", (q) => q.eq("conversationId", chat._id));
+    if (!args.working) rows = rows.filter((q) => q.neq(q.field("role"), "working"));
     const page = await rows.order("asc").paginate({ ...args.paginationOpts, numItems: Math.min(args.paginationOpts.numItems, 500) });
     const files: WorkspaceFile[] = [];
     const seen = new Set<string>();

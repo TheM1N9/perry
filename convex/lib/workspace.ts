@@ -39,6 +39,7 @@ export async function associate(ctx: MutationCtx, item: Doc<"library">, chat: Do
   for (const scope of scopes) {
     const existing = await ctx.db.query("workspaceFiles").withIndex("by_item", (q) => q.eq("conversationId", scope._id).eq("libraryId", item._id)).first();
     if (existing) {
+      if (!existing.kind) await ctx.db.patch(existing._id, { kind: item.kind });
       // A deliberately shared result graduates a registered intermediate to a usable output.
       if (promote && existing.role === "working" && source.role !== "working") await ctx.db.patch(existing._id, source);
       continue;
@@ -47,6 +48,7 @@ export async function associate(ctx: MutationCtx, item: Doc<"library">, chat: Do
     const projectAlreadyLinked = scope.projectId && related.some((row) => row.projectId === scope.projectId);
     await ctx.db.insert("workspaceFiles", {
       conversationId: scope._id, sourceConversationId: chat._id, libraryId: item._id,
+      kind: item.kind,
       ...(scope.projectId && !projectAlreadyLinked ? { projectId: scope.projectId } : {}),
       ...(chat.taskId ? { taskId: chat.taskId } : {}), ...source, createdAt: item.createdAt,
     });

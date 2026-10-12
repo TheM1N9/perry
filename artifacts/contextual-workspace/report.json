@@ -4,16 +4,16 @@
     "registered intermediates, explicit Library attachment and non-destructive pin/hide",
     "background outputs return only to origin and live task state uses the existing lifecycle",
     "share_file registers stable artifact/run identity and failed files never become ready",
-    "missing local files recover, repeated registration/backfill deduplicates and secrets stay hidden",
-    "bounded indexed pagination visits a large collection without duplicates",
+    "missing local/stored bytes recover, repeated registration/backfill deduplicates and secrets stay hidden",
+    "bounded indexed pagination and type filters visit a large collection without duplicates",
     "database/runner restart preserves membership and view metadata"
   ],
   "fixture": {
-    "home": "/tmp/perry-workspace-verification-285-release",
-    "chat": "aptkx8d3q8ymvnvfad30rrarzk",
-    "project": "03svw900jv7va2cgh35t9r615n",
-    "otherChat": "ae52yyac33z4yq9dsehk612ew3",
-    "version": "h5r31zr1g6z24whxzh9b6jqm6r"
+    "home": "/tmp/perry-workspace-verification-285-rc",
+    "chat": "8vhfwzhgdtes4ammqrz9a4qs30",
+    "project": "p331x93wrqp7w555s4yajxgpc9",
+    "otherChat": "nmzeam1ys3kbqd756exgyz9zry",
+    "version": "776vn5k7q6a63jy6bkqy763ag0"
   },
-  "createdAt": "2026-10-12T20:23:42.175Z"
+  "createdAt": "2026-10-12T20:27:22.374Z"
 }
