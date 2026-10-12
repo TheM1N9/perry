@@ -23,6 +23,7 @@ import * as history from "../convex/history";
 import * as http from "../convex/http";
 import * as ingest from "../convex/ingest";
 import * as installation from "../convex/installation";
+import * as interactive from "../convex/interactive";
 import * as jobs from "../convex/jobs";
 import * as lib_activity from "../convex/lib/activity";
 import * as lib_agent from "../convex/lib/agent";
@@ -106,6 +107,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "http": http,
   "ingest": ingest,
   "installation": installation,
+  "interactive": interactive,
   "jobs": jobs,
   "lib/activity": lib_activity,
   "lib/agent": lib_agent,

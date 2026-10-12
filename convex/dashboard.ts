@@ -286,6 +286,8 @@ export const deleteChat = mutation({
     }
     await ctx.runMutation(internal.codex.pruneOrphans, { conversationId: args.id });
     await cancelTitle(ctx, args.id);
+    for (const artifact of await ctx.db.query("interactiveAnswers").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).collect()) await ctx.db.delete(artifact._id);
+    for (const source of await ctx.db.query("interactiveSources").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).collect()) await ctx.db.delete(source._id);
     await ctx.db.delete(args.id);
     await deleteThread(ctx, chat.threadId);
     return null;
