@@ -44,6 +44,7 @@ import { Usage, UsageMoved } from "./usage";
 import { SaveStatus, useAutosave } from "../autosave";
 import { EngineChoice, useEngineChoices } from "../default-engine";
 import { ActionButton, CodeDisplay, CommandLine, EmptyState, InfoTip, List, ListSkeleton, SecretInput, Section, StatusBadge, type Tone } from "../common";
+import { Internet } from "./internet";
 
 /**
  * What each section of Settings holds (lib/settings.ts names them and puts
@@ -62,6 +63,7 @@ const SECTIONS: Record<SettingsSection, () => ReactNode> = {
   "desktop-pet": () => <><DesktopPet /><Shortcuts /></>,
   people: () => <People />,
   activity: () => <Activity />,
+  internet: () => <Internet />,
   logins: () => <Logins />,
   security: () => <Security />,
 };

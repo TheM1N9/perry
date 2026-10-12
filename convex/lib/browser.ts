@@ -112,7 +112,7 @@ async function tab(): Promise<Tab> {
 export function closeBrowser() {
   const current = box.__perryBrowser;
   box.__perryBrowser = null;
-  void current?.then((open) => { open.ws.close(); open.child.kill(); }, () => {});
+  void current?.then((open) => { if (open.idle) clearTimeout(open.idle); open.ws.close(); open.child.kill(); }, () => {});
 }
 
 async function evaluate<T>(open: Session, expression: string): Promise<T> {
@@ -335,80 +335,119 @@ const SETTLE_MS = 4_000;
  * the caller sees with `checking`. The HTML comes back for read_page to turn into text, the same way
  * as a fetched page, and is refused over `maxChars`.
  */
-export async function render(url: string, options: { guard: Guard; timeoutMs: number; maxChars: number; checking: (html: string) => boolean }): Promise<Rendered> {
+export async function render(url: string, options: { guard: Guard; timeoutMs: number; maxChars: number; checking: (html: string) => boolean; signal?: AbortSignal; isolated?: boolean }): Promise<Rendered> {
   const { guard, timeoutMs, maxChars, checking } = options;
+  const signal = AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(options.signal ? [options.signal] : [])]);
+  signal.throwIfAborted();
   const deadline = Date.now() + timeoutMs;
-  const opened: { port?: number; id?: string; session?: Session } = {};
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  const opened: { port?: number; id?: string; session?: Session; control?: Session; context?: string } = {};
+  const dispose = async () => {
+    opened.session?.ws.close();
+    if (opened.context && opened.control?.ws.readyState === WebSocket.OPEN) {
+      // Detaching also disposes the isolated context, even if Chrome cannot answer the cleanup command.
+      const timer = setTimeout(() => opened.control?.ws.close(), 1_000);
+      try { await send(opened.control, "Target.disposeBrowserContext", { browserContextId: opened.context }).catch(() => {}); }
+      finally { clearTimeout(timer); }
+    } else if (opened.id) await fetch(`http://127.0.0.1:${opened.port}/json/close/${opened.id}`, { signal: AbortSignal.timeout(1_000) }).catch(() => {});
+    opened.control?.ws.close();
+  };
+  let abort: () => void = () => {};
   const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Perry's browser did not finish loading it in ${Math.round(timeoutMs / 1000)} seconds.`)), timeoutMs);
+    abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
   });
   const reading = (async (): Promise<Rendered> => {
-    opened.port = (await tab()).port;
-    const target = await (await fetch(`http://127.0.0.1:${opened.port}/json/new?about:blank`, { method: "PUT" })).json() as { id: string; webSocketDebuggerUrl: string };
-    opened.id = target.id;
-    const open = opened.session = await connect(target.webSocketDebuggerUrl);
-    const main = (await send(open, "Page.getFrameTree") as { frameTree: { frame: { id: string } } }).frameTree.frame.id;
-    let refused: Error | null = null;
-    let status = 0;
-    open.listeners.add((method, params) => {
-      if (method === "Fetch.requestPaused") {
-        guard.request(params.request.url).then(
-          () => send(open, "Fetch.continueRequest", { requestId: params.requestId }),
-          (error: Error) => {
-            if (params.resourceType === "Document" && params.frameId === main) refused ??= error;
-            return send(open, "Fetch.failRequest", { requestId: params.requestId, errorReason: "AccessDenied" });
-          },
-        ).catch(() => {});
+    try {
+      opened.port = (await tab()).port;
+      signal.throwIfAborted();
+      let target: { id: string; webSocketDebuggerUrl: string };
+      if (options.isolated) {
+        const version = await (await fetch(`http://127.0.0.1:${opened.port}/json/version`, { signal })).json() as { webSocketDebuggerUrl: string };
+        opened.control = await connect(version.webSocketDebuggerUrl);
+        signal.throwIfAborted();
+        const context = await send(opened.control, "Target.createBrowserContext", { disposeOnDetach: true }) as { browserContextId: string };
+        opened.context = context.browserContextId;
+        signal.throwIfAborted();
+        const created = await send(opened.control, "Target.createTarget", { url: "about:blank", browserContextId: opened.context }) as { targetId: string };
+        opened.id = created.targetId;
+        signal.throwIfAborted();
+        const targets = await (await fetch(`http://127.0.0.1:${opened.port}/json/list`, { signal })).json() as Array<{ id: string; webSocketDebuggerUrl: string }>;
+        const found = targets.find((item) => item.id === created.targetId);
+        if (!found) throw new Error("Perry's public browser tab did not open.");
+        target = found;
+      } else {
+        target = await (await fetch(`http://127.0.0.1:${opened.port}/json/new?about:blank`, { method: "PUT", signal })).json() as { id: string; webSocketDebuggerUrl: string };
       }
-      // A redirect's answer arrives with the request it leads to; every other answer on its own.
-      const answer = method === "Network.requestWillBeSent" ? params.redirectResponse : method === "Network.responseReceived" ? params.response : undefined;
-      if (answer?.remoteIPAddress) {
-        try { guard.address(answer.url, answer.remoteIPAddress); } catch (error) { refused ??= error as Error; }
+      opened.id = target.id;
+      signal.throwIfAborted();
+      const open = opened.session = await connect(target.webSocketDebuggerUrl);
+      signal.throwIfAborted();
+      const main = (await send(open, "Page.getFrameTree") as { frameTree: { frame: { id: string } } }).frameTree.frame.id;
+      let refused: Error | null = null;
+      let status = 0;
+      open.listeners.add((method, params) => {
+        if (method === "Fetch.requestPaused") {
+          if (options.isolated && !["GET", "HEAD"].includes(params.request.method)) {
+            void send(open, "Fetch.failRequest", { requestId: params.requestId, errorReason: "AccessDenied" }).catch(() => {});
+            return;
+          }
+          guard.request(params.request.url).then(
+            () => send(open, "Fetch.continueRequest", { requestId: params.requestId }),
+            (error: Error) => {
+              if (params.resourceType === "Document" && params.frameId === main) refused ??= error;
+              return send(open, "Fetch.failRequest", { requestId: params.requestId, errorReason: "AccessDenied" });
+            },
+          ).catch(() => {});
+        }
+        // A redirect's answer arrives with the request it leads to; every other answer on its own.
+        const answer = method === "Network.requestWillBeSent" ? params.redirectResponse : method === "Network.responseReceived" ? params.response : undefined;
+        if (answer?.remoteIPAddress) {
+          try { guard.address(answer.url, answer.remoteIPAddress); } catch (error) { refused ??= error as Error; }
+        }
+        if (method === "Network.responseReceived" && params.type === "Document" && params.frameId === main) status = params.response.status;
+      });
+      await send(open, "Page.enable");
+      await send(open, "Network.enable");
+      // A service worker's own fetches would pass the checks by, so the page asks the network directly.
+      await send(open, "Network.setBypassServiceWorker", { bypass: true });
+      if (process.env.PERRY_BROWSER_HEADED !== "1") {
+        // Headless Chrome calls itself HeadlessChrome, which bot checks turn away on sight. It is Chrome.
+        const agent = await evaluate<string>(open, "navigator.userAgent");
+        await send(open, "Network.setUserAgentOverride", { userAgent: agent.replace("HeadlessChrome", "Chrome"), acceptLanguage: "en-US,en;q=0.9" });
       }
-      if (method === "Network.responseReceived" && params.type === "Document" && params.frameId === main) status = params.response.status;
-    });
-    await send(open, "Page.enable");
-    await send(open, "Network.enable");
-    // A service worker's own fetches would pass the checks by, so the page asks the network directly.
-    await send(open, "Network.setBypassServiceWorker", { bypass: true });
-    if (process.env.PERRY_BROWSER_HEADED !== "1") {
-      // Headless Chrome calls itself HeadlessChrome, which bot checks turn away on sight. It is Chrome.
-      const agent = await evaluate<string>(open, "navigator.userAgent");
-      await send(open, "Network.setUserAgentOverride", { userAgent: agent.replace("HeadlessChrome", "Chrome"), acceptLanguage: "en-US,en;q=0.9" });
-    }
-    await send(open, "Fetch.enable", { patterns: [{ urlPattern: "*" }] });
-    const navigated = await send(open, "Page.navigate", { url }) as { errorText?: string };
-    if (refused) throw refused;
-    if (navigated.errorText) throw new Error(`Perry's browser could not open it either (${navigated.errorText}).`);
-
-    // Until the page has loaded, is no longer a bot check, and its text has stopped growing; or, once it
-    // is past a bot check and parsed, a few seconds more at most: a page with live prices never stops
-    // drawing, and one full of ads may never finish loading.
-    let chars = -1;
-    let settled = Infinity;
-    while (Date.now() < Math.min(deadline - 1_500, settled)) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await send(open, "Fetch.enable", { patterns: [{ urlPattern: "*" }] });
+      const navigated = await send(open, "Page.navigate", { url }) as { errorText?: string };
       if (refused) throw refused;
-      const seen = await evaluate<{ state: string; chars: number; html: string }>(open,
-        "({ state: document.readyState, chars: document.body ? document.body.innerText.length : 0, html: document.documentElement.outerHTML.slice(0, 200000) })").catch(() => null);
-      if (!seen || seen.state === "loading" || checking(seen.html)) { chars = -1; settled = Infinity; continue; }
-      settled = Math.min(settled, Date.now() + SETTLE_MS);
-      if (seen.state === "complete" && seen.chars > 0 && seen.chars === chars) break;
-      chars = seen.chars;
-    }
-    if (refused) throw refused;
-    const page = await evaluate<{ url: string; title: string; html: string | null }>(open,
-      `({ url: location.href, title: document.title, html: document.documentElement.outerHTML.length > ${maxChars} ? null : document.documentElement.outerHTML })`);
-    if (page.html === null) throw new Error("The page is over the 5 MB limit.");
-    return { url: page.url, status, title: page.title, html: page.html };
+      if (navigated.errorText) throw new Error(`Perry's browser could not open it either (${navigated.errorText}).`);
+
+      // Until the page has loaded, is no longer a bot check, and its text has stopped growing; or, once it
+      // is past a bot check and parsed, a few seconds more at most: a page with live prices never stops
+      // drawing, and one full of ads may never finish loading.
+      let chars = -1;
+      let settled = Infinity;
+      while (Date.now() < Math.min(deadline - 1_500, settled)) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        signal.throwIfAborted();
+        if (refused) throw refused;
+        const seen = await evaluate<{ state: string; chars: number; html: string }>(open,
+          "({ state: document.readyState, chars: document.body ? document.body.innerText.length : 0, html: document.documentElement.outerHTML.slice(0, 200000) })").catch(() => null);
+        if (!seen || seen.state === "loading" || checking(seen.html)) { chars = -1; settled = Infinity; continue; }
+        settled = Math.min(settled, Date.now() + SETTLE_MS);
+        if (seen.state === "complete" && seen.chars > 0 && seen.chars === chars) break;
+        chars = seen.chars;
+      }
+      if (refused) throw refused;
+      const page = await evaluate<{ url: string; title: string; html: string | null }>(open,
+        `({ url: location.href, title: document.title, html: document.documentElement.outerHTML.length > ${maxChars} ? null : document.documentElement.outerHTML })`);
+      if (page.html === null) throw new Error("The page is over the 5 MB limit.");
+      return { url: page.url, status, title: page.title, html: page.html };
+    } finally { await dispose(); }
   })();
   reading.catch(() => {});
   try {
     return await Promise.race([reading, late]);
   } finally {
-    clearTimeout(timer);
-    opened.session?.ws.close();
-    if (opened.id) await fetch(`http://127.0.0.1:${opened.port}/json/close/${opened.id}`).catch(() => {});
+    signal.removeEventListener("abort", abort);
+    if (signal.aborted) await dispose();
   }
 }

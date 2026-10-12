@@ -224,10 +224,11 @@ function parseUrl(raw: string): URL {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Only http and https URLs can be read.");
   }
+  if (url.username || url.password) throw unsafeDestination();
   return url;
 }
 
-type RawPage = { url: string; status: number; contentType: string; body: string; challenged: boolean };
+export type RawPage = { url: string; status: number; contentType: string; body: string; challenged: boolean; retryAfter?: string | null; link?: string | null };
 
 // Adapted from vercel/eve (Apache-2.0): packages/eve/src/execution/web-fetch/request.ts
 /** One request, no redirects followed, the body read up to the size cap. */
@@ -276,10 +277,12 @@ async function requestOnce(url: URL, userAgent: string, signal: AbortSignal): Pr
       contentType: response.headers.get("content-type") ?? "",
       body: Buffer.concat(chunks).toString("utf8"),
       challenged: response.status === 403 && response.headers.get("cf-mitigated") === "challenge",
+      retryAfter: response.headers.get("retry-after"),
+      link: response.headers.get("link"),
       location: null,
     };
   } finally {
-    await dispatcher.close().catch(() => {});
+    await (signal.aborted ? dispatcher.destroy() : dispatcher.close()).catch(() => {});
   }
 }
 
@@ -288,8 +291,8 @@ async function requestOnce(url: URL, userAgent: string, signal: AbortSignal): Pr
  * checked, not only the first. Throws on a refused address, a timeout, a
  * network failure or an oversized page.
  */
-async function fetchPublic(raw: string): Promise<RawPage> {
-  const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+export async function fetchPublic(raw: string, signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)): Promise<RawPage> {
+  signal.throwIfAborted();
 
   const follow = async (userAgent: string): Promise<RawPage> => {
     let url = parseUrl(raw);
@@ -385,6 +388,12 @@ export type FetchedPage = {
   note?: string;
   error?: string;
   hint?: string;
+  status?: number;
+  errorId?: string;
+  publishedAt?: string;
+  author?: string;
+  attempts?: Array<"fetch" | "browser">;
+  retryAfter?: string | null;
 };
 
 // --- When the fetch is turned away -------------------------------------------
@@ -428,18 +437,20 @@ function blockedFetch(error: unknown): string | null {
 }
 
 /** The page again, in Perry's browser; `why` says what went wrong with the fetch. Throws what went wrong there. */
-async function inBrowser(raw: string, why: string): Promise<FetchedPage> {
+async function inBrowser(raw: string, why: string, options: { signal?: AbortSignal; publicOnly?: boolean } = {}): Promise<FetchedPage> {
   const page = await render(parseUrl(raw).toString(), {
     guard: browserGuard(),
     timeoutMs: BROWSER_TIMEOUT_MS,
     maxChars: MAX_RESPONSE_BYTES,
     checking: isBotCheck,
+    signal: options.signal,
+    isolated: options.publicOnly,
   });
   if (isBotCheck(page.html)) throw new Error("The site's bot check did not let it through.");
   if (page.status !== 0 && (page.status < 200 || page.status >= 300)) throw new Error(`The site returned ${page.status} to it too.`);
   const read = readable(page.url, page.html, true, page.title);
   const empty = read.chars < NEAR_EMPTY_CHARS ? " Almost no text came back even so: the site may have shown the browser an error instead of the page." : "";
-  return { ...read, via: "browser", note: `${why}, so this is the page as Perry's browser showed it.${empty}` };
+  return { ...read, via: "browser", attempts: ["fetch", "browser"], note: `${why}, so this is the page as Perry's browser showed it.${empty}` };
 }
 
 /** Both tried, neither read it: said plainly, so the agent does not carry on as if it had. */
@@ -448,6 +459,8 @@ function bothFailed(raw: string, why: string, error: unknown): FetchedPage {
   return {
     url: raw,
     error: `Could not read the page, with either a plain fetch or Perry's browser. ${why}. Perry's browser: ${message}`,
+    errorId: id,
+    attempts: ["fetch", "browser"],
     // A refused address keeps its own advice: not to look for another way there.
     hint: id === "unsafe-destination" && hint ? hint
       : "Tell the owner this page could not be read, and do not write as if you had read it: search snippets and other coverage are not the page.",
@@ -466,28 +479,45 @@ function readable(url: string, body: string, html: boolean, title = html ? extra
       : output,
     chars: markdown.length,
     truncated,
+    ...(html ? pageMetadata(body) : {}),
   };
 }
 
-export async function fetchPage(raw: string): Promise<FetchedPage> {
+/** Only metadata the source actually declares; retrieval time is never a publication date. */
+function pageMetadata(html: string): { publishedAt?: string; author?: string } {
+  const metadata = new Map<string, string>();
+  for (const tag of html.matchAll(/<meta\s+[^>]*>/gi)) {
+    const attributes = new Map([...tag[0].matchAll(/([\w:-]+)\s*=\s*(["'])(.*?)\2/gs)].map((m) => [m[1].toLowerCase(), decodeEntities(m[3])]));
+    const key = attributes.get("property") ?? attributes.get("name");
+    const content = attributes.get("content");
+    if (key && content) metadata.set(key.toLowerCase(), content);
+  }
+  const date = metadata.get("article:published_time") ?? metadata.get("datepublished");
+  const author = metadata.get("author");
+  return { ...(date && Number.isFinite(Date.parse(date)) ? { publishedAt: new Date(date).toISOString() } : {}), ...(author ? { author: author.slice(0, 300) } : {}) };
+}
+
+export async function fetchPage(raw: string, options: { signal?: AbortSignal; publicOnly?: boolean } = {}): Promise<FetchedPage> {
   let page: RawPage;
   try {
-    page = await fetchPublic(raw);
+    page = await fetchPublic(raw, options.signal);
   } catch (error) {
     const blocked = blockedFetch(error);
-    if (blocked) return await inBrowser(raw, blocked).catch((failed) => bothFailed(raw, blocked, failed));
-    const { message, hint } = describeError(error);
-    return { error: message, ...(hint ? { hint } : {}) };
+    if (blocked && !options.signal?.aborted) return await inBrowser(raw, blocked, options).catch((failed) => bothFailed(raw, blocked, failed));
+    const { id, message, hint } = describeError(error);
+    return { error: message, errorId: id, ...(hint ? { hint } : {}) };
   }
 
   if (turnedAway(page)) {
     const check = page.challenged || (isHtml(page) && isBotCheck(page.body));
     const why = `A plain fetch was turned away (${page.status}${check ? ", a bot check" : ""})`;
-    return await inBrowser(raw, why).catch((failed) => bothFailed(page.url, why, failed));
+    // A public read must not borrow Perry's saved site session to bypass an access refusal.
+    if (options.publicOnly && !check) return { url: page.url, status: page.status, error: `The site returned ${page.status}.` };
+    return await inBrowser(raw, why, options).catch((failed) => ({ ...bothFailed(page.url, why, failed), status: page.status, attempts: ["fetch", "browser"] }));
   }
 
   if (page.status < 200 || page.status >= 300) {
-    return { url: page.url, error: `The site returned ${page.status}.` };
+    return { url: page.url, status: page.status, retryAfter: page.retryAfter, error: `The site returned ${page.status}.` };
   }
 
   const html = isHtml(page);
@@ -495,9 +525,9 @@ export async function fetchPage(raw: string): Promise<FetchedPage> {
   // The tell for a JavaScript-rendered page: HTTP 200, almost no text. The browser runs the script.
   if (read.chars < NEAR_EMPTY_CHARS && html && /<script/i.test(page.body)) {
     try {
-      return await inBrowser(raw, "Almost no text came back without JavaScript");
+      return await inBrowser(raw, "Almost no text came back without JavaScript", options);
     } catch (error) {
-      return { ...read, note: `Almost no text came back. The page probably renders with JavaScript, and Perry's browser could not read it either: ${describeError(error).message}` };
+      return { ...read, attempts: ["fetch", "browser"], note: `Almost no text came back. The page probably renders with JavaScript, and Perry's browser could not read it either: ${describeError(error).message}` };
     }
   }
   return {

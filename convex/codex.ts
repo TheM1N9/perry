@@ -1299,6 +1299,15 @@ export const outwardAllowed = internalQuery({
   },
 });
 
+/** A stopped or paused chat cancels an in-flight internet read as well as its engine turn. */
+export const internetMayRead = internalQuery({
+  args: { turnId: v.id("codexTurns") },
+  handler: async (ctx, args): Promise<boolean> => {
+    const turn = await ctx.db.get(args.turnId);
+    return Boolean(turn && turn.status === "running" && !turn.stopRequested && !turn.stopped && !await pausedAt(ctx));
+  },
+});
+
 /**
  * Which of the runner's running turns a call to Perry's tools belongs to. The
  * runner runs several chats' turns at once, so a call names its chat: Codex
