@@ -231,3 +231,6 @@ else
   printf '  or this again with \033[1m--engine\033[0m codex, claude, grok or antigravity to set up without questions.\n\n'
   bun --cwd "$DIR" "$DIR/scripts/perry.ts" link
 fi
+
+# Anonymous successful-install count. Opt out with PERRY_TELEMETRY_DISABLED=1.
+bun --cwd "$DIR" "$DIR/scripts/telemetry.ts" "Installation completed" || true

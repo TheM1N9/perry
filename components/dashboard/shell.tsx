@@ -12,6 +12,7 @@ import { AppSidebar } from "./app-sidebar";
 import { CommandPalette, PaletteContext } from "./command-palette";
 import { Gate } from "./gate";
 import { PageErrorBoundary } from "./page-error";
+import { trackDashboardEvent } from "@/lib/analytics";
 
 /** How long a hidden tab waits before claiming a page the pet asked for, so a tab in view gets it first. */
 const HIDDEN_TAB_WAITS_MS = 400;
@@ -46,6 +47,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }, [ready, dashboardKey]);
 
   const lock = useCallback(() => {
+    trackDashboardEvent("Dashboard locked");
     window.localStorage.removeItem(KEY_STORAGE);
     setDashboardKey(null);
   }, []);
@@ -53,7 +55,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
   if (!ready) return null;
   if (!session) {
-    return <Gate onUnlock={(key) => { window.localStorage.setItem(KEY_STORAGE, key); setDashboardKey(key); }} />;
+    return <Gate onUnlock={(key) => { trackDashboardEvent("Dashboard unlocked"); window.localStorage.setItem(KEY_STORAGE, key); setDashboardKey(key); }} />;
   }
   return (
     <SessionContext.Provider value={session}>
