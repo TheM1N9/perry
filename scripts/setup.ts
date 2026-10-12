@@ -3,9 +3,9 @@
  * One command to install Perry: `pnpm run setup`, run by `perry setup`.
  *
  * Everything this touches belongs to whoever runs it: your bot, your keys,
- * your data, all on this computer. Nothing is shared with anyone, including
- * whoever handed you this repo, and no account is needed but the one of the
- * engine you choose.
+ * your data, all on this computer. Anonymous setup analytics exclude all
+ * credentials and content; PERRY_TELEMETRY_DISABLED=1 disables them. No account
+ * is needed but the one of the engine you choose.
  *
  * Safe to re-run. It keeps what is already configured and only asks for what
  * is missing.
@@ -19,6 +19,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { trackInstallation } from "./telemetry";
 import { accessSync, constants, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { delimiter, join, resolve } from "node:path";
@@ -379,6 +380,7 @@ async function main() {
   else if (choice.chosen) writeFileSync(PATHS.engineChoice, JSON.stringify({ engine: choice.engine }), "utf8");
 
   input.close();
+  await trackInstallation("Setup configured");
   // `perry setup` goes on to start Perry, pair the bot and open the dashboard.
   if (process.argv.includes("--from-perry")) return;
 
