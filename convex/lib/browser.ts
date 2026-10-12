@@ -24,19 +24,21 @@ import { HOME, PATHS } from "../../runner/home";
 const PROFILE = join(HOME, "browser");
 type Control = {
   scope: string; ownerBusy: boolean; sessionApprovalEpoch: number; id: string; revision: number; epoch: number; controller: "agent" | "owner";
-  promise: Promise<Tab> | null; current: Tab | null; busy: boolean; private: boolean;
+  root: Session | null; promise: Promise<Tab> | null; current: Tab | null; busy: boolean; private: boolean;
   loading: boolean; error: string | null; dialog: { type: string; message: string } | null;
   upload: number | null; downloads: Map<string, { id: string; name: string; state: string }>;
   connections: Map<string, Tab>;
 };
 type Lease = { control: Control; controller: "agent" | "owner" | "viewer"; revision: number; epoch: number; started: boolean };
-const context = new AsyncLocalStorage<Lease>();
-const states = (globalThis as typeof globalThis & { __perryBrowsers?: Map<string, Control> });
+const states = (globalThis as typeof globalThis & { __perryBrowsers?: Map<string, Control>; __perryBrowserContext?: AsyncLocalStorage<Lease> });
+const context = states.__perryBrowserContext ??= new AsyncLocalStorage<Lease>();
 states.__perryBrowsers ??= new Map();
 function control(scope = context.getStore()?.control.scope ?? "public-reader"): Control {
   let found = states.__perryBrowsers!.get(scope);
   if (!found) {
-    found = { scope, ownerBusy: false, sessionApprovalEpoch: -1, id: randomUUID(), revision: 0, epoch: 0, controller: "agent", promise: null, current: null, busy: false, private: false, loading: false, error: null, dialog: null, upload: null, downloads: new Map(), connections: new Map() };
+    let saved: { controller: "agent" | "owner"; private: boolean } = { controller: "agent", private: false };
+    try { saved = z.object({ controller: z.enum(["agent", "owner"]), private: z.boolean() }).parse(JSON.parse(readFileSync(/*turbopackIgnore: true*/ join(profileDirectory(scope), "perry-control.json"), "utf8"))); } catch {}
+    found = { scope, ownerBusy: false, sessionApprovalEpoch: -1, id: randomUUID(), revision: 0, epoch: 0, controller: saved.controller, root: null, promise: null, current: null, busy: false, private: saved.private, loading: false, error: null, dialog: null, upload: null, downloads: new Map(), connections: new Map() };
     states.__perryBrowsers!.set(scope, found);
   }
   return found;
@@ -75,6 +77,12 @@ export async function withBrowserView<T>(scope: string, run: () => Promise<T>): 
   return await context.run({ control: control(scope), controller: "viewer", revision: 0, epoch: 0, started: true }, run);
 }
 export const browserControl = control;
+export function saveBrowserControl(scope?: string) {
+  const state = control(scope);
+  const folder = profileDirectory(state.scope);
+  mkdirSync(folder, { recursive: true, mode: 0o700 });
+  writeFileSync(/*turbopackIgnore: true*/ join(folder, "perry-control.json"), JSON.stringify({ controller: state.controller, private: state.private }), { mode: 0o600 });
+}
 export function assertBrowserLease() { checkLease(); }
 export function importedSites() {
   try { return Object.keys(z.record(z.string(), z.unknown()).parse(JSON.parse(readFileSync(join(profileDirectory(control().scope), "perry-imports.json"), "utf8")))); } catch { return []; }
@@ -124,7 +132,7 @@ async function launch(): Promise<Tab> {
   if (!path) throw new Error("There is no Chrome, Edge or Chromium on this computer for Perry's browser. Install Chrome, or set PERRY_BROWSER_PATH.");
   mkdirSync(profile, { recursive: true, mode: 0o700 });
   rmSync(join(profile, "DevToolsActivePort"), { force: true });
-  const child = spawn(path, [
+  const child = spawn(/*turbopackIgnore: true*/ path, [
     `--user-data-dir=${profile}`, "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check",
     "--window-size=1280,900", ...(process.env.PERRY_BROWSER_HEADED === "1" ? [] : ["--headless=new"]), "about:blank",
   ], { stdio: "ignore", windowsHide: true });
@@ -142,9 +150,9 @@ async function launch(): Promise<Tab> {
   const tab: Tab = Object.assign(session, { targetId: page.id, child, port, idle: null });
   const gone = () => {
     if (state.current?.child !== child) return;
-    state.promise = null; state.current = null; state.revision++; state.epoch++; state.controller = "owner"; state.error = "Browser host disconnected. Reopen it; previous tabs were lost.";
+    state.promise = null; state.current = null; state.revision++; state.epoch++; state.controller = "owner"; saveBrowserControl(state.scope); state.error = "Browser host disconnected. Reopen it; previous tabs were lost.";
     for (const session of state.connections.values()) { session.ws.close(); for (const waiting of session.pending.values()) waiting.reject(new Error("Perry's browser closed.")); }
-    state.connections.clear();
+    state.connections.clear(); state.root?.ws.close(); state.root = null;
   };
 
   child.on("exit", gone);
@@ -152,7 +160,24 @@ async function launch(): Promise<Tab> {
   await prepareTab(tab, state);
   const downloadDir = join(PATHS.files, "browser-downloads", createHash("sha256").update(state.scope).digest("hex"));
   mkdirSync(downloadDir, { recursive: true, mode: 0o700 });
-  await send(tab, "Browser.setDownloadBehavior", { behavior: "allowAndName", downloadPath: downloadDir, eventsEnabled: true });
+  const version = z.object({ webSocketDebuggerUrl: z.string() }).parse(await (await fetch(`http://127.0.0.1:${port}/json/version`)).json());
+  const root = state.root = await connect(version.webSocketDebuggerUrl);
+  root.ws.addEventListener("close", gone);
+  root.listeners.add((method, params) => {
+    if (method === "Browser.downloadWillBegin") state.downloads.set(String(params.guid), { id: String(params.guid), name: String(params.suggestedFilename).slice(0, 200), state: "inProgress" });
+    if (method === "Browser.downloadProgress") {
+      const item = state.downloads.get(String(params.guid));
+      if (item) {
+        item.state = String(params.state);
+        if (item.state === "completed") void withBrowserView(state.scope, async () => {
+          const values = z.object({ cookies: z.array(z.object({ value: z.string() })) }).parse(await hostCommand("Storage.getCookies"));
+          item.name = values.cookies.reduce((name, cookie) => cookie.value ? name.replaceAll(cookie.value, "[credential]") : name, item.name);
+          await (await import("../../server/browser-files")).registerBrowserDownload(state.scope, item.id, item.name);
+        }).catch(() => { state.error = "A browser download could not be registered. Refresh the browser view."; });
+      }
+    }
+  });
+  await send(root, "Browser.setDownloadBehavior", { behavior: "allowAndName", downloadPath: downloadDir, eventsEnabled: true });
   return tab;
 }
 
@@ -164,14 +189,7 @@ async function prepareTab(tab: Tab, state: Control) {
     if (method === "Page.javascriptDialogOpening" && state.current === tab) state.dialog = { type: String(params.type), message: String(params.message).slice(0, 500) };
     if (method === "Page.javascriptDialogClosed") state.dialog = null;
     if (method === "Page.fileChooserOpened") state.upload = Number(params.backendNodeId);
-    if (method === "Browser.downloadWillBegin") state.downloads.set(String(params.guid), { id: String(params.guid), name: String(params.suggestedFilename).slice(0, 200), state: "inProgress" });
-    if (method === "Browser.downloadProgress") {
-      const item = state.downloads.get(String(params.guid));
-      if (item) {
-        item.state = String(params.state);
-        if (item.state === "completed") void import("../../server/browser-files").then(({ registerBrowserDownload }) => registerBrowserDownload(state.scope, item.id, item.name)).catch(() => { state.error = "A browser download could not be registered. Refresh the browser view."; });
-      }
-    }
+
   });
   await send(tab, "Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
   await send(tab, "Page.enable");
@@ -182,7 +200,7 @@ async function prepareTab(tab: Tab, state: Control) {
 export async function hostCommand(method: string, params: object = {}): Promise<unknown> { return await send(await tab(), method, params); }
 export async function hostTargets() {
   const current = await tab();
-  return z.array(z.object({ id: z.string(), type: z.string(), title: z.string(), url: z.string(), webSocketDebuggerUrl: z.string().optional() })).parse(await (await fetch(`http://127.0.0.1:${current.port}/json/list`)).json()).filter((target) => target.type === "page");
+  return z.array(z.object({ id: z.string(), type: z.string(), title: z.string(), url: z.string(), webSocketDebuggerUrl: z.string().optional() })).parse(await (await fetch(`http://127.0.0.1:${current.port}/json/list`, { signal: AbortSignal.timeout(3000) })).json()).filter((target) => target.type === "page");
 }
 export async function selectHostTab(id: string) {
   const state = control();
@@ -247,7 +265,7 @@ export function closeBrowser() {
   const current = state.promise;
   state.promise = null; state.current = null; state.revision++; state.epoch++;
   for (const open of state.connections.values()) { if (open.idle) clearTimeout(open.idle); open.ws.close(); }
-  state.connections.clear();
+  state.connections.clear(); state.root?.ws.close(); state.root = null;
   void current?.then((open) => { open.child.kill(); }, () => {});
 }
 
@@ -329,10 +347,9 @@ export async function describe(ref: number): Promise<{ kind: string; label: stri
     };
   })()`);
   if (!found) throw new Error(`There is no element ${ref} on this page any more; look at the page again for the current numbers.`);
-  const page = await snapshot();
   const stored = z.object({ cookies: z.array(z.object({ value: z.string() })) }).parse(await send(await tab(), "Storage.getCookies"));
-  const safeSubmit = stored.cookies.reduce((text, cookie) => cookie.value ? text.replaceAll(cookie.value, "[browser credential]") : text, found.submitLabel ?? "");
-  return { ...found, label: page.elements.find((element) => element.ref === ref)?.label ?? "", url: page.url, submitLabel: safeSubmit };
+  const scrub = (text: string) => stored.cookies.reduce((safe, cookie) => cookie.value ? safe.replaceAll(cookie.value, "[browser credential]") : safe, text);
+  return { ...found, label: scrub(found.label), url: scrub(found.url), ...(found.submitLabel ? { submitLabel: scrub(found.submitLabel) } : {}) };
 }
 
 export async function click(ref: number): Promise<Snapshot> {
@@ -414,7 +431,7 @@ export async function back(): Promise<Snapshot> {
 /** Enter a saved login's name and password, typed straight into the page: they never pass through the agent. */
 export async function signIn(login: { username?: string; value: string }, usernameRef: number | undefined, passwordRef: number, submit: boolean): Promise<Snapshot> {
   beginAction();
-  control().private = true;
+  control().private = true; saveBrowserControl();
   const current = await tab();
   if (usernameRef !== undefined && login.username) {
     await focus(current, usernameRef);

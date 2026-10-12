@@ -23,7 +23,8 @@ process.env.PERRY_BROWSER_VIEW = "1";
 process.env.PERRY_BROWSER_IMPORT = "1";
 process.env.DASHBOARD_KEY = `test-only-${randomUUID()}`;
 const key = process.env.DASHBOARD_KEY;
-const artifact = resolve("artifacts/live-browser/report.json");
+const fixtureSchema = z.enum(["16", "17"]).parse(process.env.PERRY_BROWSER_FIXTURE_SCHEMA ?? "17");
+const artifact = resolve(`artifacts/live-browser/${fixtureSchema === "16" ? "schema16-report" : "report"}.json`);
 const checks: { name: string; pass: boolean; detail?: string }[] = [];
 const testCookie = `test-account-${randomUUID()}`;
 const service = createServer((req, res) => {
@@ -47,13 +48,24 @@ const { controlBrowser, browserStatus } = await import("../../server/browser-hos
 const { POST } = await import("../../app/api/browser/route");
 const sessions = await import("../../server/browser-sessions");
 const { browserIdentity, browserState, importPreview, importProfile, importResult } = await import("../../lib/browser-protocol");
+const { modules } = await import("../../server/modules");
+const { action } = await import("../../convex/_generated/server");
+const { v } = await import("convex/values");
+const { ALL_TOOLS } = await import("../../convex/tools");
+// Register only in this disposable runtime, so the real tool receives its normal ActionCtx.
+modules.browserE2E = { call: action({ args: { conversationId: v.id("conversations"), input: v.string() }, handler: async (ctx, args) => {
+  const tool = { ...ALL_TOOLS.browser, ctx: { ...ctx, conversationId: args.conversationId } };
+  return tool.execute(tool.inputSchema.parse(JSON.parse(args.input)), { toolCallId: "browser-e2e", messages: [] });
+} }) };
 const runtime = backend();
 const chat = z.string().parse(await runtime.runMutation("dashboard:createChat", { key }));
 const other = z.string().parse(await runtime.runMutation("dashboard:createChat", { key }));
+await runtime.runMutation("runner:createToken", { name: "E2E runner", token: "test-only-runner" }, { internal: true });
+const tool = (input: unknown) => runtime.runAction("browserE2E:call", { conversationId: chat, input: JSON.stringify(input) });
 async function check(name: string, run: () => Promise<string | void>) {
   try { const detail = await run(); checks.push({ name, pass: true, ...(detail ? { detail } : {}) }); console.log(`PASS ${name}`); }
   catch (error) { checks.push({ name, pass: false, detail: error instanceof Error ? error.message.replaceAll(testCookie, "[redacted fixture]") : "Unknown failure" }); console.log(`FAIL ${name}`); }
-  writeFileSync(artifact, JSON.stringify({ at: new Date().toISOString(), platform: process.platform, browser: "Installed Chromium, disposable profile", scratch, checks }, null, 2));
+  writeFileSync(artifact, JSON.stringify({ at: new Date().toISOString(), platform: process.platform, browser: "Installed Chromium, disposable profile", cookieSource: process.env.PERRY_TEST_FIREFOX ? "Real Firefox process" : `Reviewed Firefox schema ${fixtureSchema} SQLite fixture (not an installed-profile compatibility check)`, checks }, null, 2));
 }
 function expect(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 async function waitFor(test: () => boolean | Promise<boolean>, timeout = 10000) { const end = Date.now() + timeout; while (!await test()) { if (Date.now() > end) throw new Error("Timed out waiting for browser condition."); await new Promise((done) => setTimeout(done, 150)); } }
@@ -69,6 +81,9 @@ try {
     expect((await route({ conversationId: chat, request: { action: "status" } }, { origin: "https://malicious.test" })).status === 403, "Foreign origin accepted.");
     expect((await route({ conversationId: chat, request: { action: "status" } }, {}, "http://remote.test/api/browser")).status === 403, "Insecure remote accepted.");
     expect(!(await route({ conversationId: "missing", request: { action: "status" } })).ok, "Unknown chat accepted.");
+    const remote = browserState.parse(await (await route({ conversationId: chat, request: { action: "status" } }, {}, "https://remote.test/api/browser")).json()); expect(!remote.importEnabled, "Remote import enabled.");
+    const local = browserState.parse(await (await route({ conversationId: chat, request: { action: "status" } }, { "x-forwarded-for": "::1" })).json()); expect(local.importEnabled, "Local Next.js forwarding disables import.");
+    const canonical = browserState.parse(await (await route({ conversationId: chat, request: { action: "status" } }, { host: "127.0.0.1:7377", origin: "http://127.0.0.1:7377", "x-forwarded-for": "127.0.0.1" })).json()); expect(canonical.importEnabled, "Next canonical URL breaks 127.0.0.1 origin.");
   });
   await check("real session frames, owner input and separate chat profiles", async () => {
     await owner({ action: "start" });
@@ -109,21 +124,34 @@ try {
   });
   await check("popups, tabs, dialogs, and downloaded output provenance", async () => {
     await owner({ action: "navigate", identity: identity(), url: site });
-    await browser.withOwnerBrowser(chat, () => browser.hostCommand("Runtime.evaluate", { expression: `window.open(${JSON.stringify(site + "/popup")})` }));
-    await waitFor(async () => (await browserStatus(chat, true)).tabs.length === 2);
+    await browser.withOwnerBrowser(chat, () => browser.hostCommand("Runtime.evaluate", { expression: `window.open(${JSON.stringify(site + "/popup")})`, userGesture: true }));
+    await waitFor(async () => (await browserStatus(chat, true)).tabs.length === 2).catch(() => { throw new Error("Popup was not exposed as a tab."); });
     const popup = (await browserStatus(chat, true)).tabs.find((item) => item.id !== identity().tabId);
     expect(popup, "Popup missing."); await owner({ action: "tab", identity: identity(), tabId: popup.id });
     await browser.withOwnerBrowser(chat, () => browser.hostCommand("Runtime.evaluate", { expression: "setTimeout(() => alert('Test dialog'), 50)" }));
-    await waitFor(() => browser.browserControl(chat).dialog !== null);
+    await waitFor(() => browser.browserControl(chat).dialog !== null).catch(() => { throw new Error("Dialog event missing."); });
     await owner({ action: "dialog", identity: identity(), accept: false });
     await browser.withOwnerBrowser(chat, () => browser.hostCommand("Page.navigate", { url: `${site}/download` }));
-    await waitFor(() => [...browser.browserControl(chat).downloads.values()].some((item) => item.state === "completed"));
-    await waitFor(() => runtime.store.all("library").some((item) => item.conversationId === chat && item.name === "browser-test.txt"));
+    await waitFor(() => [...browser.browserControl(chat).downloads.values()].some((item) => item.state === "completed")).catch(() => { throw new Error("Download progress event missing."); });
+    await waitFor(() => runtime.store.all("library").some((item) => item.conversationId === chat && item.name === "browser-test.txt")).catch(() => { throw new Error("Download not indexed in chat Library."); });
     expect(!runtime.store.all("library").some((item) => item.conversationId === other), "Download leaked to another chat.");
+    const files = z.object({ page: z.array(z.object({ name: z.string() })) }).parse((await runtime.runQuery("workspace:files", { key, conversationId: chat, scope: "chat", paginationOpts: { numItems: 50, cursor: null } })).value);
+    expect(files.page.some((item) => item.name === "browser-test.txt"), "Download missing from scoped workspace.");
   });
 
+  await check("manual file upload uses the same tab and registers this chat only", async () => {
+    await owner({ action: "navigate", identity: identity(), url: site });
+    await browser.withOwnerBrowser(chat, () => browser.hostCommand("Runtime.evaluate", { expression: "document.querySelector('input[type=file]').click()", userGesture: true }));
+    await waitFor(() => browser.browserControl(chat).upload !== null);
+    const { POST: upload } = await import("../../app/api/browser/upload/route");
+    const response = await upload(new Request("http://localhost:7377/api/browser/upload", { method: "POST", headers: { origin: "http://localhost:7377", "x-perry-key": key, "x-perry-chat": chat, "x-browser-identity": JSON.stringify(identity()), "x-file-name": "owner-upload.txt" }, body: "upload fixture" }));
+    expect(response.ok, "Manual upload rejected.");
+    const files = z.object({ result: z.object({ value: z.string() }) }).parse(await browser.withOwnerBrowser(chat, () => browser.hostCommand("Runtime.evaluate", { expression: "document.querySelector('input[type=file]').files[0].name", returnByValue: true })));
+    expect(files.result.value === "owner-upload.txt", "Browser uploaded a different file.");
+    expect(runtime.store.all("library").some((item) => item.name === "owner-upload.txt" && item.conversationId === chat), "Upload missing from chat Library.");
+  });
   const source = join(process.env.PERRY_FIREFOX_ROOT!, "Profiles", "test"); mkdirSync(source, { recursive: true });
-  let schema = 17;
+  let schema = Number(fixtureSchema);
   if (process.env.PERRY_TEST_FIREFOX) {
     writeFileSync(join(source, "user.js"), 'user_pref("browser.shell.checkDefaultBrowser", false); user_pref("datareporting.policy.dataSubmissionEnabled", false); user_pref("toolkit.telemetry.enabled", false);');
     const firefox = spawn(process.env.PERRY_TEST_FIREFOX, ["--headless", "--no-remote", "--profile", source, `${site}/login`], { stdio: "ignore" });
@@ -136,16 +164,26 @@ try {
       const found = z.object({ count: z.number() }).parse(db.prepare("SELECT count(*) AS count FROM moz_cookies WHERE name = 'session'").get());
       db.close(); expect(found.count === 1, "Firefox test cookie was not persisted."); return `Firefox database schema ${schema}`;
     });
+    firefox.kill("SIGTERM");
   } else {
     const db = new DatabaseSync(join(source, "cookies.sqlite"));
-    db.exec("PRAGMA user_version=17; CREATE TABLE moz_cookies(name TEXT,value TEXT,host TEXT,path TEXT,expiry INTEGER,isSecure INTEGER,isHttpOnly INTEGER,sameSite INTEGER,originAttributes TEXT,isPartitionedAttributeSet INTEGER,schemeMap INTEGER)");
+    db.exec(`PRAGMA user_version=${fixtureSchema}; CREATE TABLE moz_cookies(name TEXT,value TEXT,host TEXT,path TEXT,expiry INTEGER,isSecure INTEGER,isHttpOnly INTEGER,sameSite INTEGER,originAttributes TEXT,isPartitionedAttributeSet INTEGER,schemeMap INTEGER)`);
     db.prepare("INSERT INTO moz_cookies VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("session", testCookie, "127.0.0.1", "/", Date.now() + 3600000, 1, 1, 2, "", 0, 2); db.close();
   }
-  writeFileSync(join(process.env.PERRY_FIREFOX_ROOT!, "profiles.ini"), "[Profile0]\nName=Test account\nIsRelative=1\nPath=Profiles/test\n[Profile1]\nName=Other account\nIsRelative=1\nPath=Profiles/missing\n");
+  const secondSource = join(process.env.PERRY_FIREFOX_ROOT!, "Profiles", "other"); mkdirSync(secondSource, { recursive: true });
+  const secondDb = new DatabaseSync(join(secondSource, "cookies.sqlite"));
+  secondDb.exec(`PRAGMA user_version=${fixtureSchema}; CREATE TABLE moz_cookies(name TEXT,value TEXT,host TEXT,path TEXT,expiry INTEGER,isSecure INTEGER,isHttpOnly INTEGER,sameSite INTEGER,originAttributes TEXT,isPartitionedAttributeSet INTEGER,schemeMap INTEGER)`);
+  secondDb.prepare("INSERT INTO moz_cookies VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("other", "different-test-account", "other.test", "/", Date.now() + 3600000, 1, 1, 2, "", 0, 2); secondDb.close();
+  writeFileSync(join(process.env.PERRY_FIREFOX_ROOT!, "profiles.ini"), "[Profile0]\nName=Test account\nIsRelative=1\nPath=Profiles/test\n[Profile1]\nName=Other account\nIsRelative=1\nPath=Profiles/other\n[Profile2]\nName=Missing account\nIsRelative=1\nPath=Profiles/missing\n");
   await check("profile selection and preview contain no credential values", async () => {
     const profiles = z.array(importProfile).parse(await owner({ action: "profiles" }));
     expect(profiles.some((item) => item.label === "Test account" && item.supported), "Test profile not discoverable.");
-    expect(profiles.some((item) => item.label === "Other account" && !item.supported), "Missing second profile not explained.");
+    expect(profiles.some((item) => item.label === "Other account" && item.supported), "Second valid profile missing.");
+    expect(profiles.some((item) => item.label === "Missing account" && !item.supported), "Missing profile not explained.");
+    const otherProfile = profiles.find((item) => item.label === "Other account"); expect(otherProfile, "Second source missing.");
+    const wrong = importPreview.parse(await owner({ action: "previewImport", profileId: otherProfile.id }));
+    expect(wrong.sites.every((item) => item.site !== "127.0.0.1"), "Preview silently included another profile.");
+    await denied(() => owner({ action: "import", identity: identity(), ticket: wrong.ticket, sites: ["127.0.0.1"], confirmed: true }));
     const sourceId = profiles.find((item) => item.label === "Test account")!.id;
     const preview = importPreview.parse(await owner({ action: "previewImport", profileId: sourceId }));
     expect(!JSON.stringify(preview).includes(testCookie), "Credential in preview.");
@@ -167,6 +205,24 @@ try {
     const stored = z.object({ cookies: z.array(z.object({ name: z.string(), path: z.string(), secure: z.boolean(), httpOnly: z.boolean(), sameSite: z.string().optional() })) }).parse(await browser.withOwnerBrowser(chat, () => browser.hostCommand("Storage.getCookies")));
     expect(stored.cookies.some((item) => item.name === "session" && item.path === "/" && item.secure && item.httpOnly && item.sameSite === "Strict"), "Security attributes lost.");
   });
+  await check("real tool requires imported-session approval and takeover cancels pending approval", async () => {
+    await owner({ action: "resume", identity: identity() });
+    const pending = tool({ action: "look" });
+    await waitFor(() => runtime.store.all("approvals").some((item) => item.status === "pending" && item.title === "Use imported browser sessions"));
+    const approval = runtime.store.all("approvals").find((item) => item.status === "pending" && item.title === "Use imported browser sessions"); expect(approval, "No imported-session approval.");
+    await owner({ action: "takeover" });
+    const cancelled = z.object({ error: z.string() }).parse(await pending); expect(/control changed|paused/.test(cancelled.error), "Pending tool retained control.");
+    await runtime.runMutation("approvals:decide", { key, id: approval._id, approved: true });
+    expect((await browserStatus(chat, true)).state === "paused", "Late approval resumed browser.");
+    await owner({ action: "resume", identity: identity() });
+    const resumed = tool({ action: "look" });
+    await waitFor(() => runtime.store.all("approvals").some((item) => item.status === "pending" && item.title === "Use imported browser sessions"));
+    const next = runtime.store.all("approvals").find((item) => item.status === "pending" && item.title === "Use imported browser sessions"); expect(next, "Resume reused old approval.");
+    await runtime.runMutation("approvals:decide", { key, id: next._id, approved: true });
+    const page = z.object({ text: z.string() }).parse(await resumed); expect(!page.text.includes(testCookie), "Tool leaked imported cookie.");
+    const missing = z.object({ error: z.string() }).parse(await tool({ action: "click", ref: 1 })); expect(missing.error.includes("identity"), "Tool accepted unbound action.");
+    await owner({ action: "takeover" });
+  });
   await check("expired, partitioned, locked and incompatible sources explain recovery", async () => {
     const db = new DatabaseSync(join(source, "cookies.sqlite"));
     const columns = z.array(z.object({ name: z.string() })).parse(db.prepare("PRAGMA table_info(moz_cookies)").all()).map((item) => item.name);
@@ -186,6 +242,17 @@ try {
     const change = new DatabaseSync(join(source, "cookies.sqlite")); change.exec("PRAGMA user_version=999"); change.close();
     await denied(() => owner({ action: "previewImport", profileId: profile.id }));
     const restore = new DatabaseSync(join(source, "cookies.sqlite")); restore.exec(`PRAGMA user_version=${schema}`); restore.close();
+  });
+  await check("partial import rolls back failed destination site and preserves previous account", async () => {
+    await browser.withOwnerBrowser(chat, () => browser.hostCommand("Network.setCookies", { cookies: [{ name: "previous", value: "previous-test-account", url: "https://rollback.test/", secure: true, httpOnly: true, sameSite: "Strict", expires: Date.now() / 1000 + 3600 }] }));
+    const db = new DatabaseSync(join(source, "cookies.sqlite"));
+    db.prepare("INSERT INTO moz_cookies(name,value,host,path,expiry,isSecure,isHttpOnly,sameSite,originAttributes,isPartitionedAttributeSet,schemeMap) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("__Host-rejected", "fixture-only", ".rollback.test", "/", Date.now() + 3600000, 1, 1, 2, "", 0, 2); db.close();
+    const profile = sessions.discoverProfiles().find((item) => item.label === "Test account"); expect(profile, "Source missing.");
+    const preview = importPreview.parse(await owner({ action: "previewImport", profileId: profile.id }));
+    const result = importResult.parse(await owner({ action: "import", identity: identity(), ticket: preview.ticket, sites: ["rollback.test", "127.0.0.1"], confirmed: true }));
+    expect(result.some((item) => item.site === "rollback.test" && item.status === "rolled_back") && result.some((item) => item.site === "127.0.0.1" && item.status === "imported"), "Partial statuses missing.");
+    const kept = z.object({ cookies: z.array(z.object({ name: z.string(), value: z.string() })) }).parse(await browser.withOwnerBrowser(chat, () => browser.hostCommand("Storage.getCookies")));
+    expect(kept.cookies.some((item) => item.name === "previous" && item.value === "previous-test-account"), "Rollback lost previous account.");
   });
   await check("per-site removal leaves source unchanged and invalidates destination login", async () => {
     const before = createHash("sha256").update(readFileSync(join(source, "cookies.sqlite"))).digest("hex");
@@ -208,4 +275,4 @@ try {
   runtime.sql.close();
 }
 console.log(`${checks.filter((item) => item.pass).length}/${checks.length} passed. Artifact: ${artifact}`);
-process.exitCode = checks.every((item) => item.pass) ? 0 : 1;
+process.exit(checks.every((item) => item.pass) ? 0 : 1);

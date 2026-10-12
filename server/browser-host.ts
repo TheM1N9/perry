@@ -25,13 +25,14 @@ export async function controlBrowser(scope: string, request: BrowserRequest, imp
   const state = browser.browserControl(scope);
   if (request.action === "status") return browserStatus(scope, importEnabled);
   if (request.action === "start") {
-    state.controller = "owner"; state.epoch++; state.revision++;
+    if (state.error && state.current) await browser.withBrowserView(scope, async () => browser.closeBrowser());
+    state.controller = "owner"; state.private = true; state.epoch++; state.revision++; browser.saveBrowserControl(scope);
     await browser.withOwnerBrowser(scope, async () => { await browser.hostTargets(); });
     return browserStatus(scope, importEnabled);
   }
   if (request.action === "takeover") {
-    state.controller = "owner"; state.epoch++; state.revision++; state.private = true;
-    if (state.current) await browser.withBrowserView(scope, async () => { await browser.hostCommand("Page.stopLoading"); });
+    state.controller = "owner"; state.private = true; state.epoch++; state.revision++; browser.saveBrowserControl(scope);
+    if (state.current) void browser.withBrowserView(scope, async () => { await browser.hostCommand("Page.stopLoading"); }).catch(() => {});
     return browserStatus(scope, importEnabled);
   }
   if (request.action === "profiles") {
@@ -52,7 +53,7 @@ export async function controlBrowser(scope: string, request: BrowserRequest, imp
   }
   if (request.action === "resume") {
     if (state.busy) throw new Error("The cancelled agent action is still finishing. Wait, then explicitly resume again.");
-    state.controller = "agent"; state.epoch++; state.revision++;
+    state.controller = "agent"; state.epoch++; state.revision++; browser.saveBrowserControl(scope);
     return browserStatus(scope, importEnabled);
   }
   if (state.controller !== "owner") throw new Error("Pause and take over before interacting with the browser.");
@@ -79,7 +80,7 @@ export async function controlBrowser(scope: string, request: BrowserRequest, imp
         for (const type of ["keyDown", "keyUp"]) await browser.hostCommand("Input.dispatchKeyEvent", { type, key: request.key, code: request.code, modifiers: request.modifiers, ...(request.key === "Enter" && type === "keyDown" ? { text: "\r", windowsVirtualKeyCode: 13 } : {}), ...(request.key === "Backspace" ? { windowsVirtualKeyCode: 8 } : {}), ...(request.key === "Tab" ? { windowsVirtualKeyCode: 9 } : {}) });
         break;
       case "dialog": await browser.hostCommand("Page.handleJavaScriptDialog", { accept: request.accept, promptText: request.text }); state.dialog = null; break;
-      case "privacy": state.private = request.private; break;
+      case "privacy": state.private = request.private; browser.saveBrowserControl(scope); break;
       case "import":
         if (!importEnabled) throw new Error("Session import is disabled on this connection.");
         return (await import("./browser-sessions")).importSessions(scope, request.identity, request.ticket, request.sites);

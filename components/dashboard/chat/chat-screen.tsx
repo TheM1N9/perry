@@ -41,6 +41,7 @@ import { MessageRow, PendingRow, ReplyInProgress } from "./message";
 import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
 
 import { WorkspacePanel } from "./workspace-panel";
+import { BrowserPanel } from "./browser-panel";
 
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
@@ -92,6 +93,8 @@ export function ChatScreen() {
   useEffect(() => setCreatedId(null), [paramId]);
   const selectedId = paramId ?? createdId;
   const workspace = useQuery(api.workspace.settings, { key: dashboardKey });
+  const browserView = useQuery(api.browserView.settings, { key: dashboardKey });
+  const panelEnabled = workspace?.enabled || browserView?.enabled;
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const workspaceToggle = useRef<HTMLButtonElement>(null);
   const workspaceScopeKey = `perry.workspace.open.${selectedId ?? "new"}`;
@@ -639,7 +642,7 @@ export function ChatScreen() {
     <div className="flex h-dvh min-h-0">
     <div className="flex min-w-0 flex-1 flex-col">
       <TopBar actions={<>
-        {workspace?.enabled && !chat?.contact && <Button ref={workspaceToggle} size="icon-sm" variant="ghost" aria-label="Open workspace" aria-expanded={workspaceOpen} onClick={() => openWorkspace(!workspaceOpen)}><PanelRightIcon /></Button>}
+        {panelEnabled && !chat?.contact && <Button ref={workspaceToggle} size="icon-sm" variant="ghost" aria-label="Open workspace" aria-expanded={workspaceOpen} onClick={() => openWorkspace(!workspaceOpen)}><PanelRightIcon /></Button>}
         {selectedId && summary ? (
         <ChatMenu
           pinned={summary.pinned}
@@ -843,7 +846,7 @@ export function ChatScreen() {
       </div>
 
     </div>
-      {workspace?.enabled && !chat?.contact && <WorkspacePanel conversationId={selectedId} project={project} open={workspaceOpen} onOpenChange={openWorkspace} />}
+      {panelEnabled && !chat?.contact && <WorkspacePanel conversationId={selectedId} project={project} open={workspaceOpen} onOpenChange={openWorkspace} browser={browserView?.enabled && selectedId ? <BrowserPanel key={selectedId} conversationId={selectedId} onClose={() => openWorkspace(false)} /> : undefined} />}
       {summary && <RenameDialog chat={renaming ? summary : null} onClose={() => setRenaming(false)} />}
       {summary && <DeleteDialog chat={removing ? summary : null} onClose={() => setRemoving(false)} />}
       {summary && <NewProjectDialog open={creatingProject} chat={summary.id} onClose={() => setCreatingProject(false)} />}

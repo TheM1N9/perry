@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import * as browser from "../convex/lib/browser";
@@ -68,13 +68,13 @@ function readSource(source: Source) {
   try {
     db.exec("PRAGMA query_only = ON; PRAGMA trusted_schema = OFF;");
     const version = z.object({ user_version: z.number().int() }).parse(db.prepare("PRAGMA user_version").get()).user_version;
-    if (![14, 15, 16, 17].includes(version)) throw new Error("This Firefox cookie format is unsupported. Sign in manually instead.");
+    if (![16, 17].includes(version)) throw new Error("This Firefox cookie format is unsupported. Sign in manually instead.");
     const columns = z.array(z.object({ name: z.string() })).parse(db.prepare("PRAGMA table_info(moz_cookies)").all()).map((item) => item.name);
     const partition = columns.includes("isPartitionedAttributeSet") ? "isPartitionedAttributeSet" : "0 AS isPartitionedAttributeSet";
     const scheme = columns.includes("schemeMap") ? "schemeMap" : "0 AS schemeMap";
     const rows = z.array(row).parse(db.prepare(`SELECT name,value,host,path,expiry,isSecure,isHttpOnly,sameSite,originAttributes,${partition},${scheme} FROM moz_cookies LIMIT 50001`).all());
     if (rows.length > 50000) throw new Error("This profile has too many cookies for a bounded import. Sign in manually instead.");
-    return rows.map((item) => ({ ...item, expiry: version >= 16 ? item.expiry / 1000 : item.expiry }));
+    return rows.map((item) => ({ ...item, expiry: item.expiry / 1000 }));
   } catch (error) {
     // Never surface SQLite/zod errors: they may include row values.
     if (error instanceof Error && /^(This Firefox|This profile)/.test(error.message)) throw error;
@@ -137,7 +137,7 @@ export async function importSessions(scope: string, identity: BrowserIdentity, t
   const rows = readSource(ticket.profile);
   const results: { site: string; status: "imported" | "expired" | "unsupported" | "rolled_back" | "sign_in_required"; count: number; note: string }[] = [];
   const saved = manifest(scope);
-  browser.browserControl(scope).private = true;
+  browser.browserControl(scope).private = true; browser.saveBrowserControl(scope);
   for (const site of new Set(selected)) {
     const matching = rows.filter((item) => host(item.host) === site);
     const wanted = matching.filter((item) => supported(item) && item.expiry > Date.now() / 1000).map(convert);
@@ -154,7 +154,10 @@ export async function importSessions(scope: string, identity: BrowserIdentity, t
       saveManifest(scope, saved);
       results.push({ site, status: "imported", count: wanted.length, note: `Cookies verified; inspect this site in the browser to confirm sign-in. ${matching.length - wanted.length} expired/unsupported cookies skipped. Some sites need other storage or a fresh sign-in.` });
     } catch {
-      try { await deleteCookies((await destination()).filter((item) => host(item.domain) === site)); await setCookies(before); }
+      try { await deleteCookies((await destination()).filter((item) => host(item.domain) === site)); await setCookies(before);
+        const restored = (await destination()).filter((item) => host(item.domain) === site);
+        if (before.length !== restored.length || before.some((item) => !restored.some((actual) => actual.name === item.name && actual.domain === item.domain && actual.path === item.path && actual.value === item.value && actual.secure === item.secure && actual.httpOnly === item.httpOnly && actual.sameSite === item.sameSite))) throw new Error("Rollback verification failed.");
+      }
       catch { browser.closeBrowser(); throw new Error("Import rollback could not be verified. Browser closed. Inspect this site's destination sessions before continuing; the source is unchanged."); }
       results.push({ site, status: "rolled_back", count: 0, note: "Import failed. Previous destination cookies were restored; sign in manually." });
     }

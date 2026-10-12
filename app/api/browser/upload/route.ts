@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { extname, join } from "node:path";
+import { join } from "node:path";
 import { z } from "zod";
 import { browserIdentity } from "@/lib/browser-protocol";
 import * as browser from "@/convex/lib/browser";
@@ -24,9 +24,11 @@ export async function POST(request: Request) {
     if (!bytes.length || bytes.length > limit) return Response.json({ error: "Files must be between 1 byte and 50 MB." }, { status: 413 });
     browser.checkIdentity(expected, scope);
     const name = decodeURIComponent(request.headers.get("x-file-name") ?? "upload").slice(0, 200);
-    const extension = extname(name).slice(1).toLowerCase();
+    const safeName = name.replace(/[\\/\x00-\x1f<>:"|?*]/g, "_").replace(/^\.+/, "") || "upload";
     mkdirSync(PATHS.uploads, { recursive: true, mode: 0o700 });
-    const path = join(PATHS.uploads, `${randomUUID()}${/^[a-z0-9]{1,8}$/.test(extension) ? `.${extension}` : ""}`);
+    const folder = join(PATHS.uploads, "browser", randomUUID());
+    mkdirSync(folder, { recursive: true, mode: 0o700 });
+    const path = join(folder, safeName);
     writeFileSync(path, bytes, { mode: 0o600 });
     await browser.withOwnerBrowser(scope, async () => {
       await browser.hostCommand("DOM.setFileInputFiles", { files: [path], backendNodeId: state.upload });
