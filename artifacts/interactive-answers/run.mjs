@@ -191,11 +191,13 @@ try {
   const calendar = await mcp("interactive_create", { requestId: "calendar", definition: { ...definition, title: "Draft content calendar", summary: "Owner input fixture. Dates are saved drafts; nothing is published.", inputs: [{ kind: "date", id: "date", label: "Draft publication date", initial: "2026-10-13" }, { kind: "select", id: "channel", label: "Draft channel", options: ["Blog", "Video"], initial: "Blog" }], provenance: { ...definition.provenance, kind: "owner" }, view: { kind: "table", columns: ["Date", "Channel", "Status"], rows: [[{ input: "date" }, { input: "channel" }, "Draft"], ["2026-10-22", "Blog", "\t=1+1"]] } } });
   const calendarCard = page.locator(`[data-interactive="${calendar.id}"]`);
   await calendarCard.getByLabel("Draft publication date").fill("2026-10-20");
-  await calendarCard.getByLabel("Draft channel").selectOption("Video");
+  await calendarCard.getByRole("combobox", { name: "Draft channel" }).click();
+  await page.getByRole("option", { name: "Video", exact: true }).click();
   await until(async () => { const row = (await list()).find((row) => row.id === calendar.id); return row.values.date === "2026-10-20" && row.values.channel === "Video"; }, "draft calendar save");
   check("content calendar dates and channels update and save as drafts", (await calendarCard.locator("tbody").innerText()).includes("2026-10-20") && externalHits === 0);
   const calendarExport = page.waitForEvent("download");
-  await calendarCard.getByRole("button", { name: "Export CSV" }).click();
+  await calendarCard.getByRole("button", { name: /^Actions for / }).click();
+  await page.getByRole("menuitem", { name: "Export CSV", exact: true }).click();
   await (await calendarExport).saveAs(join(output, "calendar.csv"));
   check("CSV exports neutralize formulas after leading whitespace", readFileSync(join(output, "calendar.csv"), "utf8").includes("\"'\t=1+1\""));
 
@@ -251,12 +253,15 @@ try {
   await until(async () => (await list())[0].values.usage === 32, "keyboard number input");
   check("keyboard works at narrow width with reduced motion", await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches && document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: join(output, "mobile-reduced-motion.png"), fullPage: true });
-  await card.getByRole("button", { name: "Reset", exact: true }).click();
+  await card.getByRole("button", { name: /^Actions for / }).click();
+  await page.getByRole("menuitem", { name: "Reset", exact: true }).click();
   await until(async () => (await list())[0].values.usage === 10, "reset draft");
-  await card.getByRole("button", { name: "Undo", exact: true }).click();
+  await card.getByRole("button", { name: /^Actions for / }).click();
+  await page.getByRole("menuitem", { name: "Undo", exact: true }).click();
   await until(async () => (await list())[0].values.usage === 32, "undo draft");
   const downloadEvent = page.waitForEvent("download");
-  await card.getByRole("button", { name: "Export CSV" }).click();
+  await card.getByRole("button", { name: /^Actions for / }).click();
+  await page.getByRole("menuitem", { name: "Export CSV", exact: true }).click();
   const download = await downloadEvent;
   await download.saveAs(join(output, "comparison.csv"));
   check("reset, undo and table export complete", Boolean(download.suggestedFilename().endsWith(".csv")));
@@ -268,7 +273,8 @@ try {
   await until(async () => (await card.innerText()).includes("Save failed"), "failed save notice");
   check("failed save preserves inputs and never displays success", await usage.inputValue() === "35" && (await list())[0].values.usage === 32);
   await page.unroute("**/api/backend/call");
-  await card.getByRole("button", { name: "Save draft", exact: true }).click();
+  await card.getByRole("button", { name: /^Actions for / }).click();
+  await page.getByRole("menuitem", { name: "Save draft", exact: true }).click();
   await until(async () => (await list())[0].values.usage === 35, "save recovery");
   await usage.fill("32");
   await until(async () => (await list())[0].values.usage === 32, "restore test input");
