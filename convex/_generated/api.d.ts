@@ -54,6 +54,7 @@ import type * as lib_truncate from "../lib/truncate.js";
 import type * as lib_turnLimits from "../lib/turnLimits.js";
 import type * as lib_usage from "../lib/usage.js";
 import type * as lib_whatsappFormat from "../lib/whatsappFormat.js";
+import type * as lib_workspace from "../lib/workspace.js";
 import type * as library from "../library.js";
 import type * as mcp from "../mcp.js";
 import type * as media from "../media.js";
@@ -84,6 +85,7 @@ import type * as wake from "../wake.js";
 import type * as web from "../web.js";
 import type * as whatsapp from "../whatsapp.js";
 import type * as work from "../work.js";
+import type * as workspace from "../workspace.js";
 
 import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
 
@@ -139,6 +141,7 @@ declare const fullApi: ApiFromModules<{
   "lib/turnLimits": typeof lib_turnLimits;
   "lib/usage": typeof lib_usage;
   "lib/whatsappFormat": typeof lib_whatsappFormat;
+  "lib/workspace": typeof lib_workspace;
   library: typeof library;
   mcp: typeof mcp;
   media: typeof media;
@@ -169,6 +172,7 @@ declare const fullApi: ApiFromModules<{
   web: typeof web;
   whatsapp: typeof whatsapp;
   work: typeof work;
+  workspace: typeof workspace;
 }>;
 
 /** Functions the dashboard, the runner and scripts can call, e.g. `api.dashboard.getChat`. */

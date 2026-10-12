@@ -1581,6 +1581,9 @@ const library_add = createTool({
     path: z.string().min(3).describe("Absolute path to the file on this computer."),
     name: z.string().max(200).optional().describe("What to call it, when its file name says little."),
     madeBy: z.enum(["owner", "perry"]).optional().describe("perry (default) for a file you made; owner for one of theirs."),
+    role: z.enum(["input", "output", "working"]).optional().describe("Usable output by default. Register scratch/intermediate files as working."),
+    versionOf: z.string().optional().describe("Library ID of the previous version in this chat. Save each version at a different path."),
+    versionLabel: z.string().max(80).optional().describe("An explicit version label, e.g. Draft 2 or Final."),
   }),
   execute: async (ctx, input): Promise<{ added: true; id: string; link: string } | { error: string }> => {
     const chat: { contactId?: string } | null = ctx.conversationId ? await ctx.runQuery(internal.conversations.getById, { id: ctx.conversationId }) : null;
@@ -1588,6 +1591,9 @@ const library_add = createTool({
     try {
       const id: string = await ctx.runMutation(internal.library.add, {
         path: input.path, how: "added", by: input.madeBy ?? "perry", ...(input.name ? { name: input.name } : {}),
+        role: input.role ?? (input.madeBy === "owner" ? "input" : "output"),
+        ...(input.versionOf ? { versionOf: input.versionOf as Id<"library"> } : {}),
+        ...(input.versionLabel ? { versionLabel: input.versionLabel } : {}),
         ...(ctx.conversationId ? { conversationId: ctx.conversationId as Id<"conversations"> } : {}),
       });
       return { added: true, id, link: libraryHref(id) };

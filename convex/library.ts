@@ -9,6 +9,7 @@ import { kindOf, libraryFileUrl, previewOf, SINCE, type LibraryBy, type LibraryF
 import { ABSOLUTE_PATH, describePath } from "./media";
 import { vLibraryFrom, vLibraryKind } from "./schema";
 import { HOME, PATHS } from "../runner/home";
+import { associate, workspaceSafe } from "./lib/workspace";
 
 /**
  * The Library (issue #216): every file the owner gave Perry and every file
@@ -88,6 +89,7 @@ export async function index(ctx: MutationCtx, id: Id<"chatAttachments">, hint: H
   if (row.messageKey === "steps") return;
   const chat = await ctx.db.get(row.conversationId);
   if (!chat || chat.contactId) return;
+  if (!workspaceSafe(row.localPath, row.fileName)) return;
   const written = row.messageKey.startsWith("steps-");
   if (written && !(row.localPath && within(row.localPath, PATHS.files))) return;
 
@@ -115,12 +117,13 @@ export async function index(ctx: MutationCtx, id: Id<"chatAttachments">, hint: H
         ? { ...source, by: hint.by ?? (perry || look ? "perry" : "owner"), how }
         : { conversationId: chat._id, messageKey: row.messageKey, projectId: chat.projectId, jobId: chat.jobId, taskId: chat.taskId });
     }
+    await associate(ctx, existing, chat, { role: written ? "working" : perry ? "output" : "input", provenance: perry ? "produced" : "uploaded", messageKey: row.messageKey });
     return;
   }
   const size = row.localPath ? sizeHere(row.localPath) : row.size;
   if (size === null) return;
   const name = row.fileName || describePath(row.localPath ?? "file").fileName;
-  await ctx.db.insert("library", {
+  const libraryId = await ctx.db.insert("library", {
     name,
     contentType: row.contentType,
     kind: kindOf(row.contentType, name),
@@ -132,6 +135,8 @@ export async function index(ctx: MutationCtx, id: Id<"chatAttachments">, hint: H
     search: name.toLowerCase(),
     createdAt: row.createdAt,
   });
+  const item = await ctx.db.get(libraryId);
+  if (item) await associate(ctx, item, chat, { role: written ? "working" : perry ? "output" : "input", provenance: perry ? "produced" : "uploaded", messageKey: row.messageKey });
 }
 
 /** Index a chat's file as it is attached (media.ts, codex.ts, dashboard.ts). */
@@ -145,17 +150,26 @@ export const indexAttachment = internalMutation({
 });
 
 /** A file on this computer put in the Library by itself: a browser screenshot, or one Perry added with library_add. */
-export async function addLocal(ctx: MutationCtx, args: { path: string; how: LibraryHow; by: LibraryBy; conversationId?: Id<"conversations">; name?: string }) {
+export async function addLocal(ctx: MutationCtx, args: { path: string; how: LibraryHow; by: LibraryBy; conversationId?: Id<"conversations">; name?: string; role?: Doc<"workspaceFiles">["role"]; versionOf?: Id<"library">; versionLabel?: string }) {
   if (!ABSOLUTE_PATH.test(args.path)) throw new Error("Give the file's absolute path.");
   const size = sizeHere(args.path);
   if (size === null) throw new Error("There is no file at that path on this computer.");
   const chat = args.conversationId ? await ctx.db.get(args.conversationId) : null;
   if (chat?.contactId) throw new Error("A chat with someone else has no Library.");
   const existing = await byPath(ctx, args.path);
-  if (existing) return existing._id;
+  if (existing) {
+    if (chat) await associate(ctx, existing, chat, { role: args.role ?? "output", provenance: "produced" });
+    return existing._id;
+  }
+  const previous = args.versionOf ? await ctx.db.get(args.versionOf) : null;
+  if (args.versionOf) {
+    const member = chat ? await ctx.db.query("workspaceFiles").withIndex("by_item", (q) => q.eq("conversationId", chat._id).eq("libraryId", args.versionOf!)).first() : null;
+    if (!previous || !member) throw new Error("The previous version must belong to this conversation.");
+    if (await ctx.db.query("library").withIndex("by_version", (q) => q.eq("versionOf", previous._id)).first()) throw new Error("Register the next version from the latest result.");
+  }
   const described = describePath(args.path);
   const name = (args.name?.trim() || described.fileName).slice(0, 200);
-  return await ctx.db.insert("library", {
+  const id = await ctx.db.insert("library", {
     name,
     contentType: described.contentType,
     kind: kindOf(described.contentType, name),
@@ -170,7 +184,12 @@ export async function addLocal(ctx: MutationCtx, args: { path: string; how: Libr
     ...(chat?.taskId ? { taskId: chat.taskId } : {}),
     search: name.toLowerCase(),
     createdAt: Date.now(),
+    ...(previous ? { versionOf: previous._id, versionRoot: previous.versionRoot ?? previous._id } : {}),
+    ...(args.versionLabel ? { versionLabel: args.versionLabel.slice(0, 80) } : {}),
   });
+  const item = await ctx.db.get(id);
+  if (item && chat) await associate(ctx, item, chat, { role: args.role ?? "output", provenance: "produced" });
+  return id;
 }
 
 export const add = internalMutation({
@@ -180,6 +199,9 @@ export const add = internalMutation({
     by: v.union(v.literal("owner"), v.literal("perry")),
     conversationId: v.optional(v.id("conversations")),
     name: v.optional(v.string()),
+    role: v.optional(v.union(v.literal("input"), v.literal("output"), v.literal("working"))),
+    versionOf: v.optional(v.id("library")),
+    versionLabel: v.optional(v.string()),
   },
   returns: v.id("library"),
   handler: async (ctx, args) => await addLocal(ctx, args),
@@ -193,6 +215,13 @@ export const backfill = internalMutation({
     const before = (await ctx.db.query("library").collect()).length;
     const looks = new Set((await ctx.db.query("screenLooks").collect()).flatMap((look) => look.path ? [look.path] : []));
     for (const row of await ctx.db.query("chatAttachments").collect()) await index(ctx, row._id, {}, looks);
+    for (const item of await ctx.db.query("library").collect()) {
+      const chat = item.conversationId ? await ctx.db.get(item.conversationId) : null;
+      if (chat && item.how !== "folder") await associate(ctx, item, chat, {
+        role: item.how === "written" ? "working" : item.by === "owner" ? "input" : "output",
+        provenance: item.by === "owner" ? "uploaded" : "produced", messageKey: item.messageKey,
+      });
+    }
     return (await ctx.db.query("library").collect()).length - before;
   },
 });
@@ -234,6 +263,8 @@ export const dropMissing = internalMutation({
     let dropped = 0;
     for (const id of args.ids) {
       if (!await ctx.db.get(id)) continue;
+      // A scoped artifact remains inspectable and recoverable when its host/file is unavailable.
+      if (await ctx.db.query("workspaceFiles").withIndex("by_library", (q) => q.eq("libraryId", id)).first()) continue;
       await ctx.db.delete(id);
       dropped++;
     }

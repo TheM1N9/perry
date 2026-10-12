@@ -1,0 +1,19 @@
+{
+  "passed": [
+    "fresh chat, unrelated neighbours, project scope and credential access isolation",
+    "registered intermediates, explicit Library attachment and non-destructive pin/hide",
+    "background outputs return only to origin and live task state uses the existing lifecycle",
+    "share_file registers stable artifact/run identity and failed files never become ready",
+    "missing local files recover, repeated registration/backfill deduplicates and secrets stay hidden",
+    "bounded indexed pagination visits a large collection without duplicates",
+    "database/runner restart preserves membership and view metadata"
+  ],
+  "fixture": {
+    "home": "/tmp/perry-workspace-verification-285",
+    "chat": "mz6dj22vfshxdczdtgwwf65v9b",
+    "project": "adqskhwzs8bsa33fmpjnv2xyte",
+    "otherChat": "4q6eypckmwjxntqsjdd7x7jgf4",
+    "version": "frkh5yqe7t53rstjz8sj4g3rwj"
+  },
+  "createdAt": "2026-10-12T20:10:30.937Z"
+}

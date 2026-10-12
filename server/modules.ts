@@ -53,6 +53,7 @@ import * as lib_truncate from "../convex/lib/truncate";
 import * as lib_turnLimits from "../convex/lib/turnLimits";
 import * as lib_usage from "../convex/lib/usage";
 import * as lib_whatsappFormat from "../convex/lib/whatsappFormat";
+import * as lib_workspace from "../convex/lib/workspace";
 import * as library from "../convex/library";
 import * as mcp from "../convex/mcp";
 import * as media from "../convex/media";
@@ -83,6 +84,7 @@ import * as wake from "../convex/wake";
 import * as web from "../convex/web";
 import * as whatsapp from "../convex/whatsapp";
 import * as work from "../convex/work";
+import * as workspace from "../convex/workspace";
 
 export const modules: Record<string, Record<string, unknown>> = {
   "agentStore": agentStore,
@@ -136,6 +138,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/turnLimits": lib_turnLimits,
   "lib/usage": lib_usage,
   "lib/whatsappFormat": lib_whatsappFormat,
+  "lib/workspace": lib_workspace,
   "library": library,
   "mcp": mcp,
   "media": media,
@@ -166,4 +169,5 @@ export const modules: Record<string, Record<string, unknown>> = {
   "web": web,
   "whatsapp": whatsapp,
   "work": work,
+  "workspace": workspace,
 };
