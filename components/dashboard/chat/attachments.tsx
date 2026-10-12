@@ -1,18 +1,24 @@
 "use client";
 
-import { FileIcon, FileXIcon, XIcon } from "lucide-react";
+import { ExpandIcon, FileIcon, FileXIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { Id } from "@/convex/_generated/dataModel";
+import { previewOf } from "@/convex/lib/library";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { FilePreview } from "@/components/ui/file-preview";
 import { bytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { AudioPlayer, VideoPlayer } from "@/components/ui/media-player";
 
 /** A file in a message; `removed` once it was deleted from the Library, with no address. */
-export type Attachment = { url: string; fileName: string; contentType: string; removed?: true };
+export type Attachment = { id?: Id<"chatAttachments">; url: string; fileName: string; contentType: string; removed?: true };
 
 /** What a message carries: pictures and players inline, anything else as a file to open. */
 export function AttachmentList({ attachments, align = "start" }: { attachments: Attachment[]; align?: "start" | "end" }) {
+  const [preview, setPreview] = useState<Attachment | null>(null);
   if (!attachments.length) return null;
   return (
+    <>
     <div className={cn("mt-2 flex flex-wrap gap-2", align === "end" && "justify-end")}>
       {attachments.map((attachment, index) => {
         if (attachment.removed) {
@@ -27,27 +33,44 @@ export function AttachmentList({ attachments, align = "start" }: { attachments: 
         }
         if (attachment.contentType.startsWith("image/")) {
           return (
-            <a key={attachment.url} href={attachment.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${attachment.fileName}`}
+            <button type="button" key={attachment.url} onClick={() => setPreview(attachment)} aria-label={`Preview ${attachment.fileName}`}
               className="block overflow-hidden rounded-xl border bg-muted">
               <img src={attachment.url} alt={attachment.fileName} loading="lazy" className="max-h-64 max-w-full object-cover sm:max-w-sm" />
-            </a>
+            </button>
           );
         }
         if (attachment.contentType.startsWith("video/")) {
-          return <VideoPlayer key={attachment.url} src={attachment.url} name={attachment.fileName} download={attachment.url} className="max-h-72 w-full max-w-full sm:max-w-md" />;
+          return <div key={attachment.url} className="w-full max-w-full sm:max-w-md">
+            <VideoPlayer src={attachment.url} name={attachment.fileName} download={attachment.url} className="max-h-72" />
+            <button type="button" className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground" onClick={() => setPreview(attachment)} aria-label={`Preview ${attachment.fileName}`}><ExpandIcon className="size-3" />Preview</button>
+          </div>;
         }
         if (attachment.contentType.startsWith("audio/")) {
-          return <AudioPlayer key={attachment.url} src={attachment.url} name={attachment.fileName} download={attachment.url} className="sm:w-80" />;
+          return <div key={attachment.url} className="w-full sm:w-80">
+            <AudioPlayer src={attachment.url} name={attachment.fileName} download={attachment.url} />
+            <button type="button" className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground" onClick={() => setPreview(attachment)} aria-label={`Preview ${attachment.fileName}`}><ExpandIcon className="size-3" />Preview</button>
+          </div>;
         }
         return (
-          <a key={attachment.url} href={attachment.url} target="_blank" rel="noopener noreferrer"
+          <button type="button" key={attachment.url} onClick={() => setPreview(attachment)} aria-label={`Preview ${attachment.fileName}`}
             className="flex max-w-64 items-center gap-2 rounded-xl border bg-background px-3 py-2 text-sm hover:bg-muted">
             <FileIcon className="size-4 shrink-0 text-muted-foreground" />
             <span className="truncate">{attachment.fileName}</span>
-          </a>
+          </button>
         );
       })}
     </div>
+    <Dialog open={preview !== null} onOpenChange={(open) => { if (!open) setPreview(null); }}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
+        {preview && <>
+          <DialogTitle className="pr-8 break-words">{preview.fileName}</DialogTitle>
+          <DialogDescription className="sr-only">File preview</DialogDescription>
+          <FilePreview key={preview.url} item={{ name: preview.fileName, url: preview.url.startsWith("/api/media/") ? `${preview.url}?preview=1` : preview.url, preview: previewOf(preview.contentType, preview.fileName), download: preview.url }} />
+          <a href={preview.url.startsWith("/api/media/") ? `${preview.url}?download=1` : preview.url} download className="link">Download {preview.fileName}</a>
+        </>}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 

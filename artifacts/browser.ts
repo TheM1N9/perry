@@ -49,7 +49,7 @@ const freePort = () => new Promise<number>((resolve, reject) => {
 export async function openChat(base: string, dashboardKey: string) {
   const port = await freePort();
   const profile = mkdtempSync(join(tmpdir(), "perry-e2e-profile-"));
-  const chrome = spawn("C:/Program Files/Google/Chrome/Application/chrome.exe", [
+  const chrome = spawn(process.env.PERRY_E2E_BROWSER ?? "C:/Program Files/Google/Chrome/Application/chrome.exe", [
     "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     "--window-size=1280,800", "--autoplay-policy=no-user-gesture-required", "about:blank",
   ], { stdio: "ignore" });

@@ -825,6 +825,8 @@ export default defineSchema({
     .searchIndex("search_text", { searchField: "search" }),
 
   conversations: defineTable({
+    /** Idempotency key of the last atomic edit/resend. */
+    lastRewindRequest: v.optional(v.string()),
     channel: vChannel,
     externalId: v.string(), // telegram chat id, or a unique web session id
     threadId: v.string(),
@@ -915,6 +917,9 @@ export default defineSchema({
    * there. See app/api/media.
    */
   chatAttachments: defineTable({
+    /** Upload staged for editing this immutable message revision. */
+    editOf: v.optional(v.id("agentMessages")),
+    position: v.optional(v.number()),
     conversationId: v.id("conversations"),
     messageKey: v.string(),
     storageId: v.optional(v.id("_storage")),

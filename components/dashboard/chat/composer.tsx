@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { InfoTip } from "../common";
-import { PickedFiles } from "./attachments";
+import { AttachmentList, PickedFiles, type Attachment } from "./attachments";
 
 export const MAX_FILES = 10;
 export const MAX_BYTES = 50 * 1024 * 1024;
@@ -40,7 +40,7 @@ type Pickers = {
 
 export function Composer({
   ref, assistant, draft, onDraftChange, onCaret, onSubmit, onStop, waiting, busy, uploading, files, onAddFiles, onRemoveFile,
-  suggestions, suggesting = "Commands", completing, pickers, above,
+  suggestions, suggesting = "Commands", completing, pickers, above, editing,
 }: {
   ref?: Ref<HTMLTextAreaElement>;
   assistant: string;
@@ -61,7 +61,8 @@ export function Composer({
   suggesting?: string;
   /** What Enter finishes instead of sending: a half-typed command name, a half-typed choice ("/think hi"), or a half-typed $skill. */
   completing: "command" | "choice" | "skill" | null;
-  pickers: Pickers;
+  pickers?: Pickers;
+  editing?: { attachments: Attachment[]; onRemove: (attachment: Attachment) => void; onCancel: () => void };
   above?: ReactNode;
 }) {
   const picker = useRef<HTMLInputElement>(null);
@@ -75,11 +76,11 @@ export function Composer({
 
   const shown = dismissed ? [] : suggestions;
   const index = Math.min(highlight, Math.max(0, shown.length - 1));
-  const empty = !draft.trim() && files.length === 0;
+  const empty = !draft.trim() && files.length === 0 && !editing?.attachments.some((file) => !file.removed);
   const stopping = waiting && empty && onStop;
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       {above}
       {/* The Command menu's look, kept by hand: cmdk gives its list and items ids of its own and runs Enter itself, and
           here the box keeps the focus (aria-activedescendant names the option) and a command typed out in full runs as typed. */}
@@ -105,13 +106,20 @@ export function Composer({
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
         onDrop={(event) => { setDragging(false); if (event.dataTransfer.files.length) { event.preventDefault(); onAddFiles(Array.from(event.dataTransfer.files)); } }}
       >
-        <PickedFiles files={files} onRemove={onRemoveFile} disabled={Boolean(uploading)} />
+        {editing && editing.attachments.length > 0 && <ul aria-label="Current attachments" className="flex gap-2 overflow-x-auto px-3 pt-3">
+          {editing.attachments.map((attachment) => <li key={attachment.id} className="relative min-w-16 max-w-56 shrink-0 [&_img]:max-h-24 [&_video]:max-h-24">
+            <AttachmentList attachments={[attachment]} />
+            <Button type="button" size="icon-xs" variant="secondary" className="absolute top-2 right-0 rounded-full" aria-label={`Remove ${attachment.fileName}`} disabled={busy || Boolean(uploading)} onClick={() => editing.onRemove(attachment)}><XIcon /></Button>
+          </li>)}
+        </ul>}
+        <PickedFiles files={files} onRemove={onRemoveFile} disabled={Boolean(uploading || (editing && busy))} />
         <textarea
           ref={ref}
-          id="composer"
+          id={editing ? "edit-composer" : "composer"}
           value={draft}
           rows={1}
-          aria-label={`Message ${assistant}`}
+          aria-label={editing ? "Edit your message" : `Message ${assistant}`}
+          disabled={Boolean(editing && (uploading || busy))}
           placeholder={waiting ? "Add to the reply, or stop it" : `Message ${assistant}`}
           role="combobox"
           aria-expanded={shown.length > 0}
@@ -124,6 +132,7 @@ export function Composer({
           onPaste={(event) => { const pasted = Array.from(event.clipboardData.files); if (pasted.length) { event.preventDefault(); onAddFiles(pasted); } }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing) return;
+            if (editing && event.key === "Escape" && !uploading) { event.preventDefault(); editing.onCancel(); return; }
             if (shown.length) {
               if (event.key === "ArrowDown") { event.preventDefault(); setArrowed(true); setHighlight((index + 1) % shown.length); return; }
               if (event.key === "ArrowUp") { event.preventDefault(); setArrowed(true); setHighlight((index - 1 + shown.length) % shown.length); return; }
@@ -138,19 +147,22 @@ export function Composer({
             if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onSubmit(); }
           }}
         />
-        <div className="flex items-center gap-1 px-2.5 pt-1 pb-2.5">
+        <div className={cn("flex items-center gap-1 px-2.5 pt-1 pb-2.5", editing && "flex-wrap justify-end")}>
           <Tooltip>
             <TooltipTrigger render={<Button type="button" variant="ghost" size="icon" className="rounded-full text-muted-foreground" aria-label="Attach files"
-              onClick={() => picker.current?.click()} disabled={busy || Boolean(uploading) || files.length >= MAX_FILES} />}>
+              onClick={() => picker.current?.click()} disabled={busy || Boolean(uploading) || files.length + (editing?.attachments.length ?? 0) >= MAX_FILES} />}>
               <PaperclipIcon />
             </TooltipTrigger>
             <TooltipContent>Attach images, video, audio or documents (up to 10, 50 MB each)</TooltipContent>
           </Tooltip>
           <input ref={picker} type="file" multiple hidden accept={ACCEPT} onChange={(event) => { onAddFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
-          <ModelPickers {...pickers} />
+          {pickers && <ModelPickers {...pickers} />}
           <span className="ml-auto" />
           {uploading && <span className="nums mr-1 flex items-center gap-1.5 text-xs text-muted-foreground" role="status"><Spinner className="size-3" />Uploading {uploading.index} of {uploading.total}</span>}
-          {stopping ? (
+          {editing ? <>
+            <Button type="button" variant="ghost" size="sm" onClick={editing.onCancel} disabled={busy || Boolean(uploading)}>Cancel</Button>
+            <Button type="button" size="sm" onClick={onSubmit} disabled={empty || busy || waiting || Boolean(uploading)}>Save and resend</Button>
+          </> : stopping ? (
             <Button type="button" size="icon" className="size-9 rounded-full" aria-label="Stop the reply" onClick={onStop}>
               <SquareIcon className="size-3.5 fill-current" />
             </Button>

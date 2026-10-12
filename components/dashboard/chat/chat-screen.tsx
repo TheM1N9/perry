@@ -37,7 +37,8 @@ import { StatusIndicator } from "../status-indicator";
 import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
 import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
-import { MessageRow, PendingRow, ReplyInProgress } from "./message";
+import { MessageEditor, type MessageEdit } from "./message-editor";
+import { MessageRow, PendingRow, ReplyInProgress, type ChatMessage } from "./message";
 import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
 
 type ChatId = Id<"conversations">;
@@ -74,8 +75,8 @@ function greeting(name?: string) {
 }
 
 /** Keep the file on this machine, through the local media server. */
-async function store(file: File): Promise<{ localPath: string }> {
-  const local = await fetch("/api/media", { method: "POST", headers: { "x-file-name": encodeURIComponent(file.name) }, body: file });
+async function store(file: File, uploadId?: string): Promise<{ localPath: string }> {
+  const local = await fetch("/api/media", { method: "POST", headers: { "x-file-name": encodeURIComponent(file.name), ...(uploadId ? { "x-upload-id": uploadId } : {}) }, body: file });
   if (local.ok) return { localPath: (await local.json() as { path: string }).path };
   throw new Error((await local.json().catch(() => null) as { error?: string } | null)?.error ?? `Could not save ${file.name}.`);
 }
@@ -116,7 +117,7 @@ export function ChatScreen() {
   const skipOnboarding = useMutation(api.dashboard.skipOnboarding);
   const redoOnboarding = useMutation(api.dashboard.redoOnboarding);
   const branchChat = useAction(api.dashboard.branchChat);
-  const rewindChat = useAction(api.dashboard.rewindChat);
+  const rewindChat = useMutation(api.dashboard.rewindChat);
   const resetChat = useAction(api.dashboard.resetChat);
   const setPinned = useMutation(api.dashboard.setChatPinned);
   const noteFromChat = useMutation(api.notes.fromChat);
@@ -164,6 +165,8 @@ export function ChatScreen() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState<{ index: number; total: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<ChatMessage | null>(null);
+  useEffect(() => setEditing(null), [selectedId]);
   const [renaming, setRenaming] = useState(false);
   const [removing, setRemoving] = useState(false);
   /** A new project is being made for this chat to move into. */
@@ -566,11 +569,14 @@ export function ChatScreen() {
   }
 
   /** Regenerate from an assistant reply, or resend one of your messages with new text. */
-  async function rewind(messageId: string, text?: string) {
-    if (!selectedId || busy || waiting) return;
+  async function rewind(messageId: string, edit?: MessageEdit) {
+    if (!selectedId || busy || waiting) {
+      if (edit) throw new Error("Finish or stop the current reply before saving.");
+      return;
+    }
     const index = messages.findIndex((message) => message.id === messageId);
     const source = [...messages.slice(0, index + 1)].reverse().find((message) => message.role === "user");
-    const shown = text ?? source?.text ?? "";
+    const shown = edit?.text ?? source?.text ?? "";
     setBusy(true); setError("");
     stick.current = true;
     // The copy being replaced is removed before the new one is listed, so it is not part of the baseline.
@@ -579,10 +585,11 @@ export function ChatScreen() {
       baselineCount: messages.filter((message) => message.role === "user" && message.text === shown).length - (source?.text === shown ? 1 : 0),
     };
     try {
-      setPending((items) => [...items, entry]);
-      await rewindChat({ key: dashboardKey, id: selectedId, messageId, text });
+      if (!edit) setPending((items) => [...items, entry]);
+      await rewindChat({ key: dashboardKey, id: selectedId, messageId, ...edit });
     } catch (cause) {
       setPending((items) => items.filter((item) => item !== entry));
+      if (edit) throw cause;
       fail(cause);
     } finally {
       setBusy(false);
@@ -617,6 +624,17 @@ export function ChatScreen() {
 
   return (
     <div className="flex h-dvh min-h-0 flex-col">
+      {editing && selectedId && <MessageEditor key={editing.id} message={editing} assistant={assistant} waiting={waiting}
+        onClose={() => setEditing(null)} onSave={(edit) => rewind(editing.id, edit)}
+        onStop={() => stopChat({ key: dashboardKey, id: selectedId })}
+        onUpload={async (file, requestId, uploadId) => {
+          const stored = await store(file, uploadId);
+          const contentType = file.type || "application/octet-stream";
+          const id = await registerAttachment({ key: dashboardKey, conversationId: selectedId, messageKey: requestId, editOf: editing.id,
+            ...stored, fileName: file.name, contentType, size: file.size });
+          return { id, url: `/api/media/${id}`, fileName: file.name, contentType };
+        }} />}
+
       <TopBar actions={selectedId && summary ? (
         <ChatMenu
           pinned={summary.pinned}
@@ -702,12 +720,12 @@ export function ChatScreen() {
                   work={workOf.get(message.id)}
                   assistant={assistant}
                   latest={message.id === lastMessage?.id}
-                  canEdit={!waiting && !app}
+                  canEdit={!app}
                   canRegenerate={message.id === lastMessage?.id && !waiting && !app}
                   canBranch={!app}
                   busy={busy}
                   skills={skillNames}
-                  onEdit={(text) => void rewind(message.id, text)}
+                  onEdit={() => setEditing(message)}
                   onRegenerate={() => void rewind(message.id)}
                   onBranch={() => void branch(message.id)}
                   onSaveNote={() => void saveAsNote(message.id)}
