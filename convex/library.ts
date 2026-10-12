@@ -117,7 +117,7 @@ export async function index(ctx: MutationCtx, id: Id<"chatAttachments">, hint: H
         ? { ...source, by: hint.by ?? (perry || look ? "perry" : "owner"), how }
         : { conversationId: chat._id, messageKey: row.messageKey, projectId: chat.projectId, jobId: chat.jobId, taskId: chat.taskId });
     }
-    await associate(ctx, existing, chat, { role: written ? "working" : perry ? "output" : "input", provenance: perry ? "produced" : "uploaded", messageKey: row.messageKey });
+    await associate(ctx, existing, chat, { role: written ? "working" : perry ? "output" : "input", provenance: perry ? "produced" : "uploaded", messageKey: row.messageKey }, !written);
     return;
   }
   const size = row.localPath ? sizeHere(row.localPath) : row.size;
@@ -158,6 +158,7 @@ export async function addLocal(ctx: MutationCtx, args: { path: string; how: Libr
   if (chat?.contactId) throw new Error("A chat with someone else has no Library.");
   const existing = await byPath(ctx, args.path);
   if (existing) {
+    if (args.versionOf && existing.versionOf !== args.versionOf) throw new Error("Save each version at a different path.");
     if (chat) await associate(ctx, existing, chat, { role: args.role ?? "output", provenance: "produced" });
     return existing._id;
   }
@@ -186,6 +187,7 @@ export async function addLocal(ctx: MutationCtx, args: { path: string; how: Libr
     createdAt: Date.now(),
     ...(previous ? { versionOf: previous._id, versionRoot: previous.versionRoot ?? previous._id } : {}),
     ...(args.versionLabel ? { versionLabel: args.versionLabel.slice(0, 80) } : {}),
+    role: args.role ?? (args.by === "owner" ? "input" : "output"),
   });
   const item = await ctx.db.get(id);
   if (item && chat) await associate(ctx, item, chat, { role: args.role ?? "output", provenance: "produced" });
@@ -218,7 +220,7 @@ export const backfill = internalMutation({
     for (const item of await ctx.db.query("library").collect()) {
       const chat = item.conversationId ? await ctx.db.get(item.conversationId) : null;
       if (chat && item.how !== "folder") await associate(ctx, item, chat, {
-        role: item.how === "written" ? "working" : item.by === "owner" ? "input" : "output",
+        role: item.role ?? (item.how === "written" ? "working" : item.by === "owner" ? "input" : "output"),
         provenance: item.by === "owner" ? "uploaded" : "produced", messageKey: item.messageKey,
       });
     }

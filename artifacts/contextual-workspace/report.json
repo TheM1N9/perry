@@ -9,11 +9,11 @@
     "database/runner restart preserves membership and view metadata"
   ],
   "fixture": {
-    "home": "/tmp/perry-workspace-verification-285",
-    "chat": "mz6dj22vfshxdczdtgwwf65v9b",
-    "project": "adqskhwzs8bsa33fmpjnv2xyte",
-    "otherChat": "4q6eypckmwjxntqsjdd7x7jgf4",
-    "version": "frkh5yqe7t53rstjz8sj4g3rwj"
+    "home": "/tmp/perry-workspace-verification-285-release",
+    "chat": "aptkx8d3q8ymvnvfad30rrarzk",
+    "project": "03svw900jv7va2cgh35t9r615n",
+    "otherChat": "ae52yyac33z4yq9dsehk612ew3",
+    "version": "h5r31zr1g6z24whxzh9b6jqm6r"
   },
-  "createdAt": "2026-10-12T20:10:30.937Z"
+  "createdAt": "2026-10-12T20:23:42.175Z"
 }

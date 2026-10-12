@@ -44,6 +44,21 @@ export class BackendClient {
   private readonly adminKey?: string;
   /** Called when the change stream connects or drops, for anything that shows it. */
   onConnection?: (connected: boolean) => void;
+  private connection: "connecting" | "connected" | "disconnected" = "connecting";
+  private connectionListeners = new Set<Listener>();
+
+  connectionSnapshot = () => this.connection;
+  subscribeConnection = (listener: Listener) => {
+    this.connectionListeners.add(listener);
+    this.connect();
+    return () => { this.connectionListeners.delete(listener); };
+  };
+
+  private setConnection(connected: boolean) {
+    this.connection = connected ? "connected" : "disconnected";
+    this.onConnection?.(connected);
+    for (const listener of this.connectionListeners) listener();
+  }
 
   constructor(base = "", options: { adminKey?: string } = {}) {
     this.base = base.replace(/\/+$/, "");
@@ -197,7 +212,7 @@ export class BackendClient {
         try {
           const response = await fetch(this.resolve("/api/backend/events"), { signal: controller.signal, headers: { accept: "text/event-stream" } });
           if (!response.ok || !response.body) throw new Error(`events: ${response.status}`);
-          this.onConnection?.(true);
+          this.setConnection(true);
           delay = 1_000;
           // Whatever changed while disconnected is unknown, so everything is fetched again.
           void this.refresh();
@@ -219,7 +234,7 @@ export class BackendClient {
         } catch {
           if (controller.signal.aborted) break;
         }
-        this.onConnection?.(false);
+        this.setConnection(false);
         await new Promise((resolve) => setTimeout(resolve, delay));
         delay = Math.min(delay * 2, 10_000);
       }
@@ -235,6 +250,7 @@ export class BackendClient {
   suspend() {
     this.stream?.abort();
     this.stream = null;
+    this.setConnection(false);
   }
 
   resume() {

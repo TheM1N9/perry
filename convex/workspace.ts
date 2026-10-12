@@ -103,6 +103,24 @@ export const get = query({
   },
 });
 
+/** A shortcut to a registered output's terminal version, never a guessed final filename. */
+export const latest = query({
+  args: scopeArgs,
+  handler: async (ctx, args): Promise<WorkspaceFile | null> => {
+    const { chat, key } = await scopeOf(ctx, args);
+    const rows = await (args.scope === "project"
+      ? ctx.db.query("workspaceFiles").withIndex("by_project_role", (q) => q.eq("projectId", chat.projectId).eq("role", "output"))
+      : ctx.db.query("workspaceFiles").withIndex("by_conversation_role", (q) => q.eq("conversationId", chat._id).eq("role", "output"))).order("desc").take(50);
+    for (const row of rows) {
+      const found = await member(ctx, args, row.libraryId);
+      if (!found) continue;
+      const file = await fileView(ctx, found.item, found.association, key, args);
+      if (file.latest && !file.hidden) return file;
+    }
+    return null;
+  },
+});
+
 /** The media route checks scope again; knowing a Library ID is insufficient. */
 export const file = query({
   args: { ...scopeArgs, id: v.id("library") },
@@ -142,6 +160,7 @@ export type WorkspaceWork = {
   id: string; title: string; status: string; currentStep?: string; error?: string;
   conversationId: Id<"conversations">; taskId?: Id<"tasks">; runId?: Id<"runs">; updatedAt: number;
   plan: Doc<"tasks">["plan"];
+  outputs: Array<Pick<WorkspaceFile, "id" | "name" | "status">>;
 };
 
 /** Read the actual lifecycle; no second task/progress store. History is bounded and expanded deliberately. */
@@ -149,6 +168,18 @@ export const work = query({
   args: { ...scopeArgs, history: v.boolean() },
   handler: async (ctx, args): Promise<WorkspaceWork[]> => {
     const { chat } = await scopeOf(ctx, args);
+    const approvals = await ctx.db.query("approvals").withIndex("by_status", (q) => q.eq("status", "pending")).take(100);
+    const waitingIn = (id: Id<"conversations">) => approvals.some((approval) => approval.conversationId === id && approval.createdAt + (approval.kind === "brain" ? BRAIN_TTL_MS : APPROVAL_TTL_MS) > Date.now());
+    const outputs = async (rows: Doc<"workspaceFiles">[]): Promise<WorkspaceWork["outputs"]> => {
+      const result: WorkspaceWork["outputs"] = [];
+      for (const id of new Set(rows.filter((row) => row.role === "output").map((row) => row.libraryId))) {
+        const found = await member(ctx, args, id);
+        if (!found) continue;
+        const file = await fileView(ctx, found.item, found.association, found.key, args);
+        if (!file.hidden) result.push({ id, name: file.name, status: file.status });
+      }
+      return result;
+    };
     const chats = args.scope === "project"
       ? await ctx.db.query("conversations").withIndex("by_project", (q) => q.eq("projectId", chat.projectId)).order("desc").take(100)
       : [chat];
@@ -161,16 +192,17 @@ export const work = query({
         if (seenTasks.has(task._id)) continue;
         seenTasks.add(task._id);
         if (!args.history && ["done", "cancelled"].includes(task.status) && Date.now() - task.updatedAt > 86_400_000) continue;
-        result.push({ id: task._id, title: task.title, status: task.status === "blocked" ? "waiting" : task.status, currentStep: task.plan.find((step) => step.status === "active")?.title ?? task.question ?? task.waiting?.why, error: task.error, conversationId: task.conversationId ?? source._id, taskId: task._id, updatedAt: task.updatedAt, plan: task.plan });
+        const status = task.status === "blocked" || (task.status === "running" && task.conversationId && waitingIn(task.conversationId)) || (task.status === "queued" && task.waiting && task.waiting.until > Date.now()) ? "waiting" : task.status;
+        const related = await ctx.db.query("workspaceFiles").withIndex("by_task", (q) => q.eq("taskId", task._id)).take(50);
+        result.push({ id: task._id, title: task.title, status, currentStep: task.question ?? task.waiting?.why ?? task.plan.find((step) => step.status === "active")?.title, error: task.error, conversationId: task.conversationId ?? source._id, taskId: task._id, updatedAt: task.updatedAt, plan: task.plan, outputs: await outputs(related) });
       }
       if (source.taskId) continue;
       const runs = await ctx.db.query("runs").withIndex("by_conversation", (q) => q.eq("conversationId", source._id)).order("desc").take(args.history ? 50 : 10);
       for (const run of runs) {
         const spans = await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).order("desc").take(100);
         const step = spans.find((span) => span.kind !== "reasoning" && span.status === "running");
-        const approvals = await ctx.db.query("approvals").withIndex("by_status", (q) => q.eq("status", "pending")).take(100);
-        const waiting = approvals.some((approval) => approval.conversationId === source._id && approval.createdAt + (approval.kind === "brain" ? BRAIN_TTL_MS : APPROVAL_TTL_MS) > Date.now());
-        result.push({ id: run._id, title: run.prompt.slice(0, 100) || source.title || "Chat", status: run.status === "running" ? waiting ? "waiting" : "running" : run.status === "ok" ? "done" : "failed", currentStep: step ? describeStep(step).label : undefined, error: run.error, conversationId: source._id, runId: run._id, updatedAt: run.finishedAt ?? run.startedAt, plan: [] });
+        const related = await ctx.db.query("workspaceFiles").withIndex("by_run", (q) => q.eq("runId", run._id)).take(50);
+        result.push({ id: run._id, title: run.prompt.slice(0, 100) || source.title || "Chat", status: run.status === "running" ? waitingIn(source._id) ? "waiting" : "running" : run.status === "ok" ? "done" : "failed", currentStep: step ? describeStep(step).label : undefined, error: run.error, conversationId: source._id, runId: run._id, updatedAt: run.finishedAt ?? run.startedAt, plan: [], outputs: await outputs(related) });
       }
     }
     return result.sort((a, b) => Number(["done", "failed", "cancelled"].includes(a.status)) - Number(["done", "failed", "cancelled"].includes(b.status)) || b.updatedAt - a.updatedAt).slice(0, args.history ? 100 : 25);

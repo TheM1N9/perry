@@ -93,9 +93,10 @@ export function ChatScreen() {
   const selectedId = paramId ?? createdId;
   const workspace = useQuery(api.workspace.settings, { key: dashboardKey });
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const workspaceToggle = useRef<HTMLButtonElement>(null);
   const workspaceScopeKey = `perry.workspace.open.${selectedId ?? "new"}`;
   useEffect(() => { try { setWorkspaceOpen(localStorage.getItem(workspaceScopeKey) === "1"); } catch {} }, [workspaceScopeKey]);
-  const openWorkspace = (open: boolean) => { setWorkspaceOpen(open); try { localStorage.setItem(workspaceScopeKey, open ? "1" : "0"); } catch {} };
+  const openWorkspace = (open: boolean) => { setWorkspaceOpen(open); if (!open) requestAnimationFrame(() => workspaceToggle.current?.focus()); try { localStorage.setItem(workspaceScopeKey, open ? "1" : "0"); } catch {} };
 
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
   const assistant = status?.assistantName ?? "Perry";
@@ -297,15 +298,16 @@ export function ChatScreen() {
   }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, liveWork?.steps.length, here.length]);
   const locatedMessage = useRef("");
   const sourceMessage = search.get("message");
+  const sourceRun = search.get("run");
   useEffect(() => {
-    if (!sourceMessage || locatedMessage.current === `${selectedId}:${sourceMessage}`) return;
-    const target = document.getElementById(`message-${sourceMessage}`);
+    if ((!sourceMessage && !sourceRun) || locatedMessage.current === `${selectedId}:${sourceMessage ?? sourceRun}`) return;
+    const target = sourceMessage ? document.getElementById(`message-${sourceMessage}`) : scroller.current?.querySelector(`[data-run="${CSS.escape(sourceRun ?? "")}"]`);
     if (target) {
       stick.current = false;
       target.scrollIntoView({ block: "center", behavior: "auto" });
-      locatedMessage.current = `${selectedId}:${sourceMessage}`;
+      locatedMessage.current = `${selectedId}:${sourceMessage ?? sourceRun}`;
     } else if (messageStatus === "CanLoadMore") loadMore(50);
-  }, [selectedId, sourceMessage, messages.length, messageStatus, loadMore]);
+  }, [selectedId, sourceMessage, sourceRun, messages.length, messageStatus, loadMore]);
   const jumpToLatest = () => {
     stick.current = true;
     setAtBottom(true);
@@ -637,7 +639,7 @@ export function ChatScreen() {
     <div className="flex h-dvh min-h-0">
     <div className="flex min-w-0 flex-1 flex-col">
       <TopBar actions={<>
-        {workspace?.enabled && !chat?.contact && <Button size="icon-sm" variant="ghost" aria-label="Open workspace" aria-expanded={workspaceOpen} onClick={() => openWorkspace(!workspaceOpen)}><PanelRightIcon /></Button>}
+        {workspace?.enabled && !chat?.contact && <Button ref={workspaceToggle} size="icon-sm" variant="ghost" aria-label="Open workspace" aria-expanded={workspaceOpen} onClick={() => openWorkspace(!workspaceOpen)}><PanelRightIcon /></Button>}
         {selectedId && summary ? (
         <ChatMenu
           pinned={summary.pinned}

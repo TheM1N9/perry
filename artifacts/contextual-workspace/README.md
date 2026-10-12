@@ -16,3 +16,7 @@ PERRY_HOME=/tmp/perry-workspace-verification-285 pnpm exec node .next/workspace-
 ```
 
 Use a fresh directory on repeat runs. `report.json` records completed checks and the throwaway fixture IDs for dashboard inspection. The test covers two unrelated chats, explicit project browsing, version chains, registered intermediates, background routing, share_file, failed/missing files, pin/hide, auth, pagination and reopening SQLite. No model or owner credentials are needed.
+
+For the dashboard/media journey, start the built or development server against the home recorded in `report.json`, with `DASHBOARD_KEY=workspace-verification-key`, `PERRY_WORKSPACE=1` and `PERRY_PORT=7385`. Then run `pnpm exec node artifacts/contextual-workspace/verify-http.mjs` (requires the host's ffmpeg for real PNG/MP4 fixtures). `http-report.json` records HTTP access, ranges, active-content disposition and missing-file recovery. Use a separate hostname for concurrent test installations because media cookies are host/path scoped, independent of port.
+
+Dashboard evidence includes `desktop-preview.jpg` plus a recorded responsive journey: sidebar keyboard resize, selected-version preview, same file IDs in gallery/tree, explicit project switching, related task outputs, draft preservation and mobile close/focus controls. No real browser sessions or owner files are used.

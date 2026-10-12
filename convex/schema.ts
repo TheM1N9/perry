@@ -967,6 +967,7 @@ export default defineSchema({
     versionOf: v.optional(v.id("library")),
     versionRoot: v.optional(v.id("library")),
     versionLabel: v.optional(v.string()),
+    role: v.optional(v.union(v.literal("input"), v.literal("output"), v.literal("working"))),
   })
     .index("by_created", ["createdAt"])
     .index("by_path", ["localPath"])
@@ -989,7 +990,11 @@ export default defineSchema({
   })
     .index("by_conversation", ["conversationId", "createdAt"])
     .index("by_project", ["projectId", "createdAt"])
+    .index("by_conversation_role", ["conversationId", "role", "createdAt"])
+    .index("by_project_role", ["projectId", "role", "createdAt"])
     .index("by_item", ["conversationId", "libraryId"])
+    .index("by_task", ["taskId"])
+    .index("by_run", ["runId"])
     .index("by_library", ["libraryId"]),
 
   /** Hiding and pinning affect this view only, never the file or another scope. */

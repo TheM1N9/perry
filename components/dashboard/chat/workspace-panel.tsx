@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Component, useEffect, useState, type ReactNode } from "react";
 import { z } from "zod";
 import { ArrowLeftIcon, DownloadIcon, EyeOffIcon, FileIcon, Grid2X2Icon, ListTreeIcon, PinIcon, PlusIcon, XIcon } from "lucide-react";
-import { useMutation, useQuery } from "@/client/react";
+import { useConnection, useConvex, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { WorkspaceFile } from "@/convex/workspace";
@@ -35,11 +35,11 @@ function usePreferences(key: string) {
   return [value, update] as const;
 }
 
-class WorkspaceBoundary extends Component<{ children: ReactNode }, { error: string; retry: number }> {
+class WorkspaceBoundary extends Component<{ children: ReactNode; onRetry: () => Promise<unknown>; onClose: () => void }, { error: string; retry: number }> {
   state = { error: "", retry: 0 };
   static getDerivedStateFromError(error: unknown) { return { error: errorText(error) }; }
   render() {
-    return this.state.error ? <div role="alert" className="p-4 text-sm"><p>{this.state.error}</p><Button size="sm" variant="outline" className="mt-3" onClick={() => this.setState({ error: "", retry: this.state.retry + 1 })}>Retry workspace</Button></div>
+    return this.state.error ? <div role="alert" className="p-4 text-sm"><Button size="sm" variant="ghost" className="mb-3" onClick={this.props.onClose}>Close workspace</Button><p>{this.state.error}</p><Button size="sm" variant="outline" className="mt-3" onClick={() => void this.props.onRetry().then(() => this.setState({ error: "", retry: this.state.retry + 1 }))}>Retry workspace</Button></div>
       : <div key={this.state.retry} className="flex min-h-0 flex-1 flex-col">{this.props.children}</div>;
   }
 }
@@ -58,18 +58,18 @@ export function WorkspacePanel({ conversationId, project, open, onOpenChange, br
   project?: { id: Id<"projects">; name: string };
   open: boolean; onOpenChange: (open: boolean) => void; browser?: ReactNode;
 }) {
+  const client = useConvex();
   const mobile = useIsMobile();
   const [width, setWidth] = useState(380);
   useEffect(() => {
-    const saved = Number(localStorage.getItem("perry.workspace.width"));
-    if (saved >= 300 && saved <= 640) setWidth(saved);
+    try { const saved = Number(localStorage.getItem("perry.workspace.width")); if (saved >= 300 && saved <= 640) setWidth(saved); } catch {}
   }, []);
   function resize(value: number) {
     const next = Math.max(300, Math.min(640, value));
     setWidth(next);
     try { localStorage.setItem("perry.workspace.width", String(next)); } catch {}
   }
-  const content = <WorkspaceBoundary key={conversationId ?? "new"}><PanelContent conversationId={conversationId} project={project} browser={browser} onClose={() => onOpenChange(false)} /></WorkspaceBoundary>;
+  const content = <WorkspaceBoundary key={conversationId ?? "new"} onRetry={() => client.refresh()} onClose={() => onOpenChange(false)}><PanelContent conversationId={conversationId} project={project} browser={browser} onClose={() => onOpenChange(false)} /></WorkspaceBoundary>;
   if (mobile) return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent showCloseButton={false} className="w-full max-w-full gap-0 sm:max-w-full"><SheetTitle className="sr-only">Chat workspace</SheetTitle><SheetDescription className="sr-only">Files and work associated with this chat.</SheetDescription>{content}</SheetContent></Sheet>;
   if (!open) return null;
   return <aside aria-label="Chat workspace" className="relative flex h-full min-h-0 shrink-0 flex-col border-l bg-background" style={{ width: `min(${width}px, 50vw)` }}>
@@ -86,9 +86,10 @@ function PanelContent({ conversationId, project, browser, onClose }: {
   conversationId: Id<"conversations"> | null; project?: { id: Id<"projects">; name: string }; browser?: ReactNode; onClose: () => void;
 }) {
   const [tab, setTab] = useState("files");
+  const connection = useConnection();
   const [scope, setScope] = useState<Scope>("chat");
   const scopeKey = `perry.workspace.scope.${conversationId ?? "new"}`;
-  useEffect(() => { setScope(project && localStorage.getItem(scopeKey) === "project" ? "project" : "chat"); }, [scopeKey, project?.id]);
+  useEffect(() => { try { setScope(project && localStorage.getItem(scopeKey) === "project" ? "project" : "chat"); } catch { setScope("chat"); } }, [scopeKey, project?.id]);
   const actualScope = project ? scope : "chat";
   return <>
     <header className="flex shrink-0 items-center justify-between border-b p-3">
@@ -98,6 +99,7 @@ function PanelContent({ conversationId, project, browser, onClose }: {
     <nav aria-label="Workspace views" className="flex shrink-0 gap-1 border-b px-3 py-2">
       {["files", "work", ...(browser ? ["browser"] : [])].map((value) => <Button key={value} size="sm" variant={tab === value ? "secondary" : "ghost"} aria-pressed={tab === value} onClick={() => setTab(value)}>{value[0]?.toUpperCase()}{value.slice(1)}</Button>)}
     </nav>
+    {connection !== "connected" && <p role="status" className="border-b bg-muted px-3 py-2 text-xs">{connection === "connecting" ? "Connecting to Perry…" : "Reconnecting. Showing the last received state."}</p>}
     {tab !== "browser" && <div className="shrink-0 border-b p-3">
       <label className="flex items-center justify-between gap-2 text-xs text-muted-foreground">Scope
         <select aria-label="Workspace scope" className="min-w-0 max-w-60 rounded-md border bg-background p-1.5 text-foreground" value={actualScope} onChange={(event) => { const next = event.target.value === "project" ? "project" : "chat"; setScope(next); try { localStorage.setItem(scopeKey, next); } catch {} }}>
@@ -106,14 +108,14 @@ function PanelContent({ conversationId, project, browser, onClose }: {
       </label>
     </div>}
     {tab === "browser" ? browser : !conversationId ? <p className="p-4 text-sm text-muted-foreground">This chat has no {tab} yet. Files you upload and work started here will appear here.</p>
-      : tab === "files" ? <Files key={`${conversationId}:${actualScope}`} conversationId={conversationId} scope={actualScope} />
+      : tab === "files" ? <Files key={`${conversationId}:${actualScope}`} conversationId={conversationId} scope={actualScope} scopeId={actualScope === "project" ? project?.id ?? conversationId : conversationId} />
       : <Work conversationId={conversationId} scope={actualScope} />}
   </>;
 }
 
-function Files({ conversationId, scope }: { conversationId: Id<"conversations">; scope: Scope }) {
+function Files({ conversationId, scope, scopeId }: { conversationId: Id<"conversations">; scope: Scope; scopeId: string }) {
   const { dashboardKey: key } = useSession();
-  const [prefs, save] = usePreferences(`perry.workspace.${scope === "chat" ? conversationId : `project.${conversationId}`}`);
+  const [prefs, save] = usePreferences(`perry.workspace.${scope}.${scopeId}`);
   const [working, setWorking] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [kind, setKind] = useState("");
@@ -122,6 +124,7 @@ function Files({ conversationId, scope }: { conversationId: Id<"conversations">;
   const [attaching, setAttaching] = useState(false);
   const [error, setError] = useState("");
   const args = { key, conversationId, scope };
+  const latest = useQuery(api.workspace.latest, args);
   const page = useQuery(api.workspace.files, { ...args, working, hidden, kind: kind || undefined, paginationOpts: { numItems: 50, cursor } });
   const chosen = page?.page.find((item) => item.id === prefs.selected);
   const selected = useQuery(api.workspace.get, prefs.selected ? { ...args, id: prefs.selected } : "skip");
@@ -135,6 +138,7 @@ function Files({ conversationId, scope }: { conversationId: Id<"conversations">;
   }
   return <div className="flex min-h-0 flex-1 flex-col">
     {prefs.selected ? <FilePreview item={chosen ?? selected} onBack={() => save({ selected: undefined })} /> : <>
+      {latest && <Button size="sm" variant="ghost" className="mx-3 mt-2 justify-start truncate" onClick={() => select(latest)}>Latest result: {latest.name}</Button>}
       <div className="flex shrink-0 flex-wrap items-center gap-2 p-3">
         <Button size="icon-sm" variant={prefs.mode === "tree" ? "secondary" : "ghost"} aria-label="Tree view" aria-pressed={prefs.mode === "tree"} onClick={() => save({ mode: "tree" })}><ListTreeIcon /></Button>
         <Button size="icon-sm" variant={prefs.mode === "gallery" ? "secondary" : "ghost"} aria-label="Gallery view" aria-pressed={prefs.mode === "gallery"} onClick={() => save({ mode: "gallery" })}><Grid2X2Icon /></Button>
@@ -185,6 +189,7 @@ function Thumbnail({ item }: { item: WorkspaceFile }) {
 }
 
 function FilePreview({ item, onBack }: { item: WorkspaceFile | null | undefined; onBack: () => void }) {
+  const client = useConvex();
   const [text, setText] = useState<string>();
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -201,19 +206,19 @@ function FilePreview({ item, onBack }: { item: WorkspaceFile | null | undefined;
       <h3 className="mt-3 break-words text-sm font-semibold">{item.name}</h3>
       <p className="mt-1 text-xs text-muted-foreground">{item.contentType} · {item.versionLabel ?? item.role} · {item.status === "ready" ? "Ready" : "Unavailable"}</p>
       <p className="mt-2 text-xs">{item.provenance === "uploaded" ? "Uploaded here" : item.provenance === "attached" ? "Explicitly attached from Library" : "Produced by this work"}</p>
-      <Link href={`/chat/${item.source.conversationId}${item.source.messageKey ? `?message=${encodeURIComponent(item.source.messageKey)}` : ""}`} className="mt-1 block text-xs underline">Source: {item.source.title}{item.source.messageKey ? " · producing message" : ""}</Link>
+      <Link href={`/chat/${item.source.conversationId}${item.source.messageKey ? `?message=${encodeURIComponent(item.source.messageKey)}` : item.source.runId ? `?run=${item.source.runId}` : ""}`} className="mt-1 block text-xs underline">Source: {item.source.title}{item.source.messageKey ? " · producing message" : ""}</Link>
       {item.source.taskId && <Link href={`/work#task-${item.source.taskId}`} className="mt-1 block text-xs underline">Open task in Work</Link>}
       <div className="my-4">
         {item.status !== "ready" ? <p className="text-sm text-muted-foreground">The registered file is missing or its storage is unavailable. Restore it on the host, then retry.</p>
-          : item.preview === "image" ? <img src={item.url} alt={item.name} className="w-full rounded-lg" onError={() => setError("This image is unavailable. Retry after restoring the file.")} />
-          : item.preview === "video" ? <video src={item.url} controls playsInline className="w-full rounded-lg" onError={() => setError("This video is unavailable.")} />
-          : item.preview === "audio" ? <audio src={item.url} controls className="w-full" onError={() => setError("This audio is unavailable.")} />
+          : item.preview === "image" ? <img key={retry} src={item.url} alt={item.name} className="w-full rounded-lg" onError={() => setError("This image is unavailable. Retry after restoring the file.")} />
+          : item.preview === "video" ? <video key={retry} src={item.url} controls playsInline className="w-full rounded-lg" onError={() => setError("This video is unavailable.")} />
+          : item.preview === "audio" ? <audio key={retry} src={item.url} controls className="w-full" onError={() => setError("This audio is unavailable.")} />
           : item.preview === "pdf" ? <iframe title={item.name} src={item.url} sandbox="" className="h-[60vh] w-full rounded-lg border" />
           : item.preview === "text" || item.preview === "markdown" ? <pre className="overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap break-words">{text ?? "Loading preview…"}</pre>
           : <p className="text-sm text-muted-foreground">Preview is unavailable for this format. Download it to open it.</p>}
       </div>
       {error && <p role="alert" className="mb-3 text-xs text-destructive">{error}</p>}
-      <div className="flex gap-2"><Button size="sm" variant="outline" render={<a href={`${item.url}&download=1`} download />}> <DownloadIcon />Download</Button><Button size="sm" variant="ghost" onClick={() => { setRetry((was) => was + 1); setError(""); }}>Retry preview</Button></div>
+      <div className="flex gap-2"><Button size="sm" variant="outline" nativeButton={false} render={<a href={`${item.url}&download=1`} download />}> <DownloadIcon />Download</Button><Button size="sm" variant="ghost" onClick={() => { void client.refresh(["library", "workspaceFiles"]); setRetry((was) => was + 1); setError(""); }}>Retry preview</Button></div>
     </>}
   </div>;
 }
@@ -236,13 +241,17 @@ function AttachLibrary({ conversationId, onClose }: { conversationId: Id<"conver
 function Work({ conversationId, scope }: { conversationId: Id<"conversations">; scope: Scope }) {
   const { dashboardKey: key } = useSession();
   const [history, setHistory] = useState(false);
+  const [selected, setSelected] = useState<string>();
+  const preview = useQuery(api.workspace.get, selected ? { key, conversationId, scope, id: selected } : "skip");
   const work = useQuery(api.workspace.work, { key, conversationId, scope, history });
+  if (selected) return <FilePreview item={preview} onBack={() => setSelected(undefined)} />;
   return <div className="min-h-0 flex-1 overflow-y-auto p-3">
     {!work ? <p role="status" className="text-sm text-muted-foreground">Loading work…</p> : !work.length ? <p className="text-sm text-muted-foreground">No work started in this scope yet.</p> : work.map((item) => <article key={item.id} className="mb-3 rounded-lg border p-3">
       <div className="flex items-start justify-between gap-2"><h3 className="text-sm font-medium">{item.title}</h3><span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-2xs capitalize">{item.status}</span></div>
       {item.currentStep && <p className="mt-2 text-xs text-muted-foreground">{item.currentStep}</p>}
       {item.plan.length > 0 && <ol className="mt-2 space-y-1">{item.plan.map((step, index) => <li key={index} className="text-xs"><span className="mr-1 text-muted-foreground">{step.status === "done" ? "✓" : step.status === "active" ? "→" : "○"}</span>{step.title}</li>)}</ol>}
       {item.error && <p className="mt-2 text-xs text-destructive">{item.error.slice(0, 400)}</p>}
+      {item.outputs.length > 0 && <details className="mt-2 text-xs"><summary className="cursor-pointer">Related outputs ({item.outputs.length}{item.outputs.length === 50 ? "+" : ""})</summary><div className="mt-2 space-y-1">{item.outputs.map((output) => <button key={output.id} onClick={() => setSelected(output.id)} className="block w-full truncate text-left text-xs underline">{output.name}{output.status !== "ready" ? " · Unavailable" : ""}</button>)}</div></details>}
       <Link href={`/work${item.taskId ? `#task-${item.taskId}` : ""}`} className="mt-2 inline-block text-xs underline">Open Work</Link>
       <Link href={`/chat/${item.conversationId}`} className="ml-3 text-xs underline">Open chat</Link>
     </article>)}
