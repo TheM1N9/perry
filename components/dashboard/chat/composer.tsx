@@ -100,19 +100,22 @@ export function Composer({
       <div data-composer
         className={cn(
           "rounded-3xl border bg-background shadow-float transition-[border-color,box-shadow] dark:bg-card",
+          editing && "rounded-xl shadow-none",
           dragging && "border-primary ring-3 ring-primary/20",
         )}
         onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } }}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
         onDrop={(event) => { setDragging(false); if (event.dataTransfer.files.length) { event.preventDefault(); onAddFiles(Array.from(event.dataTransfer.files)); } }}
       >
-        {editing && editing.attachments.length > 0 && <ul aria-label="Current attachments" className="flex gap-2 overflow-x-auto px-3 pt-3">
-          {editing.attachments.map((attachment) => <li key={attachment.id} className="relative min-w-16 max-w-56 shrink-0 [&_img]:max-h-24 [&_video]:max-h-24">
-            <AttachmentList attachments={[attachment]} />
-            <Button type="button" size="icon-xs" variant="secondary" className="absolute top-2 right-0 rounded-full" aria-label={`Remove ${attachment.fileName}`} disabled={busy || Boolean(uploading)} onClick={() => editing.onRemove(attachment)}><XIcon /></Button>
-          </li>)}
-        </ul>}
-        <PickedFiles files={files} onRemove={onRemoveFile} disabled={Boolean(uploading || (editing && busy))} />
+        {editing ? (editing.attachments.length > 0 || files.length > 0) && <div className="flex gap-2 overflow-x-auto px-3 pt-3 pb-1">
+          {editing.attachments.length > 0 && <ul aria-label="Current attachments" className="flex gap-2">
+            {editing.attachments.map((attachment, index) => <li key={attachment.id ?? index} className="relative shrink-0">
+              <AttachmentList attachments={[attachment]} compact />
+              <Button type="button" size="icon-xs" variant="secondary" className="absolute top-1 right-1 size-5 rounded-full bg-background/90 shadow-sm" aria-label={`Remove ${attachment.fileName}`} disabled={busy || Boolean(uploading)} onClick={() => editing.onRemove(attachment)}><XIcon /></Button>
+            </li>)}
+          </ul>}
+          <PickedFiles files={files} onRemove={onRemoveFile} disabled={Boolean(uploading || busy)} className="overflow-visible p-0" />
+        </div> : <PickedFiles files={files} onRemove={onRemoveFile} disabled={Boolean(uploading)} />}
         <textarea
           ref={ref}
           id={editing ? "edit-composer" : "composer"}

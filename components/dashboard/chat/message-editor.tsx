@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { errorText } from "@/lib/format";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Attachment } from "./attachments";
 import { Composer, ComposerNote, MAX_BYTES, MAX_FILES } from "./composer";
 import type { ChatMessage } from "./message";
@@ -69,9 +69,11 @@ export function MessageEditor({ message, assistant, waiting, onClose, onStop, on
 
   return <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
     <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl" initialFocus={input} showCloseButton={!saving}>
-      <DialogTitle>Edit your message</DialogTitle>
-      <DialogDescription>Saving replaces this message and the replies after it. Cancel keeps the original.</DialogDescription>
-      {waiting && <div className="text-sm text-muted-foreground">
+      <DialogHeader>
+        <DialogTitle>Edit your message</DialogTitle>
+        <DialogDescription>Saving replaces this message and the replies after it.</DialogDescription>
+      </DialogHeader>
+      {waiting && <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
         <p role="status">Finish or stop the current reply before saving. Your edit stays here.</p>
         <Button type="button" variant="outline" size="sm" className="mt-2" onClick={() => void onStop().catch((cause) => setError(errorText(cause)))}>Stop reply</Button>
       </div>}
