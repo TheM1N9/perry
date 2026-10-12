@@ -159,6 +159,8 @@
         bun --cwd $dir (Join-Path $dir 'scripts\perry.ts') setup; Check 'perry setup'
         Refresh-Path
       }
+      # Anonymous successful-install count. Opt out with PERRY_TELEMETRY_DISABLED=1.
+      bun --cwd $dir (Join-Path $dir 'scripts\telemetry.ts') 'Installation completed'
     } finally { Pop-Location }
   } catch {
     Write-Host "`n  $($_.Exception.Message)" -ForegroundColor Red

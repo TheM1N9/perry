@@ -59,6 +59,8 @@ export class BackendClient {
     this.onConnection?.(connected);
     for (const listener of this.connectionListeners) listener();
   }
+  /** Browser analytics receives only the operation name, outcome and duration. */
+  onOperation?: (name: string, kind: "mutation" | "action", success: boolean, durationMs: number) => void;
 
   constructor(base = "", options: { adminKey?: string } = {}) {
     this.base = base.replace(/\/+$/, "");
@@ -86,15 +88,27 @@ export class BackendClient {
   }
 
   async mutation<M extends FunctionReference<"mutation", any>>(ref: M, args?: FunctionArgs<M>): Promise<FunctionReturnType<M>> {
-    const result = await this.call<FunctionReturnType<M>>(ref as AnyFunction, args);
+    const result = await this.trackedCall<M>(ref, args, "mutation");
     await this.refresh(result.writes);
     return result.value;
   }
 
   async action<A extends FunctionReference<"action", any>>(ref: A, args?: FunctionArgs<A>): Promise<FunctionReturnType<A>> {
-    const value = (await this.call<FunctionReturnType<A>>(ref as AnyFunction, args)).value;
+    const value = (await this.trackedCall<A>(ref, args, "action")).value;
     await this.refresh();
     return value;
+  }
+
+  private async trackedCall<F extends FunctionReference<"mutation" | "action", any>>(ref: F, args: unknown, kind: "mutation" | "action") {
+    const started = performance.now();
+    let success = false;
+    try {
+      const result = await this.call<FunctionReturnType<F>>(ref as AnyFunction, args);
+      success = true;
+      return result;
+    } finally {
+      try { this.onOperation?.(functionName(ref as AnyFunction), kind, success, Math.round(performance.now() - started)); } catch {}
+    }
   }
 
   // --- Live queries ---------------------------------------------------------------
