@@ -1,0 +1,22 @@
+{
+  "reviewedAt": "2026-10-12T22:26:54.522908+00:00",
+  "issue": 285,
+  "method": "Manual browser UI journeys through Codex computer use; disposable local data. Existing feature E2E reports remain separate.",
+  "checks": [
+    "Tree and gallery layouts",
+    "Styled file type filter",
+    "Pin, hide, and show actions persist through menus",
+    "Show hidden filter recovers hidden file",
+    "Version metadata and text preview remain available",
+    "Project scope selector",
+    "Keyboard separator resizes 380px to 400px",
+    "Work step disclosure",
+    "Full-width 390px Files and Work drawer"
+  ],
+  "screenshots": [
+    "desktop-preview.jpg",
+    "desktop-tree.jpg",
+    "mobile-work.jpg"
+  ],
+  "fixture": "Existing adversarial workspace fixture includes unavailable files and a retained task error; these are test data."
+}
