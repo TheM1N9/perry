@@ -1,0 +1,16 @@
+{
+  "checks": {
+    "Chrome is a primary visible action": true,
+    "verbose import text and unsupported profiles removed": true,
+    "production route connects real Chrome in owner control": true,
+    "compact Chrome connection and private capture controls": true,
+    "unsupported browser selector not offered": true,
+    "connection controls are keyboard operable": true,
+    "browser supports system dark mode": true,
+    "explicit resume and takeover retain controller flow": true,
+    "mobile Chrome controls fit the drawer": true,
+    "UI disconnect preserves Chrome": true,
+    "completed": true
+  },
+  "passed": true
+}

@@ -6,6 +6,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { HOME, PATHS } from "../../runner/home";
+import { homedir } from "node:os";
 
 /**
  * Perry's own browser (issue #105): a Chrome (or Edge, or Chromium) with a
@@ -28,6 +29,7 @@ type Control = {
   loading: boolean; error: string | null; dialog: { type: string; message: string } | null;
   upload: number | null; downloads: Map<string, { id: string; name: string; state: string }>;
   connections: Map<string, Tab>;
+  source: "perry" | "chrome"; ownedTargets: Set<string>;
 };
 type Lease = { control: Control; controller: "agent" | "owner" | "viewer"; revision: number; epoch: number; started: boolean };
 const states = (globalThis as typeof globalThis & { __perryBrowsers?: Map<string, Control>; __perryBrowserContext?: AsyncLocalStorage<Lease> });
@@ -38,7 +40,7 @@ function control(scope = context.getStore()?.control.scope ?? "public-reader"): 
   if (!found) {
     let saved: { controller: "agent" | "owner"; private: boolean } = { controller: "agent", private: false };
     try { saved = z.object({ controller: z.enum(["agent", "owner"]), private: z.boolean() }).parse(JSON.parse(readFileSync(/*turbopackIgnore: true*/ join(profileDirectory(scope), "perry-control.json"), "utf8"))); } catch {}
-    found = { scope, ownerBusy: false, sessionApprovalEpoch: -1, id: randomUUID(), revision: 0, epoch: 0, controller: saved.controller, root: null, promise: null, current: null, busy: false, private: saved.private, loading: false, error: null, dialog: null, upload: null, downloads: new Map(), connections: new Map() };
+    found = { scope, ownerBusy: false, sessionApprovalEpoch: -1, id: randomUUID(), revision: 0, epoch: 0, controller: saved.controller, root: null, promise: null, current: null, busy: false, private: saved.private, loading: false, error: null, dialog: null, upload: null, downloads: new Map(), connections: new Map(), source: "perry", ownedTargets: new Set() };
     states.__perryBrowsers!.set(scope, found);
   }
   return found;
@@ -87,7 +89,7 @@ export function assertBrowserLease() { checkLease(); }
 export function importedSites() {
   try { return Object.keys(z.record(z.string(), z.unknown()).parse(JSON.parse(readFileSync(join(profileDirectory(control().scope), "perry-imports.json"), "utf8")))); } catch { return []; }
 }
-export function needsSessionApproval() { return importedSites().length > 0 && control().sessionApprovalEpoch !== control().epoch; }
+export function needsSessionApproval() { return (control().source === "chrome" || importedSites().length > 0) && control().sessionApprovalEpoch !== control().epoch; }
 export function approveSessionUse() { checkLease(); control().sessionApprovalEpoch = control().epoch; }
 
 function pageChanged(state: Control) { state.revision++; }
@@ -103,8 +105,8 @@ const ELEMENTS_CAP = 150;
 
 type Pending = { resolve: (value: any) => void; reject: (error: Error) => void };
 /** A DevTools connection to one tab. */
-type Session = { ws: WebSocket; next: number; pending: Map<number, Pending>; listeners: Set<(method: string, params: any) => void> };
-type Tab = Session & { targetId: string; child: ChildProcess; port: number; idle: ReturnType<typeof setTimeout> | null };
+type Session = { ws: WebSocket; next: number; pending: Map<number, Pending>; listeners: Set<(method: string, params: any) => void>; parent?: Session; sessionId?: string; children?: Map<string, Session> };
+type Tab = Session & { targetId: string; child: ChildProcess | null; port: number; idle: ReturnType<typeof setTimeout> | null };
 
 /** Kept on globalThis, so every tool call in this server process drives the same browser. */
 
@@ -126,6 +128,7 @@ export function findBrowser(): string | null {
 
 async function launch(): Promise<Tab> {
   const state = control();
+  state.source = "perry";
   state.id = randomUUID();
   const profile = profileDirectory(state.scope);
   const path = findBrowser();
@@ -197,40 +200,61 @@ async function prepareTab(tab: Tab, state: Control) {
   await send(tab, "Page.setInterceptFileChooserDialog", { enabled: true });
 }
 /** Trusted local host helpers. Never exposed as arbitrary CDP or credential tools. */
-export async function hostCommand(method: string, params: object = {}): Promise<unknown> { return await send(await tab(), method, params); }
+export async function hostCommand(method: string, params: object = {}): Promise<unknown> {
+  const current = await tab(), state = control();
+  if (state.source === "chrome" && method.startsWith("Target.")) {
+    if (method === "Target.closeTarget" && !state.ownedTargets.has(String((params as { targetId?: string }).targetId))) throw new Error("That tab is not part of this chat.");
+    const result = await send(state.root!, method, params);
+    if (method === "Target.createTarget") state.ownedTargets.add(String(result.targetId));
+    return result;
+  }
+  return await send(current, method === "Storage.getCookies" && state.source === "chrome" ? "Network.getCookies" : method, params);
+}
 export async function hostTargets() {
   const current = await tab();
+  if (control().source === "chrome") {
+    const result = z.object({ targetInfos: z.array(z.object({ targetId: z.string(), type: z.string(), title: z.string(), url: z.string() })) }).parse(await send(control().root!, "Target.getTargets"));
+    return result.targetInfos.filter(target => target.type === "page" && control().ownedTargets.has(target.targetId)).map(target => ({ ...target, id: target.targetId, webSocketDebuggerUrl: undefined }));
+  }
   return z.array(z.object({ id: z.string(), type: z.string(), title: z.string(), url: z.string(), webSocketDebuggerUrl: z.string().optional() })).parse(await (await fetch(`http://127.0.0.1:${current.port}/json/list`, { signal: AbortSignal.timeout(3000) })).json()).filter((target) => target.type === "page");
 }
 export async function selectHostTab(id: string) {
   const state = control();
   const target = (await hostTargets()).find((target) => target.id === id);
-  if (!target?.webSocketDebuggerUrl) throw new Error("That tab closed. Refresh the browser view.");
+  if (!target || (control().source !== "chrome" && !target.webSocketDebuggerUrl)) throw new Error("That tab closed. Refresh the browser view.");
   let current = state.connections.get(id);
   if (!current) {
     const base = await tab();
-    current = Object.assign(await connect(target.webSocketDebuggerUrl), { targetId: id, child: base.child, port: base.port, idle: null });
+    if (state.source === "chrome") current = await attachChromeTab(state, id, base.port);
+    else {
+      current = Object.assign(await connect(target.webSocketDebuggerUrl!), { targetId: id, child: base.child, port: base.port, idle: null });
+      await prepareTab(current, state);
+    }
     state.connections.set(id, current);
-    await prepareTab(current, state);
   }
   if (state.current?.idle) clearTimeout(state.current.idle);
   state.current = current;
   await send(current, "Page.bringToFront");
 }
 
-async function connect(url: string): Promise<Session> {
+async function connect(url: string, chrome = false): Promise<Session> {
   const ws = new WebSocket(url);
-  await new Promise((resolve, reject) => { ws.addEventListener("open", resolve, { once: true }); ws.addEventListener("error", () => reject(new Error("Could not reach Perry's browser.")), { once: true }); });
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { ws.close(); reject(new Error(chrome ? "Chrome connection timed out. Allow the connection in Chrome, then retry." : "The browser connection timed out. Refresh the view.")); }, 30_000);
+    ws.addEventListener("open", () => { clearTimeout(timer); resolve(undefined); }, { once: true });
+    ws.addEventListener("error", () => { clearTimeout(timer); reject(new Error(chrome ? "Chrome connection failed. Check remote debugging and allow the connection in Chrome, then retry." : "The browser connection failed. Refresh the view.")); }, { once: true });
+    ws.addEventListener("close", () => { clearTimeout(timer); reject(new Error(chrome ? "Chrome declined or closed the connection." : "The browser connection closed.")); }, { once: true });
+  });
   const session: Session = { ws, next: 0, pending: new Map(), listeners: new Set() };
   ws.addEventListener("message", (event) => {
-    const message = JSON.parse(String(event.data)) as { id?: number; result?: unknown; error?: { message: string }; method?: string; params?: unknown };
+    const message = JSON.parse(String(event.data)) as { id?: number; sessionId?: string; result?: unknown; error?: { message: string }; method?: string; params?: unknown };
     if (message.id !== undefined) {
       const waiting = session.pending.get(message.id);
       session.pending.delete(message.id);
       if (message.error) waiting?.reject(new Error("Browser command failed. Refresh the page or sign in manually."));
       else waiting?.resolve(message.result);
     } else if (message.method) {
-      for (const listener of session.listeners) listener(message.method, message.params);
+      for (const listener of (message.sessionId ? session.children?.get(message.sessionId)?.listeners ?? [] : session.listeners)) listener(message.method, message.params);
     }
   });
   ws.addEventListener("close", () => { for (const waiting of session.pending.values()) waiting.reject(new Error("Perry's browser closed.")); });
@@ -238,12 +262,14 @@ async function connect(url: string): Promise<Session> {
 }
 
 function send(tab: Session, method: string, params: object = {}): Promise<any> {
+  if (method === "Storage.getCookies" && control().source === "chrome") method = "Network.getCookies";
   return new Promise((resolve, reject) => {
     try { checkLease(); } catch (error) { reject(error); return; }
-    const id = ++tab.next;
-    const timer = setTimeout(() => { tab.pending.delete(id); reject(new Error("Browser command timed out. Refresh the view.")); }, 30_000);
-    tab.pending.set(id, { resolve: (value) => { clearTimeout(timer); resolve(value); }, reject: (error) => { clearTimeout(timer); reject(error); } });
-    tab.ws.send(JSON.stringify({ id, method, params }));
+    const transport = tab.parent ?? tab;
+    const id = ++transport.next;
+    const timer = setTimeout(() => { transport.pending.delete(id); reject(new Error("Browser command timed out. Refresh the view.")); }, 30_000);
+    transport.pending.set(id, { resolve: (value) => { clearTimeout(timer); resolve(value); }, reject: (error) => { clearTimeout(timer); reject(error); } });
+    transport.ws.send(JSON.stringify({ id, method, params, ...(tab.sessionId ? { sessionId: tab.sessionId } : {}) }));
   });
 }
 
@@ -263,10 +289,71 @@ export function closeBrowser() {
   checkLease();
   const state = control();
   const current = state.promise;
+  const root = state.root;
+  const cleanup = state.source === "chrome" ? [...state.connections.values()].flatMap(open => [
+    send(open, "Emulation.clearDeviceMetricsOverride").catch(() => {}),
+    send(open, "Page.setInterceptFileChooserDialog", { enabled: false }).catch(() => {}),
+  ]) : [];
   state.promise = null; state.current = null; state.revision++; state.epoch++;
-  for (const open of state.connections.values()) { if (open.idle) clearTimeout(open.idle); open.ws.close(); }
-  state.connections.clear(); state.root?.ws.close(); state.root = null;
-  void current?.then((open) => { open.child.kill(); }, () => {});
+  for (const open of state.connections.values()) { if (open.idle) clearTimeout(open.idle); if (state.source !== "chrome") open.ws.close(); }
+  state.connections.clear(); state.root = null; state.ownedTargets.clear(); state.source = "perry";
+  void Promise.allSettled(cleanup).then(() => root?.ws.close());
+  void current?.then((open) => { open.child?.kill(); }, () => {});
+}
+
+async function attachChromeTab(state: Control, targetId: string, port: number): Promise<Tab> {
+  const root = state.root!;
+  const attached = z.object({ sessionId: z.string() }).parse(await send(root, "Target.attachToTarget", { targetId, flatten: true }));
+  const tab: Tab = { ws: root.ws, parent: root, sessionId: attached.sessionId, next: 0, pending: root.pending, listeners: new Set(), targetId, child: null, port, idle: null };
+  (root.children ??= new Map()).set(attached.sessionId, tab);
+  state.connections.set(targetId, tab);
+  await prepareTab(tab, state);
+  return tab;
+}
+
+/** Chrome 144+ publishes this endpoint only after the owner enables its native bridge. */
+export async function connectChrome(): Promise<void> {
+  const state = control();
+  if (state.current || state.promise) throw new Error("Disconnect the current browser before connecting Chrome.");
+  const folder = process.env.PERRY_CHROME_USER_DATA_DIR ?? (process.platform === "win32"
+    ? join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "Google", "Chrome", "User Data")
+    : process.platform === "darwin" ? join(homedir(), "Library", "Application Support", "Google", "Chrome") : join(homedir(), ".config", "google-chrome"));
+  let port: number, endpoint: string;
+  try {
+    const lines = readFileSync(join(folder, "DevToolsActivePort"), "utf8").trim().split(/\r?\n/);
+    port = z.coerce.number().int().min(1).max(65535).parse(lines[0]);
+    endpoint = z.string().regex(/^\/devtools\/browser\/[a-zA-Z0-9-]+$/).parse(lines[1]);
+  } catch { throw new Error("Enable remote debugging in chrome://inspect/#remote-debugging, then connect Chrome."); }
+  const epoch = state.epoch;
+  state.promise = (async () => {
+    const root = await connect(`ws://127.0.0.1:${port}${endpoint}`, true);
+    let created: string | undefined;
+    try {
+      if (state.epoch !== epoch) throw new Error("Browser control changed. Connect Chrome again.");
+      const version = z.object({ product: z.string() }).parse(await send(root, "Browser.getVersion"));
+      if (Number(/(?:Chrome|Chromium)\/(\d+)/.exec(version.product)?.[1] ?? 0) < 144) throw new Error("Update Chrome to version 144 or newer.");
+      const target = z.object({ targetId: z.string() }).parse(await send(root, "Target.createTarget", { url: "about:blank" }));
+      created = target.targetId;
+      if (state.epoch !== epoch) throw new Error("Browser control changed. Connect Chrome again.");
+      state.root = root; state.source = "chrome"; state.id = randomUUID(); state.ownedTargets.add(created);
+      root.listeners.add((method, params) => {
+        if (method === "Target.targetCreated" && params.targetInfo?.openerId && state.ownedTargets.has(params.targetInfo.openerId)) state.ownedTargets.add(params.targetInfo.targetId);
+      });
+      await send(root, "Target.setDiscoverTargets", { discover: true });
+      const tab = await attachChromeTab(state, created, port);
+      state.current = tab; state.error = null;
+      root.ws.addEventListener("close", () => {
+        if (state.root !== root) return;
+        state.promise = null; state.current = null; state.root = null; state.connections.clear(); state.ownedTargets.clear(); state.epoch++; state.revision++; state.controller = "owner"; state.error = "Chrome disconnected. Connect again.";
+      });
+      return tab;
+    } catch (error) {
+      if (created) await send(root, "Target.closeTarget", { targetId: created }).catch(() => {});
+      root.ws.close(); state.root = null; state.connections.clear(); state.ownedTargets.clear(); state.source = "perry";
+      throw error;
+    }
+  })().catch(error => { state.promise = null; throw error; });
+  await state.promise;
 }
 
 async function evaluate<T>(open: Session, expression: string): Promise<T> {

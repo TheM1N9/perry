@@ -1,0 +1,64 @@
+{
+  "at": "2026-10-13T15:56:25.999Z",
+  "platform": "win32",
+  "browser": "Installed Chromium, disposable profile",
+  "cookieSource": "Reviewed Firefox schema 17 SQLite fixture (not an installed-profile compatibility check)",
+  "checks": [
+    {
+      "name": "owner auth, same-origin, insecure remote, and unknown chat denied",
+      "pass": true
+    },
+    {
+      "name": "real session frames, owner input and separate chat profiles",
+      "pass": true
+    },
+    {
+      "name": "stale identities and explicit resume",
+      "pass": true
+    },
+    {
+      "name": "takeover invalidates an agent waiting for approval and late input",
+      "pass": true
+    },
+    {
+      "name": "takeover cancels navigation without late agent control",
+      "pass": true
+    },
+    {
+      "name": "popups, tabs, dialogs, and downloaded output provenance",
+      "pass": true
+    },
+    {
+      "name": "manual file upload uses the same tab and registers this chat only",
+      "pass": true
+    },
+    {
+      "name": "profile selection and preview contain no credential values",
+      "pass": true
+    },
+    {
+      "name": "selected cookie import actually authenticates, preserves scope, and redacts hostile echo",
+      "pass": true
+    },
+    {
+      "name": "real tool requires imported-session approval and takeover cancels pending approval",
+      "pass": true
+    },
+    {
+      "name": "expired, partitioned, locked and incompatible sources explain recovery",
+      "pass": true
+    },
+    {
+      "name": "partial import rolls back failed destination site and preserves previous account",
+      "pass": true
+    },
+    {
+      "name": "per-site removal leaves source unchanged and invalidates destination login",
+      "pass": true
+    },
+    {
+      "name": "host failure clears identity and restart stays paused",
+      "pass": true
+    }
+  ]
+}

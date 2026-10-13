@@ -28,6 +28,6 @@ export async function authorizeBrowser(request: Request, conversationId: string)
 }
 export function browserFailure(error: unknown) {
   // Browser/CDP/SQLite errors may contain URL query strings or credentials. Never log request bodies/raw errors.
-  const message = error instanceof BrowserDenied ? error.message : error instanceof Error && /^(The browser|Browser control|The owner|Another browser|Look again|Pause and|Take over|Session import|Close Firefox|Firefox cookies|This Firefox|This profile|That profile|The import|The source|No imported|Import rollback|The cancelled|Capture is|Navigation failed)/.test(error.message) ? error.message : "Browser operation failed. Refresh the view or sign in manually.";
+  const message = error instanceof BrowserDenied ? error.message : error instanceof Error && /^(The browser|Browser control|The owner|Another browser|Look again|Pause and|Take over|Session import|Close Firefox|Firefox cookies|This Firefox|This profile|That profile|The import|The source|No imported|Import rollback|The cancelled|Capture is|Navigation failed|Chrome |Enable remote debugging|Update Chrome|Disconnect the current browser|Open Perry locally|Use Perry's browser)/.test(error.message) ? error.message : "Browser operation failed. Refresh the view or sign in manually.";
   return Response.json({ error: message }, { status: error instanceof BrowserDenied ? error.status : 409, headers: { "Cache-Control": "no-store" } });
 }
