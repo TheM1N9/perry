@@ -116,3 +116,11 @@ rotation target. Both IOException and UnauthorizedAccessException now leave
 pipe draining active and preserve the child's exit code. The before/after JSON
 records in `windows-permission-{before,after}-fix/` show the failure and all 17
 native checks passing. Logs now require a full UTC timestamp ending in Z.
+
+Post-merge CI exposed an overly expensive permission fixture: 12,000 lines caused
+thousands of denied rotations on the hosted runner and
+exceeded its 15-second budget. That fixture now writes 2,000 lines (still enough
+to exceed the 1 MiB rotation limit and fill a pipe if draining stops), records
+its actual result/duration, and allows 30 seconds. The log starts empty so denial
+always tests pipe draining rather than an incidental startup rotation. The
+normal rotation fixture still writes 12,000 lines and checks all retained logs.

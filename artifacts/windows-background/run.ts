@@ -44,7 +44,8 @@ class Child {
     }
     File.AppendAllText(Path.Combine(home, "starts.txt"), "started\\n");
     File.WriteAllLines(Path.Combine(home, "child.txt"), new string[] { Directory.GetCurrentDirectory(), String.Join("|", args), Environment.GetEnvironmentVariable("PERRY_CODEX_SANDBOX"), GetConsoleWindow().ToString(), System.Diagnostics.Process.GetCurrentProcess().Id.ToString() });
-    for (int n = 0; n < 12000; n++) { Console.WriteLine(new string('x', 1000)); Console.Error.WriteLine("stderr"); }
+    int lines = Environment.GetEnvironmentVariable("PERRY_FIXTURE_PERMISSION") == "1" ? 2000 : 12000;
+    for (int n = 0; n < lines; n++) { Console.WriteLine(new string('x', 1000)); Console.Error.WriteLine("stderr"); }
     System.Threading.Thread.Sleep(3000);
     return 7;
   }
@@ -91,15 +92,23 @@ try {
   expect(logs.every((name) => statSync(join(scratch, name)).size <= 1024 * 1024), "each log bounded to 1 MiB");
   expect(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z /.test(readFileSync(context.logFile, "utf8")), "logs have UTC timestamps");
   const protectedLog = context.logFile + ".3";
-  spawnSync("attrib", ["+R", protectedLog], { windowsHide: true });
+  // Start below the rotation boundary: the denied write must occur in Drain,
+  // rather than randomly rejecting the launcher's startup diagnostic.
+  writeFileSync(context.logFile, "");
+  const permissionPlan = servicePlan({ ...context, env: { ...context.env, PERRY_FIXTURE_PERMISSION: "1" } });
+  writeFileSync(permissionPlan.files[0].path, permissionPlan.files[0].content);
+  expect(spawnSync("attrib", ["+R", protectedLog], { windowsHide: true }).status === 0, "read-only rotation fixture configured");
+  const permissionStarted = Date.now();
   const permissionLauncher = spawn(exe, [], { stdio: "ignore", windowsHide: true });
   try {
     const exited = new Promise<number | null>((done) => permissionLauncher.once("exit", done));
-    const result = await Promise.race([exited, new Promise<"timed out">((done) => setTimeout(() => done("timed out"), 15000))]);
+    const result = await Promise.race([exited, new Promise<"timed out">((done) => setTimeout(() => done("timed out"), 30000))]);
+    evidence.permissionExit = { result, elapsedMs: Date.now() - permissionStarted, lines: 2000 };
     expect(result === 7, "read-only rotation target cannot block pipes or replace child exit status");
   } finally {
     if (permissionLauncher.exitCode === null && permissionLauncher.signalCode === null) permissionLauncher.kill();
     spawnSync("attrib", ["-R", protectedLog], { windowsHide: true });
+    writeFileSync(plan.files[0].path, plan.files[0].content);
   }
   // A failed Process.Start must leave diagnostics and fail the task too.
   const broken = servicePlan({ ...context, bun: join(scratch, "missing.exe") });
