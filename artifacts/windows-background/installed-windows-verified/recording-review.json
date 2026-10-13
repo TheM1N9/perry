@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "recording": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\Perry installed Windows ü eYayn0\\installed-lifecycle.mp4",
+  "sha256": "8817E66E9C2D7F5AD5C51302C1D9AAC60E03DA2F71922527993C4E0C5EB1263C",
+  "seconds": 703.166667,
+  "fps": 30,
+  "publishedClipSeconds": 85,
+  "review": "Reviewed all 19 major scene-change frames plus startup frames; no new console observed. Owner app switching occurs after 170 seconds; full video retained locally.",
+  "scope": "Installed fresh/repeated start, crash/recovery, CLI update, dashboard update, rollback, foreground debug and shutdown",
+  "permissions": {
+    "taskRunLevel": 0,
+    "separateNonAdminAccount": false,
+    "administrators": "deny-only",
+    "integrity": "medium"
+  },
+  "finalSourceHashes": {
+    "supervisor": "92CF01DDB49F983BB9164C940438E68000A96CA14CE47B3A7B2C5BFB9A092D26",
+    "service": "D736B2EAFF3C9E8CC73701C3345C8829286B037F3B8FE2E8F12A8369F120CFCC"
+  },
+  "installedSourceHashes": {
+    "supervisor": "92CF01DDB49F983BB9164C940438E68000A96CA14CE47B3A7B2C5BFB9A092D26",
+    "service": "D736B2EAFF3C9E8CC73701C3345C8829286B037F3B8FE2E8F12A8369F120CFCC"
+  }
+}

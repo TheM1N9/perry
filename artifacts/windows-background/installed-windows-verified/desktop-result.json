@@ -1,0 +1,177 @@
+{
+  "checks": {
+    "real native tray reports installed readiness": true,
+    "native menu offers Open Perry and Open logs": true,
+    "native Open logs opens only the disposable home": true,
+    "installed Computers page shows one online Windows runner": true,
+    "real native tray reports runner failure": true,
+    "native tray returns to ready after both update paths": true,
+    "completed": true
+  },
+  "evidence": {
+    "readyMenu": {
+      "at": 1791876134984,
+      "menu": [
+        {
+          "label": "Perry is ready",
+          "type": "normal",
+          "enabled": false
+        },
+        {
+          "label": "",
+          "type": "separator",
+          "enabled": true
+        },
+        {
+          "label": "Hide",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Let clicks through him",
+          "type": "checkbox",
+          "enabled": true
+        },
+        {
+          "label": "",
+          "type": "separator",
+          "enabled": true
+        },
+        {
+          "label": "Talk to him (Ctrl+Shift+F11)",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Show him the screen",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Keyboard shortcuts…",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Open Perry",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Open logs",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Put him back in the corner",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "",
+          "type": "separator",
+          "enabled": true
+        },
+        {
+          "label": "Restart",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Quit",
+          "type": "normal",
+          "enabled": true
+        }
+      ],
+      "bounds": {
+        "x": 2059,
+        "y": 912,
+        "width": 33,
+        "height": 48
+      }
+    },
+    "failureMenu": {
+      "at": 1791876137989,
+      "menu": [
+        {
+          "label": "Perry is unavailable",
+          "type": "normal",
+          "enabled": false
+        },
+        {
+          "label": "",
+          "type": "separator",
+          "enabled": true
+        },
+        {
+          "label": "Hide",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Let clicks through him",
+          "type": "checkbox",
+          "enabled": true
+        },
+        {
+          "label": "",
+          "type": "separator",
+          "enabled": true
+        },
+        {
+          "label": "Talk to him (Ctrl+Shift+F11)",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Show him the screen",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Keyboard shortcuts…",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Open Perry",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Open logs",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Put him back in the corner",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "",
+          "type": "separator",
+          "enabled": true
+        },
+        {
+          "label": "Restart",
+          "type": "normal",
+          "enabled": true
+        },
+        {
+          "label": "Quit",
+          "type": "normal",
+          "enabled": true
+        }
+      ],
+      "bounds": {
+        "x": 2059,
+        "y": 912,
+        "width": 33,
+        "height": 48
+      }
+    },
+    "diagnostics": "Debugger listening on ws://127.0.0.1:60509/9282ec06-3f10-4e19-89e2-fd30e4735f0a\r\nFor help, see: https://nodejs.org/learn/getting-started/debugging\r\nDebugger attached.\r\nDebugger ending on ws://127.0.0.1:60509/9282ec06-3f10-4e19-89e2-fd30e4735f0a\r\nFor help, see: https://nodejs.org/learn/getting-started/debugging\r\n"
+  },
+  "passed": true
+}

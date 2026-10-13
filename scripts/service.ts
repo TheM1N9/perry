@@ -275,26 +275,27 @@ function exec(argv: string[], quiet = true) {
 }
 
 /** Windows process identity, shared by the service PID file and supervisor lock. */
-export function supervisorIdentity(pid: number, ctx = serviceContext(), own = false): string | null {
+export function supervisorIdentity(pid: number, ctx = serviceContext(), verifyCommand = true): string | null {
   if (!Number.isSafeInteger(pid) || pid <= 0) return null;
   const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
-  // A foreground launch may use a relative script path. Only our own PID may
-  // skip command verification when recording its identity; readers never do.
-  const command = own && pid === process.pid ? "" : ` -and $p.CommandLine.Contains(${quote(win32.join(ctx.repo, "scripts", "perry.ts"))}) -and $p.CommandLine -match '(?:^|\\s)"?run"?(?:\\s|$)'`;
+  const command = !verifyCommand ? "" : ` -and $p.CommandLine.Contains(${quote(win32.join(ctx.repo, "scripts", "perry.ts"))}) -and $p.CommandLine -match '(?:^|\\s)"?run"?(?:\\s|$)'`;
   const script = `$ProgressPreference = 'SilentlyContinue'; $p = Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}'; if ($p -and $p.ExecutablePath -eq ${quote(ctx.bun)}${command}) { '${pid} ' + $p.CreationDate.ToUniversalTime().Ticks }`;
   const found = exec(["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")]);
   return found.code === 0 && /^\d+ \d+$/.test(found.output) ? found.output : null;
 }
 
 /** A live Windows supervisor, verified against its executable, script and birth time. */
-export function servicePid(ctx = serviceContext(), file = join(ctx.home, "service", "runner.pid")): number | null {
+export function servicePid(ctx = serviceContext(), file = join(ctx.home, "service", "runner.pid"), supervisorLock = false): number | null {
   try {
     const record = readFileSync(file, "utf8").trim();
     const parts = /^(\d+)(?: (\d+))?$/.exec(record);
     if (!parts) return null;
     const pid = Number(parts[1]);
     if (!Number.isSafeInteger(pid) || pid <= 0) return null;
-    const identity = supervisorIdentity(pid, ctx);
+    // A timestamped supervisor lock identifies its exact owner even when the
+    // foreground command used a relative script path. PID-only legacy locks
+    // and service stop always require the absolute executable/script guard.
+    const identity = supervisorIdentity(pid, ctx, !supervisorLock || !parts[2]);
     if (!identity) return null;
     // WMI's creation timestamp has microsecond precision; StartTime's FILETIME has 100 ns precision.
     if (parts[2]) {

@@ -1,0 +1,6 @@
+{
+  "relativeScript": "scripts/perry.ts",
+  "passed": true,
+  "duplicate": "Perry is already running. Use perry stop before perry run for foreground debugging.",
+  "record": "120868 639274731451506220"
+}

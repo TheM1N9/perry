@@ -28,7 +28,7 @@ const checks: Record<string, boolean> = {};
 const notes: Record<string, unknown> = { platform: process.platform, scratch, checkout, home, task, port, testedCommit: spawnSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8", windowsHide: true }).stdout.trim() };
 let recorder: ChildProcess | undefined, desktop: ChildProcess | undefined, sentinel: ChildProcess | undefined;
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
-const save = () => writeFileSync(join(output, "result.json"), JSON.stringify({ at: new Date().toISOString(), checks, notes, passed: Object.values(checks).every(Boolean) }, null, 2));
+const save = () => writeFileSync(join(output, "result.json"), JSON.stringify({ at: new Date().toISOString(), checks, notes, passed: checks.completed === true && checks.ownerTaskUnchanged === true && Object.values(checks).every(Boolean) }, null, 2));
 const check = (name: string, ok: unknown, detail?: unknown) => { checks[name] = Boolean(ok); if (detail !== undefined) notes[name] = detail; console.log(`${ok ? "PASS" : "FAIL"} ${name}`); save(); assert.ok(ok, name); };
 const phase = (name: string) => { writeFileSync(join(output, "state.json"), JSON.stringify({ phase: name, scratch, checkout, home, task, port, base, key, output })); console.log(`PHASE ${name}`); };
 async function run(command: string, args: string[], cwd = checkout, extra: Partial<NodeJS.ProcessEnv> = {}) {
@@ -123,6 +123,7 @@ try {
   await until(() => { const result = JSON.parse(readFileSync(join(home, "update-result.json"), "utf8")); return result.ok && result.to === dashboardVersion && status().state === "ready"; }, "dashboard update completes", 600);
   check("dashboard update preserves native supervision and readiness", status().pid === beforeDashboard && (await required("git", ["rev-parse", "HEAD"])) === dashboardVersion);
   await handoff("updated-ready");
+  await until(async () => (await call("updates:status", { key })).state === "idle", "dashboard acknowledges completed update");
   writeFileSync(join(seed, "package.json"), "{ invalid JSON fixture");
   await git("add", "package.json"); await git("commit", "-m", "Deliberately broken update fixture"); await git("push", "origin", "main");
   await call("updates:check", { key }); await call("updates:update", { key });
@@ -131,9 +132,14 @@ try {
   check("failed dashboard update rolls back and restores readiness", (await required("git", ["rev-parse", "HEAD"])) === dashboardVersion);
   const stopped = await cli("stop"); await until(() => !alive(status().pid), "installed stop", 30);
   check("CLI stop releases the installed process tree and preserves unrelated process", stopped.code === 0 && alive(sentinel.pid!));
-  const debug = spawn(process.execPath, [join(checkout, "scripts/perry.ts"), "run"], { cwd: checkout, env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  const debug = spawn(process.execPath, ["scripts/perry.ts", "run"], { cwd: checkout, env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   let debugLog = ""; debug.stdout.on("data", (chunk) => { debugLog += chunk; }); debug.stderr.on("data", (chunk) => { debugLog += chunk; });
-  try { await until(() => status().state === "ready" && status().pid === debug.pid, "foreground debug readiness"); check("foreground debug exposes detailed runner output", /Assistant runner/.test(debugLog)); }
+  try {
+    await until(() => status().state === "ready" && status().pid === debug.pid, "foreground debug readiness");
+    check("foreground debug exposes detailed runner output", /Assistant runner/.test(debugLog));
+    const duplicate = await cli("run");
+    check("relative foreground launch retains exclusive supervisor ownership", duplicate.code === 1 && duplicate.text.includes("already running") && status().pid === debug.pid);
+  }
   finally { if (debug.pid) await run("taskkill", ["/PID", String(debug.pid), "/T", "/F"]); }
   writeFileSync(join(home, "perry.pid"), String(sentinel.pid));
   const restarted = await cli("start"); check("service clears a stale supervisor lock naming an unrelated live process", restarted.code === 0 && status().state === "ready" && alive(sentinel.pid!));
