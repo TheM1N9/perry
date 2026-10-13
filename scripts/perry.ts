@@ -221,16 +221,21 @@ async function runForeground(background = false) {
   // One supervisor per home, including foreground/debug launches. Never stop another instance implicitly.
   mkdirSync(HOME, { recursive: true });
   const lock = join(HOME, "perry.pid");
+  const windows = process.platform === "win32" ? await import("./service") : null;
+  const record = windows ? windows.supervisorIdentity(process.pid) : String(process.pid);
+  if (!record) throw new Error("Could not establish Windows supervisor process identity");
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      writeFileSync(lock, String(process.pid), { flag: "wx" });
-      process.on("exit", () => { try { if (readFileSync(lock, "utf8") === String(process.pid)) rmSync(lock); } catch {} });
+      writeFileSync(lock, record, { flag: "wx" });
+      process.on("exit", () => { try { if (readFileSync(lock, "utf8") === record) rmSync(lock); } catch {} });
       break;
     } catch (error) {
       if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
-      const pid = Number(readFileSync(lock, "utf8"));
-      let alive = false;
-      try { if (Number.isSafeInteger(pid) && pid > 0) { process.kill(pid, 0); alive = true; } } catch {}
+      let alive = windows ? windows.servicePid(windows.serviceContext(), lock) !== null : false;
+      if (!windows) {
+        const pid = Number(readFileSync(lock, "utf8"));
+        try { if (Number.isSafeInteger(pid) && pid > 0) { process.kill(pid, 0); alive = true; } } catch {}
+      }
       if (alive || attempt === 1) {
         say("Perry is already running. Use perry stop before perry run for foreground debugging.");
         process.exit(1);

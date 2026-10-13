@@ -20,6 +20,8 @@ Verification failure cases, recorded before changing the implementation:
   an unrelated process; foreground mode competing with an existing service.
 - Unbounded logs, oversized lines, concurrent stdout/stderr rotation, credentials
   or private turn output in background logs; lost logs on startup failure.
+- A read-only rotation target throwing UnauthorizedAccessException: both pipes
+  must continue draining and the child's exit status must be preserved.
 - Dashboard responding before the local runner checks in; startup timeout or
   crash leaving the tray with no explanation; endless rapid recovery attempts.
 - Update/recovery switching back to the old PowerShell launcher.

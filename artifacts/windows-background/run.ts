@@ -89,7 +89,18 @@ try {
   const logs = readdirSync(scratch).filter((name) => /^runner\.log(?:\.[1-3])?$/.test(name));
   expect(logs.length === 4, "three rotated logs retained");
   expect(logs.every((name) => statSync(join(scratch, name)).size <= 1024 * 1024), "each log bounded to 1 MiB");
-  expect(/^\d{4}-\d\d-\d\dT/.test(readFileSync(context.logFile, "utf8")), "logs have UTC timestamps");
+  expect(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z /.test(readFileSync(context.logFile, "utf8")), "logs have UTC timestamps");
+  const protectedLog = context.logFile + ".3";
+  spawnSync("attrib", ["+R", protectedLog], { windowsHide: true });
+  const permissionLauncher = spawn(exe, [], { stdio: "ignore", windowsHide: true });
+  try {
+    const exited = new Promise<number | null>((done) => permissionLauncher.once("exit", done));
+    const result = await Promise.race([exited, new Promise<"timed out">((done) => setTimeout(() => done("timed out"), 15000))]);
+    expect(result === 7, "read-only rotation target cannot block pipes or replace child exit status");
+  } finally {
+    if (permissionLauncher.exitCode === null && permissionLauncher.signalCode === null) permissionLauncher.kill();
+    spawnSync("attrib", ["-R", protectedLog], { windowsHide: true });
+  }
   // A failed Process.Start must leave diagnostics and fail the task too.
   const broken = servicePlan({ ...context, bun: join(scratch, "missing.exe") });
   writeFileSync(broken.files[0].path, broken.files[0].content);

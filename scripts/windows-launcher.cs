@@ -61,6 +61,14 @@ class PerryLauncher
         }
     }
 
+    // Log failures must not stop pipe consumption or replace the child's exit status.
+    static void TryLog(string line)
+    {
+        try { Log(line); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
     // Bound a line even if a broken child never writes a newline.
     static void Drain(StreamReader reader)
     {
@@ -68,10 +76,10 @@ class PerryLauncher
         int ch;
         while ((ch = reader.Read()) != -1)
         {
-            if (ch == '\n') { if (line.Length > 0) { try { Log(line.ToString()); } catch (IOException) { } } line.Clear(); }
+            if (ch == '\n') { if (line.Length > 0) TryLog(line.ToString()); line.Clear(); }
             else if (ch != '\r' && line.Length < 8192) line.Append((char)ch);
         }
-        if (line.Length > 0) { try { Log(line.ToString()); } catch (IOException) { } }
+        if (line.Length > 0) TryLog(line.ToString());
     }
 
     static int Main()
@@ -128,7 +136,7 @@ class PerryLauncher
                         // a dead supervisor cannot leave log drains waiting on an orphan forever.
                         job.Dispose();
                         Task.WaitAll(stdout, stderr);
-                        Log("[launcher] Perry exited (" + child.ExitCode + ")");
+                        TryLog("[launcher] Perry exited (" + child.ExitCode + ")");
                         return child.ExitCode;
                     }
                 }

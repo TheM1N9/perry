@@ -274,21 +274,31 @@ function exec(argv: string[], quiet = true) {
   return { code: result.status ?? (result.error ? 127 : 1), output: `${result.stdout ?? ""}${result.stderr ?? ""}`.trim() || String(result.error?.message ?? "") };
 }
 
-/** The Windows service's `perry run`, if it is alive, by the PID its launcher asked it to write. */
-function servicePid(ctx = serviceContext()): number | null {
+/** Windows process identity, shared by the service PID file and supervisor lock. */
+export function supervisorIdentity(pid: number, ctx = serviceContext()): string | null {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+  const script = `$p = Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}'; if ($p -and $p.ExecutablePath -eq ${quote(ctx.bun)} -and $p.CommandLine.Contains(${quote(win32.join(ctx.repo, "scripts", "perry.ts"))}) -and $p.CommandLine -match '(?:^|\\s)"?run"?(?:\\s|$)') { '${pid} ' + $p.CreationDate.ToUniversalTime().Ticks }`;
+  const found = exec(["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")]);
+  return found.code === 0 && /^\d+ \d+$/.test(found.output) ? found.output : null;
+}
+
+/** A live Windows supervisor, verified against its executable, script and birth time. */
+export function servicePid(ctx = serviceContext(), file = join(ctx.home, "service", "runner.pid")): number | null {
   try {
-    const record = readFileSync(join(ctx.home, "service", "runner.pid"), "utf8").trim();
+    const record = readFileSync(file, "utf8").trim();
     const parts = /^(\d+)(?: (\d+))?$/.exec(record);
     if (!parts) return null;
     const pid = Number(parts[1]);
     if (!Number.isSafeInteger(pid) || pid <= 0) return null;
-    // A stale/reused PID must never kill an unrelated terminal. Check the executable and script first.
-    const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
+    const identity = supervisorIdentity(pid, ctx);
+    if (!identity) return null;
     // WMI's creation timestamp has microsecond precision; StartTime's FILETIME has 100 ns precision.
-    const created = parts[2] ? ` -and [Math]::Abs($p.CreationDate.ToUniversalTime().Ticks - [Int64]${parts[2]}) -lt 10` : "";
-    const script = `$p = Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}'; if ($p.ExecutablePath -eq ${quote(ctx.bun)} -and $p.CommandLine.Contains(${quote(win32.join(ctx.repo, "scripts", "perry.ts"))}) -and $p.CommandLine -match '(?:^|\\s)"?run"?(?:\\s|$)'${created}) { '${pid}' }`;
-    const found = exec(["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")]);
-    return found.code === 0 && found.output === String(pid) ? pid : null;
+    if (parts[2]) {
+      const delta = BigInt(identity.split(" ")[1]) - BigInt(parts[2]);
+      if (delta <= -10n || delta >= 10n) return null;
+    }
+    return pid;
   } catch {
     return null;
   }
