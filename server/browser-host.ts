@@ -65,6 +65,7 @@ export async function controlBrowser(scope: string, request: BrowserRequest, imp
     });
   }
   if (request.action === "resume") {
+    if (state.error) throw new Error("The browser needs recovery. Reopen it before resuming.");
     if (state.busy) throw new Error("The cancelled agent action is still finishing. Wait, then explicitly resume again.");
     state.controller = "agent"; state.epoch++; state.revision++; browser.saveBrowserControl(scope);
     return browserStatus(scope, importEnabled);

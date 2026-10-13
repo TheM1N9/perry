@@ -130,6 +130,7 @@ export async function nativeImport(scope: string, identity: BrowserIdentity, pro
   if (!source) throw new Error("That profile is unavailable. Choose it again.");
   await sourceClosed();
   browser.checkIdentity(identity, scope);
+  if (state.controller !== "owner" || state.ownerBusy || state.busy) throw new Error("Another browser action is still running. Wait for it to finish.");
   const profile = browser.profileDirectory(scope), stage = mkdtempSync(join(dirname(profile), "native-import-")); checkStage(stage, profile);
   const staged = join(stage, "new"), saved = join(stage, "old");
   mkdirSync(staged); mkdirSync(saved);
@@ -259,9 +260,8 @@ export async function nativeImport(scope: string, identity: BrowserIdentity, pro
     rmSync(join(profile, recoveryFile), { force: true });
     return imported;
   } catch (error) {
-    await stopOwnBrowser(scope);
-    activeImports.delete(profile);
-    recoverNativeImport(profile);
+    try { await stopOwnBrowser(scope); activeImports.delete(profile); recoverNativeImport(profile); }
+    catch { state.error = "Import rollback needs recovery. Reopen the browser before resuming."; throw new Error(state.error); }
     state.error = null;
     throw error;
   } finally {
