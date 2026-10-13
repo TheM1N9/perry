@@ -42,6 +42,10 @@ before waiting for the drain tasks. The regression fixture verifies both bounded
 exit with the supervisor's original status and cleanup of the descendant.
 `windows-review-before-fix/result.json` records the reproduced failure;
 `windows-review-after-fix/result.json` records all 16 native checks passing.
+The cwd check resolves Windows filesystem paths before comparing them: CI may
+supply an 8.3 alias while .NET reports its long name. The short-name reproduction
+in `windows-short-path-review/result.json` passes all 16 checks and records both
+names for inspection.
 
 `bun artifacts/windows-background/supervisor.ts <output-directory>` exercises the
 real production build and runner on port 7384 in a fresh temporary home. It

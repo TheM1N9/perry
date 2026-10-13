@@ -1,6 +1,6 @@
 /** Native Windows launcher integration check. No tasks, login entries, engines or accounts are touched. */
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { servicePlan } from "../../scripts/service";
@@ -79,7 +79,9 @@ try {
   expect(await first === 7, "child failure reaches Task Scheduler");
   expect(readFileSync(join(scratch, "starts.txt"), "utf8") === "started\n", "one child for repeated launches");
   const facts = readFileSync(join(scratch, "child.txt"), "utf8").trim().split(/\r?\n/);
-  expect(facts[0] === scratch, "cwd survives special characters");
+  // CI's TEMP may contain an 8.3 alias (RUNNER~1); .NET reports the long name.
+  evidence.cwd = { requested: scratch, actual: facts[0] };
+  expect(realpathSync.native(facts[0]).toLowerCase() === realpathSync.native(scratch).toLowerCase(), "cwd survives special characters");
   expect(facts[1] === `${join(scratch, "scripts", "perry.ts")}|run|--background`, "arguments survive special characters");
   expect(facts[2] === "workspace-write", "carried environment survives");
   expect(facts[3] === "0", "console child has no console");
