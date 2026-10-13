@@ -59,7 +59,7 @@ native tables/calculators also export CSV with spreadsheet formulas escaped.
 ## Provenance and account boundaries
 
 Examples must say illustrative; explicit owner inputs say owner-provided.
-Successful MCP `read_page` and read-only `run_action` calls return a server-stamped
+Successful MCP `read_page`, nonempty `internet_read` and read-only `run_action` calls return a server-stamped
 `sourceReceipt` while the feature is enabled. Retrieved artifacts must reference
 receipts from the same conversation and match the exact source and fetch time.
 Period, units, assumptions and missing fields remain explicit. These are snapshots,

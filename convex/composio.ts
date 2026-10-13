@@ -465,6 +465,7 @@ function internetFailure(error: unknown): InternetFailure {
 export async function internetRead(ctx: ToolCtx, request: InternetRequest, platform: Platform, signal: AbortSignal): Promise<ConnectedRead> {
   const toolkit = INTERNET_TOOLKITS[platform];
   const empty: ConnectedRead = { state: "setup_required", actions: [], accounts: [], repair: "Use a public supported operation, or connect the relevant account in Apps & skills." };
+  if (retired(toolkit)) return { ...empty, repair: "GitHub uses Perry's checked token connection. Use list_connectors, find_action and GITHUB_REST_GET for authenticated GitHub reads; Composio's GitHub is retired." };
   if (!toolkit) return empty;
   const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
   if (!apiKey) return empty;

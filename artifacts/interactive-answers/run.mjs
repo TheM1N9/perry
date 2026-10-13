@@ -170,13 +170,16 @@ try {
   // Real read_page HTTP path, explicitly fixture data. It must carry a server receipt.
   const read = await mcp("read_page", { url: fixture });
   check("successful read gets a server source receipt and untrusted marker", read.sourceReceipt?.receipt && read.untrusted);
-  const sourced = { ...definition, title: "Channel analytics fixture", inputs: [{ kind: "text", id: "filter", label: "Filter channels", initial: "" }], provenance: { kind: "retrieved", sources: [read.sourceReceipt], period: "2026-10-01 through 2026-10-07", units: "views", assumptions: ["Fixture source; no real account connection"], missing: ["Channel B views unavailable"] }, view: { kind: "chart", columns: ["Channel", "Views"], rows: [["A", 120], ["B", null]] } };
+  const routedRead = await mcp("internet_read", { url: fixture });
+  check("routed internet read gets a source receipt for interactive provenance", routedRead.sourceReceipt?.receipt && routedRead.untrusted && routedRead.result.items.length > 0);
+  const sourced = { ...definition, title: "Channel analytics fixture", inputs: [{ kind: "text", id: "filter", label: "Filter channels", initial: "" }], provenance: { kind: "retrieved", sources: [routedRead.sourceReceipt], period: "2026-10-01 through 2026-10-07", units: "views", assumptions: ["Fixture source; no real account connection"], missing: ["Channel B views unavailable"] }, view: { kind: "chart", columns: ["Channel", "Views"], rows: [["A", 120], ["B", null]] } };
   const analytics = await mcp("interactive_create", { requestId: "analytics", definition: sourced });
   await assert.rejects(() => mcp("interactive_create", { requestId: "forged-source", definition: { ...sourced, provenance: { ...sourced.provenance, sources: [{ ...read.sourceReceipt, fetchedAt: "2000-01-01T00:00:00Z" }] } } }));
   check("fabricated fetch metadata is rejected", true);
   const analyticsCard = page.locator(`[data-interactive="${analytics.id}"]`);
   await analyticsCard.waitFor();
-  check("partial source data displays provenance and missing values honestly", (await analyticsCard.innerText()).includes("Missing") && (await analyticsCard.innerText()).includes(read.sourceReceipt.fetchedAt));
+  await analyticsCard.getByRole("button", { name: "Sources & assumptions" }).click();
+  check("partial source data displays provenance and missing values honestly", (await analyticsCard.innerText()).includes("Missing") && (await analyticsCard.innerText()).includes(routedRead.sourceReceipt.fetchedAt));
   await analyticsCard.getByLabel("Filter channels").fill("no-such-channel");
   await until(async () => (await analyticsCard.innerText()).includes("No data matches"), "empty data filter");
   check("filters handle empty results without invented values", true);
@@ -351,6 +354,6 @@ try {
   await browser?.close();
   await stop();
   await new Promise((done) => site.close(done));
-  writeFileSync(join(output, "result.json"), JSON.stringify({ ranAt: new Date().toISOString(), platform: platform(), pass: checks.every((check) => check.pass), checks, browserDiagnostics: browserDiagnostics.slice(-20), limitations: ["Fixture data, no real connector account calls", "Simulated runner reports, no LLM-selection behavior evaluated", "macOS Chrome runtime only; no Windows runtime claim"], home }, null, 2));
+  writeFileSync(join(output, "result.json"), JSON.stringify({ ranAt: new Date().toISOString(), platform: platform(), pass: checks.every((check) => check.pass), checks, browserDiagnostics: browserDiagnostics.slice(-20), limitations: ["Fixture data, no real connector account calls", "Simulated runner reports, no LLM-selection behavior evaluated", `Chrome runtime on ${platform()} only; other platforms not exercised in this run`], home }, null, 2));
   writeFileSync(join(output, "server.log"), serverLog);
 }

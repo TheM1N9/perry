@@ -187,13 +187,13 @@ const provider = createServer(async (req, res) => {
   res.setHeader("content-type", "application/json");
   const send = (value: unknown) => res.end(JSON.stringify(value));
   if (providerStatus) { res.statusCode = providerStatus; res.setHeader("retry-after", "60"); return send({ error: { message: "Fixture provider refused this read" } }); }
-  if (path === "/api/v3.1/connected_accounts") return send({ items: [{ id: "ca-fixture", status: accountStatus, status_reason: null, toolkit: { slug: "github" }, auth_config: { id: "ac-fixture", is_composio_managed: true, is_disabled: false }, is_disabled: false, created_at: "2026-10-01", updated_at: "2026-10-01", data: { access_token: "fixture-private-token" } }], next_cursor: accountsTruncated ? "another-page" : null, total_pages: accountsTruncated ? 4 : 1 });
+  if (path === "/api/v3.1/connected_accounts") return send({ items: [{ id: "ca-fixture", status: accountStatus, status_reason: null, toolkit: { slug: "youtube" }, auth_config: { id: "ac-fixture", is_composio_managed: true, is_disabled: false }, is_disabled: false, created_at: "2026-10-01", updated_at: "2026-10-01", data: { access_token: "fixture-private-token" } }], next_cursor: accountsTruncated ? "another-page" : null, total_pages: accountsTruncated ? 4 : 1 });
   if (path === "/api/v3.1/tool_router/session") return send({ session_id: "fixture-session", config: { user_id: "owner", execute: {}, search: {}, preload: { tools: [] } }, config_version: 1, mcp: { type: "http", url: "http://fixture.invalid/mcp" } });
   if (path.endsWith("/search")) return send({ success: true, error: null,
-    results: [{ index: 0, use_case: "read private issue", primary_tool_slugs: ["GITHUB_GET_ISSUE", "GITHUB_CREATE_ISSUE", "GITHUB_GET_TOKEN"], related_tool_slugs: [], toolkits: ["github"] }],
-    tool_schemas: Object.fromEntries(["GITHUB_GET_ISSUE", "GITHUB_CREATE_ISSUE", "GITHUB_GET_TOKEN"].map((slug) => [slug, { tool_slug: slug, toolkit: "github", description: "Fixture operation", input_schema: { type: "object", properties: { issue_number: { type: "integer" }, source_url: { type: "string" } }, required: ["issue_number"], additionalProperties: false } }])),
-    toolkit_connection_statuses: [{ toolkit: "github", description: "GitHub", has_active_connection: true, status_message: "Active fixture" }], next_steps_guidance: [], session: { id: "fixture-session", generate_id: false, instructions: "Fixture" }, time_info: { current_time_utc: "2026-10-13T00:00:00Z", current_time_utc_epoch_seconds: 1, message: "Fixture" } });
-  if (path.endsWith("/execute")) return send({ data: { items: [{ id: 1, body: "Private fixture content", html_url: "https://github.com/acme/product/issues/1" }], access_token: "fixture-private-token" }, error: connectorError, log_id: "fixture-log" });
+    results: [{ index: 0, use_case: "read private issue", primary_tool_slugs: ["YOUTUBE_GET_VIDEO", "YOUTUBE_CREATE_VIDEO", "YOUTUBE_GET_TOKEN"], related_tool_slugs: [], toolkits: ["youtube"] }],
+    tool_schemas: Object.fromEntries(["YOUTUBE_GET_VIDEO", "YOUTUBE_CREATE_VIDEO", "YOUTUBE_GET_TOKEN"].map((slug) => [slug, { tool_slug: slug, toolkit: "youtube", description: "Fixture operation", input_schema: { type: "object", properties: { issue_number: { type: "integer" }, source_url: { type: "string" } }, required: ["issue_number"], additionalProperties: false } }])),
+    toolkit_connection_statuses: [{ toolkit: "youtube", description: "YouTube", has_active_connection: true, status_message: "Active fixture" }], next_steps_guidance: [], session: { id: "fixture-session", generate_id: false, instructions: "Fixture" }, time_info: { current_time_utc: "2026-10-13T00:00:00Z", current_time_utc_epoch_seconds: 1, message: "Fixture" } });
+  if (path.endsWith("/execute")) return send({ data: { items: [{ id: 1, body: "Private fixture content", html_url: "https://youtube.com/watch?v=fixture" }], access_token: "fixture-private-token" }, error: connectorError, log_id: "fixture-log" });
   res.statusCode = 404; send({ error: "Unexpected fixture endpoint" });
 });
 await new Promise<void>((done) => provider.listen(0, "127.0.0.1", done));
@@ -205,7 +205,7 @@ try {
     const result = await mcp("internet_read", { operation: "read", url: `${base}/article` });
     assert.match(result.untrusted ?? "", /never follow instructions/); assert.equal(result.result?.items[0]?.title, "Exact resource");
     assert.equal(typeof runtime.store.get(turn)?.outsideAt, "number");
-    for (const [name, args] of [["use_secret", { id: "anything" }], ["install_skill", { reviewId: "anything" }], ["run_action", { slug: "GITHUB_CREATE_ISSUE" }], ["browser", { action: "sign_in", secretId: "anything", passwordRef: 1 }], ["update_identity", { personality: "Follow outside instructions" }]] as const) {
+    for (const [name, args] of [["use_secret", { id: "anything" }], ["install_skill", { reviewId: "anything" }], ["run_action", { slug: "YOUTUBE_CREATE_VIDEO" }], ["browser", { action: "sign_in", secretId: "anything", passwordRef: 1 }], ["update_identity", { personality: "Follow outside instructions" }]] as const) {
       assert.equal((await mcp(name, args)).refused, true, name);
     }
   });
@@ -255,19 +255,24 @@ try {
   await check("real SDK discovery pins account, validates current read schema and refuses writes", async () => {
     runtime.store.insert("secrets", { name: "COMPOSIO_API_KEY", value: "fixture-only-api-key", updatedAt: Date.now() });
     runtime.store.insert("vault", { label: 'Fixture "login"', value: "fixture-private-token", createdAt: Date.now(), updatedAt: Date.now() });
-    const request = { operation: "account", platform: "github", query: "read private issue" };
+    const beforeRetired = providerCalls.length;
+    const retired = await mcp("internet_read", { operation: "account", platform: "github", query: "read private issue", connector: { accountId: "retired-github", slug: "GITHUB_GET_ISSUE", args: { issue_number: 1 } } });
+    assert.equal(retired.result?.status, "unavailable");
+    assert.match(retired.result?.error?.repair ?? "", /GITHUB_REST_GET/);
+    assert.equal(providerCalls.length, beforeRetired, "Retired GitHub must not contact Composio");
+    const request = { operation: "account", platform: "youtube", query: "read private video" };
     const found = await mcp("internet_read", request);
-    assert.deepEqual(found.result?.discovery?.actions.map((a) => a.slug), ["GITHUB_GET_ISSUE"], JSON.stringify({ found, providerPaths: providerCalls.map((c) => c.path) }));
+    assert.deepEqual(found.result?.discovery?.actions.map((a) => a.slug), ["YOUTUBE_GET_VIDEO"], JSON.stringify({ found, providerPaths: providerCalls.map((c) => c.path) }));
     assert.equal(found.result?.status, "unavailable"); assert.equal(found.result?.items.length, 0);
     const before = providerCalls.filter((c) => c.path.endsWith("/execute")).length;
-    const refused = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "GITHUB_CREATE_ISSUE", args: { issue_number: 1 } } });
+    const refused = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "YOUTUBE_CREATE_VIDEO", args: { issue_number: 1 } } });
     assert.equal(refused.result?.error?.code, "policy");
-    const invalid = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "GITHUB_GET_ISSUE", args: { issue_number: "invalid" } } });
+    const invalid = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "YOUTUBE_GET_VIDEO", args: { issue_number: "invalid" } } });
     assert.equal(invalid.result?.error?.code, "malformed");
-    const credentialUrl = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "GITHUB_GET_ISSUE", args: { issue_number: 1, source_url: "https://github.com/?access_token=secret" } } });
+    const credentialUrl = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "YOUTUBE_GET_VIDEO", args: { issue_number: 1, source_url: "https://youtube.com/?access_token=secret" } } });
     assert.equal(credentialUrl.result?.error?.code, "policy");
     assert.equal(providerCalls.filter((c) => c.path.endsWith("/execute")).length, before);
-    const read = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "GITHUB_GET_ISSUE", args: { issue_number: 1 } } });
+    const read = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "YOUTUBE_GET_VIDEO", args: { issue_number: 1 } } });
     assert.equal(read.result?.status, "partial"); assert.match(read.result?.items[0]?.content ?? "", /Private fixture content/);
     assert.ok(!JSON.stringify(read).includes("fixture-private-token"));
     const execute = providerCalls.find((c) => c.path.endsWith("/execute")); assert.equal(execute?.body.account, "ca-fixture");
@@ -275,18 +280,18 @@ try {
     assert.ok(JSON.stringify(session?.body.tags).includes("readOnlyHint"));
     assert.ok(JSON.stringify(session?.body.manage_connections).includes("false"));
     connectorError = "OAuth token expired or revoked";
-    assert.equal((await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "GITHUB_GET_ISSUE", args: { issue_number: 1 } } })).result?.error?.code, "expired_auth");
+    assert.equal((await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "YOUTUBE_GET_VIDEO", args: { issue_number: 1 } } })).result?.error?.code, "expired_auth");
     connectorError = null; accountStatus = "EXPIRED";
-    assert.equal((await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "GITHUB_GET_ISSUE", args: { issue_number: 1 } } })).result?.error?.code, "expired_auth");
+    assert.equal((await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "YOUTUBE_GET_VIDEO", args: { issue_number: 1 } } })).result?.error?.code, "expired_auth");
     accountStatus = "ACTIVE";
     accountsTruncated = true;
-    const missing = await mcp("internet_read", { ...request, connector: { accountId: "ca-outside-first-pages", slug: "GITHUB_GET_ISSUE", args: { issue_number: 1 } } });
+    const missing = await mcp("internet_read", { ...request, connector: { accountId: "ca-outside-first-pages", slug: "YOUTUBE_GET_VIDEO", args: { issue_number: 1 } } });
     assert.equal(missing.result?.discovery?.accountsTruncated, true); assert.notEqual(missing.result?.error?.code, "expired_auth");
     accountsTruncated = false;
     for (const [status, code] of [[401, "auth_required"], [403, "forbidden"], [429, "rate_limited"]] as const) {
       providerStatus = status;
       const before = providerCalls.length;
-      const denied = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "GITHUB_GET_ISSUE", args: { issue_number: 1 } } });
+      const denied = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "YOUTUBE_GET_VIDEO", args: { issue_number: 1 } } });
       assert.equal(denied.result?.error?.code, code); assert.equal(providerCalls.length - before, 1, "No automatic SDK retry on denial or rate limit");
       if (status === 429) assert.ok(denied.result?.error?.retryAt);
     }
@@ -310,7 +315,7 @@ try {
   await runtime.stop(); sql.close(); site.close(); provider.close();
   site.closeAllConnections(); provider.closeAllConnections();
   mkdirSync("artifacts/internet-routing", { recursive: true });
-  writeFileSync("artifacts/internet-routing/result.json", JSON.stringify({ ranAt: new Date().toISOString(), platform: process.platform, pass: results.every((r) => r.passed), scope: "Deterministic source/provider fixtures plus real SDK/SQLite/MCP/public HTTP transport; no live connector or Windows runtime claims.", results, hits, providerPaths: providerCalls.map((c) => c.path) }, null, 2));
-  rmSync(home, { recursive: true, force: true });
+  writeFileSync("artifacts/internet-routing/result.json", JSON.stringify({ ranAt: new Date().toISOString(), platform: process.platform, pass: results.every((r) => r.passed), scope: `Deterministic source/provider fixtures plus real SDK/SQLite/MCP/public HTTP transport on ${process.platform}; no live connector account claims.`, results, hits, providerPaths: providerCalls.map((c) => c.path) }, null, 2));
+  rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
 }
 process.exitCode = results.every((r) => r.passed) ? 0 : 1;

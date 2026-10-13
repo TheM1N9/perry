@@ -17,7 +17,7 @@ async function provenance(ctx: QueryCtx, conversationId: Id<"conversations">, de
   for (const source of definition.provenance.sources) {
     const id = source.receipt ? ctx.db.normalizeId("interactiveSources", source.receipt) : null;
     const receipt = id ? await ctx.db.get(id) : null;
-    if (!receipt || receipt.conversationId !== conversationId) throw new Error("Retrieved data needs a sourceReceipt from this conversation's successful read_page or read-only run_action.");
+    if (!receipt || receipt.conversationId !== conversationId) throw new Error("Retrieved data needs a sourceReceipt from this conversation's successful read_page, internet_read or read-only run_action.");
     if (source.fetchedAt !== receipt.fetchedAt || source.label !== receipt.label || source.url !== receipt.url) throw new Error("Source metadata must match its server-stamped receipt.");
   }
 }

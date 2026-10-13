@@ -321,11 +321,13 @@ export const handle = httpAction(async (ctx, request) => {
         if (READS_OUTSIDE.has(name) || theirs) {
           await ctx.runMutation(internal.codex.markOutside, { turnId: access.turnId });
           const succeeded = output && typeof output === "object" && !("error" in output) && (!("ok" in output) || output.ok === true);
-          const read = name === "read_page" || (name === "run_action" && READ_ACTION.test(String((parsed.data as { slug?: string }).slug ?? "")));
+          const routed = name === "internet_read" ? z.object({ status: z.enum(["ok", "partial"]), items: z.array(z.unknown()).min(1), canonicalUrl: z.string().optional(), requestedUrl: z.string().optional(), backend: z.string().nullable() }).safeParse(output) : null;
+          const sourceUrl = routed?.success ? routed.data.canonicalUrl ?? routed.data.requestedUrl : name === "read_page" ? String((parsed.data as { url?: string }).url) : undefined;
+          const read = name === "read_page" || routed?.success || (name === "run_action" && READ_ACTION.test(String((parsed.data as { slug?: string }).slug ?? "")));
           const sourceReceipt = succeeded && read && access.conversationId ? await ctx.runMutation(internal.interactive.recordSource, {
             conversationId: access.conversationId,
-            label: name === "read_page" ? String((parsed.data as { url?: string }).url ?? "Web page") : String((parsed.data as { slug?: string }).slug ?? "Connected account"),
-            ...(name === "read_page" ? { url: String((parsed.data as { url?: string }).url) } : {}),
+            label: sourceUrl ?? (routed?.success ? routed.data.backend ?? "Internet source" : String((parsed.data as { slug?: string }).slug ?? "Connected account")),
+            ...(sourceUrl ? { url: sourceUrl } : {}),
           }) : null;
           return reply(message.id, { content: [{ type: "text", text: JSON.stringify({ untrusted: UNTRUSTED, result: withHint(output) ?? null, ...(sourceReceipt ? { sourceReceipt } : {}) }) }] });
         }

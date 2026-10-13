@@ -1,0 +1,118 @@
+{
+  "withheld": {
+    "pr279": "Superseded by PR 280: merging both restores competing GitHub token paths",
+    "pr287": "Installed Windows standard-account desktop lifecycle, both update paths, tray and no-console-flash recording remain unverified acceptance gates documented in the PR"
+  },
+  "verification": [
+    "pnpm typecheck passed",
+    "pnpm exec tsc --noEmit -p convex passed",
+    "pnpm build passed with two existing filesystem tracing warnings",
+    "pnpm exec bun scripts/smoke.ts passed: 9 checks",
+    "git diff --check passed"
+  ],
+  "reviewedAt": "2026-10-13T06:11:19.6657283Z",
+  "suites": [
+    {
+      "suite": "github-token",
+      "passed": true,
+      "checks": 25.0,
+      "artifact": "github-token/result.json"
+    },
+    {
+      "suite": "message-edit",
+      "passed": true,
+      "checks": 37.0,
+      "artifact": "message-edit/result.json"
+    },
+    {
+      "suite": "interactive-answers",
+      "passed": true,
+      "checks": 47,
+      "artifact": "interactive-answers/result.json"
+    },
+    {
+      "suite": "internet-routing",
+      "passed": true,
+      "checks": 14,
+      "artifact": "internet-routing/result.json"
+    }
+  ],
+  "browser": {
+    "checks": 14,
+    "artifact": "live-browser/report.json"
+  },
+  "platform": "Windows",
+  "pullRequests": [
+    {
+      "title": "Windows installer test: link perry in a home of its own, not over the owner's",
+      "decision": "merge",
+      "head": "896263312890bcec084387eddbcf7666aa60d66f",
+      "number": 278
+    },
+    {
+      "title": "Add a token-based way to connect GitHub, alongside OAuth",
+      "decision": "withheld",
+      "head": "d7eb05228960f87d29122ee11c9623728f0af22c",
+      "number": 279
+    },
+    {
+      "title": "Connect GitHub with a token Perry checks, and retire Composio's GitHub",
+      "decision": "merge",
+      "head": "6d1017a8532dd6e1b54d43cd866b6de72a48bf40",
+      "number": 280
+    },
+    {
+      "title": "Run Perry on Windows without a console window",
+      "decision": "withheld",
+      "head": "57e6a518461aa81ae8ff38eeba3b3af3df3754d6",
+      "number": 287
+    },
+    {
+      "title": "Add durable interactive answers to chat",
+      "decision": "merge",
+      "head": "b7fb48ff5f21c7ef92f26accdd9dd433d79d0882",
+      "number": 288
+    },
+    {
+      "title": "Chat: edit message attachments and preview media",
+      "decision": "merge",
+      "head": "422103d8c9ed7664bba12ae6a3faed02b1e13443",
+      "number": 289
+    },
+    {
+      "title": "Add a contextual Files and Work sidebar",
+      "decision": "merge",
+      "head": "fa549ab76226aceeabcf292d82a213f9a05c8a9f",
+      "number": 290
+    },
+    {
+      "title": "Route internet reads and search by operation",
+      "decision": "merge",
+      "head": "dd0b82f1a013a6d168d637a0f12bff701a5e8755",
+      "number": 291
+    },
+    {
+      "title": "Show the live browser and import selected sessions",
+      "decision": "merge",
+      "head": "a9b3353a9939312f578724a0a3b4add6aa079c1f",
+      "number": 292
+    }
+  ],
+  "integrationFixes": [
+    "Preserve all shared chat, registry, turn context, outside-read and cancellation changes during conflict resolution",
+    "Retired Composio GitHub cannot be reached through internet_read; checked token reads use GITHUB_REST_GET",
+    "Successful nonempty internet_read returns sourceReceipt for interactive provenance",
+    "Interactive E2E expands Sources & assumptions before inspecting its disclosed timestamp",
+    "Internet fixture cleanup uses native bounded retries for Windows Chrome file locks"
+  ],
+  "workspace": {
+    "checks": 7,
+    "artifact": "workspace/report.json"
+  },
+  "limitations": [
+    "Fixture accounts and fake ACP model; no real model/provider or messaging accounts exercised",
+    "Firefox import remains default-off; real installed Firefox profile compatibility remains unverified",
+    "Live browser view and workspace/interactive rollout flags retain their defaults",
+    "PR Vercel failures report fork deployment authorization, not compiler failures"
+  ]
+}
