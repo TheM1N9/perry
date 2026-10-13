@@ -1,0 +1,26 @@
+{
+  "platform": "win32",
+  "scratch": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\Perry O'Neil ü % & $ h8uOcZ",
+  "GUI PE subsystem": true,
+  "second launch exits cleanly": true,
+  "child failure reaches Task Scheduler": true,
+  "one child for repeated launches": true,
+  "cwd": {
+    "requested": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\Perry O'Neil ü % & $ h8uOcZ",
+    "actual": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\Perry O'Neil ü % & $ h8uOcZ"
+  },
+  "cwd survives special characters": true,
+  "arguments survive special characters": true,
+  "carried environment survives": true,
+  "console child has no console": true,
+  "three rotated logs retained": true,
+  "each log bounded to 1 MiB": true,
+  "logs have UTC timestamps": true,
+  "read-only rotation target cannot block pipes or replace child exit status": true,
+  "startup failure exits nonzero": true,
+  "startup failure leaves a log": true,
+  "supervisor exit drains logs without waiting for orphan pipes": true,
+  "supervisor exit cleans up its surviving descendant": true,
+  "launcher termination cleans up its owned child": true,
+  "pass": true
+}

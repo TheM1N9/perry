@@ -227,12 +227,28 @@ rights:
   Logs are in the journal (`pnpm run service logs`). A user unit stops when you
   log out; `loginctl enable-linger $USER` keeps it running and starts it at boot.
   Under WSL, systemd must be on (`[boot] systemd=true` in `/etc/wsl.conf`).
-- **Windows**: a Task Scheduler task, "Perry runner", that starts at logon in a
-  hidden window. Logs go to `~/.perry/logs/runner.log`. Unlike the task
-  defaults, it has no time limit and keeps running on battery.
+- **Windows**: a Task Scheduler task, "Perry runner", starts a console-free
+  launcher at logon. `perry start` compiles it with Windows' .NET Framework
+  compiler (`%SystemRoot%\Microsoft.NET\Framework\v4.0.30319\csc.exe`); no SDK
+  install or administrator rights are needed. If that compiler is unavailable,
+  startup reports the error without replacing the existing launcher. Unlike
+  the task defaults, Perry has no time limit and keeps running on battery.
+  `~/.perry/logs/runner.log` keeps UTC timestamps, the checkout/runtime versions,
+  readiness and process failures. It rotates at 1 MiB, retaining three previous
+  files. The desktop tray reports starting, ready or unavailable and offers
+  **Open logs**, even when the dashboard cannot load. Readiness requires the
+  backend and a recent check-in from this computer's live runner.
+
+Windows background logs omit detailed child output, which can contain private
+chat titles, commands or credentials. For full troubleshooting output, run
+`perry stop`, then `perry run` in your own terminal; it uses the same checkout,
+configuration and environment. An existing instance must be stopped first.
+Perry never hides that terminal. After ten consecutive short-lived child
+failures, automatic retries stop; the tray and logs report the failure. Use
+`perry stop` then `perry start` after fixing it.
 
 The service remembers the `PATH` it was installed from (launchd and systemd
-start services with a bare one), and any `PERRY_HOME`, `PERRY_CODEX_SANDBOX`,
+start services with a bare one), and any `PERRY_HOME`, `PERRY_PORT`, `PERRY_HOST`, `PERRY_CODEX_SANDBOX`,
 `PERRY_CODEX_WINDOWS_SANDBOX` or `CODEX_HOME`, so reinstall it after changing
 those or moving the repo. With no terminal to ask in, approvals are answered in
 the dashboard. Stop the service before running the runner in a terminal with

@@ -1,0 +1,29 @@
+{
+  "platform": "darwin",
+  "home": "/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/Perry background ü taURuw",
+  "port": 7384,
+  "production build exists": true,
+  "missing native ownership handoff fails within 10 seconds": true,
+  "failed handoff starts no runner": true,
+  "initialStatus": {
+    "pid": 20146,
+    "at": 1791835648066,
+    "state": "ready",
+    "detail": "Dashboard and local runner connected"
+  },
+  "dashboard and live runner become ready": true,
+  "foreground refuses an existing supervisor": true,
+  "repeated launch preserves one runner": true,
+  "crashStatus": {
+    "pid": 20146,
+    "at": 1791835648237,
+    "state": "failed",
+    "detail": "runner exited (signal)"
+  },
+  "runner crash is reported and recovers": true,
+  "private detailed child stdout is omitted in background": true,
+  "lifecycle log contains version and readiness": true,
+  "shutdown reports stopped and releases supervisor lock": true,
+  "foreground exposes detailed child output": true,
+  "pass": true
+}

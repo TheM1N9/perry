@@ -1,0 +1,9 @@
+2026-10-12T20:07:25.051Z [perry] version a101be5; Bun 1.3.5; Node v26.8.2
+2026-10-12T20:07:25.052Z [perry] starting: Waiting for the dashboard and local runner
+2026-10-12T20:07:25.052Z [perry] starting the runner and the dashboard on http://localhost:7384
+2026-10-12T20:07:28.067Z [perry] ready: Dashboard and local runner connected
+2026-10-12T20:07:28.237Z [perry] failed: runner exited (signal)
+2026-10-12T20:07:28.237Z [perry] runner exited (signal); starting it again in 2s
+2026-10-12T20:07:31.057Z [perry] ready: Dashboard and local runner connected
+2026-10-12T20:07:31.247Z [perry] stopped: Perry was stopped
+2026-10-12T20:07:31.247Z [perry] stopping

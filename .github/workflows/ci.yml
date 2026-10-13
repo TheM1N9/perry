@@ -27,6 +27,14 @@ jobs:
       - run: pnpm exec tsc --noEmit
       # On Windows the runner is disposable, so the smoke test also has Task Scheduler read the task it would install.
       - run: bun scripts/smoke.ts ${{ runner.os == 'Windows' && '--register' || '' }}
+      - if: runner.os == 'Windows'
+        run: bun artifacts/windows-background/run.ts "${{ runner.temp }}/windows-background"
+      - if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-background
+          path: ${{ runner.temp }}/windows-background
+          if-no-files-found: ignore
       # perry setup never picks the default engine (issue #190): it refuses with no one to answer and no --engine,
       # takes --engine or PERRY_ENGINE without asking, and asks with scripted answers. Stand-in CLIs only, nothing
       # installed for real (artifacts/choose-engine).

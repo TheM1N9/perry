@@ -187,6 +187,20 @@ if (!app.requestSingleInstanceLock({ argv })) {
 } else {
   let win = null;
   let tray = null;
+  const healthStartedAt = Date.now();
+  let healthLabel = "Starting Perry…";
+  const refreshHealth = () => {
+    if (PAIRED) return;
+    let label = Date.now() - healthStartedAt > 90_000 ? "Perry is unavailable" : "Starting Perry…";
+    try {
+      const status = JSON.parse(readFileSync(join(HOME, "service", "status.json"), "utf8"));
+      if (Date.now() - status.at < 15_000 && Number.isSafeInteger(status.pid) && status.pid > 0) {
+        process.kill(status.pid, 0);
+        label = status.state === "ready" ? "Perry is ready" : status.state === "starting" ? "Starting Perry…" : "Perry is unavailable";
+      } else label = "Perry is unavailable";
+    } catch { if (existsSync(join(HOME, "service", "status.json"))) label = "Perry is unavailable"; }
+    if (label !== healthLabel) { healthLabel = label; refreshMenu(); }
+  };
   /** Ghost: every click goes through him, even on him. */
   let ghost = Boolean(readState().ghost);
   /** Whether his page last said the pointer is on him (pet:solid): his window takes clicks then. */
@@ -389,8 +403,10 @@ if (!app.requestSingleInstanceLock({ argv })) {
 
   function refreshMenu() {
     if (!tray) return;
+    tray.setToolTip(PAIRED ? "Perry" : healthLabel);
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: "Perry", enabled: false },
+      { label: PAIRED ? "Perry" : healthLabel, enabled: false },
+      { type: "separator" },
       wanted ? { label: "Hide", click: hide } : { label: "Show", click: show },
       { label: "Let clicks through him", type: "checkbox", checked: ghost, click: (item) => {
         ghost = item.checked;
@@ -405,6 +421,7 @@ if (!app.requestSingleInstanceLock({ argv })) {
       { label: `Show him the screen${look?.current() ? ` (${look.current().replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl")})` : ""}`, click: () => void lookNow() },
       { label: "Keyboard shortcuts…", click: () => openDashboard("/settings/desktop-pet#shortcuts") },
       { label: "Open Perry", click: () => openDashboard("/") },
+      ...(!PAIRED ? [{ label: "Open logs", click: () => { mkdirSync(join(HOME, "logs"), { recursive: true }); void shell.openPath(join(HOME, "logs")); } }] : []),
       { label: "Put him back in the corner", click: () => {
         const area = screen.getPrimaryDisplay().workArea;
         standAt({ x: area.x + area.width - SIZE.width, y: area.y + area.height - SIZE.height });
@@ -574,6 +591,8 @@ if (!app.requestSingleInstanceLock({ argv })) {
     tray.on("click", () => (wanted ? hide() : show()));
     refreshMenu();
 
+    refreshHealth();
+    setInterval(refreshHealth, 3000);
     void load();
   });
 

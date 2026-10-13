@@ -1,0 +1,74 @@
+
+darwin arm64, bun 1.3.5, scratch /var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-smoke-7wLjjW
+
+[32mok[0m    runner --help
+[32mok[0m    home[2m  /var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-smoke-7wLjjW/perry home ü[0m
+[32mok[0m    machine[2m  {"os":"macOS (Darwin 27.0.0, arm64)","shell":"zsh","open":"open"}[0m
+[32mok[0m    sandbox
+[32mok[0m    media paths
+[32mok[0m    service plans[2m  {"launchd":"/Users/o'neil müller/Library/LaunchAgents/com.perry.runner.plist","systemd":"/home/o'neil müller/.config/systemd/user/perry-runner.service","taskScheduler":"Perry runner"}[0m
+[32mok[0m    service lint[2m  /var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-smoke-7wLjjW/lint/com.perry.runner.plist: OK[0m
+[32mok[0m    service dry run[2m  Installing Perry as a launchd service  (dry run: nothing is written or run)[0m
+[32mok[0m    perry command[2m  help lists the commands; run without a connection points at perry setup[0m
+
+[32mAll 9 checks passed.[0m
+
+{
+  "ranAt": "2026-10-12T20:07:37.798Z",
+  "platform": "darwin",
+  "arch": "arm64",
+  "bun": "1.3.5",
+  "pass": true,
+  "checks": [
+    {
+      "name": "runner --help",
+      "pass": true
+    },
+    {
+      "name": "home",
+      "pass": true,
+      "detail": "/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-smoke-7wLjjW/perry home ü"
+    },
+    {
+      "name": "machine",
+      "pass": true,
+      "detail": {
+        "os": "macOS (Darwin 27.0.0, arm64)",
+        "shell": "zsh",
+        "open": "open"
+      }
+    },
+    {
+      "name": "sandbox",
+      "pass": true
+    },
+    {
+      "name": "media paths",
+      "pass": true
+    },
+    {
+      "name": "service plans",
+      "pass": true,
+      "detail": {
+        "launchd": "/Users/o'neil müller/Library/LaunchAgents/com.perry.runner.plist",
+        "systemd": "/home/o'neil müller/.config/systemd/user/perry-runner.service",
+        "taskScheduler": "Perry runner"
+      }
+    },
+    {
+      "name": "service lint",
+      "pass": true,
+      "detail": "/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-smoke-7wLjjW/lint/com.perry.runner.plist: OK"
+    },
+    {
+      "name": "service dry run",
+      "pass": true,
+      "detail": "Installing Perry as a launchd service  (dry run: nothing is written or run)"
+    },
+    {
+      "name": "perry command",
+      "pass": true,
+      "detail": "help lists the commands; run without a connection points at perry setup"
+    }
+  ]
+}

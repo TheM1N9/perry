@@ -1,0 +1,47 @@
+{
+  "at": "2026-10-13T07:25:55.783Z",
+  "checks": {
+    "real installer succeeds in spaces and Unicode paths": true,
+    "installer links only the disposable home": true,
+    "recording starts before service launch": true,
+    "installed desktop pet starts with an isolated login entry": true,
+    "real perry start installs and reaches readiness": true,
+    "scheduled task uses native GUI launcher with least privilege": true,
+    "repeated CLI launch preserves the supervisor and runner": true,
+    "repeated native launch exits without another supervisor": true,
+    "installed service reports runner crash and recovers": true,
+    "real CLI update restarts the installed native service": true,
+    "dashboard update preserves native supervision and readiness": true,
+    "failed dashboard update rolls back and restores readiness": true,
+    "CLI stop releases the installed process tree and preserves unrelated process": true,
+    "foreground debug exposes detailed runner output": true,
+    "service clears a stale supervisor lock naming an unrelated live process": true,
+    "final shutdown leaves unrelated process alive": true,
+    "completed": true,
+    "ownerTaskUnchanged": true
+  },
+  "notes": {
+    "platform": "win32",
+    "scratch": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\Perry installed Windows ü eYayn0",
+    "checkout": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\Perry installed Windows ü eYayn0\\Perry checkout ü",
+    "home": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\Perry installed Windows ü eYayn0\\Perry home ü",
+    "task": "Perry verification 1cba00ed-903a-4705-bef6-e1446f60af49",
+    "port": 56064,
+    "testedCommit": "37a800f33e5b0bb0f12afea8bd75aecf5f397bef",
+    "ownerTaskHashBefore": "702871386d0dbf9288b6c78626c16b62c040dc9d6f924b888608ded52176df4e",
+    "recording": "C:\\Users\\Pranav\\AppData\\Local\\Temp\\Perry installed Windows ü eYayn0\\installed-lifecycle.mp4",
+    "installed desktop pet starts with an isolated login entry": "\n\u001b[1mPerry on your desktop\u001b[0m\n  √ installed\n  √ Electron ready\n  √ \u001b[33mstarted; he'll show up once Perry is running: \u001b[1mperry start\u001b[0m\u001b[0m\n\u001b[2m  Click him for your chats, to-dos and what needs you; drag him anywhere. Ctrl+Shift+Space talks to him.\u001b[0m\n\u001b[2m  He starts with your computer from now on; \u001b[1mperry pet off\u001b[0m stops that.\u001b[0m\n\n",
+    "real perry start installs and reaches readiness": "  √ dashboard built\n  √ running at http://localhost:56064\u001b[2m, and from every login on\u001b[0m\n",
+    "first": {
+      "pid": 47516,
+      "at": 1791875708554,
+      "state": "ready",
+      "detail": "Dashboard and local runner connected"
+    },
+    "scheduled task uses native GUI launcher with least privilege": {
+      "runLevel": "0"
+    },
+    "real CLI update restarts the installed native service": "\n\u001b[1mUpdating Perry\u001b[0m\n  √ got the latest\n  √ packages installed\n  √ dashboard built\n  √ running at http://localhost:56064\n  √ desktop pet updated\n\n"
+  },
+  "passed": true
+}
