@@ -26,6 +26,12 @@ function useClient(): BackendClient {
 /** The client itself, for a one-off call: `useConvex().query(api.x, args)`. */
 export const useConvex = useClient;
 
+/** Cached query data remains visible during a reconnect, with an honest transport indicator. */
+export function useConnection() {
+  const client = useClient();
+  return useSyncExternalStore(client.subscribeConnection, client.connectionSnapshot, () => "connecting" as const);
+}
+
 type Query = FunctionReference<"query", "public">;
 
 export function useQuery<Q extends Query>(query: Q, args: FunctionArgs<Q> | "skip"): FunctionReturnType<Q> | undefined {

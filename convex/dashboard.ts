@@ -44,6 +44,7 @@ const vKey = v.string();
 
 export type ChatMessage = {
   id: string;
+  attachmentKey?: string;
   role: string;
   text: string;
   createdAt: number;
@@ -616,6 +617,7 @@ export const getChatMessages = query({
           : undefined;
         return {
           id: doc._id,
+          attachmentKey: messageKey ?? (recovered ? `codex-${recovered._id}` : undefined),
           role: doc.message?.role ?? "assistant",
           text: (marker ? raw.slice(0, marker.index) : raw).replace(MEMORIES_MARKER, "").trimEnd(),
           createdAt: doc._creationTime,

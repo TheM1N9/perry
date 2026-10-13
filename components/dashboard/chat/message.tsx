@@ -14,7 +14,7 @@ import { AttachmentList, type Attachment } from "./attachments";
 import { Markdown } from "./markdown";
 import { Spinner, WorkSummary, type WorkState } from "./work";
 
-export type ChatMessage = { id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; memories?: Array<{ id: string; text: string }> };
+export type ChatMessage = { attachmentKey?: string; id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; memories?: Array<{ id: string; text: string }> };
 
 function Action({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
@@ -60,7 +60,7 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
   // Not in the history until its reply saves it, so there is nothing yet to edit or branch from.
   const saved = !message.pending;
   return (
-    <div className={cn("group/message flex flex-col", mine ? "items-end" : "items-start")} data-role={mine ? "user" : "assistant"}>
+    <div id={message.attachmentKey ? `message-${message.attachmentKey}` : undefined} className={cn("group/message flex flex-col", mine ? "items-end" : "items-start")} data-role={mine ? "user" : "assistant"}>
       <h3 className="sr-only">{mine ? "You said" : `${assistant} said`}</h3>
       {mine ? (
         <div className="max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-md leading-relaxed [overflow-wrap:anywhere]">

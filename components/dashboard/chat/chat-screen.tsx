@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ActivityIcon, ArrowDownIcon, CopyIcon, FilePlusIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
-  SquarePenIcon, Trash2Icon, TriangleAlertIcon,
+  PanelRightIcon, SquarePenIcon, Trash2Icon, TriangleAlertIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -41,6 +41,8 @@ import { InteractiveAnswers } from "./interactive-answer";
 import { MessageEditor, type MessageEdit } from "./message-editor";
 import { MessageRow, PendingRow, ReplyInProgress, type ChatMessage } from "./message";
 import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
+
+import { WorkspacePanel } from "./workspace-panel";
 
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
@@ -91,6 +93,12 @@ export function ChatScreen() {
   const [createdId, setCreatedId] = useState<ChatId | null>(null);
   useEffect(() => setCreatedId(null), [paramId]);
   const selectedId = paramId ?? createdId;
+  const workspace = useQuery(api.workspace.settings, { key: dashboardKey });
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const workspaceToggle = useRef<HTMLButtonElement>(null);
+  const workspaceScopeKey = `perry.workspace.open.${selectedId ?? "new"}`;
+  useEffect(() => { try { setWorkspaceOpen(localStorage.getItem(workspaceScopeKey) === "1"); } catch {} }, [workspaceScopeKey]);
+  const openWorkspace = (open: boolean) => { setWorkspaceOpen(open); if (!open) requestAnimationFrame(() => workspaceToggle.current?.focus()); try { localStorage.setItem(workspaceScopeKey, open ? "1" : "0"); } catch {} };
 
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
   const assistant = status?.assistantName ?? "Perry";
@@ -292,6 +300,18 @@ export function ChatScreen() {
       element.scrollTop = element.scrollHeight;
     }
   }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, liveWork?.steps.length, here.length]);
+  const locatedMessage = useRef("");
+  const sourceMessage = search.get("message");
+  const sourceRun = search.get("run");
+  useEffect(() => {
+    if ((!sourceMessage && !sourceRun) || locatedMessage.current === `${selectedId}:${sourceMessage ?? sourceRun}`) return;
+    const target = sourceMessage ? document.getElementById(`message-${sourceMessage}`) : scroller.current?.querySelector(`[data-run="${CSS.escape(sourceRun ?? "")}"]`);
+    if (target) {
+      stick.current = false;
+      target.scrollIntoView({ block: "center", behavior: "auto" });
+      locatedMessage.current = `${selectedId}:${sourceMessage ?? sourceRun}`;
+    } else if (messageStatus === "CanLoadMore") loadMore(50);
+  }, [selectedId, sourceMessage, sourceRun, messages.length, messageStatus, loadMore]);
   const jumpToLatest = () => {
     stick.current = true;
     setAtBottom(true);
@@ -624,7 +644,8 @@ export function ChatScreen() {
   const project = selectedId ? chat?.project : newIn ? { id: newIn.id, name: newIn.name } : undefined;
 
   return (
-    <div className="flex h-dvh min-h-0 flex-col">
+    <div className="flex h-dvh min-h-0">
+    <div className="flex min-w-0 flex-1 flex-col">
       {editing && selectedId && <MessageEditor key={editing.id} message={editing} assistant={assistant} waiting={waiting}
         onClose={() => setEditing(null)} onSave={(edit) => rewind(editing.id, edit)}
         onStop={() => stopChat({ key: dashboardKey, id: selectedId })}
@@ -636,7 +657,9 @@ export function ChatScreen() {
           return { id, url: `/api/media/${id}`, fileName: file.name, contentType };
         }} />}
 
-      <TopBar actions={selectedId && summary ? (
+      <TopBar actions={<>
+        {workspace?.enabled && !chat?.contact && <Button ref={workspaceToggle} size="icon-sm" variant="ghost" aria-label="Open workspace" aria-expanded={workspaceOpen} onClick={() => openWorkspace(!workspaceOpen)}><PanelRightIcon /></Button>}
+        {selectedId && summary ? (
         <ChatMenu
           pinned={summary.pinned}
           onPin={() => void setPinned({ key: dashboardKey, id: summary.id, pinned: !summary.pinned }).catch(fail)}
@@ -647,7 +670,7 @@ export function ChatScreen() {
           onSaveNote={() => void saveAsNote()}
           move={summary.channel === "web" ? <MoveToProject chat={summary} onNewProject={() => setCreatingProject(true)} /> : null}
         />
-      ) : !selectedId ? null : undefined}>
+      ) : null}</>}>
         {/* A project's chat says which, and leads to the project's page. */}
         {project && <>
           <Link href={`/projects/${project.id}`} className="flex min-w-0 shrink items-center gap-1.5 truncate text-muted-foreground hover:text-foreground">
@@ -839,6 +862,8 @@ export function ChatScreen() {
         </div>
       </div>
 
+    </div>
+      {workspace?.enabled && !chat?.contact && <WorkspacePanel conversationId={selectedId} project={project} open={workspaceOpen} onOpenChange={openWorkspace} />}
       {summary && <RenameDialog chat={renaming ? summary : null} onClose={() => setRenaming(false)} />}
       {summary && <DeleteDialog chat={removing ? summary : null} onClose={() => setRemoving(false)} />}
       {summary && <NewProjectDialog open={creatingProject} chat={summary.id} onClose={() => setCreatingProject(false)} />}
