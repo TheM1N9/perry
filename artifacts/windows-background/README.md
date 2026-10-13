@@ -23,6 +23,14 @@ Verification failure cases, recorded before changing the implementation:
 - Dashboard responding before the local runner checks in; startup timeout or
   crash leaving the tray with no explanation; endless rapid recovery attempts.
 - Update/recovery switching back to the old PowerShell launcher.
+- An isolated installed test replacing the owner's scheduled task, login entry,
+  launcher or home; task-name overrides disappearing after update/restart.
+- Least-privilege registration failing, duplicate service processes, stale
+  supervisor PID locks after forced Task Scheduler shutdown, and a stale lock
+  naming an unrelated live process blocking a fresh start.
+- Native startup/stop, runner recovery, CLI update, dashboard update and failed
+  update leaving the installed GUI launcher or tray stuck; no-console recording
+  starting too late, or verification quietly reusing the owner's installation.
 - A supervisor exiting while a descendant still holds stdout/stderr open:
   log-drain waits must not keep its job and orphan processes alive forever.
   Descendants must be stopped before the launcher waits for pipe EOF, and the

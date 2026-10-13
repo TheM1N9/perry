@@ -32,10 +32,10 @@ import { bold, dim, green, red, yellow } from "./lib";
 
 export const LABEL = "com.perry.runner";
 export const UNIT = "perry-runner.service";
-export const TASK = "Perry runner";
+export const TASK = process.env.PERRY_SERVICE_TASK ?? "Perry runner";
 
 /** Settings a service does not inherit from the shell it was installed from. */
-const CARRIED_ENV = ["PERRY_HOME", "PERRY_PORT", "PERRY_HOST", "PERRY_CODEX_SANDBOX", "PERRY_CODEX_WINDOWS_SANDBOX", "CODEX_HOME"];
+const CARRIED_ENV = ["PERRY_HOME", "PERRY_PORT", "PERRY_HOST", "PERRY_SERVICE_TASK", "PERRY_CODEX_SANDBOX", "PERRY_CODEX_WINDOWS_SANDBOX", "CODEX_HOME"];
 
 type Step = { argv: string[]; mayFail?: boolean; retries?: number };
 export type ServiceFile = { path: string; content: string; encoding?: "utf8" | "utf16le" };
