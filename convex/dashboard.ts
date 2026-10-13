@@ -48,7 +48,7 @@ export type ChatMessage = {
   text: string;
   createdAt: number;
   /** Its files; one deleted from the Library is `removed`, with no address. */
-  attachments: Array<{ url: string; fileName: string; contentType: string; removed?: true }>;
+  attachments: Array<{ id?: Id<"chatAttachments">; url: string; fileName: string; contentType: string; removed?: true }>;
   /** Sent, and not yet in the history: the history only gets it with its reply. */
   pending?: boolean;
   /** The memories a reply said it relied on (codex.finishTurn). */
@@ -567,12 +567,13 @@ export const getChatMessages = query({
     const attachments = await ctx.db.query("chatAttachments")
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
       .collect();
-    const attachmentMap = new Map<string, Array<{ url: string; fileName: string; contentType: string; removed?: true }>>();
+    const attachmentMap = new Map<string, ChatMessage["attachments"]>();
+    attachments.sort((a, b) => (a.position ?? a.createdAt) - (b.position ?? b.createdAt));
     for (const attachment of attachments) {
       // Deleted from the Library: the chat says so where the file was.
       if (attachment.removedAt) {
         const list = attachmentMap.get(attachment.messageKey) ?? [];
-        list.push({ url: "", fileName: attachment.fileName, contentType: attachment.contentType, removed: true });
+        list.push({ id: attachment._id, url: "", fileName: attachment.fileName, contentType: attachment.contentType, removed: true });
         attachmentMap.set(attachment.messageKey, list);
         continue;
       }
@@ -582,7 +583,7 @@ export const getChatMessages = query({
         : attachment.storageId ? await ctx.storage.getUrl(attachment.storageId) : null;
       if (!url) continue;
       const list = attachmentMap.get(attachment.messageKey) ?? [];
-      list.push({ url, fileName: attachment.fileName, contentType: attachment.contentType });
+      list.push({ id: attachment._id, url, fileName: attachment.fileName, contentType: attachment.contentType });
       attachmentMap.set(attachment.messageKey, list);
     }
     // Earlier Codex turns could finish before their media was uploaded. When
@@ -700,13 +701,26 @@ export const registerAttachment = mutation({
     fileName: v.string(),
     contentType: v.string(),
     size: v.number(),
+    /** A file staged for an edit, rather than an already sent message. */
+    editOf: v.optional(v.string()),
     /** Sent from the desktop pet, as the Library says where it came from. */
     from: v.optional(v.literal("pet")),
   },
   returns: v.id("chatAttachments"),
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
-    ownerChat(await ctx.db.get(args.conversationId));
+    const chat = ownerChat(await ctx.db.get(args.conversationId));
+    const editOf = args.editOf ? ctx.db.normalizeId("agentMessages", args.editOf) : null;
+    if (args.editOf) {
+      const message = editOf ? await ctx.db.get(editOf) : null;
+      if (chat.channel !== WEB_CHANNEL || message?.threadId !== chat.threadId || message.message.role !== "user") {
+        throw new Error("That message changed. Cancel this edit and open it again.");
+      }
+      const existing = await ctx.db.query("chatAttachments")
+        .withIndex("by_message", (q) => q.eq("conversationId", args.conversationId).eq("messageKey", args.messageKey)).collect();
+      const uploaded = existing.find((item) => item.editOf === args.editOf && item.localPath === args.localPath && item.storageId === args.storageId);
+      if (uploaded) return uploaded._id;
+    }
     if (!args.fileName.trim() || args.size <= 0 || args.size > 50 * 1024 * 1024) {
       throw new Error("Attachments must be between 1 byte and 50 MB.");
     }
@@ -717,6 +731,7 @@ export const registerAttachment = mutation({
     const id = await ctx.db.insert("chatAttachments", {
       conversationId: args.conversationId,
       messageKey: args.messageKey,
+      ...(editOf ? { editOf } : {}),
       storageId: args.storageId,
       localPath: args.localPath,
       fileName: args.fileName.trim().slice(0, 200),
@@ -798,59 +813,79 @@ export const sendChat = mutation({
 });
 
 /**
- * Regenerate a reply, or edit a message you sent. Given an assistant reply,
- * the message you sent before it is sent again as it was; given one of your
- * messages and new text, that is sent instead. Either way the message and
- * everything after it are removed first, attachments are kept, and Codex
- * starts from a fresh thread seeded with the history that remains.
+ * Atomically replace a message and its later replies, then resend on a fresh engine session.
+ * Messages are immutable revisions: an edit's source id must still exist in this transaction.
+ * A running reply must finish (or be stopped) before saving, as for regeneration.
  */
-export const rewindChat = action({
-  args: { key: vKey, id: v.id("conversations"), messageId: v.string(), text: v.optional(v.string()) },
+export const rewindChat = mutation({
+  args: {
+    key: vKey, id: v.id("conversations"), messageId: v.string(), text: v.optional(v.string()),
+    attachmentIds: v.optional(v.array(v.id("chatAttachments"))),
+    requestId: v.optional(v.string()),
+  },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
-    const chat = await ctx.runQuery(internal.conversations.getWebById, { id: args.id });
-    if (!chat) throw new Error("This chat was deleted.");
-
-    // Newest first, until the target message and the message you sent at or before it.
-    const newest: Array<{ _id: string; order: number; message?: { role: string }; text?: string }> = [];
-    let cursor: string | null = null;
-    let target: (typeof newest)[number] | undefined;
-    let sent: (typeof newest)[number] | undefined;
-    while (!sent) {
-      const page = await listMessages(ctx, { threadId: chat.threadId, paginationOpts: { cursor, numItems: 100 } });
-      for (const message of page.page) {
-        newest.push(message);
-        if (message._id === args.messageId) target = message;
-        if (target && message.message?.role === "user") { sent = message; break; }
+    const chat = ownerChat(await ctx.db.get(args.id));
+    if (chat.channel !== WEB_CHANNEL || chat.contactId) throw new Error("Only your own web messages can be edited.");
+    if (args.requestId && chat.lastRewindRequest === args.requestId) return null;
+    await assertRunning(ctx);
+    const targetId = ctx.db.normalizeId("agentMessages", args.messageId);
+    const target = targetId ? await ctx.db.get(targetId) : null;
+    if (!target || target.threadId !== chat.threadId) throw new Error("That message changed. Cancel this edit and open it again.");
+    if ((args.text !== undefined || args.attachmentIds !== undefined) && target.message.role !== "user") {
+      throw new Error("Only your own messages can be edited.");
+    }
+    const sent = target.message.role === "user" ? target : await ctx.db.query("agentMessages")
+      .withIndex("by_thread_order", (q) => q.eq("threadId", target.threadId).lte("order", target.order))
+      .order("desc").filter((q) => q.eq(q.field("message.role"), "user")).first();
+    if (!sent) throw new Error("That message is no longer in this chat.");
+    const raw = sent.text;
+    const marker = raw.match(ATTACHMENTS_MARKER);
+    const originalKey = marker?.[1]?.trim();
+    const original = originalKey ? await ctx.db.query("chatAttachments")
+      .withIndex("by_message", (q) => q.eq("conversationId", chat._id).eq("messageKey", originalKey)).collect() : [];
+    original.sort((a, b) => (a.position ?? a.createdAt) - (b.position ?? b.createdAt));
+    const originalIds = new Set(original.map((item) => item._id));
+    const text = (args.text ?? (marker ? raw.slice(0, marker.index) : raw)).trim();
+    let attachmentIds = args.attachmentIds ?? original.map((item) => item._id);
+    if (attachmentIds.length > 10 || new Set(attachmentIds).size !== attachmentIds.length) throw new Error("A message can have up to 10 different attachments.");
+    const files = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
+    for (const file of files) {
+      if (!file || file.conversationId !== chat._id || (!originalIds.has(file._id) &&
+        (!args.requestId || file.editOf !== sent._id || file.messageKey !== args.requestId || file.removedAt))) {
+        throw new Error("One of the attachments is no longer available for this edit.");
       }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
     }
-    if (!target || !sent) throw new Error("That message is no longer in this chat.");
-    if (args.text !== undefined && target.message?.role !== "user") throw new Error("Only your own messages can be edited.");
-
-    const raw = typeof sent.text === "string" ? sent.text : "";
-    const marker = raw.match(/\n?<!-- attachments:([^>]+) -->\s*$/);
-    const messageKey = marker?.[1]?.trim();
-    const original = marker ? raw.slice(0, marker.index).trimEnd() : raw;
-    const text = (args.text ?? original).trim();
-    const attachmentIds = messageKey
-      ? await ctx.runQuery(internal.conversations.attachmentIdsFor, { conversationId: chat._id, messageKey })
-      : [];
-    if (!text && attachmentIds.length === 0) throw new Error("The message is empty.");
-
+    if (!text && !files.some((file) => file && !file.removedAt)) throw new Error("The message is empty. Use Delete chat to remove it instead.");
+    // Keep files and other messages' references intact. Each edited set has its own ordered references.
+    let messageKey = originalKey;
+    if (args.attachmentIds !== undefined) {
+      if (!args.requestId) throw new Error("This edit needs a request id.");
+      messageKey = `edit-${args.requestId}`;
+      attachmentIds = [];
+      for (const [position, file] of files.entries()) {
+        if (!file) continue;
+        attachmentIds.push(await ctx.db.insert("chatAttachments", {
+          conversationId: chat._id, messageKey, position,
+          localPath: file.localPath, storageId: file.storageId,
+          fileName: file.fileName, contentType: file.contentType, size: file.size,
+          createdAt: Date.now(), ...(file.removedAt ? { removedAt: file.removedAt } : {}),
+        }));
+      }
+    }
     await ctx.runMutation(internal.conversations.rewind, { id: chat._id });
-    const replaced = newest.filter((message) => message.order >= sent!.order).map((message) => message._id);
-    for (let start = 0; start < replaced.length; start += 100) {
-      await deleteMessages(ctx, replaced.slice(start, start + 100));
-    }
+    const replaced = await ctx.db.query("agentMessages")
+      .withIndex("by_thread_order", (q) => q.eq("threadId", sent.threadId).gte("order", sent.order)).collect();
+    await deleteMessages(ctx, replaced.map((message) => message._id));
+    const prompt = attachmentIds.length ? `${text}\n\n<!-- attachments: ${messageKey} -->`.trim() : text;
+    await ctx.db.patch(chat._id, {
+      recallDigest: undefined,
+      ...(args.requestId ? { lastRewindRequest: args.requestId } : {}),
+      outbox: [{ text: prompt, at: Date.now() }],
+    });
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
-      channel: WEB_CHANNEL,
-      externalId: chat.externalId,
-      text: messageKey ? `${text}\n\n<!-- attachments: ${messageKey} -->`.trim() : text,
-      title: chat.title,
-      attachmentIds,
+      channel: WEB_CHANNEL, externalId: chat.externalId, text: prompt, title: chat.title, attachmentIds,
     });
     return null;
   },

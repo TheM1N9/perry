@@ -1,15 +1,13 @@
 "use client";
 
-import { BrainIcon, CheckIcon, CopyIcon, FilePlusIcon, GitBranchIcon, PencilIcon, PuzzleIcon, RefreshCwIcon } from "lucide-react";
+import { BrainIcon, CheckIcon, CopyIcon, FilePlusIcon, GitBranchIcon, PencilIcon, RefreshCwIcon } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import type { Work } from "@/convex/dashboard";
 import { STARTING } from "@/convex/lib/activity";
-import { SKILL_MENTION } from "@/convex/lib/commands";
 import { fullDate, timeOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCopy } from "../common";
 import { AttachmentList, type Attachment } from "./attachments";
@@ -27,32 +25,6 @@ function Action({ label, onClick, disabled, children }: { label: string; onClick
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   );
-}
-
-/**
- * Your words, with each skill they name ("$weekly-review") marked as one and
- * linked to it in Apps & skills. A $name no skill has stays plain text.
- */
-function WithSkills({ text, skills }: { text: string; skills?: ReadonlySet<string> }) {
-  if (!skills?.size || !text.includes("$")) return <>{text}</>;
-  const parts: ReactNode[] = [];
-  let from = 0;
-  for (const match of text.matchAll(SKILL_MENTION)) {
-    if (!skills.has(match[1])) continue;
-    parts.push(text.slice(from, match.index));
-    parts.push(
-      <Tooltip key={match.index}>
-        <TooltipTrigger render={<Link href={`/apps/skills?skill=${encodeURIComponent(match[1])}`} data-skill-mention={match[1]} aria-label={`${match[0]}: the ${match[1]} skill`} />}
-          className="rounded-md bg-primary/10 px-1.5 py-0.5 font-medium text-primary no-underline outline-none [box-decoration-break:clone] hover:bg-primary/15 focus-visible:ring-2 focus-visible:ring-ring/50">
-          <PuzzleIcon className="mr-1 inline size-3.5 align-[-2px]" aria-hidden />{match[0]}
-        </TooltipTrigger>
-        <TooltipContent>The {match[1]} skill</TooltipContent>
-      </Tooltip>,
-    );
-    from = match.index + match[0].length;
-  }
-  parts.push(text.slice(from));
-  return <>{parts}</>;
 }
 
 function CopyAction({ text }: { text: string }) {
@@ -78,7 +50,7 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
   busy: boolean;
   /** The skills there are, so a "$name" of one is marked in your messages. */
   skills?: ReadonlySet<string>;
-  onEdit: (text: string) => void;
+  onEdit: () => void;
   onRegenerate: () => void;
   onBranch: () => void;
   /** Keep this reply as a note of its own. */
@@ -87,33 +59,12 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
   const mine = message.role === "user";
   // Not in the history until its reply saves it, so there is nothing yet to edit or branch from.
   const saved = !message.pending;
-  const [editing, setEditing] = useState<string | null>(null);
-
-  if (editing !== null) {
-    return (
-      <form className="ml-auto w-full max-w-[85%] space-y-2" onSubmit={(event) => { event.preventDefault(); if (editing.trim() && !busy) { onEdit(editing); setEditing(null); } }}>
-        <Textarea autoFocus aria-label="Edit your message" value={editing} className="max-h-72 min-h-20 rounded-2xl bg-muted px-4 py-3 text-md"
-          onChange={(event) => setEditing(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") { event.preventDefault(); setEditing(null); }
-            // Enter resends, as in the composer; Shift+Enter is a new line.
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
-          }} />
-        <div className="flex items-center justify-end gap-1">
-          <span className="mr-1 text-xs text-muted-foreground">Enter resends, Esc cancels</span>
-          <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setEditing(null)}>Cancel</Button>
-          <Button type="submit" variant="ghost" size="sm" className="text-primary hover:text-primary" disabled={busy}>Save and resend</Button>
-        </div>
-      </form>
-    );
-  }
-
   return (
     <div className={cn("group/message flex flex-col", mine ? "items-end" : "items-start")} data-role={mine ? "user" : "assistant"}>
       <h3 className="sr-only">{mine ? "You said" : `${assistant} said`}</h3>
       {mine ? (
-        <div className="max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-md leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
-          <WithSkills text={message.text} skills={skills} />
+        <div className="max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-md leading-relaxed [overflow-wrap:anywhere]">
+          <Markdown text={message.text} skills={skills} />
           <AttachmentList attachments={message.attachments} align="end" />
         </div>
       ) : (
@@ -134,7 +85,7 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
           </time>
         )}
         <CopyAction text={message.text} />
-        {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={() => setEditing(message.text)}><PencilIcon /></Action>}
+        {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={onEdit}><PencilIcon /></Action>}
         {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={onRegenerate}><RefreshCwIcon /></Action>}
         {saved && canBranch && <Action label="Branch into a new chat" disabled={busy} onClick={onBranch}><GitBranchIcon /></Action>}
         {!mine && saved && onSaveNote && <Action label="Save as note" onClick={onSaveNote}><FilePlusIcon /></Action>}
@@ -177,8 +128,8 @@ function FromMemory({ memories }: { memories: Array<{ id: string; text: string }
 export function PendingRow({ text, attachments, sent, skills }: { text: string; attachments: Attachment[]; sent: boolean; skills?: ReadonlySet<string> }) {
   return (
     <div className="flex flex-col items-end" data-role="user" data-pending>
-      <div className={cn("max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-md leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]", !sent && "opacity-70")}>
-        <WithSkills text={text} skills={skills} />
+      <div className={cn("max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-md leading-relaxed [overflow-wrap:anywhere]", !sent && "opacity-70")}>
+        <Markdown text={text} skills={skills} />
         <AttachmentList attachments={attachments} align="end" />
       </div>
       {!sent && <span className="mt-1 text-xs text-muted-foreground" role="status">Sending…</span>}

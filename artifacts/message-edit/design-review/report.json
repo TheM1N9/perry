@@ -1,0 +1,16 @@
+{
+  "reviewedAt": "2026-10-12T22:26:54.522598+00:00",
+  "issue": 283,
+  "method": "Manual browser UI journeys through Codex computer use; disposable local data. Existing feature E2E reports remain separate.",
+  "checks": [
+    "Existing and newly selected files share one attachment strip",
+    "Remove original image, retain document, add replacement image",
+    "Save and resend persists edited text and final attachments",
+    "Retained document opens in shared file preview",
+    "Desktop and 390px editor layout"
+  ],
+  "screenshots": [
+    "desktop.jpg",
+    "mobile.jpg"
+  ]
+}

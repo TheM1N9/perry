@@ -1,20 +1,35 @@
 "use client";
 
-import { FileIcon, FileXIcon, XIcon } from "lucide-react";
+import { ExpandIcon, FileIcon, FileXIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { Id } from "@/convex/_generated/dataModel";
+import { previewOf } from "@/convex/lib/library";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { FilePreview } from "@/components/ui/file-preview";
 import { bytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { AudioPlayer, VideoPlayer } from "@/components/ui/media-player";
 
 /** A file in a message; `removed` once it was deleted from the Library, with no address. */
-export type Attachment = { url: string; fileName: string; contentType: string; removed?: true };
+export type Attachment = { id?: Id<"chatAttachments">; url: string; fileName: string; contentType: string; removed?: true };
 
 /** What a message carries: pictures and players inline, anything else as a file to open. */
-export function AttachmentList({ attachments, align = "start" }: { attachments: Attachment[]; align?: "start" | "end" }) {
+export function AttachmentList({ attachments, align = "start", compact = false }: { attachments: Attachment[]; align?: "start" | "end"; compact?: boolean }) {
+  const [preview, setPreview] = useState<Attachment | null>(null);
   if (!attachments.length) return null;
   return (
-    <div className={cn("mt-2 flex flex-wrap gap-2", align === "end" && "justify-end")}>
+    <>
+    <div className={cn("flex flex-wrap gap-2", !compact && "mt-2", align === "end" && "justify-end")}>
       {attachments.map((attachment, index) => {
+        if (compact) {
+          return <Button type="button" key={attachment.id ?? index} variant="ghost" onClick={() => setPreview(attachment)} disabled={attachment.removed}
+            aria-label={`Preview ${attachment.fileName}`} title={attachment.fileName}
+            className="size-16 overflow-hidden rounded-lg border bg-muted p-0 hover:bg-muted">
+            {!attachment.removed && attachment.contentType.startsWith("image/") ? <img src={attachment.url} alt={attachment.fileName} className="size-full object-cover" />
+              : <span className="flex size-full flex-col justify-end gap-1 p-1.5 text-left text-2xs leading-tight"><FileIcon className="mb-auto size-4 text-muted-foreground" /><span className="max-w-full truncate">{attachment.fileName}</span></span>}
+          </Button>;
+        }
         if (attachment.removed) {
           return (
             <span key={`removed-${index}-${attachment.fileName}`} data-removed
@@ -27,32 +42,49 @@ export function AttachmentList({ attachments, align = "start" }: { attachments: 
         }
         if (attachment.contentType.startsWith("image/")) {
           return (
-            <a key={attachment.url} href={attachment.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${attachment.fileName}`}
-              className="block overflow-hidden rounded-xl border bg-muted">
+            <Button type="button" variant="ghost" key={attachment.url} onClick={() => setPreview(attachment)} aria-label={`Preview ${attachment.fileName}`}
+              className="block h-auto overflow-hidden rounded-xl bg-muted p-0 hover:bg-muted focus-visible:ring-2">
               <img src={attachment.url} alt={attachment.fileName} loading="lazy" className="max-h-64 max-w-full object-cover sm:max-w-sm" />
-            </a>
+            </Button>
           );
         }
         if (attachment.contentType.startsWith("video/")) {
-          return <VideoPlayer key={attachment.url} src={attachment.url} name={attachment.fileName} download={attachment.url} className="max-h-72 w-full max-w-full sm:max-w-md" />;
+          return <div key={attachment.url} className="w-full max-w-full sm:max-w-md">
+            <VideoPlayer src={attachment.url} name={attachment.fileName} download={attachment.url} className="max-h-72" />
+            <Button type="button" variant="ghost" size="xs" className="mt-1 text-muted-foreground" onClick={() => setPreview(attachment)} aria-label={`Preview ${attachment.fileName}`}><ExpandIcon className="size-3" />Preview</Button>
+          </div>;
         }
         if (attachment.contentType.startsWith("audio/")) {
-          return <AudioPlayer key={attachment.url} src={attachment.url} name={attachment.fileName} download={attachment.url} className="sm:w-80" />;
+          return <div key={attachment.url} className="w-full sm:w-80">
+            <AudioPlayer src={attachment.url} name={attachment.fileName} download={attachment.url} />
+            <Button type="button" variant="ghost" size="xs" className="mt-1 text-muted-foreground" onClick={() => setPreview(attachment)} aria-label={`Preview ${attachment.fileName}`}><ExpandIcon className="size-3" />Preview</Button>
+          </div>;
         }
         return (
-          <a key={attachment.url} href={attachment.url} target="_blank" rel="noopener noreferrer"
-            className="flex max-w-64 items-center gap-2 rounded-xl border bg-background px-3 py-2 text-sm hover:bg-muted">
+          <Button type="button" variant="ghost" key={attachment.url} onClick={() => setPreview(attachment)} aria-label={`Preview ${attachment.fileName}`}
+            className="h-auto max-w-64 justify-start gap-2 rounded-lg bg-muted px-3 py-2">
             <FileIcon className="size-4 shrink-0 text-muted-foreground" />
             <span className="truncate">{attachment.fileName}</span>
-          </a>
+          </Button>
         );
       })}
     </div>
+    <Dialog open={preview !== null} onOpenChange={(open) => { if (!open) setPreview(null); }}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
+        {preview && <>
+          <DialogTitle className="pr-8 break-words">{preview.fileName}</DialogTitle>
+          <DialogDescription className="sr-only">File preview</DialogDescription>
+          <FilePreview key={preview.url} item={{ name: preview.fileName, url: preview.url.startsWith("/api/media/") ? `${preview.url}?preview=1` : preview.url, preview: previewOf(preview.contentType, preview.fileName), download: preview.url }} />
+          <a href={preview.url.startsWith("/api/media/") ? `${preview.url}?download=1` : preview.url} download className="link">Download {preview.fileName}</a>
+        </>}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 
 /** Files picked for the next message, with previews and a way to take each back out. */
-export function PickedFiles({ files, onRemove, disabled }: { files: File[]; onRemove: (file: File) => void; disabled?: boolean }) {
+export function PickedFiles({ files, onRemove, disabled, className }: { files: File[]; onRemove: (file: File) => void; disabled?: boolean; className?: string }) {
   const [previews, setPreviews] = useState<Map<File, string>>(new Map());
   useEffect(() => {
     const next = new Map(files.filter((file) => /^(image|video)\//.test(file.type)).map((file) => [file, URL.createObjectURL(file)]));
@@ -61,7 +93,7 @@ export function PickedFiles({ files, onRemove, disabled }: { files: File[]; onRe
   }, [files]);
   if (!files.length) return null;
   return (
-    <ul aria-label="Attached files" className="flex gap-2 overflow-x-auto px-3 pt-3">
+    <ul aria-label="Attached files" className={cn("flex gap-2 overflow-x-auto px-3 pt-3", className)}>
       {files.map((file, index) => {
         const url = previews.get(file);
         return (
@@ -76,10 +108,10 @@ export function PickedFiles({ files, onRemove, disabled }: { files: File[]; onRe
                   <span className="text-muted-foreground">{bytes(file.size)}</span>
                 </span>
               )}
-            <button type="button" aria-label={`Remove ${file.name}`} disabled={disabled} onClick={() => onRemove(file)}
-              className="absolute top-1 right-1 grid size-5 place-items-center rounded-full bg-foreground/80 text-background opacity-90 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring disabled:hidden">
+            <Button type="button" variant="secondary" size="icon-xs" aria-label={`Remove ${file.name}`} disabled={disabled} onClick={() => onRemove(file)}
+              className="absolute top-1 right-1 size-5 rounded-full bg-background/90 shadow-sm disabled:hidden">
               <XIcon className="size-3" />
-            </button>
+            </Button>
           </li>
         );
       })}
