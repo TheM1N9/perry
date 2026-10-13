@@ -19,6 +19,11 @@ export const rewind = internalMutation({
     const chat = await ctx.db.get(args.id);
     if (!chat) throw new Error("This chat was deleted.");
     if ((chat.pendingTurns ?? 0) > 0) throw new Error("Wait for the reply to finish, or stop it first.");
+    for (const status of ["running", "queued"] as const) {
+      if (await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", args.id).eq("status", status)).first()) {
+        throw new Error("Wait for the reply to finish, or stop it first.");
+      }
+    }
     await ctx.db.patch(args.id, {
       ...FORGET_SESSION,
       pendingTurns: 1,
@@ -26,13 +31,6 @@ export const rewind = internalMutation({
     });
     return null;
   },
-});
-
-export const attachmentIdsFor = internalQuery({
-  args: { conversationId: v.id("conversations"), messageKey: v.string() },
-  handler: async (ctx, args) => (await ctx.db.query("chatAttachments")
-    .withIndex("by_message", (q) => q.eq("conversationId", args.conversationId).eq("messageKey", args.messageKey))
-    .collect()).map((row) => row._id),
 });
 
 /** A chat's model, set with /model. Unset means its engine's default; another engine's moves the chat there. */
@@ -293,6 +291,7 @@ export const copyAttachments = internalMutation({
         contentType: attachment.contentType,
         size: attachment.size,
         createdAt: Date.now(),
+        ...(attachment.position !== undefined ? { position: attachment.position } : {}),
         ...(attachment.removedAt ? { removedAt: attachment.removedAt } : {}),
       });
     }

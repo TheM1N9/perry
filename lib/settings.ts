@@ -22,7 +22,7 @@ export const SETTINGS_GROUPS = [
     { slug: "logins", label: "Logins & secrets" },
     { slug: "security", label: "Dashboard key" },
   ] },
-  { label: "System", sections: [{ slug: "activity", label: "Activity log" }] },
+  { label: "System", sections: [{ slug: "internet", label: "Internet" }, { slug: "activity", label: "Activity log" }] },
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_GROUPS)[number]["sections"][number]["slug"];

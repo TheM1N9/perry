@@ -19,6 +19,7 @@ import { moveChat, retryable } from "./routing";
 import { engineLockable, engineReady, engineUsable, isOnline, recordEngines, resumeOf, statusesOf, tooOld } from "./engines";
 import { vAccess, vCodexModel, vEngine, vRoute, vSpanKind, vSpanStatus, vTurnAttachment, vUsage } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
+import { INTERACTIVE_DRAFT } from "../lib/interactive";
 
 // --- For runners from before engines ------------------------------------------
 // A computer connected with `pnpm run connect` may run an older runner than
@@ -165,6 +166,7 @@ export const enqueueTurn = internalMutation({
   returns: v.union(v.id("codexTurns"), v.id("codexSteers")),
   handler: async (ctx, args) => {
     // Paused, nothing new is queued or joins a reply: it would only run later, by surprise (pause.ts).
+    if (args.prompt.startsWith(INTERACTIVE_DRAFT)) args.outside = true;
     await assertRunning(ctx);
     const conversation = await ctx.db.get(args.conversationId);
     if (!conversation) throw new Error("This chat was deleted.");
@@ -200,6 +202,7 @@ export const enqueueTurn = internalMutation({
       createdAt: Date.now(),
     };
     if (isSteering(args.policy, running, engine)) {
+      if (args.outside) await ctx.db.patch(running._id, { outsideAt: Date.now() });
       // The running turn already carries recalled memory; a steer adds only the message.
       const { recalled: _recalled, recallDigest: _digest, projectDigest: _project, flush: _flush, checkpoint: _checkpoint, hidden: _hidden, guest: _guest, ...steer } = message;
       const id = await ctx.db.insert("codexSteers", { ...steer, turnId: running._id, runnerId: running.runnerId!, status: "pending" });
@@ -252,6 +255,7 @@ export async function queueSteer(ctx: MutationCtx, steer: Doc<"codexSteers">, gi
     conversationId: steer.conversationId,
     runId: steer.runId,
     prompt: steer.prompt,
+    ...(steer.prompt.startsWith(INTERACTIVE_DRAFT) ? { outsideAt: Date.now() } : {}),
     history: steer.history,
     instructions: steer.instructions,
     requestedModel: steer.requestedModel,
@@ -1295,7 +1299,16 @@ export const outwardAllowed = internalQuery({
     const turn = await ctx.db.get(args.turnId);
     if (!turn || turn.outsideAt === undefined) return true;
     const steers = await ctx.db.query("codexSteers").withIndex("by_turn_status", (q) => q.eq("turnId", turn._id).eq("status", "applied")).collect();
-    return steers.some((steer) => (steer.appliedAt ?? 0) > turn.outsideAt!);
+    return steers.some((steer) => !steer.prompt.startsWith(INTERACTIVE_DRAFT) && (steer.appliedAt ?? 0) > turn.outsideAt!);
+  },
+});
+
+/** A stopped or paused chat cancels an in-flight internet read as well as its engine turn. */
+export const internetMayRead = internalQuery({
+  args: { turnId: v.id("codexTurns") },
+  handler: async (ctx, args): Promise<boolean> => {
+    const turn = await ctx.db.get(args.turnId);
+    return Boolean(turn && turn.status === "running" && !turn.stopRequested && !turn.stopped && !await pausedAt(ctx));
   },
 });
 

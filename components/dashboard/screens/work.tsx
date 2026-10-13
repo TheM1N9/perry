@@ -73,8 +73,8 @@ function Intro({ children, action }: { children?: ReactNode; action: ReactNode }
   );
 }
 
-function Row({ children, className }: { children: ReactNode; className?: string }) {
-  return <li className={cn("flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:gap-4", className)}>{children}</li>;
+function Row({ children, className, id }: { children: ReactNode; className?: string; id?: string }) {
+  return <li id={id} className={cn("flex flex-col gap-3 py-4 sm:flex-row sm:items-start sm:gap-4", className)}>{children}</li>;
 }
 
 /** A small menu for a row's quieter actions, so the one you want most stays a button. */
@@ -321,7 +321,7 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
           const done = task.plan.filter((step) => step.status === "done").length;
           const live = task.status === "running" || task.status === "blocked";
           return (
-            <Row key={task._id}>
+            <Row key={task._id} id={`task-${task._id}`}>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{task.title}</h3>

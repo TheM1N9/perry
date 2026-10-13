@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ActivityIcon, ArrowDownIcon, CopyIcon, FilePlusIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
-  SquarePenIcon, Trash2Icon, TriangleAlertIcon,
+  PanelRightIcon, SquarePenIcon, Trash2Icon, TriangleAlertIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -37,8 +37,13 @@ import { StatusIndicator } from "../status-indicator";
 import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
 import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
-import { MessageRow, PendingRow, ReplyInProgress } from "./message";
+import { InteractiveAnswers } from "./interactive-answer";
+import { MessageEditor, type MessageEdit } from "./message-editor";
+import { MessageRow, PendingRow, ReplyInProgress, type ChatMessage } from "./message";
 import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
+
+import { WorkspacePanel } from "./workspace-panel";
+import { BrowserPanel } from "./browser-panel";
 
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
@@ -74,8 +79,8 @@ function greeting(name?: string) {
 }
 
 /** Keep the file on this machine, through the local media server. */
-async function store(file: File): Promise<{ localPath: string }> {
-  const local = await fetch("/api/media", { method: "POST", headers: { "x-file-name": encodeURIComponent(file.name) }, body: file });
+async function store(file: File, uploadId?: string): Promise<{ localPath: string }> {
+  const local = await fetch("/api/media", { method: "POST", headers: { "x-file-name": encodeURIComponent(file.name), ...(uploadId ? { "x-upload-id": uploadId } : {}) }, body: file });
   if (local.ok) return { localPath: (await local.json() as { path: string }).path };
   throw new Error((await local.json().catch(() => null) as { error?: string } | null)?.error ?? `Could not save ${file.name}.`);
 }
@@ -89,6 +94,14 @@ export function ChatScreen() {
   const [createdId, setCreatedId] = useState<ChatId | null>(null);
   useEffect(() => setCreatedId(null), [paramId]);
   const selectedId = paramId ?? createdId;
+  const workspace = useQuery(api.workspace.settings, { key: dashboardKey });
+  const browserView = useQuery(api.browserView.settings, { key: dashboardKey });
+  const panelEnabled = workspace?.enabled || browserView?.enabled;
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const workspaceToggle = useRef<HTMLButtonElement>(null);
+  const workspaceScopeKey = `perry.workspace.open.${selectedId ?? "new"}`;
+  useEffect(() => { try { setWorkspaceOpen(localStorage.getItem(workspaceScopeKey) === "1"); } catch {} }, [workspaceScopeKey]);
+  const openWorkspace = (open: boolean) => { setWorkspaceOpen(open); if (!open) requestAnimationFrame(() => workspaceToggle.current?.focus()); try { localStorage.setItem(workspaceScopeKey, open ? "1" : "0"); } catch {} };
 
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
   const assistant = status?.assistantName ?? "Perry";
@@ -116,7 +129,7 @@ export function ChatScreen() {
   const skipOnboarding = useMutation(api.dashboard.skipOnboarding);
   const redoOnboarding = useMutation(api.dashboard.redoOnboarding);
   const branchChat = useAction(api.dashboard.branchChat);
-  const rewindChat = useAction(api.dashboard.rewindChat);
+  const rewindChat = useMutation(api.dashboard.rewindChat);
   const resetChat = useAction(api.dashboard.resetChat);
   const setPinned = useMutation(api.dashboard.setChatPinned);
   const noteFromChat = useMutation(api.notes.fromChat);
@@ -164,6 +177,8 @@ export function ChatScreen() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState<{ index: number; total: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<ChatMessage | null>(null);
+  useEffect(() => setEditing(null), [selectedId]);
   const [renaming, setRenaming] = useState(false);
   const [removing, setRemoving] = useState(false);
   /** A new project is being made for this chat to move into. */
@@ -288,6 +303,18 @@ export function ChatScreen() {
       element.scrollTop = element.scrollHeight;
     }
   }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, liveWork?.steps.length, here.length]);
+  const locatedMessage = useRef("");
+  const sourceMessage = search.get("message");
+  const sourceRun = search.get("run");
+  useEffect(() => {
+    if ((!sourceMessage && !sourceRun) || locatedMessage.current === `${selectedId}:${sourceMessage ?? sourceRun}`) return;
+    const target = sourceMessage ? document.getElementById(`message-${sourceMessage}`) : scroller.current?.querySelector(`[data-run="${CSS.escape(sourceRun ?? "")}"]`);
+    if (target) {
+      stick.current = false;
+      target.scrollIntoView({ block: "center", behavior: "auto" });
+      locatedMessage.current = `${selectedId}:${sourceMessage ?? sourceRun}`;
+    } else if (messageStatus === "CanLoadMore") loadMore(50);
+  }, [selectedId, sourceMessage, sourceRun, messages.length, messageStatus, loadMore]);
   const jumpToLatest = () => {
     stick.current = true;
     setAtBottom(true);
@@ -566,11 +593,14 @@ export function ChatScreen() {
   }
 
   /** Regenerate from an assistant reply, or resend one of your messages with new text. */
-  async function rewind(messageId: string, text?: string) {
-    if (!selectedId || busy || waiting) return;
+  async function rewind(messageId: string, edit?: MessageEdit) {
+    if (!selectedId || busy || waiting) {
+      if (edit) throw new Error("Finish or stop the current reply before saving.");
+      return;
+    }
     const index = messages.findIndex((message) => message.id === messageId);
     const source = [...messages.slice(0, index + 1)].reverse().find((message) => message.role === "user");
-    const shown = text ?? source?.text ?? "";
+    const shown = edit?.text ?? source?.text ?? "";
     setBusy(true); setError("");
     stick.current = true;
     // The copy being replaced is removed before the new one is listed, so it is not part of the baseline.
@@ -579,10 +609,11 @@ export function ChatScreen() {
       baselineCount: messages.filter((message) => message.role === "user" && message.text === shown).length - (source?.text === shown ? 1 : 0),
     };
     try {
-      setPending((items) => [...items, entry]);
-      await rewindChat({ key: dashboardKey, id: selectedId, messageId, text });
+      if (!edit) setPending((items) => [...items, entry]);
+      await rewindChat({ key: dashboardKey, id: selectedId, messageId, ...edit });
     } catch (cause) {
       setPending((items) => items.filter((item) => item !== entry));
+      if (edit) throw cause;
       fail(cause);
     } finally {
       setBusy(false);
@@ -616,8 +647,22 @@ export function ChatScreen() {
   const project = selectedId ? chat?.project : newIn ? { id: newIn.id, name: newIn.name } : undefined;
 
   return (
-    <div className="flex h-dvh min-h-0 flex-col">
-      <TopBar actions={selectedId && summary ? (
+    <div className="flex h-dvh min-h-0">
+    <div className="flex min-w-0 flex-1 flex-col">
+      {editing && selectedId && <MessageEditor key={editing.id} message={editing} assistant={assistant} waiting={waiting}
+        onClose={() => setEditing(null)} onSave={(edit) => rewind(editing.id, edit)}
+        onStop={() => stopChat({ key: dashboardKey, id: selectedId })}
+        onUpload={async (file, requestId, uploadId) => {
+          const stored = await store(file, uploadId);
+          const contentType = file.type || "application/octet-stream";
+          const id = await registerAttachment({ key: dashboardKey, conversationId: selectedId, messageKey: requestId, editOf: editing.id,
+            ...stored, fileName: file.name, contentType, size: file.size });
+          return { id, url: `/api/media/${id}`, fileName: file.name, contentType };
+        }} />}
+
+      <TopBar actions={<>
+        {panelEnabled && !chat?.contact && <Button ref={workspaceToggle} size="icon-sm" variant="ghost" aria-label="Open workspace" aria-expanded={workspaceOpen} onClick={() => openWorkspace(!workspaceOpen)}><PanelRightIcon /></Button>}
+        {selectedId && summary ? (
         <ChatMenu
           pinned={summary.pinned}
           onPin={() => void setPinned({ key: dashboardKey, id: summary.id, pinned: !summary.pinned }).catch(fail)}
@@ -628,7 +673,7 @@ export function ChatScreen() {
           onSaveNote={() => void saveAsNote()}
           move={summary.channel === "web" ? <MoveToProject chat={summary} onNewProject={() => setCreatingProject(true)} /> : null}
         />
-      ) : !selectedId ? null : undefined}>
+      ) : null}</>}>
         {/* A project's chat says which, and leads to the project's page. */}
         {project && <>
           <Link href={`/projects/${project.id}`} className="flex min-w-0 shrink items-center gap-1.5 truncate text-muted-foreground hover:text-foreground">
@@ -702,18 +747,19 @@ export function ChatScreen() {
                   work={workOf.get(message.id)}
                   assistant={assistant}
                   latest={message.id === lastMessage?.id}
-                  canEdit={!waiting && !app}
+                  canEdit={!app}
                   canRegenerate={message.id === lastMessage?.id && !waiting && !app}
                   canBranch={!app}
                   busy={busy}
                   skills={skillNames}
-                  onEdit={(text) => void rewind(message.id, text)}
+                  onEdit={() => setEditing(message)}
                   onRegenerate={() => void rewind(message.id)}
                   onBranch={() => void branch(message.id)}
                   onSaveNote={() => void saveAsNote(message.id)}
                 />
               ))}
               {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
+              {!missing && <InteractiveAnswers conversationId={selectedId} />}
               {(waiting || liveWork) && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} approving={here.length > 0} />}
               {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
               {failedWork && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed" /></div>}
@@ -819,6 +865,8 @@ export function ChatScreen() {
         </div>
       </div>
 
+    </div>
+      {panelEnabled && !chat?.contact && <WorkspacePanel conversationId={selectedId} project={project} open={workspaceOpen} onOpenChange={openWorkspace} browser={browserView?.enabled && selectedId ? <BrowserPanel key={selectedId} conversationId={selectedId} onClose={() => openWorkspace(false)} /> : undefined} />}
       {summary && <RenameDialog chat={renaming ? summary : null} onClose={() => setRenaming(false)} />}
       {summary && <DeleteDialog chat={removing ? summary : null} onClose={() => setRemoving(false)} />}
       {summary && <NewProjectDialog open={creatingProject} chat={summary.id} onClose={() => setCreatingProject(false)} />}

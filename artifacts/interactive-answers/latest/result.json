@@ -1,0 +1,220 @@
+{
+  "ranAt": "2026-10-12T20:17:51.113Z",
+  "platform": "darwin",
+  "pass": true,
+  "checks": [
+    {
+      "name": "direct text chats start without artifacts",
+      "pass": true
+    },
+    {
+      "name": "MCP creation retries return the same durable artifact",
+      "pass": true
+    },
+    {
+      "name": "malformed, out-of-range and oversized contracts are rejected",
+      "pass": true
+    },
+    {
+      "name": "wrong key, conversation and public calls to internal functions are rejected",
+      "pass": true
+    },
+    {
+      "name": "guest conversations cannot read the owner's artifacts",
+      "pass": true
+    },
+    {
+      "name": "calculator recalculates locally without a model turn",
+      "pass": true
+    },
+    {
+      "name": "calculator selected inputs survive reload",
+      "pass": true
+    },
+    {
+      "name": "two-tab conflicts preserve the unsaved input",
+      "pass": true
+    },
+    {
+      "name": "follow-up revision updates the same id and retains compatible selected inputs",
+      "pass": true
+    },
+    {
+      "name": "stale definition revision is rejected",
+      "pass": true
+    },
+    {
+      "name": "definition update retry does not create another revision",
+      "pass": true
+    },
+    {
+      "name": "undeclared state cannot be saved",
+      "pass": true
+    },
+    {
+      "name": "successful read gets a server source receipt and untrusted marker",
+      "pass": true
+    },
+    {
+      "name": "fabricated fetch metadata is rejected",
+      "pass": true
+    },
+    {
+      "name": "partial source data displays provenance and missing values honestly",
+      "pass": true
+    },
+    {
+      "name": "filters handle empty results without invented values",
+      "pass": true
+    },
+    {
+      "name": "outside-read consequential account action is refused server-side",
+      "pass": true
+    },
+    {
+      "name": "existing approval rejection remains a decline, without an external write",
+      "pass": true
+    },
+    {
+      "name": "content calendar dates and channels update and save as drafts",
+      "pass": true
+    },
+    {
+      "name": "CSV exports neutralize formulas after leading whitespace",
+      "pass": true
+    },
+    {
+      "name": "sandbox declared input bridge persists validated state",
+      "pass": true
+    },
+    {
+      "name": "forged host-window sandbox messages cannot alter state",
+      "pass": true
+    },
+    {
+      "name": "actual iframe messages with unknown, oversized or stale inputs are rejected",
+      "pass": true
+    },
+    {
+      "name": "custom code revision remounts and retains compatible inputs",
+      "pass": true
+    },
+    {
+      "name": "incompatible selected values reset to validated defaults",
+      "pass": true
+    },
+    {
+      "name": "actual worker/iframe cannot read host storage or send network requests",
+      "pass": true
+    },
+    {
+      "name": "generated scripts and inline event handlers do not execute",
+      "pass": true
+    },
+    {
+      "name": "infinite loop terminates with accessible fallback and recovery",
+      "pass": true
+    },
+    {
+      "name": "failed renderer retries and recovers in the same artifact",
+      "pass": true
+    },
+    {
+      "name": "keyboard works at narrow width with reduced motion",
+      "pass": true
+    },
+    {
+      "name": "reset, undo and table export complete",
+      "pass": true
+    },
+    {
+      "name": "failed save preserves inputs and never displays success",
+      "pass": true
+    },
+    {
+      "name": "failed draft save recovers through explicit retry",
+      "pass": true
+    },
+    {
+      "name": "canceled generation cannot replace the last good draft",
+      "pass": true
+    },
+    {
+      "name": "late events from finished turns cannot overwrite the artifact",
+      "pass": true
+    },
+    {
+      "name": "server restart restores ids, revisions and selected inputs",
+      "pass": true
+    },
+    {
+      "name": "browser reconnect restores the calculator",
+      "pass": true
+    },
+    {
+      "name": "production browser has no uncaught errors",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "targeted draft follow-up retries are idempotent",
+      "pass": true
+    },
+    {
+      "name": "follow-up carries target id/revision and starts under outside-read gate",
+      "pass": true
+    },
+    {
+      "name": "applied artifact follow-up cannot count as approval to act outward",
+      "pass": true
+    },
+    {
+      "name": "draft steer blocks consequential connector action after application",
+      "pass": true
+    },
+    {
+      "name": "requeued draft follow-up retains the server approval boundary",
+      "pass": true
+    },
+    {
+      "name": "feature flag hides existing interactive answers",
+      "pass": true
+    },
+    {
+      "name": "feature flag rejects writes",
+      "pass": true
+    },
+    {
+      "name": "conversation deletion removes its artifacts and source receipts",
+      "pass": true
+    }
+  ],
+  "browserDiagnostics": [
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING",
+    "Failed to load resource: net::ERR_CONNECTION_RESET",
+    "Failed to load resource: net::ERR_CONNECTION_RESET",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING"
+  ],
+  "limitations": [
+    "Fixture data, no real connector account calls",
+    "Simulated runner reports, no LLM-selection behavior evaluated",
+    "macOS Chrome runtime only; no Windows runtime claim"
+  ],
+  "home": "/var/folders/6f/pxbkrv6d2p595742wxpx0wj80000gn/T/perry-issue-282-0oU3QB"
+}

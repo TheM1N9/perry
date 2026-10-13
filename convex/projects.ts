@@ -207,14 +207,17 @@ export const moveChat = mutation({
     assertDashboardKey(args.key);
     const chat = await ctx.db.get(args.id);
     if (!chat) throw new Error("Chat not found.");
+    const memberships = await ctx.db.query("workspaceFiles").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).collect();
     if (args.projectId === null) {
       if (chat.projectId) await ctx.db.patch(chat._id, { projectId: undefined });
+      for (const row of memberships) await ctx.db.patch(row._id, { projectId: undefined });
       return null;
     }
     if (chat.contactId) throw new Error("Perry's chats with other people stay out of projects, so nothing of yours reaches them.");
     if (!canJoin(chat)) throw new Error("Your Telegram and WhatsApp chats are about everything, so they stay out of projects.");
     if (!await ctx.db.get(args.projectId)) throw new Error("This project was deleted.");
     await ctx.db.patch(chat._id, { projectId: args.projectId });
+    for (const row of memberships) await ctx.db.patch(row._id, { projectId: args.projectId });
     return null;
   },
 });

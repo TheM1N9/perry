@@ -423,7 +423,7 @@ export class Query implements AsyncIterable<Doc> {
     return this;
   }
 
-  private *run(limit?: number): Generator<Doc> {
+  private *run(limit?: number, offset = 0): Generator<Doc> {
     this.reads?.add(this.table);
     const where: string[] = [];
     const params: SQLInputValue[] = [];
@@ -437,7 +437,7 @@ export class Query implements AsyncIterable<Doc> {
     const dir = this.direction === "desc" ? "DESC" : "ASC";
     const orderBy = [...fields.map((field) => `${field === "_id" ? "_id" : extract(field)} ${dir}`), `_creationTime ${dir}`].join(", ");
     const pushLimit = !this.search && this.filters.length === 0 && limit !== undefined;
-    const sqlText = `SELECT _id, _creationTime, doc FROM ${docTable(this.table)}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${orderBy}${pushLimit ? ` LIMIT ${Math.max(0, Math.floor(limit))}` : ""}`;
+    const sqlText = `SELECT _id, _creationTime, doc FROM ${docTable(this.table)}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${orderBy}${pushLimit ? ` LIMIT ${Math.max(0, Math.floor(limit))} OFFSET ${Math.max(0, Math.floor(offset))}` : ""}`;
     const matches = (doc: Doc) => this.filters.every((expr) => Boolean(evaluate(expr, doc)));
 
     if (this.search) {
@@ -458,8 +458,10 @@ export class Query implements AsyncIterable<Doc> {
       return;
     }
     let count = 0;
+    let skipped = 0;
     for (const doc of this.store.rows(sqlText, params)) {
       if (!matches(doc)) continue;
+      if (!pushLimit && skipped++ < offset) continue;
       yield doc;
       if (limit !== undefined && ++count >= limit) return;
     }
@@ -483,11 +485,17 @@ export class Query implements AsyncIterable<Doc> {
 
   /** Cursor pagination by position in the ordered results, which is all Perry's callers need. */
   async paginate(options: { numItems: number; cursor: string | null }) {
-    const all = [...this.run()];
-    const start = options.cursor ? Number(options.cursor) || 0 : 0;
-    const page = all.slice(start, start + options.numItems);
-    const end = start + page.length;
-    return { page, isDone: end >= all.length, continueCursor: String(end) };
+    const start = options.cursor ? Math.max(0, Number(options.cursor) || 0) : 0;
+    const count = Math.max(1, Math.floor(options.numItems));
+    // Full-text search has its own bounded ranking window; preserve its cursor semantics.
+    if (this.search) {
+      const all = [...this.run()];
+      const page = all.slice(start, start + count);
+      return { page, isDone: start + page.length >= all.length, continueCursor: String(start + page.length) };
+    }
+    const found = [...this.run(count + 1, start)];
+    const page = found.slice(0, count);
+    return { page, isDone: found.length <= count, continueCursor: String(start + page.length) };
   }
 }
 

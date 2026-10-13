@@ -6,10 +6,16 @@ import { BackendClient } from "@/client/backend";
 import { BackendProvider } from "@/client/react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { trackDashboardEvent } from "@/lib/analytics";
 
 /** Perry's backend is this same server, under /api/backend. */
 const backend = new BackendClient();
 if (typeof window !== "undefined") {
+  backend.onOperation = (operation, kind, success, durationMs) => {
+    if (operation === "jobs:setTimezone") return;
+    trackDashboardEvent("Feature used", { operation, kind, success, duration_ms: durationMs });
+  };
+  backend.onConnection = (connected) => trackDashboardEvent("Backend connection", { connected });
   window.addEventListener("pagehide", () => backend.suspend());
   window.addEventListener("pageshow", (event) => { if (event.persisted) backend.resume(); });
 }

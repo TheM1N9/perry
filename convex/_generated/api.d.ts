@@ -9,6 +9,7 @@ import type * as archive from "../archive.js";
 import type * as assistant from "../assistant.js";
 import type * as brain from "../brain.js";
 import type * as brainMap from "../brainMap.js";
+import type * as browserView from "../browserView.js";
 import type * as channels from "../channels.js";
 import type * as codex from "../codex.js";
 import type * as compaction from "../compaction.js";
@@ -24,6 +25,8 @@ import type * as history from "../history.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as installation from "../installation.js";
+import type * as interactive from "../interactive.js";
+import type * as internet from "../internet.js";
 import type * as jobs from "../jobs.js";
 import type * as lib_activity from "../lib/activity.js";
 import type * as lib_agent from "../lib/agent.js";
@@ -37,6 +40,7 @@ import type * as lib_embed from "../lib/embed.js";
 import type * as lib_engines from "../lib/engines.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_graph from "../lib/graph.js";
+import type * as lib_internet from "../lib/internet.js";
 import type * as lib_library from "../lib/library.js";
 import type * as lib_notes from "../lib/notes.js";
 import type * as lib_pages from "../lib/pages.js";
@@ -54,6 +58,7 @@ import type * as lib_truncate from "../lib/truncate.js";
 import type * as lib_turnLimits from "../lib/turnLimits.js";
 import type * as lib_usage from "../lib/usage.js";
 import type * as lib_whatsappFormat from "../lib/whatsappFormat.js";
+import type * as lib_workspace from "../lib/workspace.js";
 import type * as library from "../library.js";
 import type * as mcp from "../mcp.js";
 import type * as media from "../media.js";
@@ -84,6 +89,7 @@ import type * as wake from "../wake.js";
 import type * as web from "../web.js";
 import type * as whatsapp from "../whatsapp.js";
 import type * as work from "../work.js";
+import type * as workspace from "../workspace.js";
 
 import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
 
@@ -94,6 +100,7 @@ declare const fullApi: ApiFromModules<{
   assistant: typeof assistant;
   brain: typeof brain;
   brainMap: typeof brainMap;
+  browserView: typeof browserView;
   channels: typeof channels;
   codex: typeof codex;
   compaction: typeof compaction;
@@ -109,6 +116,8 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   ingest: typeof ingest;
   installation: typeof installation;
+  interactive: typeof interactive;
+  internet: typeof internet;
   jobs: typeof jobs;
   "lib/activity": typeof lib_activity;
   "lib/agent": typeof lib_agent;
@@ -122,6 +131,7 @@ declare const fullApi: ApiFromModules<{
   "lib/engines": typeof lib_engines;
   "lib/errors": typeof lib_errors;
   "lib/graph": typeof lib_graph;
+  "lib/internet": typeof lib_internet;
   "lib/library": typeof lib_library;
   "lib/notes": typeof lib_notes;
   "lib/pages": typeof lib_pages;
@@ -139,6 +149,7 @@ declare const fullApi: ApiFromModules<{
   "lib/turnLimits": typeof lib_turnLimits;
   "lib/usage": typeof lib_usage;
   "lib/whatsappFormat": typeof lib_whatsappFormat;
+  "lib/workspace": typeof lib_workspace;
   library: typeof library;
   mcp: typeof mcp;
   media: typeof media;
@@ -169,6 +180,7 @@ declare const fullApi: ApiFromModules<{
   web: typeof web;
   whatsapp: typeof whatsapp;
   work: typeof work;
+  workspace: typeof workspace;
 }>;
 
 /** Functions the dashboard, the runner and scripts can call, e.g. `api.dashboard.getChat`. */

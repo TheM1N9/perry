@@ -1,0 +1,14 @@
+{
+  "passed": [
+    "Production preview and gallery rendered real files",
+    "Project scope switches explicitly without stale items",
+    "Working files stay hidden after startup backfill",
+    "Selected version and panel size restored",
+    "Desktop keyboard resize works",
+    "Mobile close restores toggle focus and preserves draft",
+    "Existing event stream updates task state live",
+    "Fresh production chat stays empty",
+    "Disconnected backend shows reconnecting with last received state"
+  ],
+  "createdAt": "2026-10-12T20:30:11.429Z"
+}

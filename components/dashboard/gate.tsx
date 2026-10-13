@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { CommandLine, PerryMark, SecretInput } from "./common";
+import { trackDashboardEvent } from "@/lib/analytics";
 
 /** The locked door: one field, checked against the server before it is kept. */
 export function Gate({ onUnlock }: { onUnlock: (key: string) => void }) {
@@ -26,6 +27,7 @@ export function Gate({ onUnlock }: { onUnlock: (key: string) => void }) {
       await convex.query(api.dashboard.getStatus, { key });
       onUnlock(key);
     } catch (cause) {
+      trackDashboardEvent("Dashboard unlock failed");
       const message = errorText(cause);
       setError(/dashboard key|DASHBOARD_KEY/i.test(message)
         ? "That key doesn't match this Perry. Copy it again and try once more."

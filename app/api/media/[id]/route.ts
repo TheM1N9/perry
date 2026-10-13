@@ -18,5 +18,5 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return new Response("Wrong dashboard key.", { status: 403 });
   }
   if (!attachment) return new Response("Not found", { status: 404 });
-  return await serveFile(request, { path: attachment.localPath, fileName: attachment.fileName, contentType: attachment.contentType });
+  return await serveFile(request, { path: attachment.localPath, fileName: attachment.fileName, contentType: attachment.contentType }, { preview: request.nextUrl.searchParams.has("preview") });
 }

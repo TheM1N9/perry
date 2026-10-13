@@ -1,0 +1,17 @@
+{
+  "reviewedAt": "2026-10-12T22:26:54.522394+00:00",
+  "issue": 282,
+  "method": "Manual browser UI journeys through Codex computer use; disposable local data. Existing feature E2E reports remain separate.",
+  "checks": [
+    "Number input recalculates totals locally",
+    "Styled select updates selected scenario",
+    "Saved values survive reload",
+    "Reset and Undo work from the actions menu",
+    "CSV export completes through the actions menu",
+    "Desktop and 390px card layout"
+  ],
+  "screenshots": [
+    "desktop.jpg",
+    "mobile.jpg"
+  ]
+}

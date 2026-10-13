@@ -179,6 +179,15 @@ export const vEngineAuth = v.object({
  * message. Everything below is scoped to that one owner.
  */
 export default defineSchema({
+  interactiveAnswers: defineTable({
+    conversationId: v.id("conversations"), requestId: v.string(), creationHash: v.string(), schemaVersion: v.literal(1), revision: v.number(),
+    definition: v.string(), values: v.string(), previous: v.optional(v.string()), lastRequest: v.optional(v.string()), lastHash: v.optional(v.string()),
+    createdAt: v.number(), updatedAt: v.number(), lastTurnAt: v.number(), generationRunId: v.id("runs"), firstRenderedAt: v.optional(v.number()),
+    revisions: v.number(), saves: v.number(), conflicts: v.number(), restorations: v.number(), errors: v.number(),
+  }).index("by_conversation", ["conversationId"]),
+  interactiveSources: defineTable({
+    conversationId: v.id("conversations"), label: v.string(), url: v.optional(v.string()), fetchedAt: v.string(),
+  }).index("by_conversation", ["conversationId"]),
   /**
    * Exactly one row, describing this install and who owns it.
    *
@@ -372,6 +381,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_status", ["status"])
+    .index("by_origin", ["origin", "updatedAt"])
+    .index("by_conversation", ["conversationId"])
     .index("by_updated", ["updatedAt"]),
 
   /**
@@ -825,6 +836,8 @@ export default defineSchema({
     .searchIndex("search_text", { searchField: "search" }),
 
   conversations: defineTable({
+    /** Idempotency key of the last atomic edit/resend. */
+    lastRewindRequest: v.optional(v.string()),
     channel: vChannel,
     externalId: v.string(), // telegram chat id, or a unique web session id
     threadId: v.string(),
@@ -915,6 +928,9 @@ export default defineSchema({
    * there. See app/api/media.
    */
   chatAttachments: defineTable({
+    /** Upload staged for editing this immutable message revision. */
+    editOf: v.optional(v.id("agentMessages")),
+    position: v.optional(v.number()),
     conversationId: v.id("conversations"),
     messageKey: v.string(),
     storageId: v.optional(v.id("_storage")),
@@ -962,11 +978,49 @@ export default defineSchema({
     /** Its name, lowercased, for search. */
     search: v.string(),
     createdAt: v.number(),
+    versionOf: v.optional(v.id("library")),
+    versionRoot: v.optional(v.id("library")),
+    versionLabel: v.optional(v.string()),
+    role: v.optional(v.union(v.literal("input"), v.literal("output"), v.literal("working"))),
   })
     .index("by_created", ["createdAt"])
     .index("by_path", ["localPath"])
     .index("by_storage", ["storageId"])
+    .index("by_version", ["versionOf"])
     .index("by_conversation", ["conversationId"]),
+
+  /** Explicit membership, independent of the Library item's original attribution. */
+  workspaceFiles: defineTable({
+    conversationId: v.id("conversations"),
+    sourceConversationId: v.id("conversations"),
+    projectId: v.optional(v.id("projects")),
+    libraryId: v.id("library"),
+    kind: vLibraryKind,
+    role: v.union(v.literal("input"), v.literal("output"), v.literal("working")),
+    provenance: v.union(v.literal("uploaded"), v.literal("produced"), v.literal("attached")),
+    messageKey: v.optional(v.string()),
+    runId: v.optional(v.id("runs")),
+    taskId: v.optional(v.id("tasks")),
+    createdAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId", "createdAt"])
+    .index("by_project", ["projectId", "createdAt"])
+    .index("by_conversation_role", ["conversationId", "role", "createdAt"])
+    .index("by_project_role", ["projectId", "role", "createdAt"])
+    .index("by_conversation_kind", ["conversationId", "kind", "createdAt"])
+    .index("by_project_kind", ["projectId", "kind", "createdAt"])
+    .index("by_item", ["conversationId", "libraryId"])
+    .index("by_task", ["taskId"])
+    .index("by_run", ["runId"])
+    .index("by_library", ["libraryId"]),
+
+  /** Hiding and pinning affect this view only, never the file or another scope. */
+  workspaceViews: defineTable({
+    scope: v.string(),
+    libraryId: v.id("library"),
+    hidden: v.boolean(),
+    pinned: v.boolean(),
+  }).index("by_item", ["scope", "libraryId"]),
 
   /**
    * Layered like OpenClaw's workspace memory. `profile` is USER.md: standing

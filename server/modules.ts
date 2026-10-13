@@ -8,6 +8,7 @@ import * as archive from "../convex/archive";
 import * as assistant from "../convex/assistant";
 import * as brain from "../convex/brain";
 import * as brainMap from "../convex/brainMap";
+import * as browserView from "../convex/browserView";
 import * as channels from "../convex/channels";
 import * as codex from "../convex/codex";
 import * as compaction from "../convex/compaction";
@@ -23,6 +24,8 @@ import * as history from "../convex/history";
 import * as http from "../convex/http";
 import * as ingest from "../convex/ingest";
 import * as installation from "../convex/installation";
+import * as interactive from "../convex/interactive";
+import * as internet from "../convex/internet";
 import * as jobs from "../convex/jobs";
 import * as lib_activity from "../convex/lib/activity";
 import * as lib_agent from "../convex/lib/agent";
@@ -36,6 +39,7 @@ import * as lib_embed from "../convex/lib/embed";
 import * as lib_engines from "../convex/lib/engines";
 import * as lib_errors from "../convex/lib/errors";
 import * as lib_graph from "../convex/lib/graph";
+import * as lib_internet from "../convex/lib/internet";
 import * as lib_library from "../convex/lib/library";
 import * as lib_notes from "../convex/lib/notes";
 import * as lib_pages from "../convex/lib/pages";
@@ -53,6 +57,7 @@ import * as lib_truncate from "../convex/lib/truncate";
 import * as lib_turnLimits from "../convex/lib/turnLimits";
 import * as lib_usage from "../convex/lib/usage";
 import * as lib_whatsappFormat from "../convex/lib/whatsappFormat";
+import * as lib_workspace from "../convex/lib/workspace";
 import * as library from "../convex/library";
 import * as mcp from "../convex/mcp";
 import * as media from "../convex/media";
@@ -83,6 +88,7 @@ import * as wake from "../convex/wake";
 import * as web from "../convex/web";
 import * as whatsapp from "../convex/whatsapp";
 import * as work from "../convex/work";
+import * as workspace from "../convex/workspace";
 
 export const modules: Record<string, Record<string, unknown>> = {
   "agentStore": agentStore,
@@ -91,6 +97,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "assistant": assistant,
   "brain": brain,
   "brainMap": brainMap,
+  "browserView": browserView,
   "channels": channels,
   "codex": codex,
   "compaction": compaction,
@@ -106,6 +113,8 @@ export const modules: Record<string, Record<string, unknown>> = {
   "http": http,
   "ingest": ingest,
   "installation": installation,
+  "interactive": interactive,
+  "internet": internet,
   "jobs": jobs,
   "lib/activity": lib_activity,
   "lib/agent": lib_agent,
@@ -119,6 +128,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/engines": lib_engines,
   "lib/errors": lib_errors,
   "lib/graph": lib_graph,
+  "lib/internet": lib_internet,
   "lib/library": lib_library,
   "lib/notes": lib_notes,
   "lib/pages": lib_pages,
@@ -136,6 +146,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/turnLimits": lib_turnLimits,
   "lib/usage": lib_usage,
   "lib/whatsappFormat": lib_whatsappFormat,
+  "lib/workspace": lib_workspace,
   "library": library,
   "mcp": mcp,
   "media": media,
@@ -166,4 +177,5 @@ export const modules: Record<string, Record<string, unknown>> = {
   "web": web,
   "whatsapp": whatsapp,
   "work": work,
+  "workspace": workspace,
 };

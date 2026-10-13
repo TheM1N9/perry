@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import type { NextRequest } from "next/server";
 import { dashboardKey, MAX_BYTES, query, uploadDir } from "./store";
@@ -22,7 +22,16 @@ export async function POST(request: NextRequest) {
   }
 
   const extension = extname(decodeURIComponent(request.headers.get("x-file-name") ?? "")).slice(1).toLowerCase();
-  const path = join(uploadDir(), `${randomUUID()}${/^[a-z0-9]{1,8}$/.test(extension) ? `.${extension}` : ""}`);
-  await writeFile(path, bytes, { flag: "wx" });
+  const uploadId = request.headers.get("x-upload-id");
+  if (uploadId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uploadId)) {
+    return Response.json({ error: "Invalid upload id." }, { status: 400 });
+  }
+  const path = join(uploadDir(), `${uploadId ?? randomUUID()}${/^[a-z0-9]{1,8}$/.test(extension) ? `.${extension}` : ""}`);
+  try {
+    await writeFile(path, bytes, { flag: "wx" });
+  } catch (error) {
+    if (!uploadId || !(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
+    if (!(await readFile(path)).equals(bytes)) return Response.json({ error: "This upload id already belongs to another file." }, { status: 409 });
+  }
   return Response.json({ path, size: bytes.length });
 }
