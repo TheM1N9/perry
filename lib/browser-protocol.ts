@@ -15,6 +15,9 @@ export const browserState = z.object({
 });
 export type BrowserState = z.infer<typeof browserState>;
 const point = { x: z.number().min(0).max(1280), y: z.number().min(0).max(900) };
+export const nativeImportChoices = z.object({ cookies: z.boolean(), passwords: z.boolean(), history: z.boolean(), extensions: z.boolean() }).refine(choices => Object.values(choices).some(Boolean), "Choose data to import.");
+export type NativeImportChoices = z.infer<typeof nativeImportChoices>;
+export const nativeImportProfiles = z.array(z.object({ id: z.string(), browser: z.string(), label: z.string(), cookies: z.number(), passwords: z.number(), history: z.number(), extensions: z.number() }));
 export const browserRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("status") }),
   z.object({ action: z.literal("start") }),
@@ -36,6 +39,8 @@ export const browserRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("dialog"), identity: browserIdentity, accept: z.boolean(), text: z.string().max(1000).optional() }),
   z.object({ action: z.literal("privacy"), identity: browserIdentity, private: z.boolean() }),
   z.object({ action: z.literal("profiles") }),
+  z.object({ action: z.literal("nativeProfiles") }),
+  z.object({ action: z.literal("nativeImport"), identity: browserIdentity, profileId: z.string(), choices: nativeImportChoices, confirmed: z.literal(true) }),
   z.object({ action: z.literal("previewImport"), profileId: z.string() }),
   z.object({ action: z.literal("import"), identity: browserIdentity, ticket: z.string(), sites: z.array(z.string()).min(1).max(200), confirmed: z.literal(true) }),
   z.object({ action: z.literal("sessions"), identity: browserIdentity }),

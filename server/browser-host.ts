@@ -24,14 +24,18 @@ export async function browserStatus(scope: string, importEnabled: boolean): Prom
 export async function controlBrowser(scope: string, request: BrowserRequest, importEnabled: boolean) {
   const state = browser.browserControl(scope);
   if (request.action === "status") return browserStatus(scope, importEnabled);
+  if (state.ownerBusy && request.action !== "frame") throw new Error("Another browser action is still running. Wait for it to finish.");
   if (request.action === "connectChrome") {
-    if (!importEnabled) throw new Error("Open Perry locally to connect Chrome.");
-    if (state.ownerBusy || state.current || state.promise) throw new Error("Disconnect the current browser before connecting Chrome.");
-    state.controller = "owner"; state.private = true; state.epoch++; state.revision++; browser.saveBrowserControl(scope);
-    return browser.withOwnerBrowser(scope, async () => {
-      await browser.connectChrome();
-      return browserStatus(scope, importEnabled);
-    });
+    throw new Error("The browser now uses Perry's own profile. Use Import from browser to migrate your data.");
+  }
+  if (request.action === "nativeProfiles") {
+    if (!importEnabled) throw new Error("Open Perry locally to import browser data.");
+    return (await import("./browser-import")).nativeProfiles();
+  }
+  if (request.action === "nativeImport") {
+    if (!importEnabled) throw new Error("Open Perry locally to import browser data.");
+    const imported = await (await import("./browser-import")).nativeImport(scope, request.identity, request.profileId, request.choices);
+    return { imported, state: await browserStatus(scope, importEnabled) };
   }
   if (request.action === "start") {
     if (state.error && state.current) await browser.withBrowserView(scope, async () => browser.closeBrowser());

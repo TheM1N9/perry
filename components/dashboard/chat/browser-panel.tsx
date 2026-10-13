@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoTip } from "../common";
+import { BrowserImportDialog } from "./browser-import-dialog";
 import { useSession } from "@/lib/session";
 import { browserIdentity, browserState, importPreview, importProfile, importResult, type BrowserRequest, type BrowserState } from "@/lib/browser-protocol";
 
@@ -41,7 +42,7 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
   const currentTab = state?.tabs.find((item) => item.id === state.identity?.tabId);
   const paused = state?.state === "paused";
   const activeIdentity = state?.identity;
-  const chromeConnected = state?.source === "chrome" && !!activeIdentity;
+  const [importOpen, setImportOpen] = useState(false);
 
   const call = useCallback(async (request: BrowserRequest, signal?: AbortSignal): Promise<unknown> => {
     const response = await fetch("/api/browser", { method: "POST", headers: { "content-type": "application/json", "x-perry-key": dashboardKey }, body: JSON.stringify({ conversationId, request }), cache: "no-store", signal });
@@ -113,10 +114,11 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
       {state?.identity ? <>
         {paused ? <Button size="sm" onClick={() => activeIdentity && void act({ action: "resume", identity: activeIdentity })}><PlayIcon />Resume Perry</Button>
           : <Button size="sm" onClick={() => { setFrame(null); void act({ action: "takeover" }); }}><PauseIcon />Pause & take over</Button>}
-      </> : <><Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => act({ action: "start" }))}>Open browser</Button>{state?.importEnabled && <Button size="sm" disabled={busy} onClick={() => void run(() => act({ action: "connectChrome" }))}>{busy ? "Connecting…" : "Connect Chrome"}</Button>}</>}
+      </> : <Button size="sm" disabled={busy} onClick={() => void run(() => act({ action: "start" }))}>{busy ? "Opening…" : "Open browser"}</Button>}
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label="Browser actions" />}><MoreHorizontalIcon /></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-40">
+          {state?.importEnabled && <DropdownMenuItem onClick={() => setImportOpen(true)}>Import from browser</DropdownMenuItem>}
           <DropdownMenuItem onClick={() => void openSettings()}>Connections</DropdownMenuItem>
           <DropdownMenuItem disabled={!paused} onClick={() => activeIdentity && void act({ action: "close", identity: activeIdentity })}>{state?.source === "chrome" ? "Disconnect Chrome" : "Close browser"}</DropdownMenuItem>
           {onClose && <DropdownMenuItem onClick={onClose}>Return to chat</DropdownMenuItem>}
@@ -168,7 +170,7 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
         <div className="flex items-center justify-between"><p className="font-medium">Connections</p><Button size="icon-sm" variant="ghost" aria-label="Close connections" onClick={() => setSettings(false)}><XIcon /></Button></div>
         {state?.identity && <label className="flex items-center gap-2 text-xs"><Checkbox checked={state.private} disabled={!paused} onCheckedChange={(checked) => activeIdentity && void act({ action: "privacy", identity: activeIdentity, private: checked })} /><span>Hide agent screenshots<InfoTip>Perry can still read page text after you resume.</InfoTip></span></label>}
         {!state?.importEnabled ? <p className="text-xs text-muted-foreground">Open Perry locally to connect your browser.</p> : <>
-          <div className="flex items-center justify-between gap-2"><span>Chrome<InfoTip>Enable remote debugging in chrome://inspect/#remote-debugging, then allow Chrome's connection prompt. Uses your signed-in session in new chat tabs.</InfoTip></span><Button size="sm" variant="outline" disabled={busy || (!!activeIdentity && (!paused || state?.source !== "chrome"))} onClick={() => void run(() => act(chromeConnected && activeIdentity ? { action: "close", identity: activeIdentity } : { action: "connectChrome" }))}>{chromeConnected ? "Disconnect" : busy ? "Connecting…" : "Connect"}</Button></div>
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>Import from browser</Button>
           {profiles.length > 0 && state?.source !== "chrome" && <Collapsible>
           <CollapsibleTrigger render={<Button size="sm" variant="ghost" className="group -ml-2" />}><ChevronRightIcon className="group-data-panel-open:rotate-90" />Import from Firefox</CollapsibleTrigger>
           <CollapsibleContent className="space-y-3 pt-2">
@@ -190,5 +192,6 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
         {!!sessions.length && state?.source !== "chrome" && <><p className="font-medium">Imported sites</p>{sessions.map((item) => <div key={item.site} className="flex items-center justify-between gap-2"><p className="truncate text-xs">{item.site}</p><Button size="sm" variant="outline" disabled={!paused || busy} onClick={() => activeIdentity && void run(async () => { await call({ action: "removeSession", identity: activeIdentity, site: item.site }); setSessions((items) => items.filter((entry) => entry.site !== item.site)); })}>Remove</Button></div>)}</>}
       </div>}
     </div>
+    <BrowserImportDialog open={importOpen} onOpenChange={setImportOpen} state={state} call={call} apply={apply} />
   </section>;
 }
