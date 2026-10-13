@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-11T21:45:18.348Z",
+  "ranAt": "2026-10-01T17:18:38.061Z",
   "checks": {
     "noKeyIsNotAnError": true,
     "namesTheAccount": true,
@@ -22,7 +22,6 @@
     "expiredWithoutAddress": true,
     "noAddressStaysApart": true,
     "catalogueCountsAccounts": true,
-    "composioGitHubRetired": true,
     "searchByAppShowsWholeCard": true,
     "searchByAddress": true,
     "searchSaysNothing": true,
@@ -60,8 +59,8 @@
       }
     },
     "loads": {
-      "firstMs": 145,
-      "secondMs": 23
+      "firstMs": 146,
+      "secondMs": 36
     },
     "composio": [
       "gmail ACTIVE",
@@ -73,8 +72,7 @@
       "youtube EXPIRED",
       "notion INITIATED",
       "higgsfield_mcp ACTIVE",
-      "higgsfield_mcp ACTIVE",
-      "github ACTIVE"
+      "higgsfield_mcp ACTIVE"
     ],
     "accounts": [
       "Gmail | ACTIVE | alex@example.com",
@@ -91,7 +89,6 @@
     "keyRow": {
       "field": true,
       "sections": [
-        "GitHub",
         "Connected",
         "Popular",
         "All apps",
@@ -150,15 +147,6 @@
       "calendar": "Connected",
       "notion": ""
     },
-    "listedApps": [
-      "Gmail",
-      "Google Calendar",
-      "Slack",
-      "Notion",
-      "Google Drive",
-      "YouTube",
-      "Higgsfield MCP"
-    ],
     "searchSam": [
       "Gmail: sam@example.com"
     ],
@@ -172,11 +160,11 @@
     "links": [
       {
         "toolkit": "gmail",
-        "callbackUrl": "http://127.0.0.1:60888/apps/connectors?connected=gmail"
+        "callbackUrl": "http://127.0.0.1:49968/apps/connectors?connected=gmail"
       },
       {
         "toolkit": "youtube",
-        "callbackUrl": "http://127.0.0.1:60888/apps/connectors?connected=youtube"
+        "callbackUrl": "http://127.0.0.1:49968/apps/connectors?connected=youtube"
       }
     ],
     "unknownCalls": [],

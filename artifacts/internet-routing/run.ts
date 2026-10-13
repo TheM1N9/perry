@@ -255,11 +255,6 @@ try {
   await check("real SDK discovery pins account, validates current read schema and refuses writes", async () => {
     runtime.store.insert("secrets", { name: "COMPOSIO_API_KEY", value: "fixture-only-api-key", updatedAt: Date.now() });
     runtime.store.insert("vault", { label: 'Fixture "login"', value: "fixture-private-token", createdAt: Date.now(), updatedAt: Date.now() });
-    const beforeRetired = providerCalls.length;
-    const retired = await mcp("internet_read", { operation: "account", platform: "github", query: "read private issue", connector: { accountId: "retired-github", slug: "GITHUB_GET_ISSUE", args: { issue_number: 1 } } });
-    assert.equal(retired.result?.status, "unavailable");
-    assert.match(retired.result?.error?.repair ?? "", /GITHUB_REST_GET/);
-    assert.equal(providerCalls.length, beforeRetired, "Retired GitHub must not contact Composio");
     const request = { operation: "account", platform: "youtube", query: "read private video" };
     const found = await mcp("internet_read", request);
     assert.deepEqual(found.result?.discovery?.actions.map((a) => a.slug), ["YOUTUBE_GET_VIDEO"], JSON.stringify({ found, providerPaths: providerCalls.map((c) => c.path) }));

@@ -24,9 +24,7 @@ import { DEADLINE_MS, InternetError, publicUrl, type ConnectedRead, type Interne
  * the model's context.
  *
  * Assistant never sees a token. OAuth lives with Composio, and this deployment
- * holds one API key that can act only on the accounts you linked. GitHub is the
- * exception: it is connected with a token the owner pastes (github.ts), and
- * Composio's GitHub is retired, neither offered nor listed nor used.
+ * holds one API key that can act only on the accounts you linked.
  */
 
 /**
@@ -35,10 +33,6 @@ import { DEADLINE_MS, InternetError, publicUrl, type ConnectedRead, type Interne
  * deployment, not a row.
  */
 const USER_ID = "owner";
-
-/** Connected in Perry itself (github.ts): Composio's own is never offered, listed, searched or run. */
-const RETIRED = new Set(["github"]);
-const retired = (toolkit?: string) => RETIRED.has((toolkit ?? "").toLowerCase());
 
 function client(apiKey: string | null): Composio {
   if (!apiKey) {
@@ -67,10 +61,6 @@ export type Connector = {
   connected: boolean;
   status?: string;
   needsAuth: boolean;
-  /** Whose account it is, when known (GitHub's login). */
-  account?: string;
-  /** Why it is not working, when it is listed but not connected. */
-  error?: string;
 };
 
 /**
@@ -108,7 +98,7 @@ export const connectors = internalAction({
       do {
         const page = await s.toolkits({ isConnected: true, cursor });
         for (const t of page.items) {
-          if ((!t.connection?.isActive && !t.isNoAuth) || retired(t.slug)) continue;
+          if (!t.connection?.isActive && !t.isNoAuth) continue;
           connectors.push({
             slug: t.slug,
             name: t.name,
@@ -144,7 +134,7 @@ async function catalogOf(apiKey: string): Promise<CatalogApp[]> {
   const toolkits = await client(apiKey).toolkits.get({ limit: 5000 } as never) as unknown as Array<{
     slug: string; name: string; meta?: { logo?: string; description?: string; categories?: Array<{ name?: string }> };
   }>;
-  const apps = toolkits.filter((toolkit) => !retired(toolkit.slug)).map((toolkit) => ({
+  const apps = toolkits.map((toolkit) => ({
     slug: toolkit.slug,
     name: toolkit.name,
     logo: toolkit.meta?.logo,
@@ -179,6 +169,7 @@ const WHO_AM_I: Record<string, [action: string, args: Record<string, unknown>]> 
   googlecalendar: ["GOOGLECALENDAR_GET_CALENDAR_PROFILE", {}],
   googledrive: ["GOOGLEDRIVE_GET_ABOUT", {}],
   outlook: ["OUTLOOK_GET_PROFILE", {}],
+  github: ["GITHUB_GET_THE_AUTHENTICATED_USER", {}],
   slack: ["SLACK_TEST_AUTH", {}],
   notion: ["NOTION_GET_ABOUT_ME", {}],
   linear: ["LINEAR_GET_CURRENT_USER", {}],
@@ -231,7 +222,7 @@ export const accounts = internalAction({
       let cursor: string | undefined;
       do {
         const page = await composio.connectedAccounts.list({ userIds: [USER_ID], limit: 100, ...(cursor ? { cursor } : {}) } as never) as unknown as { items: typeof items; nextCursor?: string | null };
-        items.push(...page.items.filter((item) => !retired(item.toolkit.slug)));
+        items.push(...page.items);
         cursor = page.nextCursor ?? undefined;
       } while (cursor);
 
@@ -298,7 +289,6 @@ export const authorize = internalAction({
     ctx,
     args,
   ): Promise<{ redirectUrl?: string; status?: string; error?: string }> => {
-    if (retired(args.toolkit.trim())) return { error: "GitHub connects with a token you make on GitHub: Apps & skills → Connectors → GitHub." };
     try {
       const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
         name: "COMPOSIO_API_KEY",
@@ -356,24 +346,20 @@ export type SearchResult = {
 export const search = internalAction({
   args: { query: v.string(), toolkits: v.optional(v.array(v.string())) },
   handler: async (ctx, args): Promise<SearchResult> => {
-    const toolkits = args.toolkits?.filter((toolkit) => !retired(toolkit));
-    // Asked only about a retired one (GitHub): github.ts answers for it.
-    if (args.toolkits?.length && !toolkits?.length) return { actions: [] };
     try {
       const apiKey: string | null = await ctx.runQuery(internal.secrets.get, {
         name: "COMPOSIO_API_KEY",
       });
-      const s = await session(apiKey, toolkits);
+      const s = await session(apiKey, args.toolkits);
       const found = await s.search({
         query: args.query,
-        ...(toolkits && toolkits.length > 0
-          ? { toolkits }
+        ...(args.toolkits && args.toolkits.length > 0
+          ? { toolkits: args.toolkits }
           : {}),
       });
       if (!found.success && found.error) return { actions: [], error: found.error };
 
-      const slugs = [...new Set(found.results.flatMap((result) => [...result.primaryToolSlugs, ...result.relatedToolSlugs]))]
-        .filter((slug) => !retired(found.toolSchemas[slug]?.toolkit) && !slug.startsWith("GITHUB_"));
+      const slugs = [...new Set(found.results.flatMap((result) => [...result.primaryToolSlugs, ...result.relatedToolSlugs]))];
       const actions = slugs.slice(0, 15).map((slug) => {
         const schema = found.toolSchemas[slug];
         return {
@@ -384,7 +370,7 @@ export const search = internalAction({
         };
       });
       const notConnected = found.toolkitConnectionStatuses
-        .filter((status) => !status.hasActiveConnection && !retired(status.toolkit))
+        .filter((status) => !status.hasActiveConnection)
         .map((status) => `${status.toolkit}: ${status.statusMessage}`);
       return {
         actions,
@@ -465,7 +451,6 @@ function internetFailure(error: unknown): InternetFailure {
 export async function internetRead(ctx: ToolCtx, request: InternetRequest, platform: Platform, signal: AbortSignal): Promise<ConnectedRead> {
   const toolkit = INTERNET_TOOLKITS[platform];
   const empty: ConnectedRead = { state: "setup_required", actions: [], accounts: [], repair: "Use a public supported operation, or connect the relevant account in Apps & skills." };
-  if (retired(toolkit)) return { ...empty, repair: "GitHub uses Perry's checked token connection. Use list_connectors, find_action and GITHUB_REST_GET for authenticated GitHub reads; Composio's GitHub is retired." };
   if (!toolkit) return empty;
   const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
   if (!apiKey) return empty;
@@ -559,7 +544,6 @@ export type TriggerOption = { slug: string; name: string; description: string; c
 export const triggerTypes = internalAction({
   args: { toolkit: v.string(), query: v.optional(v.string()) },
   handler: async (ctx, args): Promise<{ triggers: TriggerOption[]; error?: string }> => {
-    if (retired(args.toolkit)) return { triggers: [], error: "GitHub is connected with a token, not through Composio, so its events cannot start a job. A scheduled job can check GitHub instead." };
     try {
       const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
       const listed = await client(apiKey).triggers.listTypes({ toolkits: [args.toolkit.toLowerCase()], limit: 50 });

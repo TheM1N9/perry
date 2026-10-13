@@ -29,10 +29,6 @@ Public reads never use an authenticated browser session or a connector implicitl
 
 No platform's page-read support implies comment, transcript, search or private-account support. Optional paid backends and local shell adapters are not registered. Existing Composio usage is charged under the owner's configured plan and is used only for an explicitly requested connected scope.
 
-Authenticated GitHub reads use Perry's checked token connection through
-`list_connectors`, `find_action` and `GITHUB_REST_GET`. The internet adapter
-does not discover or execute the retired Composio GitHub connection.
-
 ## Verification plan (written before implementation)
 
 The repeatable check is `artifacts/internet-routing/run.ts`. It exercises actual routing/normalization against deterministic source fixtures, then the real SQLite runtime and MCP tools against a local public-site stand-in. Fixtures do not validate live connector credentials or platform access. Optional live probes must only read public sources.

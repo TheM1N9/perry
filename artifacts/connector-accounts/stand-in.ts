@@ -51,8 +51,6 @@ export const CONNECTIONS: Connection[] = [
   // Two with no "who am I": nothing says whether they are the same account.
   { id: "ca_hf_1", toolkit: "higgsfield_mcp", status: "ACTIVE", createdAt: at("24T08:15:00") },
   { id: "ca_hf_2", toolkit: "higgsfield_mcp", status: "ACTIVE", createdAt: at("24T17:40:00") },
-  // Signed in through Composio before GitHub took a token (convex/github.ts): Composio's GitHub is retired, never shown.
-  { id: "ca_github", toolkit: "github", status: "ACTIVE", createdAt: at("10T09:00:00"), identity: "octo-owner" },
 ];
 
 /** The one key the stand-in takes. */

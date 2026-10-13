@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import { useAction } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { CatalogApp, ConnectedAccount } from "@/convex/composio";
-import type { GitHubConnection } from "@/convex/github";
 import { errorText } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -21,7 +20,7 @@ import { ActionButton, EmptyState, List, ListSkeleton, Page, Section, StatusBadg
 type FoundAction = { slug: string; description?: string; toolkit?: string };
 
 /** The ones people reach for first, in this order; the rest are under All apps. */
-const POPULAR = ["gmail", "googlecalendar", "slack", "notion", "googledrive", "googlesheets", "outlook", "linear", "googledocs"];
+const POPULAR = ["gmail", "googlecalendar", "slack", "notion", "googledrive", "googlesheets", "github", "outlook", "linear", "googledocs"];
 /** All apps shows this many at a time; search finds the rest. */
 const PAGE = 40;
 
@@ -193,120 +192,6 @@ function AccountRow({ app, account, busy, onConnect, onRemove }: {
   );
 }
 
-/** GitHub's mark (Octicons, MIT). */
-function GitHubMark() {
-  return (
-    <span className="grid size-10 shrink-0 place-items-center rounded-full border bg-background" aria-hidden>
-      <svg viewBox="0 0 16 16" className="size-[22px]" fill="currentColor">
-        <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" />
-      </svg>
-    </span>
-  );
-}
-
-/**
- * GitHub, connected with a token the owner makes on GitHub, not through
- * Composio (convex/github.ts). GitHub is asked whose a token is before it is
- * kept, and again each time this shows, so a wrong or revoked one never reads
- * as connected.
- */
-function GitHubSection() {
-  const { dashboardKey } = useSession();
-  const getGitHub = useAction(api.dashboard.getGitHub);
-  const connectGitHub = useAction(api.dashboard.connectGitHub);
-  const disconnectGitHub = useAction(api.dashboard.disconnectGitHub);
-  const [github, setGitHub] = useState<GitHubConnection | null>(null);
-  const [pasting, setPasting] = useState(false);
-  const [token, setToken] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const load = useCallback(async () => {
-    try {
-      setGitHub(await getGitHub({ key: dashboardKey }));
-    } catch (cause) {
-      setGitHub({ state: "unreachable", error: errorText(cause) });
-    }
-  }, [dashboardKey, getGitHub]);
-  useEffect(() => { void load(); }, [load]);
-
-  const save = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!token.trim() || saving) return;
-    setSaving(true);
-    setError("");
-    try {
-      const result = await connectGitHub({ key: dashboardKey, token });
-      if (result.error) return setError(result.error);
-      setToken("");
-      setPasting(false);
-      toast.success(`GitHub is connected as ${result.login}.`);
-      await load();
-    } catch (cause) {
-      setError(errorText(cause));
-    } finally {
-      setSaving(false);
-    }
-  };
-  const close = () => { setPasting(false); setToken(""); setError(""); };
-
-  const kept = github !== null && github.state !== "none";
-  const form = (
-    <form className="mt-2 space-y-2 sm:pl-13" onSubmit={(event) => void save(event)} aria-label="GitHub token">
-      <p className="text-sm text-pretty text-muted-foreground">
-        Make one on GitHub: a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer" className="link">fine-grained token</a> for
-        the repositories you choose, or a <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="link">classic one</a>.
-        Perry can do only what the token allows.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <InputGroup className="min-w-0 flex-1 basis-64">
-          <InputGroupInput type="password" aria-label="GitHub token" placeholder="github_pat_… or ghp_…" autoComplete="off" spellCheck={false}
-            value={token} onChange={(event) => { setToken(event.target.value); setError(""); }} />
-        </InputGroup>
-        <Button type="submit" disabled={!token.trim() || saving} aria-busy={saving || undefined}>{saving && <Spinner />}Connect</Button>
-        {kept && <Button type="button" variant="ghost" onClick={close}>Cancel</Button>}
-      </div>
-      {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-    </form>
-  );
-
-  return (
-    <Section title="GitHub" tip="Connected with a token you make on GitHub, which Perry keeps and never shows again. GitHub is asked whose it is each time.">
-      {github === null ? <ListSkeleton /> : (
-        <div className="-mx-3 rounded-xl px-3 py-2.5">
-          <div className="flex flex-wrap items-center gap-3">
-            <GitHubMark />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-md font-medium">GitHub</p>
-              <p className="truncate text-sm text-muted-foreground" role="status">
-                {github.state === "working" && <>Connected as <strong className="text-foreground">{github.login}</strong>{github.name && ` (${github.name})`}</>}
-                {github.state === "none" && "Not connected"}
-                {(github.state === "refused" || github.state === "unreachable") && <span className={github.state === "refused" ? "text-warning" : undefined}>{github.error}</span>}
-              </p>
-            </div>
-            {github.state === "none" && !pasting && <Button variant="outline" size="sm" onClick={() => setPasting(true)}><PlusIcon />Connect with a token</Button>}
-            {github.state === "unreachable" && <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => void load()}><RefreshCwIcon />Check again</Button>}
-            {kept && !pasting && <Button variant={github.state === "refused" ? "outline" : "ghost"} size="sm" className={github.state === "refused" ? undefined : "text-muted-foreground"} onClick={() => setPasting(true)}>Replace token</Button>}
-            {kept && (
-              <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive"
-                action={async () => { await disconnectGitHub({ key: dashboardKey }); close(); await load(); }}
-                success="GitHub disconnected."
-                confirm={{
-                  title: "Disconnect GitHub?",
-                  body: <>Perry forgets the token and can no longer reach GitHub. The token itself works until you delete it on GitHub.</>,
-                  label: "Disconnect",
-                }}>
-                Disconnect
-              </ActionButton>
-            )}
-          </div>
-          {pasting && form}
-        </div>
-      )}
-    </Section>
-  );
-}
-
 /**
  * Accounts Perry can use for you. It looks up what is connected at the moment
  * it needs to act, so this page alone decides what it can reach.
@@ -411,7 +296,6 @@ export function Connectors() {
   if (!state.configured) {
     return (
       <Page title="Connectors">
-        <GitHubSection />
         <Section title="Connect through Composio" description="Composio holds the sign-ins, so Perry never sees a password or token.">
           <ol className="list-decimal space-y-2 pl-5 text-sm">
             <li>Create a Composio account and copy an API key from <a href="https://composio.dev" target="_blank" rel="noopener noreferrer" className="link">composio.dev</a>.</li>
@@ -439,8 +323,6 @@ export function Connectors() {
   return (
     <Page wide title="Connectors" actions={<div className="flex items-center gap-2">{searchBox}{refreshButton}</div>}>
       {state.error && <Alert variant="destructive" className="mb-6"><TriangleAlertIcon /><AlertTitle>Couldn&apos;t reach Composio</AlertTitle><AlertDescription>{state.error}</AlertDescription></Alert>}
-
-      <GitHubSection />
 
       <Section title="Connected" tip="Sign-ins happen on each app's own page and stay with Composio. Perry checks what's connected each time it acts.">
         {state.accounts.length === 0

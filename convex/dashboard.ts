@@ -14,7 +14,6 @@ import { PAUSED_ERROR, type Access } from "./lib/commands";
 import { assertRunning } from "./pause";
 import type { EngineKind } from "./lib/engines";
 import type { CatalogApp, ConnectedAccount } from "./composio";
-import type { GitHubConnection } from "./github";
 import { policyOf, type Policy } from "./runner";
 import { vAccess, vEngine, vMemoryKind, vPolicy } from "./schema";
 import { pickPatch } from "./engines";
@@ -1800,7 +1799,7 @@ export const getConnectors = action({
     error?: string;
   }> => {
     assertDashboardKey(args.key);
-    return await ctx.runAction(internal.connectors.list, {});
+    return await ctx.runAction(internal.composio.connectors, {});
   },
 });
 
@@ -1845,32 +1844,6 @@ export const connectToolkit = action({
   },
 });
 
-/** GitHub, connected with a token (github.ts): whose it is, asked of GitHub now, or why it isn't working. */
-export const getGitHub = action({
-  args: { key: vKey },
-  handler: async (ctx, args): Promise<GitHubConnection> => {
-    assertDashboardKey(args.key);
-    return await ctx.runAction(internal.github.connection, {});
-  },
-});
-
-/** Connect GitHub with a pasted token, kept only if GitHub accepts it. */
-export const connectGitHub = action({
-  args: { key: vKey, token: v.string() },
-  handler: async (ctx, args): Promise<{ login?: string; name?: string; error?: string }> => {
-    assertDashboardKey(args.key);
-    return await ctx.runAction(internal.github.connect, { token: args.token });
-  },
-});
-
-export const disconnectGitHub = action({
-  args: { key: vKey },
-  handler: async (ctx, args): Promise<null> => {
-    assertDashboardKey(args.key);
-    return await ctx.runAction(internal.github.disconnect, {});
-  },
-});
-
 /** Lets the owner see exactly which operations a connection exposes. */
 export const searchActions = action({
   args: { key: vKey, query: v.string(), toolkits: v.optional(v.array(v.string())) },
@@ -1887,7 +1860,7 @@ export const searchActions = action({
     error?: string;
   }> => {
     assertDashboardKey(args.key);
-    return await ctx.runAction(internal.connectors.search, {
+    return await ctx.runAction(internal.composio.search, {
       query: args.query,
       toolkits: args.toolkits,
     });
