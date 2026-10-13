@@ -23,6 +23,10 @@ Verification failure cases, recorded before changing the implementation:
 - Dashboard responding before the local runner checks in; startup timeout or
   crash leaving the tray with no explanation; endless rapid recovery attempts.
 - Update/recovery switching back to the old PowerShell launcher.
+- A supervisor exiting while a descendant still holds stdout/stderr open:
+  log-drain waits must not keep its job and orphan processes alive forever.
+  Descendants must be stopped before the launcher waits for pipe EOF, and the
+  supervisor's original exit code must still reach Task Scheduler.
 
 Run `bun artifacts/windows-background/run.ts <output-directory>` on a disposable
 Windows account. It compiles and runs the **actual native launcher**, using a
@@ -31,6 +35,13 @@ This checks process flags, cwd/environment/argument preservation, single-instanc
 behavior, exit propagation, bounded logs and launcher failure. It does not
 establish installed desktop behavior or prove absence of a flash.
 It also checks that terminating the launcher closes its owned process tree.
+
+Windows review reproduced a supervisor-exit hang when a surviving descendant
+kept the redirected log pipes open. The launcher now closes its owning job
+before waiting for the drain tasks. The regression fixture verifies both bounded
+exit with the supervisor's original status and cleanup of the descendant.
+`windows-review-before-fix/result.json` records the reproduced failure;
+`windows-review-after-fix/result.json` records all 16 native checks passing.
 
 `bun artifacts/windows-background/supervisor.ts <output-directory>` exercises the
 real production build and runner on port 7384 in a fresh temporary home. It

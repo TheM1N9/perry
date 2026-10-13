@@ -29,6 +29,19 @@ class Child {
   [DllImport("kernel32.dll")] static extern IntPtr GetConsoleWindow();
   static int Main(string[] args) {
     string home = Environment.GetEnvironmentVariable("PERRY_HOME");
+    if (args.Length == 1 && args[0] == "orphan") { System.Threading.Thread.Sleep(60000); return 0; }
+    if (Environment.GetEnvironmentVariable("PERRY_FIXTURE_ORPHAN") == "1") {
+      string pidFile = Environment.GetEnvironmentVariable("PERRY_SERVICE_PID_FILE");
+      var deadline = DateTime.UtcNow.AddSeconds(10);
+      while (!File.Exists(pidFile)) { if (DateTime.UtcNow > deadline) return 99; System.Threading.Thread.Sleep(25); }
+      var descendant = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo {
+        FileName = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName,
+        Arguments = "orphan", UseShellExecute = false, CreateNoWindow = true
+      });
+      File.WriteAllText(Path.Combine(home, "orphan.pid"), descendant.Id.ToString());
+      Console.WriteLine("Supervisor fixture exits with a descendant holding its pipes");
+      return 7;
+    }
     File.AppendAllText(Path.Combine(home, "starts.txt"), "started\\n");
     File.WriteAllLines(Path.Combine(home, "child.txt"), new string[] { Directory.GetCurrentDirectory(), String.Join("|", args), Environment.GetEnvironmentVariable("PERRY_CODEX_SANDBOX"), GetConsoleWindow().ToString(), System.Diagnostics.Process.GetCurrentProcess().Id.ToString() });
     for (int n = 0; n < 12000; n++) { Console.WriteLine(new string('x', 1000)); Console.Error.WriteLine("stderr"); }
@@ -80,6 +93,25 @@ try {
   writeFileSync(broken.files[0].path, broken.files[0].content);
   expect(await run() === 1, "startup failure exits nonzero");
   expect(readFileSync(context.logFile, "utf8").includes("could not start"), "startup failure leaves a log");
+  const orphanPlan = servicePlan({ ...context, env: { ...context.env, PERRY_FIXTURE_ORPHAN: "1" } });
+  writeFileSync(orphanPlan.files[0].path, orphanPlan.files[0].content);
+  const orphanLauncher = spawn(exe, [], { stdio: "ignore", windowsHide: true });
+  try {
+    const exited = new Promise<number | null>((done) => orphanLauncher.once("exit", done));
+    const deadline = Date.now() + 10_000;
+    while (!existsSync(join(scratch, "orphan.pid"))) {
+      if (Date.now() > deadline) throw new Error("Orphan fixture did not start");
+      await new Promise((done) => setTimeout(done, 50));
+    }
+    const result = await Promise.race([exited, new Promise<"timed out">((done) => setTimeout(() => done("timed out"), 5000))]);
+    expect(result === 7, "supervisor exit drains logs without waiting for orphan pipes");
+    const orphanPid = Number(readFileSync(join(scratch, "orphan.pid"), "utf8"));
+    let alive = true;
+    try { process.kill(orphanPid, 0); } catch { alive = false; }
+    expect(!alive, "supervisor exit cleans up its surviving descendant");
+  } finally {
+    if (orphanLauncher.exitCode === null && orphanLauncher.signalCode === null) orphanLauncher.kill();
+  }
   writeFileSync(plan.files[0].path, plan.files[0].content);
   const owned = spawn(exe, [], { stdio: "ignore", windowsHide: true });
   try {

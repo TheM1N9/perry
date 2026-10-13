@@ -124,6 +124,9 @@ class PerryLauncher
                         var stdout = Task.Factory.StartNew(() => Drain(child.StandardOutput));
                         var stderr = Task.Factory.StartNew(() => Drain(child.StandardError));
                         child.WaitForExit();
+                        // Descendants can inherit these pipes. Close the owning job first so
+                        // a dead supervisor cannot leave log drains waiting on an orphan forever.
+                        job.Dispose();
                         Task.WaitAll(stdout, stderr);
                         Log("[launcher] Perry exited (" + child.ExitCode + ")");
                         return child.ExitCode;
