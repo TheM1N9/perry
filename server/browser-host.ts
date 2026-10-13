@@ -4,7 +4,7 @@ import type { BrowserRequest, BrowserState } from "../lib/browser-protocol";
 
 export async function browserStatus(scope: string, importEnabled: boolean): Promise<BrowserState> {
   const state = browser.browserControl(scope);
-  const result: BrowserState = { enabled: process.env.PERRY_BROWSER_VIEW === "1", importEnabled, state: state.error ? "disconnected" : "closed", identity: browser.identity(scope), tabs: [], loading: state.loading, error: state.error, dialog: state.dialog, upload: state.upload !== null, private: state.private, downloads: [...state.downloads.values()].slice(-30) };
+  const result: BrowserState = { enabled: process.env.PERRY_BROWSER_VIEW === "1", importEnabled, source: state.source, state: state.error ? "disconnected" : "closed", identity: browser.identity(scope), tabs: [], loading: state.loading, error: state.error, dialog: state.dialog, upload: state.upload !== null, private: state.private, downloads: [...state.downloads.values()].slice(-30) };
   if (!state.current) return result;
   try {
     result.tabs = (await browser.withBrowserView(scope, browser.hostTargets)).map(({ id, title, url }) => ({ id, title, url }));
@@ -24,6 +24,15 @@ export async function browserStatus(scope: string, importEnabled: boolean): Prom
 export async function controlBrowser(scope: string, request: BrowserRequest, importEnabled: boolean) {
   const state = browser.browserControl(scope);
   if (request.action === "status") return browserStatus(scope, importEnabled);
+  if (request.action === "connectChrome") {
+    if (!importEnabled) throw new Error("Open Perry locally to connect Chrome.");
+    if (state.ownerBusy || state.current || state.promise) throw new Error("Disconnect the current browser before connecting Chrome.");
+    state.controller = "owner"; state.private = true; state.epoch++; state.revision++; browser.saveBrowserControl(scope);
+    return browser.withOwnerBrowser(scope, async () => {
+      await browser.connectChrome();
+      return browserStatus(scope, importEnabled);
+    });
+  }
   if (request.action === "start") {
     if (state.error && state.current) await browser.withBrowserView(scope, async () => browser.closeBrowser());
     state.controller = "owner"; state.private = true; state.epoch++; state.revision++; browser.saveBrowserControl(scope);
@@ -82,6 +91,7 @@ export async function controlBrowser(scope: string, request: BrowserRequest, imp
       case "dialog": await browser.hostCommand("Page.handleJavaScriptDialog", { accept: request.accept, promptText: request.text }); state.dialog = null; break;
       case "privacy": state.private = request.private; browser.saveBrowserControl(scope); break;
       case "import":
+        if (state.source === "chrome") throw new Error("Use Perry's browser for Firefox imports.");
         if (!importEnabled) throw new Error("Session import is disabled on this connection.");
         return (await import("./browser-sessions")).importSessions(scope, request.identity, request.ticket, request.sites);
       case "sessions": return (await import("./browser-sessions")).listSessions(scope);

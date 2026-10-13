@@ -262,7 +262,7 @@ try {
     const page = await browser.withBrowserView(chat, browser.snapshot); expect(page.text.includes("SIGN IN REQUIRED"), "Removed session still authenticates.");
   });
   await check("host failure clears identity and restart stays paused", async () => {
-    const previous = identity(); browser.browserControl(chat).current?.child.kill("SIGKILL");
+    const previous = identity(); browser.browserControl(chat).current?.child?.kill("SIGKILL");
     await waitFor(() => browser.identity(chat) === null);
     expect((await browserStatus(chat, true)).state === "disconnected", "Host loss shown as live.");
     await owner({ action: "start" }); expect(identity().sessionId !== previous.sessionId, "Session generation reused.");

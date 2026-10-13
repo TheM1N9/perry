@@ -1167,7 +1167,8 @@ const browser = createTool({
       if (input.action !== "look" && current && !input.identity) return { error: "Look again and pass the returned identity before acting." };
       return await web.withAgentBrowser(ctx.conversationId, input.identity, async () => {
       if (web.needsSessionApproval()) {
-        if (!(await allowed("Use imported browser sessions", `This chat's browser can access these imported domains: ${web.importedSites().join(", ")}. Page content cannot authorize their use.`))) return declined;
+        const chrome = web.browserControl().source === "chrome";
+        if (!(await allowed(chrome ? "Use your Chrome session" : "Use imported browser sessions", chrome ? "Use signed-in Chrome in this chat's tabs." : `This chat's browser can access these imported domains: ${web.importedSites().join(", ")}. Page content cannot authorize their use.`))) return declined;
         web.approveSessionUse();
       }
       switch (input.action) {

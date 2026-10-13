@@ -21,6 +21,28 @@ Separate release flags: PERRY_BROWSER_VIEW=1 and PERRY_BROWSER_IMPORT=1. Import 
 
 ## Supported import boundary
 
+Chrome 144+ can now connect through its native remote-debugging consent bridge.
+Open `chrome://inspect/#remote-debugging` in Chrome, enable remote debugging,
+then choose **Connect Chrome** in Perry and accept Chrome's prompt. This uses
+the live signed-in profile without copying or decrypting its cookie database.
+Chrome opens fresh tabs for this chat; unrelated existing tabs are not exposed.
+Connect requires the same local owner gate as session import. Remote viewers
+cannot initiate it. The connection starts paused with agent capture blocked,
+and the browser tool requires session-use approval when automation resumes.
+
+**Disconnect Chrome** detaches Perry, restores emulation/file-chooser defaults
+in its tabs, and leaves Chrome and its sign-ins running. The connection is not
+silently restored after a server restart; the owner must connect again. Chrome
+keeps its ordinary download behavior. Firefox cookie import targets only
+Perry's separate browser, never the owner's Chrome profile. The compact
+**Connections** menu replaces the previous always-visible import instructions.
+
+Discovery reads only Chrome's `DevToolsActivePort` metadata, using the standard
+stable user data location. `PERRY_CHROME_USER_DATA_DIR` overrides that location
+for nonstandard installations; the dashboard cannot supply arbitrary paths or
+endpoints. The WebSocket endpoint is validated and always uses loopback.
+Reference: [Chrome's native connection guide](https://developer.chrome.com/docs/devtools/agents/use-cases/auto-connect).
+
 Firefox is the first adapter. Chromium/Safari protected databases are intentionally unsupported. Firefox cookies.sqlite is an OS-permission protected local SQLite database; Perry opens it read-only while Firefox is closed. No keychain extraction, entire-profile copy, passwords, extensions, history, localStorage, IndexedDB or background sync. Firefox session-only cookies may not be in the persisted database. Containers and partitioned cookies are reported unsupported, never flattened. Cookies are set through Chromium's supported CDP cookie interface and retain host/domain, path, Secure, HttpOnly, SameSite and expiry. Only Firefox cookie schemas 16 and 17 are accepted; both store expiry in milliseconds. Older/newer schemas are refused rather than guessed. Authentication is reported as requiring owner inspection, never inferred from successful cookie copying.
 
 References reviewed: [Mozilla cookie storage source](https://github.com/mozilla-firefox/firefox/blob/main/netwerk/cookie/CookiePersistentStorage.cpp), [Mozilla cookie definitions](https://github.com/mozilla-firefox/firefox/blob/main/netwerk/cookie/nsICookie.idl), [CDP Network](https://chromedevtools.github.io/devtools-protocol/tot/Network/), [CDP Input](https://chromedevtools.github.io/devtools-protocol/tot/Input/). Next.js route/client guides were read from the installed 16.3.6 package before implementation.

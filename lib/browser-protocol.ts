@@ -4,6 +4,7 @@ export const browserIdentity = z.object({ sessionId: z.string(), tabId: z.string
 export type BrowserIdentity = z.infer<typeof browserIdentity>;
 export const browserState = z.object({
   enabled: z.boolean(), importEnabled: z.boolean(),
+  source: z.enum(["perry", "chrome"]).default("perry"),
   state: z.enum(["closed", "live", "paused", "disconnected"]),
   identity: browserIdentity.nullable(),
   tabs: z.array(z.object({ id: z.string(), title: z.string(), url: z.string() })),
@@ -17,6 +18,7 @@ const point = { x: z.number().min(0).max(1280), y: z.number().min(0).max(900) };
 export const browserRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("status") }),
   z.object({ action: z.literal("start") }),
+  z.object({ action: z.literal("connectChrome") }),
   z.object({ action: z.literal("takeover") }),
   z.object({ action: z.literal("resume"), identity: browserIdentity }),
   z.object({ action: z.literal("close"), identity: browserIdentity }),

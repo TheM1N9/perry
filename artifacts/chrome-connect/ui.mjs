@@ -1,0 +1,76 @@
+/** Production dashboard journey with a disposable Chrome bridge. No owner profiles. */
+import assert from 'node:assert/strict';
+import { spawn, spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { pathToFileURL } from 'node:url';
+import { createServer } from 'node:http';
+const output = resolve(process.argv[2] ?? 'artifacts/chrome-connect/results');
+const fixture = JSON.parse(readFileSync(join(output, 'fixture.json'), 'utf8'));
+const library = process.env.PERRY_E2E_PLAYWRIGHT ?? join(homedir(), '.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
+const { chromium } = await import(pathToFileURL(library).href);
+const program = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const siteServer = createServer((_req,res)=>res.end('<title>Chrome test page</title><h1>Connected Chrome</h1><p>Disposable verification page</p><input aria-label="Test input">'));
+await new Promise(done=>siteServer.listen(0,'127.0.0.1',done));
+const testUrl = `http://127.0.0.1:${siteServer.address().port}`;
+const chrome = spawn(program, [`--user-data-dir=${fixture.chrome}`, '--remote-debugging-port=0', '--headless=new', '--no-first-run', 'about:blank'], { windowsHide: true, stdio:'ignore' });
+const browser = await chromium.launch({executablePath:program, headless:true});
+const checks = {};
+const check = (name, passed) => { checks[name]=!!passed; assert.ok(passed,name); console.log(`PASS ${name}`); };
+const page = await browser.newPage({viewport:{width:1440,height:1000}});
+try {
+  await page.addInitScript(key => localStorage.setItem('perry.dashboard.key',key),fixture.key);
+  await page.goto(`http://localhost:7386/chat/${fixture.chat}`);
+  await page.getByRole('button',{name:'Open workspace',exact:true}).click();
+  await page.getByRole('tab',{name:'Browser',exact:true}).click();
+  await page.getByRole('button',{name:'Connect Chrome',exact:true}).waitFor();
+  check('Chrome is a primary visible action',await page.getByRole('button',{name:'Connect Chrome',exact:true}).isVisible());
+  check('verbose import text and unsupported profiles removed',await page.getByText('Import selected login sessions',{exact:true}).count()===0 && await page.getByText('Protected browser profiles',{exact:false}).count()===0);
+  await page.screenshot({path:join(output,'desktop-before.png'),fullPage:true});
+  await page.getByRole('button',{name:'Connect Chrome',exact:true}).click();
+  await page.getByRole('button',{name:'Resume Perry',exact:true}).waitFor({timeout:20000});
+  check('production route connects real Chrome in owner control', await page.getByRole('status').filter({hasText:'Chrome · You control'}).count()>0);
+  await page.getByRole('textbox',{name:'Browser address',exact:true}).fill(testUrl);
+  await page.getByRole('button',{name:'Go to address',exact:true}).click();
+  await page.getByAltText('Live page: Chrome test page').waitFor({timeout:15000});
+  await page.getByRole('button',{name:'Browser actions',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Connections',exact:true}).click();
+  check('compact Chrome connection and private capture controls',await page.getByRole('button',{name:'Disconnect',exact:true}).isVisible() && await page.getByText('Hide agent screenshots',{exact:true}).isVisible());
+  check('unsupported browser selector not offered',await page.getByRole('combobox',{name:'Source browser profile'}).count()===0);
+  await page.getByRole('menu').waitFor({state:'hidden'});
+  await page.locator('aside[aria-label="Chat workspace"]').screenshot({path:join(output,'desktop-connected.png')});
+  await page.getByRole('button',{name:'Close connections',exact:true}).focus();
+  await page.keyboard.press('Enter');
+  check('connection controls are keyboard operable',await page.getByRole('button',{name:'Disconnect',exact:true}).count()===0);
+  await page.emulateMedia({colorScheme:'dark'});
+  await page.waitForFunction(()=>document.documentElement.classList.contains('dark'));
+  await page.locator('aside[aria-label="Chat workspace"]').screenshot({path:join(output,'desktop-dark.png')});
+  check('browser supports system dark mode',await page.locator('html').evaluate(el=>el.classList.contains('dark')));
+  await page.emulateMedia({colorScheme:'light'});
+  await page.waitForFunction(()=>!document.documentElement.classList.contains('dark'));
+  await page.getByRole('button',{name:'Resume Perry',exact:true}).click();
+  await page.getByRole('button',{name:'Pause & take over',exact:true}).waitFor();
+  check('explicit resume and takeover retain controller flow',await page.getByRole('textbox',{name:'Browser address',exact:true}).isDisabled());
+  await page.getByRole('button',{name:'Pause & take over',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});
+  // Resizing replaces the desktop panel with a drawer but preserves its open state.
+  await page.getByRole('tab',{name:'Browser',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Browser actions',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Connections',exact:true}).click();
+  check('mobile Chrome controls fit the drawer',await page.getByRole('button',{name:'Disconnect',exact:true}).isVisible() && await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.getByRole('menu').waitFor({state:'hidden'});
+  await page.getByAltText('Live page: Chrome test page').waitFor();
+  await page.screenshot({path:join(output,'mobile-connected.png'),fullPage:true});
+  await page.getByRole('button',{name:'Disconnect',exact:true}).click();
+  await page.getByRole('button',{name:'Connect Chrome',exact:true}).waitFor();
+  check('UI disconnect preserves Chrome',chrome.exitCode===null);
+  await page.screenshot({path:join(output,'mobile-disconnected.png'),fullPage:true});
+  checks.completed=true;
+} catch(error) { checks.completed=false; console.error(error); await page.screenshot({path:join(output,'ui-failure.png'),fullPage:true}); process.exitCode=1; }
+finally {
+  await browser.close();
+  siteServer.closeAllConnections(); siteServer.close();
+  if(chrome.pid) spawnSync('taskkill',['/PID',String(chrome.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});
+  writeFileSync(join(output,'ui-result.json'),JSON.stringify({checks,passed:checks.completed===true&&Object.values(checks).every(Boolean)},null,2));
+}
