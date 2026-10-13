@@ -1188,7 +1188,7 @@ const list_connectors = createTool({
   execute: async (
     ctx,
   ): Promise<{ configured: boolean; connectors: Connector[]; error?: string }> => {
-    return await ctx.runAction(internal.composio.connectors, {});
+    return await ctx.runAction(internal.connectors.list, {});
   },
 });
 
@@ -1214,7 +1214,7 @@ const find_action = createTool({
     ctx,
     input,
   ): Promise<SearchResult> => {
-    return await ctx.runAction(internal.composio.search, {
+    return await ctx.runAction(internal.connectors.search, {
       query: input.query,
       toolkits: input.toolkits,
     });
@@ -1238,8 +1238,8 @@ const run_action = createTool({
   execute: async (
     ctx,
     input,
-  ): Promise<{ ok: boolean; data?: unknown; error?: string }> => {
-    return await ctx.runAction(internal.composio.execute, {
+  ): Promise<{ ok: boolean; data?: unknown; next?: string; error?: string }> => {
+    return await ctx.runAction(internal.connectors.execute, {
       slug: input.slug,
       args: input.args ?? {},
     });

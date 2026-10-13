@@ -13,12 +13,14 @@ import * as codex from "../convex/codex";
 import * as compaction from "../convex/compaction";
 import * as composio from "../convex/composio";
 import * as connectorAccounts from "../convex/connectorAccounts";
+import * as connectors from "../convex/connectors";
 import * as contacts from "../convex/contacts";
 import * as conversations from "../convex/conversations";
 import * as crons from "../convex/crons";
 import * as dashboard from "../convex/dashboard";
 import * as engineUpdates from "../convex/engineUpdates";
 import * as engines from "../convex/engines";
+import * as github from "../convex/github";
 import * as history from "../convex/history";
 import * as http from "../convex/http";
 import * as ingest from "../convex/ingest";
@@ -96,12 +98,14 @@ export const modules: Record<string, Record<string, unknown>> = {
   "compaction": compaction,
   "composio": composio,
   "connectorAccounts": connectorAccounts,
+  "connectors": connectors,
   "contacts": contacts,
   "conversations": conversations,
   "crons": crons,
   "dashboard": dashboard,
   "engineUpdates": engineUpdates,
   "engines": engines,
+  "github": github,
   "history": history,
   "http": http,
   "ingest": ingest,
