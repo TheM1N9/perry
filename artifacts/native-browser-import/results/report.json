@@ -1,0 +1,33 @@
+{
+  "checks": {
+    "personal Chrome attachment is disabled": true,
+    "wrong owner key denied": true,
+    "remote native import denied": true,
+    "profile picker exposes metadata without credentials": true,
+    "own browser starts paused and private": true,
+    "cross-chat identity denied": true,
+    "unchecked consent denied": true,
+    "arbitrary profile denied": true,
+    "native helper migrates cookies and saved passwords": true,
+    "import response contains no credentials": true,
+    "import stays private and requires explicit resume": true,
+    "source cookie and password databases unchanged": true,
+    "own browser authenticates with imported cookie": true,
+    "password is encrypted in destination native store": true,
+    "native password manager recognizes migrated login": true,
+    "native password autofill uses migrated password": true,
+    "hostile password echo is redacted from tool text": true,
+    "browser uses only Perry's dedicated profile": true,
+    "imported sign-in survives independent browser restart": true,
+    "corrupt protected data fails before destination replacement": true,
+    "failed import preserves destination passwords": true,
+    "failed import preserves existing signed-in session": true,
+    "host restart recovers interrupted category replacement": true,
+    "completed": true
+  },
+  "passed": true,
+  "windows": true,
+  "nativeDpapi": true,
+  "appBound": "Separate UAC verification required",
+  "ownerCredentialsRead": false
+}

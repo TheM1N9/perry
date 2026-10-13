@@ -1,0 +1,10 @@
+{
+  "checks": {
+    "selected history and extension categories imported": true,
+    "source history remains unchanged": true,
+    "native browser loads extension with preserved identity": true,
+    "destination contains selected history": true
+  },
+  "passed": true,
+  "ownerCredentialsRead": false
+}

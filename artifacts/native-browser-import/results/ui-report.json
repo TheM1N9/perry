@@ -1,0 +1,16 @@
+{
+  "checks": {
+    "personal Chrome connection is removed": true,
+    "compact profile and category dialog is present": true,
+    "passwords and cookies selected explicitly": true,
+    "history and extensions are opt in": true,
+    "import requires Windows and replacement consent": true,
+    "empty password and cookie categories are disabled and unchecked": true,
+    "dark mode preserves import controls": true,
+    "mobile import dialog fits": true,
+    "keyboard consent enables import": true,
+    "production native import finishes paused": true,
+    "completed": true
+  },
+  "passed": true
+}

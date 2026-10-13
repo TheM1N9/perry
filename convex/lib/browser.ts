@@ -131,13 +131,15 @@ async function launch(): Promise<Tab> {
   state.source = "perry";
   state.id = randomUUID();
   const profile = profileDirectory(state.scope);
-  const path = findBrowser();
-  if (!path) throw new Error("There is no Chrome, Edge or Chromium on this computer for Perry's browser. Install Chrome, or set PERRY_BROWSER_PATH.");
+  (await import("../../server/browser-import")).recoverNativeImport(profile);
+  const path = await (await import("../../server/browser-runtime")).browserExecutable();
   mkdirSync(profile, { recursive: true, mode: 0o700 });
   rmSync(join(profile, "DevToolsActivePort"), { force: true });
+  let extensions: string[] = [];
+  try { extensions = z.array(z.string().regex(/^Default\/PerryExtensions\/[a-p]{32}\/[\d._]+$/)).parse(JSON.parse(readFileSync(join(profile, "perry-extensions.json"), "utf8"))).map(path => join(profile, path)); } catch {}
   const child = spawn(/*turbopackIgnore: true*/ path, [
     `--user-data-dir=${profile}`, "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check",
-    "--window-size=1280,900", ...(process.env.PERRY_BROWSER_HEADED === "1" ? [] : ["--headless=new"]), "about:blank",
+    "--window-size=1280,900", ...(extensions.length ? [`--load-extension=${extensions.join(",")}`] : []), ...(process.env.PERRY_BROWSER_HEADED === "1" ? [] : ["--headless=new"]), "about:blank",
   ], { stdio: "ignore", windowsHide: true });
   child.on("error", () => {});
   let port = 0;
@@ -403,7 +405,8 @@ export async function snapshot(): Promise<Snapshot> {
   const result = await evaluate<Snapshot>(current, SNAPSHOT);
   // A hostile page can echo cookies into text. Redact all cookie values before a model/trace sees them.
   const stored = z.object({ cookies: z.array(z.object({ value: z.string() })) }).parse(await send(current, "Storage.getCookies"));
-  const scrub = (value: string) => stored.cookies.reduce((text, cookie) => cookie.value ? text.replaceAll(cookie.value, "[browser credential]") : text, value);
+  const passwords = control().source === "perry" ? await (await import("../../server/browser-import-native")).ownPasswordValues(profileDirectory(control().scope)) : [];
+  const scrub = (value: string) => [...stored.cookies.map(cookie => cookie.value), ...passwords].reduce((text, secret) => secret ? text.replaceAll(secret, "[browser credential]") : text, value);
   return { url: scrub(result.url), title: scrub(result.title), text: scrub(result.text), elements: result.elements.map((element) => ({ ...element, label: scrub(element.label), ...(element.href ? { href: scrub(element.href) } : {}) })), identity: identity() ?? undefined };
 }
 

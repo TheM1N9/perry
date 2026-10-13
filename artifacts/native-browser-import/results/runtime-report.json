@@ -1,0 +1,7 @@
+{
+  "checks": {
+    "managedEngine": true,
+    "dedicatedChromeForTesting": true
+  },
+  "passed": true
+}
