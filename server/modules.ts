@@ -8,6 +8,7 @@ import * as archive from "../convex/archive";
 import * as assistant from "../convex/assistant";
 import * as brain from "../convex/brain";
 import * as brainMap from "../convex/brainMap";
+import * as browserView from "../convex/browserView";
 import * as channels from "../convex/channels";
 import * as codex from "../convex/codex";
 import * as compaction from "../convex/compaction";
@@ -98,6 +99,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "assistant": assistant,
   "brain": brain,
   "brainMap": brainMap,
+  "browserView": browserView,
   "channels": channels,
   "codex": codex,
   "compaction": compaction,

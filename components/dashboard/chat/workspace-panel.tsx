@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Component, useEffect, useState, type ReactNode } from "react";
 import { z } from "zod";
-import { ArrowLeftIcon, ChevronRightIcon, DownloadIcon, MoreHorizontalIcon, SlidersHorizontalIcon, EyeOffIcon, FileIcon, Grid2X2Icon, ListTreeIcon, PinIcon, PlusIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, ChevronRightIcon, DownloadIcon, MoreHorizontalIcon, SlidersHorizontalIcon, Maximize2Icon, Minimize2Icon, EyeOffIcon, FileIcon, Grid2X2Icon, ListTreeIcon, PinIcon, PlusIcon, XIcon } from "lucide-react";
 import { useConnection, useConvex, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -73,6 +73,7 @@ export function WorkspacePanel({ conversationId, project, open, onOpenChange, br
   const client = useConvex();
   const mobile = useIsMobile();
   const [width, setWidth] = useState(380);
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     try { const saved = Number(localStorage.getItem("perry.workspace.width")); if (saved >= 300 && saved <= 640) setWidth(saved); } catch {}
   }, []);
@@ -81,10 +82,10 @@ export function WorkspacePanel({ conversationId, project, open, onOpenChange, br
     setWidth(next);
     try { localStorage.setItem("perry.workspace.width", String(next)); } catch {}
   }
-  const content = <WorkspaceBoundary key={conversationId ?? "new"} onRetry={() => client.refresh()} onClose={() => onOpenChange(false)}><PanelContent conversationId={conversationId} project={project} browser={browser} onClose={() => onOpenChange(false)} /></WorkspaceBoundary>;
-  if (mobile) return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent showCloseButton={false} className="w-full max-w-full gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-full"><SheetTitle className="sr-only">Chat workspace</SheetTitle><SheetDescription className="sr-only">Files and work associated with this chat.</SheetDescription>{content}</SheetContent></Sheet>;
+  const content = <WorkspaceBoundary key={conversationId ?? "new"} onRetry={() => client.refresh()} onClose={() => onOpenChange(false)}><PanelContent conversationId={conversationId} project={project} browser={browser} expanded={expanded} onExpand={() => setExpanded(!expanded)} onClose={() => onOpenChange(false)} /></WorkspaceBoundary>;
+  if (mobile) return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent showCloseButton={false} className="w-full max-w-full gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-full motion-reduce:transition-none"><SheetTitle className="sr-only">Chat workspace</SheetTitle><SheetDescription className="sr-only">Files, work and the live browser associated with this chat.</SheetDescription>{content}</SheetContent></Sheet>;
   if (!open) return null;
-  return <aside aria-label="Chat workspace" className="relative flex h-full min-h-0 shrink-0 flex-col border-l bg-background" style={{ width: `min(${width}px, 50%)` }}>
+  return <aside aria-label="Chat workspace" className="relative flex h-full min-h-0 shrink-0 flex-col border-l bg-background" style={{ width: expanded ? "min(65%, calc(100% - 340px))" : `min(${width}px, 50%)` }}>
     <div role="separator" aria-label="Resize workspace" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={640} aria-valuenow={width} tabIndex={0}
       className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize focus-visible:bg-primary/20"
       onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); resize(width + (event.key === "ArrowLeft" ? 20 : -20)); } }}
@@ -94,10 +95,13 @@ export function WorkspacePanel({ conversationId, project, open, onOpenChange, br
   </aside>;
 }
 
-function PanelContent({ conversationId, project, browser, onClose }: {
-  conversationId: Id<"conversations"> | null; project?: { id: Id<"projects">; name: string }; browser?: ReactNode; onClose: () => void;
+function PanelContent({ conversationId, project, browser, expanded, onExpand, onClose }: {
+  conversationId: Id<"conversations"> | null; project?: { id: Id<"projects">; name: string }; browser?: ReactNode; expanded: boolean; onExpand: () => void; onClose: () => void;
 }) {
-  const [tab, setTab] = useState("files");
+  const tabKey = `perry.workspace.tab.${conversationId ?? "new"}`;
+  const [tab, setTabValue] = useState("files");
+  useEffect(() => { try { const saved = localStorage.getItem(tabKey); setTabValue(saved === "work" || (saved === "browser" && browser) ? saved : "files"); } catch {} }, [tabKey, Boolean(browser)]);
+  const setTab = (value: string) => { setTabValue(value); try { localStorage.setItem(tabKey, value); } catch {} };
   const connection = useConnection();
   const [scope, setScope] = useState<Scope>("chat");
   const scopeKey = `perry.workspace.scope.${conversationId ?? "new"}`;
@@ -112,6 +116,7 @@ function PanelContent({ conversationId, project, browser, onClose }: {
         <TabsTrigger value="work" className="px-2">Work</TabsTrigger>
         {browser && <TabsTrigger value="browser" className="px-2">Browser</TabsTrigger>}
       </TabsList>
+      <Button size="icon-sm" variant="ghost" className="hidden md:inline-flex" aria-label={expanded ? "Restore workspace width" : "Expand workspace"} onClick={onExpand}>{expanded ? <Minimize2Icon /> : <Maximize2Icon />}</Button>
       <Button size="icon-sm" variant="ghost" aria-label="Close workspace" onClick={onClose}><XIcon /></Button>
     </header>
     {connection !== "connected" && <p role="status" className="bg-muted px-3 py-2 text-xs">{connection === "connecting" ? "Connecting to Perry…" : "Reconnecting. Showing the last received state."}</p>}

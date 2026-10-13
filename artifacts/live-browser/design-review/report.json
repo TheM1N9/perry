@@ -1,0 +1,29 @@
+{
+  "reviewedAt": "2026-10-12T22:33:42.566227+00:00",
+  "issue": 286,
+  "method": "Manual browser UI journeys through Codex computer use; disposable local data. Existing feature E2E reports remain separate.",
+  "checks": [
+    "Open real Chromium in paused state",
+    "Navigate through styled address bar",
+    "Explicit resume disables manual navigation; takeover restores it",
+    "Expanded desktop workspace",
+    "Return to chat preserves paused session and restores focus",
+    "Reopen retains Browser tab and session",
+    "390px mobile browser drawer",
+    "Styled Firefox profile selector with unsupported choices disabled",
+    "Synthetic site preview; no sites preselected for a different current domain",
+    "Selecting a site still requires confirmation; import stays disabled",
+    "Mobile site metadata wraps without splitting words",
+    "Import unavailable copy with rollout flag off"
+  ],
+  "screenshots": [
+    "desktop-browser.jpg",
+    "mobile-browser.jpg",
+    "mobile-import.jpg"
+  ],
+  "fixture": "Browser visits public example.com. Import preview uses a synthetic SQLite schema-17 profile with two fake example.test domains; no owner profile or account credentials were read or imported.",
+  "limitations": [
+    "Real installed Firefox compatibility remains unverified on this macOS host; keep import disabled until that check passes.",
+    "This styling review did not repeat the existing protocol E2E suite."
+  ]
+}
