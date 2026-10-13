@@ -38,6 +38,7 @@ import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
 import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { MessageRow, PendingRow, ReplyInProgress } from "./message";
+import { InteractiveAnswers } from "./interactive-answer";
 import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
 
 type ChatId = Id<"conversations">;
@@ -653,7 +654,7 @@ export function ChatScreen() {
               <AlertTitle>Choose the engine {assistant} thinks with</AlertTitle>
               <AlertDescription>{assistant} doesn&apos;t pick one for you. Choose a default for every chat, or pick a model for this one in the box below.</AlertDescription>
               <AlertAction>
-                <Button size="sm" render={<Link href="/settings/engines" />}>Choose</Button>
+                <Button size="sm" nativeButton={false} render={<Link href="/settings/engines" />}>Choose</Button>
               </AlertAction>
             </Alert>
           )}
@@ -683,7 +684,7 @@ export function ChatScreen() {
                 </div>
               )}
               {missing && (
-                <EmptyState mascot title="This chat isn't here" action={<Button size="sm" render={<Link href="/chat" />}>New chat</Button>}>
+                <EmptyState mascot title="This chat isn't here" action={<Button size="sm" nativeButton={false} render={<Link href="/chat" />}>New chat</Button>}>
                   It may have been deleted.
                 </EmptyState>
               )}
@@ -714,6 +715,7 @@ export function ChatScreen() {
                 />
               ))}
               {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
+              {!missing && <InteractiveAnswers conversationId={selectedId} />}
               {(waiting || liveWork) && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} approving={here.length > 0} />}
               {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
               {failedWork && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed" /></div>}
@@ -834,7 +836,7 @@ function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, o
   const router = useRouter();
   return (
     <>
-      <Button variant="ghost" size="icon-sm" className="text-muted-foreground md:hidden" aria-label="New chat" render={<Link href="/chat" />}>
+      <Button variant="ghost" size="icon-sm" className="text-muted-foreground md:hidden" aria-label="New chat" nativeButton={false} render={<Link href="/chat" />}>
         <SquarePenIcon />
       </Button>
       <DropdownMenu>

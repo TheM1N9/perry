@@ -83,6 +83,9 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   create_note: (input) => ({ label: typeof input.title === "string" ? `Writing “${short(input.title, 30)}”` : "Writing a note", pose: "typing" }),
   update_note: () => ({ label: "Updating a note", pose: "typing" }),
   read_page: (input) => ({ label: `Reading ${host(input.url)}`, pose: "reading" }),
+  interactive_create: () => ({ label: "Preparing an interactive answer", pose: "typing" }),
+  interactive_read: () => ({ label: "Reading the selected inputs", pose: "reading" }),
+  interactive_update: () => ({ label: "Revising the interactive answer", pose: "typing" }),
   browser: (input) => {
     switch (input.action) {
       case "open": return { label: `Opening ${host(input.url)}`, pose: "reading" };

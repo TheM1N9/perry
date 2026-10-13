@@ -26,6 +26,7 @@ import type * as history from "../history.js";
 import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as installation from "../installation.js";
+import type * as interactive from "../interactive.js";
 import type * as jobs from "../jobs.js";
 import type * as lib_activity from "../lib/activity.js";
 import type * as lib_agent from "../lib/agent.js";
@@ -113,6 +114,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   ingest: typeof ingest;
   installation: typeof installation;
+  interactive: typeof interactive;
   jobs: typeof jobs;
   "lib/activity": typeof lib_activity;
   "lib/agent": typeof lib_agent;
