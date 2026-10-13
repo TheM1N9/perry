@@ -1,10 +1,11 @@
 /** Production UI, disposable profiles, native helper with fake credentials. */
 import assert from 'node:assert/strict';
-import {readFileSync,writeFileSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync,copyFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const output=resolve('artifacts/native-browser-import/results'),fixture=JSON.parse(readFileSync(join(output,'fixture.json'),'utf8'));
+const local=JSON.parse(readFileSync(join(fixture.root,'Local State'),'utf8'));local.profile.info_cache['Profile 1']={name:'Empty category fixture'};mkdirSync(join(fixture.root,'Profile 1'),{recursive:true});copyFileSync(join(fixture.root,'Default','History'),join(fixture.root,'Profile 1','History'));writeFileSync(join(fixture.root,'Local State'),JSON.stringify(local));
 const {chromium}=await import(pathToFileURL(process.env.PERRY_E2E_PLAYWRIGHT??join(homedir(),'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs')).href);
 const browser=await chromium.launch({executablePath:fixture.browser,headless:true}),page=await browser.newPage({viewport:{width:1440,height:1000}}),checks={};
 const check=(name,pass)=>{checks[name]=!!pass;assert.ok(pass,name);console.log(`PASS ${name}`);};
@@ -20,6 +21,9 @@ try{
  check('passwords and cookies selected explicitly',await dialog.getByRole('switch',{name:'Saved passwords',exact:true}).getAttribute('aria-checked')==='true'&&await dialog.getByRole('switch',{name:'Cookies',exact:true}).getAttribute('aria-checked')==='true');
  check('history and extensions are opt in',await dialog.getByRole('switch',{name:'Browsing history',exact:true}).getAttribute('aria-checked')==='false'&&await dialog.getByRole('switch',{name:'Extensions',exact:true}).getAttribute('aria-checked')==='false');
  check('import requires Windows and replacement consent',await dialog.getByRole('button',{name:'Import',exact:true}).isDisabled());
+ const originalProfile=await dialog.getByRole('combobox').innerText();await dialog.getByRole('combobox').click();await page.getByRole('option',{name:'Google Chrome · Empty category fixture',exact:true}).click();
+ check('empty password and cookie categories are disabled and unchecked',await dialog.getByRole('switch',{name:'Saved passwords',exact:true}).getAttribute('aria-checked')==='false'&&await dialog.getByRole('switch',{name:'Cookies',exact:true}).getAttribute('aria-checked')==='false'&&await dialog.getByRole('switch',{name:'Saved passwords',exact:true}).isDisabled());
+ await dialog.getByRole('combobox').click();await page.getByRole('option',{name:originalProfile,exact:true}).click();
  await dialog.screenshot({path:join(output,'import-light.png')});
  await page.emulateMedia({colorScheme:'dark'});await page.waitForFunction(()=>document.documentElement.classList.contains('dark'));await dialog.screenshot({path:join(output,'import-dark.png')});
  check('dark mode preserves import controls',await dialog.getByRole('button',{name:'Import',exact:true}).isVisible());

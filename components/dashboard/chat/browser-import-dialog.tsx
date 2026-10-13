@@ -29,11 +29,12 @@ export function BrowserImportDialog({ open, onOpenChange, state, call, apply }: 
     return () => { cancelled = true; };
   }, [open, call]);
   const source = profiles.find(item => item.id === profile);
+  const availableChoices: NativeImportChoices = { cookies: choices.cookies && !!source?.cookies, passwords: choices.passwords && !!source?.passwords, history: choices.history && !!source?.history, extensions: choices.extensions && !!source?.extensions };
   const rows = [{ name: "Saved passwords", key: "passwords", icon: KeyRoundIcon }, { name: "Cookies", key: "cookies", icon: CookieIcon }, { name: "Browsing history", key: "history", icon: HistoryIcon }, { name: "Extensions", key: "extensions", icon: PuzzleIcon }] as const;
   async function importData() {
     if (!state?.identity) return;
     setBusy(true); setError("");
-    try { const next = result.parse(await call({ action: "nativeImport", identity: state.identity, profileId: profile, choices, confirmed: true })); apply(next.state); toast.success(`Imported ${Object.entries(next.imported).filter(([key]) => choices[key as keyof NativeImportChoices]).map(([key, count]) => `${count} ${key === "history" ? "history entries" : key}`).join(", ")}.`); onOpenChange(false); }
+    try { const next = result.parse(await call({ action: "nativeImport", identity: state.identity, profileId: profile, choices: availableChoices, confirmed: true })); apply(next.state); toast.success(`Imported ${Object.entries(next.imported).filter(([key]) => availableChoices[key as keyof NativeImportChoices]).map(([key, count]) => `${count} ${key === "history" ? "history entries" : key}`).join(", ")}.`); onOpenChange(false); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Import failed."); }
     finally { setBusy(false); }
   }
@@ -48,7 +49,7 @@ export function BrowserImportDialog({ open, onOpenChange, state, call, apply }: 
       <p className="text-xs text-muted-foreground">Close Google Chrome before importing.</p>
       <div className="divide-y rounded-lg border px-3">{rows.map(({ name, key, icon: Icon }) => <label key={key} className="flex items-center gap-3 py-3">
         <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden /><span className="flex-1"><span id={`browser-import-${key}`}>{name}</span>{key === "extensions" && <InfoTip>Imports supported Manifest V3 extensions with a preserved identity. Their permissions apply inside Perry’s browser.</InfoTip>}</span>
-        <span className="text-xs tabular-nums text-muted-foreground">{source?.[key] ?? 0}</span><Switch aria-labelledby={`browser-import-${key}`} checked={choices[key]} disabled={busy || !source?.[key]} onCheckedChange={checked => { setChoices(value => ({ ...value, [key]: checked })); setConfirmed(false); }} />
+        <span className="text-xs tabular-nums text-muted-foreground">{source?.[key] ?? 0}</span><Switch aria-labelledby={`browser-import-${key}`} checked={availableChoices[key]} disabled={busy || !source?.[key]} onCheckedChange={checked => { setChoices(value => ({ ...value, [key]: checked })); setConfirmed(false); }} />
       </label>)}</div>
       <label className="flex items-start gap-2 text-xs text-muted-foreground"><Checkbox className="mt-0.5" checked={confirmed} disabled={busy} onCheckedChange={checked => setConfirmed(checked === true)} /><span>Replace selected data in Perry and allow Windows approval.<InfoTip>Protected credentials may require administrator approval. Your source profile stays unchanged.</InfoTip></span></label>
       {error && <p role="alert" className="break-words text-xs text-destructive">{error}</p>}
