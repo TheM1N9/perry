@@ -225,10 +225,12 @@ export async function selectHostTab(id: string) {
   let current = state.connections.get(id);
   if (!current) {
     const base = await tab();
-    current = control().source === "chrome" ? await attachChromeTab(control(), id, base.port)
-      : Object.assign(await connect(target.webSocketDebuggerUrl!), { targetId: id, child: base.child, port: base.port, idle: null });
+    if (state.source === "chrome") current = await attachChromeTab(state, id, base.port);
+    else {
+      current = Object.assign(await connect(target.webSocketDebuggerUrl!), { targetId: id, child: base.child, port: base.port, idle: null });
+      await prepareTab(current, state);
+    }
     state.connections.set(id, current);
-    await prepareTab(current, state);
   }
   if (state.current?.idle) clearTimeout(state.current.idle);
   state.current = current;
