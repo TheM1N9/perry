@@ -26,6 +26,9 @@ import { beingNamed, cancelTitle, requestTitle } from "./titles";
 import { watchProblem } from "./work";
 import { describeStep, STARTING, summarize, WAITING, WRITING, type Step } from "./lib/activity";
 import { pictureOf, stepCard, type StepCard } from "./lib/steps";
+import { diagnostics } from "./lib/internet";
+import { recheckInternetConnections } from "./composio";
+import { findBrowser } from "./lib/browser";
 
 /**
  * Everything the web dashboard is allowed to do.
@@ -1769,6 +1772,16 @@ export const revokeRunner = mutation({
 });
 
 // --- Connected accounts --------------------------------------------------
+
+export const getInternetStatus = action({
+  args: { key: vKey, recheck: v.optional(v.boolean()) },
+  handler: async (ctx, args): Promise<ReturnType<typeof diagnostics>> => {
+    assertDashboardKey(args.key);
+    if (args.recheck) recheckInternetConnections();
+    const configured = Boolean(await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" }));
+    return diagnostics(configured, Boolean(findBrowser()));
+  },
+});
 
 export const getConnectors = action({
   args: { key: vKey },

@@ -26,6 +26,7 @@ import * as http from "../convex/http";
 import * as ingest from "../convex/ingest";
 import * as installation from "../convex/installation";
 import * as interactive from "../convex/interactive";
+import * as internet from "../convex/internet";
 import * as jobs from "../convex/jobs";
 import * as lib_activity from "../convex/lib/activity";
 import * as lib_agent from "../convex/lib/agent";
@@ -39,6 +40,7 @@ import * as lib_embed from "../convex/lib/embed";
 import * as lib_engines from "../convex/lib/engines";
 import * as lib_errors from "../convex/lib/errors";
 import * as lib_graph from "../convex/lib/graph";
+import * as lib_internet from "../convex/lib/internet";
 import * as lib_library from "../convex/lib/library";
 import * as lib_notes from "../convex/lib/notes";
 import * as lib_pages from "../convex/lib/pages";
@@ -114,6 +116,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "ingest": ingest,
   "installation": installation,
   "interactive": interactive,
+  "internet": internet,
   "jobs": jobs,
   "lib/activity": lib_activity,
   "lib/agent": lib_agent,
@@ -127,6 +130,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/engines": lib_engines,
   "lib/errors": lib_errors,
   "lib/graph": lib_graph,
+  "lib/internet": lib_internet,
   "lib/library": lib_library,
   "lib/notes": lib_notes,
   "lib/pages": lib_pages,

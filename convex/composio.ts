@@ -1,9 +1,13 @@
 "use node";
 
-import { Composio } from "@composio/core";
+import { Composio, ToolRouterSession } from "@composio/core";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction } from "./_generated/server";
+import type { ToolCtx } from "./lib/agent";
+import { z } from "zod";
+import { describeError } from "./lib/errors";
+import { DEADLINE_MS, InternetError, publicUrl, type ConnectedRead, type InternetFailure, type InternetRequest, type Platform } from "./lib/internet";
 
 /**
  * Assistant's hands on your accounts, through Composio.
@@ -421,6 +425,126 @@ export const execute = internalAction({
     }
   },
 });
+
+const INTERNET_TOOLKITS: Partial<Record<Platform, string>> = { github: "github", youtube: "youtube", reddit: "reddit", x: "twitter", instagram: "instagram", linkedin: "linkedin" };
+const READ_OPERATION = /_(GET|LIST|FETCH|SEARCH|FIND|READ|RETRIEVE|QUERY|COUNT|CHECK|DESCRIBE|VIEW|LOOKUP)(_|$)/i;
+const UNSAFE_OPERATION = /(?:SECRET|TOKEN|COOKIE|PASSWORD|CREDENTIAL|EXPORT|DOWNLOAD|EXECUTE|PROXY|INSTALL|PURCHASE|CREATE|UPDATE|DELETE|SEND|PUBLISH)(?:_|$)/i;
+const accountCache = new Map<string, { at: number; accounts: ConnectedRead["accounts"]; truncated: boolean }>();
+export function recheckInternetConnections() { accountCache.clear(); }
+
+/** SDK models share this native client; internet reads own retries, deadlines and sanitized diagnostics. */
+class InternetClient extends Composio {
+  constructor(apiKey: string) {
+    super({ apiKey, allowTracking: false, disableVersionCheck: true });
+    this.client.maxRetries = 0;
+    this.client.timeout = DEADLINE_MS;
+    this.client.logLevel = "off";
+  }
+}
+
+/** SDK errors may wrap the HTTP error; classify it without exposing provider messages or headers. */
+function internetFailure(error: unknown): InternetFailure {
+  if (error instanceof InternetError) return error.failure;
+  const described = describeError(error);
+  let cause = error;
+  let status: number | undefined;
+  let retryAfter: string | null = null;
+  for (let depth = 0; cause && typeof cause === "object" && depth < 4; depth++) {
+    const http = z.object({ status: z.number().optional(), statusCode: z.number().optional() }).safeParse(cause);
+    if (http.success) status ??= http.data.status ?? http.data.statusCode;
+    if ("headers" in cause && cause.headers instanceof Headers) retryAfter ??= cause.headers.get("retry-after");
+    cause = "cause" in cause ? cause.cause : undefined;
+  }
+  const text = error instanceof Error ? error.message : String(error);
+  const code = described.id === "account-auth-expired" ? "expired_auth" : status === 429 || /\b429\b|rate.?limit/i.test(text) ? "rate_limited" : status === 403 || /\b403\b|forbidden/i.test(text) ? "forbidden" : status === 401 || /\b401\b|unauthori[sz]ed/i.test(text) ? "auth_required" : error instanceof z.ZodError ? "malformed" : "unavailable";
+  const retryTime = retryAfter ? Number.isFinite(Number(retryAfter)) ? Date.now() + Math.max(0, Number(retryAfter)) * 1000 : Date.parse(retryAfter) : NaN;
+  return { code, message: "The selected connected read failed; no other account or public substitute was tried.", repair: code === "expired_auth" || code === "auth_required" ? "Reconnect the affected account in Apps & skills." : code === "rate_limited" ? "Wait for the provider's rate limit to reset." : "Check the selected account's permission or the current discovered input schema.", ...(Number.isFinite(retryTime) ? { retryAt: new Date(retryTime).toISOString() } : {}) };
+}
+
+/** Read-only discovery and execution, pinned to an explicitly selected account. No connection setup or fallback. */
+export async function internetRead(ctx: ToolCtx, request: InternetRequest, platform: Platform, signal: AbortSignal): Promise<ConnectedRead> {
+  const toolkit = INTERNET_TOOLKITS[platform];
+  const empty: ConnectedRead = { state: "setup_required", actions: [], accounts: [], repair: "Use a public supported operation, or connect the relevant account in Apps & skills." };
+  if (!toolkit) return empty;
+  const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
+  if (!apiKey) return empty;
+  try {
+    const composio = new InternetClient(apiKey);
+    let cached = accountCache.get(toolkit);
+    if (!cached || Date.now() - cached.at > 60_000 || request.connector) {
+      const accounts: ConnectedRead["accounts"] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < 3; page++) {
+        const listed = await composio.connectedAccounts.list({ userIds: [USER_ID], toolkitSlugs: [toolkit], limit: 100, ...(cursor ? { cursor } : {}) }, { signal });
+        accounts.push(...listed.items.map((item) => ({ id: item.id, status: item.status })));
+        cursor = listed.nextCursor ?? undefined;
+        if (!cursor) break;
+      }
+      cached = { at: Date.now(), accounts, truncated: Boolean(cursor) }; accountCache.set(toolkit, cached);
+    }
+    const checked = { accounts: cached.accounts, accountsTruncated: cached.truncated, checkedAt: new Date(cached.at).toISOString(), cacheAgeMs: Date.now() - cached.at };
+    if (request.connector && !cached.accounts.some((a) => a.id === request.connector?.accountId && a.status === "ACTIVE")) {
+      accountCache.delete(toolkit);
+      const absent = !cached.accounts.some((a) => a.id === request.connector?.accountId);
+      return { ...empty, ...checked, state: absent && cached.truncated ? "degraded" : "expired_auth", repair: absent && cached.truncated ? "The selected account was not in the first 300 accounts. Account coverage is incomplete; inspect it in Apps & skills." : "The selected account is unavailable or no longer active. Recheck that account in Apps & skills; do not switch accounts automatically." };
+    }
+    if (!cached.accounts.some((a) => a.status === "ACTIVE")) return { ...empty, ...checked, state: cached.truncated ? "degraded" : cached.accounts.length ? "expired_auth" : "setup_required", repair: cached.truncated ? "Account coverage is incomplete; inspect accounts in Apps & skills." : cached.accounts.length ? "Reconnect the affected account in Apps & skills." : empty.repair };
+    const s = await composio.sessions.create(USER_ID, {
+      toolkits: [toolkit], tags: ["readOnlyHint"], manageConnections: false,
+      workbench: { enable: false },
+      multiAccount: { enable: true, requireExplicitSelection: true },
+      ...(request.connector ? { connectedAccounts: { [toolkit]: request.connector.accountId } } : {}),
+    }, { signal });
+    // The SDK's Session interface omits trailing cancellation options; its concrete public class supports them.
+    if (!(s instanceof ToolRouterSession)) throw new Error("Unsupported connected session implementation.");
+    const query = `Read-only ${request.operation}: ${"query" in request ? request.query : request.url}`;
+    const found = await s.search({ query, toolkits: [toolkit] }, { signal });
+    if (!found.success || found.error) {
+      accountCache.delete(toolkit);
+      return { ...empty, ...checked, state: "degraded", error: internetFailure(new Error(found.error ?? "Discovery failed")), repair: "Connected operation discovery failed. Recheck later; this is not evidence that the account has no such operation." };
+    }
+    if (JSON.stringify(found.toolSchemas).length > 200_000) return { ...empty, ...checked, state: "degraded", error: { code: "malformed", message: "Discovered schemas exceeded the 200 KB limit.", repair: "Narrow the requested operation." } };
+    const slugs = [...new Set(found.results.flatMap((r) => r.primaryToolSlugs))].sort();
+    const matchesOperation = (slug: string) => request.operation === "comments" ? /COMMENT|REPL(Y|IES)|THREAD/i.test(slug)
+      : request.operation === "transcript" ? /TRANSCRIPT|CAPTION/i.test(slug)
+      : request.operation === "search" ? /SEARCH|QUERY|FIND/i.test(slug) : true;
+    const actions = slugs.filter((slug) => READ_OPERATION.test(slug) && !UNSAFE_OPERATION.test(slug) && matchesOperation(slug) && found.toolSchemas[slug]?.toolkit === toolkit)
+      .slice(0, 10).map((slug) => ({ slug, description: found.toolSchemas[slug]?.description?.slice(0, 400), inputSchema: found.toolSchemas[slug]?.inputSchema }));
+    const discovery: ConnectedRead = { state: "available", ...checked, actions };
+    if (!request.connector) return { ...discovery, repair: "Select the intended account ID, then call again with an exact discovered slug and arguments matching its schema. Existing configured-plan usage applies." };
+    const selected = actions.find((a) => a.slug === request.connector?.slug);
+    if (!selected) return { ...discovery, error: { code: "policy", message: "That operation is not in current read-only discovery for this request.", repair: "Use a returned read operation and the same account; writes and secret access use their existing approval boundary." } };
+    const schema = z.object({ type: z.literal("object") }).loose().parse(selected.inputSchema);
+    // Zod 4's native JSON Schema reader validates current provider arguments, rather than a hand-written validator.
+    const input = z.fromJSONSchema(schema);
+    const args = z.record(z.string(), z.unknown()).parse(input.parse(request.connector.args));
+    const serialized = JSON.stringify(args);
+    if (serialized.length > 12_000 || /"[^"\n]*(?:token|password|cookie|secret|credential|authorization|api[_-]?key|connected_account|account_id)[^"\n]*"\s*:/i.test(serialized)) {
+      return { ...discovery, error: { code: "policy", message: "Credentials and account overrides are not accepted as adapter arguments.", repair: "Use the selected connected account and its discovered read schema." } };
+    }
+    for (const [key, value] of Object.entries(args)) {
+      if (/^(limit|max_results|maxResults|page_size|per_page)$/i.test(key) && typeof value === "number") args[key] = Math.min(request.limit, Math.max(1, value));
+    }
+    input.parse(args);
+    for (const value of serialized.matchAll(/https?:[^"\s]+/g)) {
+      const url = publicUrl(value[0]);
+      const host = new URL(url).hostname.replace(/^www\./, "");
+      const allowed = platform === "x" ? ["x.com", "twitter.com"] : platform === "github" ? ["github.com", "api.github.com"] : [`${platform}.com`];
+      if (!allowed.includes(host)) return { ...discovery, error: { code: "policy", message: "An adapter argument points outside the selected platform.", repair: "Use a source on the selected platform." } };
+    }
+    const executed = await s.execute(selected.slug, args, { account: request.connector.accountId }, { signal });
+    if (executed.error) {
+      accountCache.delete(toolkit);
+      return { ...discovery, error: internetFailure(new Error(executed.error)) };
+    }
+    if (JSON.stringify(executed.data).length > 1_000_000) return { ...discovery, error: { code: "malformed", message: "The connected response exceeded the 1 MB adapter limit.", repair: "Request fewer results." } };
+    return { ...discovery, data: executed.data, backend: `connected:${toolkit}:${selected.slug}` };
+  } catch (error) {
+    if (signal.aborted) throw error;
+    accountCache.delete(toolkit);
+    return { ...empty, state: "degraded", error: internetFailure(error) };
+  }
+}
 
 // --- Triggers: events that start jobs (jobs.ts, server/triggers.ts) ---------------
 

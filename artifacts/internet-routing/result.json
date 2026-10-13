@@ -1,0 +1,252 @@
+{
+  "ranAt": "2026-10-12T20:35:54.583Z",
+  "platform": "darwin",
+  "pass": true,
+  "scope": "Deterministic source/provider fixtures plus real SDK/SQLite/MCP/public HTTP transport; no live connector or Windows runtime claims.",
+  "results": [
+    {
+      "name": "exact URL classification and scope",
+      "passed": true
+    },
+    {
+      "name": "GitHub distinct comments, deduplication and bounded pagination",
+      "passed": true
+    },
+    {
+      "name": "empty success differs from malformed and denied",
+      "passed": true
+    },
+    {
+      "name": "RSS and Atom retain dates, links and missing fields",
+      "passed": true
+    },
+    {
+      "name": "captions disclose automatic text-only coverage; missing captions fail",
+      "passed": true
+    },
+    {
+      "name": "search snippets and retrieved originals are separate",
+      "passed": true
+    },
+    {
+      "name": "cancellation and credentials stop before fetch",
+      "passed": true
+    },
+    {
+      "name": "real MCP read marks external content and holds outward actions",
+      "passed": true
+    },
+    {
+      "name": "public transport blocks private addresses and redirects; statuses are accurate",
+      "passed": true
+    },
+    {
+      "name": "diagnostics isolate failures and never retain source content",
+      "passed": true
+    },
+    {
+      "name": "public browser fallback is isolated and cannot post",
+      "passed": true
+    },
+    {
+      "name": "stopping the chat cancels the in-flight source read",
+      "passed": true
+    },
+    {
+      "name": "shared source serialization and transport deadlines",
+      "passed": true
+    },
+    {
+      "name": "real SDK discovery pins account, validates current read schema and refuses writes",
+      "passed": true
+    },
+    {
+      "name": "live public probe: read",
+      "passed": true,
+      "detail": {
+        "status": "ok",
+        "backend": "public_page",
+        "items": 1,
+        "coverage": {
+          "kind": "page_text",
+          "pagesRead": 1,
+          "hasMore": false,
+          "truncated": false,
+          "missingFields": [
+            "author",
+            "publishedAt"
+          ]
+        },
+        "attempts": [
+          {
+            "backend": "public_page",
+            "status": "ok"
+          }
+        ],
+        "originals": []
+      }
+    },
+    {
+      "name": "live public probe: comments",
+      "passed": true,
+      "detail": {
+        "status": "empty",
+        "backend": "github_api",
+        "items": 0,
+        "coverage": {
+          "kind": "comments",
+          "pagesRead": 1,
+          "hasMore": false,
+          "truncated": false,
+          "missingFields": []
+        },
+        "attempts": [
+          {
+            "backend": "github_api",
+            "status": "ok"
+          }
+        ],
+        "originals": []
+      }
+    },
+    {
+      "name": "live public probe: feed",
+      "passed": true,
+      "detail": {
+        "status": "partial",
+        "backend": "rss_feed",
+        "items": 10,
+        "coverage": {
+          "kind": "feed_entries",
+          "pagesRead": 1,
+          "hasMore": true,
+          "truncated": true,
+          "missingFields": []
+        },
+        "attempts": [
+          {
+            "backend": "rss_feed",
+            "status": "ok"
+          }
+        ],
+        "originals": []
+      }
+    },
+    {
+      "name": "live public probe: search",
+      "passed": true,
+      "detail": {
+        "status": "partial",
+        "backend": "web_search",
+        "items": 10,
+        "coverage": {
+          "kind": "search_results",
+          "pagesRead": 1,
+          "hasMore": true,
+          "truncated": false,
+          "missingFields": [
+            "author",
+            "publishedAt"
+          ]
+        },
+        "attempts": [
+          {
+            "backend": "web_search",
+            "status": "ok"
+          }
+        ],
+        "originals": [
+          {
+            "url": "https://github.com/kashishssharma/PERRY",
+            "status": "partial",
+            "backend": "public_page"
+          },
+          {
+            "url": "https://github.com/TheM1N9/perry",
+            "status": "ok",
+            "backend": "public_page"
+          },
+          {
+            "url": "https://periip.github.io/experience/",
+            "status": "ok",
+            "backend": "public_page"
+          }
+        ]
+      }
+    },
+    {
+      "name": "live public probe: transcript",
+      "passed": true,
+      "detail": {
+        "status": "unavailable",
+        "backend": "youtube_captions",
+        "items": 0,
+        "error": {
+          "code": "missing_transcript",
+          "message": "The caption endpoint returned no transcript.",
+          "repair": "Try the original watch page; do not infer the video's content."
+        },
+        "coverage": {
+          "kind": "transcript",
+          "pagesRead": 2,
+          "hasMore": false,
+          "truncated": false,
+          "missingFields": []
+        },
+        "attempts": [
+          {
+            "backend": "youtube_captions",
+            "status": "failed",
+            "code": "missing_transcript"
+          }
+        ],
+        "originals": []
+      }
+    }
+  ],
+  "hits": [
+    "/article",
+    "/redirect",
+    "/forbidden",
+    "/rate",
+    "/article",
+    "/session",
+    "/favicon.ico",
+    "/app",
+    "/app",
+    "/favicon.ico",
+    "/slow",
+    "/serialized",
+    "/serialized",
+    "/slow"
+  ],
+  "providerPaths": [
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/search",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/search",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/search",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/search",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/search",
+    "/api/v3.1/tool_router/session/fixture-session/execute",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/search",
+    "/api/v3.1/tool_router/session/fixture-session/execute",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/connected_accounts",
+    "/api/v3.1/connected_accounts"
+  ]
+}
