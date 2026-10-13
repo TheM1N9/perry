@@ -31,7 +31,7 @@ const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 const save = () => writeFileSync(join(output, "result.json"), JSON.stringify({ at: new Date().toISOString(), checks, notes, passed: Object.values(checks).every(Boolean) }, null, 2));
 const check = (name: string, ok: unknown, detail?: unknown) => { checks[name] = Boolean(ok); if (detail !== undefined) notes[name] = detail; console.log(`${ok ? "PASS" : "FAIL"} ${name}`); save(); assert.ok(ok, name); };
 const phase = (name: string) => { writeFileSync(join(output, "state.json"), JSON.stringify({ phase: name, scratch, checkout, home, task, port, base, key, output })); console.log(`PHASE ${name}`); };
-async function run(command: string, args: string[], cwd = checkout, extra: NodeJS.ProcessEnv = {}) {
+async function run(command: string, args: string[], cwd = checkout, extra: Partial<NodeJS.ProcessEnv> = {}) {
   return new Promise<{ code: number | null; text: string }>((done) => {
     const child = spawn(command, args, { cwd, env: { ...env, ...extra }, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     let text = "";
@@ -40,7 +40,7 @@ async function run(command: string, args: string[], cwd = checkout, extra: NodeJ
     child.once("close", (code) => done({ code, text }));
   });
 }
-async function required(command: string, args: string[], cwd = checkout, extra: NodeJS.ProcessEnv = {}) {
+async function required(command: string, args: string[], cwd = checkout, extra: Partial<NodeJS.ProcessEnv> = {}) {
   const result = await run(command, args, cwd, extra);
   if (result.code !== 0) throw new Error(`${command} ${args.join(" ")} failed (${result.code}): ${result.text.slice(-5000)}`);
   return result.text.trim();

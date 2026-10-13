@@ -275,10 +275,13 @@ function exec(argv: string[], quiet = true) {
 }
 
 /** Windows process identity, shared by the service PID file and supervisor lock. */
-export function supervisorIdentity(pid: number, ctx = serviceContext()): string | null {
+export function supervisorIdentity(pid: number, ctx = serviceContext(), own = false): string | null {
   if (!Number.isSafeInteger(pid) || pid <= 0) return null;
   const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
-  const script = `$p = Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}'; if ($p -and $p.ExecutablePath -eq ${quote(ctx.bun)} -and $p.CommandLine.Contains(${quote(win32.join(ctx.repo, "scripts", "perry.ts"))}) -and $p.CommandLine -match '(?:^|\\s)"?run"?(?:\\s|$)') { '${pid} ' + $p.CreationDate.ToUniversalTime().Ticks }`;
+  // A foreground launch may use a relative script path. Only our own PID may
+  // skip command verification when recording its identity; readers never do.
+  const command = own && pid === process.pid ? "" : ` -and $p.CommandLine.Contains(${quote(win32.join(ctx.repo, "scripts", "perry.ts"))}) -and $p.CommandLine -match '(?:^|\\s)"?run"?(?:\\s|$)'`;
+  const script = `$ProgressPreference = 'SilentlyContinue'; $p = Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}'; if ($p -and $p.ExecutablePath -eq ${quote(ctx.bun)}${command}) { '${pid} ' + $p.CreationDate.ToUniversalTime().Ticks }`;
   const found = exec(["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")]);
   return found.code === 0 && /^\d+ \d+$/.test(found.output) ? found.output : null;
 }

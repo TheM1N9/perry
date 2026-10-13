@@ -222,7 +222,7 @@ async function runForeground(background = false) {
   mkdirSync(HOME, { recursive: true });
   const lock = join(HOME, "perry.pid");
   const windows = process.platform === "win32" ? await import("./service") : null;
-  const record = windows ? windows.supervisorIdentity(process.pid) : String(process.pid);
+  const record = windows ? windows.supervisorIdentity(process.pid, windows.serviceContext(), true) : String(process.pid);
   if (!record) throw new Error("Could not establish Windows supervisor process identity");
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
