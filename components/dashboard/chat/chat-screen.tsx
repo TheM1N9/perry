@@ -38,6 +38,7 @@ import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
 import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { InteractiveAnswers } from "./interactive-answer";
+import { ChatFiles } from "./markdown";
 import { MessageEditor, type MessageEdit } from "./message-editor";
 import { MessageRow, PendingRow, ReplyInProgress, type ChatMessage } from "./message";
 import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
@@ -52,6 +53,9 @@ type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
  * returns, after which the server lists it as pending until its reply saves it.
  */
 type Pending = { id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean; sent: boolean };
+
+/** No files yet, the same list each time so the replies do not draw again for nothing. */
+const NO_FILES: ReadonlyArray<{ path: string; url: string }> = [];
 
 const STARTERS = [
   "Plan my day",
@@ -253,6 +257,7 @@ export function ChatScreen() {
   const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
   // Every step Perry takes: listed as they come while a reply is on its way, and kept with the reply after.
   const work = useQuery(api.dashboard.getChatWork, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
+  const chatFiles = useQuery(api.dashboard.getChatFiles, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
   const { workOf, liveWork, failedWork } = useMemo(() => {
     const runs = work ?? [];
     const replies = messages.filter((message) => message.role === "assistant" && !message.pending);
@@ -720,6 +725,7 @@ export function ChatScreen() {
             </div>
           ) : (
             <WorkFolds>
+            <ChatFiles.Provider value={chatFiles ?? NO_FILES}>
             <div className="space-y-8 pt-6 pb-10" aria-busy={loading || undefined}>
               {loading && (
                 <div className="space-y-8" role="status" aria-label="Loading the conversation">
@@ -782,6 +788,7 @@ export function ChatScreen() {
                 </Alert>
               )}
             </div>
+            </ChatFiles.Provider>
             </WorkFolds>
           )}
         </div>

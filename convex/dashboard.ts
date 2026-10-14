@@ -557,6 +557,26 @@ export const getStep = query({
   },
 });
 
+/**
+ * The files on this computer a chat can open, by where they are: the ones its
+ * runs changed (codex.ts, linkFiles) and the ones sent in it, each with the
+ * address the media server gives it. A reply's link to one of these paths
+ * opens the file (components/dashboard/chat/markdown.tsx); a path not here
+ * is never served.
+ */
+export const getChatFiles = query({
+  args: { key: vKey, id: v.id("conversations") },
+  handler: async (ctx, args): Promise<Array<{ path: string; url: string }>> => {
+    assertDashboardKey(args.key);
+    ownerChat(await ctx.db.get(args.id));
+    const rows = await ctx.db.query("chatAttachments")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
+      .order("desc")
+      .take(1000);
+    return rows.flatMap((row) => row.localPath && !row.removedAt ? [{ path: row.localPath, url: `/api/media/${row._id}?preview` }] : []);
+  },
+});
+
 export const getChatMessages = query({
   args: { key: vKey, id: v.id("conversations"), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {

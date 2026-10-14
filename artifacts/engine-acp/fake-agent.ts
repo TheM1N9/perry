@@ -43,7 +43,7 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { agent, ndJsonStream, PROTOCOL_VERSION, RequestError, type AgentContext, type ContentBlock, type McpServer, type PermissionOption, type SessionConfigOption, type SessionUpdate } from "@agentclientprotocol/sdk";
 
@@ -438,6 +438,17 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     // A reply given word for word, as a JSON string, so a test can show any Markdown (artifacts/ai-elements).
     const words = (JSON.parse(text.slice("SAY ".length)) as string).split(/(?<=\n)/);
     await stream(words, 40);
+    return done(signal.aborted ? "cancelled" : "end_turn");
+  }
+  if (text.startsWith("EDIT ")) {
+    // One file written as an edit step, then a reply about it, word for word (artifacts/file-links).
+    const plan = JSON.parse(text.slice("EDIT ".length)) as { path: string; text: string; reply: string };
+    const id = `edit-${Date.now().toString(36)}`;
+    writeFileSync(plan.path, plan.text);
+    await tool(id, { title: `Edit ${basename(plan.path)}`, kind: "edit", status: "in_progress", locations: [{ path: plan.path }], rawInput: { path: plan.path } });
+    await tool(id, { status: "completed", content: [{ type: "diff", path: plan.path, oldText: "", newText: plan.text }] }, false);
+    await sleep(500);
+    await stream(plan.reply.split(/(?<=\n)/), 40);
     return done(signal.aborted ? "cancelled" : "end_turn");
   }
   if (text.startsWith("STEPS ")) {
