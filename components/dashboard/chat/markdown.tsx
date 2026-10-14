@@ -9,8 +9,9 @@ import remarkGfm from "remark-gfm";
 import { SKILL_MENTION } from "@/convex/lib/commands";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CodeBlock, CodeBlockActions, CodeBlockContent, CodeBlockCopyButton, CodeBlockHeader, CodeBlockLine, CodeBlockTitle } from "@/components/ui/code-block";
+import { useHighlightedCode } from "@/hooks/use-highlighted-code";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CopyButton } from "../common";
 
 /** The text of a React node tree, for copying a code block. */
 function textOf(node: ReactNode): string {
@@ -25,6 +26,26 @@ function languageOf(node: ReactNode): string | undefined {
   const child = Array.isArray(node) ? node[0] : node;
   const className = child && typeof child === "object" && "props" in child ? (child.props as { className?: string }).className : undefined;
   return className?.match(/language-([\w+-]+)/)?.[1];
+}
+
+/** A fenced block: its language and a copy button above, the code highlighted when Perry knows the language. */
+function Code({ children }: { children: ReactNode }) {
+  const language = languageOf(children);
+  const code = textOf(children).replace(/\n$/, "");
+  const lines = useHighlightedCode(code, language ?? "text");
+  return (
+    <CodeBlock className="bg-muted/50">
+      <CodeBlockHeader>
+        <CodeBlockTitle className="font-mono text-xs font-normal text-muted-foreground">{language ?? "text"}</CodeBlockTitle>
+        <CodeBlockActions>
+          <CodeBlockCopyButton value={code} aria-label="Copy code" />
+        </CodeBlockActions>
+      </CodeBlockHeader>
+      <CodeBlockContent>
+        {lines.map((line, index) => <CodeBlockLine key={index}>{line}</CodeBlockLine>)}
+      </CodeBlockContent>
+    </CodeBlock>
+  );
 }
 
 type MarkdownNode = { type: string; value?: string; url?: string; children?: MarkdownNode[] };
@@ -85,18 +106,7 @@ export const Markdown = memo(function Markdown({ text, openNote, skills }: {
             </Link>
             : <a {...props} href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
           },
-          pre: ({ node: _node, children, ...props }) => {
-            const language = languageOf(children);
-            return (
-              <div className="group/code overflow-hidden rounded-xl border bg-muted/50">
-                <div className="flex h-9 items-center justify-between border-b pr-1.5 pl-4 text-xs text-muted-foreground">
-                  <span className="font-mono">{language ?? "text"}</span>
-                  <CopyButton value={textOf(children).replace(/\n$/, "")} label="Copy code" size="icon-xs" />
-                </div>
-                <pre {...props}>{children}</pre>
-              </div>
-            );
-          },
+          pre: ({ node: _node, children }) => <Code>{children}</Code>,
           table: ({ node: _node, ...props }) => <div className="overflow-hidden rounded-lg border"><Table {...props} /></div>,
           thead: ({ node: _node, ...props }) => <TableHeader className="bg-muted/50" {...props} />,
           tbody: ({ node: _node, ...props }) => <TableBody {...props} />,

@@ -182,7 +182,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
             <DropdownMenuRadioGroup value={chatId ?? ""} onValueChange={(id) => onChatId(id as Id<"conversations">)}>
               {yours.map((item) => (
                 <DropdownMenuRadioItem key={item.id} value={item.id} closeOnClick className="gap-2">
-                  <span className={cn("min-w-0 flex-1 truncate", item.naming && "shimmer")}>{item.title}</span>
+                  <span className={cn("min-w-0 flex-1 truncate", item.naming && "shimmer motion-reduce:shimmer-none")}>{item.title}</span>
                   <StatusIndicator status={item.status} unseen={item.unseen && item.id !== chatId} />
                 </DropdownMenuRadioItem>
               ))}

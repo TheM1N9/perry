@@ -214,7 +214,7 @@ function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary
       aria-current={active ? "page" : undefined}>
       {chat.pinned && <PinIcon role="img" aria-label="Pinned" className="text-muted-foreground" />}
       <ChannelIcon channel={chat.channel} />
-      <span className={cn("pr-4", chat.naming && "shimmer")} aria-busy={chat.naming || undefined}>{chat.title}</span>
+      <span className={cn("pr-4", chat.naming && "shimmer motion-reduce:shimmer-none")} aria-busy={chat.naming || undefined}>{chat.title}</span>
     </SidebarMenuButton>
   );
 

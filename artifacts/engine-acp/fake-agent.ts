@@ -434,6 +434,12 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     await stream([`Called ${name}: ${outcome}.`], 10);
     return done("end_turn");
   }
+  if (text.startsWith("SAY ")) {
+    // A reply given word for word, as a JSON string, so a test can show any Markdown (artifacts/ai-elements).
+    const words = (JSON.parse(text.slice("SAY ".length)) as string).split(/(?<=\n)/);
+    await stream(words, 40);
+    return done(signal.aborted ? "cancelled" : "end_turn");
+  }
   if (text.startsWith("STEPS ")) {
     reply = await steps(session, text, update, say, signal);
     return done(signal.aborted ? "cancelled" : "end_turn");

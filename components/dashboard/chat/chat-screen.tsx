@@ -682,7 +682,7 @@ export function ChatScreen() {
           <span className="text-muted-foreground/60" aria-hidden>/</span>
         </>}
         {chat && <ChannelIcon channel={chat.channel} />}
-        <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer")} aria-busy={summary?.naming || undefined}>{title}</h1>
+        <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer motion-reduce:shimmer-none")} aria-busy={summary?.naming || undefined}>{title}</h1>
         {summary && <StatusIndicator status={summary.status} />}
         {parent && (
           <Link href={`/chat/${parent.id}`} className="hidden min-w-0 items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground sm:flex">
