@@ -1,14 +1,16 @@
 {
-  "ranAt": "2026-10-15T13:27:47.355Z",
+  "ranAt": "2026-10-15T14:43:28.778Z",
   "ok": true,
   "checks": {
     "panelOpens": true,
-    "panelViews": true,
+    "panelCards": true,
+    "contextCard": true,
     "filesListed": true,
     "filePreview": true,
     "browserOpens": true,
     "takeOver": true,
     "addressBar": true,
+    "browserFitsTheCard": true,
     "liveFrames": true,
     "clickShowsQuickly": true,
     "giveBack": true,
@@ -17,16 +19,43 @@
     "noPageErrors": true
   },
   "notes": {
-    "panelViews": [
-      "Files",
-      "Work",
-      "Browser"
+    "panelCards": [
+      "context",
+      "files",
+      "browser"
     ],
+    "contextCard": "Context\n\nHow full the context is shows after Perry's next reply.\n\nEngine\nGrok Build\nModel\ngrok-fake-fast",
     "openButton": true,
+    "browserFit": {
+      "card": [
+        869,
+        1413,
+        1059
+      ],
+      "page": [
+        877,
+        1405,
+        1007
+      ],
+      "wide": 528
+    },
+    "browserFitsTheCard": {
+      "card": [
+        869,
+        1413,
+        1059
+      ],
+      "page": [
+        877,
+        1405,
+        1007
+      ],
+      "wide": 528
+    },
     "framesPerSecond": 10.333333333333334,
     "liveFrames": 10.333333333333334,
-    "clickToScreenMs": 62,
-    "clickShowsQuickly": 62,
+    "clickToScreenMs": 88,
+    "clickShowsQuickly": 88,
     "closeAndReopen": {
       "closed": true,
       "back": true
@@ -39,7 +68,7 @@
     "runnerLog": [
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    THIS-PC (linux)\u001b[0m",
-      "\u001b[2m  directory  /tmp/claude-0/-home-user-perry/7192a0c1-ba7d-54e5-86ce-d44107d70a1e/scratchpad/e2e/perry-workspace-ui-753RGh/workspace\u001b[0m",
+      "\u001b[2m  directory  /tmp/claude-0/-home-user-perry/7192a0c1-ba7d-54e5-86ce-d44107d70a1e/scratchpad/e2e/perry-workspace-ui-INhGc3/workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -48,10 +77,10 @@
       "\u001b[32m  connected.",
       "\u001b[0m",
       "\u001b[33m  full access: this turn runs without the sandbox, and nothing waits for you\u001b[0m",
-      "\u001b[2m  saved turn x3jesp2635t8dqbjmn6sr2q96a\u001b[0m",
-      "\u001b[2m  named a chat \"Quarterly report markdown file edit\" (haiku)\u001b[0m",
+      "\u001b[2m  saved turn 8cjtgkgbksfthvbqr0ne1jyamf\u001b[0m",
       "\u001b[33m  full access: this turn runs without the sandbox, and nothing waits for you\u001b[0m",
-      "\u001b[2m  saved turn s7xyggx9gfv0s3vjrrmgh8scay\u001b[0m",
+      "\u001b[2m  saved turn mqb34fk0fg8g1xnmbzwng78wgy\u001b[0m",
+      "\u001b[2m  named a chat \"Quarterly report markdown file\" (haiku)\u001b[0m",
       "\u001b[2m",
       "  runner stopped. Assistant has no hands here now.",
       "\u001b[0m"

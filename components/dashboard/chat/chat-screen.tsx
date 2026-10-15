@@ -873,7 +873,7 @@ export function ChatScreen() {
       </div>
 
     </div>
-      {panelEnabled && !chat?.contact && <WorkspacePanel conversationId={selectedId} project={project} open={workspaceOpen} onOpenChange={openWorkspace} browser={browserView?.enabled && selectedId ? <BrowserPanel key={selectedId} conversationId={selectedId} onClose={() => openWorkspace(false)} /> : undefined} />}
+      {panelEnabled && !chat?.contact && <WorkspacePanel conversationId={selectedId} project={project} open={workspaceOpen} onOpenChange={openWorkspace} context={{ engine: engine ?? undefined, model: chat?.model, context: chat?.context, usage: engineUsage }} browser={browserView?.enabled && selectedId ? <BrowserPanel key={selectedId} conversationId={selectedId} onClose={() => openWorkspace(false)} /> : undefined} />}
       {summary && <RenameDialog chat={renaming ? summary : null} onClose={() => setRenaming(false)} />}
       {summary && <DeleteDialog chat={removing ? summary : null} onClose={() => setRemoving(false)} />}
       {summary && <NewProjectDialog open={creatingProject} chat={summary.id} onClose={() => setCreatingProject(false)} />}

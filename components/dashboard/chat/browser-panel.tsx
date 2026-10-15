@@ -204,7 +204,12 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
         <p className="mt-1 max-w-64 text-xs leading-relaxed text-muted-foreground">Perry browses here for this chat. Watch it work, or take over to sign in somewhere for it.</p>
         <Button size="sm" className="mt-4" disabled={busy} onClick={() => void run(() => act({ action: "start" }))}>{busy ? "Opening…" : "Open browser"}</Button>
       </div> : visibleFrame ? <div className="p-2"><div role="application" aria-label={paused ? "Browser page. Click to focus, type or paste; Tab moves within the page. Escape returns focus to browser controls." : "Browser page, view only. Pause to take over."} tabIndex={paused ? 0 : -1} className="group/page relative aspect-[1280/900] w-full overflow-hidden rounded-md bg-white ring-1 ring-border outline-offset-2 focus-visible:outline-2 focus-visible:outline-primary"
-        onClick={(event) => { event.currentTarget.focus(); if (paused && activeIdentity) void act({ action: "click", identity: activeIdentity, ...point(event) }); }}
+        onClick={(event) => {
+          // Where the click fell, read before focusing: focus must not scroll the panel and move the page under it.
+          const at = point(event);
+          event.currentTarget.focus({ preventScroll: true });
+          if (paused && activeIdentity) void act({ action: "click", identity: activeIdentity, ...at });
+        }}
         onWheel={(event) => { if (paused) void scroll(point(event), event.deltaY); }}
         onPaste={(event) => { if (paused) { event.preventDefault(); manual({ action: "text", text: event.clipboardData.getData("text").slice(0, 10000) }); } }}
         onKeyDown={(event) => {

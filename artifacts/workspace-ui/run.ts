@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 
 // bun artifacts/workspace-ui/run.ts <outDir> [label]
-// The chat's workspace panel (Files, Work, Browser) as the owner sees it, in
+// The chat's workspace panel, cards that open and close (Context, Files, Browser), as the owner sees it, in
 // light and dark, on a desktop and a phone: the panel's look and how it works.
 // `label` prefixes the pictures, so a run before a change and one after sit
 // side by side.
@@ -16,9 +16,10 @@ import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 // build` first) with the workspace and the browser view turned on.
 //
 // Ways it could fail, written down before the checks:
-//   1. The panel does not open from the chat, or opens without its views.
+//   1. The panel does not open from the chat, or opens without its cards; Context does not name the chat's engine.
 //   2. Files: a file Perry wrote is not listed, or opening it shows nothing of it.
-//   3. Browser: it cannot be opened from the panel; the page never shows; taking
+//   3. Browser: it cannot be opened from its card; the page never shows, or does not fit the card (cut off or
+//      wider than it); taking
 //      over does not hand it to the owner (address bar stays locked), or giving
 //      it back does not.
 //   4. The address bar does not take the owner to a page they type.
@@ -108,24 +109,22 @@ try {
 
   // --- Files -----------------------------------------------------------------------------------------
   check("panelOpens", await click(`button[aria-label="Open workspace"]`) && await waitFor(`document.querySelector('${PANEL}')`, "the panel", 10).then(() => true, () => false));
-  const tabs = await evaluate(`[...document.querySelectorAll('${PANEL} [role="tab"]')].map((tab) => tab.textContent.trim())`) as string[];
-  check("panelViews", ["Files", "Work", "Browser"].every((name) => tabs.includes(name)), tabs);
-  await clickText(`${PANEL} [role="tab"]`, "Files");
+  const cards = await evaluate(`[...document.querySelectorAll('${PANEL} [data-card]')].map((card) => card.dataset.card)`) as string[];
+  check("panelCards", ["context", "files", "browser"].every((name) => cards.includes(name)), cards);
+  const context = await evaluate(`document.querySelector('${PANEL} [data-card="context"]')?.innerText ?? ""`) as string;
+  notes.contextCard = context;
+  check("contextCard", /Engine\s*Grok Build/.test(context) && /(% used|after Perry's next reply)/.test(context), context);
   const listed = await waitFor(`document.querySelector('${PANEL}').textContent.includes("report.md")`, "report.md in Files", 20).then(() => true, () => false);
   check("filesListed", listed);
   await shot("files-light");
   await clickText(`${PANEL} button`, "report.md") || await evaluate(`(() => { const el = [...document.querySelectorAll('${PANEL} button')].find((el) => el.textContent.includes("report.md") && !el.textContent.includes("Latest")); el?.click(); return Boolean(el); })()`);
   check("filePreview", await waitFor(`document.querySelector('${PANEL}').textContent.includes("Revenue went up")`, "the file's words", 20).then(() => true, () => false));
   await shot("file-preview-light");
-  await clickText(`${PANEL} button`, "All files");
+  await click(`${PANEL} button[aria-label="All files"]`);
 
-  // --- Work ------------------------------------------------------------------------------------------
-  await clickText(`${PANEL} [role="tab"]`, "Work");
-  await sleep(800);
-  await shot("work-light");
-
-  // --- Browser ---------------------------------------------------------------------------------------
-  await clickText(`${PANEL} [role="tab"]`, "Browser");
+  // --- Browser, in its card --------------------------------------------------------------------------
+  await click(`${PANEL} [data-card="browser"] [data-slot="collapsible-trigger"]`);
+  await waitFor(`document.querySelector('${PANEL} [data-card="browser"] [data-browser-state]')`, "the browser card to open", 10);
   await sleep(1_000);
   await shot("browser-closed-light");
   const opened = await clickText(`${PANEL} button`, "Open browser");
@@ -141,6 +140,14 @@ try {
     const navigated = await waitFor(`document.querySelector('${PANEL} img[alt="Live page: Workspace test page"]')`, "the test page", 30).then(() => true, () => false);
     check("addressBar", navigated);
     await sleep(1_500);
+    // The page fits its card: as wide as the card at most, and not cut off by it.
+    const fit = await evaluate(`(() => {
+      const card = document.querySelector('${PANEL} [data-card="browser"]').getBoundingClientRect();
+      const page = document.querySelector('${PANEL} [data-card="browser"] [role="application"]').getBoundingClientRect();
+      return { card: [Math.round(card.left), Math.round(card.right), Math.round(card.bottom)], page: [Math.round(page.left), Math.round(page.right), Math.round(page.bottom)], wide: Math.round(page.width) };
+    })()`) as { card: number[]; page: number[]; wide: number };
+    notes.browserFit = fit;
+    check("browserFitsTheCard", fit.page[0]! >= fit.card[0]! && fit.page[1]! <= fit.card[1]! && fit.page[2]! <= fit.card[2]! && fit.wide >= 500, fit);
     await shot("browser-paused-light");
     await scheme("dark");
     await sleep(800);
@@ -156,8 +163,8 @@ try {
     const fps = (await evaluate(`window.__frames.length`) as number) / 3;
     notes.framesPerSecond = fps;
     check("liveFrames", fps >= 4, fps);
-    // The button sits at about (80+, 170) on the 1280x900 page; the click lands where the panel maps it.
-    const clickAt = await evaluate(`(() => { const box = document.querySelector('${PANEL} [role="application"]').getBoundingClientRect(); return { x: box.left + box.width * 140 / 1280, y: box.top + box.height * 205 / 900 }; })()`) as { x: number; y: number };
+    // The button sits at about x 50-260, y 240-360 on the 1280x900 page; the click lands where the panel maps it.
+    const clickAt = await evaluate(`(() => { const box = document.querySelector('${PANEL} [role="application"]').getBoundingClientRect(); return { x: box.left + box.width * 140 / 1280, y: box.top + box.height * 300 / 900 }; })()`) as { x: number; y: number };
     const pressed = await evaluate(`(async () => {
       const page = document.querySelector('${PANEL} [role="application"]');
       const yellow = async () => { const img = page.querySelector("img"); const bitmap = await createImageBitmap(img); const canvas = new OffscreenCanvas(1, 1); const draw = canvas.getContext("2d"); draw.drawImage(bitmap, bitmap.width - 4, bitmap.height - 4, 1, 1, 0, 0, 1, 1); const [r, g, b] = draw.getImageData(0, 0, 1, 1).data; return r > 200 && g > 200 && b < 120; };
@@ -179,12 +186,12 @@ try {
   await click(`${PANEL} button[aria-label="Close workspace"]`);
   const closed = await waitFor(`!document.querySelector('${PANEL}')`, "the panel to close", 10).then(() => true, () => false);
   await click(`button[aria-label="Open workspace"]`);
-  const back = await waitFor(`document.querySelector('${PANEL} [role="tab"][aria-selected="true"]')?.textContent.trim() === "Browser"`, "the panel back on Browser", 10).then(() => true, () => false);
+  const back = await waitFor(`document.querySelector('${PANEL} [data-card="browser"] img[alt^="Live page"]')`, "the browser card open again, live", 20).then(() => true, () => false);
   check("closeAndReopen", closed && back, { closed, back });
 
   // --- Dark, and a phone -----------------------------------------------------------------------------
   await scheme("dark");
-  await clickText(`[role="tab"]`, "Files");
+  await click(`${PANEL} [data-card="browser"] [data-slot="collapsible-trigger"]`);
   await sleep(800);
   await shot("files-dark");
   await size(390, 844, true);

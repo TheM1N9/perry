@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Component, useEffect, useState, type ReactNode } from "react";
 import { z } from "zod";
-import { ArrowLeftIcon, ChevronRightIcon, DownloadIcon, MoreHorizontalIcon, SlidersHorizontalIcon, Maximize2Icon, Minimize2Icon, EyeOffIcon, FileAudioIcon, FileIcon, FileImageIcon, FileTextIcon, FileVideoIcon, FolderOpenIcon, Grid2X2Icon, ListTreeIcon, PinIcon, PlusIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, ChevronDownIcon, ChevronRightIcon, DownloadIcon, MoreHorizontalIcon, SlidersHorizontalIcon, Maximize2Icon, Minimize2Icon, EyeOffIcon, FileAudioIcon, FileIcon, FileImageIcon, FileTextIcon, FileVideoIcon, FolderOpenIcon, Grid2X2Icon, ListTreeIcon, PinIcon, PlusIcon, XIcon } from "lucide-react";
 import { useConnection, useConvex, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -13,15 +13,14 @@ import { bytes, errorText } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AudioPlayer, VideoPlayer } from "@/components/ui/media-player";
-import { StatusBadge } from "../common";
+import { ENGINE_LABELS, type EngineKind } from "@/convex/lib/engines";
+import { resetsText, usedNow, WARN_PERCENT, type EngineUsage } from "@/convex/lib/usage";
 import { Markdown } from "./markdown";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 
@@ -65,6 +64,8 @@ function groupFiles(files: WorkspaceFile[], key: (file: WorkspaceFile) => string
 
 type Scope = "chat" | "project";
 
+export type ChatContext = { engine?: EngineKind; model?: string; context?: { fill: number; window: number }; usage?: EngineUsage };
+
 /** The group Perry's working files are listed under: what a run wrote on its way, not yet shared as a result. */
 const WORKING = "Working files";
 const roleLabel = (role: WorkspaceFile["role"]) => role === "working" ? "Working" : role === "input" ? "Input" : "Result";
@@ -75,18 +76,20 @@ function KindIcon({ item }: { item: WorkspaceFile }) {
 }
 
 /** Shared right panel. Browser supplies its real-session view here without another sidebar. */
-export function WorkspacePanel({ conversationId, project, open, onOpenChange, browser }: {
+export function WorkspacePanel({ conversationId, project, open, onOpenChange, browser, context }: {
   conversationId: Id<"conversations"> | null;
   project?: { id: Id<"projects">; name: string };
   open: boolean; onOpenChange: (open: boolean) => void; browser?: ReactNode;
+  /** What the Context card says: the chat's engine and model, how full its context is, and the engine's plan. */
+  context?: ChatContext;
 }) {
   const client = useConvex();
   const mobile = useIsMobile();
   const [width, setWidth] = useState(380);
-  const [tab, setTab] = useState("files");
-  // The live page is drawn at 1280px: on the Browser tab the panel opens wide so it can be read, unless the owner narrows it.
+  const [browsing, setBrowsing] = useState(false);
+  // The live page is drawn at 1280px: with the Browser card open the panel opens wide so it can be read, unless the owner narrows it.
   const [chosenWide, setChosenWide] = useState<boolean>();
-  const expanded = chosenWide ?? tab === "browser";
+  const expanded = chosenWide ?? browsing;
   useEffect(() => {
     try { const saved = Number(localStorage.getItem("perry.workspace.width")); if (saved >= 300 && saved <= 640) setWidth(saved); } catch {}
   }, []);
@@ -95,10 +98,10 @@ export function WorkspacePanel({ conversationId, project, open, onOpenChange, br
     setWidth(next);
     try { localStorage.setItem("perry.workspace.width", String(next)); } catch {}
   }
-  const content = <WorkspaceBoundary key={conversationId ?? "new"} onRetry={() => client.refresh()} onClose={() => onOpenChange(false)}><PanelContent conversationId={conversationId} project={project} browser={browser} expanded={expanded} onExpand={() => setChosenWide(!expanded)} onTab={(next) => { setTab(next); setChosenWide(undefined); }} onClose={() => onOpenChange(false)} /></WorkspaceBoundary>;
+  const content = <WorkspaceBoundary key={conversationId ?? "new"} onRetry={() => client.refresh()} onClose={() => onOpenChange(false)}><PanelContent conversationId={conversationId} project={project} browser={browser} context={context} expanded={expanded} onExpand={() => setChosenWide(!expanded)} onBrowsing={(next) => { setBrowsing(next); setChosenWide(undefined); }} onClose={() => onOpenChange(false)} /></WorkspaceBoundary>;
   if (mobile) return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent showCloseButton={false} className="w-full max-w-full gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-full motion-reduce:transition-none"><SheetTitle className="sr-only">Chat workspace</SheetTitle><SheetDescription className="sr-only">Files, work and the live browser associated with this chat.</SheetDescription>{content}</SheetContent></Sheet>;
   if (!open) return null;
-  return <aside aria-label="Chat workspace" className="relative flex h-full min-h-0 shrink-0 flex-col border-l bg-background" style={{ width: expanded ? "min(58%, calc(100% - 520px))" : `min(${width}px, 50%)` }}>
+  return <aside aria-label="Chat workspace" className="relative flex h-full min-h-0 shrink-0 flex-col border-l bg-background" style={{ width: expanded ? "min(58%, calc(100% - 600px))" : `min(${width}px, 50%)` }}>
     <div role="separator" aria-label="Resize workspace" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={640} aria-valuenow={width} tabIndex={0}
       className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize focus-visible:bg-primary/20"
       onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); resize(width + (event.key === "ArrowLeft" ? 20 : -20)); } }}
@@ -108,46 +111,117 @@ export function WorkspacePanel({ conversationId, project, open, onOpenChange, br
   </aside>;
 }
 
-function PanelContent({ conversationId, project, browser, expanded, onExpand, onTab, onClose }: {
-  conversationId: Id<"conversations"> | null; project?: { id: Id<"projects">; name: string }; browser?: ReactNode; expanded: boolean; onExpand: () => void; onTab: (tab: string) => void; onClose: () => void;
+/** Which cards are open, kept for the next visit: Context and Files open, Browser closed (opening it starts the live view). */
+const cardPrefs = z.object({ context: z.boolean().default(true), files: z.boolean().default(true), browser: z.boolean().default(false) });
+
+/** One of the panel's cards: a titled box that opens and closes, with a little on its right while closed. */
+function PanelCard({ id, title, open, onOpenChange, aside, children }: { id: string; title: string; open: boolean; onOpenChange: (open: boolean) => void; aside?: ReactNode; children: ReactNode }) {
+  return <Collapsible open={open} onOpenChange={onOpenChange} className="rounded-xl bg-card ring-1 ring-foreground/10" data-card={id}>
+    <div className="flex items-center gap-2 pr-2">
+      <CollapsibleTrigger className="group flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-xl py-3 pl-3.5 text-left text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+        {title}<ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-panel-closed:-rotate-90 motion-reduce:transition-none" />
+      </CollapsibleTrigger>
+      {aside}
+    </div>
+    <CollapsibleContent className="h-(--collapsible-panel-height) overflow-hidden transition-[height] duration-200 data-ending-style:h-0 data-starting-style:h-0 motion-reduce:transition-none">
+      <div className="pb-3">{children}</div>
+    </CollapsibleContent>
+  </Collapsible>;
+}
+
+function PanelContent({ conversationId, project, browser, context, expanded, onExpand, onBrowsing, onClose }: {
+  conversationId: Id<"conversations"> | null; project?: { id: Id<"projects">; name: string }; browser?: ReactNode; context?: ChatContext; expanded: boolean; onExpand: () => void; onBrowsing: (open: boolean) => void; onClose: () => void;
 }) {
-  const tabKey = `perry.workspace.tab.${conversationId ?? "new"}`;
-  const [tab, setTabValue] = useState("files");
-  useEffect(() => { try { const saved = localStorage.getItem(tabKey); const next = saved === "work" || (saved === "browser" && browser) ? saved : "files"; setTabValue(next); onTab(next); } catch {} }, [tabKey, Boolean(browser)]);
-  const setTab = (value: string) => { setTabValue(value); onTab(value); try { localStorage.setItem(tabKey, value); } catch {} };
+  const [cards, setCards] = useState(cardPrefs.parse({}));
+  useEffect(() => {
+    let saved = cardPrefs.parse({});
+    try { saved = cardPrefs.parse(JSON.parse(localStorage.getItem("perry.workspace.cards") ?? "{}")); } catch {}
+    setCards(saved);
+    onBrowsing(Boolean(browser) && saved.browser);
+  }, [Boolean(browser)]);
+  const toggle = (card: keyof typeof cards, open: boolean) => {
+    const next = { ...cards, [card]: open };
+    setCards(next);
+    if (card === "browser") onBrowsing(open);
+    try { localStorage.setItem("perry.workspace.cards", JSON.stringify(next)); } catch {}
+  };
   const connection = useConnection();
   const [scope, setScope] = useState<Scope>("chat");
   const scopeKey = `perry.workspace.scope.${conversationId ?? "new"}`;
   useEffect(() => { try { setScope(project && localStorage.getItem(scopeKey) === "project" ? "project" : "chat"); } catch { setScope("chat"); } }, [scopeKey, project?.id]);
   const actualScope = project ? scope : "chat";
   const scopes = [{ value: "chat", label: "This chat" }, ...(project ? [{ value: "project", label: project.name }] : [])];
-  return <Tabs value={tab} onValueChange={(value) => { if (typeof value === "string") setTab(value); }} className="min-h-0 flex-1 gap-0">
-    <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-      <h2 className="sr-only">Workspace</h2>
-      <TabsList variant="line" aria-label="Workspace views" className="mr-auto">
-        <TabsTrigger value="files" className="px-2">Files</TabsTrigger>
-        <TabsTrigger value="work" className="px-2">Work</TabsTrigger>
-        {browser && <TabsTrigger value="browser" className="px-2">Browser</TabsTrigger>}
-      </TabsList>
+  return <div className="flex min-h-0 flex-1 flex-col">
+    <header className="flex shrink-0 items-center gap-1 px-3 pt-2 pb-1">
+      <h2 className="mr-auto text-sm font-medium text-muted-foreground">Workspace</h2>
       <Button size="icon-sm" variant="ghost" className="hidden md:inline-flex" aria-label={expanded ? "Restore workspace width" : "Expand workspace"} onClick={onExpand}>{expanded ? <Minimize2Icon /> : <Maximize2Icon />}</Button>
       <Button size="icon-sm" variant="ghost" aria-label="Close workspace" onClick={onClose}><XIcon /></Button>
     </header>
-    {connection !== "connected" && <p role="status" className="bg-muted px-3 py-2 text-xs">{connection === "connecting" ? "Connecting to Perry…" : "Reconnecting. Showing the last received state."}</p>}
-    {tab !== "browser" && project && <div className="shrink-0 px-3 pt-2">
-      <Select items={scopes} value={actualScope} onValueChange={(value) => { const next = value === "project" ? "project" : "chat"; setScope(next); try { localStorage.setItem(scopeKey, next); } catch {} }}>
-        <SelectTrigger aria-label="Workspace scope" className="h-7 max-w-full border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted dark:bg-transparent"><SelectValue /></SelectTrigger>
-        <SelectContent alignItemWithTrigger={false}>{scopes.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
-      </Select>
-    </div>}
-    <TabsContent value="files" className="flex min-h-0 flex-col">
-      {!conversationId ? <p className="p-4 text-sm text-muted-foreground">Files you upload here will appear here.</p> : <Files key={`${conversationId}:${actualScope}`} conversationId={conversationId} scope={actualScope} scopeId={actualScope === "project" ? project?.id ?? conversationId : conversationId} />}
-    </TabsContent>
-    <TabsContent value="work" className="flex min-h-0 flex-col">
-      {!conversationId ? <p className="p-4 text-sm text-muted-foreground">Work started here will appear here.</p> : <Work conversationId={conversationId} scope={actualScope} />}
-    </TabsContent>
-    {browser && <TabsContent value="browser" className="min-h-0">{browser}</TabsContent>}
-  </Tabs>;
+    {connection !== "connected" && <p role="status" className="mx-3 rounded-lg bg-muted px-3 py-2 text-xs">{connection === "connecting" ? "Connecting to Perry…" : "Reconnecting. Showing the last received state."}</p>}
+    <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+      <PanelCard id="context" title="Context" open={cards.context} onOpenChange={(open) => toggle("context", open)}
+        aside={!cards.context && context?.context ? <span className="nums text-xs text-muted-foreground">{Math.round(context.context.fill * 100)}% used</span> : undefined}>
+        <ContextCard context={context} />
+      </PanelCard>
+      <PanelCard id="files" title="Files" open={cards.files} onOpenChange={(open) => toggle("files", open)}>
+        {project && <div className="px-2 pb-1">
+          <Select items={scopes} value={actualScope} onValueChange={(value) => { const next = value === "project" ? "project" : "chat"; setScope(next); try { localStorage.setItem(scopeKey, next); } catch {} }}>
+            <SelectTrigger aria-label="Workspace scope" className="h-7 max-w-full border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted dark:bg-transparent"><SelectValue /></SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>{scopes.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>}
+        {!conversationId ? <p className="px-3.5 text-sm text-muted-foreground">Files you send here, and the ones Perry makes, show up here.</p> : <Files key={`${conversationId}:${actualScope}`} conversationId={conversationId} scope={actualScope} scopeId={actualScope === "project" ? project?.id ?? conversationId : conversationId} />}
+      </PanelCard>
+      {browser && <PanelCard id="browser" title="Browser" open={cards.browser} onOpenChange={(open) => toggle("browser", open)}>
+        {/* Mounted only while open: closed, the live view stops and nothing streams. */}
+        {cards.browser && browser}
+      </PanelCard>}
+    </div>
+  </div>;
+}
 
+/** The chat's engine and model, how much of its context it has used, and how much of the engine's plan is left. */
+function ContextCard({ context }: { context?: ChatContext }) {
+  const now = Date.now();
+  const used = context?.context;
+  const windows = context?.usage?.limits?.windows ?? [];
+  const tokens = (count: number) => count >= 1_000_000 ? `${(count / 1_000_000).toFixed(count % 1_000_000 ? 1 : 0)}M` : `${Math.round(count / 1000)}k`;
+  return <div className="space-y-4 px-3.5 text-sm">
+    <div data-context-used>
+      {used ? <>
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium nums">{Math.round(used.fill * 100)}% used</span>
+          <span className="nums text-xs text-muted-foreground">{tokens(used.fill * used.window)} / {tokens(used.window)}</span>
+        </div>
+        <Meter value={used.fill} label="Context used" />
+        <p className="mt-1.5 text-xs text-muted-foreground">Perry saves what matters to Brain before the engine compacts it.</p>
+      </> : <p className="text-xs text-muted-foreground">How full the context is shows after Perry's next reply.</p>}
+    </div>
+    {context?.engine && <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-xs">
+      <dt className="text-muted-foreground">Engine</dt><dd className="truncate text-right">{ENGINE_LABELS[context.engine]}</dd>
+      <dt className="text-muted-foreground">Model</dt><dd className="truncate text-right">{context.model ?? "Default"}</dd>
+      {context.usage?.limits?.plan && <><dt className="text-muted-foreground">Plan</dt><dd className="truncate text-right">{context.usage.limits.plan}</dd></>}
+    </dl>}
+    {windows.length > 0 && <div className="space-y-2.5" data-plan-usage>
+      {windows.map((window) => {
+        const percent = usedNow(window, now);
+        return <div key={window.id}>
+          <div className="flex items-baseline justify-between gap-2 text-xs">
+            <span>{window.label}</span>
+            <span className="nums text-muted-foreground">{Math.round(percent)}%{resetsText(window, now) ? ` · ${resetsText(window, now)}` : ""}</span>
+          </div>
+          <Meter value={percent / 100} label={`${window.label} plan used`} tone={percent >= 100 ? "out" : percent >= WARN_PERCENT ? "low" : "ok"} />
+        </div>;
+      })}
+    </div>}
+  </div>;
+}
+
+function Meter({ value, label, tone = "ok" }: { value: number; label: string; tone?: "ok" | "low" | "out" }) {
+  const percent = Math.max(0, Math.min(100, value * 100));
+  return <div role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)} className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+    <div className={cn("h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none", tone === "out" ? "bg-destructive" : tone === "low" ? "bg-warning" : "bg-primary")} style={{ width: `${percent}%` }} />
+  </div>;
 }
 
 function Files({ conversationId, scope, scopeId }: { conversationId: Id<"conversations">; scope: Scope; scopeId: string }) {
@@ -224,7 +298,7 @@ function Files({ conversationId, scope, scopeId }: { conversationId: Id<"convers
               </div>)}
             </CollapsibleContent>
           </Collapsible>)}
-        {page && <div className="mt-3 flex items-center justify-between gap-2">
+        {page && (cursors.length > 0 || !page.isDone) && <div className="mt-3 flex items-center justify-between gap-2">
           {cursors.length > 0 && <Button size="sm" variant="outline" onClick={() => { setCursor(cursors.at(-1) ?? null); setCursors((was) => was.slice(0, -1)); }}>Previous files</Button>}
           {!page.isDone && <Button size="sm" variant="outline" onClick={() => { setCursors((was) => [...was, cursor]); setCursor(page.continueCursor); }}>Next files</Button>}
         </div>}
@@ -307,33 +381,5 @@ function AttachLibrary({ conversationId, onClose }: { conversationId: Id<"conver
     <Input autoFocus aria-label="Find a Library file" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Library" className="my-3" />
     {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
     <div className="min-h-0 max-h-64 overflow-y-auto">{library === undefined ? <p role="status">Loading Library…</p> : library.items.slice(0, 50).map((item) => <Button variant="ghost" key={item.id} disabled={!!pending} className="block w-full truncate text-left text-xs" onClick={() => { setPending(item.id); void attach({ key, conversationId, id: item.id }).then(onClose).catch((error: unknown) => setError(errorText(error))).finally(() => setPending(undefined)); }}>{pending === item.id ? "Attaching… " : ""}{item.name}</Button>)}</div>
-  </div>;
-}
-
-function Work({ conversationId, scope }: { conversationId: Id<"conversations">; scope: Scope }) {
-  const { dashboardKey: key } = useSession();
-  const [history, setHistory] = useState(false);
-  const [selected, setSelected] = useState<string>();
-  const preview = useQuery(api.workspace.get, selected ? { key, conversationId, scope, id: selected } : "skip");
-  const work = useQuery(api.workspace.work, { key, conversationId, scope, history });
-  if (selected) return <FilePreview item={preview} onBack={() => setSelected(undefined)} />;
-  return <div className="min-h-0 flex-1 overflow-y-auto p-3">
-    {!work ? <p role="status" className="text-sm text-muted-foreground">Loading work…</p> : !work.length ? <p className="text-sm text-muted-foreground">No work started in this scope yet.</p> : work.map((item) => <article key={item.id} className="border-b py-4 first:pt-1 last:border-0">
-      <div className="flex items-start justify-between gap-2"><h3 className="line-clamp-2 min-w-0 text-sm font-medium [overflow-wrap:anywhere]" title={item.title}>{item.title}</h3><StatusBadge tone={item.error ? "danger" : item.status === "waiting" ? "warning" : "neutral"} pulse={item.status === "running"}>{item.status.charAt(0).toUpperCase() + item.status.slice(1)}</StatusBadge></div>
-      {item.currentStep && <p className="mt-2 text-xs text-muted-foreground">{item.currentStep}</p>}
-      {item.plan.length > 0 && <Collapsible className="mt-2">
-        <CollapsibleTrigger render={<Button size="xs" variant="ghost" className="group -ml-2 text-muted-foreground" />}><ChevronRightIcon className="transition-transform group-data-panel-open:rotate-90" />Steps ({item.plan.length})</CollapsibleTrigger>
-        <CollapsibleContent><ol className="mt-2 space-y-2 pl-1">{item.plan.map((step, index) => <li key={index} className="text-xs"><span className="mr-2 text-muted-foreground">{step.status === "done" ? "✓" : step.status === "active" ? "→" : "○"}</span>{step.title}</li>)}</ol></CollapsibleContent>
-      </Collapsible>}
-      {item.error && <p className="mt-2 text-xs text-destructive">{item.error.slice(0, 400)}</p>}
-      {item.outputs.length > 0 && <Collapsible className="mt-2">
-        <CollapsibleTrigger render={<Button size="xs" variant="ghost" className="group -ml-2 text-muted-foreground" />}><ChevronRightIcon className="transition-transform group-data-panel-open:rotate-90" />Related outputs ({item.outputs.length}{item.outputs.length === 50 ? "+" : ""})</CollapsibleTrigger>
-        <CollapsibleContent className="mt-2 space-y-1">{item.outputs.map((output) => <Button key={output.id} variant="ghost" size="sm" onClick={() => setSelected(output.id)} className="w-full justify-start text-xs"><FileIcon /><span className="truncate">{output.name}{output.status !== "ready" ? " · Unavailable" : ""}</span></Button>)}</CollapsibleContent>
-      </Collapsible>}
-      <Link href={`/work${item.taskId ? `#task-${item.taskId}` : ""}`} className="link mt-3 inline-block text-xs">Open Work</Link>
-      {item.conversationId !== conversationId && <Link href={`/chat/${item.conversationId}`} className="link ml-3 text-xs">Open chat</Link>}
-    </article>)}
-    <label className="mt-2 flex items-center gap-2 text-xs"><Checkbox checked={history} onCheckedChange={setHistory} />Include completed history</label>
-    {work && work.length >= (history ? 100 : 25) && <p className="mt-2 text-xs text-muted-foreground">Showing the most recent work. <Link href="/work" className="underline">Open Work for more.</Link></p>}
   </div>;
 }

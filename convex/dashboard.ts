@@ -394,7 +394,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean } }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean }; context?: { fill: number; window: number } }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
@@ -426,6 +426,8 @@ export const getChat = query({
       streaming: running?.flush || running?.checkpoint ? undefined : running?.partial,
       lastError: latestRun?.status === "error" ? latestRun.error : undefined,
       ...(contact ? { contact: { name: contact.name, group: contact.kind === "group" } } : {}),
+      // How full its engine's context is, as its last turn said (codex.ts, recordTrace): unset until one has.
+      ...(conversation.contextWindow && conversation.contextFill !== undefined ? { context: { fill: conversation.contextFill, window: conversation.contextWindow } } : {}),
     };
   },
 });
