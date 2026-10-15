@@ -55,8 +55,9 @@ export function pollTelegram(runtime: Runtime): () => void {
           if (!removed.ok) throw new Error(removed.description ?? "Telegram refused to remove the old webhook.");
           cleared = token;
           console.log("[perry] Telegram: polling for messages");
-          // The list Telegram shows on typing "/"; a refusal costs only the menu, not the messages.
-          const listed = await call<boolean>(token, "setMyCommands", { commands: TELEGRAM_COMMANDS }, stop.signal);
+          // The list Telegram shows on typing "/"; a refusal or a stall costs only the menu, never the messages.
+          const listed = await call<boolean>(token, "setMyCommands", { commands: TELEGRAM_COMMANDS }, AbortSignal.any([stop.signal, AbortSignal.timeout(10_000)]))
+            .catch((error): Reply<boolean> => ({ ok: false, description: error instanceof Error ? error.message : String(error) }));
           if (!listed.ok) console.error(`[perry] Telegram: could not list the commands: ${listed.description ?? "refused"}`);
         }
         const offset = Number(await runtime.kv.get(OFFSET_KEY) ?? 0) || undefined;

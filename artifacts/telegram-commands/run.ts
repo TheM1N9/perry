@@ -2,7 +2,9 @@ import { mkdirSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { perry } from "../engine-acp/harness";
 
-// bun artifacts/telegram-commands/run.ts <outDir>
+// bun artifacts/telegram-commands/run.ts <outDir> [refused|stalled]
+// With "refused" the stand-in answers setMyCommands with an error, with
+// "stalled" it never answers: /help must still be answered either way.
 // The list Telegram shows when the owner types "/". A fresh Perry from the
 // production build (`pnpm build` first) on a spare port with a temp
 // PERRY_HOME and a stand-in Telegram Bot API that records setMyCommands and
@@ -14,10 +16,11 @@ import { perry } from "../engine-acp/harness";
 //      a duplicate, an empty or over-256-character description, or over 100 entries.
 //   3. The list names a command Perry does not answer (it is not in /help), or
 //      leaves out one /help lists, so the two drift apart.
-//   4. A refusal of the list stops polling: the owner's /help goes unanswered.
+//   4. A refusal of the list, or a request for it that never returns, stops
+//      polling: the owner's /help goes unanswered.
 
-const [outDir] = process.argv.slice(2);
-if (!outDir) throw new Error("usage: bun artifacts/telegram-commands/run.ts <outDir>");
+const [outDir, mode] = process.argv.slice(2);
+if (!outDir) throw new Error("usage: bun artifacts/telegram-commands/run.ts <outDir> [refused|stalled]");
 mkdirSync(outDir, { recursive: true });
 
 const OWNER = 4242;
@@ -30,7 +33,13 @@ const stub = createServer((request: IncomingMessage, response: ServerResponse) =
     const args = body ? JSON.parse(body) : {};
     const reply = (result: unknown) => { response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ ok: true, result })); };
     if (method === "getMe") return reply({ id: 999, is_bot: true, username: "perry_commands_bot", first_name: "Perry" });
-    if (method === "setMyCommands") { telegram.listCalls++; telegram.commands = args.commands ?? []; return reply(true); }
+    if (method === "setMyCommands") {
+      telegram.listCalls++;
+      if (mode === "stalled") return; // never answered
+      if (mode === "refused") { response.writeHead(400, { "content-type": "application/json" }); return void response.end(JSON.stringify({ ok: false, error_code: 400, description: "Bad Request: refused by the stand-in" })); }
+      telegram.commands = args.commands ?? [];
+      return reply(true);
+    }
     if (method === "getUpdates") {
       if (telegram.pending.length) return reply(telegram.pending.splice(0));
       return void setTimeout(() => reply(telegram.pending.splice(0)), 1_000);
@@ -49,7 +58,7 @@ const ownerSays = (text: string) => telegram.pending.push({
 });
 
 const p = await perry({
-  name: "telegram-commands",
+  name: mode ? `telegram-commands-${mode}` : "telegram-commands",
   outDir,
   engine: "claude",
   runnerEnv: () => ({}),
@@ -64,10 +73,13 @@ try {
   notes.commands = telegram.commands;
 
   // 1, 2.
+  const registered = !mode;
   const names = telegram.commands.map((item) => item.command);
-  check("listRegistered", names.length > 0);
-  check("namesAreValid", names.every((name) => /^[a-z0-9_]{1,32}$/.test(name)) && new Set(names).size === names.length);
-  check("descriptionsAreValid", telegram.commands.every((item) => item.description.length >= 1 && item.description.length <= 256) && names.length <= 100);
+  if (registered) {
+    check("listRegistered", names.length > 0);
+    check("namesAreValid", names.every((name) => /^[a-z0-9_]{1,32}$/.test(name)) && new Set(names).size === names.length);
+    check("descriptionsAreValid", telegram.commands.every((item) => item.description.length >= 1 && item.description.length <= 256) && names.length <= 100);
+  } else check("listWasAttempted", telegram.listCalls > 0);
 
   // 3, 4. Pair the owner, then /help, which must still be answered and agree with the list.
   const { code } = await call<{ code: string }>("installation:startPairing");
@@ -80,8 +92,10 @@ try {
   const helped = [...help.matchAll(/^\s*\/([a-z]+)\s{2,}/gm)].map((match) => match[1]);
   notes.helped = helped;
   check("helpAnsweredAfterList", helped.length > 0);
-  check("everyListedCommandIsInHelp", names.every((name) => helped.includes(name)));
-  check("everyHelpCommandIsListed", helped.every((name) => names.includes(name)));
+  if (registered) {
+    check("everyListedCommandIsInHelp", names.every((name) => helped.includes(name)));
+    check("everyHelpCommandIsListed", helped.every((name) => names.includes(name)));
+  }
 } catch (error) {
   check("noError", false, String(error));
 }
