@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 
 // bun artifacts/workspace-ui/run.ts <outDir> [label]
-// The chat's workspace panel, cards that open and close (Context, Files, Browser), as the owner sees it, in
+// The chat's workspace, floating windows over the chat opened from buttons in its header: each card (Context,
+// Files, Browser) on its own, or all of them stacked as cards that open and close; as the owner sees it, in
 // light and dark, on a desktop and a phone: the panel's look and how it works.
 // `label` prefixes the pictures, so a run before a change and one after sit
 // side by side.
@@ -17,6 +18,7 @@ import { FAKE_AGENT, perry, sleep } from "../engine-acp/harness";
 //
 // Ways it could fail, written down before the checks:
 //   1. The panel does not open from the chat, or opens without its cards; Context does not name the chat's engine.
+//      A card's own button opens some other card, or more than it; a window pushes the chat aside instead of floating.
 //   2. Files: a file Perry wrote is not listed, or opening it shows nothing of it.
 //   3. Browser: it cannot be opened from its card; the page never shows, or does not fit the card (cut off or
 //      wider than it); taking
@@ -107,6 +109,23 @@ try {
     await waitFor(`[...document.querySelectorAll('[data-role="assistant"]')].some((el) => el.textContent.includes("I wrote ${name}"))`, `the reply about ${name}`, 90);
   }
 
+  // --- Each card's own button, then all of them ------------------------------------------------------
+  const chatWidth = () => evaluate(`Math.round(document.querySelector("#content").getBoundingClientRect().width)`) as Promise<number>;
+  const before = await chatWidth();
+  const own: Record<string, unknown> = {};
+  for (const [label, view] of [["Open Context", "context"], ["Open Files", "files"], ["Open Browser", "browser"]] as const) {
+    await click(`button[aria-label="${label}"]`);
+    await waitFor(`document.querySelector('${PANEL}')?.dataset.view === "${view}"`, `the ${view} window`, 10).catch(() => {});
+    own[view] = await evaluate(`(() => { const panel = document.querySelector('${PANEL}'); return panel && { view: panel.dataset.view, title: panel.querySelector("h2")?.textContent, cards: [...panel.querySelectorAll("[data-card]")].map((card) => card.dataset.card), pressed: document.querySelector('button[aria-label="${label}"]').getAttribute("aria-pressed") }; })()`);
+    if (view === "files") await shot("own-files-light");
+  }
+  notes.ownWindows = own;
+  check("eachCardItsOwnWindow", Object.entries(own).every(([view, got]) => { const g = got as { view: string; cards: string[]; pressed: string } | null; return g?.view === view && g.cards.length === 1 && g.cards[0] === view && g.pressed === "true"; }), own);
+  const during = await chatWidth();
+  check("floatsOverTheChat", during === before, { before, during });
+  await click(`button[aria-label="Open Browser"]`);
+  check("sameButtonCloses", await waitFor(`!document.querySelector('${PANEL}')`, "the window to close", 10).then(() => true, () => false));
+
   // --- Files -----------------------------------------------------------------------------------------
   check("panelOpens", await click(`button[aria-label="Open workspace"]`) && await waitFor(`document.querySelector('${PANEL}')`, "the panel", 10).then(() => true, () => false));
   const cards = await evaluate(`[...document.querySelectorAll('${PANEL} [data-card]')].map((card) => card.dataset.card)`) as string[];
@@ -123,7 +142,7 @@ try {
   await click(`${PANEL} button[aria-label="All files"]`);
 
   // --- Browser, in its card --------------------------------------------------------------------------
-  await click(`${PANEL} [data-card="browser"] [data-slot="collapsible-trigger"]`);
+  if (!await evaluate(`Boolean(document.querySelector('${PANEL} [data-card="browser"] [data-browser-state]'))`)) await click(`${PANEL} [data-card="browser"] [data-slot="collapsible-trigger"]`);
   await waitFor(`document.querySelector('${PANEL} [data-card="browser"] [data-browser-state]')`, "the browser card to open", 10);
   await sleep(1_000);
   await shot("browser-closed-light");
@@ -194,6 +213,12 @@ try {
   await click(`${PANEL} [data-card="browser"] [data-slot="collapsible-trigger"]`);
   await sleep(800);
   await shot("files-dark");
+  await click(`button[aria-label="Open Browser"]`);
+  await waitFor(`document.querySelector('${PANEL} img[alt^="Live page"]')`, "the browser window", 20).catch(() => {});
+  await sleep(800);
+  await shot("own-browser-dark");
+  await click(`button[aria-label="Open Files"]`);
+  await sleep(500);
   await size(390, 844, true);
   await sleep(800);
   await shot("phone-dark");

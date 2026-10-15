@@ -75,46 +75,44 @@ function KindIcon({ item }: { item: WorkspaceFile }) {
   return <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground"><Icon className="size-4" /></span>;
 }
 
-/** Shared right panel. Browser supplies its real-session view here without another sidebar. */
-export function WorkspacePanel({ conversationId, project, open, onOpenChange, browser, context }: {
+/** What the workspace window shows: one card, or all of them stacked. */
+export type WorkspaceView = "all" | "context" | "files" | "browser";
+const TITLES: Record<WorkspaceView, string> = { all: "Workspace", context: "Context", files: "Files", browser: "Browser" };
+
+/**
+ * The chat's workspace, as a window floating over the chat (not a column beside it, so the chat never moves): one
+ * card, picked by its button in the chat's header, or every card stacked. On a phone, a sheet over the whole screen.
+ */
+export function WorkspacePanel({ conversationId, project, view, onViewChange, browser, context }: {
   conversationId: Id<"conversations"> | null;
   project?: { id: Id<"projects">; name: string };
-  open: boolean; onOpenChange: (open: boolean) => void; browser?: ReactNode;
+  view: WorkspaceView | null; onViewChange: (view: WorkspaceView | null) => void; browser?: ReactNode;
   /** What the Context card says: the chat's engine and model, how full its context is, and the engine's plan. */
   context?: ChatContext;
 }) {
   const client = useConvex();
   const mobile = useIsMobile();
-  const [width, setWidth] = useState(380);
   const [browsing, setBrowsing] = useState(false);
-  // The live page is drawn at 1280px: with the Browser card open the panel opens wide so it can be read, unless the owner narrows it.
+  // The live page is drawn at 1280px: showing it, the window opens wide so it can be read, unless the owner narrows it.
   const [chosenWide, setChosenWide] = useState<boolean>();
-  const expanded = chosenWide ?? browsing;
-  useEffect(() => {
-    try { const saved = Number(localStorage.getItem("perry.workspace.width")); if (saved >= 300 && saved <= 640) setWidth(saved); } catch {}
-  }, []);
-  function resize(value: number) {
-    const next = Math.max(300, Math.min(640, value));
-    setWidth(next);
-    try { localStorage.setItem("perry.workspace.width", String(next)); } catch {}
-  }
-  const content = <WorkspaceBoundary key={conversationId ?? "new"} onRetry={() => client.refresh()} onClose={() => onOpenChange(false)}><PanelContent conversationId={conversationId} project={project} browser={browser} context={context} expanded={expanded} onExpand={() => setChosenWide(!expanded)} onBrowsing={(next) => { setBrowsing(next); setChosenWide(undefined); }} onClose={() => onOpenChange(false)} /></WorkspaceBoundary>;
-  if (mobile) return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent showCloseButton={false} className="w-full max-w-full gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-full motion-reduce:transition-none"><SheetTitle className="sr-only">Chat workspace</SheetTitle><SheetDescription className="sr-only">Files, work and the live browser associated with this chat.</SheetDescription>{content}</SheetContent></Sheet>;
-  if (!open) return null;
-  return <aside aria-label="Chat workspace" className="relative flex h-full min-h-0 shrink-0 flex-col border-l bg-background" style={{ width: expanded ? "min(58%, calc(100% - 600px))" : `min(${width}px, 50%)` }}>
-    <div role="separator" aria-label="Resize workspace" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={640} aria-valuenow={width} tabIndex={0}
-      className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize focus-visible:bg-primary/20"
-      onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); resize(width + (event.key === "ArrowLeft" ? 20 : -20)); } }}
-      onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); }}
-      onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) resize(window.innerWidth - event.clientX); }} />
+  useEffect(() => setChosenWide(undefined), [view]);
+  const wide = chosenWide ?? (view === "browser" || (view === "all" && browsing));
+  const close = () => onViewChange(null);
+  if (!view && !mobile) return null;
+  const content = view && <WorkspaceBoundary key={conversationId ?? "new"} onRetry={() => client.refresh()} onClose={close}><PanelContent view={view} conversationId={conversationId} project={project} browser={browser} context={context} expanded={wide} onExpand={mobile ? undefined : () => setChosenWide(!wide)} onBrowsing={setBrowsing} onClose={close} /></WorkspaceBoundary>;
+  if (mobile) return <Sheet open={Boolean(view)} onOpenChange={(open) => { if (!open) close(); }}><SheetContent showCloseButton={false} className="w-full max-w-full gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-full motion-reduce:transition-none"><SheetTitle className="sr-only">Chat workspace</SheetTitle><SheetDescription className="sr-only">Context, files and the live browser of this chat.</SheetDescription>{content}</SheetContent></Sheet>;
+  return <aside aria-label="Chat workspace" data-view={view}
+    className="absolute top-14 right-3 z-30 flex max-h-[calc(100%-4.5rem)] min-h-0 flex-col overflow-hidden rounded-2xl bg-popover text-popover-foreground shadow-float ring-1 ring-foreground/10 animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 duration-150 motion-reduce:animate-none"
+    style={{ width: wide ? "min(780px, calc(100% - 1.5rem))" : "min(400px, calc(100% - 1.5rem))" }}
+    onKeyDown={(event) => { if (event.key === "Escape" && !(event.target as HTMLElement).closest('[role="application"]')) { event.stopPropagation(); close(); } }}>
     {content}
   </aside>;
 }
 
-/** Which cards are open, kept for the next visit: Context and Files open, Browser closed (opening it starts the live view). */
+/** Which cards are open in the stack, kept for the next visit: Context and Files open, Browser closed (opening it starts the live view). */
 const cardPrefs = z.object({ context: z.boolean().default(true), files: z.boolean().default(true), browser: z.boolean().default(false) });
 
-/** One of the panel's cards: a titled box that opens and closes, with a little on its right while closed. */
+/** One of the stack's cards: a titled box that opens and closes, with a little on its right while closed. */
 function PanelCard({ id, title, open, onOpenChange, aside, children }: { id: string; title: string; open: boolean; onOpenChange: (open: boolean) => void; aside?: ReactNode; children: ReactNode }) {
   return <Collapsible open={open} onOpenChange={onOpenChange} className="rounded-xl bg-card ring-1 ring-foreground/10" data-card={id}>
     <div className="flex items-center gap-2 pr-2">
@@ -129,8 +127,8 @@ function PanelCard({ id, title, open, onOpenChange, aside, children }: { id: str
   </Collapsible>;
 }
 
-function PanelContent({ conversationId, project, browser, context, expanded, onExpand, onBrowsing, onClose }: {
-  conversationId: Id<"conversations"> | null; project?: { id: Id<"projects">; name: string }; browser?: ReactNode; context?: ChatContext; expanded: boolean; onExpand: () => void; onBrowsing: (open: boolean) => void; onClose: () => void;
+function PanelContent({ view, conversationId, project, browser, context, expanded, onExpand, onBrowsing, onClose }: {
+  view: WorkspaceView; conversationId: Id<"conversations"> | null; project?: { id: Id<"projects">; name: string }; browser?: ReactNode; context?: ChatContext; expanded: boolean; onExpand?: () => void; onBrowsing: (open: boolean) => void; onClose: () => void;
 }) {
   const [cards, setCards] = useState(cardPrefs.parse({}));
   useEffect(() => {
@@ -151,32 +149,35 @@ function PanelContent({ conversationId, project, browser, context, expanded, onE
   useEffect(() => { try { setScope(project && localStorage.getItem(scopeKey) === "project" ? "project" : "chat"); } catch { setScope("chat"); } }, [scopeKey, project?.id]);
   const actualScope = project ? scope : "chat";
   const scopes = [{ value: "chat", label: "This chat" }, ...(project ? [{ value: "project", label: project.name }] : [])];
+  const files = <>
+    {project && <div className="px-2 pb-1">
+      <Select items={scopes} value={actualScope} onValueChange={(value) => { const next = value === "project" ? "project" : "chat"; setScope(next); try { localStorage.setItem(scopeKey, next); } catch {} }}>
+        <SelectTrigger aria-label="Workspace scope" className="h-7 max-w-full border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted dark:bg-transparent"><SelectValue /></SelectTrigger>
+        <SelectContent alignItemWithTrigger={false}>{scopes.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+      </Select>
+    </div>}
+    {!conversationId ? <p className="px-3.5 text-sm text-muted-foreground">Files you send here, and the ones Perry makes, show up here.</p> : <Files key={`${conversationId}:${actualScope}`} conversationId={conversationId} scope={actualScope} scopeId={actualScope === "project" ? project?.id ?? conversationId : conversationId} />}
+  </>;
   return <div className="flex min-h-0 flex-1 flex-col">
-    <header className="flex shrink-0 items-center gap-1 px-3 pt-2 pb-1">
-      <h2 className="mr-auto text-sm font-medium text-muted-foreground">Workspace</h2>
-      <Button size="icon-sm" variant="ghost" className="hidden md:inline-flex" aria-label={expanded ? "Restore workspace width" : "Expand workspace"} onClick={onExpand}>{expanded ? <Minimize2Icon /> : <Maximize2Icon />}</Button>
+    <header className="flex shrink-0 items-center gap-1 border-b py-1.5 pr-1.5 pl-4">
+      <h2 className="mr-auto text-sm font-semibold">{TITLES[view]}</h2>
+      {onExpand && <Button size="icon-sm" variant="ghost" aria-label={expanded ? "Narrow the window" : "Widen the window"} onClick={onExpand}>{expanded ? <Minimize2Icon /> : <Maximize2Icon />}</Button>}
       <Button size="icon-sm" variant="ghost" aria-label="Close workspace" onClick={onClose}><XIcon /></Button>
     </header>
-    {connection !== "connected" && <p role="status" className="mx-3 rounded-lg bg-muted px-3 py-2 text-xs">{connection === "connecting" ? "Connecting to Perry…" : "Reconnecting. Showing the last received state."}</p>}
-    <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+    {connection !== "connected" && <p role="status" className="mx-3 mt-3 rounded-lg bg-muted px-3 py-2 text-xs">{connection === "connecting" ? "Connecting to Perry…" : "Reconnecting. Showing the last received state."}</p>}
+    {view === "all" ? <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
       <PanelCard id="context" title="Context" open={cards.context} onOpenChange={(open) => toggle("context", open)}
         aside={!cards.context && context?.context ? <span className="nums text-xs text-muted-foreground">{Math.round(context.context.fill * 100)}% used</span> : undefined}>
         <ContextCard context={context} />
       </PanelCard>
-      <PanelCard id="files" title="Files" open={cards.files} onOpenChange={(open) => toggle("files", open)}>
-        {project && <div className="px-2 pb-1">
-          <Select items={scopes} value={actualScope} onValueChange={(value) => { const next = value === "project" ? "project" : "chat"; setScope(next); try { localStorage.setItem(scopeKey, next); } catch {} }}>
-            <SelectTrigger aria-label="Workspace scope" className="h-7 max-w-full border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted dark:bg-transparent"><SelectValue /></SelectTrigger>
-            <SelectContent alignItemWithTrigger={false}>{scopes.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>}
-        {!conversationId ? <p className="px-3.5 text-sm text-muted-foreground">Files you send here, and the ones Perry makes, show up here.</p> : <Files key={`${conversationId}:${actualScope}`} conversationId={conversationId} scope={actualScope} scopeId={actualScope === "project" ? project?.id ?? conversationId : conversationId} />}
-      </PanelCard>
+      <PanelCard id="files" title="Files" open={cards.files} onOpenChange={(open) => toggle("files", open)}>{files}</PanelCard>
       {browser && <PanelCard id="browser" title="Browser" open={cards.browser} onOpenChange={(open) => toggle("browser", open)}>
         {/* Mounted only while open: closed, the live view stops and nothing streams. */}
         {cards.browser && browser}
       </PanelCard>}
-    </div>
+    </div> : <div className="min-h-0 flex-1 overflow-y-auto py-3" data-card={view}>
+      {view === "context" ? <ContextCard context={context} /> : view === "files" ? files : browser ?? <p className="px-4 text-sm text-muted-foreground">Perry's browser is off here.</p>}
+    </div>}
   </div>;
 }
 
