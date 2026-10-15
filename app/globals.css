@@ -102,6 +102,12 @@
   --sidebar-accent-foreground: #1d1d1f;
   --sidebar-border: #e8e8ec;
   --sidebar-ring: #0c7a70;
+  /* Brain's map: three hues, each a role (hubs, your pages, people), validated as a set for colour-blind readers
+     (dataviz, --pairs all); the journal and chats a quiet grey, as they are most of it. Shape tells kinds apart within a hue. */
+  --map-hub: #1baf7a;
+  --map-page: #2a78d6;
+  --map-person: #eb6834;
+  --map-quiet: #a3a3aa;
 }
 
 .dark {
@@ -132,6 +138,10 @@
   --chart-3: #f0b44c;
   --chart-4: #a0a0a8;
   --chart-5: #f2f2f4;
+  --map-hub: #199e70;
+  --map-page: #3987e5;
+  --map-person: #d95926;
+  --map-quiet: #66666e;
   --sidebar: #111113;
   --sidebar-foreground: #f2f2f4;
   --sidebar-primary: #5fd4c8;
