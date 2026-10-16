@@ -175,4 +175,3 @@ try {
   writeFileSync(new URL('./e2e-results.json', import.meta.url), JSON.stringify({ passed: true, fixture: 'real BackendClient with fake fetch; no server/Runtime bootstrap or network', flows: reports, requestCount: calls.length, maxOutstanding, boundsBytes: total, browserPaintVerified: false }, null, 2));
   console.log(JSON.stringify({ passed: true, flows: reports.length, requestCount: calls.length, maxOutstanding }));
 } finally { for (const c of clients) c.close(); }
-
