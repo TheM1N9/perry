@@ -2,17 +2,17 @@
   "batch": 1,
   "branch": "codex/batch-1-reliability",
   "base": "e8d15e5c90139aefce6a32cdc8ad7968cac4cd0f",
-  "verifiedAt": "2026-10-17T01:12:14.8098508+05:30",
+  "verifiedAt": "2026-10-16T19:58:37.5078163+00:00",
   "readyForReview": true,
   "suites": [
     {
-      "scenarios": 19,
+      "scenarios": 23,
       "issue": 251,
       "passed": true,
       "artifact": "encryption.json"
     },
     {
-      "checks": 51,
+      "checks": 62,
       "issue": 281,
       "passed": true,
       "artifact": "steering.json"
@@ -121,7 +121,7 @@
       "path": "components/dashboard/screens/work.tsx"
     },
     {
-      "sha256": "c4f4ce3ef01465f832100da187f4d6d4c2b1da419bd0fc6b72101503cff7a1b5",
+      "sha256": "6bfacdb5346b1245a540c8a4136d7bb5c0b13abc7e4405afaa70bd84dcc721b0",
       "path": "components/dashboard/task-steering/index.tsx"
     },
     {
@@ -193,7 +193,7 @@
       "path": "convex/secrets.ts"
     },
     {
-      "sha256": "95f632604634b96bc809ec00a7d2a8bf4b2cd7f4dd9bfd925f3fafbc8b0e8d33",
+      "sha256": "0fbc9ae38d1d4846df761ff8c6d84d12d06e50da1f59c1ca256725e83df079d8",
       "path": "convex/tasks.ts"
     },
     {
@@ -221,7 +221,7 @@
       "path": "runner/engines/acp.ts"
     },
     {
-      "sha256": "a76dbc9a0a71cdb2b57d3af2430c2ca83643e83a6e4510cc2e9eee21b4b26405",
+      "sha256": "c08132a22329fc678d846bd983603624b2159606801c1850343fcf23e388bd33",
       "path": "runner/index.ts"
     },
     {
@@ -233,11 +233,11 @@
       "path": "runner/trace.ts"
     },
     {
-      "sha256": "8bfd00d7738f64056dd8ec943d74ca5a893b83cf32a7d745e05929dff136c83e",
+      "sha256": "1f87de6bc75c30c6d6bea96dab25211432abdfdbaf5462df6d84031becef4c4f",
       "path": "scripts/setup.ts"
     },
     {
-      "sha256": "7527856dc87bc1abfbcae613be5382ead7983939fc381ece2e141325875db6b4",
+      "sha256": "5d87c7db12fbd97c7931f588d9b46520163c7c9533a8d5c1b3d1e575eeec3916",
       "path": "server/credential-encryption.ts"
     },
     {
@@ -253,5 +253,18 @@
       "path": "server/modules.ts"
     }
   ],
-  "sourceHashEncoding": "UTF-8 text with LF newlines"
+  "sourceHashEncoding": "UTF-8 text with LF newlines",
+  "reviewFollowup": {
+    "setupPermissionChecks": "Fresh/rerun POSIX checks added to existing CI E2E; not executed locally.",
+    "metadataHeaderValidated": true,
+    "affectedSuitesRerun": [
+      251,
+      281
+    ],
+    "unknownDeliveryLabelFallback": true,
+    "liveAccessPolicyRetained": true,
+    "productionBuildExitCode": 0,
+    "dotenvFileURLFixed": true,
+    "retainedSteeringPruned": true
+  }
 }

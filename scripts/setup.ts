@@ -20,7 +20,7 @@
 
 import { randomBytes } from "node:crypto";
 import { trackInstallation } from "./telemetry";
-import { accessSync, constants, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { delimiter, join, resolve } from "node:path";
 import { ENGINE_LABELS, isRunnable, RUNNABLE_ENGINES, updateOf, type EngineKind } from "../convex/lib/engines";
@@ -102,7 +102,10 @@ function writeEnvFile(values: Record<string, string | undefined>) {
   for (const [key, value] of Object.entries(values)) {
     if (value !== undefined && value !== "") lines.push(`${key}=${value}`);
   }
-  writeFileSync(ENV_FILE, lines.join("\n") + "\n", "utf8");
+  // Restrict an existing file before placing any new key in it.
+  if (existsSync(ENV_FILE)) chmodSync(ENV_FILE, 0o600);
+  writeFileSync(ENV_FILE, lines.join("\n") + "\n", { encoding: "utf8", mode: 0o600 });
+  chmodSync(ENV_FILE, 0o600);
 }
 
 // --- Engines --------------------------------------------------------------------

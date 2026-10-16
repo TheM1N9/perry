@@ -22,3 +22,11 @@ Verification scope: disposable full Runtime + actual SQLite + actual backend fun
 - cleanup itself fails: preserve original, report failure; a subsequent retry may recover the exact staging file after permissions/storage are corrected.
 - staging contains a secret/encryption key in error/assertion output or partial serialization writes plaintext: persist only boolean evidence and scan fixture bytes.
 - filesystem failure injection must affect only exact staging descriptors in this disposable E2E; restore native Node fs exports before continuing Runtime tests, avoid new production failure toggles.
+
+## PR297 Finder metadata failure inventory (recorded before harness edits)
+- A genuine exact-name .DS_Store buddy-container header at the backup root/nested folder blocks normal bootstrap even with intact JSON/SQLite backups.
+- Arbitrary plaintext/JSON renamed .DS_Store, a truncated header, wrong magic/version, invalid root range or mismatched duplicate root offset is silently skipped; unsupported content must remain in place and stop bootstrap with a constant content-free message.
+- A .DS_Store symlink or directory bypasses regular-file/link restrictions; links must still fail closed and data-bearing directories must still be traversed rather than ignored by name.
+- Other unsupported metadata-like filenames, unsupported archives and ambiguous staging are accidentally exempted; preserve existing fail-closed behavior.
+- Metadata verification reads an entire large unknown file or emits file content in diagnostics/artifacts; inspect bounded native header only and persist booleans.
+- Approved metadata is deleted/rewritten; it must remain byte-for-byte unchanged while actual legacy credentials migrate and stay readable through Runtime.

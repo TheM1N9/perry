@@ -628,6 +628,10 @@ async function main() {
   };
   const recoverTurns = async (markIncomplete: boolean) => {
     const running = await client.query(api.codex.runningTurns, { token });
+    const runningIds = new Set<string>(running.map((job) => job._id));
+    for (const [id, steer] of steered) {
+      if (!active.has(steer.turnId) && !runningIds.has(steer.turnId)) steered.delete(id);
+    }
     for (const job of running) {
       const result = savedResult(job._id);
       if (result || markIncomplete) {

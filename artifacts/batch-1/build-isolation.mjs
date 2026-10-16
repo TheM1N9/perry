@@ -2,10 +2,11 @@
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { basename, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 const repo = resolve(process.cwd());
 const guarded = (value) => {
   if (typeof value !== 'string' && !(value instanceof URL)) return false;
-  const file = resolve(value instanceof URL ? value.pathname : value);
+  const file = resolve(value instanceof URL ? fileURLToPath(value) : value);
   return dirname(file).toLowerCase() === repo.toLowerCase() && /^\.env(?:\.|$)/.test(basename(file));
 };
 for (const name of ['statSync', 'readFileSync']) {

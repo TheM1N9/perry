@@ -469,6 +469,8 @@ async function steerTask(ctx: MutationCtx, args: { id: string; text: string; req
   const deliveryId: Id<"codexSteers"> | Id<"codexTurns"> = await ctx.runMutation(internal.codex.enqueueTurn, {
     conversationId: chat._id, runId, prompt, instructions: turn.instructions,
     history: turn.history, engine: turn.engine, model: turn.requestedModel, effort: turn.requestedEffort,
+    // Snapshot the owner's current setting, as claimTurn/turnAccess do; turn.access can be stale.
+    // Steering cannot set access, and native engine.steer carries no access override.
     access: chat.access ?? "supervised", policy: "steer",
   });
   const now = Date.now();

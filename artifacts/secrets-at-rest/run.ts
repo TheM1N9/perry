@@ -37,6 +37,12 @@ const oldLogin = secret(), oldKey = secret(), nextLogin = secret(), nextKey = se
 const database = join(home, "perry.sqlite");
 const backups = join(home, "backups");
 mkdirSync(backups);
+// Synthetic Finder buddy-container header and in-range root, no user metadata.
+const finderFixture = Buffer.alloc(4096);
+finderFixture.writeUInt32BE(1, 0); finderFixture.write("Bud1", 4, "ascii");
+finderFixture.writeUInt32BE(2048, 8); finderFixture.writeUInt32BE(1264, 12); finderFixture.writeUInt32BE(2048, 16);
+finderFixture.writeUInt32BE(1, 2052); finderFixture.writeUInt32BE(2048 | 5, 2060);
+writeFileSync(join(backups, ".DS_Store"), finderFixture);
 let sql = new DatabaseSync(database);
 sql.exec(`CREATE TABLE doc_vault (_id TEXT PRIMARY KEY, _creationTime REAL NOT NULL, doc TEXT NOT NULL);
 CREATE TABLE doc_secrets (_id TEXT PRIMARY KEY, _creationTime REAL NOT NULL, doc TEXT NOT NULL);
@@ -49,6 +55,7 @@ writeFileSync(join(backups, "legacy.json"), JSON.stringify({ tables: { vault: [{
 await check("bootstrap migrates live and historical backups", () => {
   initializeCredentialEncryption(sql, home);
   assert(existsSync(join(home, "credential-key")));
+  assert.deepEqual(readFileSync(join(backups, ".DS_Store")), finderFixture);
   assert.equal(decryptCredential("vault", JSON.parse(sql.prepare("SELECT doc FROM doc_vault").get()!.doc as string).value), oldLogin);
 });
 const runtime = new Runtime(sql, schema as never, { vault, secrets }, { storageDir: join(home, "storage") });
@@ -151,6 +158,68 @@ await check("unsupported backup files fail closed without replacement", () => {
   const file = join(backups, "unsupported.zip"); writeFileSync(file, "synthetic");
   try { assert.throws(() => migrateCredentialBackups(backups)); }
   finally { rmSync(file); }
+});
+await check("verified exact Finder metadata is preserved while nested legacy backups migrate", () => {
+  const folder = join(backups, "finder-metadata");
+  mkdirSync(folder);
+  const metadata = join(folder, ".DS_Store"), file = join(folder, "legacy.json");
+  writeFileSync(metadata, finderFixture);
+  writeFileSync(file, JSON.stringify({ vault: [{ value: oldLogin }] }));
+  initializeCredentialEncryption(sql, home);
+  assert.deepEqual(readFileSync(metadata), finderFixture);
+  assert.equal(decryptCredential("vault", JSON.parse(readFileSync(file, "utf8")).vault[0].value), oldLogin);
+});
+await check("disguised or malformed Finder metadata fails with a constant content-free error", () => {
+  const folder = join(backups, "invalid-finder");
+  mkdirSync(folder);
+  const file = join(folder, ".DS_Store");
+  const changed = (offset: number, value: number) => { const bytes = Buffer.from(finderFixture); bytes.writeUInt32BE(value, offset); return bytes; };
+  const fixtures = [
+    Buffer.from(oldLogin), Buffer.from(JSON.stringify({ secrets: [{ value: oldKey }] })),
+    finderFixture.subarray(0, 8), finderFixture.subarray(0, 35),
+    changed(0, 2), changed(4, 0), changed(16, 4096), changed(12, 0xffffffff),
+    changed(12, 0), changed(8, 0),
+  ];
+  try {
+    for (const fixture of fixtures) {
+      writeFileSync(file, fixture);
+      let message = "";
+      try { initializeCredentialEncryption(sql, home); } catch (error) { message = (error as Error).message; }
+      assert.equal(message, "Unrecognized Finder metadata in Perry's backups needs review before credential migration can finish.");
+      assert.deepEqual(readFileSync(file), fixture);
+    }
+  } finally { rmSync(folder, { recursive: true, force: true }); }
+});
+await check("metadata-like filenames and data-bearing metadata directories are not exempted", () => {
+  const folder = join(backups, "metadata-lookalikes");
+  mkdirSync(folder);
+  try {
+    for (const name of [".ds_store", "._DS_Store", ".DS_Store.bak", "Thumbs.db.unsupported"]) {
+      const file = join(folder, name);
+      writeFileSync(file, finderFixture);
+      assert.throws(() => initializeCredentialEncryption(sql, home));
+      assert.deepEqual(readFileSync(file), finderFixture);
+      rmSync(file);
+    }
+    const directory = join(folder, ".DS_Store");
+    mkdirSync(directory);
+    const unsupported = join(directory, "unsupported.txt");
+    writeFileSync(unsupported, "synthetic data");
+    assert.throws(() => initializeCredentialEncryption(sql, home));
+    assert.equal(readFileSync(unsupported, "utf8"), "synthetic data");
+  } finally { rmSync(folder, { recursive: true, force: true }); }
+});
+await check("Finder metadata links still fail closed without changing their target", () => {
+  const folder = join(backups, "metadata-link"), target = join(home, "metadata-link-target");
+  mkdirSync(folder); mkdirSync(target);
+  writeFileSync(join(target, "untouched"), "synthetic data");
+  const link = join(folder, ".DS_Store");
+  try {
+    fs.symlinkSync(target, link, "junction");
+    assert(fs.lstatSync(link).isSymbolicLink());
+    assert.throws(() => initializeCredentialEncryption(sql, home));
+    assert.equal(readFileSync(join(target, "untouched"), "utf8"), "synthetic data");
+  } finally { rmSync(folder, { recursive: true, force: true }); rmSync(target, { recursive: true, force: true }); }
 });
 for (const failure of ["write", "fsync"] as const) {
   await check(`failed staging ${failure} closes and removes staging, preserves original and retries`, () => {

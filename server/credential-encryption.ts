@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { CREDENTIAL_PREFIX, credentialKey, decryptCredential, encryptCredential, protectCredential } from "../convex/lib/credential-encryption";
@@ -122,6 +122,19 @@ type BackupStaging = { file: string; original: string };
 // Distinct from a backup: never parse or promote a partial write as original data.
 const STAGING_NAME = /^(.+\.json)\.perry-credential-[a-f0-9]{32}\.tmp$/i;
 
+/** Exact Finder metadata name only; validate its buddy-container header, not its payload. */
+function finderMetadata(file: string): boolean {
+  const fd = openSync(file, "r");
+  try {
+    const stat = fstatSync(fd);
+    const header = Buffer.alloc(36);
+    if (!stat.isFile() || readSync(fd, header, 0, header.length, 0) !== header.length) return false;
+    if (header.readUInt32BE(0) !== 1 || header.toString("ascii", 4, 8) !== "Bud1") return false;
+    const root = header.readUInt32BE(8), size = header.readUInt32BE(12);
+    return root === header.readUInt32BE(16) && root >= 32 && root % 32 === 0 && size >= 8 && root + 4 + size <= stat.size;
+  } finally { closeSync(fd); }
+}
+
 function checkStaging(staging: BackupStaging): void {
   noLink(staging.file);
   if (!existsSync(staging.original)) throw new Error("Credential backup staging has no matching original. Preserve it for manual recovery.");
@@ -152,6 +165,11 @@ function backupFiles(dir: string, staging?: BackupStaging[]): string[] {
       return [];
     }
     if (lstatSync(file).isDirectory()) return backupFiles(file, staging);
+    if (name === ".DS_Store") {
+      try { if (finderMetadata(file)) return []; }
+      catch { /* Report a constant diagnostic for unverified metadata. */ }
+      throw new Error("Unrecognized Finder metadata in Perry's backups needs review before credential migration can finish.");
+    }
     if (/\.(sqlite|db|json)$/i.test(name)) return [file];
     if (/(?:-wal|-shm|-journal)$/.test(name) && existsSync(file.replace(/(?:-wal|-shm|-journal)$/, ""))) return [];
     throw new Error("An unsupported file in Perry's backups needs review before credential migration can finish.");

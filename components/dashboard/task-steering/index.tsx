@@ -37,7 +37,7 @@ export function TaskSteering({ task }: { task: Doc<"tasks"> }) {
       {updates && updates.length > 0 && <ol className="space-y-2 text-sm" aria-label="Owner updates">
         {updates.map((update) => <li key={update.requestId}>
           <p className="whitespace-pre-wrap">{update.text}</p>
-          <p className="text-muted-foreground" role="status">{LABELS[update.state]}</p>
+          <p className="text-muted-foreground" role="status">{LABELS[update.state] ?? "Delivery status unavailable"}</p>
         </li>)}
       </ol>}
       {canSteer && <form className="space-y-2" onSubmit={async (event) => {

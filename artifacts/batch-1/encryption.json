@@ -48,6 +48,22 @@
       "passed": true
     },
     {
+      "name": "verified exact Finder metadata is preserved while nested legacy backups migrate",
+      "passed": true
+    },
+    {
+      "name": "disguised or malformed Finder metadata fails with a constant content-free error",
+      "passed": true
+    },
+    {
+      "name": "metadata-like filenames and data-bearing metadata directories are not exempted",
+      "passed": true
+    },
+    {
+      "name": "Finder metadata links still fail closed without changing their target",
+      "passed": true
+    },
+    {
       "name": "failed staging write closes and removes staging, preserves original and retries",
       "passed": true
     },

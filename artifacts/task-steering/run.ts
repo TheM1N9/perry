@@ -17,13 +17,15 @@ process.env.DASHBOARD_KEY = "task-steering-synthetic-key";
 process.env.PERRY_ENGINE = "codex";
 process.env.PERRY_CREDENTIAL_KEY = "22".repeat(32);
 // Set isolation before any project module import (runner/home freezes HOME at import).
-const [{ Runtime }, { default: schema }, tasks, codex, runs, work, { steerRunningTurn, createSteerDelivery }, routing, recovery] = await Promise.all([
+const [{ Runtime }, { default: schema }, tasks, codex, runs, work, { steerRunningTurn, createSteerDelivery }, routing, recovery, dashboard, approvals] = await Promise.all([
   import("../../server/runtime"), import("../../convex/schema"), import("../../convex/tasks"),
   import("../../convex/codex"), import("../../convex/runs"), import("../../convex/work"), import("../../runner/task-steering"),
   import("../../convex/routing"), import("../../convex/recovery"),
+  import("../../convex/dashboard"),
+  import("../../convex/approvals"),
 ]);
 const sql = new DatabaseSync(join(scratch, "test.sqlite"));
-const runtime = new Runtime(sql, schema as never, { tasks, codex, runs, work, routing, recovery }, { storageDir: join(scratch, "storage") });
+const runtime = new Runtime(sql, schema as never, { tasks, codex, runs, work, routing, recovery, dashboard, approvals }, { storageDir: join(scratch, "storage") });
 await runtime.stop(); // Deterministic: no cron/action can call any model or integration.
 const call = async (path: string, args: object) => (await runtime.call(path, args, { internal: true })).value as any;
 const db = runtime.store;
@@ -76,6 +78,7 @@ try {
     label: "Fake native engine", capabilities: { steer: "native" } as Engine["capabilities"],
     async steer(received: TurnHandle, message: { prompt: string }) {
       check("native steer sees same genuinely running engine turn", active && received === handle);
+      check("native engine steering carries no access override", !Object.hasOwn(message, "access"));
       check("engine receives update and preserved completed step", message.prompt.includes("Use a table") && message.prompt.includes("[done] Collected inputs"));
       events.push({ type: "steer", turnId: received.turnId });
       release();
@@ -224,6 +227,38 @@ try {
   check("terminal receipt follows successful replacement", (await call("tasks:steeringFromDashboard", { key, id: retry.id }))[0].state === "finished" && !(await call("tasks:awaitingSteering", { id: retry.id })));
   evidence.retry = { original: db.get(retryFirstId), replacement: db.get(replacement._id), receipts: await call("tasks:steeringFromDashboard", { key, id: retry.id }) };
 
+  // PR297: effective access follows explicit owner changes, never stale selected-turn metadata.
+  const accessCase = await fixture();
+  await runtime.exclusive(() => db.patch(accessCase.turnId, { access: "full" }));
+  await call("dashboard:setChatAccess", { key, id: accessCase.conversationId, access: "full" });
+  await call("dashboard:setChatAccess", { key, id: accessCase.conversationId, access: "supervised" });
+  const runsBeforeAccessOverride = (await db.query("runs").collect()).length;
+  await refuses("steering caller cannot supply access override", "tasks:steerFromDashboard", { key, id: accessCase.id, text: "Keep permissions", requestId: "access-override-001", access: "full" });
+  check("rejected access override leaves permission and runs unchanged", db.get(accessCase.conversationId)?.access === "supervised" && (await db.query("runs").collect()).length === runsBeforeAccessOverride && !task(accessCase.id)?.steering?.length);
+  const accessQueuedId = await call("tasks:steerFromDashboard", { key, id: accessCase.id, text: "Keep permissions", requestId: "access-queued-001" });
+  check("queued update snapshots owner downgrade instead of stale Full", turn(accessQueuedId)?.access === "supervised" && turn(accessCase.turnId)?.access === "full" && db.get(accessCase.conversationId)?.access === "supervised");
+  const accessOriginal = await call("codex:claimTurn", { token, id: accessCase.turnId });
+  check("claim ignores stale Full and uses current owner Ask", accessOriginal.access === "supervised" && (await call("codex:turnAccess", { token }))[accessCase.turnId] === "supervised");
+  const accessNativeId = await call("tasks:steerFromDashboard", { key, id: accessCase.id, text: "Continue under Ask", requestId: "access-native-001" });
+  const accessNative = (await call("codex:pendingSteers", { token })).find((entry: { _id: string }) => entry._id === accessNativeId);
+  check("native delivery projection contains no access override", Boolean(accessNative) && !Object.hasOwn(accessNative, "access"));
+  check("native acceptance leaves access and original metadata unchanged", db.get(accessCase.conversationId)?.access === "supervised" && turn(accessCase.turnId)?.access === "full");
+  await call("codex:ackSteer", { token, id: accessNativeId, applied: true });
+  await call("codex:finishTurn", { token, id: accessCase.turnId, response: "Progress under Ask" });
+  await call("dashboard:setChatAccess", { key, id: accessCase.conversationId, access: "full" });
+  const ownerUpgradedClaim = await call("codex:claimTurn", { token, id: accessQueuedId });
+  check("later explicit owner upgrade applies at claim without altering queued metadata", ownerUpgradedClaim.access === "full" && turn(accessQueuedId)?.access === "supervised");
+  await call("dashboard:setChatAccess", { key, id: accessCase.conversationId, access: "supervised" });
+  check("live owner downgrade applies to running follow-up", (await call("codex:turnAccess", { token }))[accessQueuedId] === "supervised");
+  const gated = await call("approvals:request", { token, conversationId: accessCase.conversationId, kind: "command", title: "Synthetic permission check, never executed" });
+  check("production approval gate still asks after owner downgrade", gated.next === "ask" && db.get(gated.id)?.status === "pending");
+  await call("codex:finishTurn", { token, id: accessQueuedId, response: "Finished under current owner setting" });
+  const unsetAccessCase = await fixture();
+  await runtime.exclusive(() => { db.patch(unsetAccessCase.turnId, { access: "full" }); db.patch(unsetAccessCase.conversationId, { access: undefined }); });
+  const defaultAccessUpdate = await call("tasks:steerFromDashboard", { key, id: unsetAccessCase.id, text: "Use default Ask", requestId: "access-default-001" });
+  check("unset owner access defaults to Ask rather than stale Full", turn(defaultAccessUpdate)?.access === "supervised" && (await call("codex:claimTurn", { token, id: unsetAccessCase.turnId })).access === "supervised");
+  evidence.access = { staleOriginalMetadata: turn(accessCase.turnId)?.access, queuedMetadata: turn(accessQueuedId)?.access, originalClaim: accessOriginal.access, explicitOwnerUpgradeClaim: ownerUpgradedClaim.access, liveOwnerDowngrade: db.get(accessCase.conversationId)?.access, nativeProjection: accessNative };
+
   await refuses("bad dashboard key", "tasks:steerFromDashboard", { ...update, key: "wrong" });
   await refuses("empty instruction", "tasks:steerFromDashboard", { ...update, id: next.id, text: " ", requestId: "empty-update-001" });
   await refuses("oversize instruction", "tasks:steerFromDashboard", { ...update, id: next.id, text: "x".repeat(4001), requestId: "large-update-001" });
@@ -240,7 +275,7 @@ try {
   await refuses("paused Perry rejects new instruction", "tasks:steerFromDashboard", { key, id: next.id, text: "Run later", requestId: "paused-update-001" });
   // A queued fallback preserves its receipt through another agent plan update and process restart.
   const before = await call("tasks:steeringFromDashboard", { key, id: next.id });
-  const restarted = new Runtime(sql, schema as never, { tasks, codex, runs, work, routing, recovery }, { storageDir: join(scratch, "storage") });
+  const restarted = new Runtime(sql, schema as never, { tasks, codex, runs, work, routing, recovery, dashboard, approvals }, { storageDir: join(scratch, "storage") });
   await restarted.stop();
   check("receipt and acknowledgement survive runtime restart", JSON.stringify((await restarted.call("tasks:steeringFromDashboard", { key, id: next.id })).value) === JSON.stringify(before));
 } catch (cause) {

@@ -27,3 +27,10 @@ Integrated E2E must write compact result.json with same turn id before/after nat
 - Retry chain has multiple hops or several run siblings: follow retryOf descendants within same run/chat; do not mistake unrelated turns for the accepted delivery.
 - Retried accepted delivery completes/stops/fails: receipt and completion guard follow terminal replacement, not superseded original; replacement may finish its own task.
 - Process crashes after engine acceptance before ack: process-local evidence can be lost; document this inherent protocol gap rather than claim exactly-once across crashes.
+
+## PR297 access review — recorded before regression E2E extension
+- Queued original turn records Full but owner downgrades chat to Ask before steering: update must snapshot Ask and both claims must use current Ask, never revive stale Full.
+- Owner explicitly upgrades/downgrades chat after update is accepted: claimTurn and turnAccess must continue using live owner setting, not promise a nonexistent immutable permission cap.
+- A running turn records an older permission level: native pendingSteers/engine.steer must not carry an access override; acceptance must not mutate chat or original turn access.
+- Caller supplies an extra access=Full field to steering mutation: validator must reject it before run/receipt creation and leave owner access unchanged.
+- Missing conversation access defaults to supervised even if the selected turn has stale Full metadata.

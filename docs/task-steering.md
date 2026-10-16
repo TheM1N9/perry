@@ -16,6 +16,12 @@ When a working turn can be steered, the existing `codexSteers` row is delivered 
 
 The shared `work.updateTask` integration checks `tasks.awaitingSteering` in the same transaction before done/blocked/failed. A prior turn cannot close the task before a queued accepted update runs; the current replacement's own `turnId` allows it to finish. While an accepted update is still pending or recovering, a prior turn's error finalization also keeps the task running instead of announcing a false failure. Cancellation remains the existing explicit stop path.
 
+## Access follows the owner's live setting
+
+Sending instructions does not change permissions. The steering API accepts no access argument and does not update chat access; native engine steering carries only the prompt, attachments and optional skills. The delivery row records the owner's current chat access, defaulting to supervised. It deliberately does not copy potentially stale `turn.access` metadata.
+
+This matches ordinary turns: `codex.claimTurn` uses the conversation's access at claim time, `codex.turnAccess` reports live owner changes, and `approvals.request` reads that same conversation setting. The owner can explicitly change access after sending an update; steering does not create an immutable permission cap. Replacing the snapshot with `turn.access` would change metadata without imposing such a cap, and could record stale Full access after an owner downgrade.
+
 ## Retries and limits
 
 Use a stable 8–100 character request id for each update (letters, digits, underscores and hyphens). Concurrent submissions or retries after a lost response return the original delivery id, including after the task finishes. Reusing an id with different text fails. The form retains its request id and draft after failure and disables duplicate submissions while sending. Each task accepts at most 40 updates, each 1–4000 characters; old receipts are never silently pruned to allow duplicate retries.
@@ -35,3 +41,5 @@ pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-re
 The scenario creates a fresh SQLite runtime under `.batch-work/batch-1/281/e2e/run-*/`, with `PERRY_HOME` and a synthetic `DASHBOARD_KEY` set before project imports. It starts no scheduler, server, browser or real engine. A fake engine holds its original turn open while the real task/codex mutations and shared runner adapter deliver an update. The scenario checks the unchanged active turn and completed step, idempotent receipt, acknowledgement, fallback serialization, owner/guest boundaries, atomic finish guard and persistence, then writes a compact `result.json` with checks and evidence even on failure.
 
 The final integrated run passed 51 checks, including failed/lost acknowledgement responses, bounded exhaustion and retained-outcome retry, original-turn error handling, and a production retryOn replacement. Final raw evidence, typecheck/build results and browser verification are in artifacts/batch-1/. This harness tests production backend and runner-adapter behavior with fake engines; it does not run a real CLI process.
+
+The PR297 access-review extension passed 62 checks. It adds stale Full metadata after an owner downgrade, rejected permission overrides, explicit later owner upgrade/downgrade, default Ask and a production approval request still waiting under Ask. Follow-up evidence is `.batch-work/batch-1/281/e2e/run-1792180556004/result.json`; no new build or browser run was performed for this extension.

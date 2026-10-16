@@ -5,8 +5,8 @@ it does not update, restart or migrate the installed Perry.
 
 | Issue | Result | Final isolated verification |
 | --- | --- | --- |
-| #251 | Encrypt saved credentials and migrate existing SQLite/JSON backups; recover interrupted staging safely | 19 scenarios |
-| #281 | Steer running tasks, retain acknowledgement outcomes, protect accepted follow-ups through retries | 51 checks |
+| #251 | Encrypt saved credentials and migrate existing SQLite/JSON backups; recover interrupted staging safely | 23 scenarios |
+| #281 | Steer running tasks, retain acknowledgement outcomes, protect accepted follow-ups through retries | 62 checks |
 | #243 | Warn on lost turn heartbeat, allow reconnect grace, coordinate routing retry and finalization | 22 journeys |
 | #244 | Persist stable error codes and show recovery guidance for the correct turn | 21 cases |
 | #245 | Settle interrupted trace spans and ignore late terminal events | 51 checks |
@@ -79,7 +79,7 @@ synthetic. `fixture.json` contains fresh IDs for the following repeatable steps:
    did both. No installed Perry or real user configuration was accessed.
 
 Observed desktop viewport: 924×764, no horizontal overflow, labeled input, and no
-browser console warnings/errors. Screenshots: `warning.jpg`, `terminal.jpg`, and
+browser console warnings/errors. Screenshots: `warning.jpg`, `terminal.jpg`,
 `steering.jpg`, and `steering-delivered.jpg`. This verifies the production UI and HTTP/backend transitions;
 real CLI processes, user data migration, external channel delivery and mobile
 breakpoints were not exercised.
@@ -88,3 +88,26 @@ An engine-acceptance/acknowledgement crash gap remains inherent in the steering
 protocol: process-local outcome retention prevents transport retries from
 duplicating work, but does not promise exactly-once model execution after a
 process crash. See `docs/task-steering.md`.
+
+## PR review follow-up
+
+The pre-merge review added bounded verification of Finder metadata so a genuine
+.DS_Store does not block startup; disguised or unknown data-bearing files remain
+fail-closed. Setup restricts fresh/existing POSIX env-file modes; the existing
+setup E2E now checks both paths in CI, while Windows retains inherited ACL
+semantics. The Windows file-URL dotenv guard uses fileURLToPath. A retained
+steering-map cleanup and unknown-label fallback also address two minor comments.
+
+The steering access suggestion was verified and intentionally not applied:
+claimTurn, live turnAccess and approval checks use the owner's current setting.
+Steering cannot set access. Copying stale turn metadata would not impose a
+permission cap and could misrepresent a later owner downgrade. Regression E2E
+checks cover downgrade, later explicit upgrade, default Ask and rejected access
+arguments (62 passing checks). Terminal trace repair on finalized legacy turns
+is retained; skipping finalized rows would break repair. Broader recovery-query
+index tuning is deferred rather than expanding this reliability change.
+
+After these changes, the affected encryption/steering suites and the isolated
+production build passed again. Other suite results and the original disposable
+UI journey remain applicable; no real setup, services or installed app were run
+locally for the review follow-up.

@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { FAKE_AGENT, REPO, perry, redact, sleep } from "../engine-acp/harness";
@@ -47,6 +47,9 @@ import { FAKE_AGENT, REPO, perry, redact, sleep } from "../engine-acp/harness";
 //      Codex thread is not resumed.
 //  14. A command resolves to the owner's real codex, claude or grok, or a test Perry touches the owner's home.
 //  15. The pages throw.
+//  16. Setup writes service/encryption keys with group/other access on POSIX,
+//      or a rerun leaves a preexisting permissive env file readable. Check the
+//      real fresh/rerun setup flow; Windows keeps its inherited ACL semantics.
 
 const argv = process.argv.slice(2);
 const outDir = argv.find((arg) => !arg.startsWith("--")) ?? "";
@@ -263,10 +266,14 @@ async function terminal() {
     && /default engine Codex, 0\.177\.7, signed in with ChatGPT Plus/.test(asked.output) && choiceIn(fresh.env.PERRY_HOME) === "codex" && envWritten(fresh),
     { logins: logins.map((entry) => `${entry.cli} ${entry.args.join(" ")}`), last: tailOf(asked.output, 4) });
   chosenWhileStopped = { home: fresh.env.PERRY_HOME, engine: choiceIn(fresh.env.PERRY_HOME) };
+  const freshEnv = join(fresh.root, "checkout", ".env.local");
+  check("freshEnvOwnerOnly", WINDOWS || (statSync(freshEnv).mode & 0o077) === 0);
 
   // --- 8. Run again with Perry still stopped: the choice waiting for it is kept, nothing asked -----------------------
+  if (!WINDOWS) chmodSync(freshEnv, 0o644); // A legacy permissive file must be corrected too.
   const again = await setup(fresh);
   check("rerunKeepsChoice", again.code === 0 && !again.output.includes("Which should Perry use") && again.output.includes("default engine Codex") && choiceIn(fresh.env.PERRY_HOME) === "codex", tailOf(again.output, 3));
+  check("rerunEnvOwnerOnly", WINDOWS || (statSync(freshEnv).mode & 0o077) === 0);
 
   // --- 4, 5. Enter takes the one ready engine; answers piped before their questions are kept -----------------------
   const enter = world({ codex: "signed-out", grok: "signed-in" });
