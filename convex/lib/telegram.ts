@@ -1,3 +1,4 @@
+import { setTimeout as waitForRetry } from "node:timers/promises";
 /**
  * Minimal Telegram Bot API client.
  *
@@ -81,18 +82,19 @@ async function call(
   token: string | null,
   method: string,
   body: object | FormData,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(`${api()}/bot${requireToken(token)}/${method}`, body instanceof FormData
-      ? { method: "POST", body }
-      : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      ? { method: "POST", body, signal }
+      : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
     const parsed = await parseResponseBody(res);
     const json: ApiResponse = parsed && typeof parsed === "object" ? parsed : { description: String(parsed ?? res.status) };
     if (json.ok) return json.result;
     const code = json.error_code ?? res.status;
     const wait = json.parameters?.retry_after;
     if (code === 429 && wait !== undefined && wait <= MAX_RETRY_AFTER_S && attempt < MAX_RETRIES) {
-      await new Promise((resolve) => setTimeout(resolve, wait * 1000));
+      await waitForRetry(wait * 1000, undefined, { signal });
       continue;
     }
     throw new TelegramError(method, code, json.description ?? String(res.status));
@@ -172,7 +174,7 @@ export async function sendDraft(token: string | null, chatId: string, text: stri
     chat_id: chatId,
     text: chunkMessage(text.trim() || "…")[0],
     link_preview_options: { is_disabled: true },
-  }) as { message_id: number };
+  }, AbortSignal.timeout(15_000)) as { message_id: number };
   return result.message_id;
 }
 
@@ -183,7 +185,7 @@ export async function editDraft(token: string | null, chatId: string, messageId:
       message_id: messageId,
       text: chunkMessage(text.trim() || "…")[0],
       link_preview_options: { is_disabled: true },
-    });
+    }, AbortSignal.timeout(15_000));
   } catch (error) {
     // Editing to the same text is an error on Telegram's side, and harmless.
     if (!String(error).includes("message is not modified")) throw error;

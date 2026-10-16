@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { turnErrorCode, type TurnErrorCode } from "../lib/turn-errors";
 import { createSteerDelivery, steerRunningTurn, type SteerDelivery } from "./task-steering";
+import { createReplyStream, streamFlushMs } from "./stream-reply";
 /**
  * Assistant's runner: the piece that lets Assistant work on this machine.
  *
@@ -916,10 +917,11 @@ async function main() {
   const runJob = async (job: NonNullable<FunctionReturnType<typeof api.codex.claimTurn>>, turn: Active) => {
     let result = savedResult(job._id);
     if (!result) {
-      // The reply so far, and the trace of what the engine is doing, go to Convex
-      // about three times a second while the turn runs; the first words go at once.
+      // Send acknowledged deltas; the first words go at once, later flushes adapt.
       let latest = "";
-      let sent = "";
+      const stream = createReplyStream((packet) => client.mutation(api.turnStreams.append, { token, id: job._id, ...packet }));
+      let streamStarted = false;
+      let streamClosed = false;
       let streamTimer: ReturnType<typeof setTimeout> | null = null;
       const trace = new TurnTrace();
       // One report at a time: one still on its way when the turn ends would arrive after it, and be dropped.
@@ -932,13 +934,14 @@ async function main() {
       const flush = () => {
         streamTimer = null;
         void report();
-        if (latest === sent) return;
-        sent = latest;
-        void client.mutation(api.codex.streamTurn, { token, id: job._id, text: latest }).catch(() => {});
+        void stream.flush().catch(() => {}); // The next flush retries unacknowledged text.
       };
       const schedule = () => {
-        if (sent || !latest) streamTimer ??= setTimeout(flush, 300);
-        else { if (streamTimer) clearTimeout(streamTimer); flush(); }
+        if (!streamStarted && latest) {
+          streamStarted = true;
+          if (streamTimer) clearTimeout(streamTimer);
+          flush();
+        } else streamTimer ??= setTimeout(flush, streamFlushMs(latest.length));
       };
       const kind = job.engine;
       const engine = engines.get(kind);
@@ -988,10 +991,12 @@ async function main() {
               applyAccess();
             },
             onEvent: (event) => {
+              if (streamClosed) return;
               dog?.active();
               if (event.type === "text") {
                 if (event.stream !== "assistant") return;
                 latest = event.text;
+                stream.update(latest);
                 schedule();
               } else if (event.type === "item") {
                 if (trace.item(event.phase, event.item, event.atMs)) schedule();
@@ -1050,9 +1055,14 @@ async function main() {
         stopping.delete(job._id);
         endedOnStop.delete(job._id);
       }
+      streamClosed = true;
       if (streamTimer) clearTimeout(streamTimer);
+      // Persist the last words even when cancellation or transport failure omitted
+      // the engine's final text; replay must not depend on an unfinished flush.
+      if ((result.error || result.stopped) && !result.response?.trim() && latest) result = { ...result, response: latest.slice(0, 100_000) };
       // Keep the engine result even if acknowledgement delivery is temporarily unavailable.
       saveResult(job._id, result);
+      await stream.flush().catch(() => {});
       // Where the engine's plan stands after the turn: a limit it refused the turn for, or, as it went through, none.
       if (engine && job.kind !== "compact") {
         const hit = result.errorCode === "limit" && result.error ? { at: Date.now(), message: result.error } : result.error || result.stopped ? undefined : null;

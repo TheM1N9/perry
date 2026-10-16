@@ -1,3 +1,5 @@
+import { deliverTurnInOrder } from "./lib/turn-delivery";
+import { deleteStream, snapshotStream, streamBody, streamState } from "./lib/turn-stream";
 import { turnErrorCode, turnErrorDetail, turnErrorText } from "../lib/turn-errors";
 import { ConvexError, v, type Infer } from "convex/values";
 import { markUsed } from "./archive";
@@ -18,6 +20,7 @@ import { index as indexInLibrary } from "./library";
 import { QUIET } from "./jobs";
 import { HIDDEN, hide, savedValues } from "./vault";
 import { takeFromOutbox } from "./conversations";
+import { assertQueueRoom, waitingCount, MAX_QUEUED_PER_CHAT, QUEUE_FULL } from "./queue";
 import { moveChat, retryable } from "./routing";
 import { engineLockable, engineReady, engineUsable, isOnline, recordEngines, resumeOf, statusesOf, tooOld } from "./engines";
 import { vAccess, vCodexModel, vEngine, vRoute, vSpanKind, vSpanStatus, vTurnAttachment, vUsage, vTurnErrorCode } from "./schema";
@@ -173,6 +176,12 @@ export const enqueueTurn = internalMutation({
     await assertRunning(ctx);
     const conversation = await ctx.db.get(args.conversationId);
     if (!conversation) throw new Error("This chat was deleted.");
+    // A repeated durable handoff for the same run owns the original message.
+    const previous = await ctx.db.query("codexTurns").withIndex("by_run", q => q.eq("runId", args.runId)).first();
+    if (previous) return previous._id;
+    const previousSteer = await ctx.db.query("codexSteers").withIndex("by_run", q => q.eq("runId", args.runId)).first();
+    if (previousSteer) return previousSteer._id;
+    await assertQueueRoom(ctx, conversation, { prompt: args.prompt });
     const running = await ctx.db.query("codexTurns")
       .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.conversationId).eq("status", "running"))
       .first();
@@ -258,8 +267,16 @@ async function noRunnerFailure(ctx: MutationCtx, conversation: Doc<"conversation
  * queued behind it; one the owner stopped along with its turn ends at once.
  */
 export async function queueSteer(ctx: MutationCtx, steer: Doc<"codexSteers">, given: { error?: string; stopped?: boolean } = {}) {
-  // Paused, it would run on resume: it ends with its turn instead, as when the owner stops it.
+  // Recovery and runner acknowledgement may both hold a stale copy.
+  const current = await ctx.db.get(steer._id);
+  if (!current || current.status !== "pending") return;
+  steer = current;
+  // The pending steer reserved its own fallback slot. Legacy overfull queues
+  // fail this message through normal finalization instead of growing further.
+  const chat = await ctx.db.get(steer.conversationId);
+  const full = chat && await waitingCount(ctx, chat, { steerId: steer._id }) >= MAX_QUEUED_PER_CHAT;
   const outcome = !given.stopped && await pausedAt(ctx) ? { ...given, stopped: true } : given;
+  const rejected = !outcome.stopped && full;
   const queuedTurnId = await ctx.db.insert("codexTurns", {
     engine: steer.engine,
     runnerId: steer.runnerId,
@@ -274,10 +291,10 @@ export async function queueSteer(ctx: MutationCtx, steer: Doc<"codexSteers">, gi
     access: steer.access,
     attachments: steer.attachments,
     createdAt: Date.now(),
-    ...(outcome.stopped ? { status: "done", stopped: true, finishedAt: Date.now() } : { status: "queued" }),
+    ...(outcome.stopped ? { status: "done", stopped: true, finishedAt: Date.now() } : rejected ? { status: "error", error: QUEUE_FULL, errorCode: "engine_failed", finishedAt: Date.now() } : { status: "queued" }),
   });
   await ctx.db.patch(steer._id, { status: "queued", queuedTurnId, error: outcome.error?.slice(0, 500) });
-  if (outcome.stopped) await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: queuedTurnId });
+  if (outcome.stopped || rejected) await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: queuedTurnId });
 }
 
 /** Every steer of a turn still waiting for the runner. */
@@ -429,6 +446,7 @@ export const requestCompact = internalMutation({
     if (!conversation) throw new Error("This chat was deleted.");
     const engine = await engineFor(ctx, conversation);
     if (!engine || !resumeOf(conversation, engine)) return null;
+    await assertQueueRoom(ctx, conversation);
     const runnerId = await pickRunner(ctx, conversation, engine);
     // Only the runner's engine holds the session; answering without the computer cannot compact it.
     if (!runnerId) {
@@ -553,14 +571,7 @@ export const setCodexTurn = mutation({
   },
 });
 
-/** Telegram allows about one edit a second per chat; stay under it. */
-const TELEGRAM_EDIT_MS = 1_500;
-
-/**
- * The runner reports the reply as Codex writes it. The web chat reads it live
- * from the turn; a Telegram chat gets one message that is edited as it grows,
- * one edit at a time and no faster than TELEGRAM_EDIT_MS.
- */
+/** Compatibility for runners that still send cumulative text snapshots. */
 export const streamTurn = mutation({
   args: { token: v.string(), id: v.id("codexTurns"), text: v.string() },
   returns: v.null(),
@@ -568,33 +579,22 @@ export const streamTurn = mutation({
     const runner = await authenticate(ctx, args.token);
     const job = await ctx.db.get(args.id);
     if (!job || job.runnerId !== runner._id || job.status !== "running") return null;
-    await recordTurnHeartbeat(ctx, job, Date.now());
-    await recordPartial(ctx, job, args.text);
+    // Older runners may omit activeTurnIds. Preserve their output liveness,
+    // bounded to the check-in cadence instead of invalidating metadata per flush.
+    if (Date.now() - (job.lastHeartbeatAt ?? job.startedAt ?? 0) >= 30_000) await recordTurnHeartbeat(ctx, job, Date.now());
+    await snapshotStream(ctx, job, args.text);
     return null;
   },
 });
 
-async function recordPartial(ctx: MutationCtx, job: Doc<"codexTurns">, text: string) {
-  const conversation = await ctx.db.get(job.conversationId);
-  // The flush before /reset works quietly, so it never shows on Telegram.
-  const edit = conversation?.channel === "telegram" && !job.flush && !job.telegramEditing
-    && Date.now() - (job.telegramEditedAt ?? 0) >= TELEGRAM_EDIT_MS;
-  await ctx.db.patch(job._id, {
-    // The memories line, even half written, is not the owner's to read (citedMemories).
-    partial: text.replace(/\n[ \t]*m(?:e(?:m(?:o(?:r(?:i(?:e(?:s(?::[^\n]*)?)?)?)?)?)?)?)?[ \t]*$/i, "").slice(0, 100_000),
-    ...(edit ? { telegramEditing: true, telegramEditedAt: Date.now() } : {}),
-  });
-  if (edit) await ctx.scheduler.runAfter(0, internal.codex.streamToTelegram, { id: job._id });
-}
-
 export const streamToTelegram = internalAction({
   args: { id: v.id("codexTurns") },
   returns: v.null(),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args) => deliverTurnInOrder(args.id, async () => {
     const data = await ctx.runQuery(internal.codex.getTurn, args);
     let messageId = data?.job.telegramMessageId;
     try {
-      if (data?.conversation && data.job.partial && !data.job.finalizedAt) {
+      if (data?.conversation && data.job.partial && data.job.status === "running" && !data.job.finalizedAt) {
         const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
         if (messageId) await editDraft(token, data.conversation.externalId, messageId, data.job.partial);
         else messageId = await sendDraft(token, data.conversation.externalId, data.job.partial);
@@ -605,14 +605,16 @@ export const streamToTelegram = internalAction({
       await ctx.runMutation(internal.codex.streamedToTelegram, { id: args.id, messageId });
     }
     return null;
-  },
+  }),
 });
 
 export const streamedToTelegram = internalMutation({
   args: { id: v.id("codexTurns"), messageId: v.optional(v.number()) },
   returns: v.null(),
   handler: async (ctx, args) => {
-    if (await ctx.db.get(args.id)) await ctx.db.patch(args.id, { telegramEditing: false, telegramMessageId: args.messageId });
+    const state = await streamState(ctx, args.id);
+    if (state) await ctx.db.patch(state._id, { telegramEditing: false, ...(args.messageId !== undefined ? { telegramMessageId: args.messageId } : {}) });
+    else if (await ctx.db.get(args.id)) await ctx.db.patch(args.id, { telegramEditing: false, telegramMessageId: args.messageId });
     return null;
   },
 });
@@ -866,7 +868,7 @@ export const finishTurn = mutation({
     }
     // The memories the reply relied on, named on its last line: kept, and the line taken off.
     // A turn that broke off (the runner restarting) keeps what it had streamed, as recovery.sweep does.
-    const cited = citedMemories(cleanError && !args.response?.trim() ? job.partial ?? args.response : args.response);
+    const cited = citedMemories((cleanError || args.stopped) && !args.response?.trim() ? await streamBody(ctx, job) ?? args.response : args.response);
     // Finished with nothing to show is not a reply: the chat says so, instead of keeping the owner's message alone.
     const silent = !args.error && !args.stopped && !job.checkpoint && !job.flush && job.kind !== "compact"
       && !cited.text?.trim() && !mediaKey;
@@ -925,6 +927,9 @@ export const retryOn = internalMutation({
     if (!run || run.status !== "running") return false;
     // Paused, it is not tried again: the refusal stands.
     if (await pausedAt(ctx)) return false;
+    // A retry is another durable queued turn; a full chat keeps the original
+    // failure and follows its existing finalization path. Do not move the chat.
+    if (await waitingCount(ctx, conversation) >= MAX_QUEUED_PER_CHAT) return false;
     const engine = args.route.engine;
     await moveChat(ctx, conversation, { engine, ...(args.route.model ? { model: args.route.model } : {}) }, args.route.movedFrom ? { from: args.route.movedFrom.engine, why: args.route.movedFrom.why } : undefined);
     const moved = (await ctx.db.get(conversation._id))!;
@@ -1062,6 +1067,8 @@ export const getTurn = internalQuery({
     const steers = (await ctx.db.query("codexSteers")
       .withIndex("by_turn_status", (q) => q.eq("turnId", job._id).eq("status", "applied"))
       .collect()).sort((a, b) => (a.appliedAt ?? 0) - (b.appliedAt ?? 0));
+    const partial = await streamBody(ctx, job);
+    const stream = await streamState(ctx, job._id);
     // A saved login typed into the chat, or read back into the reply, is not kept or delivered.
     const values = await savedValues(ctx);
     const clean = (text: string) => hide(text, values);
@@ -1070,7 +1077,8 @@ export const getTurn = internalQuery({
         ...job,
         prompt: clean(job.prompt),
         ...(job.response !== undefined ? { response: clean(job.response) } : {}),
-        ...(job.partial !== undefined ? { partial: clean(job.partial) } : {}),
+        ...(partial !== undefined ? { partial: clean(partial) } : {}),
+        ...(stream?.telegramMessageId !== undefined ? { telegramMessageId: stream.telegramMessageId } : {}),
         ...(job.error !== undefined ? { error: clean(job.error) } : {}),
       },
       conversation,
@@ -1087,6 +1095,9 @@ export const markFinalized = internalMutation({
     if (!job || job.finalizedAt !== undefined || job.retrying || (job.status !== "done" && job.status !== "error")) return null;
     const finishedAt = job.finishedAt ?? Date.now();
     await ctx.db.patch(job._id, { finalizedAt: Date.now() });
+    // Terminal response and delivery steps are durable now; drop the temporary
+    // body and Telegram bookkeeping rather than retain a second reply copy.
+    await deleteStream(ctx, job._id);
     // Each message that joined the turn has its own run, and ends with it.
     const steers = await ctx.db.query("codexSteers")
       .withIndex("by_turn_status", (q) => q.eq("turnId", job._id).eq("status", "applied"))
@@ -1166,7 +1177,7 @@ function citedMemories(response?: string): { text?: string; ids: string[] } {
 export const finalizeTurn = internalAction({
   args: { id: v.id("codexTurns") },
   returns: v.null(),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args) => deliverTurnInOrder(args.id, async () => {
     const result: {
       job: { runId: Id<"runs">; errorCode?: import("../lib/turn-errors").TurnErrorCode; kind?: "compact"; checkpoint?: boolean; prompt: string; response?: string; error?: string; status: string; model?: string; finalizedAt?: number; mediaKey?: string; memoryIds?: Id<"memories">[]; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
       conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram" | "whatsapp"; externalId: string; title?: string; jobId?: Id<"jobs">; taskId?: Id<"tasks">; contactId?: Id<"contacts"> } | null;
@@ -1297,7 +1308,7 @@ export const finalizeTurn = internalAction({
     // A background task carries on, or says how it ended (tasks.ts).
     if (conversation.taskId && !job.checkpoint) await ctx.runMutation(internal.tasks.afterTurn, { id: conversation.taskId, ...(job.error ? { error: job.error } : {}) });
     return null;
-  },
+  }),
 });
 
 /**
@@ -1316,6 +1327,7 @@ export const pruneOrphans = internalMutation({
       if (!args.conversationId && await ctx.db.get(turn.conversationId)) continue;
       const steers = await ctx.db.query("codexSteers").withIndex("by_turn_status", (q) => q.eq("turnId", turn._id)).collect();
       for (const steer of steers) await ctx.db.delete(steer._id);
+      await deleteStream(ctx, turn._id);
       await ctx.db.delete(turn._id);
       deleted += 1;
     }

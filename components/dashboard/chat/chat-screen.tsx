@@ -39,14 +39,19 @@ import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
 import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
-import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
+import { ComposerDraft, type DraftHandle, Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { InteractiveAnswers } from "./interactive-answer";
 import { MessageEditor, type MessageEdit } from "./message-editor";
 import { MessageRow, PendingRow, ReplyInProgress, type ChatMessage } from "./message";
 import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
 
+import { useChatDeadline, useChatEvent, useStableRecords } from "./render-isolation";
+
 import { WorkspacePanel } from "./workspace-panel";
 import { BrowserPanel } from "./browser-panel";
+
+const messageKey = (message: ChatMessage) => message.id;
+const workKey = (work: Work) => work.runId;
 
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
@@ -117,9 +122,17 @@ export function ChatScreen() {
     selectedId ? { key: dashboardKey, id: selectedId } : "skip",
     { initialNumItems: 50 },
   );
-  const messages = useMemo(() => [...newest].sort((a, b) => a.createdAt - b.createdAt), [newest]);
+  const stableMessages = useStableRecords(newest, messageKey);
+  const messages = useMemo(() => [...stableMessages].sort((a, b) => a.createdAt - b.createdAt), [stableMessages]);
   const approvals = useQuery(api.approvals.pending, { key: dashboardKey });
-  const now = useNow(1000);
+  const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
+  const workQuery = useQuery(api.dashboard.getChatWork, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
+  const deadlineRevision = useChatDeadline([
+    ...(approvals ?? []).filter((item) => item.chat?.id === selectedId).map((item) => item.expiresAt),
+    ...(workQuery ?? []).filter((run) => run.status === "ok" && run.finishedAt !== undefined).map((run) => run.finishedAt! + LANDING_MS),
+    ...(planLimits?.engines.flatMap((item) => item.usage?.limits?.windows.map((window) => window.resetsAt) ?? []) ?? []),
+  ]);
+  const now = Date.now();
   const here = (approvals ?? []).filter((item) => item.chat?.id === selectedId && item.expiresAt > now);
 
   const createChat = useMutation(api.dashboard.createChat);
@@ -141,7 +154,6 @@ export function ChatScreen() {
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
   const defaultEngine = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
-  const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
   // The heads-up about the engine's limit the owner closed, until it changes.
   const [limitSeen, setLimitSeen] = useState("");
   // The note about Perry moving the chat to another engine the owner closed, by when it moved.
@@ -167,9 +179,8 @@ export function ChatScreen() {
   const [draftEngine, setDraftEngine] = useState<EngineKind>();
   const [draftEffort, setDraftEffort] = useState<string>();
   const [draftAccess, setDraftAccess] = useState<Access>();
-  const [draft, setDraft] = useState("");
-  /** Where the caret is in the draft; unset puts it at the end. */
-  const [caret, setCaret] = useState<number>();
+  const draftControl = useRef<DraftHandle>(null);
+  const setDraft = useCallback((text: string) => draftControl.current?.write(text), []);
   const { skills, refresh: refreshSkills } = useSkills();
   const skillNames = useMemo(() => new Set((skills ?? []).filter((skill) => !skill.problem).map((skill) => skill.name)), [skills]);
   const [notice, setNotice] = useState("");
@@ -255,8 +266,9 @@ export function ChatScreen() {
   const shownPending = pending.filter((item) => item.id === selectedId);
   const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
   // Every step Perry takes: listed as they come while a reply is on its way, and kept with the reply after.
-  const work = useQuery(api.dashboard.getChatWork, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
+  const work = workQuery;
   const { workOf, liveWork, failedWork } = useMemo(() => {
+    const now = Date.now();
     const runs = work ?? [];
     const replies = messages.filter((message) => message.role === "assistant" && !message.pending);
     // Each message is a run of its own, and one sent while a reply works joins that reply's turn: several runs
@@ -281,13 +293,21 @@ export function ChatScreen() {
     const lastReply = replies.at(-1)?.createdAt ?? 0;
     const failed = runs.filter((run) => run.status !== "ok" && run.status !== "running" && run.steps.length && !paired.has(run) && run.startedAt > lastReply);
     return { workOf, liveWork: together([...runs.filter((run) => run.status === "running"), ...landing]), failedWork: together(failed) };
-  }, [work, messages, now]);
+  }, [work, messages, deadlineRevision]);
+  const historicalWork = useStableRecords(useMemo(() => [...workOf.values()], [workOf]), workKey);
+  const stableWorkOf = useMemo(() => new Map(historicalWork.map((item) => [item.runId, item])), [historicalWork]);
+  const rowWork = useMemo(() => new Map([...workOf].map(([id, item]) => [id, stableWorkOf.get(item.runId)])), [workOf, stableWorkOf]);
 
   // Scrolling: a chat opens at its newest message; after that, new content only scrolls into view for a reader already at the bottom.
   const scroller = useRef<HTMLDivElement>(null);
   const olderScroll = useRef<{ height: number; top: number } | null>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  // Stream commits adjust the DOM directly, without publishing text/height as screen state.
+  const followLiveReply = useCallback(() => {
+    const element = scroller.current;
+    if (element && stick.current && !olderScroll.current) element.scrollTop = element.scrollHeight;
+  }, []);
   useLayoutEffect(() => { stick.current = true; setAtBottom(true); }, [selectedId]);
   const onScroll = useCallback(() => {
     const element = scroller.current;
@@ -305,7 +325,7 @@ export function ChatScreen() {
     } else if (stick.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, liveWork?.steps.length, here.length]);
+  }, [selectedId, messages.length, shownPending.length, waiting, liveWork?.steps.length, here.length]);
   const locatedMessage = useRef("");
   const sourceMessage = search.get("message");
   const sourceRun = search.get("run");
@@ -395,66 +415,6 @@ export function ChatScreen() {
     setFiles((items) => [...items, ...usable].slice(0, MAX_FILES));
   }
 
-  // Slash commands: past a command's name, the suggestions are its choices.
-  const typedModel = parseModelCommand(draft);
-  const typedThink = parseThinkCommand(draft);
-  const typedAccess = parseAccessCommand(draft);
-  const choosing = /^\/(?:(?:set\s+)?model|think|access)\s/i.test(draft);
-  const choices = (options: Array<{ value: string; label: string; hint: string }>, typed: string | undefined, command: string): Suggestion[] =>
-    options.filter((option) => !typed || option.value.startsWith(typed)).map((option) => ({
-      key: option.value, label: option.label, hint: option.hint, apply: () => void runCommand(`${command} ${option.value}`),
-    }));
-  // Skills: a $ starts one's name where the caret is, and picking one puts "$name " there.
-  const mention = draft.startsWith("/") ? null : typingSkill(draft.slice(0, Math.min(caret ?? draft.length, draft.length)));
-  const mentioning = mention !== null;
-  // A skill Perry wrote a moment ago is listed too.
-  useEffect(() => { if (mentioning) void refreshSkills(); }, [mentioning, refreshSkills]);
-  function pickSkill(name: string) {
-    if (!mention) return;
-    const end = mention.start + 1 + mention.typed.length;
-    // The rest of a name the caret was inside is replaced too.
-    const after = draft.slice(end).replace(/^[a-z0-9-]*/, "");
-    const inserted = `$${name}${after.startsWith(" ") ? "" : " "}`;
-    const position = mention.start + inserted.length + (after.startsWith(" ") ? 1 : 0);
-    setDraft(draft.slice(0, mention.start) + inserted + after);
-    setCaret(position);
-    window.setTimeout(() => { composer.current?.focus(); composer.current?.setSelectionRange(position, position); }, 0);
-  }
-  const skillSuggestions: Suggestion[] = !mention ? [] : (skills ?? [])
-    .filter((skill) => !skill.problem && skill.name.includes(mention.typed))
-    .sort((a, b) => Number(b.name.startsWith(mention.typed)) - Number(a.name.startsWith(mention.typed)))
-    .map((skill) => ({ key: skill.folder, label: `$${skill.name}`, hint: skill.description, typed: skill.name === mention.typed, apply: () => pickSkill(skill.name) }));
-
-  const suggestions: Suggestion[] = !draft.startsWith("/")
-    ? skillSuggestions
-    : typedModel && choosing
-      ? (typedModel.name ? findModel(models ?? [], typedModel.name, engine).matches : models ?? []).map((item) => {
-          const key = modelKey(item.engine, item.id);
-          const current = item.engine === engine && item.id === model;
-          return {
-            key, label: item.name, hint: `${key}${current ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
-            apply: () => void runCommand(`/model ${key}`),
-          };
-        })
-      : typedThink && choosing
-        ? choices([
-            { value: "default", label: "Default", hint: `${modelInfo?.defaultEffort ?? "the model's own"}${effort ? "" : " · current"}` },
-            ...efforts.map((level) => ({ value: level, label: levelName(level), hint: `${level}${level === effort ? " · current" : ""}` })),
-          ], typedThink.level, "/think")
-        : typedAccess && choosing
-          ? choices(ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
-          : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
-              key: item.command, label: item.command, hint: item.hint,
-              apply: () => { setDraft(["/stop", "/compact", "/reset", "/pause", "/resume"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },
-            }));
-  const completing = skillSuggestions.length
-    ? "skill" as const
-    : draft.startsWith("/") && !choosing
-      ? "command" as const
-      : choosing && !typedModel && suggestions.length > 0 && !suggestions.some((item) => item.key === (typedThink?.level ?? typedAccess?.mode))
-        ? "choice" as const
-        : null;
-
   /** Commands never become messages: they change this chat, then say what they did. */
   async function runCommand(text: string): Promise<boolean> {
     const trimmed = text.trim();
@@ -537,7 +497,7 @@ export function ChatScreen() {
     return false;
   }
 
-  async function submit(text = draft) {
+  async function submit(text = draftControl.current?.read() ?? "") {
     const message = text.trim();
     if (message.startsWith("/") && files.length === 0 && await runCommand(message)) return;
     // Sent while a reply is running, the message joins that reply (it steers it).
@@ -637,11 +597,24 @@ export function ChatScreen() {
     }
   }
 
+  const editRow = useChatEvent((message: ChatMessage) => setEditing(message));
+  const regenerateRow = useChatEvent((message: ChatMessage) => { void rewind(message.id); });
+  const branchRow = useChatEvent((message: ChatMessage) => { void branch(message.id); });
+  const noteRow = useChatEvent((message: ChatMessage) => { void saveAsNote(message.id); });
   const stop = () => { if (selectedId) void stopChat({ key: dashboardKey, id: selectedId }).catch(fail); };
   // Only what is in the history can be regenerated, edited or branched from.
   const saved = messages.filter((message) => !message.pending);
   const lastUser = [...saved].reverse().find((message) => message.role === "user");
   const lastMessage = saved.at(-1);
+  const runRows = useMemo(() => {
+    const last = new Map<string | undefined, string>();
+    const prompt = new Map<string | undefined, string>();
+    for (const message of messages) {
+      last.set(message.runId, message.id);
+      if (message.role === "user" && !prompt.has(message.runId)) prompt.set(message.runId, message.id);
+    }
+    return { last, prompt };
+  }, [messages]);
   const loading = Boolean(selectedId) && (chat === undefined || messageStatus === "LoadingFirstPage");
   const missing = Boolean(selectedId) && chat === null;
   const title = summary?.title ?? (selectedId ? chat?.title ?? "" : "New chat");
@@ -743,12 +716,12 @@ export function ChatScreen() {
                 </div>
               )}
               {messageStatus === "LoadingMore" && <p className="text-center text-sm text-muted-foreground" role="status">Loading earlier messages…</p>}
-              {messages.map((message, index) => (
+              {messages.map((message) => (
                 <Fragment key={message.id}>
                 <MessageRow
                   key={message.id}
                   message={message}
-                  work={workOf.get(message.id)}
+                  work={rowWork.get(message.id)}
                   assistant={assistant}
                   latest={message.id === lastMessage?.id}
                   canEdit={!app}
@@ -756,24 +729,25 @@ export function ChatScreen() {
                   canBranch={!app}
                   busy={busy}
                   skills={skillNames}
-                  onEdit={() => setEditing(message)}
-                  onRegenerate={() => void rewind(message.id)}
-                  onBranch={() => void branch(message.id)}
-                  onSaveNote={() => void saveAsNote(message.id)}
+                  onEdit={editRow}
+                  onRegenerate={regenerateRow}
+                  onBranch={branchRow}
+                  onSaveNote={noteRow}
                 />
-                {message.failure && !messages.slice(index + 1).some((item) => item.runId === message.runId) && <TurnError
+                {message.failure && runRows.last.get(message.runId!) === message.id && <TurnError
                   {...message.failure}
                   busy={busy || waiting}
-                  onRetry={!app && !waiting && messages.find((item) => item.runId === message.runId && item.role === "user")
-                    ? () => { const prompt = messages.find((item) => item.runId === message.runId && item.role === "user"); if (prompt) void rewind(prompt.id); }
+                  onRetry={!app && !waiting && runRows.prompt.get(message.runId!)
+                    ? () => { const prompt = runRows.prompt.get(message.runId!); if (prompt) void rewind(prompt); }
                     : undefined}
                 />}
                 </Fragment>
               ))}
               {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
               {!missing && <InteractiveAnswers conversationId={selectedId} />}
-              {(waiting || liveWork) && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
-              {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
+              {(waiting || liveWork) && <LiveReply key={selectedId} conversationId={selectedId} onContentChange={followLiveReply}
+                work={liveWork} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
+              {here.map((approval) => <LiveApproval key={approval.id} approval={approval} />)}
               {failedWork && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed" /></div>}
               {chat?.lastError && !chat.isRunning && !waiting && !messages.some((message) => message.failure && message.runId === chat.lastErrorRunId) && (
                 <TurnError error={chat.lastError} errorCode={chat.lastErrorCode} busy={busy}
@@ -795,7 +769,66 @@ export function ChatScreen() {
         )}
         <div className="mx-auto w-full max-w-3xl">
           <p className="sr-only" role="status" aria-live="polite">{waiting ? `${assistant} is replying` : ""}</p>
-          {chat?.contact ? (
+          <ComposerDraft ref={draftControl} refreshSkills={refreshSkills}>{({ draft, setDraft, caret, setCaret }) => {
+            // Slash commands: past a command's name, the suggestions are its choices.
+            const typedModel = parseModelCommand(draft);
+            const typedThink = parseThinkCommand(draft);
+            const typedAccess = parseAccessCommand(draft);
+            const choosing = /^\/(?:(?:set\s+)?model|think|access)\s/i.test(draft);
+            const choices = (options: Array<{ value: string; label: string; hint: string }>, typed: string | undefined, command: string): Suggestion[] =>
+              options.filter((option) => !typed || option.value.startsWith(typed)).map((option) => ({
+                key: option.value, label: option.label, hint: option.hint, apply: () => void runCommand(`${command} ${option.value}`),
+              }));
+            // Skills: a $ starts one's name where the caret is, and picking one puts "$name " there.
+            const mention = draft.startsWith("/") ? null : typingSkill(draft.slice(0, Math.min(caret ?? draft.length, draft.length)));
+            function pickSkill(name: string) {
+              if (!mention) return;
+              const end = mention.start + 1 + mention.typed.length;
+              // The rest of a name the caret was inside is replaced too.
+              const after = draft.slice(end).replace(/^[a-z0-9-]*/, "");
+              const inserted = `$${name}${after.startsWith(" ") ? "" : " "}`;
+              const position = mention.start + inserted.length + (after.startsWith(" ") ? 1 : 0);
+              setDraft(draft.slice(0, mention.start) + inserted + after);
+              setCaret(position);
+              window.setTimeout(() => { composer.current?.focus(); composer.current?.setSelectionRange(position, position); }, 0);
+            }
+            const skillSuggestions: Suggestion[] = !mention ? [] : (skills ?? [])
+              .filter((skill) => !skill.problem && skill.name.includes(mention.typed))
+              .sort((a, b) => Number(b.name.startsWith(mention.typed)) - Number(a.name.startsWith(mention.typed)))
+              .map((skill) => ({ key: skill.folder, label: `$${skill.name}`, hint: skill.description, typed: skill.name === mention.typed, apply: () => pickSkill(skill.name) }));
+
+            const suggestions: Suggestion[] = !draft.startsWith("/")
+              ? skillSuggestions
+              : typedModel && choosing
+                ? (typedModel.name ? findModel(models ?? [], typedModel.name, engine).matches : models ?? []).map((item) => {
+                    const key = modelKey(item.engine, item.id);
+                    const current = item.engine === engine && item.id === model;
+                    return {
+                      key, label: item.name, hint: `${key}${current ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
+                      apply: () => void runCommand(`/model ${key}`),
+                    };
+                  })
+                : typedThink && choosing
+                  ? choices([
+                      { value: "default", label: "Default", hint: `${modelInfo?.defaultEffort ?? "the model's own"}${effort ? "" : " · current"}` },
+                      ...efforts.map((level) => ({ value: level, label: levelName(level), hint: `${level}${level === effort ? " · current" : ""}` })),
+                    ], typedThink.level, "/think")
+                  : typedAccess && choosing
+                    ? choices(ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
+                    : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
+                        key: item.command, label: item.command, hint: item.hint,
+                        apply: () => { setDraft(["/stop", "/compact", "/reset", "/pause", "/resume"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },
+                      }));
+            const completing = skillSuggestions.length
+              ? "skill" as const
+              : draft.startsWith("/") && !choosing
+                ? "command" as const
+                : choosing && !typedModel && suggestions.length > 0 && !suggestions.some((item) => item.key === (typedThink?.level ?? typedAccess?.mode))
+                  ? "choice" as const
+                  : null;
+
+
+          return chat?.contact ? (
             <div className="px-1 pb-1 text-sm text-muted-foreground" role="note">
               <p className="font-medium text-foreground">{assistant}&apos;s chat with {chat.contact.name}{chat.contact.group ? " (a group)" : ""}</p>
               <p className="mt-1 text-pretty">
@@ -810,7 +843,7 @@ export function ChatScreen() {
             draft={draft}
             onDraftChange={setDraft}
             onCaret={setCaret}
-            onSubmit={() => void submit()}
+            onSubmit={() => void submit(draft)}
             onStop={selectedId ? stop : undefined}
             waiting={waiting}
             busy={busy}
@@ -859,7 +892,8 @@ export function ChatScreen() {
                 ? <>Your {app} chat. What you write here, and {assistant}&apos;s reply, also go to {app}.</>
                 : <>Type <Kbd className="font-mono">/</Kbd> for commands, <Kbd className="font-mono">$</Kbd> for skills.</>}
           </p>
-          </>)}
+          </>);
+          }}</ComposerDraft>
         </div>
       </div>
 
@@ -902,4 +936,33 @@ function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, o
       </DropdownMenu>
     </>
   );
+}
+
+/** Each ticking leaf owns its clock; history and composer do not subscribe. */
+function LiveReply({ conversationId, onContentChange, ...props }: Omit<Parameters<typeof ReplyInProgress>[0], "now" | "streaming"> & {
+  conversationId: ChatId;
+  onContentChange: () => void;
+}) {
+  const { dashboardKey } = useSession();
+  const streaming = useQuery(api.turnStreams.getChatStream, { key: dashboardKey, id: conversationId });
+  const now = useNow(1000);
+  const content = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { onContentChange(); }, [streaming, onContentChange]);
+  // Markdown/media can grow after the text commit; observe native layout too.
+  useLayoutEffect(() => {
+    const element = content.current;
+    if (!element) return;
+    let active = true;
+    const observer = new ResizeObserver(() => { if (active) onContentChange(); });
+    observer.observe(element);
+    return () => { active = false; observer.disconnect(); };
+  }, [onContentChange]);
+  return <div ref={content} data-live-reply={conversationId}>
+    <ReplyInProgress {...props} streaming={streaming ?? undefined} now={now} />
+  </div>;
+}
+
+function LiveApproval({ approval }: { approval: Parameters<typeof ApprovalCard>[0]["approval"] }) {
+  const now = useNow(1000);
+  return <ApprovalCard approval={approval} now={now} showChat={false} />;
 }

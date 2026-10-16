@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "environment": "Disposable production profiling build; fake data; stopped Runtime scheduler; loopback only; normal startup disabled",
+  "savedMessagesLoadedForBaseline": 200,
+  "profiling": "Next --profile --no-mangling; pre-React DevTools commit hook; retained bailout fibers excluded; changed-row positive control",
+  "typing": {
+    "plainKeystrokes": 30,
+    "caretMoves": 10,
+    "shiftEnter": true,
+    "exactDraft": "abcdefghijklmnopqrst\nuvwxyz1234",
+    "selectionStart": 21,
+    "chatScreenUpdates": 0,
+    "messageRowUpdates": 0,
+    "composerDraftUpdates": 42
+  },
+  "clock": { "liveReplyUpdates": 25, "chatScreenUpdates": 0, "messageRowUpdates": 0, "composerDraftUpdates": 0 },
+  "deltaStream": { "visibleTextUpdated": true, "chatScreenUpdates": 0, "messageRowUpdates": 0 },
+  "legacyStream": { "visibleTextUpdated": true, "chatScreenUpdates": 1, "reason": "Legacy snapshot renews heartbeat at bounded 30-second cadence", "olderScrollTopBefore": 4915.33349609375, "olderScrollTopAfter": 4915.33349609375 },
+  "changedRow": { "visibleTextUpdated": true, "messageRowUpdates": 1 },
+  "queue": { "tenRemovalControls": true, "fullQueuePreservesDraft": true, "middleRemovalOnly": true, "activeReplyPreserved": true, "remainingRemovalControls": 9, "slotFreedSendAccepted": true },
+  "commands": { "accessHelpWorks": true, "draftSurvivesChatNavigation": true },
+  "unrun": ["Real engine or model", "Real provider OAuth", "Screen-reader session", "Full attachment/editor/approval/landing journey", "Mobile viewport"],
+  "cleanup": "Verification tab closed and only exact-command-verified disposable UI process stopped"
+}

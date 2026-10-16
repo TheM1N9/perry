@@ -225,6 +225,7 @@ function Pet() {
   const [chatId, setChatIdState] = useState<PetChatId>(null);
   const [draft, setDraft] = useState("");
   const petChat = useQuery(api.dashboard.getChat, chatId ? { key, id: chatId } : "skip");
+  const petStream = useQuery(api.turnStreams.getChatStream, chatId ? { key, id: chatId } : "skip");
   // What he is doing, step by step: in his chat, and anywhere else (a job, a message on the phone).
   const activity = useQuery(api.dashboard.getActivity, chatId ? { key, id: chatId } : "skip");
   const elsewhere = useQuery(api.dashboard.getActivity, { key });
@@ -413,12 +414,12 @@ function Pet() {
   useEffect(() => {
     if (!petChat || !chatId) return;
     if (petChat.isRunning) {
-      writing.current = { since: writing.current?.since ?? Date.now(), text: petChat.streaming ?? writing.current?.text ?? "" };
+      writing.current = { since: writing.current?.since ?? Date.now(), text: petStream ?? writing.current?.text ?? "" };
       return;
     }
     if (writing.current && !reading) setReply({ id: chatId, since: writing.current.since, streamed: writing.current.text });
     writing.current = null;
-  }, [petChat, chatId, reading]);
+  }, [petChat, petStream, chatId, reading]);
   useEffect(() => { if (reading) setReply((held) => held && held.id === chatId ? null : held); }, [reading, chatId]);
   // The saved reply, kept with it: opening another chat first leaves it still held up, and still worded.
   useEffect(() => {
@@ -625,8 +626,8 @@ function Pet() {
     bubble = <Bubble title="Perry" detail={words} note={did || undefined} onOpen={() => openChat(reply.id)} onClose={() => setReply(null)}
       onPointer={(on) => setPointerOn(on ? key : null)} />;
   } else if (working) {
-    const writing = step?.label === "Writing the reply" && petChat?.streaming;
-    bubble = <Bubble id="working" title={step?.label ?? "On it…"} detail={writing ? excerpt(petChat!.streaming!, true) : took(step?.since)} onOpen={() => openChat(chatId)} />;
+    const writing = step?.label === "Writing the reply" && petStream;
+    bubble = <Bubble id="working" title={step?.label ?? "On it…"} detail={writing ? excerpt(petStream!, true) : took(step?.since)} onOpen={() => openChat(chatId)} />;
   } else if (away && awayStep) {
     const where = [away.chat && `In ${away.chat}`, took(awayStep.since)].filter(Boolean).join(" · ");
     bubble = <Bubble id="elsewhere" title={awayStep.label} detail={where || undefined} onOpen={() => openChat(away.conversationId)} />;

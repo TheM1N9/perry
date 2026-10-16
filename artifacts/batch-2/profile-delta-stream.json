@@ -1,0 +1,246 @@
+{
+  "phase": "delta-stream-no-heartbeat",
+  "renderers": [
+    {
+      "version": "19.3.0-canary-cbb046ab-20260731",
+      "package": "react-dom",
+      "bundleType": 0
+    }
+  ],
+  "totals": {
+    "LiveReply": {
+      "mounts": 0,
+      "updates": 13,
+      "actualDurationMs": 2.5999999940395355
+    },
+    "ReplyInProgress": {
+      "mounts": 0,
+      "updates": 13,
+      "actualDurationMs": 1.3999999910593033
+    }
+  },
+  "commits": [
+    {
+      "at": 76277.20000000298,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 77275.5,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 78275.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.20000000298023224
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 79275.80000001192,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        }
+      }
+    },
+    {
+      "at": 80275.5,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.20000000298023224
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        }
+      }
+    },
+    {
+      "at": 81270.5,
+      "priority": 1,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 1.2000000029802322
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 1.0999999940395355
+        }
+      }
+    },
+    {
+      "at": 81272.70000000298,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 82275.90000000596,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        }
+      }
+    },
+    {
+      "at": 83276.30000001192,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 84277.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 85279.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.09999999403953552
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 86278.60000000894,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.19999998807907104
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    },
+    {
+      "at": 87277.20000000298,
+      "priority": 3,
+      "didError": false,
+      "rendered": {
+        "LiveReply": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0.10000000894069672
+        },
+        "ReplyInProgress": {
+          "mounts": 0,
+          "updates": 1,
+          "actualDurationMs": 0
+        }
+      }
+    }
+  ],
+  "truncated": false
+}

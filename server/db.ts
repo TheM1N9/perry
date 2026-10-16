@@ -1,3 +1,4 @@
+import { ORDINARY_NOTES, noteWriteTags } from "../lib/notes-read-dependencies";
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { protectCredential } from "../convex/lib/credential-encryption";
@@ -307,7 +308,7 @@ export class Store {
     return this.tableOf(id) === table ? (id as string) : null;
   }
 
-  insert(table: string, value: Record<string, unknown>, keep?: { _id: string; _creationTime: number }): string {
+  insert(table: string, value: Record<string, unknown>, keep?: { _id: string; _creationTime: number }, writes?: Set<string>): string {
     this.table(table);
     const id = keep?._id ?? newId();
     const { _id: _ignoredId, _creationTime: _ignoredTime, ...given } = value;
@@ -316,10 +317,11 @@ export class Store {
     this.sql.prepare(`INSERT INTO ${docTable(table)} (_id, _creationTime, doc) VALUES (?, ?, ?)`)
       .run(id, keep?._creationTime ?? this.creationTime(), JSON.stringify(fields));
     this.touched(table, id);
+    if (table === "notes") noteWriteTags(writes, fields);
     return id;
   }
 
-  private write(id: string, value: Record<string, unknown>, replacing: boolean): string {
+  private write(id: string, value: Record<string, unknown>, replacing: boolean, writes?: Set<string>): string {
     const table = this.tableOf(id);
     const current = table ? this.row(table, id) : null;
     if (!table || !current) throw new Error(`Document ${id} does not exist.`);
@@ -328,22 +330,25 @@ export class Store {
     const kept = Object.fromEntries(Object.entries(this.takeVectors(table, id, protectCredential(table, fields), replacing)).filter(([, field]) => field !== undefined));
     this.sql.prepare(`UPDATE ${docTable(table)} SET doc = ? WHERE _id = ?`).run(JSON.stringify(kept), id);
     this.touched(table, id);
+    if (table === "notes") noteWriteTags(writes, current, kept);
     return table;
   }
 
-  patch(id: string, value: Record<string, unknown>): string {
-    return this.write(id, value, false);
+  patch(id: string, value: Record<string, unknown>, writes?: Set<string>): string {
+    return this.write(id, value, false, writes);
   }
 
-  replace(id: string, value: Record<string, unknown>): string {
-    return this.write(id, value, true);
+  replace(id: string, value: Record<string, unknown>, writes?: Set<string>): string {
+    return this.write(id, value, true, writes);
   }
 
-  delete(id: string): string {
+  delete(id: string, writes?: Set<string>): string {
     const table = this.tableOf(id);
     if (!table) throw new Error(`Document ${id} does not exist.`);
+    const current = table === "notes" ? this.row(table, id) : null;
     this.sql.prepare(`DELETE FROM ${docTable(table)} WHERE _id = ?`).run(id);
     this.sql.prepare("DELETE FROM _ids WHERE id = ?").run(id);
+    if (table === "notes") noteWriteTags(writes, current);
     this.touched(table, id);
     return table;
   }
@@ -428,7 +433,11 @@ export class Query implements AsyncIterable<Doc> {
   }
 
   private *run(limit?: number, offset = 0): Generator<Doc> {
-    this.reads?.add(this.table);
+    // Only the exact ordinary-note partition is narrower than a table read.
+    // Other queries (including search) keep their conservative table dependency.
+    const ordinary = this.table === "notes" && !this.search && this.indexFields?.[0] === "kind"
+      && this.bounds.some((bound) => bound.field === "kind" && bound.op === "eq" && bound.value === undefined);
+    this.reads?.add(ordinary ? ORDINARY_NOTES : this.table);
     const where: string[] = [];
     const params: SQLInputValue[] = [];
     const bounds = this.search ? this.search.filters : this.bounds;
