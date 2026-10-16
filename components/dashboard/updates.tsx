@@ -14,6 +14,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { ActionButton, ListSkeleton, Section, StatusBadge } from "./common";
+import { useVersionNotice } from "./version-notice";
 
 /**
  * Perry's own updates (convex/updates.ts), wherever they show: a note in the
@@ -43,6 +44,7 @@ export function useUpdates() {
 /** In the sidebar, above the computer: there is an update, and the button that does it. */
 export function UpdateNotice() {
   const { view, update } = useUpdates();
+  useVersionNotice(view?.uiVersion);
   if (!view || !(updateReady(view) || view.state !== "idle")) return null;
   const busy = view.state !== "idle";
   const label = view.state === "updating" ? "Updating…" : view.state === "waiting" ? "Update waiting" : "Update available";

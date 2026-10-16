@@ -1,4 +1,5 @@
 import { readsChanged } from "../lib/notes-read-dependencies";
+import { CHAT_PAGE_SIZE, isChatHistory, isChatPayload, retainedChatBytes, RECENT_CHAT_BYTES, RECENT_CHAT_LIMIT, RECENT_CHAT_TTL } from "./recent-chat";
 import { getFunctionName, type FunctionArgs, type FunctionReference, type FunctionReturnType } from "convex/server";
 
 /**
@@ -30,6 +31,10 @@ type Subscription = {
   listeners: Set<Listener>;
   inFlight: Promise<void> | null;
   again: boolean;
+  idleAt?: number;
+  expiry?: ReturnType<typeof setTimeout>;
+  revision: number;
+  retainedBytes?: number;
   /** A value shown before the server confirms it (withOptimisticUpdate). */
   override?: { value: unknown };
 };
@@ -43,6 +48,10 @@ export class BackendClient {
   private closed = false;
   private readonly base: string;
   private readonly adminKey?: string;
+  private hoverTimer?: ReturnType<typeof setTimeout>;
+  private prefetching = false;
+  /** Lets pagination discard its load-more fallback on redaction/session changes. */
+  chatCacheGeneration = 0;
   /** Called when the change stream connects or drops, for anything that shows it. */
   onConnection?: (connected: boolean) => void;
   private connection: "connecting" | "connected" | "disconnected" = "connecting";
@@ -56,6 +65,7 @@ export class BackendClient {
   };
 
   private setConnection(connected: boolean) {
+    if (!connected) this.discardIdleHistory();
     this.connection = connected ? "connected" : "disconnected";
     this.onConnection?.(connected);
     for (const listener of this.connectionListeners) listener();
@@ -80,7 +90,12 @@ export class BackendClient {
       body: JSON.stringify({ path: functionName(ref), args: args ?? {} }),
     });
     const body = await response.json().catch(() => ({ error: `The server answered ${response.status}.` })) as { value?: T; reads?: string[]; writes?: string[]; error?: string };
-    if (!response.ok || body.error) throw new BackendError(body.error ?? `The server answered ${response.status}.`, response.status);
+    if (!response.ok || body.error) {
+      const error = new BackendError(body.error ?? `The server answered ${response.status}.`, response.status);
+      // Dashboard key failures currently arrive as 500; do not keep old text on revocation.
+      if (response.status === 401 || response.status === 403 || /dashboard key|DASHBOARD_KEY/i.test(error.message)) this.clearChatCache(error);
+      throw error;
+    }
     return { value: body.value as T, reads: body.reads, writes: body.writes };
   }
 
@@ -116,6 +131,7 @@ export class BackendClient {
 
   /** The current state of a live query; subscribe() keeps it current. */
   snapshot(name: string, args: unknown): { value?: unknown; error?: Error; loaded: boolean } {
+    this.pruneRecentChats();
     const sub = this.subscriptions.get(keyOf(name, args));
     if (!sub) return { loaded: false };
     if (sub.override) return { value: sub.override.value, loaded: true };
@@ -123,22 +139,108 @@ export class BackendClient {
   }
 
   subscribe(name: string, args: unknown, listener: Listener): () => void {
+    if (this.closed) return () => {};
+    this.pruneRecentChats();
     const key = keyOf(name, args);
     let sub = this.subscriptions.get(key);
     if (!sub) {
-      sub = { name, args, reads: null, loaded: false, listeners: new Set(), inFlight: null, again: false };
+      sub = { name, args, reads: null, loaded: false, listeners: new Set(), inFlight: null, again: false, revision: 0 };
       this.subscriptions.set(key, sub);
-      void this.fetch(sub);
     }
+    const wasIdle = sub.listeners.size === 0;
+    clearTimeout(sub.expiry);
+    sub.idleAt = undefined;
     sub.listeners.add(listener);
+    // A prefetch's listener can span lock/re-unlock. Its invalidated request
+    // cannot satisfy a new subscriber, even though the subscription is active.
+    if (wasIdle || (!sub.loaded && sub.revision > 0)) void this.fetch(sub);
     this.connect();
     return () => {
       sub!.listeners.delete(listener);
       if (sub!.listeners.size === 0) {
-        // Kept a moment, so a component that remounts does not start from nothing.
-        setTimeout(() => { if (sub!.listeners.size === 0) this.subscriptions.delete(key); }, 5_000);
+        this.keepIdle(key, sub!);
       }
     };
+  }
+
+  private keepIdle(key: string, sub: Subscription) {
+    if (this.subscriptions.get(key) !== sub) return;
+    clearTimeout(sub.expiry);
+    sub.idleAt = Date.now();
+    // Map insertion order is the LRU order, including visits in the same millisecond.
+    this.subscriptions.delete(key);
+    this.subscriptions.set(key, sub);
+    const retained = !sub.error && sub.retainedBytes;
+    // Unconfirmed/pending chat history must not linger after navigation.
+    const ttl = isChatHistory(sub.name) ? (retained ? RECENT_CHAT_TTL : 0) : isChatPayload(sub.name) ? 0 : 5_000;
+    if (!ttl) {
+      if (this.subscriptions.get(key) === sub) this.subscriptions.delete(key);
+      return;
+    }
+    sub.expiry = setTimeout(() => {
+      if (sub.listeners.size === 0 && this.subscriptions.get(key) === sub) this.subscriptions.delete(key);
+    }, ttl);
+    this.pruneRecentChats();
+  }
+
+  private pruneRecentChats() {
+    let bytes = 0;
+    let count = 0;
+    const idle = [...this.subscriptions.entries()].filter(([, sub]) => sub.idleAt !== undefined && isChatHistory(sub.name)).reverse();
+    for (const [key, sub] of idle) {
+      const size = !sub.error && sub.retainedBytes;
+      // In-flight prefetches have no value yet; they are bounded separately.
+      if (sub.inFlight && !sub.loaded) continue;
+      if (!size || Date.now() - sub.idleAt! >= RECENT_CHAT_TTL || ++count > RECENT_CHAT_LIMIT || bytes + size > RECENT_CHAT_BYTES) {
+        clearTimeout(sub.expiry);
+        this.subscriptions.delete(key);
+      } else bytes += size;
+    }
+  }
+
+  private discardIdleHistory() {
+    for (const [key, sub] of this.subscriptions) {
+      if (!isChatHistory(sub.name) || sub.listeners.size) continue;
+      clearTimeout(sub.expiry);
+      this.subscriptions.delete(key);
+    }
+  }
+
+  /** One shared intent timer, one request at a time; no background transcript sweep. */
+  scheduleChatPrefetch(key: string, id: string): () => void {
+    clearTimeout(this.hoverTimer);
+    const timer = setTimeout(() => {
+      if (this.closed || this.prefetching) return;
+      const args = { key, id, paginationOpts: { numItems: CHAT_PAGE_SIZE, cursor: null } };
+      if (this.snapshot("dashboard:getChatMessages", args).loaded) return;
+      this.prefetching = true;
+      const stop = this.subscribe("dashboard:getChatMessages", args, () => {});
+      const sub = this.subscriptions.get(keyOf("dashboard:getChatMessages", args));
+      const done = () => { stop(); this.prefetching = false; };
+      if (sub?.inFlight) void sub.inFlight.finally(done);
+      else done();
+    }, 140);
+    this.hoverTimer = timer;
+    return () => clearTimeout(timer);
+  }
+
+  /** Call synchronously on lock/unlock, before another session can render. */
+  clearChatCache(error?: Error) {
+    this.chatCacheGeneration++;
+    clearTimeout(this.hoverTimer);
+    for (const [key, sub] of this.subscriptions) {
+      if (!isChatPayload(sub.name)) continue;
+      clearTimeout(sub.expiry);
+      sub.revision++;
+      sub.again = false;
+      sub.value = undefined;
+      sub.retainedBytes = 0;
+      sub.override = undefined;
+      sub.error = error;
+      sub.loaded = Boolean(error);
+      if (!sub.listeners.size) this.subscriptions.delete(key);
+      else this.notify(sub);
+    }
   }
 
   /** Like Convex's onUpdate: call back with every new result until unsubscribed. */
@@ -163,15 +265,19 @@ export class BackendClient {
     sub.inFlight = (async () => {
       do {
         sub.again = false;
+        const revision = sub.revision;
         try {
           const result = await this.call(sub.name, sub.args);
+          if (revision !== sub.revision || this.closed) continue;
           const changed = !sub.loaded || sub.error || JSON.stringify(result.value) !== JSON.stringify(sub.value);
           sub.reads = result.reads ?? null;
           sub.error = undefined;
           sub.loaded = true;
           if (changed) sub.value = result.value;
+          sub.retainedBytes = retainedChatBytes(sub.name, sub.args, result.value);
           if (changed) this.notify(sub);
         } catch (error) {
+          if (revision !== sub.revision || this.closed) continue;
           // The server unreachable (restarting, say) is not the query's error: what is shown stays,
           // and the change stream fetches everything again once it reconnects.
           if (!(error instanceof BackendError)) break;
@@ -181,6 +287,7 @@ export class BackendClient {
         }
       } while (sub.again);
       sub.inFlight = null;
+      if (!sub.listeners.size && this.subscriptions.get(keyOf(sub.name, sub.args)) === sub) this.keepIdle(keyOf(sub.name, sub.args), sub);
     })();
     return sub.inFlight;
   }
@@ -188,8 +295,26 @@ export class BackendClient {
   /** Re-run the live queries that read any of these tables; all of them when not known. */
   refresh(tables?: string[]): Promise<unknown> {
     const wanted = tables ? new Set(tables) : null;
+    // Inactive history is disposable. A write/reconnect must not resurrect a deleted,
+    // rewound or newly redacted message; active ordinary updates keep their paint.
+    const sensitive = wanted?.has("vault") || wanted?.has("secrets");
+    if (sensitive) this.chatCacheGeneration++;
+    for (const [key, sub] of this.subscriptions) {
+      if (!(isChatHistory(sub.name) || (sensitive && isChatPayload(sub.name))) || (wanted && sub.reads !== null && !readsChanged(sub.reads, wanted) && !sensitive)) continue;
+      if (!sub.listeners.size) {
+        clearTimeout(sub.expiry);
+        this.subscriptions.delete(key);
+      } else if (sensitive) {
+        sub.revision++;
+        sub.value = undefined;
+        sub.retainedBytes = 0;
+        sub.override = undefined;
+        sub.loaded = false;
+        this.notify(sub);
+      }
+    }
     const due = [...this.subscriptions.values()].filter((sub) =>
-      sub.listeners.size > 0 && (!wanted || sub.reads === null || readsChanged(sub.reads, wanted)));
+      sub.listeners.size > 0 && (!wanted || sub.reads === null || readsChanged(sub.reads, wanted) || (sensitive && isChatPayload(sub.name))));
     return Promise.all(due.map((sub) => this.fetch(sub)));
   }
 
@@ -275,6 +400,8 @@ export class BackendClient {
 
   close() {
     this.closed = true;
+    clearTimeout(this.hoverTimer);
+    for (const sub of this.subscriptions.values()) clearTimeout(sub.expiry);
     this.stream?.abort();
     this.stream = null;
     this.subscriptions.clear();

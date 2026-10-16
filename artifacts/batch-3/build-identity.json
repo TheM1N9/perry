@@ -1,0 +1,16 @@
+{
+  "id": "c5bb4044-9f83-4979-8600-437409a13da7",
+  "browser": [
+    ".next/static/chunks/2hixaj-2rdl54.js",
+    ".next/static/chunks/3oe4k0elqd6vj.js"
+  ],
+  "server": [
+    ".next/server/chunks/ssr/_1-y_jxa._.js",
+    ".next/server/chunks/ssr/_1pi_eov._.js",
+    ".next/server/chunks/_13v62zs._.js",
+    ".next/server/chunks/_18ddr86._.js",
+    ".next/server/chunks/_1ct7lnr._.js",
+    ".next/server/chunks/_1cwty5k._.js",
+    ".next/server/middleware-build-manifest.js"
+  ]
+}

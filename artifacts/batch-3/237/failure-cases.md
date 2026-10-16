@@ -1,0 +1,13 @@
+# Isolated fake-transport E2E failure inventory (before E2E code)
+- Reopen loses initial snapshot or fails to refresh it; same payload replaces identity/causes flash.
+- Another chat/key/client/session gets retained text; lock/close/auth rejection resurrects an in-flight result.
+- Idle expiry, entry count, byte limit, oversized pages or pagination variants grow memory without bound.
+- Deleted/rewound chat or changed vault/secrets keeps stale text; invalidation races an outstanding fetch.
+- Partial replies, optimistic overrides, pending outbox or failed queries enter retained history.
+- Hover storms make overlapping/unbounded calls; leave/blur/unmount still starts work; cached hover repeats.
+- Transient failure erases confirmed live data; active updates flicker.
+- Pagination hook keeps previous chat/key results during loading/load-more/skip.
+- Cached metadata enables write/access/contact actions before fresh getChat arrives.
+- Tests accidentally open network or use real configuration. Block network and set synthetic paths before imports; no Runtime bootstrap.
+- Integration review: a prefetch can span lock/re-unlock with the same key; its dummy listener can keep an invalidated subscription active, causing the new screen to wait forever after the old response is discarded. Reattaching must fetch the current session result.
+- Integration review: existing five-second getChatWork/getChat snapshots can retain partial work/error metadata across same-key sessions or secret changes. Session and sensitive invalidation must clear all three chat payload queries, while only saved history receives extended retention.

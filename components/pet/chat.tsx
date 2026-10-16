@@ -248,7 +248,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
           </div>
         ))}
         {running && (streaming
-          ? <div className="opacity-90"><Markdown text={streaming} /></div>
+          ? <div className="opacity-90"><Markdown text={streaming} streaming /></div>
           : <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><span className="size-1.5 animate-pulse rounded-full bg-primary" />Working…</p>)}
         {chat?.lastError && !running && <p className="text-xs text-destructive">{chat.lastError}</p>}
       </div>
@@ -319,9 +319,10 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
             {!byHotkey || !hotkey ? "Listening. Send when you're done; Esc to stop."
               : holdProblem(hold) ? `Listening. Press ${keys(hotkey)} again to send; Esc to stop. ${holdProblem(hold)}`
                 : `Listening. Let go of ${keys(hotkey)} to send; Esc to stop.`}
+            {" Stops automatically after five minutes."}
           </p>
         )}
-        {(error || voice?.error) && <p className="mt-1 px-1 text-xs text-destructive">{error || voice?.error}</p>}
+        {(error || voice?.error) && <p className="mt-1 px-1 text-xs text-destructive" role="alert">{error || voice?.error}</p>}
         {noted && !error && (
           <p className="mt-1 px-1 text-xs text-muted-foreground" role="status" data-noted>
             {noted.text}{" "}

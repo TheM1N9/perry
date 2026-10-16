@@ -156,7 +156,7 @@ export function ReplyInProgress({ streaming, work, now, approving = false, unres
       {unresponsive && <p role="status" data-turn-health="unresponsive" className="text-sm text-muted-foreground">Your computer is unresponsive. Waiting for it to reconnect…</p>}
       {streaming ? (
         <div>
-          <Markdown text={streaming} />
+          <Markdown text={streaming} streaming />
           {!busy && <span className="mt-1 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle motion-reduce:animate-none" aria-hidden />}
         </div>
       ) : !busy && (

@@ -1,0 +1,76 @@
+{
+  "firstSendPending": {
+    "draft": "Synthetic focus acceptance",
+    "focused": "composer",
+    "path": "/chat",
+    "sendDisabled": true,
+    "textareaPresent": true
+  },
+  "firstSendSettled": {
+    "draft": "",
+    "focused": "composer",
+    "path": "/chat/jd5e5x6aykw96vk8mh3arj4pjy",
+    "text": "You said\n\nSynthetic focus acceptance\n\n4:36\n\nThinking",
+    "textareaPresent": true
+  },
+  "metadataPending": {
+    "draft": "Held",
+    "path": "/chat/6p1xkfpernz89aqfwg93v7wnc6",
+    "sendDisabled": true,
+    "textareaPresent": true
+  },
+  "pendingEnter": {
+    "draft": "Held",
+    "focused": "composer",
+    "path": "/chat/6p1xkfpernz89aqfwg93v7wnc6"
+  },
+  "waveform": {
+    "mode": "voice",
+    "decodedSeconds": 1,
+    "holdTranscription": false,
+    "transcript": "Synthetic voice acceptance.",
+    "getUserMediaCalls": 2,
+    "recorderStarts": 2,
+    "recorderStops": 1,
+    "transcribeCalls": 0,
+    "voiceDoneCalls": 0,
+    "meterReads": 275,
+    "frequencyReads": 31,
+    "waveformMutations": 755,
+    "liveTracks": 1,
+    "openContexts": 1,
+    "recordingCount": 1,
+    "recorderIntervals": 1,
+    "capturedDeadlines": 1,
+    "deferredTranscriptions": 0,
+    "voiceSubscribers": 1,
+    "transcriptionSampleLengths": []
+  },
+  "waveformCleanup": {
+    "mode": "voice",
+    "decodedSeconds": 1,
+    "holdTranscription": false,
+    "transcript": "Synthetic voice acceptance.",
+    "getUserMediaCalls": 2,
+    "recorderStarts": 2,
+    "recorderStops": 2,
+    "transcribeCalls": 0,
+    "voiceDoneCalls": 1,
+    "meterReads": 288,
+    "frequencyReads": 33,
+    "waveformMutations": 838,
+    "liveTracks": 0,
+    "openContexts": 0,
+    "recordingCount": 0,
+    "recorderIntervals": 0,
+    "capturedDeadlines": 0,
+    "deferredTranscriptions": 0,
+    "voiceSubscribers": 1,
+    "transcriptionSampleLengths": []
+  },
+  "composerSettled": {
+    "draft": "Held",
+    "focused": "composer",
+    "sendDisabled": false
+  }
+}

@@ -46,6 +46,7 @@ import { MessageRow, PendingRow, ReplyInProgress, type ChatMessage } from "./mes
 import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
 
 import { useChatDeadline, useChatEvent, useStableRecords } from "./render-isolation";
+import { useChatScroll } from "./use-chat-scroll";
 
 import { WorkspacePanel } from "./workspace-panel";
 import { BrowserPanel } from "./browser-panel";
@@ -298,51 +299,29 @@ export function ChatScreen() {
   const stableWorkOf = useMemo(() => new Map(historicalWork.map((item) => [item.runId, item])), [historicalWork]);
   const rowWork = useMemo(() => new Map([...workOf].map(([id, item]) => [id, stableWorkOf.get(item.runId)])), [workOf, stableWorkOf]);
 
-  // Scrolling: a chat opens at its newest message; after that, new content only scrolls into view for a reader already at the bottom.
-  const scroller = useRef<HTMLDivElement>(null);
-  const olderScroll = useRef<{ height: number; top: number } | null>(null);
-  const stick = useRef(true);
-  const [atBottom, setAtBottom] = useState(true);
-  // Stream commits adjust the DOM directly, without publishing text/height as screen state.
-  const followLiveReply = useCallback(() => {
-    const element = scroller.current;
-    if (element && stick.current && !olderScroll.current) element.scrollTop = element.scrollHeight;
-  }, []);
-  useLayoutEffect(() => { stick.current = true; setAtBottom(true); }, [selectedId]);
-  const onScroll = useCallback(() => {
-    const element = scroller.current;
-    if (!element) return;
-    const bottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
-    stick.current = bottom;
-    setAtBottom(bottom);
-  }, []);
+  const { scroller, atBottom, onScroll, followLiveReply, jumpToLatest, release: releaseScroll, readerRevision, beginPagination, restorePagination } = useChatScroll(selectedId);
+  // Text commits stay in the live leaf; structural changes only follow while
+  // the reader has opted in. Pagination restores its visible message instead.
   useLayoutEffect(() => {
-    const element = scroller.current;
-    if (!element) return;
-    if (olderScroll.current) {
-      element.scrollTop = olderScroll.current.top + element.scrollHeight - olderScroll.current.height;
-      olderScroll.current = null;
-    } else if (stick.current) {
-      element.scrollTop = element.scrollHeight;
-    }
-  }, [selectedId, messages.length, shownPending.length, waiting, liveWork?.steps.length, here.length]);
+    if (messageStatus !== "LoadingMore") restorePagination();
+    followLiveReply();
+  }, [selectedId, messages.length, shownPending.length, waiting, liveWork?.steps.length, here.length, messageStatus, restorePagination, followLiveReply]);
   const locatedMessage = useRef("");
+  const sourceScrollIntent = useRef<{ source: string; revision: number } | null>(null);
   const sourceMessage = search.get("message");
   const sourceRun = search.get("run");
   useEffect(() => {
-    if ((!sourceMessage && !sourceRun) || locatedMessage.current === `${selectedId}:${sourceMessage ?? sourceRun}`) return;
+    if (!sourceMessage && !sourceRun) { sourceScrollIntent.current = null; locatedMessage.current = ""; return; }
+    const source = selectedId + ":message:" + sourceMessage + ":run:" + sourceRun;
+    if (sourceScrollIntent.current?.source !== source) sourceScrollIntent.current = { source, revision: readerRevision.current };
+    if (locatedMessage.current === source || sourceScrollIntent.current.revision !== readerRevision.current) return;
     const target = sourceMessage ? document.getElementById(`message-${sourceMessage}`) : scroller.current?.querySelector(`[data-run="${CSS.escape(sourceRun ?? "")}"]`);
     if (target) {
-      stick.current = false;
+      releaseScroll();
       target.scrollIntoView({ block: "center", behavior: "auto" });
-      locatedMessage.current = `${selectedId}:${sourceMessage ?? sourceRun}`;
+      locatedMessage.current = source;
     } else if (messageStatus === "CanLoadMore") loadMore(50);
-  }, [selectedId, sourceMessage, sourceRun, messages.length, messageStatus, loadMore]);
-  const jumpToLatest = () => {
-    stick.current = true;
-    setAtBottom(true);
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  };
+  }, [selectedId, sourceMessage, sourceRun, messages.length, messageStatus, loadMore, releaseScroll, readerRevision]);
 
   const models = modelOptions?.models;
   // The chat's engine; a chat not sent yet is on the owner's default, unless a model was picked for it. None while there is neither.
@@ -498,6 +477,8 @@ export function ChatScreen() {
   }
 
   async function submit(text = draftControl.current?.read() ?? "") {
+    // Keep typing/focus available while cached history waits for fresh access metadata.
+    if (selectedId && (!chat || chat.contact)) return;
     const message = text.trim();
     if (message.startsWith("/") && files.length === 0 && await runCommand(message)) return;
     // Sent while a reply is running, the message joins that reply (it steers it).
@@ -521,7 +502,6 @@ export function ChatScreen() {
     const sending = files;
     const messageKey = sending.length ? crypto.randomUUID() : undefined;
     setDraft(""); setFiles([]); setError(""); setNotice("");
-    stick.current = true;
     let sent: Pending | undefined;
     try {
       const uploaded: PendingAttachment[] = [];
@@ -565,7 +545,6 @@ export function ChatScreen() {
     const source = [...messages.slice(0, index + 1)].reverse().find((message) => message.role === "user");
     const shown = edit?.text ?? source?.text ?? "";
     setBusy(true); setError("");
-    stick.current = true;
     // The copy being replaced is removed before the new one is listed, so it is not part of the baseline.
     const entry: Pending = {
       id: selectedId, text: shown, attachments: source?.attachments ?? [], seenRunning: false, sent: true,
@@ -615,7 +594,7 @@ export function ChatScreen() {
     }
     return { last, prompt };
   }, [messages]);
-  const loading = Boolean(selectedId) && (chat === undefined || messageStatus === "LoadingFirstPage");
+  const loading = Boolean(selectedId) && messageStatus === "LoadingFirstPage";
   const missing = Boolean(selectedId) && chat === null;
   const title = summary?.title ?? (selectedId ? chat?.title ?? "" : "New chat");
   // A Telegram or WhatsApp chat: written in here too, but what is on the phone cannot be taken back.
@@ -667,7 +646,7 @@ export function ChatScreen() {
         )}
       </TopBar>
 
-      <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]" id="content" tabIndex={-1}>
+      <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto" id="content" tabIndex={-1}>
         <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
           {noEngine && (
             <Alert variant="quiet" className="mt-4" role="alert">
@@ -710,7 +689,7 @@ export function ChatScreen() {
               )}
               {messageStatus === "CanLoadMore" && (
                 <div className="flex justify-center">
-                  <Button variant="outline" size="sm" onClick={() => { if (scroller.current) olderScroll.current = { height: scroller.current.scrollHeight, top: scroller.current.scrollTop }; loadMore(50); }}>
+                  <Button variant="outline" size="sm" onClick={() => { beginPagination(); loadMore(50); }}>
                     Load earlier messages
                   </Button>
                 </div>
@@ -846,7 +825,7 @@ export function ChatScreen() {
             onSubmit={() => void submit(draft)}
             onStop={selectedId ? stop : undefined}
             waiting={waiting}
-            busy={busy}
+            busy={busy || Boolean(selectedId && chat === undefined)}
             uploading={uploading}
             files={files}
             onAddFiles={addFiles}
@@ -946,18 +925,8 @@ function LiveReply({ conversationId, onContentChange, ...props }: Omit<Parameter
   const { dashboardKey } = useSession();
   const streaming = useQuery(api.turnStreams.getChatStream, { key: dashboardKey, id: conversationId });
   const now = useNow(1000);
-  const content = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => { onContentChange(); }, [streaming, onContentChange]);
-  // Markdown/media can grow after the text commit; observe native layout too.
-  useLayoutEffect(() => {
-    const element = content.current;
-    if (!element) return;
-    let active = true;
-    const observer = new ResizeObserver(() => { if (active) onContentChange(); });
-    observer.observe(element);
-    return () => { active = false; observer.disconnect(); };
-  }, [onContentChange]);
-  return <div ref={content} data-live-reply={conversationId}>
+  return <div data-live-reply={conversationId}>
     <ReplyInProgress {...props} streaming={streaming ?? undefined} now={now} />
   </div>;
 }

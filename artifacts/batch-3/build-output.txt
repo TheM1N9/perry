@@ -1,0 +1,149 @@
+⚠ Mangling is disabled. Note: This may affect performance and should only be used for debugging purposes.
+⚠ Profiling is enabled. Note: This may affect performance.
+▲ Next.js 16.3.6 (Turbopack)
+✓ Running next.config.ts took 66ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 11.1s
+  Running TypeScript ...
+✓ Finished filesystem cache database compaction in 16.9s
+  Finished TypeScript in 48s ...
+  Collecting page data using 23 workers ...
+  Generating static pages using 23 workers (0/36) ...
+  Generating static pages using 23 workers (9/36)
+  Generating static pages using 23 workers (18/36)
+  Generating static pages using 23 workers (27/36)
+✓ Generating static pages using 23 workers (36/36) in 1422ms
+Turbopack build encountered 2 warnings:
+  Finalizing page optimization ...
+./convex/pet.ts:139:19
+Warning: Dynamic filesystem access causes tracing of the whole project
+  137 |   const repo = process.cwd();
+  138 |   return new Promise((resolve) => {
+> 139 |     const child = spawn(process.env.PERRY_BUN || "bun", [join(repo, "scripts", "perry.ts"...
+      |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 140 |       cwd: repo,
+      | ^^^^^^^^^^^^^^^^
+> 141 |       env: { ...process.env, PERRY_PROGRESS: "1" },
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 142 |       stdio: ["ignore", "pipe", "pipe"],
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 143 |       windowsHide: true,
+      | ^^^^^^^^^^^^^^^^^^^^^^^^
+> 144 |     });
+      | ^^^^^^
+  145 |     let output = "";
+  146 |     let partial = "";
+  147 |     child.stdout.on("data", (chunk: Buffer) => {
+
+Static analysis determined that this filesystem access causes the whole project to be traced and included in the output.
+This is usually unintentional and leads to all source files (including the public folder) to be deployed as part of the server code.
+This can slow down deployments or lead to failures when size limits are exceeded.
+To resolve this, you can
+- make sure the path is statically scoped to some subfolder, for example path.join(process.cwd(), 'data', bar), or
+- only use them in development, or
+- opt out by adding an ignore comment to the highlighted call: child_process.spawn(/*turbopackIgnore: true*/ ...), or
+- remove them.
+
+Import traces:
+  #1 [App Route]:
+    ./convex/pet.ts
+    ./server/modules.ts
+    ./server/index.ts
+    ./app/api/browser/upload/route.ts
+
+  #2 [Instrumentation]:
+    ./convex/pet.ts
+    ./server/modules.ts
+    ./server/index.ts
+    ./instrumentation.ts
+
+  #3 [App Route]:
+    ./convex/pet.ts
+    ./convex/pet.ts
+    ./server/modules.ts
+    ./server/index.ts
+    ./app/api/backend/events/route.ts
+
+
+./server/wake.ts:97:19
+Warning: Dynamic filesystem access causes tracing of the whole project
+   95 | ...md-inhibit", ["--what=sleep:idle", "--who=Perry", "--why=Perry is working on something...
+   96 | ...
+>  97 | ... = spawn(command, args, { windowsHide: true, stdio: ["pipe", "ignore", "ignore"] });
+      |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   98 | ...rror", () => {});
+   99 | ...?.on("error", () => {});
+  100 | ...d;
+
+Static analysis determined that this filesystem access causes the whole project to be traced and included in the output.
+This is usually unintentional and leads to all source files (including the public folder) to be deployed as part of the server code.
+This can slow down deployments or lead to failures when size limits are exceeded.
+To resolve this, you can
+- make sure the path is statically scoped to some subfolder, for example path.join(process.cwd(), 'data', bar), or
+- only use them in development, or
+- opt out by adding an ignore comment to the highlighted call: child_process.spawn(/*turbopackIgnore: true*/ ...), or
+- remove them.
+
+Import traces:
+  #1 [App Route]:
+    ./server/wake.ts
+    ./server/index.ts
+    ./app/api/browser/upload/route.ts
+
+  #2 [Instrumentation]:
+    ./server/wake.ts
+    ./server/index.ts
+    ./instrumentation.ts
+
+  #3 [App Route]:
+    ./server/wake.ts
+    ./server/wake.ts
+    ./server/index.ts
+    ./app/api/backend/events/route.ts
+
+
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/backend/admin
+├ ƒ /api/backend/call
+├ ƒ /api/backend/events
+├ ƒ /api/backend/http/[...path]
+├ ƒ /api/backend/import
+├ ƒ /api/backend/storage/[id]
+├ ƒ /api/backend/storage/upload
+├ ƒ /api/browser
+├ ƒ /api/browser/upload
+├ ƒ /api/media
+├ ƒ /api/media/[id]
+├ ƒ /api/media/library/[id]
+├ ƒ /api/media/workspace/[id]
+├ ○ /apps/connectors
+├ ○ /apps/skills
+├ ○ /brain
+├ ƒ /brain/[id]
+├ ○ /chat
+├ ƒ /chat/[id]
+├ ○ /icon.svg
+├ ○ /inbox
+├ ○ /library
+├ ƒ /library/[id]
+├ ○ /pet
+├ ƒ /projects/[id]
+├   /settings/[section]
+│ ├ ● /settings/general
+│ ├ ● /settings/engines
+│ ├ ● /settings/usage
+│ └ ● [+11 more paths]
+├ ○ /todos
+├ ○ /welcome
+└ ○ /work
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+●  (SSG)      prerendered as static HTML (uses generateStaticParams)
+ƒ  (Dynamic)  server-rendered on demand
