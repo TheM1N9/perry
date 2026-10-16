@@ -1,7 +1,7 @@
 # Isolation failure inventory (recorded before E2E code)
 - Real home/config/credentials accidentally read by static imports: set synthetic PERRY_HOME, DB and key before dynamic imports; block network and child processes.
 - Normal bootstrap starts services/cron/models: import Runtime/schema/functions only, stop Runtime before mutation, no singleton/bootstrap.
-- Patches touch peer/shared files: use a Node load hook to overlay only the proposed codex/dashboard/schema text in memory; never apply patches to checkout.
+- Patches touch peer/shared files: the peer originally used proposal overlays; the final packaged harness imports integrated checkout sources directly, without applying or loading patches.
 - Scheduler executes fake tasks: keep stopped throughout; manually invoke terminal mutations only.
 - Shared SQLite connection bypasses transactions: fixture setup before concurrency; exercise actual Runtime mutation calls thereafter.
 - Admission overshoots under simultaneous sends, outbox handoff double-counts, pending steer fallback double-counts, stale fallback duplicates, retry at full queue overshoots, compact bypasses cap, repeated enqueue duplicates: assert each using real SQLite and actual function definitions.

@@ -12,7 +12,7 @@
     "connectorActualSourcePackagedE2E": { "passed": true, "scenarioGroups": 14, "realNetworkAttempts": 0 },
     "notesActualSourcePackagedE2E": { "passed": true, "brainPages": 240, "ordinaryNotesDecoded": 2, "journalListRuns": [7, 7] },
     "mixedImportEventPackagedE2E": { "passed": true, "listRuns": [26, 27], "cachedNotes": 3, "databaseNotes": 3 },
-    "streamLifecycleActualSourcePackagedE2E": { "passed": true, "replyUnits": [5000, 10000, 20000], "jsonPayloadBytes": [7939, 15840, 31740], "getChatRerunsDuringStream": [0, 0, 0], "draftAbortDeadlineMilliseconds": 15000 },
+    "streamLifecycleActualSourcePackagedE2E": { "passed": true, "replyUnits": [5000, 10000, 20000], "jsonPayloadBytes": [7939, 15840, 31740], "getChatRerunsDuringStream": [0, 0, 0], "draftAbortDeadlineMilliseconds": 15000, "terminalStreamRowsRemoved": true },
     "productionUI": { "passed": true, "evidence": "ui-result.json", "savedMessagesLoaded": 200 },
     "batch1Regressions": { "encryption": true, "steering": true, "health": true, "errors": true, "traces": true, "errorAndTraceRepeatedAfterDeliveryFix": true },
     "diffWhitespace": { "passed": true }
@@ -23,9 +23,10 @@
     "Pet and terminal subscribe separately to stream body",
     "OAuth ACTIVE response with redirect is not reported as complete",
     "Reset retry retains request ID across vault scrub",
-    "Telegram draft/final ordering, same-turn recursion rejection and bounded draft deadline"
+    "Telegram draft/final ordering, same-turn recursion rejection and bounded draft deadline",
+    "Temporary stream chunks and metadata removed after terminal finalization while preserving response/history/replay"
   ],
   "unrun": ["Remote CI for batch2", "Real OAuth", "Real engines/models", "Mobile viewport/screen reader", "Complete editor/upload/approval/landing browser journey"],
   "isolation": { "installedPerryAccessed": false, "installedPerryChanged": false, "normalStartup": false, "installsOrDownloads": false, "extraCheckouts": false, "additionalAgents": false, "disposableUIProcessStopped": true },
-  "cleanup": { "fixtureDatabaseRetained": true, "reason": "Automatic approval review blocked guarded disposable database deletion; no workaround attempted", "scratchBounded": true }
+  "cleanup": { "fixtureDatabaseRetained": false, "reason": "Removed batch1/batch2 disposable UI homes during the owner's explicitly authorized test cleanup; installed Perry and dependencies preserved", "scratchBounded": true }
 }

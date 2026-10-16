@@ -18,3 +18,14 @@
 - Production imports may accidentally still use old virtual sources after integration: default existing E2E to actual source, name its artifact explicitly, and reserve explicit proposal mode for follow-up shared patches.
 - Process-local Telegram action ordering must release on rejected operations and retain existing durable finalize ownership/recovery; it must read the turn after acquiring ordering, not use a pre-lock snapshot. Never hold Runtime.exclusive while awaiting network.
 - Follow-up delivery ordering could wait on itself if an action recursively invokes same-turn finalize, or wait forever behind a fetch with no deadline. Add native AsyncLocalStorage same-turn recursion rejection. Extend fake-request E2E with a reentrant production finalize invocation and a hanging request that rejects only when the actual draft AbortSignal.timeout aborts. A draft deadline must also cancel any Telegram 429 retry delay, while final/file delivery behavior remains unchanged.
+
+## PR review: terminal storage cleanup (before E2E extension)
+
+- Deleting chunks at finish/recovery could lose text or the Telegram draft ID
+  before delivery. Keep them until markFinalized wins its existing terminal guard.
+- Finalization could leave a second reply copy forever, delete another turn's
+  stream, break retry ownership or make delivery replay duplicate a message.
+- Assert zero stream metadata/chunks after stopped, failed, recovered and
+  successful finalization; response/history must survive repeated finalization.
+  Existing held Telegram and restart journeys must still pass. Record cleanup
+  before orphan pruning so pruning cannot hide a leak.

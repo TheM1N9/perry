@@ -217,6 +217,11 @@ try {
   const history = await call("agentStore:listMessages", { threadId: stopped.threadId, paginationOpts: { cursor: null, numItems: 100 } });
   assert.equal(history.page.length, 2);
   assert.ok(JSON.stringify(history).includes("Stopped partial"));
+  const assertStreamRemoved = (turn) => {
+    assert.equal(runtime.store.all("turnStreams").filter((row) => row.turnId === turn.id).length, 0);
+    assert.equal(runtime.store.all("turnStreamChunks").filter((row) => row.turnId === turn.id).length, 0);
+  };
+  assertStreamRemoved(stopped);
   evidence.cases.push("Cancellation partial fallback, finalization replay/idempotency, terminal delta rejection and trace settlement");
 
   const failed = await fixture();
@@ -224,6 +229,9 @@ try {
   await finish(failed, { error: "Synthetic engine failure", errorCode: "engine_failed" });
   assert.equal((await get(failed.id)).response, "Failure partial");
   assert.equal((await get(failed.id)).errorCode, "engine_failed");
+  await finalize(failed); await finalize(failed);
+  assertStreamRemoved(failed);
+  assert.equal((await get(failed.id)).response, "Failure partial");
   const healthy = await fixture();
   const oldHeartbeat = Date.now() - 120_000;
   await patch(healthy.id, { lastHeartbeatAt: oldHeartbeat });
@@ -238,6 +246,9 @@ try {
   await call("recovery:sweep", { only: abandoned.conversationId });
   assert.equal((await get(abandoned.id)).response, "Recovered partial");
   assert.equal((await get(abandoned.id)).errorCode, "offline");
+  await finalize(abandoned); await finalize(abandoned);
+  assertStreamRemoved(abandoned);
+  assert.equal((await get(abandoned.id)).response, "Recovered partial");
   evidence.cases.push("Error partial/code, no stream-driven heartbeat, genuine active-turn check-in, recovery abandoned partial");
 
   const refused = await fixture();
@@ -272,12 +283,22 @@ try {
   assert.ok(evidence.delivery.some((row) => row.method === "sendMessage"));
   assert.ok(evidence.delivery.some((row) => row.method === "editMessageText" && row.messageId === 238));
   assert.ok(evidence.delivery.every((row) => !String(row.text).includes(secret) && !String(row.text).includes("memories:")));
+  assertStreamRemoved(telegram);
   const wa = await fixture("whatsapp");
   await insert("installation", { whatsappOwner: "synthetic" });
   await append(wa, 0, "WhatsApp partial");
   await finish(wa, { stopped: true }); await finalize(wa); await finalize(wa);
   const waRows = runtime.store.all("whatsappOutbox");
   assert.ok(waRows.some((row) => row.text.includes("WhatsApp partial")));
+  assertStreamRemoved(wa);
+  const completed = await fixture();
+  await append(completed, 0, "Complete final reply");
+  await finish(completed, { response: "Complete final reply" });
+  await finalize(completed); await finalize(completed);
+  assertStreamRemoved(completed);
+  assert.equal((await get(completed.id)).response, "Complete final reply");
+  assert.ok(JSON.stringify(await call("agentStore:listMessages", { threadId: completed.threadId, paginationOpts: { cursor: null, numItems: 100 } })).includes("Complete final reply"));
+  evidence.cases.push("Terminal finalization removes stream metadata/chunks for stopped, failed, recovered, Telegram, WhatsApp and successful turns; response/history/replay preserved before orphan pruning");
   evidence.cases.push("Telegram draft send/edit/finalize preserves message ID without heavy turn writes; redaction/footer; WhatsApp final outbox and finalization replay");
 
   await call("codex:pruneOrphans", { conversationId: wa.conversationId });

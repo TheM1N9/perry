@@ -14,6 +14,7 @@
     "Cancellation partial fallback, finalization replay/idempotency, terminal delta rejection and trace settlement",
     "Error partial/code, no stream-driven heartbeat, genuine active-turn check-in, recovery abandoned partial",
     "Limit refusal preserves retry grace; overdue recovery owns finalization and rejects a late retry",
+    "Terminal finalization removes stream metadata/chunks for stopped, failed, recovered, Telegram, WhatsApp and successful turns; response/history/replay preserved before orphan pruning",
     "Telegram draft send/edit/finalize preserves message ID without heavy turn writes; redaction/footer; WhatsApp final outbox and finalization replay",
     "Orphan stream cleanup and 100k body cap",
     "Held Telegram first-send/edit across finish/finalize, queued terminal draft, ambiguous reset retry after real vault scrub",
@@ -207,7 +208,7 @@
       "terminalLast": true,
       "duplicateFirstSend": false,
       "aborted": true,
-      "milliseconds": 15022
+      "milliseconds": 15013
     },
     {
       "method": "rateLimitedSend",
@@ -215,7 +216,7 @@
       "terminalLast": true,
       "duplicateFirstSend": false,
       "aborted": true,
-      "milliseconds": 15009
+      "milliseconds": 15022
     }
   ],
   "recursiveDeliveryRejectedWithoutDeadlock": true,

@@ -19,6 +19,8 @@ deployed. Installed Perry and its data/configuration were not accessed or change
   delivery, pet and terminal consumers. Reset request IDs keep ambiguous retries
   from restoring secrets scrubbed by vault.save. Order Telegram drafts and final
   delivery; draft requests and rate-limit waits have a native 15-second deadline.
+  Finalization removes temporary stream chunks and metadata after preserving the
+  terminal response and completing its saving/delivery steps.
 - #236: composer owns draft/caret state, live rows own clocks, historical rows
   retain identity and use memo, and live streaming subscribes in its own leaf.
   Native ResizeObserver keeps bottom-following without screen stream state.

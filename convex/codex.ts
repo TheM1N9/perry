@@ -1095,6 +1095,9 @@ export const markFinalized = internalMutation({
     if (!job || job.finalizedAt !== undefined || job.retrying || (job.status !== "done" && job.status !== "error")) return null;
     const finishedAt = job.finishedAt ?? Date.now();
     await ctx.db.patch(job._id, { finalizedAt: Date.now() });
+    // Terminal response and delivery steps are durable now; drop the temporary
+    // body and Telegram bookkeeping rather than retain a second reply copy.
+    await deleteStream(ctx, job._id);
     // Each message that joined the turn has its own run, and ends with it.
     const steers = await ctx.db.query("codexSteers")
       .withIndex("by_turn_status", (q) => q.eq("turnId", job._id).eq("status", "applied"))
