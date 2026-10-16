@@ -22,4 +22,3 @@ if ($Mode -eq 'Build') {
   pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs --import ./artifacts/batch-3/ui-server.mjs node_modules/next/dist/bin/next start -p 17483 -H 127.0.0.1
 }
 exit $LASTEXITCODE
-
