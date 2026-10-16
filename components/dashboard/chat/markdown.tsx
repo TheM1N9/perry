@@ -101,8 +101,8 @@ function chatFile(files: ReadonlyArray<{ path: string; url: string }>, path: str
   return files.find((file) => slashes(file.path).endsWith(tail));
 }
 
-/** Keeps a file:// link, which react-markdown would empty (and an empty link opens Perry again); filePath reads it. */
-const urlTransform = (url: string) => /^file:/i.test(url) ? url : defaultUrlTransform(url);
+/** Preserve file URLs and Windows drives for registered-file lookup; unsafe web schemes still use the default filter. */
+const urlTransform = (url: string) => /^(?:file:|[a-z]:(?:[/\\]|%5c|%2f))/i.test(url) ? url : defaultUrlTransform(url);
 
 type MarkdownNode = { type: string; value?: string; url?: string; children?: MarkdownNode[] };
 
