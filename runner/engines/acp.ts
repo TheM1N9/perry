@@ -717,7 +717,7 @@ ${line}`.slice(-4000); this.onText(line); });
       sink.onEvent?.({ type: "usage", state: "unavailable" });
     }
     const result = (state: TurnState, error?: string): TurnResult => ({ state, cursor: session.id, text: turn.reply, images: [], ...(error ? { error } : {}) });
-    if (turn.stalled) return result("failed", `${this.label} stopped responding, so Perry stopped it. Send another message to carry on; the chat's session is kept.`);
+    if (turn.stalled) return { ...result("failed", `${this.label} stopped responding, so Perry stopped it. Send another message to carry on; the chat's session is kept.`), errorCode: "idle_timeout" };
     if (turn.interrupted) return result("interrupted");
     if (failure && !last) return result("failed", this.explain(failure).message);
     switch (last?.stopReason) {

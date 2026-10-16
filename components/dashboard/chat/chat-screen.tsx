@@ -1,5 +1,7 @@
 "use client";
 
+import { TurnError } from "./turn-error";
+
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -37,15 +39,21 @@ import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
 import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
-import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
+import { ComposerDraft, type DraftHandle, Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { InteractiveAnswers } from "./interactive-answer";
 import { ChatFiles } from "./markdown";
 import { MessageEditor, type MessageEdit } from "./message-editor";
 import { MessageRow, PendingRow, ReplyInProgress, type ChatMessage } from "./message";
 import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
 
+import { useChatDeadline, useChatEvent, useStableRecords } from "./render-isolation";
+import { useChatScroll } from "./use-chat-scroll";
+
 import { WorkspacePanel, type WorkspaceView } from "./workspace-panel";
 import { BrowserPanel } from "./browser-panel";
+
+const messageKey = (message: ChatMessage) => message.id;
+const workKey = (work: Work) => work.runId;
 
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
@@ -126,9 +134,17 @@ export function ChatScreen() {
     selectedId ? { key: dashboardKey, id: selectedId } : "skip",
     { initialNumItems: 50 },
   );
-  const messages = useMemo(() => [...newest].sort((a, b) => a.createdAt - b.createdAt), [newest]);
+  const stableMessages = useStableRecords(newest, messageKey);
+  const messages = useMemo(() => [...stableMessages].sort((a, b) => a.createdAt - b.createdAt), [stableMessages]);
   const approvals = useQuery(api.approvals.pending, { key: dashboardKey });
-  const now = useNow(1000);
+  const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
+  const workQuery = useQuery(api.dashboard.getChatWork, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
+  const deadlineRevision = useChatDeadline([
+    ...(approvals ?? []).filter((item) => item.chat?.id === selectedId).map((item) => item.expiresAt),
+    ...(workQuery ?? []).filter((run) => run.status === "ok" && run.finishedAt !== undefined).map((run) => run.finishedAt! + LANDING_MS),
+    ...(planLimits?.engines.flatMap((item) => item.usage?.limits?.windows.map((window) => window.resetsAt) ?? []) ?? []),
+  ]);
+  const now = Date.now();
   const here = (approvals ?? []).filter((item) => item.chat?.id === selectedId && item.expiresAt > now);
 
   const createChat = useMutation(api.dashboard.createChat);
@@ -150,7 +166,6 @@ export function ChatScreen() {
   const defaultAccess = useQuery(api.dashboard.getDefaultAccess, { key: dashboardKey });
   const lastPicks = useQuery(api.dashboard.getLastPicks, { key: dashboardKey });
   const defaultEngine = useQuery(api.dashboard.getDefaultEngine, { key: dashboardKey });
-  const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
   // The heads-up about the engine's limit the owner closed, until it changes.
   const [limitSeen, setLimitSeen] = useState("");
   // The note about Perry moving the chat to another engine the owner closed, by when it moved.
@@ -176,9 +191,8 @@ export function ChatScreen() {
   const [draftEngine, setDraftEngine] = useState<EngineKind>();
   const [draftEffort, setDraftEffort] = useState<string>();
   const [draftAccess, setDraftAccess] = useState<Access>();
-  const [draft, setDraft] = useState("");
-  /** Where the caret is in the draft; unset puts it at the end. */
-  const [caret, setCaret] = useState<number>();
+  const draftControl = useRef<DraftHandle>(null);
+  const setDraft = useCallback((text: string) => draftControl.current?.write(text), []);
   const { skills, refresh: refreshSkills } = useSkills();
   const skillNames = useMemo(() => new Set((skills ?? []).filter((skill) => !skill.problem).map((skill) => skill.name)), [skills]);
   const [notice, setNotice] = useState("");
@@ -264,9 +278,10 @@ export function ChatScreen() {
   const shownPending = pending.filter((item) => item.id === selectedId);
   const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
   // Every step Perry takes: listed as they come while a reply is on its way, and kept with the reply after.
-  const work = useQuery(api.dashboard.getChatWork, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
+  const work = workQuery;
   const chatFiles = useQuery(api.dashboard.getChatFiles, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
   const { workOf, liveWork, failedWork } = useMemo(() => {
+    const now = Date.now();
     const runs = work ?? [];
     const replies = messages.filter((message) => message.role === "assistant" && !message.pending);
     // Each message is a run of its own, and one sent while a reply works joins that reply's turn: several runs
@@ -291,48 +306,34 @@ export function ChatScreen() {
     const lastReply = replies.at(-1)?.createdAt ?? 0;
     const failed = runs.filter((run) => run.status !== "ok" && run.status !== "running" && run.steps.length && !paired.has(run) && run.startedAt > lastReply);
     return { workOf, liveWork: together([...runs.filter((run) => run.status === "running"), ...landing]), failedWork: together(failed) };
-  }, [work, messages, now]);
+  }, [work, messages, deadlineRevision]);
+  const historicalWork = useStableRecords(useMemo(() => [...workOf.values()], [workOf]), workKey);
+  const stableWorkOf = useMemo(() => new Map(historicalWork.map((item) => [item.runId, item])), [historicalWork]);
+  const rowWork = useMemo(() => new Map([...workOf].map(([id, item]) => [id, stableWorkOf.get(item.runId)])), [workOf, stableWorkOf]);
 
-  // Scrolling: a chat opens at its newest message; after that, new content only scrolls into view for a reader already at the bottom.
-  const scroller = useRef<HTMLDivElement>(null);
-  const olderScroll = useRef<{ height: number; top: number } | null>(null);
-  const stick = useRef(true);
-  const [atBottom, setAtBottom] = useState(true);
-  useLayoutEffect(() => { stick.current = true; setAtBottom(true); }, [selectedId]);
-  const onScroll = useCallback(() => {
-    const element = scroller.current;
-    if (!element) return;
-    const bottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
-    stick.current = bottom;
-    setAtBottom(bottom);
-  }, []);
+  const { scroller, atBottom, onScroll, followLiveReply, jumpToLatest, release: releaseScroll, readerRevision, beginPagination, restorePagination } = useChatScroll(selectedId);
+  // Text commits stay in the live leaf; structural changes only follow while
+  // the reader has opted in. Pagination restores its visible message instead.
   useLayoutEffect(() => {
-    const element = scroller.current;
-    if (!element) return;
-    if (olderScroll.current) {
-      element.scrollTop = olderScroll.current.top + element.scrollHeight - olderScroll.current.height;
-      olderScroll.current = null;
-    } else if (stick.current) {
-      element.scrollTop = element.scrollHeight;
-    }
-  }, [selectedId, messages.length, shownPending.length, waiting, chat?.streaming, liveWork?.steps.length, here.length]);
+    if (messageStatus !== "LoadingMore") restorePagination();
+    followLiveReply();
+  }, [selectedId, messages.length, shownPending.length, waiting, liveWork?.steps.length, here.length, messageStatus, restorePagination, followLiveReply]);
   const locatedMessage = useRef("");
+  const sourceScrollIntent = useRef<{ source: string; revision: number } | null>(null);
   const sourceMessage = search.get("message");
   const sourceRun = search.get("run");
   useEffect(() => {
-    if ((!sourceMessage && !sourceRun) || locatedMessage.current === `${selectedId}:${sourceMessage ?? sourceRun}`) return;
+    if (!sourceMessage && !sourceRun) { sourceScrollIntent.current = null; locatedMessage.current = ""; return; }
+    const source = selectedId + ":message:" + sourceMessage + ":run:" + sourceRun;
+    if (sourceScrollIntent.current?.source !== source) sourceScrollIntent.current = { source, revision: readerRevision.current };
+    if (locatedMessage.current === source || sourceScrollIntent.current.revision !== readerRevision.current) return;
     const target = sourceMessage ? document.getElementById(`message-${sourceMessage}`) : scroller.current?.querySelector(`[data-run="${CSS.escape(sourceRun ?? "")}"]`);
     if (target) {
-      stick.current = false;
+      releaseScroll();
       target.scrollIntoView({ block: "center", behavior: "auto" });
-      locatedMessage.current = `${selectedId}:${sourceMessage ?? sourceRun}`;
+      locatedMessage.current = source;
     } else if (messageStatus === "CanLoadMore") loadMore(50);
-  }, [selectedId, sourceMessage, sourceRun, messages.length, messageStatus, loadMore]);
-  const jumpToLatest = () => {
-    stick.current = true;
-    setAtBottom(true);
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  };
+  }, [selectedId, sourceMessage, sourceRun, messages.length, messageStatus, loadMore, releaseScroll, readerRevision]);
 
   const models = modelOptions?.models;
   // The chat's engine; a chat not sent yet is on the owner's default, unless a model was picked for it. None while there is neither.
@@ -404,66 +405,6 @@ export function ChatScreen() {
     if (problems.length) setError(problems.join(" "));
     setFiles((items) => [...items, ...usable].slice(0, MAX_FILES));
   }
-
-  // Slash commands: past a command's name, the suggestions are its choices.
-  const typedModel = parseModelCommand(draft);
-  const typedThink = parseThinkCommand(draft);
-  const typedAccess = parseAccessCommand(draft);
-  const choosing = /^\/(?:(?:set\s+)?model|think|access)\s/i.test(draft);
-  const choices = (options: Array<{ value: string; label: string; hint: string }>, typed: string | undefined, command: string): Suggestion[] =>
-    options.filter((option) => !typed || option.value.startsWith(typed)).map((option) => ({
-      key: option.value, label: option.label, hint: option.hint, apply: () => void runCommand(`${command} ${option.value}`),
-    }));
-  // Skills: a $ starts one's name where the caret is, and picking one puts "$name " there.
-  const mention = draft.startsWith("/") ? null : typingSkill(draft.slice(0, Math.min(caret ?? draft.length, draft.length)));
-  const mentioning = mention !== null;
-  // A skill Perry wrote a moment ago is listed too.
-  useEffect(() => { if (mentioning) void refreshSkills(); }, [mentioning, refreshSkills]);
-  function pickSkill(name: string) {
-    if (!mention) return;
-    const end = mention.start + 1 + mention.typed.length;
-    // The rest of a name the caret was inside is replaced too.
-    const after = draft.slice(end).replace(/^[a-z0-9-]*/, "");
-    const inserted = `$${name}${after.startsWith(" ") ? "" : " "}`;
-    const position = mention.start + inserted.length + (after.startsWith(" ") ? 1 : 0);
-    setDraft(draft.slice(0, mention.start) + inserted + after);
-    setCaret(position);
-    window.setTimeout(() => { composer.current?.focus(); composer.current?.setSelectionRange(position, position); }, 0);
-  }
-  const skillSuggestions: Suggestion[] = !mention ? [] : (skills ?? [])
-    .filter((skill) => !skill.problem && skill.name.includes(mention.typed))
-    .sort((a, b) => Number(b.name.startsWith(mention.typed)) - Number(a.name.startsWith(mention.typed)))
-    .map((skill) => ({ key: skill.folder, label: `$${skill.name}`, hint: skill.description, typed: skill.name === mention.typed, apply: () => pickSkill(skill.name) }));
-
-  const suggestions: Suggestion[] = !draft.startsWith("/")
-    ? skillSuggestions
-    : typedModel && choosing
-      ? (typedModel.name ? findModel(models ?? [], typedModel.name, engine).matches : models ?? []).map((item) => {
-          const key = modelKey(item.engine, item.id);
-          const current = item.engine === engine && item.id === model;
-          return {
-            key, label: item.name, hint: `${key}${current ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
-            apply: () => void runCommand(`/model ${key}`),
-          };
-        })
-      : typedThink && choosing
-        ? choices([
-            { value: "default", label: "Default", hint: `${modelInfo?.defaultEffort ?? "the model's own"}${effort ? "" : " · current"}` },
-            ...efforts.map((level) => ({ value: level, label: levelName(level), hint: `${level}${level === effort ? " · current" : ""}` })),
-          ], typedThink.level, "/think")
-        : typedAccess && choosing
-          ? choices(ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
-          : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
-              key: item.command, label: item.command, hint: item.hint,
-              apply: () => { setDraft(["/stop", "/compact", "/reset", "/pause", "/resume"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },
-            }));
-  const completing = skillSuggestions.length
-    ? "skill" as const
-    : draft.startsWith("/") && !choosing
-      ? "command" as const
-      : choosing && !typedModel && suggestions.length > 0 && !suggestions.some((item) => item.key === (typedThink?.level ?? typedAccess?.mode))
-        ? "choice" as const
-        : null;
 
   /** Commands never become messages: they change this chat, then say what they did. */
   async function runCommand(text: string): Promise<boolean> {
@@ -547,7 +488,9 @@ export function ChatScreen() {
     return false;
   }
 
-  async function submit(text = draft) {
+  async function submit(text = draftControl.current?.read() ?? "") {
+    // Keep typing/focus available while cached history waits for fresh access metadata.
+    if (selectedId && (!chat || chat.contact)) return;
     const message = text.trim();
     if (message.startsWith("/") && files.length === 0 && await runCommand(message)) return;
     // Sent while a reply is running, the message joins that reply (it steers it).
@@ -571,7 +514,6 @@ export function ChatScreen() {
     const sending = files;
     const messageKey = sending.length ? crypto.randomUUID() : undefined;
     setDraft(""); setFiles([]); setError(""); setNotice("");
-    stick.current = true;
     let sent: Pending | undefined;
     try {
       const uploaded: PendingAttachment[] = [];
@@ -615,7 +557,6 @@ export function ChatScreen() {
     const source = [...messages.slice(0, index + 1)].reverse().find((message) => message.role === "user");
     const shown = edit?.text ?? source?.text ?? "";
     setBusy(true); setError("");
-    stick.current = true;
     // The copy being replaced is removed before the new one is listed, so it is not part of the baseline.
     const entry: Pending = {
       id: selectedId, text: shown, attachments: source?.attachments ?? [], seenRunning: false, sent: true,
@@ -647,12 +588,25 @@ export function ChatScreen() {
     }
   }
 
+  const editRow = useChatEvent((message: ChatMessage) => setEditing(message));
+  const regenerateRow = useChatEvent((message: ChatMessage) => { void rewind(message.id); });
+  const branchRow = useChatEvent((message: ChatMessage) => { void branch(message.id); });
+  const noteRow = useChatEvent((message: ChatMessage) => { void saveAsNote(message.id); });
   const stop = () => { if (selectedId) void stopChat({ key: dashboardKey, id: selectedId }).catch(fail); };
   // Only what is in the history can be regenerated, edited or branched from.
   const saved = messages.filter((message) => !message.pending);
   const lastUser = [...saved].reverse().find((message) => message.role === "user");
   const lastMessage = saved.at(-1);
-  const loading = Boolean(selectedId) && (chat === undefined || messageStatus === "LoadingFirstPage");
+  const runRows = useMemo(() => {
+    const last = new Map<string | undefined, string>();
+    const prompt = new Map<string | undefined, string>();
+    for (const message of messages) {
+      last.set(message.runId, message.id);
+      if (message.role === "user" && !prompt.has(message.runId)) prompt.set(message.runId, message.id);
+    }
+    return { last, prompt };
+  }, [messages]);
+  const loading = Boolean(selectedId) && messageStatus === "LoadingFirstPage";
   const missing = Boolean(selectedId) && chat === null;
   const title = summary?.title ?? (selectedId ? chat?.title ?? "" : "New chat");
   // A Telegram or WhatsApp chat: written in here too, but what is on the phone cannot be taken back.
@@ -718,7 +672,7 @@ export function ChatScreen() {
         )}
       </TopBar>
 
-      <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]" id="content" tabIndex={-1}>
+      <div ref={scroller} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto" id="content" tabIndex={-1}>
         <div className="mx-auto w-full max-w-3xl px-4 sm:px-6">
           {noEngine && (
             <Alert variant="quiet" className="mt-4" role="alert">
@@ -762,17 +716,18 @@ export function ChatScreen() {
               )}
               {messageStatus === "CanLoadMore" && (
                 <div className="flex justify-center">
-                  <Button variant="outline" size="sm" onClick={() => { if (scroller.current) olderScroll.current = { height: scroller.current.scrollHeight, top: scroller.current.scrollTop }; loadMore(50); }}>
+                  <Button variant="outline" size="sm" onClick={() => { beginPagination(); loadMore(50); }}>
                     Load earlier messages
                   </Button>
                 </div>
               )}
               {messageStatus === "LoadingMore" && <p className="text-center text-sm text-muted-foreground" role="status">Loading earlier messages…</p>}
               {messages.map((message) => (
+                <Fragment key={message.id}>
                 <MessageRow
                   key={message.id}
                   message={message}
-                  work={workOf.get(message.id)}
+                  work={rowWork.get(message.id)}
                   assistant={assistant}
                   latest={message.id === lastMessage?.id}
                   canEdit={!app}
@@ -780,34 +735,29 @@ export function ChatScreen() {
                   canBranch={!app}
                   busy={busy}
                   skills={skillNames}
-                  onEdit={() => setEditing(message)}
-                  onRegenerate={() => void rewind(message.id)}
-                  onBranch={() => void branch(message.id)}
-                  onSaveNote={() => void saveAsNote(message.id)}
+                  onEdit={editRow}
+                  onRegenerate={regenerateRow}
+                  onBranch={branchRow}
+                  onSaveNote={noteRow}
                 />
+                {message.failure && runRows.last.get(message.runId!) === message.id && <TurnError
+                  {...message.failure}
+                  busy={busy || waiting}
+                  onRetry={!app && !waiting && runRows.prompt.get(message.runId!)
+                    ? () => { const prompt = runRows.prompt.get(message.runId!); if (prompt) void rewind(prompt); }
+                    : undefined}
+                />}
+                </Fragment>
               ))}
               {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
               {!missing && <InteractiveAnswers conversationId={selectedId} />}
-              {(waiting || liveWork) && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} approving={here.length > 0} />}
-              {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
+              {(waiting || liveWork) && <LiveReply key={selectedId} conversationId={selectedId} onContentChange={followLiveReply}
+                work={liveWork} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
+              {here.map((approval) => <LiveApproval key={approval.id} approval={approval} />)}
               {failedWork && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed" /></div>}
-              {chat?.lastError && !chat.isRunning && !waiting && (
-                <Alert variant="destructive">
-                  <TriangleAlertIcon />
-                  <AlertTitle>{assistant} couldn&apos;t finish the last reply</AlertTitle>
-                  <AlertDescription>
-                    {/too old for Perry|runner|offline|computer/i.test(chat.lastError) && (
-                      <p className="mb-1">{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings → Engines shows it too."
-                        : "Your computer may be offline. Start Perry on it, then try again."}</p>
-                    )}
-                    <p className="font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
-                  </AlertDescription>
-                  {lastUser && !app && (
-                    <AlertAction>
-                      <Button size="sm" variant="outline" disabled={busy} onClick={() => void rewind(lastUser.id)}><RefreshCwIcon />Try again</Button>
-                    </AlertAction>
-                  )}
-                </Alert>
+              {chat?.lastError && !chat.isRunning && !waiting && !messages.some((message) => message.failure && message.runId === chat.lastErrorRunId) && (
+                <TurnError error={chat.lastError} errorCode={chat.lastErrorCode} busy={busy}
+                  onRetry={lastUser && !app ? () => void rewind(lastUser.id) : undefined} />
               )}
             </div>
             </ChatFiles.Provider>
@@ -826,7 +776,66 @@ export function ChatScreen() {
         )}
         <div className="mx-auto w-full max-w-3xl">
           <p className="sr-only" role="status" aria-live="polite">{waiting ? `${assistant} is replying` : ""}</p>
-          {chat?.contact ? (
+          <ComposerDraft ref={draftControl} refreshSkills={refreshSkills}>{({ draft, setDraft, caret, setCaret }) => {
+            // Slash commands: past a command's name, the suggestions are its choices.
+            const typedModel = parseModelCommand(draft);
+            const typedThink = parseThinkCommand(draft);
+            const typedAccess = parseAccessCommand(draft);
+            const choosing = /^\/(?:(?:set\s+)?model|think|access)\s/i.test(draft);
+            const choices = (options: Array<{ value: string; label: string; hint: string }>, typed: string | undefined, command: string): Suggestion[] =>
+              options.filter((option) => !typed || option.value.startsWith(typed)).map((option) => ({
+                key: option.value, label: option.label, hint: option.hint, apply: () => void runCommand(`${command} ${option.value}`),
+              }));
+            // Skills: a $ starts one's name where the caret is, and picking one puts "$name " there.
+            const mention = draft.startsWith("/") ? null : typingSkill(draft.slice(0, Math.min(caret ?? draft.length, draft.length)));
+            function pickSkill(name: string) {
+              if (!mention) return;
+              const end = mention.start + 1 + mention.typed.length;
+              // The rest of a name the caret was inside is replaced too.
+              const after = draft.slice(end).replace(/^[a-z0-9-]*/, "");
+              const inserted = `$${name}${after.startsWith(" ") ? "" : " "}`;
+              const position = mention.start + inserted.length + (after.startsWith(" ") ? 1 : 0);
+              setDraft(draft.slice(0, mention.start) + inserted + after);
+              setCaret(position);
+              window.setTimeout(() => { composer.current?.focus(); composer.current?.setSelectionRange(position, position); }, 0);
+            }
+            const skillSuggestions: Suggestion[] = !mention ? [] : (skills ?? [])
+              .filter((skill) => !skill.problem && skill.name.includes(mention.typed))
+              .sort((a, b) => Number(b.name.startsWith(mention.typed)) - Number(a.name.startsWith(mention.typed)))
+              .map((skill) => ({ key: skill.folder, label: `$${skill.name}`, hint: skill.description, typed: skill.name === mention.typed, apply: () => pickSkill(skill.name) }));
+
+            const suggestions: Suggestion[] = !draft.startsWith("/")
+              ? skillSuggestions
+              : typedModel && choosing
+                ? (typedModel.name ? findModel(models ?? [], typedModel.name, engine).matches : models ?? []).map((item) => {
+                    const key = modelKey(item.engine, item.id);
+                    const current = item.engine === engine && item.id === model;
+                    return {
+                      key, label: item.name, hint: `${key}${current ? " · current" : ""}${item.isDefault ? " · default" : ""}`,
+                      apply: () => void runCommand(`/model ${key}`),
+                    };
+                  })
+                : typedThink && choosing
+                  ? choices([
+                      { value: "default", label: "Default", hint: `${modelInfo?.defaultEffort ?? "the model's own"}${effort ? "" : " · current"}` },
+                      ...efforts.map((level) => ({ value: level, label: levelName(level), hint: `${level}${level === effort ? " · current" : ""}` })),
+                    ], typedThink.level, "/think")
+                  : typedAccess && choosing
+                    ? choices(ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode], hint: `${ACCESS_HINTS[mode]}${mode === access ? " · current" : ""}` })), typedAccess.mode, "/access")
+                    : COMMANDS.filter((item) => item.command.startsWith(draft.trim().toLowerCase()) && draft.trim().length <= item.command.length).map((item) => ({
+                        key: item.command, label: item.command, hint: item.hint,
+                        apply: () => { setDraft(["/stop", "/compact", "/reset", "/pause", "/resume"].includes(item.command) ? item.command : `${item.command} `); composer.current?.focus(); },
+                      }));
+            const completing = skillSuggestions.length
+              ? "skill" as const
+              : draft.startsWith("/") && !choosing
+                ? "command" as const
+                : choosing && !typedModel && suggestions.length > 0 && !suggestions.some((item) => item.key === (typedThink?.level ?? typedAccess?.mode))
+                  ? "choice" as const
+                  : null;
+
+
+          return chat?.contact ? (
             <div className="px-1 pb-1 text-sm text-muted-foreground" role="note">
               <p className="font-medium text-foreground">{assistant}&apos;s chat with {chat.contact.name}{chat.contact.group ? " (a group)" : ""}</p>
               <p className="mt-1 text-pretty">
@@ -841,10 +850,10 @@ export function ChatScreen() {
             draft={draft}
             onDraftChange={setDraft}
             onCaret={setCaret}
-            onSubmit={() => void submit()}
+            onSubmit={() => void submit(draft)}
             onStop={selectedId ? stop : undefined}
             waiting={waiting}
-            busy={busy}
+            busy={busy || Boolean(selectedId && chat === undefined)}
             uploading={uploading}
             files={files}
             onAddFiles={addFiles}
@@ -890,7 +899,8 @@ export function ChatScreen() {
                 ? <>Your {app} chat. What you write here, and {assistant}&apos;s reply, also go to {app}.</>
                 : <>Type <Kbd className="font-mono">/</Kbd> for commands, <Kbd className="font-mono">$</Kbd> for skills.</>}
           </p>
-          </>)}
+          </>);
+          }}</ComposerDraft>
         </div>
       </div>
 
@@ -933,4 +943,23 @@ function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, o
       </DropdownMenu>
     </>
   );
+}
+
+/** Each ticking leaf owns its clock; history and composer do not subscribe. */
+function LiveReply({ conversationId, onContentChange, ...props }: Omit<Parameters<typeof ReplyInProgress>[0], "now" | "streaming"> & {
+  conversationId: ChatId;
+  onContentChange: () => void;
+}) {
+  const { dashboardKey } = useSession();
+  const streaming = useQuery(api.turnStreams.getChatStream, { key: dashboardKey, id: conversationId });
+  const now = useNow(1000);
+  useLayoutEffect(() => { onContentChange(); }, [streaming, onContentChange]);
+  return <div data-live-reply={conversationId}>
+    <ReplyInProgress {...props} streaming={streaming ?? undefined} now={now} />
+  </div>;
+}
+
+function LiveApproval({ approval }: { approval: Parameters<typeof ApprovalCard>[0]["approval"] }) {
+  const now = useNow(1000);
+  return <ApprovalCard approval={approval} now={now} showChat={false} />;
 }

@@ -2,7 +2,7 @@
 
 import { BrainIcon, CheckIcon, CopyIcon, FilePlusIcon, GitBranchIcon, PencilIcon, RefreshCwIcon } from "lucide-react";
 import Link from "next/link";
-import { Fragment, type ReactNode } from "react";
+import { Fragment, memo, type ReactNode } from "react";
 import type { Work } from "@/convex/dashboard";
 import { STARTING } from "@/convex/lib/activity";
 import { fullDate, timeOf } from "@/lib/format";
@@ -14,9 +14,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useCopy } from "../common";
 import { AttachmentList, type Attachment } from "./attachments";
 import { Markdown } from "./markdown";
+import { QueueRemoveButton, type QueuedMessage } from "./queue-remove-button";
 import { Spinner, WorkSummary, type WorkState } from "./work";
 
-export type ChatMessage = { attachmentKey?: string; id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; memories?: Array<{ id: string; text: string }> };
+export type ChatMessage = { attachmentKey?: string; id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; queued?: QueuedMessage; memories?: Array<{ id: string; text: string }> };
 
 function Action({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
@@ -39,7 +40,7 @@ function CopyAction({ text }: { text: string }) {
  * width of the column, unboxed, since that is what you read. The actions show
  * on hover and focus, and always on the newest reply.
  */
-export function MessageRow({ message, work, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch, onSaveNote }: {
+export const MessageRow = memo(function MessageRow({ message, work, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch, onSaveNote }: {
   message: ChatMessage;
   /** The run that wrote this reply, when it took steps: "Worked for 46s" above it. */
   work?: Work;
@@ -52,11 +53,11 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
   busy: boolean;
   /** The skills there are, so a "$name" of one is marked in your messages. */
   skills?: ReadonlySet<string>;
-  onEdit: () => void;
-  onRegenerate: () => void;
-  onBranch: () => void;
+  onEdit: (message: ChatMessage) => void;
+  onRegenerate: (message: ChatMessage) => void;
+  onBranch: (message: ChatMessage) => void;
   /** Keep this reply as a note of its own. */
-  onSaveNote?: () => void;
+  onSaveNote?: (message: ChatMessage) => void;
 }) {
   const mine = message.role === "user";
   // Not in the history until its reply saves it, so there is nothing yet to edit or branch from.
@@ -80,6 +81,7 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
             {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
           </div>
         )}
+        {mine && message.queued && <QueueRemoveButton queued={message.queued} />}
         <MessageFooter className={cn(
           "gap-0.5 px-0 font-normal transition-opacity [@media(hover:hover)]:opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
           !mine && "-ml-2", latest && !mine && "[@media(hover:hover)]:opacity-100",
@@ -90,10 +92,10 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
             </time>
           )}
           <CopyAction text={message.text} />
-          {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={onEdit}><PencilIcon /></Action>}
-          {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={onRegenerate}><RefreshCwIcon /></Action>}
-          {saved && canBranch && <Action label="Branch into a new chat" disabled={busy} onClick={onBranch}><GitBranchIcon /></Action>}
-          {!mine && saved && onSaveNote && <Action label="Save as note" onClick={onSaveNote}><FilePlusIcon /></Action>}
+          {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={() => onEdit(message)}><PencilIcon /></Action>}
+          {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={() => onRegenerate(message)}><RefreshCwIcon /></Action>}
+          {saved && canBranch && <Action label="Branch into a new chat" disabled={busy} onClick={() => onBranch(message)}><GitBranchIcon /></Action>}
+          {!mine && saved && onSaveNote && <Action label="Save as note" onClick={() => onSaveNote?.(message)}><FilePlusIcon /></Action>}
           {!mine && (
             <time className="nums ml-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
               {timeOf(message.createdAt)}
@@ -103,7 +105,7 @@ export function MessageRow({ message, work, assistant, latest, canRegenerate, ca
       </MessageContent>
     </Message>
   );
-}
+});
 
 /**
  * What a reply remembered: the memories it said it relied on, each a link to
@@ -152,18 +154,19 @@ export function PendingRow({ text, attachments, sent, skills }: { text: string; 
  * (dashboard.getChatWork), so none goes by unseen; then what has streamed of
  * the words, or "Thinking" while nothing else is going on.
  */
-export function ReplyInProgress({ streaming, work, now, approving = false }: { streaming?: string; work?: Work; now: number; approving?: boolean }) {
+export function ReplyInProgress({ streaming, work, now, approving = false, unresponsive = false }: { streaming?: string; work?: Work; now: number; approving?: boolean; unresponsive?: boolean }) {
   const steps = work?.steps ?? [];
   // Over (its reply on its way to the page), on a step, or held for the owner's approval: either way, not thinking.
   const over = work?.finishedAt !== undefined;
-  const busy = over || approving || steps.some((step) => step.status === "running");
-  const state: WorkState = over ? (work?.status === "ok" ? "done" : "failed") : approving ? "waiting" : "working";
+  const busy = unresponsive || over || approving || steps.some((step) => step.status === "running");
+  const state: WorkState = unresponsive ? "unresponsive" : over ? (work?.status === "ok" ? "done" : "failed") : approving ? "waiting" : "working";
   return (
-    <div className="min-w-0 space-y-2" data-role="assistant" {...(streaming ? { "data-streaming": true } : { "data-thinking": true })}>
+    <div className="min-w-0 space-y-2" data-role="assistant" {...(unresponsive ? { "data-unresponsive": true } : streaming ? { "data-streaming": true } : { "data-thinking": true })}>
       {work && <WorkSummary work={work} state={state} now={now} />}
+      {unresponsive && <p role="status" data-turn-health="unresponsive" className="text-sm text-muted-foreground">Your computer is unresponsive. Waiting for it to reconnect…</p>}
       {streaming ? (
         <div>
-          <Markdown text={streaming} />
+          <Markdown text={streaming} streaming />
           {!busy && <span className="mt-1 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle motion-reduce:animate-none" aria-hidden />}
         </div>
       ) : !busy && (

@@ -1,8 +1,8 @@
 "use client";
 
 import { ArrowUpIcon, BrainIcon, CpuIcon, PaperclipIcon, ShieldAlertIcon, ShieldCheckIcon, SparklesIcon, SquareIcon, XIcon } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
-import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, enginesOf, modelKey, modelsOf, type Access, type ModelOption } from "@/convex/lib/commands";
+import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
+import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, enginesOf, modelKey, modelsOf, typingSkill, type Access, type ModelOption } from "@/convex/lib/commands";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,22 @@ import { AttachmentList, PickedFiles, type Attachment } from "./attachments";
 
 export const MAX_FILES = 10;
 export const MAX_BYTES = 50 * 1024 * 1024;
+
+export type DraftHandle = { read: () => string; write: (text: string) => void };
+
+/** Draft/caret updates stop here. Keep this mounted even for a read-only chat. */
+export function ComposerDraft({ ref, refreshSkills, children }: {
+  ref: Ref<DraftHandle>;
+  refreshSkills: () => unknown;
+  children: (state: { draft: string; setDraft: (text: string) => void; caret: number | undefined; setCaret: (position: number) => void }) => ReactNode;
+}) {
+  const [draft, setDraft] = useState("");
+  const [caret, setCaret] = useState<number>();
+  useImperativeHandle(ref, () => ({ read: () => draft, write: setDraft }), [draft]);
+  const mentioning = !draft.startsWith("/") && typingSkill(draft.slice(0, Math.min(caret ?? draft.length, draft.length))) !== null;
+  useEffect(() => { if (mentioning) void refreshSkills(); }, [mentioning, refreshSkills]);
+  return children({ draft, setDraft, caret, setCaret });
+}
 const ACCEPT = "image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json";
 
 /** `typed`: already typed out in full, so Enter sends the message rather than picking it. */

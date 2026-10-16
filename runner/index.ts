@@ -1,4 +1,7 @@
 #!/usr/bin/env bun
+import { turnErrorCode, type TurnErrorCode } from "../lib/turn-errors";
+import { createSteerDelivery, steerRunningTurn, type SteerDelivery } from "./task-steering";
+import { createReplyStream, streamFlushMs } from "./stream-reply";
 /**
  * Assistant's runner: the piece that lets Assistant work on this machine.
  *
@@ -110,7 +113,7 @@ type Policy = "ask" | "review" | "trust";
 /** The policy lives on the runner's record in Convex; `auto` in runner.json is from before policies. */
 type Flags = RunnerConfig & { policy?: Policy; help?: boolean };
 const POLICIES: Policy[] = ["ask", "review", "trust"];
-type TurnRecord = { response?: string; error?: string; stopped?: boolean; compacted?: boolean; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
+type TurnRecord = { response?: string; errorCode?: TurnErrorCode; error?: string; stopped?: boolean; compacted?: boolean; model?: string; media?: Array<{ storageId?: Id<"_storage">; localPath?: string; fileName: string; contentType: string }> };
 
 /**
  * Commands that are never a good idea from an agent, regardless of approval.
@@ -219,10 +222,13 @@ async function main() {
 
   const client = new BackendClient(url);
 
+  // Available to startup and regular check-ins; the Active type is declared below.
+  const active = new Map<string, Active>();
   const checkIn = async (policy?: Policy) => {
     try {
       return await client.mutation(api.runner.checkIn, {
         token,
+        activeTurnIds: [...active.values()].map((turn) => turn.jobId),
         platform: platform(),
         hostname: hostname(),
         workdir,
@@ -424,10 +430,12 @@ async function main() {
     let lastActive = started;
     let grantedUntil = 0;
     let why: string | null = null;
+    let errorCode: "idle_timeout" | "max_time" | undefined;
     let kill: ReturnType<typeof setTimeout> | undefined;
     const span = (ms: number) => ms >= 60_000 ? `${Math.round(ms / 60_000)} minutes` : `${Math.round(ms / 1000)} seconds`;
-    const stop = (reason: string, log: string) => {
+    const stop = (code: "idle_timeout" | "max_time", reason: string, log: string) => {
       why = reason;
+      errorCode = code;
       const running = handle();
       console.log(yellow(`  ${engine.label} ${log}; stopping it`));
       if (running) void engine.interrupt(running).catch(() => {});
@@ -445,14 +453,15 @@ async function main() {
         lastActive = now;
         return;
       }
-      if (idleMs && now - lastActive > idleMs) stop(`It went quiet for more than ${span(idleMs)}, so it was stopped.`, `was quiet for ${span(idleMs)}`);
+      if (idleMs && now - lastActive > idleMs) stop("idle_timeout", `It went quiet for more than ${span(idleMs)}, so it was stopped.`, `was quiet for ${span(idleMs)}`);
       // Past the time it asked for, it still has the usual quiet allowance before the cap.
-      else if (now > Math.max(started + maxMs, grantedUntil + (idleMs ?? 0))) stop(`It ran for more than ${span(grantedUntil ? now - started : maxMs)}, so it was stopped.`, `ran past ${span(maxMs)}`);
+      else if (now > Math.max(started + maxMs, grantedUntil + (idleMs ?? 0))) stop("max_time", `It ran for more than ${span(grantedUntil ? now - started : maxMs)}, so it was stopped.`, `ran past ${span(maxMs)}`);
     }, WATCHDOG_TICK_MS);
     return {
       active: () => { lastActive = Date.now(); },
       expired: () => why !== null,
       why: () => why ?? "",
+      code: () => errorCode,
       done: () => { clearInterval(timer); clearTimeout(kill); },
     };
   };
@@ -610,15 +619,34 @@ async function main() {
     renameSync(temporary, target);
     console.log(dim(`  saved turn ${id}`));
   };
+  // Process-local engine outcomes survive uncertain acknowledgement and final-result retries.
+  const steered = new Map<string, { turnId: string; delivery: SteerDelivery }>();
+  const settleSteers = async (turnId: string) => {
+    await Promise.all([...steered.values()].filter((steer) => steer.turnId === turnId).map((steer) => steer.delivery.settle()));
+  };
+  const clearSteers = (turnId: string) => {
+    for (const [id, steer] of steered) if (steer.turnId === turnId) steered.delete(id);
+  };
   const recoverTurns = async (markIncomplete: boolean) => {
     const running = await client.query(api.codex.runningTurns, { token });
+    const runningIds = new Set<string>(running.map((job) => job._id));
+    for (const [id, steer] of steered) {
+      if (!active.has(steer.turnId) && !runningIds.has(steer.turnId)) steered.delete(id);
+    }
     for (const job of running) {
       const result = savedResult(job._id);
       if (result || markIncomplete) {
+        // Do not let finishTurn queue a steer the engine already accepted but has not acknowledged.
+        try { await settleSteers(job._id); }
+        catch (error) {
+          console.error(red(`  A steer acknowledgement is still pending; keeping its saved result for retry: ${message(error)}`));
+          continue;
+        }
         await client.mutation(api.codex.finishTurn, {
           token, id: job._id,
-          ...(result ?? { error: "Perry restarted during this reply, so it ended early. Send the message again to finish it." }),
+          ...(result ?? { errorCode: "restarted" as const, error: "Perry restarted during this reply, so it ended early. Send the message again to finish it." }),
         });
+        clearSteers(job._id);
       }
     }
   };
@@ -814,7 +842,6 @@ async function main() {
     /** A chat with someone else, whose messages name none of the owner's skills. */
     guest?: boolean;
   };
-  const active = new Map<string, Active>();
   let turnQueue: Doc<"codexTurns">[] = [];
   // The turns the owner asked to stop, those being stopped, and those whose engine had to be ended for it.
   let stopRequested = new Set<string>();
@@ -864,7 +891,6 @@ async function main() {
   };
   // Messages the owner sent while a turn runs, and those already handed to its engine, by steer.
   let pendingSteers: Array<{ _id: Id<"codexSteers">; turnId: Id<"codexTurns">; prompt: string; attachments?: Doc<"codexTurns">["attachments"] }> = [];
-  const steered = new Map<string, { turnId: string; done: Promise<unknown> }>();
   /**
    * Hand each new message for a running turn to its engine, then tell Convex
    * whether it took it. One it refused ("no active turn to steer", a turn id
@@ -876,18 +902,14 @@ async function main() {
       const turn = active.get(steer.turnId);
       if (!turn?.engine || !turn.handle || steered.has(steer._id)) continue;
       const { engine, handle } = turn;
-      steered.set(steer._id, { turnId: steer.turnId, done: (async () => {
-        try {
-          const mode = engine.capabilities.steer;
-          if (!engine.steer || (mode !== "native" && mode !== "concurrent-prompt")) throw new Error(`${engine.label} takes one message at a time`);
-          await engine.steer(handle, { ...withSkills(engine, steer.prompt, turn.guest), attachments: guestFiles(await localise(steer.attachments), turn.guest) });
-          console.log(dim(`  steered the ${engine.label} turn with a new message`));
-          await client.mutation(api.codex.ackSteer, { token, id: steer._id, applied: true });
-        } catch (error) {
-          console.log(yellow(`  could not steer the ${engine.label} turn, so the message waits its turn: ${message(error)}`));
-          await client.mutation(api.codex.ackSteer, { token, id: steer._id, applied: false, error: message(error) });
-        }
-      })().catch((error) => console.error(red(`  Could not report a steer: ${message(error)}`))) });
+      const delivery = createSteerDelivery(async () => {
+        await steerRunningTurn(engine, handle, async () => ({ ...withSkills(engine, steer.prompt, turn.guest), attachments: guestFiles(await localise(steer.attachments), turn.guest) }));
+        console.log(dim(`  steered the ${engine.label} turn with a new message`));
+      }, async (outcome) => {
+        await client.mutation(api.codex.ackSteer, { token, id: steer._id, ...outcome });
+      });
+      steered.set(steer._id, { turnId: steer.turnId, delivery });
+      void delivery.settle().catch((error) => console.error(red(`  Could not report a steer; its outcome is retained for retry: ${message(error)}`)));
     }
   };
 
@@ -895,10 +917,11 @@ async function main() {
   const runJob = async (job: NonNullable<FunctionReturnType<typeof api.codex.claimTurn>>, turn: Active) => {
     let result = savedResult(job._id);
     if (!result) {
-      // The reply so far, and the trace of what the engine is doing, go to Convex
-      // about three times a second while the turn runs; the first words go at once.
+      // Send acknowledged deltas; the first words go at once, later flushes adapt.
       let latest = "";
-      let sent = "";
+      const stream = createReplyStream((packet) => client.mutation(api.turnStreams.append, { token, id: job._id, ...packet }));
+      let streamStarted = false;
+      let streamClosed = false;
       let streamTimer: ReturnType<typeof setTimeout> | null = null;
       const trace = new TurnTrace();
       // One report at a time: one still on its way when the turn ends would arrive after it, and be dropped.
@@ -911,13 +934,14 @@ async function main() {
       const flush = () => {
         streamTimer = null;
         void report();
-        if (latest === sent) return;
-        sent = latest;
-        void client.mutation(api.codex.streamTurn, { token, id: job._id, text: latest }).catch(() => {});
+        void stream.flush().catch(() => {}); // The next flush retries unacknowledged text.
       };
       const schedule = () => {
-        if (sent || !latest) streamTimer ??= setTimeout(flush, 300);
-        else { if (streamTimer) clearTimeout(streamTimer); flush(); }
+        if (!streamStarted && latest) {
+          streamStarted = true;
+          if (streamTimer) clearTimeout(streamTimer);
+          flush();
+        } else streamTimer ??= setTimeout(flush, streamFlushMs(latest.length));
       };
       const kind = job.engine;
       const engine = engines.get(kind);
@@ -942,7 +966,7 @@ async function main() {
         if (!engine) throw new Error(`${ENGINE_LABELS[kind]} is not on this computer's runner. Update Perry here, or pick another engine's model.`);
         // Refused before it starts, rather than failing half-way in ways an old CLI would.
         const update = tooOld(kind);
-        if (update) throw new Error(refusal(engine.label, update));
+        if (update) throw Object.assign(new Error(refusal(engine.label, update)), { errorCode: "engine_old" });
         // Someone else's words never reach an engine that cannot be locked down for them, whatever the server asked.
         if (job.guest && !engine.capabilities.guestLockdown) throw new Error(`${engine.label} can't be locked down for a chat with someone else, so it doesn't run one.`);
         // Stopped between its claim and its start (/stop, or Perry paused): it never reaches the engine.
@@ -967,10 +991,12 @@ async function main() {
               applyAccess();
             },
             onEvent: (event) => {
+              if (streamClosed) return;
               dog?.active();
               if (event.type === "text") {
                 if (event.stream !== "assistant") return;
                 latest = event.text;
+                stream.update(latest);
                 schedule();
               } else if (event.type === "item") {
                 if (trace.item(event.phase, event.item, event.atMs)) schedule();
@@ -1013,7 +1039,7 @@ async function main() {
           const ended = endedOnStop.has(job._id);
           const failed = (outcome.state === "failed" && !ended) || dog.expired();
           result = {
-            ...(failed ? { error: dog.expired() ? dog.why() : outcome.error ?? `The ${engine.label} turn failed.` } : {}),
+            ...(failed ? { error: dog.expired() ? dog.why() : outcome.error ?? `The ${engine.label} turn failed.`, errorCode: dog.expired() ? dog.code() : outcome.errorCode ?? (outcome.error && LIMIT_HIT.test(outcome.error) ? "limit" : "engine_failed") } : {}),
             ...(outcome.text || !failed ? { response: outcome.text } : {}),
             ...(ended || (!failed && outcome.state !== "completed") ? { stopped: true } : {}),
             ...(outcome.compacted ? { compacted: true } : {}),
@@ -1022,23 +1048,24 @@ async function main() {
           };
         }
       } catch (error) {
-        result = endedOnStop.has(job._id) ? { stopped: true, model: label } : { error: dog?.expired() ? dog.why() : message(error), model: label };
+        result = endedOnStop.has(job._id) ? { stopped: true, model: label } : { error: dog?.expired() ? dog.why() : message(error), errorCode: dog?.expired() ? dog.code() : turnErrorCode(error, LIMIT_HIT.test(message(error)) ? "limit" : "engine_failed"), model: label };
       } finally {
         turn.handle = undefined;
         turn.abandon = undefined;
         stopping.delete(job._id);
         endedOnStop.delete(job._id);
       }
+      streamClosed = true;
       if (streamTimer) clearTimeout(streamTimer);
-      // A steer still being answered must be recorded as applied or not
-      // before finishTurn queues whatever the turn did not take.
-      const steers = [...steered].filter(([, steer]) => steer.turnId === job._id);
-      await Promise.all(steers.map(([, steer]) => steer.done));
-      for (const [id] of steers) steered.delete(id);
+      // Persist the last words even when cancellation or transport failure omitted
+      // the engine's final text; replay must not depend on an unfinished flush.
+      if ((result.error || result.stopped) && !result.response?.trim() && latest) result = { ...result, response: latest.slice(0, 100_000) };
+      // Keep the engine result even if acknowledgement delivery is temporarily unavailable.
       saveResult(job._id, result);
+      await stream.flush().catch(() => {});
       // Where the engine's plan stands after the turn: a limit it refused the turn for, or, as it went through, none.
       if (engine && job.kind !== "compact") {
-        const hit = result.error && LIMIT_HIT.test(result.error) ? { at: Date.now(), message: result.error } : result.error || result.stopped ? undefined : null;
+        const hit = result.errorCode === "limit" && result.error ? { at: Date.now(), message: result.error } : result.error || result.stopped ? undefined : null;
         if (hit !== undefined) void client.mutation(api.usage.report, { token, engine: kind, hit }).catch(() => {});
         if (hit) console.log(yellow(`  ${engine.label} refused the turn for your plan's limit`));
         readLimitsSoon(engine);
@@ -1047,7 +1074,10 @@ async function main() {
       trace.drain(Date.now());
       await report();
     }
+    // A bounded failed ack batch withholds finish; recoverTurns retries only the saved outcome/result.
+    await settleSteers(job._id);
     await client.mutation(api.codex.finishTurn, { token, id: job._id, ...result });
+    clearSteers(job._id);
   };
 
   /** How many turns run at once on this computer (PERRY_MAX_TURNS). */

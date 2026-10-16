@@ -1,3 +1,4 @@
+import { ORDINARY_NOTES } from "../lib/notes-read-dependencies";
 import { EventEmitter } from "node:events";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
@@ -124,10 +125,10 @@ export class Runtime {
     const wrote = (table: string) => { tx.writes.add(table); };
     return {
       ...this.reader(tx),
-      insert: async (table: string, value: Record<string, unknown>) => { tx.writes.add(table); return store.insert(table, value); },
-      patch: async (id: string, value: Record<string, unknown>) => { wrote(store.patch(id, value)); },
-      replace: async (id: string, value: Record<string, unknown>) => { wrote(store.replace(id, value)); },
-      delete: async (id: string) => { wrote(store.delete(id)); },
+      insert: async (table: string, value: Record<string, unknown>) => { tx.writes.add(table); return store.insert(table, value, undefined, tx.writes); },
+      patch: async (id: string, value: Record<string, unknown>) => { wrote(store.patch(id, value, tx.writes)); },
+      replace: async (id: string, value: Record<string, unknown>) => { wrote(store.replace(id, value, tx.writes)); },
+      delete: async (id: string) => { wrote(store.delete(id, tx.writes)); },
     };
   }
 
@@ -450,7 +451,7 @@ export class Runtime {
           count++;
         }
         this.sql.exec("COMMIT");
-        if (count) this.events.emit("change", [table]);
+        if (count) this.events.emit("change", table === "notes" ? [table, ORDINARY_NOTES] : [table]);
         return count;
       } catch (error) {
         this.sql.exec("ROLLBACK");

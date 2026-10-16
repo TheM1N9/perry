@@ -7,8 +7,8 @@ import {
   BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, InboxIcon, LibraryIcon, ListChecksIcon, LockIcon,
   MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useAction, useMutation, useQuery } from "@/client/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAction, useConvex, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { ChatSummary } from "@/convex/dashboard";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
@@ -197,6 +197,14 @@ function ChatGroups() {
 
 function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary; onRename: () => void; onDelete: () => void; onNewProject: () => void }) {
   const { dashboardKey } = useSession();
+  const client = useConvex();
+  const cancelWarm = useRef<(() => void) | undefined>(undefined);
+  const cancel = () => { cancelWarm.current?.(); cancelWarm.current = undefined; };
+  const warm = () => {
+    cancel();
+    cancelWarm.current = client.scheduleChatPrefetch(dashboardKey, chat.id);
+  };
+  useEffect(() => () => cancelWarm.current?.(), [client, dashboardKey, chat.id]);
   const pathname = usePathname();
   const active = pathname === `/chat/${chat.id}`;
   const setPinned = useMutation(api.dashboard.setChatPinned).withOptimisticUpdate((store, args) => {
@@ -209,7 +217,7 @@ function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary
   // The dot gives way to the options button under the pointer, so on hover or focus the row says what the dot meant.
   const said = statusLabel(chat.status, chat.unseen && !active);
   const row = (
-    <SidebarMenuButton render={<Link href={`/chat/${chat.id}`} />} isActive={active}
+    <SidebarMenuButton render={<Link href={`/chat/${chat.id}`} onPointerEnter={warm} onPointerLeave={cancel} onFocus={warm} onBlur={cancel} />} isActive={active}
       className={cn(chat.unseen && !active && "font-semibold")}
       aria-current={active ? "page" : undefined}>
       {chat.pinned && <PinIcon role="img" aria-label="Pinned" className="text-muted-foreground" />}

@@ -11,6 +11,7 @@ import { backupBeforeModelChange, moveVectorsOut } from "./brainIndex";
 import { EMBED_MODEL } from "../convex/lib/embed";
 import { modules } from "./modules";
 import { Runtime } from "./runtime";
+import { initializeCredentialEncryption } from "./credential-encryption";
 import { pollTelegram } from "./telegram";
 import { runTriggers } from "./triggers";
 import { runWake } from "./wake";
@@ -34,6 +35,12 @@ export function backend(): Runtime {
   if (!box.__perry) {
     mkdirSync(HOME, { recursive: true });
     const sql = new DatabaseSync(process.env.PERRY_DB ?? join(HOME, "perry.sqlite"));
+    try {
+      initializeCredentialEncryption(sql, HOME);
+    } catch (error) {
+      sql.close();
+      throw error;
+    }
     const runtime = new Runtime(sql, schema as never, modules, {
       storageDir: join(HOME, "storage"),
       crons: crons as never,

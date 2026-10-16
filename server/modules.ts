@@ -14,6 +14,7 @@ import * as codex from "../convex/codex";
 import * as compaction from "../convex/compaction";
 import * as composio from "../convex/composio";
 import * as connectorAccounts from "../convex/connectorAccounts";
+import * as connectorHealth from "../convex/connectorHealth";
 import * as contacts from "../convex/contacts";
 import * as conversations from "../convex/conversations";
 import * as crons from "../convex/crons";
@@ -34,6 +35,8 @@ import * as lib_browser from "../convex/lib/browser";
 import * as lib_budget from "../convex/lib/budget";
 import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
+import * as lib_connection_health from "../convex/lib/connection-health";
+import * as lib_credential_encryption from "../convex/lib/credential-encryption";
 import * as lib_devices from "../convex/lib/devices";
 import * as lib_embed from "../convex/lib/embed";
 import * as lib_engines from "../convex/lib/engines";
@@ -48,12 +51,16 @@ import * as lib_provenance from "../convex/lib/provenance";
 import * as lib_recall from "../convex/lib/recall";
 import * as lib_routing from "../convex/lib/routing";
 import * as lib_secrets from "../convex/lib/secrets";
+import * as lib_settle_traces from "../convex/lib/settle-traces";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
 import * as lib_skills from "../convex/lib/skills";
 import * as lib_steps from "../convex/lib/steps";
 import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
 import * as lib_truncate from "../convex/lib/truncate";
+import * as lib_turn_delivery from "../convex/lib/turn-delivery";
+import * as lib_turn_health from "../convex/lib/turn-health";
+import * as lib_turn_stream from "../convex/lib/turn-stream";
 import * as lib_turnLimits from "../convex/lib/turnLimits";
 import * as lib_usage from "../convex/lib/usage";
 import * as lib_whatsappFormat from "../convex/lib/whatsappFormat";
@@ -70,6 +77,7 @@ import * as pause from "../convex/pause";
 import * as persona from "../convex/persona";
 import * as pet from "../convex/pet";
 import * as projects from "../convex/projects";
+import * as queue from "../convex/queue";
 import * as recovery from "../convex/recovery";
 import * as routing from "../convex/routing";
 import * as runner from "../convex/runner";
@@ -81,6 +89,7 @@ import * as tasks from "../convex/tasks";
 import * as titles from "../convex/titles";
 import * as todos from "../convex/todos";
 import * as tools from "../convex/tools";
+import * as turnStreams from "../convex/turnStreams";
 import * as updates from "../convex/updates";
 import * as usage from "../convex/usage";
 import * as vault from "../convex/vault";
@@ -103,6 +112,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "compaction": compaction,
   "composio": composio,
   "connectorAccounts": connectorAccounts,
+  "connectorHealth": connectorHealth,
   "contacts": contacts,
   "conversations": conversations,
   "crons": crons,
@@ -123,6 +133,8 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/budget": lib_budget,
   "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
+  "lib/connection-health": lib_connection_health,
+  "lib/credential-encryption": lib_credential_encryption,
   "lib/devices": lib_devices,
   "lib/embed": lib_embed,
   "lib/engines": lib_engines,
@@ -137,12 +149,16 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/recall": lib_recall,
   "lib/routing": lib_routing,
   "lib/secrets": lib_secrets,
+  "lib/settle-traces": lib_settle_traces,
   "lib/shortcuts": lib_shortcuts,
   "lib/skills": lib_skills,
   "lib/steps": lib_steps,
   "lib/telegram": lib_telegram,
   "lib/telegramFormat": lib_telegramFormat,
   "lib/truncate": lib_truncate,
+  "lib/turn-delivery": lib_turn_delivery,
+  "lib/turn-health": lib_turn_health,
+  "lib/turn-stream": lib_turn_stream,
   "lib/turnLimits": lib_turnLimits,
   "lib/usage": lib_usage,
   "lib/whatsappFormat": lib_whatsappFormat,
@@ -159,6 +175,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "persona": persona,
   "pet": pet,
   "projects": projects,
+  "queue": queue,
   "recovery": recovery,
   "routing": routing,
   "runner": runner,
@@ -170,6 +187,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "titles": titles,
   "todos": todos,
   "tools": tools,
+  "turnStreams": turnStreams,
   "updates": updates,
   "usage": usage,
   "vault": vault,

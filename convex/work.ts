@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { parseTarget } from "./lib/price";
@@ -77,15 +78,20 @@ export const setPlan = internalMutation({
 export const updateTask = internalMutation({
   args: {
     taskId: v.string(),
+    turnId: v.optional(v.id("codexTurns")),
     status: v.optional(vTaskStatus),
     question: v.optional(v.string()),
     result: v.optional(v.string()),
     error: v.optional(v.string()),
   },
   returns: v.null(),
-  handler: async (ctx, { taskId, ...rest }) => {
+  handler: async (ctx, { taskId, turnId, ...rest }) => {
     const id = ctx.db.normalizeId("tasks", taskId);
     if (!id) return null;
+    if (rest.status && ["done", "blocked", "failed"].includes(rest.status) &&
+      await ctx.runQuery(internal.tasks.awaitingSteering, { id: taskId, ...(turnId ? { turnId } : {}) })) {
+      throw new Error("The owner sent an update still awaiting delivery. Keep completed work and let its follow-up turn finish the task.");
+    }
     const patch: Record<string, unknown> = { updatedAt: Date.now() };
     for (const [key, value] of Object.entries(rest)) {
       if (value !== undefined) patch[key] = value;
@@ -429,6 +435,7 @@ export const snapshot = internalQuery({
         title: t.title,
         status: t.status,
         plan: t.plan,
+        ownerUpdates: (t.steering ?? []).map((update) => ({ text: update.text, createdAt: update.createdAt })),
         question: t.question,
         result: t.result,
         error: t.error,

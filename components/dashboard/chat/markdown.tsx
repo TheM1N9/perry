@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CodeBlock, CodeBlockActions, CodeBlockContent, CodeBlockCopyButton, CodeBlockHeader, CodeBlockLine, CodeBlockTitle } from "@/components/ui/code-block";
 import { useHighlightedCode } from "@/hooks/use-highlighted-code";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { streamingMarkdown } from "./streaming-markdown";
 
 /** The text of a React node tree, for copying a code block. */
 function textOf(node: ReactNode): string {
@@ -135,8 +136,10 @@ function skillLinks({ skills }: { skills?: ReadonlySet<string> }) {
  * pages (/brain/…, or /notes/… from before Brain), which opens it here. A checklist's boxes and a table are
  * Perry's own, read-only: ticking one would not tell Perry anything.
  */
-export const Markdown = memo(function Markdown({ text, openNote, skills }: {
+export const Markdown = memo(function Markdown({ text, openNote, skills, streaming = false }: {
   text: string;
+  /** Repair only the live reply's unfinished tail; saved Markdown stays exact. */
+  streaming?: boolean;
   skills?: ReadonlySet<string>;
   /** Where a note's link goes instead, in a window that is not the dashboard's (the pet's). */
   openNote?: (href: string) => void;
@@ -144,7 +147,7 @@ export const Markdown = memo(function Markdown({ text, openNote, skills }: {
   return (
     <div className="prose-chat">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkBreaks, [skillLinks, { skills }]]}
+        remarkPlugins={[remarkGfm, [streamingMarkdown, { streaming }], remarkBreaks, [skillLinks, { skills }]]}
         urlTransform={urlTransform}
         components={{
           a: ({ node: _node, href, children, ...props }) => {

@@ -51,14 +51,14 @@ export function Spinner() {
  * A step opens, by a click, to what it did (StepDetail). `held`: the turn
  * waits on the owner's approval, so the step still open waits too.
  */
-export function WorkSteps({ steps, live = false, held = false, now = 0 }: { steps: WorkStep[]; live?: boolean; held?: boolean; now?: number }) {
+export function WorkSteps({ steps, live = false, held = false, unresponsive = false, now = 0 }: { steps: WorkStep[]; live?: boolean; held?: boolean; unresponsive?: boolean; now?: number }) {
   return (
     <Trace data-work-steps>
       <ol className="flex min-w-0 flex-col gap-1">
         {steps.map((step) => {
           // A step open while the turn waits on the owner waits with it; one a stopped run left open is over, and did not finish either.
-          const waits = live && held && step.status === "running";
-          const running = live && !held && step.status === "running";
+          const waits = live && (held || unresponsive) && step.status === "running";
+          const running = live && !held && !unresponsive && step.status === "running";
           const stopped = !live && step.status === "running";
           const failed = step.status === "error" || step.status === "declined";
           const time = running ? took(now - step.startedAt) : step.durationMs !== undefined ? took(step.durationMs) : "";
@@ -70,7 +70,7 @@ export function WorkSteps({ steps, live = false, held = false, now = 0 }: { step
                   {running
                     ? <TraceIcon><Spinner /></TraceIcon>
                     : waits
-                      ? <TraceIcon aria-hidden={false}><HourglassIcon className="size-3.5" aria-label="Waiting for your approval" /></TraceIcon>
+                      ? <TraceIcon aria-hidden={false}><HourglassIcon className="size-3.5" aria-label={unresponsive ? "Waiting for your computer to reconnect" : "Waiting for your approval"} /></TraceIcon>
                       : failed
                         ? <TraceIcon aria-hidden={false}><XIcon className="size-3.5" aria-label={step.status === "declined" ? "Declined" : "Failed"} /></TraceIcon>
                         : stopped
@@ -93,11 +93,12 @@ export function WorkSteps({ steps, live = false, held = false, now = 0 }: { step
  * Where a turn's work stands. `waiting`: it holds on the owner's approval, so
  * it is not working; `failed`: it ended in an error, or was rejected.
  */
-export type WorkState = "working" | "waiting" | "done" | "failed";
+export type WorkState = "working" | "waiting" | "unresponsive" | "done" | "failed";
 
 /** What a turn's fold says: "Working for 12s · 3 steps" while it runs, "Worked for 46s · 3 steps" after. */
 export function workLabel(work: Work, state: WorkState, now: number): string {
   const steps = work.steps.length ? ` · ${plural(work.steps.length, "step")}` : "";
+  if (state === "unresponsive") return `Computer unresponsive${steps}`;
   if (state === "working") return `Working for ${took(Math.max(0, now - work.startedAt))}${steps}`;
   if (state === "waiting") return `Waiting for your approval${steps}`;
   const end = work.finishedAt ?? Math.max(work.startedAt, ...work.steps.map((step) => step.startedAt + (step.durationMs ?? 0)));
@@ -127,7 +128,7 @@ export function WorkFolds({ children }: { children: ReactNode }) {
  * the turn ends and the fold moves above the reply.
  */
 export function WorkSummary({ work, state = "done", now = 0 }: { work: Work; state?: WorkState; now?: number }) {
-  const live = state === "working" || state === "waiting";
+  const live = state === "working" || state === "waiting" || state === "unresponsive";
   const folds = useContext(Folds);
   const [own, setOwn] = useState<boolean | undefined>(undefined);
   const open = (folds ? folds.chosen.get(work.runId) : own) ?? live;
@@ -145,7 +146,7 @@ export function WorkSummary({ work, state = "done", now = 0 }: { work: Work; sta
       {work.steps.length > 0 ? (
         <TraceCollapsible open={open} onOpenChange={onOpenChange} {...data}>
           <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
-          <TraceCollapsibleContent className="mt-1.5"><WorkSteps steps={work.steps} live={live} held={state === "waiting"} now={now} /></TraceCollapsibleContent>
+          <TraceCollapsibleContent className="mt-1.5"><WorkSteps steps={work.steps} live={live} held={state === "waiting"} unresponsive={state === "unresponsive"} now={now} /></TraceCollapsibleContent>
         </TraceCollapsible>
       ) : <p {...data}>{line}</p>}
     </Trace>

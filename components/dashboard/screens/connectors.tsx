@@ -28,7 +28,7 @@ function connectionStatus(status?: string): { tone: Tone; label: string } {
   const value = (status ?? "active").toLowerCase();
   if (value === "active") return { tone: "success", label: "Connected" };
   if (value === "initiated" || value === "initializing" || value === "pending") return { tone: "info", label: "Finishing sign-in" };
-  if (value === "expired") return { tone: "warning", label: "Expired" };
+  if (value === "expired" || value === "revoked") return { tone: "danger", label: "Reconnect required" };
   if (value === "failed" || value === "error") return { tone: "danger", label: "Failed" };
   if (value === "inactive") return { tone: "neutral", label: "Paused" };
   return { tone: "neutral", label: value.charAt(0).toUpperCase() + value.slice(1) };
@@ -37,7 +37,7 @@ function connectionStatus(status?: string): { tone: Tone; label: string } {
 const addedOn = (at?: string, withTime = false) => at ? `Added ${new Date(at).toLocaleString(undefined, withTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" })}` : "Added earlier";
 
 /** Which of one account's connections to keep using: a working one first, then the newest. */
-const RANK: Record<string, number> = { ACTIVE: 0, INITIATED: 1, INITIALIZING: 1, INACTIVE: 2, EXPIRED: 3, FAILED: 4 };
+const RANK: Record<string, number> = { ACTIVE: 0, INITIATED: 1, INITIALIZING: 1, INACTIVE: 2, EXPIRED: 3, REVOKED: 3, FAILED: 4 };
 const rank = (item: ConnectedAccount) => RANK[item.status.toUpperCase()] ?? 5;
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
@@ -156,6 +156,7 @@ function AccountRow({ app, account, busy, onConnect, onRemove }: {
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-3 py-1.5 hover:bg-muted/50 sm:pl-16">
       <div className="min-w-0 flex-1 basis-48">
         <p className={cn("truncate", !main.account && "text-muted-foreground")} title={main.account ? `Signed in as ${main.account}` : undefined}>{label}</p>
+        {(main.status === "EXPIRED" || main.status === "REVOKED") && <p role="status" className="text-sm text-destructive">Sign-in expired or was revoked. Reconnect this account to use it again.</p>}
         {spares.length > 0 && (
           <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
             Connected {spares.length + 1} times
@@ -175,7 +176,7 @@ function AccountRow({ app, account, busy, onConnect, onRemove }: {
       <div className="flex items-center gap-2">
         {!working && <span className={cn("text-sm font-medium", TONE_TEXT[status.tone])}>{status.label}</span>}
         {!working && (
-          <Button variant="outline" size="sm" disabled={busy !== null} aria-busy={busy === `account:${main.id}` || undefined} onClick={() => onConnect(app.toolkit, `account:${main.id}`)}>{busy === `account:${main.id}` && <Spinner />}Reconnect</Button>
+          <Button variant="outline" size="sm" disabled={busy !== null} aria-busy={busy === `account:${main.id}` || undefined} aria-label={`Reconnect ${app.name} (${label})`} onClick={() => onConnect(app.toolkit, `account:${main.id}`)}>{busy === `account:${main.id}` && <Spinner />}Reconnect</Button>
         )}
         <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive"
           action={() => onRemove([main, ...spares])}
@@ -210,7 +211,7 @@ export function Connectors() {
   const [search, setSearch] = useState("");
   const [shown, setShown] = useState(PAGE);
   /** The toolkit Composio just sent you back from, read off the callback address. */
-  const [returned, setReturned] = useState<{ slug: string; status: string | null } | null>(null);
+  const [returned, setReturned] = useState<{ slug: string; status: string | null; accountId: string | null } | null>(null);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -232,28 +233,45 @@ export function Connectors() {
     const params = new URLSearchParams(window.location.search);
     const slug = params.get("connected");
     if (!slug) return;
-    setReturned({ slug, status: params.get("status") });
+    setReturned({ slug, status: params.get("status"), accountId: params.get("account") });
     window.history.replaceState(null, "", window.location.pathname);
   }, []);
   useEffect(() => {
     if (!returned || !state) return;
-    const found = state.accounts.find((item) => item.toolkit === returned.slug && item.status === "ACTIVE");
-    const failed = returned.status !== null && returned.status.toLowerCase() !== "success";
-    if (found) toast.success(`${found.name}${found.account ? ` (${found.account})` : ""} is connected.`);
-    else if (failed) toast.error(`Signing in to ${returned.slug} didn't finish. Try connecting it again.`);
-    else toast.info(`${returned.slug} isn't showing as connected yet. Refresh in a moment.`);
+    const done = returned;
     setReturned(null);
-  }, [returned, state]);
+    const failed = done.status !== null && done.status.toLowerCase() !== "success";
+    if (failed) toast.error(`Signing in to ${done.slug} didn't finish. Try reconnecting it.`);
+    else if (done.accountId) {
+      // An active alternate must not make a failed reconnect look successful.
+      void connectToolkit({ key: dashboardKey, toolkit: done.slug, accountId: done.accountId }).then(async (result) => {
+        if (result.status === "ACTIVE" && !result.error && !result.redirectUrl) toast.success(`${done.slug} is reconnected.`);
+        else toast.info(`${done.slug} isn't confirmed yet. Refresh or reconnect this account again.`);
+        await refresh();
+      }, () => toast.error("Couldn't verify the reconnect. Refresh and try again."));
+    } else {
+      const found = state.accounts.find((item) => item.toolkit === done.slug && item.status === "ACTIVE");
+      if (found) toast.success(`${found.name}${found.account ? ` (${found.account})` : ""} is connected.`);
+      else toast.info(`${done.slug} isn't showing as connected yet. Refresh in a moment.`);
+    }
+  }, [returned, state, connectToolkit, dashboardKey, refresh]);
 
   const connect = async (toolkit: string, from: string) => {
     const slug = toolkit.trim().toLowerCase();
     if (!slug || busy) return;
     setBusy(from);
     try {
-      const callbackUrl = `${window.location.origin}${window.location.pathname}?connected=${encodeURIComponent(slug)}`;
-      const result = await connectToolkit({ key: dashboardKey, toolkit: slug, callbackUrl });
+      const accountId = from.startsWith("account:") ? from.slice("account:".length) : undefined;
+      const callbackUrl = `${window.location.origin}${window.location.pathname}?connected=${encodeURIComponent(slug)}${accountId ? `&account=${encodeURIComponent(accountId)}` : ""}`;
+      const result = await connectToolkit({ key: dashboardKey, toolkit: slug, callbackUrl, accountId });
       // Same tab, so Composio can send you back here when sign-in ends.
       if (result.redirectUrl) return window.location.assign(result.redirectUrl);
+      if (result.status === "ACTIVE" && !result.error) {
+        toast.success(`${slug} is reconnected.`);
+        await refresh();
+        setBusy(null);
+        return;
+      }
       toast.error(result.error ?? `Couldn't start a connection for “${slug}”. Check the name and try again.`);
     } catch (cause) {
       toast.error(errorText(cause));

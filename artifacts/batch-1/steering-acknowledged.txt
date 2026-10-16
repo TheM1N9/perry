@@ -1,0 +1,81 @@
+Browser tab: 2, Title: "Work · Perry", URL: "http://127.0.0.1:17483/work?tab=plans".
+0 AXWebArea Work · Perry, URL: 127.0.0.1:17483/work?tab=plans
+	1 link Description: Skip to content, Value: 127.0.0.1:17483/work?tab=plans#content
+	2 container
+		3 content list
+			4 link Description: Perry, Value: 127.0.0.1:17483/chat, ID: base-ui-_r_1_
+		5 content list
+			6 container
+				7 link Description: New chat, Value: 127.0.0.1:17483/chat, ID: base-ui-_r_4_
+				8 text Ctrl+Shift+O
+				9 button Description: Search, ID: base-ui-_r_6_
+			10 link Description: To-dos, Value: 127.0.0.1:17483/todos, ID: base-ui-_r_8_
+			11 link Description: Brain, Value: 127.0.0.1:17483/brain, ID: base-ui-_r_a_
+			12 link Description: Library, Value: 127.0.0.1:17483/library, ID: base-ui-_r_c_
+			13 link Description: Work, Value: 127.0.0.1:17483/work, ID: base-ui-_r_e_
+			14 link Description: Apps & skills, Value: 127.0.0.1:17483/apps/connectors, ID: base-ui-_r_g_
+		15 text Projects
+		16 button Description: New project, ID: base-ui-_r_26_
+		17 content list Projects
+			18 button New project
+		19 text Chats
+		20 content list Chats
+			21 container
+				22 link Description: Batch verification, Value: 127.0.0.1:17483/chat/vxdcvc14zmz99d62mfawp5yv2k, ID: base-ui-_r_1c_
+				23 image Description: Working, ID: base-ui-_r_1e_
+				24 pop up button (collapsed) Description: Options for Batch verification, ID: base-ui-_r_1i_, Secondary Actions: Expand
+			25 container
+				26 link Description: Untitled chat, Value: 127.0.0.1:17483/chat/bj7493pns3js12bd8psy273djd, ID: base-ui-_r_1l_
+				27 image Description: Working, ID: base-ui-_r_1n_
+				28 pop up button (collapsed) Description: Options for Untitled chat, ID: base-ui-_r_1r_, Secondary Actions: Expand
+		29 content list
+			30 container
+				31 pop up button (collapsed) Desktop pet, ID: base-ui-_r_k_, Secondary Actions: Expand
+				32 image Off
+		33 content list
+			34 container
+				35 pop up button (collapsed) You Codex, ID: base-ui-_r_s_, Secondary Actions: Expand
+				36 link Description: Needs you, Value: 127.0.0.1:17483/inbox, ID: base-ui-_r_v_
+		37 button Toggle Sidebar
+	38 container
+		39 button Toggle Sidebar
+		40 container content
+			41 heading Work, Value: 1
+				42 text Work
+			43 tab group
+				44 tab (selectable, settable, boolean) Schedules, Value: 0, ID: base-ui-_r_10_
+				45 tab (selected, settable, boolean) Plans 1, Value: 1, ID: base-ui-_r_11_
+				46 tab (selectable, settable, boolean) Goals, Value: 0, ID: base-ui-_r_12_
+				47 tab (selectable, settable, boolean) Watches, Value: 0, ID: base-ui-_r_13_
+			48 container Description: Plans 1, ID: base-ui-_r_15_
+				49 button New task
+				50 content list Plans
+					51 container task-5jhqsv7ayem5vyb1g7xsn20wxt
+						52 heading Fixture research, Value: 3
+							53 text Fixture research
+						54 text Working
+						55 container
+							56 text Updated  now  ·  1  of  2  steps
+						57 progress indicator Description: Fixture research: 1 of 2 steps, Value: 50
+						58 button (expanded) Steps, Secondary Actions: Collapse
+						59 content list Plan
+							60 container
+								61 text Collected fixture inputs ( done )
+							62 container
+								63 text Write the fixture result ( active )
+						64 content list Owner updates
+							65 container
+								66 text Use a compact table and keep the collected inputs. Delivered into the running turn
+						67 container
+							68 text Update instructions
+							69 text field (settable) Update instructions
+							70 button (disabled) Send update
+						71 link Description: Its chat, Value: 127.0.0.1:17483/chat/bj7493pns3js12bd8psy273djd
+						72 button Cancel
+	73 container
+		74 heading Search Perry, Value: 2, ID: base-ui-_r_19_
+			75 text Search Perry
+		76 text Chats, memory, notes, pages and actions
+	77 container Notifications alt+T
+
+The focused UI element is 0 AXWebArea Work · Perry, URL: 127.0.0.1:17483/work?tab=plans

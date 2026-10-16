@@ -1,0 +1,175 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "case": "240 Brain bodies, two ordinary notes",
+      "decodedRows": 2,
+      "reads": [
+        "projects",
+        "notes:ordinary"
+      ],
+      "indexPlan": [
+        "SEARCH doc_notes USING INDEX i_notes_by_kind (<expr>=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "case": "real assistant journal append via Runtime, mutation writes and SSE",
+      "listRunsBefore": 7,
+      "listRunsAfter": 7,
+      "journalRevision": 2,
+      "writes": [
+        "notes",
+        "notes:scoped-write",
+        "memories"
+      ]
+    },
+    {
+      "case": "preview, content search, revision conflict, pins, project and owner access",
+      "passed": true
+    },
+    {
+      "case": "empty-list insert, kind transitions, replace, delete, rollback and broad import event",
+      "passed": true
+    },
+    {
+      "case": "merged journal and broad-import event refreshes Notes",
+      "productionCoalescing": false,
+      "separateEvents": [
+        [
+          "notes",
+          "notes:scoped-write",
+          "memories"
+        ],
+        [
+          "notes",
+          "notes:ordinary"
+        ]
+      ],
+      "mergedTags": [
+        "notes",
+        "notes:scoped-write",
+        "memories",
+        "notes:ordinary"
+      ],
+      "listRunsBefore": 26,
+      "listRunsAfterMerged": 27,
+      "cachedAfterMerged": 3,
+      "databaseNotes": 3,
+      "broadOnlyFallbackAlsoPassed": true
+    }
+  ],
+  "listRuns": 28,
+  "events": [
+    [
+      "notes",
+      "notes:scoped-write",
+      "notes:ordinary",
+      "memories"
+    ],
+    [
+      "notes",
+      "notes:scoped-write",
+      "notes:ordinary",
+      "memories"
+    ],
+    [
+      "notes",
+      "notes:scoped-write",
+      "memories"
+    ],
+    [
+      "notes",
+      "notes:scoped-write",
+      "notes:ordinary",
+      "memories"
+    ],
+    [
+      "notes",
+      "notes:scoped-write",
+      "notes:ordinary"
+    ],
+    [
+      "notes",
+      "notes:scoped-write",
+      "notes:ordinary",
+      "memories"
+    ],
+    [
+      "notes",
+      "notes:scoped-write",
+      "notes:ordinary"
+    ],
+    [
+      "notes",
+      "notes:scoped-write",
+      "notes:ordinary"
+    ],
+    [
+      "notes",
+      "notes:scoped-write",
+      "notes:ordinary"
+    ],
+    [
+      "notes",
+      "notes:scoped-write",
+      "notes:ordinary"
+    ],
+    [
+      "memories",
+      "notes",
+      "notes:scoped-write",
+      "notes:ordinary"
+    ],
+    [
+      "notes",
+      "notes:ordinary"
+    ],
+    [
+      "notes",
+      "notes:scoped-write",
+      "memories"
+    ],
+    [
+      "notes",
+      "notes:ordinary"
+    ]
+  ],
+  "calls": [
+    "notes:list",
+    "notes:list",
+    "notes:create",
+    "notes:list",
+    "notes:list",
+    "notes:create",
+    "notes:list",
+    "notes:list",
+    "notes:updateForAgent",
+    "notes:save",
+    "notes:list",
+    "notes:list",
+    "notes:pinForAgent",
+    "notes:list",
+    "notes:list",
+    "notes:move",
+    "notes:list",
+    "notes:list",
+    "fixture:kind",
+    "notes:list",
+    "notes:list",
+    "fixture:kind",
+    "notes:list",
+    "notes:list",
+    "fixture:kind",
+    "notes:list",
+    "notes:list",
+    "fixture:replace",
+    "notes:list",
+    "notes:list",
+    "notes:remove",
+    "notes:list",
+    "notes:list",
+    "notes:list",
+    "notes:list"
+  ]
+}

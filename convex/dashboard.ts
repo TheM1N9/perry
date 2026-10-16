@@ -1,3 +1,6 @@
+import { streamState } from "./lib/turn-stream";
+import { turnErrorCode, type TurnFailure, type TurnErrorCode } from "../lib/turn-errors";
+import { hide, savedValues } from "./vault";
 import { createThread, deleteMessages, deleteThread, listMessages, saveMessages, searchMessages } from "./lib/agent";
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
@@ -15,12 +18,14 @@ import { assertRunning } from "./pause";
 import type { EngineKind } from "./lib/engines";
 import type { CatalogApp, ConnectedAccount } from "./composio";
 import { policyOf, type Policy } from "./runner";
+import { turnHealth } from "./lib/turn-health";
 import { vAccess, vEngine, vMemoryKind, vPolicy } from "./schema";
 import { pickPatch } from "./engines";
 import { APPROVAL_TTL_MS, accessChanged } from "./approvals";
 import { QUIET } from "./jobs";
 import type { VaultEntry } from "./vault";
 import { OUTBOX_TTL_MS } from "./conversations";
+import { assertQueueRoom } from "./queue";
 import { beingNamed, cancelTitle, requestTitle } from "./titles";
 import { watchProblem } from "./work";
 import { describeStep, STARTING, summarize, WAITING, WRITING, type Step } from "./lib/activity";
@@ -47,6 +52,8 @@ const vKey = v.string();
 export type ChatMessage = {
   id: string;
   attachmentKey?: string;
+  runId?: Id<"runs">;
+  failure?: TurnFailure;
   role: string;
   text: string;
   createdAt: number;
@@ -54,6 +61,7 @@ export type ChatMessage = {
   attachments: Array<{ id?: Id<"chatAttachments">; url: string; fileName: string; contentType: string; removed?: true }>;
   /** Sent, and not yet in the history: the history only gets it with its reply. */
   pending?: boolean;
+  queued?: { id: Id<"codexTurns">; conversationId: Id<"conversations"> };
   /** The memories a reply said it relied on (codex.finishTurn). */
   memories?: Array<{ id: string; text: string }>;
 };
@@ -394,7 +402,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean }; context?: { fill: number; window: number } }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; unresponsive?: boolean; lastAliveAt?: number; lastError?: string; lastErrorCode?: TurnErrorCode; lastErrorRunId?: Id<"runs">; contact?: { name: string; group: boolean }; context?: { fill: number; window: number } }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
@@ -409,6 +417,8 @@ export const getChat = query({
         .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.id).eq("status", "running"))
         .first()
       : null;
+    const runner = running?.runnerId ? await ctx.db.get(running.runnerId) : null;
+    const health = running ? turnHealth(running, runner, Date.now()) : null;
     const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
     return {
       channel: conversation.channel,
@@ -422,9 +432,10 @@ export const getChat = query({
       access: conversation.access ?? "supervised",
       title: titleOf(conversation),
       isRunning,
-      // The flush before /reset works quietly.
-      streaming: running?.flush || running?.checkpoint ? undefined : running?.partial,
-      lastError: latestRun?.status === "error" ? latestRun.error : undefined,
+      ...(health ? { unresponsive: health.unresponsive, lastAliveAt: health.lastAliveAt } : {}),
+      lastError: latestRun?.status === "error" && latestRun.error ? hide(latestRun.error, await savedValues(ctx)) : undefined,
+      lastErrorCode: latestRun?.status === "error" ? turnErrorCode(latestRun) : undefined,
+      lastErrorRunId: latestRun?.status === "error" ? latestRun._id : undefined,
       ...(contact ? { contact: { name: contact.name, group: contact.kind === "group" } } : {}),
       // How full its engine's context is, as its last turn said (codex.ts, recordTrace): unset until one has.
       ...(conversation.contextWindow && conversation.contextFill !== undefined ? { context: { fill: conversation.contextFill, window: conversation.contextWindow } } : {}),
@@ -477,9 +488,12 @@ export const getActivity = query({
       const last = spans.at(-1);
       const turn = await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", run.conversationId).eq("status", "running")).first();
       const ended = last ? last.startedAt + (last.durationMs ?? 0) : run.startedAt;
-      if (asking) step = { ...WAITING, since: asking.createdAt, live: true };
+      const runner = turn?.runnerId ? await ctx.db.get(turn.runnerId) : null;
+      const health = turn ? turnHealth(turn, runner, Date.now()) : null;
+      if (health?.unresponsive) step = { label: "Computer unresponsive", pose: "waiting", since: health.lastAliveAt, live: false };
+      else if (asking) step = { ...WAITING, since: asking.createdAt, live: true };
       else if (live) step = { ...describeStep(live), since: live.startedAt, live: true };
-      else step = { ...(turn?.partial ? WRITING : STARTING), since: ended, live: false };
+      else step = { ...(turn && (turn.partial || (await streamState(ctx, turn._id))?.length) ? WRITING : STARTING), since: ended, live: false };
       if (last && last.status !== "running" && last.kind !== "reasoning") recent = { ...describeStep(last), since: last.startedAt, endedAt: ended };
     }
     const chat = args.id ? null : await ctx.db.get(run.conversationId);
@@ -626,6 +640,12 @@ export const getChatMessages = query({
         if (memory) cited.set(memory._id, { id: memory._id, text: memory.text });
       }
     }
+    const failureRuns = new Map<string, TurnFailure>();
+    const values = await savedValues(ctx);
+    for (const runId of new Set(page.page.flatMap((doc) => doc.runId ? [doc.runId] : []))) {
+      const run = await ctx.db.get(runId);
+      if (run?.conversationId === args.id && run.status === "error") failureRuns.set(runId, { errorCode: turnErrorCode(run), ...(run.error ? { error: hide(run.error, values) } : {}) });
+    }
     const history = page.page.map((doc): ChatMessage => {
         const raw = typeof doc.text === "string" ? doc.text : "";
         const memories = (MEMORIES_MARKER.exec(raw)?.[1]?.split(",") ?? []).flatMap((id) => cited.get(id.trim()) ?? []);
@@ -641,6 +661,7 @@ export const getChatMessages = query({
           : undefined;
         return {
           id: doc._id,
+          ...(doc.runId ? { runId: doc.runId, failure: failureRuns.get(doc.runId) } : {}),
           attachmentKey: messageKey ?? (recovered ? `codex-${recovered._id}` : undefined),
           role: doc.message?.role ?? "assistant",
           text: (marker ? raw.slice(0, marker.index) : raw).replace(MEMORIES_MARKER, "").trimEnd(),
@@ -669,13 +690,14 @@ export const getChatMessages = query({
         createdAt: entry.at,
         attachments: marker?.[1] ? attachmentMap.get(marker[1].trim()) ?? [] : [],
         pending: true,
+        ...(entry.queued ? { queued: entry.queued } : {}),
       }];
     });
     return { ...page, page: [...shown.reverse(), ...history] };
   },
 });
 
-type InFlight = { prompt: string; text: string; at: number };
+type InFlight = { prompt: string; text: string; at: number; queued?: { id: Id<"codexTurns">; conversationId: Id<"conversations"> } };
 
 /** The live turns' steers that joined them, and those still waiting to. */
 async function steersOf(ctx: QueryCtx, turns: Doc<"codexTurns">[]): Promise<Doc<"codexSteers">[]> {
@@ -701,7 +723,7 @@ function inFlight(conversation: Doc<"conversations">, turns: Doc<"codexTurns">[]
     ...turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush && !turn.checkpoint && !turn.hidden
       // A finished turn is saved a moment later; one left unsaved and unfinalized for long is not coming.
       && (turn.status === "queued" || turn.status === "running" || (turn.finalizedAt === undefined && turn.createdAt > Date.now() - OUTBOX_TTL_MS)))
-      .map((turn) => entry(turn.prompt, turn.createdAt)),
+      .map((turn) => ({ ...entry(turn.prompt, turn.createdAt), ...(turn.status === "queued" ? { queued: { id: turn._id, conversationId: turn.conversationId } } : {}) })),
     ...steers.map((steer) => entry(steer.prompt, steer.createdAt)),
   ];
   return items.sort((a, b) => a.at - b.at);
@@ -797,6 +819,9 @@ export const sendChat = mutation({
     if (chat.contactId) throw new Error("This is Perry's chat with someone else. To have Perry tell them something, ask in your own chat.");
     // Paused, the message is not sent; it stays in the box for when he is back (pause.ts).
     await assertRunning(ctx);
+    // The outbox reserves capacity before asynchronous preparation. Admission
+    // and its durable handoff replace one slot rather than counting it twice.
+    await assertQueueRoom(ctx, chat);
     const messageKey = args.messageKey?.trim() || crypto.randomUUID();
     const attachments = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
     if (attachments.some((attachment) => !attachment || attachment.conversationId !== args.id || attachment.messageKey !== messageKey)) {
@@ -1853,7 +1878,7 @@ export const disconnectAccount = action({
 
 /** Returns a URL for the owner to open and finish OAuth in their browser. */
 export const connectToolkit = action({
-  args: { key: vKey, toolkit: v.string(), callbackUrl: v.optional(v.string()) },
+  args: { key: vKey, toolkit: v.string(), callbackUrl: v.optional(v.string()), accountId: v.optional(v.string()) },
   handler: async (
     ctx,
     args,
@@ -1862,6 +1887,7 @@ export const connectToolkit = action({
     return await ctx.runAction(internal.composio.authorize, {
       toolkit: args.toolkit,
       callbackUrl: args.callbackUrl,
+      accountId: args.accountId,
     });
   },
 });

@@ -5,7 +5,6 @@ import { internalAction, internalMutation, internalQuery, query, type ActionCtx,
 import { ENGINE_LABELS, ENGINES, type EngineKind } from "./lib/engines";
 import { BACKGROUND_CAP, ROUTING_RULE, effortFor, isTier, modelFor, roomOf, route, routeGuest, type Choice, type OwnerPick, type PerryPick, type Work } from "./lib/routing";
 import { modelsOf, parseModelKey } from "./lib/commands";
-import { LIMIT_HIT } from "./lib/usage";
 import { historyOf } from "./lib/agent";
 import { sendMessage } from "./lib/telegram";
 import { FORGET_SESSION, engineLockable, engineUsable, isOnline } from "./engines";
@@ -261,8 +260,8 @@ export const moveChatTo = internalMutation({
  * retry. Someone else's chat runs again only on another engine that can be
  * locked down for it (retryPlan).
  */
-export async function retryable(ctx: QueryCtx, turn: Doc<"codexTurns">, outcome: { error?: string; response?: string; stopped?: boolean; media?: number }): Promise<boolean> {
-  if (!outcome.error || !LIMIT_HIT.test(outcome.error) || outcome.stopped || outcome.response?.trim() || outcome.media || turn.mediaKey) return false;
+export async function retryable(ctx: QueryCtx, turn: Doc<"codexTurns">, outcome: { error?: string; errorCode?: import("../lib/turn-errors").TurnErrorCode; response?: string; stopped?: boolean; media?: number }): Promise<boolean> {
+  if (!outcome.error || outcome.errorCode !== "limit" || outcome.stopped || outcome.response?.trim() || outcome.media || turn.mediaKey) return false;
   if (turn.retryOf || turn.kind || turn.flush || turn.checkpoint) return false;
   const run = await ctx.db.get(turn.runId);
   if (run?.toolCalls?.length) return false;

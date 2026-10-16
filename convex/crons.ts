@@ -36,7 +36,7 @@ crons.interval("release held messages", { minutes: 1 }, internal.notify.releaseH
 crons.interval("start queued tasks", { minutes: 1 }, internal.tasks.tick, {});
 
 // Durable turns: retry unfinished finalizing, and release what an offline runner abandoned.
-crons.interval("recover turns", { minutes: 1 }, internal.recovery.sweep, {});
+crons.interval("recover turns", { seconds: 30 }, internal.recovery.sweep, {});
 
 // Perry's own updates: the day's check, the night's update, and how the last one went (updates.ts).
 crons.interval("keep Perry up to date", { minutes: 1 }, internal.updates.tick, {});

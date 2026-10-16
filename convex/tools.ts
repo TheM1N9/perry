@@ -1309,6 +1309,7 @@ type Snapshot = {
     title: string;
     status: string;
     plan: Array<{ title: string; status: string; note?: string }>;
+    ownerUpdates: Array<{ text: string; createdAt: number }>;
     question?: string;
     result?: string;
     error?: string;
@@ -1404,6 +1405,28 @@ const resume_task = createTool({
   },
 });
 
+const steer_task = createTool({
+  description: "Forward the owner's updated instructions to a running background task without cancelling it. " +
+    "Use only when the owner asks to change that task. Completed work stays done; engines that cannot steer queue a follow-up. " +
+    "Task ids come from status_report. Use resume_task for a blocked task's answer.",
+  inputSchema: z.object({
+    taskId: z.string(),
+    instructions: z.string().min(1).max(4000).describe("The owner's new instructions, in their words."),
+    requestId: z.string().regex(/^[A-Za-z0-9_-]{8,100}$/).describe("Unique update id; reuse exactly on retries of this update."),
+  }),
+  execute: async (ctx, input): Promise<{ accepted: boolean; deliveryId?: string; error?: string }> => {
+    if (!ctx.conversationId || ctx.fromJob || ctx.outside) return { accepted: false, error: "Only a fresh owner instruction can update a background task." };
+    try {
+      const deliveryId: string = await ctx.runMutation(internal.tasks.steer, {
+        id: input.taskId, text: input.instructions, requestId: input.requestId, conversationId: ctx.conversationId,
+      });
+      return { accepted: true, deliveryId };
+    } catch (cause) {
+      return { accepted: false, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  },
+});
+
 const set_plan = createTool({
   description:
     "Replace a task's plan with the current one. Send the whole list every " +
@@ -1456,6 +1479,7 @@ const finish_task = createTool({
 
     await ctx.runMutation(internal.work.updateTask, {
       taskId: input.taskId,
+      ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
       status: input.outcome,
       ...(input.outcome === "blocked"
         ? { question: input.summary }
@@ -1738,6 +1762,7 @@ export const ALL_TOOLS = {
   start_task,
   queue_task,
   resume_task,
+  steer_task,
   set_plan,
   finish_task,
   set_goal,
