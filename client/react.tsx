@@ -103,15 +103,22 @@ export function usePaginatedQuery<Q extends Paginated>(
   args: Omit<FunctionArgs<Q>, "paginationOpts"> | "skip",
   options: { initialNumItems: number },
 ): { results: Item<Q>[]; status: PaginationStatus; loadMore: (numItems: number) => void; isLoading: boolean } {
+  const client = useClient();
+  const name = functionName(query);
+  const generation = client.chatCacheGeneration;
   const argsKey = args === "skip" ? null : JSON.stringify(args);
   const [size, setSize] = useState({ key: argsKey, numItems: options.initialNumItems });
   const numItems = size.key === argsKey ? size.numItems : options.initialNumItems;
   useEffect(() => { if (size.key !== argsKey) setSize({ key: argsKey, numItems: options.initialNumItems }); }, [argsKey, size.key, options.initialNumItems]);
-  const shown = useRef<FunctionReturnType<Q> | undefined>(undefined);
+  const shown = useRef<{ client: BackendClient; name: string; key: string | null; generation: number; numItems: number; page: FunctionReturnType<Q> } | undefined>(undefined);
   const page = useQuery(query as unknown as Query, (args === "skip" ? "skip" : { ...args, paginationOpts: { numItems, cursor: null } }) as never) as FunctionReturnType<Q> | undefined;
-  if (args === "skip") shown.current = undefined;
-  else if (page !== undefined) shown.current = page;
-  const current = shown.current;
+  const previous = shown.current;
+  const sameScope = previous && previous.client === client && previous.name === name && previous.key === argsKey && previous.generation === generation;
+  if (args === "skip" || !sameScope) shown.current = undefined;
+  if (args !== "skip" && page !== undefined) shown.current = { client, name, key: argsKey, generation, numItems, page };
+  // Only a size increase may reuse a smaller page; loading another chat or a
+  // redacted/session-invalidated query must never carry the old transcript.
+  const current = page ?? (sameScope && numItems > previous.numItems ? previous.page : undefined);
   const loadingMore = current !== undefined && page === undefined;
   const status: PaginationStatus = args === "skip" || current === undefined ? "LoadingFirstPage" : loadingMore ? "LoadingMore" : current.isDone ? "Exhausted" : "CanLoadMore";
   const loadMore = useCallback((more: number) => setSize((previous) => ({ key: argsKey, numItems: (previous.key === argsKey ? previous.numItems : options.initialNumItems) + more })), [argsKey, options.initialNumItems]);

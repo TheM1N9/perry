@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { v } from "convex/values";
 import { PATHS } from "../runner/home";
+import { dashboardVersion } from "../lib/dashboard-version";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { action, internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type QueryCtx } from "./_generated/server";
@@ -83,6 +84,8 @@ function ownerTime(timezone: string, at = Date.now()): { hour: number; day: stri
 }
 
 export type UpdateView = {
+  /** Identity compiled into this server, independent of remote commits or update state. */
+  uiVersion?: string | null;
   /** Updates can run: Perry runs under `perry run` (perry start), which does them. */
   supervised: boolean;
   checkedAt?: number;
@@ -106,6 +109,7 @@ export const status = query({
     const install = await ctx.db.query("installation").first();
     const state = row?.requested ? "updating" : row?.wantedAt ? "waiting" : "idle";
     return {
+      uiVersion: dashboardVersion(),
       supervised: supervised(),
       checkedAt: row?.checkedAt,
       behind: row?.behind ?? 0,

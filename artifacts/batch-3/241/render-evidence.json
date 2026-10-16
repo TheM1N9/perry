@@ -1,0 +1,87 @@
+{
+  "checks": 34,
+  "prefixChecks": 61,
+  "staticIdentical": true,
+  "evidence": [
+    {
+      "name": "open fence",
+      "text": "```js\nconst x = 1",
+      "html": "<pre><code class=\"language-js\">const x = 1\n</code></pre>"
+    },
+    {
+      "name": "tilde fence",
+      "text": "~~~js\nconst x = 1",
+      "html": "<pre><code class=\"language-js\">const x = 1\n</code></pre>"
+    },
+    {
+      "name": "bold",
+      "text": "**bold",
+      "html": "<p><strong>bold</strong></p>"
+    },
+    {
+      "name": "emphasis",
+      "text": "*italic",
+      "html": "<p><em>italic</em></p>"
+    },
+    {
+      "name": "underscore",
+      "text": "__bold",
+      "html": "<p><strong>bold</strong></p>"
+    },
+    {
+      "name": "strike",
+      "text": "~~gone",
+      "html": "<p><del>gone</del></p>"
+    },
+    {
+      "name": "code",
+      "text": "`a * b",
+      "html": "<p><code>a * b</code></p>"
+    },
+    {
+      "name": "nested",
+      "text": "**bold *italic",
+      "html": "<p><strong>bold <em>italic</em></strong></p>"
+    },
+    {
+      "name": "header",
+      "text": "| Name | Value |",
+      "html": "<table><thead><tr><th>Name</th><th>Value</th></tr></thead></table>"
+    },
+    {
+      "name": "partial header",
+      "text": "| Nam",
+      "html": "<table><thead><tr><th>Nam</th></tr></thead></table>"
+    },
+    {
+      "name": "delimiter",
+      "text": "| Name | Value |\n| --",
+      "html": "<table><thead><tr><th>Name</th><th>Value</th></tr></thead></table>"
+    },
+    {
+      "name": "no leading pipe",
+      "text": "Name | Value\n--- |",
+      "html": "<table><thead><tr><th>Name</th><th>Value</th></tr></thead></table>"
+    },
+    {
+      "name": "table body",
+      "text": "| Name | Value |\n| --- | --- |\n| a",
+      "html": "<table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>a</td><td></td></tr></tbody></table>"
+    },
+    {
+      "name": "list",
+      "text": "- **bold",
+      "html": "<ul>\n<li><strong>bold</strong></li>\n</ul>"
+    },
+    {
+      "name": "quote",
+      "text": "> **bold",
+      "html": "<blockquote>\n<p><strong>bold</strong></p>\n</blockquote>"
+    },
+    {
+      "name": "heading",
+      "text": "## **bold",
+      "html": "<h2><strong>bold</strong></h2>"
+    }
+  ]
+}

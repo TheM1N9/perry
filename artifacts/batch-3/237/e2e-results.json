@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "fixture": "real BackendClient with fake fetch; no server/Runtime bootstrap or network",
+  "flows": [
+    "navigation: synchronous saved page, fresh replacement, stable equal identity, chat/key/client isolation",
+    "transport: transient network error preserves active confirmed history",
+    "invalidation: active vault redact-before-reload and inactive dependent writes evict",
+    "session/auth: synchronous clear ignores late success; actual key-error response purges history",
+    "same-key session race: reattach during invalidated prefetch fetches current result and ignores old result",
+    "related chat payloads: metadata/work/live-stream clear on secret/session invalidation and never retain idle text",
+    "bounds: <=30 idle pages, <=4MiB accounted bytes, 120s expiry, oversized/pending/partial/larger-page exclusion",
+    "prefetch: 20 intents => 1 request; cached/cancelled intents => 0; one concurrent request",
+    "metadata/close: metadata not retained between visits; close releases history/timers",
+    "suspend: inactive history is discarded before a disconnected tab can reopen it"
+  ],
+  "requestCount": 90,
+  "maxOutstanding": 1,
+  "boundsBytes": 4036966,
+  "browserPaintVerified": false
+}

@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useMutation, useQuery } from "@/client/react";
+import { useConvex, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import { matches } from "@/convex/lib/shortcuts";
 import { useShortcuts } from "@/hooks/use-shortcuts";
@@ -23,10 +23,12 @@ const HIDDEN_TAB_WAITS_MS = 400;
  * paint is blank rather than briefly the wrong screen.
  */
 export function DashboardShell({ children }: { children: ReactNode }) {
+  const client = useConvex();
   const [dashboardKey, setDashboardKey] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    client.clearChatCache();
     // `perry open` passes the key in the fragment, which never reaches a server; it is kept and taken out of the address.
     const fromLink = new URLSearchParams(window.location.hash.slice(1)).get("key");
     if (fromLink) {
@@ -35,7 +37,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     }
     setDashboardKey(window.localStorage.getItem(KEY_STORAGE));
     setReady(true);
-  }, []);
+    return () => client.clearChatCache();
+  }, [client]);
 
   // Local chat media is served by this app's own server, which reads the key
   // from a cookie scoped to /api/media so it never appears in a media URL.
@@ -47,15 +50,16 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }, [ready, dashboardKey]);
 
   const lock = useCallback(() => {
+    client.clearChatCache();
     trackDashboardEvent("Dashboard locked");
     window.localStorage.removeItem(KEY_STORAGE);
     setDashboardKey(null);
-  }, []);
+  }, [client]);
   const session = useMemo<Session | null>(() => dashboardKey ? { dashboardKey, lock } : null, [dashboardKey, lock]);
 
   if (!ready) return null;
   if (!session) {
-    return <Gate onUnlock={(key) => { trackDashboardEvent("Dashboard unlocked"); window.localStorage.setItem(KEY_STORAGE, key); setDashboardKey(key); }} />;
+    return <Gate onUnlock={(key) => { client.clearChatCache(); trackDashboardEvent("Dashboard unlocked"); window.localStorage.setItem(KEY_STORAGE, key); setDashboardKey(key); }} />;
   }
   return (
     <SessionContext.Provider value={session}>

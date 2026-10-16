@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { PHASE_PRODUCTION_BUILD } from "next/constants";
 import type { NextConfig } from "next";
 
 const config: NextConfig = {
@@ -33,4 +35,20 @@ const config: NextConfig = {
   },
 };
 
-export default config;
+export default function nextConfig(phase: string): NextConfig {
+  // One identity compiled into both sides of this build. At next start the
+  // compiled modules keep their inlined value; this config must not invent a
+  // runtime version or inspect a replacement build sitting on disk.
+  // Compiler workers reload config and inherit this build's environment.
+  const uiBuildId = phase === PHASE_PRODUCTION_BUILD
+    ? (process.env.PERRY_UI_BUILD_ID ??= randomUUID())
+    : "";
+  return {
+    ...config,
+    env: { PERRY_UI_BUILD_ID: uiBuildId },
+    // Reuse the identity as Next's native build ID. When a deploymentId is
+    // supplied Next uses a constant BUILD_ID instead; our compiled token still
+    // distinguishes separate builds without enabling automatic navigation.
+    generateBuildId: () => uiBuildId || null,
+  };
+}

@@ -251,7 +251,7 @@ function Pet() {
   const unseen = useRef<Set<string> | null>(null);
   const news = useRef<{ ids: string[]; until: number } | null>(null);
   const writing = useRef<{ since: number; text: string } | null>(null);
-  const voice = useVoice(typeof window === "undefined" ? undefined : window.perryPet);
+  const voice = useVoice(typeof window === "undefined" ? undefined : window.perryPet, (result) => { void heardText(result); });
   // The Talk and Look hotkeys: the keys Settings has, taken up by his window, which says if another app has them.
   const shortcuts = useQuery(api.dashboard.getShortcuts, { key })?.shortcuts;
   const talkKeys = shortcuts?.talk;
@@ -451,14 +451,17 @@ function Pet() {
     setOpen(true);
     void listen().then((on) => { if (!on && sends) window.perryPet?.voiceDone(); });
   }, [listen]);
-  const heard = useCallback(async (byKeys = false) => {
+  const heardText = useCallback(async (result: Promise<string>) => {
     const sends = talkSends.current;
-    if (!byKeys) window.perryPet?.voiceDone();
-    const text = await stopListening();
+    const text = await result;
     if (!text) return;
     setDraft((previous) => (previous.trim() ? `${previous.trimEnd()} ${text}` : text));
     if (sends) setSendSignal((count) => count + 1);
-  }, [stopListening]);
+  }, []);
+  const heard = useCallback((byKeys = false) => {
+    if (!byKeys) window.perryPet?.voiceDone();
+    return heardText(stopListening());
+  }, [heardText, stopListening]);
   const stopTalking = useCallback((byKeys = false) => {
     cancelListening();
     if (!byKeys) window.perryPet?.voiceDone();
@@ -709,7 +712,7 @@ function Pet() {
   return (
     <Stage bubble={open ? panel : bubble}>
       <Body mood={voice.state === "listening" ? "listening" : urgent ? "urgent" : petChat?.isRunning || voice.state === "transcribing" ? "thinking" : "idle"}
-        level={voice.levels[voice.levels.length - 1]} asleep={asleep} cheer={cheer} badge={open ? 0 : needs} onTouch={wake}
+        asleep={asleep} cheer={cheer} badge={open ? 0 : needs} onTouch={wake}
         pose={voice.state === "idle" ? (step ?? awayStep)?.pose : undefined}
         onClick={() => setOpen((value) => !value)} />
     </Stage>
