@@ -1,6 +1,8 @@
+import { hide, savedValues } from "./vault";
+import { turnErrorCode } from "../lib/turn-errors";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
-import { vRoute, vUsage } from "./schema";
+import { vRoute, vUsage, vTurnErrorCode } from "./schema";
 
 /** When a chat's last run that ended well started, or null. */
 export const lastOk = internalQuery({
@@ -41,6 +43,7 @@ export const recent = internalQuery({
       totalTokens: r.usage?.totalTokens,
       usage: r.usage,
       error: r.error,
+      errorCode: r.errorCode,
       startedAt: r.startedAt,
       durationMs: r.finishedAt ? r.finishedAt - r.startedAt : undefined,
     }));
@@ -99,10 +102,12 @@ export const finish = internalMutation({
     model: v.optional(v.string()),
     usage: v.optional(vUsage),
     error: v.optional(v.string()),
+    errorCode: v.optional(vTurnErrorCode),
   },
   returns: v.null(),
   handler: async (ctx, { id, ...rest }) => {
-    await ctx.db.patch(id, { ...rest, finishedAt: Date.now() });
+    const error = rest.error ? hide(rest.error, await savedValues(ctx)).slice(0, 2000) : undefined;
+    await ctx.db.patch(id, { ...rest, error, errorCode: rest.status === "error" ? turnErrorCode(rest) : undefined, finishedAt: Date.now() });
     return null;
   },
 });

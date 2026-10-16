@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
+import { decryptCredential, encryptCredential } from "./lib/credential-encryption";
 
 /**
  * Where Assistant's service keys live.
@@ -56,7 +57,10 @@ export const get = internalQuery({
       .withIndex("by_name", (q) => q.eq("name", args.name))
       .unique();
 
-    if (row && row.value.length > 0) return row.value;
+    if (row) {
+      const value = decryptCredential("secrets", row.value);
+      if (value.length > 0) return value;
+    }
     return process.env[args.name] ?? null;
   },
 });
@@ -80,8 +84,9 @@ export const status = internalQuery({
 
     return SECRET_NAMES.map((name) => {
       const row = stored.get(name);
-      const fromDb = row && row.value.length > 0;
-      const value = fromDb ? row.value : (process.env[name] ?? "");
+      const saved = row ? decryptCredential("secrets", row.value) : "";
+      const fromDb = saved.length > 0;
+      const value = fromDb ? saved : (process.env[name] ?? "");
 
       return {
         name,
@@ -102,7 +107,7 @@ export const set = internalMutation({
   handler: async (ctx, args) => {
     if (!isSecretName(args.name)) return null;
 
-    const value = args.value.trim();
+    const value = encryptCredential("secrets", args.value.trim());
     const existing = await ctx.db
       .query("secrets")
       .withIndex("by_name", (q) => q.eq("name", args.name))

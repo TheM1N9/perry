@@ -1,3 +1,5 @@
+import { turnErrorCode, type TurnFailure, type TurnErrorCode } from "../lib/turn-errors";
+import { hide, savedValues } from "./vault";
 import { createThread, deleteMessages, deleteThread, listMessages, saveMessages, searchMessages } from "./lib/agent";
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
@@ -15,6 +17,7 @@ import { assertRunning } from "./pause";
 import type { EngineKind } from "./lib/engines";
 import type { CatalogApp, ConnectedAccount } from "./composio";
 import { policyOf, type Policy } from "./runner";
+import { turnHealth } from "./lib/turn-health";
 import { vAccess, vEngine, vMemoryKind, vPolicy } from "./schema";
 import { pickPatch } from "./engines";
 import { APPROVAL_TTL_MS, accessChanged } from "./approvals";
@@ -47,6 +50,8 @@ const vKey = v.string();
 export type ChatMessage = {
   id: string;
   attachmentKey?: string;
+  runId?: Id<"runs">;
+  failure?: TurnFailure;
   role: string;
   text: string;
   createdAt: number;
@@ -394,7 +399,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; streaming?: string; lastError?: string; contact?: { name: string; group: boolean } }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; unresponsive?: boolean; lastAliveAt?: number; streaming?: string; lastError?: string; lastErrorCode?: TurnErrorCode; lastErrorRunId?: Id<"runs">; contact?: { name: string; group: boolean } }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
@@ -409,6 +414,8 @@ export const getChat = query({
         .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.id).eq("status", "running"))
         .first()
       : null;
+    const runner = running?.runnerId ? await ctx.db.get(running.runnerId) : null;
+    const health = running ? turnHealth(running, runner, Date.now()) : null;
     const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
     return {
       channel: conversation.channel,
@@ -422,9 +429,12 @@ export const getChat = query({
       access: conversation.access ?? "supervised",
       title: titleOf(conversation),
       isRunning,
+      ...(health ? { unresponsive: health.unresponsive, lastAliveAt: health.lastAliveAt } : {}),
       // The flush before /reset works quietly.
       streaming: running?.flush || running?.checkpoint ? undefined : running?.partial,
-      lastError: latestRun?.status === "error" ? latestRun.error : undefined,
+      lastError: latestRun?.status === "error" && latestRun.error ? hide(latestRun.error, await savedValues(ctx)) : undefined,
+      lastErrorCode: latestRun?.status === "error" ? turnErrorCode(latestRun) : undefined,
+      lastErrorRunId: latestRun?.status === "error" ? latestRun._id : undefined,
       ...(contact ? { contact: { name: contact.name, group: contact.kind === "group" } } : {}),
     };
   },
@@ -475,7 +485,10 @@ export const getActivity = query({
       const last = spans.at(-1);
       const turn = await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", run.conversationId).eq("status", "running")).first();
       const ended = last ? last.startedAt + (last.durationMs ?? 0) : run.startedAt;
-      if (asking) step = { ...WAITING, since: asking.createdAt, live: true };
+      const runner = turn?.runnerId ? await ctx.db.get(turn.runnerId) : null;
+      const health = turn ? turnHealth(turn, runner, Date.now()) : null;
+      if (health?.unresponsive) step = { label: "Computer unresponsive", pose: "waiting", since: health.lastAliveAt, live: false };
+      else if (asking) step = { ...WAITING, since: asking.createdAt, live: true };
       else if (live) step = { ...describeStep(live), since: live.startedAt, live: true };
       else step = { ...(turn?.partial ? WRITING : STARTING), since: ended, live: false };
       if (last && last.status !== "running" && last.kind !== "reasoning") recent = { ...describeStep(last), since: last.startedAt, endedAt: ended };
@@ -604,6 +617,12 @@ export const getChatMessages = query({
         if (memory) cited.set(memory._id, { id: memory._id, text: memory.text });
       }
     }
+    const failureRuns = new Map<string, TurnFailure>();
+    const values = await savedValues(ctx);
+    for (const runId of new Set(page.page.flatMap((doc) => doc.runId ? [doc.runId] : []))) {
+      const run = await ctx.db.get(runId);
+      if (run?.conversationId === args.id && run.status === "error") failureRuns.set(runId, { errorCode: turnErrorCode(run), ...(run.error ? { error: hide(run.error, values) } : {}) });
+    }
     const history = page.page.map((doc): ChatMessage => {
         const raw = typeof doc.text === "string" ? doc.text : "";
         const memories = (MEMORIES_MARKER.exec(raw)?.[1]?.split(",") ?? []).flatMap((id) => cited.get(id.trim()) ?? []);
@@ -619,6 +638,7 @@ export const getChatMessages = query({
           : undefined;
         return {
           id: doc._id,
+          ...(doc.runId ? { runId: doc.runId, failure: failureRuns.get(doc.runId) } : {}),
           attachmentKey: messageKey ?? (recovered ? `codex-${recovered._id}` : undefined),
           role: doc.message?.role ?? "assistant",
           text: (marker ? raw.slice(0, marker.index) : raw).replace(MEMORIES_MARKER, "").trimEnd(),

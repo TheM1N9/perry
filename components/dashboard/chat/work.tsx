@@ -51,15 +51,15 @@ export function Spinner() {
  * A step opens, by a click, to what it did (StepDetail). `held`: the turn
  * waits on the owner's approval, so the step still open waits too.
  */
-export function WorkSteps({ steps, live = false, held = false, now = 0 }: { steps: WorkStep[]; live?: boolean; held?: boolean; now?: number }) {
+export function WorkSteps({ steps, live = false, held = false, unresponsive = false, now = 0 }: { steps: WorkStep[]; live?: boolean; held?: boolean; unresponsive?: boolean; now?: number }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const toggle = (id: string) => setOpen((was) => { const next = new Set(was); if (!next.delete(id)) next.add(id); return next; });
   return (
     <ol className="space-y-1" data-work-steps>
       {steps.map((step) => {
         // A step open while the turn waits on the owner waits with it; one a stopped run left open is over, and did not finish either.
-        const waits = live && held && step.status === "running";
-        const running = live && !held && step.status === "running";
+        const waits = live && (held || unresponsive) && step.status === "running";
+        const running = live && !held && !unresponsive && step.status === "running";
         const stopped = !live && step.status === "running";
         const failed = step.status === "error" || step.status === "declined";
         const time = running ? took(now - step.startedAt) : step.durationMs !== undefined ? took(step.durationMs) : "";
@@ -72,7 +72,7 @@ export function WorkSteps({ steps, live = false, held = false, now = 0 }: { step
               {running
                 ? <Spinner />
                 : waits
-                  ? <HourglassIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label="Waiting for your approval" />
+                  ? <HourglassIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label={unresponsive ? "Waiting for your computer to reconnect" : "Waiting for your approval"} />
                   : failed
                     ? <XIcon className="size-3.5 shrink-0 text-destructive" aria-label={step.status === "declined" ? "Declined" : "Failed"} />
                     : stopped
@@ -95,11 +95,12 @@ export function WorkSteps({ steps, live = false, held = false, now = 0 }: { step
  * Where a turn's work stands. `waiting`: it holds on the owner's approval, so
  * it is not working; `failed`: it ended in an error, or was rejected.
  */
-export type WorkState = "working" | "waiting" | "done" | "failed";
+export type WorkState = "working" | "waiting" | "unresponsive" | "done" | "failed";
 
 /** What a turn's fold says: "Working for 12s · 3 steps" while it runs, "Worked for 46s · 3 steps" after. */
 export function workLabel(work: Work, state: WorkState, now: number): string {
   const steps = work.steps.length ? ` · ${plural(work.steps.length, "step")}` : "";
+  if (state === "unresponsive") return `Computer unresponsive${steps}`;
   if (state === "working") return `Working for ${took(Math.max(0, now - work.startedAt))}${steps}`;
   if (state === "waiting") return `Waiting for your approval${steps}`;
   const end = work.finishedAt ?? Math.max(work.startedAt, ...work.steps.map((step) => step.startedAt + (step.durationMs ?? 0)));
@@ -130,7 +131,7 @@ export function WorkFolds({ children }: { children: ReactNode }) {
  */
 export function WorkSummary({ work, state = "done", now = 0 }: { work: Work; state?: WorkState; now?: number }) {
   const id = useId();
-  const live = state === "working" || state === "waiting";
+  const live = state === "working" || state === "waiting" || state === "unresponsive";
   const folds = useContext(Folds);
   const [own, setOwn] = useState<boolean | undefined>(undefined);
   const open = (folds ? folds.chosen.get(work.runId) : own) ?? live;
@@ -151,7 +152,7 @@ export function WorkSummary({ work, state = "done", now = 0 }: { work: Work; sta
           <span className="nums">{label}</span>
         </p>
       )}
-      {steps && open && <div id={id} className="mt-1.5 ml-1 border-l pl-3"><WorkSteps steps={work.steps} live={live} held={state === "waiting"} now={now} /></div>}
+      {steps && open && <div id={id} className="mt-1.5 ml-1 border-l pl-3"><WorkSteps steps={work.steps} live={live} held={state === "waiting"} unresponsive={state === "unresponsive"} now={now} /></div>}
     </div>
   );
 }

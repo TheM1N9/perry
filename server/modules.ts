@@ -34,6 +34,7 @@ import * as lib_browser from "../convex/lib/browser";
 import * as lib_budget from "../convex/lib/budget";
 import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
+import * as lib_credential_encryption from "../convex/lib/credential-encryption";
 import * as lib_devices from "../convex/lib/devices";
 import * as lib_embed from "../convex/lib/embed";
 import * as lib_engines from "../convex/lib/engines";
@@ -48,12 +49,14 @@ import * as lib_provenance from "../convex/lib/provenance";
 import * as lib_recall from "../convex/lib/recall";
 import * as lib_routing from "../convex/lib/routing";
 import * as lib_secrets from "../convex/lib/secrets";
+import * as lib_settle_traces from "../convex/lib/settle-traces";
 import * as lib_shortcuts from "../convex/lib/shortcuts";
 import * as lib_skills from "../convex/lib/skills";
 import * as lib_steps from "../convex/lib/steps";
 import * as lib_telegram from "../convex/lib/telegram";
 import * as lib_telegramFormat from "../convex/lib/telegramFormat";
 import * as lib_truncate from "../convex/lib/truncate";
+import * as lib_turn_health from "../convex/lib/turn-health";
 import * as lib_turnLimits from "../convex/lib/turnLimits";
 import * as lib_usage from "../convex/lib/usage";
 import * as lib_whatsappFormat from "../convex/lib/whatsappFormat";
@@ -123,6 +126,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/budget": lib_budget,
   "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
+  "lib/credential-encryption": lib_credential_encryption,
   "lib/devices": lib_devices,
   "lib/embed": lib_embed,
   "lib/engines": lib_engines,
@@ -137,12 +141,14 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/recall": lib_recall,
   "lib/routing": lib_routing,
   "lib/secrets": lib_secrets,
+  "lib/settle-traces": lib_settle_traces,
   "lib/shortcuts": lib_shortcuts,
   "lib/skills": lib_skills,
   "lib/steps": lib_steps,
   "lib/telegram": lib_telegram,
   "lib/telegramFormat": lib_telegramFormat,
   "lib/truncate": lib_truncate,
+  "lib/turn-health": lib_turn_health,
   "lib/turnLimits": lib_turnLimits,
   "lib/usage": lib_usage,
   "lib/whatsappFormat": lib_whatsappFormat,

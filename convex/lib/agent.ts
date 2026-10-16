@@ -47,6 +47,7 @@ export async function saveMessages(
     threadId: string;
     userId?: string;
     order?: "next";
+    runId?: Id<"runs">;
     messages: Array<{ role: "user" | "assistant" | "system" | "tool"; content: string }>;
     metadata?: Array<{ provider?: string; model?: string }>;
   },
@@ -55,6 +56,7 @@ export async function saveMessages(
     threadId: args.threadId,
     userId: args.userId,
     messages: args.messages,
+    ...(args.runId ? { runId: args.runId } : {}),
     metadata: args.metadata?.map((item) => ({ provider: item.provider, model: item.model })),
   });
 }

@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, internalQuery, mutation, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { createThread } from "./lib/agent";
 import { assertDashboardKey } from "./lib/auth";
 import { ENGINE_LABELS } from "./lib/engines";
@@ -10,7 +10,7 @@ import { LIMIT_HIT } from "./lib/usage";
 import { projectFrom } from "./projects";
 import { choose, routeOf, taskAsk } from "./routing";
 import { vPerryPick, vRoute } from "./schema";
-import { pausedAt } from "./pause";
+import { assertRunning, pausedAt } from "./pause";
 
 /**
  * Background tasks (issue #102): work Perry takes on and carries out by
@@ -48,10 +48,13 @@ const HANDOFF_TRIES = 3;
 
 /** The owner's words and the task's, for a turn of it. */
 function promptFor(task: Doc<"tasks">): string {
+  const updates = task.steering?.length
+    ? `\n\nAccepted updates from the owner (in order; keep completed work and revise the remaining plan):\n${task.steering.map((update) => `- ${update.text}`).join("\n")}`
+    : "";
   const rules =
     `You are working on this by yourself: the owner is not in this chat and does not read your replies. Keep its plan current with set_plan (task id ${task._id}), ` +
     "and end by calling finish_task: done with the result (what you made and where), blocked with one clear question only if you truly " +
-    "need the owner, or failed with why. Only finish_task reaches the owner; a reply alone leaves the task open. Do the work now; do not ask for permission to start.";
+    "need the owner, or failed with why. Only finish_task reaches the owner; a reply alone leaves the task open. Do the work now; do not ask for permission to start." + updates;
   if (task.answer) return `🧩 ${task.title}\n\nThe owner answered your question: "${task.answer}"\n\nCarry on with the task.\n\n${rules}`;
   if ((task.turns ?? 0) > 1) {
     return `🧩 ${task.title}\n\nYour last turn ended without calling finish_task, so the task is still open and the owner has seen nothing. ` +
@@ -269,6 +272,8 @@ export const afterTurn = internalMutation({
     const task = await ctx.db.get(args.id);
     if (!task) return null;
     let status = task.status;
+    // A failed prior turn cannot report the task failed while an accepted update still has work to do.
+    if (status === "running" && args.error && await ctx.runQuery(internal.tasks.awaitingSteering, { id: task._id })) return null;
     // Stopped by a plan's limit: back in line for an engine with room, or the reset.
     if (status === "running" && args.error && LIMIT_HIT.test(args.error) && await recoverTask(ctx, task)) return null;
     if (status === "running" && !args.error && task.recovery) await ctx.db.patch(task._id, { recovery: undefined });
@@ -421,6 +426,134 @@ export const resume = internalMutation({
 });
 
 // --- The Work page -------------------------------------------------------------------
+
+const vSteeringInput = { id: v.string(), text: v.string(), requestId: v.string() };
+const vDeliveryId = v.union(v.id("codexSteers"), v.id("codexTurns"));
+
+/** Receipt and delivery commit together. The existing codex queue owns delivery and acknowledgement. */
+async function steerTask(ctx: MutationCtx, args: { id: string; text: string; requestId: string }, source?: Id<"conversations">): Promise<Id<"codexSteers"> | Id<"codexTurns">> {
+  const id = ctx.db.normalizeId("tasks", args.id);
+  const task = id ? await ctx.db.get(id) : null;
+  if (!task) throw new Error("No task with that id.");
+  if (source) {
+    const chat = await ctx.db.get(source);
+    // A task cannot rewrite a sibling, nor can a guest/job use the owner's tool.
+    if (!chat || chat.contactId || chat.taskId || chat.jobId || (task.origin && task.origin !== source)) {
+      throw new Error("Send the update from the owner's chat that queued this task, or the Work page.");
+    }
+  }
+  const text = args.text.trim();
+  if (!text || text.length > 4000) throw new Error("Use between 1 and 4000 characters for the update.");
+  if (!/^[A-Za-z0-9_-]{8,100}$/.test(args.requestId)) throw new Error("Use a stable request id of 8–100 letters, numbers, underscores or hyphens.");
+  const previous = task.steering?.find((update) => update.requestId === args.requestId);
+  if (previous) {
+    if (previous.text !== text) throw new Error("That request id already belongs to a different update.");
+    return previous.deliveryId;
+  }
+  await assertRunning(ctx);
+  if (task.status !== "running" || !task.conversationId || !task.turns) throw new Error("Only a running background task can take an update. Answer blocked tasks instead.");
+  if ((task.steering?.length ?? 0) >= 40) throw new Error("This task has reached its 40-update limit.");
+  const chat = await ctx.db.get(task.conversationId);
+  if (!chat || chat.contactId || chat.taskId !== task._id) throw new Error("The task's own chat is unavailable.");
+  const running = await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", chat._id).eq("status", "running")).first();
+  const queued = running ? null : await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", chat._id).eq("status", "queued")).first();
+  const turn = running ?? queued;
+  if (!turn || turn.stopRequested || turn.kind === "compact" || turn.flush || turn.checkpoint || turn.guest || !turn.engine) {
+    throw new Error("The task is between working turns or stopping. Retry this update in a moment.");
+  }
+  const plan = task.plan.map((step) => `- [${step.status}] ${step.title}${step.note ? ` (${step.note})` : ""}`).join("\n");
+  const prompt = `${promptFor(task)}\n\nOriginal task brief:\n${task.prompt}\n\nCurrent plan:\n${plan || "(not set yet)"}\n\n` +
+    `New owner update for background task ${task._id}:\n${text}\n\n` +
+    "Continue this same task without restarting completed work. Update the remaining plan with set_plan.";
+  const runId = await ctx.runMutation(internal.runs.start, { conversationId: chat._id, prompt: text, ...(task.route ? { route: task.route } : {}) });
+  const deliveryId: Id<"codexSteers"> | Id<"codexTurns"> = await ctx.runMutation(internal.codex.enqueueTurn, {
+    conversationId: chat._id, runId, prompt, instructions: turn.instructions,
+    history: turn.history, engine: turn.engine, model: turn.requestedModel, effort: turn.requestedEffort,
+    access: chat.access ?? "supervised", policy: "steer",
+  });
+  const now = Date.now();
+  await ctx.db.patch(task._id, { steering: [...(task.steering ?? []), { requestId: args.requestId, text, deliveryId, createdAt: now }], updatedAt: now });
+  if (chat.channel === "web") await ctx.db.patch(chat._id, { pendingTurns: (chat.pendingTurns ?? 0) + 1 });
+  return deliveryId;
+}
+
+/** Only the owner chat that queued it can forward new instructions through a tool. */
+export const steer = internalMutation({
+  args: { ...vSteeringInput, conversationId: v.id("conversations") },
+  returns: vDeliveryId,
+  handler: async (ctx, args) => await steerTask(ctx, args, args.conversationId),
+});
+
+export const steerFromDashboard = mutation({
+  args: { key: v.string(), ...vSteeringInput },
+  returns: vDeliveryId,
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    return await steerTask(ctx, args);
+  },
+});
+
+/** Resolve only authoritative retryOf descendants of this delivery, using the existing run index. */
+async function latestDeliveryTurn(ctx: QueryCtx, first: Doc<"codexTurns">): Promise<Doc<"codexTurns">> {
+  const siblings = await ctx.db.query("codexTurns").withIndex("by_run", (q) => q.eq("runId", first.runId)).collect();
+  let current = first;
+  const seen = new Set<string>([first._id]);
+  for (;;) {
+    const next = siblings.find((turn) => turn.retryOf === current._id && turn.conversationId === first.conversationId && !seen.has(turn._id));
+    if (!next) return current;
+    seen.add(next._id);
+    current = next;
+  }
+}
+
+/** A prior turn cannot finish a task before its accepted follow-up gets a chance to run. */
+export const awaitingSteering = internalQuery({
+  args: { id: v.string(), turnId: v.optional(v.id("codexTurns")) },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const id = ctx.db.normalizeId("tasks", args.id);
+    const task = id ? await ctx.db.get(id) : null;
+    for (const update of task?.steering ?? []) {
+      const delivery = await ctx.db.get(update.deliveryId);
+      if (!delivery) continue;
+      if ("turnId" in delivery) {
+        if (delivery.status === "pending") return true;
+        if (delivery.status === "applied") continue;
+        const first = delivery.queuedTurnId ? await ctx.db.get(delivery.queuedTurnId) : null;
+        const turn = first ? await latestDeliveryTurn(ctx, first) : null;
+        if (turn && (turn.retrying || (turn._id !== args.turnId && (turn.status === "queued" || turn.status === "running")))) return true;
+      } else {
+        const turn = await latestDeliveryTurn(ctx, delivery);
+        if (turn.retrying || (turn._id !== args.turnId && (turn.status === "queued" || turn.status === "running"))) return true;
+      }
+    }
+    return false;
+  },
+});
+
+/** Derive acknowledgement from codex's delivery record instead of keeping another delivery state machine. */
+export const steeringFromDashboard = query({
+  args: { key: v.string(), id: v.id("tasks") },
+  handler: async (ctx, args) => {
+    assertDashboardKey(args.key);
+    const task = await ctx.db.get(args.id);
+    return await Promise.all((task?.steering ?? []).map(async (update) => {
+      const delivery = await ctx.db.get(update.deliveryId);
+      const steer = delivery && "turnId" in delivery ? delivery : null;
+      const first = steer ? (steer.queuedTurnId ? await ctx.db.get(steer.queuedTurnId) : null) : delivery;
+      const turn = first && !("turnId" in first) ? await latestDeliveryTurn(ctx, first) : null;
+      const state = steer?.status === "applied" ? "applied"
+        : steer?.status === "pending" ? "pending"
+          : turn && "stopped" in turn && turn.stopped ? "stopped"
+            : turn?.retrying ? "queued"
+              : turn?.status === "running" ? "running"
+              : turn?.status === "done" ? "finished"
+                : turn?.status === "error" ? "failed"
+                : turn?.status === "queued" ? "queued" : "missing";
+      return { ...update, state, ...(steer?.error ? { error: steer.error } : {}) };
+    }));
+  },
+});
 
 export const queueFromDashboard = mutation({
   args: { key: v.string(), title: v.string(), prompt: v.string(), goalId: v.optional(v.id("goals")) },

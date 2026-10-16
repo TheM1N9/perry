@@ -1,0 +1,257 @@
+{
+  "batch": 1,
+  "branch": "codex/batch-1-reliability",
+  "base": "e8d15e5c90139aefce6a32cdc8ad7968cac4cd0f",
+  "verifiedAt": "2026-10-17T01:12:14.8098508+05:30",
+  "readyForReview": true,
+  "suites": [
+    {
+      "scenarios": 19,
+      "issue": 251,
+      "passed": true,
+      "artifact": "encryption.json"
+    },
+    {
+      "checks": 51,
+      "issue": 281,
+      "passed": true,
+      "artifact": "steering.json"
+    },
+    {
+      "artifact": "health.json",
+      "issue": 243,
+      "passed": true,
+      "journeys": 22
+    },
+    {
+      "cases": 21,
+      "issue": 244,
+      "passed": true,
+      "artifact": "errors.json"
+    },
+    {
+      "checks": 51,
+      "issue": 245,
+      "passed": true,
+      "artifact": "traces.json"
+    }
+  ],
+  "typeChecks": {
+    "fullExitCode": 0,
+    "incremental": false,
+    "backendExitCode": 0
+  },
+  "productionBuild": {
+    "existingWarnings": [
+      "convex/pet.ts dynamic filesystem tracing",
+      "server/wake.ts dynamic filesystem tracing"
+    ],
+    "exitCode": 0,
+    "dotenvExcluded": true,
+    "staticPages": 36,
+    "syntheticHome": true
+  },
+  "browser": {
+    "horizontalOverflow": false,
+    "remoteFetchBlocked": true,
+    "retryControlsVisible": true,
+    "childProcessesBlocked": true,
+    "labeledInput": true,
+    "steeringAcceptedBeforeAck": true,
+    "heartbeatClearsWarning": true,
+    "partialPreserved": true,
+    "reproductionWrapperUI": true,
+    "schedulerStopped": true,
+    "steeringDeliveredAfterAck": true,
+    "passed": true,
+    "perTurnRecoveryDetails": true,
+    "backgroundStartupSkipped": true,
+    "testProcessesStopped": true,
+    "consoleWarningsOrErrors": 0,
+    "completedPlanPreserved": true,
+    "terminalTraceSettled": true,
+    "unresponsiveWarning": true,
+    "viewport": {
+      "width": 924,
+      "height": 764
+    },
+    "receiptCount": 1,
+    "screenshots": [
+      "warning.jpg",
+      "terminal.jpg",
+      "steering.jpg",
+      "steering-delivered.jpg"
+    ],
+    "testTabsClosed": true
+  },
+  "boundaries": {
+    "deployed": false,
+    "installedPerryUntouched": true,
+    "realCredentialsOrDatabasesUsed": false,
+    "mainMerged": false,
+    "additionalAgents": false,
+    "rootDependencyManifestsChanged": false,
+    "browserOrModelDownloads": false
+  },
+  "limits": [
+    "Fake engines/runners only; no full real CLI process verification.",
+    "No live user-data migration or external channel integration.",
+    "Mobile breakpoints not exercised.",
+    "Process crash between engine acceptance and acknowledgement retains inherent ambiguity; exactly-once model execution not claimed."
+  ],
+  "sourceFiles": [
+    {
+      "sha256": "ac1d0a86f45574f42d812d4477c20c15dbdaba5a2a719b897640712fda042b65",
+      "path": "components/dashboard/chat/chat-screen.tsx"
+    },
+    {
+      "sha256": "cd77b129ac74ec587f2b4db90700cb7238825f9e7ccc4ddc819125054a808552",
+      "path": "components/dashboard/chat/message.tsx"
+    },
+    {
+      "sha256": "cbd708c7146dee2a363111dc3148c44ea9020c84c47b9af0447a8dcadc1e454d",
+      "path": "components/dashboard/chat/turn-error.tsx"
+    },
+    {
+      "sha256": "4929525520400137fd5f4d4ae8ec6bcb579b58770735aed10740dc67ff448b69",
+      "path": "components/dashboard/chat/work.tsx"
+    },
+    {
+      "sha256": "f2360d7ad2f67fa01b5d0ec18e2b34f2d27460e6bf6b8e282ef8df9f2eea9350",
+      "path": "components/dashboard/screens/work.tsx"
+    },
+    {
+      "sha256": "c4f4ce3ef01465f832100da187f4d6d4c2b1da419bd0fc6b72101503cff7a1b5",
+      "path": "components/dashboard/task-steering/index.tsx"
+    },
+    {
+      "sha256": "98ea20a1926faabbc8800ef0688d106b6b9ca9c1a9c71e3729941bfbe699abcf",
+      "path": "convex/_generated/api.d.ts"
+    },
+    {
+      "sha256": "7047f5052b712caef222421694df974de3e0aa8e5405aae76d00b33745b02693",
+      "path": "convex/agentStore.ts"
+    },
+    {
+      "sha256": "55eba72c03096d8f0336a6c53e30090b717c2a3b7edcda586dabec26f52cfcf5",
+      "path": "convex/brain.ts"
+    },
+    {
+      "sha256": "737416482d72aee8ac4e02b35c4b7392351043ced8e5b28202424e9dfdf47bb0",
+      "path": "convex/codex.ts"
+    },
+    {
+      "sha256": "694056039a8488a9bd0d803cf1c2ab72c4d8af5c3bbc880f11dba3c895d37b49",
+      "path": "convex/crons.ts"
+    },
+    {
+      "sha256": "4bb18ddb5fc2c8af931de99666eeec9a015f34f5796386803616ca084abcb796",
+      "path": "convex/dashboard.ts"
+    },
+    {
+      "sha256": "b4b5072d8e7dee3a8d0c71016d8f5e77cafecbf06557ed5ae69302bfee4f6003",
+      "path": "convex/lib/agent.ts"
+    },
+    {
+      "sha256": "31fadcf4df6edfd08ed024177a80bb1bed02ec81ae7ba0a5cc28b1c0eb7adba2",
+      "path": "convex/lib/credential-encryption.ts"
+    },
+    {
+      "sha256": "4cf6683dfb1fcda9597bfdb82dd224316242c5492031dc1a1b8883c36e55e0f3",
+      "path": "convex/lib/settle-traces.ts"
+    },
+    {
+      "sha256": "0d69b812ce56db57d3ba5d8b72f12b207f60f917a9f8b0092ca8dbaabf161b98",
+      "path": "convex/lib/turn-health.ts"
+    },
+    {
+      "sha256": "64b4bee213cc66dd70702b8c59dbf4fc3ae9f868626dc46ec987c92998fa7926",
+      "path": "convex/mcp.ts"
+    },
+    {
+      "sha256": "41438f85e6cf2c12174051cb0d6eab196d7349e5390154be39da3ba7a57ecd4e",
+      "path": "convex/recovery.ts"
+    },
+    {
+      "sha256": "ebef9faaed0c3fda5ffa3eca7312bf1db184c88745e351060e40973a360d1192",
+      "path": "convex/routing.ts"
+    },
+    {
+      "sha256": "acc0d59c9ee411bede1d7d683fb38999886cd8e078411e9ab4ecd748f7eb9d59",
+      "path": "convex/runner.ts"
+    },
+    {
+      "sha256": "c3914b82b80efa33d08b96d658d51c0270c73de60c3f89e1ef77c1f8ad70300e",
+      "path": "convex/runs.ts"
+    },
+    {
+      "sha256": "f68daaab6fbd58edbf2a8aa586448477e37c100a2a4833dd6bdb3ca5a8c72599",
+      "path": "convex/schema.ts"
+    },
+    {
+      "sha256": "1c1c0be0ec9011047bdf59a0d7efcf446498f44571a51c718e532be460acedc7",
+      "path": "convex/secrets.ts"
+    },
+    {
+      "sha256": "95f632604634b96bc809ec00a7d2a8bf4b2cd7f4dd9bfd925f3fafbc8b0e8d33",
+      "path": "convex/tasks.ts"
+    },
+    {
+      "sha256": "9ede90aecf8bfb1f43d9f428943854db690eeac81a0a78351c5d94b06de209e8",
+      "path": "convex/tools.ts"
+    },
+    {
+      "sha256": "db261f61e59ead28faebf830e847cd3e2ed8078de1991f73e621a7597b17fa95",
+      "path": "convex/vault.ts"
+    },
+    {
+      "sha256": "635fc0ef0ef63f4023313d56f25fe35a0fe8255c8951f64b769dd2fc69b6363a",
+      "path": "convex/work.ts"
+    },
+    {
+      "sha256": "e190026927591ad7caf7e3f078aa3e366912fad6117c9f2f4e66d531c9e6a492",
+      "path": "lib/turn-errors.ts"
+    },
+    {
+      "sha256": "32ef5a347c13ba44bd46d5aa3f9d5d01f39aac86866c050c9869a35b99974c23",
+      "path": "runner/engine.ts"
+    },
+    {
+      "sha256": "f4bebeced5973d4dbeb8661922967c6348c77b55120dcbf92cea1432853fabc1",
+      "path": "runner/engines/acp.ts"
+    },
+    {
+      "sha256": "a76dbc9a0a71cdb2b57d3af2430c2ca83643e83a6e4510cc2e9eee21b4b26405",
+      "path": "runner/index.ts"
+    },
+    {
+      "sha256": "7c2337198f8148d954bcf94a0c92c178e3d17c0529c5e36e101ba9f470dcbb5d",
+      "path": "runner/task-steering.ts"
+    },
+    {
+      "sha256": "eab2a4ee95171a67887b66d4365a3056401b887de1b6ae2ec459a69a1c0edff0",
+      "path": "runner/trace.ts"
+    },
+    {
+      "sha256": "8bfd00d7738f64056dd8ec943d74ca5a893b83cf32a7d745e05929dff136c83e",
+      "path": "scripts/setup.ts"
+    },
+    {
+      "sha256": "7527856dc87bc1abfbcae613be5382ead7983939fc381ece2e141325875db6b4",
+      "path": "server/credential-encryption.ts"
+    },
+    {
+      "sha256": "869cb8ef22753dacfbf0a0106841662e11253a6c920529f003672cd19320f2fe",
+      "path": "server/db.ts"
+    },
+    {
+      "sha256": "3b0fe3581f9e661d92b8902f3e09b8e1a28eeabb38d313f0367346b6521d3029",
+      "path": "server/index.ts"
+    },
+    {
+      "sha256": "09a836401b58eb8d4cebea0d9181bebfac3e9f2735560edd120d6dca9494ba97",
+      "path": "server/modules.ts"
+    }
+  ],
+  "sourceHashEncoding": "UTF-8 text with LF newlines"
+}
