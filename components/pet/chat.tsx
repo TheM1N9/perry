@@ -77,6 +77,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   const key = useDashboardKey();
   const chats = useQuery(api.dashboard.listChats, { key });
   const chat = useQuery(api.dashboard.getChat, chatId ? { key, id: chatId } : "skip");
+  const streaming = useQuery(api.turnStreams.getChatStream, chatId ? { key, id: chatId } : "skip");
   const { results } = usePaginatedQuery(api.dashboard.getChatMessages, chatId ? { key, id: chatId } : "skip", { initialNumItems: 30 });
   const messages = useMemo(() => [...results].sort((a, b) => a.createdAt - b.createdAt), [results]);
   const createChat = useMutation(api.dashboard.createChat);
@@ -105,7 +106,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   useLayoutEffect(() => {
     const element = scroller.current;
     if (element) element.scrollTop = element.scrollHeight;
-  }, [chatId, messages.length, chat?.streaming, chat?.isRunning]);
+  }, [chatId, messages.length, streaming, chat?.isRunning]);
   useEffect(() => { input.current?.focus(); }, [chatId]);
 
   const picture = shot ? shot[shot.use] ?? null : null;
@@ -246,8 +247,8 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
             )}
           </div>
         ))}
-        {running && (chat?.streaming
-          ? <div className="opacity-90"><Markdown text={chat.streaming} /></div>
+        {running && (streaming
+          ? <div className="opacity-90"><Markdown text={streaming} /></div>
           : <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><span className="size-1.5 animate-pulse rounded-full bg-primary" />Working…</p>)}
         {chat?.lastError && !running && <p className="text-xs text-destructive">{chat.lastError}</p>}
       </div>

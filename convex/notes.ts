@@ -116,8 +116,9 @@ async function secretsOf(ctx: Reader, content: string): Promise<{ secrets?: stri
   return found.length ? { secrets: [...new Set(found.map((secret) => SECRET_NAMES[secret.kind]))] } : {};
 }
 
-/** Every note, newest first, without the pages of memory (pages.ts), which the Memory page lists. A few hundred at most, so read whole. */
-const allNotes = async (ctx: Reader) => (await ctx.db.query("notes").withIndex("by_updated").order("desc").collect()).filter((note) => !note.kind);
+/** Read only ordinary notes; Brain bodies stay outside this query and its live dependency. */
+const allNotes = async (ctx: Reader) => (await ctx.db.query("notes").withIndex("by_kind", (q) => q.eq("kind", undefined)).collect())
+  .sort((a, b) => b.updatedAt - a.updatedAt || b._creationTime - a._creationTime);
 
 async function getNote(ctx: Reader, raw: string): Promise<Note | null> {
   const id = ctx.db.normalizeId("notes", raw);

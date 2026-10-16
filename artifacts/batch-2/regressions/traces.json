@@ -1,0 +1,794 @@
+{
+  "scope": "Backend E2E: production mutation handlers and SQLite runtime; fake data, no network, no models, no UI",
+  "checks": {
+    "success:actually-open-before-end": true,
+    "success:old-start-does-not-reopen": true,
+    "success:server-settles-before-finalize": true,
+    "success:preserves-partial-output": true,
+    "success:preserves-terminal-siblings": true,
+    "success:late-events-and-repeated-settlement-immutable": true,
+    "success:truthful-parent-status": true,
+    "failure:actually-open-before-end": true,
+    "failure:old-start-does-not-reopen": true,
+    "failure:server-settles-before-finalize": true,
+    "failure:preserves-partial-output": true,
+    "failure:preserves-terminal-siblings": true,
+    "failure:late-events-and-repeated-settlement-immutable": true,
+    "failure:truthful-parent-status": true,
+    "cancelled:actually-open-before-end": true,
+    "cancelled:old-start-does-not-reopen": true,
+    "cancelled:server-settles-before-finalize": true,
+    "cancelled:preserves-partial-output": true,
+    "cancelled:preserves-terminal-siblings": true,
+    "cancelled:late-events-and-repeated-settlement-immutable": true,
+    "cancelled:truthful-parent-status": true,
+    "timeout:actually-open-before-end": true,
+    "timeout:old-start-does-not-reopen": true,
+    "timeout:server-settles-before-finalize": true,
+    "timeout:preserves-partial-output": true,
+    "timeout:preserves-terminal-siblings": true,
+    "timeout:late-events-and-repeated-settlement-immutable": true,
+    "timeout:truthful-parent-status": true,
+    "restart:actually-open-before-end": true,
+    "restart:old-start-does-not-reopen": true,
+    "restart:server-settles-before-finalize": true,
+    "restart:preserves-partial-output": true,
+    "restart:preserves-terminal-siblings": true,
+    "restart:late-events-and-repeated-settlement-immutable": true,
+    "restart:truthful-parent-status": true,
+    "recovery:abandoned-before-finalize": true,
+    "recovery:unrelated-run-untouched": true,
+    "recovery:repeat-keeps-first-end": true,
+    "orphan:run-and-spans-close": true,
+    "legacy:repair-original-end": true,
+    "retry:old-attempt-cannot-close-new-work": true,
+    "retry:refusal-closes-attempt-but-keeps-run-active": true,
+    "retry:safe-fallback-for-missing-output": true,
+    "retry:uncoded-limit-settles-without-guessing-retry": true,
+    "large-trace:all-spans-close": true,
+    "clock-skew:nonnegative-duration": true,
+    "transaction:expected-rollback-error": true,
+    "transaction:settlement-rolls-back": true,
+    "runner:late-events-ignored": true,
+    "runner:repeat-drain-does-not-change-time": true,
+    "runner:failed-report-retries-terminal-state": true
+  },
+  "pass": true,
+  "evidence": {
+    "success": {
+      "before": [
+        {
+          "_id": "z9x6amf4vdm8636ncympgg75qq",
+          "_creationTime": 1792183568041.001,
+          "runId": "7e1d14g6tp1my6jjzys85ercp3",
+          "callId": "declined",
+          "kind": "command",
+          "name": "fake declined command",
+          "status": "declined",
+          "startedAt": 1792183567038,
+          "durationMs": 0,
+          "endedAt": 1792183567038
+        },
+        {
+          "_id": "pm2j6sxz0qaf17e8ps59hnr9s2",
+          "_creationTime": 1792183568040.001,
+          "runId": "7e1d14g6tp1my6jjzys85ercp3",
+          "callId": "done",
+          "kind": "command",
+          "name": "fake completed command",
+          "status": "ok",
+          "startedAt": 1792183567038,
+          "durationMs": 10,
+          "output": "complete fixture output",
+          "endedAt": 1792183567048
+        },
+        {
+          "_id": "ck2cq6z0djdfxeawkyk8tn56ss",
+          "_creationTime": 1792183568041,
+          "runId": "7e1d14g6tp1my6jjzys85ercp3",
+          "callId": "failed",
+          "kind": "mcpToolCall",
+          "name": "fake failed call",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "durationMs": 20,
+          "output": "original failure",
+          "endedAt": 1792183567058
+        },
+        {
+          "_id": "nnfd3vnp33xvdek8qjfb047x1j",
+          "_creationTime": 1792183568040,
+          "runId": "7e1d14g6tp1my6jjzys85ercp3",
+          "callId": "open",
+          "kind": "command",
+          "name": "fake unfinished command",
+          "status": "running",
+          "startedAt": 1792183567038,
+          "output": "partial fixture output"
+        }
+      ],
+      "after": [
+        {
+          "_id": "z9x6amf4vdm8636ncympgg75qq",
+          "_creationTime": 1792183568041.001,
+          "runId": "7e1d14g6tp1my6jjzys85ercp3",
+          "callId": "declined",
+          "kind": "command",
+          "name": "fake declined command",
+          "status": "declined",
+          "startedAt": 1792183567038,
+          "durationMs": 0,
+          "endedAt": 1792183567038
+        },
+        {
+          "_id": "pm2j6sxz0qaf17e8ps59hnr9s2",
+          "_creationTime": 1792183568040.001,
+          "runId": "7e1d14g6tp1my6jjzys85ercp3",
+          "callId": "done",
+          "kind": "command",
+          "name": "fake completed command",
+          "status": "ok",
+          "startedAt": 1792183567038,
+          "durationMs": 10,
+          "output": "complete fixture output",
+          "endedAt": 1792183567048
+        },
+        {
+          "_id": "ck2cq6z0djdfxeawkyk8tn56ss",
+          "_creationTime": 1792183568041,
+          "runId": "7e1d14g6tp1my6jjzys85ercp3",
+          "callId": "failed",
+          "kind": "mcpToolCall",
+          "name": "fake failed call",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "durationMs": 20,
+          "output": "original failure",
+          "endedAt": 1792183567058
+        },
+        {
+          "_id": "nnfd3vnp33xvdek8qjfb047x1j",
+          "_creationTime": 1792183568040,
+          "runId": "7e1d14g6tp1my6jjzys85ercp3",
+          "callId": "open",
+          "kind": "command",
+          "name": "fake unfinished command",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "output": "partial fixture output",
+          "endedAt": 1792183568042,
+          "durationMs": 1004
+        }
+      ],
+      "run": {
+        "_id": "7e1d14g6tp1my6jjzys85ercp3",
+        "_creationTime": 1792183568038.002,
+        "conversationId": "s5ne6bdz9gpn3j6cvk6ejjrj54",
+        "prompt": "success",
+        "status": "ok",
+        "startedAt": 1792183567038,
+        "toolCalls": [
+          "shell",
+          "shell",
+          "fake failed call",
+          "shell"
+        ],
+        "model": "codex subscription",
+        "finishedAt": 1792183568042
+      }
+    },
+    "failure": {
+      "before": [
+        {
+          "_id": "zfjg0j829gwhrsvxmdhqbwjr2v",
+          "_creationTime": 1792183568048.003,
+          "runId": "94b37g4ewtzq5y4194a45054wg",
+          "callId": "declined",
+          "kind": "command",
+          "name": "fake declined command",
+          "status": "declined",
+          "startedAt": 1792183567038,
+          "durationMs": 0,
+          "endedAt": 1792183567038
+        },
+        {
+          "_id": "1wqzjjpabwrtvq5h105wc5q57x",
+          "_creationTime": 1792183568048.001,
+          "runId": "94b37g4ewtzq5y4194a45054wg",
+          "callId": "done",
+          "kind": "command",
+          "name": "fake completed command",
+          "status": "ok",
+          "startedAt": 1792183567038,
+          "durationMs": 10,
+          "output": "complete fixture output",
+          "endedAt": 1792183567048
+        },
+        {
+          "_id": "26m3yjve826x44gawq68p9hs0k",
+          "_creationTime": 1792183568048.002,
+          "runId": "94b37g4ewtzq5y4194a45054wg",
+          "callId": "failed",
+          "kind": "mcpToolCall",
+          "name": "fake failed call",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "durationMs": 20,
+          "output": "original failure",
+          "endedAt": 1792183567058
+        },
+        {
+          "_id": "4ftjsvjscgm2zv2dk3x0ebv8et",
+          "_creationTime": 1792183568048,
+          "runId": "94b37g4ewtzq5y4194a45054wg",
+          "callId": "open",
+          "kind": "command",
+          "name": "fake unfinished command",
+          "status": "running",
+          "startedAt": 1792183567038,
+          "output": "partial fixture output"
+        }
+      ],
+      "after": [
+        {
+          "_id": "zfjg0j829gwhrsvxmdhqbwjr2v",
+          "_creationTime": 1792183568048.003,
+          "runId": "94b37g4ewtzq5y4194a45054wg",
+          "callId": "declined",
+          "kind": "command",
+          "name": "fake declined command",
+          "status": "declined",
+          "startedAt": 1792183567038,
+          "durationMs": 0,
+          "endedAt": 1792183567038
+        },
+        {
+          "_id": "1wqzjjpabwrtvq5h105wc5q57x",
+          "_creationTime": 1792183568048.001,
+          "runId": "94b37g4ewtzq5y4194a45054wg",
+          "callId": "done",
+          "kind": "command",
+          "name": "fake completed command",
+          "status": "ok",
+          "startedAt": 1792183567038,
+          "durationMs": 10,
+          "output": "complete fixture output",
+          "endedAt": 1792183567048
+        },
+        {
+          "_id": "26m3yjve826x44gawq68p9hs0k",
+          "_creationTime": 1792183568048.002,
+          "runId": "94b37g4ewtzq5y4194a45054wg",
+          "callId": "failed",
+          "kind": "mcpToolCall",
+          "name": "fake failed call",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "durationMs": 20,
+          "output": "original failure",
+          "endedAt": 1792183567058
+        },
+        {
+          "_id": "4ftjsvjscgm2zv2dk3x0ebv8et",
+          "_creationTime": 1792183568048,
+          "runId": "94b37g4ewtzq5y4194a45054wg",
+          "callId": "open",
+          "kind": "command",
+          "name": "fake unfinished command",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "output": "partial fixture output",
+          "endedAt": 1792183568049,
+          "durationMs": 1011
+        }
+      ],
+      "run": {
+        "_id": "94b37g4ewtzq5y4194a45054wg",
+        "_creationTime": 1792183568047.001,
+        "conversationId": "2k6d1whe3jke4mjwzwgx1ra1jx",
+        "prompt": "failure",
+        "status": "error",
+        "startedAt": 1792183567038,
+        "toolCalls": [
+          "shell",
+          "shell",
+          "fake failed call",
+          "shell"
+        ],
+        "model": "codex subscription",
+        "error": "Synthetic engine failure.",
+        "errorCode": "engine_failed",
+        "finishedAt": 1792183568049
+      }
+    },
+    "cancelled": {
+      "before": [
+        {
+          "_id": "mcepnfqa3077nzvnn3ct5fyh7c",
+          "_creationTime": 1792183568053.003,
+          "runId": "53286bxdas0exx4b11mx9wedgg",
+          "callId": "declined",
+          "kind": "command",
+          "name": "fake declined command",
+          "status": "declined",
+          "startedAt": 1792183567038,
+          "durationMs": 0,
+          "endedAt": 1792183567038
+        },
+        {
+          "_id": "75385xf9pewxy115wwym3zhdan",
+          "_creationTime": 1792183568053.001,
+          "runId": "53286bxdas0exx4b11mx9wedgg",
+          "callId": "done",
+          "kind": "command",
+          "name": "fake completed command",
+          "status": "ok",
+          "startedAt": 1792183567038,
+          "durationMs": 10,
+          "output": "complete fixture output",
+          "endedAt": 1792183567048
+        },
+        {
+          "_id": "2jsfv2e8xy9r93w8cdkdzc9wk2",
+          "_creationTime": 1792183568053.002,
+          "runId": "53286bxdas0exx4b11mx9wedgg",
+          "callId": "failed",
+          "kind": "mcpToolCall",
+          "name": "fake failed call",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "durationMs": 20,
+          "output": "original failure",
+          "endedAt": 1792183567058
+        },
+        {
+          "_id": "yeq3bj6ye2rs8yyr03mmec9t3b",
+          "_creationTime": 1792183568053,
+          "runId": "53286bxdas0exx4b11mx9wedgg",
+          "callId": "open",
+          "kind": "command",
+          "name": "fake unfinished command",
+          "status": "running",
+          "startedAt": 1792183567038,
+          "output": "partial fixture output"
+        }
+      ],
+      "after": [
+        {
+          "_id": "mcepnfqa3077nzvnn3ct5fyh7c",
+          "_creationTime": 1792183568053.003,
+          "runId": "53286bxdas0exx4b11mx9wedgg",
+          "callId": "declined",
+          "kind": "command",
+          "name": "fake declined command",
+          "status": "declined",
+          "startedAt": 1792183567038,
+          "durationMs": 0,
+          "endedAt": 1792183567038
+        },
+        {
+          "_id": "75385xf9pewxy115wwym3zhdan",
+          "_creationTime": 1792183568053.001,
+          "runId": "53286bxdas0exx4b11mx9wedgg",
+          "callId": "done",
+          "kind": "command",
+          "name": "fake completed command",
+          "status": "ok",
+          "startedAt": 1792183567038,
+          "durationMs": 10,
+          "output": "complete fixture output",
+          "endedAt": 1792183567048
+        },
+        {
+          "_id": "2jsfv2e8xy9r93w8cdkdzc9wk2",
+          "_creationTime": 1792183568053.002,
+          "runId": "53286bxdas0exx4b11mx9wedgg",
+          "callId": "failed",
+          "kind": "mcpToolCall",
+          "name": "fake failed call",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "durationMs": 20,
+          "output": "original failure",
+          "endedAt": 1792183567058
+        },
+        {
+          "_id": "yeq3bj6ye2rs8yyr03mmec9t3b",
+          "_creationTime": 1792183568053,
+          "runId": "53286bxdas0exx4b11mx9wedgg",
+          "callId": "open",
+          "kind": "command",
+          "name": "fake unfinished command",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "output": "partial fixture output",
+          "endedAt": 1792183568054,
+          "durationMs": 1016
+        }
+      ],
+      "run": {
+        "_id": "53286bxdas0exx4b11mx9wedgg",
+        "_creationTime": 1792183568052.001,
+        "conversationId": "8y73j4h0vyvh5qtnfgtr8cqx0s",
+        "prompt": "cancelled",
+        "status": "error",
+        "startedAt": 1792183567038,
+        "toolCalls": [
+          "shell",
+          "shell",
+          "fake failed call",
+          "shell"
+        ],
+        "model": "codex subscription",
+        "error": "Stopped before it finished.",
+        "finishedAt": 1792183568054
+      }
+    },
+    "timeout": {
+      "before": [
+        {
+          "_id": "ahezsw8kb5mg7abbhe7em7pg58",
+          "_creationTime": 1792183568057.003,
+          "runId": "3m5cxb04dqk1dkxvc6w25nd3xe",
+          "callId": "declined",
+          "kind": "command",
+          "name": "fake declined command",
+          "status": "declined",
+          "startedAt": 1792183567038,
+          "durationMs": 0,
+          "endedAt": 1792183567038
+        },
+        {
+          "_id": "j3kj3e10bkqve5x5xqsazdhxcx",
+          "_creationTime": 1792183568057.001,
+          "runId": "3m5cxb04dqk1dkxvc6w25nd3xe",
+          "callId": "done",
+          "kind": "command",
+          "name": "fake completed command",
+          "status": "ok",
+          "startedAt": 1792183567038,
+          "durationMs": 10,
+          "output": "complete fixture output",
+          "endedAt": 1792183567048
+        },
+        {
+          "_id": "5fzxqf1j1snjx6630mhfpb9e71",
+          "_creationTime": 1792183568057.002,
+          "runId": "3m5cxb04dqk1dkxvc6w25nd3xe",
+          "callId": "failed",
+          "kind": "mcpToolCall",
+          "name": "fake failed call",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "durationMs": 20,
+          "output": "original failure",
+          "endedAt": 1792183567058
+        },
+        {
+          "_id": "dv11h290zv42p5a623h1h5kgz0",
+          "_creationTime": 1792183568057,
+          "runId": "3m5cxb04dqk1dkxvc6w25nd3xe",
+          "callId": "open",
+          "kind": "command",
+          "name": "fake unfinished command",
+          "status": "running",
+          "startedAt": 1792183567038,
+          "output": "partial fixture output"
+        }
+      ],
+      "after": [
+        {
+          "_id": "ahezsw8kb5mg7abbhe7em7pg58",
+          "_creationTime": 1792183568057.003,
+          "runId": "3m5cxb04dqk1dkxvc6w25nd3xe",
+          "callId": "declined",
+          "kind": "command",
+          "name": "fake declined command",
+          "status": "declined",
+          "startedAt": 1792183567038,
+          "durationMs": 0,
+          "endedAt": 1792183567038
+        },
+        {
+          "_id": "j3kj3e10bkqve5x5xqsazdhxcx",
+          "_creationTime": 1792183568057.001,
+          "runId": "3m5cxb04dqk1dkxvc6w25nd3xe",
+          "callId": "done",
+          "kind": "command",
+          "name": "fake completed command",
+          "status": "ok",
+          "startedAt": 1792183567038,
+          "durationMs": 10,
+          "output": "complete fixture output",
+          "endedAt": 1792183567048
+        },
+        {
+          "_id": "5fzxqf1j1snjx6630mhfpb9e71",
+          "_creationTime": 1792183568057.002,
+          "runId": "3m5cxb04dqk1dkxvc6w25nd3xe",
+          "callId": "failed",
+          "kind": "mcpToolCall",
+          "name": "fake failed call",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "durationMs": 20,
+          "output": "original failure",
+          "endedAt": 1792183567058
+        },
+        {
+          "_id": "dv11h290zv42p5a623h1h5kgz0",
+          "_creationTime": 1792183568057,
+          "runId": "3m5cxb04dqk1dkxvc6w25nd3xe",
+          "callId": "open",
+          "kind": "command",
+          "name": "fake unfinished command",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "output": "partial fixture output",
+          "endedAt": 1792183568058,
+          "durationMs": 1020
+        }
+      ],
+      "run": {
+        "_id": "3m5cxb04dqk1dkxvc6w25nd3xe",
+        "_creationTime": 1792183568056.001,
+        "conversationId": "hxvmwhy211r3mpfngrjgpy6xs2",
+        "prompt": "timeout",
+        "status": "error",
+        "startedAt": 1792183567038,
+        "toolCalls": [
+          "shell",
+          "shell",
+          "fake failed call",
+          "shell"
+        ],
+        "model": "codex subscription",
+        "error": "Synthetic watchdog timed out.",
+        "errorCode": "max_time",
+        "finishedAt": 1792183568058
+      }
+    },
+    "restart": {
+      "before": [
+        {
+          "_id": "1d2y32qy87swkxcr8qssvhnrtq",
+          "_creationTime": 1792183568060.0059,
+          "runId": "05jhh7prfkkg0nyht6gf86fjrj",
+          "callId": "declined",
+          "kind": "command",
+          "name": "fake declined command",
+          "status": "declined",
+          "startedAt": 1792183567038,
+          "durationMs": 0,
+          "endedAt": 1792183567038
+        },
+        {
+          "_id": "2534yykzpsz01yc2z34ddh72yn",
+          "_creationTime": 1792183568060.004,
+          "runId": "05jhh7prfkkg0nyht6gf86fjrj",
+          "callId": "done",
+          "kind": "command",
+          "name": "fake completed command",
+          "status": "ok",
+          "startedAt": 1792183567038,
+          "durationMs": 10,
+          "output": "complete fixture output",
+          "endedAt": 1792183567048
+        },
+        {
+          "_id": "em6ksbd7t89edcavcabykpz7xw",
+          "_creationTime": 1792183568060.005,
+          "runId": "05jhh7prfkkg0nyht6gf86fjrj",
+          "callId": "failed",
+          "kind": "mcpToolCall",
+          "name": "fake failed call",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "durationMs": 20,
+          "output": "original failure",
+          "endedAt": 1792183567058
+        },
+        {
+          "_id": "edyw0wsb0m804gdfajmngkqzbr",
+          "_creationTime": 1792183568060.003,
+          "runId": "05jhh7prfkkg0nyht6gf86fjrj",
+          "callId": "open",
+          "kind": "command",
+          "name": "fake unfinished command",
+          "status": "running",
+          "startedAt": 1792183567038,
+          "output": "partial fixture output"
+        }
+      ],
+      "after": [
+        {
+          "_id": "1d2y32qy87swkxcr8qssvhnrtq",
+          "_creationTime": 1792183568060.0059,
+          "runId": "05jhh7prfkkg0nyht6gf86fjrj",
+          "callId": "declined",
+          "kind": "command",
+          "name": "fake declined command",
+          "status": "declined",
+          "startedAt": 1792183567038,
+          "durationMs": 0,
+          "endedAt": 1792183567038
+        },
+        {
+          "_id": "2534yykzpsz01yc2z34ddh72yn",
+          "_creationTime": 1792183568060.004,
+          "runId": "05jhh7prfkkg0nyht6gf86fjrj",
+          "callId": "done",
+          "kind": "command",
+          "name": "fake completed command",
+          "status": "ok",
+          "startedAt": 1792183567038,
+          "durationMs": 10,
+          "output": "complete fixture output",
+          "endedAt": 1792183567048
+        },
+        {
+          "_id": "em6ksbd7t89edcavcabykpz7xw",
+          "_creationTime": 1792183568060.005,
+          "runId": "05jhh7prfkkg0nyht6gf86fjrj",
+          "callId": "failed",
+          "kind": "mcpToolCall",
+          "name": "fake failed call",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "durationMs": 20,
+          "output": "original failure",
+          "endedAt": 1792183567058
+        },
+        {
+          "_id": "edyw0wsb0m804gdfajmngkqzbr",
+          "_creationTime": 1792183568060.003,
+          "runId": "05jhh7prfkkg0nyht6gf86fjrj",
+          "callId": "open",
+          "kind": "command",
+          "name": "fake unfinished command",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "output": "partial fixture output",
+          "endedAt": 1792183568061,
+          "durationMs": 1023
+        }
+      ],
+      "run": {
+        "_id": "05jhh7prfkkg0nyht6gf86fjrj",
+        "_creationTime": 1792183568060.001,
+        "conversationId": "gdyyrqpqqjjst3fqqts94gqxjm",
+        "prompt": "restart",
+        "status": "error",
+        "startedAt": 1792183567038,
+        "toolCalls": [
+          "shell",
+          "shell",
+          "fake failed call",
+          "shell"
+        ],
+        "model": "codex subscription",
+        "error": "Perry restarted during this reply, so it ended early.",
+        "errorCode": "restarted",
+        "finishedAt": 1792183568061
+      }
+    },
+    "recovery": {
+      "swept": {
+        "refinalized": 0,
+        "abandoned": 1,
+        "requeued": 0,
+        "released": 0
+      },
+      "spans": [
+        {
+          "_id": "pwfx0txvcec9xpc86z6fzhg0ve",
+          "_creationTime": 1792183568064.002,
+          "runId": "69skj7axaajadwmhdyrs49tape",
+          "callId": "declined",
+          "kind": "command",
+          "name": "fake declined command",
+          "status": "declined",
+          "startedAt": 1792179968038,
+          "durationMs": 0,
+          "endedAt": 1792179968038
+        },
+        {
+          "_id": "pyktqhhf2zzwjw6p5hx01zt5ks",
+          "_creationTime": 1792183568064,
+          "runId": "69skj7axaajadwmhdyrs49tape",
+          "callId": "done",
+          "kind": "command",
+          "name": "fake completed command",
+          "status": "ok",
+          "startedAt": 1792179968038,
+          "durationMs": 10,
+          "output": "complete fixture output",
+          "endedAt": 1792179968048
+        },
+        {
+          "_id": "2d64ksdkj456jccafky8z7pm0j",
+          "_creationTime": 1792183568064.001,
+          "runId": "69skj7axaajadwmhdyrs49tape",
+          "callId": "failed",
+          "kind": "mcpToolCall",
+          "name": "fake failed call",
+          "status": "error",
+          "startedAt": 1792179968038,
+          "durationMs": 20,
+          "output": "original failure",
+          "endedAt": 1792179968058
+        },
+        {
+          "_id": "e1cdd9scryj0h8kswwz17ets1k",
+          "_creationTime": 1792183568063.003,
+          "runId": "69skj7axaajadwmhdyrs49tape",
+          "callId": "open",
+          "kind": "command",
+          "name": "fake unfinished command",
+          "status": "error",
+          "startedAt": 1792179968038,
+          "output": "partial fixture output",
+          "endedAt": 1792187168038,
+          "durationMs": 7200000
+        }
+      ]
+    },
+    "refusal": {
+      "turn": {
+        "_id": "x4zw53xwnj3gg2dtfypgwv6ptr",
+        "_creationTime": 1792183568071.0068,
+        "runnerId": "c83jk8ze23xjxb40h8xhb84twb",
+        "conversationId": "pb2x3zns8ptf2hf6h4dd9k7bmw",
+        "runId": "gns350ndqn4t32x007mqyff53r",
+        "engine": "codex",
+        "prompt": "retryable plan limit",
+        "instructions": "synthetic",
+        "status": "error",
+        "createdAt": 1792183567038,
+        "startedAt": 1792183567038,
+        "error": "Usage limit reached",
+        "errorCode": "limit",
+        "finishedAt": 1792183568072,
+        "retrying": true
+      },
+      "run": {
+        "_id": "gns350ndqn4t32x007mqyff53r",
+        "_creationTime": 1792183568071.0059,
+        "conversationId": "pb2x3zns8ptf2hf6h4dd9k7bmw",
+        "prompt": "retryable plan limit",
+        "status": "running",
+        "startedAt": 1792183567038,
+        "toolCalls": []
+      },
+      "spans": [
+        {
+          "_id": "e1f8g4ets9xkzs01q7ctpfwkwc",
+          "_creationTime": 1792183568072,
+          "runId": "gns350ndqn4t32x007mqyff53r",
+          "callId": "reasoning",
+          "kind": "reasoning",
+          "name": "fake reasoning",
+          "status": "error",
+          "startedAt": 1792183567038,
+          "endedAt": 1792183568072,
+          "durationMs": 1034,
+          "output": "The turn failed before this step finished."
+        }
+      ]
+    },
+    "runner": {
+      "spans": [
+        {
+          "kind": "command",
+          "name": "fake local",
+          "status": "error",
+          "output": "The turn ended before this finished.",
+          "callId": "local",
+          "startedAt": 1792183568038,
+          "endedAt": 1792183568048,
+          "durationMs": 10
+        }
+      ]
+    }
+  }
+}

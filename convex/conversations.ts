@@ -188,8 +188,11 @@ export const OUTBOX_TTL_MS = 30 * 60_000;
 /** Take a sent message out of the chat's outbox, now that a turn or the history has it. */
 export async function takeFromOutbox(ctx: MutationCtx, chat: Doc<"conversations"> | null, text: string) {
   if (!chat?.outbox?.length) return;
-  const at = chat.outbox.findIndex((entry) => entry.text === text);
-  const fresh = chat.outbox.filter((entry, index) => index !== at && entry.at > Date.now() - OUTBOX_TTL_MS);
+  // Match the same fresh reservation admission counted, even when an older
+  // identical prompt expired before this handoff. Use one cutoff for both.
+  const cutoff = Date.now() - OUTBOX_TTL_MS;
+  const at = chat.outbox.findIndex((entry) => entry.text === text && entry.at > cutoff);
+  const fresh = chat.outbox.filter((entry, index) => index !== at && entry.at > cutoff);
   if (fresh.length !== chat.outbox.length) await ctx.db.patch(chat._id, { outbox: fresh.length ? fresh : undefined });
 }
 

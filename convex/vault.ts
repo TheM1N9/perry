@@ -1,3 +1,4 @@
+import { scrubStream } from "./lib/turn-stream";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
@@ -153,6 +154,7 @@ async function hideInChat(ctx: MutationCtx, conversationId: Id<"conversations">,
   // The owner's message is saved to the chat when its turn ends, from the turn itself.
   const turns = await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", conversationId)).collect();
   for (const turn of turns) {
+    if (await scrubStream(ctx, turn._id, scrub)) changed++;
     const patch: Partial<Pick<Doc<"codexTurns">, "prompt" | "history" | "partial" | "response">> = {};
     for (const field of ["prompt", "history", "partial", "response"] as const) {
       const text = turn[field];

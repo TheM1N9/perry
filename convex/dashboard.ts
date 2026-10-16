@@ -1,3 +1,4 @@
+import { streamState } from "./lib/turn-stream";
 import { turnErrorCode, type TurnFailure, type TurnErrorCode } from "../lib/turn-errors";
 import { hide, savedValues } from "./vault";
 import { createThread, deleteMessages, deleteThread, listMessages, saveMessages, searchMessages } from "./lib/agent";
@@ -24,6 +25,7 @@ import { APPROVAL_TTL_MS, accessChanged } from "./approvals";
 import { QUIET } from "./jobs";
 import type { VaultEntry } from "./vault";
 import { OUTBOX_TTL_MS } from "./conversations";
+import { assertQueueRoom } from "./queue";
 import { beingNamed, cancelTitle, requestTitle } from "./titles";
 import { watchProblem } from "./work";
 import { describeStep, STARTING, summarize, WAITING, WRITING, type Step } from "./lib/activity";
@@ -59,6 +61,7 @@ export type ChatMessage = {
   attachments: Array<{ id?: Id<"chatAttachments">; url: string; fileName: string; contentType: string; removed?: true }>;
   /** Sent, and not yet in the history: the history only gets it with its reply. */
   pending?: boolean;
+  queued?: { id: Id<"codexTurns">; conversationId: Id<"conversations"> };
   /** The memories a reply said it relied on (codex.finishTurn). */
   memories?: Array<{ id: string; text: string }>;
 };
@@ -399,7 +402,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; unresponsive?: boolean; lastAliveAt?: number; streaming?: string; lastError?: string; lastErrorCode?: TurnErrorCode; lastErrorRunId?: Id<"runs">; contact?: { name: string; group: boolean } }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; unresponsive?: boolean; lastAliveAt?: number; lastError?: string; lastErrorCode?: TurnErrorCode; lastErrorRunId?: Id<"runs">; contact?: { name: string; group: boolean } }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
@@ -430,8 +433,6 @@ export const getChat = query({
       title: titleOf(conversation),
       isRunning,
       ...(health ? { unresponsive: health.unresponsive, lastAliveAt: health.lastAliveAt } : {}),
-      // The flush before /reset works quietly.
-      streaming: running?.flush || running?.checkpoint ? undefined : running?.partial,
       lastError: latestRun?.status === "error" && latestRun.error ? hide(latestRun.error, await savedValues(ctx)) : undefined,
       lastErrorCode: latestRun?.status === "error" ? turnErrorCode(latestRun) : undefined,
       lastErrorRunId: latestRun?.status === "error" ? latestRun._id : undefined,
@@ -490,7 +491,7 @@ export const getActivity = query({
       if (health?.unresponsive) step = { label: "Computer unresponsive", pose: "waiting", since: health.lastAliveAt, live: false };
       else if (asking) step = { ...WAITING, since: asking.createdAt, live: true };
       else if (live) step = { ...describeStep(live), since: live.startedAt, live: true };
-      else step = { ...(turn?.partial ? WRITING : STARTING), since: ended, live: false };
+      else step = { ...(turn && (turn.partial || (await streamState(ctx, turn._id))?.length) ? WRITING : STARTING), since: ended, live: false };
       if (last && last.status !== "running" && last.kind !== "reasoning") recent = { ...describeStep(last), since: last.startedAt, endedAt: ended };
     }
     const chat = args.id ? null : await ctx.db.get(run.conversationId);
@@ -667,13 +668,14 @@ export const getChatMessages = query({
         createdAt: entry.at,
         attachments: marker?.[1] ? attachmentMap.get(marker[1].trim()) ?? [] : [],
         pending: true,
+        ...(entry.queued ? { queued: entry.queued } : {}),
       }];
     });
     return { ...page, page: [...shown.reverse(), ...history] };
   },
 });
 
-type InFlight = { prompt: string; text: string; at: number };
+type InFlight = { prompt: string; text: string; at: number; queued?: { id: Id<"codexTurns">; conversationId: Id<"conversations"> } };
 
 /** The live turns' steers that joined them, and those still waiting to. */
 async function steersOf(ctx: QueryCtx, turns: Doc<"codexTurns">[]): Promise<Doc<"codexSteers">[]> {
@@ -699,7 +701,7 @@ function inFlight(conversation: Doc<"conversations">, turns: Doc<"codexTurns">[]
     ...turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush && !turn.checkpoint && !turn.hidden
       // A finished turn is saved a moment later; one left unsaved and unfinalized for long is not coming.
       && (turn.status === "queued" || turn.status === "running" || (turn.finalizedAt === undefined && turn.createdAt > Date.now() - OUTBOX_TTL_MS)))
-      .map((turn) => entry(turn.prompt, turn.createdAt)),
+      .map((turn) => ({ ...entry(turn.prompt, turn.createdAt), ...(turn.status === "queued" ? { queued: { id: turn._id, conversationId: turn.conversationId } } : {}) })),
     ...steers.map((steer) => entry(steer.prompt, steer.createdAt)),
   ];
   return items.sort((a, b) => a.at - b.at);
@@ -795,6 +797,9 @@ export const sendChat = mutation({
     if (chat.contactId) throw new Error("This is Perry's chat with someone else. To have Perry tell them something, ask in your own chat.");
     // Paused, the message is not sent; it stays in the box for when he is back (pause.ts).
     await assertRunning(ctx);
+    // The outbox reserves capacity before asynchronous preparation. Admission
+    // and its durable handoff replace one slot rather than counting it twice.
+    await assertQueueRoom(ctx, chat);
     const messageKey = args.messageKey?.trim() || crypto.randomUUID();
     const attachments = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
     if (attachments.some((attachment) => !attachment || attachment.conversationId !== args.id || attachment.messageKey !== messageKey)) {
@@ -1851,7 +1856,7 @@ export const disconnectAccount = action({
 
 /** Returns a URL for the owner to open and finish OAuth in their browser. */
 export const connectToolkit = action({
-  args: { key: vKey, toolkit: v.string(), callbackUrl: v.optional(v.string()) },
+  args: { key: vKey, toolkit: v.string(), callbackUrl: v.optional(v.string()), accountId: v.optional(v.string()) },
   handler: async (
     ctx,
     args,
@@ -1860,6 +1865,7 @@ export const connectToolkit = action({
     return await ctx.runAction(internal.composio.authorize, {
       toolkit: args.toolkit,
       callbackUrl: args.callbackUrl,
+      accountId: args.accountId,
     });
   },
 });

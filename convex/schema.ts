@@ -1298,6 +1298,14 @@ export default defineSchema({
     createdAt: v.number(),
   }),
 
+  /** Local explicit auth failures that the provider account status has not caught up with. */
+  connectorHealth: defineTable({
+    accountId: v.string(),
+    toolkit: v.string(),
+    observedAt: v.number(),
+    authExpiredAt: v.optional(v.number()),
+  }).index("by_account", ["accountId", "toolkit"]),
+
   /**
    * Which account a Composio connection is signed in to (an email, a handle),
    * asked of the service once through a read-only "who am I" action, since
@@ -1538,6 +1546,24 @@ export default defineSchema({
     .index("by_run", ["runId"])
     .index("by_conversation_status", ["conversationId", "status"]),
 
+  /** Bounded stream bookkeeping; reply text is stored as append-only deltas. */
+  turnStreams: defineTable({
+    turnId: v.id("codexTurns"),
+    /** Source UTF-16 length, unaffected by display redaction. */
+    length: v.number(),
+    /** Last reset request ID, for retries after commit/redaction. */
+    resetKey: v.optional(v.string()),
+    telegramMessageId: v.optional(v.number()),
+    telegramEditedAt: v.optional(v.number()),
+    telegramEditing: v.optional(v.boolean()),
+  }).index("by_turn", ["turnId"]),
+
+  turnStreamChunks: defineTable({
+    turnId: v.id("codexTurns"),
+    offset: v.number(),
+    text: v.string(),
+  }).index("by_turn_offset", ["turnId", "offset"]),
+
   /** A call on the linked WhatsApp, from its first ring to its end (whatsapp.callEvent). */
   calls: defineTable({
     /** WhatsApp's id for the call. */
@@ -1589,6 +1615,8 @@ export default defineSchema({
     appliedAt: v.optional(v.number()),
   })
     .index("by_turn_status", ["turnId", "status"])
+    .index("by_conversation_status", ["conversationId", "status"])
+    .index("by_run", ["runId"])
     .index("by_status", ["status"]),
 
   /**

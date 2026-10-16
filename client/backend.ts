@@ -1,3 +1,4 @@
+import { readsChanged } from "../lib/notes-read-dependencies";
 import { getFunctionName, type FunctionArgs, type FunctionReference, type FunctionReturnType } from "convex/server";
 
 /**
@@ -188,7 +189,7 @@ export class BackendClient {
   refresh(tables?: string[]): Promise<unknown> {
     const wanted = tables ? new Set(tables) : null;
     const due = [...this.subscriptions.values()].filter((sub) =>
-      sub.listeners.size > 0 && (!wanted || sub.reads === null || sub.reads.some((table) => wanted.has(table))));
+      sub.listeners.size > 0 && (!wanted || sub.reads === null || readsChanged(sub.reads, wanted)));
     return Promise.all(due.map((sub) => this.fetch(sub)));
   }
 

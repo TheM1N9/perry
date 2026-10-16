@@ -1,3 +1,4 @@
+import { streamBody } from "./lib/turn-stream";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
@@ -97,7 +98,7 @@ export const sweep = internalMutation({
         await ctx.db.patch(turn._id, {
           status: "error",
           errorCode: "offline",
-          response: turn.response ?? turn.partial,
+          response: turn.response ?? await streamBody(ctx, turn),
           partial: undefined,
           error: turn.status === "queued"
             ? "The runner was offline, so this message was not answered. Start the runner and send it again."
