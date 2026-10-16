@@ -216,7 +216,9 @@ export class BackendClient {
       this.prefetching = true;
       const stop = this.subscribe("dashboard:getChatMessages", args, () => {});
       const sub = this.subscriptions.get(keyOf("dashboard:getChatMessages", args));
-      void sub?.inFlight?.finally(() => { stop(); this.prefetching = false; });
+      const done = () => { stop(); this.prefetching = false; };
+      if (sub?.inFlight) void sub.inFlight.finally(done);
+      else done();
     }, 140);
     this.hoverTimer = timer;
     return () => clearTimeout(timer);

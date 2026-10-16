@@ -103,7 +103,7 @@
   function setMode(mode) { if (!["silence", "voice"].includes(mode)) throw Error("Expected silence or voice"); state.mode = mode; log("mode", { mode }); refresh(); }
   function refresh() {
     if (status) { const data = snapshot(); delete data.events; status.textContent = JSON.stringify(data, null, 2); }
-    const target = document.querySelector('[role="status"][aria-label="Listening"] [aria-hidden]');
+    const target = document.querySelector('[role="status"][aria-label="Listening"] > div[aria-hidden]');
     if (target !== observed) { observer?.disconnect(); observed = target; if (target) { observer = new MutationObserver(records => { state.waveformMutations += records.length; }); observer.observe(target, { subtree: true, attributes: true, attributeFilter: ["style"] }); } }
   }
   function mount() {

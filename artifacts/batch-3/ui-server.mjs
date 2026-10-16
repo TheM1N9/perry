@@ -51,7 +51,7 @@ const [{ Runtime }, { default: schema }, { modules }, { initializeCredentialEncr
   import("../../server/modules.ts"), import("../../server/credential-encryption.ts"),
 ]);
 const buildId = process.env.PERRY_UI_BUILD_ID;
-const sql = new DatabaseSync(process.env.PERRY_DB);
+const sql = new DatabaseSync(":memory:");
 initializeCredentialEncryption(sql, home);
 const runtime = new Runtime(sql, schema, modules, { storageDir: join(home, "storage") });
 await runtime.stop();
@@ -118,8 +118,11 @@ const proxy = createServer(async (req, res) => {
   let body;
   if (req.method === "POST" && req.url?.startsWith("/api/backend")) {
     body = []; for await (const chunk of req) body.push(chunk); body = Buffer.concat(body);
-    const call = JSON.parse(body.toString()); calls.push({path:call.path, at:Date.now()}); if (calls.length > 500) calls.shift();
-    if (delay && ["dashboard:getChat", "dashboard:getChatMessages"].includes(call.path)) await new Promise(r=>setTimeout(r,delay));
+    let call; try { call = JSON.parse(body.toString()); } catch { /* Forward malformed input to backend validation. */ }
+    if (typeof call?.path === "string") {
+      calls.push({path:call.path, at:Date.now()}); if (calls.length > 500) calls.shift();
+      if (delay && ["dashboard:getChat", "dashboard:getChatMessages"].includes(call.path)) await new Promise(r=>setTimeout(r,delay));
+    }
   }
   const upstream = request({ hostname: "127.0.0.1", port: 17483, path: req.url, method: req.method,
     headers: { ...req.headers, host: "127.0.0.1:17483", "accept-encoding": "identity" } }, (incoming) => {

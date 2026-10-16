@@ -477,6 +477,8 @@ export function ChatScreen() {
   }
 
   async function submit(text = draftControl.current?.read() ?? "") {
+    // Keep typing/focus available while cached history waits for fresh access metadata.
+    if (selectedId && (!chat || chat.contact)) return;
     const message = text.trim();
     if (message.startsWith("/") && files.length === 0 && await runCommand(message)) return;
     // Sent while a reply is running, the message joins that reply (it steers it).
@@ -805,8 +807,6 @@ export function ChatScreen() {
                   : null;
 
 
-          // History may paint from memory; writing waits for fresh chat metadata.
-          if (selectedId && chat === undefined) return <p className="px-1 pb-1 text-sm text-muted-foreground" role="status">Checking chat settings…</p>;
           return chat?.contact ? (
             <div className="px-1 pb-1 text-sm text-muted-foreground" role="note">
               <p className="font-medium text-foreground">{assistant}&apos;s chat with {chat.contact.name}{chat.contact.group ? " (a group)" : ""}</p>
@@ -825,7 +825,7 @@ export function ChatScreen() {
             onSubmit={() => void submit(draft)}
             onStop={selectedId ? stop : undefined}
             waiting={waiting}
-            busy={busy}
+            busy={busy || Boolean(selectedId && chat === undefined)}
             uploading={uploading}
             files={files}
             onAddFiles={addFiles}

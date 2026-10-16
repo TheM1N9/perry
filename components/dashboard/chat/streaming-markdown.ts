@@ -73,7 +73,7 @@ function inlineTail(source: string, node: Node, start: number): string | undefin
         if (!before || /\s/.test(before)) return source.slice(0, from - start + end - token.length).trimEnd() + closing.reverse().join("");
         continue;
       }
-      if (marker === "`") return source + token; // Everything after it is code.
+      if (marker === "`") return source + token + closing.reverse().join(""); // Everything after it is code.
       closing.push(token);
       if (closing.length > 32) return;
     }

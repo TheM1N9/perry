@@ -163,6 +163,18 @@ try {
   resolveHover({ value: page('warm'), reads: ['messages'] }); await tick();
   assert.equal(maxOutstanding, 1);
   reports.push('prefetch: 20 intents => 1 request; cached/cancelled intents => 0; one concurrent request');
+  // A currently open chat can lose its first response without becoming an idle cache.
+  fixtures.set('transient-active', () => new Error('synthetic transient network failure'));
+  const stopTransient = c.subscribe(history, args('transient-active'), () => {}); await tick();
+  assert.equal(c.snapshot(history, args('transient-active')).loaded, false);
+  c.scheduleChatPrefetch('synthetic-only', 'transient-active'); await pause(180); await tick();
+  assert.equal(c.prefetching, false, 'unloaded active subscription without a request must release prefetch gate');
+  const beforeRecovery = calls.length;
+  c.scheduleChatPrefetch('synthetic-only', 'after-transient'); await pause(180); await tick();
+  assert.equal(calls.length, beforeRecovery + 1, 'later hover still starts');
+  assert.equal([...c.subscriptions.values()].find(s => s.args.id === 'transient-active').listeners.size, 1, 'temporary hover listener released');
+  stopTransient();
+  reports.push('transient active query without in-flight request releases hover listener/gate and allows later prefetch');
   // Metadata is deliberately unavailable after navigation.
   const stopMeta = c.subscribe('dashboard:getChat', { key: 'synthetic-only', id: 'meta' }, () => {}); await tick(); stopMeta();
   assert.equal(c.snapshot('dashboard:getChat', { key: 'synthetic-only', id: 'meta' }).loaded, false);

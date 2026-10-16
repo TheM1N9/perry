@@ -1,5 +1,5 @@
 {
-  "checks": 34,
+  "checks": 35,
   "prefixChecks": 61,
   "staticIdentical": true,
   "evidence": [
@@ -42,6 +42,11 @@
       "name": "nested",
       "text": "**bold *italic",
       "html": "<p><strong>bold <em>italic</em></strong></p>"
+    },
+    {
+      "name": "nested inline code",
+      "text": "**bold `code",
+      "html": "<p><strong>bold <code>code</code></strong></p>"
     },
     {
       "name": "header",

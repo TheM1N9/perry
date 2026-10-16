@@ -22,6 +22,7 @@ const cases = [
  ['strike', '~~gone', '<del>gone</del>'],
  ['code', '`a * b', '<code>a * b</code>'],
  ['nested', '**bold *italic', '<strong>bold <em>italic</em></strong>'],
+ ['nested inline code', '**bold `code', '<strong>bold <code>code</code></strong>'],
  ['header', '| Name | Value |', '<th>Name</th><th>Value</th>'],
  ['partial header', '| Nam', '<th>Nam</th>'],
  ['delimiter', '| Name | Value |\n| --', '<th>Name</th><th>Value</th>'],
