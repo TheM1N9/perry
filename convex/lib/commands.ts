@@ -39,6 +39,22 @@ export const enginesOf = (models: ModelOption[]) => ENGINES.filter((engine) => m
 export type Access = "supervised" | "auto" | "full";
 export const ACCESSES: readonly Access[] = ["supervised", "auto", "full"];
 
+/** The commands Telegram lists when the owner types "/" (setMyCommands: lowercase names without the slash, descriptions up to 256 characters). */
+export const TELEGRAM_COMMANDS = [
+  { command: "model", description: "List the models, or /model <name> to switch this chat" },
+  { command: "think", description: "List the thinking levels, or /think <level>" },
+  { command: "access", description: "Ask, auto or full: whether I ask before acting" },
+  { command: "usage", description: "How much of this chat's model plan is used, and what is left" },
+  { command: "stop", description: "Stop the reply I am writing" },
+  { command: "pause", description: "Stop everything I am doing, and start nothing new" },
+  { command: "resume", description: "Start again after /pause" },
+  { command: "compact", description: "Shrink what I carry of this chat, keep the chat" },
+  { command: "note", description: "Add words to your Inbox note, or save my last reply as a note" },
+  { command: "status", description: "Plumbing and recent errors" },
+  { command: "reset", description: "Save this chat to memory, then start a fresh one" },
+  { command: "help", description: "What I can do from here" },
+] as const;
+
 /** What /compact reports once the chat's engine has summarised its session. */
 export const COMPACTED = "Compacted. Perry now works from a summary of this chat; the messages here are unchanged.";
 
