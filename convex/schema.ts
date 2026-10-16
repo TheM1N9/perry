@@ -1,5 +1,8 @@
+import { TURN_ERROR_CODES } from "../lib/turn-errors";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+
+export const vTurnErrorCode = v.union(...TURN_ERROR_CODES.map((code) => v.literal(code)));
 
 export const vChannel = v.union(v.literal("telegram"), v.literal("web"), v.literal("whatsapp"));
 /** The messaging apps the owner can pair; the web dashboard is always there. */
@@ -348,6 +351,11 @@ export default defineSchema({
     turns: v.optional(v.number()),
     /** The owner's answer to its question, for its next turn. */
     answer: v.optional(v.string()),
+    /** Owner update receipts only; codexSteers/codexTurns own delivery and acknowledgement. */
+    steering: v.optional(v.array(v.object({
+      requestId: v.string(), text: v.string(), createdAt: v.number(),
+      deliveryId: v.union(v.id("codexSteers"), v.id("codexTurns")),
+    }))),
     /** The agent's own checklist. Rewritten wholesale by `plan`. */
     plan: v.array(
       v.object({
@@ -619,6 +627,8 @@ export default defineSchema({
     /** ask: the owner decides; review: a Codex reviewer clears routine actions first; trust: run. */
     policy: v.optional(vPolicy),
     lastSeenAt: v.optional(v.number()),
+    /** Latest check-in explicitly lists active turns; omitted by older runners. */
+    turnHeartbeats: v.optional(v.boolean()),
     revoked: v.boolean(),
     /** Each engine on this computer, as its runner last reported it (engines.ts). */
     engines: v.optional(v.array(v.object({ ...vEngineStatus.fields, updatedAt: v.number() }))),
@@ -1213,6 +1223,7 @@ export default defineSchema({
     route: v.optional(vRoute),
     usage: v.optional(vUsage),
     error: v.optional(v.string()),
+    errorCode: v.optional(vTurnErrorCode),
     startedAt: v.number(),
     finishedAt: v.optional(v.number()),
   })
@@ -1233,6 +1244,8 @@ export default defineSchema({
     name: v.string(),
     callId: v.string(),
     status: vSpanStatus,
+    /** When this step ended; absent on running steps and legacy traces. */
+    endedAt: v.optional(v.number()),
     startedAt: v.number(),
     durationMs: v.optional(v.number()),
     input: v.optional(v.string()),
@@ -1500,6 +1513,10 @@ export default defineSchema({
     deliveredAt: v.optional(v.number()),
     /** When a finalize last started, so the recovery sweep does not run a second one beside it. */
     finalizingAt: v.optional(v.number()),
+    /** Server-observed runner ownership of this running turn, independent of output. */
+    lastHeartbeatAt: v.optional(v.number()),
+    /** Recovery's reactive liveness warning; cleared only by genuine liveness. */
+    unresponsiveAt: v.optional(v.number()),
     /** The reply so far, while Codex is still writing it. */
     partial: v.optional(v.string()),
     /** Telegram: the message that shows the reply as it streams, edited as it grows. */
@@ -1510,6 +1527,7 @@ export default defineSchema({
     status: v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("error")),
     response: v.optional(v.string()),
     error: v.optional(v.string()),
+    errorCode: v.optional(vTurnErrorCode),
     model: v.optional(v.string()),
     createdAt: v.number(),
     startedAt: v.optional(v.number()),
@@ -1517,6 +1535,7 @@ export default defineSchema({
     finalizedAt: v.optional(v.number()),
   })
     .index("by_runner_status", ["runnerId", "status"])
+    .index("by_run", ["runId"])
     .index("by_conversation_status", ["conversationId", "status"]),
 
   /** A call on the linked WhatsApp, from its first ring to its end (whatsapp.callEvent). */
@@ -1600,6 +1619,7 @@ export default defineSchema({
   }),
 
   agentMessages: defineTable({
+    runId: v.optional(v.id("runs")),
     threadId: v.id("agentThreads"),
     userId: v.optional(v.string()),
     /** Position in the thread; later messages have higher numbers. */

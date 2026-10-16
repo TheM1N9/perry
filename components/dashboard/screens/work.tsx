@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { TaskSteering } from "../task-steering";
 import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, FileTextIcon, MessageSquareIcon, MoreHorizontalIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon, ZapIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "@/client/react";
@@ -389,6 +390,7 @@ function Plans({ tasks, goals }: { tasks: Doc<"tasks">[]; goals: Doc<"goals">[] 
                     </CollapsibleContent>
                   </Collapsible>
                 )}
+                <TaskSteering task={task} />
                 {task.result && <p className="mt-3 text-sm text-pretty whitespace-pre-line text-foreground/80">{task.result}</p>}
                 {task.error && <p className="mt-3 text-sm text-pretty text-destructive">{task.error}</p>}
               </div>

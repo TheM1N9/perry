@@ -1,0 +1,248 @@
+{
+  "checks": {
+    "real claim starts original turn with supervised access": true,
+    "receipt is pending before acknowledgement": true,
+    "unread update prevents early finish": true,
+    "atomic task update guard rejects early finish": true,
+    "concurrent retry reuses one delivery": true,
+    "origin owner chat uses same idempotent delivery": true,
+    "id reuse with different text rejected": true,
+    "native delivery uses existing pendingSteers": true,
+    "foreign runner cannot acknowledge delivery": true,
+    "concurrent acknowledgement callers share one batch": true,
+    "native steer sees same genuinely running engine turn": true,
+    "native engine steering carries no access override": true,
+    "engine receives update and preserved completed step": true,
+    "ack transport retries preserve applied outcome": true,
+    "delivery acknowledged without replacing turn": true,
+    "no cancellation or extra turn": true,
+    "plan and turn count unchanged by steering": true,
+    "acknowledged update allows finish": true,
+    "completed work survives plan revision": true,
+    "retry after completion returns original receipt": true,
+    "engine refusal stays a refusal across ack retries": true,
+    "unsupported mode never cancels and resends": true,
+    "uncertain refusal acknowledgement creates only one fallback": true,
+    "fallback queues exactly once with original access/context": true,
+    "original remains running": true,
+    "fallback cannot run concurrently in same task chat": true,
+    "original cannot finish task ahead of follow-up": true,
+    "error finalization keeps accepted queued follow-up alive": true,
+    "fallback claim runs in original task chat": true,
+    "follow-up can finish its own accepted instruction": true,
+    "fallback delivery finishes without losing completed step": true,
+    "retained accepted outcome never becomes refusal": true,
+    "ack attempts are bounded without finalizing or queuing duplicate": true,
+    "later acknowledgement delivers retained result without engine replay": true,
+    "receipt remains queued while replacement is being chosen": true,
+    "retry ownership guards completion before replacement exists": true,
+    "production retryOn creates replacement": true,
+    "superseded turn cannot finish pending replacement": true,
+    "receipt follows replacement while running": true,
+    "replacement can finish its own update": true,
+    "terminal receipt follows successful replacement": true,
+    "steering caller cannot supply access override": true,
+    "rejected access override leaves permission and runs unchanged": true,
+    "queued update snapshots owner downgrade instead of stale Full": true,
+    "claim ignores stale Full and uses current owner Ask": true,
+    "native delivery projection contains no access override": true,
+    "native acceptance leaves access and original metadata unchanged": true,
+    "later explicit owner upgrade applies at claim without altering queued metadata": true,
+    "live owner downgrade applies to running follow-up": true,
+    "production approval gate still asks after owner downgrade": true,
+    "unset owner access defaults to Ask rather than stale Full": true,
+    "bad dashboard key": true,
+    "empty instruction": true,
+    "oversize instruction": true,
+    "other owner chat cannot steer scoped task": true,
+    "task cannot steer sibling": true,
+    "completed task refuses new instruction": true,
+    "between turns refuses without orphan receipt": true,
+    "rejected instruction leaves only original receipt": true,
+    "guest source cannot steer owner task": true,
+    "paused Perry rejects new instruction": true,
+    "receipt and acknowledgement survive runtime restart": true
+  },
+  "evidence": {
+    "native": {
+      "turnId": "radk8qwh3mgs9q7fgapjjpmqxq",
+      "deliveryId": "7jky3wsqwb3mn71pda4twypnz8",
+      "plan": [
+        {
+          "title": "Collected inputs",
+          "status": "done"
+        },
+        {
+          "title": "Produce requested table",
+          "status": "done"
+        }
+      ],
+      "events": [
+        {
+          "type": "started",
+          "turnId": "fake-active-turn"
+        },
+        {
+          "type": "steer",
+          "turnId": "fake-active-turn"
+        },
+        {
+          "type": "finished",
+          "turnId": "fake-active-turn"
+        }
+      ],
+      "receipts": [
+        {
+          "requestId": "native-update-001",
+          "text": "Use a table",
+          "deliveryId": "7jky3wsqwb3mn71pda4twypnz8",
+          "createdAt": 1792180617108,
+          "state": "applied"
+        }
+      ]
+    },
+    "fallback": {
+      "originalTurn": {
+        "_id": "2shz6pcrbwdmrnt06zf50be0vd",
+        "_creationTime": 1792180617125.001,
+        "conversationId": "kh4bbd3fwtr856tawyff9p07xb",
+        "runnerId": "sybk0k75ybky4rwr4jgpvv29n6",
+        "runId": "3fhcfzrnj8q0m1h8hnyrncqgyc",
+        "engine": "codex",
+        "prompt": "Do the task",
+        "instructions": "Keep approval checks.",
+        "status": "error",
+        "createdAt": 1792180617124,
+        "startedAt": 1792180617126,
+        "lastHeartbeatAt": 1792180617126,
+        "response": "First turn progress saved",
+        "error": "Synthetic original turn failed",
+        "errorCode": "engine_failed",
+        "finishedAt": 1792180617130
+      },
+      "fallback": {
+        "_id": "h5sr93ny62ynvcxzscz4avvqyd",
+        "_creationTime": 1792180617127,
+        "engine": "codex",
+        "conversationId": "kh4bbd3fwtr856tawyff9p07xb",
+        "runId": "5d5w85edbys4nep7v9ebf8eern",
+        "prompt": "🧩 Background task: Compare inputs\n\nCompare collected inputs and produce a result.\n\nYou are working on this by yourself: the owner is not in this chat and does not read your replies. Keep its plan current with set_plan (task id y5q0sh22q1ry8wwprw1j4szxab), and end by calling finish_task: done with the result (what you made and where), blocked with one clear question only if you truly need the owner, or failed with why. Only finish_task reaches the owner; a reply alone leaves the task open. Do the work now; do not ask for permission to start.\n\nOriginal task brief:\nCompare collected inputs and produce a result.\n\nCurrent plan:\n- [done] Collected inputs\n- [active] Draft result\n\nNew owner update for background task y5q0sh22q1ry8wwprw1j4szxab:\nAdd a summary\n\nContinue this same task without restarting completed work. Update the remaining plan with set_plan.",
+        "instructions": "Keep approval checks.",
+        "access": "supervised",
+        "createdAt": 1792180617127,
+        "turnId": "2shz6pcrbwdmrnt06zf50be0vd",
+        "runnerId": "sybk0k75ybky4rwr4jgpvv29n6",
+        "status": "queued",
+        "queuedTurnId": "fjakxd1853f850rvabg8pqqmbt",
+        "error": "Fake native engine takes one message at a time"
+      },
+      "receipts": [
+        {
+          "requestId": "fallback-update-001",
+          "text": "Add a summary",
+          "deliveryId": "h5sr93ny62ynvcxzscz4avvqyd",
+          "createdAt": 1792180617127,
+          "state": "finished",
+          "error": "Fake native engine takes one message at a time"
+        }
+      ]
+    },
+    "uncertainAck": {
+      "engineCalls": 1,
+      "ackCalls": 4,
+      "receipt": {
+        "_id": "52y0fztxgp8v6f74reced7v823",
+        "_creationTime": 1792180617138.001,
+        "engine": "codex",
+        "conversationId": "g7sj8s031jnd7201zekahaw2qe",
+        "runId": "y602sr6gxa1y83c6wtg0z29v47",
+        "prompt": "🧩 Background task: Compare inputs\n\nCompare collected inputs and produce a result.\n\nYou are working on this by yourself: the owner is not in this chat and does not read your replies. Keep its plan current with set_plan (task id 1hb6d7vbgp31zyyhpzm93m62pc), and end by calling finish_task: done with the result (what you made and where), blocked with one clear question only if you truly need the owner, or failed with why. Only finish_task reaches the owner; a reply alone leaves the task open. Do the work now; do not ask for permission to start.\n\nOriginal task brief:\nCompare collected inputs and produce a result.\n\nCurrent plan:\n- [done] Collected inputs\n- [active] Draft result\n\nNew owner update for background task 1hb6d7vbgp31zyyhpzm93m62pc:\nKeep progress\n\nContinue this same task without restarting completed work. Update the remaining plan with set_plan.",
+        "instructions": "Keep approval checks.",
+        "access": "supervised",
+        "createdAt": 1792180617138,
+        "turnId": "78yp9rjgth3wf1v3qahd6pehaz",
+        "runnerId": "sybk0k75ybky4rwr4jgpvv29n6",
+        "status": "applied",
+        "appliedAt": 1792180617156
+      },
+      "original": {
+        "_id": "78yp9rjgth3wf1v3qahd6pehaz",
+        "_creationTime": 1792180617137,
+        "conversationId": "g7sj8s031jnd7201zekahaw2qe",
+        "runnerId": "sybk0k75ybky4rwr4jgpvv29n6",
+        "runId": "67ng9ex0v6a5zhn3m78zhzm6xx",
+        "engine": "codex",
+        "prompt": "Do the task",
+        "instructions": "Keep approval checks.",
+        "status": "done",
+        "createdAt": 1792180617135,
+        "startedAt": 1792180617137,
+        "lastHeartbeatAt": 1792180617137,
+        "response": "Retained engine result",
+        "finishedAt": 1792180617156
+      }
+    },
+    "retry": {
+      "original": {
+        "_id": "bcwy96sbm26cwp8j5pmwzxvmwj",
+        "_creationTime": 1792180617437,
+        "engine": "codex",
+        "runnerId": "sybk0k75ybky4rwr4jgpvv29n6",
+        "conversationId": "0xqns4n170qhkgqfhe7r46y5ka",
+        "runId": "dca25k1d6x8bgw7gptzdd9rbka",
+        "prompt": "🧩 Background task: Compare inputs\n\nCompare collected inputs and produce a result.\n\nYou are working on this by yourself: the owner is not in this chat and does not read your replies. Keep its plan current with set_plan (task id 9mt3fm4b2y81dtp77ngafqxzx0), and end by calling finish_task: done with the result (what you made and where), blocked with one clear question only if you truly need the owner, or failed with why. Only finish_task reaches the owner; a reply alone leaves the task open. Do the work now; do not ask for permission to start.\n\nOriginal task brief:\nCompare collected inputs and produce a result.\n\nCurrent plan:\n- [done] Collected inputs\n- [active] Draft result\n\nNew owner update for background task 9mt3fm4b2y81dtp77ngafqxzx0:\nRecover this update\n\nContinue this same task without restarting completed work. Update the remaining plan with set_plan.",
+        "instructions": "Keep approval checks.",
+        "access": "supervised",
+        "createdAt": 1792180617437,
+        "status": "error",
+        "startedAt": 1792180617438,
+        "lastHeartbeatAt": 1792180617438,
+        "error": "Synthetic usage limit reached",
+        "errorCode": "limit",
+        "finishedAt": 1792180617439,
+        "finalizedAt": 1792180617441
+      },
+      "replacement": {
+        "_id": "nym7752ecf74y197fyf83jrg0a",
+        "_creationTime": 1792180617441,
+        "engine": "claude",
+        "runnerId": "sybk0k75ybky4rwr4jgpvv29n6",
+        "conversationId": "0xqns4n170qhkgqfhe7r46y5ka",
+        "runId": "dca25k1d6x8bgw7gptzdd9rbka",
+        "prompt": "🧩 Background task: Compare inputs\n\nCompare collected inputs and produce a result.\n\nYou are working on this by yourself: the owner is not in this chat and does not read your replies. Keep its plan current with set_plan (task id 9mt3fm4b2y81dtp77ngafqxzx0), and end by calling finish_task: done with the result (what you made and where), blocked with one clear question only if you truly need the owner, or failed with why. Only finish_task reaches the owner; a reply alone leaves the task open. Do the work now; do not ask for permission to start.\n\nOriginal task brief:\nCompare collected inputs and produce a result.\n\nCurrent plan:\n- [done] Collected inputs\n- [active] Draft result\n\nNew owner update for background task 9mt3fm4b2y81dtp77ngafqxzx0:\nRecover this update\n\nContinue this same task without restarting completed work. Update the remaining plan with set_plan.",
+        "instructions": "Keep approval checks.",
+        "access": "supervised",
+        "retryOf": "bcwy96sbm26cwp8j5pmwzxvmwj",
+        "status": "done",
+        "createdAt": 1792180617441,
+        "startedAt": 1792180617443,
+        "lastHeartbeatAt": 1792180617443,
+        "response": "Recovered update complete",
+        "finishedAt": 1792180617444
+      },
+      "receipts": [
+        {
+          "requestId": "retry-update-001",
+          "text": "Recover this update",
+          "deliveryId": "a92vj2abs6v5ee02h0awjm623j",
+          "createdAt": 1792180617436,
+          "state": "finished",
+          "error": "Fake engine only queues"
+        }
+      ]
+    },
+    "access": {
+      "staleOriginalMetadata": "full",
+      "queuedMetadata": "supervised",
+      "originalClaim": "supervised",
+      "explicitOwnerUpgradeClaim": "full",
+      "liveOwnerDowngrade": "supervised",
+      "nativeProjection": {
+        "_id": "w8yzhj17n9cxkz1egf4pvgq5gm",
+        "turnId": "tgwypmm4bew64ffr9tdpzfs6x6",
+        "prompt": "🧩 Background task: Compare inputs\n\nCompare collected inputs and produce a result.\n\nYou are working on this by yourself: the owner is not in this chat and does not read your replies. Keep its plan current with set_plan (task id m5q7ydgj927kvw4dr1zjcrs1qt), and end by calling finish_task: done with the result (what you made and where), blocked with one clear question only if you truly need the owner, or failed with why. Only finish_task reaches the owner; a reply alone leaves the task open. Do the work now; do not ask for permission to start.\n\nAccepted updates from the owner (in order; keep completed work and revise the remaining plan):\n- Keep permissions\n\nOriginal task brief:\nCompare collected inputs and produce a result.\n\nCurrent plan:\n- [done] Collected inputs\n- [active] Draft result\n\nNew owner update for background task m5q7ydgj927kvw4dr1zjcrs1qt:\nContinue under Ask\n\nContinue this same task without restarting completed work. Update the remaining plan with set_plan."
+      }
+    }
+  },
+  "pass": true
+}

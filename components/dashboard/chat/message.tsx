@@ -142,15 +142,16 @@ export function PendingRow({ text, attachments, sent, skills }: { text: string; 
  * (dashboard.getChatWork), so none goes by unseen; then what has streamed of
  * the words, or "Thinking" while nothing else is going on.
  */
-export function ReplyInProgress({ streaming, work, now, approving = false }: { streaming?: string; work?: Work; now: number; approving?: boolean }) {
+export function ReplyInProgress({ streaming, work, now, approving = false, unresponsive = false }: { streaming?: string; work?: Work; now: number; approving?: boolean; unresponsive?: boolean }) {
   const steps = work?.steps ?? [];
   // Over (its reply on its way to the page), on a step, or held for the owner's approval: either way, not thinking.
   const over = work?.finishedAt !== undefined;
-  const busy = over || approving || steps.some((step) => step.status === "running");
-  const state: WorkState = over ? (work?.status === "ok" ? "done" : "failed") : approving ? "waiting" : "working";
+  const busy = unresponsive || over || approving || steps.some((step) => step.status === "running");
+  const state: WorkState = unresponsive ? "unresponsive" : over ? (work?.status === "ok" ? "done" : "failed") : approving ? "waiting" : "working";
   return (
-    <div className="min-w-0 space-y-2" data-role="assistant" {...(streaming ? { "data-streaming": true } : { "data-thinking": true })}>
+    <div className="min-w-0 space-y-2" data-role="assistant" {...(unresponsive ? { "data-unresponsive": true } : streaming ? { "data-streaming": true } : { "data-thinking": true })}>
       {work && <WorkSummary work={work} state={state} now={now} />}
+      {unresponsive && <p role="status" data-turn-health="unresponsive" className="text-sm text-muted-foreground">Your computer is unresponsive. Waiting for it to reconnect…</p>}
       {streaming ? (
         <div>
           <Markdown text={streaming} />

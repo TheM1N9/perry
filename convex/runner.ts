@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation } from "./_generated/server";
 import { vPolicy } from "./schema";
+import { heartbeatActiveTurns } from "./lib/turn-health";
 
 /**
  * The protocol between Assistant and a machine the owner has connected.
@@ -59,6 +60,7 @@ export function policyOf(runner: Doc<"runners">): Policy {
 export const checkIn = mutation({
   args: {
     token: v.string(),
+    activeTurnIds: v.optional(v.array(v.id("codexTurns"))),
     platform: v.optional(v.string()),
     hostname: v.optional(v.string()),
     workdir: v.optional(v.string()),
@@ -71,13 +73,18 @@ export const checkIn = mutation({
     const policy = args.policy
       ?? (args.autoApprove === undefined ? policyOf(runner) : args.autoApprove ? "trust" : "ask");
 
+    const now = Date.now();
+    // Before updating lastSeenAt, freeze any omitted legacy turn at the last
+    // actual machine heartbeat, not at this unrelated check-in.
+    await heartbeatActiveTurns(ctx, runner, args.activeTurnIds, now);
     await ctx.db.patch(runner._id, {
+      turnHeartbeats: args.activeTurnIds !== undefined,
       platform: args.platform ?? runner.platform,
       hostname: args.hostname ?? runner.hostname,
       workdir: args.workdir ?? runner.workdir,
       policy,
       autoApprove: policy === "trust",
-      lastSeenAt: Date.now(),
+      lastSeenAt: now,
     });
 
     return { name: runner.name, policy };

@@ -2,6 +2,8 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
 import { FINALIZE_LEASE_MS, queueSteer } from "./codex";
+import { turnHealth } from "./lib/turn-health";
+import { settleRunSpans } from "./lib/settle-traces";
 
 /**
  * Durable turns. The runner keeps finished Codex results on disk and delivers
@@ -19,9 +21,6 @@ import { FINALIZE_LEASE_MS, queueSteer } from "./codex";
  */
 
 const RETRY_FINALIZE_MS = 60_000;
-const QUEUED_OFFLINE_MS = 10 * 60_000;
-const RUNNING_OFFLINE_MS = 15 * 60_000;
-const RUNNER_ONLINE_MS = 90_000;
 const STUCK_CHAT_MS = 5 * 60_000;
 
 export const sweep = internalMutation({
@@ -37,20 +36,45 @@ export const sweep = internalMutation({
     const turns = args.only
       ? await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", args.only!)).collect()
       : await ctx.db.query("codexTurns").order("desc").take(300);
-    const runnerOnline = new Map<string, boolean>();
-    const online = async (id: (typeof turns)[number]["runnerId"]) => {
-      if (!id) return false;
-      if (!runnerOnline.has(id)) {
-        const runner = await ctx.db.get(id);
-        runnerOnline.set(id, Boolean(runner && !runner.revoked && (runner.lastSeenAt ?? 0) > now - RUNNER_ONLINE_MS));
+    const runners = await ctx.db.query("runners").collect();
+    const runnerById = new Map(runners.map((runner) => [runner._id, runner]));
+    // The most recent history is enough for routine finalize retries, but an
+    // hours-old active turn must not fall behind 300 newer completed turns.
+    if (!args.only) {
+      const seen = new Set(turns.map((turn) => turn._id));
+      for (const runnerId of [undefined, ...runners.map((runner) => runner._id)]) {
+        for (const status of ["queued", "running"] as const) {
+          const active = await ctx.db.query("codexTurns")
+            .withIndex("by_runner_status", (q) => q.eq("runnerId", runnerId).eq("status", status)).collect();
+          for (const turn of active) if (!seen.has(turn._id)) { turns.push(turn); seen.add(turn._id); }
+        }
       }
-      return runnerOnline.get(id)!;
-    };
+    }
 
     // Chats whose turn this sweep already failed; finalizing that turn releases them.
     const handled = new Set<string>();
     for (const turn of turns) {
+      // Repair legacy terminal traces too, without an older retry closing the
+      // newer attempt that shares its run. The by_run index orders attempts.
+      if (turn.status === "done" || turn.status === "error") {
+        const latest = await ctx.db.query("codexTurns")
+          .withIndex("by_run", (q) => q.eq("runId", turn.runId)).order("desc").first();
+        if (latest?._id === turn._id) {
+          await settleRunSpans(ctx, turn.runId, turn.finishedAt ?? now, turn.stopped ? "stopped" : "recovery");
+        }
+      }
       if (turn.finalizedAt) continue;
+      if (turn.retrying) {
+        // A routing retry owns the shared run until it gives up or its bounded
+        // grace expires. Existing delivery evidence permanently rules out a
+        // retry, even when an earlier finalizer's lease has since expired.
+        const finalizationStarted = turn.finalizingAt !== undefined || turn.reportedAt !== undefined
+          || turn.savedAt !== undefined || turn.deliveredAt !== undefined;
+        if (!finalizationStarted && now - (turn.finishedAt ?? turn.createdAt) < FINALIZE_LEASE_MS) continue;
+        // Claim finalization ownership in this transaction, before scheduling
+        // its action: any late retryOn now sees retrying cleared and loses.
+        await ctx.db.patch(turn._id, { retrying: undefined });
+      }
       // Not while a finalize that started recently may still be delivering.
       if ((turn.status === "done" || turn.status === "error") && (turn.finishedAt ?? 0) < now - RETRY_FINALIZE_MS
         && (turn.finalizingAt ?? 0) < now - FINALIZE_LEASE_MS) {
@@ -58,13 +82,21 @@ export const sweep = internalMutation({
         refinalized += 1;
         continue;
       }
-      const stale = turn.status === "queued"
-        ? turn.createdAt < now - QUEUED_OFFLINE_MS
-        : turn.status === "running" && (turn.startedAt ?? turn.createdAt) < now - RUNNING_OFFLINE_MS;
-      if (stale && !(await online(turn.runnerId))) {
+      if (turn.status !== "queued" && turn.status !== "running") continue;
+      const health = turnHealth(turn, turn.runnerId ? runnerById.get(turn.runnerId) ?? null : null, now);
+      if (turn.status === "running") {
+        const marked = (turn as typeof turn & { unresponsiveAt?: number }).unresponsiveAt;
+        if (health.unresponsive && marked === undefined) {
+          await ctx.db.patch(turn._id, { unresponsiveAt: now });
+        } else if (!health.unresponsive && marked !== undefined) {
+          await ctx.db.patch(turn._id, { unresponsiveAt: undefined });
+        }
+      }
+      if (health.abandon) {
         // What it had written so far is kept, as when the owner stops a turn.
         await ctx.db.patch(turn._id, {
           status: "error",
+          errorCode: "offline",
           response: turn.response ?? turn.partial,
           partial: undefined,
           error: turn.status === "queued"
@@ -72,6 +104,7 @@ export const sweep = internalMutation({
             : "The runner stopped during this turn and did not come back. Start the runner and send the message again.",
           finishedAt: now,
         });
+        await settleRunSpans(ctx, turn.runId, now, "recovery");
         await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: turn._id });
         abandoned += 1;
         handled.add(turn.conversationId);
@@ -108,7 +141,8 @@ export const sweep = internalMutation({
         .take(5);
       for (const run of runs) {
         if (run.status === "running" && run.startedAt < now - STUCK_CHAT_MS) {
-          await ctx.db.patch(run._id, { status: "error", error: "This turn was interrupted before Codex answered. Send the message again.", finishedAt: now });
+          await ctx.db.patch(run._id, { status: "error", error: "This turn was interrupted before Codex answered. Send the message again.", errorCode: "restarted", finishedAt: now });
+          await settleRunSpans(ctx, run._id, now, "recovery");
         }
       }
       released += 1;

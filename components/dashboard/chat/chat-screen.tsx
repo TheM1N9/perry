@@ -1,5 +1,8 @@
 "use client";
 
+import { Fragment } from "react";
+import { TurnError } from "./turn-error";
+
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -740,7 +743,8 @@ export function ChatScreen() {
                 </div>
               )}
               {messageStatus === "LoadingMore" && <p className="text-center text-sm text-muted-foreground" role="status">Loading earlier messages…</p>}
-              {messages.map((message) => (
+              {messages.map((message, index) => (
+                <Fragment key={message.id}>
                 <MessageRow
                   key={message.id}
                   message={message}
@@ -757,29 +761,23 @@ export function ChatScreen() {
                   onBranch={() => void branch(message.id)}
                   onSaveNote={() => void saveAsNote(message.id)}
                 />
+                {message.failure && !messages.slice(index + 1).some((item) => item.runId === message.runId) && <TurnError
+                  {...message.failure}
+                  busy={busy || waiting}
+                  onRetry={!app && !waiting && messages.find((item) => item.runId === message.runId && item.role === "user")
+                    ? () => { const prompt = messages.find((item) => item.runId === message.runId && item.role === "user"); if (prompt) void rewind(prompt.id); }
+                    : undefined}
+                />}
+                </Fragment>
               ))}
               {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
               {!missing && <InteractiveAnswers conversationId={selectedId} />}
-              {(waiting || liveWork) && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} approving={here.length > 0} />}
+              {(waiting || liveWork) && <ReplyInProgress streaming={chat?.streaming} work={liveWork} now={now} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
               {here.map((approval) => <ApprovalCard key={approval.id} approval={approval} now={now} showChat={false} />)}
               {failedWork && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed" /></div>}
-              {chat?.lastError && !chat.isRunning && !waiting && (
-                <Alert variant="destructive">
-                  <TriangleAlertIcon />
-                  <AlertTitle>{assistant} couldn&apos;t finish the last reply</AlertTitle>
-                  <AlertDescription>
-                    {/too old for Perry|runner|offline|computer/i.test(chat.lastError) && (
-                      <p className="mb-1">{/too old for Perry/.test(chat.lastError) ? "Update it with the command below, then try again. Settings → Engines shows it too."
-                        : "Your computer may be offline. Start Perry on it, then try again."}</p>
-                    )}
-                    <p className="font-mono text-xs opacity-80 [overflow-wrap:anywhere]">{chat.lastError.slice(0, 400)}</p>
-                  </AlertDescription>
-                  {lastUser && !app && (
-                    <AlertAction>
-                      <Button size="sm" variant="outline" disabled={busy} onClick={() => void rewind(lastUser.id)}><RefreshCwIcon />Try again</Button>
-                    </AlertAction>
-                  )}
-                </Alert>
+              {chat?.lastError && !chat.isRunning && !waiting && !messages.some((message) => message.failure && message.runId === chat.lastErrorRunId) && (
+                <TurnError error={chat.lastError} errorCode={chat.lastErrorCode} busy={busy}
+                  onRetry={lastUser && !app ? () => void rewind(lastUser.id) : undefined} />
               )}
             </div>
             </WorkFolds>

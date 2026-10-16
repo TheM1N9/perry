@@ -1,3 +1,4 @@
+import type { TurnErrorCode } from "../lib/turn-errors";
 /**
  * Perry's engines: the coding agents that do a chat's work on the owner's
  * computer, each signed in with the owner's own subscription. Codex is the
@@ -324,6 +325,8 @@ export type TurnResult = {
   images: GeneratedImage[];
   /** The engine compacted the session's context during the turn. */
   compacted?: boolean;
+  /** Stable reason when the adapter exposes one. */
+  errorCode?: TurnErrorCode;
   /** Why it failed. */
   error?: string;
 };

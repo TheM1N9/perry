@@ -1,3 +1,4 @@
+import { turnErrorCode, turnErrorDetail, turnErrorText } from "../lib/turn-errors";
 import { createThread, historyOf, saveMessages } from "./lib/agent";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -356,8 +357,8 @@ async function reset(ctx: ActionCtx, conversation: Doc<"conversations">): Promis
     delegated = true;
     return "Saving what is worth keeping from this chat to memory, then starting fresh.";
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access, settings.engine), error: message.slice(0, 1000) });
+    const message: string = await ctx.runQuery(internal.codex.cleanTurnError, { detail: turnErrorDetail(error) });
+    await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access, settings.engine), error: message.slice(0, 1000), errorCode: turnErrorCode(error) });
     const threadId = await createThread(ctx, { userId: userIdOf(conversation), title: conversation.title });
     await ctx.runMutation(internal.conversations.clearThread, { id: conversation._id, threadId });
     return `Fresh start, but this chat was not summarised into memory first: ${message}`;
@@ -407,8 +408,8 @@ async function checkpoint(ctx: ActionCtx, conversation: Doc<"conversations">): P
     });
     return true;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access, settings.engine), error: message.slice(0, 1000) });
+    const message: string = await ctx.runQuery(internal.codex.cleanTurnError, { detail: turnErrorDetail(error) });
+    await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access, settings.engine), error: message.slice(0, 1000), errorCode: turnErrorCode(error) });
     return false;
   }
 }
@@ -697,9 +698,9 @@ export const handleTurn = internalAction({
       } catch (error) {
         // Usually no runner is online. Say so: a silent failure is worse than
         // an admitted one, because you keep waiting for a reply that never comes.
-        const message = error instanceof Error ? error.message : String(error);
+        const message: string = await ctx.runQuery(internal.codex.cleanTurnError, { detail: turnErrorDetail(error) });
         console.error(`turn failed: ${message}`);
-        await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access, settings.engine), error: message.slice(0, 1000) });
+        await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access, settings.engine), error: message.slice(0, 1000), errorCode: turnErrorCode(error) });
         // Paused while it was on its way: a job has missed a run and a task waits, rather than failing (pause.ts).
         const paused = message === PAUSED_ERROR;
         if (paused && (conversation.jobId || conversation.taskId)) await ctx.runMutation(internal.pause.held, { conversationId: conversation._id });
@@ -708,13 +709,13 @@ export const handleTurn = internalAction({
         // The message stays in the chat with the error under it, as a turn would have saved it: the owner's
         // (in any channel, so the dashboard shows what failed) and a job's prompt alike. It never became a turn.
         if (!args.hidden) {
-          await saveMessages(ctx, { threadId: conversation.threadId, userId: userIdOf(conversation), order: "next", messages: [{ role: "user", content: prompt }] })
+          await saveMessages(ctx, { threadId: conversation.threadId, userId: userIdOf(conversation), runId, order: "next", messages: [{ role: "user", content: prompt }] })
             .catch((saveError) => console.error(`could not keep the message: ${String(saveError)}`));
         }
         // Someone else never hears why: what broke is the owner's business, and the dashboard shows it.
         // A turn of Perry's own (a task's outcome coming back, tasks.handOff) is tried again by what started it, quietly.
         if (channel !== "web" && !guest && !args.hidden) {
-          await say(paused ? PAUSED_OWNER : `That broke: ${message.slice(0, 300)}`)
+          await say(paused ? PAUSED_OWNER : turnErrorText({ errorCode: turnErrorCode(error), error: message.slice(0, 300) }))
             .catch((sendError) => console.error(`could not report failure: ${String(sendError)}`));
         }
         // No engine could take it: the owner's phone hears why once, not at every message.
