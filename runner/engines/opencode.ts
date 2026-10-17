@@ -17,7 +17,7 @@ import { commandOf, killTree, runCli, spawnEngine } from "./process";
 const INSTALL = "Install OpenCode on this computer (see https://opencode.ai), then sign in here if you want a paid model.";
 
 /** Parse `opencode models`: one model id per line. */
-const EFFORTS = ["low", "medium", "high"];
+const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
 export function parseModels(output: string): EngineModel[] {
   const ids = output.split("\n").map((line) => line.trim()).filter(Boolean);
