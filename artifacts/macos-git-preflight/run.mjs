@@ -31,12 +31,12 @@ for(const os of ["Darwin","Linux"]) for(const git of ["broken","working"]) for(c
   const name=`${os}-${git}-${pet?"pet":"full"}`;
   const home=path.join(scratch,name),bin=path.join(home,"tools"),log=path.join(home,"calls.log");fs.mkdirSync(bin,{recursive:true});
   for(const tool of ["git","node","npm","pnpm","bun","curl","uname","xcode-select"]) {const file=path.join(bin,tool);fs.writeFileSync(file,script);fs.chmodSync(file,0o755);}
-  const env={HOME:unix(home),PATH:`${unix(bin)}:/usr/bin:/bin`,SHELL:"/bin/sh",PERRY_HOME:unix(path.join(home,"state")),PERRY_DIR:unix(path.join(home,"checkout")),PERRY_REPO:unix(path.join(home,"nonexistent-fixture-repo")),TEST_BIN:unix(bin),PERRY_NO_SETUP:"1",PERRY_TELEMETRY_DISABLED:"1",TEST_LOG:unix(log),TEST_OS:os,TEST_GIT:git,TEMP:unix(scratch),TMP:unix(scratch)};
+  const env={HOME:unix(home),PATH:`${unix(bin)}:/usr/bin:/bin`,SHELL:"/bin/sh",TEST_SHELL:process.platform === "win32" ? "/usr/bin/sh" : "/bin/sh",PERRY_HOME:unix(path.join(home,"state")),PERRY_DIR:unix(path.join(home,"checkout")),PERRY_REPO:unix(path.join(home,"nonexistent-fixture-repo")),TEST_BIN:unix(bin),PERRY_NO_SETUP:"1",PERRY_TELEMETRY_DISABLED:"1",TEST_LOG:unix(log),TEST_OS:os,TEST_GIT:git,TEMP:unix(scratch),TMP:unix(scratch)};
   if(process.platform === "win32") {env.SYSTEMROOT=process.env.SYSTEMROOT;env.WINDIR=process.env.WINDIR;}
   if(pet) env.PERRY_PET="http://127.0.0.1:1 FAKE-CODE";
   // Git for Windows' launcher prepends real executables to PATH. Reset it
   // inside the shell, then prove every executable is the fixture before running.
-  const guard='export PATH="$TEST_BIN:/usr/bin:/bin"; for tool in git node npm pnpm bun curl uname; do [ "$(command -v "$tool")" = "$TEST_BIN/$tool" ] || exit 97; done; exec /usr/bin/sh "$1"';
+  const guard='export PATH="$TEST_BIN:/usr/bin:/bin"; for tool in git node npm pnpm bun curl uname xcode-select; do [ "$(command -v "$tool")" = "$TEST_BIN/$tool" ] || exit 97; done; exec "$TEST_SHELL" "$1"';
   const args=[...(process.platform === "win32" ? ["--noprofile","--norc"] : []),"-c",guard,"fixture",unix(path.join(repo,"install.sh"))];
   const run=()=>spawnSync(shell,args,{cwd:repo,env,encoding:"utf8",timeout:15000});
   const result=run();const output=(result.stdout??"")+(result.stderr??"");const calls=fs.readFileSync(log,"utf8");

@@ -11,3 +11,7 @@ uname. All filesystem output stays in this batch's small W: scratch folder. No
 network, installs, services, personal settings, real home or live Perry may run.
 Capture exit status, command trace and output as JSON. This simulates macOS's Git
 failure under Git Bash on Windows; it does not exercise Apple's real GUI installer.
+
+Cross-platform CI review: macOS does not provide `/usr/bin/sh`; use `/bin/sh`
+on native Unix hosts and the Git Bash shell path only on Windows. The launcher
+must still verify fixture resolution before executing the installer.

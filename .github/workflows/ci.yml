@@ -23,6 +23,13 @@ jobs:
           cache: pnpm
       - uses: oven-sh/setup-bun@v2
       - run: pnpm install --frozen-lockfile
+      - run: pnpm exec node artifacts/macos-git-preflight/run.mjs
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-git-preflight-${{ runner.os }}
+          path: artifacts/macos-git-preflight/result.json
+          if-no-files-found: ignore
       - run: pnpm exec tsc --noEmit -p convex
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec node --experimental-strip-types artifacts/pr-300/stream-integration.mjs

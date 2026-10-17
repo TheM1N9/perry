@@ -44,10 +44,10 @@
         "node --version",
         "pnpm --version",
         "bun --version",
-        "git clone --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Darwin-working-full/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Darwin-working-full/checkout",
+        "git clone --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Darwin-working-full/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Darwin-working-full/checkout",
         "pnpm install --frozen-lockfile",
-        "bun --cwd /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Darwin-working-full/checkout /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Darwin-working-full/checkout/scripts/perry.ts link",
-        "bun --cwd /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Darwin-working-full/checkout /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Darwin-working-full/checkout/scripts/telemetry.ts Installation completed"
+        "bun --cwd /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Darwin-working-full/checkout /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Darwin-working-full/checkout/scripts/perry.ts link",
+        "bun --cwd /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Darwin-working-full/checkout /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Darwin-working-full/checkout/scripts/telemetry.ts Installation completed"
       ],
       "output": "\nInstalling Perry\n  git version 2.50.0, node v22.23.3, pnpm 10.34.7, bun 1.4.3\n  downloading Perry...\r\u001b[K  installing packages...\r\u001b[K  Perry in <home>/checkout\n\n  Installed. Run perry setup in a new terminal to finish.\n\n"
     },
@@ -61,10 +61,10 @@
         "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
         "node --version",
         "pnpm --version",
-        "git clone --depth 1 --filter=blob:none --sparse --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Darwin-working-pet/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Darwin-working-pet/checkout",
-        "git -C /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Darwin-working-pet/checkout sparse-checkout set pet",
-        "pnpm install --dir /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Darwin-working-pet/checkout/pet --frozen-lockfile",
-        "node /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Darwin-working-pet/checkout/pet/connect.js http://127.0.0.1:1 FAKE-CODE"
+        "git clone --depth 1 --filter=blob:none --sparse --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Darwin-working-pet/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Darwin-working-pet/checkout",
+        "git -C /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Darwin-working-pet/checkout sparse-checkout set pet",
+        "pnpm install --dir /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Darwin-working-pet/checkout/pet --frozen-lockfile",
+        "node /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Darwin-working-pet/checkout/pet/connect.js http://127.0.0.1:1 FAKE-CODE"
       ],
       "output": "\nInstalling Perry's desktop pet\n  git version 2.50.0, node v22.23.3, pnpm 10.34.7\n  downloading the pet...\r\u001b[K  picking out his folder...\r\u001b[K  installing his window and his ears (Electron and ONNX Runtime, under 1 GB)...\r\u001b[K  the pet in <home>/checkout\n"
     },
@@ -101,10 +101,10 @@
         "node --version",
         "pnpm --version",
         "bun --version",
-        "git clone --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Linux-working-full/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Linux-working-full/checkout",
+        "git clone --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Linux-working-full/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Linux-working-full/checkout",
         "pnpm install --frozen-lockfile",
-        "bun --cwd /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Linux-working-full/checkout /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Linux-working-full/checkout/scripts/perry.ts link",
-        "bun --cwd /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Linux-working-full/checkout /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Linux-working-full/checkout/scripts/telemetry.ts Installation completed"
+        "bun --cwd /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Linux-working-full/checkout /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Linux-working-full/checkout/scripts/perry.ts link",
+        "bun --cwd /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Linux-working-full/checkout /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Linux-working-full/checkout/scripts/telemetry.ts Installation completed"
       ],
       "output": "\nInstalling Perry\n  git version 2.50.0, node v22.23.3, pnpm 10.34.7, bun 1.4.3\n  downloading Perry...\r\u001b[K  installing packages...\r\u001b[K  Perry in <home>/checkout\n\n  Installed. Run perry setup in a new terminal to finish.\n\n"
     },
@@ -118,10 +118,10 @@
         "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
         "node --version",
         "pnpm --version",
-        "git clone --depth 1 --filter=blob:none --sparse --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Linux-working-pet/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Linux-working-pet/checkout",
-        "git -C /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Linux-working-pet/checkout sparse-checkout set pet",
-        "pnpm install --dir /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Linux-working-pet/checkout/pet --frozen-lockfile",
-        "node /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-A6ZV0Y/Linux-working-pet/checkout/pet/connect.js http://127.0.0.1:1 FAKE-CODE"
+        "git clone --depth 1 --filter=blob:none --sparse --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Linux-working-pet/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Linux-working-pet/checkout",
+        "git -C /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Linux-working-pet/checkout sparse-checkout set pet",
+        "pnpm install --dir /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Linux-working-pet/checkout/pet --frozen-lockfile",
+        "node /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-gtdwC2/Linux-working-pet/checkout/pet/connect.js http://127.0.0.1:1 FAKE-CODE"
       ],
       "output": "\nInstalling Perry's desktop pet\n  git version 2.50.0, node v22.23.3, pnpm 10.34.7\n  downloading the pet...\r\u001b[K  picking out his folder...\r\u001b[K  installing his window and his ears (Electron and ONNX Runtime, under 1 GB)...\r\u001b[K  the pet in <home>/checkout\n"
     }

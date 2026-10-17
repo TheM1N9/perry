@@ -18,6 +18,10 @@ installer and verify the update path. Broken scenarios verify an early exit,
 guidance, and no clone, download, dependency install or profile writes.
 Shell syntax and `git diff --check` also passed.
 
+The CI matrix runs this harness on Windows, macOS and Linux and uploads the
+result JSON from each host. Each host simulates both target operating systems;
+Apple's developer-tools installation dialog itself requires a real user session.
+
 These checks execute the actual installer with stand-in executables under Git
 Bash on Windows. They simulate macOS's Git failure; an actual macOS installation
 and Apple's installation dialog were not exercised. Each corrected run writes
