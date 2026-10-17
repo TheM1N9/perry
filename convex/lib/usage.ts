@@ -188,4 +188,8 @@ export const USAGE_REPORTS: Record<EngineKind, { limits: boolean; tokens: "all" 
     limits: false, tokens: "none",
     note: "Cursor isn't one of Perry's engines yet.",
   },
+  opencode: {
+    limits: false, tokens: "none",
+    note: "OpenCode reports neither limits nor tokens. Perry says so here when it refuses a reply for one.",
+  },
 };
