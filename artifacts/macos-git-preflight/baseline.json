@@ -1,0 +1,145 @@
+{
+  "platform": "win32",
+  "checks": {
+    "Darwin-broken-full": false,
+    "Darwin-broken-pet": false,
+    "Darwin-working-full": true,
+    "Darwin-working-pet": true,
+    "Linux-broken-full": false,
+    "Linux-broken-pet": false,
+    "Linux-working-full": true,
+    "Linux-working-pet": true
+  },
+  "cases": {
+    "Darwin-broken-full": {
+      "exit": 1,
+      "noEffects": false,
+      "calls": [
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "npm prefix -g",
+        "git --version",
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "node --version",
+        "pnpm --version",
+        "bun --version",
+        "git clone --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-broken-full/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-broken-full/checkout"
+      ],
+      "output": "\nInstalling Perry\n  git , node v22.23.3, pnpm 10.34.7, bun 1.4.3\n  downloading Perry...\r\u001b[Kxcode-select: note: No developer tools were found, requesting install.\n\n  Downloading Perry failed.\n  Fix that, then run the installer again; it picks up where it stopped.\n\nxcode-select: note: No developer tools were found, requesting install.\n"
+    },
+    "Darwin-broken-pet": {
+      "exit": 1,
+      "noEffects": false,
+      "calls": [
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "npm prefix -g",
+        "git --version",
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "node --version",
+        "pnpm --version",
+        "git clone --depth 1 --filter=blob:none --sparse --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-broken-pet/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-broken-pet/checkout"
+      ],
+      "output": "\nInstalling Perry's desktop pet\n  git , node v22.23.3, pnpm 10.34.7\n  downloading the pet...\r\u001b[Kxcode-select: note: No developer tools were found, requesting install.\n\n  Downloading the pet failed.\n  Fix that, then run the installer again; it picks up where it stopped.\n\nxcode-select: note: No developer tools were found, requesting install.\n"
+    },
+    "Darwin-working-full": {
+      "exit": 0,
+      "rerunStatus": 0,
+      "calls": [
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "npm prefix -g",
+        "git --version",
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "node --version",
+        "pnpm --version",
+        "bun --version",
+        "git clone --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-working-full/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-working-full/checkout",
+        "pnpm install --frozen-lockfile",
+        "bun --cwd /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-working-full/checkout /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-working-full/checkout/scripts/perry.ts link",
+        "bun --cwd /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-working-full/checkout /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-working-full/checkout/scripts/telemetry.ts Installation completed"
+      ],
+      "output": "\nInstalling Perry\n  git 2.50.0, node v22.23.3, pnpm 10.34.7, bun 1.4.3\n  downloading Perry...\r\u001b[K  installing packages...\r\u001b[K  Perry in <home>/checkout\n\n  Installed. Run perry setup in a new terminal to finish.\n\n"
+    },
+    "Darwin-working-pet": {
+      "exit": 0,
+      "rerunStatus": 0,
+      "calls": [
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "npm prefix -g",
+        "git --version",
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "node --version",
+        "pnpm --version",
+        "git clone --depth 1 --filter=blob:none --sparse --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-working-pet/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-working-pet/checkout",
+        "git -C /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-working-pet/checkout sparse-checkout set pet",
+        "pnpm install --dir /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-working-pet/checkout/pet --frozen-lockfile",
+        "node /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Darwin-working-pet/checkout/pet/connect.js http://127.0.0.1:1 FAKE-CODE"
+      ],
+      "output": "\nInstalling Perry's desktop pet\n  git 2.50.0, node v22.23.3, pnpm 10.34.7\n  downloading the pet...\r\u001b[K  picking out his folder...\r\u001b[K  installing his window and his ears (Electron and ONNX Runtime, under 1 GB)...\r\u001b[K  the pet in <home>/checkout\n"
+    },
+    "Linux-broken-full": {
+      "exit": 1,
+      "noEffects": false,
+      "calls": [
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "npm prefix -g",
+        "git --version",
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "node --version",
+        "pnpm --version",
+        "bun --version",
+        "git clone --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-broken-full/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-broken-full/checkout"
+      ],
+      "output": "\nInstalling Perry\n  git , node v22.23.3, pnpm 10.34.7, bun 1.4.3\n  downloading Perry...\r\u001b[Kxcode-select: note: No developer tools were found, requesting install.\n\n  Downloading Perry failed.\n  Fix that, then run the installer again; it picks up where it stopped.\n\nxcode-select: note: No developer tools were found, requesting install.\n"
+    },
+    "Linux-broken-pet": {
+      "exit": 1,
+      "noEffects": false,
+      "calls": [
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "npm prefix -g",
+        "git --version",
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "node --version",
+        "pnpm --version",
+        "git clone --depth 1 --filter=blob:none --sparse --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-broken-pet/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-broken-pet/checkout"
+      ],
+      "output": "\nInstalling Perry's desktop pet\n  git , node v22.23.3, pnpm 10.34.7\n  downloading the pet...\r\u001b[Kxcode-select: note: No developer tools were found, requesting install.\n\n  Downloading the pet failed.\n  Fix that, then run the installer again; it picks up where it stopped.\n\nxcode-select: note: No developer tools were found, requesting install.\n"
+    },
+    "Linux-working-full": {
+      "exit": 0,
+      "rerunStatus": 0,
+      "calls": [
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "npm prefix -g",
+        "git --version",
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "node --version",
+        "pnpm --version",
+        "bun --version",
+        "git clone --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-working-full/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-working-full/checkout",
+        "pnpm install --frozen-lockfile",
+        "bun --cwd /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-working-full/checkout /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-working-full/checkout/scripts/perry.ts link",
+        "bun --cwd /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-working-full/checkout /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-working-full/checkout/scripts/telemetry.ts Installation completed"
+      ],
+      "output": "\nInstalling Perry\n  git 2.50.0, node v22.23.3, pnpm 10.34.7, bun 1.4.3\n  downloading Perry...\r\u001b[K  installing packages...\r\u001b[K  Perry in <home>/checkout\n\n  Installed. Run perry setup in a new terminal to finish.\n\n"
+    },
+    "Linux-working-pet": {
+      "exit": 0,
+      "rerunStatus": 0,
+      "calls": [
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "npm prefix -g",
+        "git --version",
+        "node -e const [a,b]=process.versions.node.split(\".\").map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)",
+        "node --version",
+        "pnpm --version",
+        "git clone --depth 1 --filter=blob:none --sparse --branch main /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-working-pet/nonexistent-fixture-repo /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-working-pet/checkout",
+        "git -C /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-working-pet/checkout sparse-checkout set pet",
+        "pnpm install --dir /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-working-pet/checkout/pet --frozen-lockfile",
+        "node /w/Developer-w/m1n9/perry/.batch-work/macos-git-preflight/run-FC2lDT/Linux-working-pet/checkout/pet/connect.js http://127.0.0.1:1 FAKE-CODE"
+      ],
+      "output": "\nInstalling Perry's desktop pet\n  git 2.50.0, node v22.23.3, pnpm 10.34.7\n  downloading the pet...\r\u001b[K  picking out his folder...\r\u001b[K  installing his window and his ears (Electron and ONNX Runtime, under 1 GB)...\r\u001b[K  the pet in <home>/checkout\n"
+    }
+  },
+  "scratchBytes": 64871,
+  "ok": false
+}
