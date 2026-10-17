@@ -12,3 +12,12 @@ licenses/opendots-LICENSE): the notes store's revision-checked saves, Perry's
 note tools, and the note editor (TipTap, Markdown, slash commands, autosave).
 Files that contain adapted material say so in a comment naming the OpenDots
 source file, and were modified for Perry.
+
+Portions adapted from whirl (https://github.com/whirlchat/whirl), Copyright (c)
+2026 Anterra, licensed under the MIT License (see licenses/whirl-LICENSE): the
+metered reveal of streamed text and the tab-visibility store
+(hooks/use-typewriter.ts and hooks/use-page-visible.ts, from
+apps/v2/lib/use-typewriter.ts and apps/v2/lib/page-visibility.ts), and the
+long-lived tab and window agent rules in AGENTS.md (from CLAUDE.md). Files that
+contain adapted material say so in a comment naming the whirl source file, and
+were modified for Perry.
