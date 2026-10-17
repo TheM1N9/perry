@@ -212,8 +212,9 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
   const engines = enginesOf(models ?? []);
   const modelItems = (models ?? []).map((item) => ({ value: keyOf(item), label: item.name }));
   const modelItem = (item: ModelOption) => (
-    <SelectItem key={keyOf(item)} value={keyOf(item)}>
-      {item.name}{item.isDefault && <span className="text-muted-foreground"> · default</span>}
+    <SelectItem key={keyOf(item)} value={keyOf(item)} className="max-w-[18rem]">
+      <span className="truncate">{item.name}</span>
+      {item.isDefault && <span className="shrink-0 text-muted-foreground">· default</span>}
     </SelectItem>
   );
   const effortItems = [
@@ -230,7 +231,7 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
           <CpuIcon className="size-3.5" />
           <SelectValue className="truncate" placeholder={models === undefined ? "Loading…" : "Default model"} />
         </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false} align="start" side="top" className="max-w-80">
+        <SelectContent alignItemWithTrigger={false} align="start" side="top" className="max-h-80 w-72">
           {engines.length > 1
             ? engines.map((engine) => (
                 <SelectGroup key={engine}>
