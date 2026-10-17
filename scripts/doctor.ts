@@ -19,6 +19,7 @@ import { platform, release, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ENGINE_LABELS, updateOf, versionIn, type EngineKind } from "../convex/lib/engines";
 import { antigravityDirs } from "../runner/engines/antigravity";
+import { commandOf } from "../runner/engines/process";
 import { sandboxMode } from "../runner/codex";
 import { HOME, readRunnerConfig } from "../runner/home";
 import { latestVersionNow, updateCommand } from "../runner/versions";
@@ -108,8 +109,9 @@ async function checkMachine() {
   const antigravity = existsSync(antigravityDirs.server) && readdirSync(antigravityDirs.server).length > 0;
   if (antigravity) { installedHere.add("antigravity"); ok("antigravity", "turned on (experimental)"); }
   else note("antigravity", "not turned on (optional, experimental; Settings → Engines)");
-  // OpenCode: its own CLI, driven over ACP.
-  const opencode = await runOnPath("opencode", ["--version"]);
+  // OpenCode: its own CLI, driven over ACP, wherever PERRY_OPENCODE_COMMAND points (runner/engines/opencode.ts).
+  const opencodeCli = commandOf("PERRY_OPENCODE_COMMAND", "opencode");
+  const opencode = await runOnPath(opencodeCli.command, [...opencodeCli.args, "--version"]);
   if (opencode.code === 0 && opencode.output.trim()) { installedHere.add("opencode"); ok("opencode", opencode.output.trim().split("\n")[0]); }
   else note("opencode", `not installed (optional). To use it: ${INSTALL_COMMANDS.opencode}`);
   if (!installedHere.size) bad("engines", "none installed here, so Perry has nothing to think with. Run perry setup to choose one and install it");
