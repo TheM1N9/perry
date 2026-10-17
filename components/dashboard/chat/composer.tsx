@@ -226,11 +226,11 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
   return (
     <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
       <Select items={modelItems} value={model ?? null} onValueChange={(value) => { if (value) onModel(value); }} disabled={!models?.length}>
-        <SelectTrigger aria-label="Model" className={pill}>
+        <SelectTrigger aria-label="Model" className={cn(pill, "max-w-64")}>
           <CpuIcon className="size-3.5" />
-          <SelectValue placeholder={models === undefined ? "Loading…" : "Default model"} />
+          <SelectValue className="truncate" placeholder={models === undefined ? "Loading…" : "Default model"} />
         </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false} align="start" side="top">
+        <SelectContent alignItemWithTrigger={false} align="start" side="top" className="max-w-80">
           {engines.length > 1
             ? engines.map((engine) => (
                 <SelectGroup key={engine}>

@@ -81,41 +81,67 @@ function validateProtectedDatabase(sql: DatabaseSync) {
 /** Whole migration commits atomically. A durable pending flag retries physical cleanup after a crash. */
 export function migrateCredentialDatabase(sql: DatabaseSync): void {
   credentialKey();
-  sql.exec("PRAGMA secure_delete = ON; PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE;");
   let marker: { keyCheck: string; cleanup: number } | undefined;
-  const changes: Array<{ table: string; id: string; doc: string }> = [];
-  try {
-    marker = hasTable(sql, "_credential_encryption")
-      ? sql.prepare("SELECT keyCheck, cleanup FROM _credential_encryption WHERE id = 1").get() as typeof marker
-      : undefined;
-    if (marker && decryptCredential("secrets", marker.keyCheck) !== CHECK) throw new Error("Perry's credential key check failed.");
-    for (const table of TABLES) {
-      if (!hasTable(sql, `doc_${table}`)) continue;
-      for (const row of sql.prepare(`SELECT _id, doc FROM "doc_${table}"`).all() as Array<{ _id: string; doc: string }>) {
-        const fields = parseDocument(row.doc) as Record<string, unknown>;
-        const protectedFields = protectCredential(table, fields);
-        if (protectedFields !== fields) changes.push({ table, id: row._id, doc: JSON.stringify(protectedFields) });
+  let changes: Array<{ table: string; id: string; doc: string }> = [];
+  // The transactional migration can race a stale Perry process that is still
+  // closing its connection; retry a few times before giving up.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    changes = [];
+    try {
+      sql.exec("PRAGMA secure_delete = ON; PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE;");
+      marker = hasTable(sql, "_credential_encryption")
+        ? sql.prepare("SELECT keyCheck, cleanup FROM _credential_encryption WHERE id = 1").get() as typeof marker
+        : undefined;
+      if (marker && decryptCredential("secrets", marker.keyCheck) !== CHECK) throw new Error("Perry's credential key check failed.");
+      for (const table of TABLES) {
+        if (!hasTable(sql, `doc_${table}`)) continue;
+        for (const row of sql.prepare(`SELECT _id, doc FROM "doc_${table}"`).all() as Array<{ _id: string; doc: string }>) {
+          const fields = parseDocument(row.doc) as Record<string, unknown>;
+          const protectedFields = protectCredential(table, fields);
+          if (protectedFields !== fields) changes.push({ table, id: row._id, doc: JSON.stringify(protectedFields) });
+        }
       }
+      if (!marker || changes.length) {
+        sql.exec("CREATE TABLE IF NOT EXISTS _credential_encryption (id INTEGER PRIMARY KEY CHECK(id = 1), keyCheck TEXT NOT NULL, cleanup INTEGER NOT NULL)");
+        for (const row of changes) sql.prepare(`UPDATE "doc_${row.table}" SET doc = ? WHERE _id = ?`).run(row.doc, row.id);
+        sql.prepare("INSERT INTO _credential_encryption (id, keyCheck, cleanup) VALUES (1, ?, 1) ON CONFLICT(id) DO UPDATE SET cleanup = 1").run(encryptCredential("secrets", CHECK));
+      }
+      sql.exec("COMMIT");
+      break;
+    } catch (error) {
+      try { sql.exec("ROLLBACK"); } catch {}
+      const message = error instanceof Error ? error.message : String(error);
+      const locked = /locked|busy/i.test(message);
+      if (!locked || attempt === 4) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
     }
-    if (!marker || changes.length) {
-      sql.exec("CREATE TABLE IF NOT EXISTS _credential_encryption (id INTEGER PRIMARY KEY CHECK(id = 1), keyCheck TEXT NOT NULL, cleanup INTEGER NOT NULL)");
-      for (const row of changes) sql.prepare(`UPDATE "doc_${row.table}" SET doc = ? WHERE _id = ?`).run(row.doc, row.id);
-      sql.prepare("INSERT INTO _credential_encryption (id, keyCheck, cleanup) VALUES (1, ?, 1) ON CONFLICT(id) DO UPDATE SET cleanup = 1").run(encryptCredential("secrets", CHECK));
-    }
-    sql.exec("COMMIT");
-  } catch (error) { sql.exec("ROLLBACK"); throw error; }
+  }
   if (!marker || marker.cleanup || changes.length) {
-    checkpoint(sql);
-    sql.exec("VACUUM");
-    checkpoint(sql);
-    sql.exec("UPDATE _credential_encryption SET cleanup = 0 WHERE id = 1");
-    checkpoint(sql);
+    // Physical cleanup (VACUUM) needs exclusive access. If another Perry
+    // process is still holding the database, defer it instead of failing to
+    // start: the logical migration above is already committed and durable, and
+    // cleanup=1 makes the next start retry it.
+    try {
+      checkpoint(sql);
+      sql.exec("VACUUM");
+      checkpoint(sql);
+      sql.exec("UPDATE _credential_encryption SET cleanup = 0 WHERE id = 1");
+      checkpoint(sql);
+    } catch (error) {
+      console.warn(`[perry] credential cleanup deferred: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }
 
 function checkpoint(sql: DatabaseSync) {
-  const result = sql.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy?: number };
-  if (result.busy) throw new Error("Credential migration needs exclusive database access. Close other Perry processes and retry.");
+  // A checkpoint can report busy while another connection has the WAL open even
+  // when no write transaction is in progress; retry briefly before giving up.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const result = sql.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get() as { busy?: number };
+    if (!result.busy) return;
+    if (attempt < 19) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+  }
+  throw new Error("Credential migration needs exclusive database access. Close other Perry processes and retry.");
 }
 
 type BackupStaging = { file: string; original: string };

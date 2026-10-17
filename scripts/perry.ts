@@ -729,6 +729,16 @@ async function open(): Promise<boolean> {
 
 async function status() {
   const { serviceState, servicePlan, serviceContext } = await import("./service");
+  // A crashed Perry can leave a dashboard on the port holding the database open,
+  // which keeps the next start from migrating it. Clear such a stale holder first.
+  let portOccupied = false;
+  try {
+    await fetch(`http://127.0.0.1:${PORT}/`, { signal: AbortSignal.timeout(1000) });
+    portOccupied = true;
+  } catch (error) {
+    portOccupied = !/ECONNREFUSED|connection refused/i.test(String(error));
+  }
+  if (portOccupied && !(await runnerReady())) killPort(PORT);
   const ctx = serviceContext();
   const state = serviceState(ctx);
   const up = await dashboardUp();
@@ -739,6 +749,22 @@ async function status() {
   const config = readRunnerConfig();
   say(`  computer   ${config.token ? `${config.name ?? hostname()}${dim(`, working in ${config.dir ?? "?"}`)}` : yellow("not connected")}`);
   say(dim(`  logs       ${servicePlan(ctx).logs ? "perry logs" : ctx.logFile}\n`));
+}
+
+function killPort(port: number) {
+  if (process.platform === "win32") {
+    try { spawnSync("cmd", ["/c", `for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port}') do taskkill /PID %a /F`], { stdio: "ignore" }); } catch {}
+    return;
+  }
+  try {
+    const result = spawnSync("lsof", ["-ti", `tcp:${port}`], { encoding: "utf8" });
+    for (const pid of (result.stdout ?? "").split(/\s+/).filter(Boolean)) {
+      const n = Number(pid);
+      if (Number.isSafeInteger(n) && n > 0 && n !== process.pid) {
+        try { process.kill(n, "SIGKILL"); } catch {}
+      }
+    }
+  } catch {}
 }
 
 async function start({ pet = true } = {}): Promise<boolean> {
@@ -774,6 +800,7 @@ async function stop({ quiet = false, pet = true } = {}) {
   const ctx = serviceContext();
   runSteps(servicePlan(ctx).stop, false);
   if (ctx.platform === "win32") endServiceProcess();
+  killPort(PORT);
   if (pet) await (await import("./pet")).quit();
   if (!quiet) await done("stopped");
 }

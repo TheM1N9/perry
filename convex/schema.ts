@@ -93,7 +93,7 @@ export const vCodexModel = v.object({
   defaultEffort: v.optional(v.string()),
 });
 /** The engine a chat, turn or job runs on (lib/engines.ts). */
-export const vEngine = v.union(v.literal("codex"), v.literal("claude"), v.literal("grok"), v.literal("cursor"), v.literal("antigravity"));
+export const vEngine = v.union(v.literal("codex"), v.literal("claude"), v.literal("grok"), v.literal("cursor"), v.literal("antigravity"), v.literal("opencode"));
 /** What the owner does to finish signing an engine in (lib/engines.ts, LoginInteraction). */
 export const vLoginInteraction = v.union(
   v.object({ type: v.literal("browser"), url: v.string() }),
