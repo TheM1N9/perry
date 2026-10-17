@@ -153,7 +153,15 @@ if ! has git; then
   if [ "$(uname -s)" = Darwin ]; then xcode-select --install 2>/dev/null || true; fail "Git is needed; macOS is offering to install it. Run this again once that finishes."; fi
   fail "Git is needed. Install it with your package manager (for example: sudo apt install git), then run this again."
 fi
-found "git $(git --version | sed 's/git version //')"
+# macOS ships a git placeholder even without Command Line Tools. Checking only
+# PATH accepts it, and a pipeline to sed hides its failed exit status.
+if ! git_version=$(git --version 2>/dev/null); then
+  if [ "$(uname -s)" = Darwin ]; then
+    fail "Git is not ready. Finish installing macOS Command Line Tools, then verify git --version and rerun this installer. If no install window appeared, run xcode-select --install."
+  fi
+  fail "Git is installed but not working. Run git --version, fix its error, then rerun this installer."
+fi
+found "$git_version"
 
 if node_ok; then
   found "node $(node --version)"
