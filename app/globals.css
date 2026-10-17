@@ -102,6 +102,12 @@
   --sidebar-accent-foreground: #1d1d1f;
   --sidebar-border: #e8e8ec;
   --sidebar-ring: #0c7a70;
+  /* Brain's map: three hues, each a role (hubs, your pages, people), validated as a set for colour-blind readers
+     (dataviz, --pairs all); the journal and chats a quiet grey, as they are most of it. Shape tells kinds apart within a hue. */
+  --map-hub: #1baf7a;
+  --map-page: #2a78d6;
+  --map-person: #eb6834;
+  --map-quiet: #a3a3aa;
 }
 
 .dark {
@@ -132,6 +138,10 @@
   --chart-3: #f0b44c;
   --chart-4: #a0a0a8;
   --chart-5: #f2f2f4;
+  --map-hub: #199e70;
+  --map-page: #3987e5;
+  --map-person: #d95926;
+  --map-quiet: #66666e;
   --sidebar: #111113;
   --sidebar-foreground: #f2f2f4;
   --sidebar-primary: #5fd4c8;
@@ -215,9 +225,6 @@
   .prose-chat :not(pre) > code {
     @apply rounded-[5px] bg-muted px-[0.35em] py-[0.1em] font-mono text-[0.86em];
   }
-  .prose-chat pre {
-    @apply overflow-x-auto p-4 font-mono text-sm leading-relaxed;
-  }
   .prose-chat img { @apply max-h-96 rounded-lg; }
 }
 
@@ -257,18 +264,3 @@
   }
 }
 
-/* The shimmer on "Thinking", swept once a second and a half; still for those who ask for less motion. */
-@keyframes shimmer {
-  from { background-position: 150% 0; }
-  to { background-position: -50% 0; }
-}
-.shimmer {
-  background: linear-gradient(90deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%) 0 0 / 250% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: shimmer 1.6s linear infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .shimmer { animation: none; color: var(--muted-foreground); background: none; }
-}

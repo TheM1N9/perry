@@ -1,10 +1,10 @@
 "use client";
 
-import { CheckIcon, ChevronRightIcon, HourglassIcon, MinusIcon, XIcon } from "lucide-react";
-import { createContext, useCallback, useContext, useId, useMemo, useState, type ReactNode } from "react";
+import { CheckIcon, HourglassIcon, MinusIcon, XIcon } from "lucide-react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import type { Work, WorkStep } from "@/convex/dashboard";
 import { plural } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 import { StepDetail } from "./step-card";
 
 export type { Work };
@@ -52,42 +52,40 @@ export function Spinner() {
  * waits on the owner's approval, so the step still open waits too.
  */
 export function WorkSteps({ steps, live = false, held = false, unresponsive = false, now = 0 }: { steps: WorkStep[]; live?: boolean; held?: boolean; unresponsive?: boolean; now?: number }) {
-  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
-  const toggle = (id: string) => setOpen((was) => { const next = new Set(was); if (!next.delete(id)) next.add(id); return next; });
   return (
-    <ol className="space-y-1" data-work-steps>
-      {steps.map((step) => {
-        // A step open while the turn waits on the owner waits with it; one a stopped run left open is over, and did not finish either.
-        const waits = live && (held || unresponsive) && step.status === "running";
-        const running = live && !held && !unresponsive && step.status === "running";
-        const stopped = !live && step.status === "running";
-        const failed = step.status === "error" || step.status === "declined";
-        const time = running ? took(now - step.startedAt) : step.durationMs !== undefined ? took(step.durationMs) : "";
-        const opened = open.has(step.id);
-        return (
-          <li key={step.id} className="min-w-0 text-sm text-muted-foreground"
-            data-step={step.label} data-status={stopped ? "stopped" : waits ? "waiting" : step.status} data-kind={step.kind}>
-            <button type="button" aria-expanded={opened} onClick={() => toggle(step.id)}
-              className="group/step flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50">
-              {running
-                ? <Spinner />
-                : waits
-                  ? <HourglassIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label={unresponsive ? "Waiting for your computer to reconnect" : "Waiting for your approval"} />
-                  : failed
-                    ? <XIcon className="size-3.5 shrink-0 text-destructive" aria-label={step.status === "declined" ? "Declined" : "Failed"} />
-                    : stopped
-                      ? <MinusIcon className="size-3.5 shrink-0 text-muted-foreground" aria-label="Stopped" />
-                      : <CheckIcon className="size-3.5 shrink-0 text-primary" aria-hidden />}
-              <span className={cn("min-w-0 truncate", running && "shimmer")}>{step.label}</span>
-              {time && <span className="nums shrink-0 text-xs text-muted-foreground/70">{time}</span>}
-              <ChevronRightIcon aria-hidden className={cn("size-3.5 shrink-0 opacity-0 transition group-hover/step:opacity-100 group-focus-visible/step:opacity-100 motion-reduce:transition-none",
-                opened && "rotate-90 opacity-100")} />
-            </button>
-            {opened && <div className="mt-1 mb-2 ml-5.5"><StepDetail id={step.id} /></div>}
-          </li>
-        );
-      })}
-    </ol>
+    <Trace data-work-steps>
+      <ol className="flex min-w-0 flex-col gap-1">
+        {steps.map((step) => {
+          // A step open while the turn waits on the owner waits with it; one a stopped run left open is over, and did not finish either.
+          const waits = live && (held || unresponsive) && step.status === "running";
+          const running = live && !held && !unresponsive && step.status === "running";
+          const stopped = !live && step.status === "running";
+          const failed = step.status === "error" || step.status === "declined";
+          const time = running ? took(now - step.startedAt) : step.durationMs !== undefined ? took(step.durationMs) : "";
+          return (
+            <TraceCollapsible key={step.id} render={<li />}
+              data-step={step.label} data-status={stopped ? "stopped" : waits ? "waiting" : step.status} data-kind={step.kind}>
+              <TraceCollapsibleTrigger>
+                <TraceLine status={running ? "running" : failed ? "error" : undefined}>
+                  {running
+                    ? <TraceIcon><Spinner /></TraceIcon>
+                    : waits
+                      ? <TraceIcon aria-hidden={false}><HourglassIcon className="size-3.5" aria-label={unresponsive ? "Waiting for your computer to reconnect" : "Waiting for your approval"} /></TraceIcon>
+                      : failed
+                        ? <TraceIcon aria-hidden={false}><XIcon className="size-3.5" aria-label={step.status === "declined" ? "Declined" : "Failed"} /></TraceIcon>
+                        : stopped
+                          ? <TraceIcon aria-hidden={false}><MinusIcon className="size-3.5" aria-label="Stopped" /></TraceIcon>
+                          : <TraceIcon><CheckIcon className="size-3.5 text-primary" /></TraceIcon>}
+                  <TraceTitle>{step.label}</TraceTitle>
+                  {time && <TraceDescription className="nums text-xs">{time}</TraceDescription>}
+                </TraceLine>
+              </TraceCollapsibleTrigger>
+              <TraceCollapsibleContent className="mt-1 mb-2"><StepDetail id={step.id} /></TraceCollapsibleContent>
+            </TraceCollapsible>
+          );
+        })}
+      </ol>
+    </Trace>
   );
 }
 
@@ -130,29 +128,27 @@ export function WorkFolds({ children }: { children: ReactNode }) {
  * the turn ends and the fold moves above the reply.
  */
 export function WorkSummary({ work, state = "done", now = 0 }: { work: Work; state?: WorkState; now?: number }) {
-  const id = useId();
   const live = state === "working" || state === "waiting" || state === "unresponsive";
   const folds = useContext(Folds);
   const [own, setOwn] = useState<boolean | undefined>(undefined);
   const open = (folds ? folds.chosen.get(work.runId) : own) ?? live;
-  const onToggle = () => folds ? folds.choose(work.runId, !open) : setOwn(!open);
+  const onOpenChange = (next: boolean) => folds ? folds.choose(work.runId, next) : setOwn(next);
   const label = workLabel(work, state, now);
-  const steps = work.steps.length > 0;
+  const line = (
+    <TraceLine status={state === "working" ? "running" : undefined}>
+      {state === "working" && <TraceIcon><Spinner /></TraceIcon>}
+      <TraceTitle className="nums">{label}</TraceTitle>
+    </TraceLine>
+  );
+  const data = { "data-work": true, "data-work-state": state, "data-run": work.runId };
   return (
-    <div className="mb-2" data-work data-work-state={state} data-run={work.runId}>
-      {steps ? (
-        <button type="button" aria-expanded={open} aria-controls={id} onClick={onToggle}
-          className="-ml-1 flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
-          {state === "working" && <Spinner />}
-          <span className={cn("nums", state === "working" && "shimmer")}>{label}</span>
-          <ChevronRightIcon className={cn("size-4 transition-transform motion-reduce:transition-none", open && "rotate-90")} aria-hidden />
-        </button>
-      ) : (
-        <p className="-ml-1 flex items-center gap-1.5 px-1 py-0.5 text-sm text-muted-foreground">
-          <span className="nums">{label}</span>
-        </p>
-      )}
-      {steps && open && <div id={id} className="mt-1.5 ml-1 border-l pl-3"><WorkSteps steps={work.steps} live={live} held={state === "waiting"} unresponsive={state === "unresponsive"} now={now} /></div>}
-    </div>
+    <Trace className="mb-2">
+      {work.steps.length > 0 ? (
+        <TraceCollapsible open={open} onOpenChange={onOpenChange} {...data}>
+          <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
+          <TraceCollapsibleContent className="mt-1.5"><WorkSteps steps={work.steps} live={live} held={state === "waiting"} unresponsive={state === "unresponsive"} now={now} /></TraceCollapsibleContent>
+        </TraceCollapsible>
+      ) : <p {...data}>{line}</p>}
+    </Trace>
   );
 }

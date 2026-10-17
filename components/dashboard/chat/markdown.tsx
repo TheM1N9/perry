@@ -1,16 +1,17 @@
 "use client";
 
-import { FileTextIcon, PuzzleIcon } from "lucide-react";
+import { FileIcon, FileTextIcon, PuzzleIcon } from "lucide-react";
 import Link from "next/link";
-import { memo, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import { createContext, memo, useContext, type ReactNode } from "react";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { SKILL_MENTION } from "@/convex/lib/commands";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CodeBlock, CodeBlockActions, CodeBlockContent, CodeBlockCopyButton, CodeBlockHeader, CodeBlockLine, CodeBlockTitle } from "@/components/ui/code-block";
+import { useHighlightedCode } from "@/hooks/use-highlighted-code";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CopyButton } from "../common";
 import { streamingMarkdown } from "./streaming-markdown";
 
 /** The text of a React node tree, for copying a code block. */
@@ -27,6 +28,81 @@ function languageOf(node: ReactNode): string | undefined {
   const className = child && typeof child === "object" && "props" in child ? (child.props as { className?: string }).className : undefined;
   return className?.match(/language-([\w+-]+)/)?.[1];
 }
+
+/**
+ * A reply's link to a file on this computer: opened from the media server when
+ * it is one of the chat's files, else the path, shown and not followed (a path
+ * is no page of Perry's, so following it would only open Perry again).
+ */
+function FileLink({ path, children }: { path: string; children: ReactNode }) {
+  const file = chatFile(useContext(ChatFiles), path);
+  if (file) return <a href={file.url} target="_blank" rel="noopener noreferrer" title={file.path} data-file-link className="inline-flex items-baseline gap-1">
+    <FileIcon className="size-3.5 self-center" aria-hidden />{children}
+  </a>;
+  return <span title={`${path} (not a file Perry can open from here)`} data-file-path className="inline-flex items-baseline gap-1 font-medium">
+    <FileIcon className="size-3.5 self-center text-muted-foreground" aria-hidden />{children}
+  </span>;
+}
+
+/** A fenced block: its language and a copy button above, the code highlighted when Perry knows the language. */
+function Code({ children }: { children: ReactNode }) {
+  const language = languageOf(children);
+  const code = textOf(children).replace(/\n$/, "");
+  const lines = useHighlightedCode(code, language ?? "text");
+  return (
+    <CodeBlock className="bg-muted/50">
+      <CodeBlockHeader>
+        <CodeBlockTitle className="font-mono text-xs font-normal text-muted-foreground">{language ?? "text"}</CodeBlockTitle>
+        <CodeBlockActions>
+          <CodeBlockCopyButton value={code} aria-label="Copy code" />
+        </CodeBlockActions>
+      </CodeBlockHeader>
+      <CodeBlockContent>
+        {lines.map((line, index) => <CodeBlockLine key={index}>{line}</CodeBlockLine>)}
+      </CodeBlockContent>
+    </CodeBlock>
+  );
+}
+
+/**
+ * The files a chat can open, by where they are on this computer
+ * (dashboard.getChatFiles): a reply's link to one opens it, and a link to any
+ * other path is only shown, since nothing would serve it.
+ */
+export const ChatFiles = createContext<ReadonlyArray<{ path: string; url: string }>>([]);
+
+/** Perry's own pages (app/(app), and next.config.ts's short ways to them): a link to one stays in the app. */
+const PAGES = new Set(["chat", "todos", "projects", "library", "settings", "work", "brain", "notes", "apps", "inbox", "welcome", "pet",
+  "keys", "setup", "connectors", "skills", "computer", "activity", "api"]);
+
+/**
+ * Where a link to a file on this computer points, or null for a web address
+ * or one of Perry's pages. A reply names a file as an absolute path, a
+ * file:// address, ~/ or a path relative to where it worked, sometimes with
+ * the line after it ("app.ts:12", "app.ts#L12").
+ */
+function filePath(href: string): string | null {
+  if (/^file:/i.test(href)) href = href.replace(/^file:\/\/(?:localhost)?/i, "").replace(/^\/([a-zA-Z]:)/, "$1");
+  // A scheme has two letters or more; one letter and a colon is a Windows drive.
+  else if (/^[a-zA-Z][\w+.-]+:/.test(href) || href.startsWith("#") || href.startsWith("//")) return null;
+  else if (href.startsWith("/") && PAGES.has(href.slice(1).split(/[/?#]/)[0]!)) return null;
+  try { href = decodeURI(href); } catch {}
+  return href.replace(/#L?\d+(?:-L?\d+)?$/, "").replace(/:\d+(?::\d+)?$/, "") || null;
+}
+
+const slashes = (path: string) => path.replace(/\\/g, "/");
+
+/** The file of the chat's at that path: the same path, or for a relative one, the newest whose path ends with it. */
+function chatFile(files: ReadonlyArray<{ path: string; url: string }>, path: string) {
+  const want = slashes(path);
+  const exact = files.find((file) => slashes(file.path) === want);
+  if (exact || /^(?:[a-zA-Z]:)?\//.test(want)) return exact;
+  const tail = `/${want.replace(/^(?:~|\.)?\//, "").replace(/^(?:\.\.\/)+/, "")}`;
+  return files.find((file) => slashes(file.path).endsWith(tail));
+}
+
+/** Preserve file URLs and Windows drives for registered-file lookup; unsafe web schemes still use the default filter. */
+const urlTransform = (url: string) => /^(?:file:|[a-z]:(?:[/\\]|%5c|%2f))/i.test(url) ? url : defaultUrlTransform(url);
 
 type MarkdownNode = { type: string; value?: string; url?: string; children?: MarkdownNode[] };
 
@@ -72,6 +148,7 @@ export const Markdown = memo(function Markdown({ text, openNote, skills, streami
     <div className="prose-chat">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, [streamingMarkdown, { streaming }], remarkBreaks, [skillLinks, { skills }]]}
+        urlTransform={urlTransform}
         components={{
           a: ({ node: _node, href, children, ...props }) => {
             const skill = href?.startsWith("/apps/skills?") ? new URLSearchParams(href.split("?")[1]).get("skill") : null;
@@ -82,24 +159,17 @@ export const Markdown = memo(function Markdown({ text, openNote, skills, streami
               </TooltipTrigger>
               <TooltipContent>The {skill} skill</TooltipContent>
             </Tooltip>;
-            return href?.startsWith("/brain/") || href?.startsWith("/notes/")
-            ? <Link href={href} data-note-link className="inline-flex items-baseline gap-1" onClick={openNote ? (event) => { event.preventDefault(); openNote(href); } : undefined}>
+            if (href?.startsWith("/brain/") || href?.startsWith("/notes/")) return <Link href={href} data-note-link className="inline-flex items-baseline gap-1" onClick={openNote ? (event) => { event.preventDefault(); openNote(href); } : undefined}>
               <FileTextIcon className="size-3.5 self-center" aria-hidden />{children}
-            </Link>
-            : <a {...props} href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+            </Link>;
+            // Emptied by urlTransform (javascript: and the like): an empty link would open Perry again.
+            if (!href) return <span>{children}</span>;
+            const path = filePath(href);
+            if (path !== null) return <FileLink path={path}>{children}</FileLink>;
+            if (href.startsWith("/")) return <Link href={href}>{children}</Link>;
+            return <a {...props} href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
           },
-          pre: ({ node: _node, children, ...props }) => {
-            const language = languageOf(children);
-            return (
-              <div className="group/code overflow-hidden rounded-xl border bg-muted/50">
-                <div className="flex h-9 items-center justify-between border-b pr-1.5 pl-4 text-xs text-muted-foreground">
-                  <span className="font-mono">{language ?? "text"}</span>
-                  <CopyButton value={textOf(children).replace(/\n$/, "")} label="Copy code" size="icon-xs" />
-                </div>
-                <pre {...props}>{children}</pre>
-              </div>
-            );
-          },
+          pre: ({ node: _node, children }) => <Code>{children}</Code>,
           table: ({ node: _node, ...props }) => <div className="overflow-hidden rounded-lg border"><Table {...props} /></div>,
           thead: ({ node: _node, ...props }) => <TableHeader className="bg-muted/50" {...props} />,
           tbody: ({ node: _node, ...props }) => <TableBody {...props} />,

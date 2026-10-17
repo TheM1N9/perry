@@ -402,7 +402,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; unresponsive?: boolean; lastAliveAt?: number; lastError?: string; lastErrorCode?: TurnErrorCode; lastErrorRunId?: Id<"runs">; contact?: { name: string; group: boolean } }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; unresponsive?: boolean; lastAliveAt?: number; lastError?: string; lastErrorCode?: TurnErrorCode; lastErrorRunId?: Id<"runs">; contact?: { name: string; group: boolean }; context?: { fill: number; window: number } }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
@@ -437,6 +437,8 @@ export const getChat = query({
       lastErrorCode: latestRun?.status === "error" ? turnErrorCode(latestRun) : undefined,
       lastErrorRunId: latestRun?.status === "error" ? latestRun._id : undefined,
       ...(contact ? { contact: { name: contact.name, group: contact.kind === "group" } } : {}),
+      // How full its engine's context is, as its last turn said (codex.ts, recordTrace): unset until one has.
+      ...(conversation.contextWindow && conversation.contextFill !== undefined ? { context: { fill: conversation.contextFill, window: conversation.contextWindow } } : {}),
     };
   },
 });
@@ -568,6 +570,26 @@ export const getStep = query({
     // Only a picture registered for this chat's steps, whatever id a tool's answer carried.
     const shown = picture?.conversationId === run.conversationId && picture.messageKey === "steps" && picture.localPath ? `/api/media/${picture._id}` : undefined;
     return { ...stepCard(span, { files, ...(shown ? { picture: shown } : {}) }), status: span.status };
+  },
+});
+
+/**
+ * The files on this computer a chat can open, by where they are: the ones its
+ * runs changed (codex.ts, linkFiles) and the ones sent in it, each with the
+ * address the media server gives it. A reply's link to one of these paths
+ * opens the file (components/dashboard/chat/markdown.tsx); a path not here
+ * is never served.
+ */
+export const getChatFiles = query({
+  args: { key: vKey, id: v.id("conversations") },
+  handler: async (ctx, args): Promise<Array<{ path: string; url: string }>> => {
+    assertDashboardKey(args.key);
+    ownerChat(await ctx.db.get(args.id));
+    const rows = await ctx.db.query("chatAttachments")
+      .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
+      .order("desc")
+      .take(1000);
+    return rows.flatMap((row) => row.localPath && !row.removedAt ? [{ path: row.localPath, url: `/api/media/${row._id}?preview` }] : []);
   },
 });
 

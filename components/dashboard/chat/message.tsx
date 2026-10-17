@@ -7,7 +7,9 @@ import type { Work } from "@/convex/dashboard";
 import { STARTING } from "@/convex/lib/activity";
 import { fullDate, timeOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
+import { Message, MessageContent, MessageFooter } from "@/components/ui/message";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCopy } from "../common";
 import { AttachmentList, type Attachment } from "./attachments";
@@ -61,43 +63,47 @@ export const MessageRow = memo(function MessageRow({ message, work, assistant, l
   // Not in the history until its reply saves it, so there is nothing yet to edit or branch from.
   const saved = !message.pending;
   return (
-    <div id={message.attachmentKey ? `message-${message.attachmentKey}` : undefined} className={cn("group/message flex flex-col", mine ? "items-end" : "items-start")} data-role={mine ? "user" : "assistant"}>
-      <h3 className="sr-only">{mine ? "You said" : `${assistant} said`}</h3>
-      {mine ? (
-        <div className="max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-md leading-relaxed [overflow-wrap:anywhere]">
-          <Markdown text={message.text} skills={skills} />
-          <AttachmentList attachments={message.attachments} align="end" />
-        </div>
-      ) : (
-        <div className="w-full min-w-0">
-          {work && <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} />}
-          <Markdown text={message.text} />
-          <AttachmentList attachments={message.attachments} />
-          {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
-        </div>
-      )}
-      {mine && message.queued && <QueueRemoveButton queued={message.queued} />}
-      <div className={cn(
-        "mt-1 flex items-center gap-0.5 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
-        !mine && "-ml-2", latest && !mine && "[@media(hover:hover)]:opacity-100",
-      )}>
-        {mine && (
-          <time className="nums mr-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
-            {timeOf(message.createdAt)}
-          </time>
+    <Message id={message.attachmentKey ? `message-${message.attachmentKey}` : undefined} align={mine ? "end" : "start"} data-role={mine ? "user" : "assistant"}>
+      <MessageContent className="gap-1">
+        <h3 className="sr-only">{mine ? "You said" : `${assistant} said`}</h3>
+        {mine ? (
+          <Bubble align="end" variant="muted" className="max-w-[85%]">
+            <BubbleContent className="rounded-3xl px-4 py-2.5 text-md [overflow-wrap:anywhere]">
+              <Markdown text={message.text} skills={skills} />
+              <AttachmentList attachments={message.attachments} align="end" />
+            </BubbleContent>
+          </Bubble>
+        ) : (
+          <div className="w-full min-w-0">
+            {work && <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} />}
+            <Markdown text={message.text} />
+            <AttachmentList attachments={message.attachments} />
+            {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
+          </div>
         )}
-        <CopyAction text={message.text} />
-        {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={() => onEdit(message)}><PencilIcon /></Action>}
-        {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={() => onRegenerate(message)}><RefreshCwIcon /></Action>}
-        {saved && canBranch && <Action label="Branch into a new chat" disabled={busy} onClick={() => onBranch(message)}><GitBranchIcon /></Action>}
-        {!mine && saved && onSaveNote && <Action label="Save as note" onClick={() => onSaveNote?.(message)}><FilePlusIcon /></Action>}
-        {!mine && (
-          <time className="nums ml-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
-            {timeOf(message.createdAt)}
-          </time>
-        )}
-      </div>
-    </div>
+        {mine && message.queued && <QueueRemoveButton queued={message.queued} />}
+        <MessageFooter className={cn(
+          "gap-0.5 px-0 font-normal transition-opacity [@media(hover:hover)]:opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
+          !mine && "-ml-2", latest && !mine && "[@media(hover:hover)]:opacity-100",
+        )}>
+          {mine && (
+            <time className="nums mr-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
+              {timeOf(message.createdAt)}
+            </time>
+          )}
+          <CopyAction text={message.text} />
+          {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={() => onEdit(message)}><PencilIcon /></Action>}
+          {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={() => onRegenerate(message)}><RefreshCwIcon /></Action>}
+          {saved && canBranch && <Action label="Branch into a new chat" disabled={busy} onClick={() => onBranch(message)}><GitBranchIcon /></Action>}
+          {!mine && saved && onSaveNote && <Action label="Save as note" onClick={() => onSaveNote?.(message)}><FilePlusIcon /></Action>}
+          {!mine && (
+            <time className="nums ml-1 text-xs text-muted-foreground" dateTime={new Date(message.createdAt).toISOString()} title={fullDate(message.createdAt)}>
+              {timeOf(message.createdAt)}
+            </time>
+          )}
+        </MessageFooter>
+      </MessageContent>
+    </Message>
   );
 });
 
@@ -129,13 +135,17 @@ function FromMemory({ memories }: { memories: Array<{ id: string; text: string }
 /** A message you sent, before the server lists it; "Sending…" until the server has taken it. */
 export function PendingRow({ text, attachments, sent, skills }: { text: string; attachments: Attachment[]; sent: boolean; skills?: ReadonlySet<string> }) {
   return (
-    <div className="flex flex-col items-end" data-role="user" data-pending>
-      <div className={cn("max-w-[85%] rounded-3xl bg-muted px-4 py-2.5 text-md leading-relaxed [overflow-wrap:anywhere]", !sent && "opacity-70")}>
-        <Markdown text={text} skills={skills} />
-        <AttachmentList attachments={attachments} align="end" />
-      </div>
-      {!sent && <span className="mt-1 text-xs text-muted-foreground" role="status">Sending…</span>}
-    </div>
+    <Message align="end" data-role="user" data-pending>
+      <MessageContent className="gap-1">
+        <Bubble align="end" variant="muted" className={cn("max-w-[85%]", !sent && "opacity-70")}>
+          <BubbleContent className="rounded-3xl px-4 py-2.5 text-md [overflow-wrap:anywhere]">
+            <Markdown text={text} skills={skills} />
+            <AttachmentList attachments={attachments} align="end" />
+          </BubbleContent>
+        </Bubble>
+        {!sent && <MessageFooter className="px-0 font-normal" role="status">Sending…</MessageFooter>}
+      </MessageContent>
+    </Message>
   );
 }
 
@@ -162,7 +172,7 @@ export function ReplyInProgress({ streaming, work, now, approving = false, unres
       ) : !busy && (
         <p className="flex items-center gap-2 text-md font-medium" data-step={STARTING.label}>
           <Spinner />
-          <span className="shimmer">{STARTING.label}</span>
+          <span className="shimmer motion-reduce:shimmer-none">{STARTING.label}</span>
         </p>
       )}
     </div>

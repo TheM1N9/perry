@@ -212,6 +212,17 @@ export async function hostCommand(method: string, params: object = {}): Promise<
   }
   return await send(current, method === "Storage.getCookies" && state.source === "chrome" ? "Network.getCookies" : method, params);
 }
+/**
+ * The open tab's events, for the owner's live view (server/browser-stream.ts):
+ * `listener` hears each one and can answer on the same tab. Null when no tab is
+ * open; it never opens one. Returns the tab watched and how to stop.
+ */
+export function hostWatch(listener: (method: string, params: any) => void): { tabId: string; send: (method: string, params?: object) => Promise<unknown>; stop: () => void } | null {
+  const current = control().current;
+  if (!current) return null;
+  current.listeners.add(listener);
+  return { tabId: current.targetId, send: (method, params = {}) => send(current, method, params), stop: () => { current.listeners.delete(listener); } };
+}
 export async function hostTargets() {
   const current = await tab();
   if (control().source === "chrome") {

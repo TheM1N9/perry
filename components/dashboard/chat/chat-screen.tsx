@@ -1,15 +1,14 @@
 "use client";
 
-import { Fragment } from "react";
 import { TurnError } from "./turn-error";
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ActivityIcon, ArrowDownIcon, CopyIcon, FilePlusIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
-  PanelRightIcon, SquarePenIcon, Trash2Icon, TriangleAlertIcon,
+  GaugeIcon, GlobeIcon, PanelRightIcon, SquarePenIcon, Trash2Icon, TriangleAlertIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
@@ -31,6 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ApprovalCard } from "../approval-card";
 import { DeleteDialog, RenameDialog } from "../app-sidebar";
 import { APPS, ChannelIcon, EmptyState, PerryMark, TopBar } from "../common";
@@ -41,6 +41,7 @@ import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
 import { ComposerDraft, type DraftHandle, Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { InteractiveAnswers } from "./interactive-answer";
+import { ChatFiles } from "./markdown";
 import { MessageEditor, type MessageEdit } from "./message-editor";
 import { MessageRow, PendingRow, ReplyInProgress, type ChatMessage } from "./message";
 import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
@@ -48,7 +49,7 @@ import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type
 import { useChatDeadline, useChatEvent, useStableRecords } from "./render-isolation";
 import { useChatScroll } from "./use-chat-scroll";
 
-import { WorkspacePanel } from "./workspace-panel";
+import { WorkspacePanel, type WorkspaceView } from "./workspace-panel";
 import { BrowserPanel } from "./browser-panel";
 
 const messageKey = (message: ChatMessage) => message.id;
@@ -61,6 +62,9 @@ type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
  * returns, after which the server lists it as pending until its reply saves it.
  */
 type Pending = { id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean; sent: boolean };
+
+/** No files yet, the same list each time so the replies do not draw again for nothing. */
+const NO_FILES: ReadonlyArray<{ path: string; url: string }> = [];
 
 const STARTERS = [
   "Plan my day",
@@ -106,11 +110,18 @@ export function ChatScreen() {
   const workspace = useQuery(api.workspace.settings, { key: dashboardKey });
   const browserView = useQuery(api.browserView.settings, { key: dashboardKey });
   const panelEnabled = workspace?.enabled || browserView?.enabled;
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const workspaceToggle = useRef<HTMLButtonElement>(null);
-  const workspaceScopeKey = `perry.workspace.open.${selectedId ?? "new"}`;
-  useEffect(() => { try { setWorkspaceOpen(localStorage.getItem(workspaceScopeKey) === "1"); } catch {} }, [workspaceScopeKey]);
-  const openWorkspace = (open: boolean) => { setWorkspaceOpen(open); if (!open) requestAnimationFrame(() => workspaceToggle.current?.focus()); try { localStorage.setItem(workspaceScopeKey, open ? "1" : "0"); } catch {} };
+  // Which workspace window is open over this chat, if any (workspace-panel.tsx), kept for the chat's next visit.
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
+  const workspaceButtons = useRef<HTMLDivElement>(null);
+  const workspaceScopeKey = `perry.workspace.view.${selectedId ?? "new"}`;
+  useEffect(() => { try { const saved = localStorage.getItem(workspaceScopeKey); setWorkspaceView(saved === "all" || saved === "context" || saved === "files" || saved === "browser" ? saved : null); } catch {} }, [workspaceScopeKey]);
+  const openWorkspace = (view: WorkspaceView | null) => {
+    const was = workspaceView;
+    setWorkspaceView(view);
+    // Closed, focus goes back to the button that opened it.
+    if (!view && was) requestAnimationFrame(() => workspaceButtons.current?.querySelector<HTMLButtonElement>(`[data-workspace-button="${was}"]`)?.focus());
+    try { localStorage.setItem(workspaceScopeKey, view ?? ""); } catch {}
+  };
 
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
   const assistant = status?.assistantName ?? "Perry";
@@ -268,6 +279,7 @@ export function ChatScreen() {
   const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
   // Every step Perry takes: listed as they come while a reply is on its way, and kept with the reply after.
   const work = workQuery;
+  const chatFiles = useQuery(api.dashboard.getChatFiles, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
   const { workOf, liveWork, failedWork } = useMemo(() => {
     const now = Date.now();
     const runs = work ?? [];
@@ -602,7 +614,7 @@ export function ChatScreen() {
   const project = selectedId ? chat?.project : newIn ? { id: newIn.id, name: newIn.name } : undefined;
 
   return (
-    <div className="flex h-dvh min-h-0">
+    <div className="relative flex h-dvh min-h-0">
     <div className="flex min-w-0 flex-1 flex-col">
       {editing && selectedId && <MessageEditor key={editing.id} message={editing} assistant={assistant} waiting={waiting}
         onClose={() => setEditing(null)} onSave={(edit) => rewind(editing.id, edit)}
@@ -616,7 +628,21 @@ export function ChatScreen() {
         }} />}
 
       <TopBar actions={<>
-        {panelEnabled && !chat?.contact && <Button ref={workspaceToggle} size="icon-sm" variant="ghost" aria-label="Open workspace" aria-expanded={workspaceOpen} onClick={() => openWorkspace(!workspaceOpen)}><PanelRightIcon /></Button>}
+        {panelEnabled && !chat?.contact && <div ref={workspaceButtons} className="flex items-center gap-0.5" role="group" aria-label="Workspace">
+          {([
+            ["all", "Open workspace", PanelRightIcon],
+            ["context", "Open Context", GaugeIcon],
+            ["files", "Open Files", FolderIcon],
+            ...(browserView?.enabled ? [["browser", "Open Browser", GlobeIcon] as const] : []),
+          ] as const).map(([view, label, Icon], index) => <Fragment key={view}>
+            {index === 1 && <span className="mx-1 h-4 w-px bg-border" aria-hidden />}
+            <Tooltip>
+              <TooltipTrigger render={<Button size="icon-sm" variant="ghost" aria-label={label} aria-pressed={workspaceView === view} data-workspace-button={view}
+                className="aria-pressed:bg-muted aria-pressed:text-foreground" onClick={() => openWorkspace(workspaceView === view ? null : view)} />}><Icon /></TooltipTrigger>
+              <TooltipContent>{label.replace("Open ", "")}</TooltipContent>
+            </Tooltip>
+          </Fragment>)}
+        </div>}
         {selectedId && summary ? (
         <ChatMenu
           pinned={summary.pinned}
@@ -637,7 +663,7 @@ export function ChatScreen() {
           <span className="text-muted-foreground/60" aria-hidden>/</span>
         </>}
         {chat && <ChannelIcon channel={chat.channel} />}
-        <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer")} aria-busy={summary?.naming || undefined}>{title}</h1>
+        <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer motion-reduce:shimmer-none")} aria-busy={summary?.naming || undefined}>{title}</h1>
         {summary && <StatusIndicator status={summary.status} />}
         {parent && (
           <Link href={`/chat/${parent.id}`} className="hidden min-w-0 items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground sm:flex">
@@ -675,6 +701,7 @@ export function ChatScreen() {
             </div>
           ) : (
             <WorkFolds>
+            <ChatFiles.Provider value={chatFiles ?? NO_FILES}>
             <div className="space-y-8 pt-6 pb-10" aria-busy={loading || undefined}>
               {loading && (
                 <div className="space-y-8" role="status" aria-label="Loading the conversation">
@@ -733,6 +760,7 @@ export function ChatScreen() {
                   onRetry={lastUser && !app ? () => void rewind(lastUser.id) : undefined} />
               )}
             </div>
+            </ChatFiles.Provider>
             </WorkFolds>
           )}
         </div>
@@ -877,7 +905,7 @@ export function ChatScreen() {
       </div>
 
     </div>
-      {panelEnabled && !chat?.contact && <WorkspacePanel conversationId={selectedId} project={project} open={workspaceOpen} onOpenChange={openWorkspace} browser={browserView?.enabled && selectedId ? <BrowserPanel key={selectedId} conversationId={selectedId} onClose={() => openWorkspace(false)} /> : undefined} />}
+      {panelEnabled && !chat?.contact && <WorkspacePanel conversationId={selectedId} project={project} view={workspaceView} onViewChange={openWorkspace} context={{ engine: engine ?? undefined, model: chat?.model, context: chat?.context, usage: engineUsage }} browser={browserView?.enabled && selectedId ? <BrowserPanel key={selectedId} conversationId={selectedId} onClose={() => openWorkspace(null)} /> : undefined} />}
       {summary && <RenameDialog chat={renaming ? summary : null} onClose={() => setRenaming(false)} />}
       {summary && <DeleteDialog chat={removing ? summary : null} onClose={() => setRemoving(false)} />}
       {summary && <NewProjectDialog open={creatingProject} chat={summary.id} onClose={() => setCreatingProject(false)} />}

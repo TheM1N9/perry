@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Component, useEffect, useState, type ReactNode } from "react";
 import { z } from "zod";
-import { ArrowLeftIcon, ChevronRightIcon, DownloadIcon, MoreHorizontalIcon, SlidersHorizontalIcon, Maximize2Icon, Minimize2Icon, EyeOffIcon, FileIcon, Grid2X2Icon, ListTreeIcon, PinIcon, PlusIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, ChevronDownIcon, ChevronRightIcon, DownloadIcon, MoreHorizontalIcon, SlidersHorizontalIcon, Maximize2Icon, Minimize2Icon, EyeOffIcon, FileAudioIcon, FileIcon, FileImageIcon, FileTextIcon, FileVideoIcon, FolderOpenIcon, Grid2X2Icon, ListTreeIcon, PinIcon, PlusIcon, XIcon } from "lucide-react";
 import { useConnection, useConvex, useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -13,15 +13,15 @@ import { bytes, errorText } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AudioPlayer, VideoPlayer } from "@/components/ui/media-player";
-import { StatusBadge } from "../common";
+import { ENGINE_LABELS, type EngineKind } from "@/convex/lib/engines";
+import { resetsText, usedNow, WARN_PERCENT, type EngineUsage } from "@/convex/lib/usage";
+import { Markdown } from "./markdown";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 
 const fileKind = z.enum(["", "image", "media", "document", "other"]);
@@ -64,83 +64,170 @@ function groupFiles(files: WorkspaceFile[], key: (file: WorkspaceFile) => string
 
 type Scope = "chat" | "project";
 
-/** Shared right panel. Browser supplies its real-session view here without another sidebar. */
-export function WorkspacePanel({ conversationId, project, open, onOpenChange, browser }: {
+export type ChatContext = { engine?: EngineKind; model?: string; context?: { fill: number; window: number }; usage?: EngineUsage };
+
+/** The group Perry's working files are listed under: what a run wrote on its way, not yet shared as a result. */
+const WORKING = "Working files";
+const roleLabel = (role: WorkspaceFile["role"]) => role === "working" ? "Working" : role === "input" ? "Input" : "Result";
+
+function KindIcon({ item }: { item: WorkspaceFile }) {
+  const Icon = item.preview === "image" ? FileImageIcon : item.preview === "video" ? FileVideoIcon : item.preview === "audio" ? FileAudioIcon : item.preview === "markdown" || item.preview === "text" || item.preview === "pdf" ? FileTextIcon : FileIcon;
+  return <span className="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground"><Icon className="size-4" /></span>;
+}
+
+/** What the workspace window shows: one card, or all of them stacked. */
+export type WorkspaceView = "all" | "context" | "files" | "browser";
+const TITLES: Record<WorkspaceView, string> = { all: "Workspace", context: "Context", files: "Files", browser: "Browser" };
+
+/**
+ * The chat's workspace, as a window floating over the chat (not a column beside it, so the chat never moves): one
+ * card, picked by its button in the chat's header, or every card stacked. On a phone, a sheet over the whole screen.
+ */
+export function WorkspacePanel({ conversationId, project, view, onViewChange, browser, context }: {
   conversationId: Id<"conversations"> | null;
   project?: { id: Id<"projects">; name: string };
-  open: boolean; onOpenChange: (open: boolean) => void; browser?: ReactNode;
+  view: WorkspaceView | null; onViewChange: (view: WorkspaceView | null) => void; browser?: ReactNode;
+  /** What the Context card says: the chat's engine and model, how full its context is, and the engine's plan. */
+  context?: ChatContext;
 }) {
   const client = useConvex();
   const mobile = useIsMobile();
-  const [width, setWidth] = useState(380);
-  const [expanded, setExpanded] = useState(false);
-  useEffect(() => {
-    try { const saved = Number(localStorage.getItem("perry.workspace.width")); if (saved >= 300 && saved <= 640) setWidth(saved); } catch {}
-  }, []);
-  function resize(value: number) {
-    const next = Math.max(300, Math.min(640, value));
-    setWidth(next);
-    try { localStorage.setItem("perry.workspace.width", String(next)); } catch {}
-  }
-  const content = <WorkspaceBoundary key={conversationId ?? "new"} onRetry={() => client.refresh()} onClose={() => onOpenChange(false)}><PanelContent conversationId={conversationId} project={project} browser={browser} expanded={expanded} onExpand={() => setExpanded(!expanded)} onClose={() => onOpenChange(false)} /></WorkspaceBoundary>;
-  if (mobile) return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent showCloseButton={false} className="w-full max-w-full gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-full motion-reduce:transition-none"><SheetTitle className="sr-only">Chat workspace</SheetTitle><SheetDescription className="sr-only">Files, work and the live browser associated with this chat.</SheetDescription>{content}</SheetContent></Sheet>;
-  if (!open) return null;
-  return <aside aria-label="Chat workspace" className="relative flex h-full min-h-0 shrink-0 flex-col border-l bg-background" style={{ width: expanded ? "min(65%, calc(100% - 340px))" : `min(${width}px, 50%)` }}>
-    <div role="separator" aria-label="Resize workspace" aria-orientation="vertical" aria-valuemin={300} aria-valuemax={640} aria-valuenow={width} tabIndex={0}
-      className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize focus-visible:bg-primary/20"
-      onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); resize(width + (event.key === "ArrowLeft" ? 20 : -20)); } }}
-      onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); }}
-      onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) resize(window.innerWidth - event.clientX); }} />
+  const [browsing, setBrowsing] = useState(false);
+  // The live page is drawn at 1280px: showing it, the window opens wide so it can be read, unless the owner narrows it.
+  const [chosenWide, setChosenWide] = useState<boolean>();
+  useEffect(() => setChosenWide(undefined), [view]);
+  const wide = chosenWide ?? (view === "browser" || (view === "all" && browsing));
+  const close = () => onViewChange(null);
+  if (!view && !mobile) return null;
+  const content = view && <WorkspaceBoundary key={conversationId ?? "new"} onRetry={() => client.refresh()} onClose={close}><PanelContent view={view} conversationId={conversationId} project={project} browser={browser} context={context} expanded={wide} onExpand={mobile ? undefined : () => setChosenWide(!wide)} onBrowsing={setBrowsing} onClose={close} /></WorkspaceBoundary>;
+  if (mobile) return <Sheet open={Boolean(view)} onOpenChange={(open) => { if (!open) close(); }}><SheetContent showCloseButton={false} className="w-full max-w-full gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-full motion-reduce:transition-none"><SheetTitle className="sr-only">Chat workspace</SheetTitle><SheetDescription className="sr-only">Context, files and the live browser of this chat.</SheetDescription>{content}</SheetContent></Sheet>;
+  return <aside aria-label="Chat workspace" data-view={view}
+    className="absolute top-14 right-3 z-30 flex max-h-[calc(100%-4.5rem)] min-h-0 flex-col overflow-hidden rounded-2xl bg-popover text-popover-foreground shadow-float ring-1 ring-foreground/10 animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 duration-150 motion-reduce:animate-none"
+    style={{ width: wide ? "min(780px, calc(100% - 1.5rem))" : "min(400px, calc(100% - 1.5rem))" }}
+    onKeyDown={(event) => { if (event.key === "Escape" && !(event.target as HTMLElement).closest('[role="application"]')) { event.stopPropagation(); close(); } }}>
     {content}
   </aside>;
 }
 
-function PanelContent({ conversationId, project, browser, expanded, onExpand, onClose }: {
-  conversationId: Id<"conversations"> | null; project?: { id: Id<"projects">; name: string }; browser?: ReactNode; expanded: boolean; onExpand: () => void; onClose: () => void;
+/** Which cards are open in the stack, kept for the next visit: Context and Files open, Browser closed (opening it starts the live view). */
+const cardPrefs = z.object({ context: z.boolean().default(true), files: z.boolean().default(true), browser: z.boolean().default(false) });
+
+/** One of the stack's cards: a titled box that opens and closes, with a little on its right while closed. */
+function PanelCard({ id, title, open, onOpenChange, aside, children }: { id: string; title: string; open: boolean; onOpenChange: (open: boolean) => void; aside?: ReactNode; children: ReactNode }) {
+  return <Collapsible open={open} onOpenChange={onOpenChange} className="rounded-xl bg-card ring-1 ring-foreground/10" data-card={id}>
+    <div className="flex items-center gap-2 pr-2">
+      <CollapsibleTrigger className="group flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-xl py-3 pl-3.5 text-left text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+        {title}<ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-panel-closed:-rotate-90 motion-reduce:transition-none" />
+      </CollapsibleTrigger>
+      {aside}
+    </div>
+    <CollapsibleContent className="h-(--collapsible-panel-height) overflow-hidden transition-[height] duration-200 data-ending-style:h-0 data-starting-style:h-0 motion-reduce:transition-none">
+      <div className="pb-3">{children}</div>
+    </CollapsibleContent>
+  </Collapsible>;
+}
+
+function PanelContent({ view, conversationId, project, browser, context, expanded, onExpand, onBrowsing, onClose }: {
+  view: WorkspaceView; conversationId: Id<"conversations"> | null; project?: { id: Id<"projects">; name: string }; browser?: ReactNode; context?: ChatContext; expanded: boolean; onExpand?: () => void; onBrowsing: (open: boolean) => void; onClose: () => void;
 }) {
-  const tabKey = `perry.workspace.tab.${conversationId ?? "new"}`;
-  const [tab, setTabValue] = useState("files");
-  useEffect(() => { try { const saved = localStorage.getItem(tabKey); setTabValue(saved === "work" || (saved === "browser" && browser) ? saved : "files"); } catch {} }, [tabKey, Boolean(browser)]);
-  const setTab = (value: string) => { setTabValue(value); try { localStorage.setItem(tabKey, value); } catch {} };
+  const [cards, setCards] = useState(cardPrefs.parse({}));
+  useEffect(() => {
+    let saved = cardPrefs.parse({});
+    try { saved = cardPrefs.parse(JSON.parse(localStorage.getItem("perry.workspace.cards") ?? "{}")); } catch {}
+    setCards(saved);
+    onBrowsing(Boolean(browser) && saved.browser);
+  }, [Boolean(browser)]);
+  const toggle = (card: keyof typeof cards, open: boolean) => {
+    const next = { ...cards, [card]: open };
+    setCards(next);
+    if (card === "browser") onBrowsing(open);
+    try { localStorage.setItem("perry.workspace.cards", JSON.stringify(next)); } catch {}
+  };
   const connection = useConnection();
   const [scope, setScope] = useState<Scope>("chat");
   const scopeKey = `perry.workspace.scope.${conversationId ?? "new"}`;
   useEffect(() => { try { setScope(project && localStorage.getItem(scopeKey) === "project" ? "project" : "chat"); } catch { setScope("chat"); } }, [scopeKey, project?.id]);
   const actualScope = project ? scope : "chat";
   const scopes = [{ value: "chat", label: "This chat" }, ...(project ? [{ value: "project", label: project.name }] : [])];
-  return <Tabs value={tab} onValueChange={(value) => { if (typeof value === "string") setTab(value); }} className="min-h-0 flex-1 gap-0">
-    <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-      <h2 className="sr-only">Workspace</h2>
-      <TabsList variant="line" aria-label="Workspace views" className="mr-auto">
-        <TabsTrigger value="files" className="px-2">Files</TabsTrigger>
-        <TabsTrigger value="work" className="px-2">Work</TabsTrigger>
-        {browser && <TabsTrigger value="browser" className="px-2">Browser</TabsTrigger>}
-      </TabsList>
-      <Button size="icon-sm" variant="ghost" className="hidden md:inline-flex" aria-label={expanded ? "Restore workspace width" : "Expand workspace"} onClick={onExpand}>{expanded ? <Minimize2Icon /> : <Maximize2Icon />}</Button>
-      <Button size="icon-sm" variant="ghost" aria-label="Close workspace" onClick={onClose}><XIcon /></Button>
-    </header>
-    {connection !== "connected" && <p role="status" className="bg-muted px-3 py-2 text-xs">{connection === "connecting" ? "Connecting to Perry…" : "Reconnecting. Showing the last received state."}</p>}
-    {tab !== "browser" && <div className="shrink-0 px-3 pt-3">
-      {project ? <Select items={scopes} value={actualScope} onValueChange={(value) => { const next = value === "project" ? "project" : "chat"; setScope(next); try { localStorage.setItem(scopeKey, next); } catch {} }}>
+  const files = <>
+    {project && <div className="px-2 pb-1">
+      <Select items={scopes} value={actualScope} onValueChange={(value) => { const next = value === "project" ? "project" : "chat"; setScope(next); try { localStorage.setItem(scopeKey, next); } catch {} }}>
         <SelectTrigger aria-label="Workspace scope" className="h-7 max-w-full border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted dark:bg-transparent"><SelectValue /></SelectTrigger>
         <SelectContent alignItemWithTrigger={false}>{scopes.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
-      </Select> : <p className="px-2 text-xs text-muted-foreground">This chat</p>}
+      </Select>
     </div>}
-    <TabsContent value="files" className="flex min-h-0 flex-col">
-      {!conversationId ? <p className="p-4 text-sm text-muted-foreground">Files you upload here will appear here.</p> : <Files key={`${conversationId}:${actualScope}`} conversationId={conversationId} scope={actualScope} scopeId={actualScope === "project" ? project?.id ?? conversationId : conversationId} />}
-    </TabsContent>
-    <TabsContent value="work" className="flex min-h-0 flex-col">
-      {!conversationId ? <p className="p-4 text-sm text-muted-foreground">Work started here will appear here.</p> : <Work conversationId={conversationId} scope={actualScope} />}
-    </TabsContent>
-    {browser && <TabsContent value="browser" className="min-h-0">{browser}</TabsContent>}
-  </Tabs>;
+    {!conversationId ? <p className="px-3.5 text-sm text-muted-foreground">Files you send here, and the ones Perry makes, show up here.</p> : <Files key={`${conversationId}:${actualScope}`} conversationId={conversationId} scope={actualScope} scopeId={actualScope === "project" ? project?.id ?? conversationId : conversationId} />}
+  </>;
+  return <div className="flex min-h-0 flex-1 flex-col">
+    <header className="flex shrink-0 items-center gap-1 border-b py-1.5 pr-1.5 pl-4">
+      <h2 className="mr-auto text-sm font-semibold">{TITLES[view]}</h2>
+      {onExpand && <Button size="icon-sm" variant="ghost" aria-label={expanded ? "Narrow the window" : "Widen the window"} onClick={onExpand}>{expanded ? <Minimize2Icon /> : <Maximize2Icon />}</Button>}
+      <Button size="icon-sm" variant="ghost" aria-label="Close workspace" onClick={onClose}><XIcon /></Button>
+    </header>
+    {connection !== "connected" && <p role="status" className="mx-3 mt-3 rounded-lg bg-muted px-3 py-2 text-xs">{connection === "connecting" ? "Connecting to Perry…" : "Reconnecting. Showing the last received state."}</p>}
+    {view === "all" ? <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+      <PanelCard id="context" title="Context" open={cards.context} onOpenChange={(open) => toggle("context", open)}
+        aside={!cards.context && context?.context ? <span className="nums text-xs text-muted-foreground">{Math.round(context.context.fill * 100)}% used</span> : undefined}>
+        <ContextCard context={context} />
+      </PanelCard>
+      <PanelCard id="files" title="Files" open={cards.files} onOpenChange={(open) => toggle("files", open)}>{files}</PanelCard>
+      {browser && <PanelCard id="browser" title="Browser" open={cards.browser} onOpenChange={(open) => toggle("browser", open)}>
+        {/* Mounted only while open: closed, the live view stops and nothing streams. */}
+        {cards.browser && browser}
+      </PanelCard>}
+    </div> : <div className="min-h-0 flex-1 overflow-y-auto py-3" data-card={view}>
+      {view === "context" ? <ContextCard context={context} /> : view === "files" ? files : browser ?? <p className="px-4 text-sm text-muted-foreground">Perry's browser is off here.</p>}
+    </div>}
+  </div>;
+}
 
+/** The chat's engine and model, how much of its context it has used, and how much of the engine's plan is left. */
+function ContextCard({ context }: { context?: ChatContext }) {
+  const now = Date.now();
+  const used = context?.context;
+  const windows = context?.usage?.limits?.windows ?? [];
+  const tokens = (count: number) => count >= 1_000_000 ? `${(count / 1_000_000).toFixed(count % 1_000_000 ? 1 : 0)}M` : `${Math.round(count / 1000)}k`;
+  return <div className="space-y-4 px-3.5 text-sm">
+    <div data-context-used>
+      {used ? <>
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium nums">{Math.round(used.fill * 100)}% used</span>
+          <span className="nums text-xs text-muted-foreground">{tokens(used.fill * used.window)} / {tokens(used.window)}</span>
+        </div>
+        <Meter value={used.fill} label="Context used" />
+        <p className="mt-1.5 text-xs text-muted-foreground">Perry saves what matters to Brain before the engine compacts it.</p>
+      </> : <p className="text-xs text-muted-foreground">How full the context is shows after Perry's next reply.</p>}
+    </div>
+    {context?.engine && <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-xs">
+      <dt className="text-muted-foreground">Engine</dt><dd className="truncate text-right">{ENGINE_LABELS[context.engine]}</dd>
+      <dt className="text-muted-foreground">Model</dt><dd className="truncate text-right">{context.model ?? "Default"}</dd>
+      {context.usage?.limits?.plan && <><dt className="text-muted-foreground">Plan</dt><dd className="truncate text-right">{context.usage.limits.plan}</dd></>}
+    </dl>}
+    {windows.length > 0 && <div className="space-y-2.5" data-plan-usage>
+      {windows.map((window) => {
+        const percent = usedNow(window, now);
+        return <div key={window.id}>
+          <div className="flex items-baseline justify-between gap-2 text-xs">
+            <span>{window.label}</span>
+            <span className="nums text-muted-foreground">{Math.round(percent)}%{resetsText(window, now) ? ` · ${resetsText(window, now)}` : ""}</span>
+          </div>
+          <Meter value={percent / 100} label={`${window.label} plan used`} tone={percent >= 100 ? "out" : percent >= WARN_PERCENT ? "low" : "ok"} />
+        </div>;
+      })}
+    </div>}
+  </div>;
+}
+
+function Meter({ value, label, tone = "ok" }: { value: number; label: string; tone?: "ok" | "low" | "out" }) {
+  const percent = Math.max(0, Math.min(100, value * 100));
+  return <div role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)} className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+    <div className={cn("h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none", tone === "out" ? "bg-destructive" : tone === "low" ? "bg-warning" : "bg-primary")} style={{ width: `${percent}%` }} />
+  </div>;
 }
 
 function Files({ conversationId, scope, scopeId }: { conversationId: Id<"conversations">; scope: Scope; scopeId: string }) {
   const { dashboardKey: key } = useSession();
   const [prefs, save] = usePreferences(`perry.workspace.${scope}.${scopeId}`);
-  const [working, setWorking] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [kind, setKind] = useState<z.infer<typeof fileKind>>("");
   const [cursor, setCursor] = useState<string | null>(null);
@@ -149,12 +236,16 @@ function Files({ conversationId, scope, scopeId }: { conversationId: Id<"convers
   const [error, setError] = useState("");
   const args = { key, conversationId, scope };
   const latest = useQuery(api.workspace.latest, args);
-  const page = useQuery(api.workspace.files, { ...args, working, hidden, kind: kind || undefined, paginationOpts: { numItems: 50, cursor } });
+  // What a run writes is registered as working; it is listed too, in its own group, since often it is all a chat has.
+  const page = useQuery(api.workspace.files, { ...args, working: true, hidden, kind: kind || undefined, paginationOpts: { numItems: 50, cursor } });
   const chosen = page?.page.find((item) => item.id === prefs.selected);
   const selected = useQuery(api.workspace.get, prefs.selected ? { ...args, id: prefs.selected } : "skip");
   const view = useMutation(api.workspace.setView);
   const items = page?.page ?? [];
-  const groups = groupFiles(items, (item) => item.group);
+  const results = items.filter((item) => item.role !== "working");
+  const groups = groupFiles(results, (item) => item.group);
+  const working = items.filter((item) => item.role === "working");
+  if (working.length) groups.set(WORKING, working);
   const select = (item: WorkspaceFile) => save({ selected: item.id });
   const resetPage = () => { setCursor(null); setCursors([]); };
   function metadata(item: WorkspaceFile, patch: { hidden?: boolean; pinned?: boolean }) {
@@ -163,19 +254,18 @@ function Files({ conversationId, scope, scopeId }: { conversationId: Id<"convers
   return <div className="flex min-h-0 flex-1 flex-col">
     {prefs.selected ? <FilePreview item={chosen ?? selected} onBack={() => save({ selected: undefined })} /> : <>
       {latest && <Button size="sm" variant="ghost" className="mx-3 mt-3 justify-start overflow-hidden bg-primary/5 text-primary hover:bg-primary/10" onClick={() => select(latest)}><FileIcon /><span className="truncate">Latest result: {latest.name}</span></Button>}
-      <div className="flex shrink-0 items-center gap-1 px-3 py-3">
+      <div className="flex shrink-0 items-center gap-1 px-3 py-2">
         <ToggleGroup aria-label="File view" value={[prefs.mode]} spacing={0} onValueChange={(values) => { const value = values[0]; if (value === "tree" || value === "gallery") save({ mode: value }); }}>
           <ToggleGroupItem value="tree" size="sm" aria-label="Tree view" className="size-7 p-0"><ListTreeIcon className="size-4" /></ToggleGroupItem>
           <ToggleGroupItem value="gallery" size="sm" aria-label="Gallery view" className="size-7 p-0"><Grid2X2Icon className="size-4" /></ToggleGroupItem>
         </ToggleGroup>
         <Select items={fileTypes} value={kind} onValueChange={(value) => { const next = fileKind.safeParse(value); if (next.success) { setKind(next.data); resetPage(); } }}>
-          <SelectTrigger aria-label="File type" className="h-7 min-w-0 flex-1 border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted dark:bg-transparent"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label="File type" className="mr-auto h-7 w-auto min-w-0 border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted dark:bg-transparent"><SelectValue /></SelectTrigger>
           <SelectContent alignItemWithTrigger={false}>{fileTypes.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
         </Select>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button size="icon-sm" variant={working || hidden ? "secondary" : "ghost"} aria-label="File filters" />}><SlidersHorizontalIcon /></DropdownMenuTrigger>
+          <DropdownMenuTrigger render={<Button size="icon-sm" variant={hidden ? "secondary" : "ghost"} aria-label="File filters" />}><SlidersHorizontalIcon /></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-40">
-            <DropdownMenuCheckboxItem checked={working} onCheckedChange={(value) => { setWorking(value); resetPage(); }}>Working files</DropdownMenuCheckboxItem>
             <DropdownMenuCheckboxItem checked={hidden} onCheckedChange={(value) => { setHidden(value); resetPage(); }}>Show hidden</DropdownMenuCheckboxItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -183,29 +273,33 @@ function Files({ conversationId, scope, scopeId }: { conversationId: Id<"convers
       </div>
       {error && <p role="alert" className="px-3 text-xs text-destructive">{error}</p>}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3" aria-busy={!page}>
-        {!page ? <p role="status" className="py-4 text-sm text-muted-foreground">Loading files…</p> : !items.length ? <p className="py-4 text-sm text-muted-foreground">No files in this view. Upload files in this chat or attach a Library item.</p>
+        {!page ? <p role="status" className="py-4 text-sm text-muted-foreground">Loading files…</p> : !items.length ? <div className="flex flex-col items-center px-4 py-12 text-center" data-files-empty>
+            <span className="grid size-10 place-items-center rounded-full bg-muted text-muted-foreground"><FolderOpenIcon className="size-5" /></span>
+            <p className="mt-3 text-sm font-medium">{kind || hidden ? "No files match" : "No files yet"}</p>
+            <p className="mt-1 max-w-60 text-xs text-muted-foreground">{kind || hidden ? "Try another type, or clear the filters." : "Files Perry makes, and the ones you send in this chat, show up here."}</p>
+          </div>
           : prefs.mode === "gallery" ? <div className="grid grid-cols-2 gap-x-3 gap-y-4">{items.map((item) => <div key={item.id} className={cn("group/file relative min-w-0", item.hidden && "opacity-50")}>
             <Button variant="ghost" className="block h-auto w-full overflow-hidden p-0 text-left hover:bg-transparent" onClick={() => select(item)}>
               <div className="overflow-hidden rounded-lg"><Thumbnail item={item} /></div>
               <p className="mt-2 truncate pr-6 text-xs font-medium">{item.name}</p>
-              <p className="mt-0.5 truncate text-2xs font-normal text-muted-foreground">{item.versionLabel ?? item.role} · {item.status === "ready" ? bytes(item.size) : "Unavailable"}{item.pinned ? " · Pinned" : ""}</p>
+              <p className="mt-0.5 truncate text-2xs font-normal text-muted-foreground">{item.versionLabel ?? roleLabel(item.role)} · {item.status === "ready" ? bytes(item.size) : "Unavailable"}{item.pinned ? " · Pinned" : ""}</p>
             </Button>
             <div className="absolute top-1 right-1 rounded-md bg-background/90"><FileActions item={item} onChange={(patch) => metadata(item, patch)} /></div>
           </div>)}</div>
-          : [...groups].map(([group, files]) => <Collapsible key={group} open={prefs.expanded[group] ?? true} onOpenChange={(open) => save({ expanded: { ...prefs.expanded, [group]: open } })} className="mb-3">
-            <CollapsibleTrigger render={<Button variant="ghost" size="sm" className="group w-full justify-start px-1 text-xs text-muted-foreground" />}><ChevronRightIcon className="size-3 transition-transform group-data-panel-open:rotate-90" />{group}</CollapsibleTrigger>
-            <CollapsibleContent>
-              {[...groupFiles(files, (item) => item.versionRoot ?? item.id)].map(([root, versions]) => <div key={root} className="ml-2 border-l pl-2">
-                {versions.map((item) => <div key={item.id} className={cn("group/file flex items-center gap-1 rounded-lg hover:bg-muted/60", item.hidden && "opacity-50")}>
-                  <Button variant="ghost" className="h-auto min-w-0 flex-1 justify-start gap-2 py-2 text-left hover:bg-transparent" onClick={() => select(item)}>
-                    <FileIcon className="shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium">{item.name}{item.pinned && <PinIcon className="ml-1 inline size-3 text-muted-foreground" aria-label="Pinned" />}</span><span className="block truncate text-2xs font-normal text-muted-foreground">{item.versionLabel ?? item.role}{versions.length > 1 && item.latest ? " · Latest version" : ""}{item.status !== "ready" ? " · Unavailable" : ""}</span></span>
+          : [...groups].map(([group, files]) => <Collapsible key={group} open={prefs.expanded[group] ?? (group !== WORKING || !results.length)} onOpenChange={(open) => save({ expanded: { ...prefs.expanded, [group]: open } })} className="mb-2" data-file-group={group === WORKING ? "working" : "results"}>
+            <CollapsibleTrigger render={<Button variant="ghost" size="sm" className="group h-7 w-full justify-start gap-1 px-1 text-xs font-medium text-muted-foreground" />}><ChevronRightIcon className="size-3 transition-transform group-data-panel-open:rotate-90" /><span className="truncate">{group}</span><span className="nums ml-auto font-normal">{files.length}</span></CollapsibleTrigger>
+            <CollapsibleContent className="pt-0.5">
+              {[...groupFiles(files, (item) => item.versionRoot ?? item.id)].map(([root, versions]) => <div key={root} className={cn(versions.length > 1 && "ml-3 border-l pl-1")}>
+                {versions.map((item) => <div key={item.id} className={cn("group/file flex items-center gap-1 rounded-lg pr-1 hover:bg-muted/60", item.hidden && "opacity-50")}>
+                  <Button variant="ghost" className="h-auto min-w-0 flex-1 justify-start gap-2.5 px-2 py-1.5 text-left hover:bg-transparent" onClick={() => select(item)}>
+                    <KindIcon item={item} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-normal">{item.name}{item.pinned && <PinIcon className="ml-1 inline size-3 text-muted-foreground" aria-label="Pinned" />}</span><span className="block truncate text-xs font-normal text-muted-foreground">{[item.versionLabel ?? roleLabel(item.role), versions.length > 1 && item.latest ? "Latest version" : "", item.status === "ready" ? bytes(item.size) : "Unavailable"].filter(Boolean).join(" · ")}</span></span>
                   </Button>
                   <FileActions item={item} onChange={(patch) => metadata(item, patch)} />
                 </div>)}
               </div>)}
             </CollapsibleContent>
           </Collapsible>)}
-        {page && <div className="mt-3 flex items-center justify-between gap-2">
+        {page && (cursors.length > 0 || !page.isDone) && <div className="mt-3 flex items-center justify-between gap-2">
           {cursors.length > 0 && <Button size="sm" variant="outline" onClick={() => { setCursor(cursors.at(-1) ?? null); setCursors((was) => was.slice(0, -1)); }}>Previous files</Button>}
           {!page.isDone && <Button size="sm" variant="outline" onClick={() => { setCursors((was) => [...was, cursor]); setCursor(page.continueCursor); }}>Next files</Button>}
         </div>}
@@ -217,7 +311,7 @@ function Files({ conversationId, scope, scopeId }: { conversationId: Id<"convers
 
 function FileActions({ item, onChange }: { item: WorkspaceFile; onChange: (patch: { pinned?: boolean; hidden?: boolean }) => void }) {
   return <DropdownMenu>
-    <DropdownMenuTrigger render={<Button size="icon-xs" variant="ghost" aria-label={`Actions for ${item.name}`} />}><MoreHorizontalIcon /></DropdownMenuTrigger>
+    <DropdownMenuTrigger render={<Button size="icon-xs" variant="ghost" className="text-muted-foreground transition-opacity [@media(hover:hover)]:opacity-0 group-hover/file:opacity-100 group-focus-within/file:opacity-100 aria-expanded:opacity-100" aria-label={`Actions for ${item.name}`} />}><MoreHorizontalIcon /></DropdownMenuTrigger>
     <DropdownMenuContent align="end" className="min-w-32">
       <DropdownMenuItem onClick={() => onChange({ pinned: !item.pinned })}><PinIcon />{item.pinned ? "Unpin" : "Pin"}</DropdownMenuItem>
       <DropdownMenuItem onClick={() => onChange({ hidden: !item.hidden })}><EyeOffIcon />{item.hidden ? "Show in workspace" : "Hide from workspace"}</DropdownMenuItem>
@@ -246,26 +340,33 @@ function FilePreview({ item, onBack }: { item: WorkspaceFile | null | undefined;
     void fetch(item.url, { headers: { Range: "bytes=0-196607" }, signal: controller.signal }).then(async (response) => { if (!response.ok) throw new Error("This file is unavailable. Restore it on the host and retry."); const content = await response.text(); setText(content + (item.size > 196608 ? "\n\n[Preview truncated; download to read the full file.]" : "")); }).catch((error: unknown) => { if (!controller.signal.aborted) setError(errorText(error)); });
     return () => controller.abort();
   }, [item?.url, item?.preview, retry]);
-  return <div className="min-h-0 flex-1 overflow-y-auto p-3">
-    <Button size="sm" variant="ghost" onClick={onBack}><ArrowLeftIcon />All files</Button>
-    {item === undefined ? <p role="status" className="py-3 text-sm">Loading file…</p> : !item ? <p className="py-3 text-sm">This file is no longer in this workspace.</p> : <>
-      <h3 className="mt-3 break-words text-sm font-semibold">{item.name}</h3>
-      <p className="mt-1 text-xs text-muted-foreground">{item.contentType} · {item.versionLabel ?? item.role} · {item.status === "ready" ? "Ready" : "Unavailable"}</p>
-      <p className="mt-2 text-xs">{item.provenance === "uploaded" ? "Uploaded here" : item.provenance === "attached" ? "Explicitly attached from Library" : "Produced by this work"}</p>
-      <Link href={`/chat/${item.source.conversationId}${item.source.messageKey ? `?message=${encodeURIComponent(item.source.messageKey)}` : item.source.runId ? `?run=${item.source.runId}` : ""}`} className="link mt-1 block text-xs">Source: {item.source.title}{item.source.messageKey ? " · producing message" : ""}</Link>
-      {item.source.taskId && <Link href={`/work#task-${item.source.taskId}`} className="link mt-1 block text-xs">Open task in Work</Link>}
-      <div className="my-4">
+  return <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex shrink-0 items-center gap-1 border-b px-2 py-1.5">
+      <Button size="icon-sm" variant="ghost" aria-label="All files" onClick={onBack}><ArrowLeftIcon /></Button>
+      <h3 className="min-w-0 flex-1 truncate text-sm font-medium" title={item?.name}>{item?.name ?? "File"}</h3>
+      {item && item.status === "ready" && <Button size="icon-sm" variant="ghost" aria-label="Download" nativeButton={false} render={<a href={`${item.url}&download=1`} download />}><DownloadIcon /></Button>}
+    </div>
+    <div className="min-h-0 flex-1 overflow-y-auto p-3">
+    {item === undefined ? <p role="status" className="py-3 text-sm text-muted-foreground">Loading file…</p> : !item ? <p className="py-3 text-sm text-muted-foreground">This file is no longer in this workspace.</p> : <>
+      <p className="text-xs text-muted-foreground">
+        {[item.provenance === "uploaded" ? "Sent here" : item.provenance === "attached" ? "Attached from Library" : "Made by Perry", item.versionLabel ?? roleLabel(item.role), item.status === "ready" ? bytes(item.size) : "Unavailable"].join(" · ")}
+        {" · "}<Link href={`/chat/${item.source.conversationId}${item.source.messageKey ? `?message=${encodeURIComponent(item.source.messageKey)}` : item.source.runId ? `?run=${item.source.runId}` : ""}`} className="link">{item.source.title}</Link>
+        {item.source.taskId && <>{" · "}<Link href={`/work#task-${item.source.taskId}`} className="link">Task</Link></>}
+      </p>
+      <div className="my-3">
         {item.status !== "ready" ? <p className="text-sm text-muted-foreground">The registered file is missing or its storage is unavailable. Restore it on the host, then retry.</p>
           : item.preview === "image" ? <img key={retry} src={item.url} alt={item.name} className="w-full rounded-lg" onError={() => setError("This image is unavailable. Retry after restoring the file.")} />
           : item.preview === "video" ? <VideoPlayer key={retry} src={item.url} name={item.name} download={`${item.url}&download=1`} />
           : item.preview === "audio" ? <AudioPlayer key={retry} src={item.url} name={item.name} download={`${item.url}&download=1`} />
           : item.preview === "pdf" ? <iframe key={retry} title={item.name} src={item.url} sandbox="" className="h-[60vh] w-full rounded-lg border" />
-          : item.preview === "text" || item.preview === "markdown" ? <pre className="overflow-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap break-words">{text ?? "Loading preview…"}</pre>
+          : item.preview === "markdown" && text !== undefined ? <div className="rounded-lg border p-4" data-file-text><Markdown text={text} /></div>
+          : item.preview === "text" || item.preview === "markdown" ? <pre className="overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words" data-file-text>{text ?? "Loading preview…"}</pre>
           : <p className="text-sm text-muted-foreground">Preview is unavailable for this format. Download it to open it.</p>}
       </div>
       {error && <p role="alert" className="mb-3 text-xs text-destructive">{error}</p>}
-      <div className="flex gap-2"><Button size="sm" variant="outline" nativeButton={false} render={<a href={`${item.url}&download=1`} download />}> <DownloadIcon />Download</Button>{(error || item.status !== "ready") && <Button size="sm" variant="ghost" onClick={() => { void client.refresh(["library", "workspaceFiles"]); setRetry((was) => was + 1); setError(""); }}>Retry preview</Button>}</div>
+      {(error || item.status !== "ready") && <Button size="sm" variant="outline" onClick={() => { void client.refresh(["library", "workspaceFiles"]); setRetry((was) => was + 1); setError(""); }}>Retry preview</Button>}
     </>}
+    </div>
   </div>;
 }
 
@@ -281,33 +382,5 @@ function AttachLibrary({ conversationId, onClose }: { conversationId: Id<"conver
     <Input autoFocus aria-label="Find a Library file" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Library" className="my-3" />
     {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
     <div className="min-h-0 max-h-64 overflow-y-auto">{library === undefined ? <p role="status">Loading Library…</p> : library.items.slice(0, 50).map((item) => <Button variant="ghost" key={item.id} disabled={!!pending} className="block w-full truncate text-left text-xs" onClick={() => { setPending(item.id); void attach({ key, conversationId, id: item.id }).then(onClose).catch((error: unknown) => setError(errorText(error))).finally(() => setPending(undefined)); }}>{pending === item.id ? "Attaching… " : ""}{item.name}</Button>)}</div>
-  </div>;
-}
-
-function Work({ conversationId, scope }: { conversationId: Id<"conversations">; scope: Scope }) {
-  const { dashboardKey: key } = useSession();
-  const [history, setHistory] = useState(false);
-  const [selected, setSelected] = useState<string>();
-  const preview = useQuery(api.workspace.get, selected ? { key, conversationId, scope, id: selected } : "skip");
-  const work = useQuery(api.workspace.work, { key, conversationId, scope, history });
-  if (selected) return <FilePreview item={preview} onBack={() => setSelected(undefined)} />;
-  return <div className="min-h-0 flex-1 overflow-y-auto p-3">
-    {!work ? <p role="status" className="text-sm text-muted-foreground">Loading work…</p> : !work.length ? <p className="text-sm text-muted-foreground">No work started in this scope yet.</p> : work.map((item) => <article key={item.id} className="border-b py-4 first:pt-1 last:border-0">
-      <div className="flex items-start justify-between gap-2"><h3 className="text-sm font-medium">{item.title}</h3><StatusBadge tone={item.error ? "danger" : "neutral"}>{item.status}</StatusBadge></div>
-      {item.currentStep && <p className="mt-2 text-xs text-muted-foreground">{item.currentStep}</p>}
-      {item.plan.length > 0 && <Collapsible className="mt-2">
-        <CollapsibleTrigger render={<Button size="xs" variant="ghost" className="group -ml-2 text-muted-foreground" />}><ChevronRightIcon className="transition-transform group-data-panel-open:rotate-90" />Steps ({item.plan.length})</CollapsibleTrigger>
-        <CollapsibleContent><ol className="mt-2 space-y-2 pl-1">{item.plan.map((step, index) => <li key={index} className="text-xs"><span className="mr-2 text-muted-foreground">{step.status === "done" ? "✓" : step.status === "active" ? "→" : "○"}</span>{step.title}</li>)}</ol></CollapsibleContent>
-      </Collapsible>}
-      {item.error && <p className="mt-2 text-xs text-destructive">{item.error.slice(0, 400)}</p>}
-      {item.outputs.length > 0 && <Collapsible className="mt-2">
-        <CollapsibleTrigger render={<Button size="xs" variant="ghost" className="group -ml-2 text-muted-foreground" />}><ChevronRightIcon className="transition-transform group-data-panel-open:rotate-90" />Related outputs ({item.outputs.length}{item.outputs.length === 50 ? "+" : ""})</CollapsibleTrigger>
-        <CollapsibleContent className="mt-2 space-y-1">{item.outputs.map((output) => <Button key={output.id} variant="ghost" size="sm" onClick={() => setSelected(output.id)} className="w-full justify-start text-xs"><FileIcon /><span className="truncate">{output.name}{output.status !== "ready" ? " · Unavailable" : ""}</span></Button>)}</CollapsibleContent>
-      </Collapsible>}
-      <Link href={`/work${item.taskId ? `#task-${item.taskId}` : ""}`} className="link mt-3 inline-block text-xs">Open Work</Link>
-      <Link href={`/chat/${item.conversationId}`} className="link ml-3 text-xs">Open chat</Link>
-    </article>)}
-    <label className="mt-2 flex items-center gap-2 text-xs"><Checkbox checked={history} onCheckedChange={setHistory} />Include completed history</label>
-    {work && work.length >= (history ? 100 : 25) && <p className="mt-2 text-xs text-muted-foreground">Showing the most recent work. <Link href="/work" className="underline">Open Work for more.</Link></p>}
   </div>;
 }

@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { InfoTip } from "../common";
+import { Spinner } from "./work";
 import { BrowserImportDialog } from "./browser-import-dialog";
 import { useSession } from "@/lib/session";
 import { browserIdentity, browserState, importPreview, importProfile, importResult, type BrowserRequest, type BrowserState } from "@/lib/browser-protocol";
@@ -52,31 +53,77 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
   }, [conversationId, dashboardKey]);
   const apply = useCallback((next: BrowserState) => { stateRef.current = next; setState(next); }, []);
 
+  // The panel's width in device pixels, in steps, so the frames Chrome sends are as sharp as the panel and no bigger.
+  const sectionRef = useRef<HTMLElement>(null);
+  const [width, setWidth] = useState(0);
   useEffect(() => {
+    const element = sectionRef.current;
+    if (!element) return;
+    const measure = () => setWidth(Math.min(1280, Math.max(320, Math.ceil(element.clientWidth * (window.devicePixelRatio || 1) / 160) * 160)));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  // One open response the server writes the browser's state and its frames to as they change (server/browser-stream.ts);
+  // dropped, it is opened again after a second.
+  useEffect(() => {
+    if (!width) return;
     let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    const abort = new AbortController();
-    async function poll() {
+    let retry: ReturnType<typeof setTimeout>;
+    let abort = new AbortController();
+    async function listen() {
+      abort = new AbortController();
       try {
-        const next = browserState.parse(await call({ action: "status" }, AbortSignal.any([abort.signal, AbortSignal.timeout(5000)])));
-        if (!active) return;
-        apply(next);
-        if (next.identity && ["live", "paused"].includes(next.state)) {
-          const shot = frameSchema.parse(await call({ action: "frame", identity: next.identity }, AbortSignal.any([abort.signal, AbortSignal.timeout(5000)])));
-          if (!active) return;
-          // Never display a frame across a page, session or controller change.
-          if (JSON.stringify(stateRef.current?.identity) === JSON.stringify(shot.identity)) setFrame(shot);
-          else setFrame(null);
-        } else setFrame(null);
-        setConnection(next.state === "disconnected" ? "Disconnected" : "Connected"); setConnectionError("");
+        const response = await fetch("/api/browser/stream", { method: "POST", headers: { "content-type": "application/json", "x-perry-key": dashboardKey }, body: JSON.stringify({ conversationId, width }), cache: "no-store", signal: abort.signal });
+        if (!response.ok || !response.body) throw new Error(z.object({ error: z.string() }).safeParse(await response.json().catch(() => null)).data?.error ?? "Browser connection lost. Retrying.");
+        const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+        let buffer = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done || !active) break;
+          buffer += value;
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line) continue;
+            const message = z.union([z.object({ state: browserState }), z.object({ frame: frameSchema })]).parse(JSON.parse(line));
+            if ("state" in message) {
+              apply(message.state);
+              if (!message.state.identity) setFrame(null);
+              setConnection(message.state.state === "disconnected" ? "Disconnected" : "Connected"); setConnectionError("");
+            } else setFrame(message.frame);
+          }
+        }
+        if (active) throw new Error("Browser connection lost. Retrying.");
       } catch (cause) {
         if (!active) return;
         setFrame(null); setConnection("Reconnecting"); setConnectionError(cause instanceof Error ? cause.message : "Browser connection lost. Retrying.");
-      } finally { if (active) timer = setTimeout(() => void poll(), document.hidden ? 5000 : 1000); }
+        retry = setTimeout(() => void listen(), 1000);
+      }
     }
-    void poll();
-    return () => { active = false; clearTimeout(timer); abort.abort(); setFrame(null); };
-  }, [call, apply]);
+    void listen();
+    return () => { active = false; clearTimeout(retry); abort.abort(); setFrame(null); };
+  }, [conversationId, dashboardKey, width, apply]);
+
+  // A wheel sends many small turns: added up while one scroll is on its way, and sent as one after.
+  const wheel = useRef<{ busy: boolean; deltaY: number; at: { x: number; y: number } }>({ busy: false, deltaY: 0, at: { x: 0, y: 0 } });
+  async function scroll(at: { x: number; y: number }, deltaY: number) {
+    const pending = wheel.current;
+    pending.deltaY += deltaY; pending.at = at;
+    if (pending.busy) return;
+    pending.busy = true;
+    try {
+      while (pending.deltaY) {
+        const current = stateRef.current;
+        const amount = Math.max(-3000, Math.min(3000, pending.deltaY));
+        pending.deltaY = 0;
+        if (current?.state !== "paused" || !current.identity) break;
+        await call({ action: "scroll", identity: current.identity, ...pending.at, deltaY: amount }).catch(() => {});
+      }
+    } finally { pending.busy = false; pending.deltaY = 0; }
+  }
   useEffect(() => { setUrl(currentTab?.url === "about:blank" ? "" : currentTab?.url ?? ""); }, [currentTab?.url]);
 
   async function act(request: BrowserRequest) {
@@ -107,42 +154,63 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
   };
   const visibleFrame = frame && state?.identity && JSON.stringify(frame.identity) === JSON.stringify(state.identity) && connection === "Connected" ? frame : null;
 
-  return <section className="flex h-full min-h-0 flex-col text-sm" aria-label="Live browser">
-    <div className="flex flex-wrap items-center gap-2 px-3 py-3">
-      <GlobeIcon className="size-4 text-muted-foreground" aria-hidden />
-      <span role="status" className="mr-auto text-xs font-medium">{state?.source === "chrome" ? "Chrome · " : ""}{connection !== "Connected" ? connection : state?.state === "paused" ? "You control" : state?.state === "live" ? "Perry controls" : "Browser closed"}{state?.loading ? " · Loading" : ""}</span>
-      {state?.identity ? <>
-        {paused ? <Button size="sm" onClick={() => activeIdentity && void act({ action: "resume", identity: activeIdentity })}><PlayIcon />Resume Perry</Button>
-          : <Button size="sm" onClick={() => { setFrame(null); void act({ action: "takeover" }); }}><PauseIcon />Pause & take over</Button>}
-      </> : <Button size="sm" disabled={busy} onClick={() => void run(() => act({ action: "start" }))}>{busy ? "Opening…" : "Open browser"}</Button>}
+  const open = Boolean(state?.identity);
+  const status = connection !== "Connected" ? { text: connection === "Connecting" ? "Connecting…" : `${connection}…`, tone: "bg-muted-foreground/50" }
+    : paused ? { text: "You're in control", tone: "bg-warning" }
+    : state?.state === "live" ? { text: "Perry is browsing", tone: "bg-success motion-safe:animate-pulse" }
+    : { text: "Not open", tone: "bg-muted-foreground/40" };
+
+  return <section ref={sectionRef} className="flex h-full min-h-0 flex-col text-sm" aria-label="Live browser" data-browser-state={state?.state ?? "loading"}>
+    <div className="flex shrink-0 items-center gap-2 px-3 py-2">
+      <span className={`size-2 shrink-0 rounded-full ${status.tone}`} aria-hidden />
+      <span role="status" className="mr-auto min-w-0 truncate text-xs font-medium text-muted-foreground">{state?.source === "chrome" ? "Chrome · " : ""}{status.text}{state?.loading ? " · Loading" : ""}</span>
+      {open && (paused ? <Button size="sm" onClick={() => activeIdentity && void act({ action: "resume", identity: activeIdentity })}><PlayIcon />Resume Perry</Button>
+        : <Button size="sm" variant="outline" onClick={() => { setFrame(null); void act({ action: "takeover" }); }}><PauseIcon />Pause & take over</Button>)}
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label="Browser actions" />}><MoreHorizontalIcon /></DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-40">
+        <DropdownMenuContent align="end" className="min-w-44">
           {state?.importEnabled && <DropdownMenuItem onClick={() => setImportOpen(true)}>Import from browser</DropdownMenuItem>}
           <DropdownMenuItem onClick={() => void openSettings()}>Connections</DropdownMenuItem>
-          <DropdownMenuItem disabled={!paused} onClick={() => activeIdentity && void act({ action: "close", identity: activeIdentity })}>{state?.source === "chrome" ? "Disconnect Chrome" : "Close browser"}</DropdownMenuItem>
+          {open && <DropdownMenuItem disabled={!paused} onClick={() => activeIdentity && void act({ action: "close", identity: activeIdentity })}>{state?.source === "chrome" ? "Disconnect Chrome" : "Close browser"}</DropdownMenuItem>}
           {onClose && <DropdownMenuItem onClick={onClose}>Return to chat</DropdownMenuItem>}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-    {state?.tabs.length ? <div className="flex shrink-0 gap-1 overflow-x-auto bg-muted/40 px-2 py-1.5" aria-label="Browser tabs">
-      {state.tabs.map((tab) => <Button key={tab.id} size="sm" variant={tab.id === state.identity?.tabId ? "secondary" : "ghost"} disabled={!paused} className="h-7 max-w-44 shrink-0 text-xs" onClick={() => state.identity && void act({ action: "tab", identity: state.identity, tabId: tab.id })}><span className="truncate">{tab.title || "New tab"}</span></Button>)}
-      <Button size="icon-sm" variant="ghost" aria-label="New browser tab" disabled={!paused} onClick={() => state.identity && void act({ action: "newTab", identity: state.identity })}><PlusIcon /></Button>
-      <Button size="icon-sm" variant="ghost" aria-label="Close current browser tab" disabled={!paused} onClick={() => state.identity && void act({ action: "closeTab", identity: state.identity })}><XIcon /></Button>
-    </div> : null}
-    <form className="flex shrink-0 gap-1 border-b p-2" onSubmit={(event) => { event.preventDefault(); if (state?.identity) void act({ action: "navigate", identity: state.identity, url: /^https?:\/\//i.test(url) ? url : `https://${url}` }); }}>
-      <Button type="button" size="icon-sm" variant="ghost" aria-label="Go back" disabled={!paused} onClick={() => state?.identity && void act({ action: "back", identity: state.identity })}><ArrowLeftIcon /></Button>
-      <Button type="button" size="icon-sm" variant="ghost" aria-label="Reload browser page" disabled={!paused} onClick={() => state?.identity && void act({ action: "reload", identity: state.identity })}><RefreshCwIcon /></Button>
-      <Input aria-label="Browser address" value={url} disabled={!paused} onChange={(event) => setUrl(event.target.value)} className="min-w-0 flex-1 bg-muted/50 text-xs" placeholder="https://example.com" />
-      <Button type="submit" size="icon-sm" variant="ghost" aria-label="Go to address" disabled={!paused || !url}><ArrowRightIcon /></Button>
-    </form>
+    {open && <div className="shrink-0 border-y bg-muted/30">
+      {state && state.tabs.length > 0 && (paused || state.tabs.length > 1) && <div className="flex items-center gap-1 overflow-x-auto px-2 pt-1.5" aria-label="Browser tabs">
+        {state.tabs.map((tab) => {
+          const current = tab.id === state.identity?.tabId;
+          return <span key={tab.id} className={`flex h-7 max-w-44 shrink-0 items-center rounded-md text-xs ${current ? "bg-background shadow-xs ring-1 ring-border" : "text-muted-foreground"}`}>
+            <button type="button" disabled={!paused || current} className="min-w-0 truncate px-2.5 py-1 enabled:cursor-pointer enabled:hover:text-foreground" onClick={() => state.identity && void act({ action: "tab", identity: state.identity, tabId: tab.id })}>{tab.title || "New tab"}</button>
+            {current && paused && <Button size="icon-xs" variant="ghost" className="mr-0.5 size-5" aria-label="Close current browser tab" onClick={() => state.identity && void act({ action: "closeTab", identity: state.identity })}><XIcon className="size-3" /></Button>}
+          </span>;
+        })}
+        {paused && <Button size="icon-sm" variant="ghost" className="size-7" aria-label="New browser tab" onClick={() => state.identity && void act({ action: "newTab", identity: state.identity })}><PlusIcon /></Button>}
+      </div>}
+      <form className="flex items-center gap-1 p-1.5" onSubmit={(event) => { event.preventDefault(); if (state?.identity && url) void act({ action: "navigate", identity: state.identity, url: /^https?:\/\//i.test(url) ? url : `https://${url}` }); }}>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Go back" disabled={!paused} onClick={() => state?.identity && void act({ action: "back", identity: state.identity })}><ArrowLeftIcon /></Button>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Reload browser page" disabled={!paused} onClick={() => state?.identity && void act({ action: "reload", identity: state.identity })}><RefreshCwIcon /></Button>
+        <Input aria-label="Browser address" value={url} disabled={!paused} onChange={(event) => setUrl(event.target.value)} onFocus={(event) => event.currentTarget.select()} className="h-8 min-w-0 flex-1 rounded-full bg-background px-3 text-xs disabled:opacity-100 disabled:text-muted-foreground" placeholder={paused ? "Type an address" : ""} />
+        <Button type="submit" size="icon-sm" variant="ghost" aria-label="Go to address" className={paused && url && url !== currentTab?.url ? "" : "hidden"}><ArrowRightIcon /></Button>
+      </form>
+    </div>}
     {connectionError && !error && <p role="status" className="border-b p-3 text-muted-foreground">{connectionError}</p>}
     {error && <p role="alert" className="border-b p-3 text-destructive">{error}</p>}
     {state?.error && <p role="alert" className="border-b p-3 text-destructive">{state.error}</p>}
     <div className="min-h-0 flex-1 overflow-auto">
-      {visibleFrame ? <div role="application" aria-label={paused ? "Browser page. Click to focus, type or paste; Tab moves within the page. Escape returns focus to browser controls." : "Browser page, view only. Pause to take over."} tabIndex={paused ? 0 : -1} className="relative aspect-[1280/900] w-full outline-offset-[-3px] focus-visible:outline-2 focus-visible:outline-primary"
-        onClick={(event) => { event.currentTarget.focus(); if (paused && activeIdentity) void act({ action: "click", identity: activeIdentity, ...point(event) }); }}
-        onWheel={(event) => { if (paused && activeIdentity) void act({ action: "scroll", identity: activeIdentity, ...point(event), deltaY: Math.max(-3000, Math.min(3000, event.deltaY)) }); }}
+      {!open && state ? <div className="flex flex-col items-center px-6 py-14 text-center" data-browser-empty>
+        <span className="grid size-11 place-items-center rounded-full bg-muted text-muted-foreground"><GlobeIcon className="size-5" /></span>
+        <p className="mt-3 text-sm font-medium">Perry's browser</p>
+        <p className="mt-1 max-w-64 text-xs leading-relaxed text-muted-foreground">Perry browses here for this chat. Watch it work, or take over to sign in somewhere for it.</p>
+        <Button size="sm" className="mt-4" disabled={busy} onClick={() => void run(() => act({ action: "start" }))}>{busy ? "Opening…" : "Open browser"}</Button>
+      </div> : visibleFrame ? <div className="p-2"><div role="application" aria-label={paused ? "Browser page. Click to focus, type or paste; Tab moves within the page. Escape returns focus to browser controls." : "Browser page, view only. Pause to take over."} tabIndex={paused ? 0 : -1} className="group/page relative aspect-[1280/900] w-full overflow-hidden rounded-md bg-white ring-1 ring-border outline-offset-2 focus-visible:outline-2 focus-visible:outline-primary"
+        onClick={(event) => {
+          // Where the click fell, read before focusing: focus must not scroll the panel and move the page under it.
+          const at = point(event);
+          event.currentTarget.focus({ preventScroll: true });
+          if (paused && activeIdentity) void act({ action: "click", identity: activeIdentity, ...at });
+        }}
+        onWheel={(event) => { if (paused) void scroll(point(event), event.deltaY); }}
         onPaste={(event) => { if (paused) { event.preventDefault(); manual({ action: "text", text: event.clipboardData.getData("text").slice(0, 10000) }); } }}
         onKeyDown={(event) => {
           if (!paused) return;
@@ -155,8 +223,9 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
         {/* Owner-only ephemeral image. No URL key, media record, disk capture or model attachment. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={`data:image/jpeg;base64,${visibleFrame.image}`} alt={`Live page: ${currentTab?.title || "Browser"}`} draggable={false} className="pointer-events-none h-full w-full" />
-      </div> : <div className="grid min-h-48 place-items-center p-6 text-center text-sm text-muted-foreground"><p>{state?.state === "closed" ? "No browser connected" : connection !== "Connected" ? "Reconnecting…" : "Loading page…"}</p></div>}
-      {paused && <Collapsible className="border-t px-3 py-2">
+        {!paused && <span className="pointer-events-none absolute right-2 bottom-2 rounded-full bg-foreground/75 px-2.5 py-1 text-2xs font-medium text-background opacity-0 transition-opacity group-hover/page:opacity-100">View only · take over to use it</span>}
+      </div></div> : <div className="p-2"><div className="grid aspect-[1280/900] w-full place-items-center rounded-md bg-muted/40 text-xs text-muted-foreground ring-1 ring-border"><p className="flex items-center gap-2"><Spinner />{connection !== "Connected" ? `${connection}…` : "Loading page…"}</p></div></div>}
+      {paused && <Collapsible className="px-3 py-1">
         <CollapsibleTrigger render={<Button size="xs" variant="ghost" className="group -ml-2 text-muted-foreground" />}><ChevronRightIcon className="transition-transform group-data-panel-open:rotate-90" />Type into page</CollapsibleTrigger>
         <CollapsibleContent className="pt-2"><form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); if (typing) { manual({ action: "text", text: typing }); setTyping(""); } }}>
           <Input type="password" autoComplete="off" value={typing} onChange={(event) => setTyping(event.target.value)} aria-label="Text for the focused browser field" placeholder="Text for the focused page field" className="min-w-0 flex-1" />

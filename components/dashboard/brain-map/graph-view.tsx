@@ -1,7 +1,9 @@
 "use client";
 
 import { cn } from "cn";
+import { MaximizeIcon, MinusIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
+import { Button } from "@/components/ui/button";
 import type { BrainGraph, MapKind, MapNode } from "@/convex/lib/graph";
 import type { FromLayout, ToLayout } from "./layout-worker";
 
@@ -20,8 +22,16 @@ import type { FromLayout, ToLayout } from "./layout-worker";
  * reveals the rest. Hovering a page shows all of its neighbours.
  */
 
+/** Each kind's colour, by its role (globals.css, --map-*): hubs, the owner's pages, people, and the quiet many. */
 export const KIND_COLOR: Record<MapKind, string> = {
-  about: "--primary", remember: "--chart-2", journal: "--chart-4", journey: "--success", person: "--chart-3", page: "--foreground", chat: "--chart-4", project: "--primary",
+  about: "--map-hub", remember: "--map-hub", project: "--map-hub", page: "--map-page", journey: "--map-page", person: "--map-person", journal: "--map-quiet", chat: "--map-quiet",
+};
+/** And its shape, so two kinds of one colour still differ: a project square, a journey a diamond, a chat a ring. */
+export const KIND_SHAPE: Record<MapKind, "dot" | "square" | "diamond" | "ring"> = {
+  about: "dot", remember: "dot", project: "square", page: "dot", journey: "diamond", person: "dot", journal: "dot", chat: "ring",
+};
+export const KIND_LABEL: Record<MapKind, string> = {
+  about: "About me", remember: "To remember", journal: "Journal", journey: "Journeys", person: "People", page: "Pages", chat: "Chats", project: "Projects",
 };
 const KINDS = Object.keys(KIND_COLOR) as MapKind[];
 /** Below this zoom, journal days are drawn a month to a dot. */
@@ -193,6 +203,7 @@ export function GraphView({
   labelAll?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
   const shown = useMemo(() => visible ?? new Uint8Array(graph.nodes.length).fill(1), [visible, graph]);
   const views = useMemo(() => ({ full: buildView(graph, shown, false), months: months ? buildView(graph, shown, true) : null }), [graph, shown, months]);
   const focusIndex = useMemo(() => (focus ? graph.nodes.findIndex((node) => node.id === focus) : -1), [graph, focus]);
@@ -208,7 +219,7 @@ export function GraphView({
     hover: -1, drag: -1, colors: null as ReturnType<typeof readColors> | null,
     frame: 0, worker: null as Worker | null, placed: graph as BrainGraph,
     stats: { dataAt: performance.now(), firstDraw: 0, draws: [] as number[], frames: [] as number[], drawn: { nodes: 0, edges: 0, months: false }, settled: false, labels: [] as Array<[number, number, number, number]> },
-    pendingFocus: -1, lastFrame: 0, fitK: 0,
+    pendingFocus: -1, lastFrame: 0, fitK: 0, glide: 0,
     /** What the last frame drew, for hit-testing: only a drawn node can be hovered or clicked. */
     drawn: new Uint8Array(0), drawnView: null as View | null,
   });
@@ -287,7 +298,7 @@ export function GraphView({
     ctx.lineWidth = 1 / k;
     ctx.strokeStyle = colors.edge;
     const big = v.count > SMALL;
-    const base = lit >= 0 ? 0.07 : big ? 0.2 : 0.25;
+    const base = lit >= 0 ? 0.07 : big ? 0.2 : 0.38;
     const strong = new Path2D();
     const faint = new Path2D();
     let edgesDrawn = 0;
@@ -316,22 +327,36 @@ export function GraphView({
     // Nodes, a colour at a time; dimmed when another is lit and they are not its neighbours.
     let nodesDrawn = 0;
     // However far out, a dot stays a few pixels wide, a hub's a little more.
-    const size = (g: number) => Math.max(v.radius[g], (v.rank[g] < 60 ? 4 : 2.2) / k);
+    const size = (g: number) => Math.max(v.radius[g], (v.rank[g] < 60 ? 4.5 : 2.6) / k);
+    // Each mark of a small map wears a thin ring of the background, so marks that touch stay apart.
     for (const dim of lit >= 0 ? [true, false] : [false]) {
       for (const kind of KINDS) {
-        ctx.fillStyle = colors.kind[kind];
-        ctx.globalAlpha = dim ? 0.25 : 1;
-        ctx.beginPath();
+        const path = new Path2D();
+        const shape = KIND_SHAPE[kind];
+        let any = false;
         for (let g = 0; g < v.count; g++) {
           if (v.kind[g] !== kind || !drawn[g]) continue;
           const faded = lit >= 0 && g !== lit && !near.has(g);
           if (faded !== dim) continue;
           const x = xy[g * 2], y = xy[g * 2 + 1], r = size(g);
-          if (kind === "project") ctx.rect(x - r, y - r, r * 2, r * 2);
-          else { ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, Math.PI * 2); }
+          if (shape === "square") path.rect(x - r * 0.9, y - r * 0.9, r * 1.8, r * 1.8);
+          else if (shape === "diamond") { path.moveTo(x, y - r * 1.2); path.lineTo(x + r * 1.2, y); path.lineTo(x, y + r * 1.2); path.lineTo(x - r * 1.2, y); path.closePath(); }
+          else { path.moveTo(x + r, y); path.arc(x, y, r, 0, Math.PI * 2); }
           nodesDrawn++;
+          any = true;
         }
-        ctx.fill();
+        if (!any) continue;
+        ctx.globalAlpha = dim ? 0.22 : 1;
+        // The ring is a second stroke of every mark: on a small map it costs nothing; on thousands it would slow a pan.
+        if (!big) {
+          ctx.lineJoin = "round";
+          ctx.strokeStyle = colors.background;
+          ctx.lineWidth = 3 / k;
+          ctx.stroke(path);
+        }
+        ctx.fillStyle = shape === "ring" ? colors.background : colors.kind[kind];
+        ctx.fill(path);
+        if (shape === "ring") { ctx.strokeStyle = colors.kind[kind]; ctx.lineWidth = 1.75 / k; ctx.stroke(path); }
       }
     }
     // Pinned pages wear a ring; the lit one and the page a local map is of, a bolder one.
@@ -420,6 +445,25 @@ export function GraphView({
     if (!s.stats.firstDraw && v.count) s.stats.firstDraw = performance.now();
     s.stats.drawn = { nodes: nodesDrawn, edges: edgesDrawn, months: v !== s.views.full };
     s.stats.labels = boxes;
+    // The hovered page's card: its name, kind and how many it is tied to, beside it.
+    const tip = tipRef.current;
+    if (tip) {
+      if (s.hover >= 0 && s.drag < 0) {
+        const g = s.hover;
+        const links = v.adjStart[g + 1] - v.adjStart[g];
+        const many = v.group[g] === 1;
+        tip.querySelector("[data-tip-title]")!.textContent = v.title[g];
+        tip.querySelector("[data-tip-meta]")!.textContent = many
+          ? `${v.start[g + 1] - v.start[g]} journal days · click to zoom in`
+          : `${KIND_LABEL[v.kind[g]]} · ${links} ${links === 1 ? "link" : "links"}`;
+        const x = xy[g * 2] * k + tx;
+        const y = xy[g * 2 + 1] * k + ty;
+        const right = x > s.width - 240;
+        // Above the page and to its side, clear of its name and of the names below it.
+        tip.style.transform = `translate(${Math.round(right ? x - 10 : x + 10)}px, ${Math.round(y - size(g) * k - 8)}px) translate(${right ? "-100%" : "0"}, -100%)`;
+        tip.hidden = false;
+      } else tip.hidden = true;
+    }
     canvas.dataset.drawnNodes = String(nodesDrawn);
     canvas.dataset.drawnEdges = String(edgesDrawn);
     canvas.dataset.view = v === s.views.full ? "pages" : "months";
@@ -448,13 +492,44 @@ export function GraphView({
     s.tx = s.width / 2 - ((minX + maxX) / 2) * k;
     s.ty = s.height / 2 - ((minY + maxY) / 2) * k;
   };
+  /** Moves the view to a zoom and offset in a fifth of a second, eased; at once for those who ask for less motion. */
+  const glide = (k: number, tx: number, ty: number) => {
+    s.moved = true;
+    if (s.glide) cancelAnimationFrame(s.glide);
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { s.k = k; s.tx = tx; s.ty = ty; request(); return; }
+    const from = { k: s.k, tx: s.tx, ty: s.ty };
+    const began = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - began) / 220);
+      const e = 1 - (1 - t) ** 3;
+      // Zoom eases in log space, so going in and out feel alike.
+      s.k = Math.exp(Math.log(from.k) + (Math.log(k) - Math.log(from.k)) * e);
+      const scale = (s.k - from.k) / (k - from.k || 1);
+      s.tx = from.tx + (tx - from.tx) * (k === from.k ? e : scale);
+      s.ty = from.ty + (ty - from.ty) * (k === from.k ? e : scale);
+      draw();
+      s.glide = t < 1 ? requestAnimationFrame(step) : 0;
+    };
+    s.glide = requestAnimationFrame(step);
+  };
+  /** Zoom by a factor about a point on screen (the middle, unset). */
+  const zoomBy = (factor: number, at = { x: s.width / 2, y: s.height / 2 }) => {
+    const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, s.k * factor));
+    glide(k, at.x - ((at.x - s.tx) / s.k) * k, at.y - ((at.y - s.ty) / s.k) * k);
+  };
+  const refit = () => {
+    const was = { k: s.k, tx: s.tx, ty: s.ty };
+    fit();
+    const to = { k: s.k, tx: s.tx, ty: s.ty };
+    Object.assign(s, was);
+    glide(to.k, to.tx, to.ty);
+    s.moved = false;
+  };
   const centreOn = (index: number) => {
     if (!ready() || index < 0) { s.pendingFocus = index; return; }
-    s.k = Math.max(s.k, 1.4);
-    s.tx = s.width / 2 - s.positions[index * 2] * s.k;
-    s.ty = s.height / 2 - s.positions[index * 2 + 1] * s.k;
-    s.moved = true;
+    const k = Math.max(s.k, 1.4);
     s.pendingFocus = -1;
+    glide(k, s.width / 2 - s.positions[index * 2] * k, s.height / 2 - s.positions[index * 2 + 1] * k);
   };
 
   // The worker, for as long as the map is open.
@@ -572,7 +647,7 @@ export function GraphView({
         const dx = xy[g * 2] - mx;
         const dy = xy[g * 2 + 1] - my;
         const d = dx * dx + dy * dy;
-        const r = Math.max(v.radius[g], (v.rank[g] < 60 ? 4 : 2.2) / s.k) + 4 / s.k;
+        const r = Math.max(v.radius[g], (v.rank[g] < 60 ? 4.5 : 2.6) / s.k) + 5 / s.k;
         if (d <= r * r && d < bestD) { best = g; bestD = d; }
       }
       return best;
@@ -624,12 +699,9 @@ export function GraphView({
       if (v.group[was.node]) {
         // A month of journal days opens up: zoom in on it.
         const xy = place(v);
-        s.k = Math.max(MONTHS_BELOW * 1.6, s.k);
-        s.tx = s.width / 2 - xy[was.node * 2] * s.k;
-        s.ty = s.height / 2 - xy[was.node * 2 + 1] * s.k;
-        s.moved = true;
+        const k = Math.max(MONTHS_BELOW * 1.6, s.k);
         s.hover = -1;
-        request();
+        glide(k, s.width / 2 - xy[was.node * 2] * k, s.height / 2 - xy[was.node * 2 + 1] * k);
         return;
       }
       onOpenRef.current(s.graph.nodes[v.members[v.start[was.node]]]);
@@ -646,7 +718,7 @@ export function GraphView({
       s.moved = true;
       request();
     };
-    const again = () => { s.moved = false; fit(); request(); };
+    const again = () => refit();
     canvas.addEventListener("pointerdown", down);
     canvas.addEventListener("pointermove", move);
     canvas.addEventListener("pointerup", up);
@@ -654,6 +726,14 @@ export function GraphView({
     canvas.addEventListener("pointerleave", leave);
     canvas.addEventListener("wheel", wheel, { passive: false });
     canvas.addEventListener("dblclick", again);
+    const keys = (event: KeyboardEvent) => {
+      if (event.key === "+" || event.key === "=") zoomBy(1.4);
+      else if (event.key === "-") zoomBy(1 / 1.4);
+      else if (event.key === "0") refit();
+      else return;
+      event.preventDefault();
+    };
+    canvas.addEventListener("keydown", keys);
     canvas.style.cursor = "grab";
     // For the end-to-end check: where a page is drawn, and how long frames take.
     (canvas as HTMLCanvasElement & { brainMap?: MapHandle }).brainMap = {
@@ -681,20 +761,33 @@ export function GraphView({
       canvas.removeEventListener("pointerleave", leave);
       canvas.removeEventListener("wheel", wheel);
       canvas.removeEventListener("dblclick", again);
+      canvas.removeEventListener("keydown", keys);
     };
   }, []);
 
   const edgeCount = views.full.edges.length / 2;
   return (
-    <canvas
-      ref={canvasRef}
-      role="img"
-      aria-label={`${label}: ${views.full.count} ${views.full.count === 1 ? "page" : "pages"}, ${edgeCount} ${edgeCount === 1 ? "link" : "links"}`}
-      data-brain-map
-      data-nodes={views.full.count}
-      data-edges={edgeCount}
-      className={cn("block w-full touch-none select-none", className)}
-    />
+    <div className={cn("relative overflow-hidden", className)}>
+      <canvas
+        ref={canvasRef}
+        role="img"
+        tabIndex={0}
+        aria-label={`${label}: ${views.full.count} ${views.full.count === 1 ? "page" : "pages"}, ${edgeCount} ${edgeCount === 1 ? "link" : "links"}. Plus and minus zoom, 0 fits.`}
+        data-brain-map
+        data-nodes={views.full.count}
+        data-edges={edgeCount}
+        className="block size-full touch-none select-none outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
+      />
+      <div ref={tipRef} hidden aria-hidden className="pointer-events-none absolute top-0 left-0 z-10 max-w-60 rounded-lg bg-popover px-2.5 py-1.5 text-popover-foreground shadow-float ring-1 ring-foreground/10" data-map-tip>
+        <p className="truncate text-xs font-medium" data-tip-title />
+        <p className="truncate text-2xs text-muted-foreground" data-tip-meta />
+      </div>
+      <div className="absolute right-3 bottom-3 z-10 flex flex-col overflow-hidden rounded-lg bg-background/90 shadow-raised ring-1 ring-foreground/10 backdrop-blur" data-map-controls>
+        <Button size="icon-sm" variant="ghost" className="rounded-none" aria-label="Zoom in" onClick={() => zoomBy(1.4)}><PlusIcon /></Button>
+        <Button size="icon-sm" variant="ghost" className="rounded-none" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.4)}><MinusIcon /></Button>
+        <Button size="icon-sm" variant="ghost" className="rounded-none" aria-label="Fit the map" onClick={() => refit()}><MaximizeIcon /></Button>
+      </div>
+    </div>
   );
 }
 

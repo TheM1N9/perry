@@ -8,13 +8,14 @@ import { api } from "@/convex/_generated/api";
 import type { BrainGraph, MapKind, MapNode } from "@/convex/lib/graph";
 import { noteHref } from "@/convex/lib/notes";
 import { useSession } from "@/lib/session";
+import { cn } from "@/lib/utils";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { EmptyState } from "../common";
-import { GraphView, KIND_COLOR } from "./graph-view";
+import { GraphView, KIND_COLOR, KIND_LABEL, KIND_SHAPE } from "./graph-view";
 
 /**
  * Brain as a map (issue #225), Obsidian's graph view: every page a dot, every
@@ -23,9 +24,7 @@ import { GraphView, KIND_COLOR } from "./graph-view";
  * and whether it is tied to anything.
  */
 
-export const KIND_LABEL: Record<MapKind, string> = {
-  about: "About me", remember: "To remember", journal: "Journal", journey: "Journeys", person: "People", page: "Pages", chat: "Chats", project: "Projects",
-};
+export { KIND_LABEL };
 const KINDS = Object.keys(KIND_LABEL) as MapKind[];
 const DAY = 86_400_000;
 const TIMES = [
@@ -157,7 +156,7 @@ export function BrainMap() {
         <EmptyState title="Nothing to map yet" />
       ) : (
         <GraphView
-          graph={graph} visible={visible} focus={focus} label="Brain map" className="h-[min(70dvh,720px)] min-h-96"
+          graph={graph} visible={visible} focus={focus} label="Brain map" className="h-[min(70dvh,720px)] min-h-96 rounded-xl bg-muted/25 ring-1 ring-foreground/5"
           onOpen={(node) => router.push(hrefOf(node))}
         />
       )}
@@ -167,6 +166,8 @@ export function BrainMap() {
 
 /** A kind's colour, as the map draws it. */
 export function Dot({ kind }: { kind: MapKind }) {
-  const square = kind === "project";
-  return <span aria-hidden className={square ? "size-2 shrink-0 rounded-[2px]" : "size-2 shrink-0 rounded-full"} style={{ background: `var(${KIND_COLOR[kind]})` }} />;
+  const shape = KIND_SHAPE[kind];
+  const color = `var(${KIND_COLOR[kind]})`;
+  if (shape === "ring") return <span aria-hidden className="size-2 shrink-0 rounded-full border-[1.5px]" style={{ borderColor: color }} />;
+  return <span aria-hidden className={cn("size-2 shrink-0", shape === "square" ? "rounded-[2px]" : shape === "diamond" ? "scale-90 rotate-45 rounded-[1px]" : "rounded-full")} style={{ background: color }} />;
 }
