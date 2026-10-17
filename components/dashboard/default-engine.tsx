@@ -34,6 +34,8 @@ function describe(engine: EngineView, computer: string, online: boolean, several
   if (engine.kind === "antigravity" && !engine.signedIn) return `Experimental. Not turned on${where} yet; Settings → Engines turns it on.`;
   if (engine.update?.need === "required") return `${engine.update.version}${where} is too old for Perry; it needs ${engine.update.minimum} or newer.`;
   if (!engine.signedIn) return `Installed${where}, not signed in.`;
+  // OpenCode's free models answer with no account; the engine is ready all the same.
+  if (!engine.auth.type && !engine.auth.label) return `Ready${where} on its free models; no account needed.`;
   const plan = engine.auth.plan ? ` ${engine.auth.plan[0].toUpperCase()}${engine.auth.plan.slice(1)}` : "";
   return `Signed in${where} with ${engine.auth.label ?? "an account"}${plan}${engine.version ? ` · ${engine.version}` : ""}.`;
 }

@@ -2,7 +2,7 @@ import { ACCESSES } from "../../convex/lib/commands";
 import type { EngineModel, EngineStatus, LoginFlow } from "../engine";
 import { AcpEngine, modelsOr, waitForSignIn, type AcpLaunch } from "./acp";
 import { updateCommand } from "../versions";
-import { commandOf, killTree, runCli, spawnEngine } from "./process";
+import { commandOf, runCli } from "./process";
 
 /**
  * OpenCode, an open-source coding agent, over ACP (`opencode acp`), signed in
@@ -16,18 +16,17 @@ import { commandOf, killTree, runCli, spawnEngine } from "./process";
 
 const INSTALL = "Install OpenCode on this computer (see https://opencode.ai), then sign in here if you want a paid model.";
 
-/** Parse `opencode models`: one model id per line. */
+/**
+ * The efforts OpenCode's models take, until a session has said which the
+ * chosen model really offers: only ACP knows them per model (see status), as
+ * Grok's do. A model without the one picked is left to its own default.
+ */
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
+/** Parse `opencode models`: one model id per line, named by its last segment. What each takes comes from ACP. */
 export function parseModels(output: string): EngineModel[] {
   const ids = output.split("\n").map((line) => line.trim()).filter(Boolean);
-  return ids.map((id, index): EngineModel => ({
-    id,
-    name: id.split("/").pop() || id,
-    isDefault: index === 0,
-    efforts: EFFORTS,
-    defaultEffort: "medium",
-  }));
+  return ids.map((id, index): EngineModel => ({ id, name: id.split("/").pop() || id, isDefault: index === 0 }));
 }
 
 export class OpenCodeEngine extends AcpEngine {
@@ -67,6 +66,18 @@ export class OpenCodeEngine extends AcpEngine {
     this.listed = null;
   }
 
+  /** Whether a provider account or key is connected, as `opencode auth list` says. The free models need none. */
+  private async authenticated(): Promise<boolean> {
+    try {
+      const ran = await runCli(this.cli, ["auth", "list", "--format", "json"], 20_000);
+      if (ran.code !== 0) return false;
+      const found: unknown = JSON.parse(ran.stdout);
+      return Array.isArray(found) && found.some((item: { connections?: unknown[] }) => (item?.connections?.length ?? 0) > 0);
+    } catch {
+      return false;
+    }
+  }
+
   async status(): Promise<EngineStatus> {
     const base: Pick<EngineStatus, "kind" | "auth" | "models" | "update"> = { kind: "opencode", auth: {}, models: [] };
     let version: string | undefined;
@@ -79,37 +90,67 @@ export class OpenCodeEngine extends AcpEngine {
     }
     base.update = updateCommand("opencode", this.cli.command);
     try {
+      let listError: string | undefined;
       if (!this.listed || Date.now() - this.listed.at > 2 * 60_000) {
         const ran = await runCli(this.cli, ["models"], 30_000);
-        this.listed = { at: Date.now(), models: parseModels(`${ran.stdout}\n${ran.stderr}`) };
+        // Only a successful listing says anything about models: a failed one
+        // must not turn OpenCode's error text into a model id.
+        if (ran.code === 0) this.listed = { at: Date.now(), models: parseModels(ran.stdout) };
+        else {
+          this.listed = { at: Date.now(), models: [] };
+          listError = ran.stderr.trim().split("\n")[0] || `opencode models exited with code ${ran.code}`;
+        }
       }
-      const models = this.listed.models.length ? this.listed.models : this.learnedModels();
-      // OpenCode's free models need no sign-in; report signed in whenever it runs.
+      // Efforts are per model, and only a session says which: those ACP has
+      // seen are used, else OpenCode's fallback list. ACP names its own
+      // default "default", which the picker already offers as "Default".
+      const learned = new Map(this.learnedModels().map((model) => [model.id, model]));
+      const models = (this.listed.models.length ? this.listed.models : this.learnedModels()).map((model) => {
+        const seen = learned.get(model.id);
+        const efforts = (seen?.efforts ?? EFFORTS).filter((level) => level !== "default");
+        const defaultEffort = seen?.defaultEffort && seen.defaultEffort !== "default" ? seen.defaultEffort : undefined;
+        return { ...model, efforts, ...(defaultEffort ? { defaultEffort } : {}) };
+      });
+      // `signedIn` is Perry's "can answer now", and OpenCode's free models
+      // answer with no provider account at all. Whether one is connected is
+      // `opencode auth list`'s answer, which login() starts from and the
+      // message below tells apart.
       const signedIn = models.length > 0;
+      const connected = signedIn && (await this.authenticated());
       return {
         ...base, installed: true, version, signedIn,
-        auth: signedIn ? { type: "opencode", label: "OpenCode" } : {},
+        auth: connected ? { type: "opencode", label: "OpenCode" } : {},
         models: signedIn ? modelsOr(models, this.label) : [],
-        message: !signedIn ? "Run `opencode auth login` on this computer to sign in." : undefined,
+        message: signedIn ? connected ? undefined : "Free models need no account. Run `opencode auth login` on this computer to use your own providers."
+          : "Run `opencode auth login` on this computer to sign in.",
+        error: signedIn ? undefined : listError,
       };
     } catch (error) {
       return { ...base, installed: true, version, signedIn: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
 
+  /**
+   * OpenCode signs in only in its own terminal flow: the owner runs `opencode
+   * auth login` on the computer. Perry shows the command and waits for
+   * `opencode auth list` to show an account; it starts no child of its own.
+   */
   async login(): Promise<LoginFlow> {
     this.listed = null;
-    if ((await this.status()).signedIn) return { interaction: null, done: Promise.resolve(), cancel: () => {} };
-    const child = spawnEngine(this.cli.command, [...this.cli.args, "auth", "login"], { ...process.env });
-    const exited = new Promise<number | null>((done) => { child.on("close", done); child.on("error", () => done(-1)); });
+    if (await this.authenticated()) return { interaction: null, done: Promise.resolve(), cancel: () => {} };
     const finish = (signedIn: Promise<void>) => signedIn.finally(() => { this.listed = null; this.kill(); });
-    const waiting = waitForSignIn(async () => { this.listed = null; return (await this.status()).signedIn; }, "Signing in to OpenCode");
+    const waiting = waitForSignIn(async () => { this.listed = null; return await this.authenticated(); }, "Signing in to OpenCode");
     return { interaction: { type: "terminal", command: "opencode auth login" }, done: finish(waiting.done), cancel: waiting.cancel };
   }
 
+  /** A logout that did not remove the credentials says so, rather than letting the owner think it did. */
   async logout(): Promise<void> {
-    try { await runCli(this.cli, ["auth", "logout"], 30_000); } catch {}
-    this.listed = null;
-    this.kill();
+    try {
+      const ran = await runCli(this.cli, ["auth", "logout"], 30_000);
+      if (ran.code !== 0) throw new Error(ran.stderr.trim().split("\n")[0] || `opencode auth logout exited with code ${ran.code}`);
+    } finally {
+      this.listed = null;
+      this.kill();
+    }
   }
 }

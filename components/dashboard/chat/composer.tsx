@@ -207,7 +207,11 @@ const pill = "h-8 gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-sm fo
  * the chat there.
  */
 function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, access, onAccess, accessDisabled }: Pickers) {
-  const efforts = modelInfo?.efforts ?? [];
+  // An engine can name its own default as an effort level ("default", from
+  // ACP); the picker's own Default option already covers it, so it is not
+  // offered twice.
+  const efforts = (modelInfo?.efforts ?? []).filter((level) => level !== "default");
+  const defaultEffort = modelInfo?.defaultEffort && modelInfo.defaultEffort !== "default" ? modelInfo.defaultEffort : undefined;
   const keyOf = (item: ModelOption) => modelKey(item.engine, item.id);
   const engines = enginesOf(models ?? []);
   const modelItems = (models ?? []).map((item) => ({ value: keyOf(item), label: item.name }));
@@ -218,7 +222,7 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
     </SelectItem>
   );
   const effortItems = [
-    { value: "default", label: modelInfo?.defaultEffort ? `Default (${levelName(modelInfo.defaultEffort)})` : "Default" },
+    { value: "default", label: defaultEffort ? `Default (${levelName(defaultEffort)})` : "Default" },
     ...efforts.map((level) => ({ value: level, label: levelName(level) })),
   ];
   const accessItems = ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode] }));
