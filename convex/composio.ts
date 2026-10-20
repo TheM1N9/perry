@@ -430,17 +430,21 @@ export const execute = internalAction({
     input,
   ): Promise<{ ok: boolean; data?: unknown; error?: string }> => {
     let selected: { accountId: string; toolkit: string } | undefined;
+    let stage = "credentials";
     const startedAt = Date.now();
     try {
       const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
       const composio = client(apiKey);
+      stage = "tool_metadata";
       // Resolve metadata from the SDK, never infer the toolkit from a slug prefix.
       const tool = await composio.tools.getRawComposioToolBySlug(input.slug).catch(() => null);
       // Router helper tools may not have standalone metadata. They still execute,
       // but without an exact account we do not infer or persist account health.
       const toolkit = tool?.toolkit?.slug;
+      stage = "session";
       const s = await session(apiKey);
       if (toolkit) {
+        stage = "account_selection";
         const state = await s.toolkits({ toolkits: [toolkit] });
         const account = state.items.find((item) => item.slug === toolkit)?.connection?.connectedAccount;
         if (account) selected = { accountId: account.id, toolkit };
@@ -449,8 +453,19 @@ export const execute = internalAction({
           return { ok: false, error: reconnectMessage };
         }
       }
-      // Pin the account whose health we observe; no ambiguous toolkit-wide marks.
-      const result = await s.execute(input.slug, (input.args ?? {}) as Record<string, unknown>, selected ? { account: selected.accountId } : undefined);
+      // Standalone app tools use the native account-specific execution API.
+      // The router's `account` option returns HTTP 400/code 4300 on projects
+      // without multi-account selection. Native execution pins the account
+      // without requiring that project feature. Router helpers stay on s.execute.
+      stage = "execution";
+      const result = selected
+        ? await composio.tools.execute(input.slug, {
+          userId: USER_ID,
+          connectedAccountId: selected.accountId,
+          arguments: (input.args ?? {}) as Record<string, unknown>,
+          dangerouslySkipVersionCheck: true,
+        }).then((reply) => ({ data: reply.data, error: reply.successful ? null : (reply.error ?? "execution_failed") }))
+        : await s.execute(input.slug, (input.args ?? {}) as Record<string, unknown>);
       if (result.error) {
         if (selected && expiredConnection(result.error)) {
           await ctx.runMutation(internal.connectorHealth.observe, { ...selected, startedAt, expired: true }).catch(() => null);
@@ -467,7 +482,13 @@ export const execute = internalAction({
         recheckInternetConnections();
         return { ok: false, error: reconnectMessage };
       }
-      return { ok: false, error: "The connected action could not complete. Check the service, Composio key, and permissions, then try again." };
+      // Only structural diagnostics: never log provider payloads, arguments,
+      // headers, credentials, or arbitrary exception messages.
+      const details = error as { name?: unknown; code?: unknown; status?: unknown } | null;
+      const safeLabel = (value: unknown) => typeof value === "string" && /^[\w.-]{1,80}$/.test(value) ? value : undefined;
+      const diagnostic = { stage, type: safeLabel(details?.name) ?? "Error", code: safeLabel(details?.code), status: typeof details?.status === "number" ? details.status : undefined };
+      console.error("[composio] execution failed", diagnostic);
+      return { ok: false, error: `The connected action could not complete (${Object.entries(diagnostic).filter(([, value]) => value !== undefined).map(([key, value]) => `${key}=${value}`).join(", ")}).` };
     }
   },
 });
@@ -554,7 +575,7 @@ export async function internetRead(ctx: ToolCtx, request: InternetRequest, platf
     const matchesOperation = (slug: string) => request.operation === "comments" ? /COMMENT|REPL(Y|IES)|THREAD/i.test(slug)
       : request.operation === "transcript" ? /TRANSCRIPT|CAPTION/i.test(slug)
       : request.operation === "search" ? /SEARCH|QUERY|FIND/i.test(slug) : true;
-    const actions = slugs.filter((slug) => READ_OPERATION.test(slug) && !UNSAFE_OPERATION.test(slug) && matchesOperation(slug) && found.toolSchemas[slug]?.toolkit === toolkit)
+    const actions = slugs.filter((slug) => READ_OPERATION.test(slug) && !UNSAFE_OPERATION.test(slug) && matchesOperation(slug) && found.toolSchemas[slug]?.toolkit?.toLowerCase() === toolkit)
       .slice(0, 10).map((slug) => ({ slug, description: found.toolSchemas[slug]?.description?.slice(0, 400), inputSchema: found.toolSchemas[slug]?.inputSchema }));
     const discovery: ConnectedRead = { state: "available", ...checked, actions };
     if (!request.connector) return { ...discovery, repair: "Select the intended account ID, then call again with an exact discovered slug and arguments matching its schema. Existing configured-plan usage applies." };
@@ -579,11 +600,14 @@ export async function internetRead(ctx: ToolCtx, request: InternetRequest, platf
       if (!allowed.includes(host)) return { ...discovery, error: { code: "policy", message: "An adapter argument points outside the selected platform.", repair: "Use a source on the selected platform." } };
     }
     executionStartedAt = Date.now();
-    const executed = await s.execute(selected.slug, args, { account: request.connector.accountId }, { signal });
-    if (executed.error) {
+    const executed = await composio.tools.execute(selected.slug, {
+      userId: USER_ID, connectedAccountId: request.connector.accountId,
+      arguments: args, dangerouslySkipVersionCheck: true,
+    }, { signal });
+    if (!executed.successful) {
       accountCache.delete(toolkit);
       if (expiredConnection(executed.error)) await ctx.runMutation(internal.connectorHealth.observe, { accountId: request.connector.accountId, toolkit, startedAt: executionStartedAt, expired: true }).catch(() => null);
-      return { ...discovery, error: internetFailure(new Error(executed.error)) };
+      return { ...discovery, error: internetFailure(executed.error ?? new Error("Connected execution failed")) };
     }
     await ctx.runMutation(internal.connectorHealth.observe, { accountId: request.connector.accountId, toolkit, startedAt: executionStartedAt, expired: false }).catch(() => null);
     if (JSON.stringify(executed.data).length > 1_000_000) return { ...discovery, error: { code: "malformed", message: "The connected response exceeded the 1 MB adapter limit.", repair: "Request fewer results." } };
