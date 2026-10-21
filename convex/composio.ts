@@ -7,6 +7,7 @@ import { internalAction } from "./_generated/server";
 import type { ToolCtx } from "./lib/agent";
 import { z } from "zod";
 import { expiredConnection, reconnectMessage } from "./lib/connection-health";
+import { connectedDiagnostic, type ConnectedDiagnostic } from "./lib/connected-error";
 import { DEADLINE_MS, InternetError, publicUrl, type ConnectedRead, type InternetFailure, type InternetRequest, type Platform } from "./lib/internet";
 
 /**
@@ -428,10 +429,19 @@ export const execute = internalAction({
   handler: async (
     ctx,
     input,
-  ): Promise<{ ok: boolean; data?: unknown; error?: string }> => {
+  ): Promise<{ ok: boolean; data?: unknown; error?: string; diagnostic?: ConnectedDiagnostic }> => {
     let selected: { accountId: string; toolkit: string } | undefined;
     let stage = "credentials";
     const startedAt = Date.now();
+    const failed = async (error: unknown) => {
+      const diagnostic = connectedDiagnostic(error, stage, input.slug);
+      if (selected && diagnostic.category === "expired_auth") {
+        await ctx.runMutation(internal.connectorHealth.observe, { ...selected, startedAt, expired: true }).catch(() => null);
+        recheckInternetConnections();
+      }
+      console.error("[composio] execution failed", diagnostic);
+      return { ok: false, error: `${diagnostic.reason} ${diagnostic.repair}`, diagnostic };
+    };
     try {
       const apiKey: string | null = await ctx.runQuery(internal.secrets.get, { name: "COMPOSIO_API_KEY" });
       const composio = client(apiKey);
@@ -467,28 +477,12 @@ export const execute = internalAction({
         }).then((reply) => ({ data: reply.data, error: reply.successful ? null : (reply.error ?? "execution_failed") }))
         : await s.execute(input.slug, (input.args ?? {}) as Record<string, unknown>);
       if (result.error) {
-        if (selected && expiredConnection(result.error)) {
-          await ctx.runMutation(internal.connectorHealth.observe, { ...selected, startedAt, expired: true }).catch(() => null);
-          recheckInternetConnections();
-          return { ok: false, error: reconnectMessage };
-        }
-        return { ok: false, error: "The connected action failed. Check the service and permissions, then try again." };
+        return await failed(result.error);
       }
       if (selected) await ctx.runMutation(internal.connectorHealth.observe, { ...selected, startedAt, expired: false }).catch(() => null);
       return { ok: true, data: result.data };
     } catch (error) {
-      if (selected && expiredConnection(error)) {
-        await ctx.runMutation(internal.connectorHealth.observe, { ...selected, startedAt, expired: true }).catch(() => null);
-        recheckInternetConnections();
-        return { ok: false, error: reconnectMessage };
-      }
-      // Only structural diagnostics: never log provider payloads, arguments,
-      // headers, credentials, or arbitrary exception messages.
-      const details = error as { name?: unknown; code?: unknown; status?: unknown } | null;
-      const safeLabel = (value: unknown) => typeof value === "string" && /^[\w.-]{1,80}$/.test(value) ? value : undefined;
-      const diagnostic = { stage, type: safeLabel(details?.name) ?? "Error", code: safeLabel(details?.code), status: typeof details?.status === "number" ? details.status : undefined };
-      console.error("[composio] execution failed", diagnostic);
-      return { ok: false, error: `The connected action could not complete (${Object.entries(diagnostic).filter(([, value]) => value !== undefined).map(([key, value]) => `${key}=${value}`).join(", ")}).` };
+      return await failed(error);
     }
   },
 });
