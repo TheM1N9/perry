@@ -1,0 +1,9 @@
+Perry stops when its main agent hits a usage limit after writing text or completing a tool call. Its existing fallback also stops after one alternative, even when another signed-in engine has room.
+
+This continues eligible owner web turns in the same run with the original request, recalled context, partial replies and redacted completed-step evidence. Each engine is attempted at most once. Activity records the attempted engines and the reason for the move. Outside-read state survives the handoff, and Stop/Pause cancel the routing gap. Tool IDs are scoped per attempt so two engines cannot hide each other's steps. A sign-out before commit leaves the original chat engine intact, and failed alternatives retain earlier visible progress.
+
+Progress handoffs are bounded to 32 completed/declined steps and 24,000 characters of partial replies. Unfinished or failed actions, pending approvals, missing legacy evidence, media, applied steers, guest/phone progress and maintenance turns retain their existing failure behavior. Jobs and tasks keep their existing reset recovery. The next agent is instructed to verify current state and avoid repeating completed actions; arbitrary external side effects do not gain an exactly-once guarantee.
+
+Validation: production build, TypeScript, all 25 protocol lifecycle checks and all 28 full app/runner routing checks passed. The protocol harness blocks external traffic. The full run used only isolated fake engines and confirmed that the completed-action counter remains one after a late limit. It also checked reset waiting, scheduled-job recovery, Activity explanations and page errors. Evidence is in `artifacts/main-agent-limits/{protocol-result.json,routing-result.json,run-details.png}`. No paid model calls or owner account sessions were used.
+
+Follow-up to #189, which is already closed.

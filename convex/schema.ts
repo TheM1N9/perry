@@ -1511,7 +1511,7 @@ export default defineSchema({
     patienceWhy: v.optional(v.string()),
     /** The turn ended because the owner stopped it. */
     stopped: v.optional(v.boolean()),
-    /** Its engine refused it for a limit before it did anything: it is being tried once on another (routing.retryTurn). */
+    /** Its engine hit a limit: routing is handing the turn to an untried eligible engine. */
     retrying: v.optional(v.boolean()),
     /** The turn this one tries again, on another engine. */
     retryOf: v.optional(v.id("codexTurns")),

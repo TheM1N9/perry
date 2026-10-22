@@ -1,0 +1,105 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "name": "empty refusal carries outside guard",
+      "passed": true
+    },
+    {
+      "name": "chain tries every engine once and terminates",
+      "passed": true
+    },
+    {
+      "name": "main web progress hands off and finalizes once",
+      "passed": true
+    },
+    {
+      "name": "partial stream without final response is retained",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: running-tool",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: failed-tool",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: legacy-trace",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: too-many-steps",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: pending-approval",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: stopped",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: stop-requested",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: guest-progress",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: phone-progress",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: media",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: maintenance",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: applied-steer",
+      "passed": true
+    },
+    {
+      "name": "blocks unsafe handoff: non-limit",
+      "passed": true
+    },
+    {
+      "name": "pause between finish and routing prevents continuation",
+      "passed": true
+    },
+    {
+      "name": "failed history read preserves original failure",
+      "passed": true
+    },
+    {
+      "name": "stop between finish and routing cancels handoff",
+      "passed": true
+    },
+    {
+      "name": "runner unavailable at commit leaves chat engine unchanged",
+      "passed": true
+    },
+    {
+      "name": "later failure keeps earlier visible progress",
+      "passed": true
+    },
+    {
+      "name": "tool ids cannot collide across engine attempts",
+      "passed": true
+    },
+    {
+      "name": "all exhausted alternatives keep original progress for delivery",
+      "passed": true
+    },
+    {
+      "name": "pause cancels the routing gap even after resume",
+      "passed": true
+    }
+  ]
+}

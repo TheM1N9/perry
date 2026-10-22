@@ -131,7 +131,7 @@ try {
   p.start("server");
   await until(() => fetch(`${BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start", 90);
   await call("dashboard:skipOnboarding", { key: KEY }).catch(() => {});
-  await until(async () => (await jobs()).filter((job) => job.builtin).length === 3, "the built-in jobs", 90);
+  await until(async () => ["heartbeat", "daily-summary", "consolidate", "brain-review"].every(kind => (rows("jobs")).some(job => job.builtin === kind)), "the built-in jobs", 90);
   // Nothing runs by the clock while this runs: each job here is run when the check says.
   for (const job of await jobs()) await call("jobs:update", { id: job.id, enabled: false });
   p.start("runner");
@@ -341,6 +341,21 @@ try {
     && retryTurns.length === 2 && retryTurns.filter((turn) => turn.retryOf).length === 1
     && /Fake antigravity reply to: hello after the limit/.test(retried.reply) && (await getChat(retryChat)).engine === "antigravity");
 
+  // A real runner transports completed work and partial words through a late limit.
+  limited("grok", false);
+  await seed("grok", 20);
+  await seed("antigravity", 40);
+  const progressChat = await call<string>("dashboard:createChat", { key: KEY });
+  const continued = await exchange(progressChat, "HANDOFF-CHECK finish the remaining synthetic work");
+  const progressRuns = runsIn(progressChat);
+  const progressTurns = rows("codexTurns").filter(turn => turn.conversationId === progressChat);
+  check("mainAgentProgressContinues", continued.reply.includes("The action count is 1") && progressRuns.length === 1
+    && progressRuns[0].status === "ok" && progressTurns.length === 2 && progressTurns[1].engine === "antigravity"
+    && progressTurns[1].history?.includes("HANDOFF_COMPLETED_ACTION_ONCE") && progressTurns[1].history.includes("The synthetic action completed once.")
+    && readFileSync(join(fakeHome, "handoff-completed-count"), "utf8") === "1");
+  notes.mainAgentHandoff = { reply: continued.reply, route: summary(progressRuns[0]?.route), attempts: progressTurns.map(turn => turn.engine) };
+  limited("grok", true);
+
   // --- 10. A job that failed on a limit waits for the reset, runs on the engine with room, and the owner hears once ---
   await call("usage:report", { token, engine: "grok", hit: null });
   const sweepReset = Date.now() + 60_000;
@@ -391,7 +406,7 @@ try {
   const details = await evaluate(`document.querySelector('[data-e2e-run] [data-route]').innerText`) as string;
   await photo("run-details.png");
   notes.runDetails = details;
-  check("runDetailsSayWhy", /Antigravity · gemini-fake-pro at medium/.test(details) && /Moved from Grok Build to Antigravity/.test(details) && /Grok Build refused it for its plan's limit/.test(details) && /ran there after its first engine refused it/.test(details));
+  check("runDetailsSayWhy", /Antigravity · gemini-fake-pro at medium/.test(details) && /Moved from Grok Build to Antigravity/.test(details) && /Grok Build refused it for its plan's limit/.test(details) && /continued here after another engine reached a usage limit/.test(details));
   notes.pageErrors = browser.errors;
   check("noPageErrors", browser.errors.length === 0);
   check("screenshots", ["chat-moved.png", "work-waiting.png", "work-moved.png", "work-kept.png", "run-details.png"].every((name) => existsSync(join(outDir, name))));
