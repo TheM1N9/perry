@@ -1,0 +1,5 @@
+{
+  "repository_full_name": "TheM1N9/perry",
+  "title": "External MCP confirmations are declined without asking the owner",
+  "body": "When Codex forwards an external MCP confirmation, runner/engines/codex.ts converts it to tool_user_input. runner/index.ts only handles command and file requests and immediately declines everything else. The owner never sees an approval card. A synthetic replay through the actual adapter, runner dispatcher and real approvals backend reproduced this before implementation.\n\nThe repeated historical GitHub user rejected MCP tool call responses are consistent with this path, but their exact approval events were not recovered.\n\nExpected: show a clearly labeled tool confirmation in Perry's normal approval UI, wait for the owner, return proper native accept/decline/cancel results, retain timeout and cancellation behavior, and avoid inheriting file rules or inventing answers to structured forms.\n\nLocal implementation and repeatable evidence are prepared on fix/tool-approval-routing under artifacts/tool-approval-routing. No issue has been posted by this draft."
+}

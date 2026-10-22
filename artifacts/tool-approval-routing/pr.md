@@ -1,0 +1,5 @@
+External MCP confirmation requests were always declined because Perry's runner had no handler for `tool_user_input`. Users saw a rejection despite never receiving a prompt.
+
+This routes confirmation-only requests into Perry's existing approval UI with a distinct tool kind. They wait for the owner under every access mode, and cannot inherit command/file rules or Always allow. The adapter returns the native MCP decline/cancel shape, rejects stale turn ownership and reports unsupported form/URL/verification requests explicitly. The runner also handles expired backend approvals immediately.
+
+Validation: production build and TypeScript passed; 22 protocol/backend cases, 8 full UI/API checks and 165 existing checks passed. The synthetic regression exercises the real Codex adapter, actual runner dispatcher/wait loop and production SQLite approval handlers without network or model calls. Full UI/API evidence covers keyboard approval and mobile decline; both screenshots were inspected. No live GitHub write or running-app update is claimed. Commands and limits are in artifacts/tool-approval-routing/README.md.

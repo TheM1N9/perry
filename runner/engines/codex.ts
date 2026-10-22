@@ -189,7 +189,7 @@ export class CodexEngine implements Engine {
   private starting: Promise<CodexAppServer> | null = null;
   private lastAttempt = 0;
   /** Running chat turns by thread, and where their approval requests go. */
-  private turns = new Map<string, { sink: TurnSink; cwd: string }>();
+  private turns = new Map<string, { sink: TurnSink; cwd: string; turnId?: string }>();
   /** Threads quick turns started. Any request Codex makes from one is refused. */
   private quickThreads = new Set<string>();
   /** Threads started ahead of a new chat's first message, by what they were started with (takeSpare). */
@@ -370,15 +370,37 @@ export class CodexEngine implements Engine {
         ? { permissions: {} }
         : { permissions: { ...(params.permissions?.network ? { network: params.permissions.network } : {}), ...(params.permissions?.fileSystem ? { fileSystem: params.permissions.fileSystem } : {}) }, scope: option });
     } else if (method === "mcpServer/elicitation/request") {
+      if (turn?.turnId && params.turnId && turn.turnId !== params.turnId) {
+        app.respond(request.id, { action: "cancel", content: null, _meta: null });
+        return;
+      }
+      // Approve/Decline supplies consent, not arbitrary user data. Accept only
+      // schemas for an empty confirmation; a form, URL or identity challenge
+      // needs its own input flow and must never receive fabricated content.
+      const schema = params.requestedSchema;
+      const allowedKeys = ["$schema", "type", "properties", "required", "additionalProperties", "title", "description"];
+      const confirmation = [undefined, "form", "openai/form", "openaiForm"].includes(params.mode)
+        && schema && typeof schema === "object" && !Array.isArray(schema) && schema.type === "object"
+        && schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)
+        && Object.keys(schema.properties).length === 0
+        && (schema.required === undefined || (Array.isArray(schema.required) && schema.required.length === 0))
+        && (schema.additionalProperties === undefined || typeof schema.additionalProperties === "boolean")
+        && Object.keys(schema).every((key) => allowedKeys.includes(key));
+      if (!confirmation) {
+        app.rejectRequest(request.id, "This tool requires input or verification that Perry cannot collect yet. Confirmation-only tool requests are supported.");
+        return;
+      }
       normalized = {
         type: "tool_user_input",
         detail: { server: params.serverName, message: params.message },
         options: [{ id: "accept", kind: "accept", label: "Accept" }, { id: "decline", kind: "decline", label: "Decline" }],
         raw: params,
       };
-      reply = (option) => option === "accept"
-        ? app.respond(request.id, { action: "accept", content: {}, _meta: null })
-        : app.rejectRequest(request.id, "Declined.");
+      reply = (option) => {
+        const active = turn && this.turns.get(params.threadId) === turn && (!turn.turnId || !params.turnId || turn.turnId === params.turnId);
+        const action = !turn ? "decline" : !active ? "cancel" : option === "accept" ? "accept" : "decline";
+        app.respond(request.id, { action, content: action === "accept" ? {} : null, _meta: null });
+      };
     } else {
       app.rejectRequest(request.id, `Assistant does not support ${method}.`);
       return;
@@ -505,7 +527,8 @@ export class CodexEngine implements Engine {
     app.on("item/started", onItemStarted);
     app.on("item/completed", onItemCompleted);
     app.on("thread/tokenUsage/updated", onTokens);
-    this.turns.set(id, { sink, cwd });
+    const running: { sink: TurnSink; cwd: string; turnId?: string } = { sink, cwd };
+    this.turns.set(id, running);
     try {
       // turn/start's overrides hold "for this turn and subsequent turns", and
       // thread/resume of a thread this app-server still has loaded just rejoins
@@ -522,6 +545,7 @@ export class CodexEngine implements Engine {
       }, 30_000);
       if (!started.turn?.id) throw new Error("Codex did not start a turn.");
       turnId = started.turn.id;
+      running.turnId = turnId;
       // Taken with the message, the change is in the thread's history now.
       if (untold) gave(id, current);
       for (const replay of early.splice(0)) replay();

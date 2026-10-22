@@ -1394,7 +1394,7 @@ export default defineSchema({
      * "contact": someone new wrote to Perry, or added it to a group; "message": Perry wants to write to
      * someone for the first time (contacts.ts). Allowing either lets Perry talk with them from then on.
      */
-    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message"), v.literal("brain")),
+    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message"), v.literal("brain"), v.literal("tool")),
     /** For "contact" and "message": who. */
     contactId: v.optional(v.id("contacts")),
     /** For "brain": the change to Brain it asks about (compaction.ts). */
