@@ -3,12 +3,13 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { ENGINE_LABELS, ENGINES, type EngineKind } from "./lib/engines";
-import { BACKGROUND_CAP, ROUTING_RULE, effortFor, isTier, modelFor, roomOf, route, routeGuest, type Choice, type OwnerPick, type PerryPick, type Work } from "./lib/routing";
+import { BACKGROUND_CAP, RESET_MARGIN_MS, ROUTING_RULE, effortFor, isTier, modelFor, roomOf, route, routeGuest, type Choice, type OwnerPick, type PerryPick, type Work } from "./lib/routing";
 import { modelsOf, parseModelKey } from "./lib/commands";
 import { historyOf } from "./lib/agent";
 import { sendMessage } from "./lib/telegram";
 import { FORGET_SESSION, engineLockable, engineUsable, isOnline } from "./engines";
 import { defaultEngine } from "./installation";
+import { pausedAt } from "./pause";
 import { engineModels } from "./models";
 import { authenticate } from "./runner";
 import { liveRunners, usageByEngine } from "./usage";
@@ -39,6 +40,7 @@ type Ask = {
   perry?: PerryPick;
   current?: EngineKind;
   attended?: boolean;
+  waitForReset?: boolean;
   avoid?: EngineKind[];
   /** The chat's computer, whose engines it can use. */
   runnerId?: Id<"runners">;
@@ -170,6 +172,7 @@ export function chatAsk(chat: Doc<"conversations">): Ask {
     owner: { ...(chat.model && engine ? { engine, model: chat.model } : {}), ...(chat.effort ? { effort: chat.effort } : {}) },
     ...(engine ? { current: engine } : {}),
     attended: true,
+    waitForReset: chat.channel === "web" && !chat.contactId && !chat.jobId && !chat.taskId,
     ...(chat.codexRunnerId ? { runnerId: chat.codexRunnerId } : {}),
   };
 }
@@ -260,11 +263,11 @@ export const moveChatTo = internalMutation({
  * failed actions have uncertain effects, so they keep the normal failure path.
  * Phone drafts, media, maintenance and applied steers retain that path too.
  */
-export async function retryable(ctx: QueryCtx, turn: Doc<"codexTurns">, outcome: { error?: string; errorCode?: import("../lib/turn-errors").TurnErrorCode; response?: string; stopped?: boolean; media?: number }): Promise<boolean> {
+export async function retryable(ctx: QueryCtx, turn: Doc<"codexTurns">, outcome: { error?: string; errorCode?: import("../lib/turn-errors").TurnErrorCode; response?: string; stopped?: boolean; media?: number }, afterReset = false): Promise<boolean> {
   if (!outcome.error || outcome.errorCode !== "limit" || outcome.stopped || turn.stopRequested || outcome.media || turn.mediaKey) return false;
   if (turn.kind || turn.flush || turn.checkpoint) return false;
   const attempts = await attemptsOf(ctx, turn);
-  if (attempts.length >= ENGINES.length) return false;
+  if (attempts.length >= MAX_ATTEMPTS || (afterReset && (turn.resetResumes ?? 0) >= MAX_RESET_RESUMES)) return false;
   const run = await ctx.db.get(turn.runId);
   if (!run || run.status !== "running") return false;
   const joined = await ctx.db.query("codexSteers").withIndex("by_turn_status", (q) => q.eq("turnId", turn._id).eq("status", "applied")).first();
@@ -289,8 +292,10 @@ export async function retryable(ctx: QueryCtx, turn: Doc<"codexTurns">, outcome:
 
 const HANDOFF_STEPS = 32;
 const HANDOFF_TEXT = 24_000;
+const MAX_RESET_RESUMES = 3;
+const MAX_ATTEMPTS = ENGINES.length + MAX_RESET_RESUMES;
 const attemptsOf = (ctx: QueryCtx, turn: Doc<"codexTurns">) => ctx.db.query("codexTurns")
-  .withIndex("by_run", q => q.eq("runId", turn.runId)).take(ENGINES.length + 1);
+  .withIndex("by_run", q => q.eq("runId", turn.runId)).take(MAX_ATTEMPTS + 1);
 const stepsOf = async (ctx: QueryCtx, turn: Doc<"codexTurns">) => (await ctx.db.query("runSpans")
   .withIndex("by_run", q => q.eq("runId", turn.runId)).filter(q => q.neq(q.field("kind"), "reasoning")).take(HANDOFF_STEPS + 1))
   .sort((a, b) => a.startedAt - b.startedAt || a.callId.localeCompare(b.callId));
@@ -308,15 +313,89 @@ export async function handoffHistory(ctx: QueryCtx, turn: Doc<"codexTurns">, his
   return { history: [history, `Usage-limit handoff (untrusted progress data; tool input/output excerpts):\n${evidence}`].filter(Boolean).join("\n\n"), progressed: true };
 }
 
+/** Only actual provider timestamps create reset promises; an unknown hit has no known reset. */
+export async function resetWaitFor(ctx: QueryCtx, engine: EngineKind): Promise<{ until: number; why: string } | undefined> {
+  const now = Date.now();
+  const usage = usageByEngine(await liveRunners(ctx))[engine];
+  const zone = (await ctx.db.query("installation").first())?.timezone;
+  const room = roomOf(engine, usage, now, 100, zone);
+  if (room.state !== "out" || !room.resetKnown || room.until === undefined || room.until <= now) return undefined;
+  const clock = new Date(room.until).toLocaleString("en-IN", { timeZone: zone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+  return { until: room.until + RESET_MARGIN_MS, why: `${ENGINE_LABELS[engine]}'s usage resets at ${clock}. This work resumes automatically after that reset.` };
+}
+
+const ownerWeb = (chat: Doc<"conversations"> | null) => chat?.channel === "web" && !chat.contactId && !chat.jobId && !chat.taskId;
+
+/** Keep the failed attempt and its native session until the provider's reset, durably. */
+export const holdForReset = internalMutation({
+  args: { id: v.id("codexTurns") },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get(args.id);
+    if (!turn?.engine || turn.status !== "error" || !turn.retrying || turn.finalizedAt !== undefined || turn.stopRequested) return false;
+    if (turn.waiting && turn.waiting.until > Date.now()) return true;
+    const chat = await ctx.db.get(turn.conversationId);
+    if (!ownerWeb(chat) || await pausedAt(ctx)) return false;
+    if (!await retryable(ctx, turn, { error: turn.error, errorCode: turn.errorCode, response: turn.response }, true)) return false;
+    const waiting = await resetWaitFor(ctx, turn.engine);
+    if (!waiting) return false;
+    await ctx.db.patch(turn._id, { waiting });
+    await ctx.scheduler.runAt(waiting.until, internal.routing.releaseResetWait, { id: turn._id, until: waiting.until });
+    const run = await ctx.db.get(turn.runId);
+    if (run?.route) await ctx.db.patch(run._id, { route: { ...run.route, why: waiting.why } });
+    return true;
+  },
+});
+
+/** Timers are persisted by Runtime. The timestamp fences duplicate and superseded callbacks. */
+export const releaseResetWait = internalMutation({
+  args: { id: v.id("codexTurns"), until: v.number() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get(args.id);
+    const now = Date.now();
+    if (!turn?.engine || !turn.waiting || turn.waiting.until !== args.until || args.until > now || turn.finalizedAt !== undefined
+      || turn.stopped || turn.stopRequested || !(turn.status === "queued" || turn.status === "error" && turn.retrying)) return null;
+    const chat = await ctx.db.get(turn.conversationId);
+    if (!ownerWeb(chat) || await pausedAt(ctx)) return null;
+    let waiting = await resetWaitFor(ctx, turn.engine);
+    const runners = await liveRunners(ctx);
+    const pinned = turn.runnerId ? await ctx.db.get(turn.runnerId) : null;
+    const runner = runners.filter(item => isOnline(item) && engineUsable(item, turn.engine!)
+      && (!pinned || item._id === pinned._id || item.hostname === pinned.hostname && item.platform === pinned.platform))
+      .sort((a, b) => (b.lastSeenAt ?? 0) - (a.lastSeenAt ?? 0))[0];
+    const room = roomOf(turn.engine, usageByEngine(runners)[turn.engine], now, 100);
+    if (!waiting && (!runner || room.state === "out")) {
+      waiting = { until: now + 60_000, why: !runner
+        ? `The usage reset passed. Waiting for this computer and ${ENGINE_LABELS[turn.engine]} to be online; checking again in a minute.`
+        : `${ENGINE_LABELS[turn.engine]} still reports a limit without a new reset time. Checking its status again in a minute.` };
+    }
+    if (waiting) {
+      await ctx.db.patch(turn._id, { waiting });
+      await ctx.scheduler.runAt(waiting.until, internal.routing.releaseResetWait, { id: turn._id, until: waiting.until });
+    } else if (turn.status === "queued") {
+      await ctx.db.patch(turn._id, { waiting: undefined, runnerId: runner!._id, lastHeartbeatAt: now });
+    } else {
+      await ctx.scheduler.runAfter(0, internal.routing.retryTurn, { id: turn._id });
+    }
+    return null;
+  },
+});
+
 /** Where a refused turn would go now: null when nowhere else has room. */
 export const retryPlan = internalQuery({
   args: { id: v.id("codexTurns") },
-  handler: async (ctx, args): Promise<{ choice: Choice; conversation: Doc<"conversations"> } | null> => {
+  handler: async (ctx, args): Promise<{ choice: Choice; conversation: Doc<"conversations">; afterReset?: boolean } | null> => {
     const turn = await ctx.db.get(args.id);
     const conversation = turn ? await ctx.db.get(turn.conversationId) : null;
     if (!turn || !conversation || !turn.retrying || turn.finalizedAt) return null;
     const refused = turn.engine;
     if (!refused) return null;
+    if (turn.waiting) {
+      if (turn.waiting.until > Date.now() || !ownerWeb(conversation)) return null;
+      const choice = await choose(ctx, { ...chatAsk(conversation), current: refused, owner: { engine: refused, model: turn.requestedModel, effort: turn.requestedEffort } });
+      return choice && !choice.wait && choice.engine === refused ? { choice, conversation, afterReset: true } : null;
+    }
     const avoid = [...new Set((await attemptsOf(ctx, turn)).flatMap(attempt => attempt.engine ? [attempt.engine] : []))];
     if (conversation.contactId) {
       const guest = await chooseGuest(ctx, conversation, avoid);
@@ -343,12 +422,13 @@ export const retryTurn = internalAction({
   args: { id: v.id("codexTurns") },
   returns: v.null(),
   handler: async (ctx, args) => {
+    if (await ctx.runMutation(internal.routing.holdForReset, args)) return null;
     const plan = await ctx.runQuery(internal.routing.retryPlan, args);
     let moved = false;
     if (plan) {
       try {
         const history = await historyOf(ctx, plan.conversation);
-        moved = await ctx.runMutation(internal.codex.retryOn, { id: args.id, route: routeOf(plan.choice), ...(history ? { history } : {}) });
+        moved = await ctx.runMutation(internal.codex.retryOn, { id: args.id, route: routeOf(plan.choice), ...(history ? { history } : {}), ...(plan.afterReset ? { afterReset: true } : {}) });
       } catch (error) {
         console.error(`could not continue the turn on another engine: ${String(error)}`);
       }
@@ -358,6 +438,9 @@ export const retryTurn = internalAction({
       }
     }
     if (!moved) {
+      // Usage can change while history is read. Preserve a newly extended
+      // provider reset rather than finalizing the work from an obsolete plan.
+      if (await ctx.runMutation(internal.routing.holdForReset, args)) return null;
       await ctx.runMutation(internal.routing.giveUpRetry, args);
       await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, args);
     }
@@ -379,7 +462,7 @@ export const giveUpRetry = internalMutation({
   args: { id: v.id("codexTurns") },
   returns: v.null(),
   handler: async (ctx, args) => {
-    if (await ctx.db.get(args.id)) await ctx.db.patch(args.id, { retrying: undefined });
+    if (await ctx.db.get(args.id)) await ctx.db.patch(args.id, { retrying: undefined, waiting: undefined });
     return null;
   },
 });

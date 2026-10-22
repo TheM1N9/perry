@@ -131,6 +131,7 @@ try {
   p.start("server");
   await until(() => fetch(`${BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the server to start", 90);
   await call("dashboard:skipOnboarding", { key: KEY }).catch(() => {});
+  await call("jobs:tick"); // Initialize fixture schedules without waiting for the minute cron.
   await until(async () => ["heartbeat", "daily-summary", "consolidate", "brain-review"].every(kind => (rows("jobs")).some(job => job.builtin === kind)), "the built-in jobs", 90);
   // Nothing runs by the clock while this runs: each job here is run when the check says.
   for (const job of await jobs()) await call("jobs:update", { id: job.id, enabled: false });
@@ -276,13 +277,14 @@ try {
   check("chatKeepsEngineWithRoom", stayed?.route?.engine === "grok" && !stayed.route.movedFrom && sent("still on grok at 95")?.profile === "grok");
 
   // --- 7. A chat whose engine is used up moves, and says so -------------------------------------------------------
-  await seed("grok", 100);
+  // Without a provider reset timestamp, the existing engine fallback remains available.
+  await call("usage:report", { token, engine: "grok", limits: { windows: [], at: Date.now() }, hit: { at: Date.now(), message: "usage limit reached" } });
   const movedReply = await exchange(pinnedChat, "grok is used up now");
   const movedRun = runsIn(pinnedChat).at(-1);
   const movedChat = await getChat(pinnedChat) as Awaited<ReturnType<typeof getChat>> & { moved?: { from: string; why: string } };
   notes.chatMoved = { route: summary(movedRun?.route), chat: { engine: movedChat.engine, moved: movedChat.moved }, reply: movedReply.reply.slice(0, 80) };
   check("chatMovesWhenUsedUp", movedRun?.route?.engine === "antigravity" && movedRun.route.movedFrom?.engine === "grok" && movedChat.engine === "antigravity"
-    && movedChat.moved?.from === "grok" && /used up/.test(movedChat.moved.why) && /Fake antigravity reply to: grok is used up now/.test(movedReply.reply));
+    && movedChat.moved?.from === "grok" && /plan's limit/.test(movedChat.moved.why) && /Fake antigravity reply to: grok is used up now/.test(movedReply.reply));
   const browser = await p.openBrowser();
   const { evaluate, send } = browser;
   const photo = async (name: string) => {
@@ -297,12 +299,12 @@ try {
   await waitFor(`document.body.innerText.includes("Moved to Antigravity")`, "the chat's moved note");
   const chatNote = await evaluate(`[...document.querySelectorAll('[role="alert"], [role="status"]')].map((el) => el.innerText).find((text) => text.includes("Moved to")) ?? document.body.innerText.match(/Moved to[^\\n]*/)?.[0] ?? ""`) as string;
   await photo("chat-moved.png");
-  check("chatSaysItMoved", /Moved to Antigravity/.test(chatNote) && /Grok Build's 5-hour limit is used up/.test(chatNote), chatNote);
+  check("chatSaysItMoved", /Moved to Antigravity/.test(chatNote) && /Grok Build refused a reply for its plan's limit/.test(chatNote), chatNote);
 
   notes.modelsAfterMove = await modelsNow();
   notes.learned = ["grok", "antigravity"].map((engine) => { try { return readFileSync(join(p.home, "engines", `${engine}.json`), "utf8"); } catch { return `${engine}: none`; } });
   // --- 8. Every engine used up: a job waits for the first reset, then runs --------------------------------------
-  const resetAt = Date.now() + 60_000;
+  const resetAt = Date.now() + 5_000;
   await seed("grok", 100, 75_000);
   await call("usage:report", { token, engine: "antigravity", limits: WINDOW(100, resetAt), hit: null });
   const briefing = await jobNamed("Morning briefing");
@@ -354,11 +356,32 @@ try {
     && progressTurns[1].history?.includes("HANDOFF_COMPLETED_ACTION_ONCE") && progressTurns[1].history.includes("The synthetic action completed once.")
     && readFileSync(join(fakeHome, "handoff-completed-count"), "utf8") === "1");
   notes.mainAgentHandoff = { reply: continued.reply, route: summary(progressRuns[0]?.route), attempts: progressTurns.map(turn => turn.engine) };
+  // A late limit with a known reset keeps the selected engine and native session.
+  await seed("grok", 20);
+  const resetChat = await call<string>("dashboard:createChat", { key: KEY });
+  await call("dashboard:sendChat", { key: KEY, id: resetChat, text: "RESET-CHECK finish after the subscription reset" });
+  await until(() => log().some(entry => entry.awaitingResetSeed), "the completed step before the usage reset", 60);
+  const mainResetAt = Date.now() + 5_000;
+  await call("usage:report", { token, engine: "grok", limits: WINDOW(100, mainResetAt), hit: null });
+  await until(async () => Boolean((await getChat(resetChat) as any).waiting), "the main chat to wait for its reset", 30);
+  await send("Page.navigate", { url: `${BASE}/chat/${resetChat}` });
+  await waitFor(`!!document.querySelector('[data-reset-wait]')`, "the reset-wait note");
+  await photo("main-reset-waiting.png");
+  check("resetWaitVisible", String(await evaluate(`document.querySelector('[data-reset-wait]').innerText`)).includes("resumes automatically"));
+  await until(() => Date.now() >= mainResetAt, "the provider reset", 30);
+  check("noMainCallBeforeReset", rows("codexTurns").filter(turn => turn.conversationId === resetChat).length === 1);
+  await until(async () => !(await getChat(resetChat)).isRunning && runsIn(resetChat).at(-1)?.status === "ok", "the main agent to resume after reset", 90);
+  const resetTurns = rows("codexTurns").filter(turn => turn.conversationId === resetChat);
+  check("mainResumesSelectedEngine", resetTurns.length === 2 && resetTurns.every(turn => turn.engine === "grok")
+    && resetTurns[1].startedAt >= mainResetAt + 15_000 && (await getChat(resetChat)).engine === "grok"
+    && readFileSync(join(fakeHome, "reset-completed-count"), "utf8") === "1"
+    && (await messagesOf(resetChat)).some(message => message.text.includes("Resumed after reset on the same engine")));
+  notes.mainReset = { resetAt: mainResetAt, attempts: resetTurns.map(turn => ({ engine: turn.engine, startedAt: turn.startedAt, resetResumes: turn.resetResumes })) };
   limited("grok", true);
 
   // --- 10. A job that failed on a limit waits for the reset, runs on the engine with room, and the owner hears once ---
   await call("usage:report", { token, engine: "grok", hit: null });
-  const sweepReset = Date.now() + 60_000;
+  const sweepReset = Date.now() + 5_000;
   await call("usage:report", { token, engine: "antigravity", limits: WINDOW(100, sweepReset), hit: null });
   await call("jobs:create", { name: "Inbox sweep", schedule: "0 6 * * *", prompt: "Sweep the owner's inbox and say what needs a reply.", origin: notesChat });
   const sweepJob = await jobNamed("Inbox sweep");
@@ -406,7 +429,7 @@ try {
   const details = await evaluate(`document.querySelector('[data-e2e-run] [data-route]').innerText`) as string;
   await photo("run-details.png");
   notes.runDetails = details;
-  check("runDetailsSayWhy", /Antigravity · gemini-fake-pro at medium/.test(details) && /Moved from Grok Build to Antigravity/.test(details) && /Grok Build refused it for its plan's limit/.test(details) && /continued here after another engine reached a usage limit/.test(details));
+  check("runDetailsSayWhy", /Antigravity · gemini-fake-pro at medium/.test(details) && /Moved from Grok Build to Antigravity/.test(details) && /Grok Build refused it for its plan's limit/.test(details) && /recovered from a usage limit/.test(details));
   notes.pageErrors = browser.errors;
   check("noPageErrors", browser.errors.length === 0);
   check("screenshots", ["chat-moved.png", "work-waiting.png", "work-moved.png", "work-kept.png", "run-details.png"].every((name) => existsSync(join(outDir, name))));

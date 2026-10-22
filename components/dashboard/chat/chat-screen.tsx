@@ -751,7 +751,7 @@ export function ChatScreen() {
               ))}
               {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
               {!missing && <InteractiveAnswers conversationId={selectedId} />}
-              {(waiting || liveWork) && <LiveReply key={selectedId} conversationId={selectedId} onContentChange={followLiveReply}
+              {!chat?.waiting && (waiting || liveWork) && <LiveReply key={selectedId} conversationId={selectedId} onContentChange={followLiveReply}
                 work={liveWork} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
               {here.map((approval) => <LiveApproval key={approval.id} approval={approval} />)}
               {failedWork && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed" /></div>}
@@ -775,7 +775,7 @@ export function ChatScreen() {
           </div>
         )}
         <div className="mx-auto w-full max-w-3xl">
-          <p className="sr-only" role="status" aria-live="polite">{waiting ? `${assistant} is replying` : ""}</p>
+          <p className="sr-only" role="status" aria-live="polite">{chat?.waiting ? chat.waiting.why : waiting ? `${assistant} is replying` : ""}</p>
           <ComposerDraft ref={draftControl} refreshSkills={refreshSkills} storageKey={`perry.prompt.${paramId ?? (inProject ? `project.${inProject}` : "new")}`}>{({ draft, setDraft, caret, setCaret }) => {
             // Slash commands: past a command's name, the suggestions are its choices.
             const typedModel = parseModelCommand(draft);
@@ -868,6 +868,11 @@ export function ChatScreen() {
             above={<>
               {error && <ComposerNote tone="error" onDismiss={() => setError("")}>{error}</ComposerNote>}
               {notice && <ComposerNote tone="info" onDismiss={() => setNotice("")}>{notice}</ComposerNote>}
+              {chat?.waiting && (
+                <ComposerNote tone="warning">
+                  <span data-reset-wait role="status">{chat.waiting.why}</span>
+                </ComposerNote>
+              )}
               {chat?.moved && movedSeen !== chat.moved.at && (chat.moved.to ?? chat.engine) && (
                 <ComposerNote tone="warning" onDismiss={() => setMovedSeen(chat.moved!.at)}>
                   <span className="font-medium">Moved to {ENGINE_LABELS[(chat.moved.to ?? chat.engine)!]}.</span> {chat.moved.why}.{" "}

@@ -337,26 +337,31 @@ async function main() {
   };
   /** When each engine's plan limits were last read, those being read, and reads waiting their minute. */
   const limitsRead = new Map<EngineKind, number>();
-  const readingLimits = new Set<EngineKind>();
+  const readingLimits = new Map<EngineKind, Promise<void>>();
   const limitsLater = new Map<EngineKind, ReturnType<typeof setTimeout>>();
   /**
    * Read how much of an engine's plan is used and report it (convex/usage.ts):
    * every LIMITS_EVERY_MS while it is signed in, or now (`fresh`), for an
    * engine that can say. None of the plan is spent reading it.
    */
-  const readLimits = async (engine: Engine, fresh = false) => {
-    if (!engine.limits || !statuses.get(engine.kind)?.signedIn || readingLimits.has(engine.kind) || replacing.has(engine.kind)) return;
-    if (!fresh && Date.now() - (limitsRead.get(engine.kind) ?? 0) < LIMITS_EVERY_MS) return;
-    readingLimits.add(engine.kind);
+  const readLimits = (engine: Engine, fresh = false): Promise<void> => {
+    const reading = readingLimits.get(engine.kind);
+    if (reading) return reading;
+    if (!engine.limits || !statuses.get(engine.kind)?.signedIn || replacing.has(engine.kind)) return Promise.resolve();
+    if (!fresh && Date.now() - (limitsRead.get(engine.kind) ?? 0) < LIMITS_EVERY_MS) return Promise.resolve();
     limitsRead.set(engine.kind, Date.now());
-    try {
-      const limits = await engine.limits(fresh);
-      if (limits) await client.mutation(api.usage.report, { token, engine: engine.kind, limits });
-    } catch (error) {
-      console.log(dim(`  could not read ${engine.label}'s plan limits: ${message(error)}`));
-    } finally {
-      readingLimits.delete(engine.kind);
-    }
+    const done = (async () => {
+      try {
+        const limits = await engine.limits!(fresh);
+        if (limits) await client.mutation(api.usage.report, { token, engine: engine.kind, limits });
+      } catch (error) {
+        console.log(dim(`  could not read ${engine.label}'s plan limits: ${message(error)}`));
+      } finally {
+        readingLimits.delete(engine.kind);
+      }
+    })();
+    readingLimits.set(engine.kind, done);
+    return done;
   };
   /** After a turn, its engine's limits are read again: at once, or when a minute has passed since the last read. */
   const readLimitsSoon = (engine: Engine) => {
@@ -1066,7 +1071,10 @@ async function main() {
       // Where the engine's plan stands after the turn: a limit it refused the turn for, or, as it went through, none.
       if (engine && job.kind !== "compact") {
         const hit = result.errorCode === "limit" && result.error ? { at: Date.now(), message: result.error } : result.error || result.stopped ? undefined : null;
-        if (hit !== undefined) void client.mutation(api.usage.report, { token, engine: kind, hit }).catch(() => {});
+        if (hit) {
+          await client.mutation(api.usage.report, { token, engine: kind, hit }).catch(() => {});
+          await readLimits(engine, true);
+        } else if (hit !== undefined) void client.mutation(api.usage.report, { token, engine: kind, hit }).catch(() => {});
         if (hit) console.log(yellow(`  ${engine.label} refused the turn for your plan's limit`));
         readLimitsSoon(engine);
       }

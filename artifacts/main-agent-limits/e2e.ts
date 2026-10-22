@@ -8,6 +8,11 @@
 // 4. Stop, pending approval/unfinished/failed action, applied steer, guest, media, maintenance,
 //    legacy trace gaps or oversized evidence incorrectly permit replay of work with uncertain effects.
 // 5. Pausing, repeated routing delivery, exhausted alternatives or a failed history read create extra turns.
+// Reset-wait failure cases, written before the reset implementation:
+// 6. Known Claude reset switches engines, runs early, loses progress, wakes twice or stalls after restart.
+// 7. Five-hour and weekly limits resume at the earlier deadline; an unknown reset is presented as known.
+// 8. A stale callback wakes a rescheduled/stopped/deleted turn; offline waiting becomes a terminal failure.
+// 9. Newly extended limits, repeated refusals, queued work or cancellation bypass the wait/approval boundary.
 // No engines or external services are contacted. Real SQLite Runtime, routing actions, claim/trace/finish
 // and finalization functions run against disposable synthetic data; a runner is driven by this harness.
 import assert from "node:assert/strict";
@@ -229,6 +234,150 @@ try {
     await call("routing:retryTurn", { id: s.turn });
     assert.equal(turns(s.run).length, 1);
     assert.equal((await get(s.turn)).stopped, true);
+  });
+  const limitWindows = (reset, weeklyReset = reset) => ({ at: Date.now(), windows: [
+    { id: "five_hour", label: "5-hour", usedPercent: 100, resetsAt: reset },
+    { id: "seven_day", label: "Weekly", usedPercent: 100, resetsAt: weeklyReset },
+  ] });
+  const claude = async () => {
+    const s = await make({}, { engine: "claude", model: "claude-fake" });
+    // make() drives a synthetic Codex start; put this fixture's claimed turn on Claude.
+    await patch(s.turn, { engine: "claude", requestedModel: "claude-fake", requestedEffort: "high" });
+    await call("codex:setResume", { token, id: s.turn, cursor: "synthetic-claude-session" });
+    return s;
+  };
+  await check("Claude limit waits for the last blocking reset and preserves progress", async () => {
+    const s = await claude();
+    const reset = Date.now() + 3_600_000, weekly = reset + 86_400_000;
+    await call("usage:report", { token, engine: "claude", limits: limitWindows(reset, weekly) });
+    await trace(s);
+    await finishLimit(s.turn, "Completed Claude work before the limit");
+    await call("routing:retryTurn", { id: s.turn });
+    const waited = await get(s.turn);
+    assert.ok(waited.waiting.until >= weekly + 15_000);
+    assert.equal((await get(s.chat)).engine, "claude");
+    assert.equal(turns(s.run).length, 1);
+    assert.ok((await call("dashboard:getChat", { key: process.env.DASHBOARD_KEY, id: s.chat })).waiting.why.includes("Claude"));
+    await call("routing:releaseResetWait", { id: s.turn, until: waited.waiting.until });
+    assert.equal(turns(s.run).length, 1, "an early callback cannot resume");
+    const due = Date.now() - 1;
+    await patch(s.turn, { waiting: { ...waited.waiting, until: due } });
+    await call("usage:report", { token, engine: "claude", limits: { at: Date.now(), windows: [] }, hit: null });
+    await call("routing:releaseResetWait", { id: s.turn, until: due });
+    await call("routing:retryTurn", { id: s.turn }); // Drive the durable scheduled action.
+    await call("routing:releaseResetWait", { id: s.turn, until: due });
+    const next = turns(s.run).find(t => t.retryOf === s.turn);
+    assert.ok(next);
+    assert.equal(next.engine, "claude");
+    assert.equal(next.requestedModel, "claude-fake");
+    assert.equal(next.requestedEffort, "high");
+    assert.ok(next.history.includes("Completed Claude work before the limit"));
+    const claimed = await call("codex:claimTurn", { token, id: next._id });
+    assert.equal(claimed.resumeCursor, "synthetic-claude-session");
+    assert.ok(claimed.prompt.includes("Continue the previous request"));
+    assert.equal((await get(next._id)).prompt, s.prompt, "the original saved user message stays intact");
+    assert.equal(turns(s.run).length, 2);
+  });
+  await check("new work queues before spending on an exhausted selected engine", async () => {
+    await resetUsage();
+    const threadId = await call("agentStore:createThread", { userId: "web:dashboard" });
+    const chat = await insert("conversations", { threadId, channel: "web", externalId: "synthetic", engine: "claude", model: "claude-fake", codexRunnerId: runnerId, pendingTurns: 1, lastMessageAt: Date.now() });
+    const reset = Date.now() + 3_600_000;
+    await call("usage:report", { token, engine: "claude", limits: limitWindows(reset) });
+    const choice = await call("routing:forChat", { id: chat });
+    assert.equal(choice.engine, "claude");
+    assert.ok(choice.wait.until > reset);
+    const run = await call("runs:start", { conversationId: chat, prompt: "Start after reset" });
+    const id = await call("codex:enqueueTurn", { conversationId: chat, runId: run, engine: "claude", prompt: "Start after reset", instructions: "Synthetic" });
+    assert.ok((await get(id)).waiting);
+    assert.equal(await call("codex:claimTurn", { token, id }), null);
+    assert.ok(!(await call("codex:queuedTurns", { token })).some(t => t._id === id));
+    const due = Date.now() - 1;
+    await patch(id, { waiting: { until: due, why: "Claude reset" } });
+    await call("usage:report", { token, engine: "claude", limits: { at: Date.now(), windows: [] }, hit: null });
+    await call("routing:releaseResetWait", { id, until: due });
+    assert.ok(await call("codex:claimTurn", { token, id }));
+  });
+  for (const action of ["stop", "pause", "restart", "extended", "offline", "stale"]) {
+    await check(`waiting survives or cancels correctly: ${action}`, async () => {
+      const s = await claude();
+      await call("usage:report", { token, engine: "claude", limits: limitWindows(Date.now() + 3_600_000) });
+      await finishLimit(s.turn);
+      await call("routing:retryTurn", { id: s.turn });
+      const waited = await get(s.turn);
+      assert.ok(waited.waiting);
+      if (action === "stop") await call("codex:requestStop", { conversationId: s.chat });
+      if (action === "pause") { await call("pause:pauseFrom", { by: "web" }); await patch(install, { paused: undefined }); }
+      if (action === "restart") {
+        await call("recovery:sweep", { only: s.chat, now: Date.now() + 20 * 60_000 });
+        assert.ok((await get(s.turn)).waiting);
+        assert.ok((await get(s.turn)).retrying);
+      }
+      const due = Date.now() - 1;
+      await patch(s.turn, { waiting: { ...waited.waiting, until: due } });
+      if (action === "offline") await patch(runnerId, { lastSeenAt: 0 });
+      if (action === "extended") await call("usage:report", { token, engine: "claude", limits: limitWindows(Date.now() + 7 * 86_400_000) });
+      if (!["extended", "restart"].includes(action)) await call("usage:report", { token, engine: "claude", limits: { at: Date.now(), windows: [] }, hit: null });
+      await call("routing:releaseResetWait", { id: s.turn, until: action === "stale" ? waited.waiting.until : due });
+      assert.equal(turns(s.run).length, 1);
+      if (["extended", "offline", "stale"].includes(action)) assert.ok((await get(s.turn)).waiting);
+      await patch(runnerId, { lastSeenAt: Date.now() });
+    });
+  }
+  await check("later queued messages cannot overtake a reset continuation", async () => {
+    const s = await claude();
+    await call("usage:report", { token, engine: "claude", limits: limitWindows(Date.now() + 3_600_000) });
+    await finishLimit(s.turn, "Earlier work");
+    await call("routing:retryTurn", { id: s.turn });
+    const laterRun = await call("runs:start", { conversationId: s.chat, prompt: "Later message" });
+    const later = await call("codex:enqueueTurn", { conversationId: s.chat, runId: laterRun, engine: "claude", prompt: "Later message", instructions: "Synthetic" });
+    await call("usage:report", { token, engine: "claude", limits: { at: Date.now(), windows: [] }, hit: null });
+    const due = Date.now() - 1;
+    await patch(later, { waiting: { until: due, why: "Reset due" } });
+    await call("routing:releaseResetWait", { id: later, until: due });
+    assert.equal(await call("codex:claimTurn", { token, id: later }), null);
+    const old = await get(s.turn);
+    await patch(s.turn, { waiting: { ...old.waiting, until: due } });
+    await call("routing:retryTurn", { id: s.turn });
+    const next = turns(s.run).find(t => t.retryOf === s.turn);
+    assert.ok(next);
+    assert.equal(await call("codex:claimTurn", { token, id: later }), null);
+    assert.ok(await call("codex:claimTurn", { token, id: next._id }));
+  });
+  await check("unknown provider reset never becomes a promised reset time", async () => {
+    const s = await claude();
+    await call("usage:report", { token, engine: "claude", limits: { at: Date.now(), windows: [{ id: "five_hour", label: "5-hour", usedPercent: 100 }] } });
+    await finishLimit(s.turn);
+    await call("routing:retryTurn", { id: s.turn });
+    assert.equal((await get(s.turn)).waiting, undefined);
+    assert.ok(turns(s.run).some(t => t.retryOf === s.turn && t.engine !== "claude"));
+  });
+  await check("failure after multiple resets keeps the latest progress", async () => {
+    const s = await claude();
+    let current = s.turn;
+    for (const progress of ["Original findings", "Latest findings after reset"]) {
+      await call("usage:report", { token, engine: "claude", limits: limitWindows(Date.now() + 3_600_000) });
+      await finishLimit(current, progress);
+      await call("routing:retryTurn", { id: current });
+      const held = await get(current);
+      await patch(current, { waiting: { ...held.waiting, until: Date.now() - 1 } });
+      await call("usage:report", { token, engine: "claude", limits: { at: Date.now(), windows: [] }, hit: null });
+      await call("routing:retryTurn", { id: current });
+      const next = turns(s.run).find(turn => turn.retryOf === current);
+      assert.ok(await call("codex:claimTurn", { token, id: next._id }));
+      current = next._id;
+    }
+    await call("codex:finishTurn", { token, id: current, error: "Synthetic transport failure", errorCode: "engine_failed" });
+    assert.equal((await get(current)).response, "Latest findings after reset");
+  });
+  await check("a later wait never hides the currently running main agent", async () => {
+    const s = await claude();
+    await call("usage:report", { token, engine: "claude", limits: limitWindows(Date.now() + 3_600_000) });
+    const laterRun = await call("runs:start", { conversationId: s.chat, prompt: "Later queued work" });
+    await call("codex:enqueueTurn", { conversationId: s.chat, runId: laterRun, engine: "claude", prompt: "Later queued work", instructions: "Synthetic" });
+    const view = await call("dashboard:getChat", { key: process.env.DASHBOARD_KEY, id: s.chat });
+    assert.equal(view.waiting, undefined);
+    assert.equal(view.isRunning, true);
   });
   result.passed = result.cases.every(c => c.passed);
   if (!result.passed) process.exitCode = 1;

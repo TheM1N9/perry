@@ -339,6 +339,21 @@ async function turn(client: AgentContext, session: Live, prompt: ContentBlock[],
     await stream(["Continued from recorded progress. The action count is 1."], 10);
     return done("end_turn");
   }
+  if (text.startsWith("RESET-CHECK ")) {
+    const file = join(HOME, "reset-completed-count");
+    writeFileSync(file, String(Number(existsSync(file) ? readFileSync(file, "utf8") : "0") + 1));
+    await tool("reset-provider-step", { title: "Completed before reset", kind: "execute", status: "completed", content: [{ type: "content", content: { type: "text", text: "RESET_COMPLETED_ACTION_ONCE" } }] });
+    await say("The reset test action completed once.");
+    log({ awaitingResetSeed: true });
+    await sleep(2000);
+    throw new RequestError(-32000, "You've hit the rate limit for your plan. Try again after the reset.");
+  }
+  if (text.startsWith("Continue the previous request") && text.includes("RESET-CHECK ")) {
+    if (readFileSync(join(HOME, "reset-completed-count"), "utf8") !== "1") throw new Error("Reset resumed by repeating completed work");
+    if (!texts.slice(0, -1).join("\n\n").includes("RESET_COMPLETED_ACTION_ONCE")) throw new Error("Reset continuation lost its recorded step");
+    await stream(["Resumed after reset on the same engine. The action count is 1."], 10);
+    return done("end_turn");
+  }
   if (text === "/compact" || text === "/compress") {
     await stream(["Compacted ", "the conversation."], 50);
     return done("end_turn");

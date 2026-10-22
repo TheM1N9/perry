@@ -43,6 +43,8 @@ export const sweep = internalMutation({
     // hours-old active turn must not fall behind 300 newer completed turns.
     if (!args.only) {
       const seen = new Set(turns.map((turn) => turn._id));
+      const waiting = await ctx.db.query("codexTurns").withIndex("by_reset_wait", q => q.gt("waiting.until", 0)).collect();
+      for (const turn of waiting) if (!seen.has(turn._id)) { turns.push(turn); seen.add(turn._id); }
       for (const runnerId of [undefined, ...runners.map((runner) => runner._id)]) {
         for (const status of ["queued", "running"] as const) {
           const active = await ctx.db.query("codexTurns")
@@ -65,6 +67,12 @@ export const sweep = internalMutation({
         }
       }
       if (turn.finalizedAt) continue;
+      if (turn.waiting && (turn.status === "queued" || turn.status === "error" && turn.retrying)) {
+        // A reset wait is idle by design, even for days. Recover a missed
+        // deadline without mistaking it for a dead runner or finalizing it.
+        if (turn.waiting.until <= now) await ctx.scheduler.runAfter(0, internal.routing.releaseResetWait, { id: turn._id, until: turn.waiting.until });
+        continue;
+      }
       if (turn.retrying) {
         // A routing retry owns the shared run until it gives up or its bounded
         // grace expires. Existing delivery evidence permanently rules out a

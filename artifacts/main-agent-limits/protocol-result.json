@@ -100,6 +100,54 @@
     {
       "name": "pause cancels the routing gap even after resume",
       "passed": true
+    },
+    {
+      "name": "Claude limit waits for the last blocking reset and preserves progress",
+      "passed": true
+    },
+    {
+      "name": "new work queues before spending on an exhausted selected engine",
+      "passed": true
+    },
+    {
+      "name": "waiting survives or cancels correctly: stop",
+      "passed": true
+    },
+    {
+      "name": "waiting survives or cancels correctly: pause",
+      "passed": true
+    },
+    {
+      "name": "waiting survives or cancels correctly: restart",
+      "passed": true
+    },
+    {
+      "name": "waiting survives or cancels correctly: extended",
+      "passed": true
+    },
+    {
+      "name": "waiting survives or cancels correctly: offline",
+      "passed": true
+    },
+    {
+      "name": "waiting survives or cancels correctly: stale",
+      "passed": true
+    },
+    {
+      "name": "later queued messages cannot overtake a reset continuation",
+      "passed": true
+    },
+    {
+      "name": "unknown provider reset never becomes a promised reset time",
+      "passed": true
+    },
+    {
+      "name": "failure after multiple resets keeps the latest progress",
+      "passed": true
+    },
+    {
+      "name": "a later wait never hides the currently running main agent",
+      "passed": true
     }
   ]
 }

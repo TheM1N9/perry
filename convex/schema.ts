@@ -152,7 +152,7 @@ export const vRoute = v.object({
   by: v.union(v.literal("owner"), v.literal("perry"), v.literal("auto")),
   why: v.string(),
   movedFrom: v.optional(vMoved),
-  /** Its first engine refused it part-way for a limit, and it ran again on this one. */
+  /** The run continued after a usage limit, on another engine or after its reset. */
   retried: v.optional(v.boolean()),
 });
 /** Work waiting for an engine's plan to reset: until when, and why. */
@@ -1515,6 +1515,10 @@ export default defineSchema({
     retrying: v.optional(v.boolean()),
     /** The turn this one tries again, on another engine. */
     retryOf: v.optional(v.id("codexTurns")),
+    /** Durable wait for a provider-reported reset; no engine turn runs meanwhile. */
+    waiting: v.optional(vWaiting),
+    /** Bound automatic same-engine resumptions within one owner request. */
+    resetResumes: v.optional(v.number()),
     /** Finalizing steps already done, so a retried finalize never repeats one. */
     reportedAt: v.optional(v.number()),
     savedAt: v.optional(v.number()),
@@ -1544,7 +1548,8 @@ export default defineSchema({
   })
     .index("by_runner_status", ["runnerId", "status"])
     .index("by_run", ["runId"])
-    .index("by_conversation_status", ["conversationId", "status"]),
+    .index("by_conversation_status", ["conversationId", "status"])
+    .index("by_reset_wait", ["waiting.until"]),
 
   /** Bounded stream bookkeeping; reply text is stored as append-only deltas. */
   turnStreams: defineTable({
