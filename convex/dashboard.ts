@@ -402,7 +402,7 @@ export const getChat = query({
   handler: async (
     ctx,
     args,
-  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; unresponsive?: boolean; lastAliveAt?: number; lastError?: string; lastErrorCode?: TurnErrorCode; lastErrorRunId?: Id<"runs">; contact?: { name: string; group: boolean }; context?: { fill: number; window: number } }> => {
+  ): Promise<{ channel: ChatSummary["channel"]; engine?: EngineKind; moved?: Doc<"conversations">["moved"]; waiting?: { until: number; why: string }; project?: { id: Id<"projects">; name: string }; model?: string; effort?: string; access: Access; title: string; isRunning: boolean; unresponsive?: boolean; lastAliveAt?: number; lastError?: string; lastErrorCode?: TurnErrorCode; lastErrorRunId?: Id<"runs">; contact?: { name: string; group: boolean }; context?: { fill: number; window: number } }> => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
@@ -419,6 +419,9 @@ export const getChat = query({
       : null;
     const runner = running?.runnerId ? await ctx.db.get(running.runnerId) : null;
     const health = running ? turnHealth(running, runner, Date.now()) : null;
+    const waiting = running ? undefined : (await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", args.id)).collect())
+      .filter(turn => turn.finalizedAt === undefined && (turn.status === "queued" || turn.status === "error" && turn.retrying))
+      .sort((a, b) => a.createdAt - b.createdAt)[0]?.waiting;
     const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
     return {
       channel: conversation.channel,
@@ -432,6 +435,7 @@ export const getChat = query({
       access: conversation.access ?? "supervised",
       title: titleOf(conversation),
       isRunning,
+      ...(waiting ? { waiting } : {}),
       ...(health ? { unresponsive: health.unresponsive, lastAliveAt: health.lastAliveAt } : {}),
       lastError: latestRun?.status === "error" && latestRun.error ? hide(latestRun.error, await savedValues(ctx)) : undefined,
       lastErrorCode: latestRun?.status === "error" ? turnErrorCode(latestRun) : undefined,
@@ -722,7 +726,7 @@ function inFlight(conversation: Doc<"conversations">, turns: Doc<"codexTurns">[]
     ...(conversation.outbox ?? []).filter((item) => item.at > Date.now() - OUTBOX_TTL_MS).map((item) => entry(item.text, item.at)),
     ...turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush && !turn.checkpoint && !turn.hidden
       // A finished turn is saved a moment later; one left unsaved and unfinalized for long is not coming.
-      && (turn.status === "queued" || turn.status === "running" || (turn.finalizedAt === undefined && turn.createdAt > Date.now() - OUTBOX_TTL_MS)))
+      && (turn.status === "queued" || turn.status === "running" || (turn.finalizedAt === undefined && (turn.waiting || turn.createdAt > Date.now() - OUTBOX_TTL_MS))))
       .map((turn) => ({ ...entry(turn.prompt, turn.createdAt), ...(turn.status === "queued" ? { queued: { id: turn._id, conversationId: turn.conversationId } } : {}) })),
     ...steers.map((steer) => entry(steer.prompt, steer.createdAt)),
   ];

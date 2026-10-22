@@ -302,13 +302,13 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
 }
 
 /** A dismissible line above the composer: a command's answer, why something failed, or a heads-up (an engine near its limit). */
-export function ComposerNote({ tone, children, onDismiss }: { tone: "info" | "warning" | "error"; children: ReactNode; onDismiss: () => void }) {
+export function ComposerNote({ tone, children, onDismiss }: { tone: "info" | "warning" | "error"; children: ReactNode; onDismiss?: () => void }) {
   return (
     <div role={tone === "error" ? "alert" : "status"}
       className={cn("mb-2 flex items-start gap-2 text-sm",
         tone === "error" ? "rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-2.5 text-destructive" : tone === "warning" ? "rounded-2xl border border-warning/40 bg-warning-soft px-4 py-2.5 text-warning" : "px-4 text-muted-foreground")}>
       <div className={cn("min-w-0 flex-1 leading-relaxed whitespace-pre-wrap", tone === "info" && "font-mono text-xs")}>{children}</div>
-      <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss} className="-mr-1 shrink-0"><XIcon /></Button>
+      {onDismiss && <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={onDismiss} className="-mr-1 shrink-0"><XIcon /></Button>}
     </div>
   );
 }
