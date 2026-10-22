@@ -776,7 +776,7 @@ export function ChatScreen() {
         )}
         <div className="mx-auto w-full max-w-3xl">
           <p className="sr-only" role="status" aria-live="polite">{waiting ? `${assistant} is replying` : ""}</p>
-          <ComposerDraft ref={draftControl} refreshSkills={refreshSkills}>{({ draft, setDraft, caret, setCaret }) => {
+          <ComposerDraft ref={draftControl} refreshSkills={refreshSkills} storageKey={`perry.prompt.${paramId ?? (inProject ? `project.${inProject}` : "new")}`}>{({ draft, setDraft, caret, setCaret }) => {
             // Slash commands: past a command's name, the suggestions are its choices.
             const typedModel = parseModelCommand(draft);
             const typedThink = parseThinkCommand(draft);

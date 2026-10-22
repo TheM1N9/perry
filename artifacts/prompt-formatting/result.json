@@ -1,0 +1,48 @@
+{
+  "ranAt": "2026-10-21T15:59:57.382Z",
+  "checks": {
+    "selectionFormatting": true,
+    "nativeUndo": true,
+    "nativeRedo": true,
+    "listsPreserveIndentAndBlankLines": true,
+    "listToggle": true,
+    "codeBlockBoundaries": true,
+    "nestedFenceEscaped": true,
+    "safeStructuredPreview": true,
+    "previewRetainsExactSource": true,
+    "returnToEditor": true,
+    "keyboardBold": true,
+    "keyboardFormatToggle": true,
+    "shiftEnterDoesNotSend": true,
+    "imeEnterDoesNotSend": true,
+    "commandSuggestionsRemain": true,
+    "reloadPreservesDraft": true,
+    "mobileNoHorizontalOverflow": true,
+    "submittedSourceUnchanged": true,
+    "submittedDraftCleared": true,
+    "sendingPreviewReturnsToEditor": true,
+    "messageEditorRetainsSource": true,
+    "editFormattingAndDraftIsolation": true,
+    "formattedEditSubmitted": true,
+    "noBrowserExceptions": true
+  },
+  "notes": {
+    "noBrowserExceptions": [],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-qa\\perry-prompt-formatting-UmUjtr\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn hxaxmryk7awbg149zc0ctyx7fs\u001b[0m",
+      "\u001b[2m  saved turn wgyw63016phmp49ccyp6agnx8w\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}
