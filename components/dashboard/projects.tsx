@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  CheckIcon, FolderIcon, FolderInputIcon, FolderOpenIcon, FolderOutputIcon, FolderPlusIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, Trash2Icon,
+  CheckIcon, FolderIcon, FolderInputIcon, FolderOpenIcon, FolderOutputIcon, FolderPlusIcon, MoreHorizontalIcon, PencilIcon, PlusIcon, SquarePenIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -89,12 +89,18 @@ function Folder({ project, chats, row, onRename, onDelete }: {
   useEffect(() => { if (here) setOpen(true); }, [here]);
   return (
     <Collapsible open={open} onOpenChange={setOpen} render={<SidebarMenuItem />}>
-      <CollapsibleTrigger render={<SidebarMenuButton isActive={pathname === `/projects/${project.id}`} aria-label={`${project.name}, a project`} />}>
+      <CollapsibleTrigger render={<SidebarMenuButton className="group-has-data-[sidebar=menu-action]/menu-item:pr-14" isActive={pathname === `/projects/${project.id}`} aria-label={`${project.name}, a project`} />}>
         {open ? <FolderOpenIcon /> : <FolderIcon />}
-        <span className="pr-4">{project.name}</span>
+        <span>{project.name}</span>
       </CollapsibleTrigger>
+      <Tooltip>
+        <TooltipTrigger render={<SidebarMenuAction showOnHover className="right-7 after:inset-x-0" aria-label={`New chat in ${project.name}`} render={<Link href={`/chat?project=${project.id}`} />} />}>
+          <SquarePenIcon />
+        </TooltipTrigger>
+        <TooltipContent side="right">New chat in {project.name}</TooltipContent>
+      </Tooltip>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<SidebarMenuAction showOnHover aria-label={`Options for ${project.name}`} />}>
+        <DropdownMenuTrigger render={<SidebarMenuAction showOnHover className="after:inset-x-0" aria-label={`Options for ${project.name}`} />}>
           <MoreHorizontalIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent side="right" align="start" className="w-48">
@@ -107,12 +113,12 @@ function Folder({ project, chats, row, onRename, onDelete }: {
       </DropdownMenu>
       <CollapsibleContent>
         <SidebarMenuSub aria-label={`Chats in ${project.name}`} className="mr-0 gap-0.5 pr-0">
-          {chats.map(row)}
           <SidebarMenuItem>
             <SidebarMenuButton size="sm" render={<Link href={`/chat?project=${project.id}`} />} className="text-sidebar-foreground/70">
               <PlusIcon />New chat
             </SidebarMenuButton>
           </SidebarMenuItem>
+          {chats.map(row)}
         </SidebarMenuSub>
       </CollapsibleContent>
     </Collapsible>
