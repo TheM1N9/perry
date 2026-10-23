@@ -1,0 +1,60 @@
+{
+  "at": "2026-10-21T15:45:37.516Z",
+  "passed": true,
+  "checks": [
+    {
+      "name": "real action: configuration",
+      "passed": true
+    },
+    {
+      "name": "real action: invalid",
+      "passed": true
+    },
+    {
+      "name": "real action: auth",
+      "passed": true
+    },
+    {
+      "name": "real action: rate",
+      "passed": true
+    },
+    {
+      "name": "real action: returned-error",
+      "passed": true
+    },
+    {
+      "name": "real action: success",
+      "passed": true
+    },
+    {
+      "name": "cyclic and unknown structural fields stay bounded and private",
+      "passed": true
+    },
+    {
+      "name": "sanitized logs and real SDK fixture execution",
+      "passed": true
+    }
+  ],
+  "paths": [
+    "/api/v3.1/tools/COMPOSIO_FIXTURE_GET",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/execute",
+    "/api/v3.1/tools/COMPOSIO_FIXTURE_GET",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/execute",
+    "/api/v3.1/tools/COMPOSIO_FIXTURE_GET",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/execute",
+    "/api/v3.1/tools/COMPOSIO_FIXTURE_GET",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/execute",
+    "/api/v3.1/tool_router/session/fixture-session/execute",
+    "/api/v3.1/tool_router/session/fixture-session/execute",
+    "/api/v3.1/tools/COMPOSIO_FIXTURE_GET",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/execute",
+    "/api/v3.1/tools/COMPOSIO_FIXTURE_GET",
+    "/api/v3.1/tool_router/session",
+    "/api/v3.1/tool_router/session/fixture-session/execute"
+  ]
+}
