@@ -31,6 +31,7 @@ import { watchProblem } from "./work";
 import { describeStep, STARTING, summarize, WAITING, WRITING, type Step } from "./lib/activity";
 import { pictureOf, stepCard, type StepCard } from "./lib/steps";
 import { diagnostics } from "./lib/internet";
+import { choiceForChat } from "./routing";
 import { recheckInternetConnections } from "./composio";
 import { findBrowser } from "./lib/browser";
 
@@ -423,15 +424,16 @@ export const getChat = query({
       .filter(turn => turn.finalizedAt === undefined && (turn.status === "queued" || turn.status === "error" && turn.retrying))
       .sort((a, b) => a.createdAt - b.createdAt)[0]?.waiting;
     const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
+    const taskChoice = conversation.taskId ? await choiceForChat(ctx, conversation) : null;
     return {
       channel: conversation.channel,
       // Its own, else the default it follows; unset while there is neither.
-      engine: await engineFor(ctx, conversation),
+      engine: taskChoice?.engine ?? await engineFor(ctx, conversation),
       // Perry moved it to this engine because its own had no room (routing.moveChat).
       ...(conversation.moved ? { moved: conversation.moved } : {}),
       ...(project ? { project: { id: project._id, name: project.name } } : {}),
-      model: conversation.model,
-      effort: conversation.effort,
+      model: taskChoice?.model ?? conversation.model,
+      effort: taskChoice ? taskChoice.effort : conversation.effort,
       access: conversation.access ?? "supervised",
       title: titleOf(conversation),
       isRunning,
@@ -849,7 +851,7 @@ export const sendChat = mutation({
       // Shown in the chat from now, until a turn or the history has it (conversations.takeFromOutbox).
       outbox: [...(chat.outbox ?? []).filter((entry) => entry.at > Date.now() - OUTBOX_TTL_MS), { text: prompt, at: Date.now() }],
       ...(args.model !== undefined ? pickPatch(chat, args.model, args.engine, await engineFor(ctx, chat)) : {}),
-      ...(args.effort !== undefined ? { effort: args.effort.trim() || undefined } : {}),
+      ...(args.effort !== undefined ? { effort: args.effort.trim() || (chat.taskId ? "" : undefined) } : {}),
       ...(args.access !== undefined ? { access: args.access } : {}),
     });
 
@@ -1008,8 +1010,8 @@ export const setChatEffort = mutation({
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
     assertDashboardKey(args.key);
-    ownerChat(await ctx.db.get(args.id));
-    await ctx.db.patch(args.id, { effort: args.effort?.trim().toLowerCase() || undefined });
+    const chat = ownerChat(await ctx.db.get(args.id));
+    await ctx.db.patch(args.id, { effort: args.effort?.trim().toLowerCase() || (chat.taskId ? "" : undefined) });
     return null;
   },
 });

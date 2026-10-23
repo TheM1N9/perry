@@ -150,13 +150,36 @@ export async function jobAsk(_ctx: QueryCtx, job: Doc<"jobs">, avoid?: EngineKin
   };
 }
 
-/** A task's ask: Perry's pick, else the owner's default engine, as for a job. */
-export async function taskAsk(_ctx: QueryCtx, task: Doc<"tasks">, avoid?: EngineKind[]): Promise<Ask> {
+/** Task picks apply to every entry point. Deliberate chat overrides win for subsequent task turns too. */
+export async function taskAsk(ctx: QueryCtx, task: Doc<"tasks">, avoid?: EngineKind[]): Promise<Ask> {
+  const chat = task.conversationId ? await ctx.db.get(task.conversationId) : null;
+  const own = chat?.taskId === task._id ? chat : null;
+  const perry = { ...task.pick };
+  const owner: OwnerPick = {};
+  if (own?.engine) owner.engine = own.engine;
+  if (own?.model !== undefined) {
+    owner.engine = own.engine ?? task.pick?.engine ?? await defaultEngine(ctx);
+    owner.model = own.model;
+    // An explicit engine-default selection must not recover Perry's named model.
+    delete perry.model;
+  }
+  if (own?.effort !== undefined) {
+    owner.effort = own.effort;
+    delete perry.effort;
+  }
   return {
     work: { kind: "task", brief: task.prompt.length },
-    ...(task.pick ? { perry: task.pick } : {}),
+    ...(Object.keys(perry).length ? { perry } : {}),
+    ...(Object.keys(owner).length ? { owner } : {}),
+    ...(own?.codexRunnerId ? { runnerId: own.codexRunnerId } : {}),
     ...(avoid?.length ? { avoid } : {}),
   };
+}
+
+/** The dashboard and direct messages resolve the same selection as the background scheduler. */
+export async function choiceForChat(ctx: QueryCtx, chat: Doc<"conversations">): Promise<Choice | null> {
+  const task = chat.taskId ? await ctx.db.get(chat.taskId) : null;
+  return await choose(ctx, task ? await taskAsk(ctx, task) : chatAsk(chat));
 }
 
 /**
@@ -197,7 +220,7 @@ export const forChat = internalQuery({
   args: { id: v.id("conversations") },
   handler: async (ctx, args): Promise<Choice | null> => {
     const chat = await ctx.db.get(args.id);
-    return chat ? await choose(ctx, chatAsk(chat)) : null;
+    return chat ? await choiceForChat(ctx, chat) : null;
   },
 });
 

@@ -875,9 +875,9 @@ export default defineSchema({
     codexThreadId: v.optional(v.string()),
     /** The runner (computer) this chat's turns run on; its engine sessions are on that disk. */
     codexRunnerId: v.optional(v.id("runners")),
-    /** The model picked for this chat, one of its engine's. Unset means the engine's default. */
+    /** The chat's model. Task chats inherit while unset; "" deliberately selects the engine default. */
     model: v.optional(v.string()),
-    /** Reasoning effort picked for this chat (/think). Unset means the model's default. */
+    /** Thinking pick (/think). Task chats inherit while unset; "" deliberately selects the model default. */
     effort: v.optional(v.string()),
     /** Set when the chat is created, from installation.defaultAccess. Unset means supervised. */
     access: v.optional(vAccess),

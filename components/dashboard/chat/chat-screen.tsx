@@ -533,8 +533,8 @@ export function ChatScreen() {
       setPending((items) => [...items, entry]);
       // A new chat takes what was picked before it existed; an existing one already has its own.
       await sendChat({
-        key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, model, engine,
-        ...(fresh ? { effort: pickedEffort ?? "", access: draftAccess } : {}),
+        key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey,
+        ...(fresh ? { model, engine, effort: pickedEffort ?? "", access: draftAccess } : {}),
       });
       setPending((items) => items.map((item) => item === entry ? { ...item, sent: true } : item));
       // Full access is chosen for a chat, never carried into the next new one.
