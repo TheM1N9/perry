@@ -50,7 +50,8 @@ export const setEffort = internalMutation({
   args: { id: v.id("conversations"), effort: v.optional(v.string()) },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, { effort: args.effort });
+    const chat = await ctx.db.get(args.id);
+    if (chat) await ctx.db.patch(args.id, { effort: args.effort || (chat.taskId ? "" : undefined) });
     return null;
   },
 });

@@ -125,7 +125,8 @@ export const FORGET_SESSION = { resume: undefined, codexThreadId: undefined } as
 export function pickPatch(chat: Doc<"conversations">, model: string | undefined, engine: EngineKind | undefined, current: EngineKind | undefined) {
   const switching = engine !== undefined && engine !== current;
   return {
-    model: model?.trim() || undefined,
+    // Task chats inherit a model; an empty string records an intentional engine-default override.
+    model: model?.trim() || (chat.taskId ? "" : undefined),
     ...(engine !== undefined && engine !== chat.engine ? { engine } : {}),
     // The owner's own move ends what Perry said about moving it (routing.moveChat).
     ...(switching ? { ...FORGET_SESSION, recallDigest: undefined, moved: undefined } : {}),

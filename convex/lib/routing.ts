@@ -138,7 +138,7 @@ export function roomOf(engine: EngineKind, usage: EngineUsage | undefined, now: 
   return { state: "room", used };
 }
 
-/** The owner's pick for the work, which wins: a model, a thinking level, and whether it stays on its engine whatever its plan. */
+/** The owner's pick. An empty model/effort deliberately uses that engine/model's default. */
 export type OwnerPick = { engine?: EngineKind; model?: string; effort?: string; stay?: boolean };
 /** Perry's own pick (create_job, update_job, queue_task): a tier, or a model and level. */
 export type PerryPick = { tier?: Tier; engine?: EngineKind; model?: string; effort?: string };
@@ -209,15 +209,17 @@ export function route(input: RouteInput): Choice | null {
   const pick = (engine: EngineKind): Pick<Choice, "model" | "effort" | "by"> & { said: string } => {
     const offered = modelsOf(models, engine);
     const listed = (id?: string) => id && (!offered.length || offered.some((model) => model.id === id)) ? id : undefined;
+    const defaultModel = owner?.engine === engine && owner.model === "";
     const ownerModel = owner?.engine === engine ? listed(owner.model) : undefined;
-    const perryModel = !ownerModel && (perry?.engine ?? engine) === engine ? listed(perry?.model) : undefined;
+    const perryModel = !defaultModel && !ownerModel && (perry?.engine ?? engine) === engine ? listed(perry?.model) : undefined;
     const chosen = ownerModel ?? perryModel;
-    const model = chosen ? offered.find((item) => item.id === chosen) : modelFor(models, engine, tier);
+    const model = chosen ? offered.find((item) => item.id === chosen) : modelFor(models, engine, defaultModel ? "standard" : tier);
     const takes = (level?: string) => level && (!model?.efforts?.length || model.efforts.includes(level)) ? level : undefined;
     const ownerEffort = owner?.engine === undefined || owner.engine === engine ? takes(owner?.effort) : undefined;
     const perryEffort = !ownerEffort ? takes(perry?.effort) : undefined;
-    const effort = ownerEffort ?? perryEffort ?? effortFor(model, tier);
-    const by = ownerModel || ownerEffort ? "owner" : perryModel || perryEffort || given ? "perry" : "auto";
+    const defaultEffort = (owner?.engine === undefined || owner.engine === engine) && owner?.effort === "";
+    const effort = defaultEffort ? effortFor(model, "standard") : ownerEffort ?? perryEffort ?? effortFor(model, tier);
+    const by = defaultModel || defaultEffort || ownerModel || ownerEffort ? "owner" : perryModel || perryEffort || given ? "perry" : "auto";
     const name = chosen ?? model?.id;
     const said = by === "owner" ? `Your pick: ${[name, effort].filter(Boolean).join(" at ")}`
       : by === "perry" ? `Perry's pick${given ? ` (${tier})` : ""}: ${[name, effort].filter(Boolean).join(" at ")}`
