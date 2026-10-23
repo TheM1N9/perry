@@ -34,8 +34,8 @@ const ttlOf = (row: Pick<Doc<"approvals">, "kind">) => (row.kind === "brain" ? B
 /** With no pet to say whether the owner is at the computer, how long a web request waits before it goes to the phone too. */
 const ESCALATE_MS = 2 * 60_000;
 
-const vKind = v.union(v.literal("command"), v.literal("file"), v.literal("write"));
-type Kind = "command" | "file" | "write";
+const vKind = v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("tool"));
+type Kind = "command" | "file" | "write" | "tool";
 type Person = "terminal" | "dashboard" | "telegram" | "whatsapp" | "timeout";
 
 // --- Rules ---------------------------------------------------------------
@@ -109,6 +109,7 @@ function commonFolder(paths: string[]): string | undefined {
 type Request = { kind: Kind; title: string; cwd?: string; paths?: string[] };
 
 function alwaysAllowFor(request: Request, amendment?: string[]): Doc<"approvals">["alwaysAllow"] {
+  if (request.kind === "tool") return undefined;
   if (request.kind === "command") {
     if (request.title.length > 4000) return undefined;
     const prefix = suggestedPrefix(request.title, amendment);
@@ -119,6 +120,7 @@ function alwaysAllowFor(request: Request, amendment?: string[]): Doc<"approvals"
 }
 
 function ruleMatches(rule: Doc<"approvalRules">, request: Request): boolean {
+  if (request.kind === "tool") return false;
   if (request.kind === "command") {
     if (rule.kind !== "command" || !rule.command) return false;
     if (rule.cwd && !(request.cwd && inside(request.cwd, rule.cwd))) return false;
@@ -170,6 +172,16 @@ export const request = mutation({
       createdAt: now,
     };
 
+    // A tool has explicitly asked for owner confirmation. A computer policy,
+    // reviewer, saved file rule or Full access cannot supply that answer.
+    if (args.kind === "tool") {
+      const chat = args.conversationId ? await ctx.db.get(args.conversationId) : null;
+      if (!chat || chat.contactId) throw new Error("Tool confirmations require an owner's chat.");
+      const id = await ctx.db.insert("approvals", { ...row, status: "pending" });
+      await ask(ctx, id);
+      return { id, next: "ask" };
+    }
+
     // The owner already said "always" to this.
     const rules = await ctx.db.query("approvalRules").withIndex("by_runner", (q) => q.eq("runnerId", runner._id)).take(200);
     const rule = rules.find((candidate) => ruleMatches(candidate, request));
@@ -215,7 +227,7 @@ export const reviewed = mutation({
   handler: async (ctx, args): Promise<boolean> => {
     const runner = await authenticate(ctx, args.token);
     const row = await ctx.db.get(args.id);
-    if (row?.runnerId !== runner._id || row.status !== "reviewing") return false;
+    if (row?.runnerId !== runner._id || row.status !== "reviewing" || row.kind === "tool") return false;
     const review = { verdict: args.verdict, reason: args.reason.slice(0, 1000), model: args.model, ms: args.ms };
     // The owner may have changed the chat's access while the reviewer looked: Full access runs it, Ask asks.
     const chat = row.conversationId ? await ctx.db.get(row.conversationId) : null;
@@ -293,7 +305,7 @@ export async function accessChanged(ctx: MutationCtx, conversationId: Id<"conver
   const pending = await ctx.db.query("approvals").withIndex("by_status", (q) => q.eq("status", "pending")).take(200);
   const now = Date.now();
   for (const row of pending) {
-    if (row.conversationId !== conversationId) continue;
+    if (row.conversationId !== conversationId || row.kind === "tool") continue;
     await ctx.db.patch(row._id, { status: "auto", decidedBy: "trust", decidedAt: now });
     if (row.telegramMessageId) await ctx.scheduler.runAfter(0, internal.approvals.showOutcomeOnTelegram, { id: row._id });
   }
@@ -442,7 +454,7 @@ export const escalate = internalMutation({
 
 // --- Telegram ------------------------------------------------------------
 
-const ASK = { command: "run", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone", brain: "tidy Brain" } as const;
+const ASK = { command: "run", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone", brain: "tidy Brain", tool: "confirm a tool request" } as const;
 /** Who is asking: the computer for what runs on it, Perry itself for talking with people. */
 const asker = async (ctx: QueryCtx, row: Doc<"approvals">) =>
   row.kind === "contact" || row.kind === "message" || row.kind === "brain" ? (await readPersona(ctx)).name : (await ctx.db.get(row.runnerId))?.name;

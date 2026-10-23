@@ -1,0 +1,25 @@
+{
+  "ranAt": "2026-10-22T19:14:54.976Z",
+  "scope": "UI/API with synthetic approvals; no engine or account action",
+  "checks": {
+    "pendingCardHasRequest": true,
+    "noAlwaysAllow": true,
+    "requestStillPendingBeforeClick": true,
+    "keyboardApprovalReachedBackend": true,
+    "mobileControlsVisible": true,
+    "declineReachedBackend": true,
+    "noBrowserErrors": true,
+    "noModelTurns": true
+  },
+  "notes": {
+    "keyboardFocus": {
+      "focused": true,
+      "tag": "BUTTON",
+      "disabled": false
+    },
+    "noBrowserErrors": [],
+    "runnerLog": [],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

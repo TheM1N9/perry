@@ -474,7 +474,7 @@ async function main() {
   // --- Approvals -------------------------------------------------------------
 
   type Request = {
-    kind: "command" | "file";
+    kind: "command" | "file" | "tool";
     what: string;
     detail: string | null;
     cwd?: string;
@@ -506,11 +506,12 @@ async function main() {
       console.log(`${cyan("  allowed")} ${request.what}`);
       return true;
     }
-    if (next === "review") {
+    if (next === "review" && request.kind !== "tool") {
+      const kind = request.kind;
       // The chat's own engine reviews when it can; with none here that can, the owner is asked.
       const reviewer = quickEngine(engine);
       const verdict = await quickly(reviewer, () => review(reviewer, {
-        kind: request.kind,
+        kind,
         title: request.what,
         cwd: request.cwd,
         workdir,
@@ -560,7 +561,7 @@ async function main() {
       const timer = setTimeout(() => settle(false, "timeout"), APPROVAL_TIMEOUT_MS);
       unsubscribe = client.onUpdate(api.approvals.decision, { token, id }, (status) => {
         // "auto": the chat was put on Full access while this waited.
-        if (status === "approved" || status === "auto" || status === "declined") settle(status !== "declined", "elsewhere");
+        if (status === "approved" || status === "auto" || status === "declined" || status === "expired") settle(status === "approved" || status === "auto", "elsewhere");
       }, (error) => console.error(red(`  could not follow the dashboard's answer: ${message(error)}`)));
       terminal?.question(`  ${bold("run it?")} [y/N/a = always] `, { signal: abort.signal })
         .then((answer) => {
@@ -602,7 +603,15 @@ async function main() {
       }, conversationId, engine);
       return optionOf(request, approved ? "accept" : "decline");
     }
-    // Wider permissions, and questions from other tools, have no place to be asked yet.
+    if (request.type === "tool_user_input") {
+      const approved = await approve({
+        kind: "tool",
+        what: `Confirm request from ${detail.server ?? "an external tool"}`,
+        detail: detail.message ?? "This tool is waiting for your confirmation.",
+      }, conversationId, engine);
+      return optionOf(request, approved ? "accept" : "decline");
+    }
+    // Wider permission grants still require a separate supported flow.
     return optionOf(request, "decline");
   };
 
