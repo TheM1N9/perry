@@ -32,7 +32,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { standing, type UpdateRequest, type UpdateResult } from "../convex/lib/checkout";
@@ -731,6 +731,11 @@ async function status() {
   const { serviceState, servicePlan, serviceContext } = await import("./service");
   const ctx = serviceContext();
   const state = serviceState(ctx);
+  // A crashed Perry can leave a dashboard on the port holding the database open,
+  // which keeps the next start from migrating it. Clear such a stale holder first,
+  // but only one of Perry's own (killPort), and only while the service is stopped:
+  // a Perry still starting up is left to perry run.
+  if (state.installed && !state.running && !(await runnerReady())) killPort(PORT);
   const up = await dashboardUp();
   say(`\n${bold("Perry")}  ${dim(REPO)}`);
   say(`  service    ${state.running ? green("running") : state.installed ? yellow("stopped") : dim("not installed")}${state.installed ? dim(`  ${state.detail}`) : ""}`);
@@ -739,6 +744,53 @@ async function status() {
   const config = readRunnerConfig();
   say(`  computer   ${config.token ? `${config.name ?? hostname()}${dim(`, working in ${config.dir ?? "?"}`)}` : yellow("not connected")}`);
   say(dim(`  logs       ${servicePlan(ctx).logs ? "perry logs" : ctx.logFile}\n`));
+}
+
+/** The PIDs listening on a port, listeners only: `lsof -ti tcp:PORT` also names the clients connected to it. */
+function listeningPids(port: number): number[] {
+  try {
+    if (process.platform === "win32") {
+      const result = spawnSync("netstat", ["-ano"], { encoding: "utf8", windowsHide: true });
+      const pids = new Set<number>();
+      // TCP    127.0.0.1:7377    0.0.0.0:0    LISTENING    4123
+      for (const line of (result.stdout ?? "").split("\n")) {
+        const found = line.trim().match(/^TCP\s+\S+:(\d+)\s+\S+\s+LISTENING\s+(\d+)$/i);
+        if (found && Number(found[1]) === port) pids.add(Number(found[2]));
+      }
+      return [...pids];
+    }
+    const result = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" });
+    return [...new Set((result.stdout ?? "").split(/\s+/).filter(Boolean).map(Number))].filter((pid) => Number.isSafeInteger(pid) && pid > 0);
+  } catch {
+    return [];
+  }
+}
+
+/** Whether a listening process is Perry's: it works in this checkout. A port some other program holds is left alone. */
+function isPerryProcess(pid: number): boolean {
+  try {
+    if (process.platform === "win32") {
+      const result = spawnSync("powershell", ["-NoProfile", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true });
+      return (result.stdout ?? "").toLowerCase().includes(REPO.toLowerCase());
+    }
+    const result = spawnSync("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"], { encoding: "utf8" });
+    const cwd = (result.stdout ?? "").split("\n").find((line) => line.startsWith("n/"))?.slice(1);
+    if (!cwd) return false;
+    return cwd === REPO || cwd.startsWith(`${REPO}${sep}`);
+  } catch {
+    return false;
+  }
+}
+
+/** End whatever of Perry's is still holding a port — its dashboard, its runner — never another program's process. */
+function killPort(port: number) {
+  for (const pid of listeningPids(port)) {
+    if (pid === process.pid || !isPerryProcess(pid)) continue;
+    try {
+      if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(pid), "/F"], { stdio: "ignore", windowsHide: true });
+      else process.kill(pid, "SIGKILL");
+    } catch {}
+  }
 }
 
 async function start({ pet = true } = {}): Promise<boolean> {
@@ -774,6 +826,7 @@ async function stop({ quiet = false, pet = true } = {}) {
   const ctx = serviceContext();
   runSteps(servicePlan(ctx).stop, false);
   if (ctx.platform === "win32") endServiceProcess();
+  killPort(PORT);
   if (pet) await (await import("./pet")).quit();
   if (!quiet) await done("stopped");
 }
