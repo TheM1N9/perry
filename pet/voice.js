@@ -147,6 +147,9 @@ export function hotkeys(send) {
   const finish = (type) => {
     listening = false;
     holding = false;
+    // A press still waiting to be heard would start listening again after this.
+    clearTimeout(waiting);
+    waiting = null;
     escape.off();
     send(type);
   };
@@ -258,6 +261,8 @@ export function hotkeys(send) {
   const done = () => {
     listening = false;
     holding = false;
+    clearTimeout(waiting);
+    waiting = null;
     escape.off();
   };
   return {

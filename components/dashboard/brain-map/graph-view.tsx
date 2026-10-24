@@ -553,7 +553,7 @@ export function GraphView({
       if (canvasRef.current) canvasRef.current.dataset.settled = String(data.settled);
       request();
     };
-    return () => { worker?.terminate(); s.worker = null; if (s.frame) cancelAnimationFrame(s.frame); s.frame = 0; };
+    return () => { worker?.terminate(); s.worker = null; if (s.frame) cancelAnimationFrame(s.frame); s.frame = 0; if (s.glide) cancelAnimationFrame(s.glide); s.glide = 0; };
   }, []);
 
   // A new shape of graph (pages or ties added or gone) is laid out again from where each page was.
