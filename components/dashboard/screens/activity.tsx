@@ -32,6 +32,7 @@ const RUN_STATUS: Record<string, { tone: Tone; label: string }> = {
   running: { tone: "info", label: "Running" },
   error: { tone: "danger", label: "Failed" },
   rejected: { tone: "warning", label: "Rejected" },
+  stopped: { tone: "neutral", label: "Stopped" },
 };
 const STATUS_FILTERS = [
   { value: "all", label: "Every status" },
@@ -39,6 +40,7 @@ const STATUS_FILTERS = [
   { value: "running", label: "Running" },
   { value: "error", label: "Failed" },
   { value: "rejected", label: "Rejected" },
+  { value: "stopped", label: "Stopped" },
 ];
 const SPAN_KINDS: Record<SpanView["kind"], string> = {
   command: "shell", fileChange: "files", mcpToolCall: "tool", dynamicToolCall: "tool", webSearch: "search", imageGeneration: "image", reasoning: "thinking",

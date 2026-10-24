@@ -1,0 +1,30 @@
+{
+  "ranAt": "2026-10-24T09:03:53.162Z",
+  "scope": "Isolated production backend/browser; synthetic runner metadata; no runner process or model calls",
+  "checks": {
+    "initialTaskSelectionRetained": true,
+    "claimSyntheticTurn": true,
+    "nativeBrowserMessageSteersActiveTask": true,
+    "steeringUsesExistingModelAndThinking": true,
+    "taskStaysHeldAfterStoppedCallbacks": true,
+    "stoppedTurnHasNoFailure": true,
+    "progressAndCancelledUpdateRemainVisible": true,
+    "stoppedHistoryKeepsOriginalBeforeCorrection": true,
+    "bothStoppedRunsAccurate": true,
+    "resumeReusesNativeSession": true,
+    "resumeReusesTaskAndChat": true,
+    "cancelledCorrectionWasNotReplayed": true,
+    "automaticPromptQueuesDuringRunningTask": true,
+    "activityShowsStoppedWithoutFailure": true,
+    "mobileActivityFitsViewport": true,
+    "genuineFailureStillReported": true,
+    "noBrowserErrors": true,
+    "completedAllScenarios": true
+  },
+  "notes": {
+    "noBrowserErrors": [],
+    "runnerLog": [],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

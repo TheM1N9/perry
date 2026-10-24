@@ -11,6 +11,7 @@ import { projectFrom } from "./projects";
 import { choose, routeOf, taskAsk } from "./routing";
 import { vPerryPick, vRoute } from "./schema";
 import { assertRunning, pausedAt } from "./pause";
+import { taskVersionMatches } from "./lib/task-control";
 
 /**
  * Background tasks (issue #102): work Perry takes on and carries out by
@@ -65,6 +66,7 @@ function promptFor(task: Doc<"tasks">): string {
 
 /** A turn of the chat queued or running, besides compactions and memory checkpoints: it will end in afterTurn itself. */
 async function turnAhead(ctx: QueryCtx, conversationId: Id<"conversations">): Promise<boolean> {
+  if ((await ctx.db.get(conversationId))?.outbox?.length) return true;
   for (const status of ["queued", "running"] as const) {
     const turns = await ctx.db.query("codexTurns").withIndex("by_conversation_status", (q) => q.eq("conversationId", conversationId).eq("status", status)).collect();
     if (turns.some((turn) => turn.kind !== "compact" && !turn.flush && !turn.checkpoint)) return true;
@@ -125,7 +127,7 @@ export const tick = internalMutation({
       .sort((a, b) => a.createdAt - b.createdAt);
     for (const next of queued.slice(0, RUNNING_TASKS - running.length)) {
       await ctx.db.patch(next._id, { status: "running", turns: (next.turns ?? 0) + 1, question: undefined, waiting: undefined, updatedAt: Date.now() });
-      await ctx.scheduler.runAfter(0, internal.tasks.work, { id: next._id });
+      await ctx.scheduler.runAfter(0, internal.tasks.work, { id: next._id, version: next.stopVersion ?? 0 });
     }
     return null;
   },
@@ -165,42 +167,58 @@ export const chatFor = internalMutation({
 
 /** One turn of the task, in its own chat. */
 export const work = internalAction({
-  args: { id: v.id("tasks") },
+  args: { id: v.id("tasks"), version: v.optional(v.number()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const task: Doc<"tasks"> | null = await ctx.runQuery(internal.tasks.get, { id: args.id });
-    if (!task || task.status !== "running") return null;
+    if (!task || task.status !== "running" || !taskVersionMatches(task, args.version)) return null;
     // Perry paused since its turn was set going: it waits for the owner instead (pause.ts).
     if (await ctx.runQuery(internal.pause.state, {})) {
-      await ctx.runMutation(internal.pause.holdTask, { id: task._id });
+      await ctx.runMutation(internal.pause.holdTask, { id: task._id, version: args.version });
       return null;
     }
     // Where this turn runs, on what and why; or, with no engine that has room, back in line until one has.
     // With no engine to route to (no default chosen), it goes on unrouted and is refused there, asking for one.
     const choice: Choice | null = await ctx.runQuery(internal.routing.forTask, { id: task._id });
     if (choice?.wait) {
-      await ctx.runMutation(internal.tasks.wait, { id: task._id, until: choice.wait.until, why: choice.wait.why });
+      await ctx.runMutation(internal.tasks.wait, { id: task._id, until: choice.wait.until, why: choice.wait.why, version: args.version });
       return null;
     }
     const route = choice ? routeOf(choice) : undefined;
-    if (route) await ctx.runMutation(internal.tasks.routed, { id: task._id, route });
     const existing = task.conversationId ? await ctx.runQuery(internal.conversations.getWebById, { id: task.conversationId }) : null;
     // A turn of its chat is already on its way (a message the owner wrote there): that one carries it on, not a second.
     if (existing && await ctx.runQuery(internal.tasks.hasTurnAhead, { conversationId: existing._id })) return null;
     const threadId = existing?.threadId ?? await createThread(ctx, { userId: "web:dashboard", title: `🧩 ${task.title}` });
-    const chat = await ctx.runMutation(internal.tasks.chatFor, { id: task._id, threadId });
+    await ctx.runMutation(internal.tasks.dispatch, { id: task._id, threadId, version: args.version, ...(route ? { route } : {}) });
+    return null;
+  },
+});
+
+/** Commit asynchronous preparation only while the same execution still owns the task. */
+export const dispatch = internalMutation({
+  args: { id: v.id("tasks"), threadId: v.string(), version: v.optional(v.number()), route: v.optional(vRoute) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.id);
+    if (!task || task.status !== "running" || !taskVersionMatches(task, args.version) || await pausedAt(ctx)) return null;
+    if (task.conversationId && await turnAhead(ctx, task.conversationId)) return null;
+    const chat = await ctx.runMutation(internal.tasks.chatFor, { id: task._id, threadId: args.threadId });
     if (!chat) return null;
-    await ctx.runMutation(internal.tasks.clearAnswer, { id: task._id });
-    await ctx.scheduler.runAfter(0, internal.brain.handleTurn, { channel: "web", externalId: chat.externalId, text: promptFor(task), title: chat.title, ...(route ? { route } : {}) });
+    await ctx.db.patch(task._id, { answer: undefined, ...(args.route ? { route: args.route, waiting: undefined } : {}) });
+    await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
+      channel: "web", externalId: chat.externalId, text: promptFor(task), title: chat.title,
+      taskPrompt: true, taskVersion: task.stopVersion ?? 0, ...(args.route ? { route: args.route } : {}),
+    });
     return null;
   },
 });
 
 export const routed = internalMutation({
-  args: { id: v.id("tasks"), route: vRoute },
+  args: { id: v.id("tasks"), route: vRoute, version: v.optional(v.number()) },
   returns: v.null(),
   handler: async (ctx, args) => {
-    if (await ctx.db.get(args.id)) await ctx.db.patch(args.id, { route: args.route, waiting: undefined });
+    const task = await ctx.db.get(args.id);
+    if (task && taskVersionMatches(task, args.version)) await ctx.db.patch(args.id, { route: args.route, waiting: undefined });
     return null;
   },
 });
@@ -224,11 +242,11 @@ async function requeue(ctx: MutationCtx, task: Doc<"tasks">, waiting?: { until: 
 
 /** No engine has room for its next turn: it waits in line for the first reset, and the owner hears once. */
 export const wait = internalMutation({
-  args: { id: v.id("tasks"), until: v.number(), why: v.string() },
+  args: { id: v.id("tasks"), until: v.number(), why: v.string(), version: v.optional(v.number()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const task = await ctx.db.get(args.id);
-    if (!task || task.status !== "running") return null;
+    if (!task || task.status !== "running" || !taskVersionMatches(task, args.version)) return null;
     await requeue(ctx, task, { until: args.until, why: args.why });
     await tellOnce(ctx, task, `🧩 **${task.title}** is waiting. ${args.why}`);
     return null;
@@ -266,14 +284,14 @@ export const clearAnswer = internalMutation({
  * run (brain.handleTurn): carry on, or say how it ended where it was asked for.
  */
 export const afterTurn = internalMutation({
-  args: { id: v.id("tasks"), error: v.optional(v.string()) },
+  args: { id: v.id("tasks"), error: v.optional(v.string()), stopped: v.optional(v.boolean()), version: v.optional(v.number()), turnId: v.optional(v.id("codexTurns")) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const task = await ctx.db.get(args.id);
-    if (!task) return null;
+    if (!task || args.stopped || !taskVersionMatches(task, args.version)) return null;
     let status = task.status;
     // A failed prior turn cannot report the task failed while an accepted update still has work to do.
-    if (status === "running" && args.error && await ctx.runQuery(internal.tasks.awaitingSteering, { id: task._id })) return null;
+    if (status === "running" && args.error && await ctx.runQuery(internal.tasks.awaitingSteering, { id: task._id, ...(args.turnId ? { turnId: args.turnId } : {}) })) return null;
     // Stopped by a plan's limit: back in line for an engine with room, or the reset.
     if (status === "running" && args.error && LIMIT_HIT.test(args.error) && await recoverTask(ctx, task)) return null;
     if (status === "running" && !args.error && task.recovery) await ctx.db.patch(task._id, { recovery: undefined });
@@ -285,7 +303,7 @@ export const afterTurn = internalMutation({
       if (task.conversationId && await turnAhead(ctx, task.conversationId)) return null;
       if ((task.turns ?? 0) < MAX_TURNS) {
         await ctx.db.patch(task._id, { turns: (task.turns ?? 0) + 1, updatedAt: Date.now() });
-        await ctx.scheduler.runAfter(0, internal.tasks.work, { id: task._id });
+        await ctx.scheduler.runAfter(0, internal.tasks.work, { id: task._id, version: task.stopVersion ?? 0 });
         return null;
       }
       await ctx.db.patch(task._id, { status: "failed", error: `Stopped after ${MAX_TURNS} turns without finishing; its chat shows how far it got.`, updatedAt: Date.now() });
@@ -472,6 +490,7 @@ async function steerTask(ctx: MutationCtx, args: { id: string; text: string; req
     // Snapshot the owner's current setting, as claimTurn/turnAccess do; turn.access can be stale.
     // Steering cannot set access, and native engine.steer carries no access override.
     access: chat.access ?? "supervised", policy: "steer",
+    taskVersion: task.stopVersion ?? 0,
   });
   const now = Date.now();
   await ctx.db.patch(task._id, { steering: [...(task.steering ?? []), { requestId: args.requestId, text, deliveryId, createdAt: now }], updatedAt: now });
@@ -515,6 +534,15 @@ export const awaitingSteering = internalQuery({
   handler: async (ctx, args) => {
     const id = ctx.db.normalizeId("tasks", args.id);
     const task = id ? await ctx.db.get(id) : null;
+    // Direct chat updates use the same delivery queue as Work-page steering.
+    if (task?.conversationId) {
+      const pending = await ctx.db.query("codexSteers").withIndex("by_conversation_status", q => q.eq("conversationId", task.conversationId!).eq("status", "pending")).collect();
+      if (pending.some(steer => steer.status === "pending")) return true;
+      for (const status of ["queued", "running"] as const) {
+        const turns = await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", task.conversationId!).eq("status", status)).collect();
+        if (turns.some(turn => (turn.status === "queued" || (args.turnId && turn._id !== args.turnId)) && turn.kind !== "compact" && !turn.checkpoint && !turn.flush)) return true;
+      }
+    }
     for (const update of task?.steering ?? []) {
       const delivery = await ctx.db.get(update.deliveryId);
       if (!delivery) continue;

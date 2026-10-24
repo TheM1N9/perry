@@ -6,6 +6,7 @@ import { assertDashboardKey } from "./lib/auth";
 import { describeMissed, PAUSED_ERROR, type MissedRun } from "./lib/commands";
 import { stopTurns } from "./codex";
 import { vPauseSource } from "./schema";
+import { holdTask as holdBackgroundTask, taskVersionMatches } from "./lib/task-control";
 
 /**
  * Pause Perry (issue #204): one switch that stops everything, as OpenDots'
@@ -53,12 +54,7 @@ export function missedPatch(job: Doc<"jobs">, extra: { stopped?: boolean; event?
 /** A background task the pause stopped: it waits for the owner's word, so it never carries on by surprise. */
 async function hold(ctx: MutationCtx, task: Doc<"tasks">) {
   if (task.status !== "running") return;
-  await ctx.db.patch(task._id, {
-    status: "blocked",
-    question: "Perry was paused while this ran. Answer to carry on.",
-    waiting: undefined,
-    updatedAt: Date.now(),
-  });
+  await holdBackgroundTask(ctx, task, "Perry was paused while this ran. Answer to carry on.");
 }
 
 /** Pause: stop what runs, and hold what was about to. Whether it was running. */
@@ -189,14 +185,14 @@ export const skipMissedFrom = internalMutation({
  * way when the owner paused): the job missed a run, the task waits for them.
  */
 export const held = internalMutation({
-  args: { conversationId: v.id("conversations"), event: v.optional(v.string()) },
+  args: { conversationId: v.id("conversations"), event: v.optional(v.string()), taskVersion: v.optional(v.number()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const chat = await ctx.db.get(args.conversationId);
     const job = chat?.jobId ? await ctx.db.get(chat.jobId) : null;
     if (job) await ctx.db.patch(job._id, missedPatch(job, { ...(args.event !== undefined ? { event: args.event } : {}) }));
     const task = chat?.taskId ? await ctx.db.get(chat.taskId) : null;
-    if (task) await hold(ctx, task);
+    if (task && taskVersionMatches(task, args.taskVersion)) await hold(ctx, task);
     return null;
   },
 });
@@ -214,11 +210,11 @@ export const missedJob = internalMutation({
 
 /** A task's turn that was about to start when Perry was paused (tasks.work). */
 export const holdTask = internalMutation({
-  args: { id: v.id("tasks") },
+  args: { id: v.id("tasks"), version: v.optional(v.number()) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const task = await ctx.db.get(args.id);
-    if (task) await hold(ctx, task);
+    if (task && taskVersionMatches(task, args.version)) await hold(ctx, task);
     return null;
   },
 });

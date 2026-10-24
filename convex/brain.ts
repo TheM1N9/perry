@@ -529,6 +529,9 @@ export const handleTurn = internalAction({
     engine: v.optional(vEngine),
     /** Where a job's or task's turn runs, on what and why, as routing chose it (lib/routing.ts); it wins over model and engine. */
     route: v.optional(vRoute),
+    /** Automatic task prompt, as distinct from the owner's follow-up. */
+    taskPrompt: v.optional(v.boolean()),
+    taskVersion: v.optional(v.number()),
     /** Written in the web app in the owner's Telegram or WhatsApp chat: the web app shows it as its own, and the phone hears of it. */
     fromWeb: v.optional(v.boolean()),
     /** From someone other than the owner (contacts.ts), already allowed: a sealed turn in their chat. */
@@ -574,7 +577,7 @@ export const handleTurn = internalAction({
       // answered that Perry is paused, the owner's with how to resume; commands still work, /resume among them.
       // The web app's own messages go on to be refused where the turn is queued, and the chat shows why.
       if (!command && (channel !== "web" || conversation.jobId || conversation.taskId) && await ctx.runQuery(internal.pause.state, {})) {
-        if (conversation.jobId || conversation.taskId) await ctx.runMutation(internal.pause.held, { conversationId: conversation._id });
+        if (conversation.jobId || conversation.taskId) await ctx.runMutation(internal.pause.held, { conversationId: conversation._id, taskVersion: args.taskVersion });
         else if (!args.fromWeb && !args.hidden) await say(guest ? PAUSED_REPLY : PAUSED_OWNER);
         return null;
       }
@@ -643,7 +646,7 @@ export const handleTurn = internalAction({
       const settings = guest ? { engine: route?.engine, model: route?.model, effort: route?.effort, access: "supervised" as const }
         : route ? { engine: route.engine, model: route.model, effort: route.effort, access: conversation.access ?? "supervised" as const }
           : await turnSettings(ctx, conversation, args.model ? { model: args.model, engine: args.engine } : undefined);
-      if (chosen && conversation.taskId) await ctx.runMutation(internal.tasks.routed, { id: conversation.taskId, route: routeOf(chosen) });
+      if (chosen && conversation.taskId) await ctx.runMutation(internal.tasks.routed, { id: conversation.taskId, route: routeOf(chosen), version: args.taskVersion });
       const moved = owners ? route?.movedFrom : undefined;
       if (moved && route) {
         // Moved for its engine's limit. A chat on an engine of its own goes on on the new one; one that follows the
@@ -695,7 +698,8 @@ export const handleTurn = internalAction({
           ...(args.hidden ? { hidden: true } : {}),
           ...(guest ? { guest: true } : {}),
           // The owner's message joins a reply that is running; a job's prompt waits its turn.
-          policy: conversation.jobId || conversation.taskId || args.outside ? "queue" : "steer",
+          policy: conversation.jobId || args.taskPrompt || args.outside ? "queue" : "steer",
+          taskVersion: args.taskVersion, taskPrompt: args.taskPrompt,
           ...(args.outside ? { outside: true } : {}),
         });
         delegated = true;
@@ -709,9 +713,9 @@ export const handleTurn = internalAction({
         await ctx.runMutation(internal.runs.finish, { id: runId, status: "error", model: runLabel(settings.model, settings.effort, settings.access, settings.engine), error: message.slice(0, 1000), errorCode: turnErrorCode(error) });
         // Paused while it was on its way: a job has missed a run and a task waits, rather than failing (pause.ts).
         const paused = message === PAUSED_ERROR;
-        if (paused && (conversation.jobId || conversation.taskId)) await ctx.runMutation(internal.pause.held, { conversationId: conversation._id });
+        if (paused && (conversation.jobId || conversation.taskId)) await ctx.runMutation(internal.pause.held, { conversationId: conversation._id, taskVersion: args.taskVersion });
         else if (conversation.jobId) await ctx.runMutation(internal.jobs.finished, { id: conversation.jobId, error: message });
-        else if (conversation.taskId) await ctx.runMutation(internal.tasks.afterTurn, { id: conversation.taskId, error: message });
+        else if (conversation.taskId) await ctx.runMutation(internal.tasks.afterTurn, { id: conversation.taskId, error: message, version: args.taskVersion });
         // The message stays in the chat with the error under it, as a turn would have saved it: the owner's
         // (in any channel, so the dashboard shows what failed) and a job's prompt alike. It never became a turn.
         if (!args.hidden) {

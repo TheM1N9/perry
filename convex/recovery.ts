@@ -104,16 +104,17 @@ export const sweep = internalMutation({
       if (health.abandon) {
         // What it had written so far is kept, as when the owner stops a turn.
         await ctx.db.patch(turn._id, {
-          status: "error",
-          errorCode: "offline",
+          status: turn.stopRequested ? "done" : "error",
+          ...(turn.stopRequested ? { stopped: true } : {}),
+          errorCode: turn.stopRequested ? undefined : "offline",
           response: turn.response ?? await streamBody(ctx, turn),
           partial: undefined,
-          error: turn.status === "queued"
+          error: turn.stopRequested ? undefined : turn.status === "queued"
             ? "The runner was offline, so this message was not answered. Start the runner and send it again."
             : "The runner stopped during this turn and did not come back. Start the runner and send the message again.",
           finishedAt: now,
         });
-        await settleRunSpans(ctx, turn.runId, now, "recovery");
+        await settleRunSpans(ctx, turn.runId, now, turn.stopRequested ? "stopped" : "recovery");
         await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: turn._id });
         abandoned += 1;
         handled.add(turn.conversationId);

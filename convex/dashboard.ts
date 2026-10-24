@@ -828,11 +828,16 @@ export const sendChat = mutation({
     // The outbox reserves capacity before asynchronous preparation. Admission
     // and its durable handoff replace one slot rather than counting it twice.
     await assertQueueRoom(ctx, chat);
+    const task = chat.taskId ? await ctx.db.get(chat.taskId) : null;
     const messageKey = args.messageKey?.trim() || crypto.randomUUID();
     const attachments = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
     if (attachments.some((attachment) => !attachment || attachment.conversationId !== args.id || attachment.messageKey !== messageKey)) {
       throw new Error("One of the attachments is no longer available.");
     }
+    // A new owner message explicitly resumes this same task, without replaying cancelled updates.
+    if (task?.status === "blocked") await ctx.db.patch(task._id, {
+      status: "running", question: undefined, answer: undefined, reported: undefined, updatedAt: Date.now(),
+    });
     const prompt = attachmentIds.length > 0
       ? `${text}\n\n<!-- attachments: ${messageKey} -->`.trim()
       : text;
@@ -863,6 +868,7 @@ export const sendChat = mutation({
       text: prompt,
       title: chat.title,
       attachmentIds,
+      ...(task ? { taskVersion: task.stopVersion ?? 0 } : {}),
       ...(web ? {} : { fromWeb: true }),
     });
     return null;

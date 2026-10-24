@@ -1,0 +1,105 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "name": "normal and legacy completion continue once",
+      "passed": true
+    },
+    {
+      "name": "dashboard Stop holds task and labels stopped without error",
+      "passed": true
+    },
+    {
+      "name": "shared /stop backend handles between-turn Stop",
+      "passed": true
+    },
+    {
+      "name": "Stop preserves queued owner text; active-first finalization never restarts",
+      "passed": true
+    },
+    {
+      "name": "Stop preserves queued owner text; queued-first finalization never restarts",
+      "passed": true
+    },
+    {
+      "name": "runner finish without stopped flag still honors Stop",
+      "passed": true
+    },
+    {
+      "name": "runner interruption error after Stop is stopped",
+      "passed": true
+    },
+    {
+      "name": "genuine provider failure retains details",
+      "passed": true
+    },
+    {
+      "name": "late owner preparation is kept stopped after Stop",
+      "passed": true
+    },
+    {
+      "name": "immediate resume rejects old work, dispatch, wait and error callbacks",
+      "passed": true
+    },
+    {
+      "name": "old finalization after explicit resume cannot consume turns",
+      "passed": true
+    },
+    {
+      "name": "new chat message explicitly resumes same task and snapshots version",
+      "passed": true
+    },
+    {
+      "name": "same-engine owner update steers with model access and attachment snapshot",
+      "passed": true
+    },
+    {
+      "name": "pending steering cannot finish task before accepted update",
+      "passed": true
+    },
+    {
+      "name": "unsupported steering uses existing ordered fallback once",
+      "passed": true
+    },
+    {
+      "name": "Stop cancels pending steering and fallback without replay",
+      "passed": true
+    },
+    {
+      "name": "different-engine update queues and blocks premature task completion",
+      "passed": true
+    },
+    {
+      "name": "automatic prompts remain queued and carry the current version",
+      "passed": true
+    },
+    {
+      "name": "owner outbox preparation prevents automatic duplicate turn",
+      "passed": true
+    },
+    {
+      "name": "global Pause holds task and global Resume does not resume it",
+      "passed": true
+    },
+    {
+      "name": "usage retry scheduled before Stop cannot restart after resume",
+      "passed": true
+    },
+    {
+      "name": "cancelled tasks refuse queued claims",
+      "passed": true
+    },
+    {
+      "name": "ordinary owner chat still steers and stops normally",
+      "passed": true
+    },
+    {
+      "name": "stale Pause callbacks cannot hold explicitly resumed work",
+      "passed": true
+    },
+    {
+      "name": "runner disappearance after Stop recovers as stopped without restart",
+      "passed": true
+    }
+  ]
+}

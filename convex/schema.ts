@@ -371,6 +371,8 @@ export default defineSchema({
     ),
     /** What it needs from the owner, when status is blocked. */
     question: v.optional(v.string()),
+    /** Incremented on Stop/Pause; callbacks from before it cannot resume this task. */
+    stopVersion: v.optional(v.number()),
     result: v.optional(v.string()),
     error: v.optional(v.string()),
     /** When the owner dismissed its failure from Needs you. */
@@ -1215,6 +1217,7 @@ export default defineSchema({
       v.literal("ok"),
       v.literal("error"),
       v.literal("rejected"),
+      v.literal("stopped"),
     ),
     steps: v.optional(v.number()),
     toolCalls: v.optional(v.array(v.string())),
@@ -1459,6 +1462,8 @@ export default defineSchema({
     runnerId: v.optional(v.id("runners")),
     conversationId: v.id("conversations"),
     runId: v.id("runs"),
+    /** The task's Stop version when this turn was admitted. Legacy turns use zero. */
+    taskVersion: v.optional(v.number()),
     /** The engine it runs on, always set; unset only on a turn from before engines. The table keeps its name from before engines. */
     engine: v.optional(vEngine),
     /** A turn that compacts the chat's engine session (/compact) rather than answering a message. */
@@ -1597,6 +1602,7 @@ export default defineSchema({
    * refused) becomes an ordinary queued turn, so it keeps what a turn needs.
    */
   codexSteers: defineTable({
+    taskVersion: v.optional(v.number()),
     /** The running turn it joins. */
     turnId: v.id("codexTurns"),
     /** The engine of that turn. */

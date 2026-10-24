@@ -96,6 +96,7 @@ export const finish = internalMutation({
       v.literal("ok"),
       v.literal("error"),
       v.literal("rejected"),
+      v.literal("stopped"),
     ),
     steps: v.optional(v.number()),
     toolCalls: v.optional(v.array(v.string())),
