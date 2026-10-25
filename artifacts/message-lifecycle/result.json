@@ -60,20 +60,20 @@
   "evidence": {
     "accepted": {
       "channel": "web",
-      "externalId": "session:jxzwf18e5ka38fqa862jk3pvjg",
+      "externalId": "session:6xqf26qb1eaxyjpdy3kyht4y4b",
       "text": "first message",
       "title": "New chat",
       "attachmentIds": [],
-      "preparingId": "drp626c0wjavspf50y6mrd8c0q"
+      "preparingId": "jvj5kmcakm944a7y0nfmfya3pn"
     },
     "journeys": {
-      "fifo": "r4jr8b8qwpxxwsyyvtgbrp4rgw",
-      "steering": "h9sytj88vzdmbzjtm795vwtenk",
-      "changing": "x3x10v63b0ypt9fxf0x1eb4y8k",
-      "stoppedChat": "0v1932et4ghe2d2ynpyj96fx1q",
-      "otherChat": "9ahwec5n0gk0npzh9jp6wevc1z",
-      "full": "k11nj7cpa0zm2f5b5pwdm0npd1",
-      "abandoned": "tqjm34rajrr9k2g3a01cagf86z"
+      "fifo": "ctnv2ahfm00hapv8f0c5y6cqpa",
+      "steering": "d7nw27gyccnxkhkkj79kpkjrkt",
+      "changing": "jsgr703s6csvyw05ve0p7xgbjv",
+      "stoppedChat": "s7997ka48vxy9y7aaddhqqc5n4",
+      "otherChat": "e9a1pcy9p66jc66j2p0q2frvtv",
+      "full": "ttf792atttvwbvrbdy2k30c2ev",
+      "abandoned": "rfemm5x6rfyxrx6z3eppd14vcc"
     }
   }
 }

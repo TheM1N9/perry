@@ -68,3 +68,6 @@ The failure inventory preceded the harness. `verification.json` records the
 final checks and source hashes. Native child routing is verified with protocol
 metadata fixtures, not live native subagent execution. The existing real-model
 `artifacts/parallel-turns/run.ts` suite was inspected, but was not rerun.
+
+`post-integration-verification.json` records the source hashes, both typechecks,
+and the 55 lifecycle / 25 parallel-session checks rerun after integrating main.
