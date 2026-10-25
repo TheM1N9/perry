@@ -11,6 +11,6 @@
       "title": "New chat",
       "attachmentIds": []
     },
-    "error": "Error: accepted message has a durable turn before preparation\n    at check (C:\\Users\\Pranav\\.t3\\worktrees\\perry\\t3-69a61aab\\artifacts\\message-lifecycle\\run.ts:24:85)\n    at <anonymous> (C:\\Users\\Pranav\\.t3\\worktrees\\perry\\t3-69a61aab\\artifacts\\message-lifecycle\\run.ts:40:3)"
+    "error": "Error: accepted message has a durable turn before preparation\n    at check (artifacts/message-lifecycle/run.ts:24:85)\n    at <anonymous> (artifacts/message-lifecycle/run.ts:40:3)"
   }
 }

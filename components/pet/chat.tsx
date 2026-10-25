@@ -110,7 +110,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
 
   const picture = shot ? shot[shot.use] ?? null : null;
   const current = useRef({ chatId, draft, shot });
-  current.current = { chatId, draft, shot };
+  useLayoutEffect(() => { current.current = { chatId, draft, shot }; }, [chatId, draft, shot]);
   const send = async () => {
     const text = draft.trim();
     if ((!text && !picture) || sending || submitting.current) return;

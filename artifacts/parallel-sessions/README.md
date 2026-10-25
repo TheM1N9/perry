@@ -56,7 +56,7 @@ pnpm typecheck
 pnpm exec powershell -NoProfile -File artifacts/batch-1/run-isolated.ps1 -Mode Build
 ```
 
-The parallel-session harness writes `result.json` on every run. Its 25 checks
+The parallel-session harness writes `result.json` on every run. Its 39 checks
 use real Runtime/SQLite, dashboard/task mutations, selected scheduled task/brain
 handlers, authenticated fake runner claims and the actual MCP HTTP endpoint.
 It replays the production runner's hard-stop selection against a fake shared
@@ -71,3 +71,12 @@ metadata fixtures, not live native subagent execution. The existing real-model
 
 `post-integration-verification.json` records the source hashes, both typechecks,
 and the 55 lifecycle / 25 parallel-session checks rerun after integrating main.
+
+PR review added `runner-lifecycle.ts`, replaying the actual `runJob` function
+against backend claims and a gated fake engine. It checks active native work,
+media persistence, delayed finish acknowledgement, native failure, saved-result
+replay and Stop timer cleanup. `review-baseline.json` records eight failures
+before the lifecycle fix; `review-verification.json` records the final checks
+and source hashes. The engine reference itself represents engine ownership and
+is released as soon as engine work settles; the active turn remains until its
+result is acknowledged.

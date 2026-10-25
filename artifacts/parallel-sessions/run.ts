@@ -2,6 +2,7 @@ import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import ts from "typescript";
+import { replayRunnerLifecycle } from "./runner-lifecycle";
 
 const out = resolve("artifacts/parallel-sessions");
 const scratch = resolve("node_modules/.cache/perry-parallel-sessions", `run-${Date.now()}`);
@@ -150,6 +151,7 @@ try {
     await call("codex:finalizeTurn", { id: turn._id });
   }
   check("parallel task completion preserves independent results and releases pending counts", finalTasks.every((task, index) => db.get(task._id)?.result === `Result from task ${index}` && db.get(String(db.get(task._id)?.conversationId))?.pendingTurns === 0));
+  await replayRunnerLifecycle({ source, call, db, token, key: key!, running, check });
 } catch (error) {
   evidence.error = error instanceof Error ? error.stack : String(error);
 } finally {

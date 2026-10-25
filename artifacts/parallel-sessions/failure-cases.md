@@ -24,3 +24,18 @@ Exercise production task/dashboard mutations, actual Runtime/SQLite transactions
 authenticated claims and the MCP HTTP endpoint. Replay the real runner stop-selection
 code with a fake shared engine. Keep the scheduler stopped, select scheduled actions
 explicitly, and block network/model calls. Save JSON results on every run.
+
+## PR review regression inventory
+
+Before extending the runner replay, check every engine-work boundary:
+
+- A sibling without a native handle yet must still prevent a shared-engine kill.
+- A sibling actively running native work must also prevent that kill.
+- A sibling whose engine settled must stop blocking the kill immediately, even
+  while media persistence or finish acknowledgement is pending.
+- Engine failure must release its engine ownership and Stop timer as success does.
+- Replaying a saved result must never claim engine ownership.
+- The turn must remain in `active` until result acknowledgement, so chat ordering
+  and retry delivery survive the earlier release of engine ownership.
+- The original stopped chat must retain cancellation and the sibling's final
+  response must still reach its own backend turn.

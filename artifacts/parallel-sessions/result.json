@@ -25,7 +25,21 @@
     "cancelled tasks release their background slot": true,
     "two real task preparation pipelines reach distinct concurrent sessions": true,
     "task native-session cursors remain isolated": true,
-    "parallel task completion preserves independent results and releases pending counts": true
+    "parallel task completion preserves independent results and releases pending counts": true,
+    "success: hard Stop preserves a sibling doing native work": true,
+    "settled engine releases ownership and Stop timer before media delivery": true,
+    "media delivery does not prevent hard Stop": true,
+    "success: result acknowledgement holds the chat without holding its engine": true,
+    "success: pending acknowledgement does not prevent hard Stop": true,
+    "success: delivery preserves sibling result and target cancellation": true,
+    "failure: hard Stop preserves a sibling doing native work": true,
+    "failure: result acknowledgement holds the chat without holding its engine": true,
+    "failure: pending acknowledgement does not prevent hard Stop": true,
+    "failure: delivery preserves sibling result and target cancellation": true,
+    "saved: result acknowledgement holds the chat without holding its engine": true,
+    "saved: pending acknowledgement does not prevent hard Stop": true,
+    "saved result replay never starts native work": true,
+    "saved: delivery preserves sibling result and target cancellation": true
   },
   "evidence": {
     "duplicateStarts": 1,
