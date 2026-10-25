@@ -6,7 +6,7 @@ import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { action, internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertDashboardKey } from "./lib/auth";
 import { problemWith, resolve as resolveShortcuts, SHORTCUT_IDS, SHORTCUTS, type ShortcutId, type Shortcuts } from "./lib/shortcuts";
 import { ABSOLUTE_PATH, stepsKey } from "./media";
@@ -1166,6 +1166,8 @@ export const setShortcut = mutation({
 
 export type MemoryView = {
   id: string;
+  forgetAt?: number;
+  forgetError?: string;
   text: string;
   tags: string[];
   source: string;
@@ -1198,6 +1200,8 @@ export const listMemories = query({
     }) as MemoryView[];
     // A memory kept to one chat or one project says which.
     return await Promise.all(found.map(async (memory) => {
+      const stored = await ctx.db.get(memory.id as Id<"memories">);
+      memory = { ...memory, forgetAt: stored?.forgetAt, forgetError: stored?.forgetError };
       if (memory.projectId) {
         const project = await ctx.db.get(memory.projectId as Id<"projects">);
         return { ...memory, project: project?.name ?? "a deleted project" };
@@ -1248,6 +1252,50 @@ export const deleteMemory = mutation({
     assertDashboardKey(args.key);
     await ctx.runMutation(internal.memories.removeMany, { ids: [args.id] });
     return null;
+  },
+});
+
+/** The server owns the deadline; a toast only offers the matching Undo action. */
+export const forgetMemory = mutation({
+  args: { key: vKey, id: v.id("memories") },
+  returns: v.number(),
+  handler: async (ctx, args): Promise<number> => {
+    assertDashboardKey(args.key);
+    const memory = await ctx.db.get(args.id);
+    if (!memory || memory.kind === "page") throw new Error("This memory is no longer available.");
+    if (memory.forgetAt !== undefined) return memory.forgetAt;
+    const at = Date.now() + 5_000;
+    await ctx.db.patch(args.id, { forgetAt: at, forgetError: undefined });
+    await ctx.scheduler.runAt(at, internal.dashboard.finishForgettingMemory, { id: args.id, at });
+    return at;
+  },
+});
+
+export const undoForgetMemory = mutation({
+  args: { key: vKey, id: v.id("memories"), at: v.number() },
+  returns: v.boolean(),
+  handler: async (ctx, args): Promise<boolean> => {
+    assertDashboardKey(args.key);
+    const memory = await ctx.db.get(args.id);
+    // A stale toast must never undo a later Forget, or extend the deadline.
+    if (!memory || memory.forgetAt !== args.at || Date.now() >= args.at) return false;
+    await ctx.db.patch(args.id, { forgetAt: undefined });
+    return true;
+  },
+});
+
+export const finishForgettingMemory = internalMutation({
+  args: { id: v.id("memories"), at: v.number() },
+  handler: async (ctx, args): Promise<void> => {
+    const memory = await ctx.db.get(args.id);
+    if (!memory || memory.forgetAt !== args.at) return;
+    try {
+      await ctx.runMutation(internal.memories.removeMany, { ids: [args.id] });
+    } catch {
+      // The nested mutation rolls back on failure. Restore the row with an
+      // error that is also visible after a reload, instead of hiding it forever.
+      await ctx.db.patch(args.id, { forgetAt: undefined, forgetError: "Perry could not forget this memory. Try again." });
+    }
   },
 });
 

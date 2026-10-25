@@ -161,10 +161,10 @@ export function ReplyInProgress({ streaming, work, now, approving = false, unres
   const busy = unresponsive || over || approving || steps.some((step) => step.status === "running");
   const state: WorkState = unresponsive ? "unresponsive" : over ? (work?.status === "ok" ? "done" : "failed") : approving ? "waiting" : "working";
   return (
-    <div className="min-w-0 space-y-2" data-role="assistant" {...(unresponsive ? { "data-unresponsive": true } : streaming ? { "data-streaming": true } : { "data-thinking": true })}>
+    <div className="min-w-0 space-y-2" data-role="assistant" {...(unresponsive ? { "data-unresponsive": true } : streaming !== undefined ? { "data-streaming": true } : { "data-thinking": true })}>
       {work && <WorkSummary work={work} state={state} now={now} />}
       {unresponsive && <p role="status" data-turn-health="unresponsive" className="text-sm text-muted-foreground">Your computer is unresponsive. Waiting for it to reconnect…</p>}
-      {streaming ? (
+      {streaming !== undefined ? (
         <div>
           <Markdown text={streaming} streaming />
           {!busy && <span className="mt-1 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle motion-reduce:animate-none" aria-hidden />}

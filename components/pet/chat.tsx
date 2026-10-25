@@ -6,6 +6,7 @@ import { useMutation, usePaginatedQuery, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { noteHref } from "@/convex/lib/notes";
+import { useTypewriter } from "@/hooks/use-typewriter";
 import { errorText } from "@/lib/format";
 import { useDashboardKey } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -77,7 +78,8 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   const key = useDashboardKey();
   const chats = useQuery(api.dashboard.listChats, { key });
   const chat = useQuery(api.dashboard.getChat, chatId ? { key, id: chatId } : "skip");
-  const streaming = useQuery(api.turnStreams.getChatStream, chatId ? { key, id: chatId } : "skip");
+  const stream = useQuery(api.turnStreams.getChatStream, chatId ? { key, id: chatId } : "skip");
+  const streaming = useTypewriter(stream ?? "", chatId);
   const { results } = usePaginatedQuery(api.dashboard.getChatMessages, chatId ? { key, id: chatId } : "skip", { initialNumItems: 30 });
   const messages = useMemo(() => [...results].sort((a, b) => a.createdAt - b.createdAt), [results]);
   const createChat = useMutation(api.dashboard.createChat);
@@ -247,7 +249,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
             )}
           </div>
         ))}
-        {running && (streaming
+        {running && (stream != null
           ? <div className="opacity-90"><Markdown text={streaming} streaming /></div>
           : <p className="flex items-center gap-1.5 text-sm text-muted-foreground"><span className="size-1.5 animate-pulse rounded-full bg-primary" />Working…</p>)}
         {chat?.lastError && !running && <p className="text-xs text-destructive">{chat.lastError}</p>}

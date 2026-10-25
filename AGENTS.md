@@ -16,6 +16,15 @@
 - Prefer native platform features, then existing library utilities, then a few lines of project code, then a new abstraction, and only then a new dependency.
 - Avoid keeping state that the platform already keeps. Replace clever custom behavior with the built-in equivalent when available.
 
+## Long-lived tabs and windows
+
+The dashboard and the pet stay open for days.
+
+- Every listener, observer, timer and `requestAnimationFrame` needs a teardown that actually runs, including on unmount mid-flight.
+- Every module-level Map or Set needs an eviction or replacement path (key on id and overwrite, never on id plus revision).
+- Anything kept mounted offscreen must stay small, since it still re-renders on every update.
+- A leak that only shows after an hour is a bug like any other.
+
 ## Next.js
 
 - Before writing Next.js code, read the relevant guide in `node_modules/next/dist/docs/`, the docs bundled with the installed Next.js 16. Heed deprecation notices.
@@ -23,7 +32,7 @@
 
 <!-- BEGIN:nextjs-agent-rules -->
 
-# This is NOT the Next.js you know
+## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 

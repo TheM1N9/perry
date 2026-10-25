@@ -20,6 +20,7 @@ import {
 import { ENGINE_LABELS, type EngineKind } from "@/convex/lib/engines";
 import { noteHref } from "@/convex/lib/notes";
 import { describeUsage, limitWarning } from "@/convex/lib/usage";
+import { useTypewriter } from "@/hooks/use-typewriter";
 import { copyText, errorText, useNow } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
@@ -269,6 +270,16 @@ export function ChatScreen() {
       return changed ? next : items;
     });
   }, [chat?.isRunning, selectedId]);
+  // Blob previews of a just-sent message are memory; each is freed the moment its
+  // row stops being shown, and the rest when the screen goes.
+  const previews = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const live = new Set<string>();
+    for (const item of pending) for (const attachment of item.attachments) if (attachment.url.startsWith("blob:")) live.add(attachment.url);
+    for (const url of previews.current) if (!live.has(url)) URL.revokeObjectURL(url);
+    previews.current = live;
+  }, [pending]);
+  useEffect(() => () => { for (const url of previews.current) URL.revokeObjectURL(url); }, []);
   useEffect(() => {
     if (!compactionStatus || compactionStatus.status === "queued" || compactionStatus.status === "running") return;
     setNotice(compactionStatus.status === "done" ? COMPACTED : `Could not compact: ${compactionStatus.error ?? "no reason was given."}`);
@@ -956,11 +967,13 @@ function LiveReply({ conversationId, onContentChange, ...props }: Omit<Parameter
   onContentChange: () => void;
 }) {
   const { dashboardKey } = useSession();
-  const streaming = useQuery(api.turnStreams.getChatStream, { key: dashboardKey, id: conversationId });
+  const stream = useQuery(api.turnStreams.getChatStream, { key: dashboardKey, id: conversationId });
+  const streaming = useTypewriter(stream ?? "", conversationId);
   const now = useNow(1000);
+  // The page follows the reply as it is revealed, not as it lands: that is what the reader is reading.
   useLayoutEffect(() => { onContentChange(); }, [streaming, onContentChange]);
   return <div data-live-reply={conversationId}>
-    <ReplyInProgress {...props} streaming={streaming ?? undefined} now={now} />
+    <ReplyInProgress {...props} streaming={stream == null ? undefined : streaming} now={now} />
   </div>;
 }
 

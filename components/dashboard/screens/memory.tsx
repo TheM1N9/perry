@@ -38,6 +38,8 @@ const KINDS: Array<{ kind: Kind; label: string }> = [
 const ORIGINS = { owner: "From you", tool: "From a chat", job: "From a schedule" } as const;
 /** The list shows at most this many; a search finds the rest. */
 const LIMIT = 25;
+/** How long a forgotten memory can be brought back before its words are deleted. */
+const FORGET_UNDO_MS = 5000;
 
 function when(ts: number, day?: string): string {
   // A daily note's day is already a calendar date, so it is shown as written, not shifted by timezone.
@@ -64,13 +66,20 @@ export function OlderMemories() {
     const timer = window.setTimeout(() => setTerm(search.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [search]);
-  const memories = useQuery(api.dashboard.listMemories, { key: dashboardKey, query: term, kind: filter === "all" ? undefined : filter });
-  const deleteMemory = useMutation(api.dashboard.deleteMemory);
+  const memoryArgs = { key: dashboardKey, query: term, kind: filter === "all" ? undefined : filter };
+  const memories = useQuery(api.dashboard.listMemories, memoryArgs);
+  const forgetMemory = useMutation(api.dashboard.forgetMemory).withOptimisticUpdate((store, { id }) => {
+    const current = store.getQuery(api.dashboard.listMemories, memoryArgs);
+    if (current) store.setQuery(api.dashboard.listMemories, memoryArgs, current.map((memory) => memory.id === id ? { ...memory, forgetAt: Date.now() + FORGET_UNDO_MS } : memory));
+  });
+  const undoForgetMemory = useMutation(api.dashboard.undoForgetMemory);
   const editMemory = useMutation(api.dashboard.editMemory);
   /** The memory being edited, its new words, and why a save was refused. */
   const [editing, setEditing] = useState<{ id: string; text: string; error: string } | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const filterLabel = KINDS.find((item) => item.kind === filter)?.label;
+
+  const listed = memories?.filter((memory) => memory.forgetAt === undefined);
 
   const saveEdit = async (event: FormEvent) => {
     event.preventDefault();
@@ -91,6 +100,21 @@ export function OlderMemories() {
     }
   };
 
+  const forget = async (memory: MemoryView) => {
+    const id = memory.id as Id<"memories">;
+    try {
+      const at = await forgetMemory({ key: dashboardKey, id });
+      toast("Forgotten.", {
+        duration: Math.max(0, at - Date.now()),
+        action: { label: "Undo", onClick: () => {
+          void undoForgetMemory({ key: dashboardKey, id, at }).then((undone) => {
+            if (!undone) toast.error("The Undo window has ended.");
+          }, (cause: unknown) => toast.error(errorText(cause)));
+        } },
+      });
+    } catch (cause) { toast.error(errorText(cause)); }
+  };
+
   return (
     <div className="space-y-8">
       {/* Memories from before pages, until Perry moves them into theirs: none once moved. */}
@@ -107,20 +131,20 @@ export function OlderMemories() {
             {search && <InputGroupAddon align="inline-end"><InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => setSearch("")}><XIcon /></InputGroupButton></InputGroupAddon>}
           </InputGroup>
         </div>
-        {memories !== undefined && (
+        {listed !== undefined && (
           <p className="text-sm text-muted-foreground" role="status">
-            {memories.length === LIMIT ? `The ${LIMIT} newest` : `${memories.length} ${memories.length === 1 ? "memory" : "memories"}`}
+            {memories?.length === LIMIT ? `The ${LIMIT} newest` : `${listed.length} ${listed.length === 1 ? "memory" : "memories"}`}
             {filterLabel ? ` in ${filterLabel}` : ""}{term ? ` matching “${term}”` : ""}
-            {memories.length === LIMIT ? ". Search to find older ones." : ""}
+            {memories?.length === LIMIT ? ". Search to find older ones." : ""}
           </p>
         )}
         {memories === undefined && <ListSkeleton />}
         {memories?.length === 0 && (term || filter !== "all"
           ? <EmptyState title="Nothing matches" action={<Button variant="outline" size="sm" onClick={() => { setSearch(""); setFilter("all"); }}>Clear filters</Button>} />
           : <EmptyState title="None left" />)}
-        {memories && memories.length > 0 && (
+        {listed && listed.length > 0 && (
           <List label="Memories">
-            {memories.map((memory) => (
+            {listed.map((memory) => (
               <li key={memory.id} className="group/memory flex items-start gap-4 px-4 py-3.5">
                 {editing?.id === memory.id ? (
                   <form className="min-w-0 flex-1" onSubmit={(event) => void saveEdit(event)}>
@@ -144,6 +168,7 @@ export function OlderMemories() {
                 ) : <>
                 <div className="min-w-0 flex-1">
                   <p className="text-md text-pretty [overflow-wrap:anywhere]">{memory.text}</p>
+                  {memory.forgetError && <p role="alert" className="mt-1 text-sm text-destructive">{memory.forgetError}</p>}
                   <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
                     <span>{KINDS.find((item) => item.kind === memory.kind)?.label ?? memory.kind}</span>
                     {memory.chat && <TextTip tip="Kept to one chat: no other chat sees it." spoken="kept to one chat">Only in {memory.chat}</TextTip>}
@@ -163,10 +188,7 @@ export function OlderMemories() {
                   </p>
                 </div>
                 <Button variant="ghost" size="sm" className="shrink-0 text-muted-foreground" onClick={() => setEditing({ id: memory.id, text: memory.text, error: "" })}>Edit</Button>
-                <ActionButton variant="ghost" size="sm" className="shrink-0 text-muted-foreground hover:text-destructive" action={() => deleteMemory({ key: dashboardKey, id: memory.id })} success="Forgotten."
-                  confirm={{ title: "Forget this?", body: <>&ldquo;{memory.text.length > 160 ? `${memory.text.slice(0, 160)}…` : memory.text}&rdquo; is deleted, and Perry won&apos;t recall it again.</>, label: "Forget" }}>
-                  Forget
-                </ActionButton>
+                <Button variant="ghost" size="sm" className="shrink-0 text-muted-foreground hover:text-destructive" onClick={() => forget(memory)}>Forget</Button>
                 </>}
               </li>
             ))}

@@ -1,0 +1,11 @@
+Failure inventory before verification harness:
+- Reveal count survives an empty or shorter stream, so a subsequent reply dumps chunks.
+- Switching chats inherits the previous reveal position or replays historical text.
+- Hidden tabs or reduced motion build a reveal backlog; intervals survive unmount.
+- Toast pause/dismissal, navigation, reload, tab close or server restart loses the deletion.
+- Concurrent Forget creates duplicate operations; stale Undo cancels a later operation.
+- Row reappears while server deletion is pending; failures leave it hidden permanently.
+- Undo after expiry succeeds because a scheduled job has not run yet.
+- Undo cancels no job, or a previously scheduled job deletes an undone memory.
+- Hiding one of 25 results removes the limited-results search instruction.
+- Page lines can be deleted using the older-memory endpoint.
