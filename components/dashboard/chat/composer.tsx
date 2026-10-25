@@ -64,7 +64,7 @@ type Pickers = {
 };
 
 export function Composer({
-  ref, assistant, draft, onDraftChange, onCaret, onSubmit, onStop, waiting, busy, uploading, files, onAddFiles, onRemoveFile,
+  ref, assistant, draft, onDraftChange, onCaret, onSubmit, onQueue, onStop, waiting, busy, uploading, files, onAddFiles, onRemoveFile,
   suggestions, suggesting = "Commands", completing, pickers, above, editing,
 }: {
   ref?: Ref<HTMLTextAreaElement>;
@@ -74,6 +74,7 @@ export function Composer({
   /** Where the caret is, as it moves: a $name is completed where it is typed. */
   onCaret?: (position: number) => void;
   onSubmit: () => void;
+  onQueue?: () => void;
   onStop?: () => void;
   waiting: boolean;
   busy: boolean;
@@ -204,6 +205,10 @@ export function Composer({
           {pickers && <ModelPickers {...pickers} />}
           <span className="ml-auto" />
           {uploading && <span className="nums mr-1 flex items-center gap-1.5 text-xs text-muted-foreground" role="status"><Spinner className="size-3" />Uploading {uploading.index} of {uploading.total}</span>}
+          {!editing && waiting && !empty && <>
+            {onStop && <Button type="button" size="icon" variant="secondary" className="size-9 shrink-0 rounded-full" aria-label="Stop the reply" onClick={onStop}><SquareIcon className="size-3.5 fill-current" /></Button>}
+            {onQueue && <Button type="button" size="sm" variant="secondary" className="shrink-0 rounded-full" aria-label="Queue message after the reply" onClick={onQueue} disabled={busy || Boolean(uploading)}>Queue</Button>}
+          </>}
           {editing ? <>
             <Button type="button" variant="ghost" size="sm" onClick={editing.onCancel} disabled={busy || Boolean(uploading)}>Cancel</Button>
             <Button type="button" size="sm" onClick={onSubmit} disabled={empty || busy || waiting || Boolean(uploading)}>Save and resend</Button>

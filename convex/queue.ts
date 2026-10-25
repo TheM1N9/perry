@@ -23,7 +23,7 @@ export async function waitingCount(ctx: QueryCtx, chat: Doc<"conversations">, re
   return [...turns, ...held].filter(item => item._id !== replacing.turnId).length + steers.filter(item => item._id !== replacing.steerId).length + outbox.length - Number(replacesOutbox);
 }
 
-export async function assertQueueRoom(ctx: MutationCtx, chat: Doc<"conversations">, replacing: { prompt?: string; steerId?: Id<"codexSteers"> } = {}) {
+export async function assertQueueRoom(ctx: MutationCtx, chat: Doc<"conversations">, replacing: { prompt?: string; steerId?: Id<"codexSteers">; turnId?: Id<"codexTurns"> } = {}) {
   if (await waitingCount(ctx, chat, replacing) >= MAX_QUEUED_PER_CHAT) {
     // Queue pressure is not an engine rate limit; routing must not retry it.
     throw new Error(QUEUE_FULL);

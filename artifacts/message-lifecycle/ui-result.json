@@ -1,0 +1,54 @@
+{
+  "passed": true,
+  "checks": {
+    "Stop stays available with a typed draft": true,
+    "explicit Queue is available": true,
+    "mobile controls fit the viewport": true,
+    "Queue creates a durable removable message": true,
+    "Queue records separate-turn intent": true,
+    "Stop preserves the unsent draft": true,
+    "Stop requests interruption of the active turn": true,
+    "Stop cancels queued preparation": true,
+    "Stop leaves the other chat running": true,
+    "Stop is available during a media upload": true,
+    "cancelled upload restores media and preserves newer typing": true,
+    "stopped media upload cannot submit afterwards": true,
+    "pet keeps Stop available with a draft": true,
+    "pet prevents duplicate submissions": true,
+    "pet retains rejected message": true,
+    "no browser exceptions": true
+  },
+  "evidence": {
+    "mobile": {
+      "width": 390,
+      "scroll": 390,
+      "buttons": [
+        {
+          "label": "Stop the reply",
+          "rect": {
+            "x": 227.640625,
+            "right": 263.640625,
+            "width": 36
+          }
+        },
+        {
+          "label": "Queue message after the reply",
+          "rect": {
+            "x": 267.640625,
+            "right": 327,
+            "width": 59.359375
+          }
+        },
+        {
+          "label": "Send into the reply",
+          "rect": {
+            "x": 331,
+            "right": 367,
+            "width": 36
+          }
+        }
+      ]
+    }
+  },
+  "errors": []
+}

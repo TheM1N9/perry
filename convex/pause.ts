@@ -69,9 +69,10 @@ async function pause(ctx: MutationCtx, by: Source): Promise<{ changed: boolean; 
   await ctx.db.patch(install._id, { paused: { at: Date.now(), by } });
   // Every chat with a turn running or queued is stopped, as /stop stops one: a running turn keeps what it wrote.
   const busy = new Set<Id<"conversations">>();
-  for (const runner of await ctx.db.query("runners").collect()) {
+  const runners = await ctx.db.query("runners").collect();
+  for (const runnerId of [undefined, ...runners.map(runner => runner._id)]) {
     for (const status of ["running", "queued", "error"] as const) {
-      const turns = await ctx.db.query("codexTurns").withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", status)).collect();
+      const turns = await ctx.db.query("codexTurns").withIndex("by_runner_status", (q) => q.eq("runnerId", runnerId).eq("status", status)).collect();
       for (const turn of turns) if (status !== "error" || turn.retrying) busy.add(turn.conversationId);
     }
   }

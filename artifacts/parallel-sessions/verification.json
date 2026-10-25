@@ -1,0 +1,45 @@
+{
+  "verifiedAt": "2026-10-25T19:17:21.684334+00:00",
+  "parallelSessions": {
+    "passed": true,
+    "checks": 25
+  },
+  "messageLifecycle": {
+    "passed": true,
+    "checks": 55
+  },
+  "taskSteering": {
+    "passed": true,
+    "checks": 62
+  },
+  "externalToolApproval": {
+    "passed": true,
+    "checks": 22
+  },
+  "backendTypecheck": "passed",
+  "typecheck": "passed",
+  "productionBuild": "passed",
+  "buildWarnings": [
+    "Existing filesystem tracing in convex/pet.ts",
+    "Existing filesystem tracing in server/wake.ts"
+  ],
+  "nativeChildExecutionTested": false,
+  "networkBlocked": true,
+  "realModelsOrServicesStarted": false,
+  "sourceSha256": {
+    "components/dashboard/chat/chat-screen.tsx": "82caf3a356e0e9e998f555c4428c5625723892fbb6b8c49c64882eb62d3fbf46",
+    "components/dashboard/chat/composer.tsx": "808e213656e67a4d9007f8941c40f38e6119ac1e8a06707295c5bd5528afd95c",
+    "components/pet/chat.tsx": "02119ca09a590976b436c005b2413ebdf0c9e7d7883be81572895a525290de16",
+    "convex/brain.ts": "b6f1c5e20e480c26e879d63b7d8947ac95453f5079d0c0e2eaed4b433d73ba18",
+    "convex/codex.ts": "c725bf209f6016040d07e2ce14774534e2c0ad933e58916f4940390f2c6738b2",
+    "convex/dashboard.ts": "defea4bc1c171cbfbb31cd3f5baa1130314be76a7f782f728882ede32bc28145",
+    "convex/mcp.ts": "e84781e18f0f30e69b4749fbad8c150d5d34d9c50727acd78b762f500b6991af",
+    "convex/pause.ts": "32dace8551a37afc01438a32ecda4311149ee0ec3d9b47a3fc3682e428710d79",
+    "convex/queue.ts": "b0d794fc073cde191f1c0777a71141c254bfbfc8d4e905f2cc6c5c4b368c1bb5",
+    "convex/recovery.ts": "70def1fed76195cbe2cb59cf7c124f1a0f7d3f1277ecdab841c45ac95347a0bf",
+    "convex/schema.ts": "899038191f2c9d1dba7a4612dbcdfc006a6ac2bb6055e8a44bac9a591fed2d44",
+    "convex/tasks.ts": "6b97995644eb32b5b13efe3d81ae65d8c45ae50ac5f0e4fbcbc1e8a145ef572a",
+    "convex/work.ts": "b1b2c05e00bc2d1314e18a647e322fed9121c5b0001fc6637d7700e2c940acef",
+    "runner/index.ts": "4c7c86ac90a3825d8d17577e79ba3a7ce5501961a26be9334a61fb14a23a87cb"
+  }
+}
