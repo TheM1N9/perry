@@ -150,7 +150,7 @@ function RunRow({ run }: { run: RunView }) {
                 <h4 className="mb-1 text-xs font-medium text-muted-foreground">Engine, model and thinking</h4>
                 <p className="text-sm">{routeLabel(run.route)} <span className="text-muted-foreground">· {run.route.tier} tier</span></p>
                 <p className="mt-0.5 max-w-3xl text-sm text-pretty text-muted-foreground">
-                  {PICKED_BY[run.route.by]}. {run.route.why}{run.route.retried ? " It ran there after its first engine refused it for a limit, before doing anything." : ""}
+                  {PICKED_BY[run.route.by]}. {run.route.why}{run.route.retried ? " This run recovered from a usage limit." : ""}
                 </p>
               </div>
             )}

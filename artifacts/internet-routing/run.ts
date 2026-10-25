@@ -189,11 +189,12 @@ const provider = createServer(async (req, res) => {
   if (providerStatus) { res.statusCode = providerStatus; res.setHeader("retry-after", "60"); return send({ error: { message: "Fixture provider refused this read" } }); }
   if (path === "/api/v3.1/connected_accounts") return send({ items: [{ id: "ca-fixture", status: accountStatus, status_reason: null, toolkit: { slug: "youtube" }, auth_config: { id: "ac-fixture", is_composio_managed: true, is_disabled: false }, is_disabled: false, created_at: "2026-10-01", updated_at: "2026-10-01", data: { access_token: "fixture-private-token" } }], next_cursor: accountsTruncated ? "another-page" : null, total_pages: accountsTruncated ? 4 : 1 });
   if (path === "/api/v3.1/tool_router/session") return send({ session_id: "fixture-session", config: { user_id: "owner", execute: {}, search: {}, preload: { tools: [] } }, config_version: 1, mcp: { type: "http", url: "http://fixture.invalid/mcp" } });
+  if (path === "/api/v3.1/tools/YOUTUBE_GET_VIDEO") return send({ slug: "YOUTUBE_GET_VIDEO", name: "Fixture read", input_parameters: { type: "object", properties: { issue_number: { type: "integer" } } }, output_parameters: { type: "object", properties: {} }, no_auth: false });
   if (path.endsWith("/search")) return send({ success: true, error: null,
     results: [{ index: 0, use_case: "read private issue", primary_tool_slugs: ["YOUTUBE_GET_VIDEO", "YOUTUBE_CREATE_VIDEO", "YOUTUBE_GET_TOKEN"], related_tool_slugs: [], toolkits: ["youtube"] }],
     tool_schemas: Object.fromEntries(["YOUTUBE_GET_VIDEO", "YOUTUBE_CREATE_VIDEO", "YOUTUBE_GET_TOKEN"].map((slug) => [slug, { tool_slug: slug, toolkit: "youtube", description: "Fixture operation", input_schema: { type: "object", properties: { issue_number: { type: "integer" }, source_url: { type: "string" } }, required: ["issue_number"], additionalProperties: false } }])),
     toolkit_connection_statuses: [{ toolkit: "youtube", description: "YouTube", has_active_connection: true, status_message: "Active fixture" }], next_steps_guidance: [], session: { id: "fixture-session", generate_id: false, instructions: "Fixture" }, time_info: { current_time_utc: "2026-10-13T00:00:00Z", current_time_utc_epoch_seconds: 1, message: "Fixture" } });
-  if (path.endsWith("/execute")) return send({ data: { items: [{ id: 1, body: "Private fixture content", html_url: "https://youtube.com/watch?v=fixture" }], access_token: "fixture-private-token" }, error: connectorError, log_id: "fixture-log" });
+  if (path.includes("/tools/execute/") || path.endsWith("/execute")) return send({ successful: !connectorError, data: { items: [{ id: 1, body: "Private fixture content", html_url: "https://youtube.com/watch?v=fixture" }], access_token: "fixture-private-token" }, error: connectorError, log_id: "fixture-log" });
   res.statusCode = 404; send({ error: "Unexpected fixture endpoint" });
 });
 await new Promise<void>((done) => provider.listen(0, "127.0.0.1", done));
@@ -259,18 +260,19 @@ try {
     const found = await mcp("internet_read", request);
     assert.deepEqual(found.result?.discovery?.actions.map((a) => a.slug), ["YOUTUBE_GET_VIDEO"], JSON.stringify({ found, providerPaths: providerCalls.map((c) => c.path) }));
     assert.equal(found.result?.status, "unavailable"); assert.equal(found.result?.items.length, 0);
-    const before = providerCalls.filter((c) => c.path.endsWith("/execute")).length;
+    const before = providerCalls.filter((c) => c.path.includes("/tools/execute/")).length;
     const refused = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "YOUTUBE_CREATE_VIDEO", args: { issue_number: 1 } } });
     assert.equal(refused.result?.error?.code, "policy");
     const invalid = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "YOUTUBE_GET_VIDEO", args: { issue_number: "invalid" } } });
     assert.equal(invalid.result?.error?.code, "malformed");
     const credentialUrl = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "YOUTUBE_GET_VIDEO", args: { issue_number: 1, source_url: "https://youtube.com/?access_token=secret" } } });
     assert.equal(credentialUrl.result?.error?.code, "policy");
-    assert.equal(providerCalls.filter((c) => c.path.endsWith("/execute")).length, before);
+    assert.equal(providerCalls.filter((c) => c.path.includes("/tools/execute/")).length, before);
     const read = await mcp("internet_read", { ...request, connector: { accountId: "ca-fixture", slug: "YOUTUBE_GET_VIDEO", args: { issue_number: 1 } } });
-    assert.equal(read.result?.status, "partial"); assert.match(read.result?.items[0]?.content ?? "", /Private fixture content/);
+    assert.equal(read.result?.status, "partial", JSON.stringify({ read, paths: providerCalls.map((c) => c.path) })); assert.match(read.result?.items[0]?.content ?? "", /Private fixture content/);
     assert.ok(!JSON.stringify(read).includes("fixture-private-token"));
-    const execute = providerCalls.find((c) => c.path.endsWith("/execute")); assert.equal(execute?.body.account, "ca-fixture");
+    const execute = providerCalls.find((c) => c.path.includes("/tools/execute/")); assert.equal(execute?.body.connected_account_id, "ca-fixture");
+    assert.ok(!providerCalls.some((c) => c.path.includes("/tool_router/") && c.path.endsWith("/execute")), "Single-account reads must not use the router account option");
     const session = providerCalls.find((c) => c.path === "/api/v3.1/tool_router/session");
     assert.ok(JSON.stringify(session?.body.tags).includes("readOnlyHint"));
     assert.ok(JSON.stringify(session?.body.manage_connections).includes("false"));
@@ -306,11 +308,13 @@ try {
     });
   }
 } finally {
-  browser.closeBrowser();
+  await browser.closeBrowser();
   await runtime.stop(); sql.close(); site.close(); provider.close();
   site.closeAllConnections(); provider.closeAllConnections();
   mkdirSync("artifacts/internet-routing", { recursive: true });
   writeFileSync("artifacts/internet-routing/result.json", JSON.stringify({ ranAt: new Date().toISOString(), platform: process.platform, pass: results.every((r) => r.passed), scope: `Deterministic source/provider fixtures plus real SDK/SQLite/MCP/public HTTP transport on ${process.platform}; no live connector account claims.`, results, hits, providerPaths: providerCalls.map((c) => c.path) }, null, 2));
-  rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
+  // Chromium releases its profile handles asynchronously after termination on Windows.
+  if (process.platform === "win32") await new Promise((done) => setTimeout(done, 3000));
+  rmSync(home, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });
 }
 process.exitCode = results.every((r) => r.passed) ? 0 : 1;

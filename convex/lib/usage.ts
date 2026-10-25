@@ -70,7 +70,8 @@ export function standing(usage: EngineUsage | undefined, now: number): { level: 
   const fullest = [...windows].sort((a, b) => usedNow(b, now) - usedNow(a, now) || (b.resetsAt ?? 0) - (a.resetsAt ?? 0))[0];
   const used = fullest ? usedNow(fullest, now) : 0;
   // A hit is past once the limits read after it show every window with room again.
-  const hit = usage?.hit && !(usage.limits && usage.limits.at > usage.hit.at && used < 100) ? usage.hit : undefined;
+  const resetPassed = usage?.hit && windows.some(window => window.usedPercent >= 100 && window.resetsAt !== undefined && window.resetsAt <= now && window.resetsAt >= usage.hit!.at);
+  const hit = usage?.hit && !resetPassed && !(usage.limits && usage.limits.at > usage.hit.at && used < 100) ? usage.hit : undefined;
   if (used >= 100 || hit) return { level: "out", window: used >= 100 ? fullest : undefined, hit };
   if (used >= WARN_PERCENT) return { level: "low", window: fullest };
   return { level: "ok", window: fullest };
@@ -102,7 +103,7 @@ export function limitWarning(engine: EngineKind, usage: EngineUsage | undefined,
       title: window ? `${label}'s ${window.label.toLowerCase()} limit is used up` : `${label} hit its plan's limit`,
       detail: [
         until ? `It ${until}.` : hit ? `${label} said: “${hit.message.slice(0, 200)}”` : "",
-        "Until then, Perry moves chats and work to another signed-in engine with room, when there is one.",
+        "Work can wait for the reported reset or move to another signed-in engine with room.",
       ].filter(Boolean).join(" "),
     };
   }
@@ -154,7 +155,7 @@ export function describeUsage(
   }
 
   if (level === "out" && hit) lines.push("", `${label} refused a reply for its limit: “${hit.message.slice(0, 200)}”`);
-  else if (level === "out") lines.push("", `${label}'s limit is used up. Perry moves chats to another signed-in engine with room, when there is one.`);
+  else if (level === "out") lines.push("", `${label}'s limit is used up. Main web chats wait for its reported reset; work can also move to another signed-in engine with room.`);
   else if (level === "low") lines.push("", `${label} is running low.`);
 
   if (options.share) lines.push("", `Perry's share this week: ${options.share.turns} ${options.share.turns === 1 ? "turn" : "turns"}, ${compact(options.share.tokens)} tokens.`);
@@ -187,5 +188,9 @@ export const USAGE_REPORTS: Record<EngineKind, { limits: boolean; tokens: "all" 
   cursor: {
     limits: false, tokens: "none",
     note: "Cursor isn't one of Perry's engines yet.",
+  },
+  opencode: {
+    limits: false, tokens: "none",
+    note: "OpenCode reports neither limits nor tokens. Perry says so here when it refuses a reply for one.",
   },
 };

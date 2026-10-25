@@ -107,7 +107,7 @@ export function effortFor(model: ModelOption | undefined, tier: Tier): string | 
  * work (low, past `cap`), or room. `until` is when that changes, when known;
  * `used` the fullest window's share, for ranking engines.
  */
-export type Room = { state: "room" | "low" | "out"; used: number | null; until?: number; why?: string };
+export type Room = { state: "room" | "low" | "out"; used: number | null; until?: number; resetKnown?: boolean; why?: string };
 
 export function roomOf(engine: EngineKind, usage: EngineUsage | undefined, now: number, cap: number, timeZone?: string): Room {
   const label = ENGINE_LABELS[engine];
@@ -115,21 +115,30 @@ export function roomOf(engine: EngineKind, usage: EngineUsage | undefined, now: 
   const fullest = [...windows].sort((a, b) => usedNow(b, now) - usedNow(a, now) || (b.resetsAt ?? 0) - (a.resetsAt ?? 0))[0];
   const used = fullest ? usedNow(fullest, now) : null;
   const resets = fullest ? resetsText(fullest, now, timeZone) : "";
+  // Every blocking window must open. A weekly cap can outlast the five-hour cap.
+  const resetOf = (threshold: number) => {
+    const blocked = windows.filter(window => usedNow(window, now) >= threshold);
+    return blocked.length && blocked.every(window => window.resetsAt !== undefined && Number.isFinite(window.resetsAt))
+      ? Math.max(...blocked.map(window => window.resetsAt!)) : undefined;
+  };
   if (fullest && used !== null && used >= 100) {
-    return { state: "out", used, until: fullest.resetsAt, why: `${label}'s ${fullest.label.toLowerCase()} limit is used up${resets ? ` and ${resets}` : ""}` };
+    const until = resetOf(100);
+    return { state: "out", used, until, resetKnown: until !== undefined, why: `${label}'s ${fullest.label.toLowerCase()} limit is used up${resets ? ` and ${resets}` : ""}` };
   }
   // A hit is past once limits read after it show room, or after HIT_HOLD_MS when nothing says.
   const hit = usage?.hit;
-  if (hit && now - hit.at < HIT_HOLD_MS && !(usage?.limits && usage.limits.at > hit.at)) {
+  const resetPassed = hit && windows.some(window => window.usedPercent >= 100 && window.resetsAt !== undefined && window.resetsAt <= now && window.resetsAt >= hit.at);
+  if (hit && !resetPassed && now - hit.at < HIT_HOLD_MS && !(usage?.limits && usage.limits.at > hit.at)) {
     return { state: "out", used, until: hit.at + HIT_HOLD_MS, why: `${label} refused a reply for its plan's limit` };
   }
   if (fullest && used !== null && used >= cap) {
-    return { state: "low", used, until: fullest.resetsAt, why: `${Math.round(used)}% of ${label}'s ${fullest.label.toLowerCase()} limit is used` };
+    const until = resetOf(cap);
+    return { state: "low", used, until, resetKnown: until !== undefined, why: `${Math.round(used)}% of ${label}'s ${fullest.label.toLowerCase()} limit is used` };
   }
   return { state: "room", used };
 }
 
-/** The owner's pick for the work, which wins: a model, a thinking level, and whether it stays on its engine whatever its plan. */
+/** The owner's pick. An empty model/effort deliberately uses that engine/model's default. */
 export type OwnerPick = { engine?: EngineKind; model?: string; effort?: string; stay?: boolean };
 /** Perry's own pick (create_job, update_job, queue_task): a tier, or a model and level. */
 export type PerryPick = { tier?: Tier; engine?: EngineKind; model?: string; effort?: string };
@@ -167,6 +176,8 @@ export type RouteInput = {
   usage: Partial<Record<EngineKind, EngineUsage>>;
   /** The owner is waiting on it (a chat): an engine is used until it is out, never left for its last tenth. */
   attended?: boolean;
+  /** Owner web work can wait for its selected engine's reported reset. */
+  waitForReset?: boolean;
   /** Engines that just refused this very turn for a limit. */
   avoid?: EngineKind[];
   now: number;
@@ -198,15 +209,17 @@ export function route(input: RouteInput): Choice | null {
   const pick = (engine: EngineKind): Pick<Choice, "model" | "effort" | "by"> & { said: string } => {
     const offered = modelsOf(models, engine);
     const listed = (id?: string) => id && (!offered.length || offered.some((model) => model.id === id)) ? id : undefined;
+    const defaultModel = owner?.engine === engine && owner.model === "";
     const ownerModel = owner?.engine === engine ? listed(owner.model) : undefined;
-    const perryModel = !ownerModel && (perry?.engine ?? engine) === engine ? listed(perry?.model) : undefined;
+    const perryModel = !defaultModel && !ownerModel && (perry?.engine ?? engine) === engine ? listed(perry?.model) : undefined;
     const chosen = ownerModel ?? perryModel;
-    const model = chosen ? offered.find((item) => item.id === chosen) : modelFor(models, engine, tier);
+    const model = chosen ? offered.find((item) => item.id === chosen) : modelFor(models, engine, defaultModel ? "standard" : tier);
     const takes = (level?: string) => level && (!model?.efforts?.length || model.efforts.includes(level)) ? level : undefined;
     const ownerEffort = owner?.engine === undefined || owner.engine === engine ? takes(owner?.effort) : undefined;
     const perryEffort = !ownerEffort ? takes(perry?.effort) : undefined;
-    const effort = ownerEffort ?? perryEffort ?? effortFor(model, tier);
-    const by = ownerModel || ownerEffort ? "owner" : perryModel || perryEffort || given ? "perry" : "auto";
+    const defaultEffort = (owner?.engine === undefined || owner.engine === engine) && owner?.effort === "";
+    const effort = defaultEffort ? effortFor(model, "standard") : ownerEffort ?? perryEffort ?? effortFor(model, tier);
+    const by = defaultModel || defaultEffort || ownerModel || ownerEffort ? "owner" : perryModel || perryEffort || given ? "perry" : "auto";
     const name = chosen ?? model?.id;
     const said = by === "owner" ? `Your pick: ${[name, effort].filter(Boolean).join(" at ")}`
       : by === "perry" ? `Perry's pick${given ? ` (${tier})` : ""}: ${[name, effort].filter(Boolean).join(" at ")}`
@@ -227,6 +240,10 @@ export function route(input: RouteInput): Choice | null {
   }
   // Routing is for a plan's limit only: work is not moved for an engine that is only signed out. It stays, and says so.
   if (!input.engines.includes(home)) return choose(home, `On ${ENGINE_LABELS[home]}, ${where}.`);
+  if (input.waitForReset && room(home).state === "out" && room(home).resetKnown && room(home).until! > now) {
+    const until = room(home).until! + RESET_MARGIN_MS;
+    return { ...choose(home, `Waiting for ${ENGINE_LABELS[home]}'s reported usage reset.`), wait: { until, why: `${ENGINE_LABELS[home]} resumes after its usage reset at ${clockAt(until - RESET_MARGIN_MS, timeZone)}.` } };
+  }
   if (owner?.stay && !input.attended) {
     // Refused just now, before its plan says so, it is given the hour a refusal holds an engine.
     const held = room(home).state === "room" ? now + HIT_HOLD_MS : room(home).until ?? now + HIT_HOLD_MS;
@@ -316,7 +333,7 @@ export function routeGuest(input: GuestInput): Choice | { none: string } {
 /** The rule in a few lines, for the agent's list_engines and the run's details. */
 export const ROUTING_RULE = [
   "Tiers: quick (chat names, reviews, the heartbeat, reminders) runs an engine's fastest model at low; standard (chats, recurring and event jobs, the daily summary, short background tasks) its default model at its default level; deep (background tasks with a long brief, memory consolidation) its strongest at high.",
-  `The engine is the work's own (a model picked for it, or its chat's engine), else the owner's default engine, while it has room. Background work leaves an engine at ${BACKGROUND_CAP}% of any window for the default engine if that has room, else the signed-in engine with the most of its plan left, and waits for the first reset when every engine is past it. A chat moves only when its engine is used up. With no default engine chosen, Perry asks the owner to choose one rather than picking.`,
+  `The engine is the work's own (a model picked for it, or its chat's engine), else the owner's default engine, while it has room. Background work leaves an engine at ${BACKGROUND_CAP}% of any window for the default engine if that has room, else the signed-in engine with the most of its plan left, and waits for the first reset when every engine is past it. Main web chats wait for their selected engine's reported reset and resume automatically; when no reset is known, another signed-in engine can answer. With no default engine chosen, Perry asks the owner to choose one rather than picking.`,
   "The owner's pick wins over Perry's, and Perry's over the tier's.",
   "Chats with other people run only on engines that can be locked down (no shell, files or computer), routed the same way among them.",
 ].join(" ");
