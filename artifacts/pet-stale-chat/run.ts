@@ -1,8 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openChat, sleep } from "../browser";
 
@@ -11,6 +12,9 @@ import { openChat, sleep } from "../browser";
 // Cover a stale saved id, a valid saved id, deletion with the panel closed,
 // opening the recovered panel, and a reload after recovery. Keep screenshots
 // and result.json so each run is reviewable and repeatable.
+// A new chat must also stay selected when refreshing the list is slow.
+// Cleanup must stop the server on the host OS, stay inside the temporary
+// home, and preserve result.json even when cleanup itself fails.
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const out = join(repo, "artifacts/pet-stale-chat");
 mkdirSync(out, { recursive: true });
@@ -79,6 +83,31 @@ try {
   await until(() => pet.evaluate(`!!document.querySelector('textarea')`));
   checks.recoveredPanelOpens = await healthy();
   await screenshot("recovered-chat-panel");
+  // Exercise the actual composer, not just a saved id. Perry's mutation
+  // promise waits for query refreshes before PetChat selects the new id.
+  await pet.evaluate(`(() => {
+    const original = window.fetch;
+    window.__slowChatLists = 0;
+    window.fetch = async (...args) => {
+      const path = args[1]?.body ? JSON.parse(args[1].body).path : null;
+      if (path === "dashboard:listChats" && window.__createdChatId) {
+        window.__slowChatLists++;
+        await new Promise((done) => setTimeout(done, 800));
+      }
+      const response = await original(...args);
+      if (path === "dashboard:createChat") window.__createdChatId = (await response.clone().json()).value;
+      return response;
+    };
+    const input = document.querySelector('textarea[aria-label="Message Perry"]');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(input, "Keep this new pet chat");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  })()`);
+  await until(() => pet.evaluate(`!document.querySelector('button[aria-label="Send"]').disabled`));
+  await pet.evaluate(`document.querySelector('button[aria-label="Send"]').click(); true`);
+  await until(() => pet.evaluate(`!!window.__createdChatId && localStorage.getItem("perry.pet.chat") === window.__createdChatId && [...document.querySelectorAll('[data-role="user"]')].some((item) => item.textContent.includes("Keep this new pet chat"))`));
+  checks.newChatSurvivesSlowListRefresh = await pet.evaluate(`window.__slowChatLists > 0`) && await healthy();
+  await screenshot("new-chat-selected");
   await showPet(valid);
   await openPanel();
   await until(() => pet.evaluate(`document.body.innerText.includes("Still here")`));
@@ -94,15 +123,24 @@ try {
 } catch (error) {
   failure = error instanceof Error ? error.stack : String(error);
 } finally {
-  browser?.close();
-  if (server.pid) spawnSync("taskkill", ["/PID", String(server.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
-  // Check the absolute target before recursively deleting only this run's home.
-  const target = realpathSync(home);
-  if (!target.startsWith(`${realpathSync(tmpdir())}\\perry-stale-chat-`)) throw new Error(`Unexpected test home: ${target}`);
-  rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+  try {
+    browser?.close();
+    if (server.exitCode === null && server.signalCode === null) {
+      const exited = once(server, "exit", { signal: AbortSignal.timeout(10_000) });
+      if (process.platform === "win32" && server.pid) spawnSync("taskkill", ["/PID", String(server.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+      else server.kill("SIGTERM"); // next dev forwards SIGTERM to its worker.
+      await exited;
+    }
+    // Check the absolute target before recursively deleting only this run's home.
+    const target = realpathSync(home);
+    if (!target.startsWith(`${realpathSync(tmpdir())}${sep}perry-stale-chat-`)) throw new Error(`Unexpected test home: ${target}`);
+    rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+  } catch (error) {
+    failure = [failure, `Cleanup failed: ${String(error)}`].filter(Boolean).join("\n");
+  }
   writeFileSync(join(out, "server.log"), log);
 }
-const passed = !failure && Object.keys(checks).length === 6 && Object.values(checks).every(Boolean);
+const passed = !failure && Object.keys(checks).length === 7 && Object.values(checks).every(Boolean);
 writeFileSync(join(out, "result.json"), JSON.stringify({ passed, checks, failure }, null, 2));
 console.log(JSON.stringify({ passed, checks, failure }, null, 2));
 process.exit(passed ? 0 : 1);
