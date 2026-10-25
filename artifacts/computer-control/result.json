@@ -34,7 +34,7 @@
     "shortcutValue": "replacement",
     "queuedTyping": "abcd",
     "firstLook": {
-      "url": "http://127.0.0.1:53260/",
+      "url": "http://127.0.0.1:51031/",
       "title": "Control fixture",
       "text": "First Second Send",
       "elements": [
@@ -60,21 +60,21 @@
         }
       ],
       "identity": {
-        "sessionId": "84010bac-0d41-48be-950a-ab666ff7fd03",
-        "tabId": "63AAA3E44ACD853EA694BD6D837B57A0",
+        "sessionId": "05e90290-d69a-4ae0-bf1f-3592ee94b077",
+        "tabId": "2788CD6A6294E6791EC06185D328C079",
         "revision": 8
       }
     },
     "staleClick": {
       "clicked": null,
       "firstIdentity": {
-        "sessionId": "84010bac-0d41-48be-950a-ab666ff7fd03",
-        "tabId": "63AAA3E44ACD853EA694BD6D837B57A0",
+        "sessionId": "05e90290-d69a-4ae0-bf1f-3592ee94b077",
+        "tabId": "2788CD6A6294E6791EC06185D328C079",
         "revision": 8
       },
       "secondIdentity": {
-        "sessionId": "84010bac-0d41-48be-950a-ab666ff7fd03",
-        "tabId": "63AAA3E44ACD853EA694BD6D837B57A0",
+        "sessionId": "05e90290-d69a-4ae0-bf1f-3592ee94b077",
+        "tabId": "2788CD6A6294E6791EC06185D328C079",
         "revision": 9
       },
       "result": {
@@ -91,7 +91,7 @@
       "result": {
         "error": "This operation was aborted"
       },
-      "cancelMs": 456
+      "cancelMs": 460
     }
   }
 }

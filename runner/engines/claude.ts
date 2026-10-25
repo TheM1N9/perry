@@ -14,7 +14,7 @@ import type {
   Access, Engine, EngineAttachment, EngineCapabilities, EngineItem, EngineModel, EngineRequest, EngineStatus, ItemStatus, ItemType,
   LoginFlow, PlanLimits, PlanWindow, QuickTurn, TokenUsage, TurnHandle, TurnInput, TurnResult, TurnSink,
 } from "../engine";
-import { toolsOfChat } from "../engine";
+import { FULL_ACCESS_INSTRUCTIONS, toolsOfChat } from "../engine";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
 import { updateCommand } from "../versions";
@@ -354,7 +354,7 @@ const LIVE_MAX = Math.max(1, Math.floor(Number(process.env.PERRY_CLAUDE_LIVE)) |
 const modeOf = (access: Access): PermissionMode => access === "supervised" ? "default" : "acceptEdits";
 
 /** What the instructions say about approvals, for an access. */
-const gateOf = (access: Access): string => access === "full" ? ""
+const gateOf = (access: Access): string => access === "full" ? FULL_ACCESS_INSTRUCTIONS
   : access === "auto" ? "Each command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
   : "Anything you do that changes something waits for the owner's approval. If one is declined, say what you wanted to do and why, and do not work around it.";
 

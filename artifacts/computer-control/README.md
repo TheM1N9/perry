@@ -1,5 +1,8 @@
 # Computer-control audit
 
+The later Full-access permission symptom and its repair are documented in
+[`full-access.md`](full-access.md).
+
 Four reproduced browser-control bugs:
 
 1. A browser call already waiting for approval could execute after chat Stop.

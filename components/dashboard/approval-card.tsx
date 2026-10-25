@@ -15,8 +15,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { TextTip } from "./common";
 
-const KIND = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone", brain: "change Brain", tool: "confirm a tool request" } as const;
-const ICON = { command: TerminalIcon, file: FilePenIcon, write: FilePenIcon, browser: GlobeIcon, contact: UserPlusIcon, message: MessageCircleIcon, brain: BrainIcon, tool: ShieldAlertIcon } as const;
+const KIND = { command: "run a command", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone", brain: "change Brain", tool: "confirm a tool request", permission: "use additional computer access" } as const;
+const ICON = { command: TerminalIcon, file: FilePenIcon, write: FilePenIcon, browser: GlobeIcon, contact: UserPlusIcon, message: MessageCircleIcon, brain: BrainIcon, tool: ShieldAlertIcon, permission: ShieldAlertIcon } as const;
 
 function remaining(ms: number) {
   if (ms > 2 * 86_400_000) return `${Math.floor(ms / 86_400_000)} days`;

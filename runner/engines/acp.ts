@@ -13,7 +13,7 @@ import {
 import {
   type Access, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineKind, type EngineModel,
   type EngineRequest, type EngineStatus, type ItemStatus, type ItemType, type LoginFlow, type PerryTools, type RequestOption,
-  type TokenUsage, type TurnHandle, type TurnInput, type TurnResult, type TurnSink, type TurnState, toolsOfChat,
+  type TokenUsage, type TurnHandle, type TurnInput, type TurnResult, type TurnSink, type TurnState, FULL_ACCESS_INSTRUCTIONS, toolsOfChat,
 } from "../engine";
 import { HOME, PATHS } from "../home";
 import { describeMachine } from "../shell";
@@ -626,7 +626,7 @@ ${line}`.slice(-4000); this.onText(line); });
     const machine = describeMachine();
     const home = `Your own folder for files you make is ${PATHS.files}; use it unless the owner or the task calls for somewhere else. Your skills folder is ${PATHS.skills}.` +
       ` This machine runs ${machine.os}, and your commands run in ${machine.shell}; write commands, paths and quoting for that, and open files or apps with ${machine.open}.`;
-    const access = input.access === "full" ? ""
+    const access = input.access === "full" ? `\n\n${FULL_ACCESS_INSTRUCTIONS}`
       : input.access === "auto" ? "\n\nEach command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
       : "\n\nThe owner approves your commands and edits before they run. If one is declined, say what you wanted to do and why, and do not work around it.";
     return `${input.instructions}\n\n## This computer\n\n${home}${access}`;

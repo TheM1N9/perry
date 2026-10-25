@@ -34,8 +34,8 @@ const ttlOf = (row: Pick<Doc<"approvals">, "kind">) => (row.kind === "brain" ? B
 /** With no pet to say whether the owner is at the computer, how long a web request waits before it goes to the phone too. */
 const ESCALATE_MS = 2 * 60_000;
 
-const vKind = v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("tool"));
-type Kind = "command" | "file" | "write" | "tool";
+const vKind = v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("tool"), v.literal("permission"));
+type Kind = "command" | "file" | "write" | "tool" | "permission";
 type Person = "terminal" | "dashboard" | "telegram" | "whatsapp" | "timeout";
 
 // --- Rules ---------------------------------------------------------------
@@ -109,7 +109,7 @@ function commonFolder(paths: string[]): string | undefined {
 type Request = { kind: Kind; title: string; cwd?: string; paths?: string[] };
 
 function alwaysAllowFor(request: Request, amendment?: string[]): Doc<"approvals">["alwaysAllow"] {
-  if (request.kind === "tool") return undefined;
+  if (request.kind === "tool" || request.kind === "permission") return undefined;
   if (request.kind === "command") {
     if (request.title.length > 4000) return undefined;
     const prefix = suggestedPrefix(request.title, amendment);
@@ -120,7 +120,7 @@ function alwaysAllowFor(request: Request, amendment?: string[]): Doc<"approvals"
 }
 
 function ruleMatches(rule: Doc<"approvalRules">, request: Request): boolean {
-  if (request.kind === "tool") return false;
+  if (request.kind === "tool" || request.kind === "permission") return false;
   if (request.kind === "command") {
     if (rule.kind !== "command" || !rule.command) return false;
     if (rule.cwd && !(request.cwd && inside(request.cwd, rule.cwd))) return false;
@@ -172,11 +172,15 @@ export const request = mutation({
       createdAt: now,
     };
 
-    // A tool has explicitly asked for owner confirmation. A computer policy,
-    // reviewer, saved file rule or Full access cannot supply that answer.
-    if (args.kind === "tool") {
+    // Computer permission grants follow Full access; explicit tool consent
+    // still asks. Neither can be supplied by a saved command/file rule.
+    if (args.kind === "tool" || args.kind === "permission") {
       const chat = args.conversationId ? await ctx.db.get(args.conversationId) : null;
       if (!chat || chat.contactId) throw new Error("Tool confirmations require an owner's chat.");
+      if (args.kind === "permission" && chat.access === "full") {
+        const id = await ctx.db.insert("approvals", { ...row, status: "auto", decidedBy: "trust", decidedAt: now });
+        return { id, next: "run" };
+      }
       const id = await ctx.db.insert("approvals", { ...row, status: "pending" });
       await ask(ctx, id);
       return { id, next: "ask" };
@@ -227,7 +231,7 @@ export const reviewed = mutation({
   handler: async (ctx, args): Promise<boolean> => {
     const runner = await authenticate(ctx, args.token);
     const row = await ctx.db.get(args.id);
-    if (row?.runnerId !== runner._id || row.status !== "reviewing" || row.kind === "tool") return false;
+    if (row?.runnerId !== runner._id || row.status !== "reviewing" || row.kind === "tool" || row.kind === "permission") return false;
     const review = { verdict: args.verdict, reason: args.reason.slice(0, 1000), model: args.model, ms: args.ms };
     // The owner may have changed the chat's access while the reviewer looked: Full access runs it, Ask asks.
     const chat = row.conversationId ? await ctx.db.get(row.conversationId) : null;
@@ -465,7 +469,7 @@ export const escalate = internalMutation({
 
 // --- Telegram ------------------------------------------------------------
 
-const ASK = { command: "run", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone", brain: "tidy Brain", tool: "confirm a tool request" } as const;
+const ASK = { command: "run", file: "change files", write: "write a file", browser: "do this in its browser", contact: "talk with someone new", message: "message someone", brain: "tidy Brain", tool: "confirm a tool request", permission: "use additional computer access" } as const;
 /** Who is asking: the computer for what runs on it, Perry itself for talking with people. */
 const asker = async (ctx: QueryCtx, row: Doc<"approvals">) =>
   row.kind === "contact" || row.kind === "message" || row.kind === "brain" ? (await readPersona(ctx)).name : (await ctx.db.get(row.runnerId))?.name;
