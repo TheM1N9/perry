@@ -160,8 +160,11 @@ export function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id
   const unavailable = !online ? "This computer is offline." : !engine.installed ? `${engine.label} isn't installed or can't start on this computer.` : null;
   // Too old for Perry: it is updated before it is signed in.
   const outdated = engine.update?.need === "required";
+  // A provider account or key is connected. OpenCode's free models answer without one.
+  const connected = Boolean(engine.auth.type || engine.auth.label);
   const state: { tone: Tone; label: string } = !online ? { tone: "neutral", label: "Offline" }
     : !engine.installed ? { tone: "danger", label: `${engine.label} unavailable` }
+    : engine.signedIn && !connected ? { tone: "success", label: "Ready" }
     : engine.signedIn ? { tone: "success", label: "Signed in" } : { tone: "warning", label: "Signed out" };
   const update: { tone: Tone; label: string } | null = online && engine.update
     ? engine.update.need === "required" ? { tone: "danger", label: "Update required" } : { tone: "info", label: "Update available" }
@@ -170,7 +173,9 @@ export function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id
   const pill = update?.tone === "danger" ? update : state.tone === "danger" || state.tone === "warning" ? state : null;
   const plan = engine.auth.plan ? ` ${engine.auth.plan[0].toUpperCase()}${engine.auth.plan.slice(1)}` : "";
   const account = engine.signedIn
-    ? `${engine.auth.label ?? "Signed in"}${plan}${engine.auth.email ? ` · ${engine.auth.email}` : ""}`
+    ? connected
+      ? `${engine.auth.label ?? "Signed in"}${plan}${engine.auth.email ? ` · ${engine.auth.email}` : ""}`
+      : "No account needed for its free models."
     : engine.auth.type ? `${engine.label} is using ${engine.auth.label ?? engine.auth.type}` : "Not signed in";
   const interaction = request?.status === "running" ? request.interaction : undefined;
   const ask = (kind: "login" | "logout", method?: string) => requestAuth({ key: dashboardKey, runnerId, engine: engine.kind, kind, ...(method ? { method } : {}) });
@@ -190,7 +195,7 @@ export function EngineRow({ runnerId, computer, online, engine }: { runnerId: Id
           <p className="mt-0.5 text-sm text-muted-foreground">{account}{unavailable && ` · ${unavailable}`}</p>
           {engine.message && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{engine.message}</p>}
         </div>
-        {engine.signedIn
+        {engine.signedIn && connected
           ? <ActionButton variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" disabled={Boolean(unavailable) || pending}
               action={() => ask("logout")}
               confirm={{ title: `Sign out of ${engine.label} on ${computer}?`, body: `Perry can't use ${engine.label} on this computer until you sign in again.`, label: "Sign out" }}>Sign out</ActionButton>

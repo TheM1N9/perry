@@ -233,17 +233,22 @@ const pill = "h-8 gap-1.5 rounded-full border-0 bg-transparent px-2.5 text-sm fo
  * the chat there.
  */
 function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, access, onAccess, accessDisabled }: Pickers) {
-  const efforts = modelInfo?.efforts ?? [];
+  // An engine can name its own default as an effort level ("default", from
+  // ACP); the picker's own Default option already covers it, so it is not
+  // offered twice.
+  const efforts = (modelInfo?.efforts ?? []).filter((level) => level !== "default");
+  const defaultEffort = modelInfo?.defaultEffort && modelInfo.defaultEffort !== "default" ? modelInfo.defaultEffort : undefined;
   const keyOf = (item: ModelOption) => modelKey(item.engine, item.id);
   const engines = enginesOf(models ?? []);
   const modelItems = (models ?? []).map((item) => ({ value: keyOf(item), label: item.name }));
   const modelItem = (item: ModelOption) => (
-    <SelectItem key={keyOf(item)} value={keyOf(item)}>
-      {item.name}{item.isDefault && <span className="text-muted-foreground"> · default</span>}
+    <SelectItem key={keyOf(item)} value={keyOf(item)} className="max-w-[18rem]">
+      <span className="truncate">{item.name}</span>
+      {item.isDefault && <span className="shrink-0 text-muted-foreground">· default</span>}
     </SelectItem>
   );
   const effortItems = [
-    { value: "default", label: modelInfo?.defaultEffort ? `Default (${levelName(modelInfo.defaultEffort)})` : "Default" },
+    { value: "default", label: defaultEffort ? `Default (${levelName(defaultEffort)})` : "Default" },
     ...efforts.map((level) => ({ value: level, label: levelName(level) })),
   ];
   const accessItems = ACCESSES.map((mode) => ({ value: mode, label: ACCESS_LABELS[mode] }));
@@ -252,11 +257,11 @@ function ModelPickers({ models, model, onModel, modelInfo, effort, onEffort, acc
   return (
     <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
       <Select items={modelItems} value={model ?? null} onValueChange={(value) => { if (value) onModel(value); }} disabled={!models?.length}>
-        <SelectTrigger aria-label="Model" className={pill}>
+        <SelectTrigger aria-label="Model" className={cn(pill, "max-w-64")}>
           <CpuIcon className="size-3.5" />
-          <SelectValue placeholder={models === undefined ? "Loading…" : "Default model"} />
+          <SelectValue className="truncate" placeholder={models === undefined ? "Loading…" : "Default model"} />
         </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false} align="start" side="top">
+        <SelectContent alignItemWithTrigger={false} align="start" side="top" className="max-h-80 w-72">
           {engines.length > 1
             ? engines.map((engine) => (
                 <SelectGroup key={engine}>

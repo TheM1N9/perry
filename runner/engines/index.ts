@@ -2,6 +2,7 @@ import type { Engine, EngineKind } from "../engine";
 import { ClaudeEngine } from "./claude";
 import { CodexEngine } from "./codex";
 import { AntigravityEngine } from "./antigravity";
+import { OpenCodeEngine } from "./opencode";
 import { GrokEngine } from "./grok";
 
 /**
@@ -14,6 +15,7 @@ export function createEngines(options: { warn: (line: string) => void; secret?: 
     new GrokEngine(options.warn),
     new ClaudeEngine(options.warn),
     new AntigravityEngine(options.warn, options.secret),
+    new OpenCodeEngine(options.warn),
   ];
   return new Map(engines.map((engine) => [engine.kind, engine]));
 }
