@@ -467,13 +467,19 @@ ${line}`.slice(-4000); this.onText(line); });
     const efforts = effort?.type === "select" ? this.values(effort) : [];
     const known = this.learnedModels();
     const knownDefault = fresh ? undefined : known.find((item) => item.isDefault)?.id;
-    const knownEffort = fresh ? undefined : known.find((item) => item.defaultEffort)?.defaultEffort;
-    const models = this.values(model).map((value): EngineModel => ({
-      id: value.value,
-      name: value.name,
-      isDefault: value.value === (knownDefault ?? model.currentValue),
-      ...(efforts.length ? { efforts: efforts.map((item) => item.value), ...(effort?.type === "select" ? { defaultEffort: knownEffort ?? String(effort.currentValue) } : {}) } : {}),
-    }));
+    const models = this.values(model).map((value): EngineModel => {
+      const previous = known.find((item) => item.id === value.value);
+      const selected = value.value === model.currentValue;
+      // Session effort options describe the selected model only. Retain other
+      // models' previously learned options instead of copying these onto them.
+      const levels = selected ? efforts.map((item) => item.value) : previous?.efforts;
+      const defaultEffort = selected && effort?.type === "select"
+        ? (!fresh && previous?.defaultEffort) || String(effort.currentValue) : previous?.defaultEffort;
+      return {
+        id: value.value, name: value.name, isDefault: value.value === (knownDefault ?? model.currentValue),
+        ...(levels?.length ? { efforts: levels, ...(defaultEffort ? { defaultEffort } : {}) } : {}),
+      };
+    });
     if (!models.length || json(models) === json(this.learned)) return;
     this.learned = models;
     try {
