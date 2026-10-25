@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "checks": {
+    "staleSelectionCleared": true,
+    "recoveredPanelOpens": true,
+    "validSelectionRestored": true,
+    "deletedSelectionClearedWhileClosed": true,
+    "reloadStaysHealthy": true,
+    "noPageExceptions": true
+  }
+}
