@@ -98,10 +98,6 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
-  // A chat that was deleted in the dashboard is let go of.
-  useEffect(() => {
-    if (chatId && chats && !chats.some((item) => item.id === chatId)) onChatId(null);
-  }, [chatId, chats, onChatId]);
   // Open here, what it says is seen, as in the dashboard.
   useEffect(() => {
     if (chatId && chat && !chat.isRunning) void markSeen({ key, id: chatId }).catch(() => {});
