@@ -968,7 +968,7 @@ function LiveReply({ conversationId, onContentChange, ...props }: Omit<Parameter
 }) {
   const { dashboardKey } = useSession();
   const stream = useQuery(api.turnStreams.getChatStream, { key: dashboardKey, id: conversationId });
-  const streaming = useTypewriter(stream ?? "");
+  const streaming = useTypewriter(stream ?? "", conversationId);
   const now = useNow(1000);
   // The page follows the reply as it is revealed, not as it lands: that is what the reader is reading.
   useLayoutEffect(() => { onContentChange(); }, [streaming, onContentChange]);

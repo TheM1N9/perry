@@ -66,17 +66,20 @@ export function OlderMemories() {
     const timer = window.setTimeout(() => setTerm(search.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [search]);
-  const memories = useQuery(api.dashboard.listMemories, { key: dashboardKey, query: term, kind: filter === "all" ? undefined : filter });
-  const deleteMemory = useMutation(api.dashboard.deleteMemory);
+  const memoryArgs = { key: dashboardKey, query: term, kind: filter === "all" ? undefined : filter };
+  const memories = useQuery(api.dashboard.listMemories, memoryArgs);
+  const forgetMemory = useMutation(api.dashboard.forgetMemory).withOptimisticUpdate((store, { id }) => {
+    const current = store.getQuery(api.dashboard.listMemories, memoryArgs);
+    if (current) store.setQuery(api.dashboard.listMemories, memoryArgs, current.map((memory) => memory.id === id ? { ...memory, forgetAt: Date.now() + FORGET_UNDO_MS } : memory));
+  });
+  const undoForgetMemory = useMutation(api.dashboard.undoForgetMemory);
   const editMemory = useMutation(api.dashboard.editMemory);
   /** The memory being edited, its new words, and why a save was refused. */
   const [editing, setEditing] = useState<{ id: string; text: string; error: string } | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const filterLabel = KINDS.find((item) => item.kind === filter)?.label;
 
-  /** Memories waiting out a forget's undo window: off the list, not yet deleted. */
-  const [forgetting, setForgetting] = useState<ReadonlySet<string>>(new Set());
-  const listed = memories?.filter((memory) => !forgetting.has(memory.id));
+  const listed = memories?.filter((memory) => memory.forgetAt === undefined);
 
   const saveEdit = async (event: FormEvent) => {
     event.preventDefault();
@@ -97,32 +100,19 @@ export function OlderMemories() {
     }
   };
 
-  /** Forget a memory behind an Undo window: its row goes at once, and its words
-      are deleted only once the toast passes untouched. */
-  const forget = (memory: MemoryView) => {
-    const id = memory.id;
-    const hide = (hidden: boolean) => setForgetting((current) => {
-      const next = new Set(current);
-      if (hidden) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-    hide(true);
-    // The toast owns the window, and it lives above this screen: leaving the
-    // page mid-window still deletes, so nothing here needs tearing down.
-    let settled = false;
-    const settle = () => {
-      if (settled) return;
-      settled = true;
-      hide(false);
-      void deleteMemory({ key: dashboardKey, id }).catch((cause: unknown) => toast.error(errorText(cause)));
-    };
-    toast("Forgotten.", {
-      duration: FORGET_UNDO_MS,
-      action: { label: "Undo", onClick: () => { settled = true; hide(false); } },
-      onAutoClose: settle,
-      onDismiss: settle,
-    });
+  const forget = async (memory: MemoryView) => {
+    const id = memory.id as Id<"memories">;
+    try {
+      const at = await forgetMemory({ key: dashboardKey, id });
+      toast("Forgotten.", {
+        duration: Math.max(0, at - Date.now()),
+        action: { label: "Undo", onClick: () => {
+          void undoForgetMemory({ key: dashboardKey, id, at }).then((undone) => {
+            if (!undone) toast.error("The Undo window has ended.");
+          }, (cause: unknown) => toast.error(errorText(cause)));
+        } },
+      });
+    } catch (cause) { toast.error(errorText(cause)); }
   };
 
   return (
@@ -143,9 +133,9 @@ export function OlderMemories() {
         </div>
         {listed !== undefined && (
           <p className="text-sm text-muted-foreground" role="status">
-            {listed.length === LIMIT ? `The ${LIMIT} newest` : `${listed.length} ${listed.length === 1 ? "memory" : "memories"}`}
+            {memories?.length === LIMIT ? `The ${LIMIT} newest` : `${listed.length} ${listed.length === 1 ? "memory" : "memories"}`}
             {filterLabel ? ` in ${filterLabel}` : ""}{term ? ` matching “${term}”` : ""}
-            {listed.length === LIMIT ? ". Search to find older ones." : ""}
+            {memories?.length === LIMIT ? ". Search to find older ones." : ""}
           </p>
         )}
         {memories === undefined && <ListSkeleton />}
@@ -178,6 +168,7 @@ export function OlderMemories() {
                 ) : <>
                 <div className="min-w-0 flex-1">
                   <p className="text-md text-pretty [overflow-wrap:anywhere]">{memory.text}</p>
+                  {memory.forgetError && <p role="alert" className="mt-1 text-sm text-destructive">{memory.forgetError}</p>}
                   <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
                     <span>{KINDS.find((item) => item.kind === memory.kind)?.label ?? memory.kind}</span>
                     {memory.chat && <TextTip tip="Kept to one chat: no other chat sees it." spoken="kept to one chat">Only in {memory.chat}</TextTip>}

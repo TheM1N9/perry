@@ -31,8 +31,9 @@ function cadenceFor(length: number): { tickMs: number; scale: number } {
 }
 
 /** What has streamed so far, revealed at a steady rate instead of in the bursts it landed in. */
-export function useTypewriter(sourceText: string): string {
+export function useTypewriter(sourceText: string, streamId?: string | null): string {
   const [visibleCount, setVisibleCount] = useState(() => sourceText.length);
+  const [previousStream, setPreviousStream] = useState(streamId);
   const visible = usePageVisible();
   const reduced = useReducedMotion();
 
@@ -42,7 +43,10 @@ export function useTypewriter(sourceText: string): string {
      audience, and the backlog it builds is exactly what makes a tab feel
      wrecked on the way back in. Catching up at once also means there is
      nothing left to replay when it returns: the text is simply there. */
-  if ((!visible || reduced) && visibleCount < sourceText.length) {
+  if (previousStream !== streamId) {
+    setPreviousStream(streamId);
+    setVisibleCount(sourceText.length);
+  } else if (visibleCount > sourceText.length || ((!visible || reduced) && visibleCount < sourceText.length)) {
     setVisibleCount(sourceText.length);
   }
 

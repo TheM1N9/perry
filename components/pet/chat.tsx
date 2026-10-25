@@ -79,7 +79,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   const chats = useQuery(api.dashboard.listChats, { key });
   const chat = useQuery(api.dashboard.getChat, chatId ? { key, id: chatId } : "skip");
   const stream = useQuery(api.turnStreams.getChatStream, chatId ? { key, id: chatId } : "skip");
-  const streaming = useTypewriter(stream ?? "");
+  const streaming = useTypewriter(stream ?? "", chatId);
   const { results } = usePaginatedQuery(api.dashboard.getChatMessages, chatId ? { key, id: chatId } : "skip", { initialNumItems: 30 });
   const messages = useMemo(() => [...results].sort((a, b) => a.createdAt - b.createdAt), [results]);
   const createChat = useMutation(api.dashboard.createChat);

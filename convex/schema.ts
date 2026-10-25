@@ -1042,6 +1042,9 @@ export default defineSchema({
    */
   memories: defineTable({
     text: v.string(),
+    /** Server-owned Undo deadline; the durable scheduler settles it even with no browser open. */
+    forgetAt: v.optional(v.number()),
+    forgetError: v.optional(v.string()),
     tags: v.array(v.string()),
     source: v.string(),
     createdAt: v.number(),
