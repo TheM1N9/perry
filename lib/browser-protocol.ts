@@ -34,7 +34,7 @@ export const browserRequest = z.discriminatedUnion("action", [
   z.object({ action: z.literal("reload"), identity: browserIdentity }),
   z.object({ action: z.literal("click"), identity: browserIdentity, ...point }),
   z.object({ action: z.literal("scroll"), identity: browserIdentity, ...point, deltaY: z.number().min(-3000).max(3000) }),
-  z.object({ action: z.literal("key"), identity: browserIdentity, key: z.string().max(50), code: z.string().max(50), modifiers: z.number().int().min(0).max(15) }),
+  z.object({ action: z.literal("key"), identity: browserIdentity, key: z.string().max(50), code: z.string().max(50), keyCode: z.number().int().min(0).max(255).optional(), modifiers: z.number().int().min(0).max(15) }),
   z.object({ action: z.literal("text"), identity: browserIdentity, text: z.string().max(10_000) }),
   z.object({ action: z.literal("dialog"), identity: browserIdentity, accept: z.boolean(), text: z.string().max(1000).optional() }),
   z.object({ action: z.literal("privacy"), identity: browserIdentity, private: z.boolean() }),

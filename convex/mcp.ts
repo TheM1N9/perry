@@ -308,12 +308,13 @@ export const handle = httpAction(async (ctx, request) => {
           finally { checking = false; }
         };
         const internet = name === "internet_read" || name === "internet_search";
-        const timer = internet ? setInterval(() => void check(), 500) : undefined;
+        const cancellable = internet || name === "browser";
+        const timer = cancellable ? setInterval(() => void check(), 500) : undefined;
         const signal = AbortSignal.any([request.signal, controller.signal]);
         const bound = { ...tool, ctx: { ...ctx, userId: access.userId, threadId: access.threadId, fromJob: access.fromJob, conversationId: access.conversationId, turnId: access.turnId, outside, signal } };
         let output: unknown;
         try {
-          if (internet) await check();
+          if (cancellable) await check();
           output = await bound.execute(parsed.data, { toolCallId: String(message.id), messages: [] });
         } finally { clearInterval(timer); }
         // A chat with someone else, read from the owner's own, is what they wrote: outside, like a web page.

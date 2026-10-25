@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
 import { createTool, type ToolCtx } from "./lib/agent";
 import type { PerryPick } from "./lib/routing";
 import { z } from "zod";
@@ -1147,16 +1148,27 @@ const browser = createTool({
     const page = async (step: Promise<web.Snapshot>) => { const found = await step; return await shown(found, found); };
     /** Ask the owner before a step like this; true once they said yes. */
     const allowed = async (title: string, detail: string): Promise<boolean> => {
+      const active = async () => {
+        ctx.signal?.throwIfAborted();
+        if (ctx.turnId && !await ctx.runQuery(internal.codex.internetMayRead, { turnId: ctx.turnId })) throw new Error("This reply was stopped. Send a new message to continue.");
+        web.assertBrowserLease();
+      };
+      await active();
       const asked: { id: Id<"approvals">; status: string } = await ctx.runMutation(internal.approvals.askForBrowser, {
         title, detail, ...(ctx.conversationId ? { conversationId: ctx.conversationId as Id<"conversations"> } : {}),
       });
       let status = asked.status;
-      while (status === "pending") {
-        web.assertBrowserLease();
-        await new Promise((resolve) => setTimeout(resolve, APPROVAL_POLL_MS));
-        status = await ctx.runMutation(internal.approvals.decisionOf, { id: asked.id });
+      try {
+        while (status === "pending") {
+          await active();
+          await delay(APPROVAL_POLL_MS, undefined, { signal: ctx.signal });
+          status = await ctx.runMutation(internal.approvals.decisionOf, { id: asked.id });
+        }
+        await active();
+        return status === "approved" || status === "auto";
+      } finally {
+        if (status === "pending") await ctx.runMutation(internal.approvals.cancelBrowser, { id: asked.id });
       }
-      return status === "approved" || status === "auto";
     };
     const declined = { declined: true as const, note: "The owner said no (or did not answer in time). Do not try it another way; tell them where things stand." };
     try {
@@ -1216,7 +1228,7 @@ const browser = createTool({
           return await web.signIn(login, input.usernameRef, input.passwordRef, input.submit !== false);
         }
       }
-      });
+      }, ctx.signal);
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
     }

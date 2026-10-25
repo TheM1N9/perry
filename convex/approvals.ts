@@ -376,6 +376,17 @@ export const decisionOf = internalMutation({
   },
 });
 
+/** An interrupted browser call cannot use its outstanding approval later. */
+export const cancelBrowser = internalMutation({
+  args: { id: v.id("approvals") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (row?.kind === "browser" && row.status === "pending") await settleRow(ctx, row, { approved: false, by: "timeout" });
+    return null;
+  },
+});
+
 // --- Other people ----------------------------------------------------------
 
 /**
