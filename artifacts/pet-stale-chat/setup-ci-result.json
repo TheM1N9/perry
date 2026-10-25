@@ -1,0 +1,23 @@
+﻿{
+    "ranAt":  "2026-10-25T18:34:24.935Z",
+    "platform":  "win32",
+    "setupOnly":  true,
+    "checks":  {
+                   "refusesWithoutChoice":  true,
+                   "isolated":  true,
+                   "oneReadyNotTakenUnconfirmed":  true,
+                   "unknownEngineRefused":  true,
+                   "flagChoosesWithoutAsking":  true,
+                   "envLabelChoosesNoSignInAlone":  true,
+                   "listSaysHowEachStands":  true,
+                   "installsTheChosenOne":  true,
+                   "signsInToTheChosenOne":  true,
+                   "freshEnvOwnerOnly":  true,
+                   "rerunKeepsChoice":  true,
+                   "rerunEnvOwnerOnly":  true,
+                   "enterConfirmsTheOneReady":  true,
+                   "pipedAnswersKept":  true,
+                   "setupInstalledNothingForReal":  true
+               },
+    "passed":  true
+}
