@@ -853,6 +853,8 @@ async function main() {
     access?: Access;
     /** Stop waiting for the turn, which its engine may still be running. */
     abandon?: () => void;
+    /** Stop's grace timer belongs to this turn and is cleared when it ends. */
+    stopTimer?: ReturnType<typeof setTimeout>;
     /** A chat with someone else, whose messages name none of the owner's skills. */
     guest?: boolean;
   };
@@ -869,18 +871,20 @@ async function main() {
   const endTurn = (jobId: string) => {
     const turn = active.get(jobId);
     if (!turn?.engine) return;
-    const shared = [...active.values()].some((other) => other.jobId !== jobId && other.engine === turn.engine && other.handle);
+    const shared = [...active.values()].some((other) => other.jobId !== jobId && other.engine === turn.engine);
     if (shared && turn.abandon) turn.abandon();
     else turn.engine.kill();
   };
   const interruptIfAsked = () => {
-    for (const { jobId, engine, handle } of active.values()) {
+    for (const turn of active.values()) {
+      const { jobId, engine, handle } = turn;
       if (!engine || !handle || !stopRequested.has(jobId) || stopping.has(jobId)) continue;
       stopping.add(jobId);
       console.log(yellow(`  stopping the ${engine.label} turn, as asked`));
       void engine.interrupt(handle).catch((error) => console.error(red(`  Could not stop the ${engine.label} turn: ${message(error)}`)));
       // An engine too stuck to hear it is ended, as the watchdog does, and the turn counts as stopped.
-      setTimeout(() => {
+      turn.stopTimer = setTimeout(() => {
+        turn.stopTimer = undefined;
         if (!active.get(jobId)?.handle) return;
         console.log(yellow(`  ${engine.label} did not stop; ending it`));
         endedOnStop.add(jobId);
@@ -914,10 +918,14 @@ async function main() {
   const steerIfAsked = () => {
     for (const steer of pendingSteers) {
       const turn = active.get(steer.turnId);
-      if (!turn?.engine || !turn.handle || steered.has(steer._id)) continue;
+      if (!turn?.engine || !turn.handle || stopRequested.has(steer.turnId) || stopping.has(steer.turnId) || steered.has(steer._id)) continue;
       const { engine, handle } = turn;
       const delivery = createSteerDelivery(async () => {
-        await steerRunningTurn(engine, handle, async () => ({ ...withSkills(engine, steer.prompt, turn.guest), attachments: guestFiles(await localise(steer.attachments), turn.guest) }));
+        await steerRunningTurn(engine, handle, async () => {
+          const attachments = guestFiles(await localise(steer.attachments), turn.guest);
+          if (stopRequested.has(steer.turnId) || stopping.has(steer.turnId)) throw new Error("The reply was stopped before this message could join it.");
+          return { ...withSkills(engine, steer.prompt, turn.guest), attachments };
+        });
         console.log(dim(`  steered the ${engine.label} turn with a new message`));
       }, async (outcome) => {
         await client.mutation(api.codex.ackSteer, { token, id: steer._id, ...outcome });
@@ -1064,6 +1072,8 @@ async function main() {
       } catch (error) {
         result = endedOnStop.has(job._id) ? { stopped: true, model: label } : { error: dog?.expired() ? dog.why() : message(error), errorCode: dog?.expired() ? dog.code() : turnErrorCode(error, LIMIT_HIT.test(message(error)) ? "limit" : "engine_failed"), model: label };
       } finally {
+        clearTimeout(turn.stopTimer);
+        turn.stopTimer = undefined;
         turn.handle = undefined;
         turn.abandon = undefined;
         stopping.delete(job._id);

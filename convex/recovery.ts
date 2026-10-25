@@ -92,6 +92,14 @@ export const sweep = internalMutation({
         continue;
       }
       if (turn.status !== "queued" && turn.status !== "running") continue;
+      if (turn.preparing) {
+        if (now - turn.createdAt < STUCK_CHAT_MS) continue;
+        await ctx.db.patch(turn._id, { preparing: undefined, status: "error", errorCode: "engine_failed", error: "Message preparation was interrupted. Send the message again.", finishedAt: now });
+        await ctx.scheduler.runAfter(0, internal.codex.finalizeTurn, { id: turn._id });
+        abandoned += 1;
+        handled.add(turn.conversationId);
+        continue;
+      }
       const health = turnHealth(turn, turn.runnerId ? runnerById.get(turn.runnerId) ?? null : null, now);
       if (turn.status === "running") {
         const marked = (turn as typeof turn & { unresponsiveAt?: number }).unresponsiveAt;

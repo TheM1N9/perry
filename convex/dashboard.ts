@@ -812,6 +812,7 @@ export const sendChat = mutation({
     /** Picked in the composer before the chat existed; "" is the model's default. Unset keeps the chat's. */
     effort: v.optional(v.string()),
     access: v.optional(vAccess),
+    mode: v.optional(v.union(v.literal("auto"), v.literal("queue"))),
   },
   returns: v.null(),
   handler: async (ctx, args): Promise<null> => {
@@ -825,12 +826,12 @@ export const sendChat = mutation({
     if (chat.contactId) throw new Error("This is Perry's chat with someone else. To have Perry tell them something, ask in your own chat.");
     // Paused, the message is not sent; it stays in the box for when he is back (pause.ts).
     await assertRunning(ctx);
-    // The outbox reserves capacity before asynchronous preparation. Admission
-    // and its durable handoff replace one slot rather than counting it twice.
+    // Reserve durable queue capacity before asynchronous preparation.
     await assertQueueRoom(ctx, chat);
     const messageKey = args.messageKey?.trim() || crypto.randomUUID();
     const attachments = await Promise.all(attachmentIds.map((id) => ctx.db.get(id)));
-    if (attachments.some((attachment) => !attachment || attachment.conversationId !== args.id || attachment.messageKey !== messageKey)) {
+    if (attachmentIds.length > 10 || new Set(attachmentIds).size !== attachmentIds.length) throw new Error("A message can have up to 10 different attachments.");
+    if (attachments.some((attachment) => !attachment || attachment.removedAt || attachment.conversationId !== args.id || attachment.messageKey !== messageKey)) {
       throw new Error("One of the attachments is no longer available.");
     }
     const prompt = attachmentIds.length > 0
@@ -848,12 +849,12 @@ export const sendChat = mutation({
       title,
       // A messaging app's chat shows its turns as they run (isBusy), whichever side sent them.
       ...(web ? { pendingTurns: (chat.pendingTurns ?? 0) + 1 } : {}),
-      // Shown in the chat from now, until a turn or the history has it (conversations.takeFromOutbox).
-      outbox: [...(chat.outbox ?? []).filter((entry) => entry.at > Date.now() - OUTBOX_TTL_MS), { text: prompt, at: Date.now() }],
       ...(args.model !== undefined ? pickPatch(chat, args.model, args.engine, await engineFor(ctx, chat)) : {}),
       ...(args.effort !== undefined ? { effort: args.effort.trim() || (chat.taskId ? "" : undefined) } : {}),
       ...(args.access !== undefined ? { access: args.access } : {}),
     });
+
+    const preparingId = await ctx.runMutation(internal.codex.prepareTurn, { conversationId: chat._id, prompt, queue: args.mode === "queue" });
 
     // Sent while a reply is running, this joins that reply (see codex.enqueueTurn).
     // Written in a Telegram or WhatsApp chat, it is that chat's turn, so the reply goes to the phone too.
@@ -863,6 +864,7 @@ export const sendChat = mutation({
       text: prompt,
       title: chat.title,
       attachmentIds,
+      preparingId,
       ...(web ? {} : { fromWeb: true }),
     });
     return null;

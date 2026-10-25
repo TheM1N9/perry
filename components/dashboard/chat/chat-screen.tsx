@@ -93,8 +93,8 @@ function greeting(name?: string) {
 }
 
 /** Keep the file on this machine, through the local media server. */
-async function store(file: File, uploadId?: string): Promise<{ localPath: string }> {
-  const local = await fetch("/api/media", { method: "POST", headers: { "x-file-name": encodeURIComponent(file.name), ...(uploadId ? { "x-upload-id": uploadId } : {}) }, body: file });
+async function store(file: File, uploadId?: string, signal?: AbortSignal): Promise<{ localPath: string }> {
+  const local = await fetch("/api/media", { method: "POST", headers: { "x-file-name": encodeURIComponent(file.name), ...(uploadId ? { "x-upload-id": uploadId } : {}) }, body: file, signal });
   if (local.ok) return { localPath: (await local.json() as { path: string }).path };
   throw new Error((await local.json().catch(() => null) as { error?: string } | null)?.error ?? `Could not save ${file.name}.`);
 }
@@ -204,6 +204,8 @@ export function ChatScreen() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState<{ index: number; total: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef<{ id: ChatId | null; controller: AbortController } | null>(null);
+  useEffect(() => () => submitting.current?.controller.abort(), []);
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   useEffect(() => setEditing(null), [selectedId]);
   const [renaming, setRenaming] = useState(false);
@@ -453,6 +455,7 @@ export function ChatScreen() {
     }
     if (command === "/stop") {
       setDraft("");
+      if (submitting.current?.id === selectedId) submitting.current?.controller.abort("stop");
       if (selectedId && waiting) await stopChat({ key: dashboardKey, id: selectedId });
       setNotice(selectedId && waiting ? "Stopping." : "Nothing is running.");
       return true;
@@ -499,42 +502,47 @@ export function ChatScreen() {
     return false;
   }
 
-  async function submit(text = draftControl.current?.read() ?? "") {
+  async function submit(text = draftControl.current?.read() ?? "", mode: "auto" | "queue" = "auto") {
     // Keep typing/focus available while cached history waits for fresh access metadata.
     if (selectedId && (!chat || chat.contact)) return;
     const message = text.trim();
     if (message.startsWith("/") && files.length === 0 && await runCommand(message)) return;
     // Sent while a reply is running, the message joins that reply (it steers it).
-    if ((!message && files.length === 0) || busy || uploading) return;
+    if ((!message && files.length === 0) || busy || uploading || submitting.current) return;
+    const submission = { id: selectedId, controller: new AbortController() };
+    submitting.current = submission;
     const fresh = !selectedId;
     let id = selectedId;
     if (!id) {
       setBusy(true);
       try {
         id = await createChat({ key: dashboardKey, ...(newIn ? { projectId: newIn.id } : {}) });
+        submission.id = id;
         setCreatedId(id);
         // The chat has its own address from now, so a reload while it sends comes back to it.
         router.replace(`/chat/${id}`);
       } catch (cause) {
         fail(cause);
-        return;
-      } finally {
+        submitting.current = null;
         setBusy(false);
+        return;
       }
     }
+    setBusy(true);
     const sending = files;
     const messageKey = sending.length ? crypto.randomUUID() : undefined;
     setDraft(""); setFiles([]); setError(""); setNotice("");
     let sent: Pending | undefined;
+    const uploaded: PendingAttachment[] = [];
     try {
-      const uploaded: PendingAttachment[] = [];
       for (const [index, file] of sending.entries()) {
         setUploading({ index: index + 1, total: sending.length });
         const contentType = file.type || "application/octet-stream";
-        const attachmentId = await registerAttachment({ key: dashboardKey, conversationId: id, messageKey: messageKey!, ...await store(file), fileName: file.name, contentType, size: file.size });
+        const attachmentId = await registerAttachment({ key: dashboardKey, conversationId: id, messageKey: messageKey!, ...await store(file, undefined, submission.controller.signal), fileName: file.name, contentType, size: file.size });
         uploaded.push({ id: attachmentId, url: URL.createObjectURL(file), fileName: file.name, contentType });
       }
       setUploading(null);
+      submission.controller.signal.throwIfAborted();
       sent = {
         id, text: message, attachments: uploaded,
         baselineCount: fresh ? 0 : messages.filter((item) => item.role === "user" && item.text === message).length,
@@ -544,17 +552,24 @@ export function ChatScreen() {
       setPending((items) => [...items, entry]);
       // A new chat takes what was picked before it existed; an existing one already has its own.
       await sendChat({
-        key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey,
+        key: dashboardKey, id, text: message, attachmentIds: uploaded.map((item) => item.id), messageKey, mode,
         ...(fresh ? { model, engine, effort: pickedEffort ?? "", access: draftAccess } : {}),
       });
+      // A send already crossing the network must acknowledge before Stop can cover it.
+      if (submission.controller.signal.reason === "stop") await stopChat({ key: dashboardKey, id }).catch(fail);
       setPending((items) => items.map((item) => item === entry ? { ...item, sent: true } : item));
       // Full access is chosen for a chat, never carried into the next new one.
       if (fresh) setDraftAccess(undefined);
     } catch (cause) {
       setUploading(null);
       setPending((items) => items.filter((item) => item !== sent));
-      setDraft(message); setFiles(sending);
-      setError(`Your message wasn't sent: ${errorText(cause)}`);
+      for (const attachment of uploaded) URL.revokeObjectURL(attachment.url);
+      const newer = draftControl.current?.read() ?? "";
+      setDraft([message, newer].filter(Boolean).join("\n\n")); setFiles(items => [...sending, ...items]);
+      setError(submission.controller.signal.aborted ? "Sending cancelled. Your message is back in the composer." : `Your message wasn't sent: ${errorText(cause)}`);
+    } finally {
+      submitting.current = null;
+      setBusy(false);
     }
   }
 
@@ -603,7 +618,10 @@ export function ChatScreen() {
   const regenerateRow = useChatEvent((message: ChatMessage) => { void rewind(message.id); });
   const branchRow = useChatEvent((message: ChatMessage) => { void branch(message.id); });
   const noteRow = useChatEvent((message: ChatMessage) => { void saveAsNote(message.id); });
-  const stop = () => { if (selectedId) void stopChat({ key: dashboardKey, id: selectedId }).catch(fail); };
+  const stop = () => {
+    if (submitting.current?.id === selectedId) submitting.current?.controller.abort("stop");
+    if (selectedId) void stopChat({ key: dashboardKey, id: selectedId }).catch(fail);
+  };
   // Only what is in the history can be regenerated, edited or branched from.
   const saved = messages.filter((message) => !message.pending);
   const lastUser = [...saved].reverse().find((message) => message.role === "user");
@@ -862,8 +880,9 @@ export function ChatScreen() {
             onDraftChange={setDraft}
             onCaret={setCaret}
             onSubmit={() => void submit(draft)}
+            onQueue={() => void submit(draft, "queue")}
             onStop={selectedId ? stop : undefined}
-            waiting={waiting}
+            waiting={waiting || Boolean(uploading)}
             busy={busy || Boolean(selectedId && chat === undefined)}
             uploading={uploading}
             files={files}

@@ -164,7 +164,7 @@ export const chatFor = internalMutation({
 });
 
 /** One turn of the task, in its own chat. */
-export const work = internalAction({
+export const work = internalMutation({
   args: { id: v.id("tasks") },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -191,7 +191,14 @@ export const work = internalAction({
     const chat = await ctx.runMutation(internal.tasks.chatFor, { id: task._id, threadId });
     if (!chat) return null;
     await ctx.runMutation(internal.tasks.clearAnswer, { id: task._id });
-    await ctx.scheduler.runAfter(0, internal.brain.handleTurn, { channel: "web", externalId: chat.externalId, text: promptFor(task), title: chat.title, ...(route ? { route } : {}) });
+    const conversation = (await ctx.db.get(task._id))?.conversationId;
+    if (!conversation) return null;
+    // Admit the work in this transaction, before another start can observe an empty chat.
+    const prompt = promptFor(task);
+    const preparingId = await ctx.runMutation(internal.codex.prepareTurn, { conversationId: conversation, prompt, queue: true });
+    const currentChat = await ctx.db.get(conversation);
+    if (currentChat) await ctx.db.patch(conversation, { pendingTurns: (currentChat.pendingTurns ?? 0) + 1 });
+    await ctx.scheduler.runAfter(0, internal.brain.handleTurn, { channel: "web", externalId: chat.externalId, text: prompt, preparingId, title: chat.title, ...(route ? { route } : {}) });
     return null;
   },
 });

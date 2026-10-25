@@ -93,6 +93,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   /** What a note just saved says: where it went, with a way to open it. */
   const [noted, setNoted] = useState<{ text: string; id: Id<"notes"> } | null>(null);
   const [sending, setSending] = useState(false);
+  const submitting = useRef(false);
   /** What scrolls: the ScrollArea's viewport, kept at the newest message. */
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -112,9 +113,11 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
   useEffect(() => { input.current?.focus(); }, [chatId]);
 
   const picture = shot ? shot[shot.use] ?? null : null;
+  const current = useRef({ chatId, draft, shot });
+  current.current = { chatId, draft, shot };
   const send = async () => {
     const text = draft.trim();
-    if ((!text && !picture) || sending) return;
+    if ((!text && !picture) || sending || submitting.current) return;
     // "/note <words>": into the Inbox note at once, with no reply to wait for.
     if (!picture && /^\/note(\s|$)/i.test(text)) {
       const words = text.slice(5).trim();
@@ -129,6 +132,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
       }
       return;
     }
+    submitting.current = true;
     setSending(true);
     setNoted(null);
     setError("");
@@ -138,12 +142,15 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
       // The picture is kept on this computer as the dashboard keeps a file you attach, and goes with the message.
       const messageKey = crypto.randomUUID();
       const attachmentIds = picture ? [await attach(id, messageKey, picture)] : [];
-      onDraft("");
-      onShot(null);
       await sendChat({ key, id, text, ...(attachmentIds.length ? { attachmentIds, messageKey } : {}) });
+      if (current.current.chatId === id) {
+        if (current.current.draft.trim() === text) onDraft("");
+        if (current.current.shot === shot) onShot(null);
+      }
     } catch (cause) {
       setError(errorText(cause));
     } finally {
+      submitting.current = false;
       setSending(false);
     }
   };
@@ -301,14 +308,15 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
                 </PetTip>
               )}
               {voice && <MicButton onClick={onTalk} />}
-              {running && !draft.trim() && !picture ? (
+              {running && (
                 <PetTip label="Stop">
                   <InputGroupButton size="icon-xs" variant="default" className="size-7 rounded-full bg-foreground text-background hover:bg-foreground/80" aria-label="Stop"
-                    onClick={() => chatId && void stopChat({ key, id: chatId })}>
+                    onClick={() => chatId && void stopChat({ key, id: chatId }).catch(cause => setError(errorText(cause)))}>
                     <SquareIcon className="size-3 fill-current" />
                   </InputGroupButton>
                 </PetTip>
-              ) : (
+              )}
+              {(!running || draft.trim() || picture) && (
                 <InputGroupButton type="submit" size="icon-xs" variant={!draft.trim() && !picture ? "secondary" : "default"} className={cn("size-7 rounded-full", !draft.trim() && !picture && "text-muted-foreground disabled:opacity-100")} aria-label="Send" disabled={(!draft.trim() && !picture) || sending}>
                   <ArrowUpIcon className="size-4" />
                 </InputGroupButton>

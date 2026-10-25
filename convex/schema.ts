@@ -1458,6 +1458,12 @@ export default defineSchema({
 
   /** Subscription turns are queued for the owner's outbound local runner. */
   codexTurns: defineTable({
+    /** This turn's native session, retained if the chat switches engines while it runs. */
+    sessionCursor: v.optional(v.string()),
+    /** Accepted web send awaiting brain preparation. It already owns its queue position and can be stopped/removed. */
+    preparing: v.optional(v.boolean()),
+    /** Only this reply may receive the follow-up. Unset means a separate turn. */
+    steerTarget: v.optional(v.id("codexTurns")),
     /** Unset only on turns from before Perry ran on this computer, answered without a runner. */
     runnerId: v.optional(v.id("runners")),
     conversationId: v.id("conversations"),
@@ -1622,6 +1628,7 @@ export default defineSchema({
     createdAt: v.number(),
     appliedAt: v.optional(v.number()),
   })
+    .index("by_runner_status", ["runnerId", "status"])
     .index("by_turn_status", ["turnId", "status"])
     .index("by_conversation_status", ["conversationId", "status"])
     .index("by_run", ["runId"])

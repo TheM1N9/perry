@@ -198,10 +198,11 @@ export const handle = httpAction(async (ctx, request) => {
   if (!access) return json({ error: "No Codex turn is running for this runner." }, 401);
   if (!message) return fail(null, -32700, "Parse error");
   if (message.id === undefined || message.id === null) return new Response(null, { status: 202 });
-  // Several chats' turns are running and this call does not say which it is from: acting on one could be acting on the wrong chat.
+  // Missing, stale or conflicting identities must never select another assistant session.
   if (access.unknown && message.method === "tools/call") {
-    return fail(message.id, -32603, "Perry is running several chats at once and cannot tell which one this call is from. Try again.");
+    return fail(message.id, -32603, "Perry cannot tell which active chat this call is from. Its session may have ended. Try again from the active chat.");
   }
+  if (access.stopped && message.method === "tools/call") return toolError(message.id, new Error("This reply was stopped. Send a new message to continue."));
 
   // Paused, a turn still winding down does nothing more: the owner's pause holds mid-turn too (pause.ts).
   if (access.paused && message.method === "tools/call") return toolError(message.id, new Error(PAUSED_ERROR));

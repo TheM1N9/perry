@@ -88,6 +88,13 @@ export const updateTask = internalMutation({
   handler: async (ctx, { taskId, turnId, ...rest }) => {
     const id = ctx.db.normalizeId("tasks", taskId);
     if (!id) return null;
+    const task = await ctx.db.get(id);
+    if (!task) return null;
+    // The check and update serialize with owner cancellation, including late tool results.
+    if (task.status === "cancelled") {
+      if (rest.status === "cancelled") return null;
+      throw new Error("The owner cancelled this task; stop working on it.");
+    }
     if (rest.status && ["done", "blocked", "failed"].includes(rest.status) &&
       await ctx.runQuery(internal.tasks.awaitingSteering, { id: taskId, ...(turnId ? { turnId } : {}) })) {
       throw new Error("The owner sent an update still awaiting delivery. Keep completed work and let its follow-up turn finish the task.");
@@ -97,6 +104,11 @@ export const updateTask = internalMutation({
       if (value !== undefined) patch[key] = value;
     }
     await ctx.db.patch(id, patch);
+    if (rest.status === "cancelled") {
+      await ctx.db.patch(id, { waiting: undefined });
+      if (task.conversationId) await ctx.runMutation(internal.codex.requestStop, { conversationId: task.conversationId });
+      await ctx.scheduler.runAfter(0, internal.tasks.tick, {});
+    }
     return null;
   },
 });

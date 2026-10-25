@@ -1,0 +1,15 @@
+{
+  "passed": false,
+  "checks": {
+    "explicit stale native identity cannot act on another session": false,
+    "task cancellation interrupts its running turn": false,
+    "late completion cannot overwrite task cancellation": false,
+    "duplicate task starts schedule one preparation": false,
+    "duplicate task starts create one history session": false,
+    "hard Stop preserves a sibling still starting on the shared engine": false
+  },
+  "evidence": {
+    "duplicateStarts": 2,
+    "engineKilled": true
+  }
+}

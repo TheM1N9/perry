@@ -510,6 +510,7 @@ export async function loadConversation(
 
 export const handleTurn = internalAction({
   args: {
+    preparingId: v.optional(v.string()),
     channel: vChannel,
     externalId: v.string(),
     text: v.string(),
@@ -540,6 +541,8 @@ export const handleTurn = internalAction({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const preparing = args.preparingId ? await ctx.runQuery(internal.codex.preparation, { id: args.preparingId }) : null;
+    if (args.preparingId && !preparing) return null;
     const channel = args.channel as Channel;
     // What the web app keeps track of while it waits: its own chats, and what it sent into a messaging app's.
     const web = channel === "web" || args.fromWeb === true;
@@ -574,6 +577,7 @@ export const handleTurn = internalAction({
       // answered that Perry is paused, the owner's with how to resume; commands still work, /resume among them.
       // The web app's own messages go on to be refused where the turn is queued, and the chat shows why.
       if (!command && (channel !== "web" || conversation.jobId || conversation.taskId) && await ctx.runQuery(internal.pause.state, {})) {
+        if (args.preparingId) throw new Error(PAUSED_ERROR);
         if (conversation.jobId || conversation.taskId) await ctx.runMutation(internal.pause.held, { conversationId: conversation._id });
         else if (!args.fromWeb && !args.hidden) await say(guest ? PAUSED_REPLY : PAUSED_OWNER);
         return null;
@@ -657,7 +661,7 @@ export const handleTurn = internalAction({
         if (owners && route && !conversation.engine && conversation.moved) await ctx.runMutation(internal.routing.clearMoved, { id: conversation._id });
         conversation = await onEngine(ctx, conversation, settings, !guest && Boolean(args.model));
       }
-      const runId: Id<"runs"> = await ctx.runMutation(internal.runs.start, {
+      const runId: Id<"runs"> = preparing?.runId ?? await ctx.runMutation(internal.runs.start, {
         conversationId: conversation._id,
         prompt: args.label ?? args.text,
         ...(route ? { route } : {}),
@@ -688,6 +692,8 @@ export const handleTurn = internalAction({
         await ctx.runMutation(internal.codex.enqueueTurn, {
           conversationId: conversation._id,
           runId,
+          ...(args.preparingId ? { preparingId: args.preparingId } : {}),
+          ...(route ? { route } : {}),
           prompt,
           ...turn,
           ...settings,
@@ -702,6 +708,7 @@ export const handleTurn = internalAction({
         if (guest) await ctx.runMutation(internal.routing.guestsStuck, { why: null });
         if (sent.length) await ctx.runMutation(internal.conversations.clearUnprompted, { id: conversation._id, through: sent[sent.length - 1].at });
       } catch (error) {
+        if (args.preparingId) throw error;
         // Usually no runner is online. Say so: a silent failure is worse than
         // an admitted one, because you keep waiting for a reply that never comes.
         const message: string = await ctx.runQuery(internal.codex.cleanTurnError, { detail: turnErrorDetail(error) });
@@ -731,8 +738,14 @@ export const handleTurn = internalAction({
         }
       }
       return null;
+    } catch (error) {
+      if (!args.preparingId) throw error;
+      await ctx.runMutation(internal.codex.failPreparation, {
+        id: args.preparingId, error: await ctx.runQuery(internal.codex.cleanTurnError, { detail: turnErrorDetail(error) }), errorCode: turnErrorCode(error),
+      });
+      return null;
     } finally {
-      if (web && !delegated) {
+      if (web && !delegated && !args.preparingId) {
         await ctx.runMutation(internal.conversations.finishWebTurn, { id: conversation._id, prompt: args.text });
       }
     }
