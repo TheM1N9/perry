@@ -63,7 +63,8 @@ async function runCommand(
   const [raw] = text.trim().split(/\s+/);
   const command = raw.toLowerCase().replace(/@.*$/, ""); // strip /cmd@botname
 
-  // The chat's own engine, else the default it follows; none while the owner has not chosen one.
+  // Task commands describe the task's inherited selection, just as the composer does.
+  if (conversation.taskId) conversation = { ...conversation, ...await turnSettings(ctx, conversation) };
   const engine = conversation.engine ?? (await ctx.runQuery(internal.installation.getDefaultEngine, {})) ?? undefined;
   const modelCommand = parseModelCommand(text);
   if (modelCommand) {
@@ -299,6 +300,10 @@ async function guestTurn(ctx: ActionCtx, conversation: Doc<"conversations">, con
  * cannot use; the account's own default is the one model/list marks.
  */
 async function turnSettings(ctx: ActionCtx, conversation: Doc<"conversations">, job?: { model?: string; engine?: EngineKind }) {
+  if (conversation.taskId && !job?.model) {
+    const choice: Choice | null = await ctx.runQuery(internal.routing.forChat, { id: conversation._id });
+    if (choice) return { engine: choice.engine, model: choice.model, effort: choice.effort, access: conversation.access ?? "supervised" as const };
+  }
   const models: ModelOption[] = await ctx.runQuery(internal.models.list, {});
   const engine = job?.model && job.engine ? job.engine
     : conversation.engine ?? (await ctx.runQuery(internal.installation.getDefaultEngine, {})) ?? undefined;
@@ -629,7 +634,7 @@ export const handleTurn = internalAction({
       // default) while that has room (lib/routing.ts). With neither, nothing is routed and the turn is refused,
       // asking the owner to choose (codex.enqueueTurn): routing never picks a default for them.
       const owners = !guest && !conversation.jobId && !conversation.taskId;
-      const chosen: Choice | null = owners && !args.route && !args.model ? await ctx.runQuery(internal.routing.forChat, { id: conversation._id }) : null;
+      const chosen: Choice | null = !guest && !conversation.jobId && !args.route && !args.model ? await ctx.runQuery(internal.routing.forChat, { id: conversation._id }) : null;
       // Someone else's chat is routed only among the engines that can be locked down for it; with none, no turn runs.
       const guestly = guest ? await guestRoute(ctx, conversation) : undefined;
       const stuck = guestly && "none" in guestly ? guestly.none : undefined;
@@ -638,6 +643,7 @@ export const handleTurn = internalAction({
       const settings = guest ? { engine: route?.engine, model: route?.model, effort: route?.effort, access: "supervised" as const }
         : route ? { engine: route.engine, model: route.model, effort: route.effort, access: conversation.access ?? "supervised" as const }
           : await turnSettings(ctx, conversation, args.model ? { model: args.model, engine: args.engine } : undefined);
+      if (chosen && conversation.taskId) await ctx.runMutation(internal.tasks.routed, { id: conversation.taskId, route: routeOf(chosen) });
       const moved = owners ? route?.movedFrom : undefined;
       if (moved && route) {
         // Moved for its engine's limit. A chat on an engine of its own goes on on the new one; one that follows the

@@ -337,26 +337,31 @@ async function main() {
   };
   /** When each engine's plan limits were last read, those being read, and reads waiting their minute. */
   const limitsRead = new Map<EngineKind, number>();
-  const readingLimits = new Set<EngineKind>();
+  const readingLimits = new Map<EngineKind, Promise<void>>();
   const limitsLater = new Map<EngineKind, ReturnType<typeof setTimeout>>();
   /**
    * Read how much of an engine's plan is used and report it (convex/usage.ts):
    * every LIMITS_EVERY_MS while it is signed in, or now (`fresh`), for an
    * engine that can say. None of the plan is spent reading it.
    */
-  const readLimits = async (engine: Engine, fresh = false) => {
-    if (!engine.limits || !statuses.get(engine.kind)?.signedIn || readingLimits.has(engine.kind) || replacing.has(engine.kind)) return;
-    if (!fresh && Date.now() - (limitsRead.get(engine.kind) ?? 0) < LIMITS_EVERY_MS) return;
-    readingLimits.add(engine.kind);
+  const readLimits = (engine: Engine, fresh = false): Promise<void> => {
+    const reading = readingLimits.get(engine.kind);
+    if (reading) return reading;
+    if (!engine.limits || !statuses.get(engine.kind)?.signedIn || replacing.has(engine.kind)) return Promise.resolve();
+    if (!fresh && Date.now() - (limitsRead.get(engine.kind) ?? 0) < LIMITS_EVERY_MS) return Promise.resolve();
     limitsRead.set(engine.kind, Date.now());
-    try {
-      const limits = await engine.limits(fresh);
-      if (limits) await client.mutation(api.usage.report, { token, engine: engine.kind, limits });
-    } catch (error) {
-      console.log(dim(`  could not read ${engine.label}'s plan limits: ${message(error)}`));
-    } finally {
-      readingLimits.delete(engine.kind);
-    }
+    const done = (async () => {
+      try {
+        const limits = await engine.limits!(fresh);
+        if (limits) await client.mutation(api.usage.report, { token, engine: engine.kind, limits });
+      } catch (error) {
+        console.log(dim(`  could not read ${engine.label}'s plan limits: ${message(error)}`));
+      } finally {
+        readingLimits.delete(engine.kind);
+      }
+    })();
+    readingLimits.set(engine.kind, done);
+    return done;
   };
   /** After a turn, its engine's limits are read again: at once, or when a minute has passed since the last read. */
   const readLimitsSoon = (engine: Engine) => {
@@ -469,7 +474,7 @@ async function main() {
   // --- Approvals -------------------------------------------------------------
 
   type Request = {
-    kind: "command" | "file";
+    kind: "command" | "file" | "tool";
     what: string;
     detail: string | null;
     cwd?: string;
@@ -501,11 +506,12 @@ async function main() {
       console.log(`${cyan("  allowed")} ${request.what}`);
       return true;
     }
-    if (next === "review") {
+    if (next === "review" && request.kind !== "tool") {
+      const kind = request.kind;
       // The chat's own engine reviews when it can; with none here that can, the owner is asked.
       const reviewer = quickEngine(engine);
       const verdict = await quickly(reviewer, () => review(reviewer, {
-        kind: request.kind,
+        kind,
         title: request.what,
         cwd: request.cwd,
         workdir,
@@ -555,7 +561,7 @@ async function main() {
       const timer = setTimeout(() => settle(false, "timeout"), APPROVAL_TIMEOUT_MS);
       unsubscribe = client.onUpdate(api.approvals.decision, { token, id }, (status) => {
         // "auto": the chat was put on Full access while this waited.
-        if (status === "approved" || status === "auto" || status === "declined") settle(status !== "declined", "elsewhere");
+        if (status === "approved" || status === "auto" || status === "declined" || status === "expired") settle(status === "approved" || status === "auto", "elsewhere");
       }, (error) => console.error(red(`  could not follow the dashboard's answer: ${message(error)}`)));
       terminal?.question(`  ${bold("run it?")} [y/N/a = always] `, { signal: abort.signal })
         .then((answer) => {
@@ -597,7 +603,15 @@ async function main() {
       }, conversationId, engine);
       return optionOf(request, approved ? "accept" : "decline");
     }
-    // Wider permissions, and questions from other tools, have no place to be asked yet.
+    if (request.type === "tool_user_input") {
+      const approved = await approve({
+        kind: "tool",
+        what: `Confirm request from ${detail.server ?? "an external tool"}`,
+        detail: detail.message ?? "This tool is waiting for your confirmation.",
+      }, conversationId, engine);
+      return optionOf(request, approved ? "accept" : "decline");
+    }
+    // Wider permission grants still require a separate supported flow.
     return optionOf(request, "decline");
   };
 
@@ -1066,7 +1080,10 @@ async function main() {
       // Where the engine's plan stands after the turn: a limit it refused the turn for, or, as it went through, none.
       if (engine && job.kind !== "compact") {
         const hit = result.errorCode === "limit" && result.error ? { at: Date.now(), message: result.error } : result.error || result.stopped ? undefined : null;
-        if (hit !== undefined) void client.mutation(api.usage.report, { token, engine: kind, hit }).catch(() => {});
+        if (hit) {
+          await client.mutation(api.usage.report, { token, engine: kind, hit }).catch(() => {});
+          await readLimits(engine, true);
+        } else if (hit !== undefined) void client.mutation(api.usage.report, { token, engine: kind, hit }).catch(() => {});
         if (hit) console.log(yellow(`  ${engine.label} refused the turn for your plan's limit`));
         readLimitsSoon(engine);
       }

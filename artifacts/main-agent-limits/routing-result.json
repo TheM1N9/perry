@@ -1,0 +1,443 @@
+{
+  "ranAt": "2026-10-22T18:31:55.617Z",
+  "checks": {
+    "noRealEngineSignedIn": true,
+    "automaticQuickTier": true,
+    "automaticStandardTier": true,
+    "automaticDeepTier": true,
+    "newChatOnTheDefaultEngine": true,
+    "defaultWinsWhileItHasRoom": true,
+    "ownerPickWinsForJob": true,
+    "ownerPickWinsForChat": true,
+    "listEnginesAnswers": true,
+    "perryPickUsed": true,
+    "unknownPickRefused": true,
+    "backgroundMovesPastCap": true,
+    "chatKeepsEngineWithRoom": true,
+    "chatMovesWhenUsedUp": true,
+    "chatSaysItMoved": true,
+    "allLimitedWaits": true,
+    "runsAfterReset": true,
+    "refusedTurnRetriedElsewhere": true,
+    "mainAgentProgressContinues": true,
+    "resetWaitVisible": true,
+    "noMainCallBeforeReset": true,
+    "mainResumesSelectedEngine": true,
+    "failedJobRerunAfterReset": true,
+    "ownerToldOnce": true,
+    "workPageShowsMove": true,
+    "keepOnPinsItBack": true,
+    "runDetailsSayWhy": true,
+    "noPageErrors": true,
+    "screenshots": true,
+    "onlyFakeEnginesRan": true,
+    "completed": true
+  },
+  "notes": {
+    "realEngines": [
+      "codex: not signed in",
+      "grok: signed in",
+      "claude: not signed in",
+      "antigravity: not signed in"
+    ],
+    "automatic": {
+      "Heartbeat": {
+        "route": {
+          "engine": "grok",
+          "model": "grok-fake-fast",
+          "effort": "low",
+          "tier": "quick",
+          "by": "auto",
+          "why": "Quick tier, for the heartbeat, a quick look over what is going on: grok-fake-fast at low. On Grok Build, your default engine, which has room."
+        },
+        "sent": {
+          "profile": "grok",
+          "model": "grok-fake-fast",
+          "effort": "low"
+        }
+      },
+      "Pay rent reminder": {
+        "route": {
+          "engine": "grok",
+          "model": "grok-fake-fast",
+          "effort": "low",
+          "tier": "quick",
+          "by": "auto",
+          "why": "Quick tier, for a reminder, run once: grok-fake-fast at low. On Grok Build, your default engine, which has room."
+        },
+        "sent": {
+          "profile": "grok",
+          "model": "grok-fake-fast",
+          "effort": "low"
+        }
+      },
+      "Morning briefing": {
+        "route": {
+          "engine": "grok",
+          "model": "grok-fake-fast",
+          "effort": "medium",
+          "tier": "standard",
+          "by": "auto",
+          "why": "Standard tier, for a scheduled job: grok-fake-fast at medium. On Grok Build, your default engine, which has room."
+        },
+        "sent": {
+          "profile": "grok",
+          "model": "grok-fake-fast",
+          "effort": "medium"
+        }
+      },
+      "Memory consolidation": {
+        "route": {
+          "engine": "grok",
+          "model": "grok-fake-heavy",
+          "effort": "high",
+          "tier": "deep",
+          "by": "auto",
+          "why": "Deep tier, for the nightly memory consolidation: grok-fake-heavy at high. On Grok Build, your default engine, which has room."
+        },
+        "sent": {
+          "profile": "grok",
+          "model": "grok-fake-heavy",
+          "effort": "high"
+        }
+      },
+      "shortTask": {
+        "engine": "grok",
+        "model": "grok-fake-fast",
+        "effort": "medium",
+        "tier": "standard",
+        "by": "auto",
+        "why": "Standard tier, for a background task with a short brief: grok-fake-fast at medium. On Grok Build, your default engine, which has room."
+      },
+      "longTask": {
+        "engine": "grok",
+        "model": "grok-fake-heavy",
+        "effort": "high",
+        "tier": "deep",
+        "by": "auto",
+        "why": "Deep tier, for a background task with a long brief: grok-fake-heavy at high. On Grok Build, your default engine, which has room."
+      },
+      "newChat": {
+        "route": {
+          "engine": "grok",
+          "model": "grok-fake-fast",
+          "effort": "medium",
+          "tier": "standard",
+          "by": "auto",
+          "why": "Standard tier, for a chat: grok-fake-fast at medium. On Grok Build, your default engine, which has room."
+        },
+        "reply": "Fake grok reply to: hello, which engine is this. One two three four five six sev",
+        "engine": "grok"
+      }
+    },
+    "defaultWins": {
+      "job": {
+        "engine": "grok",
+        "model": "grok-fake-fast",
+        "effort": "medium",
+        "tier": "standard",
+        "by": "auto",
+        "why": "Standard tier, for a scheduled job: grok-fake-fast at medium. On Grok Build, your default engine, which has room."
+      },
+      "chat": {
+        "engine": "grok",
+        "model": "grok-fake-fast",
+        "effort": "medium",
+        "tier": "standard",
+        "by": "auto",
+        "why": "Standard tier, for a chat: grok-fake-fast at medium. On Grok Build, your default engine, which has room."
+      }
+    },
+    "ownerPick": {
+      "job": {
+        "engine": "antigravity",
+        "model": "gemini-fake-flash",
+        "effort": "medium",
+        "tier": "standard",
+        "by": "owner",
+        "why": "Your pick: gemini-fake-flash at medium. On Antigravity, as picked, which has room."
+      },
+      "chat": {
+        "engine": "grok",
+        "model": "grok-fake-heavy",
+        "effort": "low",
+        "tier": "standard",
+        "by": "owner",
+        "why": "Your pick: grok-fake-heavy at low. On Grok Build, as picked, which has room."
+      },
+      "sent": {
+        "model": "grok-fake-heavy",
+        "effort": "low"
+      }
+    },
+    "perryPick": {
+      "listEngines": "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"engines\\\":[{\\\"engine\\\":\\\"grok\\\",\\\"label\\\":\\\"Grok Build\\\",\\\"room\\\":\\\"room\\\",\\\"tiers\\\":{\\\"quick\\\":\\\"grok-fake-fast at low\\\",\\\"standard\\\":\\\"grok-fake-fast at medium\\\",\\\"deep\\\":\\\"grok-fake-heavy at high\\\"},\\\"default\\\":true,\\\"models\\\":[{\\\"model\\\":\\\"grok/grok-fake-fast\\\",\\\"name\\\":\\\"grok-fake-fast\\\",\\\"isDefault\\\":true,\\\"efforts\\\":[\\\"low\\\",\\\"medium\\\",\\\"high\\\"],\\\"defaultEffort\\\":\\\"medium\\\"},{\\\"model\\\":\\\"grok/grok-fake-heavy\\\",\\\"name\\\":\\\"grok-fake-heavy\\\",\\\"isDefault\\\":false,\\\"efforts\\\":[\\\"low\\\",\\\"medium\\\",\\\"high\\\"],\\\"defaultEffort\\\"",
+      "engines": "Called list_engines: ok over HTTP.",
+      "research": {
+        "engine": "grok",
+        "model": "grok-fake-heavy",
+        "effort": "high",
+        "tier": "deep",
+        "by": "perry",
+        "why": "Perry's pick (deep): grok-fake-heavy at high. On Grok Build, your default engine, which has room."
+      },
+      "receipts": {
+        "engine": "antigravity",
+        "model": "gemini-fake-flash",
+        "effort": "low",
+        "tier": "standard",
+        "by": "perry",
+        "why": "Perry's pick: gemini-fake-flash at low. On Antigravity, as Perry picked, which has room."
+      },
+      "refused": "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"error\\\":\\\"No signed-in engine offers \\\\\\\"grok/no-such-model\\\\\\\"; list_engines names the models as <engine>/<id>.\\\"}\"}]}}"
+    },
+    "modelsAfterPicks": [
+      "grok/grok-fake-fast*:medium",
+      "grok/grok-fake-heavy:medium",
+      "antigravity/gemini-fake-pro*:medium",
+      "antigravity/gemini-fake-flash:medium"
+    ],
+    "movedAtCap": {
+      "job": {
+        "engine": "antigravity",
+        "model": "gemini-fake-flash",
+        "effort": "low",
+        "tier": "quick",
+        "by": "auto",
+        "why": "Quick tier, for a reminder, run once: gemini-fake-flash at low. Moved from Grok Build to Antigravity, the signed-in engine with the most of its plan left: 95% of Grok Build's 5-hour limit is used.",
+        "movedFrom": "grok"
+      },
+      "chat": {
+        "engine": "grok",
+        "model": "grok-fake-heavy",
+        "effort": "low",
+        "tier": "standard",
+        "by": "owner",
+        "why": "Your pick: grok-fake-heavy at low. On Grok Build, as picked, which has room."
+      }
+    },
+    "chatMoved": {
+      "route": {
+        "engine": "antigravity",
+        "model": "gemini-fake-pro",
+        "effort": "medium",
+        "tier": "standard",
+        "by": "auto",
+        "why": "Standard tier, for a chat: gemini-fake-pro at medium. Moved from Grok Build to Antigravity, the signed-in engine with the most of its plan left: Grok Build refused a reply for its plan's limit.",
+        "movedFrom": "grok"
+      },
+      "chat": {
+        "engine": "antigravity",
+        "moved": {
+          "from": "grok",
+          "why": "Grok Build refused a reply for its plan's limit",
+          "at": 1792693817184
+        }
+      },
+      "reply": "Fake antigravity reply to: grok is used up now. One two three four five six seve"
+    },
+    "chatSaysItMoved": "Moved to Antigravity. Grok Build refused a reply for its plan's limit. Pick a Grok Build model to move it back.",
+    "modelsAfterMove": [
+      "grok/grok-fake-fast*:medium",
+      "grok/grok-fake-heavy:medium",
+      "antigravity/gemini-fake-pro*:medium",
+      "antigravity/gemini-fake-flash:medium"
+    ],
+    "learned": [
+      "{\n  \"models\": [\n    {\n      \"id\": \"grok-fake-fast\",\n      \"name\": \"grok-fake-fast\",\n      \"isDefault\": true,\n      \"efforts\": [\n        \"low\",\n        \"medium\",\n        \"high\"\n      ],\n      \"defaultEffort\": \"medium\"\n    },\n    {\n      \"id\": \"grok-fake-heavy\",\n      \"name\": \"grok-fake-heavy\",\n      \"isDefault\": false,\n      \"efforts\": [\n        \"low\",\n        \"medium\",\n        \"high\"\n      ],\n      \"defaultEffort\": \"medium\"\n    }\n  ],\n  \"updatedAt\": 1792693740049\n}",
+      "{\"models\":[{\"id\":\"gemini-fake-pro\",\"name\":\"gemini-fake-pro\",\"isDefault\":true,\"efforts\":[\"low\",\"medium\",\"high\"],\"defaultEffort\":\"medium\"},{\"id\":\"gemini-fake-flash\",\"name\":\"gemini-fake-flash\",\"isDefault\":false,\"efforts\":[\"low\",\"medium\",\"high\"],\"defaultEffort\":\"medium\"}]}"
+    ],
+    "allLimited": {
+      "waiting": {
+        "until": 1792693847736,
+        "why": "No engine has room: Grok Build's 5-hour limit is used up and resets at 12:01 am; Antigravity's 5-hour limit is used up and resets at 12:00 am. It runs at 12:00 am, when Antigravity has room again."
+      },
+      "ranEarly": false,
+      "run": {
+        "startedAt": 1792693847744,
+        "resetAt": 1792693832736,
+        "status": "ok",
+        "route": {
+          "engine": "antigravity",
+          "model": "gemini-fake-pro",
+          "effort": "medium",
+          "tier": "standard",
+          "by": "auto",
+          "why": "Standard tier, for a scheduled job: gemini-fake-pro at medium. Moved from Grok Build to Antigravity, the signed-in engine with the most of its plan left: Grok Build's 5-hour limit is used up and resets at 12:01 am.",
+          "movedFrom": "grok"
+        }
+      },
+      "told": [
+        "⏰ **Morning briefing** is waiting. No engine has room: Grok Build's 5-hour limit is used up and resets at 12:01 am; Antigravity's 5-hour limit is used up and resets at 12:00 am. It runs at 12:00 am, when Antigravity has room again."
+      ]
+    },
+    "midTurn": {
+      "reply": "Fake antigravity reply to: hello after the limit. One two three four five six seven eight nine ten.",
+      "runs": [
+        {
+          "status": "ok",
+          "route": {
+            "engine": "antigravity",
+            "model": "gemini-fake-pro",
+            "effort": "medium",
+            "tier": "standard",
+            "by": "auto",
+            "why": "Standard tier, for a chat: gemini-fake-pro at medium. Moved from Grok Build to Antigravity, the signed-in engine with the most of its plan left: Grok Build refused it for its plan's limit. Attempted engines: Grok Build → Antigravity.",
+            "movedFrom": "grok",
+            "retried": true
+          }
+        }
+      ],
+      "turns": [
+        {
+          "engine": "grok",
+          "status": "error",
+          "retryOf": false
+        },
+        {
+          "engine": "antigravity",
+          "status": "done",
+          "retryOf": true
+        }
+      ],
+      "refusedOnGrok": true
+    },
+    "mainAgentHandoff": {
+      "reply": "Continued from recorded progress. The action count is 1.",
+      "route": {
+        "engine": "antigravity",
+        "model": "gemini-fake-pro",
+        "effort": "medium",
+        "tier": "standard",
+        "by": "auto",
+        "why": "Standard tier, for a chat: gemini-fake-pro at medium. Moved from Grok Build to Antigravity, the signed-in engine with the most of its plan left: Grok Build refused it for its plan's limit. Continued with recorded progress. Attempted engines: Grok Build → Antigravity.",
+        "movedFrom": "grok",
+        "retried": true
+      },
+      "attempts": [
+        "grok",
+        "antigravity"
+      ]
+    },
+    "mainReset": {
+      "resetAt": 1792693862471,
+      "attempts": [
+        {
+          "engine": "grok",
+          "startedAt": 1792693857187
+        },
+        {
+          "engine": "grok",
+          "startedAt": 1792693877503,
+          "resetResumes": 1
+        }
+      ]
+    },
+    "recovery": {
+      "failedRun": {
+        "status": "error",
+        "error": "You've hit the rate limit for your plan. Upgrade your account or try again later.",
+        "route": {
+          "engine": "grok",
+          "model": "grok-fake-fast",
+          "effort": "medium",
+          "tier": "standard",
+          "by": "auto",
+          "why": "Standard tier, for a scheduled job: grok-fake-fast at medium. On Grok Build, your default engine, which has room."
+        }
+      },
+      "waiting": {
+        "until": 1792693898071,
+        "why": "No engine has room: Antigravity's 5-hour limit is used up and resets at 12:01 am. It runs at 12:01 am, when Antigravity has room again."
+      },
+      "rerun": {
+        "engine": "antigravity",
+        "model": "gemini-fake-pro",
+        "effort": "medium",
+        "tier": "standard",
+        "by": "auto",
+        "why": "Standard tier, for a scheduled job: gemini-fake-pro at medium. Moved from Grok Build to Antigravity, the signed-in engine with the most of its plan left: Grok Build refused a reply for its plan's limit.",
+        "movedFrom": "grok"
+      },
+      "runs": [
+        {
+          "status": "error",
+          "startedAt": 1792693878113
+        },
+        {
+          "status": "ok",
+          "startedAt": 1792693898082
+        }
+      ],
+      "sweepReset": 1792693883071,
+      "told": [
+        "⏰ **Inbox sweep** didn't run: Grok Build refused it for its plan's limit. No engine has room: Antigravity's 5-hour limit is used up and resets at 12:01 am. It runs at 12:01 am, when Antigravity has room again."
+      ]
+    },
+    "workPage": {
+      "movedRow": "Inbox sweep\n\nEvery day at 6:00\nNext in 6 hr\n(23 Oct 2026, 06:00)\nLast ran now\n(23 Oct 2026, 00:01)\n\nLast run on Antigravity · gemini-fake-pro at medium\n\nMoved to Antigravity: Grok Build refused a reply for its plan's limit.\n\nKeep on Grok Build\n\nFake antigravity reply to: ⏰ Inbox sweep (Friday, 23 October 2026 at 00:01)\n\nSweep the owner's inbox and say what needs a reply.\n\nConditional deliv. One two three four five six seven eight nine ten.\n\nResults\nAutomatic\nRun now",
+      "kept": {
+        "engine": "grok",
+        "model": "grok-fake-fast",
+        "stay": true
+      }
+    },
+    "runDetails": "Engine, model and thinking\n\nAntigravity · gemini-fake-pro at medium · standard tier\n\nPicked by the kind of work. Standard tier, for a chat: gemini-fake-pro at medium. Moved from Grok Build to Antigravity, the signed-in engine with the most of its plan left: Grok Build refused it for its plan's limit. Attempted engines: Grok Build → Antigravity. This run recovered from a usage limit.",
+    "pageErrors": [],
+    "turnEngines": [
+      "grok",
+      "antigravity"
+    ],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\perry-tests\\auto-routing\\perry-auto-routing-BaR9M9\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn 86fpna33ep510gapwvpzkfvmwb\u001b[0m",
+      "\u001b[2m  saved turn ns7pgfrd5q07378dftt7b669a4\u001b[0m",
+      "\u001b[2m  saved turn rn9dp35fp7e2qqvnvppr6kkh6s\u001b[0m",
+      "\u001b[2m  saved turn fsdtcdtma8ex5v0gnmzsm09vt8\u001b[0m",
+      "\u001b[2m  saved turn 0fe68nbg3meazwt6b5wh6h7688\u001b[0m",
+      "\u001b[2m  saved turn j68napgwe0sbkddj16xcvj616e\u001b[0m",
+      "\u001b[2m  saved turn cqsqjj0xckwh9qzf7dt45bevx3\u001b[0m",
+      "\u001b[2m  saved turn m76c8bxazfwvk9znxcmy1xxzhz\u001b[0m",
+      "\u001b[2m  saved turn 4c2t59syfhvyjprg3z9smr8py9\u001b[0m",
+      "\u001b[2m  saved turn avap5vh7b1zneatym2dj11paz8\u001b[0m",
+      "\u001b[2m  saved turn fxx1ww7rwkngwbvhv9kaqc0ppt\u001b[0m",
+      "\u001b[2m  saved turn 70myp45v9abbrnskjgnhyykwr4\u001b[0m",
+      "\u001b[2m  saved turn x5wddmmbpb9yshq34j4rj6zzpg\u001b[0m",
+      "\u001b[2m  saved turn tv81ajk3a4xw4v830mcd4n8mwg\u001b[0m",
+      "\u001b[2m  saved turn e6jhfb9pgm9cgea0c9qpdmz40r\u001b[0m",
+      "\u001b[2m  saved turn s8jp2ywvmebzz6g80cqmtpf9vm\u001b[0m",
+      "\u001b[2m  saved turn g1b12mntzcpkrmtr8fw1dy2qmp\u001b[0m",
+      "\u001b[2m  saved turn f4wnga66x7nkjadrvf42cd88es\u001b[0m",
+      "\u001b[2m  saved turn nzhpfmzt1hmgxqfcs7r9xsrj2k\u001b[0m",
+      "\u001b[2m  saved turn 0d0b2yb0vsv4qqt092p7awa8tw\u001b[0m",
+      "\u001b[2m  saved turn 90pxm5kxrjcafdjzafc4pv8m10\u001b[0m",
+      "\u001b[2m  saved turn xve9hakeax7pd7wngzm34jdm9n\u001b[0m",
+      "\u001b[2m  saved turn s0z5my8vzp4jd14qcng35hqx38\u001b[0m",
+      "\u001b[2m  saved turn g6svdgckh7hhhczy81eha7ash2\u001b[0m",
+      "\u001b[2m  saved turn zp200665q0gbvnhbb0yvqqh2gd\u001b[0m",
+      "\u001b[2m  saved turn 6rgw9td0x1y722y7vxyh742hdm\u001b[0m",
+      "\u001b[33m  Grok Build refused the turn for your plan's limit\u001b[0m",
+      "\u001b[2m  saved turn 6jk0n9hwaxxraedga2ygdy8eyw\u001b[0m",
+      "\u001b[2m  saved turn rwd1ger7q4hcyej8qcyzxjdshw\u001b[0m",
+      "\u001b[33m  Grok Build refused the turn for your plan's limit\u001b[0m",
+      "\u001b[2m  saved turn y1x42f961v62865rkrmcrgpny0\u001b[0m",
+      "\u001b[2m  saved turn v2fhd4j760jpx6j6afrfpveqn1\u001b[0m",
+      "\u001b[33m  Grok Build refused the turn for your plan's limit\u001b[0m",
+      "\u001b[2m  saved turn f93f36vxvbzssq6fn0vyxmj7fn\u001b[0m",
+      "\u001b[2m  saved turn 9tnf2tvkpvmtdpqdtkv5e3naq8\u001b[0m",
+      "\u001b[33m  Grok Build refused the turn for your plan's limit\u001b[0m",
+      "\u001b[2m  saved turn sckj312jsagw5bmdcyzgttevxt\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

@@ -1,0 +1,83 @@
+{
+  "ranAt": "2026-10-23T20:43:02.071Z",
+  "scope": "Isolated production backend and browser; synthetic runner metadata; no runner process, no model CLI and no paid calls",
+  "checks": {
+    "taskChatInheritsClaudeOpusHigh": true,
+    "legacyUnconfiguredChatReadDoesNotPersistDefaults": true,
+    "browserShowsInheritedModelAndHighThinking": true,
+    "browserFollowupQueuesClaudeHigh": true,
+    "browserSendDoesNotPersistInheritedSelection": true,
+    "noRunnerStarted:k4begcax0q5vfm0qwk7dknvxy5": true,
+    "directApiReplyInheritsTaskPick": true,
+    "noRunnerStarted:e2nrgg6wcf1gch68qhvn052r3g": true,
+    "ownerThinkingOverrideWins": true,
+    "automaticContinuationHonorsOwnerOverride": true,
+    "noRunnerStarted:2549br5kzt9e6rhhr14dmf1cvp": true,
+    "explicitEngineSwitchWins": true,
+    "automaticRouteUsesOwnerEngine": true,
+    "noRunnerStarted:xdkajhrjksqg13y3qctm0an0tf": true,
+    "explicitDefaultEffortUsesModelDefault": true,
+    "noRunnerStarted:v7be4jxe47f2prfsj04pr1r490": true,
+    "explicitDefaultModelSuppressesOriginalOpus": true,
+    "noRunnerStarted:6b5jhj7bxh8k9ysf3damw4ngk4": true,
+    "slashCommandEffortOverrideWins": true,
+    "noRunnerStarted:8qqyafyxn277rzwxssn67fw7xj": true,
+    "slashCommandDefaultEffortResets": true,
+    "legacyExplicitChoicesArePreserved": true,
+    "usageLimitFallbackStillRoutesAway": true,
+    "dashboardShowsFallbackSelection": true,
+    "noRunnerStarted:rnem67sp62gmr3m9jsc0rhkk95": true,
+    "followupUsesSameLimitFallback": true,
+    "fallbackDoesNotBecomeOwnerOverride": true,
+    "noRunnerStarted:0q5p8ck84kw30xvwh5eyc91zy4": true,
+    "taskReturnsToClaudeAfterRoomRestored": true,
+    "tierOnlyTaskStillFollowsDefault": true,
+    "tierOnlyChatDisplaysScheduledChoice": true,
+    "noRunnerStarted:m3fg8mk35jbc7s1eedrp617h27": true,
+    "normalChatRetainsExplicitSelection": true,
+    "danglingTaskReferenceFallsBack": true,
+    "noBrowserErrors": true,
+    "completedAllScenarios": true
+  },
+  "notes": {
+    "taskChatInheritsClaudeOpusHigh": {
+      "channel": "web",
+      "engine": "claude",
+      "model": "opus",
+      "effort": "high",
+      "access": "supervised",
+      "title": "🧩 Synthetic Claude task",
+      "isRunning": false
+    },
+    "browserFollowupQueuesClaudeHigh": {
+      "engine": "claude",
+      "model": "opus",
+      "effort": "high"
+    },
+    "usageLimitFallbackStillRoutesAway": {
+      "engine": "codex",
+      "tier": "deep",
+      "model": "sol",
+      "effort": "high",
+      "by": "perry",
+      "why": "Perry's pick: sol at high. Moved from Claude Code to Codex, your default engine: Claude Code's five hours limit is used up and resets at 3:12 am.",
+      "movedFrom": {
+        "engine": "claude",
+        "model": "opus",
+        "why": "Claude Code's five hours limit is used up and resets at 3:12 am"
+      }
+    },
+    "tierOnlyTaskStillFollowsDefault": {
+      "engine": "codex",
+      "tier": "quick",
+      "model": "luna",
+      "effort": "low",
+      "by": "perry",
+      "why": "Perry's pick (quick): luna at low. On Codex, your default engine, which has room."
+    },
+    "noBrowserErrors": [],
+    "runnerLog": [],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

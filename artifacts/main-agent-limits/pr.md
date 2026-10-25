@@ -1,0 +1,11 @@
+Perry stops when its main agent hits a usage limit after writing text or completing a tool call. Its existing fallback also stops after one alternative, and main work cannot wait for its selected engine's reported reset.
+
+This keeps eligible owner web work on its selected engine when the provider reports a reset. The runner refreshes native usage after a limit, and the server persists the wait and schedules resumption after all exhausted windows reset, plus 15 seconds. The selected model/session and completed-step evidence survive. Restart, offline computers, extended limits, Stop/Pause and queued follow-ups preserve the wait's ownership. The composer shows the deadline instead of a replying indicator. Unknown reset timestamps retain engine fallback.
+
+Continuation uses the same run and original request, recalled context, partial replies and redacted evidence. Each alternative engine is attempted once; reported resets allow at most three same-engine resumptions per request. Activity records the reason. Outside-read state survives, and tool IDs are scoped per attempt. A sign-out before commit leaves the original chat engine intact, and failed alternatives retain earlier visible progress.
+
+Progress handoffs are bounded to 32 completed/declined steps and 24,000 characters of partial replies. Unfinished or failed actions, pending approvals, missing legacy evidence, media, applied steers, guest/phone progress and maintenance turns retain their existing failure behavior. Jobs and tasks keep their existing reset recovery. The next agent is instructed to verify current state and avoid repeating completed actions; arbitrary external side effects do not gain an exactly-once guarantee.
+
+Validation: production build, TypeScript, all 37 protocol lifecycle cases and all 31 full app/runner checks passed. The full test covers a real timer, the waiting UI and completed-action counters for both fallback and same-engine reset resumption. Protocol checks block external traffic; app checks use only isolated fake engines. No paid model calls or owner account sessions were used. Evidence: `protocol-result.json`, `routing-result.json`, `main-reset-waiting.png` and `run-details.png` in `artifacts/main-agent-limits`.
+
+Follow-up to #189, which is already closed.

@@ -152,7 +152,7 @@ export const vRoute = v.object({
   by: v.union(v.literal("owner"), v.literal("perry"), v.literal("auto")),
   why: v.string(),
   movedFrom: v.optional(vMoved),
-  /** Its first engine refused it part-way for a limit, and it ran again on this one. */
+  /** The run continued after a usage limit, on another engine or after its reset. */
   retried: v.optional(v.boolean()),
 });
 /** Work waiting for an engine's plan to reset: until when, and why. */
@@ -875,9 +875,9 @@ export default defineSchema({
     codexThreadId: v.optional(v.string()),
     /** The runner (computer) this chat's turns run on; its engine sessions are on that disk. */
     codexRunnerId: v.optional(v.id("runners")),
-    /** The model picked for this chat, one of its engine's. Unset means the engine's default. */
+    /** The chat's model. Task chats inherit while unset; "" deliberately selects the engine default. */
     model: v.optional(v.string()),
-    /** Reasoning effort picked for this chat (/think). Unset means the model's default. */
+    /** Thinking pick (/think). Task chats inherit while unset; "" deliberately selects the model default. */
     effort: v.optional(v.string()),
     /** Set when the chat is created, from installation.defaultAccess. Unset means supervised. */
     access: v.optional(vAccess),
@@ -1394,7 +1394,7 @@ export default defineSchema({
      * "contact": someone new wrote to Perry, or added it to a group; "message": Perry wants to write to
      * someone for the first time (contacts.ts). Allowing either lets Perry talk with them from then on.
      */
-    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message"), v.literal("brain")),
+    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message"), v.literal("brain"), v.literal("tool")),
     /** For "contact" and "message": who. */
     contactId: v.optional(v.id("contacts")),
     /** For "brain": the change to Brain it asks about (compaction.ts). */
@@ -1511,10 +1511,14 @@ export default defineSchema({
     patienceWhy: v.optional(v.string()),
     /** The turn ended because the owner stopped it. */
     stopped: v.optional(v.boolean()),
-    /** Its engine refused it for a limit before it did anything: it is being tried once on another (routing.retryTurn). */
+    /** Its engine hit a limit: routing is handing the turn to an untried eligible engine. */
     retrying: v.optional(v.boolean()),
     /** The turn this one tries again, on another engine. */
     retryOf: v.optional(v.id("codexTurns")),
+    /** Durable wait for a provider-reported reset; no engine turn runs meanwhile. */
+    waiting: v.optional(vWaiting),
+    /** Bound automatic same-engine resumptions within one owner request. */
+    resetResumes: v.optional(v.number()),
     /** Finalizing steps already done, so a retried finalize never repeats one. */
     reportedAt: v.optional(v.number()),
     savedAt: v.optional(v.number()),
@@ -1544,7 +1548,8 @@ export default defineSchema({
   })
     .index("by_runner_status", ["runnerId", "status"])
     .index("by_run", ["runId"])
-    .index("by_conversation_status", ["conversationId", "status"]),
+    .index("by_conversation_status", ["conversationId", "status"])
+    .index("by_reset_wait", ["waiting.until"]),
 
   /** Bounded stream bookkeeping; reply text is stored as append-only deltas. */
   turnStreams: defineTable({
