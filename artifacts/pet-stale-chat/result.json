@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "checks": {
+    "staleSelectionCleared": true,
+    "recoveredPanelOpens": true,
+    "newChatSurvivesSlowListRefresh": true,
+    "validSelectionRestored": true,
+    "deletedSelectionClearedWhileClosed": true,
+    "reloadStaysHealthy": true,
+    "noPageExceptions": true
+  }
+}

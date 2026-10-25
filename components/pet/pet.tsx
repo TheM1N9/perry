@@ -222,7 +222,10 @@ function Pet() {
   const now = useNow(1000);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("chat");
-  const [chatId, setChatIdState] = useState<PetChatId>(null);
+  const [selectedChatId, setChatIdState] = useState<PetChatId>(null);
+  // A saved selection can belong to a deleted chat or a previous install.
+  // Check the live list before any query (or the panel) receives that id.
+  const chatId = selectedChatId && chats?.some((chat) => chat.id === selectedChatId) ? selectedChatId : null;
   const [draft, setDraft] = useState("");
   const petChat = useQuery(api.dashboard.getChat, chatId ? { key, id: chatId } : "skip");
   const petStream = useQuery(api.turnStreams.getChatStream, chatId ? { key, id: chatId } : "skip");
@@ -278,6 +281,9 @@ function Pet() {
     else window.localStorage.removeItem(CHAT_STORAGE);
   }, []);
   useEffect(() => { setChatIdState(window.localStorage.getItem(CHAT_STORAGE) as PetChatId); }, []);
+  useEffect(() => {
+    if (selectedChatId && chats && !chatId) setChatId(null);
+  }, [selectedChatId, chats, chatId, setChatId]);
   const askToOpen = useMutation(api.pet.askToOpen);
   const claimOpen = useMutation(api.pet.claimOpen);
   /**
