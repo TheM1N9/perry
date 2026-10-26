@@ -51,10 +51,35 @@ profiles remain under the ignored cache for inspection.
 
 `baseline.json` records five initial failing checks. `queued-input-baseline.json`
 records the additional queued-input failure after the first fixes. `result.json`
-records 19 passing checks, with browser version and observed page values.
+records 22 passing checks, with browser version and observed page values.
 `verification.json` records final validation and source hashes. The original
 failure inventory also lists launch/restart, retained browser-state maps and
 downloads, and desktop/native-app paths; those are not covered by these journeys.
 
 Protocol reference reviewed:
 [CDP Input.dispatchKeyEvent](https://chromedevtools.github.io/devtools-protocol/tot/Input/#method-dispatchKeyEvent).
+
+## PR review regressions
+
+The current harness has 22 control checks. `review-stop-baseline.json` records
+three failures with a deliberately unanswered Stop command. Cleanup now waits
+at most one second; an unresponsive host is retired and left paused with a
+recovery error before the action lock is released. Reopening creates a new
+generation, so the old command cannot interrupt later actions.
+
+The approval harness has 41 checks. Scope JSON is shown first and must fit the
+800 characters displayed on every approval surface; only explanatory reasons
+may be shortened. Oversized/missing scopes decline before an approval is created,
+and backend validation rejects oversized details. `review-permission-baseline.json`
+records four failing scope-display checks before the fix.
+
+These two commands deliberately fail during fixture initialization, return exit
+code 1 promptly and write failure evidence with `teardown.serverClosed: true`:
+
+```powershell
+pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/computer-control/run.ts --fail-setup=imports
+pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/computer-control/run.ts --fail-setup=runtime
+```
+
+Their reports are `setup-failure-imports.json` and `setup-failure-runtime.json`.
+`review-verification.json` records the final build, typechecks and source hashes.

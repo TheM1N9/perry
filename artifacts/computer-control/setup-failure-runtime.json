@@ -1,0 +1,11 @@
+{
+  "passed": false,
+  "checks": {},
+  "evidence": {
+    "error": "Error: Injected Runtime construction failure\n    at <anonymous> (.\\artifacts\\computer-control\\run.ts:53:39)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
+    "teardown": {
+      "serverClosed": true,
+      "errors": []
+    }
+  }
+}

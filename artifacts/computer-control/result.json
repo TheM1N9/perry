@@ -16,6 +16,9 @@
     "takeover invalidates an approval and releases the agent": true,
     "takeover remains paused until explicit resume": true,
     "explicit resume restores browser use": true,
+    "unresponsive Stop cleanup promptly releases the browser lock": true,
+    "unresponsive Stop cleanup invalidates its old host before new input": true,
+    "browser recovery uses a new generation after stalled cleanup": true,
     "Stop cancels a browser navigation before the page responds": true,
     "cancelled navigation releases pending CDP commands": true,
     "global Pause cancels an in-flight browser approval": true,
@@ -34,7 +37,7 @@
     "shortcutValue": "replacement",
     "queuedTyping": "abcd",
     "firstLook": {
-      "url": "http://127.0.0.1:51031/",
+      "url": "http://127.0.0.1:51289/",
       "title": "Control fixture",
       "text": "First Second Send",
       "elements": [
@@ -60,21 +63,21 @@
         }
       ],
       "identity": {
-        "sessionId": "05e90290-d69a-4ae0-bf1f-3592ee94b077",
-        "tabId": "2788CD6A6294E6791EC06185D328C079",
+        "sessionId": "f673677c-a7a2-4b22-bc9b-3123f9fb9046",
+        "tabId": "329E6FC60D89D6B80A9B35A786F6DE84",
         "revision": 8
       }
     },
     "staleClick": {
       "clicked": null,
       "firstIdentity": {
-        "sessionId": "05e90290-d69a-4ae0-bf1f-3592ee94b077",
-        "tabId": "2788CD6A6294E6791EC06185D328C079",
+        "sessionId": "f673677c-a7a2-4b22-bc9b-3123f9fb9046",
+        "tabId": "329E6FC60D89D6B80A9B35A786F6DE84",
         "revision": 8
       },
       "secondIdentity": {
-        "sessionId": "05e90290-d69a-4ae0-bf1f-3592ee94b077",
-        "tabId": "2788CD6A6294E6791EC06185D328C079",
+        "sessionId": "f673677c-a7a2-4b22-bc9b-3123f9fb9046",
+        "tabId": "329E6FC60D89D6B80A9B35A786F6DE84",
         "revision": 9
       },
       "result": {
@@ -92,6 +95,10 @@
         "error": "This operation was aborted"
       },
       "cancelMs": 460
+    },
+    "teardown": {
+      "serverClosed": true,
+      "errors": []
     }
   }
 }

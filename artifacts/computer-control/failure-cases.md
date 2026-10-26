@@ -23,3 +23,19 @@ Never use the owner's browser profile, desktop, credentials, or a live model.
 
 Save JSON checks, observed values, browser/version, and failure details on each
 run. A failing check must continue far enough to release all fixture gates.
+
+## PR review regressions
+
+Record before extending the E2E and editing the fixes:
+
+- An open CDP transport that never answers `Page.stopLoading` holds the browser
+  lock for 30 seconds. Cleanup must release it promptly and invalidate/close the
+  old host so a delayed stop cannot interrupt a later action or another chat.
+- A setup error after the fixture starts listening bypasses all teardown and
+  result handling. Cover module initialization and Runtime construction failures,
+  and verify bounded process exit, server closure and a saved failure artifact.
+- A native permission's JSON scope or its reason exceeds the approval detail
+  limit. Never offer a truncated scope for approval while granting the full one.
+  Keep the entire scope visible, shorten only explanatory text, and decline
+  before creating a request when the scope itself will not fit. Check the exact
+  boundary, oversized reason, oversized scope and missing scope in Ask/Auto/Full.

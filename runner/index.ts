@@ -612,10 +612,15 @@ async function main() {
       return optionOf(request, approved ? "accept" : "decline");
     }
     if (request.type === "permission_approval") {
+      // Phone prompts display 800 detail characters. Keep the whole scope
+      // first, shorten only the reason, and never approve an invisible tail.
+      const scope = detail.permissionSummary;
+      if (!scope || scope.length > 800) return optionOf(request, "decline");
+      const reason = detail.reason?.slice(0, Math.max(0, 800 - scope.length - 2));
       const approved = await approve({
         kind: "permission",
         what: "Grant additional computer access for this turn",
-        detail: [detail.reason, detail.permissionSummary].filter(Boolean).join("\n") || null,
+        detail: [scope, reason].filter(Boolean).join("\n\n"),
         cwd: detail.cwd,
       }, conversationId, engine);
       return optionOf(request, approved ? "accept" : "decline");

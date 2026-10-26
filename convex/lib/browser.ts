@@ -74,7 +74,19 @@ export async function withAgentBrowser<T>(scope: string, expected: BrowserIdenti
     try {
       if (signal?.aborted && state.epoch === epoch && state.controller === "agent" && state.current) {
         const current = state.current;
-        await withBrowserView(scope, () => send(current, "Page.stopLoading")).catch(() => {});
+        await withBrowserView(scope, async () => {
+          try { await send(current, "Page.stopLoading", {}, AbortSignal.timeout(1_000)); }
+          catch {
+            // A sent CDP command cannot be unsent. Retire its host before a
+            // new action can start, so a delayed stop cannot hit later work.
+            if (state.current === current && state.epoch === epoch && state.controller === "agent") {
+              closeBrowser();
+              state.controller = "owner"; state.private = true;
+              state.error = "The browser did not respond to Stop in time. Reopen it before continuing.";
+              saveBrowserControl(scope);
+            }
+          }
+        });
       }
     } finally { state.busy = false; }
   }
@@ -285,13 +297,12 @@ async function connect(url: string, chrome = false): Promise<Session> {
   return session;
 }
 
-function send(tab: Session, method: string, params: object = {}): Promise<any> {
+function send(tab: Session, method: string, params: object = {}, signal = context.getStore()?.signal): Promise<any> {
   if (method === "Storage.getCookies" && control().source === "chrome") method = "Network.getCookies";
   return new Promise((resolve, reject) => {
-    try { checkLease(); } catch (error) { reject(error); return; }
+    try { checkLease(); signal?.throwIfAborted(); } catch (error) { reject(error); return; }
     const transport = tab.parent ?? tab;
     const id = ++transport.next;
-    const signal = context.getStore()?.signal;
     const finish = (error?: unknown, value?: unknown) => {
       transport.pending.delete(id);
       clearTimeout(timer);

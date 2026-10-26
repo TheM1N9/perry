@@ -24,26 +24,37 @@ const service = createServer((request, response) => {
     <button id="send" onclick="window.sent=(window.sent||0)+1">Send</button>
   </body></html>`);
 });
-await new Promise<void>(done => service.listen(0, "127.0.0.1", done));
-const site = `http://127.0.0.1:${(service.address() as any).port}`;
+const checks: Record<string, boolean> = {};
+const evidence: Record<string, any> = {};
+const chats: string[] = [];
 const realFetch = globalThis.fetch;
+let cleanupBrowser: typeof import("../../convex/lib/browser") | undefined;
+let cleanupRuntime: import("../../server/runtime").Runtime | undefined;
+let cleanupSql: DatabaseSync | undefined;
+const setupFailure = process.argv.includes("--fail-setup=imports") ? "imports" : process.argv.includes("--fail-setup=runtime") ? "runtime" : undefined;
+try {
+await new Promise<void>((done, reject) => {
+  service.once("error", reject);
+  service.listen(0, "127.0.0.1", () => { service.removeListener("error", reject); done(); });
+});
+const site = `http://127.0.0.1:${(service.address() as any).port}`;
 globalThis.fetch = (input, options) => {
   const url = new URL(input instanceof Request ? input.url : String(input));
   if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") throw new Error("External network blocked in control fixture");
   return realFetch(input, options);
 };
+if (setupFailure === "imports") throw new Error("Injected module initialization failure");
 const [{ Runtime }, { default: schema }, { modules }, { default: http }, browser, { controlBrowser }] = await Promise.all([
   import("../../server/runtime"), import("../../convex/schema"), import("../../server/modules"), import("../../convex/http"),
   import("../../convex/lib/browser"), import("../../server/browser-host"),
 ]);
-const sql = new DatabaseSync(join(scratch, "fixture.sqlite"));
-const rt = new Runtime(sql, schema as never, modules, { storageDir: join(scratch, "storage"), http: http as never });
+cleanupBrowser = browser;
+const sql = cleanupSql = new DatabaseSync(join(scratch, "fixture.sqlite"));
+if (setupFailure === "runtime") throw new Error("Injected Runtime construction failure");
+const rt = cleanupRuntime = new Runtime(sql, schema as never, modules, { storageDir: join(scratch, "storage"), http: http as never });
 await rt.stop();
 const db = rt.store;
 const call = async (path: string, args: object = {}) => (await rt.call(path, args, { internal: true })).value as any;
-const checks: Record<string, boolean> = {};
-const evidence: Record<string, any> = {};
-const chats: string[] = [];
 function check(name: string, passed: boolean) { checks[name] = passed; console.log(`${passed ? "PASS" : "FAIL"} ${name}`); }
 const sleep = (ms: number) => new Promise(done => setTimeout(done, ms));
 async function until(test: () => boolean | Promise<boolean>, ms = 6_000) { const end = Date.now() + ms; while (!await test()) { if (Date.now() >= end) throw new Error("Fixture condition timed out"); await sleep(50); } }
@@ -65,7 +76,6 @@ async function mcp(chat: string, args: object, signal?: AbortSignal) {
   const parsed = result ? JSON.parse(result) : rpc;
   return parsed.untrusted ? parsed.result : parsed;
 }
-try {
   await rt.exclusive(() => {
     db.insert("installation", { defaultEngine: "codex", onboarding: "skipped", createdAt: Date.now() });
     db.insert("runners", { name: "Fixture runner", token, createdAt: Date.now(), lastSeenAt: Date.now(), engines: [{ kind: "codex", installed: true, signedIn: true, auth: {}, models: [], updatedAt: Date.now() }] });
@@ -149,6 +159,33 @@ try {
   check("takeover remains paused until explicit resume", (await mcp(other.chat, { action: "look" })).error?.includes("paused") === true);
   await owner(other.chat, { action: "resume", identity: identity(other.chat) });
   check("explicit resume restores browser use", !(await mcp(other.chat, { action: "look" })).error);
+  const beforeStall = identity(other.chat);
+  const stalledConnection = browser.browserControl(other.chat).current!;
+  const sendNormally = stalledConnection.ws.send.bind(stalledConnection.ws);
+  let stalledStop: number | undefined;
+  stalledConnection.ws.send = (data: any) => {
+    const packet = JSON.parse(String(data));
+    if (packet.method === "Page.stopLoading") { stalledStop = packet.id; return; }
+    sendNormally(data);
+  };
+  const stallAbort = new AbortController();
+  const stallPage = await mcp(other.chat, { action: "look" });
+  const stalledAction = mcp(other.chat, { action: "click", identity: stallPage.identity, ref: stallPage.elements.find((item: any) => item.label === "Send").ref }, stallAbort.signal);
+  await until(async () => (await db.query("approvals").collect()).some(row => row.conversationId === other.chat && row.status === "pending"));
+  stallAbort.abort();
+  await until(() => stalledStop !== undefined);
+  await sleep(1_600);
+  check("unresponsive Stop cleanup promptly releases the browser lock", !browser.browserControl(other.chat).busy);
+  check("unresponsive Stop cleanup invalidates its old host before new input", browser.identity(other.chat) === null && browser.browserControl(other.chat).controller === "owner" && Boolean(browser.browserControl(other.chat).error));
+  // Release the injected transport gate on the baseline too, so failure never hangs the fixture.
+  if (stalledStop !== undefined) stalledConnection.pending.get(stalledStop)?.resolve({});
+  await stalledAction;
+  stalledConnection.ws.send = sendNormally;
+  if (stalledConnection.child && stalledConnection.child.exitCode === null && !browser.identity(other.chat)) await until(() => stalledConnection.child!.exitCode !== null || stalledConnection.child!.signalCode !== null);
+  await owner(other.chat, { action: "start" });
+  await owner(other.chat, { action: "navigate", identity: identity(other.chat), url: site });
+  check("browser recovery uses a new generation after stalled cleanup", identity(other.chat).sessionId !== beforeStall.sessionId && await evaluate(other.chat, "window.sent || 0") === 0);
+  await owner(other.chat, { action: "resume", identity: identity(other.chat) });
   const navigating = mcp(other.chat, { action: "open", identity: identity(other.chat), url: `${site}/slow` });
   await until(() => slowStarted > 0);
   const cancelledAt = Date.now();
@@ -169,10 +206,20 @@ try {
 } catch (error) {
   evidence.error = error instanceof Error ? error.stack?.replaceAll(process.cwd(), ".") : String(error);
 } finally {
-  for (const chat of chats) await browser.withBrowserView(chat, async () => browser.closeBrowser());
-  await rt.stop(); sql.close();
-  service.closeAllConnections(); await new Promise<void>(done => service.close(() => done()));
+  const cleanupErrors: string[] = [];
+  for (const chat of chats) {
+    try { await cleanupBrowser?.withBrowserView(chat, async () => cleanupBrowser!.closeBrowser()); }
+    catch { cleanupErrors.push("Browser teardown failed"); }
+  }
+  try { await cleanupRuntime?.stop(); } catch { cleanupErrors.push("Runtime teardown failed"); }
+  try { cleanupSql?.close(); } catch { cleanupErrors.push("SQLite teardown failed"); }
+  service.closeAllConnections();
+  if (service.listening) await new Promise<void>(done => service.close(() => done()));
+  globalThis.fetch = realFetch;
+  evidence.teardown = { serverClosed: !service.listening, errors: cleanupErrors };
+  if (cleanupErrors.length) evidence.error ??= cleanupErrors.join("; ");
   const passed = !evidence.error && Object.values(checks).every(Boolean);
-  writeFileSync(join(out, process.argv.includes("--baseline") ? "baseline.json" : "result.json"), JSON.stringify({ passed, checks, evidence }, null, 2) + "\n");
+  const report = setupFailure ? `setup-failure-${setupFailure}.json` : process.argv.includes("--baseline") ? "baseline.json" : "result.json";
+  writeFileSync(join(out, report), JSON.stringify({ passed, checks, evidence }, null, 2) + "\n");
   if (!passed) process.exitCode = 1;
 }

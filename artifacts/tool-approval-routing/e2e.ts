@@ -101,6 +101,41 @@ await check('Full access grants requested native computer permissions without as
   assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions, scope: 'turn' });
   rt.store.patch(chat, { access: 'supervised' });
 });
+for (const access of ['supervised', 'auto', 'full']) await check(`${access}: oversized native permission scope is declined before approval`, async () => {
+  rt.store.patch(chat, { access });
+  const count = asked.length;
+  const call = permission({ permissions: { fileSystem: { write: [`C:/fixture/${'scope'.repeat(900)}`] } } });
+  await flush();
+  if (asked.length > count) await settle(asked.at(-1)!, true);
+  await call.response;
+  assert.equal(asked.length, count);
+  assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions: {}, scope: 'turn' });
+  rt.store.patch(chat, { access: 'supervised' });
+});
+await check('long permission reasons cannot hide any of the requested scope', async () => {
+  rt.store.patch(chat, { access: 'supervised' });
+  const call = permission({ reason: 'Explanation '.repeat(700) }); await flush();
+  const id = asked.at(-1)!;
+  const row = rt.store.get(id)!;
+  assert(typeof row.detail === 'string' && row.detail.includes(JSON.stringify(permissions)) && row.detail.length <= 800);
+  await settle(id, true); await call.response;
+  assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions, scope: 'turn' });
+});
+await check('the exact permission display boundary preserves the full scope', async () => {
+  const boundary = { fileSystem: { read: null, write: ['C:/fixture/'] } };
+  boundary.fileSystem.write[0] += 'x'.repeat(800 - JSON.stringify(boundary).length);
+  assert.equal(JSON.stringify(boundary).length, 800);
+  const call = permission({ permissions: boundary, reason: 'A reason that cannot displace the scope' }); await flush();
+  const id = asked.at(-1)!; assert.equal(rt.store.get(id)?.detail, JSON.stringify(boundary));
+  await settle(id, true); await call.response;
+  assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions: boundary, scope: 'turn' });
+});
+await check('missing permission scopes cannot ask and backend rejects oversized details', async () => {
+  const count = asked.length;
+  assert.equal(await dispatch({ type: 'permission_approval', detail: {}, options: [{ id: 'turn', kind: 'accept' }, { id: 'none', kind: 'decline' }], raw: {} }, chat, 'codex'), 'none');
+  assert.equal(asked.length, count);
+  await assert.rejects(() => mutate('approvals:request', { token, kind: 'permission', title: 'Oversized scope', detail: 'x'.repeat(801), conversationId: chat }));
+});
 for (const access of ['supervised', 'auto']) await check(`${access}: native computer permission asks rather than silently refusing`, async () => {
   rt.store.patch(chat, { access }); const count = asked.length; const call = permission(); await flush();
   assert.equal(asked.length, count + 1); const id = asked.at(-1)!;
@@ -153,7 +188,7 @@ await check('Full permission grants remain turn-scoped and downgrade restores as
 });
 await check('saved file rules never grant native computer permission', async () => {
   rt.store.insert('approvalRules', { runnerId, kind: 'file', pathPrefix: 'C:/fixture', uses: 0, createdAt: Date.now() });
-  const result = await mutate('approvals:request', { token, kind: 'permission', title: 'Requested computer permissions', conversationId: chat, paths: ['C:/fixture/write/test.txt'] });
+  const result = await mutate('approvals:request', { token, kind: 'permission', title: 'Requested computer permissions', detail: JSON.stringify(permissions), conversationId: chat, paths: ['C:/fixture/write/test.txt'] });
   assert.equal(result.next, 'ask'); assert.equal(rt.store.get(result.id)?.alwaysAllow, undefined);
   await mutate('approvals:decide', { key: process.env.DASHBOARD_KEY, id: result.id, approved: false });
 });
@@ -183,7 +218,7 @@ await check('Full access in one chat does not authorize another chat computer pe
   rt.store.patch(chat, { access: 'full' });
   const otherThread = await mutate('agentStore:createThread', { userId: 'fixture-other-chat' });
   const otherChat = rt.store.insert('conversations', { channel: 'web', externalId: 'permission-other-chat', threadId: otherThread, access: 'supervised', lastMessageAt: Date.now() });
-  const request = await mutate('approvals:request', { token, kind: 'permission', title: 'Other chat computer permissions', conversationId: otherChat });
+  const request = await mutate('approvals:request', { token, kind: 'permission', title: 'Other chat computer permissions', detail: JSON.stringify(permissions), conversationId: otherChat });
   assert.equal(request.next, 'ask');
   await mutate('approvals:decide', { key: process.env.DASHBOARD_KEY, id: request.id, approved: false });
   rt.store.patch(chat, { access: 'supervised' });

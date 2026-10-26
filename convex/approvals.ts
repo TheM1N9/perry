@@ -159,6 +159,7 @@ export const request = mutation({
   handler: async (ctx, args): Promise<{ id: Id<"approvals">; next: "run" | "review" | "ask" }> => {
     const runner = await authenticate(ctx, args.token);
     const now = Date.now();
+    if (args.kind === "permission" && (!args.detail || args.detail.length > 800)) throw new Error("The complete computer permission scope must fit in the approval details.");
     const request: Request = { kind: args.kind, title: args.title, cwd: args.cwd, paths: args.paths };
     const row = {
       runnerId: runner._id,
