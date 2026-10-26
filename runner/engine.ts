@@ -70,6 +70,9 @@ import type { TurnErrorCode } from "../lib/turn-errors";
  */
 
 import type { Access } from "../convex/lib/commands";
+
+/** Tell the model about existing computer authorization as well as enforcing it in tools. */
+export const FULL_ACCESS_INSTRUCTIONS = "The owner selected Full access for this chat. You already have permission to use this computer to carry out their request. Do not ask again for general computer, browser, app or filesystem access; proceed with routine control steps directly. Explicit external-tool consent, authentication challenges and operating-system dialogs still use their supported flows.";
 import type { EngineKind, LoginInteraction } from "../convex/lib/engines";
 import type { PlanLimits, PlanWindow } from "../convex/lib/usage";
 
@@ -235,6 +238,8 @@ export type EngineRequest = {
     changes?: FileChange[];
     /** A command prefix the engine suggests allowing from now on. */
     proposedPrefix?: string[];
+    /** Requested native network/filesystem scope, displayed without broadening it. */
+    permissionSummary?: string;
     /** The MCP server or tool asking, for a question from one. */
     server?: string;
     message?: string;

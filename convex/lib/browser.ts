@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { HOME, PATHS } from "../../runner/home";
 import { homedir } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 
 /**
  * Perry's own browser (issue #105): a Chrome (or Edge, or Chromium) with a
@@ -31,7 +32,7 @@ type Control = {
   connections: Map<string, Tab>;
   source: "perry" | "chrome"; ownedTargets: Set<string>;
 };
-type Lease = { control: Control; controller: "agent" | "owner" | "viewer"; revision: number; epoch: number; started: boolean };
+type Lease = { control: Control; controller: "agent" | "owner" | "viewer"; revision: number; epoch: number; started: boolean; signal?: AbortSignal };
 const states = (globalThis as typeof globalThis & { __perryBrowsers?: Map<string, Control>; __perryBrowserContext?: AsyncLocalStorage<Lease> });
 const context = states.__perryBrowserContext ??= new AsyncLocalStorage<Lease>();
 states.__perryBrowsers ??= new Map();
@@ -56,17 +57,39 @@ export function checkIdentity(expected: BrowserIdentity, scope?: string) {
 }
 function checkLease() {
   const lease = context.getStore();
+  lease?.signal?.throwIfAborted();
   if (lease && lease.controller !== "viewer" && (lease.epoch !== lease.control.epoch || lease.controller !== lease.control.controller || (!lease.started && lease.revision !== lease.control.revision))) throw new Error("Browser control changed. Look again; the owner must explicitly resume Perry.");
 }
 /** One agent step at a time, including its approval wait. Takeover invalidates it immediately. */
-export async function withAgentBrowser<T>(scope: string, expected: BrowserIdentity | undefined, run: () => Promise<T>): Promise<T> {
+export async function withAgentBrowser<T>(scope: string, expected: BrowserIdentity | undefined, run: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  signal?.throwIfAborted();
   const state = control(scope);
   if (state.controller !== "agent") throw new Error("The owner has paused browser automation. Wait for explicit Resume Perry.");
   if (state.busy) throw new Error("Another browser action is still running. Wait for it to finish.");
   if (expected) checkIdentity(expected, scope);
   state.busy = true;
-  try { return await context.run({ control: state, controller: "agent", revision: state.revision, epoch: state.epoch, started: false }, run); }
-  finally { state.busy = false; }
+  const epoch = state.epoch;
+  try { return await context.run({ control: state, controller: "agent", revision: state.revision, epoch, started: false, signal }, run); }
+  finally {
+    try {
+      if (signal?.aborted && state.epoch === epoch && state.controller === "agent" && state.current) {
+        const current = state.current;
+        await withBrowserView(scope, async () => {
+          try { await send(current, "Page.stopLoading", {}, AbortSignal.timeout(1_000)); }
+          catch {
+            // A sent CDP command cannot be unsent. Retire its host before a
+            // new action can start, so a delayed stop cannot hit later work.
+            if (state.current === current && state.epoch === epoch && state.controller === "agent") {
+              closeBrowser();
+              state.controller = "owner"; state.private = true;
+              state.error = "The browser did not respond to Stop in time. Reopen it before continuing.";
+              saveBrowserControl(scope);
+            }
+          }
+        });
+      }
+    } finally { state.busy = false; }
+  }
 }
 export async function withOwnerBrowser<T>(scope: string, run: () => Promise<T>): Promise<T> {
   const state = control(scope);
@@ -274,15 +297,24 @@ async function connect(url: string, chrome = false): Promise<Session> {
   return session;
 }
 
-function send(tab: Session, method: string, params: object = {}): Promise<any> {
+function send(tab: Session, method: string, params: object = {}, signal = context.getStore()?.signal): Promise<any> {
   if (method === "Storage.getCookies" && control().source === "chrome") method = "Network.getCookies";
   return new Promise((resolve, reject) => {
-    try { checkLease(); } catch (error) { reject(error); return; }
+    try { checkLease(); signal?.throwIfAborted(); } catch (error) { reject(error); return; }
     const transport = tab.parent ?? tab;
     const id = ++transport.next;
-    const timer = setTimeout(() => { transport.pending.delete(id); reject(new Error("Browser command timed out. Refresh the view.")); }, 30_000);
-    transport.pending.set(id, { resolve: (value) => { clearTimeout(timer); resolve(value); }, reject: (error) => { clearTimeout(timer); reject(error); } });
-    transport.ws.send(JSON.stringify({ id, method, params, ...(tab.sessionId ? { sessionId: tab.sessionId } : {}) }));
+    const finish = (error?: unknown, value?: unknown) => {
+      transport.pending.delete(id);
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      if (error) reject(error); else resolve(value);
+    };
+    const abort = () => finish(signal?.reason ?? new Error("Browser action cancelled."));
+    const timer = setTimeout(() => finish(new Error("Browser command timed out. Refresh the view.")), 30_000);
+    transport.pending.set(id, { resolve: value => finish(undefined, value), reject: error => finish(error) });
+    signal?.addEventListener("abort", abort, { once: true });
+    try { transport.ws.send(JSON.stringify({ id, method, params, ...(tab.sessionId ? { sessionId: tab.sessionId } : {}) })); }
+    catch (error) { finish(error); }
   });
 }
 
@@ -378,18 +410,31 @@ async function evaluate<T>(open: Session, expression: string): Promise<T> {
 /** Wait for a page load that an action may have started, briefly when none comes. */
 async function settle(open: Tab, maxMs = 15_000) {
   let loading = false;
-  const done = new Promise<void>((resolve) => {
-    const listener = (method: string) => {
-      if (method === "Page.frameStartedLoading") loading = true;
-      if (method === "Page.loadEventFired") { open.listeners.delete(listener); resolve(); }
-    };
-    open.listeners.add(listener);
-    setTimeout(() => { if (!loading) { open.listeners.delete(listener); resolve(); } }, 900);
-    setTimeout(() => { open.listeners.delete(listener); resolve(); }, maxMs);
-  });
-  await done;
+  const signal = context.getStore()?.signal;
+  let quiet: ReturnType<typeof setTimeout> | undefined;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let listener: (method: string) => void = () => {};
+  let abort: () => void = () => {};
+  try {
+    await new Promise<void>((resolve, reject) => {
+      signal?.throwIfAborted();
+      abort = () => reject(signal?.reason);
+      listener = (method: string) => {
+        if (method === "Page.frameStartedLoading") loading = true;
+        if (method === "Page.loadEventFired") resolve();
+      };
+      open.listeners.add(listener);
+      signal?.addEventListener("abort", abort, { once: true });
+      quiet = setTimeout(() => { if (!loading) resolve(); }, 900);
+      deadline = setTimeout(resolve, maxMs);
+    });
+  } finally {
+    open.listeners.delete(listener);
+    clearTimeout(quiet); clearTimeout(deadline);
+    signal?.removeEventListener("abort", abort);
+  }
   // A moment for what the page draws after it loads.
-  await new Promise((resolve) => setTimeout(resolve, 400));
+  await delay(400, undefined, { signal });
 }
 
 export type Element = { ref: number; kind: string; label: string; href?: string };
@@ -413,11 +458,19 @@ const SNAPSHOT = `(() => {
 
 export async function snapshot(): Promise<Snapshot> {
   const current = await tab();
+  const state = control();
+  const revision = state.revision;
   const result = await evaluate<Snapshot>(current, SNAPSHOT);
   // A hostile page can echo cookies into text. Redact all cookie values before a model/trace sees them.
   const stored = z.object({ cookies: z.array(z.object({ value: z.string() })) }).parse(await send(current, "Storage.getCookies"));
   const passwords = control().source === "perry" ? await (await import("../../server/browser-import-native")).ownPasswordValues(profileDirectory(control().scope)) : [];
   const scrub = (value: string) => [...stored.cookies.map(cookie => cookie.value), ...passwords].reduce((text, secret) => secret ? text.replaceAll(secret, "[browser credential]") : text, value);
+  checkLease();
+  if (state.current !== current || state.revision !== revision) throw new Error("The browser page changed. Look again before acting.");
+  // Numbered refs belong to this observation, including when the URL did not change.
+  state.revision++;
+  const lease = context.getStore();
+  if (lease) lease.revision = state.revision;
   return { url: scrub(result.url), title: scrub(result.title), text: scrub(result.text), elements: result.elements.map((element) => ({ ...element, label: scrub(element.label), ...(element.href ? { href: scrub(element.href) } : {}) })), identity: identity() ?? undefined };
 }
 

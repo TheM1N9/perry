@@ -39,14 +39,20 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
   const [results, setResults] = useState<z.infer<typeof importResult>>([]);
   const [sessions, setSessions] = useState<z.infer<typeof sessionsSchema>>([]);
   const [busy, setBusy] = useState(false);
+  const requests = useRef<AbortController | null>(null);
   const manualQueue = useRef(Promise.resolve());
   const currentTab = state?.tabs.find((item) => item.id === state.identity?.tabId);
   const paused = state?.state === "paused";
   const activeIdentity = state?.identity;
   const [importOpen, setImportOpen] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    requests.current = controller;
+    return () => { controller.abort(); stateRef.current = null; };
+  }, [conversationId, dashboardKey]);
 
   const call = useCallback(async (request: BrowserRequest, signal?: AbortSignal): Promise<unknown> => {
-    const response = await fetch("/api/browser", { method: "POST", headers: { "content-type": "application/json", "x-perry-key": dashboardKey }, body: JSON.stringify({ conversationId, request }), cache: "no-store", signal });
+    const response = await fetch("/api/browser", { method: "POST", headers: { "content-type": "application/json", "x-perry-key": dashboardKey }, body: JSON.stringify({ conversationId, request }), cache: "no-store", signal: AbortSignal.any([...(signal ? [signal] : []), ...(requests.current ? [requests.current.signal] : [])]) });
     const data: unknown = await response.json();
     if (!response.ok) throw new Error(z.object({ error: z.string() }).parse(data).error);
     return data;
@@ -110,6 +116,7 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
   // A wheel sends many small turns: added up while one scroll is on its way, and sent as one after.
   const wheel = useRef<{ busy: boolean; deltaY: number; at: { x: number; y: number } }>({ busy: false, deltaY: 0, at: { x: 0, y: 0 } });
   async function scroll(at: { x: number; y: number }, deltaY: number) {
+    const expected = stateRef.current?.identity;
     const pending = wheel.current;
     pending.deltaY += deltaY; pending.at = at;
     if (pending.busy) return;
@@ -119,8 +126,8 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
         const current = stateRef.current;
         const amount = Math.max(-3000, Math.min(3000, pending.deltaY));
         pending.deltaY = 0;
-        if (current?.state !== "paused" || !current.identity) break;
-        await call({ action: "scroll", identity: current.identity, ...pending.at, deltaY: amount }).catch(() => {});
+        if (current?.state !== "paused" || !expected || JSON.stringify(current.identity) !== JSON.stringify(expected)) break;
+        await call({ action: "scroll", identity: expected, ...pending.at, deltaY: amount }).catch(() => {});
       }
     } finally { pending.busy = false; pending.deltaY = 0; }
   }
@@ -133,9 +140,10 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
   }
   function manual(request: Omit<Extract<BrowserRequest, { action: "text" }>, "identity"> | Omit<Extract<BrowserRequest, { action: "key" }>, "identity">) {
     // Serialize owner keystrokes without ever queuing agent actions.
+    const expected = stateRef.current?.identity;
     manualQueue.current = manualQueue.current.then(async () => {
       const current = stateRef.current;
-      if (current?.state === "paused" && current.identity) await act({ ...request, identity: current.identity });
+      if (current?.state === "paused" && expected && JSON.stringify(current.identity) === JSON.stringify(expected)) await act({ ...request, identity: expected });
     });
   }
   async function run<T>(work: () => Promise<T>) {
@@ -218,7 +226,7 @@ export function BrowserPanel({ conversationId, onClose }: { conversationId: stri
           if (event.key === "v" && (event.ctrlKey || event.metaKey)) return;
           event.preventDefault();
           if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) manual({ action: "text", text: event.key });
-          else manual({ action: "key", key: event.key, code: event.code, modifiers: (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0) });
+          else manual({ action: "key", key: event.key, code: event.code, keyCode: event.keyCode, modifiers: (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0) });
         }}>
         {/* Owner-only ephemeral image. No URL key, media record, disk capture or model attachment. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}

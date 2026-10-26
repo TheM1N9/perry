@@ -1,5 +1,10 @@
 # External tool confirmations
 
+The follow-up native computer-permission repair is documented in
+[`../computer-control/full-access.md`](../computer-control/full-access.md).
+The current harness has 35 checks, including startup/resumed Full-access
+instructions, native grants, interruption, access changes and browser policy.
+
 When an external MCP tool requested confirmation, the Codex adapter normalized it as `tool_user_input`. The runner only handled command/file requests and immediately declined everything else. A synthetic end-to-end replay reproduced that exact path before implementation.
 
 The repair records a distinct `tool` approval and shows it through Perry's existing dashboard/pet/phone approval surfaces. It waits for an explicit owner decision, including in Full and Auto chats. Saved command/file rules and Always allow cannot supply tool consent. Approvals remain tied to their originating chat. Native declines return the MCP decline result; expired backend rows resolve the runner's wait loop. Requests from stopped/replaced turns are cancelled rather than accepted by a late reply.

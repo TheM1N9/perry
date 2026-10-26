@@ -91,7 +91,7 @@ export async function controlBrowser(scope: string, request: BrowserRequest, imp
       case "scroll": await browser.hostCommand("Input.dispatchMouseEvent", { type: "mouseWheel", x: request.x, y: request.y, deltaX: 0, deltaY: request.deltaY }); break;
       case "text": await browser.hostCommand("Input.insertText", { text: request.text }); break;
       case "key":
-        for (const type of ["keyDown", "keyUp"]) await browser.hostCommand("Input.dispatchKeyEvent", { type, key: request.key, code: request.code, modifiers: request.modifiers, ...(request.key === "Enter" && type === "keyDown" ? { text: "\r", windowsVirtualKeyCode: 13 } : {}), ...(request.key === "Backspace" ? { windowsVirtualKeyCode: 8 } : {}), ...(request.key === "Tab" ? { windowsVirtualKeyCode: 9 } : {}) });
+        for (const type of ["keyDown", "keyUp"]) await browser.hostCommand("Input.dispatchKeyEvent", { type, key: request.key, code: request.code, modifiers: request.modifiers, ...(request.keyCode !== undefined ? { windowsVirtualKeyCode: request.keyCode } : {}), ...(request.key === "Enter" && type === "keyDown" ? { text: "\r", windowsVirtualKeyCode: 13 } : {}), ...(request.key === "Backspace" ? { windowsVirtualKeyCode: 8 } : {}), ...(request.key === "Tab" ? { windowsVirtualKeyCode: 9 } : {}) });
         break;
       case "dialog": await browser.hostCommand("Page.handleJavaScriptDialog", { accept: request.accept, promptText: request.text }); state.dialog = null; break;
       case "privacy": state.private = request.private; browser.saveBrowserControl(scope); break;

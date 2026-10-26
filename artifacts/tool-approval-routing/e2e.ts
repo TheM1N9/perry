@@ -88,6 +88,149 @@ for (const access of ['full', 'auto']) await check(`${access} access still requi
   assert(waiting.has(asked.at(-1)!)); assert(!replies.some(r => r.id === call.id));
   await settle(asked.at(-1)!, false); await call.response; rt.store.patch(chat, { access: 'supervised' });
 });
+// Native computer permission regression inventory: artifacts/computer-control/full-access-failure-cases.md.
+const permissions = { network: { enabled: true }, fileSystem: { read: ['C:/fixture/read'], write: ['C:/fixture/write'] } };
+const permission = (extra: any = {}) => {
+  const id = ++sequence;
+  const response = engine.answer(app, { id, method: 'item/permissions/requestApproval', params: { threadId: 'synthetic-thread', turnId: 'synthetic-turn', itemId: `permission-${id}`, cwd: process.cwd(), reason: 'Use the fixture computer', permissions, ...extra } });
+  return { id, response };
+};
+await check('Full access grants requested native computer permissions without asking', async () => {
+  rt.store.patch(chat, { access: 'full' }); const before = waiting.size; const call = permission(); await flush();
+  assert.equal(waiting.size, before); await call.response;
+  assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions, scope: 'turn' });
+  rt.store.patch(chat, { access: 'supervised' });
+});
+for (const access of ['supervised', 'auto', 'full']) await check(`${access}: oversized native permission scope is declined before approval`, async () => {
+  rt.store.patch(chat, { access });
+  const count = asked.length;
+  const call = permission({ permissions: { fileSystem: { write: [`C:/fixture/${'scope'.repeat(900)}`] } } });
+  await flush();
+  if (asked.length > count) await settle(asked.at(-1)!, true);
+  await call.response;
+  assert.equal(asked.length, count);
+  assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions: {}, scope: 'turn' });
+  rt.store.patch(chat, { access: 'supervised' });
+});
+await check('long permission reasons cannot hide any of the requested scope', async () => {
+  rt.store.patch(chat, { access: 'supervised' });
+  const call = permission({ reason: 'Explanation '.repeat(700) }); await flush();
+  const id = asked.at(-1)!;
+  const row = rt.store.get(id)!;
+  assert(typeof row.detail === 'string' && row.detail.includes(JSON.stringify(permissions)) && row.detail.length <= 800);
+  await settle(id, true); await call.response;
+  assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions, scope: 'turn' });
+});
+await check('the exact permission display boundary preserves the full scope', async () => {
+  const boundary = { fileSystem: { read: null, write: ['C:/fixture/'] } };
+  boundary.fileSystem.write[0] += 'x'.repeat(800 - JSON.stringify(boundary).length);
+  assert.equal(JSON.stringify(boundary).length, 800);
+  const call = permission({ permissions: boundary, reason: 'A reason that cannot displace the scope' }); await flush();
+  const id = asked.at(-1)!; assert.equal(rt.store.get(id)?.detail, JSON.stringify(boundary));
+  await settle(id, true); await call.response;
+  assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions: boundary, scope: 'turn' });
+});
+await check('missing permission scopes cannot ask and backend rejects oversized details', async () => {
+  const count = asked.length;
+  assert.equal(await dispatch({ type: 'permission_approval', detail: {}, options: [{ id: 'turn', kind: 'accept' }, { id: 'none', kind: 'decline' }], raw: {} }, chat, 'codex'), 'none');
+  assert.equal(asked.length, count);
+  await assert.rejects(() => mutate('approvals:request', { token, kind: 'permission', title: 'Oversized scope', detail: 'x'.repeat(801), conversationId: chat }));
+});
+for (const access of ['supervised', 'auto']) await check(`${access}: native computer permission asks rather than silently refusing`, async () => {
+  rt.store.patch(chat, { access }); const count = asked.length; const call = permission(); await flush();
+  assert.equal(asked.length, count + 1); const id = asked.at(-1)!;
+  assert(waiting.has(id)); assert.equal(rt.store.get(id)?.kind, 'permission');
+  assert.equal(rt.store.get(id)?.alwaysAllow, undefined);
+  await settle(id, true); await call.response;
+  assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions, scope: 'turn' });
+  rt.store.patch(chat, { access: 'supervised' });
+});
+await check('declining native computer permission grants nothing with a valid turn scope', async () => {
+  const count = asked.length; const call = permission(); await flush(); assert.equal(asked.length, count + 1);
+  await settle(asked.at(-1)!, false); await call.response;
+  assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions: {}, scope: 'turn' });
+});
+await check('switching to Full access releases pending native computer permission', async () => {
+  const count = asked.length; const call = permission(); await flush(); assert.equal(asked.length, count + 1);
+  const id = asked.at(-1)!; await mutate('conversations:setAccess', { id: chat, access: 'full' });
+  assert.equal(rt.store.get(id)?.status, 'auto'); waiting.get(id)?.(true); waiting.delete(id);
+  await call.response; assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions, scope: 'turn' });
+  rt.store.patch(chat, { access: 'supervised' });
+});
+await check('permission grant cannot outlive or select a different native turn', async () => {
+  rt.store.patch(chat, { access: 'full' }); const before = asked.length;
+  for (const extra of [{ turnId: 'earlier-turn' }, { threadId: 'missing-thread' }]) {
+    const call = permission(extra); await call.response;
+    assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions: {}, scope: 'turn' });
+  }
+  assert.equal(asked.length, before); rt.store.patch(chat, { access: 'supervised' });
+});
+await check('late native permission approval cannot survive replacement', async () => {
+  const count = asked.length; const call = permission(); await flush(); assert.equal(asked.length, count + 1);
+  engine.turns.set('synthetic-thread', { ...running, turnId: 'replacement' });
+  await settle(asked.at(-1)!, true); await call.response;
+  assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions: {}, scope: 'turn' });
+  engine.turns.set('synthetic-thread', running);
+});
+await check('native permission approval cannot survive Stop on the same turn', async () => {
+  const count = asked.length; const call = permission(); await flush(); assert.equal(asked.length, count + 1);
+  await engine.interrupt({ cursor: 'synthetic-thread', turnId: 'synthetic-turn' });
+  await settle(asked.at(-1)!, true); await call.response;
+  assert.deepEqual(replies.find(r => r.id === call.id)?.result, { permissions: {}, scope: 'turn' });
+  delete (running as any).interrupted;
+});
+await check('Full permission grants remain turn-scoped and downgrade restores asking', async () => {
+  rt.store.patch(chat, { access: 'full' }); const granted = permission(); await granted.response;
+  assert.equal(replies.find(r => r.id === granted.id)?.result.scope, 'turn');
+  await mutate('conversations:setAccess', { id: chat, access: 'supervised' });
+  const count = asked.length; const requested = permission(); await flush(); assert.equal(asked.length, count + 1);
+  assert(waiting.has(asked.at(-1)!)); await settle(asked.at(-1)!, false); await requested.response;
+});
+await check('saved file rules never grant native computer permission', async () => {
+  rt.store.insert('approvalRules', { runnerId, kind: 'file', pathPrefix: 'C:/fixture', uses: 0, createdAt: Date.now() });
+  const result = await mutate('approvals:request', { token, kind: 'permission', title: 'Requested computer permissions', detail: JSON.stringify(permissions), conversationId: chat, paths: ['C:/fixture/write/test.txt'] });
+  assert.equal(result.next, 'ask'); assert.equal(rt.store.get(result.id)?.alwaysAllow, undefined);
+  await mutate('approvals:decide', { key: process.env.DASHBOARD_KEY, id: result.id, approved: false });
+});
+await check('Full-access startup and resumed turns tell Codex computer access is already granted', async () => {
+  const native: any = new CodexEngine();
+  const requests: any[] = [];
+  const fake = {
+    reloadSkills: async () => [], on() {}, off() {},
+    request: async (method: string, params: any) => {
+      requests.push({ method, params });
+      return method === 'turn/start' ? { turn: { id: 'prompt-fixture-turn' } } : { thread: { id: 'prompt-fixture-thread' } };
+    },
+    waitForTurn: async () => ({ text: 'Fixture only', images: [], interrupted: false }),
+  };
+  native.ensure = async () => fake;
+  const input = { instructions: 'Fixture instructions', prompt: 'Use the computer', cwd: process.cwd(), access: 'full', attachments: [] };
+  const sink = { onSession: async () => {}, onRequest: async () => 'decline' };
+  await native.runTurn(input, sink);
+  const started = requests.find(item => item.method === 'thread/start');
+  assert.match(started.params.developerInstructions, /Full access[\s\S]*already[\s\S]*permission/i);
+  requests.length = 0;
+  await native.runTurn({ ...input, resumeCursor: 'another-existing-thread' }, sink);
+  const resumed = requests.find(item => item.method === 'thread/resume');
+  assert.match(resumed.params.developerInstructions, /Do not ask again for general computer/i);
+});
+await check('Full access in one chat does not authorize another chat computer permissions', async () => {
+  rt.store.patch(chat, { access: 'full' });
+  const otherThread = await mutate('agentStore:createThread', { userId: 'fixture-other-chat' });
+  const otherChat = rt.store.insert('conversations', { channel: 'web', externalId: 'permission-other-chat', threadId: otherThread, access: 'supervised', lastMessageAt: Date.now() });
+  const request = await mutate('approvals:request', { token, kind: 'permission', title: 'Other chat computer permissions', detail: JSON.stringify(permissions), conversationId: otherChat });
+  assert.equal(request.next, 'ask');
+  await mutate('approvals:decide', { key: process.env.DASHBOARD_KEY, id: request.id, approved: false });
+  rt.store.patch(chat, { access: 'supervised' });
+});
+await check('Perry browser Full access runs without another approval prompt', async () => {
+  rt.store.patch(chat, { access: 'full' });
+  const before = (await query('approvals:pending', { key: process.env.DASHBOARD_KEY })).length;
+  const request = await mutate('approvals:askForBrowser', { conversationId: chat, title: 'Fixture browser step' });
+  assert.equal(request.status, 'auto');
+  assert.equal((await query('approvals:pending', { key: process.env.DASHBOARD_KEY })).length, before);
+  rt.store.patch(chat, { access: 'supervised' });
+});
 await check('changing access does not grant a pending tool request', async () => {
   const call = begin(); await flush(); const id = asked.at(-1)!;
   await mutate('conversations:setAccess', { id: chat, access: 'full' });
@@ -95,11 +238,12 @@ await check('changing access does not grant a pending tool request', async () =>
   await settle(id, false); await call.response; rt.store.patch(chat, { access: 'supervised' });
 });
 await check('tool approvals never create an Always allow rule', async () => {
+  const ruleCount = rt.store.all('approvalRules').length;
   const call = begin(); await flush(); const id = asked.at(-1)!;
   assert.equal(rt.store.get(id)?.alwaysAllow, undefined);
   await mutate('approvals:decide', { key: process.env.DASHBOARD_KEY, id, approved: true, always: true });
   waiting.get(id)?.(true); waiting.delete(id); await call.response;
-  assert.equal(rt.store.all('approvalRules').length, 0);
+  assert.equal(rt.store.all('approvalRules').length, ruleCount);
 });
 for (const params of [
   { mode: 'form', requestedSchema: { type: 'object', properties: { account: { type: 'string' } }, required: ['account'] } },

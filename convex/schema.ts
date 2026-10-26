@@ -1396,8 +1396,9 @@ export default defineSchema({
      * "browser": a step in Perry's own browser that buys, sends or posts (lib/browser.ts, tools.ts).
      * "contact": someone new wrote to Perry, or added it to a group; "message": Perry wants to write to
      * someone for the first time (contacts.ts). Allowing either lets Perry talk with them from then on.
+     * "permission": a native computer permission grant, scoped to its current turn; Full access allows it.
      */
-    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message"), v.literal("brain"), v.literal("tool")),
+    kind: v.union(v.literal("command"), v.literal("file"), v.literal("write"), v.literal("browser"), v.literal("contact"), v.literal("message"), v.literal("brain"), v.literal("tool"), v.literal("permission")),
     /** For "contact" and "message": who. */
     contactId: v.optional(v.id("contacts")),
     /** For "brain": the change to Brain it asks about (compaction.ts). */

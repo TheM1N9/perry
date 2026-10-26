@@ -6,7 +6,7 @@ import {
   type ItemEvent, type RateLimitSnapshot, type RpcMessage, type SandboxMode, type TokenUsage as CodexUsage, type TokenUsageEvent, type TurnItem,
 } from "../codex";
 import {
-  optionOf, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineRequest, type EngineStatus,
+  FULL_ACCESS_INSTRUCTIONS, optionOf, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineRequest, type EngineStatus,
   type ItemStatus, type LoginFlow, type NamedSkill, type PlanLimits, type PlanWindow, type QuickTurn, type TokenUsage, type TurnHandle,
   type TurnInput, type TurnResult, type TurnSink,
 } from "../engine";
@@ -189,7 +189,7 @@ export class CodexEngine implements Engine {
   private starting: Promise<CodexAppServer> | null = null;
   private lastAttempt = 0;
   /** Running chat turns by thread, and where their approval requests go. */
-  private turns = new Map<string, { sink: TurnSink; cwd: string; turnId?: string }>();
+  private turns = new Map<string, { sink: TurnSink; cwd: string; turnId?: string; interrupted?: boolean }>();
   /** Threads quick turns started. Any request Codex makes from one is refused. */
   private quickThreads = new Set<string>();
   /** Threads started ahead of a new chat's first message, by what they were started with (takeSpare). */
@@ -325,7 +325,8 @@ export class CodexEngine implements Engine {
       app.respond(request.id, { action: "accept", content: {}, _meta: null });
       return;
     }
-    const turn = this.turns.get(params.threadId);
+    const tracked = this.turns.get(params.threadId);
+    const turn = tracked && !tracked.interrupted && (!tracked.turnId || !params.turnId || tracked.turnId === params.turnId) ? tracked : undefined;
     const decisions = [
       { id: "accept", kind: "accept" as const, label: "Allow once" },
       { id: "acceptForSession", kind: "acceptForSession" as const, label: "Allow for this session" },
@@ -357,7 +358,7 @@ export class CodexEngine implements Engine {
     } else if (method === "item/permissions/requestApproval") {
       normalized = {
         type: "permission_approval",
-        detail: { cwd: params.cwd ?? undefined, reason: params.reason ?? undefined },
+        detail: { cwd: params.cwd ?? undefined, reason: params.reason ?? undefined, permissionSummary: JSON.stringify(params.permissions ?? {}) },
         options: [
           { id: "turn", kind: "accept", label: "Allow for this turn" },
           { id: "session", kind: "acceptForSession", label: "Allow for this session" },
@@ -365,12 +366,15 @@ export class CodexEngine implements Engine {
         ],
         raw: params,
       };
-      // Declining grants nothing.
-      reply = (option) => app.respond(request.id, option === "none"
-        ? { permissions: {} }
-        : { permissions: { ...(params.permissions?.network ? { network: params.permissions.network } : {}), ...(params.permissions?.fileSystem ? { fileSystem: params.permissions.fileSystem } : {}) }, scope: option });
+      // A grant belongs only to the still-running turn; never keep it for a session.
+      reply = (option) => {
+        const active = turn && !turn.interrupted && this.turns.get(params.threadId) === turn && (!turn.turnId || !params.turnId || turn.turnId === params.turnId);
+        app.respond(request.id, { permissions: active && option === "turn"
+          ? { ...(params.permissions?.network ? { network: params.permissions.network } : {}), ...(params.permissions?.fileSystem ? { fileSystem: params.permissions.fileSystem } : {}) }
+          : {}, scope: "turn" });
+      };
     } else if (method === "mcpServer/elicitation/request") {
-      if (turn?.turnId && params.turnId && turn.turnId !== params.turnId) {
+      if (tracked?.turnId && params.turnId && tracked.turnId !== params.turnId) {
         app.respond(request.id, { action: "cancel", content: null, _meta: null });
         return;
       }
@@ -397,8 +401,8 @@ export class CodexEngine implements Engine {
         raw: params,
       };
       reply = (option) => {
-        const active = turn && this.turns.get(params.threadId) === turn && (!turn.turnId || !params.turnId || turn.turnId === params.turnId);
-        const action = !turn ? "decline" : !active ? "cancel" : option === "accept" ? "accept" : "decline";
+        const active = turn && !turn.interrupted && this.turns.get(params.threadId) === turn && (!turn.turnId || !params.turnId || turn.turnId === params.turnId);
+        const action = !tracked ? "decline" : !active ? "cancel" : option === "accept" ? "accept" : "decline";
         app.respond(request.id, { action, content: action === "accept" ? {} : null, _meta: null });
       };
     } else {
@@ -440,7 +444,7 @@ export class CodexEngine implements Engine {
     // every command that is not plainly read-only to (approvals.ts, review.ts). A sandbox would
     // only make commands fail quietly, since Codex does not reliably ask to leave it.
     const auto = access === "auto";
-    const sandboxed = full ? "" : auto
+    const sandboxed = full ? `\n\n${FULL_ACCESS_INSTRUCTIONS}` : auto
       ? "\n\nEach command you run is checked by a reviewer first: routine ones go ahead, and risky ones wait for the owner. If one is declined, say what you wanted to do and why, and do not work around it."
       // Sandboxed, Codex tends to give up when a command is blocked (no network, a folder outside
       // the workspace) rather than ask; the owner's access setting is what should decide, so it asks.
@@ -527,7 +531,7 @@ export class CodexEngine implements Engine {
     app.on("item/started", onItemStarted);
     app.on("item/completed", onItemCompleted);
     app.on("thread/tokenUsage/updated", onTokens);
-    const running: { sink: TurnSink; cwd: string; turnId?: string } = { sink, cwd };
+    const running: { sink: TurnSink; cwd: string; turnId?: string; interrupted?: boolean } = { sink, cwd };
     this.turns.set(id, running);
     try {
       // turn/start's overrides hold "for this turn and subsequent turns", and
@@ -583,6 +587,8 @@ export class CodexEngine implements Engine {
   }
 
   async interrupt(handle: TurnHandle): Promise<void> {
+    const turn = this.turns.get(handle.cursor);
+    if (turn?.turnId === handle.turnId) turn.interrupted = true;
     if (this.app && !this.app.closed) await this.app.interrupt(handle.cursor, handle.turnId);
   }
 
