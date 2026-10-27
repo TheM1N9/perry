@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpIcon, BrainIcon, CpuIcon, PaperclipIcon, ShieldAlertIcon, ShieldCheckIcon, SparklesIcon, SquareIcon, TypeIcon, XIcon } from "lucide-react";
+import { ArrowUpIcon, BrainIcon, CpuIcon, PaperclipIcon, ShieldAlertIcon, ShieldCheckIcon, SparklesIcon, SquareIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
 import { ACCESS_HINTS, ACCESS_LABELS, ACCESSES, enginesOf, modelKey, modelsOf, typingSkill, type Access, type ModelOption } from "@/convex/lib/commands";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
@@ -11,19 +11,22 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { InfoTip } from "../common";
 import { AttachmentList, PickedFiles, type Attachment } from "./attachments";
-import { formatPrompt, PromptFormatting, PromptPreview } from "./composer-formatting";
+import { PromptEditor, type PromptHandle } from "./prompt-editor";
 
 export const MAX_FILES = 10;
 export const MAX_BYTES = 50 * 1024 * 1024;
 
 export type DraftHandle = { read: () => string; write: (text: string) => void };
+/** The composer's box (prompt-editor.tsx): focused, and written at the caret. */
+export type ComposerHandle = PromptHandle;
 
 /** Draft/caret updates stop here. Keep this mounted even for a read-only chat. */
 export function ComposerDraft({ ref, refreshSkills, storageKey, children }: {
   ref: Ref<DraftHandle>;
   storageKey: string;
   refreshSkills: () => unknown;
-  children: (state: { draft: string; setDraft: (text: string) => void; caret: number | undefined; setCaret: (position: number) => void }) => ReactNode;
+  /** `before`: the caret's line up to the caret, where a $name is typed. */
+  children: (state: { draft: string; setDraft: (text: string) => void; before: string | undefined; setBefore: (before: string) => void }) => ReactNode;
 }) {
   const [draft, setDraftState] = useState("");
   const setDraft = useCallback((text: string) => {
@@ -33,11 +36,11 @@ export function ComposerDraft({ ref, refreshSkills, storageKey, children }: {
   useEffect(() => {
     try { setDraftState(sessionStorage.getItem(storageKey) ?? ""); } catch { setDraftState(""); }
   }, [storageKey]);
-  const [caret, setCaret] = useState<number>();
+  const [before, setBefore] = useState<string>();
   useImperativeHandle(ref, () => ({ read: () => draft, write: setDraft }), [draft, setDraft]);
-  const mentioning = !draft.startsWith("/") && typingSkill(draft.slice(0, Math.min(caret ?? draft.length, draft.length))) !== null;
+  const mentioning = !draft.startsWith("/") && typingSkill(before ?? draft) !== null;
   useEffect(() => { if (mentioning) void refreshSkills(); }, [mentioning, refreshSkills]);
-  return children({ draft, setDraft, caret, setCaret });
+  return children({ draft, setDraft, before, setBefore });
 }
 const ACCEPT = "image/*,video/*,audio/*,.pdf,.txt,.md,.csv,.json";
 
@@ -67,12 +70,12 @@ export function Composer({
   ref, assistant, draft, onDraftChange, onCaret, onSubmit, onQueue, onStop, waiting, busy, uploading, files, onAddFiles, onRemoveFile,
   suggestions, suggesting = "Commands", completing, pickers, above, editing, editingQueued,
 }: {
-  ref?: Ref<HTMLTextAreaElement>;
+  ref?: Ref<ComposerHandle>;
   assistant: string;
   draft: string;
   onDraftChange: (draft: string) => void;
-  /** Where the caret is, as it moves: a $name is completed where it is typed. */
-  onCaret?: (position: number) => void;
+  /** The caret's line up to the caret, as it moves: a $name is completed where it is typed. */
+  onCaret?: (before: string) => void;
   onSubmit: () => void;
   onQueue?: () => void;
   onStop?: () => void;
@@ -94,11 +97,6 @@ export function Composer({
   above?: ReactNode;
 }) {
   const picker = useRef<HTMLInputElement>(null);
-  const input = useRef<HTMLTextAreaElement>(null);
-  useImperativeHandle(ref, () => input.current!, []);
-  const [formatting, setFormatting] = useState(false);
-  const [preview, setPreview] = useState(false);
-  useEffect(() => { if (!draft) setPreview(false); }, [draft]);
   const [highlight, setHighlight] = useState(0);
   const [arrowed, setArrowed] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -107,10 +105,27 @@ export function Composer({
   // Escape hides the list until there is nothing to suggest: a command or $name finished, or taken back.
   useEffect(() => { if (!suggestions.length) setDismissed(false); }, [suggestions.length]);
 
-  const shown = dismissed || preview ? [] : suggestions;
+  const shown = dismissed ? [] : suggestions;
   const index = Math.min(highlight, Math.max(0, shown.length - 1));
   const empty = !draft.trim() && files.length === 0 && !editing?.attachments.some((file) => !file.removed);
   const stopping = waiting && empty && onStop;
+
+  /** Keys the box gives the composer first; true when one was taken. Enter that is not taken sends (prompt-editor.tsx). */
+  function onKey(event: KeyboardEvent) {
+    if (editing && event.key === "Escape" && !uploading) { editing.onCancel(); return true; }
+    if (editingQueued && event.key === "Escape" && !shown.length) { editingQueued.onCancel(); return true; }
+    if (!shown.length) return false;
+    if (event.key === "ArrowDown") { setArrowed(true); setHighlight((index + 1) % shown.length); return true; }
+    if (event.key === "ArrowUp") { setArrowed(true); setHighlight((index - 1 + shown.length) % shown.length); return true; }
+    if (event.key === "Tab") { shown[index].apply(); return true; }
+    if (event.key === "Escape") { setDismissed(true); return true; }
+    // Enter takes a suggestion you arrowed to, or finishes a half-typed command or $name; anything typed out in full runs as typed.
+    if (event.key === "Enter" && !event.shiftKey && (arrowed || completing === "choice" || (completing === "command" && shown[index].label.trim() !== draft.trim())
+      || (completing === "skill" && !shown[index].typed))) {
+      shown[index].apply(); return true;
+    }
+    return false;
+  }
 
   return (
     <div className="relative min-w-0">
@@ -149,57 +164,27 @@ export function Composer({
           </ul>}
           <PickedFiles files={files} onRemove={onRemoveFile} disabled={Boolean(uploading || busy)} className="overflow-visible p-0" />
         </div> : <PickedFiles files={files} onRemove={onRemoveFile} disabled={Boolean(uploading)} />}
-        <textarea
-          ref={input}
-          id={editing ? "edit-composer" : "composer"}
+        <PromptEditor
+          ref={ref}
           value={draft}
-          rows={1}
-          hidden={preview}
-          aria-label={editing ? "Edit your message" : editingQueued ? "Edit the queued message" : `Message ${assistant}`}
-          disabled={Boolean(editing && (uploading || busy))}
+          onChange={onDraftChange}
+          onCaret={onCaret}
+          onSubmit={onSubmit}
+          onKeyDown={onKey}
+          onFiles={(pasted) => { if (!editingQueued) onAddFiles(pasted); return true; }}
           placeholder={editingQueued ? "Edit the queued message" : waiting ? "Add to the reply, or stop it" : `Message ${assistant}`}
-          role="combobox"
-          aria-expanded={shown.length > 0}
-          aria-controls={shown.length ? "chat-commands" : undefined}
-          aria-autocomplete="list"
-          aria-activedescendant={shown.length ? `chat-command-${index}` : undefined}
-          className={cn("max-h-[40vh] min-h-[52px] w-full resize-none overflow-y-auto bg-transparent px-5 pt-4 pb-1 text-base leading-relaxed outline-none sm:text-md field-sizing-content placeholder:text-muted-foreground", preview ? "hidden" : "block")}
-          onChange={(event) => { onDraftChange(event.target.value); onCaret?.(event.target.selectionStart); }}
-          onSelect={(event) => onCaret?.(event.currentTarget.selectionStart)}
-          onPaste={(event) => { const pasted = Array.from(event.clipboardData.files); if (pasted.length) { event.preventDefault(); if (!editingQueued) onAddFiles(pasted); } }}
-          onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing) return;
-            const key = (event.ctrlKey || event.metaKey) && !event.altKey ? event.key.toLowerCase() : "";
-            const format = key === "b" ? "bold" : key === "i" ? "italic" : null;
-            // Bold needs a selection: a bare Ctrl/Cmd+B toggles the sidebar instead.
-            if (format && (format === "italic" || event.currentTarget.selectionStart !== event.currentTarget.selectionEnd)) {
-              event.preventDefault();
-              formatPrompt(event.currentTarget, format, onDraftChange, onCaret);
-              return;
-            }
-            if (editing && event.key === "Escape" && !uploading) { event.preventDefault(); editing.onCancel(); return; }
-            if (editingQueued && event.key === "Escape" && !shown.length) { event.preventDefault(); editingQueued.onCancel(); return; }
-            if (shown.length) {
-              if (event.key === "ArrowDown") { event.preventDefault(); setArrowed(true); setHighlight((index + 1) % shown.length); return; }
-              if (event.key === "ArrowUp") { event.preventDefault(); setArrowed(true); setHighlight((index - 1 + shown.length) % shown.length); return; }
-              if (event.key === "Tab") { event.preventDefault(); shown[index].apply(); return; }
-              if (event.key === "Escape") { event.preventDefault(); setDismissed(true); return; }
-              // Enter takes a suggestion you arrowed to, or finishes a half-typed command or $name; anything typed out in full runs as typed.
-              if (event.key === "Enter" && !event.shiftKey && (arrowed || completing === "choice" || (completing === "command" && shown[index].label.trim() !== draft.trim())
-                || (completing === "skill" && !shown[index].typed))) {
-                event.preventDefault(); shown[index].apply(); return;
-              }
-            }
-            if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onSubmit(); }
+          attributes={{ id: editing ? "edit-composer" : "composer", role: "combobox", "aria-autocomplete": "list" }}
+          aria={{
+            "aria-label": editing ? "Edit your message" : editingQueued ? "Edit the queued message" : `Message ${assistant}`,
+            "aria-expanded": String(shown.length > 0),
+            "aria-controls": shown.length ? "chat-commands" : undefined,
+            "aria-activedescendant": shown.length ? `chat-command-${index}` : undefined,
           }}
+          disabled={Boolean(editing && (uploading || busy))}
+          autoFocus={Boolean(editing)}
+          className="max-h-[40vh] min-h-[52px] w-full overflow-y-auto px-5 pt-4 pb-1"
         />
-        {preview && <PromptPreview text={draft} />}
-        {formatting && <PromptFormatting input={input} onChange={onDraftChange} onCaret={onCaret} preview={preview} onPreview={setPreview} disabled={Boolean(editing && (uploading || busy))} />}
         <div className={cn("flex items-center gap-1 px-2.5 pt-1 pb-2.5", editing && "flex-wrap justify-end")}>
-          <Button type="button" variant="ghost" size="icon" className="rounded-full text-muted-foreground" aria-label="Formatting options" aria-expanded={formatting}
-            onClick={() => { setFormatting(!formatting); if (formatting) { setPreview(false); requestAnimationFrame(() => input.current?.focus()); } }}>
-            <TypeIcon className="size-4" />
-          </Button>
           <Tooltip>
             <TooltipTrigger render={<Button type="button" variant="ghost" size="icon" className="rounded-full text-muted-foreground" aria-label="Attach files"
               onClick={() => picker.current?.click()} disabled={busy || Boolean(uploading) || Boolean(editingQueued) || files.length + (editing?.attachments.length ?? 0) >= MAX_FILES} />}>

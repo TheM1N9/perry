@@ -1,0 +1,89 @@
+{
+  "ranAt": "2026-10-27T19:06:07.464Z",
+  "checks": {
+    "noFormattingButton": true,
+    "inlineFormatsAsTyped": true,
+    "inlineSentAsMarkdown": true,
+    "backspaceUndoesShortcut": true,
+    "bulletListAsTyped": true,
+    "enterInListDoesNotSend": true,
+    "orderedListAsTyped": true,
+    "quoteAndHeadingAsTyped": true,
+    "codeBlockAsTyped": true,
+    "codeBlockSentAsFence": true,
+    "plainTextNotEscaped": true,
+    "plainPasteVerbatim": true,
+    "vscodePasteIsCode": true,
+    "imeEnterDoesNotSend": true,
+    "commandSuggestions": true,
+    "commandPicked": true,
+    "skillSuggested": true,
+    "skillPicked": true,
+    "bareCtrlBTogglesSidebar": true,
+    "ctrlBBoldsChosenWords": true,
+    "reloadRestoresFormatted": true,
+    "shiftEnterDoesNotSend": true,
+    "draftBeforeSend": true,
+    "modEnterSendsMarkdown": true,
+    "sentDraftCleared": true,
+    "messageEditorFormatted": true,
+    "phoneNoOverflow": true,
+    "noBrowserExceptions": true
+  },
+  "notes": {
+    "inline": {
+      "html": "<p>Fix the <strong>login</strong> bug in <code>auth.ts</code> <em>soon</em> and <s>later</s> ok</p>",
+      "shown": "Fix the login bug in auth.ts soon and later ok",
+      "draft": "Fix the **login** bug in `auth.ts` *soon* and ~~later~~ ok"
+    },
+    "inlineSentAsMarkdown": "Fix the **login** bug in `auth.ts` *soon* and ~~later~~ ok",
+    "backspaceUndoesShortcut": {
+      "formatted": true,
+      "html": "<p>**x**</p>"
+    },
+    "enterInListDoesNotSend": "- first\n- second\n- third\n\nafter",
+    "orderedListAsTyped": "1. one\n2. two",
+    "quoteAndHeadingAsTyped": "## Steps",
+    "codeBlockAsTyped": "<pre><code class=\"language-ts\">const a = 1;\nb_c *d*</code></pre><p><br class=\"ProseMirror-trailingBreak\"></p>",
+    "codeBlockSentAsFence": "```ts\nconst a = 1;\nb_c *d*\n```",
+    "plainTextNotEscaped": "rename foo_bar_baz in C:\\Users\\x <div> for 2 * 3 [a](b)",
+    "plainPasteVerbatim": "line 1\n  indented * not_italic\n\nlast",
+    "vscodePasteIsCode": "```typescript\nconst x = 1;\nif (x) go();\n```",
+    "commandSuggestions": {
+      "list": true,
+      "expanded": "true",
+      "active": "chat-command-0",
+      "role": "combobox"
+    },
+    "commandPicked": "/think ",
+    "skillPicked": "please $review-pr now",
+    "bareCtrlBTogglesSidebar": {
+      "before": "expanded",
+      "after": "collapsed"
+    },
+    "ctrlBBoldsChosenWords": "**make me bold**",
+    "draftBeforeSend": "Fix the **login** bug in `auth.ts`\n\n- check foo_bar\n- then $HOME",
+    "messageEditorFormatted": {
+      "strong": true,
+      "list": 2,
+      "focused": true,
+      "main": ""
+    },
+    "noBrowserExceptions": [],
+    "runnerLog": [
+      "\u001b[1mAssistant runner\u001b[0m",
+      "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
+      "\u001b[2m  directory  W:\\motionclip-storage-513\\temp\\perry-notion-composer-jN7FEJ\\workspace\u001b[0m",
+      "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
+      "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
+      "\u001b[2m",
+      "  `pnpm run service stop` takes Assistant's hands away.",
+      "\u001b[0m",
+      "\u001b[32m  connected.",
+      "\u001b[0m",
+      "\u001b[2m  saved turn nhznfjy2hvp6q1v96gjv0s35a8\u001b[0m"
+    ],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}
