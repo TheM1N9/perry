@@ -6,7 +6,7 @@ import { errorText } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Attachment } from "./attachments";
-import { Composer, ComposerNote, MAX_BYTES, MAX_FILES } from "./composer";
+import { Composer, ComposerNote, MAX_BYTES, MAX_FILES, type ComposerHandle } from "./composer";
 import type { ChatMessage } from "./message";
 
 export type MessageEdit = { text: string; attachmentIds: Id<"chatAttachments">[]; requestId: string };
@@ -31,7 +31,7 @@ export function MessageEditor({ message, assistant, waiting, onClose, onStop, on
   const [error, setError] = useState("");
   const uploaded = useRef(new Map<File, UploadedAttachment>());
   const uploadIds = useRef(new Map<File, string>());
-  const input = useRef<HTMLTextAreaElement>(null);
+  const input = useRef<ComposerHandle>(null);
 
   function addFiles(added: File[]) {
     if (saving) return;
@@ -68,7 +68,7 @@ export function MessageEditor({ message, assistant, waiting, onClose, onStop, on
   }
 
   return <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
-    <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl" initialFocus={input} showCloseButton={!saving}>
+    <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl" initialFocus={() => input.current?.element ?? true} showCloseButton={!saving}>
       <DialogHeader>
         <DialogTitle>Edit your message</DialogTitle>
         <DialogDescription>Saving replaces this message and the replies after it.</DialogDescription>

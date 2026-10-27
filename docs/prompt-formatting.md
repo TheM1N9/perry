@@ -1,40 +1,48 @@
 # Prompt formatting (#307)
 
-The owner writes long instructions in Perry's existing chat composer, including code and lists. The composer should help structure those instructions while preserving the exact Markdown sent to the agent. A familiar text input with a small formatting row and an optional preview fits this job.
+The owner writes long instructions in Perry's chat composer, including code and lists. The composer should help structure those instructions while sending the agent Markdown it can read as written.
 
-Considered a rich-text editor using the installed Tiptap stack, a separate full-screen prompt document, and Markdown with selection controls. Choose Markdown controls: existing refs, command completion, skill mentions, drafts and message editing already depend on a textarea and string offsets. A second editor would introduce serialization and caret conversions. A full-screen editor hides the conversation during a common action.
+The first version (a textarea, a "Formatting options" row and a Markdown preview) kept the textarea as the source of truth, because command completion, skill mentions, drafts and message editing depended on string offsets. In use, the row was one more thing to open, and the preview was a second view of the same words. The composer now formats as you type, the way Notion does, and both are gone.
 
-Keep the textarea as the source of truth. Format selected text, retain native typing/paste/undo behavior, and preview with the existing safe Markdown libraries. Never execute HTML. Formatting is local; sending still uses the existing action.
+## Behavior
 
-Failure inventory before E2E checks:
+The composer is a TipTap editor (components/dashboard/chat/prompt-editor.tsx). It uses the same StarterKit and Markdown extension as notes.
 
-- Selection or focus is lost when clicking a toolbar action.
-- Formatting overwrites adjacent text or fails across multiple lines.
-- Existing backticks prematurely close inserted inline/code fences.
-- Undo/redo loses formatting or ordinary typed text.
-- Preview changes the source, triggers a send, executes HTML, or cannot return to editing.
-- Enter, Shift+Enter, IME composition or command/skill suggestions regress.
-- Editing a message, attachment paste, or a read-only state bypasses existing guards.
-- Long text hides controls or overflows on a phone.
-- External draft writes are not reflected in the mounted textarea.
-- Formatting keyboard shortcuts conflict with browser shortcuts when focus is elsewhere.
+- **Inline:** `**bold**`, `_italic_`, `` `code` `` and `~~strike~~` format as typed, and their markers disappear. Backspace straight after takes the formatting back.
+- **Blocks:** `- `, `1. `, `> ` and `#`/`##`/`###` at a line's start make a list, a quote or a heading. "```" and a space starts code, as does "```lang" and Enter.
+- **Enter:** sends the message. In a list it adds the next item, and an empty item ends the list. In code it adds a line, and two empty lines leave the code.
+  - **Shift+Enter:** adds a new paragraph or list item.
+  - **Ctrl/Cmd+Enter:** sends from anywhere.
+- **Keyboard shortcuts:** Ctrl/Cmd+B bolds selected words. With no selection it is left to the page, which opens or closes the sidebar. Ctrl/Cmd+I italicizes.
+- **Paste:**
+  - Plain text goes in as it was copied, with its line breaks and indentation.
+  - Several lines copied from VS Code become code in its language.
+  - Anything else with HTML, such as a web page or a document, keeps its formatting.
+  - Files are attached.
 
-Use browser workflow evidence against an isolated instance with fake engines. Record raw submitted text, preview structure, selections, undo/redo and narrow-screen layout. No paid calls or owner account data are needed.
+What is sent is the editor's Markdown. TipTap escapes plain text for Markdown that will be parsed again (`foo\_bar`, `C:\\Users`, `&lt;div&gt;`). An agent would read those backslashes and entities too, so the composer turns that escaping off. Plain text goes out as typed, as the textarea sent it.
 
-## Delivered behavior
-
-Formatting options reveal selection controls for bold, italic, lists, inline code and code blocks. Ctrl/Cmd+B and Ctrl/Cmd+I operate in the textarea. Lists preserve indentation and blank lines; fenced blocks choose a delimiter longer than any selected backtick run. Preview uses safe Markdown with inert HTML and no remote image loading. Sending from preview returns to editing.
-
-Draft source is kept in sessionStorage per chat/project/new-chat scope and restored after reload in the same tab. Sending clears that draft. This is local draft recovery, not a server-synced or cross-device draft system. Textarea attachment handling, command/skill completion and message editing continue through the existing composer.
+The draft is still a Markdown string in sessionStorage, kept per chat, project or new chat. A draft written from outside replaces what is shown, and only then. This covers a command picked, a starter, a queued message to edit, a reload, and a sent message cleared. The composer reports the caret's line up to the caret, so `$name` mentions are found where they are typed and replaced in place. `/` commands are unchanged. The editable element keeps the combobox role, `aria-activedescendant` and the `composer`/`edit-composer` ids.
 
 ## Verification
 
-The production build passed. The browser workflow passed all 24 checks against an isolated Windows production instance with a fake engine, including native undo/redo, real pointer clicks, format toggles, list/code edge cases, safe preview, Shift+Enter, IME Enter, command suggestions, reload recovery, 375px layout, exact submitted source and edit/resend isolation.
+`artifacts/notion-composer/run.ts` uses an isolated production instance with a fake engine, so no paid calls are made. It lists every way the composer could fail and checks each one:
+
+- formatting as typed;
+- the exact Markdown sent;
+- unescaped plain text;
+- Enter, Shift+Enter, Ctrl+Enter and IME Enter;
+- lists and code;
+- paste;
+- command and skill suggestions;
+- Ctrl+B;
+- reload;
+- the message editor;
+- a 375px phone.
 
 ```powershell
 pnpm build
-$env:PERRY_E2E_DIR = 'W:\perry-qa'
-pnpm exec bun artifacts/prompt-formatting/run.ts W:/perry-qa/prompt-formatting
+pnpm exec bun artifacts/notion-composer/run.ts artifacts/notion-composer
 ```
 
-JSON and desktop/mobile screenshots are under artifacts/prompt-formatting. Chromium on Windows was exercised; the native insertion fallback on other browser engines needs platform verification. Existing build tracing warnings in convex/pet.ts and server/wake.ts remain.
+Results and screenshots are written to `artifacts/notion-composer`. Only Chromium on Windows has been exercised.

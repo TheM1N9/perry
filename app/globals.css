@@ -264,3 +264,28 @@
   }
 }
 
+/* The composer's words, formatted as typed (components/dashboard/chat/prompt-editor.tsx): the chat's prose, close set. */
+@layer components {
+  .prose-prompt {
+    @apply text-base leading-relaxed text-foreground [overflow-wrap:anywhere] sm:text-md;
+  }
+  .prose-prompt > * + * { @apply mt-2; }
+  .prose-prompt h1, .prose-prompt h2, .prose-prompt h3 { @apply font-semibold tracking-tight; }
+  .prose-prompt h1 { @apply text-lg; }
+  .prose-prompt h2, .prose-prompt h3 { @apply text-base; }
+  .prose-prompt ul { @apply list-disc pl-5; }
+  .prose-prompt ol { @apply list-decimal pl-5; }
+  .prose-prompt li + li { @apply mt-0.5; }
+  .prose-prompt li > p { @apply m-0; }
+  .prose-prompt a { @apply link; }
+  .prose-prompt strong { @apply font-semibold; }
+  .prose-prompt blockquote { @apply border-l-2 pl-3 text-muted-foreground; }
+  .prose-prompt hr { @apply my-3 border-border; }
+  .prose-prompt :not(pre) > code { @apply rounded-[5px] bg-muted px-[0.35em] py-[0.1em] font-mono text-[0.86em]; }
+  .prose-prompt pre { @apply overflow-x-auto rounded-lg bg-muted p-3 font-mono text-sm leading-relaxed; }
+  .prose-prompt p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    @apply pointer-events-none float-left h-0 text-muted-foreground;
+  }
+}
+

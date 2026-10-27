@@ -39,7 +39,7 @@ import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
 import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
-import { ComposerDraft, type DraftHandle, Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
+import { ComposerDraft, type ComposerHandle, type DraftHandle, Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
 import { InteractiveAnswers } from "./interactive-answer";
 import { ChatFiles } from "./markdown";
 import { MessageEditor, type MessageEdit } from "./message-editor";
@@ -211,7 +211,7 @@ export function ChatScreen() {
   const [removing, setRemoving] = useState(false);
   /** A new project is being made for this chat to move into. */
   const [creatingProject, setCreatingProject] = useState(false);
-  const composer = useRef<HTMLTextAreaElement>(null);
+  const composer = useRef<ComposerHandle>(null);
   const compactionStatus = useQuery(api.dashboard.getCompaction, compaction ? { key: dashboardKey, id: compaction } : "skip");
 
   // Remember the open chat, for the next visit to the root.
@@ -871,7 +871,7 @@ export function ChatScreen() {
         <div className="mx-auto w-full max-w-3xl">
           <p className="sr-only" role="status" aria-live="polite">{chat?.waiting?.why ?? ""}</p>
           <ChatAnnouncer chatId={selectedId ?? null} status={summary?.status} />
-          <ComposerDraft ref={draftControl} refreshSkills={refreshSkills} storageKey={`perry.prompt.${paramId ?? (inProject ? `project.${inProject}` : "new")}`}>{({ draft, setDraft, caret, setCaret }) => {
+          <ComposerDraft ref={draftControl} refreshSkills={refreshSkills} storageKey={`perry.prompt.${paramId ?? (inProject ? `project.${inProject}` : "new")}`}>{({ draft, setDraft, before, setBefore }) => {
             // Slash commands: past a command's name, the suggestions are its choices.
             const typedModel = parseModelCommand(draft);
             const typedThink = parseThinkCommand(draft);
@@ -882,17 +882,12 @@ export function ChatScreen() {
                 key: option.value, label: option.label, hint: option.hint, apply: () => void runCommand(`${command} ${option.value}`),
               }));
             // Skills: a $ starts one's name where the caret is, and picking one puts "$name " there.
-            const mention = draft.startsWith("/") ? null : typingSkill(draft.slice(0, Math.min(caret ?? draft.length, draft.length)));
+            const mention = draft.startsWith("/") ? null : typingSkill(before ?? draft);
             function pickSkill(name: string) {
-              if (!mention) return;
-              const end = mention.start + 1 + mention.typed.length;
-              // The rest of a name the caret was inside is replaced too.
-              const after = draft.slice(end).replace(/^[a-z0-9-]*/, "");
-              const inserted = `$${name}${after.startsWith(" ") ? "" : " "}`;
-              const position = mention.start + inserted.length + (after.startsWith(" ") ? 1 : 0);
-              setDraft(draft.slice(0, mention.start) + inserted + after);
-              setCaret(position);
-              window.setTimeout(() => { composer.current?.focus(); composer.current?.setSelectionRange(position, position); }, 0);
+              if (!mention || !composer.current) return;
+              // The rest of a name the caret was inside is replaced too, and the space after it, which "$name " brings back.
+              const rest = composer.current.around().after.match(/^[a-z0-9-]* ?/)?.[0] ?? "";
+              composer.current.replaceAroundCaret(mention.typed.length + 1, rest.length, `$${name} `);
             }
             const skillSuggestions: Suggestion[] = !mention ? [] : (skills ?? [])
               .filter((skill) => !skill.problem && skill.name.includes(mention.typed))
@@ -944,7 +939,7 @@ export function ChatScreen() {
             assistant={assistant}
             draft={draft}
             onDraftChange={setDraft}
-            onCaret={setCaret}
+            onCaret={setBefore}
             onSubmit={() => void (queueEdit ? saveQueueEdit(draft) : submit(draft))}
             onQueue={() => void submit(draft, "queue")}
             editingQueued={queueEdit ? { onCancel: endQueueEdit } : undefined}
