@@ -18,7 +18,7 @@ import { browserIdentity, browserState, importPreview, importProfile, importResu
 const frameSchema = z.object({ image: z.string(), identity: browserIdentity, capturedAt: z.number() });
 const sessionsSchema = z.array(z.object({ site: z.string(), source: z.string(), count: z.number(), note: z.string() }));
 
-/** Content slot for #285's WorkspacePanel. The shared shell owns open/close, resizing and expansion. */
+/** The Browser surface of the chat panel (panel/chat-panel.tsx), which owns opening, closing, resizing and widening it. */
 export function BrowserPanel({ conversationId, onClose }: { conversationId: string; onClose?: () => void }) {
   const { dashboardKey } = useSession();
   const [state, setState] = useState<BrowserState | null>(null);

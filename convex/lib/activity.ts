@@ -121,8 +121,26 @@ const OWN_TOOLS: Record<string, (input: Record<string, unknown>) => Step> = {
   share_file: (input) => ({ label: typeof input.path === "string" ? `Sending you ${short(baseName(input.path), 32)}` : "Sending you a file", pose: "running" }),
 };
 
-/** One trace step, as the pet says it. */
-export function describeStep(span: Span): Step {
+/** Each label's first word, said of a step that is over: "Running git status" is "Ran git status". */
+const PAST: Record<string, string> = {
+  Running: "Ran", Editing: "Edited", Searching: "Searched", Drawing: "Drew", Thinking: "Thought", Using: "Used", Checking: "Checked",
+  Looking: "Looked", Reading: "Read", Writing: "Wrote", Adding: "Added", Linking: "Linked", Pinning: "Pinned", Unpinning: "Unpinned",
+  Summing: "Summed", Proposing: "Proposed", Noting: "Noted", Forgetting: "Forgot", Updating: "Updated", Changing: "Changed",
+  Putting: "Put", Getting: "Got", Scheduling: "Scheduled", Starting: "Started", Removing: "Removed", Opening: "Opened",
+  Clicking: "Clicked", Typing: "Typed", Picking: "Picked", Signing: "Signed", Taking: "Took", Going: "Went", Closing: "Closed",
+  Finding: "Found", Making: "Made", Wrapping: "Wrapped", Setting: "Set", Sending: "Sent", Preparing: "Prepared", Revising: "Revised",
+};
+
+/**
+ * One trace step, as the pet says it: what it is doing ("Running git status").
+ * `done`: as the chat lists a step that is over ("Ran git status").
+ */
+export function describeStep(span: Span, { done = false }: { done?: boolean } = {}): Step {
+  const step = presentStep(span);
+  return done ? { ...step, label: step.label.replace(/^\p{L}+/u, (word) => PAST[word] ?? word) } : step;
+}
+
+function presentStep(span: Span): Step {
   switch (span.kind) {
     case "command": return { label: `Running ${short(innerCommand(span.name))}`, pose: "running" };
     case "fileChange": {
@@ -162,8 +180,11 @@ export function shownStep(of: Shown | null | undefined, now: number) {
 
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** What a finished turn did, for under its reply: "Ran 3 commands · read 2 pages". Empty when it only answered. */
-export function summarize(spans: Span[]): string {
+/**
+ * What a finished turn did, for under its reply: "Ran 3 commands · read 2 pages". Empty when it only answered.
+ * `sentence`: as the chat's fold says it, every step counted, "Ran 3 commands, read 2 pages and took 4 other steps".
+ */
+export function summarize(spans: Span[], { sentence = false }: { sentence?: boolean } = {}): string {
   const commands = spans.filter((span) => span.kind === "command").length;
   const files = new Set(spans.filter((span) => span.kind === "fileChange").flatMap((span) => span.name.split(", "))).size;
   const pages = spans.filter((span) => span.kind === "mcpToolCall" && span.name === "read_page").length;
@@ -179,6 +200,22 @@ export function summarize(spans: Span[]): string {
     apps.length && `used ${apps.join(" and ")}`,
     images && `drew ${count(images, "image")}`,
   ].filter((part): part is string => Boolean(part));
-  const line = parts.join(" · ");
+  if (sentence) {
+    const counted = (span: Span) => span.kind === "reasoning" || span.kind === "command" || span.kind === "fileChange" || span.kind === "webSearch"
+      || span.kind === "imageGeneration" || (span.kind === "mcpToolCall" && (span.name === "read_page" || span.name === "run_action"));
+    const other = spans.filter((span) => !counted(span)).length;
+    if (other) parts.push(parts.length ? `took ${count(other, "other step")}` : `took ${count(other, "step")}`);
+    if (parts.length > 1) parts.splice(-2, 2, `${parts.at(-2)} and ${parts.at(-1)}`);
+  }
+  const line = parts.join(sentence ? ", " : " · ");
   return line ? line.charAt(0).toUpperCase() + line.slice(1) : "";
+}
+
+/**
+ * A run's steps as its trace's tool-call names keep them (runs.toolCalls, codex.ts toolName), for summarize
+ * on a run that ended before it had a summary of its own: each file change counts as one file.
+ */
+export function spansOfCalls(calls: string[]): Span[] {
+  const kinds: Record<string, string> = { shell: "command", apply_patch: "fileChange", web_search: "webSearch", image_generation: "imageGeneration" };
+  return calls.map((name, index) => kinds[name] ? { kind: kinds[name], name: kinds[name] === "fileChange" ? `change ${index}` : name } : { kind: "mcpToolCall", name });
 }

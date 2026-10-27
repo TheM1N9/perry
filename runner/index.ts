@@ -356,6 +356,8 @@ async function main() {
         if (limits) await client.mutation(api.usage.report, { token, engine: engine.kind, limits });
       } catch (error) {
         console.log(dim(`  could not read ${engine.label}'s plan limits: ${message(error)}`));
+        // Said on the Usage page too, which would otherwise wait for limits that are not coming (an expired sign-in).
+        await client.mutation(api.usage.report, { token, engine: engine.kind, unread: { at: Date.now(), message: message(error) } }).catch(() => {});
       } finally {
         readingLimits.delete(engine.kind);
       }

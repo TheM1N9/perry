@@ -20,7 +20,8 @@ import { index as indexInLibrary } from "./library";
 import { QUIET } from "./jobs";
 import { HIDDEN, hide, savedValues } from "./vault";
 import { takeFromOutbox } from "./conversations";
-import { assertQueueRoom, waitingCount, MAX_QUEUED_PER_CHAT, QUEUE_FULL } from "./queue";
+import { assertQueueRoom, byQueuePosition, queuePosition, steerable, waitingCount, MAX_QUEUED_PER_CHAT, QUEUE_FULL } from "./queue";
+import { summarize } from "./lib/activity";
 import { HANDOFF_INSTRUCTIONS, handoffHistory, moveChat, resetWaitFor, retryable } from "./routing";
 import { engineLockable, engineReady, engineUsable, isOnline, recordEngines, resumeOf, statusesOf, tooOld } from "./engines";
 import { vAccess, vCodexModel, vEngine, vRoute, vSpanKind, vSpanStatus, vTurnAttachment, vUsage, vTurnErrorCode } from "./schema";
@@ -130,9 +131,8 @@ export async function pickRunner(ctx: MutationCtx, conversation: Doc<"conversati
  * The runner then steers as its engine can, or queues it (runner/engine.ts).
  */
 function isSteering(policy: "steer" | "queue" | undefined, running: Doc<"codexTurns"> | null, engine: EngineKind): running is Doc<"codexTurns"> {
-  // A memory checkpoint or the flush before /reset is not a reply the owner's words could join.
-  return (policy ?? "queue") === "steer" && running !== null && !running.stopRequested && running.kind !== "compact"
-    && !running.checkpoint && !running.flush && running.runnerId !== undefined && running.engine === engine;
+  // A memory checkpoint or the flush before /reset is not a reply the owner's words could join (queue.steerable).
+  return (policy ?? "queue") === "steer" && steerable(running, engine);
 }
 
 /** Reserve the turn before asynchronous recall, routing or media preparation. */
@@ -145,7 +145,7 @@ export const prepareTurn = internalMutation({
     const running = await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", chat._id).eq("status", "running")).first();
     const queued = await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", chat._id).eq("status", "queued")).collect();
     const steers = await ctx.db.query("codexSteers").withIndex("by_conversation_status", q => q.eq("conversationId", chat._id).eq("status", "pending")).collect();
-    const createdAt = Math.max(Date.now(), ...queued.map(turn => turn.createdAt + 1), ...steers.map(steer => steer.createdAt + 1));
+    const createdAt = Math.max(Date.now(), ...queued.map(turn => Math.max(turn.createdAt, queuePosition(turn)) + 1), ...steers.map(steer => steer.createdAt + 1));
     const runId = await ctx.runMutation(internal.runs.start, { conversationId: chat._id, prompt: args.prompt });
     return await ctx.db.insert("codexTurns", {
       conversationId: chat._id, runId, prompt: args.prompt, instructions: "", engine: engine ?? undefined,
@@ -366,7 +366,7 @@ export const queuedTurns = query({
     return (await ctx.db.query("codexTurns")
       .withIndex("by_runner_status", (q) => q.eq("runnerId", runner._id).eq("status", "queued"))
       .filter(q => q.eq(q.field("waiting"), undefined))
-      .order("asc").take(20)).sort((a, b) => a.createdAt - b.createdAt || a._creationTime - b._creationTime);
+      .order("asc").take(20)).sort(byQueuePosition);
   },
 });
 
@@ -439,7 +439,7 @@ export const pendingSteers = query({
       if (seen.has(steer.turnId)) continue;
       seen.add(steer.turnId);
       const preparing = await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", steer.conversationId).eq("status", "queued")).collect();
-      if (preparing.some(turn => turn.preparing && turn.steerTarget === steer.turnId && turn.createdAt < steer.createdAt)) continue;
+      if (preparing.some(turn => turn.preparing && turn.steerTarget === steer.turnId && queuePosition(turn) < steer.createdAt)) continue;
       ready.push({ _id: steer._id, turnId: steer.turnId, prompt: steer.prompt, attachments: steer.attachments });
     }
     return ready;
@@ -568,7 +568,7 @@ export const claimTurn = mutation({
     for (const status of ["queued", "error"] as const) {
       const ahead = await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", job.conversationId).eq("status", status)).collect();
       if (ahead.some(turn => turn._id !== job._id && turn.finalizedAt === undefined
-        && (status === "queued" || turn.retrying) && (turn.createdAt < job.createdAt || turn.createdAt === job.createdAt && turn._creationTime < job._creationTime))) return null;
+        && (status === "queued" || turn.retrying) && byQueuePosition(turn, job) < 0)) return null;
     }
     const now = Date.now();
     // The chat's session, when it is on this turn's engine; a chat moved to another engine since starts one.
@@ -1051,6 +1051,7 @@ export const retryOn = internalMutation({
       ...((turn.resetResumes ?? 0) + Number(afterReset) ? { resetResumes: (turn.resetResumes ?? 0) + Number(afterReset) } : {}),
       status: "queued",
       createdAt: afterReset ? turn.createdAt : Date.now(),
+      ...(afterReset && turn.queueOrder !== undefined ? { queueOrder: turn.queueOrder } : {}),
       ...(afterReset ? { lastHeartbeatAt: Date.now() } : {}),
     });
     // Done with, and not finalized: the retry's own finalize saves the chat's messages and ends the run.
@@ -1195,6 +1196,9 @@ export const getTurn = internalQuery({
   },
 });
 
+/** What the run of a turn the owner stopped ends with; the chat's fold says "You stopped after…" for it (dashboard.getChatRuns). */
+export const STOPPED = "Stopped before it finished.";
+
 export const markFinalized = internalMutation({
   args: { id: v.id("codexTurns") },
   returns: v.null(),
@@ -1212,10 +1216,13 @@ export const markFinalized = internalMutation({
       .collect();
     for (const runId of [job.runId, ...steers.map((steer) => steer.runId)]) {
       await settleRunSpans(ctx, runId, finishedAt, job.stopped ? "stopped" : job.status === "error" ? "failed" : "ended");
+      // What the run did, said once now, so the chat's fold reads it without reading every step (dashboard.getChatRuns).
+      const summary = summarize(await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", runId)).collect(), { sentence: true });
       await ctx.db.patch(runId, {
         status: job.status === "done" && !job.stopped ? "ok" : "error",
         model: job.model ?? runLabel(undefined, undefined, undefined, job.engine),
-        error: job.error ? hide(job.error, await savedValues(ctx)) : job.stopped ? "Stopped before it finished." : undefined,
+        error: job.error ? hide(job.error, await savedValues(ctx)) : job.stopped ? STOPPED : undefined,
+        ...(summary ? { summary } : {}),
         errorCode: job.error ? turnErrorCode(job) : undefined,
         finishedAt,
       });

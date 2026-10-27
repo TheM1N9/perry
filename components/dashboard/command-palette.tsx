@@ -93,6 +93,13 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const run = (action: () => void) => { onOpenChange(false); action(); };
   const needle = term.toLocaleLowerCase();
   const matches = (...texts: string[]) => !needle || texts.some((text) => text.toLocaleLowerCase().includes(needle));
+  // A match at the start of a word ("auth" in "Auth tokens") ranks above one inside a word ("OAuth"); recency breaks ties.
+  const startsWord = (text: string) => {
+    const lower = text.toLocaleLowerCase();
+    for (let at = lower.indexOf(needle); at >= 0; at = lower.indexOf(needle, at + 1)) if (!at || !/[\p{L}\p{N}]/u.test(lower[at - 1])) return true;
+    return false;
+  };
+  const ranked = <T extends { title: string }>(items: T[]) => needle ? items.sort((a, b) => Number(startsWord(b.title)) - Number(startsWord(a.title))) : items;
   const themeLabel = `Switch to ${resolvedTheme === "dark" ? "light" : "dark"} theme`;
   const actions = [
     { id: "new", label: "New chat", icon: SquarePenIcon, shortcut: shortcutLabel("newChat"), run: () => router.push("/chat") },
@@ -100,14 +107,14 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     { id: "theme", label: themeLabel, icon: resolvedTheme === "dark" ? SunIcon : MoonIcon, run: () => setTheme(resolvedTheme === "dark" ? "light" : "dark") },
     { id: "lock", label: "Lock dashboard", icon: LockIcon, run: lock },
   ].filter((action) => matches(action.label, action.id === "theme" ? "theme dark light" : ""));
-  const chatHits = (chats ?? []).filter((chat) => matches(chat.title)).slice(0, needle ? 30 : 8);
+  const chatHits = ranked((chats ?? []).filter((chat) => matches(chat.title))).slice(0, needle ? 30 : 8);
   const pages = PAGES.filter((page) => matches(page.label));
   const titled = new Set((chats ?? []).map((chat) => chat.id));
   const searching = term.length >= 2 && (found?.term !== term || recalled?.term !== term);
   const shownChats = new Set(chatHits.map((chat) => chat.id));
   const messageHits = (found?.term === term ? found.results : []).filter((item) => titled.has(item.id) && !shownChats.has(item.id));
   // Notes by title as you type; then what memory and notes say, by words and by meaning.
-  const noteTitles = (needle ? (notes ?? []).filter((note) => matches(note.title)) : []).slice(0, 5);
+  const noteTitles = ranked(needle ? (notes ?? []).filter((note) => matches(note.title)) : []).slice(0, 5);
   const brainHits = (recalled?.term === term ? recalled.results : []).slice(0, 8);
 
   return (

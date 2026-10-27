@@ -44,6 +44,19 @@ function FileLink({ path, children }: { path: string; children: ReactNode }) {
   </span>;
 }
 
+/**
+ * A reply's picture. One on this computer (a chart it saved, a screenshot) is shown from the media server when it is
+ * one of the chat's files, and named like any other path when it is not; a path in an <img> would only break.
+ */
+function ChatImage({ src, alt }: { src: string; alt?: string }) {
+  const files = useContext(ChatFiles);
+  const path = filePath(src);
+  if (path === null) return <img src={src} alt={alt ?? ""} />;
+  const file = chatFile(files, path);
+  if (file) return <img src={file.url} alt={alt ?? ""} title={file.path} />;
+  return <FileLink path={path}>{alt || path}</FileLink>;
+}
+
 /** A fenced block: its language and a copy button above, the code highlighted when Perry knows the language. */
 function Code({ children }: { children: ReactNode }) {
   const language = languageOf(children);
@@ -169,6 +182,7 @@ export const Markdown = memo(function Markdown({ text, openNote, skills, streami
             if (href.startsWith("/")) return <Link href={href}>{children}</Link>;
             return <a {...props} href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
           },
+          img: ({ node: _node, src, alt }) => typeof src === "string" && src ? <ChatImage src={src} alt={alt} /> : null,
           pre: ({ node: _node, children }) => <Code>{children}</Code>,
           table: ({ node: _node, ...props }) => <div className="overflow-hidden rounded-lg border"><Table {...props} /></div>,
           thead: ({ node: _node, ...props }) => <TableHeader className="bg-muted/50" {...props} />,

@@ -27,8 +27,11 @@ export type PlanLimits = { windows: PlanWindow[]; plan?: string; at: number };
 /** The engine refused a turn because a limit was hit ("You've hit your usage limit…"): when, and what it said. */
 export type LimitHit = { at: number; message: string };
 
-/** What the server keeps per engine on a runner: its limits, and the last limit it hit, until a turn goes through again. */
-export type EngineUsage = { limits?: PlanLimits; hit?: LimitHit };
+/**
+ * What the server keeps per engine on a runner: its limits, the last limit it hit until a turn goes through again,
+ * and why the newest read of its limits failed (an expired sign-in, say) until one succeeds.
+ */
+export type EngineUsage = { limits?: PlanLimits; hit?: LimitHit; unread?: LimitHit };
 
 /** Past this share of a window, Perry warns before the limit is hit. */
 export const WARN_PERCENT = 80;
