@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ActivityIcon, ArrowDownIcon, CopyIcon, FilePlusIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
-  GaugeIcon, GlobeIcon, PanelRightIcon, SquarePenIcon, Trash2Icon, TriangleAlertIcon,
+  SquarePenIcon, Trash2Icon, TriangleAlertIcon,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -14,7 +14,7 @@ import { useAction, useMutation, usePaginatedQuery, useQuery } from "@/client/re
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
-  ACCESS_HINTS, ACCESS_LABELS, ACCESSES, COMPACTED, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
+  ACCESS_HINTS, ACCESS_LABELS, ACCESSES, chatModel, currentModel, describeAccess, describeEfforts, describeModels, effortUnused, findModel,
   modelKey, parseAccessCommand, parseModelCommand, parseModelKey, parseThinkCommand, pickAccess, pickEffort, pickModel, typingSkill, type Access,
 } from "@/convex/lib/commands";
 import { ENGINE_LABELS, type EngineKind } from "@/convex/lib/engines";
@@ -31,7 +31,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ApprovalCard } from "../approval-card";
 import { DeleteDialog, RenameDialog } from "../app-sidebar";
 import { APPS, ChannelIcon, EmptyState, PerryMark, TopBar } from "../common";
@@ -45,24 +44,30 @@ import { InteractiveAnswers } from "./interactive-answer";
 import { ChatFiles } from "./markdown";
 import { MessageEditor, type MessageEdit } from "./message-editor";
 import { MessageRow, PendingRow, ReplyInProgress, type ChatMessage } from "./message";
-import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Work } from "./work";
+import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Turn, type Work } from "./work";
+import { NowAction, ThreadNow, type NowLine } from "./thread-now";
+import { UpNext, type UpNextItem } from "./up-next";
+import { ClockIcon, Minimize2Icon, UnplugIcon } from "lucide-react";
 
 import { useChatDeadline, useChatEvent, useStableRecords } from "./render-isolation";
 import { useChatScroll } from "./use-chat-scroll";
 
-import { WorkspacePanel, type WorkspaceView } from "./workspace-panel";
-import { BrowserPanel } from "./browser-panel";
+import { ChatPanel, ChatPanelToggle, useChatPanel } from "./panel/chat-panel";
+import { ChatAnnouncer } from "../chat-announcer";
 
 const messageKey = (message: ChatMessage) => message.id;
-const workKey = (work: Work) => work.runId;
+const workKey = (work: Turn) => work.runId;
 
 type ChatId = Id<"conversations">;
 type PendingAttachment = Attachment & { id: Id<"chatAttachments"> };
 /**
  * A message you sent, shown before the server has it: `sent` once sendChat
  * returns, after which the server lists it as pending until its reply saves it.
+ * `queued`: sent with Queue, so it waits under Up next, not in the conversation.
  */
-type Pending = { id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean; sent: boolean };
+type Pending = { id: ChatId; text: string; attachments: Attachment[]; baselineCount: number; seenRunning: boolean; sent: boolean; queued?: boolean };
+/** A queued message being edited in the composer, and the draft the composer had before, given back after. */
+type QueueEdit = { id: Id<"codexTurns">; conversationId: ChatId; stash: string };
 
 /** No files yet, the same list each time so the replies do not draw again for nothing. */
 const NO_FILES: ReadonlyArray<{ path: string; url: string }> = [];
@@ -110,19 +115,8 @@ export function ChatScreen() {
   const selectedId = paramId ?? createdId;
   const workspace = useQuery(api.workspace.settings, { key: dashboardKey });
   const browserView = useQuery(api.browserView.settings, { key: dashboardKey });
-  const panelEnabled = workspace?.enabled || browserView?.enabled;
-  // Which workspace window is open over this chat, if any (workspace-panel.tsx), kept for the chat's next visit.
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView | null>(null);
-  const workspaceButtons = useRef<HTMLDivElement>(null);
-  const workspaceScopeKey = `perry.workspace.view.${selectedId ?? "new"}`;
-  useEffect(() => { try { const saved = localStorage.getItem(workspaceScopeKey); setWorkspaceView(saved === "all" || saved === "context" || saved === "files" || saved === "browser" ? saved : null); } catch {} }, [workspaceScopeKey]);
-  const openWorkspace = (view: WorkspaceView | null) => {
-    const was = workspaceView;
-    setWorkspaceView(view);
-    // Closed, focus goes back to the button that opened it.
-    if (!view && was) requestAnimationFrame(() => workspaceButtons.current?.querySelector<HTMLButtonElement>(`[data-workspace-button="${was}"]`)?.focus());
-    try { localStorage.setItem(workspaceScopeKey, view ?? ""); } catch {}
-  };
+  // The panel beside the chat (panel/chat-panel.tsx): open or not, its tabs and its width, kept per chat.
+  const panel = useChatPanel(selectedId ?? "new");
 
   const status = useQuery(api.dashboard.getStatus, { key: dashboardKey });
   const assistant = status?.assistantName ?? "Perry";
@@ -136,10 +130,13 @@ export function ChatScreen() {
     { initialNumItems: 50 },
   );
   const stableMessages = useStableRecords(newest, messageKey);
-  const messages = useMemo(() => [...stableMessages].sort((a, b) => a.createdAt - b.createdAt), [stableMessages]);
+  // What is saved comes first: a turn's messages are saved as it ends, so a message queued while it ran is older than
+  // them by the clock and would otherwise sit above the very reply it waited for.
+  const messages = useMemo(() => [...stableMessages].sort((a, b) => Number(Boolean(a.pending)) - Number(Boolean(b.pending)) || a.createdAt - b.createdAt), [stableMessages]);
   const approvals = useQuery(api.approvals.pending, { key: dashboardKey });
   const planLimits = useQuery(api.usage.limits, { key: dashboardKey });
-  const workQuery = useQuery(api.dashboard.getChatWork, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
+  // The chat's runs without their steps: a fold reads its steps when it is open, the reply running its newest one.
+  const workQuery = useQuery(api.dashboard.getChatRuns, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
   const deadlineRevision = useChatDeadline([
     ...(approvals ?? []).filter((item) => item.chat?.id === selectedId).map((item) => item.expiresAt),
     ...(workQuery ?? []).filter((run) => run.status === "ok" && run.finishedAt !== undefined).map((run) => run.finishedAt! + LANDING_MS),
@@ -208,6 +205,8 @@ export function ChatScreen() {
   useEffect(() => () => submitting.current?.controller.abort(), []);
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   useEffect(() => setEditing(null), [selectedId]);
+  const [queueEdit, setQueueEdit] = useState<QueueEdit | null>(null);
+  const editQueued = useMutation(api.queue.edit);
   const [renaming, setRenaming] = useState(false);
   const [removing, setRemoving] = useState(false);
   /** A new project is being made for this chat to move into. */
@@ -282,18 +281,42 @@ export function ChatScreen() {
     previews.current = live;
   }, [pending]);
   useEffect(() => () => { for (const url of previews.current) URL.revokeObjectURL(url); }, []);
+  // The end of the timeline says it is compacting, then that it compacted (nowLines); only why it could not is said here.
   useEffect(() => {
     if (!compactionStatus || compactionStatus.status === "queued" || compactionStatus.status === "running") return;
-    setNotice(compactionStatus.status === "done" ? COMPACTED : `Could not compact: ${compactionStatus.error ?? "no reason was given."}`);
+    if (compactionStatus.status !== "done") setNotice(`Could not compact: ${compactionStatus.error ?? "no reason was given."}`);
     setCompaction(null);
   }, [compactionStatus]);
 
-  const shownPending = pending.filter((item) => item.id === selectedId);
+  const shownPending = useMemo(() => pending.filter((item) => item.id === selectedId), [pending, selectedId]);
   const waiting = shownPending.length > 0 || Boolean(chat?.isRunning);
+  // What waits its turn, in the order it will go, after what is going on now (up-next.tsx); a message that
+  // waits behind nothing (it joins the reply running, or starts next) stays with the conversation.
+  const upNext = useMemo((): UpNextItem[] => [
+    ...messages.flatMap((message) => message.queued && !message.queued.now ? [{ key: message.queued.id, text: message.text, attachments: message.attachments, queued: message.queued }] : [])
+      .sort((a, b) => a.queued.position - b.queued.position),
+    ...shownPending.flatMap((item, index) => item.queued ? [{ key: `sending-${index}`, text: item.text, attachments: item.attachments }] : []),
+  ], [messages, shownPending]);
+  const conversation = useMemo(() => messages.filter((message) => !message.queued || message.queued.now), [messages]);
+  // A queued message edited in the composer that started meanwhile: the words stay in the composer, unsaved.
+  useEffect(() => {
+    if (!queueEdit || queueEdit.conversationId !== selectedId || messageStatus === "LoadingFirstPage" || upNext.some((item) => item.queued?.id === queueEdit.id)) return;
+    setQueueEdit(null);
+    setError("That message started before your edit was saved. Your words are still in the composer.");
+  }, [queueEdit, upNext, messageStatus, selectedId]);
+  // Leaving the chat mid-edit drops the edit, and the chat's own draft is what it finds when it comes back.
+  const queueEditNow = useRef(queueEdit);
+  useLayoutEffect(() => { queueEditNow.current = queueEdit; }, [queueEdit]);
+  useEffect(() => () => {
+    const left = queueEditNow.current;
+    if (!left) return;
+    try { if (left.stash) sessionStorage.setItem(`perry.prompt.${left.conversationId}`, left.stash); else sessionStorage.removeItem(`perry.prompt.${left.conversationId}`); } catch {}
+    setQueueEdit(null);
+  }, [selectedId]);
   // Every step Perry takes: listed as they come while a reply is on its way, and kept with the reply after.
   const work = workQuery;
   const chatFiles = useQuery(api.dashboard.getChatFiles, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
-  const { workOf, liveWork, failedWork } = useMemo(() => {
+  const { workOf, liveWork, failedWork, compaction: compacting, lastReply } = useMemo(() => {
     const now = Date.now();
     const runs = work ?? [];
     const replies = messages.filter((message) => message.role === "assistant" && !message.pending);
@@ -302,24 +325,32 @@ export function ChatScreen() {
     // last reply saved while it ran; a message that waited for a turn of its own then gets that turn's reply.
     const groups = new Map<string, Work[]>();
     for (const run of runs) {
-      if (run.status === "running" || run.finishedAt === undefined) continue;
+      // A run with no steps has no fold: a message that joined a reply, or one removed from the queue (whose run ends "stopped").
+      if (run.status === "running" || run.finishedAt === undefined || !run.stepCount) continue;
       const reply = [...replies].reverse().find((message) => message.createdAt >= run.startedAt && message.createdAt <= run.finishedAt! + SAVED_BEFORE_END_MS);
       if (reply) groups.set(reply.id, [...groups.get(reply.id) ?? [], run]);
     }
-    const workOf = new Map<string, Work>();
+    const workOf = new Map<string, Turn>();
     for (const [id, group] of groups) {
       const merged = together(group);
-      if (merged?.steps.length) workOf.set(id, merged);
+      if (merged?.stepCount) workOf.set(id, merged);
     }
     // A run that ended well and whose reply is not in the chat yet stays up until it is: the two come
     // from different reads, a moment apart, and the steps would blink out in between.
     const paired = new Set([...groups.values()].flat());
-    const landing = runs.filter((run) => run.status === "ok" && run.steps.length && !paired.has(run) && now - (run.finishedAt ?? 0) < LANDING_MS);
+    const landing = runs.filter((run) => run.status === "ok" && run.stepCount && !paired.has(run) && now - (run.finishedAt ?? 0) < LANDING_MS);
     // A turn that failed before it could reply has no reply to sit above: its steps stay where its reply would have been.
     const lastReply = replies.at(-1)?.createdAt ?? 0;
-    const failed = runs.filter((run) => run.status !== "ok" && run.status !== "running" && run.steps.length && !paired.has(run) && run.startedAt > lastReply);
-    return { workOf, liveWork: together([...runs.filter((run) => run.status === "running"), ...landing]), failedWork: together(failed) };
+    const failed = runs.filter((run) => run.status !== "ok" && run.status !== "running" && run.stepCount && !paired.has(run) && run.startedAt > lastReply);
+    // A /compact is not a reply: the end of the timeline says it is going on (nowLines).
+    const running = runs.filter((run) => run.status === "running" && !run.compact);
+    // The latest /compact, said at the end of the timeline while it runs, and after until a reply comes.
+    const compaction = [...runs].reverse().find((run) => run.compact);
+    return { workOf, liveWork: together([...running, ...landing]), failedWork: together(failed), compaction, lastReply };
   }, [work, messages, deadlineRevision]);
+  // A reply is on its way: not one held for a reset (said at the end of the timeline), and not messages sent
+  // during a /compact, which wait behind it under Up next rather than show a reply thinking.
+  const replying = !chat?.waiting && Boolean(liveWork || (waiting && compacting?.status !== "running"));
   const historicalWork = useStableRecords(useMemo(() => [...workOf.values()], [workOf]), workKey);
   const stableWorkOf = useMemo(() => new Map(historicalWork.map((item) => [item.runId, item])), [historicalWork]);
   const rowWork = useMemo(() => new Map([...workOf].map(([id, item]) => [id, stableWorkOf.get(item.runId)])), [workOf, stableWorkOf]);
@@ -330,7 +361,7 @@ export function ChatScreen() {
   useLayoutEffect(() => {
     if (messageStatus !== "LoadingMore") restorePagination();
     followLiveReply();
-  }, [selectedId, messages.length, shownPending.length, waiting, liveWork?.steps.length, here.length, messageStatus, restorePagination, followLiveReply]);
+  }, [selectedId, messages.length, shownPending.length, waiting, liveWork?.stepCount, here.length, upNext.length, messageStatus, restorePagination, followLiveReply]);
   const locatedMessage = useRef("");
   const sourceScrollIntent = useRef<{ source: string; revision: number } | null>(null);
   const sourceMessage = search.get("message");
@@ -495,7 +526,8 @@ export function ChatScreen() {
       try {
         const id = selectedId ? await compactChat({ key: dashboardKey, id: selectedId }) : null;
         setCompaction(id);
-        setNotice(id ? "Compacting this chat…" : "Nothing to compact yet.");
+        // Under way, the end of the timeline says so (nowLines).
+        if (!id) setNotice("Nothing to compact yet.");
       } catch (cause) { setNotice(errorText(cause)); }
       return true;
     }
@@ -546,7 +578,7 @@ export function ChatScreen() {
       sent = {
         id, text: message, attachments: uploaded,
         baselineCount: fresh ? 0 : messages.filter((item) => item.role === "user" && item.text === message).length,
-        seenRunning: !fresh && Boolean(chat?.isRunning), sent: false,
+        seenRunning: !fresh && Boolean(chat?.isRunning), sent: false, ...(mode === "queue" ? { queued: true } : {}),
       };
       const entry = sent;
       setPending((items) => [...items, entry]);
@@ -622,6 +654,50 @@ export function ChatScreen() {
     if (submitting.current?.id === selectedId) submitting.current?.controller.abort("stop");
     if (selectedId) void stopChat({ key: dashboardKey, id: selectedId }).catch(fail);
   };
+  /** A queued message's words, into the composer to be changed; what was being written there comes back after. */
+  const startQueueEdit = (item: UpNextItem & { queued: NonNullable<UpNextItem["queued"]> }) => {
+    if (!selectedId) return;
+    setQueueEdit({ id: item.queued.id, conversationId: item.queued.conversationId, stash: draftControl.current?.read() ?? "" });
+    setDraft(item.text); setError("");
+    window.setTimeout(() => composer.current?.focus(), 0);
+  };
+  const endQueueEdit = () => {
+    if (queueEdit) setDraft(queueEdit.stash);
+    setQueueEdit(null);
+    window.setTimeout(() => composer.current?.focus(), 0);
+  };
+  async function saveQueueEdit(text: string) {
+    if (!queueEdit || busy) return;
+    setBusy(true); setError("");
+    try {
+      if (await editQueued({ key: dashboardKey, conversationId: queueEdit.conversationId, id: queueEdit.id, text })) endQueueEdit();
+      else {
+        setQueueEdit(null);
+        setError("That message started before your edit was saved. Your words are still in the composer.");
+      }
+    } catch (cause) {
+      fail(cause);
+    } finally {
+      setBusy(false);
+    }
+  }
+  // What the chat is doing now, at the end of the timeline, after the reply and before what is queued (thread-now.tsx).
+  const nowLines: NowLine[] = [
+    ...(chat?.waiting ? [{
+      id: "reset-wait", icon: <ClockIcon />, title: chat.waiting.why, data: { "data-reset-wait": true },
+      actions: <NowAction onClick={stop}>Stop</NowAction>,
+    }] : []),
+    ...(chat?.unresponsive && waiting ? [{
+      id: "unresponsive", icon: <UnplugIcon />, title: "Your computer is unresponsive", detail: "Waiting for it to reconnect…", data: { "data-turn-health": "unresponsive" },
+    }] : []),
+    // Over, it is said until the next reply starts, so it never sits below a reply that came after it.
+    ...(compacting && (compacting.status === "running" || (!liveWork && lastReply < (compacting.finishedAt ?? 0))) ? [{
+      id: "compaction", icon: <Minimize2Icon />, data: { "data-compaction": compacting.status },
+      ...(compacting.status === "running" ? { title: "Compacting context", live: true }
+        : compacting.status === "ok" ? { title: "Context compacted", detail: `${assistant} works from a summary of this chat now; the messages are unchanged` }
+          : { title: "Couldn't compact the context" }),
+    }] : []),
+  ];
   // Only what is in the history can be regenerated, edited or branched from.
   const saved = messages.filter((message) => !message.pending);
   const lastUser = [...saved].reverse().find((message) => message.role === "user");
@@ -657,21 +733,7 @@ export function ChatScreen() {
         }} />}
 
       <TopBar actions={<>
-        {panelEnabled && !chat?.contact && <div ref={workspaceButtons} className="flex items-center gap-0.5" role="group" aria-label="Workspace">
-          {([
-            ["all", "Open workspace", PanelRightIcon],
-            ["context", "Open Context", GaugeIcon],
-            ["files", "Open Files", FolderIcon],
-            ...(browserView?.enabled ? [["browser", "Open Browser", GlobeIcon] as const] : []),
-          ] as const).map(([view, label, Icon], index) => <Fragment key={view}>
-            {index === 1 && <span className="mx-1 h-4 w-px bg-border" aria-hidden />}
-            <Tooltip>
-              <TooltipTrigger render={<Button size="icon-sm" variant="ghost" aria-label={label} aria-pressed={workspaceView === view} data-workspace-button={view}
-                className="aria-pressed:bg-muted aria-pressed:text-foreground" onClick={() => openWorkspace(workspaceView === view ? null : view)} />}><Icon /></TooltipTrigger>
-              <TooltipContent>{label.replace("Open ", "")}</TooltipContent>
-            </Tooltip>
-          </Fragment>)}
-        </div>}
+        {!chat?.contact && <ChatPanelToggle panel={panel} />}
         {selectedId && summary ? (
         <ChatMenu
           pinned={summary.pinned}
@@ -751,7 +813,7 @@ export function ChatScreen() {
                 </div>
               )}
               {messageStatus === "LoadingMore" && <p className="text-center text-sm text-muted-foreground" role="status">Loading earlier messages…</p>}
-              {messages.map((message) => (
+              {conversation.map((message) => (
                 <Fragment key={message.id}>
                 <MessageRow
                   key={message.id}
@@ -778,9 +840,9 @@ export function ChatScreen() {
                 />}
                 </Fragment>
               ))}
-              {shownPending.map((item, index) => <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
+              {shownPending.map((item, index) => !item.queued && <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
               {!missing && <InteractiveAnswers conversationId={selectedId} />}
-              {!chat?.waiting && (waiting || liveWork) && <LiveReply key={selectedId} conversationId={selectedId} onContentChange={followLiveReply}
+              {replying && <LiveReply key={selectedId} conversationId={selectedId} onContentChange={followLiveReply}
                 work={liveWork} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
               {here.map((approval) => <LiveApproval key={approval.id} approval={approval} />)}
               {failedWork && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed" /></div>}
@@ -788,6 +850,8 @@ export function ChatScreen() {
                 <TurnError error={chat.lastError} errorCode={chat.lastErrorCode} busy={busy}
                   onRetry={lastUser && !app ? () => void rewind(lastUser.id) : undefined} />
               )}
+              {/* Past and now: what the chat is doing. What waits its turn is on the composer (UpNext). */}
+              <ThreadNow lines={nowLines} />
             </div>
             </ChatFiles.Provider>
             </WorkFolds>
@@ -799,12 +863,14 @@ export function ChatScreen() {
         {!atBottom && selectedId && (
           <div className="pointer-events-none absolute inset-x-0 -top-12 flex justify-center">
             <Button variant="outline" size="sm" className="pointer-events-auto rounded-full bg-background shadow-md" onClick={jumpToLatest}>
-              <ArrowDownIcon />{waiting ? "New reply below" : "Jump to latest"}
+              {/* It names what goes on below: "Jump to latest · Working". The queue is on the composer, in sight already. */}
+              <ArrowDownIcon />{["Jump to latest", replying ? "Working" : ""].filter(Boolean).join(" · ")}
             </Button>
           </div>
         )}
         <div className="mx-auto w-full max-w-3xl">
-          <p className="sr-only" role="status" aria-live="polite">{chat?.waiting ? chat.waiting.why : waiting ? `${assistant} is replying` : ""}</p>
+          <p className="sr-only" role="status" aria-live="polite">{chat?.waiting?.why ?? ""}</p>
+          <ChatAnnouncer chatId={selectedId ?? null} status={summary?.status} />
           <ComposerDraft ref={draftControl} refreshSkills={refreshSkills} storageKey={`perry.prompt.${paramId ?? (inProject ? `project.${inProject}` : "new")}`}>{({ draft, setDraft, caret, setCaret }) => {
             // Slash commands: past a command's name, the suggestions are its choices.
             const typedModel = parseModelCommand(draft);
@@ -879,8 +945,9 @@ export function ChatScreen() {
             draft={draft}
             onDraftChange={setDraft}
             onCaret={setCaret}
-            onSubmit={() => void submit(draft)}
+            onSubmit={() => void (queueEdit ? saveQueueEdit(draft) : submit(draft))}
             onQueue={() => void submit(draft, "queue")}
+            editingQueued={queueEdit ? { onCancel: endQueueEdit } : undefined}
             onStop={selectedId ? stop : undefined}
             waiting={waiting || Boolean(uploading)}
             busy={busy || Boolean(selectedId && chat === undefined)}
@@ -898,11 +965,6 @@ export function ChatScreen() {
             above={<>
               {error && <ComposerNote tone="error" onDismiss={() => setError("")}>{error}</ComposerNote>}
               {notice && <ComposerNote tone="info" onDismiss={() => setNotice("")}>{notice}</ComposerNote>}
-              {chat?.waiting && (
-                <ComposerNote tone="warning">
-                  <span data-reset-wait role="status">{chat.waiting.why}</span>
-                </ComposerNote>
-              )}
               {chat?.moved && movedSeen !== chat.moved.at && (chat.moved.to ?? chat.engine) && (
                 <ComposerNote tone="warning" onDismiss={() => setMovedSeen(chat.moved!.at)}>
                   <span className="font-medium">Moved to {ENGINE_LABELS[(chat.moved.to ?? chat.engine)!]}.</span> {chat.moved.why}.{" "}
@@ -916,6 +978,8 @@ export function ChatScreen() {
                   <Link href="/settings/usage" className="link">See usage</Link>
                 </ComposerNote>
               )}
+              {/* Last, so the queued messages sit on the box they were typed in. Keyed per chat: its "show all" and drag reset. */}
+              {selectedId && <UpNext key={selectedId} items={upNext} editing={queueEdit?.id ?? null} onEdit={startQueueEdit} onCancelEdit={endQueueEdit} />}
               {!selectedId && !draft && files.length === 0 && (
                 <div className="mb-3 flex flex-wrap justify-center gap-2">
                   {STARTERS.map((text) => (
@@ -940,7 +1004,8 @@ export function ChatScreen() {
       </div>
 
     </div>
-      {panelEnabled && !chat?.contact && <WorkspacePanel conversationId={selectedId} project={project} view={workspaceView} onViewChange={openWorkspace} context={{ engine: engine ?? undefined, model: chat?.model, context: chat?.context, usage: engineUsage }} browser={browserView?.enabled && selectedId ? <BrowserPanel key={selectedId} conversationId={selectedId} onClose={() => openWorkspace(null)} /> : undefined} />}
+      {!chat?.contact && <ChatPanel panel={panel} conversationId={selectedId} project={project} flags={{ files: Boolean(workspace?.enabled), browser: Boolean(browserView?.enabled) }}
+        details={{ engine, model, effort, access, status: summary?.status, project, context: chat?.context, usage: engineUsage }} />}
       {summary && <RenameDialog chat={renaming ? summary : null} onClose={() => setRenaming(false)} />}
       {summary && <DeleteDialog chat={removing ? summary : null} onClose={() => setRemoving(false)} />}
       {summary && <NewProjectDialog open={creatingProject} chat={summary.id} onClose={() => setCreatingProject(false)} />}
@@ -980,19 +1045,18 @@ function ChatMenu({ pinned, onPin, onRename, onCopyId, activityHref, onDelete, o
   );
 }
 
-/** Each ticking leaf owns its clock; history and composer do not subscribe. */
-function LiveReply({ conversationId, onContentChange, ...props }: Omit<Parameters<typeof ReplyInProgress>[0], "now" | "streaming"> & {
+/** The reply being written. Its running times write themselves from one shared second (lib/format.ts, tickText), so nothing here renders each second. */
+function LiveReply({ conversationId, onContentChange, ...props }: Omit<Parameters<typeof ReplyInProgress>[0], "streaming"> & {
   conversationId: ChatId;
   onContentChange: () => void;
 }) {
   const { dashboardKey } = useSession();
   const stream = useQuery(api.turnStreams.getChatStream, { key: dashboardKey, id: conversationId });
   const streaming = useTypewriter(stream ?? "", conversationId);
-  const now = useNow(1000);
   // The page follows the reply as it is revealed, not as it lands: that is what the reader is reading.
   useLayoutEffect(() => { onContentChange(); }, [streaming, onContentChange]);
   return <div data-live-reply={conversationId}>
-    <ReplyInProgress {...props} streaming={stream == null ? undefined : streaming} now={now} />
+    <ReplyInProgress {...props} streaming={stream == null ? undefined : streaming} />
   </div>;
 }
 

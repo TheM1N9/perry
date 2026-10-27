@@ -9,6 +9,7 @@ import { useShortcuts } from "@/hooks/use-shortcuts";
 import { KEY_STORAGE, SessionContext, useSession, type Session } from "@/lib/session";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./app-sidebar";
+import { ChatsAnnouncer } from "./chat-announcer";
 import { CommandPalette, PaletteContext } from "./command-palette";
 import { Gate } from "./gate";
 import { PageErrorBoundary } from "./page-error";
@@ -117,6 +118,7 @@ function Unlocked({ children }: { children: ReactNode }) {
   }, [request, requestPath, dashboardKey, claimOpen, router]);
 
   const palette = useMemo(() => ({ open: () => setPaletteOpen(true) }), []);
+  const chats = useQuery(api.dashboard.listChats, { key: dashboardKey });
 
   // The welcome page is full screen, before anything else.
   if (pathname === "/welcome") return <PageErrorBoundary onLock={lock}>{children}</PageErrorBoundary>;
@@ -132,6 +134,7 @@ function Unlocked({ children }: { children: ReactNode }) {
           <PageErrorBoundary onLock={lock}>{children}</PageErrorBoundary>
         </SidebarInset>
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        <ChatsAnnouncer chats={chats} openId={pathname.match(/^\/chat\/([^/]+)/)?.[1] ?? null} />
       </SidebarProvider>
     </PaletteContext.Provider>
   );

@@ -10,7 +10,7 @@ export function isChatHistory(name: string) {
 
 /** Related chat state can contain errors, tool text or a live partial reply. */
 export function isChatPayload(name: string) {
-  return isChatHistory(name) || name === "dashboard:getChat" || name === "dashboard:getChatWork" || name === "turnStreams:getChatStream";
+  return isChatHistory(name) || name === "dashboard:getChat" || name === "dashboard:getChatRuns" || name === "dashboard:getRunSteps" || name === "turnStreams:getChatStream";
 }
 
 export function retainedChatBytes(name: string, args: unknown, value: unknown): number {

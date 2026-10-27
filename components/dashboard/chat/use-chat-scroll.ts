@@ -99,8 +99,10 @@ export function useChatScroll(scope: string | null) {
       if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) readerInput();
     };
     const click = (event: MouseEvent) => {
-      // Capture runs before either WorkSteps or WorkSummary changes layout,
-      // including clicks synthesized by keyboard activation.
+      // Capture runs before a fold (WorkSummary, LiveWork and its step line)
+      // or a step in it changes layout, including clicks synthesized by
+      // keyboard activation. Up next and the lines before it grow the content
+      // like a reply does, so the observer below follows them.
       if (event.target instanceof Element && event.target.closest("[data-work] button[aria-expanded], [data-work-steps] button[aria-expanded]")) release();
     };
     const pointerdown = (event: PointerEvent) => {

@@ -4,15 +4,17 @@ import { useState } from "react";
 import { XIcon } from "lucide-react";
 import { useMutation } from "@/client/react";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
+import type { QueuedTurn } from "@/convex/dashboard";
 import { useSession } from "@/lib/session";
 import { errorText } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 
-export type QueuedMessage = { id: Id<"codexTurns">; conversationId: Id<"conversations"> };
-
-/** Always visible, keyboard reachable, with local feedback for a lost claim race. */
-export function QueueRemoveButton({ queued }: { queued: QueuedMessage }) {
+/**
+ * For a sent message that waits behind nothing yet: one being prepared to
+ * join the reply running, or the next to start (up-next.tsx has the queue's own). Always visible, keyboard reachable, with local feedback for a
+ * lost claim race.
+ */
+export function QueueRemoveButton({ queued }: { queued: QueuedTurn }) {
   const { dashboardKey } = useSession();
   const remove = useMutation(api.queue.remove);
   const [removing, setRemoving] = useState(false);
@@ -21,7 +23,7 @@ export function QueueRemoveButton({ queued }: { queued: QueuedMessage }) {
     setRemoving(true);
     setNotice("");
     try {
-      if (!await remove({ key: dashboardKey, ...queued })) setNotice("This message has already started or left the queue.");
+      if (!await remove({ key: dashboardKey, conversationId: queued.conversationId, id: queued.id })) setNotice("This message has already started or left the queue.");
     } catch (error) {
       setNotice(errorText(error));
     } finally {

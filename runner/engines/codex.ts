@@ -154,8 +154,19 @@ export function limitsOf(buckets: Map<string, RateLimitSnapshot>, at: number): P
       });
     }
   }
-  const plan = buckets.get("codex")?.planType ?? [...buckets.values()].find((bucket) => bucket.planType)?.planType;
+  const plan = planName(buckets.get("codex")?.planType ?? [...buckets.values()].find((bucket) => bucket.planType)?.planType);
   return { windows, ...(plan ? { plan } : {}), at };
+}
+
+/** A ChatGPT plan as ChatGPT names it now ("prolite" is Pro 100), as T3 Code does; one not listed reads as sent. */
+function planName(plan?: string | null): string | undefined {
+  if (!plan || plan === "unknown") return undefined;
+  const names: Record<string, string> = {
+    pro: "Pro 200", prolite: "Pro 100", promax: "Pro 500",
+    self_serve_business_prolite: "Business Premium", team: "Business", business: "Business", self_serve_business_usage_based: "Business",
+    enterprise: "Enterprise", ent26: "Enterprise", enterprise_cbp_automation: "Enterprise", enterprise_cbp_usage_based: "Enterprise", edu: "Edu", edu_plus: "Edu", edu_pro: "Edu",
+  };
+  return names[plan] ?? plan.replaceAll("_", " ");
 }
 
 /** A thread started before any chat asked for it; its id, or null if it failed to start. */
@@ -235,7 +246,7 @@ export class CodexEngine implements Engine {
         installed: true,
         version: app.version,
         signedIn,
-        auth: { type: account.authMode, label: signedIn ? "ChatGPT" : account.authMode, email: account.email, plan: account.planType },
+        auth: { type: account.authMode, label: signedIn ? "ChatGPT" : account.authMode, email: account.email, plan: planName(account.planType) },
         models: signedIn ? await app.models().catch(() => []) : [],
       };
       await this.followUpdates(app);

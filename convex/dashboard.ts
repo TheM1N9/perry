@@ -25,10 +25,11 @@ import { APPROVAL_TTL_MS, accessChanged } from "./approvals";
 import { QUIET } from "./jobs";
 import type { VaultEntry } from "./vault";
 import { OUTBOX_TTL_MS } from "./conversations";
-import { assertQueueRoom } from "./queue";
+import { assertQueueRoom, byQueuePosition, queuePosition, steerable } from "./queue";
 import { beingNamed, cancelTitle, requestTitle } from "./titles";
 import { watchProblem } from "./work";
-import { describeStep, STARTING, summarize, WAITING, WRITING, type Step } from "./lib/activity";
+import { describeStep, spansOfCalls, STARTING, summarize, WAITING, WRITING, type Step } from "./lib/activity";
+import { STOPPED } from "./codex";
 import { pictureOf, stepCard, type StepCard } from "./lib/steps";
 import { diagnostics } from "./lib/internet";
 import { choiceForChat } from "./routing";
@@ -62,9 +63,21 @@ export type ChatMessage = {
   attachments: Array<{ id?: Id<"chatAttachments">; url: string; fileName: string; contentType: string; removed?: true }>;
   /** Sent, and not yet in the history: the history only gets it with its reply. */
   pending?: boolean;
-  queued?: { id: Id<"codexTurns">; conversationId: Id<"conversations"> };
+  queued?: QueuedTurn;
   /** The memories a reply said it relied on (codex.finishTurn). */
   memories?: Array<{ id: string; text: string }>;
+};
+
+/**
+ * A message sent and waiting its turn in the chat's queue (queue.ts). `now`: it is not waiting behind anything,
+ * so it stays with the conversation rather than under Up next: it is being prepared to join the reply running,
+ * or with nothing running it is the first to start. `action`: what sending it early does:
+ * "steer" joins the reply running; "send" moves it to the front, to start next. `retry`: another engine's try
+ * at an earlier message, which keeps its words. `held`: it waits for its engine's limit to reset (routing.ts).
+ */
+export type QueuedTurn = {
+  id: Id<"codexTurns">; conversationId: Id<"conversations">; position: number; action: "steer" | "send";
+  preparing?: true; now?: true; retry?: true; held?: true;
 };
 
 /** Where a saved reply keeps the memories it relied on. */
@@ -422,7 +435,7 @@ export const getChat = query({
     const health = running ? turnHealth(running, runner, Date.now()) : null;
     const waiting = running ? undefined : (await ctx.db.query("codexTurns").withIndex("by_conversation_status", q => q.eq("conversationId", args.id)).collect())
       .filter(turn => turn.finalizedAt === undefined && (turn.status === "queued" || turn.status === "error" && turn.retrying))
-      .sort((a, b) => a.createdAt - b.createdAt)[0]?.waiting;
+      .sort(byQueuePosition)[0]?.waiting;
     const project = conversation.projectId ? await ctx.db.get(conversation.projectId) : null;
     const taskChoice = conversation.taskId ? await choiceForChat(ctx, conversation) : null;
     return {
@@ -515,37 +528,88 @@ export const getActivity = query({
   },
 });
 
-/** A step of a run, as the chat lists it under "Worked for…". */
-export type WorkStep = Step & { id: Id<"runSpans">; kind: Doc<"runSpans">["kind"]; status: Doc<"runSpans">["status"]; startedAt: number; durationMs?: number };
-/** One run of a chat and every step it took, in order. */
-export type Work = { runId: Id<"runs">; status: Doc<"runs">["status"]; startedAt: number; finishedAt?: number; steps: WorkStep[] };
-/** The runs a chat lists the steps of: its latest, which covers the replies it shows. */
+/**
+ * One run of a chat, without its steps: how it went, how many steps it took
+ * and, once it is over, what they came to ("Ran 2 commands and changed 3
+ * files"). The steps are read only for the run going on and for a fold the
+ * owner opens (getRunSteps).
+ */
+export type Work = {
+  runId: Id<"runs">; status: Doc<"runs">["status"]; startedAt: number; finishedAt?: number; stepCount: number; summary?: string;
+  /** The owner stopped it (codex.STOPPED). */
+  stopped?: true;
+  /** A /compact, not a reply: the chat says "Compacting context", then "Context compacted". */
+  compact?: true;
+};
+/** A step of a run, as the chat lists it: `label` while it runs ("Running git status"), `done` once it is over ("Ran git status"). */
+export type WorkStep = Step & { id: Id<"runSpans">; done: string; kind: Doc<"runSpans">["kind"]; status: Doc<"runSpans">["status"]; startedAt: number; durationMs?: number };
+/** The runs a chat pairs with its replies: its latest, which covers the replies it shows. */
 const WORK_RUNS = 50;
+/** The most steps a fold lists for a run: its newest, so the one going on is always among them. */
+const RUN_STEPS = 500;
 
 /**
- * What each of a chat's latest runs did, step by step, oldest first, for the
- * chat to show with its reply: as a list that grows while the run goes, and
- * folded into "Worked for 46s" once the reply is in. Reasoning is left out;
- * its time is in the run's.
+ * A chat's latest runs, oldest first, for the chat to pair with its replies
+ * ("Worked for 46s" above each) and to show the one going on. Only the runs'
+ * own rows are read, so a step written while a reply runs costs this one
+ * small read, not every step of fifty runs.
  */
-export const getChatWork = query({
+export const getChatRuns = query({
   args: { key: vKey, id: v.id("conversations") },
   handler: async (ctx, args): Promise<Work[]> => {
     assertDashboardKey(args.key);
     ownerChat(await ctx.db.get(args.id));
     const runs = await ctx.db.query("runs").withIndex("by_conversation", (q) => q.eq("conversationId", args.id)).order("desc").take(WORK_RUNS);
-    return await Promise.all(runs.reverse().map(async (run): Promise<Work> => {
-      const spans = await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).take(500);
-      const steps = spans.filter((span) => span.kind !== "reasoning").sort((a, b) => a.startedAt - b.startedAt).map((span): WorkStep => ({
-        ...describeStep(span),
-        id: span._id,
-        kind: span.kind,
-        status: span.status,
-        startedAt: span.startedAt,
-        ...(span.durationMs !== undefined ? { durationMs: span.durationMs } : {}),
-      }));
-      return { runId: run._id, status: run.status, startedAt: run.startedAt, ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}), steps };
-    }));
+    return runs.reverse().map((run): Work => {
+      // Each step but reasoning is a tool call (codex.ts, recordTrace); a run that ended before summaries were kept is summed up from those.
+      const calls = run.toolCalls ?? [];
+      const summary = run.summary ?? (run.status !== "running" && calls.length ? summarize(spansOfCalls(calls), { sentence: true }) : "");
+      return {
+        runId: run._id, status: run.status, startedAt: run.startedAt, stepCount: calls.length,
+        ...(run.finishedAt !== undefined ? { finishedAt: run.finishedAt } : {}),
+        ...(summary ? { summary } : {}),
+        ...(run.status === "error" && run.error === STOPPED ? { stopped: true as const } : {}),
+        // Commands never become messages, so only requestCompact's run carries this prompt.
+        ...(run.prompt === "/compact" ? { compact: true as const } : {}),
+      };
+    });
+  },
+});
+
+/**
+ * The steps of one or more runs of a chat (the runs that went as one turn),
+ * in the order they started, reasoning left out; its time is in the run's.
+ * `limit`: only the newest, for the one line a reply in progress shows.
+ * Only runs of one of the owner's chats, and of the same one, are read.
+ */
+export const getRunSteps = query({
+  args: { key: vKey, runIds: v.array(v.id("runs")), limit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<WorkStep[]> => {
+    assertDashboardKey(args.key);
+    const limit = Math.max(1, Math.min(args.limit ?? RUN_STEPS, RUN_STEPS));
+    const steps: WorkStep[] = [];
+    let chat: Id<"conversations"> | undefined;
+    for (const runId of args.runIds.slice(0, 10)) {
+      const run = await ctx.db.get(runId);
+      if (!run || (chat ??= run.conversationId) !== run.conversationId) continue;
+      ownerChat(await ctx.db.get(run.conversationId));
+      // Newest first, so a long run keeps its latest steps; reasoning is skipped as it comes, not counted against the limit.
+      let taken = 0;
+      for await (const span of ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", runId)).order("desc")) {
+        if (span.kind === "reasoning") continue;
+        steps.push({
+          ...describeStep(span),
+          done: describeStep(span, { done: true }).label,
+          id: span._id,
+          kind: span.kind,
+          status: span.status,
+          startedAt: span.startedAt,
+          ...(span.durationMs !== undefined ? { durationMs: span.durationMs } : {}),
+        });
+        if (++taken >= limit) break;
+      }
+    }
+    return steps.sort((a, b) => a.startedAt - b.startedAt).slice(-limit);
   },
 });
 
@@ -703,7 +767,7 @@ export const getChatMessages = query({
   },
 });
 
-type InFlight = { prompt: string; text: string; at: number; queued?: { id: Id<"codexTurns">; conversationId: Id<"conversations"> } };
+type InFlight = { prompt: string; text: string; at: number; queued?: QueuedTurn };
 
 /** The live turns' steers that joined them, and those still waiting to. */
 async function steersOf(ctx: QueryCtx, turns: Doc<"codexTurns">[]): Promise<Doc<"codexSteers">[]> {
@@ -724,12 +788,22 @@ async function steersOf(ctx: QueryCtx, turns: Doc<"codexTurns">[]): Promise<Doc<
  */
 function inFlight(conversation: Doc<"conversations">, turns: Doc<"codexTurns">[], steers: Doc<"codexSteers">[]): InFlight[] {
   const entry = (prompt: string, at: number): InFlight => ({ prompt, at, text: prompt.replace(ATTACHMENTS_MARKER, "").trimEnd() });
+  const running = turns.find((turn) => turn.status === "running") ?? null;
+  const next = running ? undefined : turns.filter((turn) => turn.status === "queued" && !turn.waiting && turn.finalizedAt === undefined).sort(byQueuePosition)[0];
+  const queued = (turn: Doc<"codexTurns">): QueuedTurn => ({
+    id: turn._id, conversationId: turn.conversationId, position: queuePosition(turn),
+    action: turn.engine && steerable(running, turn.engine) ? "steer" : "send",
+    ...(turn.preparing ? { preparing: true as const } : {}),
+    ...((turn.preparing && turn.steerTarget) || turn === next ? { now: true as const } : {}),
+    ...(turn.retryOf ? { retry: true as const } : {}),
+    ...(turn.waiting ? { held: true as const } : {}),
+  });
   const items: InFlight[] = [
     ...(conversation.outbox ?? []).filter((item) => item.at > Date.now() - OUTBOX_TTL_MS).map((item) => entry(item.text, item.at)),
     ...turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush && !turn.checkpoint && !turn.hidden
       // A finished turn is saved a moment later; one left unsaved and unfinalized for long is not coming.
       && (turn.status === "queued" || turn.status === "running" || (turn.finalizedAt === undefined && (turn.waiting || turn.createdAt > Date.now() - OUTBOX_TTL_MS))))
-      .map((turn) => ({ ...entry(turn.prompt, turn.createdAt), ...(turn.status === "queued" ? { queued: { id: turn._id, conversationId: turn.conversationId } } : {}) })),
+      .map((turn) => ({ ...entry(turn.prompt, turn.createdAt), ...(turn.status === "queued" ? { queued: queued(turn) } : {}) })),
     ...steers.map((steer) => entry(steer.prompt, steer.createdAt)),
   ];
   return items.sort((a, b) => a.at - b.at);

@@ -352,10 +352,18 @@ async function main() {
     limitsRead.set(engine.kind, Date.now());
     const done = (async () => {
       try {
-        const limits = await engine.limits!(fresh);
-        if (limits) await client.mutation(api.usage.report, { token, engine: engine.kind, limits });
-      } catch (error) {
-        console.log(dim(`  could not read ${engine.label}'s plan limits: ${message(error)}`));
+        let limits;
+        try {
+          limits = await engine.limits!(fresh);
+        } catch (error) {
+          console.log(dim(`  could not read ${engine.label}'s plan limits: ${message(error)}`));
+          // Said on the Usage page too, which would otherwise wait for limits that are not coming (an expired sign-in).
+          await client.mutation(api.usage.report, { token, engine: engine.kind, unread: { at: Date.now(), message: message(error) } }).catch(() => {});
+          return;
+        }
+        // Read but not reported (the backend away): tried again on the next read, never shown as a failed read.
+        if (limits) await client.mutation(api.usage.report, { token, engine: engine.kind, limits })
+          .catch((error) => console.log(dim(`  could not report ${engine.label}'s plan limits: ${message(error)}`)));
       } finally {
         readingLimits.delete(engine.kind);
       }

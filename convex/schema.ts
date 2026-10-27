@@ -635,7 +635,7 @@ export default defineSchema({
     /** Sign-ins and sign-outs asked for from Settings, by engine. */
     engineAuth: v.optional(v.record(v.string(), vEngineAuth)),
     /** How much of each engine's plan is used, by engine, as this computer last read it (usage.ts). */
-    usage: v.optional(v.record(v.string(), v.object({ limits: v.optional(vPlanLimits), hit: v.optional(vLimitHit) }))),
+    usage: v.optional(v.record(v.string(), v.object({ limits: v.optional(vPlanLimits), hit: v.optional(vLimitHit), unread: v.optional(vLimitHit) }))),
     /** When this computer last read any engine's plan limits (usage.ts report), for the Usage page's refresh. */
     usageReadAt: v.optional(v.number()),
     /**
@@ -1227,6 +1227,8 @@ export default defineSchema({
     usage: v.optional(vUsage),
     error: v.optional(v.string()),
     errorCode: v.optional(vTurnErrorCode),
+    /** What it did, in a sentence ("Ran 2 commands and changed 3 files"), written when it ends (codex.markFinalized). */
+    summary: v.optional(v.string()),
     startedAt: v.number(),
     finishedAt: v.optional(v.number()),
   })
@@ -1253,7 +1255,10 @@ export default defineSchema({
     durationMs: v.optional(v.number()),
     input: v.optional(v.string()),
     output: v.optional(v.string()),
-  }).index("by_run", ["runId", "callId"]),
+  })
+    .index("by_run", ["runId", "callId"])
+    /** A run's steps in the order they started, so the newest are read first (dashboard.getRunSteps). */
+    .index("by_run_started", ["runId", "startedAt"]),
 
   /** Scheduled prompts, run as Codex turns. See jobs.ts. */
   jobs: defineTable({
@@ -1471,6 +1476,8 @@ export default defineSchema({
     preparing: v.optional(v.boolean()),
     /** Only this reply may receive the follow-up. Unset means a separate turn. */
     steerTarget: v.optional(v.id("codexTurns")),
+    /** Where the owner moved it in the chat's queue (queue.reorder, sendNow); unset, it waits by createdAt (queue.queuePosition). */
+    queueOrder: v.optional(v.number()),
     /** Unset only on turns from before Perry ran on this computer, answered without a runner. */
     runnerId: v.optional(v.id("runners")),
     conversationId: v.id("conversations"),

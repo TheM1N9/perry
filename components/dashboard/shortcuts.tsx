@@ -30,7 +30,7 @@ export function Shortcuts() {
 
   return (
     <Section id="shortcuts" title="Keyboard shortcuts" description="Click one, then press the new keys.">
-      {data === undefined ? <ListSkeleton rows={4} /> : (
+      {data === undefined ? <ListSkeleton rows={SHORTCUT_IDS.length} /> : (
         <List label="Keyboard shortcuts">
           {SHORTCUT_IDS.map((id) => (
             <li key={id} className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-4">

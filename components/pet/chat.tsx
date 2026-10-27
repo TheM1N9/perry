@@ -18,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Markdown } from "@/components/dashboard/chat/markdown";
 import { StatusIndicator } from "@/components/dashboard/status-indicator";
+import { ChatAnnouncer } from "@/components/dashboard/chat-announcer";
 import { describe, holdProblem } from "@/convex/lib/shortcuts";
 import { Empty } from "./empty";
 import { PetTip } from "./tip";
@@ -176,6 +177,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <ChatAnnouncer chatId={chatId} status={chatId ? chats?.find((item) => item.id === chatId)?.status : undefined} />
       <div className="flex items-center gap-0.5 border-b px-2.5 pb-1.5">
         {/* Your chats, as a menu: arrow keys, Esc and a click outside close it; data-solid, or the window would let its clicks through. */}
         <DropdownMenu>

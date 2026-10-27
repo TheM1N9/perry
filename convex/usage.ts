@@ -25,9 +25,9 @@ const SHARE_MS = 7 * 24 * HOUR;
 /** Runs read for it, at most: far more than a week of replies. */
 const RUNS_READ = 5_000;
 
-/** An engine's limits, or a limit it hit, or a turn that went through again after one. */
+/** An engine's limits, or a limit it hit, or a turn that went through again after one, or a read of its limits that failed. */
 export const report = mutation({
-  args: { token: v.string(), engine: vEngine, limits: v.optional(vPlanLimits), hit: v.optional(v.union(vLimitHit, v.null())) },
+  args: { token: v.string(), engine: vEngine, limits: v.optional(vPlanLimits), hit: v.optional(v.union(vLimitHit, v.null())), unread: v.optional(vLimitHit) },
   returns: v.null(),
   handler: async (ctx, args) => {
     const runner = await authenticate(ctx, args.token);
@@ -35,11 +35,13 @@ export const report = mutation({
     const limits = args.limits ?? before.limits;
     // null: a turn went through, so the last hit is over.
     const hit = args.hit === null ? undefined : args.hit ? { at: args.hit.at, message: args.hit.message.slice(0, 500) } : before.hit;
-    const next: EngineUsage = { ...(limits ? { limits } : {}), ...(hit ? { hit } : {}) };
-    // A fresh reading counts as read even when nothing changed: the Usage page's refresh waits for it.
-    const read = args.limits ? { usageReadAt: Date.now() } : {};
+    // Until a read succeeds, the Usage page says why the last one failed rather than waiting for it.
+    const unread = args.limits ? undefined : args.unread ? { at: args.unread.at, message: args.unread.message.slice(0, 500) } : before.unread;
+    const next: EngineUsage = { ...(limits ? { limits } : {}), ...(hit ? { hit } : {}), ...(unread ? { unread } : {}) };
+    // A fresh reading, or a failed one, counts as read even when nothing changed: the Usage page's refresh waits for it.
+    const read = args.limits || args.unread ? { usageReadAt: Date.now() } : {};
     if (JSON.stringify(next) === JSON.stringify(before)) {
-      if (args.limits) await ctx.db.patch(runner._id, read);
+      if (args.limits || args.unread) await ctx.db.patch(runner._id, read);
       return null;
     }
     await ctx.db.patch(runner._id, { usage: { ...runner.usage, [args.engine]: next }, ...read });
@@ -94,9 +96,12 @@ export function usageByEngine(runners: Doc<"runners">[]): Partial<Record<EngineK
       merged[kind] = {
         limits: (usage.limits?.at ?? 0) >= (known?.limits?.at ?? 0) ? usage.limits ?? known?.limits : known?.limits,
         hit: (usage.hit?.at ?? 0) >= (known?.hit?.at ?? 0) ? usage.hit ?? known?.hit : known?.hit,
+        unread: (usage.unread?.at ?? 0) >= (known?.unread?.at ?? 0) ? usage.unread ?? known?.unread : known?.unread,
       };
     }
   }
+  // A failed read on one computer is moot once any computer has read the limits since.
+  for (const usage of Object.values(merged)) if (usage.unread && (usage.limits?.at ?? 0) >= usage.unread.at) delete usage.unread;
   return merged;
 }
 

@@ -24,8 +24,15 @@ import { StepDetail } from "../chat/step-card";
 /** Runs shown at a time; the rest are a click away. */
 const PAGE = 20;
 
-const duration = (ms: number) =>
-  ms < 1000 ? `${Math.round(ms)} ms` : ms < 60_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
+const duration = (ms: number) => {
+  if (ms < 999.5) return `${Math.round(ms)} ms`;
+  if (ms < 59_950) return `${(ms / 1000).toFixed(1)} s`;
+  // Whole seconds first, so 119.7 s reads "2m 0s" and not "1m 60s".
+  const seconds = Math.round(ms / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return hours ? `${hours}h ${minutes}m` : `${minutes}m ${seconds % 60}s`;
+};
 
 const RUN_STATUS: Record<string, { tone: Tone; label: string }> = {
   ok: { tone: "success", label: "Completed" },

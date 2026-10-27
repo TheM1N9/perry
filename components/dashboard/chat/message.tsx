@@ -3,7 +3,7 @@
 import { BrainIcon, CheckIcon, CopyIcon, FilePlusIcon, GitBranchIcon, PencilIcon, RefreshCwIcon } from "lucide-react";
 import Link from "next/link";
 import { Fragment, memo, type ReactNode } from "react";
-import type { Work } from "@/convex/dashboard";
+import type { QueuedTurn } from "@/convex/dashboard";
 import { STARTING } from "@/convex/lib/activity";
 import { fullDate, timeOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -14,10 +14,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useCopy } from "../common";
 import { AttachmentList, type Attachment } from "./attachments";
 import { Markdown } from "./markdown";
-import { QueueRemoveButton, type QueuedMessage } from "./queue-remove-button";
-import { Spinner, WorkSummary, type WorkState } from "./work";
+import { QueueRemoveButton } from "./queue-remove-button";
+import { LiveWork, Spinner, WorkSummary, type Turn } from "./work";
 
-export type ChatMessage = { attachmentKey?: string; id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; queued?: QueuedMessage; memories?: Array<{ id: string; text: string }> };
+export type ChatMessage = { attachmentKey?: string; id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; queued?: QueuedTurn; memories?: Array<{ id: string; text: string }> };
 
 function Action({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
@@ -43,7 +43,7 @@ function CopyAction({ text }: { text: string }) {
 export const MessageRow = memo(function MessageRow({ message, work, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch, onSaveNote }: {
   message: ChatMessage;
   /** The run that wrote this reply, when it took steps: "Worked for 46s" above it. */
-  work?: Work;
+  work?: Turn;
   assistant: string;
   latest: boolean;
   canRegenerate: boolean;
@@ -81,6 +81,7 @@ export const MessageRow = memo(function MessageRow({ message, work, assistant, l
             {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
           </div>
         )}
+        {/* Waiting in the queue it is under Up next (up-next.tsx); here only while it waits behind nothing (dashboard.QueuedTurn, now). */}
         {mine && message.queued && <QueueRemoveButton queued={message.queued} />}
         <MessageFooter className={cn(
           "gap-0.5 px-0 font-normal transition-opacity [@media(hover:hover)]:opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
@@ -150,26 +151,26 @@ export function PendingRow({ text, attachments, sent, skills }: { text: string; 
 }
 
 /**
- * The reply being written: each step the run has taken so far, in order
- * (dashboard.getChatWork), so none goes by unseen; then what has streamed of
- * the words, or "Thinking" while nothing else is going on.
+ * The reply being written: "Working for 12s" and the step it is on
+ * (work.tsx, LiveWork), every step a click away, so none goes by unseen;
+ * then what has streamed of the words, or "Thinking" before the turn's run
+ * is in.
  */
-export function ReplyInProgress({ streaming, work, now, approving = false, unresponsive = false }: { streaming?: string; work?: Work; now: number; approving?: boolean; unresponsive?: boolean }) {
-  const steps = work?.steps ?? [];
-  // Over (its reply on its way to the page), on a step, or held for the owner's approval: either way, not thinking.
+export function ReplyInProgress({ streaming, work, approving = false, unresponsive = false }: { streaming?: string; work?: Turn; approving?: boolean; unresponsive?: boolean }) {
+  // Over (its reply on its way to the page), held for the owner's approval, or with its computer gone: not writing.
   const over = work?.finishedAt !== undefined;
-  const busy = unresponsive || over || approving || steps.some((step) => step.status === "running");
-  const state: WorkState = unresponsive ? "unresponsive" : over ? (work?.status === "ok" ? "done" : "failed") : approving ? "waiting" : "working";
+  const busy = unresponsive || over || approving;
   return (
     <div className="min-w-0 space-y-2" data-role="assistant" {...(unresponsive ? { "data-unresponsive": true } : streaming !== undefined ? { "data-streaming": true } : { "data-thinking": true })}>
-      {work && <WorkSummary work={work} state={state} now={now} />}
-      {unresponsive && <p role="status" data-turn-health="unresponsive" className="text-sm text-muted-foreground">Your computer is unresponsive. Waiting for it to reconnect…</p>}
+      {work && (over
+        ? <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} />
+        : <LiveWork work={work} state={unresponsive ? "unresponsive" : approving ? "waiting" : "working"} />)}
       {streaming !== undefined ? (
         <div>
           <Markdown text={streaming} streaming />
           {!busy && <span className="mt-1 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle motion-reduce:animate-none" aria-hidden />}
         </div>
-      ) : !busy && (
+      ) : !work && (
         <p className="flex items-center gap-2 text-md font-medium" data-step={STARTING.label}>
           <Spinner />
           <span className="shimmer motion-reduce:shimmer-none">{STARTING.label}</span>

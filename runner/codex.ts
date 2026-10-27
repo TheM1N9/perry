@@ -184,7 +184,16 @@ export class CodexAppServer extends EventEmitter {
     // flag and exits (2) on it, so it is left out rather than spelled out.
     const child = spawnEngine("codex", ["app-server"]);
     this.child = child;
-    createInterface({ input: child.stdout }).on("line", (line) => {
+    const output = createInterface({ input: child.stdout });
+    // Output can close while the process lingers (a hung shutdown, a grandchild holding stderr), and the child's
+    // "close" waits for both. Requests would then wait out their timeouts, and every later turn would be handed a
+    // dead app-server; so a short wait for the exit, then fail as if it had exited.
+    output.on("close", () => setTimeout(() => {
+      if (this.closed) return;
+      this.fail(new Error("Codex app-server closed its output."));
+      killTree(child, "SIGKILL");
+    }, 250).unref());
+    output.on("line", (line) => {
       let message: RpcMessage;
       try { message = JSON.parse(line); } catch { return; }
       const pending = message.id !== undefined ? this.pending.get(message.id) : undefined;
@@ -214,7 +223,10 @@ export class CodexAppServer extends EventEmitter {
           this.turnItems.set(params.turnId, items);
         }
         if (message.method === "turn/completed" && params.turn?.id) {
-          this.completedTurns.set(params.turn.id, params as TurnEvent);
+          const id = params.turn.id;
+          this.completedTurns.set(id, params as TurnEvent);
+          // Kept for a waitForTurn that has yet to start; a turn nobody waits on (a helper agent's) is let go.
+          setTimeout(() => { this.completedTurns.delete(id); this.turnItems.delete(id); }, 5 * 60_000).unref();
         }
         // A rolling update is sparse: what it leaves out keeps its last value.
         if (message.method === "account/rateLimits/updated" && params.rateLimits) {

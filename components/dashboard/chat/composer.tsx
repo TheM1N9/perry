@@ -65,7 +65,7 @@ type Pickers = {
 
 export function Composer({
   ref, assistant, draft, onDraftChange, onCaret, onSubmit, onQueue, onStop, waiting, busy, uploading, files, onAddFiles, onRemoveFile,
-  suggestions, suggesting = "Commands", completing, pickers, above, editing,
+  suggestions, suggesting = "Commands", completing, pickers, above, editing, editingQueued,
 }: {
   ref?: Ref<HTMLTextAreaElement>;
   assistant: string;
@@ -89,6 +89,8 @@ export function Composer({
   completing: "command" | "choice" | "skill" | null;
   pickers?: Pickers;
   editing?: { attachments: Attachment[]; onRemove: (attachment: Attachment) => void; onCancel: () => void };
+  /** A queued message's words are in the box (up-next.tsx): sending saves them in its place, and Escape gives the draft back. */
+  editingQueued?: { onCancel: () => void };
   above?: ReactNode;
 }) {
   const picker = useRef<HTMLInputElement>(null);
@@ -136,7 +138,7 @@ export function Composer({
         )}
         onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } }}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
-        onDrop={(event) => { setDragging(false); if (event.dataTransfer.files.length) { event.preventDefault(); onAddFiles(Array.from(event.dataTransfer.files)); } }}
+        onDrop={(event) => { setDragging(false); if (event.dataTransfer.files.length) { event.preventDefault(); if (!editingQueued) onAddFiles(Array.from(event.dataTransfer.files)); } }}
       >
         {editing ? (editing.attachments.length > 0 || files.length > 0) && <div className="flex gap-2 overflow-x-auto px-3 pt-3 pb-1">
           {editing.attachments.length > 0 && <ul aria-label="Current attachments" className="flex gap-2">
@@ -153,9 +155,9 @@ export function Composer({
           value={draft}
           rows={1}
           hidden={preview}
-          aria-label={editing ? "Edit your message" : `Message ${assistant}`}
+          aria-label={editing ? "Edit your message" : editingQueued ? "Edit the queued message" : `Message ${assistant}`}
           disabled={Boolean(editing && (uploading || busy))}
-          placeholder={waiting ? "Add to the reply, or stop it" : `Message ${assistant}`}
+          placeholder={editingQueued ? "Edit the queued message" : waiting ? "Add to the reply, or stop it" : `Message ${assistant}`}
           role="combobox"
           aria-expanded={shown.length > 0}
           aria-controls={shown.length ? "chat-commands" : undefined}
@@ -164,15 +166,19 @@ export function Composer({
           className={cn("max-h-[40vh] min-h-[52px] w-full resize-none overflow-y-auto bg-transparent px-5 pt-4 pb-1 text-base leading-relaxed outline-none sm:text-md field-sizing-content placeholder:text-muted-foreground", preview ? "hidden" : "block")}
           onChange={(event) => { onDraftChange(event.target.value); onCaret?.(event.target.selectionStart); }}
           onSelect={(event) => onCaret?.(event.currentTarget.selectionStart)}
-          onPaste={(event) => { const pasted = Array.from(event.clipboardData.files); if (pasted.length) { event.preventDefault(); onAddFiles(pasted); } }}
+          onPaste={(event) => { const pasted = Array.from(event.clipboardData.files); if (pasted.length) { event.preventDefault(); if (!editingQueued) onAddFiles(pasted); } }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing) return;
-            if ((event.ctrlKey || event.metaKey) && !event.altKey && ["b", "i"].includes(event.key.toLowerCase())) {
+            const key = (event.ctrlKey || event.metaKey) && !event.altKey ? event.key.toLowerCase() : "";
+            const format = key === "b" ? "bold" : key === "i" ? "italic" : null;
+            // Bold needs a selection: a bare Ctrl/Cmd+B toggles the sidebar instead.
+            if (format && (format === "italic" || event.currentTarget.selectionStart !== event.currentTarget.selectionEnd)) {
               event.preventDefault();
-              formatPrompt(event.currentTarget, event.key.toLowerCase() === "b" ? "bold" : "italic", onDraftChange, onCaret);
+              formatPrompt(event.currentTarget, format, onDraftChange, onCaret);
               return;
             }
             if (editing && event.key === "Escape" && !uploading) { event.preventDefault(); editing.onCancel(); return; }
+            if (editingQueued && event.key === "Escape" && !shown.length) { event.preventDefault(); editingQueued.onCancel(); return; }
             if (shown.length) {
               if (event.key === "ArrowDown") { event.preventDefault(); setArrowed(true); setHighlight((index + 1) % shown.length); return; }
               if (event.key === "ArrowUp") { event.preventDefault(); setArrowed(true); setHighlight((index - 1 + shown.length) % shown.length); return; }
@@ -196,7 +202,7 @@ export function Composer({
           </Button>
           <Tooltip>
             <TooltipTrigger render={<Button type="button" variant="ghost" size="icon" className="rounded-full text-muted-foreground" aria-label="Attach files"
-              onClick={() => picker.current?.click()} disabled={busy || Boolean(uploading) || files.length + (editing?.attachments.length ?? 0) >= MAX_FILES} />}>
+              onClick={() => picker.current?.click()} disabled={busy || Boolean(uploading) || Boolean(editingQueued) || files.length + (editing?.attachments.length ?? 0) >= MAX_FILES} />}>
               <PaperclipIcon />
             </TooltipTrigger>
             <TooltipContent>Attach images, video, audio or documents (up to 10, 50 MB each)</TooltipContent>
@@ -205,13 +211,17 @@ export function Composer({
           {pickers && <ModelPickers {...pickers} />}
           <span className="ml-auto" />
           {uploading && <span className="nums mr-1 flex items-center gap-1.5 text-xs text-muted-foreground" role="status"><Spinner className="size-3" />Uploading {uploading.index} of {uploading.total}</span>}
-          {!editing && waiting && !empty && <>
+          {!editing && !editingQueued && waiting && !empty && <>
             {onStop && <Button type="button" size="icon" variant="secondary" className="size-9 shrink-0 rounded-full" aria-label="Stop the reply" onClick={onStop}><SquareIcon className="size-3.5 fill-current" /></Button>}
             {onQueue && <Button type="button" size="sm" variant="secondary" className="shrink-0 rounded-full" aria-label="Queue message after the reply" onClick={onQueue} disabled={busy || Boolean(uploading)}>Queue</Button>}
           </>}
           {editing ? <>
             <Button type="button" variant="ghost" size="sm" onClick={editing.onCancel} disabled={busy || Boolean(uploading)}>Cancel</Button>
             <Button type="button" size="sm" onClick={onSubmit} disabled={empty || busy || waiting || Boolean(uploading)}>Save and resend</Button>
+          </> : editingQueued ? <>
+            {/* Its files stay with it; only the words change. */}
+            <Button type="button" variant="ghost" size="sm" className="rounded-full" onClick={editingQueued.onCancel} disabled={busy}>Cancel</Button>
+            <Button type="button" size="sm" className="rounded-full" aria-label="Save the queued message" onClick={onSubmit} disabled={busy}>Save</Button>
           </> : stopping ? (
             <Button type="button" size="icon" className="size-9 rounded-full" aria-label="Stop the reply" onClick={onStop}>
               <SquareIcon className="size-3.5 fill-current" />
