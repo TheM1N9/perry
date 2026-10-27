@@ -56,7 +56,8 @@ const EDITED = "Queued C, edited: reply with the single word gamma-two.";
 // Long enough to queue, edit, remove, reorder and steer while the first reply runs.
 // Commands with no quotes in them: Codex on Windows may wrap a command in PowerShell, whose quoting broke a `node -e "…"`
 // sleep so that it ended at once and left nothing running to watch.
-const FIRST = "Use the shell. First run exactly this command and wait for it to finish: ping -n 61 127.0.0.1 "
+const PING = process.platform === "win32" ? "ping -n 61 127.0.0.1" : "ping -c 61 127.0.0.1";
+const FIRST = `Use the shell. First run exactly this command and wait for it to finish: ${PING} `
   + "Then run hostname as a second command. Then reply with the single word done.";
 
 try {

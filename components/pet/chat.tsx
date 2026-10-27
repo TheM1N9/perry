@@ -209,7 +209,7 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
       </div>
 
       <ScrollArea viewportRef={scroller} className="min-h-0 flex-1">
-      <div className="flex min-h-full flex-col space-y-3 px-3.5 pt-3 pb-2 [&_.prose-chat]:text-sm [&_.prose-chat]:leading-[1.6]">
+      <div className="flex min-h-full flex-col space-y-3 px-3.5 pt-3 pb-2 [&_.prose-chat]:text-sm [&_.prose-chat]:leading-[1.6]" aria-live="polite">
         {!chatId && (<div className="flex flex-1 flex-col justify-center pb-3">
           <Empty title="What can I do for you?" awake className="pt-0">
             {voice && hotkey ? (holdProblem(hold)

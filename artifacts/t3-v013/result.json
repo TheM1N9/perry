@@ -1,5 +1,5 @@
 {
-  "ranAt": "2026-10-27T10:44:54.141Z",
+  "ranAt": "2026-10-27T15:06:47.220Z",
   "checks": {
     "ctrlBWithoutSelectionTogglesSidebar": true,
     "ctrlBWithSelectionBolds": true,
@@ -51,8 +51,8 @@
         "Fix the OAuth callback"
       ]
     },
-    "usageFailed": "Codex\nPro 100\nRead now\nWeekly\n24% used · 76% left · resets Mon 2 Nov, 11:32\nx\n\nPerry in this window: 209.8k tokens over 2 replies\n\nCouldn't read Codex's limits now: “Your access token could not be refreshed. Please sign out and sign in again.” If it keeps happening, sign in again.\n\nCounts all your Codex use, not only Perry's.\n\nPerry this week: 209.8k tokens over 2 replies.",
-    "usageRecovered": "Codex\nPro 100\nRead now\nWeekly\n24% used · 76% left · resets Mon 2 Nov, 11:32\nx\n\nPerry in this window: 209.8k tokens over 2 replies\n\nCounts all your Codex use, not only Perry's.\n\nPerry this week: 209.8k tokens over 2 replies.",
+    "usageFailed": "Codex\nPro 100\nRead now\nWeekly\n25% used · 75% left · resets Mon 2 Nov, 11:32\nx\n\nPerry in this window: 113.3k tokens over 2 replies\n\nCouldn't read Codex's limits: “Your access token could not be refreshed. Please sign out and sign in again.” If it keeps happening, sign in again.\n\nCounts all your Codex use, not only Perry's.\n\nPerry this week: 113.3k tokens over 2 replies.",
+    "usageRecovered": "Codex\nPro 100\nRead now\nWeekly\n25% used · 75% left · resets Mon 2 Nov, 11:32\nx\n\nPerry in this window: 113.3k tokens over 2 replies\n\nCounts all your Codex use, not only Perry's.\n\nPerry this week: 113.3k tokens over 2 replies.",
     "plan": {
       "raw": "prolite",
       "shown": "Pro 100"
@@ -61,7 +61,7 @@
     "runnerLog": [
       "\u001b[1mAssistant runner\u001b[0m",
       "\u001b[2m  machine    THIS-PC (win32)\u001b[0m",
-      "\u001b[2m  directory  W:\\motionclip-storage-513\\temp\\perry-t3-v013-jH5p5Z\\workspace\u001b[0m",
+      "\u001b[2m  directory  W:\\motionclip-storage-513\\temp\\perry-t3-v013-12fbqs\\workspace\u001b[0m",
       "\u001b[2m  access     set per chat: Ask, Auto or Full access, from the chat or Settings\u001b[0m",
       "\u001b[2m  connection outbound only, nothing is listening here\u001b[0m",
       "\u001b[2m",
@@ -69,8 +69,8 @@
       "\u001b[0m",
       "\u001b[32m  connected.",
       "\u001b[0m",
-      "\u001b[2m  saved turn vh5wnvmsct5hq5xdfrxhqb6es7\u001b[0m",
-      "\u001b[2m  saved turn 7xszcyvmk8j67h6yqchm8yr3k7\u001b[0m"
+      "\u001b[2m  saved turn hgjyhzgzmyqjjwadqyz7wh7qqy\u001b[0m",
+      "\u001b[2m  saved turn qbem7bxnj1n4grgsvvfk4he5wr\u001b[0m"
     ],
     "tempHomeRemoved": true
   },

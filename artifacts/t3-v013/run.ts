@@ -183,8 +183,11 @@ try {
   check("failedReadClearsOnSuccess", !recovered.text.includes(failure));
   const shown = (await call<{ engines: Array<{ kind: string; plan?: string }> }>("usage:overview", { key: KEY })).engines.find((engine) => engine.kind === "codex")?.plan;
   notes.plan = { raw, shown };
-  const current: Record<string, string> = { pro: "Pro 200", prolite: "Pro 100", promax: "Pro 500", self_serve_business_prolite: "Business Premium", team: "Business" };
-  check("planNamedAsChatGPTDoes", Boolean(shown) && !shown!.includes("_") && (raw && raw in current ? shown === current[raw] : shown === raw));
+  // As runner/engines/codex.ts planName names them; one not listed reads as sent, its underscores as spaces.
+  const current: Record<string, string> = { pro: "Pro 200", prolite: "Pro 100", promax: "Pro 500", self_serve_business_prolite: "Business Premium",
+    team: "Business", business: "Business", self_serve_business_usage_based: "Business", enterprise: "Enterprise", ent26: "Enterprise",
+    enterprise_cbp_automation: "Enterprise", enterprise_cbp_usage_based: "Enterprise", edu: "Edu", edu_plus: "Edu", edu_pro: "Edu" };
+  check("planNamedAsChatGPTDoes", Boolean(shown) && !shown!.includes("_") && shown === (raw ? current[raw] ?? raw.replaceAll("_", " ") : shown));
   await shot("usage.png");
 
   notes.pageErrors = errors;

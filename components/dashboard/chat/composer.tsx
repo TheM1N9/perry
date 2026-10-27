@@ -138,7 +138,7 @@ export function Composer({
         )}
         onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setDragging(true); } }}
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
-        onDrop={(event) => { setDragging(false); if (event.dataTransfer.files.length) { event.preventDefault(); onAddFiles(Array.from(event.dataTransfer.files)); } }}
+        onDrop={(event) => { setDragging(false); if (event.dataTransfer.files.length) { event.preventDefault(); if (!editingQueued) onAddFiles(Array.from(event.dataTransfer.files)); } }}
       >
         {editing ? (editing.attachments.length > 0 || files.length > 0) && <div className="flex gap-2 overflow-x-auto px-3 pt-3 pb-1">
           {editing.attachments.length > 0 && <ul aria-label="Current attachments" className="flex gap-2">
@@ -166,7 +166,7 @@ export function Composer({
           className={cn("max-h-[40vh] min-h-[52px] w-full resize-none overflow-y-auto bg-transparent px-5 pt-4 pb-1 text-base leading-relaxed outline-none sm:text-md field-sizing-content placeholder:text-muted-foreground", preview ? "hidden" : "block")}
           onChange={(event) => { onDraftChange(event.target.value); onCaret?.(event.target.selectionStart); }}
           onSelect={(event) => onCaret?.(event.currentTarget.selectionStart)}
-          onPaste={(event) => { const pasted = Array.from(event.clipboardData.files); if (pasted.length) { event.preventDefault(); onAddFiles(pasted); } }}
+          onPaste={(event) => { const pasted = Array.from(event.clipboardData.files); if (pasted.length) { event.preventDefault(); if (!editingQueued) onAddFiles(pasted); } }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing) return;
             const key = (event.ctrlKey || event.metaKey) && !event.altKey ? event.key.toLowerCase() : "";
