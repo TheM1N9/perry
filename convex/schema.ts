@@ -1320,6 +1320,12 @@ export default defineSchema({
     toolkit: v.string(),
     /** Unset when the service would not say; asked again after a day. */
     identity: v.optional(v.string()),
+    profile: v.optional(v.object({
+      email: v.optional(v.string()),
+      username: v.optional(v.string()),
+      displayName: v.optional(v.string()),
+      workspace: v.optional(v.string()),
+    })),
     checkedAt: v.number(),
   }).index("by_account", ["accountId"]),
 

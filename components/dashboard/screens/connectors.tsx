@@ -56,7 +56,8 @@ function byApp(connections: ConnectedAccount[]): AppAccounts[] {
   const apps = new Map<string, { name: string; logo?: string; accounts: Map<string, ConnectedAccount[]> }>();
   for (const item of connections) {
     const app = apps.get(item.toolkit) ?? { name: item.name, logo: item.logo, accounts: new Map() };
-    const key = item.account ? item.account.toLowerCase() : `#${item.id}`;
+    const identity = item.profile?.email ?? item.profile?.username ?? item.account;
+    const key = identity ? JSON.stringify([identity.toLowerCase(), item.profile?.workspace?.toLowerCase() ?? ""]) : `#${item.id}`;
     app.accounts.set(key, [...app.accounts.get(key) ?? [], item]);
     apps.set(item.toolkit, app);
   }
@@ -151,11 +152,15 @@ function AccountRow({ app, account, busy, onConnect, onRemove }: {
   const { main, spares, label } = account;
   const status = connectionStatus(main.status);
   const working = status.tone === "success";
+  const details = [...new Set([main.profile?.displayName, main.profile?.email, main.profile?.username, main.profile?.workspace])]
+    .filter((value): value is string => Boolean(value) && value?.toLowerCase() !== label.toLowerCase());
   const who = main.account ? <strong>{main.account}</strong> : "this account";
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl px-3 py-1.5 hover:bg-muted/50 sm:pl-16">
       <div className="min-w-0 flex-1 basis-48">
-        <p className={cn("truncate", !main.account && "text-muted-foreground")} title={main.account ? `Signed in as ${main.account}` : undefined}>{label}</p>
+        <p className={cn("wrap-anywhere", !main.account && "text-muted-foreground")}>{label}</p>
+        {details.length > 0 && <p className="wrap-anywhere text-sm text-muted-foreground">{details.join(" · ")}</p>}
+        {main.account && main.createdAt && <p className="text-xs text-muted-foreground">{addedOn(main.createdAt)}</p>}
         {(main.status === "EXPIRED" || main.status === "REVOKED") && <p role="status" className="text-sm text-destructive">Sign-in expired or was revoked. Reconnect this account to use it again.</p>}
         {spares.length > 0 && (
           <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
@@ -295,7 +300,7 @@ export function Connectors() {
   // An app by its name shows whole; otherwise only the accounts whose address matches.
   const shownApps = useMemo(() => term ? apps.flatMap((app) => {
     if (matches(app.name) || matches(app.toolkit)) return [app];
-    const accounts = app.accounts.filter((account) => matches(account.main.account));
+    const accounts = app.accounts.filter((account) => matches(account.main.account) || Object.values(account.main.profile ?? {}).some(matches));
     return accounts.length ? [{ ...app, accounts }] : [];
   }) : apps, [apps, term, matches]);
   const found = useMemo(() => (catalog ?? []).filter((app) => !term || matches(app.name) || matches(app.slug) || matches(app.category) || matches(app.description)), [catalog, term, matches]);
