@@ -162,7 +162,7 @@ export const catalog = internalAction({
 
 /**
  * A read-only "who am I" per service: Composio keeps no account name, so the
- * service is asked, once per connection. Services not listed show when they
+ * service is asked, with the answer cached for a day. Services not listed show when they
  * were connected instead.
  */
 const WHO_AM_I: Record<string, [action: string, args: Record<string, unknown>]> = {
@@ -180,6 +180,36 @@ const WHO_AM_I: Record<string, [action: string, args: Record<string, unknown>]> 
 /** The fields that name an account, best first: an address, then a handle, then a display name. */
 const IDENTITY_FIELDS = ["emailAddress", "email", "mail", "userPrincipalName", "login", "username", "screen_name", "handle", "user", "name", "title", "summary"];
 
+export type AccountProfile = { email?: string; username?: string; displayName?: string; workspace?: string };
+
+/** Only public identity fields from the read-only profile reply, never auth data. */
+function profileOf(data: unknown, toolkit: string): AccountProfile {
+  const fields: Record<string, string> = {};
+  const queue: Array<[unknown, number]> = [[data, 0]];
+  for (let index = 0; index < queue.length && index < 100; index++) {
+    const [value, depth] = queue[index];
+    if (!value || typeof value !== "object" || depth > 5) continue;
+    for (const [key, inner] of Object.entries(value).slice(0, 100)) {
+      if (typeof inner === "string" && inner.trim() && !(key in fields)) fields[key] = inner.trim();
+      else if (inner && typeof inner === "object" && queue.length < 100) queue.push([inner, depth + 1]);
+    }
+  }
+  const first = (...keys: string[]) => keys.map((key) => fields[key]).find(Boolean);
+  const profile = {
+    email: first("emailAddress", "email", "mail", "userPrincipalName"),
+    username: first("login", "username", "screen_name", "handle", "user"),
+    displayName: first("display_name", "displayName", "real_name", "name", "title"),
+    workspace: first("workspace_name", "team_name", "team"),
+  };
+  // Notion's root name belongs to the integration bot; the person is its owner.
+  if (toolkit === "notion") {
+    const reply = data as { bot?: { owner?: { user?: { name?: string } } } } | null;
+    const name = reply?.bot?.owner?.user?.name;
+    profile.displayName = typeof name === "string" && name.trim() ? name.trim() : undefined;
+  }
+  return Object.fromEntries(Object.entries(profile).filter(([, value]) => value !== undefined));
+}
+
 /** The best identity in a "who am I" reply, however deep the service put it. */
 export function identityOf(data: unknown): string | undefined {
   const found: Record<string, string> = {};
@@ -193,7 +223,7 @@ export function identityOf(data: unknown): string | undefined {
     }
   }
   const best = IDENTITY_FIELDS.find((key) => found[key]);
-  return best ? found[best].slice(0, 80) : undefined;
+  return best ? found[best] : undefined;
 }
 
 export type ConnectedAccount = {
@@ -206,6 +236,7 @@ export type ConnectedAccount = {
   authExpiredAt?: number;
   /** The account it is signed in to, when the service says. */
   account?: string;
+  profile?: AccountProfile;
 };
 
 /**
@@ -230,10 +261,10 @@ export const accounts = internalAction({
 
       const health: Record<string, number> = await ctx.runQuery(internal.connectorHealth.read, { accounts: items.map((item) => ({ accountId: item.id, toolkit: item.toolkit.slug })) });
       const apps = await catalogOf(apiKey).catch(() => [] as CatalogApp[]);
-      const known: Record<string, { identity?: string; checkedAt: number }> = await ctx.runQuery(internal.connectorAccounts.identities, { accountIds: items.map((item) => item.id) });
-      // Ask each active account without a name yet (or whose service would not say, a day ago).
+      const known: Record<string, { identity?: string; profile?: AccountProfile; checkedAt: number }> = await ctx.runQuery(internal.connectorAccounts.identities, { accountIds: items.map((item) => item.id) });
+      // Upgrade older cached identities once; refresh profiles at most daily.
       const ask = items.filter((item) => item.status === "ACTIVE" && WHO_AM_I[item.toolkit.slug]
-        && (health[item.id] !== undefined || !known[item.id] || (!known[item.id].identity && Date.now() - known[item.id].checkedAt > 86_400_000)));
+        && (health[item.id] !== undefined || !known[item.id] || !known[item.id].profile || Date.now() - known[item.id].checkedAt > 86_400_000));
       await Promise.all(ask.map(async (item) => {
         const [action, args] = WHO_AM_I[item.toolkit.slug];
         const startedAt = Date.now();
@@ -244,9 +275,10 @@ export const accounts = internalAction({
           if (result?.successful) delete health[item.id];
           else health[item.id] = startedAt;
         }
-        const identity = result?.successful ? identityOf(result.data) : known[item.id]?.identity;
-        await ctx.runMutation(internal.connectorAccounts.remember, { accountId: item.id, toolkit: item.toolkit.slug, identity });
-        known[item.id] = { identity, checkedAt: Date.now() };
+        const profile = { ...known[item.id]?.profile, ...(result?.successful ? profileOf(result.data, item.toolkit.slug) : {}) };
+        const identity = (result?.successful ? identityOf(result.data) : undefined) ?? known[item.id]?.identity;
+        await ctx.runMutation(internal.connectorAccounts.remember, { accountId: item.id, toolkit: item.toolkit.slug, identity, profile });
+        known[item.id] = { identity, profile, checkedAt: Date.now() };
       }));
 
       return {
@@ -262,6 +294,7 @@ export const accounts = internalAction({
             authExpiredAt: health[item.id],
             createdAt: item.createdAt,
             account: item.alias || known[item.id]?.identity,
+            profile: known[item.id]?.profile,
           };
         }),
       };
