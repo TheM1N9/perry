@@ -70,4 +70,8 @@ browser errors so a selector failure cannot be mistaken for a passing app.
   every deadline must clear and cleanup must run even if diagnostics fail.
 - Historical and current replay outputs must never overwrite committed snapshots
   or each other. Check output paths and preserve baseline-only evidence links.
+- Temporary directories can themselves use filesystem aliases (macOS /var and
+  Windows short names). Seed permission rules with the canonical directory,
+  as the runner does, and explicitly run the filesystem probe through a real
+  directory alias so every platform exercises that boundary.
 

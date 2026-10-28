@@ -261,10 +261,14 @@ try {
   });
   await check('Runner filesystem resolution refuses symlink-parent ambiguity', async () => {
     const { approvalPath } = await import('../../runner/approval-path.ts');
-    const allowed = join(scratch, 'allowed'); const outside = join(scratch, 'outside');
-    mkdirSync(allowed); mkdirSync(join(outside, 'deep'), { recursive: true });
+    const physicalAllowed = join(scratch, 'allowed');
+    const allowed = join(scratch, 'allowed-alias'); const outside = join(scratch, 'outside');
+    mkdirSync(physicalAllowed); mkdirSync(join(outside, 'deep'), { recursive: true });
+    symlinkSync(physicalAllowed, allowed, process.platform === 'win32' ? 'junction' : 'dir');
     symlinkSync(join(outside, 'deep'), join(allowed, 'link'), process.platform === 'win32' ? 'junction' : 'dir');
-    const rule = await rt.exclusive(() => rt.store.insert('approvalRules', { runnerId, kind: 'file', pathPrefix: allowed, uses: 0, createdAt: Date.now() }));
+    const canonicalAllowed = approvalPath(allowed);
+    assert(canonicalAllowed);
+    const rule = await rt.exclusive(() => rt.store.insert('approvalRules', { runnerId, kind: 'file', pathPrefix: canonicalAllowed, uses: 0, createdAt: Date.now() }));
     try {
       const raw = join(allowed, 'link') + sep + '..' + sep + 'secret';
       assert.equal(approvalPath(raw), undefined);
@@ -275,7 +279,7 @@ try {
       const inside = approvalPath(join(allowed, 'new-file'));
       const accepted = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'canonical inside control', paths: [inside], pathsVerified: true });
       assert.equal(ambiguous.body.value.next, 'ask'); assert.equal(escaped.body.value.next, 'ask'); assert.equal(accepted.body.value.next, 'run');
-      return { protectionPassed: true, actualFilesystemLink: true, ambiguousDecision: 'ask', outsideDecision: 'ask', insideDecision: 'run' };
+      return { protectionPassed: true, actualFilesystemLink: true, directoryAliasExercised: true, ruleUsedCanonicalDirectory: true, ambiguousDecision: 'ask', outsideDecision: 'ask', insideDecision: 'run' };
     } finally { await rt.exclusive(() => rt.store.delete(rule)); }
   });
   await check('A lost write acknowledgement exposes an unknown outcome without replay', async () => {
