@@ -45,3 +45,29 @@ The shared Chrome harness can itself fail before returning its handle. Close
 its WebSocket and process on that path too, and include the rendered page and
 browser errors so a selector failure cannot be mistaken for a passing app.
 
+## Review follow-up failure inventory
+
+- An active query deadline can leave the initial page unloaded forever without
+  a change-stream event. Retry with bounded backoff, cancelling retries on
+  unsubscribe, cache invalidation and close. Intentional cancellation must not retry.
+- A write can commit before its response times out. Surface an unknown outcome,
+  never automatically replay it, and verify exactly one durable change remains.
+- Lexical normalization can erase a symlink before `..`. Refuse automatic rules
+  for parent-segment paths; exercise real symlinks/junctions and saved-rule decisions.
+- A UNC file directly under a share must not offer an entire-share permission;
+  a file beneath a share subdirectory can offer that narrower directory.
+- An action's metadata delete and tombstone insert must roll back together.
+  Inject a SQLite tombstone-insert failure and verify metadata/bytes survive.
+- One hundred failed unlinks must not starve later removable files. Simulate
+  failures with directories at synthetic file paths, then verify later cleanup.
+- Importing an ID with a pending tombstone must serialize file bytes and metadata
+  with the sweeper. Hold the Runtime queue to prove no pre-queue filesystem write.
+- Rollback probes must clear all synthetic scheduled jobs before ticking; assert
+  the scheduler remains empty so approval delivery cannot run during the probe.
+- Large uploads need a bounded size-scaled deadline, while ordinary JSON stays
+  bounded at 30 seconds. Cancellation, size limits and admission must still work.
+- Browser diagnostics and CDP requests must settle after disconnect or timeout;
+  every deadline must clear and cleanup must run even if diagnostics fail.
+- Historical and current replay outputs must never overwrite committed snapshots
+  or each other. Check output paths and preserve baseline-only evidence links.
+

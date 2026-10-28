@@ -30,6 +30,6 @@ try {
 } catch (error) { result.completed = false; result.error = String(error); }
 finally {
   stop?.(); globalThis.setTimeout = nativeTimer; globalThis.AbortController = NativeController;
-  writeFileSync(new URL('./lifecycle-result.json', import.meta.url), JSON.stringify(result, null, 2) + '\n');
+  writeFileSync(new URL('./baseline-lifecycle-replay-result.json', import.meta.url), JSON.stringify(result, null, 2) + '\n');
 }
 console.log(JSON.stringify(result)); process.exitCode = result.completed ? 0 : 1;

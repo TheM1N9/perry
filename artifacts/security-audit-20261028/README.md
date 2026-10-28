@@ -4,6 +4,8 @@ This directory publishes the original local audit bundle for issue #324.
 `baseline-*.json` and `baseline-*-replay.mjs`/`baseline-replay.mjs` preserve the
 original vulnerable outcomes and reproductions against `75a0788`. Those scripts
 are historical evidence and intentionally do not pass on a remediated checkout.
+Their probe logic is preserved; reruns now write separate ignored
+`baseline-*-result.json` files rather than overwriting the recorded snapshots.
 
 The current `run.mjs`, `client-replay.mjs`, and `lifecycle-replay.mjs` assert the
 new protections: active-document downloads, path-rule boundaries, bounded
@@ -13,6 +15,15 @@ real Runtime, HTTP handlers, cache, and a disposable Chrome profile where
 available. They do not use owner accounts or a real model. Live outputs are
 `result.json`, `client-result.json`, and `lifecycle-result.json`; named
 `verified-*.json` files are recorded snapshots and are never CI upload inputs.
+Current inventories use ignored `function-inventory-result.json` and
+`indexes-result.json`; the original committed inventories remain unchanged.
+
+Review follow-ups cover transactional action deletion, fair cleanup retries,
+serialized file imports, UNC scope, actual filesystem links, and query retry
+teardown. Writes that lose their transport acknowledgement raise
+`WriteOutcomeUnknownError`: the server may have committed them. Mutations and
+actions are never automatically replayed; callers need durable operation IDs
+before retrying an uncertain write. Chat-wide idempotency remains F08 work.
 
 This is a partial remediation of #324. Network binding/TLS (F03), dependency
 advisories (F05), durable Telegram ingestion (F07), chat idempotency (F08), and
@@ -48,7 +59,7 @@ Audited `main` at `75a07880cae2a29022960b61b8fa4057f6caab70` (PR #322). `git pul
 
 Reviewed the local Next.js dashboard and API routes, custom SQLite/Convex-compatible runtime, runner authentication and permissions, messaging ingestion and delivery, pet pairing and Electron configuration, browser controls and public fetches, notes/queue/cache behavior, installation, CI, and all four package lockfiles. Enumerated **611 backend definitions, including 257 public definitions**, in [function-inventory.json](function-inventory.json). Direct-auth marker absence was manually followed through the queue, todos, workspace and Codex-to-engine helper/delegation paths; it is not automatically an authentication vulnerability.
 
-Fresh verification uses actual application handlers over loopback HTTP, the real Runtime/SQLite/validators, a disposable Chrome profile, and synthetic transport adapters where stated. **16 HTTP/runtime scenarios, four client/cache scenarios and one polling lifecycle scenario completed successfully**, meaning the checks reproduced the stated outcomes, including vulnerabilities. The existing 23-scenario credentials replay and platform smoke checks passed. Root and Convex TypeScript checks passed. See [result.json](result.json), [client-result.json](client-result.json), [lifecycle-result.json](lifecycle-result.json), and [credentials-result.json](credentials-result.json).
+Fresh verification uses actual application handlers over loopback HTTP, the real Runtime/SQLite/validators, a disposable Chrome profile, and synthetic transport adapters where stated. **16 HTTP/runtime scenarios, four client/cache scenarios and one polling lifecycle scenario completed successfully**, meaning the checks reproduced the stated outcomes, including vulnerabilities. The existing 23-scenario credentials replay and platform smoke checks passed. Root and Convex TypeScript checks passed. See [baseline-result.json](baseline-result.json), [baseline-client-result.json](baseline-client-result.json), [baseline-lifecycle-result.json](baseline-lifecycle-result.json), and [credentials-result.json](credentials-result.json).
 
 The HTTP adapter does not exercise Next.js middleware, production rendering, reverse proxies, or hosting configuration. No deployed Perry was attacked; no real engine, connected account, personal browser profile, credential or message was used. Provider delivery, live Vercel settings/deployed SHA, Tailscale ACLs, OS sandbox enforcement, production query latency, power-loss behavior and multi-day soak behavior remain unverified. The installed Node runtime here is 25.8.2 on Windows. These are bounded application-flow reproductions, not a complete production penetration test or a model-driven full product E2E.
 
@@ -62,7 +73,7 @@ The benchmark is [OWASP ASVS 5.0](https://asvs.owasp.org/), [OWASP API resource-
 
 Stored files are returned anonymously to anyone possessing their capability URL, with their supplied MIME type, no attachment disposition, no sandbox CSP and no `nosniff`. Unlike `app/api/media/store.ts`, this handler does not force active content to download. A stored `text/html` document therefore executes on the dashboard origin. The dashboard's full bearer key is in localStorage on that origin; it also authorizes `/api/backend/admin`, including internal functions.
 
-**Reproduced:** a synthetic HTML document, served through the real handler, opened in a fresh headless Chrome profile and read a synthetic dashboard key from localStorage. `syntheticKeyReadableInChrome=true` in result.json. No real key was involved.
+**Reproduced:** a synthetic HTML document, served through the real handler, opened in a fresh headless Chrome profile and read a synthetic dashboard key from localStorage. `syntheticKeyReadableInChrome=true` in baseline-result.json. No real key was involved.
 
 **Precondition:** attacker-influenced content must enter storage and the owner must open its URL on an already-unlocked origin. This is not an anonymous upload bypass. Telegram files and imported content make treating every stored document as trusted inappropriate.
 
@@ -234,4 +245,4 @@ pnpm --dir film audit --json
 
 The browser proof uses the default installed Windows Chrome path, or `PERRY_E2E_BROWSER`. Without Chrome, the route/header proof runs but the browser-specific field is null. No browser is downloaded. Each audit script writes JSON; scanner commands exit nonzero when advisories exist, as expected. The credentials harness writes `.batch-work/batch-1/251/e2e-result.json`; this audit copied its result here. Future dependency results will change as registry data changes.
 
-The HTTP replay binds only loopback and starts no background scheduler or engine. The client replay substitutes transport only. The lifecycle replay accelerates the real polling loop's idle timer. Synthetic fault injection is restricted to the disposable database. Temporary HTTP/browser resources and home are removed; result.json records fixture cleanup. The failure inventory was written before these scripts. A completed audit check can mean a defect was successfully reproduced: do not treat `completed:true` as `secure:true`.
+The HTTP replay binds only loopback and starts no engine. Its rollback scenario clears the synthetic scheduler queue before manually ticking it; no queued provider work runs. The client replay substitutes transport only. The current lifecycle replay uses real native idle delays; only the historical baseline accelerated them. Synthetic fault injection is restricted to the disposable database. Temporary HTTP/browser resources and home are removed; the live result records fixture cleanup. The failure inventory was written before these scripts. A completed historical audit check can mean a defect was successfully reproduced: do not treat `completed:true` as `secure:true`.

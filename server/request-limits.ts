@@ -50,7 +50,9 @@ export async function requestBytes(request: Request, maxBytes: number): Promise<
     void reader.cancel(reason).catch(() => {});
   };
   const abort = () => stop(request.signal.reason);
-  const timer = setTimeout(() => stop(new RequestLimitError("Reading the request timed out.", 408)), 30_000);
+  // JSON keeps its 30s cap; large uploads allow roughly 2 Mbit/s plus startup.
+  const deadline = 30_000 + Math.ceil(Math.max(0, maxBytes - 2 * 1024 * 1024) / (256 * 1024)) * 1000;
+  const timer = setTimeout(() => stop(new RequestLimitError("Reading the request timed out.", 408)), deadline);
   request.signal.addEventListener("abort", abort, { once: true });
   let buffer = new Uint8Array(Math.min(maxBytes, Math.max(1024, declared)));
   let size = 0;

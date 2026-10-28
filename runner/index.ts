@@ -47,10 +47,11 @@ import { createReplyStream, streamFlushMs } from "./stream-reply";
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import { hostname, platform } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
+import { approvalPath } from "./approval-path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { BackendClient } from "../client/backend";
@@ -140,28 +141,6 @@ function denied(command: string): string | null {
     if (rule.pattern.test(command)) return rule.why;
   }
   return null;
-}
-
-/** Resolve existing symlinks/junctions, including the parent of a file not created yet. */
-function approvalPath(file: string, cwd?: string): string | undefined {
-  if (!isAbsolute(file) && (!cwd || !isAbsolute(cwd))) return undefined;
-  let candidate = resolve(cwd ?? ".", file);
-  const missing: string[] = [];
-  while (true) {
-    try { return join(realpathSync.native(candidate), ...missing); }
-    catch (error) {
-      if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT") return undefined;
-      // A dangling symlink exists even though realpath fails; it is not a new directory.
-      try { lstatSync(candidate); return undefined; }
-      catch (missingError) {
-        if (!missingError || typeof missingError !== "object" || !("code" in missingError) || missingError.code !== "ENOENT") return undefined;
-      }
-      const parent = dirname(candidate);
-      if (parent === candidate) return undefined;
-      missing.unshift(basename(candidate));
-      candidate = parent;
-    }
-  }
 }
 
 // --- Config --------------------------------------------------------------

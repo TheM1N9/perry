@@ -21,6 +21,15 @@ export class BackendError extends Error {
   }
 }
 
+/** The server may have committed a write whose acknowledgement never arrived. */
+export class WriteOutcomeUnknownError extends BackendError {
+  readonly outcome = "unknown";
+  constructor(readonly cause: unknown) {
+    super("Perry could not confirm this change. It may have been saved. Check the current state before trying again.", 504);
+    this.name = "WriteOutcomeUnknownError";
+  }
+}
+
 type Subscription = {
   name: string;
   args: unknown;
@@ -31,6 +40,8 @@ type Subscription = {
   listeners: Set<Listener>;
   inFlight: Promise<void> | null;
   controller?: AbortController;
+  retry?: ReturnType<typeof setTimeout>;
+  retryDelay?: number;
   again: boolean;
   idleAt?: number;
   expiry?: ReturnType<typeof setTimeout>;
@@ -133,6 +144,10 @@ export class BackendClient {
       const result = await this.call<FunctionReturnType<F>>(ref as AnyFunction, args, { timeoutMs: kind === "action" ? 120_000 : 30_000 });
       success = true;
       return result;
+    } catch (error) {
+      // Never replay writes after transport loss; retries need durable operation IDs.
+      if (!(error instanceof BackendError)) throw new WriteOutcomeUnknownError(error);
+      throw error;
     } finally {
       try { this.onOperation?.(functionName(ref as AnyFunction), kind, success, Math.round(performance.now() - started)); } catch {}
     }
@@ -177,6 +192,7 @@ export class BackendClient {
   private keepIdle(key: string, sub: Subscription) {
     if (this.subscriptions.get(key) !== sub) return;
     clearTimeout(sub.expiry);
+    clearTimeout(sub.retry);
     sub.again = false;
     sub.controller?.abort();
     sub.idleAt = Date.now();
@@ -245,6 +261,7 @@ export class BackendClient {
       if (!isChatPayload(sub.name)) continue;
       clearTimeout(sub.expiry);
       sub.revision++;
+      clearTimeout(sub.retry);
       sub.controller?.abort();
       sub.again = false;
       sub.value = undefined;
@@ -275,6 +292,7 @@ export class BackendClient {
   }
 
   private fetch(sub: Subscription): Promise<void> {
+    clearTimeout(sub.retry);
     if (sub.inFlight) { sub.again = true; return sub.inFlight; }
     sub.inFlight = (async () => {
       do {
@@ -288,6 +306,7 @@ export class BackendClient {
           const changed = !sub.loaded || sub.error || JSON.stringify(result.value) !== JSON.stringify(sub.value);
           sub.reads = result.reads ?? null;
           sub.error = undefined;
+          sub.retryDelay = undefined;
           sub.loaded = true;
           if (changed) sub.value = result.value;
           sub.retainedBytes = retainedChatBytes(sub.name, sub.args, result.value);
@@ -295,6 +314,15 @@ export class BackendClient {
         } catch (error) {
           if (revision !== sub.revision || this.closed) continue;
           if (controller.signal.aborted) continue;
+          if (error instanceof Error && error.name === "TimeoutError" && sub.listeners.size) {
+            const delay = sub.retryDelay ?? 500;
+            sub.retryDelay = Math.min(delay * 2, 10_000);
+            sub.retry = setTimeout(() => {
+              sub.retry = undefined;
+              if (!this.closed && sub.listeners.size && this.subscriptions.get(keyOf(sub.name, sub.args)) === sub) void this.fetch(sub);
+            }, delay);
+            break;
+          }
           // The server unreachable (restarting, say) is not the query's error: what is shown stays,
           // and the change stream fetches everything again once it reconnects.
           if (!(error instanceof BackendError)) break;
@@ -425,7 +453,7 @@ export class BackendClient {
     this.closed = true;
     this.lifetime.abort();
     clearTimeout(this.hoverTimer);
-    for (const sub of this.subscriptions.values()) clearTimeout(sub.expiry);
+    for (const sub of this.subscriptions.values()) { clearTimeout(sub.expiry); clearTimeout(sub.retry); }
     this.stream?.abort();
     this.stream = null;
     this.subscriptions.clear();

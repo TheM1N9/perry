@@ -1,6 +1,6 @@
 {
   "baselineCommit": "75a07880cae2a29022960b61b8fa4057f6caab70",
-  "checkedAt": "2026-10-28T09:11:11.647Z",
+  "checkedAt": "2026-10-28T09:33:05.673Z",
   "environment": {
     "node": "v25.8.2",
     "platform": "win32"
@@ -48,11 +48,11 @@
         "accept-ranges": "bytes",
         "cache-control": "private, max-age=3600",
         "connection": "keep-alive",
-        "content-disposition": "attachment; filename*=UTF-8''c0999cec6a94f9dac45d78b6af6706db",
+        "content-disposition": "attachment; filename*=UTF-8''7301c1f88d60c1d011f0c8a2ff42201f",
         "content-length": "206",
         "content-security-policy": "sandbox; default-src 'none'; media-src 'self'; style-src 'unsafe-inline'",
         "content-type": "application/octet-stream",
-        "date": "Wed, 28 Oct 2026 09:11:11 GMT",
+        "date": "Wed, 28 Oct 2026 09:33:05 GMT",
         "keep-alive": "timeout=5",
         "x-content-type-options": "nosniff"
       },
@@ -71,6 +71,12 @@
       "protectionPassed": true,
       "rejectedStatus": 413,
       "retryStatus": 200
+    },
+    {
+      "name": "A large-upload stream may finish beyond the JSON body deadline",
+      "completed": true,
+      "protectionPassed": true,
+      "nativeDelayMs": 31000
     },
     {
       "name": "Invalid uploads are rejected before consuming the body",
@@ -111,6 +117,30 @@
       "fileWritesPerformed": false
     },
     {
+      "name": "Network-share approvals require a subdirectory",
+      "completed": true,
+      "protectionPassed": true,
+      "shareRootOffered": false,
+      "subdirectoryOffered": true
+    },
+    {
+      "name": "Runner filesystem resolution refuses symlink-parent ambiguity",
+      "completed": true,
+      "protectionPassed": true,
+      "actualFilesystemLink": true,
+      "ambiguousDecision": "ask",
+      "outsideDecision": "ask",
+      "insideDecision": "run"
+    },
+    {
+      "name": "A lost write acknowledgement exposes an unknown outcome without replay",
+      "completed": true,
+      "protectionPassed": true,
+      "committedWrites": 1,
+      "transportAttempts": 1,
+      "reportedOutcome": "unknown"
+    },
+    {
       "name": "Concurrent owner approval decisions have one winner",
       "completed": true,
       "protectionPassed": true,
@@ -137,7 +167,7 @@
       "name": "Generated SQLite indexes and query plans",
       "completed": true,
       "protectionPassed": true,
-      "generatedIndexCount": 140,
+      "generatedIndexCount": 141,
       "plans": {
         "runnerLookup": [
           {
@@ -192,6 +222,27 @@
       "completed": true,
       "protectionPassed": true,
       "durableUnlinkRecovered": true
+    },
+    {
+      "name": "Action storage deletion rolls back if its tombstone cannot be inserted",
+      "completed": true,
+      "protectionPassed": true,
+      "rollbackPreservedFile": true,
+      "successfulRetryDeletedFile": true
+    },
+    {
+      "name": "Repeated unlink failures do not starve later files",
+      "completed": true,
+      "protectionPassed": true,
+      "blockedEntries": 100,
+      "laterFileRemoved": true
+    },
+    {
+      "name": "File import serializes bytes and metadata with pending cleanup",
+      "completed": true,
+      "protectionPassed": true,
+      "importFirstAndSweepFirstPassed": true,
+      "noFilesystemWriteBeforeQueue": true
     },
     {
       "name": "Public fetch refuses private, loopback, mapped and reserved destinations",

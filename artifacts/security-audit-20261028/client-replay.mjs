@@ -6,6 +6,7 @@ import { BackendClient } from '../../client/backend.ts';
 const originalFetch = globalThis.fetch;
 const clients = new Set(); const streams = new Set(); const checks = [];
 let content = 'before'; let hold = null; let waiting = null; let requestSignal;
+let timeouts = 0; let ordinaryCalls = 0;
 globalThis.fetch = async (url, options = {}) => {
   if (String(url).endsWith('/events')) {
     let current;
@@ -15,6 +16,8 @@ globalThis.fetch = async (url, options = {}) => {
       controller.enqueue(new TextEncoder().encode('retry: 2000\n\n'));
     }, cancel() { streams.delete(current); } }));
   }
+  ordinaryCalls++;
+  if (timeouts > 0) { timeouts--; throw new DOMException('Synthetic live-query deadline', 'TimeoutError'); }
   const value = { page: [{ text: content }], isDone: true, continueCursor: '' };
   if (hold) {
     requestSignal = options.signal; waiting?.();
@@ -83,6 +86,30 @@ try {
     try { await assert.rejects(c.call(name, args, { timeoutMs: 10 }), error => error.name === 'TimeoutError'); }
     finally { release(); hold = null; waiting = null; c.close(); }
     return { protectionPassed: true };
+  });
+  await check('An initial query deadline retries while the change stream stays connected', async () => {
+    const c = client(); const stop = c.subscribeConnection(() => {});
+    await until(() => c.connectionSnapshot() === 'connected');
+    const before = ordinaryCalls; timeouts = 1;
+    const off = c.subscribe(name, args, () => {});
+    await delay(30); assert.equal(c.snapshot(name, args).loaded, false);
+    await until(() => c.snapshot(name, args).loaded);
+    assert.equal(c.connectionSnapshot(), 'connected'); assert.equal(ordinaryCalls - before, 2);
+    off(); stop(); c.close(); return { protectionPassed: true, transportAttempts: 2 };
+  });
+  await check('Idle, invalidation and close each cancel scheduled query retries', async () => {
+    for (const teardown of ['idle', 'invalidate', 'close']) {
+      const c = client(); const stop = c.subscribeConnection(() => {});
+      await until(() => c.connectionSnapshot() === 'connected');
+      const before = ordinaryCalls; timeouts = 1;
+      const off = c.subscribe(name, args, () => {}); await delay(30);
+      if (teardown === 'idle') off();
+      else if (teardown === 'invalidate') c.clearChatCache();
+      else c.close();
+      await delay(550); assert.equal(ordinaryCalls - before, 1, teardown);
+      off(); stop(); c.close();
+    }
+    return { protectionPassed: true, teardownPaths: 3 };
   });
   await check('Removing the final subscriber cancels its pending request', async () => {
     const c = client(); let release; hold = new Promise(done => { release = done; });

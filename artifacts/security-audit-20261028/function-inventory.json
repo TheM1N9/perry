@@ -247,8 +247,6 @@
       "detail",
       "cwd",
       "paths",
-      "cwdVerified",
-      "pathsVerified",
       "amendment",
       "conversationId"
     ]
@@ -5543,13 +5541,6 @@
       "prompt",
       "goalId"
     ]
-  },
-  {
-    "name": "tasks:reconcileMissingChats",
-    "kind": "mutation",
-    "visibility": "internal",
-    "authMarkers": [],
-    "args": []
   },
   {
     "name": "tasks:resume",

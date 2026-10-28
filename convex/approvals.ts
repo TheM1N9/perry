@@ -113,6 +113,8 @@ function commonFolder(paths: string[]): string | undefined {
   }
   // C:/Users/me is three parts, and so is /home/me with its empty root.
   if (shared.length < 3) return undefined;
+  // //server/share is the network equivalent of a drive root.
+  if (normalized[0]?.startsWith("//") && shared.length <= 4) return undefined;
   const folder = shared.join("/");
   return windows ? folder.replace(/\//g, "\\") : folder;
 }

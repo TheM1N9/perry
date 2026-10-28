@@ -55,9 +55,12 @@ export async function openChat(base: string, dashboardKey: string) {
   ], { stdio: "ignore" });
   let closed = false;
   let socket: WebSocket | undefined;
+  const waiting = new Map<number, { settle: (message: CdpMessage) => void; fail: (error: Error) => void }>();
   const close = () => {
     if (closed) return;
     closed = true;
+    for (const pending of waiting.values()) pending.fail(new Error("Chrome connection closed."));
+    waiting.clear();
     socket?.close();
     process.off("exit", close);
     closeChrome(chrome, profile);
@@ -67,35 +70,47 @@ export async function openChat(base: string, dashboardKey: string) {
 
   let targets: Array<{ type: string; webSocketDebuggerUrl: string }> = [];
   for (let i = 0; i < 50 && !targets.some((target) => target.type === "page"); i++) {
-    try { targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as typeof targets; } catch {}
+    try { targets = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1000) })).json() as typeof targets; } catch {}
     await sleep(200);
   }
   const page = targets.find((target) => target.type === "page");
   if (!page) { close(); throw new Error("Chrome did not open a page."); }
   const ws = socket = new WebSocket(page.webSocketDebuggerUrl);
-  await new Promise((resolve) => ws.addEventListener("open", resolve, { once: true }));
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const done = (error?: Error) => { clearTimeout(timer); ws.removeEventListener("open", opened); ws.removeEventListener("error", failed); error ? reject(error) : resolve(); };
+      const opened = () => done();
+      const failed = () => done(new Error("Chrome connection failed."));
+      const timer = setTimeout(() => done(new Error("Chrome connection timed out.")), 10_000);
+      ws.addEventListener("open", opened, { once: true });
+      ws.addEventListener("error", failed, { once: true });
+    });
+  } catch (error) { close(); throw error; }
 
   let nextId = 0;
-  const waiting = new Map<number, (message: CdpMessage) => void>();
   const errors: string[] = [];
   ws.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data)) as CdpMessage;
     if (message.id && waiting.has(message.id)) {
-      waiting.get(message.id)!(message);
-      waiting.delete(message.id);
+      waiting.get(message.id)!.settle(message);
     }
     if (message.method === "Runtime.exceptionThrown") {
       errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
     }
   });
-  const send = (method: string, params: object = {}): Promise<any> => new Promise((resolve, reject) => {
+  ws.addEventListener("close", close, { once: true });
+  const send = (method: string, params: object = {}, timeoutMs = 45_000): Promise<any> => new Promise((resolve, reject) => {
+    if (closed || ws.readyState !== WebSocket.OPEN) { reject(new Error("Chrome connection closed.")); return; }
     const id = ++nextId;
-    waiting.set(id, (message) => message.error ? reject(new Error(`${method}: ${message.error.message}`)) : resolve(message.result));
-    ws.send(JSON.stringify({ id, method, params }));
+    const finish = (error?: Error, result?: unknown) => { clearTimeout(timer); waiting.delete(id); error ? reject(error) : resolve(result); };
+    const timer = setTimeout(() => finish(new Error(`${method} timed out.`)), timeoutMs);
+    waiting.set(id, { settle: message => finish(message.error ? new Error(`${method}: ${message.error.message}`) : undefined, message.result), fail: error => finish(error) });
+    try { ws.send(JSON.stringify({ id, method, params })); }
+    catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
   });
   /** Run an expression in the page and return its (JSON) value. */
-  const evaluate = async (expression: string): Promise<any> => {
-    const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+  const evaluate = async (expression: string, timeoutMs?: number): Promise<any> => {
+    const result = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, timeoutMs);
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
     return result.result.value;
   };
@@ -122,8 +137,9 @@ export async function openChat(base: string, dashboardKey: string) {
       close,
     };
   } catch (error) {
-    const page = await evaluate(`JSON.stringify({ url: location.href, text: document.body.innerText.slice(0, 1500) })`).catch(() => "Page unavailable");
-    close();
+    let page = "Page unavailable";
+    try { page = await evaluate(`JSON.stringify({ url: location.href, text: document.body.innerText.slice(0, 1500) })`, 2000).catch(() => "Page unavailable"); }
+    finally { close(); }
     throw new Error(`${String(error)}; browser errors: ${JSON.stringify(errors)}; page: ${page}`);
   }
 }

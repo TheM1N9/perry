@@ -2,3 +2,10 @@
 /client-result.json
 /lifecycle-result.json
 /deployment/result.json
+/function-inventory-result.json
+/indexes-result.json
+/baseline-replay-result.json
+/baseline-function-inventory-result.json
+/baseline-indexes-result.json
+/baseline-client-replay-result.json
+/baseline-lifecycle-replay-result.json

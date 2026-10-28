@@ -1,8 +1,8 @@
 // Read failure-cases.md before extending this audit replay.
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, rmdirSync, symlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 import { spawn } from 'node:child_process';
@@ -84,7 +84,7 @@ try {
     .filter(([, def]) => def?.perryFunction).map(([name, def]) => ({ name: `${module}:${name}`, kind: def.kind, visibility: def.visibility,
       authMarkers: ['assertDashboardKey', 'authenticate', 'ownedTurn', 'recordSession', 'asRunner'].filter(marker => def.handler.toString().includes(marker)),
       args: Object.keys(def.args?.fields ?? def.args ?? {}) })));
-  writeFileSync(join(out, 'function-inventory.json'), JSON.stringify(definitions, null, 2) + '\n');
+  writeFileSync(join(out, 'function-inventory-result.json'), JSON.stringify(definitions, null, 2) + '\n');
   await internal('installation:ensure');
   await internal('installation:setDefaultEngine', { engine: 'codex' });
   const runnerId = await internal('runner:createToken', { name: 'Synthetic runner', token: runnerToken });
@@ -190,6 +190,17 @@ try {
     assert.equal(response.status, 200);
     return { protectionPassed: true, rejectedStatus: 413, retryStatus: 200 };
   });
+  await check('A large-upload stream may finish beyond the JSON body deadline', async () => {
+    const upload = (await owner('dashboard:generateUploadUrl')).body.value;
+    let timer;
+    const stream = new ReadableStream({ start(controller) {
+      timer = setTimeout(() => { controller.enqueue(new TextEncoder().encode('slow synthetic upload')); controller.close(); }, 31_000);
+    }, cancel() { clearTimeout(timer); } });
+    const request = new NextRequest(base + upload, { method: 'POST', body: stream, duplex: 'half' });
+    try { assert.equal((await uploadRoute.POST(request)).status, 200); }
+    finally { clearTimeout(timer); }
+    return { protectionPassed: true, nativeDelayMs: 31_000 };
+  });
   await check('Invalid uploads are rejected before consuming the body', async () => {
     let consumed = false;
     const request = { nextUrl: new URL(base + '/api/backend/storage/upload?ticket=invalid'), headers: new Headers(),
@@ -240,6 +251,49 @@ try {
     await rt.exclusive(() => rt.store.delete(ruleId));
     return { protectionPassed: true, traversalDecision: row.status, unverifiedDecision: 'ask', verifiedDecision: 'run', siblingControl: 'ask', fileWritesPerformed: false };
   });
+  await check('Network-share approvals require a subdirectory', async () => {
+    const root = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'share-root control', paths: ['\\\\synthetic-server\\share\\file.txt'], pathsVerified: true });
+    const narrow = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'share-directory control', paths: ['\\\\synthetic-server\\share\\project\\file.txt'], pathsVerified: true });
+    const rows = await rt.exclusive(() => [rt.store.get(root.body.value.id), rt.store.get(narrow.body.value.id)]);
+    assert.equal(rows[0].alwaysAllow, undefined);
+    assert.equal(rows[1].alwaysAllow.pathPrefix.replaceAll('\\', '/'), '//synthetic-server/share/project');
+    return { protectionPassed: true, shareRootOffered: false, subdirectoryOffered: true };
+  });
+  await check('Runner filesystem resolution refuses symlink-parent ambiguity', async () => {
+    const { approvalPath } = await import('../../runner/approval-path.ts');
+    const allowed = join(scratch, 'allowed'); const outside = join(scratch, 'outside');
+    mkdirSync(allowed); mkdirSync(join(outside, 'deep'), { recursive: true });
+    symlinkSync(join(outside, 'deep'), join(allowed, 'link'), process.platform === 'win32' ? 'junction' : 'dir');
+    const rule = await rt.exclusive(() => rt.store.insert('approvalRules', { runnerId, kind: 'file', pathPrefix: allowed, uses: 0, createdAt: Date.now() }));
+    try {
+      const raw = join(allowed, 'link') + sep + '..' + sep + 'secret';
+      assert.equal(approvalPath(raw), undefined);
+      const canonical = approvalPath(join(allowed, 'link', 'new-file'));
+      assert.equal(canonical, join(approvalPath(join(outside, 'deep')), 'new-file'));
+      const ambiguous = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'ambiguous path control', paths: [raw], pathsVerified: false });
+      const escaped = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'canonical outside control', paths: [canonical], pathsVerified: true });
+      const inside = approvalPath(join(allowed, 'new-file'));
+      const accepted = await post('approvals:request', { token: runnerToken, kind: 'file', title: 'canonical inside control', paths: [inside], pathsVerified: true });
+      assert.equal(ambiguous.body.value.next, 'ask'); assert.equal(escaped.body.value.next, 'ask'); assert.equal(accepted.body.value.next, 'run');
+      return { protectionPassed: true, actualFilesystemLink: true, ambiguousDecision: 'ask', outsideDecision: 'ask', insideDecision: 'run' };
+    } finally { await rt.exclusive(() => rt.store.delete(rule)); }
+  });
+  await check('A lost write acknowledgement exposes an unknown outcome without replay', async () => {
+    const { BackendClient, WriteOutcomeUnknownError } = await import('../../client/backend.ts');
+    const client = new BackendClient(base); let sent = 0;
+    const before = await rt.exclusive(() => rt.store.all('conversations').length);
+    const previous = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      const response = await previous(url, options); sent++;
+      assert.equal(response.status, 200); await response.arrayBuffer();
+      throw new DOMException('Synthetic response lost after commit', 'TimeoutError');
+    };
+    try { await assert.rejects(client.mutation('dashboard:createChat', { key }), error => error instanceof WriteOutcomeUnknownError && error.outcome === 'unknown'); }
+    finally { globalThis.fetch = previous; client.close(); }
+    assert.equal(sent, 1);
+    assert.equal(await rt.exclusive(() => rt.store.all('conversations').length), before + 1);
+    return { protectionPassed: true, committedWrites: 1, transportAttempts: sent, reportedOutcome: 'unknown' };
+  });
   await check('Concurrent owner approval decisions have one winner', async () => {
     const asked = (await post('approvals:request', { token: runnerToken, kind: 'command', title: 'echo synthetic', conversationId: chatId })).body.value;
     const results = await Promise.all([true, false].map(approved => owner('approvals:decide', { id: asked.id, approved })));
@@ -280,10 +334,11 @@ try {
     const plans = Object.fromEntries(Object.entries(queries).map(([name, query]) => [name, sql.prepare('EXPLAIN QUERY PLAN ' + query).all()]));
     assert(Object.values(plans).every(rows => rows.some(row => /USING INDEX/.test(row.detail))));
     const uploadCleanupPlan = sql.prepare('EXPLAIN QUERY PLAN DELETE FROM _uploads WHERE ticket = ? OR expiresAt < ?').all('synthetic', Date.now());
-    writeFileSync(join(out, 'indexes.json'), JSON.stringify({ indexes, queries, plans, uploadCleanupPlan, pragmas: { journalMode: sql.prepare('PRAGMA journal_mode').get(), synchronous: sql.prepare('PRAGMA synchronous').get() } }, null, 2) + '\n');
+    writeFileSync(join(out, 'indexes-result.json'), JSON.stringify({ indexes, queries, plans, uploadCleanupPlan, pragmas: { journalMode: sql.prepare('PRAGMA journal_mode').get(), synchronous: sql.prepare('PRAGMA synchronous').get() } }, null, 2) + '\n');
     return { protectionPassed: true, generatedIndexCount: indexes.length, plans };
   });
   await check('Chat deletion rollback preserves metadata and stored file bytes', async () => {
+    await rt.exclusive(() => sql.exec('DELETE FROM _scheduled'));
     const id = (await owner('dashboard:createChat')).body.value;
     const fileId = await rt.storeFile(new Blob(['synthetic rollback bytes'], { type: 'text/plain' }));
     const attachmentId = await rt.exclusive(() => rt.store.insert('chatAttachments', { conversationId: id, messageKey: 'rollback', storageId: fileId,
@@ -303,6 +358,7 @@ try {
     let response;
     try { response = await owner('dashboard:deleteChat', { id }); }
     finally { definition.handler = originalHandler; await tick; await rt.stop(); }
+    assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM _scheduled').get().n, 0);
     assert.equal(response.status, 500);
     assert(await rt.exclusive(() => rt.store.get(id))); assert(await rt.exclusive(() => rt.store.get(attachmentId)));
     assert(await rt.fileInfo(fileId)); assert.equal(existsSync(join(home, 'storage', fileId)), true);
@@ -326,6 +382,59 @@ try {
     assert.equal(existsSync(join(home, 'storage', fileId)), false);
     assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM _file_deletions WHERE id = ?').get(fileId).n, 0);
     return { protectionPassed: true, durableUnlinkRecovered: true };
+  });
+  await check('Action storage deletion rolls back if its tombstone cannot be inserted', async () => {
+    const id = await rt.storeFile(new Blob(['action-delete-fixture']));
+    rt.registry.set('security:deleteStoredFile', { perryFunction: true, kind: 'action', visibility: 'internal', handler: (ctx, args) => ctx.storage.delete(args.id) });
+    await rt.exclusive(() => sql.exec("CREATE TEMP TRIGGER synthetic_fail_tombstone BEFORE INSERT ON _file_deletions BEGIN SELECT RAISE(ABORT, 'synthetic tombstone failure'); END"));
+    try { await assert.rejects(rt.runAction('security:deleteStoredFile', { id }, { internal: true }), /synthetic tombstone failure/); }
+    finally { await rt.exclusive(() => sql.exec('DROP TRIGGER synthetic_fail_tombstone')); }
+    assert(await rt.fileInfo(id)); assert.equal(existsSync(join(home, 'storage', id)), true);
+    await rt.runAction('security:deleteStoredFile', { id }, { internal: true });
+    assert.equal(await rt.fileInfo(id), null); assert.equal(existsSync(join(home, 'storage', id)), false);
+    return { protectionPassed: true, rollbackPreservedFile: true, successfulRetryDeletedFile: true };
+  });
+  await check('Repeated unlink failures do not starve later files', async () => {
+    const blocked = Array.from({ length: 100 }, (_, i) => 'blocked-' + String(i).padStart(8, '0'));
+    try {
+      await rt.exclusive(() => {
+        for (const [index, id] of blocked.entries()) {
+          mkdirSync(join(home, 'storage', id));
+          sql.prepare('INSERT INTO _file_deletions (id, createdAt) VALUES (?, ?)').run(id, index);
+        }
+      });
+      const id = await rt.storeFile(new Blob(['removable-file']));
+      await rt.runAction('security:deleteStoredFile', { id }, { internal: true });
+      assert.equal(existsSync(join(home, 'storage', id)), true);
+      await rt.exclusive(() => rt.collectDeletedFiles());
+      assert.equal(existsSync(join(home, 'storage', id)), false);
+      return { protectionPassed: true, blockedEntries: 100, laterFileRemoved: true };
+    } finally {
+      for (const id of blocked) if (existsSync(join(home, 'storage', id))) rmdirSync(join(home, 'storage', id));
+      await rt.exclusive(() => rt.collectDeletedFiles());
+    }
+  });
+  await check('File import serializes bytes and metadata with pending cleanup', async () => {
+    for (const sweepFirst of [false, true]) {
+      const id = await rt.storeFile(new Blob(['old import bytes']));
+      await rt.exclusive(() => rt.deleteFileInTx(id));
+      rmSync(join(home, 'storage', id));
+      let release; let entered;
+      const ready = new Promise(done => { entered = done; });
+      const blocker = rt.exclusive(() => { entered(); return new Promise(done => { release = done; }); });
+      await ready;
+      const sweep = () => rt.exclusive(() => rt.collectDeletedFiles());
+      const operations = [];
+      try {
+        if (sweepFirst) operations.push(sweep());
+        operations.push(rt.importFile(id, Buffer.from('restored import bytes'), 'text/plain', Date.now()));
+        assert.equal(existsSync(join(home, 'storage', id)), false);
+        if (!sweepFirst) operations.push(sweep());
+      } finally { release(); await blocker; await Promise.all(operations); }
+      assert(await rt.fileInfo(id));
+      assert.equal(readFileSync(join(home, 'storage', id), 'utf8'), 'restored import bytes');
+    }
+    return { protectionPassed: true, importFirstAndSweepFirstPassed: true, noFilesystemWriteBeforeQueue: true };
   });
   await check('Public fetch refuses private, loopback, mapped and reserved destinations', async () => {
     const { fetchPublic } = await import('../../convex/web.ts');

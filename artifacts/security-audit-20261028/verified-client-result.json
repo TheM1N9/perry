@@ -30,6 +30,18 @@
       "protectionPassed": true
     },
     {
+      "name": "An initial query deadline retries while the change stream stays connected",
+      "completed": true,
+      "protectionPassed": true,
+      "transportAttempts": 2
+    },
+    {
+      "name": "Idle, invalidation and close each cancel scheduled query retries",
+      "completed": true,
+      "protectionPassed": true,
+      "teardownPaths": 3
+    },
+    {
       "name": "Removing the final subscriber cancels its pending request",
       "completed": true,
       "protectionPassed": true

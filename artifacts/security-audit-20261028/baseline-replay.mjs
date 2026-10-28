@@ -42,7 +42,7 @@ const [callRoute, adminRoute, uploadRoute, storageRoute, eventsRoute] = await Pr
 const checks = [];
 const report = { commit: '75a07880cae2a29022960b61b8fa4057f6caab70', environment: { node: process.version, platform: process.platform },
   scope: 'Real application HTTP handlers and SQLite behind a loopback adapter; not Next.js deployment or provider E2E', checks };
-const save = () => writeFileSync(join(out, 'result.json'), JSON.stringify(report, null, 2) + '\n');
+const save = () => writeFileSync(join(out, 'baseline-replay-result.json'), JSON.stringify(report, null, 2) + '\n');
 async function check(name, work) {
   try { const evidence = await work(); checks.push({ name, completed: true, ...evidence }); }
   catch (error) { checks.push({ name, completed: false, error: String(error) }); }
@@ -84,7 +84,7 @@ try {
     .filter(([, def]) => def?.perryFunction).map(([name, def]) => ({ name: `${module}:${name}`, kind: def.kind, visibility: def.visibility,
       authMarkers: ['assertDashboardKey', 'authenticate', 'ownedTurn', 'recordSession', 'asRunner'].filter(marker => def.handler.toString().includes(marker)),
       args: Object.keys(def.args?.fields ?? def.args ?? {}) })));
-  writeFileSync(join(out, 'function-inventory.json'), JSON.stringify(definitions, null, 2) + '\n');
+  writeFileSync(join(out, 'baseline-function-inventory-result.json'), JSON.stringify(definitions, null, 2) + '\n');
   await internal('installation:ensure');
   await internal('installation:setDefaultEngine', { engine: 'codex' });
   const runnerId = await internal('runner:createToken', { name: 'Synthetic runner', token: runnerToken });
@@ -214,7 +214,7 @@ try {
     const plans = Object.fromEntries(Object.entries(queries).map(([name, query]) => [name, sql.prepare('EXPLAIN QUERY PLAN ' + query).all()]));
     assert(Object.values(plans).every(rows => rows.some(row => /USING INDEX/.test(row.detail))));
     const uploadCleanupPlan = sql.prepare('EXPLAIN QUERY PLAN DELETE FROM _uploads WHERE ticket = ? OR expiresAt < ?').all('synthetic', Date.now());
-    writeFileSync(join(out, 'indexes.json'), JSON.stringify({ indexes, queries, plans, uploadCleanupPlan, pragmas: { journalMode: sql.prepare('PRAGMA journal_mode').get(), synchronous: sql.prepare('PRAGMA synchronous').get() } }, null, 2) + '\n');
+    writeFileSync(join(out, 'baseline-indexes-result.json'), JSON.stringify({ indexes, queries, plans, uploadCleanupPlan, pragmas: { journalMode: sql.prepare('PRAGMA journal_mode').get(), synchronous: sql.prepare('PRAGMA synchronous').get() } }, null, 2) + '\n');
     return { protectionPassed: true, generatedIndexCount: indexes.length, plans };
   });
   await check('Chat deletion rollback restores metadata but loses stored file bytes', async () => {

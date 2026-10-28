@@ -68,6 +68,6 @@ try {
 } finally {
   for (const c of clients) c.close(); globalThis.fetch = originalFetch;
   for (const stream of streams) { try { stream.close(); } catch {} } streams.clear();
-  writeFileSync(new URL('./client-result.json', import.meta.url), JSON.stringify({ completed: checks.every(c => c.completed), scope: 'Real client with synthetic fetch/stream transport', checks }, null, 2) + '\n');
+  writeFileSync(new URL('./baseline-client-replay-result.json', import.meta.url), JSON.stringify({ completed: checks.every(c => c.completed), scope: 'Real client with synthetic fetch/stream transport', checks }, null, 2) + '\n');
 }
 console.log(JSON.stringify(checks, null, 2)); process.exitCode = checks.every(c => c.completed) ? 0 : 1;

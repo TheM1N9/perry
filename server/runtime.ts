@@ -173,7 +173,12 @@ export class Runtime {
         getUrl: async (id: string) => this.urlFor(id),
         getMetadata: (id: string) => this.exclusive(() => this.metadata(id)),
         generateUploadUrl: () => this.exclusive(() => this.uploadUrlInTx()),
-        delete: (id: string) => this.exclusive(() => { this.deleteFileInTx(id); this.collectDeletedFiles(); }),
+        delete: (id: string) => this.exclusive(() => {
+          this.sql.exec("BEGIN IMMEDIATE");
+          try { this.deleteFileInTx(id); this.sql.exec("COMMIT"); }
+          catch (error) { this.sql.exec("ROLLBACK"); throw error; }
+          this.collectDeletedFiles();
+        }),
       },
     };
   }
@@ -421,12 +426,18 @@ export class Runtime {
   private collectDeletedFiles() {
     try {
       const pending = this.sql.prepare("SELECT id FROM _file_deletions ORDER BY createdAt LIMIT 100").all() as Array<{ id: string }>;
+      if (!pending.length) return;
+      const last = this.sql.prepare("SELECT MAX(createdAt) AS at FROM _file_deletions").get() as { at: number };
+      let retryAt = Math.max(Date.now(), last.at) + 1;
       for (const { id } of pending) {
         try {
           // A restored/imported metadata record owns its bytes again.
           if (!this.metadata(id)) rmSync(this.filePath(id), { force: true });
           this.sql.prepare("DELETE FROM _file_deletions WHERE id = ?").run(id);
-        } catch { /* Keep the durable tombstone for the next pass. */ }
+        } catch {
+          // Move failures behind the rest of the queue, including equal timestamps.
+          this.sql.prepare("UPDATE _file_deletions SET createdAt = ? WHERE id = ?").run(retryAt++, id);
+        }
       }
     } catch {
       // Cleanup must never turn a committed mutation into an apparent failure.
@@ -491,10 +502,11 @@ export class Runtime {
   }
 
   async importFile(id: string, bytes: Buffer, contentType: string | undefined, createdAt: number): Promise<void> {
-    if (!existsSync(this.filePath(id))) writeFileSync(this.filePath(id), bytes);
     await this.exclusive(() => {
+      if (!existsSync(this.filePath(id))) writeFileSync(this.filePath(id), bytes);
       this.sql.prepare("INSERT OR IGNORE INTO _storage (id, contentType, size, sha256, createdAt) VALUES (?, ?, ?, ?, ?)")
         .run(id, contentType ?? null, bytes.length, createHash("sha256").update(bytes).digest("base64"), createdAt);
+      this.sql.prepare("DELETE FROM _file_deletions WHERE id = ?").run(id);
     });
   }
 }

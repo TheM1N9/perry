@@ -31,6 +31,13 @@ try {
   await app.openBrowser();
   assert.equal(app.browser()!.errors.length, 0, JSON.stringify(app.browser()!.errors));
   app.check("production dashboard loads in isolated Chrome", true);
+  const browser = app.browser()!;
+  await assert.rejects(browser.evaluate("new Promise(() => {})", 50), /timed out/);
+  const pending = browser.evaluate("new Promise(() => {})");
+  const disconnected = assert.rejects(pending, /connection closed/);
+  await browser.send("Browser.close").catch(() => {});
+  await disconnected;
+  app.check("Chrome deadlines and disconnect settle pending commands", true);
 } catch (error) {
   failure = String(error);
   app.check("deployment acceptance", false, failure);
