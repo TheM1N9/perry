@@ -82,9 +82,12 @@ export class Runtime {
     sql.exec(`CREATE TABLE IF NOT EXISTS _scheduled (id TEXT PRIMARY KEY, name TEXT NOT NULL, args TEXT NOT NULL, runAt REAL NOT NULL, createdAt REAL NOT NULL)`);
     sql.exec(`CREATE INDEX IF NOT EXISTS _scheduled_by_time ON _scheduled (runAt)`);
     sql.exec(`CREATE TABLE IF NOT EXISTS _storage (id TEXT PRIMARY KEY, contentType TEXT, size INTEGER NOT NULL, sha256 TEXT NOT NULL, createdAt REAL NOT NULL)`);
+    sql.exec(`CREATE TABLE IF NOT EXISTS _file_deletions (id TEXT PRIMARY KEY, createdAt REAL NOT NULL)`);
+    sql.exec(`CREATE INDEX IF NOT EXISTS _file_deletions_by_time ON _file_deletions (createdAt)`);
     sql.exec(`CREATE TABLE IF NOT EXISTS _uploads (ticket TEXT PRIMARY KEY, expiresAt REAL NOT NULL)`);
     sql.exec(`CREATE TABLE IF NOT EXISTS _kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
     mkdirSync(options.storageDir, { recursive: true });
+    this.collectDeletedFiles();
     for (const [module, exports] of Object.entries(modules)) {
       for (const [name, value] of Object.entries(exports)) {
         if (isDef(value)) this.registry.set(`${module}:${name}`, value);
@@ -170,7 +173,7 @@ export class Runtime {
         getUrl: async (id: string) => this.urlFor(id),
         getMetadata: (id: string) => this.exclusive(() => this.metadata(id)),
         generateUploadUrl: () => this.exclusive(() => this.uploadUrlInTx()),
-        delete: (id: string) => this.exclusive(() => this.deleteFileInTx(id)),
+        delete: (id: string) => this.exclusive(() => { this.deleteFileInTx(id); this.collectDeletedFiles(); }),
       },
     };
   }
@@ -275,6 +278,7 @@ export class Runtime {
   }
 
   private committed(tx: Tx) {
+    this.collectDeletedFiles();
     if (tx.writes.size) this.events.emit("change", [...tx.writes]);
     if (tx.scheduled) this.wake();
   }
@@ -298,6 +302,8 @@ export class Runtime {
     this.timer = null;
     if (this.stopped) return;
     try {
+      // The sweeper must never see tombstones in another mutation's open transaction.
+      await this.exclusive(() => this.collectDeletedFiles());
       const due = await this.exclusive(() => this.sql.prepare("SELECT id, name, args FROM _scheduled WHERE runAt <= ? ORDER BY runAt LIMIT 100").all(Date.now()) as Array<{ id: string; name: string; args: string }>);
       for (const row of due) {
         const def = this.registry.get(row.name);
@@ -405,8 +411,27 @@ export class Runtime {
   }
 
   private deleteFileInTx(id: string) {
-    this.sql.prepare("DELETE FROM _storage WHERE id = ?").run(id);
-    try { rmSync(this.filePath(id), { force: true }); } catch {}
+    // The tombstone rolls back with the metadata. File bytes change only after commit.
+    const removed = this.sql.prepare("DELETE FROM _storage WHERE id = ?").run(id);
+    if (!Number(removed.changes)) return;
+    this.sql.prepare("INSERT INTO _file_deletions (id, createdAt) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET createdAt = excluded.createdAt").run(id, Date.now());
+  }
+
+  /** Retry interrupted/failed unlinks on startup and scheduler ticks, in bounded batches. */
+  private collectDeletedFiles() {
+    try {
+      const pending = this.sql.prepare("SELECT id FROM _file_deletions ORDER BY createdAt LIMIT 100").all() as Array<{ id: string }>;
+      for (const { id } of pending) {
+        try {
+          // A restored/imported metadata record owns its bytes again.
+          if (!this.metadata(id)) rmSync(this.filePath(id), { force: true });
+          this.sql.prepare("DELETE FROM _file_deletions WHERE id = ?").run(id);
+        } catch { /* Keep the durable tombstone for the next pass. */ }
+      }
+    } catch {
+      // Cleanup must never turn a committed mutation into an apparent failure.
+      console.error("[perry] Stored-file cleanup was deferred; it will retry.");
+    }
   }
 
   /** A one-time address to upload a file to, good for an hour, as Convex's upload URLs are. */
@@ -417,6 +442,11 @@ export class Runtime {
   }
 
   /** Take an upload made to an address from generateUploadUrl; null if the address is unknown or used. */
+  async uploadTicketValid(ticket: string): Promise<boolean> {
+    if (!/^[a-f0-9]{48}$/.test(ticket)) return false;
+    return this.exclusive(() => Boolean(this.sql.prepare("SELECT 1 FROM _uploads WHERE ticket = ? AND expiresAt >= ?").get(ticket, Date.now())));
+  }
+
   async acceptUpload(ticket: string, blob: Blob): Promise<string | null> {
     const valid = await this.exclusive(() => {
       const row = this.sql.prepare("SELECT expiresAt FROM _uploads WHERE ticket = ?").get(ticket) as { expiresAt: number } | undefined;

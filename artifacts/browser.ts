@@ -54,9 +54,12 @@ export async function openChat(base: string, dashboardKey: string) {
     "--window-size=1280,800", "--autoplay-policy=no-user-gesture-required", "about:blank",
   ], { stdio: "ignore" });
   let closed = false;
+  let socket: WebSocket | undefined;
   const close = () => {
     if (closed) return;
     closed = true;
+    socket?.close();
+    process.off("exit", close);
     closeChrome(chrome, profile);
   };
   // A check that throws or exits without closing still leaves no profile behind.
@@ -68,8 +71,8 @@ export async function openChat(base: string, dashboardKey: string) {
     await sleep(200);
   }
   const page = targets.find((target) => target.type === "page");
-  if (!page) throw new Error("Chrome did not open a page.");
-  const ws = new WebSocket(page.webSocketDebuggerUrl);
+  if (!page) { close(); throw new Error("Chrome did not open a page."); }
+  const ws = socket = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((resolve) => ws.addEventListener("open", resolve, { once: true }));
 
   let nextId = 0;
@@ -97,24 +100,30 @@ export async function openChat(base: string, dashboardKey: string) {
     return result.result.value;
   };
 
-  await send("Runtime.enable");
-  await send("Page.enable");
-  await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-  await send("Page.navigate", { url: base });
-  await sleep(1500);
-  await evaluate(`localStorage.setItem("perry.dashboard.key", ${JSON.stringify(dashboardKey)}); localStorage.removeItem("perry.activeChat"); true`);
-  await send("Page.navigate", { url: `${base}/chat` });
-  await evaluate(`new Promise((resolve, reject) => { const start = Date.now(); const tick = () => document.querySelector('input[type=file]') ? resolve(true) : Date.now() - start > 30000 ? reject(new Error('composer never rendered')) : setTimeout(tick, 200); tick(); })`);
-  // The first visit compiles the route in dev and may reload once.
-  await sleep(4000);
-  await evaluate(`new Promise((resolve) => { const tick = () => document.body.innerText.includes('Loading chats') ? setTimeout(tick, 200) : resolve(true); tick(); })`);
+  try {
+    await send("Runtime.enable");
+    await send("Page.enable");
+    await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await send("Page.navigate", { url: base });
+    await sleep(1500);
+    await evaluate(`localStorage.setItem("perry.dashboard.key", ${JSON.stringify(dashboardKey)}); localStorage.removeItem("perry.activeChat"); true`);
+    await send("Page.navigate", { url: `${base}/chat` });
+    await evaluate(`new Promise((resolve, reject) => { const start = Date.now(); const tick = () => document.querySelector('input[type=file]') ? resolve(true) : Date.now() - start > 30000 ? reject(new Error('composer never rendered')) : setTimeout(tick, 200); tick(); })`);
+    // The first visit compiles the route in dev and may reload once.
+    await sleep(4000);
+    await evaluate(`new Promise((resolve) => { const tick = () => document.body.innerText.includes('Loading chats') ? setTimeout(tick, 200) : resolve(true); tick(); })`);
 
-  return {
-    evaluate,
-    send,
-    errors,
-    /** Its DevTools port, for its list of pages. */
-    port,
-    close: () => { ws.close(); close(); },
-  };
+    return {
+      evaluate,
+      send,
+      errors,
+      /** Its DevTools port, for its list of pages. */
+      port,
+      close,
+    };
+  } catch (error) {
+    const page = await evaluate(`JSON.stringify({ url: location.href, text: document.body.innerText.slice(0, 1500) })`).catch(() => "Page unavailable");
+    close();
+    throw new Error(`${String(error)}; browser errors: ${JSON.stringify(errors)}; page: ${page}`);
+  }
 }

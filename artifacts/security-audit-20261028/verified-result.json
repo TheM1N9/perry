@@ -1,0 +1,217 @@
+{
+  "baselineCommit": "75a07880cae2a29022960b61b8fa4057f6caab70",
+  "checkedAt": "2026-10-28T09:11:11.647Z",
+  "environment": {
+    "node": "v25.8.2",
+    "platform": "win32"
+  },
+  "scope": "Real application HTTP handlers and SQLite behind a loopback adapter; not Next.js deployment or provider E2E",
+  "checks": [
+    {
+      "name": "HTTP authorization and internal visibility",
+      "completed": true,
+      "protectionPassed": true,
+      "wrongDashboardStatus": 401
+    },
+    {
+      "name": "Malformed calls and foreign browser origins are rejected",
+      "completed": true,
+      "protectionPassed": true
+    },
+    {
+      "name": "Backend JSON streaming is capped without Content-Length",
+      "completed": true,
+      "protectionPassed": true,
+      "rejectedStatus": 413
+    },
+    {
+      "name": "Backend admission is bounded and aborted requests release capacity",
+      "completed": true,
+      "protectionPassed": true,
+      "concurrentLimit": 16
+    },
+    {
+      "name": "One-use upload capability rejects concurrent replay",
+      "completed": true,
+      "protectionPassed": true,
+      "statuses": [
+        200,
+        403
+      ]
+    },
+    {
+      "name": "Stored HTML downloads without dashboard-origin script execution",
+      "completed": true,
+      "protectionPassed": true,
+      "anonymousStatus": 200,
+      "headers": {
+        "accept-ranges": "bytes",
+        "cache-control": "private, max-age=3600",
+        "connection": "keep-alive",
+        "content-disposition": "attachment; filename*=UTF-8''c0999cec6a94f9dac45d78b6af6706db",
+        "content-length": "206",
+        "content-security-policy": "sandbox; default-src 'none'; media-src 'self'; style-src 'unsafe-inline'",
+        "content-type": "application/octet-stream",
+        "date": "Wed, 28 Oct 2026 09:11:11 GMT",
+        "keep-alive": "timeout=5",
+        "x-content-type-options": "nosniff"
+      },
+      "syntheticKeyReadableInChrome": false
+    },
+    {
+      "name": "Active MIME variants download while media retains byte-range support",
+      "completed": true,
+      "protectionPassed": true,
+      "activeVariants": 4,
+      "mediaRanges": true
+    },
+    {
+      "name": "Oversized declared uploads do not consume their one-use capability",
+      "completed": true,
+      "protectionPassed": true,
+      "rejectedStatus": 413,
+      "retryStatus": 200
+    },
+    {
+      "name": "Invalid uploads are rejected before consuming the body",
+      "completed": true,
+      "protectionPassed": true,
+      "bytesInProbe": 3,
+      "rejectedStatus": 403,
+      "bodyReadBeforeRejection": false
+    },
+    {
+      "name": "SSE connections are bounded and ordinary cancellation cleans up",
+      "completed": true,
+      "protectionPassed": true,
+      "maximumListeners": 32,
+      "ordinaryCancelCleanupPassed": true
+    },
+    {
+      "name": "An already-aborted SSE request attaches no resources",
+      "completed": true,
+      "protectionPassed": true,
+      "retainedListenersAfterPriorAbort": 0
+    },
+    {
+      "name": "An unread SSE stream cannot accumulate an unbounded buffer",
+      "completed": true,
+      "protectionPassed": true,
+      "bufferedBytes": 65526,
+      "maximumBytes": 65536
+    },
+    {
+      "name": "File approval rules reject traversal and unverified paths",
+      "completed": true,
+      "protectionPassed": true,
+      "traversalDecision": "pending",
+      "unverifiedDecision": "ask",
+      "verifiedDecision": "run",
+      "siblingControl": "ask",
+      "fileWritesPerformed": false
+    },
+    {
+      "name": "Concurrent owner approval decisions have one winner",
+      "completed": true,
+      "protectionPassed": true,
+      "winners": 1
+    },
+    {
+      "name": "Concurrent note saves reject a stale revision",
+      "completed": true,
+      "protectionPassed": true,
+      "winners": 1
+    },
+    {
+      "name": "Atomic runner turn claim has one winner",
+      "completed": true,
+      "protectionPassed": true,
+      "winners": 1
+    },
+    {
+      "name": "Pet pairing is one-use and device removal revokes its key",
+      "completed": true,
+      "protectionPassed": true
+    },
+    {
+      "name": "Generated SQLite indexes and query plans",
+      "completed": true,
+      "protectionPassed": true,
+      "generatedIndexCount": 140,
+      "plans": {
+        "runnerLookup": [
+          {
+            "id": 5,
+            "parent": 0,
+            "notused": 61,
+            "detail": "SEARCH doc_runners USING INDEX i_runners_by_token (<expr>=?)"
+          },
+          {
+            "id": 23,
+            "parent": 0,
+            "notused": 0,
+            "detail": "USE TEMP B-TREE FOR ORDER BY"
+          }
+        ],
+        "turnQueue": [
+          {
+            "id": 5,
+            "parent": 0,
+            "notused": 61,
+            "detail": "SEARCH doc_codexTurns USING INDEX i_codexTurns_by_runner_status (<expr>=? AND <expr>=?)"
+          },
+          {
+            "id": 25,
+            "parent": 0,
+            "notused": 0,
+            "detail": "USE TEMP B-TREE FOR ORDER BY"
+          }
+        ],
+        "scheduler": [
+          {
+            "id": 5,
+            "parent": 0,
+            "notused": 203,
+            "detail": "SEARCH _scheduled USING INDEX _scheduled_by_time (runAt<?)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Chat deletion rollback preserves metadata and stored file bytes",
+      "completed": true,
+      "protectionPassed": true,
+      "databaseRowsRolledBack": true,
+      "metadataRestored": true,
+      "fileBytesLost": false,
+      "concurrentSweeperWaited": true,
+      "injectedFailure": "Disposable delete-chat handler before commit only"
+    },
+    {
+      "name": "An interrupted post-commit unlink is recovered on Runtime restart",
+      "completed": true,
+      "protectionPassed": true,
+      "durableUnlinkRecovered": true
+    },
+    {
+      "name": "Public fetch refuses private, loopback, mapped and reserved destinations",
+      "completed": true,
+      "protectionPassed": true,
+      "refused": [
+        "http://127.0.0.1/",
+        "http://localhost/",
+        "http://10.0.0.1/",
+        "http://169.254.169.254/",
+        "http://[::1]/",
+        "http://[::ffff:127.0.0.1]/",
+        "http://2130706433/",
+        "http://0x7f000001/",
+        "file:///synthetic",
+        "http://user:pass@example.com/"
+      ],
+      "limitation": "No DNS-rebinding or browser-fallback network replay"
+    }
+  ],
+  "fixtureRemoved": true,
+  "completed": true
+}

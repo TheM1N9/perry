@@ -1,0 +1,14 @@
+{
+  "ranAt": "2026-10-28T09:12:12.548Z",
+  "scope": "Compiled Next server and isolated Chrome; synthetic account, no runner or model",
+  "checks": {
+    "production dashboard security headers": true,
+    "compiled storage route forces active documents to download": true,
+    "production dashboard loads in isolated Chrome": true
+  },
+  "notes": {
+    "runnerLog": [],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}

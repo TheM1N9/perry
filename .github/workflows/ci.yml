@@ -34,6 +34,18 @@ jobs:
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec node --experimental-strip-types artifacts/pr-300/stream-integration.mjs
       - run: pnpm exec node artifacts/pr-300/file-render-integration.mjs
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/security-audit-20261028/run.mjs
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/security-audit-20261028/client-replay.mjs
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/security-audit-20261028/loader.mjs artifacts/security-audit-20261028/lifecycle-replay.mjs
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-remediation-${{ runner.os }}
+          path: |
+            artifacts/security-audit-20261028/result.json
+            artifacts/security-audit-20261028/client-result.json
+            artifacts/security-audit-20261028/lifecycle-result.json
+          if-no-files-found: ignore
       - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/orphan-tasks/run.mjs
       - if: always()
         uses: actions/upload-artifact@v4

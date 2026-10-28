@@ -1,0 +1,38 @@
+{
+  "completed": true,
+  "scope": "Real client with synthetic fetch/stream transport",
+  "checks": [
+    {
+      "name": "Vault invalidation removes old active history and loads redacted content",
+      "completed": true,
+      "protectionPassed": true
+    },
+    {
+      "name": "Lock invalidation prevents late history response from repopulating cache",
+      "completed": true,
+      "protectionPassed": true
+    },
+    {
+      "name": "Reconnect refreshes subscribed history after missed changes",
+      "completed": true,
+      "protectionPassed": true
+    },
+    {
+      "name": "Client close aborts its pending ordinary backend fetch",
+      "completed": true,
+      "protectionPassed": true,
+      "abortSignalSupplied": true,
+      "pendingFetchAborted": true
+    },
+    {
+      "name": "A bounded backend deadline rejects a stalled request",
+      "completed": true,
+      "protectionPassed": true
+    },
+    {
+      "name": "Removing the final subscriber cancels its pending request",
+      "completed": true,
+      "protectionPassed": true
+    }
+  ]
+}

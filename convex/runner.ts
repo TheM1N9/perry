@@ -3,6 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation } from "./_generated/server";
 import { vPolicy } from "./schema";
 import { heartbeatActiveTurns } from "./lib/turn-health";
+import { AuthenticationError } from "./lib/auth";
 
 /**
  * The protocol between Assistant and a machine the owner has connected.
@@ -37,7 +38,7 @@ export async function authenticate(
     .unique();
 
   if (!runner || runner.revoked || !sameToken(runner.token, token)) {
-    throw new Error("This runner token is not valid. Run `pnpm run connect` again.");
+    throw new AuthenticationError("This runner token is not valid. Run `pnpm run connect` again.");
   }
   return runner;
 }

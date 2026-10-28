@@ -10,6 +10,27 @@ const config: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "100.*.*.*", "**.ts.net"],
   // WhatsApp's client (server/whatsapp.ts) is loaded by Node as it ships, not bundled.
   serverExternalPackages: ["baileys", "qrcode"],
+  poweredByHeader: false,
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+      {
+        // Media/PDF API responses must remain embeddable by Perry's own file viewer.
+        source: "/((?!api/).*)",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'; object-src 'none'; base-uri 'self'" },
+        ],
+      },
+    ];
+  },
   // Pages that moved when the dashboard was rebuilt, and again when Settings
   // took sections; old links and bookmarks still land. A query goes along, so
   // /activity?session=…, /skills?skill=… and Composio's way back to

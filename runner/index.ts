@@ -47,10 +47,10 @@ import { createReplyStream, streamFlushMs } from "./stream-reply";
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import { hostname, platform } from "node:os";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { BackendClient } from "../client/backend";
@@ -140,6 +140,28 @@ function denied(command: string): string | null {
     if (rule.pattern.test(command)) return rule.why;
   }
   return null;
+}
+
+/** Resolve existing symlinks/junctions, including the parent of a file not created yet. */
+function approvalPath(file: string, cwd?: string): string | undefined {
+  if (!isAbsolute(file) && (!cwd || !isAbsolute(cwd))) return undefined;
+  let candidate = resolve(cwd ?? ".", file);
+  const missing: string[] = [];
+  while (true) {
+    try { return join(realpathSync.native(candidate), ...missing); }
+    catch (error) {
+      if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT") return undefined;
+      // A dangling symlink exists even though realpath fails; it is not a new directory.
+      try { lstatSync(candidate); return undefined; }
+      catch (missingError) {
+        if (!missingError || typeof missingError !== "object" || !("code" in missingError) || missingError.code !== "ENOENT") return undefined;
+      }
+      const parent = dirname(candidate);
+      if (parent === candidate) return undefined;
+      missing.unshift(basename(candidate));
+      candidate = parent;
+    }
+  }
 }
 
 // --- Config --------------------------------------------------------------
@@ -500,13 +522,18 @@ async function main() {
    * `conversationId` is the chat that asked, whose access decides.
    */
   const approve = async (request: Request, conversationId?: Id<"conversations">, engine?: EngineKind): Promise<boolean> => {
+    const cwd = request.cwd ? approvalPath(request.cwd) : undefined;
+    const paths = request.paths?.map(path => approvalPath(path, request.cwd ? cwd : workdir));
+    const pathsVerified = Boolean(paths?.length && paths.every(path => path !== undefined));
     const { id, next } = await client.mutation(api.approvals.request, {
       token,
       kind: request.kind,
       title: request.what,
       detail: request.detail ?? undefined,
-      cwd: request.cwd,
-      paths: request.paths,
+      cwd: cwd ?? request.cwd,
+      paths: pathsVerified ? paths as string[] : request.paths,
+      cwdVerified: Boolean(cwd),
+      pathsVerified,
       amendment: request.amendment,
       conversationId,
     });

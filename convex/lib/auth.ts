@@ -11,6 +11,14 @@
  * Auth, and every function already has the check in the right place.
  */
 
+/** Expected authentication failures do not become server errors or stack-trace logs. */
+export class AuthenticationError extends Error {
+  constructor(message: string, readonly status: 401 | 503 = 401) {
+    super(message);
+    this.name = "AuthenticationError";
+  }
+}
+
 /** Constant time, so the key cannot be recovered a character at a time. */
 function matches(provided: string, expected: string): boolean {
   if (provided.length !== expected.length) return false;
@@ -25,13 +33,13 @@ export function assertDashboardKey(key: string): void {
   const expected = process.env.DASHBOARD_KEY;
 
   if (!expected) {
-    throw new Error(
+    throw new AuthenticationError(
       "DASHBOARD_KEY is not set on this deployment, so the dashboard is " +
-        "closed. Run: pnpm exec convex env set DASHBOARD_KEY <a long random string>",
+        "closed. Run: perry setup", 503,
     );
   }
 
   if (!matches(key, expected)) {
-    throw new Error("Wrong dashboard key.");
+    throw new AuthenticationError("Wrong dashboard key.");
   }
 }

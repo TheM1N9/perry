@@ -84,17 +84,19 @@ async function call(
   body: object | FormData,
   signal?: AbortSignal,
 ): Promise<unknown> {
+  const overall = AbortSignal.any([AbortSignal.timeout(120_000), ...(signal ? [signal] : [])]);
   for (let attempt = 0; ; attempt++) {
+    const attemptSignal = AbortSignal.any([overall, AbortSignal.timeout(30_000)]);
     const res = await fetch(`${api()}/bot${requireToken(token)}/${method}`, body instanceof FormData
-      ? { method: "POST", body, signal }
-      : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
+      ? { method: "POST", body, signal: attemptSignal }
+      : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: attemptSignal });
     const parsed = await parseResponseBody(res);
     const json: ApiResponse = parsed && typeof parsed === "object" ? parsed : { description: String(parsed ?? res.status) };
     if (json.ok) return json.result;
     const code = json.error_code ?? res.status;
     const wait = json.parameters?.retry_after;
     if (code === 429 && wait !== undefined && wait <= MAX_RETRY_AFTER_S && attempt < MAX_RETRIES) {
-      await waitForRetry(wait * 1000, undefined, { signal });
+      await waitForRetry(wait * 1000, undefined, { signal: overall });
       continue;
     }
     throw new TelegramError(method, code, json.description ?? String(res.status));
@@ -425,7 +427,7 @@ function mediaOf(message: TelegramMessage): InboundMedia[] {
 export async function downloadFile(token: string | null, fileId: string): Promise<ArrayBuffer> {
   const file = await call(token, "getFile", { file_id: fileId }) as { file_path?: string };
   if (!file.file_path) throw new Error("Telegram did not return a path for that file.");
-  const response = await fetch(`${api()}/file/bot${requireToken(token)}/${file.file_path}`);
+  const response = await fetch(`${api()}/file/bot${requireToken(token)}/${file.file_path}`, { signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`Could not download a file from Telegram (${response.status}).`);
   return await response.arrayBuffer();
 }
