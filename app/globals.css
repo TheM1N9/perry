@@ -169,6 +169,47 @@
   ::selection {
     background: color-mix(in oklab, var(--primary) 22%, transparent);
   }
+
+  /* Keep native scrolling, with a quiet thumb that follows Perry's theme.
+     Windows high-contrast mode keeps its system scrollbars. */
+  @media (forced-colors: none) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--muted-foreground) transparent;
+    }
+
+    @supports selector(::-webkit-scrollbar) {
+      /* Non-auto standard properties override the rounded WebKit styling. */
+      * {
+        scrollbar-width: auto;
+        scrollbar-color: auto;
+      }
+
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      ::-webkit-scrollbar-track,
+      ::-webkit-scrollbar-corner {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        min-height: 24px;
+        border: 2px solid transparent;
+        border-radius: 999px;
+        background-color: color-mix(in srgb, var(--muted-foreground) 70%, transparent);
+        background-clip: padding-box;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background-color: var(--muted-foreground);
+      }
+      ::-webkit-scrollbar-button {
+        display: none;
+        width: 0;
+        height: 0;
+      }
+    }
+  }
 }
 
 @utility nums {
