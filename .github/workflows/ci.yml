@@ -34,6 +34,13 @@ jobs:
       - run: pnpm exec tsc --noEmit
       - run: pnpm exec node --experimental-strip-types artifacts/pr-300/stream-integration.mjs
       - run: pnpm exec node artifacts/pr-300/file-render-integration.mjs
+      - run: pnpm exec node --experimental-transform-types --import ./artifacts/secrets-at-rest/node-loader.mjs artifacts/orphan-tasks/run.mjs
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orphan-tasks-${{ runner.os }}
+          path: artifacts/orphan-tasks/result.json
+          if-no-files-found: ignore
       # On Windows the runner is disposable, so the smoke test also has Task Scheduler read the task it would install.
       - run: bun scripts/smoke.ts ${{ runner.os == 'Windows' && '--register' || '' }}
       - if: runner.os == 'Windows'

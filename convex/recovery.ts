@@ -29,6 +29,7 @@ export const sweep = internalMutation({
   args: { now: v.optional(v.number()), only: v.optional(v.id("conversations")) },
   returns: v.object({ refinalized: v.number(), abandoned: v.number(), requeued: v.number(), released: v.number() }),
   handler: async (ctx, args) => {
+    if (!args.only) await ctx.runMutation(internal.tasks.reconcileMissingChats, {});
     const now = args.now ?? Date.now();
     let refinalized = 0;
     let abandoned = 0;

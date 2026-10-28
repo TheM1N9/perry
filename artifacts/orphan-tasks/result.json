@@ -1,0 +1,42 @@
+{
+  "checkedAt": "2026-10-28T07:58:48.268Z",
+  "passed": true,
+  "cases": [
+    {
+      "name": "resume refuses a deleted task chat without changing status",
+      "passed": true
+    },
+    {
+      "name": "cancel succeeds after both task and origin chats are deleted",
+      "passed": true
+    },
+    {
+      "name": "deleting an idle task chat cancels the task atomically",
+      "passed": true
+    },
+    {
+      "name": "deleting a completed chat preserves its completed task",
+      "passed": true
+    },
+    {
+      "name": "recovery fails orphaned tasks and preserves a new task without a chat",
+      "passed": true
+    },
+    {
+      "name": "a stale scheduled callback fails safely without recreating the chat",
+      "passed": true
+    },
+    {
+      "name": "orphaned running tasks do not consume all background slots",
+      "passed": true
+    },
+    {
+      "name": "healthy blocked tasks still resume",
+      "passed": true
+    },
+    {
+      "name": "steering an orphan refuses without accepting an update",
+      "passed": true
+    }
+  ]
+}
