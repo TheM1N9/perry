@@ -143,10 +143,12 @@ export const reconcileMissingChats = internalMutation({
       for (const task of tasks) {
         // New background tasks have no chat until work starts; tracked tasks need not have one.
         if (!task.conversationId || await ctx.db.get(task.conversationId)) continue;
+        const error = "This task's chat was deleted. Queue a new task to continue.";
         await ctx.db.patch(task._id, {
-          status: "failed", error: "This task's chat was deleted. Queue a new task to continue.",
+          status: "failed", error,
           question: undefined, waiting: undefined, updatedAt: Date.now(),
         });
+        await report(ctx, { ...task, status: "failed", error }, "failed", `🧩 **${task.title}** could not be finished.\n\n${error}`);
         failed += 1;
       }
     }

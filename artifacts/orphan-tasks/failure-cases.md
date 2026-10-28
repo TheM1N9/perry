@@ -12,6 +12,8 @@ Failure cases recorded before the implementation and replay:
 - Steering an orphan reports success without a delivery.
 - Repeated recovery changes completed tasks or creates duplicate recovery effects.
 - Cancellation fails when both the task chat and the origin chat have been deleted.
+- Recovery silently fails a task with a valid origin, or repeated recovery/late finalization reports it twice.
+- CI uploads a tracked success result even though the replay did not run.
 
 Use the actual SQLite Runtime and registered backend functions with synthetic
 conversations. Keep the scheduler stopped and external network traffic disabled.

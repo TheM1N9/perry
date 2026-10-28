@@ -8,6 +8,9 @@ import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 const out = resolve(import.meta.dirname);
+const results = { checkedAt: new Date().toISOString(), passed: false, cases: [] };
+const save = () => writeFileSync(join(out, "result.json"), JSON.stringify(results, null, 2) + "\n");
+save();
 const scratch = mkdtempSync(join(tmpdir(), "perry-orphan-tasks-"));
 process.env.PERRY_HOME = scratch;
 process.env.DASHBOARD_KEY = "synthetic-orphan-task-key";
@@ -26,8 +29,6 @@ const get = id => runtime.exclusive(() => runtime.store.get(id));
 const remove = id => runtime.exclusive(() => runtime.store.delete(id));
 const patch = (id, doc) => runtime.exclusive(() => runtime.store.patch(id, doc));
 const chat = () => call("dashboard:createChat", { key: process.env.DASHBOARD_KEY });
-const results = { checkedAt: new Date().toISOString(), passed: false, cases: [] };
-const save = () => writeFileSync(join(out, "result.json"), JSON.stringify(results, null, 2) + "\n");
 const check = async (name, run) => {
   try { await run(); results.cases.push({ name, passed: true }); }
   catch (error) { results.cases.push({ name, passed: false, error: String(error) }); }
@@ -81,6 +82,17 @@ try {
     assert.equal((await get(row.id)).status, "failed");
     assert.equal((await get(row.id)).conversationId, row.conversationId);
     assert.equal(await get(row.conversationId), null);
+  });
+  await check("recovery reports an orphan's failure once to its originating chat", async () => {
+    const origin = await chat();
+    const row = await task("running", { origin }); await remove(row.conversationId);
+    await call("tasks:reconcileMissingChats");
+    const handoffs = () => sql.prepare("SELECT COUNT(*) AS n FROM doc_taskHandoffs WHERE json_extract(doc, '$.taskId') = ?").get(row.id).n;
+    assert.equal(handoffs(), 1);
+    assert.match((await get(row.id)).reported, /^failed:/);
+    await call("tasks:reconcileMissingChats");
+    await call("tasks:afterTurn", { id: row.id });
+    assert.equal(handoffs(), 1);
   });
   await check("orphaned running tasks do not consume all background slots", async () => {
     for (let i = 0; i < 2; i++) {
