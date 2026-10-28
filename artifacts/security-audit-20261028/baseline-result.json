@@ -1,0 +1,182 @@
+{
+  "commit": "75a07880cae2a29022960b61b8fa4057f6caab70",
+  "environment": {
+    "node": "v25.8.2",
+    "platform": "win32"
+  },
+  "scope": "Real application HTTP handlers and SQLite behind a loopback adapter; not Next.js deployment or provider E2E",
+  "checks": [
+    {
+      "name": "HTTP authorization and internal visibility",
+      "completed": true,
+      "protectionPassed": true,
+      "wrongDashboardStatus": 500
+    },
+    {
+      "name": "One-use upload capability rejects concurrent replay",
+      "completed": true,
+      "protectionPassed": true,
+      "statuses": [
+        200,
+        403
+      ]
+    },
+    {
+      "name": "Stored HTML response permits dashboard-origin script execution",
+      "completed": true,
+      "findingConfirmed": true,
+      "anonymousStatus": 200,
+      "headers": {
+        "accept-ranges": "bytes",
+        "cache-control": "private, max-age=31536000, immutable",
+        "connection": "keep-alive",
+        "content-length": "206",
+        "content-type": "text/html",
+        "date": "Tue, 27 Oct 2026 19:04:15 GMT",
+        "keep-alive": "timeout=5"
+      },
+      "syntheticKeyReadableInChrome": true
+    },
+    {
+      "name": "Invalid upload reads request body before validating its ticket",
+      "completed": true,
+      "findingConfirmed": true,
+      "bytesInProbe": 3,
+      "rejectedStatus": 403,
+      "bodyReadBeforeRejection": true
+    },
+    {
+      "name": "Anonymous SSE connections have no handler quota; ordinary cancellation cleans up",
+      "completed": true,
+      "findingConfirmed": true,
+      "acceptedAnonymousConnections": 12,
+      "ordinaryCancelCleanupPassed": true
+    },
+    {
+      "name": "Already-aborted SSE request still attaches a listener until explicit cancel",
+      "completed": true,
+      "findingConfirmed": true,
+      "retainedListenersAfterPriorAbort": 1
+    },
+    {
+      "name": "File approval path traversal escapes an always-allow folder",
+      "completed": true,
+      "findingConfirmed": true,
+      "traversalDecision": "auto",
+      "traversalDecidedBy": "rule",
+      "siblingControl": "ask",
+      "fileWritesPerformed": false
+    },
+    {
+      "name": "Concurrent owner approval decisions have one winner",
+      "completed": true,
+      "protectionPassed": true,
+      "winners": 1
+    },
+    {
+      "name": "Concurrent note saves reject a stale revision",
+      "completed": true,
+      "protectionPassed": true,
+      "winners": 1
+    },
+    {
+      "name": "Duplicate chat submission with the same messageKey enqueues twice",
+      "completed": true,
+      "findingConfirmed": true,
+      "identicalRequests": 2,
+      "durableTurnsAdded": 2,
+      "enginesStarted": 0
+    },
+    {
+      "name": "Atomic runner turn claim has one winner",
+      "completed": true,
+      "protectionPassed": true,
+      "winners": 1
+    },
+    {
+      "name": "Pet pairing is one-use and device removal revokes its key",
+      "completed": true,
+      "protectionPassed": true
+    },
+    {
+      "name": "Generated SQLite indexes and query plans",
+      "completed": true,
+      "protectionPassed": true,
+      "generatedIndexCount": 140,
+      "plans": {
+        "runnerLookup": [
+          {
+            "id": 5,
+            "parent": 0,
+            "notused": 61,
+            "detail": "SEARCH doc_runners USING INDEX i_runners_by_token (<expr>=?)"
+          },
+          {
+            "id": 23,
+            "parent": 0,
+            "notused": 0,
+            "detail": "USE TEMP B-TREE FOR ORDER BY"
+          }
+        ],
+        "turnQueue": [
+          {
+            "id": 5,
+            "parent": 0,
+            "notused": 61,
+            "detail": "SEARCH doc_codexTurns USING INDEX i_codexTurns_by_runner_status (<expr>=? AND <expr>=?)"
+          },
+          {
+            "id": 25,
+            "parent": 0,
+            "notused": 0,
+            "detail": "USE TEMP B-TREE FOR ORDER BY"
+          }
+        ],
+        "scheduler": [
+          {
+            "id": 5,
+            "parent": 0,
+            "notused": 203,
+            "detail": "SEARCH _scheduled USING INDEX _scheduled_by_time (runAt<?)"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Chat deletion rollback restores metadata but loses stored file bytes",
+      "completed": true,
+      "findingConfirmed": true,
+      "databaseRowsRolledBack": true,
+      "metadataRestored": true,
+      "fileBytesLost": true,
+      "injectedFailure": "Store deletion of disposable conversation only"
+    },
+    {
+      "name": "Public fetch refuses private, loopback, mapped and reserved destinations",
+      "completed": true,
+      "protectionPassed": true,
+      "refused": [
+        "http://127.0.0.1/",
+        "http://localhost/",
+        "http://10.0.0.1/",
+        "http://169.254.169.254/",
+        "http://[::1]/",
+        "http://[::ffff:127.0.0.1]/",
+        "http://2130706433/",
+        "http://0x7f000001/",
+        "file:///synthetic",
+        "http://user:pass@example.com/"
+      ],
+      "limitation": "No DNS-rebinding or browser-fallback network replay"
+    },
+    {
+      "name": "Telegram ingestion failure still advances the update offset",
+      "completed": true,
+      "findingConfirmed": true,
+      "ingestionFailures": 1,
+      "nextOffset": "457"
+    }
+  ],
+  "fixtureRemoved": true,
+  "completed": true
+}

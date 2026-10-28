@@ -1,5 +1,6 @@
 import { TELEGRAM_COMMANDS } from "../convex/lib/commands";
 import type { Runtime } from "./runtime";
+import { setTimeout as delay } from "node:timers/promises";
 
 /**
  * Telegram, by long polling: this process asks Telegram for new updates, so no
@@ -19,17 +20,15 @@ const OFFSET_KEY = "telegram.offset";
 type Update = { update_id: number } & Record<string, unknown>;
 type Reply<T> = { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
 
-const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) => {
-  const timer = setTimeout(resolve, ms);
-  signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
-});
+const sleep = (ms: number, signal: AbortSignal) => delay(ms, undefined, { signal })
+  .catch((error) => { if (!signal.aborted) throw error; });
 
 async function call<T>(token: string, method: string, body: object, signal?: AbortSignal): Promise<Reply<T>> {
   const response = await fetch(`${api()}/bot${token}/${method}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-    signal,
+    signal: AbortSignal.any([AbortSignal.timeout(method === "getUpdates" ? (POLL_SECONDS + 15) * 1000 : 15_000), ...(signal ? [signal] : [])]),
   });
   return await response.json() as Reply<T>;
 }

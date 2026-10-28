@@ -10,6 +10,7 @@ import { authenticate, policyOf, type Policy } from "./runner";
 import { targetOf, type Target } from "./channels";
 import { presenceOf } from "./todos";
 import { readPersona } from "./persona";
+import { posix, win32 } from "node:path";
 
 /**
  * Approvals for what a runner is asked to do on the owner's machine: a command
@@ -41,15 +42,23 @@ type Person = "terminal" | "dashboard" | "telegram" | "whatsapp" | "timeout";
 // --- Rules ---------------------------------------------------------------
 
 /** Compare paths the way the owner's filesystem does: Windows ignores case and slash direction. */
-function normalPath(path: string): string {
-  const slashed = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return /^[a-z]:(\/|$)/i.test(slashed) || slashed.startsWith("//") ? slashed.toLowerCase() : slashed;
+function normalPath(path: string): string | null {
+  if (!path || path.includes("\0")) return null;
+  const slashed = path.replace(/\\/g, "/");
+  const windows = /^[a-z]:\//i.test(slashed) || /^\/\/[^/]+\/[^/]+(?:\/|$)/.test(slashed);
+  if (windows) {
+    if (slashed.startsWith("//?/") || slashed.startsWith("//./")) return null;
+    // Win32 aliases trailing dots/spaces; do not guess at ambiguous components or device paths.
+    if (slashed.split("/").some(part => part !== "." && part !== ".." && /[. ]$/.test(part))) return null;
+    return win32.normalize(path).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  }
+  return posix.isAbsolute(path) ? posix.normalize(path).replace(/\/+$/, "") || "/" : null;
 }
 
 function inside(path: string, folder: string): boolean {
   const child = normalPath(path);
   const parent = normalPath(folder);
-  return child === parent || child.startsWith(`${parent}/`);
+  return child !== null && parent !== null && (child === parent || child.startsWith(parent.endsWith("/") ? parent : `${parent}/`));
 }
 
 /**
@@ -91,9 +100,11 @@ function suggestedPrefix(command: string, amendment?: string[]): string | undefi
 
 /** The deepest folder holding every path, unless that is a drive or home-sized root that allows too much. */
 function commonFolder(paths: string[]): string | undefined {
+  const normalized = paths.map(normalPath);
+  if (normalized.some(path => path === null)) return undefined;
   const windows = /^[a-z]:[\\/]/i.test(paths[0] ?? "");
   const same = (a: string, b: string) => windows ? a.toLowerCase() === b.toLowerCase() : a === b;
-  const folders = paths.map((path) => path.replace(/\\/g, "/").split("/").slice(0, -1));
+  const folders = (normalized as string[]).map(path => path.split("/").slice(0, -1));
   let shared = folders[0] ?? [];
   for (const parts of folders.slice(1)) {
     let i = 0;
@@ -102,20 +113,23 @@ function commonFolder(paths: string[]): string | undefined {
   }
   // C:/Users/me is three parts, and so is /home/me with its empty root.
   if (shared.length < 3) return undefined;
+  // //server/share is the network equivalent of a drive root.
+  if (normalized[0]?.startsWith("//") && shared.length <= 4) return undefined;
   const folder = shared.join("/");
   return windows ? folder.replace(/\//g, "\\") : folder;
 }
 
-type Request = { kind: Kind; title: string; cwd?: string; paths?: string[] };
+type Request = { kind: Kind; title: string; cwd?: string; paths?: string[]; cwdVerified?: boolean; pathsVerified?: boolean };
 
 function alwaysAllowFor(request: Request, amendment?: string[]): Doc<"approvals">["alwaysAllow"] {
   if (request.kind === "tool" || request.kind === "permission") return undefined;
   if (request.kind === "command") {
+    if (request.cwd && !request.cwdVerified) return undefined;
     if (request.title.length > 4000) return undefined;
     const prefix = suggestedPrefix(request.title, amendment);
     return prefix ? { command: prefix, prefix: true } : { command: request.title };
   }
-  const folder = request.paths?.length ? commonFolder(request.paths) : undefined;
+  const folder = request.pathsVerified && request.paths?.length ? commonFolder(request.paths) : undefined;
   return folder ? { pathPrefix: folder } : undefined;
 }
 
@@ -123,11 +137,11 @@ function ruleMatches(rule: Doc<"approvalRules">, request: Request): boolean {
   if (request.kind === "tool" || request.kind === "permission") return false;
   if (request.kind === "command") {
     if (rule.kind !== "command" || !rule.command) return false;
-    if (rule.cwd && !(request.cwd && inside(request.cwd, rule.cwd))) return false;
+    if (rule.cwd && !(request.cwdVerified && request.cwd && inside(request.cwd, rule.cwd))) return false;
     return rule.prefix ? startsWithCommand(request.title, rule.command) : request.title === rule.command;
   }
   const folder = rule.pathPrefix;
-  return rule.kind === "file" && Boolean(folder) && Boolean(request.paths?.length)
+  return rule.kind === "file" && Boolean(folder) && request.pathsVerified === true && Boolean(request.paths?.length)
     && request.paths!.every((path) => inside(path, folder!));
 }
 
@@ -148,6 +162,8 @@ export const request = mutation({
     detail: v.optional(v.string()),
     cwd: v.optional(v.string()),
     paths: v.optional(v.array(v.string())),
+    cwdVerified: v.optional(v.boolean()),
+    pathsVerified: v.optional(v.boolean()),
     /** Codex's proposed exec-policy amendment: a command prefix it would allow from now on. */
     amendment: v.optional(v.array(v.string())),
     conversationId: v.optional(v.id("conversations")),
@@ -160,7 +176,7 @@ export const request = mutation({
     const runner = await authenticate(ctx, args.token);
     const now = Date.now();
     if (args.kind === "permission" && (!args.detail || args.detail.length > 800)) throw new Error("The complete computer permission scope must fit in the approval details.");
-    const request: Request = { kind: args.kind, title: args.title, cwd: args.cwd, paths: args.paths };
+    const request: Request = { kind: args.kind, title: args.title, cwd: args.cwd, paths: args.paths, cwdVerified: args.cwdVerified, pathsVerified: args.pathsVerified };
     const row = {
       runnerId: runner._id,
       conversationId: args.conversationId,

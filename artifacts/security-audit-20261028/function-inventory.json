@@ -1,0 +1,6697 @@
+[
+  {
+    "name": "agentStore:createThread",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "userId",
+      "title"
+    ]
+  },
+  {
+    "name": "agentStore:deleteMessages",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "messageIds"
+    ]
+  },
+  {
+    "name": "agentStore:deleteThread",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "threadId"
+    ]
+  },
+  {
+    "name": "agentStore:listMessages",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "threadId",
+      "excludeToolMessages",
+      "paginationOpts"
+    ]
+  },
+  {
+    "name": "agentStore:saveMessages",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "threadId",
+      "runId",
+      "userId",
+      "messages",
+      "metadata"
+    ]
+  },
+  {
+    "name": "agentStore:searchMessages",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "userId",
+      "text",
+      "limit"
+    ]
+  },
+  {
+    "name": "approvals:acknowledgeTap",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "callbackId",
+      "note"
+    ]
+  },
+  {
+    "name": "approvals:answerFromTelegram",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "senderId",
+      "data"
+    ]
+  },
+  {
+    "name": "approvals:answerFromWhatsApp",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chatId",
+      "text"
+    ]
+  },
+  {
+    "name": "approvals:askForBrowser",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "title",
+      "detail"
+    ]
+  },
+  {
+    "name": "approvals:askedOnWhatsApp",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "chatId"
+    ]
+  },
+  {
+    "name": "approvals:cancelBrowser",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "approvals:decide",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "approved",
+      "always",
+      "edited"
+    ]
+  },
+  {
+    "name": "approvals:decision",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id"
+    ]
+  },
+  {
+    "name": "approvals:decisionOf",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "approvals:deleteRule",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "approvals:escalate",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "late"
+    ]
+  },
+  {
+    "name": "approvals:pending",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "approvals:promptOnTelegram",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "home"
+    ]
+  },
+  {
+    "name": "approvals:promptOnWhatsApp",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "home"
+    ]
+  },
+  {
+    "name": "approvals:promptSent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "chatId",
+      "messageId"
+    ]
+  },
+  {
+    "name": "approvals:recent",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "approvals:request",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "kind",
+      "title",
+      "detail",
+      "cwd",
+      "paths",
+      "amendment",
+      "conversationId"
+    ]
+  },
+  {
+    "name": "approvals:reviewed",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id",
+      "verdict",
+      "reason",
+      "model",
+      "ms"
+    ]
+  },
+  {
+    "name": "approvals:rules",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "approvals:settle",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id",
+      "approved",
+      "by",
+      "always"
+    ]
+  },
+  {
+    "name": "approvals:showOutcomeOnTelegram",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "approvals:view",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "archive:getSetting",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "archive:keyVectors",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "archive:list",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "query"
+    ]
+  },
+  {
+    "name": "archive:opened",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "archive:restore",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "ids"
+    ]
+  },
+  {
+    "name": "archive:run",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "now"
+    ]
+  },
+  {
+    "name": "archive:setSetting",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "days"
+    ]
+  },
+  {
+    "name": "archive:used",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "ids",
+      "revive"
+    ]
+  },
+  {
+    "name": "brain:checkpointIfFull",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "brain:compactChat",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "brain:handleTurn",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "preparingId",
+      "channel",
+      "externalId",
+      "text",
+      "title",
+      "attachmentIds",
+      "telegramMedia",
+      "storedMedia",
+      "hidden",
+      "label",
+      "model",
+      "engine",
+      "route",
+      "fromWeb",
+      "guest",
+      "guestContext",
+      "outside"
+    ]
+  },
+  {
+    "name": "brain:resetChat",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "brain:sendDirect",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chatId",
+      "text"
+    ]
+  },
+  {
+    "name": "brainMap:graph",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "around",
+      "depth"
+    ]
+  },
+  {
+    "name": "browserView:settings",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "channels:describe",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId"
+    ]
+  },
+  {
+    "name": "channels:target",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId"
+    ]
+  },
+  {
+    "name": "codex:ackSteer",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id",
+      "applied",
+      "error"
+    ]
+  },
+  {
+    "name": "codex:beginFinalize",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "codex:claimAuth",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "token",
+      "id"
+    ]
+  },
+  {
+    "name": "codex:claimTurn",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id"
+    ]
+  },
+  {
+    "name": "codex:cleanTurnError",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "detail"
+    ]
+  },
+  {
+    "name": "codex:enqueueTurn",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "runId",
+      "prompt",
+      "history",
+      "instructions",
+      "recalled",
+      "recallDigest",
+      "projectDigest",
+      "flush",
+      "checkpoint",
+      "hidden",
+      "guest",
+      "engine",
+      "model",
+      "effort",
+      "access",
+      "attachments",
+      "policy",
+      "preparingId",
+      "route",
+      "outside"
+    ]
+  },
+  {
+    "name": "codex:failPreparation",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "error",
+      "errorCode"
+    ]
+  },
+  {
+    "name": "codex:finalizeTurn",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "codex:finishTurn",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id",
+      "response",
+      "error",
+      "errorCode",
+      "model",
+      "stopped",
+      "compacted",
+      "media"
+    ]
+  },
+  {
+    "name": "codex:getTurn",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "codex:internetMayRead",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "turnId"
+    ]
+  },
+  {
+    "name": "codex:markFinalized",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "codex:markOutside",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "turnId"
+    ]
+  },
+  {
+    "name": "codex:markStep",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "step"
+    ]
+  },
+  {
+    "name": "codex:mcpAccess",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "threads",
+      "chat"
+    ]
+  },
+  {
+    "name": "codex:mediaUploadUrl",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id"
+    ]
+  },
+  {
+    "name": "codex:outwardAllowed",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "turnId"
+    ]
+  },
+  {
+    "name": "codex:pendingSteers",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "codex:preparation",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "codex:prepareTurn",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "prompt",
+      "queue"
+    ]
+  },
+  {
+    "name": "codex:pruneOrphans",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId"
+    ]
+  },
+  {
+    "name": "codex:queuedAuth",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "codex:queuedTurns",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "codex:recoverAuth",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "codex:recoverMedia",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id",
+      "storageId",
+      "fileName",
+      "contentType"
+    ]
+  },
+  {
+    "name": "codex:recoverMediaUploadUrl",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id"
+    ]
+  },
+  {
+    "name": "codex:reportAccount",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "available",
+      "authMode",
+      "planType",
+      "error",
+      "models"
+    ]
+  },
+  {
+    "name": "codex:requestCompact",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId"
+    ]
+  },
+  {
+    "name": "codex:requestStop",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId"
+    ]
+  },
+  {
+    "name": "codex:retryOn",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "route",
+      "history",
+      "afterReset"
+    ]
+  },
+  {
+    "name": "codex:runningTurns",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "codex:setCodexTurn",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id",
+      "codexTurnId"
+    ]
+  },
+  {
+    "name": "codex:setResume",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "recordSession"
+    ],
+    "args": [
+      "token",
+      "id",
+      "cursor",
+      "version",
+      "replaces"
+    ]
+  },
+  {
+    "name": "codex:setThread",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "recordSession"
+    ],
+    "args": [
+      "token",
+      "id",
+      "threadId"
+    ]
+  },
+  {
+    "name": "codex:sharedFiles",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id"
+    ]
+  },
+  {
+    "name": "codex:stopRequests",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "codex:streamToTelegram",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "codex:streamTurn",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id",
+      "text"
+    ]
+  },
+  {
+    "name": "codex:streamedToTelegram",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "messageId"
+    ]
+  },
+  {
+    "name": "codex:takeLonger",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "turnId",
+      "minutes",
+      "why"
+    ]
+  },
+  {
+    "name": "codex:traceTurn",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id",
+      "spans",
+      "usage",
+      "steps",
+      "context"
+    ]
+  },
+  {
+    "name": "codex:turnAccess",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "codex:turnFiles",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "messageKey"
+    ]
+  },
+  {
+    "name": "codex:turnPatience",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "codex:updateAuth",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "token",
+      "id",
+      "status",
+      "verificationUrl",
+      "userCode",
+      "error"
+    ]
+  },
+  {
+    "name": "compaction:decided",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "approved",
+      "expired"
+    ]
+  },
+  {
+    "name": "compaction:forReview",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "compaction:list",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "compaction:proposeForAgent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "kind",
+      "page",
+      "section",
+      "replaces",
+      "with",
+      "why",
+      "to",
+      "toSection",
+      "title"
+    ]
+  },
+  {
+    "name": "compaction:review",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "compaction:reviewIfDue",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "compaction:undo",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "composio:accounts",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "composio:authorize",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "toolkit",
+      "callbackUrl",
+      "accountId"
+    ]
+  },
+  {
+    "name": "composio:catalog",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "composio:connectors",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "composio:createTrigger",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "slug",
+      "config"
+    ]
+  },
+  {
+    "name": "composio:deleteTrigger",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "instanceId"
+    ]
+  },
+  {
+    "name": "composio:disconnect",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "accountId"
+    ]
+  },
+  {
+    "name": "composio:execute",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "slug",
+      "args"
+    ]
+  },
+  {
+    "name": "composio:search",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "query",
+      "toolkits"
+    ]
+  },
+  {
+    "name": "composio:triggerTypes",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "toolkit",
+      "query"
+    ]
+  },
+  {
+    "name": "connectorAccounts:forget",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "accountId"
+    ]
+  },
+  {
+    "name": "connectorAccounts:identities",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "accountIds"
+    ]
+  },
+  {
+    "name": "connectorAccounts:remember",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "accountId",
+      "toolkit",
+      "identity",
+      "profile"
+    ]
+  },
+  {
+    "name": "connectorHealth:forget",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "accountId",
+      "toolkit"
+    ]
+  },
+  {
+    "name": "connectorHealth:observe",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "accountId",
+      "toolkit",
+      "startedAt",
+      "expired"
+    ]
+  },
+  {
+    "name": "connectorHealth:read",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "accounts"
+    ]
+  },
+  {
+    "name": "contacts:answerWaiting",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "contactId",
+      "lines"
+    ]
+  },
+  {
+    "name": "contacts:byChat",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "channel",
+      "externalId"
+    ]
+  },
+  {
+    "name": "contacts:decided",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "contactId",
+      "kind",
+      "approved",
+      "expired"
+    ]
+  },
+  {
+    "name": "contacts:deliver",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "contactId",
+      "text"
+    ]
+  },
+  {
+    "name": "contacts:get",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "contacts:guestPrompt",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "contactId",
+      "conversationId"
+    ]
+  },
+  {
+    "name": "contacts:inbound",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "channel",
+      "chatId",
+      "kind",
+      "chatName",
+      "from",
+      "text",
+      "addressed"
+    ]
+  },
+  {
+    "name": "contacts:isTheirs",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chatId"
+    ]
+  },
+  {
+    "name": "contacts:learn",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "items"
+    ]
+  },
+  {
+    "name": "contacts:listForDashboard",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "contacts:memoriesForDashboard",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "contacts:noteTold",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "contactId"
+    ]
+  },
+  {
+    "name": "contacts:record",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "channel",
+      "chatId",
+      "kind",
+      "chatName",
+      "from",
+      "text",
+      "addressed"
+    ]
+  },
+  {
+    "name": "contacts:requestSend",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "contactId",
+      "phone",
+      "name",
+      "text",
+      "conversationId"
+    ]
+  },
+  {
+    "name": "contacts:search",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "query"
+    ]
+  },
+  {
+    "name": "contacts:setForDashboard",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "status",
+      "brief"
+    ]
+  },
+  {
+    "name": "contacts:theySaid",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "query"
+    ]
+  },
+  {
+    "name": "contacts:update",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "contactId",
+      "brief",
+      "block"
+    ]
+  },
+  {
+    "name": "conversations:activeSince",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "since"
+    ]
+  },
+  {
+    "name": "conversations:attachmentsForConversation",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "conversations:beginReset",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "conversations:clearThread",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "threadId"
+    ]
+  },
+  {
+    "name": "conversations:clearUnprompted",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "through"
+    ]
+  },
+  {
+    "name": "conversations:copyAttachments",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "sourceId",
+      "targetId",
+      "messageKeys"
+    ]
+  },
+  {
+    "name": "conversations:create",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "channel",
+      "externalId",
+      "threadId",
+      "title",
+      "contactId"
+    ]
+  },
+  {
+    "name": "conversations:createBranch",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "parentId",
+      "threadId",
+      "title",
+      "messageId"
+    ]
+  },
+  {
+    "name": "conversations:finishWebTurn",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "prompt"
+    ]
+  },
+  {
+    "name": "conversations:getByExternalId",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "channel",
+      "externalId"
+    ]
+  },
+  {
+    "name": "conversations:getById",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "conversations:getWebById",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "conversations:list",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "conversations:listDashboard",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "conversations:listWeb",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "conversations:markCheckpointed",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "conversations:noteUnprompted",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "text"
+    ]
+  },
+  {
+    "name": "conversations:rewind",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "conversations:setAccess",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "access"
+    ]
+  },
+  {
+    "name": "conversations:setEffort",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "effort"
+    ]
+  },
+  {
+    "name": "conversations:setModel",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "model",
+      "engine"
+    ]
+  },
+  {
+    "name": "conversations:stats",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "conversations:touch",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:addMemory",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "text",
+      "tags",
+      "kind"
+    ]
+  },
+  {
+    "name": "dashboard:branchChat",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "messageId"
+    ]
+  },
+  {
+    "name": "dashboard:cancelTask",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "taskId"
+    ]
+  },
+  {
+    "name": "dashboard:checkBot",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:checkMonitorsNow",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:clearKey",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "name"
+    ]
+  },
+  {
+    "name": "dashboard:compactChat",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:connectToolkit",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "toolkit",
+      "callbackUrl",
+      "accountId"
+    ]
+  },
+  {
+    "name": "dashboard:createChat",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "projectId"
+    ]
+  },
+  {
+    "name": "dashboard:deleteChat",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:deleteMemory",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:deleteMonitor",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "monitorId"
+    ]
+  },
+  {
+    "name": "dashboard:disconnectAccount",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "accountId"
+    ]
+  },
+  {
+    "name": "dashboard:dismissInbox",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "items"
+    ]
+  },
+  {
+    "name": "dashboard:editMemory",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "text"
+    ]
+  },
+  {
+    "name": "dashboard:finishForgettingMemory",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "at"
+    ]
+  },
+  {
+    "name": "dashboard:finishOnboarding",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "name",
+      "personality",
+      "userMd"
+    ]
+  },
+  {
+    "name": "dashboard:forgetMemory",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:generateUploadUrl",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getActivity",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:getCatalog",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getChat",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:getChatFiles",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:getChatMessages",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "paginationOpts"
+    ]
+  },
+  {
+    "name": "dashboard:getChatRuns",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:getCompaction",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:getCompute",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getConnectedAccounts",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getConnectors",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getDefaultAccess",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getDefaultEngine",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getInbox",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getInternetStatus",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "recheck"
+    ]
+  },
+  {
+    "name": "dashboard:getKeys",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getLastPicks",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getManners",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getPersona",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getRunSteps",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "runIds",
+      "limit"
+    ]
+  },
+  {
+    "name": "dashboard:getShortcuts",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getStatus",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getStep",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:getVault",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:getWork",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:listActivitySessions",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:listChats",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:listMemories",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "query",
+      "kind"
+    ]
+  },
+  {
+    "name": "dashboard:listRuns",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "conversationId"
+    ]
+  },
+  {
+    "name": "dashboard:markChatSeen",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:personaHistory",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "kind"
+    ]
+  },
+  {
+    "name": "dashboard:redoOnboarding",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:registerAttachment",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "conversationId",
+      "messageKey",
+      "storageId",
+      "localPath",
+      "fileName",
+      "contentType",
+      "size",
+      "editOf",
+      "from"
+    ]
+  },
+  {
+    "name": "dashboard:removeFromVault",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:renameChat",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "title"
+    ]
+  },
+  {
+    "name": "dashboard:resetChat",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:restorePersonaVersion",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:revokeRunner",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "runnerId"
+    ]
+  },
+  {
+    "name": "dashboard:rewindChat",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "messageId",
+      "text",
+      "attachmentIds",
+      "requestId"
+    ]
+  },
+  {
+    "name": "dashboard:runTrace",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "runId"
+    ]
+  },
+  {
+    "name": "dashboard:saveGoal",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "title",
+      "description",
+      "status",
+      "milestones"
+    ]
+  },
+  {
+    "name": "dashboard:saveIdentity",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "name",
+      "personality"
+    ]
+  },
+  {
+    "name": "dashboard:saveMonitor",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "title",
+      "url",
+      "condition",
+      "value",
+      "intervalMinutes"
+    ]
+  },
+  {
+    "name": "dashboard:saveToVault",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "label",
+      "url",
+      "username",
+      "value",
+      "note"
+    ]
+  },
+  {
+    "name": "dashboard:saveUserMd",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "text"
+    ]
+  },
+  {
+    "name": "dashboard:searchActions",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "query",
+      "toolkits"
+    ]
+  },
+  {
+    "name": "dashboard:searchChats",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "search"
+    ]
+  },
+  {
+    "name": "dashboard:sendChat",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "text",
+      "attachmentIds",
+      "messageKey",
+      "model",
+      "engine",
+      "effort",
+      "access",
+      "mode"
+    ]
+  },
+  {
+    "name": "dashboard:setChatAccess",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "access"
+    ]
+  },
+  {
+    "name": "dashboard:setChatEffort",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "effort"
+    ]
+  },
+  {
+    "name": "dashboard:setChatModel",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "model",
+      "engine"
+    ]
+  },
+  {
+    "name": "dashboard:setChatPinned",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "pinned"
+    ]
+  },
+  {
+    "name": "dashboard:setDefaultAccess",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "access"
+    ]
+  },
+  {
+    "name": "dashboard:setDefaultEngine",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "engine"
+    ]
+  },
+  {
+    "name": "dashboard:setKey",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "name",
+      "value"
+    ]
+  },
+  {
+    "name": "dashboard:setManners",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "quietHours",
+      "dailyLimit"
+    ]
+  },
+  {
+    "name": "dashboard:setRunnerPolicy",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "runnerId",
+      "policy"
+    ]
+  },
+  {
+    "name": "dashboard:setShortcut",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "accelerator"
+    ]
+  },
+  {
+    "name": "dashboard:setTelegramApprovals",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "enabled"
+    ]
+  },
+  {
+    "name": "dashboard:skipOnboarding",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:startPairing",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:stopChat",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "dashboard:toggleMonitor",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "monitorId"
+    ]
+  },
+  {
+    "name": "dashboard:unclaim",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "dashboard:undoForgetMemory",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "at"
+    ]
+  },
+  {
+    "name": "engineUpdates:claim",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id"
+    ]
+  },
+  {
+    "name": "engineUpdates:progress",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id",
+      "status",
+      "waitingFor",
+      "command",
+      "output",
+      "to",
+      "error"
+    ]
+  },
+  {
+    "name": "engineUpdates:queued",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "engineUpdates:recover",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "engineUpdates:request",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "runnerId",
+      "engine"
+    ]
+  },
+  {
+    "name": "engines:claimAuth",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "engine",
+      "id"
+    ]
+  },
+  {
+    "name": "engines:list",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "engines:preferred",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "engines:queuedAuth",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "engines:recoverAuth",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "engines:report",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "engines"
+    ]
+  },
+  {
+    "name": "engines:requestAuth",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "runnerId",
+      "engine",
+      "kind",
+      "method"
+    ]
+  },
+  {
+    "name": "engines:secret",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "name"
+    ]
+  },
+  {
+    "name": "engines:updateAuth",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "engine",
+      "id",
+      "status",
+      "interaction",
+      "error"
+    ]
+  },
+  {
+    "name": "history:read",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chatId",
+      "limit",
+      "from"
+    ]
+  },
+  {
+    "name": "history:search",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "query",
+      "limit",
+      "from",
+      "scope"
+    ]
+  },
+  {
+    "name": "ingest:fromTelegram",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "update"
+    ]
+  },
+  {
+    "name": "ingest:otherFacts",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "ingest:receive",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chatId",
+      "senderId",
+      "text",
+      "title",
+      "name",
+      "media",
+      "chatType",
+      "username",
+      "replyToId",
+      "mentions"
+    ]
+  },
+  {
+    "name": "ingest:receiveOther",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chatId",
+      "senderId",
+      "text",
+      "title",
+      "name",
+      "chatType",
+      "username",
+      "replyToId",
+      "mentions",
+      "hasMedia"
+    ]
+  },
+  {
+    "name": "installation:authorize",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "channel",
+      "externalId",
+      "name",
+      "text"
+    ]
+  },
+  {
+    "name": "installation:ensure",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "installation:get",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "installation:getDefaultEngine",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "installation:ownerWrote",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "installation:setDefaultAccess",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "access"
+    ]
+  },
+  {
+    "name": "installation:setDefaultEngine",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "engine"
+    ]
+  },
+  {
+    "name": "installation:setManners",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "quietHours",
+      "dailyLimit"
+    ]
+  },
+  {
+    "name": "installation:setOnboarding",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "state"
+    ]
+  },
+  {
+    "name": "installation:setTelegramApprovals",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "enabled"
+    ]
+  },
+  {
+    "name": "installation:startPairing",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "installation:status",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "installation:unclaim",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "interactive:create",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "turnId",
+      "requestId",
+      "definition"
+    ]
+  },
+  {
+    "name": "interactive:followup",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "conversationId",
+      "id",
+      "expectedRevision",
+      "requestId",
+      "text"
+    ]
+  },
+  {
+    "name": "interactive:forAgent",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "id"
+    ]
+  },
+  {
+    "name": "interactive:list",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "conversationId"
+    ]
+  },
+  {
+    "name": "interactive:recordSource",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "label",
+      "url"
+    ]
+  },
+  {
+    "name": "interactive:report",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "conversationId",
+      "id",
+      "event"
+    ]
+  },
+  {
+    "name": "interactive:revise",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "turnId",
+      "id",
+      "expectedRevision",
+      "definition",
+      "requestId"
+    ]
+  },
+  {
+    "name": "interactive:save",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "conversationId",
+      "id",
+      "expectedRevision",
+      "requestId",
+      "operation",
+      "values"
+    ]
+  },
+  {
+    "name": "internet:clean",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "json"
+    ]
+  },
+  {
+    "name": "jobs:chatFor",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "threadId"
+    ]
+  },
+  {
+    "name": "jobs:create",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "name",
+      "schedule",
+      "at",
+      "trigger",
+      "prompt",
+      "origin",
+      "pick",
+      "noteId"
+    ]
+  },
+  {
+    "name": "jobs:finished",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "result",
+      "error"
+    ]
+  },
+  {
+    "name": "jobs:get",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "jobs:keepOn",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "jobs:list",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "jobs:listForDashboard",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "jobs:listening",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "jobs:onEvent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "instanceIds",
+      "folder",
+      "event"
+    ]
+  },
+  {
+    "name": "jobs:ownerTimezone",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "jobs:remove",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "jobs:removeFromDashboard",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "jobs:routed",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "route"
+    ]
+  },
+  {
+    "name": "jobs:run",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "since",
+      "event",
+      "avoid",
+      "waited"
+    ]
+  },
+  {
+    "name": "jobs:runNow",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "jobs:saveFromDashboard",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "name",
+      "prompt",
+      "schedule",
+      "at",
+      "folder",
+      "noteId"
+    ]
+  },
+  {
+    "name": "jobs:setEnabled",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "enabled"
+    ]
+  },
+  {
+    "name": "jobs:setModel",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "model",
+      "engine"
+    ]
+  },
+  {
+    "name": "jobs:setTimezone",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "timezone"
+    ]
+  },
+  {
+    "name": "jobs:tick",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "jobs:trigger",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "jobs:update",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "name",
+      "prompt",
+      "schedule",
+      "at",
+      "enabled",
+      "pick",
+      "noteId"
+    ]
+  },
+  {
+    "name": "jobs:wait",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "until",
+      "why",
+      "since",
+      "event"
+    ]
+  },
+  {
+    "name": "library:add",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "path",
+      "how",
+      "by",
+      "conversationId",
+      "name",
+      "role",
+      "versionOf",
+      "versionLabel"
+    ]
+  },
+  {
+    "name": "library:addFound",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "files"
+    ]
+  },
+  {
+    "name": "library:backfill",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "library:dropMissing",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "ids"
+    ]
+  },
+  {
+    "name": "library:file",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "library:find",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "kind",
+      "by",
+      "from",
+      "since",
+      "query",
+      "limit",
+      "conversationId"
+    ]
+  },
+  {
+    "name": "library:forget",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "library:get",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "library:indexAttachment",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "library:list",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "kind",
+      "by",
+      "from",
+      "since",
+      "query"
+    ]
+  },
+  {
+    "name": "library:refresh",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "library:remove",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "library:sync",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "library:syncItems",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "mcp:handle",
+    "kind": "httpAction",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "media:attachPreview",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "path"
+    ]
+  },
+  {
+    "name": "media:attachStored",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "messageKey",
+      "storageId",
+      "fileName",
+      "contentType",
+      "size"
+    ]
+  },
+  {
+    "name": "media:canStoreLocally",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "media:forTurn",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "attachmentIds"
+    ]
+  },
+  {
+    "name": "media:localAttachment",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "media:shareFromLibrary",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "turnId",
+      "id"
+    ]
+  },
+  {
+    "name": "media:shareFromTurn",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "turnId",
+      "path",
+      "look"
+    ]
+  },
+  {
+    "name": "memories:add",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "text",
+      "tags",
+      "source",
+      "kind",
+      "supersedes",
+      "origin",
+      "conversationId",
+      "projectId",
+      "journey",
+      "about",
+      "todoId",
+      "section",
+      "by",
+      "from",
+      "basedOn",
+      "type",
+      "expiresAt",
+      "extends"
+    ]
+  },
+  {
+    "name": "memories:alertsSince",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "since"
+    ]
+  },
+  {
+    "name": "memories:anyEverywhere",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "ids"
+    ]
+  },
+  {
+    "name": "memories:context",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "query",
+      "seen",
+      "chat",
+      "engine",
+      "window"
+    ]
+  },
+  {
+    "name": "memories:count",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "memories:edit",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "text"
+    ]
+  },
+  {
+    "name": "memories:embedMissing",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "memories:embedProgress",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "memories:embeddedAll",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "memories:excerpts",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "ids",
+      "chat",
+      "everywhere"
+    ]
+  },
+  {
+    "name": "memories:getMany",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "ids",
+      "chat",
+      "everywhere",
+      "deep"
+    ]
+  },
+  {
+    "name": "memories:mentioning",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "people",
+      "limit",
+      "chat",
+      "everywhere",
+      "deep"
+    ]
+  },
+  {
+    "name": "memories:noteAlert",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "text",
+      "at"
+    ]
+  },
+  {
+    "name": "memories:noteModel",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "memories:ofPagesNamed",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "query",
+      "limit",
+      "chat",
+      "everywhere",
+      "deep"
+    ]
+  },
+  {
+    "name": "memories:openThreads",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "memories:peopleAsked",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "query"
+    ]
+  },
+  {
+    "name": "memories:previousModel",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "memories:progress",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "memories:read",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "kind",
+      "day",
+      "chat"
+    ]
+  },
+  {
+    "name": "memories:recall",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "query",
+      "limit",
+      "chat",
+      "everywhere",
+      "excerpts",
+      "parts",
+      "now",
+      "deep"
+    ]
+  },
+  {
+    "name": "memories:removeMany",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "ids",
+      "chat"
+    ]
+  },
+  {
+    "name": "memories:search",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "query",
+      "limit",
+      "kind",
+      "chat",
+      "everywhere",
+      "memoriesOnly",
+      "loose",
+      "deep"
+    ]
+  },
+  {
+    "name": "memories:storeVectors",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "items"
+    ]
+  },
+  {
+    "name": "memories:unembedded",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "limit"
+    ]
+  },
+  {
+    "name": "models:list",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "models:options",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "notes:create",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "title",
+      "content",
+      "projectId"
+    ]
+  },
+  {
+    "name": "notes:createForAgent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "title",
+      "content",
+      "project",
+      "outside"
+    ]
+  },
+  {
+    "name": "notes:fromChat",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "conversationId",
+      "messageId"
+    ]
+  },
+  {
+    "name": "notes:get",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "notes:jot",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "text"
+    ]
+  },
+  {
+    "name": "notes:jotFromPhone",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "text"
+    ]
+  },
+  {
+    "name": "notes:lastReplyFromPhone",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId"
+    ]
+  },
+  {
+    "name": "notes:linkForAgent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "a",
+      "b",
+      "why",
+      "revisionA",
+      "revisionB"
+    ]
+  },
+  {
+    "name": "notes:list",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "projectId"
+    ]
+  },
+  {
+    "name": "notes:listForAgent",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "memory"
+    ]
+  },
+  {
+    "name": "notes:move",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "projectId"
+    ]
+  },
+  {
+    "name": "notes:neighborsForAgent",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "id",
+      "steps"
+    ]
+  },
+  {
+    "name": "notes:pinForAgent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "id",
+      "section",
+      "pinned"
+    ]
+  },
+  {
+    "name": "notes:reachableFrom",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "id"
+    ]
+  },
+  {
+    "name": "notes:readForAgent",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "id",
+      "section"
+    ]
+  },
+  {
+    "name": "notes:relatedForRecall",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "pages",
+      "limit"
+    ]
+  },
+  {
+    "name": "notes:remove",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "notes:save",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "title",
+      "content",
+      "expectedRevision"
+    ]
+  },
+  {
+    "name": "notes:search",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "query",
+      "limit"
+    ]
+  },
+  {
+    "name": "notes:searchForAgent",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "query",
+      "limit"
+    ]
+  },
+  {
+    "name": "notes:updateForAgent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "id",
+      "mode",
+      "content",
+      "section",
+      "title",
+      "expectedRevision",
+      "outside"
+    ]
+  },
+  {
+    "name": "notify:admit",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "from",
+      "fromId",
+      "name",
+      "text",
+      "origin",
+      "channel",
+      "buttons",
+      "keepsRules"
+    ]
+  },
+  {
+    "name": "notify:claimOffer",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "from",
+      "fromId",
+      "name",
+      "text",
+      "origin",
+      "channel",
+      "buttons"
+    ]
+  },
+  {
+    "name": "notify:deliver",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "text",
+      "origin",
+      "buttons",
+      "from"
+    ]
+  },
+  {
+    "name": "notify:forget",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "notify:held",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "notify:holdReason",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "notify:markSent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "ids"
+    ]
+  },
+  {
+    "name": "notify:releaseHeld",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "pages:fixPeople",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "pages:indexAll",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "pages:indexMentions",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "pages:journalsWaiting",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "pages:lines",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "pages:memoryPages",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "pages:mentions",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "pages:migrate",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "again"
+    ]
+  },
+  {
+    "name": "pages:moveJournals",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "pages:openMemoryPage",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "kind",
+      "projectId"
+    ]
+  },
+  {
+    "name": "pages:peopleMissing",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "pages:pin",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "pinned",
+      "section"
+    ]
+  },
+  {
+    "name": "pages:pinnedUsage",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "pages:scrubAll",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "pages:search",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "query",
+      "limit",
+      "deep"
+    ]
+  },
+  {
+    "name": "pages:standing",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "budget"
+    ]
+  },
+  {
+    "name": "pages:summarizeForAgent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "page",
+      "section",
+      "text"
+    ]
+  },
+  {
+    "name": "pages:titles",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "ids"
+    ]
+  },
+  {
+    "name": "pages:undoMigration",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "pages:writeLately",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chat",
+      "text"
+    ]
+  },
+  {
+    "name": "pause:held",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "event"
+    ]
+  },
+  {
+    "name": "pause:holdTask",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "pause:missed",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "pause:missedJob",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "event"
+    ]
+  },
+  {
+    "name": "pause:pauseFrom",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "by"
+    ]
+  },
+  {
+    "name": "pause:resumeFrom",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "pause:runMissedFrom",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "ids"
+    ]
+  },
+  {
+    "name": "pause:runMissedNow",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "pause:set",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "paused",
+      "from"
+    ]
+  },
+  {
+    "name": "pause:skip",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "pause:skipMissedFrom",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "pause:state",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "pause:status",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "persona:current",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "persona:forPrompt",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "persona:history",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "kind",
+      "limit"
+    ]
+  },
+  {
+    "name": "persona:restore",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "persona:writeIdentity",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "name",
+      "personality",
+      "by",
+      "typing"
+    ]
+  },
+  {
+    "name": "persona:writeUser",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "text",
+      "by",
+      "typing"
+    ]
+  },
+  {
+    "name": "pet:askToOpen",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "path"
+    ]
+  },
+  {
+    "name": "pet:begin",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "action"
+    ]
+  },
+  {
+    "name": "pet:cancelPairing",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "pet:claimOpen",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "request"
+    ]
+  },
+  {
+    "name": "pet:devices",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "pet:finish",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "error",
+      "gone"
+    ]
+  },
+  {
+    "name": "pet:openRequest",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "pet:pair",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "pet:redeem",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "code",
+      "name",
+      "platform"
+    ]
+  },
+  {
+    "name": "pet:removeDevice",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "pet:setTheme",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "theme"
+    ]
+  },
+  {
+    "name": "pet:status",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "pet:step",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "text"
+    ]
+  },
+  {
+    "name": "pet:turnOff",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "pet:turnOn",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "projects:create",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "name",
+      "instructions"
+    ]
+  },
+  {
+    "name": "projects:forTurn",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId"
+    ]
+  },
+  {
+    "name": "projects:get",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "projects:list",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "projects:migrate",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "projects:moveChat",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "projectId"
+    ]
+  },
+  {
+    "name": "projects:remove",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "projects:rename",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "name"
+    ]
+  },
+  {
+    "name": "projects:setInstructions",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "instructions"
+    ]
+  },
+  {
+    "name": "queue:edit",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "conversationId",
+      "id",
+      "text"
+    ]
+  },
+  {
+    "name": "queue:remove",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "conversationId",
+      "id"
+    ]
+  },
+  {
+    "name": "queue:reorder",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "conversationId",
+      "ids"
+    ]
+  },
+  {
+    "name": "queue:sendNow",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "conversationId",
+      "id"
+    ]
+  },
+  {
+    "name": "queue:steer",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "conversationId",
+      "id"
+    ]
+  },
+  {
+    "name": "recovery:sweep",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "now",
+      "only"
+    ]
+  },
+  {
+    "name": "routing:checkPick",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "tier",
+      "model",
+      "effort"
+    ]
+  },
+  {
+    "name": "routing:clearMoved",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "routing:engines",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "routing:forChat",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "routing:forGuest",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "routing:forJob",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "avoid"
+    ]
+  },
+  {
+    "name": "routing:forTask",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "avoid"
+    ]
+  },
+  {
+    "name": "routing:giveUpRetry",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "routing:guestOn",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "engine"
+    ]
+  },
+  {
+    "name": "routing:guestsStuck",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "why"
+    ]
+  },
+  {
+    "name": "routing:holdForReset",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "routing:moveChatTo",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "engine",
+      "model",
+      "moved"
+    ]
+  },
+  {
+    "name": "routing:pickFor",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "work",
+      "perry",
+      "owner"
+    ]
+  },
+  {
+    "name": "routing:releaseResetWait",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "until"
+    ]
+  },
+  {
+    "name": "routing:retryPlan",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "routing:retryTurn",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "routing:rooms",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "routing:used",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "runner:checkIn",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "activeTurnIds",
+      "platform",
+      "hostname",
+      "workdir",
+      "policy",
+      "autoApprove"
+    ]
+  },
+  {
+    "name": "runner:createToken",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "name",
+      "token"
+    ]
+  },
+  {
+    "name": "runner:listRunners",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "runner:liveRunner",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "runner:revokeRunner",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "runnerId"
+    ]
+  },
+  {
+    "name": "runner:setPolicy",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "runnerId",
+      "policy"
+    ]
+  },
+  {
+    "name": "runs:finish",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "status",
+      "steps",
+      "toolCalls",
+      "model",
+      "usage",
+      "error",
+      "errorCode"
+    ]
+  },
+  {
+    "name": "runs:lastOk",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId"
+    ]
+  },
+  {
+    "name": "runs:recent",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "limit",
+      "conversationId"
+    ]
+  },
+  {
+    "name": "runs:spans",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "runId"
+    ]
+  },
+  {
+    "name": "runs:start",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "prompt",
+      "route"
+    ]
+  },
+  {
+    "name": "screen:ask",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId",
+      "which",
+      "why"
+    ]
+  },
+  {
+    "name": "screen:asked",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "device"
+    ]
+  },
+  {
+    "name": "screen:fulfil",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "path",
+      "name",
+      "error",
+      "device"
+    ]
+  },
+  {
+    "name": "screen:get",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "screen:getSetting",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "screen:giveUp",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "screen:setSetting",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "enabled"
+    ]
+  },
+  {
+    "name": "secrets:clear",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "name"
+    ]
+  },
+  {
+    "name": "secrets:get",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "name"
+    ]
+  },
+  {
+    "name": "secrets:set",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "name",
+      "value"
+    ]
+  },
+  {
+    "name": "secrets:status",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "skills:list",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "skills:read",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "folder"
+    ]
+  },
+  {
+    "name": "skills:remove",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "folder"
+    ]
+  },
+  {
+    "name": "tasks:afterTurn",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "error"
+    ]
+  },
+  {
+    "name": "tasks:answerFromDashboard",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "answer"
+    ]
+  },
+  {
+    "name": "tasks:awaitingSteering",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "turnId"
+    ]
+  },
+  {
+    "name": "tasks:chatFor",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "threadId"
+    ]
+  },
+  {
+    "name": "tasks:checkHandoff",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "tasks:clearAnswer",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "tasks:get",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "tasks:handOff",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "tasks:hasTurnAhead",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "conversationId"
+    ]
+  },
+  {
+    "name": "tasks:queue",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "title",
+      "prompt",
+      "goalId",
+      "origin",
+      "pick"
+    ]
+  },
+  {
+    "name": "tasks:queueFromDashboard",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "title",
+      "prompt",
+      "goalId"
+    ]
+  },
+  {
+    "name": "tasks:resume",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "answer"
+    ]
+  },
+  {
+    "name": "tasks:routed",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "route"
+    ]
+  },
+  {
+    "name": "tasks:steer",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "text",
+      "requestId",
+      "conversationId"
+    ]
+  },
+  {
+    "name": "tasks:steerFromDashboard",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id",
+      "text",
+      "requestId"
+    ]
+  },
+  {
+    "name": "tasks:steeringFromDashboard",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "tasks:tick",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "tasks:wait",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "until",
+      "why"
+    ]
+  },
+  {
+    "name": "tasks:work",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "titles:claim",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id"
+    ]
+  },
+  {
+    "name": "titles:finish",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id",
+      "title"
+    ]
+  },
+  {
+    "name": "titles:pending",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "todos:add",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "title",
+      "dueAt",
+      "repeat"
+    ]
+  },
+  {
+    "name": "todos:addFromAgent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "title",
+      "at",
+      "repeat",
+      "noteIds"
+    ]
+  },
+  {
+    "name": "todos:answerFromTelegram",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "senderId",
+      "data"
+    ]
+  },
+  {
+    "name": "todos:board",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "todos:edit",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "id",
+      "title",
+      "dueAt"
+    ]
+  },
+  {
+    "name": "todos:endDay",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "action"
+    ]
+  },
+  {
+    "name": "todos:forFollowUps",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "todos:get",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "todos:listForAgent",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "includeDone"
+    ]
+  },
+  {
+    "name": "todos:presence",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "idleSeconds",
+      "hotkey",
+      "hotkeyError",
+      "hotkeyHold",
+      "keys",
+      "device"
+    ]
+  },
+  {
+    "name": "todos:pushBack",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "id",
+      "minutes"
+    ]
+  },
+  {
+    "name": "todos:remind",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "todos:remove",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "todos:removeFromAgent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "todos:setDone",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "id",
+      "done"
+    ]
+  },
+  {
+    "name": "todos:setRepeat",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "id",
+      "repeat"
+    ]
+  },
+  {
+    "name": "todos:settleCard",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chatId",
+      "messageId",
+      "text"
+    ]
+  },
+  {
+    "name": "todos:tick",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "todos:updateFromAgent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "title",
+      "at",
+      "noTime",
+      "repeat",
+      "done",
+      "noteIds"
+    ]
+  },
+  {
+    "name": "turnStreams:append",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "id",
+      "offset",
+      "text",
+      "reset",
+      "resetKey"
+    ]
+  },
+  {
+    "name": "turnStreams:getChatStream",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "id"
+    ]
+  },
+  {
+    "name": "updates:ask",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "at",
+      "by",
+      "nightOf"
+    ]
+  },
+  {
+    "name": "updates:check",
+    "kind": "action",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "updates:finished",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "result"
+    ]
+  },
+  {
+    "name": "updates:plan",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "updates:saveCheck",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "head",
+      "behind",
+      "latest",
+      "problem"
+    ]
+  },
+  {
+    "name": "updates:setAuto",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "on"
+    ]
+  },
+  {
+    "name": "updates:status",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "updates:tick",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "updates:update",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "usage:forEngine",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "engine"
+    ]
+  },
+  {
+    "name": "usage:limits",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "usage:overview",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "usage:refreshAt",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token"
+    ]
+  },
+  {
+    "name": "usage:report",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "authenticate"
+    ],
+    "args": [
+      "token",
+      "engine",
+      "limits",
+      "hit",
+      "unread"
+    ]
+  },
+  {
+    "name": "usage:requestRefresh",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "vault:anySaved",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "text"
+    ]
+  },
+  {
+    "name": "vault:list",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "vault:remove",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "vault:reveal",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id"
+    ]
+  },
+  {
+    "name": "vault:save",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "label",
+      "url",
+      "username",
+      "value",
+      "note",
+      "by",
+      "conversationId"
+    ]
+  },
+  {
+    "name": "wake:busy",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "wake:get",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "wake:next",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "wake:report",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "at",
+      "what",
+      "error",
+      "awake"
+    ]
+  },
+  {
+    "name": "wake:set",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "enabled"
+    ]
+  },
+  {
+    "name": "web:checkMonitors",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "web:read",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "url"
+    ]
+  },
+  {
+    "name": "whatsapp:authorize",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chatId",
+      "text"
+    ]
+  },
+  {
+    "name": "whatsapp:callEvent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "from",
+      "chatId",
+      "status",
+      "isVideo",
+      "isGroup"
+    ]
+  },
+  {
+    "name": "whatsapp:callOf",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "waCallId"
+    ]
+  },
+  {
+    "name": "whatsapp:link",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "whatsapp:nameOf",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "whatsapp:newPairingCode",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "whatsapp:otherState",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "whatsapp:ownerClaimed",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "whatsapp:pending",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "whatsapp:receive",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chatId",
+      "text",
+      "name",
+      "media"
+    ]
+  },
+  {
+    "name": "whatsapp:receiveOther",
+    "kind": "action",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "chatId",
+      "group",
+      "groupName",
+      "from",
+      "fromName",
+      "fromOwner",
+      "mentionsLinked",
+      "repliesToLinked",
+      "text"
+    ]
+  },
+  {
+    "name": "whatsapp:report",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "status",
+      "qr",
+      "code",
+      "me",
+      "error"
+    ]
+  },
+  {
+    "name": "whatsapp:send",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "to",
+      "text"
+    ]
+  },
+  {
+    "name": "whatsapp:sendFile",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "to",
+      "storageId",
+      "localPath",
+      "fileName",
+      "contentType"
+    ]
+  },
+  {
+    "name": "whatsapp:sent",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "error"
+    ]
+  },
+  {
+    "name": "whatsapp:setHomeChannel",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "channel"
+    ]
+  },
+  {
+    "name": "whatsapp:startLinking",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "mode",
+      "phone"
+    ]
+  },
+  {
+    "name": "whatsapp:status",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "whatsapp:stop",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "whatsapp:typing",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "to"
+    ]
+  },
+  {
+    "name": "whatsapp:unlink",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "work:createGoal",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "title",
+      "description",
+      "milestones"
+    ]
+  },
+  {
+    "name": "work:createMonitor",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "title",
+      "url",
+      "condition",
+      "value",
+      "intervalMinutes",
+      "origin"
+    ]
+  },
+  {
+    "name": "work:createTask",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "title",
+      "prompt",
+      "goalId"
+    ]
+  },
+  {
+    "name": "work:deleteMonitor",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "monitorId"
+    ]
+  },
+  {
+    "name": "work:dueMonitors",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "work:getGoal",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "goalId"
+    ]
+  },
+  {
+    "name": "work:getTask",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "taskId"
+    ]
+  },
+  {
+    "name": "work:listGoals",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "work:listMonitors",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "work:listTasks",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "limit"
+    ]
+  },
+  {
+    "name": "work:markMonitorsDue",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "monitorId"
+    ]
+  },
+  {
+    "name": "work:recordCheck",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "fingerprint",
+      "observation",
+      "fired",
+      "failed",
+      "met"
+    ]
+  },
+  {
+    "name": "work:saveGoal",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "title",
+      "description",
+      "status",
+      "milestones"
+    ]
+  },
+  {
+    "name": "work:setMonitorActive",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "active"
+    ]
+  },
+  {
+    "name": "work:setPlan",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "taskId",
+      "plan"
+    ]
+  },
+  {
+    "name": "work:snapshot",
+    "kind": "query",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": []
+  },
+  {
+    "name": "work:toggleMonitor",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "monitorId",
+      "active"
+    ]
+  },
+  {
+    "name": "work:updateGoal",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "status",
+      "completeMilestones"
+    ]
+  },
+  {
+    "name": "work:updateMonitor",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "id",
+      "title",
+      "url",
+      "condition",
+      "value",
+      "intervalMinutes"
+    ]
+  },
+  {
+    "name": "work:updateTask",
+    "kind": "mutation",
+    "visibility": "internal",
+    "authMarkers": [],
+    "args": [
+      "taskId",
+      "turnId",
+      "status",
+      "question",
+      "result",
+      "error"
+    ]
+  },
+  {
+    "name": "workspace:attach",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "conversationId",
+      "id"
+    ]
+  },
+  {
+    "name": "workspace:file",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "conversationId",
+      "scope",
+      "id"
+    ]
+  },
+  {
+    "name": "workspace:files",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "conversationId",
+      "scope",
+      "paginationOpts",
+      "working",
+      "hidden",
+      "kind"
+    ]
+  },
+  {
+    "name": "workspace:get",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key",
+      "conversationId",
+      "scope",
+      "id"
+    ]
+  },
+  {
+    "name": "workspace:latest",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "conversationId",
+      "scope"
+    ]
+  },
+  {
+    "name": "workspace:setView",
+    "kind": "mutation",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "conversationId",
+      "scope",
+      "id",
+      "pinned",
+      "hidden"
+    ]
+  },
+  {
+    "name": "workspace:settings",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [
+      "assertDashboardKey"
+    ],
+    "args": [
+      "key"
+    ]
+  },
+  {
+    "name": "workspace:work",
+    "kind": "query",
+    "visibility": "public",
+    "authMarkers": [],
+    "args": [
+      "key",
+      "conversationId",
+      "scope",
+      "history"
+    ]
+  }
+]

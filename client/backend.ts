@@ -21,6 +21,15 @@ export class BackendError extends Error {
   }
 }
 
+/** The server may have committed a write whose acknowledgement never arrived. */
+export class WriteOutcomeUnknownError extends BackendError {
+  readonly outcome = "unknown";
+  constructor(readonly cause: unknown) {
+    super("Perry could not confirm this change. It may have been saved. Check the current state before trying again.", 504);
+    this.name = "WriteOutcomeUnknownError";
+  }
+}
+
 type Subscription = {
   name: string;
   args: unknown;
@@ -30,6 +39,9 @@ type Subscription = {
   loaded: boolean;
   listeners: Set<Listener>;
   inFlight: Promise<void> | null;
+  controller?: AbortController;
+  retry?: ReturnType<typeof setTimeout>;
+  retryDelay?: number;
   again: boolean;
   idleAt?: number;
   expiry?: ReturnType<typeof setTimeout>;
@@ -46,6 +58,7 @@ export class BackendClient {
   private subscriptions = new Map<string, Subscription>();
   private stream: AbortController | null = null;
   private closed = false;
+  private readonly lifetime = new AbortController();
   private readonly base: string;
   private readonly adminKey?: string;
   private hoverTimer?: ReturnType<typeof setTimeout>;
@@ -83,20 +96,29 @@ export class BackendClient {
     return /^https?:\/\//.test(path) ? path : `${this.base}${path}`;
   }
 
-  async call<T = unknown>(ref: AnyFunction | string, args: unknown = {}): Promise<{ value: T; reads?: string[]; writes?: string[] }> {
-    const response = await fetch(this.resolve(this.adminKey ? "/api/backend/admin" : "/api/backend/call"), {
-      method: "POST",
-      headers: { "content-type": "application/json", ...(this.adminKey ? { "x-perry-key": this.adminKey } : {}) },
-      body: JSON.stringify({ path: functionName(ref), args: args ?? {} }),
-    });
-    const body = await response.json().catch(() => ({ error: `The server answered ${response.status}.` })) as { value?: T; reads?: string[]; writes?: string[]; error?: string };
-    if (!response.ok || body.error) {
-      const error = new BackendError(body.error ?? `The server answered ${response.status}.`, response.status);
-      // Dashboard key failures currently arrive as 500; do not keep old text on revocation.
-      if (response.status === 401 || response.status === 403 || /dashboard key|DASHBOARD_KEY/i.test(error.message)) this.clearChatCache(error);
-      throw error;
-    }
-    return { value: body.value as T, reads: body.reads, writes: body.writes };
+  async call<T = unknown>(ref: AnyFunction | string, args: unknown = {}, options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<{ value: T; reads?: string[]; writes?: string[] }> {
+    if (this.closed) throw new BackendError("This backend connection is closed.", 499);
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(new DOMException("The backend request timed out.", "TimeoutError")), options.timeoutMs ?? 30_000);
+    const signal = AbortSignal.any([this.lifetime.signal, deadline.signal, ...(options.signal ? [options.signal] : [])]);
+    try {
+      const response = await fetch(this.resolve(this.adminKey ? "/api/backend/admin" : "/api/backend/call"), {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(this.adminKey ? { "x-perry-key": this.adminKey } : {}) },
+        body: JSON.stringify({ path: functionName(ref), args: args ?? {} }),
+        signal,
+      });
+      const body = await response.json().catch(() => {
+        signal.throwIfAborted();
+        return { error: `The server answered ${response.status}.` };
+      }) as { value?: T; reads?: string[]; writes?: string[]; error?: string };
+      if (!response.ok || body.error) {
+        const error = new BackendError(body.error ?? `The server answered ${response.status}.`, response.status);
+        if (response.status === 401 || response.status === 403 || /dashboard key|DASHBOARD_KEY/i.test(error.message)) this.clearChatCache(error);
+        throw error;
+      }
+      return { value: body.value as T, reads: body.reads, writes: body.writes };
+    } finally { clearTimeout(timer); }
   }
 
   async query<Q extends FunctionReference<"query", any>>(ref: Q, args?: FunctionArgs<Q>): Promise<FunctionReturnType<Q>> {
@@ -119,9 +141,13 @@ export class BackendClient {
     const started = performance.now();
     let success = false;
     try {
-      const result = await this.call<FunctionReturnType<F>>(ref as AnyFunction, args);
+      const result = await this.call<FunctionReturnType<F>>(ref as AnyFunction, args, { timeoutMs: kind === "action" ? 120_000 : 30_000 });
       success = true;
       return result;
+    } catch (error) {
+      // Never replay writes after transport loss; retries need durable operation IDs.
+      if (!(error instanceof BackendError)) throw new WriteOutcomeUnknownError(error);
+      throw error;
     } finally {
       try { this.onOperation?.(functionName(ref as AnyFunction), kind, success, Math.round(performance.now() - started)); } catch {}
     }
@@ -166,6 +192,9 @@ export class BackendClient {
   private keepIdle(key: string, sub: Subscription) {
     if (this.subscriptions.get(key) !== sub) return;
     clearTimeout(sub.expiry);
+    clearTimeout(sub.retry);
+    sub.again = false;
+    sub.controller?.abort();
     sub.idleAt = Date.now();
     // Map insertion order is the LRU order, including visits in the same millisecond.
     this.subscriptions.delete(key);
@@ -232,6 +261,8 @@ export class BackendClient {
       if (!isChatPayload(sub.name)) continue;
       clearTimeout(sub.expiry);
       sub.revision++;
+      clearTimeout(sub.retry);
+      sub.controller?.abort();
       sub.again = false;
       sub.value = undefined;
       sub.retainedBytes = 0;
@@ -261,30 +292,44 @@ export class BackendClient {
   }
 
   private fetch(sub: Subscription): Promise<void> {
+    clearTimeout(sub.retry);
     if (sub.inFlight) { sub.again = true; return sub.inFlight; }
     sub.inFlight = (async () => {
       do {
         sub.again = false;
         const revision = sub.revision;
+        const controller = new AbortController();
+        sub.controller = controller;
         try {
-          const result = await this.call(sub.name, sub.args);
+          const result = await this.call(sub.name, sub.args, { signal: controller.signal });
           if (revision !== sub.revision || this.closed) continue;
           const changed = !sub.loaded || sub.error || JSON.stringify(result.value) !== JSON.stringify(sub.value);
           sub.reads = result.reads ?? null;
           sub.error = undefined;
+          sub.retryDelay = undefined;
           sub.loaded = true;
           if (changed) sub.value = result.value;
           sub.retainedBytes = retainedChatBytes(sub.name, sub.args, result.value);
           if (changed) this.notify(sub);
         } catch (error) {
           if (revision !== sub.revision || this.closed) continue;
+          if (controller.signal.aborted) continue;
+          if (error instanceof Error && error.name === "TimeoutError" && sub.listeners.size) {
+            const delay = sub.retryDelay ?? 500;
+            sub.retryDelay = Math.min(delay * 2, 10_000);
+            sub.retry = setTimeout(() => {
+              sub.retry = undefined;
+              if (!this.closed && sub.listeners.size && this.subscriptions.get(keyOf(sub.name, sub.args)) === sub) void this.fetch(sub);
+            }, delay);
+            break;
+          }
           // The server unreachable (restarting, say) is not the query's error: what is shown stays,
           // and the change stream fetches everything again once it reconnects.
           if (!(error instanceof BackendError)) break;
           sub.error = error;
           sub.loaded = true;
           this.notify(sub);
-        }
+        } finally { if (sub.controller === controller) sub.controller = undefined; }
       } while (sub.again);
       sub.inFlight = null;
       if (!sub.listeners.size && this.subscriptions.get(keyOf(sub.name, sub.args)) === sub) this.keepIdle(keyOf(sub.name, sub.args), sub);
@@ -375,7 +420,13 @@ export class BackendClient {
           if (controller.signal.aborted) break;
         }
         this.setConnection(false);
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        if (controller.signal.aborted || this.closed) break;
+        await new Promise<void>((resolve) => {
+          const done = () => { clearTimeout(timer); controller.signal.removeEventListener("abort", done); resolve(); };
+          const timer = setTimeout(done, delay);
+          controller.signal.addEventListener("abort", done, { once: true });
+          if (controller.signal.aborted) done();
+        });
         delay = Math.min(delay * 2, 10_000);
       }
     })();
@@ -400,8 +451,9 @@ export class BackendClient {
 
   close() {
     this.closed = true;
+    this.lifetime.abort();
     clearTimeout(this.hoverTimer);
-    for (const sub of this.subscriptions.values()) clearTimeout(sub.expiry);
+    for (const sub of this.subscriptions.values()) { clearTimeout(sub.expiry); clearTimeout(sub.retry); }
     this.stream?.abort();
     this.stream = null;
     this.subscriptions.clear();

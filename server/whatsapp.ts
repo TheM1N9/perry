@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { HOME } from "../runner/home";
 import type { Runtime } from "./runtime";
+import { setTimeout as delay } from "node:timers/promises";
 
 /**
  * WhatsApp, as a linked device: Baileys speaks the WhatsApp Web protocol from
@@ -126,10 +127,8 @@ type Link = { mode: "self" | "separate"; wanted: boolean; phone?: string; status
 type Outgoing = { _id: string; to: string; kind: "text" | "typing" | "file"; text?: string; file?: { storageId?: string; localPath?: string; fileName: string; contentType: string } };
 
 const bare = (jid?: string | null) => (jid ?? "").replace(/:\d+(?=@)/, "");
-const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) => {
-  const timer = setTimeout(resolve, ms);
-  signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
-});
+const sleep = (ms: number, signal: AbortSignal) => delay(ms, undefined, { signal })
+  .catch((error) => { if (!signal.aborted) throw error; });
 
 /** The words of a message, whatever kind it is; media captions count. */
 function textOf(message: Record<string, any> | undefined): string {
