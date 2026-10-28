@@ -109,6 +109,7 @@ export const tick = internalMutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
+    await ctx.runMutation(internal.tasks.reconcileMissingChats, {});
     // Paused, none starts; those queued go on in their turn once resumed (pause.ts).
     if (await pausedAt(ctx)) return null;
     // A background task has turns from the moment it starts (its chat comes a moment later); a task opened by start_task in a chat is only tracked.
@@ -128,6 +129,30 @@ export const tick = internalMutation({
       await ctx.scheduler.runAfter(0, internal.tasks.work, { id: next._id });
     }
     return null;
+  },
+});
+
+/** Release tasks left behind by a deleted chat, including rows from older installs. */
+export const reconcileMissingChats = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    let failed = 0;
+    for (const status of ["queued", "running", "blocked"] as const) {
+      const tasks = await ctx.db.query("tasks").withIndex("by_status", q => q.eq("status", status)).collect();
+      for (const task of tasks) {
+        // New background tasks have no chat until work starts; tracked tasks need not have one.
+        if (!task.conversationId || await ctx.db.get(task.conversationId)) continue;
+        const error = "This task's chat was deleted. Queue a new task to continue.";
+        await ctx.db.patch(task._id, {
+          status: "failed", error,
+          question: undefined, waiting: undefined, updatedAt: Date.now(),
+        });
+        await report(ctx, { ...task, status: "failed", error }, "failed", `🧩 **${task.title}** could not be finished.\n\n${error}`);
+        failed += 1;
+      }
+    }
+    return failed;
   },
 });
 
@@ -170,6 +195,11 @@ export const work = internalMutation({
   handler: async (ctx, args) => {
     const task: Doc<"tasks"> | null = await ctx.runQuery(internal.tasks.get, { id: args.id });
     if (!task || task.status !== "running") return null;
+    if (task.conversationId && !await ctx.db.get(task.conversationId)) {
+      await ctx.runMutation(internal.tasks.reconcileMissingChats, {});
+      await ctx.scheduler.runAfter(0, internal.tasks.tick, {});
+      return null;
+    }
     // Perry paused since its turn was set going: it waits for the owner instead (pause.ts).
     if (await ctx.runQuery(internal.pause.state, {})) {
       await ctx.runMutation(internal.pause.holdTask, { id: task._id });
@@ -425,6 +455,7 @@ export const resume = internalMutation({
     const id = ctx.db.normalizeId("tasks", args.id);
     const task = id ? await ctx.db.get(id) : null;
     if (!task || task.status !== "blocked" || !args.answer.trim()) return false;
+    if (task.conversationId && !await ctx.db.get(task.conversationId)) return false;
     // Whatever it says next is news, even the same question again.
     await ctx.db.patch(task._id, { status: "queued", answer: args.answer.trim().slice(0, 4000), question: undefined, reported: undefined, updatedAt: Date.now() });
     await ctx.scheduler.runAfter(0, internal.tasks.tick, {});

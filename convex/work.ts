@@ -106,7 +106,9 @@ export const updateTask = internalMutation({
     await ctx.db.patch(id, patch);
     if (rest.status === "cancelled") {
       await ctx.db.patch(id, { waiting: undefined });
-      if (task.conversationId) await ctx.runMutation(internal.codex.requestStop, { conversationId: task.conversationId });
+      if (task.conversationId && await ctx.db.get(task.conversationId)) {
+        await ctx.runMutation(internal.codex.requestStop, { conversationId: task.conversationId });
+      }
       await ctx.scheduler.runAfter(0, internal.tasks.tick, {});
     }
     return null;

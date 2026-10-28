@@ -294,6 +294,10 @@ export const deleteChat = mutation({
     if (runs.some((run) => run.status === "running")) {
       throw new Error("Wait for this chat to finish before deleting it.");
     }
+    const task = chat.taskId ? await ctx.db.get(chat.taskId) : null;
+    if (task && ["queued", "running", "blocked"].includes(task.status)) {
+      await ctx.db.patch(task._id, { status: "cancelled", question: undefined, waiting: undefined, updatedAt: Date.now() });
+    }
     for (const run of runs) {
       const spans = await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).collect();
       for (const span of spans) await ctx.db.delete(span._id);
