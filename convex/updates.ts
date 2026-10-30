@@ -38,6 +38,7 @@ const DAY_MS = 24 * HOUR_MS;
 const PICKUP_MS = 90_000;
 /** A request picked up this long ago that never said how it ended was cut off partway. */
 const LOST_MS = 30 * 60_000;
+const DOWNLOAD_MS = 2 * 60_000;
 /** The dashboard's server runs in the checkout: `perry run` starts it there. */
 const REPO = process.cwd();
 
@@ -64,6 +65,7 @@ async function busyWith(ctx: QueryCtx): Promise<string | undefined> {
   }
   // A web message not queued yet; the recovery sweep releases one that is stuck.
   if (await ctx.db.query("conversations").filter((q) => q.gt(q.field("pendingTurns"), 0)).first()) return "a reply";
+  if ((await ctx.db.query("conversations").collect()).some((chat) => chat.providerAgent?.status === "running" && Date.now() - (chat.providerAgent.updatedAt ?? chat.providerAgent.startedAt) < HOUR_MS)) return "an agent";
   const recent = await ctx.db.query("runs").withIndex("by_started", (q) => q.gt("startedAt", Date.now() - HOUR_MS)).collect();
   if (recent.some((run) => run.status === "running")) return "a reply";
   for (const status of ["pending", "reviewing"] as const) {
@@ -95,8 +97,9 @@ export type UpdateView = {
   problem?: string;
   /** He updates himself at night. */
   auto: boolean;
-  /** Waiting for Perry to finish what he is doing, or updating now. */
-  state: "idle" | "waiting" | "updating";
+  /** Download progress, a staged update, and installation status. */
+  state: "idle" | "downloading" | "ready" | "waiting" | "updating";
+  downloaded?: { sha: string; at: number };
   busy?: string;
   last?: NonNullable<Doc<"updates">["last"]>;
 };
@@ -107,7 +110,8 @@ export const status = query({
     assertDashboardKey(args.key);
     const row = await ctx.db.query("updates").first();
     const install = await ctx.db.query("installation").first();
-    const state = row?.requested ? "updating" : row?.wantedAt ? "waiting" : "idle";
+    const state = row?.requested ? "updating" : row?.wantedAt ? "waiting" : row?.downloading ? "downloading"
+      : row?.downloaded && row.downloaded.sha === row.latest?.sha && available(row) ? "ready" : "idle";
     return {
       uiVersion: dashboardVersion(),
       supervised: supervised(),
@@ -117,6 +121,7 @@ export const status = query({
       problem: row?.problem,
       auto: install?.autoUpdate !== false,
       state,
+      downloaded: row?.downloaded,
       busy: state === "waiting" ? await busyWith(ctx) : undefined,
       last: row?.last,
     };
@@ -125,15 +130,58 @@ export const status = query({
 
 /** Update now, from the dashboard or the pet; if Perry is busy, as soon as he isn't. */
 export const update = mutation({
-  args: { key: v.string() },
+  args: { key: v.string(), expectedSha: v.optional(v.string()) },
   handler: async (ctx, args): Promise<{ waitingFor?: string }> => {
     assertDashboardKey(args.key);
     if (!supervised()) throw new Error("Perry updates himself when he runs in the background. Start him with perry start, or update him with perry update.");
     const row = await ctx.db.query("updates").first();
     if (!row || !available(row)) throw new Error(row?.problem ?? "There's nothing new to update to.");
-    if (!row.requested && !row.wantedAt) await ctx.db.patch(row._id, { wantedAt: Date.now() });
+    if (row.downloading) throw new Error("Wait for the download to finish.");
+    if (args.expectedSha && (row.downloaded?.sha !== args.expectedSha || row.latest?.sha !== args.expectedSha)) throw new Error("The available update changed. Download it again.");
+    if (!row.requested && !row.wantedAt) await ctx.db.patch(row._id, { wantedAt: Date.now(), wantedTarget: args.expectedSha });
     await ctx.scheduler.runAfter(0, internal.updates.tick, {});
     return { waitingFor: await busyWith(ctx) };
+  },
+});
+
+/** Fetch the update without stopping Perry or changing the running checkout. */
+export const download = action({
+  args: { key: v.string() },
+  handler: async (ctx, args): Promise<{ ready: boolean }> => {
+    assertDashboardKey(args.key);
+    const id = await ctx.runMutation(internal.updates.beginDownload, {});
+    if (!id) return { ready: false };
+    try {
+      const found = await standing(REPO);
+      const ready = await ctx.runMutation(internal.updates.finishDownload, { id, ...found });
+      if (!ready && found.problem) throw new Error(found.problem);
+      return { ready };
+    } catch (error) {
+      await ctx.runMutation(internal.updates.failDownload, { id });
+      throw error;
+    }
+  },
+});
+
+export const beginDownload = internalMutation({
+  args: {},
+  handler: async (ctx): Promise<string | null> => {
+    if (!supervised()) throw new Error("Automatic updates aren't available in this session.");
+    const row = await ctx.db.query("updates").first();
+    if (!row?.behind) throw new Error("You're up to date.");
+    if (row.requested || row.wantedAt || (row.downloading && Date.now() - row.downloading.at < DOWNLOAD_MS)) return null;
+    const id = randomUUID();
+    await ctx.db.patch(row._id, { downloading: { id, at: Date.now() }, downloaded: undefined });
+    return id;
+  },
+});
+
+export const failDownload = internalMutation({
+  args: { id: v.string() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.query("updates").first();
+    if (row?.downloading?.id === args.id) await ctx.db.patch(row._id, { downloading: undefined });
+    return null;
   },
 });
 
@@ -177,13 +225,28 @@ const vStanding = {
   problem: v.optional(v.string()),
 };
 
+export const finishDownload = internalMutation({
+  args: { id: v.string(), ...vStanding },
+  handler: async (ctx, { id, ...found }): Promise<boolean> => {
+    const row = await ctx.db.query("updates").first();
+    if (row?.downloading?.id !== id) return false;
+    const ready = Boolean(found.behind && found.latest && !found.problem);
+    await ctx.db.patch(row._id, {
+      head: undefined, latest: undefined, problem: undefined, ...found, checkedAt: Date.now(), downloading: undefined,
+      downloaded: ready ? { sha: found.latest!.sha, at: Date.now() } : undefined,
+    });
+    return ready;
+  },
+});
+
 export const saveCheck = internalMutation({
   args: vStanding,
   returns: v.null(),
   handler: async (ctx, args) => {
     const row = await ctx.db.query("updates").first();
-    const found = { ...args, checkedAt: Date.now(), ...(args.behind && !args.problem ? {} : { wantedAt: undefined }) };
-    if (row) await ctx.db.patch(row._id, { head: undefined, latest: undefined, problem: undefined, ...found });
+    const found = { ...args, checkedAt: Date.now(), ...(args.behind && !args.problem ? {} : { wantedAt: undefined, wantedTarget: undefined }) };
+    if (row) await ctx.db.patch(row._id, { head: undefined, latest: undefined, problem: undefined, ...found,
+      ...(row.downloaded?.sha !== args.latest?.sha || args.problem || !args.behind ? { downloaded: undefined } : {}) });
     else await ctx.db.insert("updates", found);
     return null;
   },
@@ -191,12 +254,12 @@ export const saveCheck = internalMutation({
 
 /** Hand an update to `perry run`: false when one already is. */
 export const ask = internalMutation({
-  args: { id: v.string(), at: v.number(), by: vUpdateBy, nightOf: v.optional(v.string()) },
+  args: { id: v.string(), at: v.number(), by: vUpdateBy, target: v.optional(v.string()), nightOf: v.optional(v.string()) },
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const row = await ctx.db.query("updates").first();
     if (!row || row.requested) return false;
-    await ctx.db.patch(row._id, { requested: { id: args.id, at: args.at, by: args.by }, wantedAt: undefined, ...(args.nightOf ? { nightOf: args.nightOf } : {}) });
+    await ctx.db.patch(row._id, { requested: { id: args.id, at: args.at, by: args.by, ...(args.target ? { target: args.target } : {}) }, wantedAt: undefined, wantedTarget: undefined, ...(args.nightOf ? { nightOf: args.nightOf } : {}) });
     return true;
   },
 });
@@ -216,7 +279,7 @@ export const finished = internalMutation({
       last: result,
       ...(row?.requested?.id === result.id ? { requested: undefined } : {}),
       // On the new version now; the next check says whether there is more.
-      ...(result.ok && result.to ? { head: result.to, behind: 0, latest: undefined } : {}),
+      ...(result.ok && result.to ? { head: result.to, behind: 0, latest: undefined, downloaded: undefined } : {}),
     };
     if (row) await ctx.db.patch(row._id, done);
     else await ctx.db.insert("updates", done);
@@ -260,6 +323,7 @@ export const tick = internalAction({
   handler: async (ctx) => {
     const now = Date.now();
     let plan = await ctx.runQuery(internal.updates.plan, {});
+    if (plan.row?.downloading && now - plan.row.downloading.at > DOWNLOAD_MS) await ctx.runMutation(internal.updates.failDownload, { id: plan.row.downloading.id });
     const result = readResult();
     if (result && result.id !== plan.row?.last?.id) await ctx.runMutation(internal.updates.finished, { result });
     const requested = plan.row?.requested;
@@ -285,12 +349,12 @@ export const tick = internalAction({
     }
 
     const { row } = plan;
-    if (!row || row.requested || !available(row) || !supervised()) return null;
+    if (!row || row.requested || row.downloading || !available(row) || !supervised()) return null;
     // Not the same failed update night after night: the owner has been told, and it is theirs now.
     const failedBefore = row.last && !row.last.ok && row.last.to === row.latest?.sha;
-    const nightly = night && row.nightOf !== day && !failedBefore;
+    const nightly = night && row.nightOf !== day && !failedBefore && !row.downloaded;
     if ((!row.wantedAt && !nightly) || plan.busy) return null;
-    const request: UpdateRequest = { id: randomUUID(), at: Date.now(), by: row.wantedAt ? "owner" : "nightly" };
+    const request: UpdateRequest = { id: randomUUID(), at: Date.now(), by: row.wantedAt ? "owner" : "nightly", ...(row.wantedAt && row.wantedTarget ? { target: row.wantedTarget } : {}) };
     if (!(await ctx.runMutation(internal.updates.ask, { ...request, ...(request.by === "nightly" ? { nightOf: day } : {}) }))) return null;
     try {
       writeFileSync(/*turbopackIgnore: true*/ PATHS.updateRequest, JSON.stringify(request));

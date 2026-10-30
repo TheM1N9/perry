@@ -245,6 +245,7 @@ export async function startBackend() {
   await runtime.runMutation("projects:migrate", {}, { internal: true });
   // Every note's paragraphs as lines that search finds with the memories (pages.ts); nothing once done.
   await runtime.runMutation("pages:indexAll", {}, { internal: true });
+  await runtime.runMutation("compaction:applyPendingUpkeep", {}, { internal: true });
   // Memories from before pages move into them, after a backup.
   await moveMemoriesIntoPages(runtime);
   await givePeoplePages(runtime);

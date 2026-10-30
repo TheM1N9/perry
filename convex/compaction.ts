@@ -10,32 +10,8 @@ import { timezoneOf } from "./jobs";
 import { seenFrom } from "./memories";
 import { isPinned, linesOf, linesProject, removePage, scrubbed, secretIn, setPinned, writePage, insertPage } from "./pages";
 
-/**
- * Brain tidied with the owner's yes (issue #220, the owner's idea): Perry
- * proposes merging lines that say the same thing, condensing a long section,
- * rolling a past week of the journal up into a summary, or a fact inferred
- * from several lines; each proposal waits in Needs you and on the phone as a
- * before and after, to approve, edit or decline. Nothing in Brain changes
- * until the owner says yes.
- *
- * Applied, a merge or a condensation takes its lines out of their page and
- * puts the new ones in their place; the old lines stay, as rows superseded by
- * the new ones and marked with the proposal (compactedBy, compactedFrom: their
- * page, section and place), so they are history, not lost. A rollup adds a
- * page of its own (the week, kind journal, rollup) and leaves the days as
- * they are. Undo puts it all back as it was, the old lines with their ids.
- *
- * Rearranging Brain (#230) is proposed the same way: move lines to a better
- * page, split some off to a page of their own, merge one page into another
- * (the merged page keeps a link there), or make a topic page that gathers
- * what is said across pages. Lines move as the rows they are (ids, who wrote
- * them, from which chat, when), never into a page another set of chats
- * reads; Undo moves them back and takes away the page it made.
- *
- * Proposals come from the weekly Brain review (jobs.ts): the duplicates found
- * here by their words (review), and what Perry writes itself with brain_review
- * and brain_propose. One with the same lines is never proposed twice while it
- * waits, nor again for 90 days once declined.
+/** Brain upkeep applies immediately and keeps a reversible record of every change.
+ * Imported instructions remain proposals so outside content cannot rewrite standing preferences.
  */
 
 type Proposal = Doc<"brainProposals">;
@@ -178,7 +154,11 @@ export async function propose(ctx: MutationCtx, input: {
   // Lines from outside are told apart by their words, as they have no lines of their own yet.
   const key = keyOf(input.kind, input.kind === "mergePages" ? [page._id] : input.kind === "outside" ? after.map(sameKey) : before.map((line) => line.id), input.kind === "outside" ? page._id : target?._id ?? input.title?.trim().toLocaleLowerCase());
   for (const other of await ctx.db.query("brainProposals").withIndex("by_key", (q) => q.eq("key", key)).collect()) {
-    if (other.status === "pending") return { error: "That is already waiting for the owner." };
+    if (other.status === "pending") {
+      if (other.kind === "outside") return { error: "That is already waiting for the owner." };
+      await applyUpkeep(ctx, other);
+      return { id: other._id };
+    }
     if (other.status === "declined" && Date.now() - (other.decidedAt ?? 0) < DECLINED_FOR_MS) return { error: "The owner declined that lately." };
   }
   const proposal = {
@@ -186,9 +166,13 @@ export async function propose(ctx: MutationCtx, input: {
     ...(target ? { targetPageId: target._id } : {}), ...(input.targetSection?.trim() ? { targetSection: input.targetSection.trim() } : {}), ...(input.title?.trim() ? { title: cleanTitle(input.title) } : {}),
   };
   const id = await ctx.db.insert("brainProposals", proposal);
-  const where = input.kind === "rollup" ? `the journal, ${input.section ?? page.title}` : input.kind === "topic" ? "Brain" : `${page.title}${input.section ? ` › ${input.section}` : ""}`;
-  const approvalId = await askAboutBrain(ctx, { proposalId: id, ...describe(proposal, where, target?.title) });
-  if (approvalId) await ctx.db.patch(id, { approvalId });
+  if (input.kind === "outside") {
+    const where = `${page.title}${input.section ? ` › ${input.section}` : ""}`;
+    const approvalId = await askAboutBrain(ctx, { proposalId: id, ...describe(proposal, where, target?.title) });
+    if (approvalId) await ctx.db.patch(id, { approvalId });
+  } else {
+    await applyUpkeep(ctx, { _id: id, _creationTime: proposal.createdAt, ...proposal });
+  }
   const note = cleaned.find((line) => line.note)?.note;
   return { id, ...(note ? { note } : {}) };
 }
@@ -217,6 +201,24 @@ export const decided = internalMutation({
       return null;
     }
     await apply(ctx, proposal);
+    return null;
+  },
+});
+
+async function applyUpkeep(ctx: MutationCtx, proposal: Proposal) {
+  await apply(ctx, proposal);
+  const approval = proposal.approvalId ? await ctx.db.get(proposal.approvalId) : null;
+  if (approval?.status === "pending") await ctx.db.patch(approval._id, { status: "auto", decidedBy: "trust", decidedAt: Date.now() });
+}
+
+/** Existing upkeep requests follow the same policy after an upgrade. */
+export const applyPendingUpkeep = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const pending = (await ctx.db.query("brainProposals").withIndex("by_status", (q) => q.eq("status", "pending")).collect())
+      .filter((proposal) => proposal.kind !== "outside");
+    for (const proposal of pending.slice(0, 100)) await applyUpkeep(ctx, proposal);
+    if (pending.length > 100) await ctx.scheduler.runAfter(0, internal.compaction.applyPendingUpkeep, {});
     return null;
   },
 });
@@ -618,7 +620,7 @@ export const proposeForAgent = internalMutation({
       kind: args.kind, pageId, ...(args.section ? { section: args.section } : {}), before: args.replaces, after: args.with, summary: args.why, by: "assistant",
       ...(to ? { targetPageId: to._id } : {}), ...(args.toSection?.trim() ? { targetSection: args.toSection } : {}), ...(args.title?.trim() ? { title: args.title } : {}),
     });
-    return done.id ? { proposed: `Waiting for the owner's OK (${done.id}).`, ...(done.note ? { note: done.note } : {}) } : { error: done.error };
+    return done.id ? { proposed: `Applied to Brain (${done.id}). You can undo it in Brain.`, ...(done.note ? { note: done.note } : {}) } : { error: done.error };
   },
 });
 

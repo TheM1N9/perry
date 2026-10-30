@@ -1,5 +1,5 @@
 import type { Doc } from "../convex/_generated/dataModel";
-import type { EngineItem, ItemStatus, ItemType, TokenUsage } from "./engine";
+import type { EngineItem, ItemStatus, ItemType, ProviderAgentUpdate, TokenUsage } from "./engine";
 
 /**
  * A turn's trace, as the runner reports it: one span per item the engine
@@ -11,6 +11,7 @@ import type { EngineItem, ItemStatus, ItemType, TokenUsage } from "./engine";
 export type Span = Pick<Doc<"runSpans">, "callId" | "kind" | "name" | "status" | "startedAt" | "endedAt" | "durationMs" | "input" | "output">;
 export type TraceReport = {
   spans: Span[];
+  agents?: ProviderAgentUpdate[];
   usage?: NonNullable<Doc<"runs">["usage"]>;
   steps?: number;
   /** How full the thread's context is: the latest response's input, and the model's window. */
@@ -77,17 +78,36 @@ export class TurnTrace {
   private spans = new Map<string, Span>();
   private closed = false;
   private dirty = new Set<string>();
+  private agents = new Map<string, ProviderAgentUpdate>();
+  private dirtyAgents = new Set<string>();
   // Adapted from vercel/eve (Apache-2.0): packages/eve/src/cli/dev/tui/turn-clock.ts
   private usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 };
   private steps = 0;
   private usageDirty = false;
   private context: { used: number; window: number } | undefined;
 
+  /** Keep intermediate assistant messages where they happened, alongside the tool spans. */
+  text(itemId: string, text: string, atMs: number) {
+    if (this.closed) return;
+    const callId = `assistant:${itemId}`;
+    const known = this.spans.get(callId);
+    this.spans.set(callId, {
+      callId, kind: "commentary", name: "Assistant update", status: "running",
+      startedAt: known?.startedAt ?? atMs, output: truncate(text, 32_768),
+    });
+    this.dirty.add(callId);
+  }
+
   /** Records an item's start, change or end. False when the trace does not keep that kind of item. */
   item(phase: "started" | "updated" | "completed", item: EngineItem, atMs: number): boolean {
     if (this.closed) return false;
+    for (const agent of item.agents ?? []) {
+      this.agents.set(agent.id, { ...this.agents.get(agent.id), ...agent, updatedAt: atMs });
+      this.dirtyAgents.add(agent.id);
+    }
+    if (item.agents?.length) return true;
     const described = describe(item);
-    if (!described) return false;
+    if (!described) return Boolean(item.agents?.length);
     const known = this.spans.get(item.id);
     if (known && known.status !== "running") return false;
     const reported = item.durationMs;
@@ -120,13 +140,18 @@ export class TurnTrace {
 
   // Adapted from vercel/eve (Apache-2.0): packages/eve/src/tracing/agent-tool-instrumentation.ts
   /** The turn is over: whatever is still running never finished. */
-  drain(atMs: number) {
+  drain(atMs: number, cancelAgents = false) {
     this.closed = true;
+    if (cancelAgents) for (const [id, agent] of this.agents) {
+      if (agent.status !== "running") continue;
+      this.agents.set(id, { ...agent, status: "cancelled", updatedAt: atMs });
+      this.dirtyAgents.add(id);
+    }
     for (const span of this.spans.values()) {
       if (span.status !== "running") continue;
       this.spans.set(span.callId, {
         ...span,
-        status: "error",
+        status: span.kind === "commentary" ? "ok" : "error",
         endedAt: Math.max(span.startedAt, atMs),
         durationMs: Math.max(0, atMs - span.startedAt),
         output: span.output ?? "The turn ended before this finished.",
@@ -137,12 +162,14 @@ export class TurnTrace {
 
   /** What changed since the last report, or null when nothing did. */
   take(): TraceReport | null {
-    if (this.dirty.size === 0 && !this.usageDirty) return null;
+    if (this.dirty.size === 0 && !this.usageDirty && this.dirtyAgents.size === 0) return null;
     const report: TraceReport = {
       spans: [...this.dirty].map((id) => this.spans.get(id)!),
+      ...(this.dirtyAgents.size ? { agents: [...this.dirtyAgents].map((id) => this.agents.get(id)!) } : {}),
       ...(this.usageDirty ? { usage: { ...this.usage }, steps: this.steps, ...(this.context ? { context: this.context } : {}) } : {}),
     };
     this.dirty.clear();
+    this.dirtyAgents.clear();
     this.usageDirty = false;
     return report;
   }
@@ -150,6 +177,7 @@ export class TurnTrace {
   /** A report that did not arrive goes out again with the next one, at its latest state. */
   retry(report: TraceReport) {
     for (const span of report.spans) this.dirty.add(span.callId);
+    for (const agent of report.agents ?? []) this.dirtyAgents.add(agent.id);
     if (report.usage) this.usageDirty = true;
   }
 }

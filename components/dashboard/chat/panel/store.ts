@@ -10,7 +10,7 @@ import { z } from "zod";
  */
 
 /** The panel's surfaces, each at most once in its tabs. */
-export const SURFACES = ["details", "files", "browser", "work"] as const;
+export const SURFACES = ["details", "files", "browser", "agents", "work"] as const;
 export type SurfaceId = (typeof SURFACES)[number];
 
 const CAP = 50;

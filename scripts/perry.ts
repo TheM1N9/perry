@@ -423,10 +423,13 @@ async function selfUpdate({ pause, resume, note }: { pause: () => Promise<unknow
 
   say(asked.by === "nightly" ? "updating Perry, as planned for the night" : "updating Perry, as asked from the dashboard");
   // Nothing stops for an update that cannot happen.
-  const before = await standing(REPO);
+  const before = await standing(REPO, { fetch: !asked.target });
   if (before.problem) {
     say(before.problem);
     return record({ ok: false, from: before.head, error: before.problem });
+  }
+  if (asked.target && before.latest?.sha !== asked.target && before.head !== asked.target) {
+    return record({ ok: false, from: before.head, error: "The available update changed. Download the update again before installing." });
   }
   if (!before.behind || !before.head || !before.latest) {
     say("already the latest");

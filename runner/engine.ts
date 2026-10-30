@@ -210,6 +210,13 @@ export type EngineItem = {
   durationMs?: number;
   /** The engine's own item, for traces. */
   raw: unknown;
+  agents?: ProviderAgentUpdate[];
+};
+
+export type ProviderAgentUpdate = {
+  id: string; title?: string; prompt?: string; text?: string; model?: string;
+  updatedAt?: number;
+  status: "running" | "done" | "failed" | "cancelled";
 };
 
 /** One model response's tokens. Cached input is part of input, reasoning part of output. */
@@ -317,6 +324,8 @@ export type TurnSink = {
   /** The turn is running, with what interrupt() and steer() need. */
   onStarted?(handle: TurnHandle): void;
   onEvent?(event: TurnEvent): void;
+  /** Native agents may finish after the parent turn ends. */
+  onAgents?(agents: ProviderAgentUpdate[]): void;
   /** Answer with the id of one of the request's options. */
   onRequest(request: EngineRequest): Promise<string>;
 };

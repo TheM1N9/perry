@@ -661,8 +661,8 @@ function Pet() {
   }
   if (!bubble && updateNews && updateNews > now && updates && updateReady(updates)) {
     bubble = (
-      <Bubble id="update" title="A new version of me is ready" detail={`${plural(updates.behind, "change")} · ${updates.latest?.title ?? ""}`} onClose={() => setUpdateNews(null)}>
-        <BubbleButton primary onClick={updateNow}>Update</BubbleButton>
+      <Bubble id="update" title={updates.state === "ready" ? "Update ready to install" : "An update is available"} detail={updates.state === "ready" ? "Reload when you’re ready to install it." : "Download it now and install when you’re ready."} onClose={() => setUpdateNews(null)}>
+        <BubbleButton primary onClick={updateNow}>{updates.state === "ready" ? "Reload to install" : "Download update"}</BubbleButton>
         <BubbleButton onClick={() => setUpdateNews(null)}>Later</BubbleButton>
       </Bubble>
     );
@@ -695,11 +695,12 @@ function Pet() {
           {limit.title}
         </Button>
       )
-      : updates?.state === "updating" ? "Updating myself; back in a few minutes"
-        : updates?.state === "waiting" ? "Updating once I'm done"
+      : updates?.state === "downloading" ? "Downloading update…"
+      : updates?.state === "updating" ? "Installing update…"
+        : updates?.state === "waiting" ? "The update will install when I’m done"
           : updateReady(updates) ? (
             <>A new version is ready ·{" "}
-              <Button variant="link" className="h-auto p-0 text-xs" onClick={updateNow}>Update</Button>
+              <Button variant="link" className="h-auto p-0 text-xs" onClick={updateNow}>{updates?.state === "ready" ? "Reload to install" : "Download update"}</Button>
             </>
           ) : "Here when you need him";
   const panel = (

@@ -138,8 +138,7 @@ function Reembedding() {
 }
 
 /**
- * Changes to Brain the owner approved (compaction.ts): what Perry tidied with
- * their yes, newest first, each with Undo; and how many wait in Needs you.
+ * Changes to Brain (compaction.ts), newest first, each with Undo; and how many wait in Needs you.
  */
 function BrainChanges() {
   const { dashboardKey } = useSession();
@@ -162,11 +161,11 @@ function BrainChanges() {
     }
   };
   return (
-    <section aria-label="Changed with your OK" className="space-y-1">
-      <h2 className="text-sm font-medium text-muted-foreground">Changed with your OK</h2>
+    <section aria-label="Recent changes" className="space-y-1">
+      <h2 className="text-sm font-medium text-muted-foreground">Recent changes</h2>
       {waiting > 0 && <p className="text-sm text-muted-foreground"><Link href="/inbox" className="underline-offset-2 hover:underline">{waiting} waiting in Needs you</Link></p>}
       {applied.length > 0 && (
-        <List label="Changed with your OK">
+        <List label="Recent changes">
           {applied.map((change) => (
             <li key={change.id} className="flex items-center gap-3 py-2.5" data-change={change.kind}>
               <SparklesIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />

@@ -715,6 +715,11 @@ const toolName = (span: { kind: Doc<"runSpans">["kind"]; name: string }) =>
  * tool calls, and each model response counts as one step.
  */
 const vTrace = v.object({
+  agents: v.optional(v.array(v.object({
+    id: v.string(), title: v.optional(v.string()), prompt: v.optional(v.string()), text: v.optional(v.string()), model: v.optional(v.string()),
+    updatedAt: v.optional(v.number()),
+    status: v.union(v.literal("running"), v.literal("done"), v.literal("failed"), v.literal("cancelled")),
+  }))),
   spans: v.array(v.object({
     callId: v.string(),
     kind: vSpanKind,
@@ -764,7 +769,47 @@ async function linkFiles(ctx: MutationCtx, conversationId: Id<"conversations">, 
   }
 }
 
+/** Agent updates can outlive their parent turn; runner ownership still applies. */
+export const agentProgress = mutation({
+  args: { token: v.string(), id: v.id("codexTurns"), agents: vTrace.fields.agents },
+  handler: async (ctx, args) => {
+    const runner = await authenticate(ctx, args.token);
+    const job = await ctx.db.get(args.id);
+    if (!job || job.runnerId !== runner._id) return null;
+    await recordAgents(ctx, job, args.agents ?? []);
+    return null;
+  },
+});
+
+async function recordAgents(ctx: MutationCtx, job: Doc<"codexTurns">, agents: NonNullable<Infer<typeof vTrace>["agents"]>) {
+  const parent = await ctx.db.get(job.conversationId);
+  if (parent) for (const agent of agents.slice(0, 100)) {
+    const externalId = `agent:${parent._id}:${agent.id}`;
+    const existing = await ctx.db.query("conversations").withIndex("by_channel_external", (q) => q.eq("channel", "web").eq("externalId", externalId)).first();
+    const now = Date.now();
+    const updatedAt = agent.updatedAt ?? now;
+    if (existing?.providerAgent?.updatedAt !== undefined && (updatedAt < existing.providerAgent.updatedAt
+      || (updatedAt === existing.providerAgent.updatedAt && existing.providerAgent.status !== "running" && agent.status === "running"))) continue;
+    const providerAgent = {
+      ...existing?.providerAgent, id: agent.id, runId: existing?.providerAgent?.runId ?? job.runId, status: agent.status, updatedAt,
+      startedAt: existing?.providerAgent?.startedAt ?? now,
+      ...(agent.status !== "running" ? { finishedAt: existing?.providerAgent?.finishedAt ?? now } : { finishedAt: undefined }),
+      ...(agent.prompt ? { prompt: hide(agent.prompt, await savedValues(ctx)).slice(0, 32_768) } : {}),
+      ...(agent.text !== undefined ? { text: hide(agent.text, await savedValues(ctx)).slice(0, 100_000) } : {}),
+    };
+    const update = { providerAgent, lastMessageAt: now, ...(agent.title && (!existing || existing.title === "Agent") ? { title: hide(agent.title, await savedValues(ctx)).slice(0, 160) } : {}), ...(agent.model ? { model: agent.model } : {}) };
+    if (existing) await ctx.db.patch(existing._id, update);
+    else await ctx.db.insert("conversations", {
+      ...update, channel: "web", externalId, threadId: `provider:${agent.id}`, parentConversationId: parent._id,
+      title: agent.title ? hide(agent.title, await savedValues(ctx)).slice(0, 160) : "Agent",
+      engine: job.engine, codexRunnerId: job.runnerId, ...(parent.projectId ? { projectId: parent.projectId } : {}),
+    });
+  }
+}
+
 async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infer<typeof vTrace>) {
+  await recordAgents(ctx, job, trace.agents ?? []);
+
   const run = await ctx.db.get(job.runId);
   if (!run || run.status !== "running") return;
   const toolCalls = [...(run.toolCalls ?? [])];
@@ -785,7 +830,7 @@ async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infe
       name: hide(span.name, values).slice(0, 300),
       input: span.input && hide(span.input, values).slice(0, SPAN_TEXT),
       // A command's output keeps its end, as the runner cut it.
-      output: span.output && (span.kind === "command" ? hide(span.output, values).slice(-SPAN_TEXT) : hide(span.output, values).slice(0, SPAN_TEXT)),
+      output: span.output && (span.kind === "command" ? hide(span.output, values).slice(-SPAN_TEXT) : hide(span.output, values).slice(0, span.kind === "commentary" ? 32_768 : SPAN_TEXT)),
     };
     const existing = await ctx.db.query("runSpans")
       .withIndex("by_run", (q) => q.eq("runId", run._id).eq("callId", callId))
@@ -798,7 +843,7 @@ async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infe
       continue;
     }
     await ctx.db.insert("runSpans", { runId: run._id, ...row });
-    if (span.kind !== "reasoning") toolCalls.push(toolName(span));
+    if (span.kind !== "reasoning" && span.kind !== "commentary") toolCalls.push(toolName(span));
     // Codex's own web search reads pages too (mcp.ts, outwardAllowed).
     if (span.kind === "webSearch" && job.outsideAt === undefined) await ctx.db.patch(job._id, { outsideAt: Date.now() });
   }
@@ -1302,7 +1347,7 @@ export const finalizeTurn = internalAction({
     if (!(await ctx.runMutation(internal.codex.beginFinalize, args))) return null;
     const { job, conversation, steers } = result;
     // A stopped turn keeps whatever it had written, marked as stopped.
-    const reply = job.stopped ? `${job.response ?? ""}\n\n_Stopped._`.trim() : job.response;
+    const reply = job.stopped && conversation.channel !== "web" ? `${job.response ?? ""}\n\n_Stopped._`.trim() : job.response;
     // Each step is recorded once done, so recovery can retry this safely (see recovery.ts).
     const done = (step: "reportedAt" | "savedAt" | "deliveredAt") => ctx.runMutation(internal.codex.markStep, { id: args.id, step });
     const userId = conversation.channel === "web" ? "web:dashboard" : `${conversation.channel}:${conversation.externalId}`;
