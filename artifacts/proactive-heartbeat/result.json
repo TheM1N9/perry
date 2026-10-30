@@ -6,8 +6,11 @@
     "due job queues a bounded investigation with timezone, private context boundaries and alert history",
     "an in-flight investigation cannot queue a second turn",
     "rolling lookback survives failures, partial reads and indexing delays",
-    "a fixture finding reaches delivery and memory once; whitespace duplicates and NOTHING stay quiet",
+    "a targetless delivery is not marked as alerted and the next check can retry",
+    "an accepted finding reaches memory once; whitespace duplicates and NOTHING stay quiet",
     "proactive findings use the existing quiet-hours admission path",
+    "a successfully queued WhatsApp alert is recorded after acceptance",
+    "a failed transport leaves no deduplication marker and the next check can retry",
     "global pause prevents new investigations",
     "duplicate suppression survives a runtime restart",
     "truncated alert memory never suppresses a materially different long finding"

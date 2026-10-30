@@ -104,20 +104,45 @@ try {
   const finding = "You cancelled the meeting because you are away this week, but the original invitation is for the week after next. Check the original invitation before sending a correction.";
   await mutate("jobs:finished", { id, result: finding });
   assert.equal(scheduled("notify:deliver").length, 1);
-  assert(db.all("memories").some((memory) => String(memory.text).includes(finding)));
-  await mutate("jobs:finished", { id, result: `  ${finding.replaceAll(" ", "\n")}  ` });
-  assert.equal(scheduled("notify:deliver").length, 1);
-  await mutate("jobs:finished", { id, result: "NOTHING" });
-  assert.equal(scheduled("notify:deliver").length, 1);
-  pass("a fixture finding reaches delivery and memory once; whitespace duplicates and NOTHING stay quiet");
+  assert(!db.all("memories").some((memory) => String(memory.text).includes(finding)));
+  assert.equal(await rt.runAction("notify:deliver", scheduled("notify:deliver")[0], { internal: true }), false);
+  await mutate("jobs:finished", { id, result: finding });
+  assert.equal(scheduled("notify:deliver").length, 2);
+  pass("a targetless delivery is not marked as alerted and the next check can retry");
 
   const clock = new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).split(":").map(Number);
   const minute = clock[0] * 60 + clock[1];
   const time = (offset: number) => { const at = (minute + offset + 1440) % 1440; return `${Math.floor(at / 60).toString().padStart(2, "0")}:${(at % 60).toString().padStart(2, "0")}`; };
   db.patch(install, { claimedAt: Date.now(), ownerChannel: "telegram", ownerExternalId: "4242", quietHours: { start: time(-30), end: time(30) } });
-  await rt.runAction("notify:deliver", scheduled("notify:deliver")[0], { internal: true });
+  await rt.runAction("notify:deliver", scheduled("notify:deliver")[1], { internal: true });
   assert(db.all("sent").some((row) => row.heldFor === "quiet" && String(row.text).includes(finding)));
+  assert(db.all("memories").some((memory) => String(memory.text).includes(finding)));
+  await mutate("jobs:finished", { id, result: `  ${finding.replaceAll(" ", "\n")}  ` });
+  assert.equal(scheduled("notify:deliver").length, 2);
+  await mutate("jobs:finished", { id, result: "NOTHING" });
+  assert.equal(scheduled("notify:deliver").length, 2);
+  pass("an accepted finding reaches memory once; whitespace duplicates and NOTHING stay quiet");
   pass("proactive findings use the existing quiet-hours admission path");
+
+  db.patch(install, { quietHours: undefined, homeChannel: "whatsapp", whatsappOwner: "919876543210@s.whatsapp.net" });
+  const accepted = "A confirmed calendar clash needs your attention.";
+  await mutate("jobs:finished", { id, result: accepted });
+  assert.equal(await rt.runAction("notify:deliver", scheduled("notify:deliver").at(-1)!, { internal: true }), true);
+  assert(db.all("whatsappOutbox").some((row) => String(row.text).includes(accepted)));
+  assert(db.all("memories").some((memory) => String(memory.text).includes(accepted)));
+  pass("a successfully queued WhatsApp alert is recorded after acceptance");
+
+  process.env.TELEGRAM_BOT_TOKEN = "123456:proactive-fixture";
+  db.patch(install, { homeChannel: "telegram" });
+  const failed = "A finding whose Telegram transport fails must be retried.";
+  await mutate("jobs:finished", { id, result: failed });
+  const attempts = scheduled("notify:deliver").length;
+  assert.equal(await rt.runAction("notify:deliver", scheduled("notify:deliver").at(-1)!, { internal: true }), false);
+  assert(!db.all("memories").some((memory) => String(memory.text).includes(failed)));
+  assert(!db.all("sent").some((row) => String(row.text).includes(failed)));
+  await mutate("jobs:finished", { id, result: failed });
+  assert.equal(scheduled("notify:deliver").length, attempts + 1);
+  pass("a failed transport leaves no deduplication marker and the next check can retry");
 
   db.patch(chatId, { pendingTurns: 0 });
   await rt.runMutation("pause:set", { key: process.env.DASHBOARD_KEY, paused: true });
@@ -137,7 +162,9 @@ try {
   pass("duplicate suppression survives a runtime restart");
 
   const shared = "The original meeting thread provides additional context. ".repeat(12);
+  runtime.store.patch(install, { quietHours: { start: time(-30), end: time(30) } });
   await runtime.runMutation("jobs:finished", { id, result: shared + "The meeting is on Tuesday." }, { internal: true });
+  await runtime.runAction("notify:deliver", scheduled("notify:deliver").at(-1)!, { internal: true });
   await runtime.runMutation("jobs:finished", { id, result: shared + "The meeting has moved to Wednesday." }, { internal: true });
   assert.equal(Number(sql.prepare("SELECT count(*) AS n FROM _scheduled WHERE name = 'notify:deliver'").get()!.n), Number(beforeRestart) + 2);
   pass("truncated alert memory never suppresses a materially different long finding");

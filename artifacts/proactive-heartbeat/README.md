@@ -23,6 +23,8 @@ Failure cases recorded before writing the verification script:
   the owner's timezone or earlier alerts, or lacks sent-mail/thread checks.
 - Autonomous turns can begin without the existing outside-data restrictions.
 - A finding is never queued for delivery or never reaches alert memory.
+- A targetless or failed delivery is marked as already alerted, suppressing a retry.
+- A held notification is not marked, so every check queues it again during quiet hours.
 - The same finding is queued again, including after a runtime restart.
 - A changed finding is suppressed because it shares the first 600 characters
   with an earlier alert's truncated memory.

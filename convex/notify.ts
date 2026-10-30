@@ -4,7 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, type ActionCtx, type QueryCtx } from "./_generated/server";
 import { loadConversation } from "./brain";
 import type { Target } from "./channels";
-import { nextRun, timezoneOf } from "./jobs";
+import { nextRun, ownerClock, timezoneOf } from "./jobs";
 import { saveMessages } from "./lib/agent";
 import { sendButtons, sendMessage } from "./lib/telegram";
 
@@ -52,6 +52,8 @@ export const deliver = internalAction({
     buttons: v.optional(vButtons),
     /** What sent it: a job or watch (whose manners are kept), or a reminder (which always goes). */
     from: v.optional(vFrom),
+    /** A heartbeat finding becomes an alert only once accepted for delivery. */
+    heartbeatAlert: v.optional(v.string()),
   },
   returns: v.boolean(),
   handler: async (ctx, args): Promise<boolean> => {
@@ -70,12 +72,12 @@ export const deliver = internalAction({
     // Whether it may go now is decided and its place taken in one step: messages ready at once (three
     // jobs finishing together) are each counted against the day's limit, not all let through.
     const admitted: { id: Id<"sent">; held: boolean } = await ctx.runMutation(internal.notify.admit, { ...row, keepsRules: target.channel !== "web" && args.from?.kind !== "reminder" });
-    if (admitted.held) return true;
-    if (!(await send(ctx, target, args.text, args.buttons))) {
+    if (!admitted.held && !(await send(ctx, target, args.text, args.buttons))) {
       await ctx.runMutation(internal.notify.forget, { id: admitted.id });
       return false;
     }
-    if ((args.from?.kind === "job" || args.from?.kind === "watch") && args.from.id) await offerPause(ctx, target, args.origin, args.from);
+    if (args.heartbeatAlert) await ctx.runMutation(internal.memories.noteAlert, { text: args.heartbeatAlert, at: ownerClock(await ctx.runQuery(internal.jobs.ownerTimezone, {})) });
+    if (!admitted.held && (args.from?.kind === "job" || args.from?.kind === "watch") && args.from.id) await offerPause(ctx, target, args.origin, args.from);
     return true;
   },
 });
