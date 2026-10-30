@@ -310,6 +310,23 @@ const send_message = createTool({
   },
 });
 
+const send_to_owner = createTool({
+  description:
+    "Send something to the owner's own linked WhatsApp or Telegram when they ask to receive it or continue the conversation there. " +
+    "No phone number or contact lookup is needed. Include a self-contained message and a short context summary with the " +
+    "relevant decisions, constraints and next step, so their reply there can continue this chat. Both are sent to the requested app. " +
+    "Report the returned status accurately: WhatsApp queues messages, Telegram sends them. If already in the requested app, reply normally instead.",
+  inputSchema: z.object({
+    channel: z.enum(["whatsapp", "telegram"]).describe("The app the owner asked for. Never substitute another app."),
+    text: z.string().min(1).max(4000).describe("The message to send to the owner."),
+    context: z.string().min(1).max(1200).describe("Relevant background for continuing this conversation in the requested app. Include only what is needed for this handoff."),
+  }),
+  execute: async (ctx, input): Promise<{ status: "sent" | "queued" | "failed"; error?: string }> => {
+    if (!ctx.conversationId || ctx.fromJob) return { status: "failed", error: "Only an owner's chat can send a conversation to another app." };
+    return await ctx.runAction(internal.notify.sendToOwner, { from: ctx.conversationId, ...input });
+  },
+});
+
 const update_contact = createTool({
   description:
     "Set what you may know and share with someone you talk with, in the owner's words: their brief (\"You can tell Datta my gym " +
@@ -1785,6 +1802,7 @@ export const ALL_TOOLS = {
   check_watches,
   find_contact,
   send_message,
+  send_to_owner,
   update_contact,
   tell_owner,
   library_list,

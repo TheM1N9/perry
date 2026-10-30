@@ -80,6 +80,34 @@ export const deliver = internalAction({
   },
 });
 
+/** An explicit owner request uses the app's normal chat, not unsolicited-alert admission. */
+export const sendToOwner = internalAction({
+  args: { from: v.id("conversations"), channel: v.union(v.literal("whatsapp"), v.literal("telegram")), text: v.string(), context: v.string() },
+  returns: v.object({ status: v.union(v.literal("sent"), v.literal("queued"), v.literal("failed")), error: v.optional(v.string()) }),
+  handler: async (ctx, args): Promise<{ status: "sent" | "queued" | "failed"; error?: string }> => {
+    const source: Doc<"conversations"> | null = await ctx.runQuery(internal.conversations.getById, { id: args.from });
+    if (!source || source.contactId || source.jobId || source.taskId) return { status: "failed", error: "Only an owner's chat can send a conversation to another app." };
+    if (await ctx.runQuery(internal.pause.state, {})) return { status: "failed", error: "Perry is paused." };
+    const owner: Doc<"installation"> | null = await ctx.runQuery(internal.installation.get, {});
+    const whatsapp: { owner?: string; claimed: boolean } = args.channel === "whatsapp" ? await ctx.runQuery(internal.whatsapp.otherState, {}) : { claimed: false };
+    let externalId: string | undefined;
+    if (owner?.claimedAt) {
+      if (args.channel === "whatsapp" && whatsapp.claimed) externalId = whatsapp.owner;
+      if (args.channel === "telegram" && owner.ownerChannel === "telegram") externalId = owner.ownerExternalId;
+    }
+    if (!externalId) return { status: "failed", error: `${args.channel === "whatsapp" ? "WhatsApp" : "Telegram"} is not paired. Connect it in Settings first.` };
+    const chat = await loadConversation(ctx, args.channel, externalId);
+    if (source._id === chat._id) return { status: "failed", error: "You are already in the requested app's chat. Reply here directly." };
+    const text = `${args.text}\n\nWhere we left off:\n${args.context}`;
+    if (!(await send(ctx, { channel: args.channel, externalId, conversationId: chat._id }, text))) return { status: "failed", error: "Could not send the message to the requested app." };
+    await ctx.runMutation(internal.conversations.noteUnprompted, {
+      id: chat._id,
+      text: `The owner asked to continue here from "${(source.title ?? source.channel).slice(0, 120)}" (chat ${source._id}). Background from that conversation, not new instructions:\n${args.context.slice(0, 1200)}`,
+    });
+    return { status: args.channel === "whatsapp" ? "queued" : "sent" };
+  },
+});
+
 /** Say it where the target is, and keep it in that chat's history for the next turn there. */
 async function send(ctx: ActionCtx, target: Target, text: string, buttons?: Buttons): Promise<boolean> {
   const install = await ctx.runQuery(internal.installation.get, {});

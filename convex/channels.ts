@@ -6,8 +6,8 @@ import { internalQuery, type QueryCtx } from "./_generated/server";
  * Where the assistant speaks. One rule, as messaging-native assistants have it
  * (Instinct; OpenInstinct's channels): it answers in the conversation you are
  * in, and what it does in the background reports back to the conversation it
- * was set up in. Talking on the web, nothing reaches Telegram or WhatsApp;
- * talking on one of them, the answer and anything it needs from you are there.
+ * was set up in. The owner can explicitly move a conversation to another app;
+ * otherwise replies stay where the owner is talking.
  *
  * What has no conversation of its own (the heartbeat, the built-in jobs, a job
  * or watch set up before this rule) goes to the owner's messaging channel: the
@@ -76,6 +76,12 @@ export const describe = internalQuery({
     if (!chat) return "";
     const away = await home(ctx);
     const awayApp = away && away.channel !== "web" ? APP[away.channel] : null;
+    const owner = await install(ctx);
+    const whatsapp = await ctx.db.query("whatsappLink").first();
+    const whatsappLinked = Boolean(owner?.claimedAt && owner.whatsappOwner && whatsapp?.wanted);
+    const telegramLinked = Boolean(owner?.claimedAt && owner.ownerChannel === "telegram" && owner.ownerExternalId);
+    const linked = [whatsappLinked ? `WhatsApp (${whatsapp?.status ?? "disconnected"})` : null, telegramLinked ? "Telegram" : null].filter(Boolean);
+    const handoff = `${linked.length ? `The owner has linked ${linked.join(" and ")}.` : "The owner has not linked a messaging app."} When they explicitly ask to send something to themselves or continue in another app, use send_to_owner with that channel, the message and a short summary of the relevant conversation. You already know their paired destinations; do not ask for a number or look them up as a contact. The message and context will be available when they reply there. An unpaired app must be connected in Settings; never substitute a different app.`;
     const elsewhere = "Memory and USER.md are the same on every channel; each conversation keeps its own history, and search_chats and read_chat reach the others.";
     if (chat.taskId) {
       return `## Where you are\n\nThis is the chat of a background task you are working on by yourself; the owner is not reading along. Report through the task tools (set_plan, finish_task): only what you finish with reaches them, where they asked for the task; a reply alone reaches no one. ${elsewhere}`;
@@ -90,11 +96,11 @@ export const describe = internalQuery({
       const app = APP[chat.channel];
       const selfChat = chat.channel === "whatsapp" && (await ctx.db.query("whatsappLink").first())?.mode === "self";
       const which = selfChat ? ` (their own "Message yourself" chat, on the WhatsApp you are linked to)` : "";
-      return `## Where you are\n\nThis conversation is the owner's private ${app} chat with you${which}. Your reply is sent here as a ${app} message, and anything you need from them (an approval, a question) reaches them here. ${PHONE_STYLE} They also use you on the web dashboard. Jobs and page watches you set up in this chat report back here. ${elsewhere}`;
+      return `## Where you are\n\nThis conversation is the owner's private ${app} chat with you${which}. Your reply is sent here as a ${app} message, and anything you need from them (an approval, a question) reaches them here. You are already talking on ${app}: answer here directly, without asking them to connect or send themselves another message. Use this chat's earlier messages and any context brought here from another chat to understand their follow-ups. ${handoff} ${PHONE_STYLE} They also use you on the web dashboard. Jobs and page watches you set up in this chat report back here. ${elsewhere}`;
     }
     const reached = awayApp
       ? `They have also paired ${awayApp}, where you reach them when they are away: your own background checks (the heartbeat) go there, while jobs and page watches set up in this chat report back to this chat. `
       : "They have not paired a messaging app, so everything you send them waits here. ";
-    return `## Where you are\n\nThis conversation is on the web dashboard. Your reply appears only here: nothing from this chat is sent to ${awayApp ?? "any other app"}, and anything you need from the owner is asked here. ${reached}${elsewhere}`;
+    return `## Where you are\n\nThis conversation is on the web dashboard. Your reply appears here, and anything you need from the owner is asked here. ${handoff} ${reached}${elsewhere}`;
   },
 });

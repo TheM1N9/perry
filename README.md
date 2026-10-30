@@ -49,6 +49,9 @@ can run their own copy, and every copy is separate.
   Work → Schedules; quiet hours and your notification limit still apply.
 - **"From now on, keep replies short."** Remembers who you are, what you like
   and what you told it last week.
+- **"Send this to me on WhatsApp. I'll continue there."** Sends to your own
+  paired WhatsApp or Telegram, with a short recap. Your reply there continues
+  in that app's existing Perry chat, with its earlier messages and the recap.
 - **"Note this: passport renewal by May."** Keeps notes you both edit: packing
   lists, trip plans, meeting notes, a weekly review a schedule adds to. A
   project's notes are shared with its chats. `/note` from your phone adds a line.
