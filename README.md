@@ -41,6 +41,12 @@ can run their own copy, and every copy is separate.
   your files, asking before anything outside its sandbox.
 - **"What's on my calendar? Draft a reply to that email."** Connects to Gmail,
   Google Calendar, Notion and more through [Composio](https://composio.dev).
+- **Notices things without a prompt.** Every half hour from 8am to 10:30pm,
+  Perry checks recent activity in connected email and calendars against your
+  plans. If a reply gets a meeting date wrong, he can read the original thread
+  and alert you. He stays quiet when there is nothing new worth saying and
+  asks before sending a correction. Pause or reschedule Heartbeat under
+  Work → Schedules; quiet hours and your notification limit still apply.
 - **"From now on, keep replies short."** Remembers who you are, what you like
   and what you told it last week.
 - **"Note this: passport renewal by May."** Keeps notes you both edit: packing

@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "checks": [
+    "fresh heartbeat uses half-hour schedule and is created once",
+    "upgrade updates old defaults and preserves pause and custom scheduling",
+    "due job queues a bounded investigation with timezone, private context boundaries and alert history",
+    "an in-flight investigation cannot queue a second turn",
+    "rolling lookback survives failures, partial reads and indexing delays",
+    "a fixture finding reaches delivery and memory once; whitespace duplicates and NOTHING stay quiet",
+    "proactive findings use the existing quiet-hours admission path",
+    "global pause prevents new investigations",
+    "duplicate suppression survives a runtime restart",
+    "truncated alert memory never suppresses a materially different long finding"
+  ],
+  "model": "fixture output; no model or live accounts",
+  "promptArtifact": "heartbeat-prompt.txt"
+}
