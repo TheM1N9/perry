@@ -27,7 +27,7 @@ export function Providers({ children }: { children: ReactNode }) {
       <BackendProvider client={backend}>
         <TooltipProvider delay={400}>
           {children}
-          <Toaster position="bottom-right" />
+          <Toaster position="top-right" closeButton />
         </TooltipProvider>
       </BackendProvider>
     </ThemeProvider>

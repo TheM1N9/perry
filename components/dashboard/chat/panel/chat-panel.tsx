@@ -112,13 +112,11 @@ function useRoomy() {
 
 const focusToggle = () => document.querySelector<HTMLButtonElement>("[data-chat-panel-toggle]")?.focus();
 
-export function ChatPanel({ panel, conversationId, project, details, flags }: {
+export function ChatPanel({ panel, conversationId, project, details }: {
   panel: ChatPanelControl;
   conversationId: Id<"conversations"> | null;
   project?: { id: Id<"projects">; name: string };
   details: ChatDetails;
-  /** The server's switches for Files (PERRY_WORKSPACE) and Browser (PERRY_BROWSER_VIEW). */
-  flags: { files: boolean; browser: boolean };
 }) {
   const mobile = useIsMobile();
   const roomy = useRoomy();
@@ -129,8 +127,8 @@ export function ChatPanel({ panel, conversationId, project, details, flags }: {
   const unstarted = "Available once this chat has started.";
   const reasons: Record<SurfaceId, string | null> = {
     details: null,
-    files: flags.files ? null : "Available when Perry's workspace is on (PERRY_WORKSPACE=1).",
-    browser: !flags.browser ? "Available when Perry's browser is on (PERRY_BROWSER_VIEW=1)." : conversationId ? null : unstarted,
+    files: null,
+    browser: conversationId ? null : unstarted,
     work: conversationId ? null : unstarted,
   };
 

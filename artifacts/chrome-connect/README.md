@@ -45,8 +45,6 @@ $fixture = Get-Content artifacts/chrome-connect/results/fixture.json | ConvertFr
 $env:PERRY_HOME = $fixture.home
 $env:PERRY_CHROME_USER_DATA_DIR = $fixture.chrome
 $env:DASHBOARD_KEY = $fixture.key
-$env:PERRY_BROWSER_VIEW = '1'
-$env:PERRY_BROWSER_IMPORT = '1'
 pnpm exec next start -p 7386
 ```
 

@@ -33,6 +33,7 @@ import { STOPPED } from "./codex";
 import { pictureOf, stepCard, type StepCard } from "./lib/steps";
 import { diagnostics } from "./lib/internet";
 import { choiceForChat } from "./routing";
+import { questionAnswerText } from "../lib/interactive";
 import { recheckInternetConnections } from "./composio";
 import { findBrowser } from "./lib/browser";
 
@@ -738,7 +739,7 @@ export const getChatMessages = query({
           ...(doc.runId ? { runId: doc.runId, failure: failureRuns.get(doc.runId) } : {}),
           attachmentKey: messageKey ?? (recovered ? `codex-${recovered._id}` : undefined),
           role: doc.message?.role ?? "assistant",
-          text: (marker ? raw.slice(0, marker.index) : raw).replace(MEMORIES_MARKER, "").trimEnd(),
+          text: questionAnswerText((marker ? raw.slice(0, marker.index) : raw).replace(MEMORIES_MARKER, "").trimEnd()),
           createdAt: doc._creationTime,
           ...(memories.length ? { memories } : {}),
           attachments: messageKey
@@ -791,7 +792,7 @@ async function steersOf(ctx: QueryCtx, turns: Doc<"codexTurns">[]): Promise<Doc<
  * it) until its reply is saved with it.
  */
 function inFlight(conversation: Doc<"conversations">, turns: Doc<"codexTurns">[], steers: Doc<"codexSteers">[]): InFlight[] {
-  const entry = (prompt: string, at: number): InFlight => ({ prompt, at, text: prompt.replace(ATTACHMENTS_MARKER, "").trimEnd() });
+  const entry = (prompt: string, at: number): InFlight => ({ prompt, at, text: questionAnswerText(prompt.replace(ATTACHMENTS_MARKER, "").trimEnd()) });
   const running = turns.find((turn) => turn.status === "running") ?? null;
   const next = running ? undefined : turns.filter((turn) => turn.status === "queued" && !turn.waiting && turn.finalizedAt === undefined).sort(byQueuePosition)[0];
   const queued = (turn: Doc<"codexTurns">): QueuedTurn => ({

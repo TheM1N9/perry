@@ -3,7 +3,7 @@ import { z } from "zod";
 export const browserIdentity = z.object({ sessionId: z.string(), tabId: z.string(), revision: z.number().int() });
 export type BrowserIdentity = z.infer<typeof browserIdentity>;
 export const browserState = z.object({
-  enabled: z.boolean(), importEnabled: z.boolean(),
+  importEnabled: z.boolean(),
   source: z.enum(["perry", "chrome"]).default("perry"),
   state: z.enum(["closed", "live", "paused", "disconnected"]),
   identity: browserIdentity.nullable(),

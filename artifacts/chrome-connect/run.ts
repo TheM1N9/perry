@@ -10,7 +10,6 @@ const output = resolve(process.argv[2] ?? "artifacts/chrome-connect/results"); m
 const scratch = mkdtempSync(join(tmpdir(), "perry-chrome-connect-"));
 process.env.PERRY_HOME = join(scratch, "perry");
 process.env.PERRY_CHROME_USER_DATA_DIR = join(scratch, "chrome");
-process.env.PERRY_BROWSER_VIEW = "1"; process.env.PERRY_BROWSER_IMPORT = "1";
 process.env.DASHBOARD_KEY = `test-only-${randomUUID()}`;
 const key = process.env.DASHBOARD_KEY;
 const cookie = `fake-account-${randomUUID()}`;

@@ -9,6 +9,7 @@ import { HELD_FOR_OWNER } from "./lib/provenance";
 import { LOOK_WAIT_MS } from "./screen";
 import { TAKE_LONGER_MAX_MIN, TURN_IDLE_MIN, TURN_MAX_MIN } from "./lib/turnLimits";
 import { ALL_TOOLS, type ToolName } from "./tools";
+import { enabled as interactiveEnabled } from "./interactive";
 
 /**
  * Assistant's own tools, served to Codex over MCP.
@@ -207,7 +208,7 @@ export const handle = httpAction(async (ctx, request) => {
   // Paused, a turn still winding down does nothing more: the owner's pause holds mid-turn too (pause.ts).
   if (access.paused && message.method === "tools/call") return toolError(message.id, new Error(PAUSED_ERROR));
 
-  const tools = access.guest ? GUEST_TOOLS : process.env.PERRY_INTERACTIVE_ANSWERS === "1" ? CODEX_TOOLS : CODEX_TOOLS.filter((name) => !name.startsWith("interactive_"));
+  const tools = access.guest ? GUEST_TOOLS : interactiveEnabled() ? CODEX_TOOLS : CODEX_TOOLS.filter((name) => !name.startsWith("interactive_"));
   switch (message.method) {
     case "initialize":
       return reply(message.id, {

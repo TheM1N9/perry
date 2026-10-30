@@ -19,8 +19,6 @@ import { z } from "zod";
 const scratch = mkdtempSync(join(tmpdir(), "perry-browser-e2e-"));
 process.env.PERRY_HOME = join(scratch, "perry");
 process.env.PERRY_FIREFOX_ROOT = join(scratch, "firefox");
-process.env.PERRY_BROWSER_VIEW = "1";
-process.env.PERRY_BROWSER_IMPORT = "1";
 process.env.DASHBOARD_KEY = `test-only-${randomUUID()}`;
 const key = process.env.DASHBOARD_KEY;
 const fixtureSchema = z.enum(["16", "17"]).parse(process.env.PERRY_BROWSER_FIXTURE_SCHEMA ?? "17");

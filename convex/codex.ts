@@ -26,7 +26,7 @@ import { HANDOFF_INSTRUCTIONS, handoffHistory, moveChat, resetWaitFor, retryable
 import { engineLockable, engineReady, engineUsable, isOnline, recordEngines, resumeOf, statusesOf, tooOld } from "./engines";
 import { vAccess, vCodexModel, vEngine, vRoute, vSpanKind, vSpanStatus, vTurnAttachment, vUsage, vTurnErrorCode } from "./schema";
 import type { Doc, Id } from "./_generated/dataModel";
-import { INTERACTIVE_DRAFT } from "../lib/interactive";
+import { isInteractiveInput } from "../lib/interactive";
 
 // --- For runners from before engines ------------------------------------------
 // A computer connected with `pnpm run connect` may run an older runner than
@@ -217,7 +217,7 @@ export const enqueueTurn = internalMutation({
   returns: v.union(v.id("codexTurns"), v.id("codexSteers")),
   handler: async (ctx, args) => {
     // Paused, nothing new is queued or joins a reply: it would only run later, by surprise (pause.ts).
-    if (args.prompt.startsWith(INTERACTIVE_DRAFT)) args.outside = true;
+    if (isInteractiveInput(args.prompt)) args.outside = true;
     const conversation = await ctx.db.get(args.conversationId);
     if (!conversation) throw new Error("This chat was deleted.");
     // A repeated durable handoff for the same run owns the original message.
@@ -338,7 +338,7 @@ export async function queueSteer(ctx: MutationCtx, steer: Doc<"codexSteers">, gi
     conversationId: steer.conversationId,
     runId: steer.runId,
     prompt: steer.prompt,
-    ...(steer.prompt.startsWith(INTERACTIVE_DRAFT) ? { outsideAt: Date.now() } : {}),
+    ...(isInteractiveInput(steer.prompt) ? { outsideAt: Date.now() } : {}),
     history: steer.history,
     instructions: steer.instructions,
     requestedModel: steer.requestedModel,
@@ -1479,7 +1479,7 @@ export const outwardAllowed = internalQuery({
     const turn = await ctx.db.get(args.turnId);
     if (!turn || turn.outsideAt === undefined) return true;
     const steers = await ctx.db.query("codexSteers").withIndex("by_turn_status", (q) => q.eq("turnId", turn._id).eq("status", "applied")).collect();
-    return steers.some((steer) => !steer.prompt.startsWith(INTERACTIVE_DRAFT) && (steer.appliedAt ?? 0) > turn.outsideAt!);
+    return steers.some((steer) => !isInteractiveInput(steer.prompt) && (steer.appliedAt ?? 0) > turn.outsideAt!);
   },
 });
 

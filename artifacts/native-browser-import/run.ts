@@ -16,7 +16,6 @@ process.env.PERRY_HOME = own; process.env.PERRY_IMPORT_CHROME_ROOT = sourceRoot;
 process.env.PERRY_IMPORT_HELPER_PATH = join(tmpdir(), "PerryBrowserImportFixture.exe");
 process.env.PERRY_BROWSER_PATH ??= (await getInstalledBrowsers({cacheDir:join(homedir(),'.perry','browser','runtime')})).filter(item=>item.browser===Browser.CHROME).sort((a,b)=>b.buildId.localeCompare(a.buildId,undefined,{numeric:true}))[0]?.executablePath;
 if(!process.env.PERRY_BROWSER_PATH)throw new Error('Set PERRY_BROWSER_PATH to a dedicated Chrome for Testing executable.');
-process.env.PERRY_BROWSER_VIEW = "1"; process.env.PERRY_BROWSER_IMPORT = "1";
 process.env.DASHBOARD_KEY = `fixture-${randomUUID()}`;
 const key = process.env.DASHBOARD_KEY, secret = `fake-cookie-${randomUUID()}`, password = `fake-password-${randomUUID()}`;
 const site = createServer((req, res) => {

@@ -54,7 +54,7 @@ const PAGE = `http://127.0.0.1:${sitePort}/`;
 const p = await perry({
   name: "workspace-ui",
   outDir,
-  env: { PERRY_WORKSPACE: "1", PERRY_BROWSER_VIEW: "1", ...(process.env.PERRY_BROWSER_PATH ? { PERRY_BROWSER_PATH: process.env.PERRY_BROWSER_PATH } : {}) },
+  env: process.env.PERRY_BROWSER_PATH ? { PERRY_BROWSER_PATH: process.env.PERRY_BROWSER_PATH } : {},
   runnerEnv: (home) => {
     fakeHome = join(home, "fake-grok");
     mkdirSync(fakeHome, { recursive: true });

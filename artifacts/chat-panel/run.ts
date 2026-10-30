@@ -6,16 +6,15 @@ import { perry, sleep } from "../engine-acp/harness";
 // The chat panel ported from T3 Code's right panel (components/dashboard/chat/panel/chat-panel.tsx): a column
 // docked beside the chat on a wide window, floating over it on a narrower one, a sheet on a phone; tabs of
 // surfaces (Details, Files, Browser, Work) with "Open a surface" as the empty state and a "+" menu in the tab bar.
-// Two fresh Perrys from the production build (`pnpm build` first): one with the workspace and the browser view
-// off, only to see the rows they gate say why; one with both on (PERRY_WORKSPACE=1, PERRY_BROWSER_VIEW=1), the
-// real runner and Codex (signed in with ChatGPT) for a reply the Details and Work surfaces describe, and
+// Two fresh Perrys from the production build (`pnpm build` first): one for default surface availability,
+// one with the real runner and Codex (signed in with ChatGPT) for a reply the Details and Work surfaces describe, and
 // headless Chrome. Replies run on PERRY_E2E_MODEL (gpt-6-luna by default).
 //
 // Ways it could fail, written down before the checks:
 //   1. The header's toggle does not open the panel, opens it without the launcher, or does not say it is pressed;
 //      the panel opens over the chat instead of beside it on a wide window, so the chat does not narrow.
 //   2. Closed, the docked panel still takes width, can be tabbed into (not inert), or keeps its surfaces mounted.
-//   3. The launcher's letters do nothing, fire while typing in the composer, or open a surface that is off;
+//   3. The launcher's letters do nothing, fire while typing in the composer, or open a surface that is defaults;
 //      arrow keys and Enter do not move through the rows or open the highlighted one.
 //   4. The "+" menu does not list the surfaces, its letters do not pick one, or picking one opens a second tab of it.
 //   5. Tabs: clicking does not switch; arrow keys do not move between them; closing a tab shows nothing; closing
@@ -33,8 +32,8 @@ import { perry, sleep } from "../engine-acp/harness";
 //  10. The Browser surface stays mounted (and streaming) while another tab is shown.
 //  11. At 1024px it docks (and squeezes the chat) instead of floating; Escape does not close the floating one.
 //      At 390px it is not a full-width sheet.
-//  12. With the workspace or browser view off, Files and Browser look pickable, or are faded without saying why;
-//      on a chat not started yet, Browser and Work do not say they need one.
+//  12. Files and Browser are unavailable without configuration; on a chat not started yet, Browser and Work
+//      do not say they need one.
 //  13. Details does not name the chat's engine, or Work does not list the reply Perry just worked on.
 //  14. Any of it throws in the page: no page errors, on either Perry.
 
@@ -46,8 +45,8 @@ const MAC = process.platform === "darwin";
 const MOD = MAC ? 4 : 2;
 const ALT = 1;
 
-const p = await perry({ name: "chat-panel", outDir, runnerEnv: () => ({}), engine: "codex", env: { PERRY_WORKSPACE: "1", PERRY_BROWSER_VIEW: "1" } });
-const off = await perry({ name: "chat-panel-off", outDir: join(outDir, "flags-off"), runnerEnv: () => ({}), engine: "codex", env: { PERRY_WORKSPACE: "0", PERRY_BROWSER_VIEW: "0" } });
+const p = await perry({ name: "chat-panel", outDir, runnerEnv: () => ({}), engine: "codex" });
+const defaults = await perry({ name: "chat-panel-defaults", outDir: join(outDir, "defaults"), runnerEnv: () => ({}), engine: "codex" });
 const { BASE, KEY, call, check, notes, until, computers, openBrowser } = p;
 
 type Browser = Awaited<ReturnType<typeof openBrowser>>;
@@ -120,23 +119,21 @@ const scheme = async (browser: Browser, value: "light" | "dark") => {
 };
 const size = (browser: Browser, width: number, height: number, mobile = false) => browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: mobile ? 2 : 1, mobile });
 
-let offFinished = false;
+let defaultsFinished = false;
 try {
-  // --- 12. With the workspace and the browser view off ---------------------------------------------------------
-  off.start("server");
-  await off.until(() => fetch(`${off.BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the flags-off server to start", 90);
-  await off.call("dashboard:skipOnboarding", { key: off.KEY }).catch(() => {});
-  const offChat = await off.call<string>("dashboard:createChat", { key: off.KEY });
-  await off.call("dashboard:renameChat", { key: off.KEY, id: offChat, title: "Flags off" });
-  const offBrowser = await off.openBrowser();
-  await size(offBrowser, 1440, 900);
-  const o = driver(offBrowser, off.BASE);
-  await o.go(`/chat/${offChat}`);
+  // --- 12. Default surface availability ---------------------------------------------------------
+  defaults.start("server");
+  await defaults.until(() => fetch(`${defaults.BASE}/api/backend/http/health`).then((r) => r.ok, () => false), "the defaults server to start", 90);
+  await defaults.call("dashboard:skipOnboarding", { key: defaults.KEY }).catch(() => {});
+  const defaultChat = await defaults.call<string>("dashboard:createChat", { key: defaults.KEY });
+  await defaults.call("dashboard:renameChat", { key: defaults.KEY, id: defaultChat, title: "Defaults" });
+  const defaultBrowser = await defaults.openBrowser();
+  await size(defaultBrowser, 1440, 900);
+  const o = driver(defaultBrowser, defaults.BASE);
+  await o.go(`/chat/${defaultChat}`);
   await o.click("[data-chat-panel-toggle]");
   await o.settle();
   const rows = await o.evaluate(`Object.fromEntries([...document.querySelectorAll('[data-launcher-row]')].map((row) => [row.dataset.launcherRow, { unavailable: row.hasAttribute('data-unavailable'), opacity: getComputedStyle(row).opacity, text: row.textContent.trim() }]))`) as Record<string, { unavailable: boolean; opacity: string; text: string }>;
-  const filesTip = await o.hover('[data-launcher-row="files"]');
-  const browserTip = await o.hover('[data-launcher-row="browser"]');
   await o.evaluate(`document.querySelector('[data-panel-launcher]')?.focus(), true`);
   await o.press("f");
   const afterF = await o.panel();
@@ -147,16 +144,14 @@ try {
   await o.click("[data-chat-panel-toggle]");
   await o.settle();
   const unstarted = await o.evaluate(`Object.fromEntries([...document.querySelectorAll('[data-launcher-row]')].map((row) => [row.dataset.launcherRow, row.hasAttribute('data-unavailable') ? row.textContent.trim() : null]))`) as Record<string, string | null>;
-  notes.flagsOff = { rows, filesTip, browserTip, afterF, menu, unstarted, pageErrors: offBrowser.errors };
-  check("flagsOffRowsFaded", Boolean(rows.files?.unavailable && rows.browser?.unavailable && rows.files.opacity === "0.5" && !rows.details?.unavailable && !rows.work?.unavailable));
-  check("flagsOffRowsSayWhy", Boolean(rows.files?.text.includes("PERRY_WORKSPACE=1") && rows.browser?.text.includes("PERRY_BROWSER_VIEW=1")
-    && filesTip.includes("PERRY_WORKSPACE=1") && browserTip.includes("PERRY_BROWSER_VIEW=1")));
-  check("flagsOffLetterIgnored", afterF.tabs.length === 0 && afterF.launcher !== null && !afterF.launcher.includes("F"));
-  check("flagsOffMenuDisabled", menu.files === true && menu.browser === true && menu.details === false && menu.work === false);
-  check("unstartedChatSaysWhy", Boolean(unstarted.work?.includes("once this chat has started")) && unstarted.details === null);
-  check("flagsOffNoPageErrors", offBrowser.errors.length === 0);
-  await off.finish();
-  offFinished = true;
+  notes.defaults = { rows, afterF, menu, unstarted, pageErrors: defaultBrowser.errors };
+  check("defaultRowsAvailable", Boolean(!rows.files?.unavailable && !rows.browser?.unavailable && !rows.details?.unavailable && !rows.work?.unavailable));
+  check("defaultLetterOpensFiles", afterF.tabs.some((tab) => tab.id === "files" && tab.selected));
+  check("defaultMenuAvailable", menu.files === false && menu.browser === false && menu.details === false && menu.work === false);
+  check("unstartedChatSaysWhy", Boolean(unstarted.work?.includes("once this chat has started")) && Boolean(unstarted.browser?.includes("once this chat has started")) && unstarted.details === null && unstarted.files === null);
+  check("defaultNoPageErrors", defaultBrowser.errors.length === 0);
+  await defaults.finish();
+  defaultsFinished = true;
 
   // --- The Perry with everything on ---------------------------------------------------------------------------
   p.start("server");
@@ -394,5 +389,5 @@ try {
   check("completed", false);
 }
 
-if (!offFinished) await off.finish().catch(() => false);
+if (!defaultsFinished) await defaults.finish().catch(() => false);
 process.exit(await p.finish() ? 0 : 1);

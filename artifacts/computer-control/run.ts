@@ -11,7 +11,6 @@ process.env.PERRY_HOME = join(scratch, "home");
 process.env.DASHBOARD_KEY = "computer-control-synthetic";
 process.env.PERRY_CREDENTIAL_KEY = "88".repeat(32);
 process.env.PERRY_BROWSER_PATH ??= "C:/Program Files/Google/Chrome/Application/chrome.exe";
-process.env.PERRY_BROWSER_VIEW = "1";
 const key = process.env.DASHBOARD_KEY;
 const token = "computer-control-fake-runner";
 let slowStarted = 0;

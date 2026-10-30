@@ -67,8 +67,6 @@ $env:PERRY_IMPORT_CHROME_ROOT = $fixture.root
 $env:PERRY_IMPORT_HELPER_PATH = $fixture.helper
 $env:PERRY_BROWSER_PATH = $fixture.browser
 $env:DASHBOARD_KEY = $fixture.key
-$env:PERRY_BROWSER_VIEW = '1'
-$env:PERRY_BROWSER_IMPORT = '1'
 pnpm exec next start -p 7388
 ```
 

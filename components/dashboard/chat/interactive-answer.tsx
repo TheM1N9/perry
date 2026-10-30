@@ -8,7 +8,7 @@ import type { Artifact } from "@/convex/interactive";
 import { bridgeSchema, migrateValues, tableRows, validValue, type Definition, type Input as InputDefinition, type Values } from "@/lib/interactive";
 import { sandboxDocument } from "@/lib/interactive-sandbox";
 import { useDashboardKey } from "@/lib/session";
-import { ArrowUp, ChevronRight, MoreHorizontal } from "lucide-react";
+import { ArrowUp, CheckIcon, ChevronRight, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -16,6 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { RadioGroup, RadioGroupCard } from "@/components/ui/radio-group";
+import { Spinner } from "@/components/ui/spinner";
 
 const same = (a: Values, b: Values) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -81,7 +83,7 @@ function Sandbox({ artifact, values, onChange }: { artifact: Artifact; values: V
 
 function NativeView({ definition, values }: { definition: Definition; values: Values }) {
   const rows = tableRows(definition, values);
-  const columns = definition.view.kind === "calculator" ? ["Option", "Total", "Unit"] : definition.view.kind === "sandbox" ? [] : definition.view.columns;
+  const columns = definition.view.kind === "calculator" ? ["Option", "Total", "Unit"] : definition.view.kind === "sandbox" || definition.view.kind === "question" ? [] : definition.view.columns;
   const filter = typeof values.filter === "string" ? values.filter.toLocaleLowerCase() : "";
   const shown = filter ? rows.filter((row) => row.some((cell) => String(cell ?? "").toLocaleLowerCase().includes(filter))) : rows;
   const max = Math.max(1, ...shown.map((row) => typeof row[1] === "number" ? Math.abs(row[1]) : 0));
@@ -98,7 +100,7 @@ function NativeView({ definition, values }: { definition: Definition; values: Va
 
 function download(artifact: Artifact, values: Values, format: "json" | "csv") {
   const def = artifact.definition;
-  const columns = def.view.kind === "calculator" ? ["Option", "Total", "Unit"] : def.view.kind === "sandbox" ? [] : def.view.columns;
+  const columns = def.view.kind === "calculator" ? ["Option", "Total", "Unit"] : def.view.kind === "sandbox" || def.view.kind === "question" ? [] : def.view.columns;
   const csvCell = (value: unknown) => {
     const text = String(value ?? "");
     const safe = typeof value === "string" && /^\s*[=+@-]/.test(text) ? `'${text}` : text;
@@ -113,6 +115,7 @@ function Answer({ artifact }: { artifact: Artifact }) {
   const key = useDashboardKey();
   const save = useMutation(api.interactive.save);
   const followup = useMutation(api.interactive.followup);
+  const answer = useMutation(api.interactive.answer);
   const report = useMutation(api.interactive.report);
   const [base, setBase] = useState(artifact);
   const [values, setValues] = useState(artifact.values);
@@ -122,6 +125,7 @@ function Answer({ artifact }: { artifact: Artifact }) {
   const [sending, setSending] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const saving = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const currentValues = useRef(values); currentValues.current = values;
   const dirty = !same(base.values, values);
   useEffect(() => {
@@ -134,7 +138,7 @@ function Answer({ artifact }: { artifact: Artifact }) {
     else { setBase(artifact); setValues(artifact.values); }
   }, [artifact, base.revision, dirty]);
   async function persist(operation: "save" | "reset" | "undo") {
-    if (saving.current || conflict) return;
+    if (saving.current || conflict || sending || base.lifecycle === "answered") return;
     saving.current = true; setSaveBusy(true); setNotice("Saving draft…");
     const sent = values;
     try {
@@ -145,12 +149,44 @@ function Answer({ artifact }: { artifact: Artifact }) {
     finally { saving.current = false; setSaveBusy(false); }
   }
   useEffect(() => {
-    if (!dirty || conflict || saving.current) return;
-    const timer = setTimeout(() => void persist("save"), 650);
-    return () => clearTimeout(timer);
-  }, [values, base.revision, dirty, conflict]);
+    if (!dirty || conflict || saving.current || sending || base.lifecycle === "answered") return;
+    saveTimer.current = setTimeout(() => void persist("save"), 650);
+    return () => clearTimeout(saveTimer.current);
+  }, [values, base.revision, base.lifecycle, dirty, conflict, sending]);
   const change = useCallback((id: string, value: Values[string]) => setValues((previous) => ({ ...previous, [id]: value })), []);
   const def = base.definition;
+  if (def.view.kind === "question") {
+    const hasAnswer = def.inputs.some((input) => typeof values[input.id] !== "string" || String(values[input.id]).trim());
+    return <article id={`interactive-${artifact.id}`} aria-label={`Question: ${def.title}`} data-interactive={artifact.id} data-revision={base.revision} className="min-w-0 space-y-4 rounded-xl border bg-card p-4 sm:p-5">
+      <div><h3 className="font-semibold">{def.title}</h3><p className="mt-1 text-sm whitespace-pre-wrap text-muted-foreground">{def.summary}</p></div>
+      {base.lifecycle === "answered" ? <>
+        <dl className="space-y-3 text-sm">{def.inputs.filter((input) => String(values[input.id]).trim()).map((input) => <div key={input.id}><dt className="text-muted-foreground">{input.label}</dt><dd className="mt-1 whitespace-pre-wrap">{String(values[input.id])}</dd></div>)}</dl>
+        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><CheckIcon className="size-4" aria-hidden />Answer sent</p>
+      </> : <form className="space-y-4" onSubmit={async (event) => {
+        event.preventDefault();
+        if (!hasAnswer || sending || saving.current || conflict) return;
+        clearTimeout(saveTimer.current);
+        setSending(true); setNotice("Sending answer…");
+        try {
+          const result = await answer({ key, id: base.id, conversationId: base.conversationId, expectedRevision: base.revision, values: JSON.stringify(values) });
+          setBase(result); setValues(result.values); setNotice("Answer sent");
+        } catch (error) { setNotice(`Answer failed: ${error instanceof Error ? error.message : String(error)}. Your answer is still here.`); }
+        finally { setSending(false); }
+      }}>
+        <fieldset disabled={sending || conflict} className="grid min-w-0 gap-4 [&_[data-slot=input]]:min-h-11">
+          {def.inputs.map((input) => input.kind === "select" ? <div key={input.id} className="space-y-2">
+            <p id={`question-${artifact.id}-${input.id}`} className="text-sm font-medium">{input.label}</p>
+            <RadioGroup aria-labelledby={`question-${artifact.id}-${input.id}`} value={String(values[input.id])} onValueChange={(value) => { if (typeof value === "string") change(input.id, value); }} className="sm:grid-cols-2">
+              {input.options.map((option) => <RadioGroupCard key={option} value={option} className="min-h-11 items-center px-3 py-2 text-sm"><span>{option}</span></RadioGroupCard>)}
+            </RadioGroup>
+          </div> : <Control key={input.id} scope={artifact.id} input={input} value={values[input.id]} onChange={(value) => change(input.id, value)} />)}
+        </fieldset>
+        <p className={`text-xs ${conflict || notice.includes("failed") ? "text-destructive" : "text-muted-foreground"}`} role={conflict || notice.includes("failed") ? "alert" : "status"}>{notice}</p>
+        {conflict && <Button type="button" variant="outline" size="sm" onClick={() => { setBase(artifact); setValues(artifact.values); setConflict(false); setNotice("Loaded latest question"); }}>Load latest question</Button>}
+        <Button type="submit" className="min-h-11" disabled={!hasAnswer || sending || saveBusy || conflict} aria-busy={sending || undefined}>{sending && <Spinner />}{sending ? "Sending…" : "Send answer"}</Button>
+      </form>}
+    </article>;
+  }
   return <article id={`interactive-${artifact.id}`} aria-label={`Interactive answer: ${def.title}`} data-interactive={artifact.id} data-revision={base.revision} className="min-w-0 space-y-4 rounded-xl border bg-card p-4 sm:p-5">
     <div><h3 className="font-semibold">{def.title}</h3><p className="mt-1 text-sm whitespace-pre-wrap text-muted-foreground">{def.summary}</p></div>
     <div className="grid gap-3 sm:grid-cols-2">{def.inputs.map((input) => <Control key={input.id} scope={artifact.id} input={input} value={values[input.id]} onChange={(value) => change(input.id, value)} />)}</div>

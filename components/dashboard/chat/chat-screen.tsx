@@ -113,8 +113,6 @@ export function ChatScreen() {
   const [createdId, setCreatedId] = useState<ChatId | null>(null);
   useEffect(() => setCreatedId(null), [paramId]);
   const selectedId = paramId ?? createdId;
-  const workspace = useQuery(api.workspace.settings, { key: dashboardKey });
-  const browserView = useQuery(api.browserView.settings, { key: dashboardKey });
   // The panel beside the chat (panel/chat-panel.tsx): open or not, its tabs and its width, kept per chat.
   const panel = useChatPanel(selectedId ?? "new");
 
@@ -999,7 +997,7 @@ export function ChatScreen() {
       </div>
 
     </div>
-      {!chat?.contact && <ChatPanel panel={panel} conversationId={selectedId} project={project} flags={{ files: Boolean(workspace?.enabled), browser: Boolean(browserView?.enabled) }}
+      {!chat?.contact && <ChatPanel panel={panel} conversationId={selectedId} project={project}
         details={{ engine, model, effort, access, status: summary?.status, project, context: chat?.context, usage: engineUsage }} />}
       {summary && <RenameDialog chat={renaming ? summary : null} onClose={() => setRenaming(false)} />}
       {summary && <DeleteDialog chat={removing ? summary : null} onClose={() => setRemoving(false)} />}

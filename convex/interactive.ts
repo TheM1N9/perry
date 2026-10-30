@@ -5,10 +5,10 @@ import { api } from "./_generated/api";
 import { internalMutation, internalQuery, mutation, query, type QueryCtx, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertDashboardKey } from "./lib/auth";
-import { INTERACTIVE_DRAFT, migrateValues, parseDefinition, parseValues, type Definition, type Values } from "../lib/interactive";
+import { INTERACTIVE_ANSWER, INTERACTIVE_DRAFT, migrateValues, parseDefinition, parseValues, type Definition, type Values } from "../lib/interactive";
 
-export type Artifact = { id: Id<"interactiveAnswers">; conversationId: Id<"conversations">; lifecycle: "draft"; link: string; revision: number; definition: Definition; values: Values; updatedAt: number; createdAt: number; canUndo: boolean };
-export const enabled = () => process.env.PERRY_INTERACTIVE_ANSWERS === "1";
+export type Artifact = { id: Id<"interactiveAnswers">; conversationId: Id<"conversations">; lifecycle: "draft" | "answered"; link: string; revision: number; definition: Definition; values: Values; updatedAt: number; createdAt: number; canUndo: boolean };
+export const enabled = () => process.env.PERRY_INTERACTIVE_ANSWERS !== "0";
 const fingerprint = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 function requestId(id: string) { if (!/^[\w-]{1,80}$/.test(id)) throw new Error("Use a stable request id of at most 80 characters."); }
 
@@ -45,7 +45,7 @@ async function scope(ctx: QueryCtx, id: Id<"conversations">) {
 
 function view(row: Doc<"interactiveAnswers">): Artifact {
   const definition = parseDefinition(JSON.parse(row.definition));
-  return { id: row._id, conversationId: row.conversationId, lifecycle: "draft", link: `/chat/${row.conversationId}#interactive-${row._id}`, revision: row.revision, definition, values: parseValues(definition, JSON.parse(row.values)), updatedAt: row.updatedAt, createdAt: row.createdAt, canUndo: Boolean(row.previous) };
+  return { id: row._id, conversationId: row.conversationId, lifecycle: row.answeredAt ? "answered" : "draft", link: `/chat/${row.conversationId}#interactive-${row._id}`, revision: row.revision, definition, values: parseValues(definition, JSON.parse(row.values)), updatedAt: row.updatedAt, createdAt: row.createdAt, canUndo: Boolean(row.previous) };
 }
 
 async function artifact(ctx: QueryCtx, conversationId: Id<"conversations">, id: Id<"interactiveAnswers">) {
@@ -112,6 +112,7 @@ export const revise = internalMutation({
     const running = await turn(ctx, args.conversationId, args.turnId);
     requestId(args.requestId);
     const row = await artifact(ctx, args.conversationId, args.id);
+    if (row.answeredAt) throw new Error("This question has already been answered. Create a new question instead.");
     const definition = parseDefinition(JSON.parse(args.definition));
     await provenance(ctx, args.conversationId, definition);
     const serialized = JSON.stringify(definition);
@@ -134,6 +135,7 @@ export const save = mutation({
     assertDashboardKey(args.key);
     requestId(args.requestId);
     const row = await artifact(ctx, args.conversationId, args.id);
+    if (row.answeredAt) throw new Error("This answer has already been sent and cannot be edited.");
     const hash = fingerprint([args.expectedRevision, args.operation, args.values]);
     if (row.lastRequest === args.requestId && row.lastHash === hash) return { ok: true, artifact: view(row) };
     if (row.revision !== args.expectedRevision) {
@@ -158,6 +160,34 @@ export const save = mutation({
   },
 });
 
+/** Save the answer and enqueue its chat message in one transaction. */
+export const answer = mutation({
+  args: { key: v.string(), conversationId: v.id("conversations"), id: v.id("interactiveAnswers"), expectedRevision: v.number(), values: v.string() },
+  handler: async (ctx, args): Promise<Artifact> => {
+    assertDashboardKey(args.key);
+    const row = await artifact(ctx, args.conversationId, args.id);
+    const current = view(row);
+    if (current.definition.view.kind !== "question") throw new Error("This interactive answer is not a question.");
+    const values = parseValues(current.definition, JSON.parse(args.values));
+    if (row.answeredAt) {
+      if (current.definition.inputs.every((input) => current.values[input.id] === values[input.id])) return current;
+      throw new Error("This question was already answered in another tab.");
+    }
+    if (row.revision !== args.expectedRevision) throw new Error("This question changed. Load the latest version before answering.");
+    const lines = current.definition.inputs.flatMap((input) => {
+      const value = values[input.id];
+      return typeof value === "string" && !value.trim() ? [] : [`${input.label}: ${String(value)}`];
+    });
+    if (!lines.length) throw new Error("Choose an option or write an answer first.");
+    await ctx.runMutation(api.dashboard.sendChat, {
+      key: args.key, id: args.conversationId,
+      text: `${INTERACTIVE_ANSWER}${row._id} -->\n${current.definition.title}\n${lines.join("\n")}`,
+    });
+    await ctx.db.patch(row._id, { values: JSON.stringify(values), answeredAt: Date.now(), revision: row.revision + 1, updatedAt: Date.now() });
+    return view((await ctx.db.get(row._id))!);
+  },
+});
+
 /** An explicit host form queues a draft request, never a sandbox tool call or account write. */
 export const followup = mutation({
   args: { key: v.string(), conversationId: v.id("conversations"), id: v.id("interactiveAnswers"), expectedRevision: v.number(), requestId: v.string(), text: v.string() },
@@ -166,6 +196,7 @@ export const followup = mutation({
     requestId(args.requestId);
     const row = await artifact(ctx, args.conversationId, args.id);
     const hash = fingerprint(["followup", args.expectedRevision, args.text]);
+    if (row.answeredAt) throw new Error("This question has already been answered. Continue in chat instead.");
     if (row.lastRequest === args.requestId && row.lastHash === hash) return null;
     if (row.revision !== args.expectedRevision) throw new Error("Revision conflict: save or load the latest draft before asking Perry.");
     if (!args.text.trim() || args.text.length > 1000) throw new Error("Follow-up must contain 1–1000 characters.");

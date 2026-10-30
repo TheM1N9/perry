@@ -8,7 +8,6 @@ import * as archive from "../convex/archive";
 import * as assistant from "../convex/assistant";
 import * as brain from "../convex/brain";
 import * as brainMap from "../convex/brainMap";
-import * as browserView from "../convex/browserView";
 import * as channels from "../convex/channels";
 import * as codex from "../convex/codex";
 import * as compaction from "../convex/compaction";
@@ -35,6 +34,7 @@ import * as lib_browser from "../convex/lib/browser";
 import * as lib_budget from "../convex/lib/budget";
 import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
+import * as lib_connected_error from "../convex/lib/connected-error";
 import * as lib_connection_health from "../convex/lib/connection-health";
 import * as lib_credential_encryption from "../convex/lib/credential-encryption";
 import * as lib_devices from "../convex/lib/devices";
@@ -106,7 +106,6 @@ export const modules: Record<string, Record<string, unknown>> = {
   "assistant": assistant,
   "brain": brain,
   "brainMap": brainMap,
-  "browserView": browserView,
   "channels": channels,
   "codex": codex,
   "compaction": compaction,
@@ -133,6 +132,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/budget": lib_budget,
   "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
+  "lib/connected-error": lib_connected_error,
   "lib/connection-health": lib_connection_health,
   "lib/credential-encryption": lib_credential_encryption,
   "lib/devices": lib_devices,

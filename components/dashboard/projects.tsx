@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { ChatSummary } from "@/convex/dashboard";
+import type { ChatStatus, ChatSummary } from "@/convex/dashboard";
 import type { ProjectSummary } from "@/convex/projects";
 import { errorText } from "@/lib/format";
 import { useSession } from "@/lib/session";
@@ -26,7 +26,7 @@ import {
   DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { StatusIndicator } from "@/components/dashboard/status-indicator";
+import { StatusIndicator, statusLabel } from "@/components/dashboard/status-indicator";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -86,13 +86,17 @@ function Folder({ project, chats, row, onRename, onDelete }: {
   const pathname = usePathname();
   const router = useRouter();
   const here = pathname === `/projects/${project.id}` || chats.some((chat) => pathname === `/chat/${chat.id}`);
-  const working = chats.some((chat) => chat.status === "running");
+  const status: ChatStatus = chats.some((chat) => chat.status === "needs-approval") ? "needs-approval"
+    : chats.some((chat) => chat.status === "running") ? "running"
+    : chats.some((chat) => chat.status === "error") ? "error" : "idle";
+  const unseen = chats.some((chat) => chat.unseen && pathname !== `/chat/${chat.id}`);
+  const label = statusLabel(status, unseen);
   const [open, setOpen] = useState(here);
   useEffect(() => { if (here) setOpen(true); }, [here]);
   return (
     <Collapsible open={open} onOpenChange={setOpen} render={<SidebarMenuItem />}>
-      <CollapsibleTrigger render={<SidebarMenuButton className="group-has-data-[sidebar=menu-action]/menu-item:pr-14" isActive={pathname === `/projects/${project.id}`} aria-label={`${project.name}, a project${working ? ", working" : ""}`} />}>
-        {working ? <StatusIndicator status="running" /> : open ? <FolderOpenIcon /> : <FolderIcon />}
+      <CollapsibleTrigger render={<SidebarMenuButton className="group-has-data-[sidebar=menu-action]/menu-item:pr-14" isActive={pathname === `/projects/${project.id}`} aria-label={`${project.name}, a project${label ? `, ${label}` : ""}`} />}>
+        <StatusIndicator status={status} unseen={unseen} fallback={open ? <FolderOpenIcon /> : <FolderIcon />} />
         <span>{project.name}</span>
       </CollapsibleTrigger>
       <Tooltip>

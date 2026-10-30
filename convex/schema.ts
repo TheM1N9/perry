@@ -185,6 +185,7 @@ export default defineSchema({
   interactiveAnswers: defineTable({
     conversationId: v.id("conversations"), requestId: v.string(), creationHash: v.string(), schemaVersion: v.literal(1), revision: v.number(),
     definition: v.string(), values: v.string(), previous: v.optional(v.string()), lastRequest: v.optional(v.string()), lastHash: v.optional(v.string()),
+    answeredAt: v.optional(v.number()),
     createdAt: v.number(), updatedAt: v.number(), lastTurnAt: v.number(), generationRunId: v.id("runs"), firstRenderedAt: v.optional(v.number()),
     revisions: v.number(), saves: v.number(), conflicts: v.number(), restorations: v.number(), errors: v.number(),
   }).index("by_conversation", ["conversationId"]),

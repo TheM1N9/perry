@@ -23,11 +23,6 @@ async function scopeOf(ctx: QueryCtx, args: ScopeArgs) {
   return { chat, key: args.scope === "project" ? `project:${chat.projectId}` : `chat:${chat._id}` };
 }
 
-export const settings = query({
-  args: { key: v.string() },
-  handler: (_ctx, args) => { assertDashboardKey(args.key); return { enabled: process.env.PERRY_WORKSPACE === "1" }; },
-});
-
 async function member(ctx: QueryCtx, args: ScopeArgs, libraryId: Id<"library">) {
   const { chat, key } = await scopeOf(ctx, args);
   const candidates = await ctx.db.query("workspaceFiles").withIndex("by_library", (q) => q.eq("libraryId", libraryId)).take(500);

@@ -4,7 +4,7 @@ import type { BrowserRequest, BrowserState } from "../lib/browser-protocol";
 
 export async function browserStatus(scope: string, importEnabled: boolean): Promise<BrowserState> {
   const state = browser.browserControl(scope);
-  const result: BrowserState = { enabled: process.env.PERRY_BROWSER_VIEW === "1", importEnabled, source: state.source, state: state.error ? "disconnected" : "closed", identity: browser.identity(scope), tabs: [], loading: state.loading, error: state.error, dialog: state.dialog, upload: state.upload !== null, private: state.private, downloads: [...state.downloads.values()].slice(-30) };
+  const result: BrowserState = { importEnabled, source: state.source, state: state.error ? "disconnected" : "closed", identity: browser.identity(scope), tabs: [], loading: state.loading, error: state.error, dialog: state.dialog, upload: state.upload !== null, private: state.private, downloads: [...state.downloads.values()].slice(-30) };
   if (!state.current) return result;
   try {
     result.tabs = (await browser.withBrowserView(scope, browser.hostTargets)).map(({ id, title, url }) => ({ id, title, url }));
