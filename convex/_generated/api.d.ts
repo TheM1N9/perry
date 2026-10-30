@@ -79,6 +79,7 @@ import type * as persona from "../persona.js";
 import type * as pet from "../pet.js";
 import type * as projects from "../projects.js";
 import type * as queue from "../queue.js";
+import type * as reactions from "../reactions.js";
 import type * as recovery from "../recovery.js";
 import type * as routing from "../routing.js";
 import type * as runner from "../runner.js";
@@ -179,6 +180,7 @@ declare const fullApi: ApiFromModules<{
   pet: typeof pet;
   projects: typeof projects;
   queue: typeof queue;
+  reactions: typeof reactions;
   recovery: typeof recovery;
   routing: typeof routing;
   runner: typeof runner;

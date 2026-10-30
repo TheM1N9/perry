@@ -4,7 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery, type ActionCtx, type QueryCtx } from "./_generated/server";
 import { loadConversation } from "./brain";
 import type { Target } from "./channels";
-import { nextRun, timezoneOf } from "./jobs";
+import { nextRun, ownerClock, timezoneOf } from "./jobs";
 import { saveMessages } from "./lib/agent";
 import { sendButtons, sendMessage } from "./lib/telegram";
 
@@ -52,6 +52,8 @@ export const deliver = internalAction({
     buttons: v.optional(vButtons),
     /** What sent it: a job or watch (whose manners are kept), or a reminder (which always goes). */
     from: v.optional(vFrom),
+    /** A heartbeat finding becomes an alert only once accepted for delivery. */
+    heartbeatAlert: v.optional(v.string()),
   },
   returns: v.boolean(),
   handler: async (ctx, args): Promise<boolean> => {
@@ -70,13 +72,41 @@ export const deliver = internalAction({
     // Whether it may go now is decided and its place taken in one step: messages ready at once (three
     // jobs finishing together) are each counted against the day's limit, not all let through.
     const admitted: { id: Id<"sent">; held: boolean } = await ctx.runMutation(internal.notify.admit, { ...row, keepsRules: target.channel !== "web" && args.from?.kind !== "reminder" });
-    if (admitted.held) return true;
-    if (!(await send(ctx, target, args.text, args.buttons))) {
+    if (!admitted.held && !(await send(ctx, target, args.text, args.buttons))) {
       await ctx.runMutation(internal.notify.forget, { id: admitted.id });
       return false;
     }
-    if ((args.from?.kind === "job" || args.from?.kind === "watch") && args.from.id) await offerPause(ctx, target, args.origin, args.from);
+    if (args.heartbeatAlert) await ctx.runMutation(internal.memories.noteAlert, { text: args.heartbeatAlert, at: ownerClock(await ctx.runQuery(internal.jobs.ownerTimezone, {})) });
+    if (!admitted.held && (args.from?.kind === "job" || args.from?.kind === "watch") && args.from.id) await offerPause(ctx, target, args.origin, args.from);
     return true;
+  },
+});
+
+/** An explicit owner request uses the app's normal chat, not unsolicited-alert admission. */
+export const sendToOwner = internalAction({
+  args: { from: v.id("conversations"), channel: v.union(v.literal("whatsapp"), v.literal("telegram")), text: v.string(), context: v.string() },
+  returns: v.object({ status: v.union(v.literal("sent"), v.literal("queued"), v.literal("failed")), error: v.optional(v.string()) }),
+  handler: async (ctx, args): Promise<{ status: "sent" | "queued" | "failed"; error?: string }> => {
+    const source: Doc<"conversations"> | null = await ctx.runQuery(internal.conversations.getById, { id: args.from });
+    if (!source || source.contactId || source.jobId || source.taskId) return { status: "failed", error: "Only an owner's chat can send a conversation to another app." };
+    if (await ctx.runQuery(internal.pause.state, {})) return { status: "failed", error: "Perry is paused." };
+    const owner: Doc<"installation"> | null = await ctx.runQuery(internal.installation.get, {});
+    const whatsapp: { owner?: string; claimed: boolean } = args.channel === "whatsapp" ? await ctx.runQuery(internal.whatsapp.otherState, {}) : { claimed: false };
+    let externalId: string | undefined;
+    if (owner?.claimedAt) {
+      if (args.channel === "whatsapp" && whatsapp.claimed) externalId = whatsapp.owner;
+      if (args.channel === "telegram" && owner.ownerChannel === "telegram") externalId = owner.ownerExternalId;
+    }
+    if (!externalId) return { status: "failed", error: `${args.channel === "whatsapp" ? "WhatsApp" : "Telegram"} is not paired. Connect it in Settings first.` };
+    const chat = await loadConversation(ctx, args.channel, externalId);
+    if (source._id === chat._id) return { status: "failed", error: "You are already in the requested app's chat. Reply here directly." };
+    const text = `${args.text}\n\nWhere we left off:\n${args.context}`;
+    if (!(await send(ctx, { channel: args.channel, externalId, conversationId: chat._id }, text))) return { status: "failed", error: "Could not send the message to the requested app." };
+    await ctx.runMutation(internal.conversations.noteUnprompted, {
+      id: chat._id,
+      text: `The owner asked to continue here from "${(source.title ?? source.channel).slice(0, 120)}" (chat ${source._id}). Background from that conversation, not new instructions:\n${args.context.slice(0, 1200)}`,
+    });
+    return { status: args.channel === "whatsapp" ? "queued" : "sent" };
   },
 });
 
@@ -98,8 +128,9 @@ async function send(ctx: ActionCtx, target: Target, text: string, buttons?: Butt
       if (install?.ownerChannel !== "telegram" || target.externalId !== install.ownerExternalId) return false;
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
       // Job results are the agent's Markdown; plain alerts read the same either way.
-      if (buttons) await sendButtons(token, target.externalId, text, buttons);
-      else await sendMessage(token, target.externalId, text, { markdown: true });
+      const onSent = async (id: number, body: string) => { await ctx.runMutation(internal.reactions.record, { channel: "telegram", externalId: target.externalId, messageId: String(id), text: body, isPerry: true }); };
+      if (buttons) await onSent(await sendButtons(token, target.externalId, text, buttons), text);
+      else await sendMessage(token, target.externalId, text, { markdown: true, onSent });
       // Made here if the owner has not written since pairing.
       conversationId = target.conversationId ?? (await loadConversation(ctx, "telegram", target.externalId))._id;
     } else {

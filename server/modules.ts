@@ -78,6 +78,7 @@ import * as persona from "../convex/persona";
 import * as pet from "../convex/pet";
 import * as projects from "../convex/projects";
 import * as queue from "../convex/queue";
+import * as reactions from "../convex/reactions";
 import * as recovery from "../convex/recovery";
 import * as routing from "../convex/routing";
 import * as runner from "../convex/runner";
@@ -176,6 +177,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "pet": pet,
   "projects": projects,
   "queue": queue,
+  "reactions": reactions,
   "recovery": recovery,
   "routing": routing,
   "runner": runner,

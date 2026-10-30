@@ -17,6 +17,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Markdown } from "@/components/dashboard/chat/markdown";
+import { ReactionBadges } from "@/components/dashboard/chat/reactions";
 import { StatusIndicator } from "@/components/dashboard/status-indicator";
 import { ChatAnnouncer } from "@/components/dashboard/chat-announcer";
 import { describe, holdProblem } from "@/convex/lib/shortcuts";
@@ -240,10 +241,12 @@ export function PetChat({ chatId, onChatId, draft, onDraft, open, voice, hotkey,
                 {message.text}
               </p>
             )}
+            <ReactionBadges {...message.reactions} assistant="Perry" />
           </div>
         ) : (
           <div key={message.id} className="group/reply">
             <Markdown text={message.text} openNote={open} />
+            <ReactionBadges {...message.reactions} assistant="Perry" />
             {!message.pending && chatId && (
               <PetTip label="Save as note">
                 <Button variant="ghost" size="icon-xs" aria-label="Save as note" className="-ml-1 text-muted-foreground opacity-0 group-hover/reply:opacity-100 focus-visible:opacity-100"

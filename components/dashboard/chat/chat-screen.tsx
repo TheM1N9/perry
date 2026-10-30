@@ -150,6 +150,7 @@ export function ChatScreen() {
   const compactChat = useAction(api.dashboard.compactChat);
   const registerAttachment = useMutation(api.dashboard.registerAttachment);
   const markSeen = useMutation(api.dashboard.markChatSeen);
+  const setReaction = useMutation(api.reactions.setWeb);
   const skipOnboarding = useMutation(api.dashboard.skipOnboarding);
   const redoOnboarding = useMutation(api.dashboard.redoOnboarding);
   const branchChat = useAction(api.dashboard.branchChat);
@@ -648,6 +649,9 @@ export function ChatScreen() {
   const regenerateRow = useChatEvent((message: ChatMessage) => { void rewind(message.id); });
   const branchRow = useChatEvent((message: ChatMessage) => { void branch(message.id); });
   const noteRow = useChatEvent((message: ChatMessage) => { void saveAsNote(message.id); });
+  const reactRow = useChatEvent(async (message: ChatMessage, emoji: string) => {
+    if (selectedId) await setReaction({ key: dashboardKey, conversationId: selectedId, messageId: message.id as Id<"agentMessages">, emoji });
+  });
   const stop = () => {
     if (submitting.current?.id === selectedId) submitting.current?.controller.abort("stop");
     if (selectedId) void stopChat({ key: dashboardKey, id: selectedId }).catch(fail);
@@ -828,6 +832,7 @@ export function ChatScreen() {
                   onRegenerate={regenerateRow}
                   onBranch={branchRow}
                   onSaveNote={noteRow}
+                  onReact={!app ? reactRow : undefined}
                 />
                 {message.failure && runRows.last.get(message.runId!) === message.id && <TurnError
                   {...message.failure}

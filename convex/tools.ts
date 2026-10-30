@@ -310,6 +310,39 @@ const send_message = createTool({
   },
 });
 
+const send_to_owner = createTool({
+  description:
+    "Send something to the owner's own linked WhatsApp or Telegram when they ask to receive it or continue the conversation there. " +
+    "No phone number or contact lookup is needed. Include a self-contained message and a short context summary with the " +
+    "relevant decisions, constraints and next step, so their reply there can continue this chat. Both are sent to the requested app. " +
+    "Report the returned status accurately: WhatsApp queues messages, Telegram sends them. If already in the requested app, reply normally instead.",
+  inputSchema: z.object({
+    channel: z.enum(["whatsapp", "telegram"]).describe("The app the owner asked for. Never substitute another app."),
+    text: z.string().min(1).max(4000).describe("The message to send to the owner."),
+    context: z.string().min(1).max(1200).describe("Relevant background for continuing this conversation in the requested app. Include only what is needed for this handoff."),
+  }),
+  execute: async (ctx, input): Promise<{ status: "sent" | "queued" | "failed"; error?: string }> => {
+    if (!ctx.conversationId || ctx.fromJob) return { status: "failed", error: "Only an owner's chat can send a conversation to another app." };
+    return await ctx.runAction(internal.notify.sendToOwner, { from: ctx.conversationId, ...input });
+  },
+});
+
+const react_to_message = createTool({
+  description:
+    "Add, replace or remove your reaction on a message in the owner's current web, WhatsApp or Telegram chat. " +
+    "Use reactions naturally for acknowledgement, feelings or work progress, without needing a text reply every time. " +
+    "Choose any emoji the app supports; these are not fixed status categories. Reuse the same message id to change progress. " +
+    "If a successful reaction is the whole response, finish with exactly NO_REPLY. A failed reaction still needs a useful reply.",
+  inputSchema: z.object({
+    emoji: z.string().max(64).describe("One emoji supported by the app, or an empty string to remove your reaction."),
+    messageId: z.string().max(200).optional().describe("Message id from this chat's reaction context. Omit for the owner's current/latest message; on web, current refers to the message that started this turn."),
+  }),
+  execute: async (ctx, input): Promise<{ status: "sent" | "queued" | "failed"; messageId?: string; error?: string }> => {
+    if (!ctx.turnId || ctx.fromJob) return { status: "failed", error: "Reactions are available only in an active owner chat." };
+    return await ctx.runAction(internal.reactions.react, { turnId: ctx.turnId, ...input });
+  },
+});
+
 const update_contact = createTool({
   description:
     "Set what you may know and share with someone you talk with, in the owner's words: their brief (\"You can tell Datta my gym " +
@@ -1785,6 +1818,8 @@ export const ALL_TOOLS = {
   check_watches,
   find_contact,
   send_message,
+  send_to_owner,
+  react_to_message,
   update_contact,
   tell_owner,
   library_list,
