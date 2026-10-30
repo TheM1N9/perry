@@ -35,6 +35,7 @@ import * as lib_browser from "../convex/lib/browser";
 import * as lib_budget from "../convex/lib/budget";
 import * as lib_checkout from "../convex/lib/checkout";
 import * as lib_commands from "../convex/lib/commands";
+import * as lib_connected_error from "../convex/lib/connected-error";
 import * as lib_connection_health from "../convex/lib/connection-health";
 import * as lib_credential_encryption from "../convex/lib/credential-encryption";
 import * as lib_devices from "../convex/lib/devices";
@@ -78,6 +79,7 @@ import * as persona from "../convex/persona";
 import * as pet from "../convex/pet";
 import * as projects from "../convex/projects";
 import * as queue from "../convex/queue";
+import * as reactions from "../convex/reactions";
 import * as recovery from "../convex/recovery";
 import * as routing from "../convex/routing";
 import * as runner from "../convex/runner";
@@ -133,6 +135,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "lib/budget": lib_budget,
   "lib/checkout": lib_checkout,
   "lib/commands": lib_commands,
+  "lib/connected-error": lib_connected_error,
   "lib/connection-health": lib_connection_health,
   "lib/credential-encryption": lib_credential_encryption,
   "lib/devices": lib_devices,
@@ -176,6 +179,7 @@ export const modules: Record<string, Record<string, unknown>> = {
   "pet": pet,
   "projects": projects,
   "queue": queue,
+  "reactions": reactions,
   "recovery": recovery,
   "routing": routing,
   "runner": runner,

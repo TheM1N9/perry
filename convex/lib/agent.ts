@@ -48,7 +48,7 @@ export async function saveMessages(
     userId?: string;
     order?: "next";
     runId?: Id<"runs">;
-    messages: Array<{ role: "user" | "assistant" | "system" | "tool"; content: string }>;
+    messages: Array<{ role: "user" | "assistant" | "system" | "tool"; content: string; perryReaction?: string }>;
     metadata?: Array<{ provider?: string; model?: string }>;
   },
 ) {

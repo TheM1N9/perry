@@ -63,7 +63,7 @@ export function pollTelegram(runtime: Runtime): () => void {
         const reply = await call<Update[]>(token, "getUpdates", {
           offset,
           timeout: POLL_SECONDS,
-          allowed_updates: ["message", "edited_message", "callback_query"],
+            allowed_updates: ["message", "edited_message", "callback_query", "message_reaction"],
         }, AbortSignal.any([stop.signal, AbortSignal.timeout((POLL_SECONDS + 15) * 1000)]));
         if (!reply.ok) {
           if (reply.error_code === 409) { cleared = null; continue; }
