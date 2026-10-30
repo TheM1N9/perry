@@ -1396,8 +1396,9 @@ export default defineSchema({
    */
   whatsappOutbox: defineTable({
     to: v.string(),
-    kind: v.union(v.literal("text"), v.literal("typing"), v.literal("file")),
+    kind: v.union(v.literal("text"), v.literal("typing"), v.literal("file"), v.literal("reaction")),
     text: v.optional(v.string()),
+    reaction: v.optional(v.object({ id: v.string(), fromMe: v.boolean(), remoteJid: v.optional(v.string()), participant: v.optional(v.string()), emoji: v.string() })),
     /** A file to send: in Perry's storage, or on this machine. */
     file: v.optional(v.object({ storageId: v.optional(v.string()), localPath: v.optional(v.string()), fileName: v.string(), contentType: v.string() })),
     state: v.union(v.literal("pending"), v.literal("sent"), v.literal("failed")),
@@ -1554,6 +1555,10 @@ export default defineSchema({
     reportedAt: v.optional(v.number()),
     savedAt: v.optional(v.number()),
     deliveredAt: v.optional(v.number()),
+    reactionAt: v.optional(v.number()),
+    reactionEvent: v.optional(v.boolean()),
+    reactionOnly: v.optional(v.boolean()),
+    webReaction: v.optional(v.string()),
     /** When a finalize last started, so the recovery sweep does not run a second one beside it. */
     finalizingAt: v.optional(v.number()),
     /** Server-observed runner ownership of this running turn, independent of output. */
@@ -1678,12 +1683,32 @@ export default defineSchema({
    * chats share a userId ("web:dashboard", "telegram:<chat>"), which is what
    * search_chats searches within. See agentStore.ts.
    */
+  /** Native message receipts let reactions refer to the exact phone message, including before a turn finishes. */
+  channelMessages: defineTable({
+    channel: v.union(v.literal("telegram"), v.literal("whatsapp")),
+    externalId: v.string(),
+    messageId: v.string(),
+    text: v.string(),
+    isPerry: v.optional(v.boolean()),
+    fromMe: v.optional(v.boolean()),
+    remoteJid: v.optional(v.string()),
+    participant: v.optional(v.string()),
+    perryReaction: v.optional(v.string()),
+    ownerReaction: v.optional(v.array(v.string())),
+    ownerReactionAt: v.optional(v.number()),
+    createdAt: v.number(),
+  }).index("by_message", ["channel", "externalId", "messageId"])
+    .index("by_chat", ["channel", "externalId", "createdAt"])
+    .index("by_created", ["createdAt"]),
+
   agentThreads: defineTable({
     userId: v.optional(v.string()),
     title: v.optional(v.string()),
   }),
 
   agentMessages: defineTable({
+    ownerReaction: v.optional(v.string()),
+    perryReaction: v.optional(v.string()),
     runId: v.optional(v.id("runs")),
     threadId: v.id("agentThreads"),
     userId: v.optional(v.string()),

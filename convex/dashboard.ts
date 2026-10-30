@@ -66,6 +66,7 @@ export type ChatMessage = {
   queued?: QueuedTurn;
   /** The memories a reply said it relied on (codex.finishTurn). */
   memories?: Array<{ id: string; text: string }>;
+  reactions?: { owner?: string; perry?: string };
 };
 
 /**
@@ -779,6 +780,7 @@ export const getChatMessages = query({
         const text = (marker ? raw.slice(0, marker.index) : raw).replace(MEMORIES_MARKER, "").trimEnd();
         return {
           id: doc._id,
+          ...(doc.ownerReaction || doc.perryReaction ? { reactions: { owner: doc.ownerReaction, perry: doc.perryReaction } } : {}),
           ...(doc.runId ? { runId: doc.runId, failure: failureRuns.get(doc.runId) } : {}),
           attachmentKey: messageKey ?? (recovered ? `codex-${recovered._id}` : undefined),
           role: doc.message?.role ?? "assistant",
@@ -810,6 +812,7 @@ export const getChatMessages = query({
         createdAt: entry.at,
         attachments: marker?.[1] ? attachmentMap.get(marker[1].trim()) ?? [] : [],
         pending: true,
+        ...(entry.reaction ? { reactions: { perry: entry.reaction } } : {}),
         ...(entry.queued ? { queued: entry.queued } : {}),
       }];
     });
@@ -817,7 +820,7 @@ export const getChatMessages = query({
   },
 });
 
-type InFlight = { prompt: string; text: string; at: number; queued?: QueuedTurn };
+type InFlight = { prompt: string; text: string; at: number; reaction?: string; queued?: QueuedTurn };
 
 /** The live turns' steers that joined them, and those still waiting to. */
 async function steersOf(ctx: QueryCtx, turns: Doc<"codexTurns">[]): Promise<Doc<"codexSteers">[]> {
@@ -853,7 +856,7 @@ function inFlight(conversation: Doc<"conversations">, turns: Doc<"codexTurns">[]
     ...turns.filter((turn) => turn.savedAt === undefined && turn.kind !== "compact" && !turn.flush && !turn.checkpoint && !turn.hidden
       // A finished turn is saved a moment later; one left unsaved and unfinalized for long is not coming.
       && (turn.status === "queued" || turn.status === "running" || (turn.finalizedAt === undefined && (turn.waiting || turn.createdAt > Date.now() - OUTBOX_TTL_MS))))
-      .map((turn) => ({ ...entry(turn.prompt, turn.createdAt), ...(turn.status === "queued" ? { queued: queued(turn) } : {}) })),
+      .map((turn) => ({ ...entry(turn.prompt, turn.createdAt), ...(turn.webReaction ? { reaction: turn.webReaction } : {}), ...(turn.status === "queued" ? { queued: queued(turn) } : {}) })),
     ...steers.map((steer) => entry(steer.prompt, steer.createdAt)),
   ];
   return items.sort((a, b) => a.at - b.at);

@@ -4,6 +4,7 @@ import { authenticate } from "./runner";
 import { assertDashboardKey } from "./lib/auth";
 import { appendStream, streamBody } from "./lib/turn-stream";
 import { hide, savedValues } from "./vault";
+import { REACTION_ONLY } from "./reactions";
 
 export const append = mutation({
   args: { token: v.string(), id: v.id("codexTurns"), offset: v.number(), text: v.string(), reset: v.optional(v.boolean()), resetKey: v.optional(v.string()) },
@@ -27,6 +28,7 @@ export const getChatStream = query({
       .withIndex("by_conversation_status", (q) => q.eq("conversationId", args.id).eq("status", "running")).first();
     if (!turn || turn.flush || turn.checkpoint || turn.kind === "compact") return null;
     const body = await streamBody(ctx, turn);
+    if (body?.trim() && REACTION_ONLY.startsWith(body.trim())) return null;
     return body === undefined ? null : hide(body, await savedValues(ctx));
   },
 });

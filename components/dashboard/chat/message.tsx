@@ -17,8 +17,9 @@ import { AttachmentList, type Attachment } from "./attachments";
 import { Markdown } from "./markdown";
 import { QueueRemoveButton } from "./queue-remove-button";
 import { LiveWork, Spinner, WorkSummary, type Turn } from "./work";
+import { ReactionBadges, ReactionPicker } from "./reactions";
 
-export type ChatMessage = { attachmentKey?: string; id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; queued?: QueuedTurn; memories?: Array<{ id: string; text: string }> };
+export type ChatMessage = { attachmentKey?: string; id: string; role: string; text: string; createdAt: number; attachments: Attachment[]; pending?: boolean; queued?: QueuedTurn; memories?: Array<{ id: string; text: string }>; reactions?: { owner?: string; perry?: string } };
 
 function Action({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
@@ -41,7 +42,7 @@ function CopyAction({ text }: { text: string }) {
  * width of the column, unboxed, since that is what you read. The actions show
  * on hover and focus, and always on the newest reply.
  */
-export const MessageRow = memo(function MessageRow({ message, work, agents, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch, onSaveNote }: {
+export const MessageRow = memo(function MessageRow({ message, work, agents, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch, onSaveNote, onReact }: {
   message: ChatMessage;
   /** The run that wrote this reply, when it took steps: "Worked for 46s" above it. */
   work?: Turn;
@@ -60,6 +61,7 @@ export const MessageRow = memo(function MessageRow({ message, work, agents, assi
   onBranch: (message: ChatMessage) => void;
   /** Keep this reply as a note of its own. */
   onSaveNote?: (message: ChatMessage) => void;
+  onReact?: (message: ChatMessage, emoji: string) => Promise<void>;
 }) {
   const mine = message.role === "user";
   // Not in the history until its reply saves it, so there is nothing yet to edit or branch from.
@@ -85,6 +87,7 @@ export const MessageRow = memo(function MessageRow({ message, work, agents, assi
         )}
         {/* Waiting in the queue it is under Up next (up-next.tsx); here only while it waits behind nothing (dashboard.QueuedTurn, now). */}
         {mine && message.queued && <QueueRemoveButton queued={message.queued} />}
+        <ReactionBadges {...message.reactions} assistant={assistant} onChange={saved && onReact ? (emoji) => onReact(message, emoji) : undefined} />
         <MessageFooter className={cn(
           "gap-0.5 px-0 font-normal transition-opacity [@media(hover:hover)]:opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
           !mine && "-ml-2", latest && !mine && "[@media(hover:hover)]:opacity-100",
@@ -95,6 +98,7 @@ export const MessageRow = memo(function MessageRow({ message, work, agents, assi
             </time>
           )}
           <CopyAction text={message.text} />
+          {saved && onReact && <ReactionPicker current={message.reactions?.owner} onChange={(emoji) => onReact(message, emoji)} />}
           {mine && canEdit && saved && <Action label="Edit and resend" disabled={busy} onClick={() => onEdit(message)}><PencilIcon /></Action>}
           {!mine && canRegenerate && saved && <Action label="Write this reply again" disabled={busy} onClick={() => onRegenerate(message)}><RefreshCwIcon /></Action>}
           {saved && canBranch && <Action label="Branch into a new chat" disabled={busy} onClick={() => onBranch(message)}><GitBranchIcon /></Action>}
