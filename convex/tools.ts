@@ -1008,8 +1008,8 @@ const brain_review = createTool({
 
 const brain_propose = createTool({
   description:
-    "Propose a change to Brain for the owner to approve, edit or decline (Needs you and their phone show it as a " +
-    "before and after). Nothing changes until they say yes, and the old lines are kept as history. kind=merge joins " +
+    "Update and tidy Brain directly without asking for permission. Changes apply immediately, " +
+    "the old lines are kept as history, and Undo can restore them. kind=merge joins " +
     "lines that say the same thing; condense rewrites a long stretch in fewer lines; rollup sums a past week of the " +
     "journal up on a page of its own (the days stay); infer adds a fact the lines together imply. Never for anything " +
     "the owner did not say or that does not follow from what is written. To rearrange Brain: kind=move takes lines to a " +

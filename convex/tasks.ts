@@ -178,6 +178,7 @@ export const chatFor = internalMutation({
       threadId: args.threadId,
       title,
       taskId: task._id,
+      ...(task.origin ? { parentConversationId: task.origin } : {}),
       access: install?.defaultAccess,
       lastMessageAt: Date.now(),
       // Started from a project's chat, it works in the project: its instructions, its chats and its memory.

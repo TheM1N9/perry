@@ -42,7 +42,7 @@ export const vUsage = v.object({
 /** The engine items a run's trace records (runner/trace.ts maps each engine's canonical items to these). See runSpans. */
 export const vSpanKind = v.union(
   v.literal("command"), v.literal("fileChange"), v.literal("mcpToolCall"), v.literal("dynamicToolCall"),
-  v.literal("webSearch"), v.literal("imageGeneration"), v.literal("reasoning"),
+  v.literal("webSearch"), v.literal("imageGeneration"), v.literal("reasoning"), v.literal("commentary"),
 );
 export const vSpanStatus = v.union(v.literal("running"), v.literal("ok"), v.literal("error"), v.literal("declined"));
 /** Where a memory came from: the owner, tool output such as a web page or email, or a scheduled job. */
@@ -527,10 +527,13 @@ export default defineSchema({
     latest: v.optional(v.object({ sha: v.string(), title: v.string() })),
     /** Why no update can be offered (changes of the owner's, no network, not a git checkout). */
     problem: v.optional(v.string()),
+    downloading: v.optional(v.object({ id: v.string(), at: v.number() })),
+    downloaded: v.optional(v.object({ sha: v.string(), at: v.number() })),
     /** The owner asked while Perry was busy: he updates once he isn't. */
     wantedAt: v.optional(v.number()),
+    wantedTarget: v.optional(v.string()),
     /** Handed to `perry run` (update-request.json), which stops the dashboard's server to do it. */
-    requested: v.optional(v.object({ id: v.string(), at: v.number(), by: vUpdateBy })),
+    requested: v.optional(v.object({ id: v.string(), at: v.number(), by: vUpdateBy, target: v.optional(v.string()) })),
     /** The owner's day the night's update was last asked for, so it is asked once a night. */
     nightOf: v.optional(v.string()),
     last: v.optional(v.object({
@@ -887,6 +890,10 @@ export default defineSchema({
     /** Set on the chat a background task works in (tasks.ts). */
     taskId: v.optional(v.id("tasks")),
     parentConversationId: v.optional(v.id("conversations")),
+    providerAgent: v.optional(v.object({
+      id: v.string(), runId: v.id("runs"), status: v.union(v.literal("running"), v.literal("done"), v.literal("failed"), v.literal("cancelled")),
+      startedAt: v.number(), updatedAt: v.optional(v.number()), finishedAt: v.optional(v.number()), prompt: v.optional(v.string()), text: v.optional(v.string()),
+    })),
     branchedFromMessageId: v.optional(v.string()),
     pendingTurns: v.optional(v.number()),
     /** Digest of the recalled memory this chat's Codex thread last saw, so an unchanged block is not sent again. */
@@ -929,7 +936,8 @@ export default defineSchema({
   })
     .index("by_channel_external", ["channel", "externalId"])
     .index("by_channel_last", ["channel", "lastMessageAt"])
-    .index("by_project", ["projectId", "lastMessageAt"]),
+    .index("by_project", ["projectId", "lastMessageAt"])
+    .index("by_parent", ["parentConversationId", "lastMessageAt"]),
 
   /**
    * Files attached to a chat turn. The bytes live either in the server's file

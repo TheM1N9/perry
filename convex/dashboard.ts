@@ -163,6 +163,9 @@ export type ChatSummary = {
   pinned: boolean;
   /** Set on the chat where a scheduled job's results collect. */
   jobId?: Id<"jobs">;
+  taskId?: Id<"tasks">;
+  isAgent?: boolean;
+  agent?: { status: Doc<"tasks">["status"]; startedAt: number; finishedAt?: number };
   /** A reply came after the owner last had the chat open. */
   unseen: boolean;
   /** A runner is naming it; its title is the first message until then (titles.ts). */
@@ -191,6 +194,7 @@ export const listChats = query({
       .collect()).map((row) => row.conversationId));
     const jobs = new Map((await ctx.db.query("jobs").collect()).map((job) => [job._id, job]));
     const naming = await beingNamed(ctx);
+    const tasks = new Map((await ctx.db.query("tasks").collect()).map((task) => [task._id, task]));
     const summaries = await Promise.all(chats.map(async (chat): Promise<ChatSummary> => {
       const running = await isBusy(ctx, chat);
       const latestRun = running || asking.has(chat._id) ? null : await ctx.db.query("runs")
@@ -202,11 +206,16 @@ export const listChats = query({
         channel: chat.channel,
         title: titleOf(chat),
         lastMessageAt: chat.lastMessageAt,
-        parentConversationId: chat.parentConversationId,
+        parentConversationId: chat.parentConversationId ?? (chat.taskId ? tasks.get(chat.taskId)?.origin : undefined),
         branchedFromMessageId: chat.branchedFromMessageId,
-        status: asking.has(chat._id) ? "needs-approval" : running ? "running" : latestRun?.status === "error" ? "error" : "idle",
+        status: chat.providerAgent ? (chat.providerAgent.status === "running" ? "running" : chat.providerAgent.status === "failed" ? "error" : "idle") : asking.has(chat._id) ? "needs-approval" : running ? "running" : latestRun?.status === "error" && latestRun.error !== STOPPED ? "error" : "idle",
         pinned: chat.pinnedAt !== undefined,
         jobId: chat.jobId,
+        taskId: chat.taskId,
+        isAgent: Boolean(chat.taskId || chat.providerAgent),
+        ...(chat.providerAgent ? { agent: { status: chat.providerAgent.status, startedAt: chat.providerAgent.startedAt, finishedAt: chat.providerAgent.finishedAt } }
+          : chat.taskId && tasks.has(chat.taskId) ? { agent: { status: tasks.get(chat.taskId)!.status, startedAt: tasks.get(chat.taskId)!.createdAt,
+            ...(["done", "failed", "cancelled"].includes(tasks.get(chat.taskId)!.status) ? { finishedAt: tasks.get(chat.taskId)!.updatedAt } : {}) } } : {}),
         unseen: isUnseen(chat, chat.jobId ? jobs.get(chat.jobId) : undefined),
         naming: naming.has(chat._id),
         ...(chat.projectId ? { projectId: chat.projectId } : {}),
@@ -218,6 +227,31 @@ export const listChats = query({
       ...summaries.filter((chat) => chat.pinned).sort((a, b) => pinnedAt.get(b.id)! - pinnedAt.get(a.id)!),
       ...summaries.filter((chat) => !chat.pinned),
     ];
+  },
+});
+
+export type ChatAgent = {
+  id: string; runId?: Id<"runs">; conversationId?: Id<"conversations">; parentId: Id<"conversations">; title: string;
+  status: Doc<"tasks">["status"]; text?: string; startedAt: number; finishedAt?: number;
+};
+
+export const getChatAgents = query({
+  args: { key: vKey, id: v.id("conversations") },
+  handler: async (ctx, args): Promise<ChatAgent[]> => {
+    assertDashboardKey(args.key);
+    ownerChat(await ctx.db.get(args.id));
+    const tasks = await ctx.db.query("tasks").withIndex("by_origin", (q) => q.eq("origin", args.id)).collect();
+    const native = (await ctx.db.query("conversations").withIndex("by_parent", (q) => q.eq("parentConversationId", args.id)).collect())
+      .filter((chat) => chat.providerAgent).map((chat): ChatAgent => ({
+        id: chat._id, runId: chat.providerAgent!.runId, conversationId: chat._id, parentId: args.id, title: chat.title ?? "Agent", status: chat.providerAgent!.status,
+        text: chat.providerAgent!.text, startedAt: chat.providerAgent!.startedAt, finishedAt: chat.providerAgent!.finishedAt,
+      }));
+    return [...native, ...tasks.map((task) => ({
+      id: task._id, conversationId: task.conversationId, parentId: args.id, title: task.title,
+      status: task.status, text: task.result ?? task.question ?? task.error,
+      startedAt: task.createdAt,
+      ...(["done", "failed", "cancelled"].includes(task.status) ? { finishedAt: task.updatedAt } : {}),
+    }))].sort((a, b) => a.startedAt - b.startedAt);
   },
 });
 
@@ -426,7 +460,7 @@ export const getChat = query({
     const conversation = ownerChat(await ctx.db.get(args.id));
     // Perry's chat with someone else (contacts.ts): the owner reads it, and does not write in it.
     const contact = conversation.contactId ? await ctx.db.get(conversation.contactId) : null;
-    const isRunning = await isBusy(ctx, conversation);
+    const isRunning = conversation.providerAgent ? conversation.providerAgent.status === "running" : await isBusy(ctx, conversation);
     const latestRun = await ctx.db.query("runs")
       .withIndex("by_conversation", (q) => q.eq("conversationId", args.id))
       .order("desc")
@@ -501,6 +535,7 @@ export const getActivity = query({
     if (!run) return null;
     const running = run.status === "running";
     const spans = (await ctx.db.query("runSpans").withIndex("by_run", (q) => q.eq("runId", run._id)).collect())
+      .filter((span) => span.kind !== "commentary")
       .sort((a, b) => a.startedAt - b.startedAt);
     let step: Activity["step"];
     let recent: Activity["recent"];
@@ -547,7 +582,7 @@ export type Work = {
   compact?: true;
 };
 /** A step of a run, as the chat lists it: `label` while it runs ("Running git status"), `done` once it is over ("Ran git status"). */
-export type WorkStep = Step & { id: Id<"runSpans">; done: string; kind: Doc<"runSpans">["kind"]; status: Doc<"runSpans">["status"]; startedAt: number; durationMs?: number };
+export type WorkStep = Step & { id: Id<"runSpans">; name: string; text?: string; done: string; kind: Doc<"runSpans">["kind"]; status: Doc<"runSpans">["status"]; startedAt: number; durationMs?: number };
 /** The runs a chat pairs with its replies: its latest, which covers the replies it shows. */
 const WORK_RUNS = 50;
 /** The most steps a fold lists for a run: its newest, so the one going on is always among them. */
@@ -583,7 +618,7 @@ export const getChatRuns = query({
 
 /**
  * The steps of one or more runs of a chat (the runs that went as one turn),
- * in the order they started, reasoning left out; its time is in the run's.
+ * in the order they started, including commentary and reasoning.
  * `limit`: only the newest, for the one line a reply in progress shows.
  * Only runs of one of the owner's chats, and of the same one, are read.
  */
@@ -598,15 +633,16 @@ export const getRunSteps = query({
       const run = await ctx.db.get(runId);
       if (!run || (chat ??= run.conversationId) !== run.conversationId) continue;
       ownerChat(await ctx.db.get(run.conversationId));
-      // Newest first, so a long run keeps its latest steps; reasoning is skipped as it comes, not counted against the limit.
+      // Newest first, so a long run keeps its latest activity.
       let taken = 0;
       for await (const span of ctx.db.query("runSpans").withIndex("by_run_started", (q) => q.eq("runId", runId)).order("desc")) {
-        if (span.kind === "reasoning") continue;
         steps.push({
           ...describeStep(span),
           done: describeStep(span, { done: true }).label,
           id: span._id,
           kind: span.kind,
+          name: span.name,
+          ...(span.kind === "commentary" || span.kind === "reasoning" ? { text: span.output } : {}),
           status: span.status,
           startedAt: span.startedAt,
           ...(span.durationMs !== undefined ? { durationMs: span.durationMs } : {}),
@@ -673,6 +709,13 @@ export const getChatMessages = query({
   handler: async (ctx, args) => {
     assertDashboardKey(args.key);
     const conversation = ownerChat(await ctx.db.get(args.id));
+    if (conversation.providerAgent) {
+      const agent = conversation.providerAgent;
+      const page: ChatMessage[] = args.paginationOpts.cursor !== null ? [] : [
+        ...(agent.text ? [{ id: `agent-${conversation._id}-reply`, role: "assistant", text: agent.text, createdAt: agent.finishedAt ?? conversation.lastMessageAt, attachments: [] }] : []),
+      ];
+      return { page, isDone: true, continueCursor: "" };
+    }
     const page = await listMessages(ctx, {
       threadId: conversation.threadId,
       excludeToolMessages: true,
@@ -734,13 +777,15 @@ export const getChatMessages = query({
               attachmentMap.has(`codex-${turn._id}`),
             )
           : undefined;
+        const text = (marker ? raw.slice(0, marker.index) : raw).replace(MEMORIES_MARKER, "").trimEnd();
         return {
           id: doc._id,
           ...(doc.ownerReaction || doc.perryReaction ? { reactions: { owner: doc.ownerReaction, perry: doc.perryReaction } } : {}),
           ...(doc.runId ? { runId: doc.runId, failure: failureRuns.get(doc.runId) } : {}),
           attachmentKey: messageKey ?? (recovered ? `codex-${recovered._id}` : undefined),
           role: doc.message?.role ?? "assistant",
-          text: (marker ? raw.slice(0, marker.index) : raw).replace(MEMORIES_MARKER, "").trimEnd(),
+          text: doc.message?.role === "assistant" && failureRuns.get(doc.runId ?? "")?.error === STOPPED
+            ? text.replace(/\n*_Stopped\._$/, "").trimEnd() : text,
           createdAt: doc._creationTime,
           ...(memories.length ? { memories } : {}),
           attachments: messageKey
@@ -749,7 +794,8 @@ export const getChatMessages = query({
               ? attachmentMap.get(`codex-${recovered._id}`) ?? []
               : doc.message?.role === "assistant" ? assistantMedia(raw) : [],
         };
-      }).filter((message) => message.text.trim().length > 0 || message.attachments.length > 0);
+      }).filter((message) => (message.text.trim().length > 0 || message.attachments.length > 0)
+        && !(conversation.taskId && message.role === "user" && message.text.startsWith("\u{1F9E9}")));
     // The newest page also carries what was sent and is not in the history yet, from the same read, so
     // a message never shows twice or blinks out between the outbox, its turn and the history.
     const pending = args.paginationOpts.cursor === null ? inFlight(conversation, codexTurns, await steersOf(ctx, codexTurns)) : [];

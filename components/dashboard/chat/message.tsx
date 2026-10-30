@@ -3,7 +3,7 @@
 import { BrainIcon, CheckIcon, CopyIcon, FilePlusIcon, GitBranchIcon, PencilIcon, RefreshCwIcon } from "lucide-react";
 import Link from "next/link";
 import { Fragment, memo, type ReactNode } from "react";
-import type { QueuedTurn } from "@/convex/dashboard";
+import type { ChatAgent, QueuedTurn } from "@/convex/dashboard";
 import { STARTING } from "@/convex/lib/activity";
 import { fullDate, timeOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Message, MessageContent, MessageFooter } from "@/components/ui/message";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCopy } from "../common";
+import { AgentRows } from "./agents";
 import { AttachmentList, type Attachment } from "./attachments";
 import { Markdown } from "./markdown";
 import { QueueRemoveButton } from "./queue-remove-button";
@@ -41,10 +42,11 @@ function CopyAction({ text }: { text: string }) {
  * width of the column, unboxed, since that is what you read. The actions show
  * on hover and focus, and always on the newest reply.
  */
-export const MessageRow = memo(function MessageRow({ message, work, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch, onSaveNote, onReact }: {
+export const MessageRow = memo(function MessageRow({ message, work, agents, assistant, latest, canRegenerate, canEdit, canBranch = true, busy, skills, onEdit, onRegenerate, onBranch, onSaveNote, onReact }: {
   message: ChatMessage;
   /** The run that wrote this reply, when it took steps: "Worked for 46s" above it. */
   work?: Turn;
+  agents?: ChatAgent[];
   assistant: string;
   latest: boolean;
   canRegenerate: boolean;
@@ -77,7 +79,7 @@ export const MessageRow = memo(function MessageRow({ message, work, assistant, l
           </Bubble>
         ) : (
           <div className="w-full min-w-0">
-            {work && <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} />}
+            {work && <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} omitText={message.text}><AgentRows agents={agents ?? []} /></WorkSummary>}
             <Markdown text={message.text} />
             <AttachmentList attachments={message.attachments} />
             {message.memories && message.memories.length > 0 && <FromMemory memories={message.memories} />}
@@ -160,15 +162,15 @@ export function PendingRow({ text, attachments, sent, skills }: { text: string; 
  * then what has streamed of the words, or "Thinking" before the turn's run
  * is in.
  */
-export function ReplyInProgress({ streaming, work, approving = false, unresponsive = false }: { streaming?: string; work?: Turn; approving?: boolean; unresponsive?: boolean }) {
+export function ReplyInProgress({ streaming, work, agents = [], approving = false, unresponsive = false }: { streaming?: string; work?: Turn; agents?: ChatAgent[]; approving?: boolean; unresponsive?: boolean }) {
   // Over (its reply on its way to the page), held for the owner's approval, or with its computer gone: not writing.
   const over = work?.finishedAt !== undefined;
   const busy = unresponsive || over || approving;
   return (
     <div className="min-w-0 space-y-2" data-role="assistant" {...(unresponsive ? { "data-unresponsive": true } : streaming !== undefined ? { "data-streaming": true } : { "data-thinking": true })}>
       {work && (over
-        ? <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} />
-        : <LiveWork work={work} state={unresponsive ? "unresponsive" : approving ? "waiting" : "working"} />)}
+        ? <WorkSummary work={work} state={work.status === "ok" ? "done" : "failed"} omitText={streaming}><AgentRows agents={agents} /></WorkSummary>
+        : <LiveWork work={work} state={unresponsive ? "unresponsive" : approving ? "waiting" : "working"} omitText={streaming}><AgentRows agents={agents} /></LiveWork>)}
       {streaming !== undefined ? (
         <div>
           <Markdown text={streaming} streaming />
