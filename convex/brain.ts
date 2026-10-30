@@ -700,7 +700,7 @@ export const handleTurn = internalAction({
           ...turn,
           ...settings,
           attachments,
-          ...(args.hidden ? { hidden: true } : {}),
+          ...(args.hidden || args.reactionEvent ? { hidden: true } : {}),
           ...(args.reactionEvent ? { reactionEvent: true } : {}),
           ...(guest ? { guest: true } : {}),
           // The owner's message joins a reply that is running; a job's prompt waits its turn.

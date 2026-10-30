@@ -1304,7 +1304,7 @@ export const finalizeTurn = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => deliverTurnInOrder(args.id, async () => {
     const result: {
-      job: { runId: Id<"runs">; errorCode?: import("../lib/turn-errors").TurnErrorCode; kind?: "compact"; checkpoint?: boolean; prompt: string; response?: string; reactionOnly?: boolean; error?: string; status: string; model?: string; finalizedAt?: number; mediaKey?: string; memoryIds?: Id<"memories">[]; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
+      job: { runId: Id<"runs">; errorCode?: import("../lib/turn-errors").TurnErrorCode; kind?: "compact"; checkpoint?: boolean; prompt: string; response?: string; reactionOnly?: boolean; webReaction?: string; error?: string; status: string; model?: string; finalizedAt?: number; mediaKey?: string; memoryIds?: Id<"memories">[]; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
       conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram" | "whatsapp"; externalId: string; title?: string; jobId?: Id<"jobs">; taskId?: Id<"tasks">; contactId?: Id<"contacts"> } | null;
       steers: string[];
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
@@ -1376,7 +1376,7 @@ export const finalizeTurn = internalAction({
       userId,
       order: "next",
       messages: [
-        ...prompts.map((content) => ({ role: "user" as const, content })),
+        ...prompts.map((content, index) => ({ role: "user" as const, content, ...(index === 0 && !job.hidden && job.webReaction ? { perryReaction: job.webReaction } : {}) })),
         ...(answered
           ? [{ role: "assistant" as const, content: `${reply ?? ""}${job.memoryIds?.length ? `\n\n<!-- memories: ${job.memoryIds.join(",")} -->` : ""}${job.mediaKey ? `\n\n<!-- attachments: ${job.mediaKey} -->` : ""}`.trim() }]
           : []),

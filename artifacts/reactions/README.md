@@ -1,5 +1,7 @@
 # Phone reactions
 
+For the website's browser journey and screenshots, see [web.md](web.md).
+
 Run with installed dependencies and Node 25:
 
 ```powershell

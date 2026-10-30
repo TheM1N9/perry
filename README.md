@@ -52,7 +52,7 @@ can run their own copy, and every copy is separate.
 - **"Send this to me on WhatsApp. I'll continue there."** Sends to your own
   paired WhatsApp or Telegram, with a short recap. Your reply there continues
   in that app's existing Perry chat, with its earlier messages and the recap.
-- **Reactions can be replies.** On WhatsApp and Telegram, Perry can acknowledge
+- **Reactions can be replies.** In web chat, WhatsApp and Telegram, Perry can acknowledge
   a message, express a feeling, or change a reaction as work progresses. The
   emoji choices are open to what each app supports. He can also understand
   your reaction changes and removals against the original message. Telegram

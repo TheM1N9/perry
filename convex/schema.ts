@@ -1550,6 +1550,7 @@ export default defineSchema({
     reactionAt: v.optional(v.number()),
     reactionEvent: v.optional(v.boolean()),
     reactionOnly: v.optional(v.boolean()),
+    webReaction: v.optional(v.string()),
     /** When a finalize last started, so the recovery sweep does not run a second one beside it. */
     finalizingAt: v.optional(v.number()),
     /** Server-observed runner ownership of this running turn, independent of output. */
@@ -1698,6 +1699,8 @@ export default defineSchema({
   }),
 
   agentMessages: defineTable({
+    ownerReaction: v.optional(v.string()),
+    perryReaction: v.optional(v.string()),
     runId: v.optional(v.id("runs")),
     threadId: v.id("agentThreads"),
     userId: v.optional(v.string()),

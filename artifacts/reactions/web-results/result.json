@@ -1,0 +1,63 @@
+{
+  "ranAt": "2026-10-30T23:04:33.648Z",
+  "engine": "manual fixture runner; no model",
+  "checks": {
+    "reaction feedback is bound to its message and cannot approve outward actions": true,
+    "preset reaction saves without adding chat text": true,
+    "invalid text keeps the picker open and preserves the saved reaction": true,
+    "custom emoji can replace a preset": true,
+    "reaction persists through reload": true,
+    "Escape dismisses the popover and restores trigger focus": true,
+    "reaction can be removed without extra text": true,
+    "Perry can set web reaction 🤔": true,
+    "Perry's progress reaction is visible while work runs": true,
+    "Perry can set web reaction 👍": true,
+    "web streaming suppresses the quiet-reply sentinel": true,
+    "progress persists when the pending message becomes saved history": true,
+    "reaction-only work adds no empty or sentinel reply": true,
+    "shared emoji displays both actors without changing Perry's reaction": true,
+    "reaction badges align with the owner's message bubble": true,
+    "cross-chat reaction writes are rejected": true,
+    "reaction writes require dashboard authentication": true,
+    "mobile reaction controls fit and have touch-sized choices": true,
+    "no browser runtime errors": true
+  },
+  "notes": {
+    "mobileControls": {
+      "width": 390,
+      "popup": {
+        "left": 38,
+        "right": 358
+      },
+      "choices": [
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        },
+        {
+          "width": 44,
+          "height": 44
+        }
+      ]
+    },
+    "runnerLog": [],
+    "tempHomeRemoved": true
+  },
+  "passed": true
+}
