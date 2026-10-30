@@ -16,6 +16,13 @@ export const fromTelegram = internalAction({
   args: { update: v.any() },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const reaction = (args.update as { message_reaction?: { chat: { id: number }; message_id: number; user?: { id: number; is_bot?: boolean }; date: number; new_reaction: Array<{ type: string; emoji?: string; custom_emoji_id?: string }> } }).message_reaction;
+    if (reaction) {
+      const owner = await ctx.runQuery(internal.installation.get, {});
+      if (reaction.user?.is_bot || !reaction.user || owner?.ownerChannel !== "telegram" || String(reaction.user.id) !== owner.ownerExternalId) return null;
+      await ctx.runAction(internal.reactions.receive, { channel: "telegram", externalId: String(reaction.chat.id), messageId: String(reaction.message_id), at: reaction.date * 1000, emojis: reaction.new_reaction.map(item => item.emoji ?? `custom:${item.custom_emoji_id ?? item.type}`) });
+      return null;
+    }
     const inbound = parseUpdate(args.update as TelegramUpdate);
     if (!inbound) return null;
     // A tap on a to-do reminder's button: done, or pushed back. The mutation checks the tapper is the owner.
@@ -35,6 +42,7 @@ export const fromTelegram = internalAction({
     }
     await ctx.runMutation(internal.ingest.receive, {
       chatId: inbound.chatId,
+      messageId: inbound.messageId,
       senderId: inbound.senderId,
       text: inbound.text,
       title: inbound.title,
@@ -119,6 +127,7 @@ Try:
 
 export const receive = internalMutation({
   args: {
+    messageId: v.optional(v.number()),
     chatId: v.string(),
     senderId: v.string(),
     text: v.string(),
@@ -183,6 +192,7 @@ export const receive = internalMutation({
         return null;
     }
 
+    if (args.messageId !== undefined) await ctx.runMutation(internal.reactions.record, { channel: "telegram", externalId: args.chatId, messageId: String(args.messageId), text: args.text || "(attachment)", isPerry: false });
     await ctx.scheduler.runAfter(0, internal.brain.handleTurn, {
       channel: "telegram",
       externalId: args.chatId,

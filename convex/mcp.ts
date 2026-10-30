@@ -32,7 +32,7 @@ export const CODEX_TOOLS: readonly ToolName[] = [
   "watch_page", "update_watch", "delete_watch", "check_watches",
   "create_job", "find_triggers", "list_jobs", "update_job", "delete_job", "run_job", "list_engines",
   "add_todo", "list_todos", "update_todo", "delete_todo",
-  "find_contact", "send_message", "send_to_owner", "update_contact",
+  "find_contact", "send_message", "send_to_owner", "react_to_message", "update_contact",
   "library_list", "library_find", "library_add",
   "interactive_create", "interactive_read", "interactive_update",
 ];

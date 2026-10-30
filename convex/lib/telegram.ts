@@ -150,19 +150,20 @@ export async function sendMessage(
   token: string | null,
   chatId: string,
   text: string,
-  options: { markdown?: boolean } = {},
+  options: { markdown?: boolean; onSent?: (id: number, text: string) => Promise<void> } = {},
 ): Promise<void> {
   const body = text.trim();
   if (body.length === 0) return;
 
   const chunks = options.markdown ? balanceFences(chunkMessage(body)) : chunkMessage(body);
   for (const chunk of chunks) {
-    await withHtml((html) => call(token, "sendMessage", {
+    const result = await withHtml((html) => call(token, "sendMessage", {
       chat_id: chatId,
       text: html && options.markdown ? toTelegramHtml(chunk) : chunk,
       ...(html && options.markdown ? { parse_mode: "HTML" } : {}),
       link_preview_options: { is_disabled: true },
-    }));
+    })) as { message_id?: number };
+    if (result.message_id !== undefined) await options.onSent?.(result.message_id, chunk);
   }
 }
 
@@ -198,7 +199,7 @@ export async function editDraft(token: string | null, chatId: string, messageId:
  * Finish a streamed reply: the draft, plain while it grew, becomes the first
  * chunk formatted, and the rest follow as new messages.
  */
-export async function finishDraft(token: string | null, chatId: string, messageId: number, text: string): Promise<void> {
+export async function finishDraft(token: string | null, chatId: string, messageId: number, text: string, onSent?: (id: number, text: string) => Promise<void>): Promise<void> {
   const [first, ...rest] = balanceFences(chunkMessage(text.trim() || "…"));
   await withHtml(async (html) => {
     try {
@@ -213,7 +214,13 @@ export async function finishDraft(token: string | null, chatId: string, messageI
       if (!String(error).includes("message is not modified")) throw error;
     }
   });
-  for (const chunk of rest) await sendMessage(token, chatId, chunk, { markdown: true });
+  await onSent?.(messageId, first);
+  for (const chunk of rest) await sendMessage(token, chatId, chunk, { markdown: true, onSent });
+}
+
+export async function setReaction(token: string | null, chatId: string, messageId: number, emoji: string): Promise<void> {
+  if (!Number.isSafeInteger(messageId) || messageId <= 0) throw new Error("Invalid Telegram message id.");
+  await call(token, "setMessageReaction", { chat_id: chatId, message_id: messageId, reaction: emoji ? [{ type: "emoji", emoji }] : [] });
 }
 
 /** One row of inline buttons under a message. `data` comes back in a callback_query, at most 64 bytes. */
@@ -367,6 +374,7 @@ export interface TelegramMessage {
 export type InboundMedia = { fileId: string; fileName: string; contentType: string; size?: number };
 
 export interface InboundMessage {
+  messageId: number;
   chatId: string;
   senderId: string;
   text: string;
@@ -453,6 +461,7 @@ export function parseUpdate(update: TelegramUpdate): InboundMessage | InboundCal
     .map((entity) => raw.slice(entity.offset + 1, entity.offset + entity.length).toLowerCase());
   return {
     chatId: String(message.chat.id),
+    messageId: message.message_id,
     senderId: String(message.from?.id ?? message.chat.id),
     text,
     title: message.chat.title ?? message.from?.username,

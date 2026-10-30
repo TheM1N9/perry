@@ -1,4 +1,5 @@
 import { deliverTurnInOrder } from "./lib/turn-delivery";
+import { REACTION_ONLY } from "./reactions";
 import { deleteStream, snapshotStream, streamBody, streamState } from "./lib/turn-stream";
 import { turnErrorCode, turnErrorDetail, turnErrorText } from "../lib/turn-errors";
 import { ConvexError, v, type Infer } from "convex/values";
@@ -186,6 +187,7 @@ export const failPreparation = internalMutation({
  */
 export const enqueueTurn = internalMutation({
   args: {
+    reactionEvent: v.optional(v.boolean()),
     conversationId: v.id("conversations"),
     runId: v.id("runs"),
     prompt: v.string(),
@@ -249,6 +251,7 @@ export const enqueueTurn = internalMutation({
       history: args.history,
       instructions: args.instructions,
       recalled: args.recalled || undefined,
+      ...(args.reactionEvent ? { reactionEvent: true } : {}),
       recallDigest: args.recallDigest,
       projectDigest: args.projectDigest,
       ...(args.flush ? { flush: true } : {}),
@@ -671,10 +674,12 @@ export const streamToTelegram = internalAction({
     const data = await ctx.runQuery(internal.codex.getTurn, args);
     let messageId = data?.job.telegramMessageId;
     try {
+      if (data?.job.partial?.trim() && REACTION_ONLY.startsWith(data.job.partial.trim())) return null;
       if (data?.conversation && data.job.partial && data.job.status === "running" && !data.job.finalizedAt) {
         const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
         if (messageId) await editDraft(token, data.conversation.externalId, messageId, data.job.partial);
         else messageId = await sendDraft(token, data.conversation.externalId, data.job.partial);
+        await ctx.runMutation(internal.reactions.record, { channel: "telegram", externalId: data.conversation.externalId, messageId: String(messageId), text: data.job.partial, isPerry: true });
       }
     } catch (error) {
       console.error(`Could not stream to Telegram: ${String(error)}`);
@@ -955,9 +960,12 @@ export const finishTurn = mutation({
     const interrupted = Boolean(cleanError || args.stopped) && !args.response?.trim();
     const retained = interrupted ? progress?.trim() ? progress : await previousResponse(ctx, job) ?? args.response : args.response;
     const cited = citedMemories(retained);
+    const reactionOnly = !cleanError && !args.stopped && !mediaKey && Boolean(job.reactionAt || job.reactionEvent)
+      && cited.text?.trim() === REACTION_ONLY;
+    if (cited.text?.trim() === REACTION_ONLY) cited.text = undefined;
     // Finished with nothing to show is not a reply: the chat says so, instead of keeping the owner's message alone.
     const silent = !args.error && !args.stopped && !job.checkpoint && !job.flush && job.kind !== "compact"
-      && !cited.text?.trim() && !mediaKey;
+      && !cited.text?.trim() && !mediaKey && !reactionOnly;
     const error = cleanError ?? (silent ? EMPTY_REPLY : undefined);
     const errorCode = error ? failureCode ?? (silent ? "empty_reply" : "engine_failed") : undefined;
     await settleRunSpans(ctx, job.runId, finishedAt, args.stopped ? "stopped" : error ? "failed" : "ended");
@@ -972,6 +980,7 @@ export const finishTurn = mutation({
       ...(args.stopped ? { stopped: true } : {}),
       ...(kept.length ? { memoryIds: kept } : {}),
       response: cited.text?.slice(0, 100_000),
+      ...(reactionOnly ? { reactionOnly: true } : {}),
       error: error?.slice(0, 2000),
       errorCode,
       model: args.model,
@@ -1117,6 +1126,7 @@ export const sharedFiles = query({
 async function deliverToTelegram(
   ctx: ActionCtx, token: string | null, chatId: string, text: string, draftId: number | undefined, files: TurnFile[],
 ): Promise<void> {
+  const onSent = async (id: number, body: string) => { await ctx.runMutation(internal.reactions.record, { channel: "telegram", externalId: chatId, messageId: String(id), text: body, isPerry: true }); };
   const send = async (file: TurnFile, caption?: string) => {
     if (!file.storageId) {
       await sendMessage(token, chatId, `${file.fileName} is on your computer at ${file.localPath}; it could not be uploaded.`);
@@ -1145,9 +1155,9 @@ async function deliverToTelegram(
   if (captioned) {
     if (draftId) await deleteMessage(token, chatId, draftId);
   } else if (draftId) {
-    await finishDraft(token, chatId, draftId, text || "Done.");
+    await finishDraft(token, chatId, draftId, text || "Done.", onSent);
   } else if (text) {
-    await sendMessage(token, chatId, text, { markdown: true });
+    await sendMessage(token, chatId, text, { markdown: true, onSent });
   }
   for (const file of files) {
     if (captioned && file === first) continue;
@@ -1294,7 +1304,7 @@ export const finalizeTurn = internalAction({
   returns: v.null(),
   handler: async (ctx, args) => deliverTurnInOrder(args.id, async () => {
     const result: {
-      job: { runId: Id<"runs">; errorCode?: import("../lib/turn-errors").TurnErrorCode; kind?: "compact"; checkpoint?: boolean; prompt: string; response?: string; error?: string; status: string; model?: string; finalizedAt?: number; mediaKey?: string; memoryIds?: Id<"memories">[]; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
+      job: { runId: Id<"runs">; errorCode?: import("../lib/turn-errors").TurnErrorCode; kind?: "compact"; checkpoint?: boolean; prompt: string; response?: string; reactionOnly?: boolean; error?: string; status: string; model?: string; finalizedAt?: number; mediaKey?: string; memoryIds?: Id<"memories">[]; telegramMessageId?: number; stopped?: boolean; flush?: boolean; hidden?: boolean; reportedAt?: number; savedAt?: number; deliveredAt?: number };
       conversation: { _id: Id<"conversations">; threadId: string; channel: "web" | "telegram" | "whatsapp"; externalId: string; title?: string; jobId?: Id<"jobs">; taskId?: Id<"tasks">; contactId?: Id<"contacts"> } | null;
       steers: string[];
     } | null = await ctx.runQuery(internal.codex.getTurn, args);
@@ -1372,6 +1382,15 @@ export const finalizeTurn = internalAction({
           : []),
       ],
     }).then(() => done("savedAt"));
+    if (job.reactionOnly) {
+      if (conversation.channel === "telegram" && job.telegramMessageId) {
+        const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
+        await deleteMessage(token, conversation.externalId, job.telegramMessageId);
+      }
+      await done("deliveredAt");
+      await ctx.runMutation(internal.codex.markFinalized, args);
+      return null;
+    }
     // Someone else hears only what Perry said: never what broke, never "No reply came back", and nothing at all when
     // Perry chose to stay quiet (a group message that was not for it).
     const guest = Boolean(conversation.contactId);

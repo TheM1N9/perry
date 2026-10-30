@@ -230,6 +230,7 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   const persona: { identity: string; user: string } = await ctx.runQuery(internal.persona.forPrompt, {});
   // Which channel this is, where the reply goes, and where what it sets up will report (channels.ts).
   const where: string = await ctx.runQuery(internal.channels.describe, { conversationId: conversation._id });
+  const reactions: string = await ctx.runQuery(internal.reactions.context, { conversationId: conversation._id });
   // The project's instructions and its other chats go with the message, like memory, and again whenever they
   // change: the session keeps the instructions it started with, and an edit must reach a chat already going.
   const project: string | null = await ctx.runQuery(internal.projects.forTurn, { conversationId: conversation._id });
@@ -249,7 +250,7 @@ async function prepareTurn(ctx: ActionCtx, conversation: Doc<"conversations">, q
   return {
     // About me comes with the memory guide (pages.standing); USER.md by itself only when memory could not be had.
     instructions: [persona.identity, INSTRUCTIONS, memory?.instructions ?? persona.user].filter(Boolean).join("\n\n"),
-    recalled: [`# Right now\n\n${now}`, where, goals, aboutProject, memory?.recalled, note, interactive].filter(Boolean).join("\n\n"),
+    recalled: [`# Right now\n\n${now}`, where, reactions, goals, aboutProject, memory?.recalled, note, interactive].filter(Boolean).join("\n\n"),
     recallDigest: memory?.digest,
     projectDigest,
     history,
@@ -510,6 +511,7 @@ export async function loadConversation(
 
 export const handleTurn = internalAction({
   args: {
+    reactionEvent: v.optional(v.boolean()),
     preparingId: v.optional(v.string()),
     channel: vChannel,
     externalId: v.string(),
@@ -699,6 +701,7 @@ export const handleTurn = internalAction({
           ...settings,
           attachments,
           ...(args.hidden ? { hidden: true } : {}),
+          ...(args.reactionEvent ? { reactionEvent: true } : {}),
           ...(guest ? { guest: true } : {}),
           // The owner's message joins a reply that is running; a job's prompt waits its turn.
           policy: conversation.jobId || conversation.taskId || args.outside ? "queue" : "steer",

@@ -52,6 +52,12 @@ can run their own copy, and every copy is separate.
 - **"Send this to me on WhatsApp. I'll continue there."** Sends to your own
   paired WhatsApp or Telegram, with a short recap. Your reply there continues
   in that app's existing Perry chat, with its earlier messages and the recap.
+- **Reactions can be replies.** On WhatsApp and Telegram, Perry can acknowledge
+  a message, express a feeling, or change a reaction as work progresses. The
+  emoji choices are open to what each app supports. He can also understand
+  your reaction changes and removals against the original message. Telegram
+  only delivers reaction updates where the bot has the required administrator
+  permissions; private-chat reaction feedback is not guaranteed.
 - **"Note this: passport renewal by May."** Keeps notes you both edit: packing
   lists, trip plans, meeting notes, a weekly review a schedule adds to. A
   project's notes are shared with its chats. `/note` from your phone adds a line.

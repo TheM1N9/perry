@@ -327,6 +327,22 @@ const send_to_owner = createTool({
   },
 });
 
+const react_to_message = createTool({
+  description:
+    "Add, replace or remove your reaction on a message in the owner's current WhatsApp or Telegram chat. " +
+    "Use reactions naturally for acknowledgement, feelings or work progress, without needing a text reply every time. " +
+    "Choose any emoji the app supports; these are not fixed status categories. Reuse the same message id to change progress. " +
+    "If a successful reaction is the whole response, finish with exactly NO_REPLY. A failed reaction still needs a useful reply.",
+  inputSchema: z.object({
+    emoji: z.string().max(64).describe("One emoji supported by the app, or an empty string to remove your reaction."),
+    messageId: z.string().max(200).optional().describe("Native message id from this chat's reaction context. Omit to react to the owner's current/latest message."),
+  }),
+  execute: async (ctx, input): Promise<{ status: "sent" | "queued" | "failed"; messageId?: string; error?: string }> => {
+    if (!ctx.turnId || ctx.fromJob) return { status: "failed", error: "Reactions are available only in an active owner phone chat." };
+    return await ctx.runAction(internal.reactions.react, { turnId: ctx.turnId, ...input });
+  },
+});
+
 const update_contact = createTool({
   description:
     "Set what you may know and share with someone you talk with, in the owner's words: their brief (\"You can tell Datta my gym " +
@@ -1803,6 +1819,7 @@ export const ALL_TOOLS = {
   find_contact,
   send_message,
   send_to_owner,
+  react_to_message,
   update_contact,
   tell_owner,
   library_list,

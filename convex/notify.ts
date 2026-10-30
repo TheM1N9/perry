@@ -128,8 +128,9 @@ async function send(ctx: ActionCtx, target: Target, text: string, buttons?: Butt
       if (install?.ownerChannel !== "telegram" || target.externalId !== install.ownerExternalId) return false;
       const token: string | null = await ctx.runQuery(internal.secrets.get, { name: "TELEGRAM_BOT_TOKEN" });
       // Job results are the agent's Markdown; plain alerts read the same either way.
-      if (buttons) await sendButtons(token, target.externalId, text, buttons);
-      else await sendMessage(token, target.externalId, text, { markdown: true });
+      const onSent = async (id: number, body: string) => { await ctx.runMutation(internal.reactions.record, { channel: "telegram", externalId: target.externalId, messageId: String(id), text: body, isPerry: true }); };
+      if (buttons) await onSent(await sendButtons(token, target.externalId, text, buttons), text);
+      else await sendMessage(token, target.externalId, text, { markdown: true, onSent });
       // Made here if the owner has not written since pairing.
       conversationId = target.conversationId ?? (await loadConversation(ctx, "telegram", target.externalId))._id;
     } else {
