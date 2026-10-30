@@ -254,22 +254,22 @@ function UpdateSteps({ engine, computer, update, last, onUpdate }: {
   const failed = tried?.status === "error";
   return (
     <div className={cn("mt-3 border-l-2 pl-3", required && "border-destructive")} role={required ? "alert" : "status"} data-engine-update={tried?.status ?? "none"}>
-      <p className={cn("text-sm font-medium", required && "text-destructive")}>{required ? `Update ${engine} to keep using it` : `${engine} ${update.latest} is out`}</p>
+      <p className={cn("text-sm font-medium", required && "text-destructive")}>{required ? `Update ${engine} to keep using it` : `Update available for ${engine}`}</p>
       {!elevate && (
         <ActionButton size="sm" className="mt-2" variant={required ? "default" : "outline"} action={onUpdate}>{failed ? "Try again" : "Update"}</ActionButton>
       )}
       {(required || elevate) && (
         <p className="mt-2 text-sm text-pretty text-muted-foreground">
-          {required && `${computer} has ${update.version}; Perry needs ${update.minimum} or newer and won't start replies with it until then.`}
-          {elevate && ` ${tried?.error ?? ""} Run this yourself in a terminal with those rights:`}
+          {required && `Update ${engine} before starting a new reply.`}
+          {elevate && " Open a terminal as administrator and run this command:"}
         </p>
       )}
-      {failed && <p className="mt-2 text-sm text-pretty text-destructive">The update didn&apos;t work. {tried?.error}</p>}
-      {failed && tried?.output && <Folded label="What it said"><Printed output={tried.output} /></Folded>}
+      {failed && <p className="mt-2 text-sm text-pretty text-destructive">The update couldn’t be installed. Try again.</p>}
+      {failed && (tried?.error || tried?.output) && <Folded label="Technical details"><Printed output={[tried?.error, tried?.output].filter(Boolean).join("\n\n")} /></Folded>}
       {elevate
         ? <div className="mt-3 max-w-md"><CommandLine>{elevate}</CommandLine></div>
         : (
-          <Folded label="Or run it yourself">
+          <Folded label="Update manually">
             <div className="max-w-md"><CommandLine>{update.command}</CommandLine></div>
           </Folded>
         )}
@@ -280,23 +280,18 @@ function UpdateSteps({ engine, computer, update, last, onUpdate }: {
 /** An update on its way: asked for, waiting for that engine's replies to end, or running, with the last of what it prints. */
 function UpdateProgress({ engine, computer, updating }: { engine: string; computer: string; updating: EngineUpdating }) {
   const output = updating.output?.trim() ?? "";
-  // A few lines at most, so a long log doesn't move the page as it runs; all of it is folded beneath.
-  const lines = output.split("\n");
   return (
     <div className="mt-3 border-l-2 border-primary/60 pl-3" role="status" data-engine-update={updating.status}>
       <p className="flex items-center gap-2 text-sm font-medium"><Spinner className="size-3.5" />{updating.status === "waiting" ? "Update waiting" : `Updating ${engine}…`}</p>
       {updating.status !== "running" && (
         <p className="mt-0.5 text-sm text-pretty text-muted-foreground">
-          {updating.status === "queued" ? `Waiting for ${computer} to pick this up…`
+          {updating.status === "queued" ? "Preparing the update…"
             : updating.waitingFor
-              ? `Starts once ${updating.waitingFor} ${/^a /.test(updating.waitingFor) ? "is" : "are"} done. New replies on ${engine} wait.`
+              ? "The update will start when current replies finish."
               : "Getting ready…"}
         </p>
       )}
-      {updating.status === "running" && output && (
-        <pre className="mt-2 line-clamp-3 font-mono text-xs whitespace-pre-wrap text-muted-foreground [overflow-wrap:anywhere]" aria-label="What the update prints">{lines.slice(-3).join("\n")}</pre>
-      )}
-      {updating.status === "running" && lines.length > 3 && <Folded label="What it said"><Printed output={output} /></Folded>}
+      {updating.status === "running" && output && <Folded label="Technical details"><Printed output={output} /></Folded>}
     </div>
   );
 }
@@ -308,8 +303,7 @@ function Updated({ engine, updating }: { engine: string; updating: EngineUpdatin
   const at = ago(updating.finishedAt, now);
   return (
     <div className="mt-2" data-engine-update="done">
-      <p className="text-sm text-muted-foreground" role="status">Updated {engine}{updating.from ? ` from ${updating.from}` : ""} to {updating.to}, {at === "now" ? "just now" : at}.</p>
-      {updating.output && <Folded label="What it said"><Printed output={updating.output} /></Folded>}
+      <p className="text-sm text-muted-foreground" role="status">Updated {engine} {at === "now" ? "just now" : at}.</p>
     </div>
   );
 }

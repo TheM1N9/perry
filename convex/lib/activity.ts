@@ -150,6 +150,7 @@ function presentStep(span: Span): Step {
     case "webSearch": return { label: span.name && span.name !== "web search" ? `Searching the web for “${short(span.name, 32)}”` : "Searching the web", pose: "searching" };
     case "imageGeneration": return { label: "Drawing an image", pose: "drawing" };
     case "reasoning": return { label: "Thinking it through", pose: "thinking" };
+    case "commentary": return { label: "Writing the reply", pose: "typing" };
     case "mcpToolCall": {
       const own = OWN_TOOLS[span.name];
       if (own) return own(args(span));
@@ -201,7 +202,7 @@ export function summarize(spans: Span[], { sentence = false }: { sentence?: bool
     images && `drew ${count(images, "image")}`,
   ].filter((part): part is string => Boolean(part));
   if (sentence) {
-    const counted = (span: Span) => span.kind === "reasoning" || span.kind === "command" || span.kind === "fileChange" || span.kind === "webSearch"
+    const counted = (span: Span) => span.kind === "reasoning" || span.kind === "commentary" || span.kind === "command" || span.kind === "fileChange" || span.kind === "webSearch"
       || span.kind === "imageGeneration" || (span.kind === "mcpToolCall" && (span.name === "read_page" || span.name === "run_action"));
     const other = spans.filter((span) => !counted(span)).length;
     if (other) parts.push(parts.length ? `took ${count(other, "other step")}` : `took ${count(other, "step")}`);

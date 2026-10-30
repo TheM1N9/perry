@@ -8,7 +8,7 @@ import {
 import {
   FULL_ACCESS_INSTRUCTIONS, optionOf, type Engine, type EngineAttachment, type EngineCapabilities, type EngineItem, type EngineRequest, type EngineStatus,
   type ItemStatus, type LoginFlow, type NamedSkill, type PlanLimits, type PlanWindow, type QuickTurn, type TokenUsage, type TurnHandle,
-  type TurnInput, type TurnResult, type TurnSink,
+  type TurnInput, type TurnResult, type TurnSink, type ProviderAgentUpdate,
 } from "../engine";
 import { windowLabel } from "../../convex/lib/usage";
 import { HOME, PATHS } from "../home";
@@ -61,6 +61,19 @@ export function toItem(item: TurnItem, phase: "started" | "completed"): EngineIt
   const status = (value: unknown) => STATUS[String(value)] ?? done;
   const base = { id: item.id, raw: item, ...(typeof item.durationMs === "number" ? { durationMs: item.durationMs } : {}) };
   switch (item.type) {
+    case "collabAgentToolCall": {
+      const states = item.agentsStates ?? {};
+      const ids: string[] = [...new Set<string>([...(item.receiverThreadIds ?? []), ...Object.keys(states)])];
+      const agents = ids.map((id) => {
+        const state = states[id] ?? {};
+        const status = state.status === "completed" ? "done" as const : state.status === "errored" || state.status === "notFound" ? "failed" as const
+          : state.status === "shutdown" ? "cancelled" as const : "running" as const;
+        return { id, status, ...(typeof state.message === "string" ? { text: state.message } : {}),
+          ...(item.tool === "spawnAgent" && item.prompt ? { prompt: String(item.prompt), title: String(item.prompt).split(/[\n.!?]/)[0].slice(0, 80) } : {}),
+          ...(typeof item.model === "string" ? { model: item.model } : {}) };
+      });
+      return { ...base, type: "unknown", title: "Agents", status: done, agents };
+    }
     case "agentMessage":
     case "userMessage":
       return null;
@@ -197,6 +210,26 @@ export class CodexEngine implements Engine {
   };
 
   private app: CodexAppServer | null = null;
+  private agents = new Map<string, { app: CodexAppServer; sink: TurnSink; update: ProviderAgentUpdate; itemId?: string; text: string; flush?: ReturnType<typeof setTimeout>; timer: ReturnType<typeof setTimeout> }>();
+
+  private finishAgent(id: string, update: Partial<ProviderAgentUpdate>) {
+    const agent = this.agents.get(id);
+    if (!agent) return;
+    clearTimeout(agent.timer);
+    if (agent.flush) clearTimeout(agent.flush);
+    this.agents.delete(id);
+    agent.sink.onAgents?.([{ ...agent.update, ...update, id, updatedAt: Date.now() }]);
+  }
+
+  private trackAgent(app: CodexAppServer, update: ProviderAgentUpdate, sink: TurnSink) {
+    if (update.status !== "running") { this.finishAgent(update.id, update); return; }
+    if (this.agents.has(update.id)) return;
+    if (this.agents.size >= 100) this.finishAgent(this.agents.keys().next().value!, { status: "failed", text: "Agent progress is no longer available." });
+    const timer = setTimeout(() => this.finishAgent(update.id, { status: "failed", text: "Agent progress stopped after an hour." }), 3_600_000);
+    timer.unref();
+    this.agents.set(update.id, { app, sink, update, text: update.text ?? "", timer });
+  }
+
   private starting: Promise<CodexAppServer> | null = null;
   private lastAttempt = 0;
   /** Running chat turns by thread, and where their approval requests go. */
@@ -225,7 +258,32 @@ export class CodexEngine implements Engine {
         app.on("serverRequest", (request: RpcMessage) => {
           void this.answer(app, request).catch((error) => app.rejectRequest(request.id, message(error)));
         });
-        app.on("closed", () => { if (this.app === app) this.app = null; });
+        app.on("item/agentMessage/delta", (event: { threadId?: string; itemId?: string; delta?: string }) => {
+          const agent = event.threadId ? this.agents.get(event.threadId) : undefined;
+          if (!agent || agent.app !== app || !event.delta) return;
+          agent.text = ((agent.itemId === event.itemId ? agent.text : "") + event.delta).slice(0, 100_000);
+          agent.itemId = event.itemId;
+          agent.flush ??= setTimeout(() => {
+            agent.flush = undefined;
+            if (this.agents.get(event.threadId!) === agent) agent.sink.onAgents?.([{ ...agent.update, text: agent.text, updatedAt: Date.now() }]);
+          }, 160);
+          agent.flush.unref();
+        });
+        app.on("item/completed", (event: ItemEvent) => {
+          const agent = event.threadId ? this.agents.get(event.threadId) : undefined;
+          if (agent?.app === app && event.item.type === "agentMessage" && typeof event.item.text === "string") agent.text = event.item.text;
+        });
+        app.on("turn/completed", (event: { threadId?: string; turn?: { status?: string; items?: TurnItem[] } }) => {
+          const agent = event.threadId ? this.agents.get(event.threadId) : undefined;
+          if (!agent || agent.app !== app) return;
+          const text = event.turn?.items?.filter((item) => item.type === "agentMessage").at(-1)?.text;
+          this.finishAgent(event.threadId!, { status: event.turn?.status === "failed" ? "failed" : event.turn?.status === "interrupted" ? "cancelled" : "done",
+            text: typeof text === "string" ? text : agent.text });
+        });
+        app.on("closed", () => {
+          for (const [id, agent] of this.agents) if (agent.app === app) this.finishAgent(id, { status: "failed", text: "Codex disconnected before the agent finished." });
+          if (this.app === app) this.app = null;
+        });
         this.app = app;
         return app;
       } catch (error) {
@@ -270,7 +328,7 @@ export class CodexEngine implements Engine {
    * PATH every five minutes, and started again between turns once it differs.
    */
   private async followUpdates(app: CodexAppServer) {
-    if (this.turns.size) return;
+    if (this.turns.size || this.agents.size) return;
     let restart = updateOf({ kind: "codex", version: app.version })?.need === "required";
     if (!restart && Date.now() - this.comparedAt > 5 * 60_000) {
       this.comparedAt = Date.now();
@@ -278,7 +336,7 @@ export class CodexEngine implements Engine {
       const installed = printed?.code === 0 ? versionIn(printed.stdout) : undefined;
       restart = Boolean(installed && app.version && installed !== app.version);
     }
-    if (!restart || this.turns.size || this.app !== app) return;
+    if (!restart || this.turns.size || this.agents.size || this.app !== app) return;
     this.app = null;
     this.lastAttempt = 0;
     app.close();
@@ -531,6 +589,7 @@ export class CodexEngine implements Engine {
     const item = (phase: "started" | "completed") => ofTurn((event: ItemEvent) => {
       const normalized = toItem(event.item, phase);
       const atMs = (phase === "started" ? event.startedAtMs : event.completedAtMs) ?? Date.now();
+      for (const agent of normalized?.agents ?? []) this.trackAgent(app, agent, sink);
       if (normalized) sink.onEvent?.({ type: "item", phase, item: normalized, atMs });
     });
     const onItemStarted = item("started");

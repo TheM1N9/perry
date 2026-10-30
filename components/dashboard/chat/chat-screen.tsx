@@ -1,11 +1,12 @@
 "use client";
 
+import { AgentRows, AgentStatus, agentsForWork } from "./agents";
 import { TurnError } from "./turn-error";
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  ActivityIcon, ArrowDownIcon, CopyIcon, FilePlusIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
+  ActivityIcon, ArrowDownIcon, ArrowUpLeftIcon, BotIcon, CopyIcon, FilePlusIcon, FolderIcon, GitBranchIcon, MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, RefreshCwIcon,
   SquarePenIcon, Trash2Icon, TriangleAlertIcon,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -44,7 +45,7 @@ import { InteractiveAnswers } from "./interactive-answer";
 import { ChatFiles } from "./markdown";
 import { MessageEditor, type MessageEdit } from "./message-editor";
 import { MessageRow, PendingRow, ReplyInProgress, type ChatMessage } from "./message";
-import { LANDING_MS, SAVED_BEFORE_END_MS, together, WorkFolds, WorkSummary, type Turn, type Work } from "./work";
+import { Interrupted, LANDING_MS, SAVED_BEFORE_END_MS, together, WorkSummary, type Turn, type Work } from "./work";
 import { NowAction, ThreadNow, type NowLine } from "./thread-now";
 import { UpNext, type UpNextItem } from "./up-next";
 import { ClockIcon, Minimize2Icon, UnplugIcon } from "lucide-react";
@@ -120,6 +121,7 @@ export function ChatScreen() {
   const assistant = status?.assistantName ?? "Perry";
   const chats = useQuery(api.dashboard.listChats, { key: dashboardKey });
   const summary = chats?.find((item) => item.id === selectedId);
+  const agents = useQuery(api.dashboard.getChatAgents, selectedId ? { key: dashboardKey, id: selectedId } : "skip") ?? [];
   const parent = chats?.find((item) => item.id === summary?.parentConversationId);
   const chat = useQuery(api.dashboard.getChat, selectedId ? { key: dashboardKey, id: selectedId } : "skip");
   const { results: newest, status: messageStatus, loadMore } = usePaginatedQuery(
@@ -324,23 +326,23 @@ export function ChatScreen() {
     // last reply saved while it ran; a message that waited for a turn of its own then gets that turn's reply.
     const groups = new Map<string, Work[]>();
     for (const run of runs) {
-      // A run with no steps has no fold: a message that joined a reply, or one removed from the queue (whose run ends "stopped").
-      if (run.status === "running" || run.finishedAt === undefined || !run.stepCount) continue;
-      const reply = [...replies].reverse().find((message) => message.createdAt >= run.startedAt && message.createdAt <= run.finishedAt! + SAVED_BEFORE_END_MS);
+      // Prefer the saved run id; older messages fall back to the time they were saved.
+      if (run.status === "running" || run.finishedAt === undefined) continue;
+      const reply = [...replies].reverse().find((message) => message.runId === run.runId) ?? [...replies].reverse().find((message) => message.createdAt >= run.startedAt && message.createdAt <= run.finishedAt! + SAVED_BEFORE_END_MS);
       if (reply) groups.set(reply.id, [...groups.get(reply.id) ?? [], run]);
     }
     const workOf = new Map<string, Turn>();
     for (const [id, group] of groups) {
       const merged = together(group);
-      if (merged?.stepCount) workOf.set(id, merged);
+      if (merged) workOf.set(id, merged);
     }
     // A run that ended well and whose reply is not in the chat yet stays up until it is: the two come
     // from different reads, a moment apart, and the steps would blink out in between.
     const paired = new Set([...groups.values()].flat());
-    const landing = runs.filter((run) => run.status === "ok" && run.stepCount && !paired.has(run) && now - (run.finishedAt ?? 0) < LANDING_MS);
+    const landing = runs.filter((run) => run.status === "ok" && !paired.has(run) && now - (run.finishedAt ?? 0) < LANDING_MS);
     // A turn that failed before it could reply has no reply to sit above: its steps stay where its reply would have been.
     const lastReply = replies.at(-1)?.createdAt ?? 0;
-    const failed = runs.filter((run) => run.status !== "ok" && run.status !== "running" && run.stepCount && !paired.has(run) && run.startedAt > lastReply);
+    const failed = runs.filter((run) => run.status !== "ok" && run.status !== "running" && !paired.has(run) && run.startedAt > lastReply);
     // A /compact is not a reply: the end of the timeline says it is going on (nowLines).
     const running = runs.filter((run) => run.status === "running" && !run.compact);
     // The latest /compact, said at the end of the timeline while it runs, and after until a reply comes.
@@ -349,7 +351,7 @@ export function ChatScreen() {
   }, [work, messages, deadlineRevision]);
   // A reply is on its way: not one held for a reset (said at the end of the timeline), and not messages sent
   // during a /compact, which wait behind it under Up next rather than show a reply thinking.
-  const replying = !chat?.waiting && Boolean(liveWork || (waiting && compacting?.status !== "running"));
+  const replying = !(summary?.isAgent && !summary.taskId) && !chat?.waiting && Boolean(liveWork || (waiting && compacting?.status !== "running"));
   const historicalWork = useStableRecords(useMemo(() => [...workOf.values()], [workOf]), workKey);
   const stableWorkOf = useMemo(() => new Map(historicalWork.map((item) => [item.runId, item])), [historicalWork]);
   const rowWork = useMemo(() => new Map([...workOf].map(([id, item]) => [id, stableWorkOf.get(item.runId)])), [workOf, stableWorkOf]);
@@ -755,10 +757,14 @@ export function ChatScreen() {
           </Link>
           <span className="text-muted-foreground/60" aria-hidden>/</span>
         </>}
+        {parent && summary?.isAgent && <>
+          <Link href={`/chat/${parent.id}`} className="min-w-0 truncate text-sm text-muted-foreground hover:text-foreground">{parent.title}</Link>
+          <span className="text-muted-foreground/60" aria-hidden>/</span>
+        </>}
         {chat && <ChannelIcon channel={chat.channel} />}
         <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer motion-reduce:shimmer-none")} aria-busy={summary?.naming || undefined}>{title}</h1>
         {summary && <StatusIndicator status={summary.status} />}
-        {parent && (
+        {parent && !summary?.isAgent && (
           <Link href={`/chat/${parent.id}`} className="hidden min-w-0 items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground sm:flex">
             <GitBranchIcon className="size-3 shrink-0" />from {parent.title}
           </Link>
@@ -793,9 +799,9 @@ export function ChatScreen() {
               <h2 className="mt-5 text-3xl font-semibold tracking-[-0.025em] text-balance">{project ? `New chat in ${project.name}` : greeting(status?.displayName)}</h2>
             </div>
           ) : (
-            <WorkFolds>
             <ChatFiles.Provider value={chatFiles ?? NO_FILES}>
             <div className="space-y-8 pt-6 pb-10" aria-busy={loading || undefined}>
+              {parent && summary?.isAgent && <div className="flex items-center gap-3 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border/50" /><Link className="flex min-h-11 min-w-0 touch-manipulation items-center gap-2 rounded-full border border-border/50 px-3 py-1.5 hover:text-foreground" href={`/chat/${parent.id}`}><BotIcon className="size-3.5 shrink-0" /><span className="truncate">Subagent of {"\u00b7"} {parent.title}</span></Link><span className="h-px flex-1 bg-border/50" /></div>}
               {loading && (
                 <div className="space-y-8" role="status" aria-label="Loading the conversation">
                   <Skeleton className="ml-auto h-10 w-1/2 rounded-3xl" />
@@ -821,11 +827,12 @@ export function ChatScreen() {
                   key={message.id}
                   message={message}
                   work={rowWork.get(message.id)}
+                  agents={agentsForWork(agents, rowWork.get(message.id))}
                   assistant={assistant}
                   latest={message.id === lastMessage?.id}
-                  canEdit={!app}
-                  canRegenerate={message.id === lastMessage?.id && !waiting && !app}
-                  canBranch={!app}
+                  canEdit={!app && !summary?.isAgent}
+                  canRegenerate={message.id === lastMessage?.id && !waiting && !app && !summary?.isAgent}
+                  canBranch={!app && !summary?.isAgent}
                   busy={busy}
                   skills={skillNames}
                   onEdit={editRow}
@@ -834,7 +841,8 @@ export function ChatScreen() {
                   onSaveNote={noteRow}
                   onReact={!app ? reactRow : undefined}
                 />
-                {message.failure && runRows.last.get(message.runId!) === message.id && <TurnError
+                {message.failure?.error === "Stopped before it finished." && (message.role === "assistant" || message.runId !== chat?.lastErrorRunId) && runRows.last.get(message.runId!) === message.id && <Interrupted />}
+                {message.failure && message.failure.error !== "Stopped before it finished." && runRows.last.get(message.runId!) === message.id && <TurnError
                   {...message.failure}
                   busy={busy || waiting}
                   onRetry={!app && !waiting && runRows.prompt.get(message.runId!)
@@ -846,10 +854,11 @@ export function ChatScreen() {
               {shownPending.map((item, index) => !item.queued && <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
               {!missing && <InteractiveAnswers conversationId={selectedId} />}
               {replying && <LiveReply key={selectedId} conversationId={selectedId} onContentChange={followLiveReply}
-                work={liveWork} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
+                work={liveWork} agents={agentsForWork(agents, liveWork)} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
               {here.map((approval) => <LiveApproval key={approval.id} approval={approval} />)}
-              {failedWork && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed" /></div>}
-              {chat?.lastError && !chat.isRunning && !waiting && !messages.some((message) => message.failure && message.runId === chat.lastErrorRunId) && (
+              {failedWork && (failedWork.stepCount > 0 || !failedWork.stopped) && !waiting && !liveWork && <div data-role="assistant"><WorkSummary work={failedWork} state="failed"><AgentRows agents={agentsForWork(agents, failedWork) ?? []} /></WorkSummary></div>}
+              {chat?.lastError === "Stopped before it finished." && !chat.isRunning && !waiting && !messages.some((message) => message.role === "assistant" && message.failure?.error === chat.lastError && message.runId === chat.lastErrorRunId) && <Interrupted detail={failedWork?.stepCount ? undefined : "Stopped before any work finished"} />}
+              {chat?.lastError && chat.lastError !== "Stopped before it finished." && !chat.isRunning && !waiting && !messages.some((message) => message.failure && message.runId === chat.lastErrorRunId) && (
                 <TurnError error={chat.lastError} errorCode={chat.lastErrorCode} busy={busy}
                   onRetry={lastUser && !app ? () => void rewind(lastUser.id) : undefined} />
               )}
@@ -857,7 +866,6 @@ export function ChatScreen() {
               <ThreadNow lines={nowLines} />
             </div>
             </ChatFiles.Provider>
-            </WorkFolds>
           )}
         </div>
       </div>
@@ -874,7 +882,11 @@ export function ChatScreen() {
         <div className="mx-auto w-full max-w-3xl">
           <p className="sr-only" role="status" aria-live="polite">{chat?.waiting?.why ?? ""}</p>
           <ChatAnnouncer chatId={selectedId ?? null} status={summary?.status} />
-          <ComposerDraft ref={draftControl} refreshSkills={refreshSkills} storageKey={`perry.prompt.${paramId ?? (inProject ? `project.${inProject}` : "new")}`}>{({ draft, setDraft, before, setBefore }) => {
+          {summary?.isAgent && parent ? <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/50 bg-muted/30 px-4 py-3 text-sm" data-agent-bar>
+            <BotIcon className="size-4 text-muted-foreground" /><span className="font-medium">{model || ENGINE_LABELS[engine ?? "codex"]}</span><span className="text-muted-foreground">{effort}</span>
+            <span className="flex-1 text-muted-foreground"><AgentStatus agent={summary.agent} /></span><span className="text-xs text-muted-foreground">Runs on its own</span>
+            <Link href={`/chat/${parent.id}`} className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-md px-2 font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"><ArrowUpLeftIcon className="size-4" />Open parent</Link>
+          </div> : <ComposerDraft ref={draftControl} refreshSkills={refreshSkills} storageKey={`perry.prompt.${paramId ?? (inProject ? `project.${inProject}` : "new")}`}>{({ draft, setDraft, before, setBefore }) => {
             // Slash commands: past a command's name, the suggestions are its choices.
             const typedModel = parseModelCommand(draft);
             const typedThink = parseThinkCommand(draft);
@@ -997,7 +1009,7 @@ export function ChatScreen() {
                 : <>Type <Kbd className="font-mono">/</Kbd> for commands, <Kbd className="font-mono">$</Kbd> for skills.</>}
           </p>
           </>);
-          }}</ComposerDraft>
+          }}</ComposerDraft>}
         </div>
       </div>
 

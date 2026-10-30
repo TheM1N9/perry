@@ -1040,6 +1040,10 @@ async function main() {
         } else {
           const sink: TurnSink = {
             onSession: (cursor, replaces) => client.mutation(api.codex.setResume, { token, id: job._id, cursor, ...(replaces ? { replaces } : {}) }),
+            onAgents: (agents) => {
+              void client.mutation(api.codex.agentProgress, { token, id: job._id, agents })
+                .catch((error) => console.error(`Could not save agent progress: ${String(error)}`));
+            },
             onStarted: (handle) => {
               dog?.active();
               turn.handle = handle;
@@ -1053,6 +1057,7 @@ async function main() {
               dog?.active();
               if (event.type === "text") {
                 if (event.stream !== "assistant") return;
+                trace.text(event.itemId, event.text, Date.now());
                 latest = event.text;
                 stream.update(latest);
                 schedule();
@@ -1131,7 +1136,7 @@ async function main() {
         readLimitsSoon(engine);
       }
       // The trace's last report goes before the turn ends; Convex takes reports only while it runs.
-      trace.drain(Date.now());
+      trace.drain(Date.now(), kind === "claude");
       await report();
     }
     // A bounded failed ack batch withholds finish; recoverTurns retries only the saved outcome/result.

@@ -1,9 +1,10 @@
 "use client";
 
 import {
-  BrainIcon, EyeIcon, GlobeIcon, HammerIcon, HourglassIcon, ImageIcon, SearchIcon, SquarePenIcon, TerminalIcon, type LucideIcon,
+  BrainIcon, ChevronRightIcon, EyeIcon, GlobeIcon, HammerIcon, HourglassIcon, ImageIcon, SearchIcon, SquarePenIcon, TerminalIcon, XIcon, type LucideIcon,
 } from "lucide-react";
-import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useRef, useState, type ReactNode } from "react";
+import { useInView } from "motion/react";
 import { useQuery } from "@/client/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -12,8 +13,10 @@ import { tickText } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
+import { TraceDescription, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 import { StepDetail } from "./step-card";
+import { Markdown } from "./markdown";
+import { summarize } from "@/convex/lib/activity";
 
 export type { Work };
 
@@ -115,141 +118,93 @@ function StepLine({ step, state, unresponsive = false }: { step: WorkStep; state
   );
 }
 
-/**
- * Every step of a turn's runs, in the order it took them, read only while
- * shown (dashboard.getRunSteps), in a list that scrolls past 18rem. While the
- * turn runs the list grows, and stays at its end if it was there.
- */
-function RunSteps({ runIds, live = false, held = false, unresponsive = false }: { runIds: Id<"runs">[]; live?: boolean; held?: boolean; unresponsive?: boolean }) {
-  const { dashboardKey } = useSession();
-  const steps = useQuery(api.dashboard.getRunSteps, { key: dashboardKey, runIds });
-  const list = useRef<HTMLOListElement>(null);
-  const atEnd = useRef(true);
-  useLayoutEffect(() => {
-    const element = list.current;
-    if (element && live && atEnd.current) element.scrollTop = element.scrollHeight;
-  }, [steps?.length, live]);
-  if (steps === undefined) return <Skeleton className="my-1 h-3.5 w-2/3" role="status" aria-label="Loading the steps" />;
-  return (
-    <Trace data-work-steps>
-      <ol ref={list} className="-mx-1 flex max-h-[min(18rem,50dvh)] min-w-0 flex-col overflow-y-auto px-1 py-0.5" aria-label="Steps"
-        onScroll={(event) => { const element = event.currentTarget; atEnd.current = element.scrollHeight - element.clientHeight - element.scrollTop <= 4; }}>
-        {steps.map((step) => {
-          const state = stepState(step, live, held || unresponsive);
-          return (
-            <TraceCollapsible key={step.id} render={<li />} data-step={step.label} data-status={state === "stopped" || state === "waiting" ? state : step.status} data-kind={step.kind}>
-              <TraceCollapsibleTrigger><StepLine step={step} state={state} unresponsive={unresponsive} /></TraceCollapsibleTrigger>
-              <TraceCollapsibleContent className="mt-1 mb-2"><StepDetail id={step.id} /></TraceCollapsibleContent>
-            </TraceCollapsible>
-          );
-        })}
-      </ol>
-    </Trace>
-  );
+function StepEntry({ step, live, held, unresponsive }: { step: WorkStep; live: boolean; held: boolean; unresponsive: boolean }) {
+  const [open, setOpen] = useState(false);
+  const state = stepState(step, live, held || unresponsive);
+  return <details onToggle={(event) => setOpen(event.currentTarget.open)} className="group/step min-w-0" data-step={step.label} data-status={state === "stopped" || state === "waiting" ? state : step.status} data-kind={step.kind}>
+    <summary className="flex min-h-11 touch-manipulation cursor-pointer list-none items-center gap-2 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+      <span className="min-w-0 flex-1"><StepLine step={step} state={state} unresponsive={unresponsive} /></span>
+      <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none group-open/step:rotate-90" aria-hidden />
+    </summary>
+    <div className="my-2 ml-6 border-l pl-3 text-muted-foreground">{open && <StepDetail id={step.id} />}</div>
+  </details>;
 }
 
-/** What a finished turn's fold says: "Worked for 46s · Ran 2 commands and changed 3 files", or "You stopped after 12s". */
+/** Native disclosure keeps each tool group independent, without mounting hidden step details. */
+function ToolGroup({ steps, live, held, unresponsive }: { steps: WorkStep[]; live: boolean; held: boolean; unresponsive: boolean }) {
+  const active = live && steps.some((step) => step.status === "running");
+  const [open, setOpen] = useState(active);
+  const summary = summarize(steps, { sentence: true }) || `${steps.length} ${steps.length === 1 ? "step" : "steps"}`;
+  return <details className="group/tools min-w-0 text-sm text-muted-foreground" open={active} onToggle={(event) => setOpen(event.currentTarget.open)} data-tool-group>
+    <summary className="flex min-h-11 touch-manipulation cursor-pointer list-none items-center gap-2 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+      <HammerIcon className="size-4 shrink-0" aria-hidden /><span className="min-w-0 flex-1 truncate">{summary}</span>
+      <ChevronRightIcon className="size-3.5 shrink-0 transition-transform motion-reduce:transition-none group-open/tools:rotate-90" aria-hidden />
+    </summary>
+    <div className="max-h-[min(22rem,50dvh)] overflow-y-auto overscroll-contain" data-work-steps>
+      {open && steps.map((step) => <StepEntry key={step.id} step={step} live={live} held={held} unresponsive={unresponsive} />)}
+    </div>
+  </details>;
+}
+
+function RunSteps({ runIds, live = false, held = false, unresponsive = false, omitText }: { runIds: Id<"runs">[]; live?: boolean; held?: boolean; unresponsive?: boolean; omitText?: string }) {
+  const { dashboardKey } = useSession();
+  const container = useRef<HTMLDivElement>(null);
+  const visible = useInView(container, { margin: "600px 0px" });
+  const fetched = useQuery(api.dashboard.getRunSteps, visible || live ? { key: dashboardKey, runIds } : "skip");
+  const cached = useRef<WorkStep[] | undefined>(undefined);
+  if (fetched !== undefined) cached.current = fetched;
+  const steps = fetched ?? cached.current;
+  if (steps === undefined) return <div ref={container}><Skeleton className="my-2 h-4 w-2/3" role="status" aria-label="Loading activity" /></div>;
+  const groups: Array<{ id: string; text: string } | { id: string; steps: WorkStep[] } | { id: string; step: WorkStep }> = [];
+  const lastCommentary = [...steps].reverse().find((step) => step.kind === "commentary");
+  for (const step of steps) {
+    if (step.kind === "commentary") {
+      const text = step.text?.trim();
+      if (!text || (omitText !== undefined && step.id === lastCommentary?.id)) continue;
+      groups.push({ id: step.id, text });
+    } else if (step.kind === "reasoning" || (live && step.status === "running")) {
+      groups.push({ id: step.id, step });
+    } else {
+      const previous = groups.at(-1);
+      if (previous && "steps" in previous) previous.steps.push(step);
+      else groups.push({ id: step.id, steps: [step] });
+    }
+  }
+  return <div ref={container} className="min-w-0 space-y-4" data-work-timeline>
+    {groups.map((group) => <Fragment key={group.id}>{"text" in group
+      ? <div data-commentary><Markdown text={group.text} /></div>
+      : "step" in group ? <StepEntry step={group.step} live={live} held={held} unresponsive={unresponsive} />
+      : <ToolGroup steps={group.steps} live={live} held={held} unresponsive={unresponsive} />}</Fragment>)}
+  </div>;
+}
+
 export function workLabel(work: Turn, state: "done" | "failed"): string {
   const time = took(Math.max(0, (work.finishedAt ?? work.startedAt) - work.startedAt));
-  const what = work.summary || (work.stepCount ? `Took ${work.stepCount} ${work.stepCount === 1 ? "step" : "steps"}` : "");
-  const lead = work.stopped ? `You stopped after ${time}` : state === "failed" ? `Failed after ${time}` : `Worked for ${time}`;
-  return what ? `${lead} · ${what}` : lead;
+  return `Worked for ${time}`;
 }
 
-/**
- * Which turns' folds the owner opened or closed, by the turn's first run: one
- * fold is drawn live while the turn runs and above its reply after, and the
- * owner's choice goes with it. Untouched, a fold is closed.
- */
-const Folds = createContext<{ chosen: ReadonlyMap<string, boolean>; choose: (runId: string, open: boolean) => void } | null>(null);
-
-export function WorkFolds({ children }: { children: ReactNode }) {
-  const [chosen, setChosen] = useState<ReadonlyMap<string, boolean>>(() => new Map());
-  const choose = useCallback((runId: string, open: boolean) => setChosen((was) => new Map(was).set(runId, open)), []);
-  const value = useMemo(() => ({ chosen, choose }), [chosen, choose]);
-  return <Folds.Provider value={value}>{children}</Folds.Provider>;
+export function WorkSummary({ work, state = "done", omitText, children }: { work: Turn; state?: "done" | "failed"; omitText?: string; children?: ReactNode }) {
+  return <div className="mb-4 space-y-4" data-work data-work-state={state} data-run={work.runId}>
+    <p className="nums border-b border-border/50 pb-3 text-sm text-muted-foreground">{workLabel(work, state)}</p>
+    <RunSteps runIds={work.runIds} omitText={omitText} />
+    {children}
+  </div>;
 }
 
-/** Whether a turn's fold is open, kept by the chat (WorkFolds) so it stays as the owner left it when the turn ends. */
-function useFold(runId: string): [boolean, (open: boolean) => void] {
-  const folds = useContext(Folds);
-  const [own, setOwn] = useState(false);
-  const open = folds ? folds.chosen.get(runId) ?? false : own;
-  return [open, (next) => folds ? folds.choose(runId, next) : setOwn(next)];
+export function Interrupted({ detail }: { detail?: string }) {
+  return <div role="status" className="flex items-center gap-3 py-3 text-sm text-destructive" data-run-interrupted>
+    <span className="h-px min-w-4 flex-1 bg-border/60" aria-hidden />
+    <span className="flex min-w-0 items-center gap-2"><XIcon className="size-4 shrink-0" aria-hidden /><span>Run interrupted{detail && <span className="text-destructive/80"> · {detail}</span>}</span></span>
+    <span className="h-px min-w-4 flex-1 bg-border/60" aria-hidden />
+  </div>;
 }
 
-/**
- * A finished turn's work, folded into one line above its reply: "Worked for
- * 46s · Ran 2 commands and changed 3 files", its steps a click away (read
- * from the server only once opened).
- */
-export function WorkSummary({ work, state = "done" }: { work: Turn; state?: "done" | "failed" }) {
-  const [open, setOpen] = useFold(work.runId);
-  const line = (
-    <TraceLine status={state === "failed" && !work.stopped ? "error" : undefined}>
-      <TraceTitle className="nums">{workLabel(work, state)}</TraceTitle>
-    </TraceLine>
-  );
-  const data = { "data-work": true, "data-work-state": state, "data-run": work.runId };
-  return (
-    <Trace className="mb-2">
-      {work.stepCount > 0 ? (
-        <TraceCollapsible open={open} onOpenChange={setOpen} {...data}>
-          <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
-          <TraceCollapsibleContent className="mt-1.5"><RunSteps runIds={work.runIds} /></TraceCollapsibleContent>
-        </TraceCollapsible>
-      ) : <p {...data}>{line}</p>}
-    </Trace>
-  );
-}
-
-/**
- * A turn's work while it runs: "Working for 12s", its time kept by the
- * shared second, and under it the one step it is on, or the last it took,
- * read alone (getRunSteps with a limit of one). A click on either opens every
- * step, live. `waiting`: the turn holds on the owner's approval, so it is
- * not working; `unresponsive`: its computer stopped answering.
- */
-export function LiveWork({ work, state }: { work: Turn; state: "working" | "waiting" | "unresponsive" }) {
-  const { dashboardKey } = useSession();
-  const [open, setOpen] = useFold(work.runId);
-  const fold = useRef<HTMLDivElement>(null);
-  // The step line goes as the list opens from it; the fold's own line takes the focus it had.
-  const refocus = useRef(false);
-  useLayoutEffect(() => {
-    if (!open || !refocus.current) return;
-    refocus.current = false;
-    fold.current?.querySelector<HTMLElement>("[data-slot=trace-collapsible-trigger]")?.focus();
-  }, [open]);
-  const stepped = work.stepCount > 0;
-  const latest = useQuery(api.dashboard.getRunSteps, stepped && !open ? { key: dashboardKey, runIds: work.runIds, limit: 1 } : "skip")?.at(-1);
-  const held = state !== "working";
-  const head = (
-    <TraceLine className="min-h-6" status={state === "working" ? "running" : undefined}>
-      <TraceIcon>{state === "working" ? <Spinner /> : <HourglassIcon className="size-3.5" />}</TraceIcon>
-      <TraceTitle className="nums">
-        {state === "unresponsive" ? "Computer unresponsive" : state === "waiting" ? "Waiting for your approval" : <>Working for <Ticking since={work.startedAt} /></>}
-      </TraceTitle>
-    </TraceLine>
-  );
-  // Both lines open the fold, so a click on either is the reader's, and the chat stops following (use-chat-scroll.ts).
-  const data = { "data-work": true, "data-work-state": state, "data-run": work.runId };
-  if (!stepped) return <Trace className="mb-2" {...data}><p>{head}</p></Trace>;
-  return (
-    <Trace ref={fold} className="mb-2 gap-0.5" {...data}>
-      <TraceCollapsible open={open} onOpenChange={setOpen}>
-        <TraceCollapsibleTrigger>{head}</TraceCollapsibleTrigger>
-        <TraceCollapsibleContent className="mt-1.5">
-          <RunSteps runIds={work.runIds} live held={state === "waiting"} unresponsive={state === "unresponsive"} />
-        </TraceCollapsibleContent>
-      </TraceCollapsible>
-      {!open && latest && (
-        <button type="button" aria-expanded={false} aria-label={`${latest.status === "running" ? latest.label : latest.done}. Show every step`}
-          data-live-step={latest.label} data-status={latest.status} data-kind={latest.kind}
-          onClick={(event) => { refocus.current = event.currentTarget === document.activeElement; setOpen(true); }}>
-          <StepLine step={latest} state={stepState(latest, true, held)} unresponsive={state === "unresponsive"} />
-        </button>
-      )}
-    </Trace>
-  );
+export function LiveWork({ work, state, omitText, children }: { work: Turn; state: "working" | "waiting" | "unresponsive"; omitText?: string; children?: ReactNode }) {
+  return <div className="mb-4 space-y-4" data-work data-work-state={state} data-run={work.runId}>
+    <p className="nums border-b border-border/50 pb-3 text-sm text-muted-foreground">
+      {state === "unresponsive" ? "Computer unresponsive" : state === "waiting" ? "Waiting for your approval" : <>Working for <Ticking since={work.startedAt} /></>}
+    </p>
+    <RunSteps runIds={work.runIds} live held={state === "waiting"} unresponsive={state === "unresponsive"} omitText={omitText} />
+    {children}
+  </div>;
 }

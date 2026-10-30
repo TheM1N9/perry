@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, InboxIcon, LibraryIcon, ListChecksIcon, LockIcon,
+  BellIcon, BlocksIcon, BrainIcon, CheckCircle2Icon, GaugeIcon, LibraryIcon, ListChecksIcon, LockIcon,
   MoreHorizontalIcon, PencilIcon, PinIcon, PinOffIcon, PowerIcon, PowerOffIcon, SearchIcon, SettingsIcon, SquarePenIcon, SunMoonIcon, Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -40,7 +40,7 @@ import { usePalette } from "./command-palette";
 import { ChannelIcon, PerryMark } from "./common";
 import { StatusIndicator, statusLabel } from "./status-indicator";
 import { useNeedsYouCount } from "./needs-you-count";
-import { UpdateNotice } from "./updates";
+import { UpdateControl } from "./updates";
 import { PauseMenuItem, PauseNotice, usePause } from "./pause";
 import { PlatypusArt } from "./platypus";
 import { MoveToProject, NewProjectDialog, ProjectFolders } from "./projects";
@@ -66,11 +66,12 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" variant="sidebar">
       <SidebarHeader className="pb-0">
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" render={<Link href="/chat" />} tooltip={assistant} className="gap-2.5">
+          <SidebarMenuItem className="flex items-center gap-2 group-data-[collapsible=icon]:flex-col">
+            <SidebarMenuButton size="lg" render={<Link href="/chat" />} tooltip={assistant} className="min-w-0 flex-1 gap-2.5 group-data-[collapsible=icon]:flex-none">
               <PerryMark className="size-8" />
               <span className="truncate text-md font-semibold tracking-[-0.01em]" translate="no">{assistant}</span>
             </SidebarMenuButton>
+            <UpdateControl />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
@@ -133,7 +134,6 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter>
         <PauseNotice />
-        <UpdateNotice />
         <DesktopPet />
         <AccountMenu />
       </SidebarFooter>
@@ -144,7 +144,8 @@ export function AppSidebar() {
 
 function ChatGroups() {
   const { dashboardKey } = useSession();
-  const all = useQuery(api.dashboard.listChats, { key: dashboardKey });
+  const listed = useQuery(api.dashboard.listChats, { key: dashboardKey });
+  const all = useMemo(() => listed?.filter((chat) => !chat.jobId && !chat.isAgent), [listed]);
   const [showAll, setShowAll] = useState(false);
   const [renaming, setRenaming] = useState<ChatSummary | null>(null);
   const [removing, setRemoving] = useState<ChatSummary | null>(null);
@@ -413,10 +414,7 @@ function useSignedIn(): SignedIn[] | undefined {
 }
 
 /**
- * The owner, at the foot of the sidebar: under the name, the plan and engine
- * Perry thinks with (or Telegram waiting to be paired). Open, the same two
- * lines, then Usage (Settings → Usage), the theme, Settings and locking the
- * dashboard. How much of each plan is left is on the usage page, not here.
+ * The account row keeps the name visible; account details and settings live in the overflow menu.
  */
 function AccountMenu() {
   const { dashboardKey, lock } = useSession();
@@ -437,17 +435,14 @@ function AccountMenu() {
 
   return (
     <SidebarMenu>
-      {/* The name opens the menu; beside it, what needs you, as an inbox with its count. Stacked when the sidebar is icons. */}
-      <SidebarMenuItem className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col-reverse group-data-[collapsible=icon]:gap-0.5">
+      <SidebarMenuItem className="flex min-h-12 items-center gap-2 px-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:px-0" data-account-row>
+        <div className="flex min-w-0 flex-1 items-center gap-2 group-data-[collapsible=icon]:flex-none">
+          <Avatar size="sm" aria-hidden className="size-7 after:hidden"><AvatarFallback className="bg-muted text-xs font-medium text-foreground">{name.charAt(0).toUpperCase()}</AvatarFallback></Avatar>
+          <span className="truncate text-sm font-medium group-data-[collapsible=icon]:hidden">{name}</span>
+        </div>
         <DropdownMenu>
-          <DropdownMenuTrigger render={<SidebarMenuButton size="lg" className="min-w-0 flex-1 data-popup-open:bg-sidebar-accent group-data-[collapsible=icon]:flex-none" />}>
-            <Avatar aria-hidden className="after:hidden">
-              <AvatarFallback className="bg-foreground text-sm font-semibold text-background">{name.charAt(0).toUpperCase()}</AvatarFallback>
-            </Avatar>
-            <span className="grid min-w-0 flex-1 text-left leading-tight">
-              <span className="truncate text-sm font-medium">{name}</span>
-              <span className="truncate text-xs text-muted-foreground" data-account-line>{line}</span>
-            </span>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label="Account options" className="relative size-9 shrink-0 touch-manipulation rounded-full border border-border/60 text-muted-foreground before:absolute before:-inset-1" />}>
+            <MoreHorizontalIcon className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent side={isMobile ? "top" : "right"} align="end" sideOffset={8} className="w-60">
             <DropdownMenuGroup>
@@ -475,13 +470,13 @@ function AccountMenu() {
           </DropdownMenuContent>
         </DropdownMenu>
         <Tooltip>
-          <TooltipTrigger render={<SidebarMenuButton render={<Link href="/inbox" />} isActive={pathname === "/inbox"} aria-label={count > 0 ? `Needs you: ${count}` : "Needs you"} className="relative size-9 shrink-0 justify-center p-0" />}>
-            <InboxIcon />
-            {count > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-warning px-1 text-2xs font-semibold text-background" aria-hidden>{count}</span>
-            )}
+          <TooltipTrigger render={<Button variant="ghost" size="icon" nativeButton={false} render={<Link href="/inbox" />} aria-current={pathname === "/inbox" ? "page" : undefined}
+            aria-label={count > 0 ? `Notifications: ${count} need your attention` : "Notifications"}
+            className="relative size-9 shrink-0 touch-manipulation rounded-full border border-border/60 text-muted-foreground before:absolute before:-inset-1 aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground" />}>
+            <BellIcon className="size-4" />
+            {count > 0 && <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-destructive ring-2 ring-sidebar" aria-hidden />}
           </TooltipTrigger>
-          <TooltipContent side="right">Needs you{count > 0 ? ` · ${count}` : ""}</TooltipContent>
+          <TooltipContent side="top">{count > 0 ? `${count} need your attention` : "Notifications"}</TooltipContent>
         </Tooltip>
       </SidebarMenuItem>
     </SidebarMenu>

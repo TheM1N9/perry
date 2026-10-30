@@ -724,7 +724,18 @@ export class ClaudeEngine implements Engine {
           turn.compacted = true;
           turn.sink.onEvent?.({ type: "item", phase: "completed", item: { id: event.uuid, type: "context_compaction", status: "completed", title: "context compaction", raw: event }, atMs: Date.now() });
         } else if (event.type === "stream_event") {
-          if (event.parent_tool_use_id) continue;
+          if (event.parent_tool_use_id) {
+            const child = event.event as { type: string; delta?: { type?: string; text?: string } };
+            if (child.type === "content_block_delta" && child.delta?.type === "text_delta" && child.delta.text) {
+              const id = `claude:${event.parent_tool_use_id}`;
+              const text = (turn.written.get(id) ?? "") + child.delta.text;
+              turn.written.set(id, text);
+              turn.sink.onEvent?.({ type: "item", phase: "updated", atMs: Date.now(), item: {
+                id, type: "unknown", title: "Agent", status: "running", raw: null, agents: [{ id, status: "running", text }],
+              } });
+            }
+            continue;
+          }
           const stream = event.event as { type: string; index?: number; message?: { id?: string }; delta?: { type?: string; text?: string } };
           if (stream.type === "message_start") turn.messageId = stream.message?.id ?? randomUUID();
           if (stream.type === "content_block_delta" && stream.delta?.type === "text_delta" && stream.delta.text) {
@@ -734,9 +745,21 @@ export class ClaudeEngine implements Engine {
             turn.sink.onEvent?.({ type: "text", stream: "assistant", itemId, delta: stream.delta.text, text: turn.latest });
           }
         } else if (event.type === "assistant") {
+          if (event.parent_tool_use_id) {
+            const text = event.message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n\n");
+            if (text) turn.sink.onEvent?.({ type: "item", phase: "updated", atMs: Date.now(), item: {
+              id: event.uuid, type: "unknown", title: "Agent", status: "running", raw: null,
+              agents: [{ id: `claude:${event.parent_tool_use_id}`, status: "running", text }],
+            } });
+            continue;
+          }
           for (const block of event.message.content as Array<{ type: string; id?: string; name?: string; input?: Record<string, unknown> }>) {
             if (block.type !== "tool_use" || !block.id || !block.name) continue;
             const item = { id: block.id, ...describe(block.name, block.input ?? {}, perry), status: "running" as ItemStatus, raw: block, at: Date.now() };
+            if (block.name === "Agent" || block.name === "Task") Object.assign(item, { agents: [{
+              id: `claude:${block.id}`, status: "running", title: String(block.input?.description ?? "Agent"),
+              ...(typeof block.input?.prompt === "string" ? { prompt: block.input.prompt } : {}),
+            }] });
             turn.open.set(block.id, item);
             const { at, ...shown } = item;
             turn.sink.onEvent?.({ type: "item", phase: "started", item: shown, atMs: at });
@@ -750,7 +773,9 @@ export class ClaudeEngine implements Engine {
             turn.open.delete(block.tool_use_id);
             const { at, ...item } = begun;
             const status: ItemStatus = kinds.get(block.tool_use_id) ? "declined" : block.is_error ? "failed" : "completed";
-            turn.sink.onEvent?.({ type: "item", phase: "completed", item: { ...item, status, output: item.type === "file_change" && status === "completed" && item.output ? item.output : resultText(block.content), durationMs: Date.now() - at, raw: { use: item.raw, result: block } }, atMs: Date.now() });
+            turn.sink.onEvent?.({ type: "item", phase: "completed", item: { ...item, status, ...(item.agents ? { agents: item.agents.map((agent) => ({ ...agent,
+              status: status === "completed" ? "done" as const : "failed" as const, text: resultText(block.content),
+            })) } : {}), output: item.type === "file_change" && status === "completed" && item.output ? item.output : resultText(block.content), durationMs: Date.now() - at, raw: { use: item.raw, result: block } }, atMs: Date.now() });
           }
         } else if (event.type === "result") {
           turn.results++;

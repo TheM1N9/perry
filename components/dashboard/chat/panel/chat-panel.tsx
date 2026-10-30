@@ -4,7 +4,7 @@ import {
   Component, useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState,
   type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode,
 } from "react";
-import { FolderIcon, GaugeIcon, GlobeIcon, ListChecksIcon, Maximize2Icon, Minimize2Icon, PanelRightIcon, PlusIcon, XIcon, type LucideIcon } from "lucide-react";
+import { BotIcon, FolderIcon, GaugeIcon, GlobeIcon, ListChecksIcon, Maximize2Icon, Minimize2Icon, PanelRightIcon, PlusIcon, XIcon, type LucideIcon } from "lucide-react";
 import { useConnection, useConvex } from "@/client/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { matches } from "@/convex/lib/shortcuts";
@@ -22,6 +22,7 @@ import { Details, type ChatDetails } from "./details";
 import { FilesSurface } from "./files";
 import { usePanelState, type PanelState, type SurfaceId } from "./store";
 import { WorkSurface } from "./work";
+import { AgentsSurface } from "../agents";
 
 /**
  * The panel beside a chat, after T3 Code's right panel (RightPanelTabs.tsx, PreviewPanelShell.tsx): tabs of
@@ -46,6 +47,7 @@ const SURFACE_LIST: Surface[] = [
   { id: "details", label: "Details", letter: "D", icon: GaugeIcon },
   { id: "files", label: "Files", letter: "F", icon: FolderIcon },
   { id: "browser", label: "Browser", letter: "B", icon: GlobeIcon },
+  { id: "agents", label: "Agents", letter: "A", icon: BotIcon },
   { id: "work", label: "Work", letter: "W", icon: ListChecksIcon },
 ];
 const SURFACE = Object.fromEntries(SURFACE_LIST.map((surface) => [surface.id, surface])) as Record<SurfaceId, Surface>;
@@ -129,6 +131,7 @@ export function ChatPanel({ panel, conversationId, project, details }: {
     details: null,
     files: null,
     browser: conversationId ? null : unstarted,
+    agents: conversationId ? null : unstarted,
     work: conversationId ? null : unstarted,
   };
 
@@ -159,7 +162,7 @@ export function ChatPanel({ panel, conversationId, project, details }: {
   if (!mode) return null;
   if (mode === "sheet") return <Sheet open={state.open} onOpenChange={(open) => { if (!open) panel.close(); }}>
     <SheetContent showCloseButton={false} className="w-full max-w-full gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-full motion-reduce:transition-none" data-chat-panel data-panel-mode="sheet">
-      <SheetTitle className="sr-only">Chat panel</SheetTitle><SheetDescription className="sr-only">Details, files, the live browser and the work of this chat.</SheetDescription>
+      <SheetTitle className="sr-only">Chat panel</SheetTitle><SheetDescription className="sr-only">Details, files, the live browser, agents and the work of this chat.</SheetDescription>
       {body(true)}
     </SheetContent>
   </Sheet>;
@@ -347,6 +350,7 @@ function PanelBody({ panel, mode, reasons, conversationId, project, details, wid
   const surface = !active ? null : reasons[active] ? <Unavailable surface={SURFACE[active]} reason={reasons[active]} />
     : active === "details" ? <Details details={details} />
     : active === "files" ? <FilesSurface conversationId={conversationId} project={project} scope={state.scope} onScope={panel.setScope} />
+    : active === "agents" && conversationId ? <AgentsSurface conversationId={conversationId} />
     : active === "work" && conversationId ? <WorkSurface conversationId={conversationId} project={project} scope={state.scope} onScope={panel.setScope} onOpenFiles={reasons.files ? undefined : () => panel.openSurface("files")} />
     // Mounted only while its tab is shown: hidden, the live view stops and nothing streams.
     : active === "browser" && conversationId ? <div className="flex min-h-0 flex-1 flex-col" data-surface="browser"><BrowserPanel key={conversationId} conversationId={conversationId} onClose={() => panel.closeSurface("browser")} /></div>

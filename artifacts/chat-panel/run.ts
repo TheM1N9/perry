@@ -5,7 +5,7 @@ import { perry, sleep } from "../engine-acp/harness";
 // bun artifacts/chat-panel/run.ts <outDir>
 // The chat panel ported from T3 Code's right panel (components/dashboard/chat/panel/chat-panel.tsx): a column
 // docked beside the chat on a wide window, floating over it on a narrower one, a sheet on a phone; tabs of
-// surfaces (Details, Files, Browser, Work) with "Open a surface" as the empty state and a "+" menu in the tab bar.
+// surfaces (Details, Files, Browser, Agents, Work) with "Open a surface" as the empty state and a "+" menu in the tab bar.
 // Two fresh Perrys from the production build (`pnpm build` first): one for default surface availability,
 // one with the real runner and Codex (signed in with ChatGPT) for a reply the Details and Work surfaces describe, and
 // headless Chrome. Replies run on PERRY_E2E_MODEL (gpt-6-luna by default).
@@ -247,7 +247,7 @@ try {
   const plus = await panel();
   const detailsText = await evaluate(`document.querySelector('[data-surface="details"]')?.innerText ?? ""`) as string;
   notes.details = detailsText;
-  check("plusMenuLetterOpens", listed.join() === "details,files,browser,work" && plus.tabs.map((tab) => tab.id).join() === "work,details" && plus.surface === "details", { listed, plus });
+  check("plusMenuLetterOpens", listed.join() === "details,files,browser,agents,work" && plus.tabs.map((tab) => tab.id).join() === "work,details" && plus.surface === "details", { listed, plus });
   check("detailsNamesEngine", /Engine\s*Codex/.test(detailsText) && detailsText.includes(MODEL) && /Access/.test(detailsText));
   await shot("details-light.png");
   await pointer("[data-panel-add]");
