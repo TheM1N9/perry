@@ -5,7 +5,7 @@ import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {join,resolve} from 'node:path';
 const output=resolve('artifacts/native-browser-import/results'),fixture=JSON.parse(readFileSync(join(output,'fixture.json'),'utf8'));
-process.env.PERRY_HOME=fixture.home;process.env.PERRY_IMPORT_CHROME_ROOT=fixture.root;process.env.PERRY_IMPORT_HELPER_PATH=fixture.helper;process.env.PERRY_BROWSER_PATH=fixture.browser;process.env.PERRY_BROWSER_VIEW='1';process.env.PERRY_BROWSER_IMPORT='1';
+process.env.PERRY_HOME=fixture.home;process.env.PERRY_IMPORT_CHROME_ROOT=fixture.root;process.env.PERRY_IMPORT_HELPER_PATH=fixture.helper;process.env.PERRY_BROWSER_PATH=fixture.browser;
 const web=await import('../../convex/lib/browser'),{controlBrowser}=await import('../../server/browser-host'),{nativeImport,nativeProfiles}=await import('../../server/browser-import'),{browserState}=await import('../../lib/browser-protocol');
 const checks:Record<string,boolean>={};const check=(name:string,pass:boolean)=>{checks[name]=pass;assert.ok(pass,name);console.log(`PASS ${name}`);};
 try {

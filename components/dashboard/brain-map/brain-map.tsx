@@ -73,7 +73,7 @@ function shownBy(graph: BrainGraph, filters: { kinds: MapKind[]; project: string
 export function BrainMap() {
   const { dashboardKey } = useSession();
   const router = useRouter();
-  const params = useSearchParams();
+  const params = useSearchParams()!;
   const graph = useQuery(api.brainMap.graph, { key: dashboardKey });
   const [kinds, setKinds] = useState<MapKind[]>(KINDS);
   const [project, setProject] = useState("all");

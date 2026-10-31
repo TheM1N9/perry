@@ -12,7 +12,6 @@ import { z } from "zod";
 
 assert(process.env.PERRY_HOME?.includes("workspace-verification"), "Use a throwaway PERRY_HOME containing workspace-verification.");
 process.env.DASHBOARD_KEY = "workspace-verification-key";
-process.env.PERRY_WORKSPACE = "1";
 mkdirSync(PATHS.files, { recursive: true });
 const sql = new DatabaseSync(join(HOME, "perry.sqlite"));
 let runtime = new Runtime(sql, schema as never, modules, { storageDir: join(HOME, "storage") });

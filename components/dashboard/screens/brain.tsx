@@ -34,7 +34,7 @@ import { NoteRows } from "./notes";
 export function Brain() {
   const { dashboardKey } = useSession();
   const router = useRouter();
-  const params = useSearchParams();
+  const params = useSearchParams()!;
   // List or Map (issue #225), in the address so Back and a link keep it. List unless asked.
   const map = params.get("view") === "map";
   const notes = useQuery(api.notes.list, map ? "skip" : { key: dashboardKey });

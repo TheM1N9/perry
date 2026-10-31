@@ -10,7 +10,6 @@ const output = resolve(process.argv[2] ?? "artifacts/chrome-connect/results"); m
 const scratch = mkdtempSync(join(tmpdir(), "perry-chrome-connect-"));
 process.env.PERRY_HOME = join(scratch, "perry");
 process.env.PERRY_CHROME_USER_DATA_DIR = join(scratch, "chrome");
-process.env.PERRY_BROWSER_VIEW = "1"; process.env.PERRY_BROWSER_IMPORT = "1";
 process.env.DASHBOARD_KEY = `test-only-${randomUUID()}`;
 const key = process.env.DASHBOARD_KEY;
 const cookie = `fake-account-${randomUUID()}`;
@@ -24,7 +23,7 @@ await new Promise<void>(done => service.listen(0, "127.0.0.1", done));
 const site = `http://127.0.0.1:${(service.address() as { port: number }).port}`;
 const web = await import("../../convex/lib/browser");
 const { backend } = await import("../../server/index");
-const { POST } = await import("../../app/api/browser/route");
+const { POST } = await import("../../server/browser-routes/control");
 const { controlBrowser } = await import("../../server/browser-host");
 const { browserState } = await import("../../lib/browser-protocol");
 const { modules } = await import("../../server/modules");
@@ -45,7 +44,7 @@ let chrome: ReturnType<typeof spawn> | undefined, raw: WebSocket | undefined;
 const save = () => writeFileSync(join(output, "result.json"), JSON.stringify({ at: new Date().toISOString(), platform: process.platform, checks, passed: checks.completed === true && Object.values(checks).every(Boolean), nativeConsent: "Not automated; disposable Chrome uses its standard debugging launch flag." }, null, 2));
 const check = (name: string, value: unknown) => { checks[name] = Boolean(value); save(); assert.ok(value, name); console.log(`PASS ${name}`); };
 const wait = async (predicate: () => unknown, seconds = 20) => { const end = Date.now() + seconds * 1000; while (!await Promise.resolve().then(predicate).catch(() => false)) { if (Date.now() > end) throw new Error("E2E wait timed out"); await new Promise(done => setTimeout(done, 100)); } };
-const route = (request: object, id = chat, url = "http://localhost:7377/api/browser", dashboardKey = key) => POST(new Request(url, { method: "POST", headers: { "content-type": "application/json", origin: new URL(url).origin, "x-perry-key": dashboardKey }, body: JSON.stringify({ conversationId: id, request }) }));
+const route = (request: object, id = chat, url = "http://localhost:7377/api/browser", dashboardKey = key) => POST(new Request(url, { method: "POST", headers: { "content-type": "application/json", origin: new URL(url).origin, "x-perry-key": dashboardKey }, body: JSON.stringify({ conversationId: id, request }) }), "127.0.0.1");
 const identity = () => web.identity(chat)!;
 const owner = (request: Parameters<typeof controlBrowser>[1]) => controlBrowser(chat, request, true);
 try {

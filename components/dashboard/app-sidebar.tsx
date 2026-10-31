@@ -52,7 +52,7 @@ const CHAT_PAGE = 25;
 
 export function AppSidebar() {
   const { dashboardKey } = useSession();
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const palette = usePalette();
   const { setOpenMobile } = useSidebar();
   const { label } = useShortcuts();
@@ -215,7 +215,7 @@ function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary
   const pin = () => void setPinned({ key: dashboardKey, id: chat.id, pinned: !chat.pinned })
     .catch((cause) => toast.error(`Couldn't ${chat.pinned ? "unpin" : "pin"} it: ${errorText(cause)}`));
 
-  // The dot gives way to the options button under the pointer, so on hover or focus the row says what the dot meant.
+  // Keep the status beside the menu, including while the row is hovered.
   const said = statusLabel(chat.status, chat.unseen && !active);
   const row = (
     <SidebarMenuButton render={<Link href={`/chat/${chat.id}`} onPointerEnter={warm} onPointerLeave={cancel} onFocus={warm} onBlur={cancel} />} isActive={active}
@@ -223,7 +223,7 @@ function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary
       aria-current={active ? "page" : undefined}>
       {chat.pinned && <PinIcon role="img" aria-label="Pinned" className="text-muted-foreground" />}
       <ChannelIcon channel={chat.channel} />
-      <span className={cn("pr-4", chat.naming && "shimmer motion-reduce:shimmer-none")} aria-busy={chat.naming || undefined}>{chat.title}</span>
+      <span className={cn("pr-8", chat.naming && "shimmer motion-reduce:shimmer-none")} aria-busy={chat.naming || undefined}>{chat.title}</span>
     </SidebarMenuButton>
   );
 
@@ -236,7 +236,7 @@ function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary
         </Tooltip>
       ) : row}
       <StatusIndicator status={chat.status} unseen={chat.unseen && !active}
-        className="pointer-events-none absolute top-1/2 right-8 -translate-y-1/2 transition-opacity md:right-1.5 md:group-focus-within/menu-item:opacity-0 md:group-hover/menu-item:opacity-0" />
+        className="pointer-events-none absolute top-1/2 right-8 -translate-y-1/2" />
       <DropdownMenu>
         <DropdownMenuTrigger render={<SidebarMenuAction showOnHover aria-label={`Options for ${chat.title}`} />}>
           <MoreHorizontalIcon />

@@ -7,7 +7,7 @@ export class BrowserDenied extends Error {
 }
 const loopback = (url: URL) => ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
 /** Owner bearer key + same-origin protected transport. Pet keys and arbitrary pages cannot call this. */
-export async function authorizeBrowser(request: Request, conversationId: string) {
+export async function authorizeBrowser(request: Request, conversationId: string, peerAddress?: string) {
   if (!isAdmin(request)) throw new BrowserDenied("Unlock the owner dashboard first.", 401);
   const url = new URL(request.url);
   const origin = request.headers.get("origin");
@@ -19,12 +19,12 @@ export async function authorizeBrowser(request: Request, conversationId: string)
   if (dashboard.host !== host || dashboard.pathname !== "/" || dashboard.search || dashboard.hash || request.headers.get("sec-fetch-site") === "cross-site") throw new BrowserDenied("Browser controls require a same-origin dashboard request.", 403);
   const tls = dashboard.protocol === "https:" && (url.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https");
   if (!loopback(dashboard) && !tls) throw new BrowserDenied("Remote browser viewing requires HTTPS. Open Perry locally or through an HTTPS connection.", 403);
-  if (process.env.PERRY_BROWSER_VIEW !== "1") throw new BrowserDenied("Live browser viewing is disabled. Enable PERRY_BROWSER_VIEW=1 on the browser host.", 404);
   const chat = z.object({ contact: z.unknown().optional() }).parse((await backend().runQuery("dashboard:getChat", { key: request.headers.get("x-perry-key"), id: conversationId })).value);
   if (chat.contact) throw new BrowserDenied("The owner's browser is unavailable in contact chats.", 403);
   const forwarded = request.headers.get("x-forwarded-for")?.split(",").map((value) => value.trim()) ?? [];
-  const localTransport = loopback(dashboard) && forwarded.every((address) => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address));
-  return { importEnabled: process.env.PERRY_BROWSER_IMPORT === "1" && localTransport };
+  const localAddress = (address: string) => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address);
+  const localTransport = Boolean(peerAddress && localAddress(peerAddress)) && loopback(dashboard) && forwarded.every(localAddress);
+  return { importEnabled: localTransport };
 }
 export function browserFailure(error: unknown) {
   // Browser/CDP/SQLite errors may contain URL query strings or credentials. Never log request bodies/raw errors.

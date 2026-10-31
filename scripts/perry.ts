@@ -274,7 +274,8 @@ async function runForeground(background = false) {
     { name: "runner", argv: [process.execPath, join(REPO, "runner", "index.ts")], env: childEnv, failures: 0, startedAt: 0 },
     // PERRY_BUN: the dashboard can start `perry pet` itself (Settings → Desktop pet), and Bun runs it.
     // PERRY_SUPERVISOR: this process, which does the updates the dashboard asks for (convex/updates.ts).
-    { name: "dashboard", argv: [node, NEXT_CLI, "start", "-p", String(PORT), ...(HOST ? ["-H", HOST] : [])], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT), PERRY_BUN: process.execPath, PERRY_SUPERVISOR: String(process.pid) }, failures: 0, startedAt: 0 },
+    // Next's router headers and browser cookies share Node's request-header budget.
+    { name: "dashboard", argv: [node, "--max-http-header-size=65536", NEXT_CLI, "start", "-p", String(PORT), ...(HOST ? ["-H", HOST] : [])], env: { ...childEnv, NODE_ENV: "production", PERRY_PORT: String(PORT), PERRY_BUN: process.execPath, PERRY_SUPERVISOR: String(process.pid) }, failures: 0, startedAt: 0 },
   ];
   let stopping = false;
   // Stopped for an update: not started again until it is done.

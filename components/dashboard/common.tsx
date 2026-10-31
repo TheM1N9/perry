@@ -371,9 +371,9 @@ export function ActionButton({ action, success, error, confirm, children, ...pro
 
 /** A value kept in the address, like a tab or a filter, so it survives a reload and can be linked to. */
 export function useSearchParam(name: string, fallback: string): [string, (value: string) => void] {
-  const params = useSearchParams();
+  const params = useSearchParams()!;
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const value = params.get(name) ?? fallback;
   const set = (next: string) => {
     const query = new URLSearchParams(params);

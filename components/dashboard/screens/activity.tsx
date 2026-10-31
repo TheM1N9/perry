@@ -55,7 +55,7 @@ const SPAN_KINDS: Record<SpanView["kind"], string> = {
 export function Activity() {
   const { dashboardKey } = useSession();
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const [session, setSession] = useSearchParam("session", "all");
   const sessionId = session === "all" ? "" : session;
   const [status, setStatus] = useSearchParam("status", "all");

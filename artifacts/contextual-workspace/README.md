@@ -1,6 +1,6 @@
 # Contextual workspace (#285)
 
-Enable the rollout with `PERRY_WORKSPACE=1` on the dashboard host and restart it. Defaults off. The Files/Work panel uses the same local bearer-key boundary as the rest of Perry; guest/contact chats cannot open it. Browser view is an optional slot used by #286.
+The Files/Work panel is available by default; no rollout flags are required. The Files/Work panel uses the same local bearer-key boundary as the rest of Perry; guest/contact chats cannot open it. Browser view is an optional slot used by #286.
 
 The Library remains the file identity and storage. `workspaceFiles` records explicit membership and source chat/message/run/task, including a task or schedule's recorded origin. `workspaceViews` stores scope-specific pin/hide choices; neither action deletes bytes. Existing proven attachment/Library attribution is backfilled at startup. A folder scan alone cannot create membership. Unavailable registered artifacts retain identity through sync and become ready again when restored. `library_add` supports role, versionOf and versionLabel; versions must use different paths and an explicit previous Library ID. Existing files are not guessed into versions.
 
@@ -17,6 +17,6 @@ PERRY_HOME=/tmp/perry-workspace-verification-285 pnpm exec node .next/workspace-
 
 Use a fresh directory on repeat runs. `report.json` records completed checks and the throwaway fixture IDs for dashboard inspection. The test covers two unrelated chats, explicit project browsing, version chains, registered intermediates, background routing, share_file, failed/missing files, pin/hide, auth, pagination and reopening SQLite. No model or owner credentials are needed.
 
-For the dashboard/media journey, start the built or development server against the home recorded in `report.json`, with `DASHBOARD_KEY=workspace-verification-key`, `PERRY_WORKSPACE=1` and `PERRY_PORT=7385`. Then run `pnpm exec node artifacts/contextual-workspace/verify-http.mjs` (requires the host's ffmpeg for real PNG/MP4 fixtures). `http-report.json` records HTTP access, ranges, active-content disposition and missing-file recovery. Use a separate hostname for concurrent test installations because media cookies are host/path scoped, independent of port.
+For the dashboard/media journey, start the built or development server against the home recorded in `report.json`, with `DASHBOARD_KEY=workspace-verification-key` and `PERRY_PORT=7385`. Then run `pnpm exec node artifacts/contextual-workspace/verify-http.mjs` (requires the host's ffmpeg for real PNG/MP4 fixtures). `http-report.json` records HTTP access, ranges, active-content disposition and missing-file recovery. Use a separate hostname for concurrent test installations because media cookies are host/path scoped, independent of port.
 
 Dashboard evidence includes `desktop-preview.jpg` plus a recorded responsive journey: sidebar keyboard resize, selected-version preview, same file IDs in gallery/tree, explicit project switching, related task outputs, draft preservation and mobile close/focus controls. No real browser sessions or owner files are used.

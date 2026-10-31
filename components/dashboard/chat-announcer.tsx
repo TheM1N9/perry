@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import type { ChatStatus, ChatSummary } from "@/convex/dashboard";
 
 /*
@@ -59,6 +61,7 @@ export function ChatAnnouncer({ chatId, status }: { chatId: string | null; statu
 /** Other chats finishing, failing or needing you, said wherever you are, sidebar open or not. */
 export function ChatsAnnouncer({ chats, openId }: { chats: ChatSummary[] | undefined; openId: string | null }) {
   const { region, announce } = useLiveRegion();
+  const router = useRouter();
   // Replaced whole each time, so a deleted chat leaves nothing behind.
   const last = useRef<Map<string, ChatStatus> | null>(null);
   useEffect(() => {
@@ -68,12 +71,21 @@ export function ChatsAnnouncer({ chats, openId }: { chats: ChatSummary[] | undef
     if (!before) return;
     const lines = chats.flatMap((chat) => {
       const from = before.get(chat.id);
-      if (chat.id === openId || from === undefined || from === chat.status) return [];
+      if (from === undefined || from === chat.status) return [];
+      if (chat.status === "idle" && chat.replyCompleted && (from === "running" || from === "needs-approval")) {
+        toast.success("Reply ready", {
+          id: `chat-done:${chat.id}`,
+          description: chat.title || "Your chat",
+          duration: 6000,
+          ...(chat.id !== openId ? { action: { label: "Open chat", onClick: () => router.push(`/chat/${chat.id}`) } } : {}),
+        });
+      }
+      if (chat.id === openId) return [];
       const what = chat.status === "needs-approval" ? "needs your approval" : chat.status === "error" ? "failed"
-        : chat.status === "idle" && from === "running" ? "finished" : null;
+        : chat.status === "idle" && from === "running" ? chat.replyCompleted ? "finished" : "stopped" : null;
       return what ? [`${chat.title || "A chat"} ${what}`] : [];
     });
     if (lines.length) announce(lines.join(". "));
-  }, [chats, openId, announce]);
+  }, [chats, openId, announce, router]);
   return <div ref={region} aria-live="polite" className="sr-only" />;
 }

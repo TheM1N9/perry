@@ -70,7 +70,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 }
 
 function Unlocked({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const router = useRouter();
   const [paletteOpen, setPaletteOpen] = useState(false);
 

@@ -29,7 +29,7 @@ import { NoteRows } from "./notes";
  */
 export function ProjectScreen() {
   const { dashboardKey } = useSession();
-  const params = useParams<{ id: string }>();
+  const params = useParams<{ id: string }>()!;
   const id = decodeURIComponent(params.id);
   const project = useQuery(api.projects.get, { key: dashboardKey, id });
   const [renaming, setRenaming] = useState(false);

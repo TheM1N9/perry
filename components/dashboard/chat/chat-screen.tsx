@@ -108,14 +108,12 @@ async function store(file: File, uploadId?: string, signal?: AbortSignal): Promi
 export function ChatScreen() {
   const { dashboardKey } = useSession();
   const router = useRouter();
-  const params = useParams<{ id?: string }>();
+  const params = useParams<{ id?: string }>()!;
   const paramId = (params.id ? decodeURIComponent(params.id) : null) as ChatId | null;
   /** A chat made from /chat by its first message, until the address catches up. */
   const [createdId, setCreatedId] = useState<ChatId | null>(null);
   useEffect(() => setCreatedId(null), [paramId]);
   const selectedId = paramId ?? createdId;
-  const workspace = useQuery(api.workspace.settings, { key: dashboardKey });
-  const browserView = useQuery(api.browserView.settings, { key: dashboardKey });
   // The panel beside the chat (panel/chat-panel.tsx): open or not, its tabs and its width, kept per chat.
   const panel = useChatPanel(selectedId ?? "new");
 
@@ -226,7 +224,7 @@ export function ChatScreen() {
     if (!paramId) window.setTimeout(() => composer.current?.focus(), 0);
   }, [paramId]);
   // Needs you starts an answer here with ?draft=, which is taken in, then out of the address.
-  const search = useSearchParams();
+  const search = useSearchParams()!;
   const handed = search.get("draft");
   // A new chat started inside a project (?project=) is in it from its first message.
   const inProject = paramId ? null : search.get("project");
@@ -1016,7 +1014,7 @@ export function ChatScreen() {
       </div>
 
     </div>
-      {!chat?.contact && <ChatPanel panel={panel} conversationId={selectedId} project={project} flags={{ files: Boolean(workspace?.enabled), browser: Boolean(browserView?.enabled) }}
+      {!chat?.contact && <ChatPanel panel={panel} conversationId={selectedId} project={project}
         details={{ engine, model, effort, access, status: summary?.status, project, context: chat?.context, usage: engineUsage }} />}
       {summary && <RenameDialog chat={renaming ? summary : null} onClose={() => setRenaming(false)} />}
       {summary && <DeleteDialog chat={removing ? summary : null} onClose={() => setRemoving(false)} />}

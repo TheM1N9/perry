@@ -21,7 +21,7 @@ const TABS = [
  * address under /apps.
  */
 export function AppsShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const router = useRouter();
   const tab = TABS.find((item) => pathname.startsWith(`/apps/${item.value}`))?.value ?? "connectors";
   return (

@@ -219,7 +219,7 @@ function Rows({ items }: { items: LibraryItem[] }) {
 
 export function LibraryItemScreen() {
   const { dashboardKey } = useSession();
-  const params = useParams<{ id: string }>();
+  const params = useParams<{ id: string }>()!;
   const id = decodeURIComponent(params.id);
   const item = useQuery(api.library.get, { key: dashboardKey, id });
   useEffect(() => { if (item) document.title = `${item.name} · Perry`; }, [item?.name]);

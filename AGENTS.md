@@ -9,6 +9,7 @@
 - Never write unit tests after writing code.
 - Prefer end-to-end tests as the sole testing mechanism for complex features. End each E2E run with a verifiable, repeatable artifact.
 - If a system must be tested in isolation, write down every way it could fail before writing the test code.
+- After verification, delete temporary tests, generated test artifacts, disposable data, and test-only tooling created for the task. Preserve existing project tests.
 
 ## Development
 

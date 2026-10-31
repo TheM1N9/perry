@@ -36,6 +36,32 @@ whose kinds and values remain valid. Definitions and updates are atomic tool
 calls: chat work shows preparing/revising while the call runs; the browser then
 shows rendering, ready or failed. Partial generated code is never executed.
 
+## Questions for the owner
+
+`interactive_create` also accepts `view: {kind: "question"}`. The existing
+declared inputs become a question card: select inputs use radio cards and can
+start with `initial: ""` for no preselection; text inputs provide free-form
+answers or details. At least one input is required. The owner explicitly
+presses Send answer; typing and selecting only save a draft. Perry's standing
+instructions ask it to end its reply and wait after creating a question.
+
+The answer mutation validates the full input map, saves the submitted values,
+marks the card answered and sends a labeled message to the same conversation
+in one transaction. Identical retries return the existing answer; conflicting
+answers, stale revisions, and subsequent save/reset/undo/revise operations are
+rejected. The normal queue or steering path continues the conversation. Drafts
+and submitted answers survive reloads. Question responses carry the existing
+outside-content restriction, including steering and requeueing: a clarification
+form never grants approval for an external action. Phone channels use text.
+
+Question E2E failure cases: empty/malformed forms and undeclared choices;
+wrong key, conversation or guest access; no automatic submission; radio/keyboard
+and free-text entry; draft restoration; failed sends preserving inputs;
+submission before autosave fires; duplicate/two-tab sends; answered-card
+immutability and reload; stale revision conflicts; exact answers delivered
+once to the same chat; queued/applied/requeued answers not granting approval;
+mobile/reduced-motion layout and browser exceptions. No unit tests are added.
+
 ## Persistence and concurrency
 
 SQLite creates the two new document tables and indexes on startup using the
@@ -97,9 +123,11 @@ JSON export and bounded rendering retry if a worker crashes or times out.
 
 ## Rollout and operation
 
-Set `PERRY_INTERACTIVE_ANSWERS=1` in the server environment and restart Perry.
-Default is off: tools are absent, reads return no artifacts and writes refuse.
-Rollback unsets the flag and restarts; rows remain recoverable when reenabled.
+Generative UI is enabled by default. Perry can create and revise interactive
+answers through the existing `interactive_*` tools, with no additional setup.
+To disable it, set `PERRY_INTERACTIVE_ANSWERS=0` and restart Perry: tools are
+absent, reads return no artifacts and writes refuse. Remove that override and
+restart to reenable; saved rows remain recoverable.
 Reverting code leaves unused additive tables in place. Back up the existing
 SQLite database before deployment, using the normal Perry backup procedure.
 
