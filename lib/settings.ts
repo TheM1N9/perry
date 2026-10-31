@@ -4,21 +4,23 @@
  * browser for the nav and the phone's switcher.
  */
 export const SETTINGS_GROUPS = [
-  { label: "Perry", sections: [
+  { label: "Workspace", sections: [
     { slug: "general", label: "General" },
     { slug: "engines", label: "Engines" },
     { slug: "usage", label: "Usage" },
     { slug: "computers", label: "Computers" },
   ] },
-  { label: "Permissions", sections: [{ slug: "access", label: "Access & approvals" }] },
-  { label: "Reaching you", sections: [
+  { label: "Preferences", sections: [
     { slug: "notifications", label: "Notifications" },
+    { slug: "desktop-pet", label: "Desktop pet" },
+  ] },
+  { label: "Connections", sections: [
     { slug: "telegram", label: "Telegram" },
     { slug: "whatsapp", label: "WhatsApp" },
+    { slug: "people", label: "People" },
   ] },
-  { label: "Desktop pet", sections: [{ slug: "desktop-pet", label: "Desktop pet" }] },
-  { label: "People", sections: [{ slug: "people", label: "People" }] },
   { label: "Security", sections: [
+    { slug: "access", label: "Access & approvals" },
     { slug: "logins", label: "Logins & secrets" },
     { slug: "security", label: "Dashboard key" },
   ] },

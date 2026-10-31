@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CheckIcon, TriangleAlertIcon } from "lucide-react";
+import { CheckIcon, KeyboardIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useMutation, useQuery } from "@/client/react";
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { useIsMac } from "@/hooks/use-shortcuts";
 import { Button } from "@/components/ui/button";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { List, ListSkeleton, Section } from "./common";
+import { InfoTip, List, ListSkeleton, Section } from "./common";
 
 /**
  * Settings → Desktop pet → Keyboard shortcuts: each one, and the keys it is
@@ -29,14 +29,13 @@ export function Shortcuts() {
   const [recording, setRecording] = useState<ShortcutId | null>(null);
 
   return (
-    <Section id="shortcuts" title="Keyboard shortcuts" description="Click one, then press the new keys.">
+    <Section id="shortcuts" title="Keyboard shortcuts" icon={<KeyboardIcon />} tip="Click a shortcut, then press its new keys. Escape cancels.">
       {data === undefined ? <ListSkeleton rows={SHORTCUT_IDS.length} /> : (
         <List label="Keyboard shortcuts">
           {SHORTCUT_IDS.map((id) => (
             <li key={id} className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-4">
               <div className="min-w-0 flex-1">
-                <p className="font-medium">{SHORTCUTS[id].label}</p>
-                {SHORTCUTS[id].description && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{SHORTCUTS[id].description}</p>}
+                <p className="flex items-center gap-2 font-medium">{SHORTCUTS[id].label}{SHORTCUTS[id].description && <InfoTip>{SHORTCUTS[id].description}</InfoTip>}</p>
                 {SHORTCUTS[id].global && <PetStatus pet={{ running: data.pet.running, ...data.pet.keys[id] }} wanted={data.shortcuts[id]} mac={mac} />}
               </div>
               <div className="flex shrink-0 items-center gap-2">

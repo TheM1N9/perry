@@ -313,29 +313,28 @@ export function YourAssistant() {
     ?? both.find((state) => state.status === "saved") ?? { status: "idle" };
 
   return (
-    <Section title="Your assistant">
+    <Section title="Assistant" icon={<UserRoundIcon />} actions={<SaveStatus state={identity} onRetry={() => { void name.flush(); void personality.flush(); }} />}>
       {persona === undefined ? <ListSkeleton rows={2} /> : (
-        <div className="space-y-4">
-          <Field>
-            <FieldLabel htmlFor="identity-name">Name</FieldLabel>
-            <Input id="identity-name" value={name.value} maxLength={40} placeholder={persona.defaultName} className="max-w-xs" {...name.field}
+        <div className="grid gap-4">
+          <Field className="sm:grid sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-center sm:gap-x-4">
+            <FieldLabel htmlFor="identity-name" className="text-muted-foreground">Name</FieldLabel>
+            <Input id="identity-name" value={name.value} maxLength={40} placeholder={persona.defaultName} className="h-10 max-w-xs text-base md:text-sm" {...name.field}
               onChange={(event) => name.change(event.target.value)}
               onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void name.flush(); } }} />
           </Field>
-          <Field>
-            <FieldLabel htmlFor="identity-personality">Personality</FieldLabel>
-            <Textarea id="identity-personality" rows={3} maxLength={600} value={personality.value} placeholder="Leave empty for the default: direct, clear and concise." {...personality.field}
+          <Field className="sm:grid sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start sm:gap-x-4">
+            <FieldLabel htmlFor="identity-personality" className="text-muted-foreground sm:pt-2">Personality</FieldLabel>
+            <Textarea id="identity-personality" rows={2} className="min-h-20 text-base md:text-sm" maxLength={600} value={personality.value} placeholder="Direct, clear and concise" {...personality.field}
               onChange={(event) => personality.change(event.target.value)}
               onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void personality.flush(); } }} />
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Start from a preset">
+            <div className="flex flex-wrap gap-1.5 sm:col-start-2" role="group" aria-label="Start from a preset">
               {PERSONALITIES.map((item) => (
-                <Button key={item.id} type="button" variant={personality.value === item.text ? "secondary" : "outline"} size="xs" className="rounded-full" onClick={() => personality.change(item.text, { now: true })}>
+                <Button key={item.id} type="button" variant={personality.value === item.text ? "secondary" : "outline"} size="xs" className="min-h-11 rounded-md sm:min-h-7" onClick={() => personality.change(item.text, { now: true })}>
                   {item.label}
                 </Button>
               ))}
             </div>
           </Field>
-          <SaveStatus state={identity} idle="Saves as you type." onRetry={() => { void name.flush(); void personality.flush(); }} />
         </div>
       )}
     </Section>

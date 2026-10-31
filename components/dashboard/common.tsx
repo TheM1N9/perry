@@ -129,15 +129,15 @@ export function TopBar({ children, actions }: { children?: ReactNode; actions?: 
   );
 }
 
-const InPage = createContext(false);
+const InPage = createContext<boolean | "settings">(false);
 
 /**
  * A screen shown inside another page, as a section of Settings or a tab of
  * Apps & skills: its Page is then its words and rows, without a top bar, a
  * column or a title of its own, since the page around it has them.
  */
-export function PageInPage({ children }: { children: ReactNode }) {
-  return <InPage.Provider value>{children}</InPage.Provider>;
+export function PageInPage({ children, variant }: { children: ReactNode; variant?: "settings" }) {
+  return <InPage.Provider value={variant ?? true}>{children}</InPage.Provider>;
 }
 
 /** A page: its top bar, then a readable column with a title. */
@@ -151,7 +151,7 @@ export function Page({ title, description, actions, children, wide }: {
         {/* The page around it says where you are; the title stays for a screen reader. */}
         <h2 className="sr-only">{title}</h2>
         {(description || actions) && (
-          <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+          <div className={cn("flex flex-wrap items-end justify-between gap-4", inPage === "settings" ? "mb-4" : "mb-8")}>
             {description && <p className="min-w-0 max-w-prose flex-1 text-sm text-pretty text-muted-foreground">{description}</p>}
             {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
           </div>
@@ -183,14 +183,15 @@ export function Page({ title, description, actions, children, wide }: {
  * A titled group of rows on a page. A `description` is one short line at most;
  * what is worth knowing but not worth a line goes in `tip`, an ⓘ by the title.
  */
-export function Section({ title, description, tip, actions, children, className, id }: {
-  title: string; description?: ReactNode; tip?: string; actions?: ReactNode; children: ReactNode; className?: string; id?: string;
+export function Section({ title, description, tip, icon, actions, children, className, id }: {
+  title: string; description?: ReactNode; tip?: string; icon?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; id?: string;
 }) {
+  const settings = useContext(InPage) === "settings";
   return (
-    <section id={id} className={cn("mt-10 scroll-mt-16 first:mt-0", className)} aria-label={title}>
+    <section id={id} className={cn("scroll-mt-16 first:mt-0", settings ? "mt-6 border-t pt-6 first:border-t-0 first:pt-0" : "mt-10", className)} aria-label={title}>
       <div className="mb-3 flex items-end justify-between gap-4">
         <div className="min-w-0">
-          <h2 className="flex items-center gap-1.5 text-md font-semibold tracking-[-0.01em]">{title}{tip && <InfoTip>{tip}</InfoTip>}</h2>
+          <h2 className={cn("flex items-center gap-2 font-semibold", settings ? "text-sm" : "text-md tracking-[-0.01em]")}>{icon && <span aria-hidden className="text-muted-foreground [&>svg]:size-4 [&>svg]:stroke-[1.75]">{icon}</span>}{title}{tip && <InfoTip>{tip}</InfoTip>}</h2>
           {description && <p className="mt-0.5 text-sm text-pretty text-muted-foreground">{description}</p>}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
