@@ -81,7 +81,7 @@ export const context = internalQuery({
   returns: v.string(),
   handler: async (ctx, args) => {
     const chat = await ctx.db.get(args.conversationId);
-    if (!chat || chat.contactId) return "";
+    if (!chat || chat.contactId || chat.jobId || chat.taskId) return "";
     if (chat.channel === "web") {
       const threadId = ctx.db.normalizeId("agentThreads", chat.threadId);
       const messages = threadId ? await ctx.db.query("agentMessages").withIndex("by_thread_order", q => q.eq("threadId", threadId)).order("desc").take(12) : [];
