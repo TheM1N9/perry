@@ -140,15 +140,19 @@ function RunSteps({ runIds, live = false, held = false, unresponsive = false, om
   const steps = fetched ?? (cached.current?.identity === identity ? cached.current.steps : undefined);
   if (steps === undefined) return <div ref={container}><Skeleton className="my-2 h-4 w-2/3" role="status" aria-label="Loading activity" /></div>;
   const groups: Array<{ id: string; text: string } | { id: string; steps: WorkStep[] }> = [];
+  const omitted = omitText?.trim() ? [...steps].reverse().find((step) => step.kind === "commentary" && step.text?.trim() === omitText.trim())?.id : undefined;
+  let previous: { id: string; steps: WorkStep[] } | undefined;
   for (const step of steps) {
     if (step.kind === "commentary") {
+      previous = undefined;
       const text = step.text?.trim();
-      if (!text || text === omitText?.trim()) continue;
+      if (!text || step.id === omitted) continue;
       groups.push({ id: step.id, text });
+    } else if (previous) {
+      previous.steps.push(step);
     } else {
-      const previous = groups.at(-1);
-      if (previous && "steps" in previous) previous.steps.push(step);
-      else groups.push({ id: step.id, steps: [step] });
+      previous = { id: step.id, steps: [step] };
+      groups.push(previous);
     }
   }
   return <div ref={container} className="min-w-0 pt-2" data-work-timeline>
