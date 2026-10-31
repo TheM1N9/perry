@@ -13,6 +13,7 @@ import { api } from "@/convex/_generated/api";
 import type { ChatSummary } from "@/convex/dashboard";
 import { ACTIVE_CHAT, useSession } from "@/lib/session";
 import type { EngineKind } from "@/convex/lib/engines";
+import { ProviderIcon } from "./provider-icon";
 import { errorText } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useShortcuts } from "@/hooks/use-shortcuts";
@@ -222,7 +223,7 @@ function ChatRow({ chat, onRename, onDelete, onNewProject }: { chat: ChatSummary
       className={cn(chat.unseen && !active && "font-semibold")}
       aria-current={active ? "page" : undefined}>
       {chat.pinned && <PinIcon role="img" aria-label="Pinned" className="text-muted-foreground" />}
-      <ChannelIcon channel={chat.channel} />
+      {chat.isAgent ? <ProviderIcon engine={chat.engine} aria-hidden /> : <ChannelIcon channel={chat.channel} />}
       <span className={cn("pr-8", chat.naming && "shimmer motion-reduce:shimmer-none")} aria-busy={chat.naming || undefined}>{chat.title}</span>
     </SidebarMenuButton>
   );

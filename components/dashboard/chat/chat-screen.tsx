@@ -38,6 +38,7 @@ import { APPS, ChannelIcon, EmptyState, PerryMark, TopBar } from "../common";
 import { MoveToProject, NewProjectDialog } from "../projects";
 import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
+import { ProviderIcon } from "../provider-icon";
 import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
 import { ComposerDraft, type ComposerHandle, type DraftHandle, Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
@@ -761,7 +762,7 @@ export function ChatScreen() {
           <Link href={`/chat/${parent.id}`} className="min-w-0 truncate text-sm text-muted-foreground hover:text-foreground">{parent.title}</Link>
           <span className="text-muted-foreground/60" aria-hidden>/</span>
         </>}
-        {chat && <ChannelIcon channel={chat.channel} />}
+        {chat && (summary?.isAgent ? <ProviderIcon engine={summary.engine ?? chat.engine} aria-hidden /> : <ChannelIcon channel={chat.channel} />)}
         <h1 className={cn("min-w-0 truncate text-sm font-medium", summary?.naming && "shimmer motion-reduce:shimmer-none")} aria-busy={summary?.naming || undefined}>{title}</h1>
         {summary && <StatusIndicator status={summary.status} />}
         {parent && !summary?.isAgent && (

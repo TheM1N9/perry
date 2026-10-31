@@ -11,6 +11,8 @@ import { tickText } from "@/lib/format";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ENGINE_LABELS } from "@/convex/lib/engines";
+import { ProviderIcon } from "../provider-icon";
 import { took, type Turn } from "./work";
 
 const STATUS = { queued: "Queued", running: "Working", blocked: "Needs you", done: "Completed", failed: "Failed", cancelled: "Stopped" };
@@ -33,7 +35,7 @@ export function AgentRow({ agent }: { agent: ChatAgent }) {
   const active = agent.status === "running" || agent.status === "queued";
   const content = <>
     <span className="relative grid size-8 shrink-0 place-items-center rounded-full border border-border/60">
-      <BotIcon className="size-4 text-muted-foreground" aria-hidden />
+      <ProviderIcon engine={agent.engine} aria-label={agent.engine ? ENGINE_LABELS[agent.engine] : "Agent"} role="img" />
       <span className={cn("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-background", active ? "bg-primary motion-safe:animate-pulse" : agent.status === "done" ? "bg-success" : agent.status === "failed" ? "bg-destructive" : "bg-muted-foreground")} />
     </span>
     <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{agent.title}</span>

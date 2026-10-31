@@ -167,6 +167,7 @@ export type ChatSummary = {
   jobId?: Id<"jobs">;
   taskId?: Id<"tasks">;
   isAgent?: boolean;
+  engine?: EngineKind;
   agent?: { status: Doc<"tasks">["status"]; startedAt: number; finishedAt?: number };
   /** A reply came after the owner last had the chat open. */
   unseen: boolean;
@@ -216,6 +217,7 @@ export const listChats = query({
         jobId: chat.jobId,
         taskId: chat.taskId,
         isAgent: Boolean(chat.taskId || chat.providerAgent),
+        engine: (chat.taskId ? tasks.get(chat.taskId)?.route?.engine : undefined) ?? chat.engine,
         ...(chat.providerAgent ? { agent: { status: chat.providerAgent.status, startedAt: chat.providerAgent.startedAt, finishedAt: chat.providerAgent.finishedAt } }
           : chat.taskId && tasks.has(chat.taskId) ? { agent: { status: tasks.get(chat.taskId)!.status, startedAt: tasks.get(chat.taskId)!.createdAt,
             ...(["done", "failed", "cancelled"].includes(tasks.get(chat.taskId)!.status) ? { finishedAt: tasks.get(chat.taskId)!.updatedAt } : {}) } } : {}),
@@ -235,7 +237,7 @@ export const listChats = query({
 
 export type ChatAgent = {
   id: string; runId?: Id<"runs">; conversationId?: Id<"conversations">; parentId: Id<"conversations">; title: string;
-  status: Doc<"tasks">["status"]; text?: string; startedAt: number; finishedAt?: number;
+  status: Doc<"tasks">["status"]; engine?: EngineKind; text?: string; startedAt: number; finishedAt?: number;
 };
 
 export const getChatAgents = query({
@@ -247,11 +249,11 @@ export const getChatAgents = query({
     const native = (await ctx.db.query("conversations").withIndex("by_parent", (q) => q.eq("parentConversationId", args.id)).collect())
       .filter((chat) => chat.providerAgent).map((chat): ChatAgent => ({
         id: chat._id, runId: chat.providerAgent!.runId, conversationId: chat._id, parentId: args.id, title: chat.title ?? "Agent", status: chat.providerAgent!.status,
-        text: chat.providerAgent!.text, startedAt: chat.providerAgent!.startedAt, finishedAt: chat.providerAgent!.finishedAt,
+        engine: chat.engine, text: chat.providerAgent!.text, startedAt: chat.providerAgent!.startedAt, finishedAt: chat.providerAgent!.finishedAt,
       }));
     return [...native, ...tasks.map((task) => ({
       id: task._id, conversationId: task.conversationId, parentId: args.id, title: task.title,
-      status: task.status, text: task.result ?? task.question ?? task.error,
+      status: task.status, engine: task.route?.engine ?? task.pick?.engine, text: task.result ?? task.question ?? task.error,
       startedAt: task.createdAt,
       ...(["done", "failed", "cancelled"].includes(task.status) ? { finishedAt: task.updatedAt } : {}),
     }))].sort((a, b) => a.startedAt - b.startedAt);
