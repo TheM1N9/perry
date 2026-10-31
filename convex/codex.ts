@@ -835,7 +835,7 @@ async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infe
       name: hide(span.name, values).slice(0, 300),
       input: span.input && hide(span.input, values).slice(0, SPAN_TEXT),
       // A command's output keeps its end, as the runner cut it.
-      output: span.output && (span.kind === "command" ? hide(span.output, values).slice(-SPAN_TEXT) : hide(span.output, values).slice(0, span.kind === "commentary" ? 32_768 : SPAN_TEXT)),
+      output: span.output && (span.kind === "command" ? hide(span.output, values).slice(-SPAN_TEXT) : hide(span.output, values).slice(0, span.kind === "commentary" ? 32_768 : span.kind === "plan" ? 16_384 : SPAN_TEXT)),
     };
     const existing = await ctx.db.query("runSpans")
       .withIndex("by_run", (q) => q.eq("runId", run._id).eq("callId", callId))
@@ -848,7 +848,7 @@ async function recordTrace(ctx: MutationCtx, job: Doc<"codexTurns">, trace: Infe
       continue;
     }
     await ctx.db.insert("runSpans", { runId: run._id, ...row });
-    if (span.kind !== "reasoning" && span.kind !== "commentary") toolCalls.push(toolName(span));
+    if (span.kind !== "reasoning" && span.kind !== "commentary" && span.kind !== "plan") toolCalls.push(toolName(span));
     // Codex's own web search reads pages too (mcp.ts, outwardAllowed).
     if (span.kind === "webSearch" && job.outsideAt === undefined) await ctx.db.patch(job._id, { outsideAt: Date.now() });
   }

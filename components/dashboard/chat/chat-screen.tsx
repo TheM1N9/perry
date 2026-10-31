@@ -39,6 +39,7 @@ import { MoveToProject, NewProjectDialog } from "../projects";
 import { useSkills } from "../screens/skills";
 import { StatusIndicator } from "../status-indicator";
 import { ProviderIcon } from "../provider-icon";
+import { PlanChecklist } from "./plan";
 import { PAUSED_TOAST, usePause } from "../pause";
 import type { Attachment } from "./attachments";
 import { ComposerDraft, type ComposerHandle, type DraftHandle, Composer, ComposerNote, MAX_BYTES, MAX_FILES, levelName, type Suggestion } from "./composer";
@@ -854,6 +855,7 @@ export function ChatScreen() {
               ))}
               {shownPending.map((item, index) => !item.queued && <PendingRow key={index} text={item.text} attachments={item.attachments} sent={item.sent} skills={skillNames} />)}
               {!missing && <InteractiveAnswers conversationId={selectedId} />}
+              {chat?.taskPlan && chat.taskPlan.plan.length > 0 && <PlanChecklist steps={chat.taskPlan.plan} active={["queued", "running", "blocked"].includes(chat.taskPlan.status)} />}
               {replying && <LiveReply key={selectedId} conversationId={selectedId} onContentChange={followLiveReply}
                 work={liveWork} agents={agentsForWork(agents, liveWork)} approving={here.length > 0} unresponsive={chat?.unresponsive} />}
               {here.map((approval) => <LiveApproval key={approval.id} approval={approval} />)}

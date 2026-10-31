@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ENGINE_LABELS } from "@/convex/lib/engines";
 import { ProviderIcon } from "../provider-icon";
 import { took, type Turn } from "./work";
+import { PlanChecklist } from "./plan";
 
 const STATUS = { queued: "Queued", running: "Working", blocked: "Needs you", done: "Completed", failed: "Failed", cancelled: "Stopped" };
 
@@ -45,9 +46,10 @@ export function AgentRow({ agent }: { agent: ChatAgent }) {
     {agent.conversationId && <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
   </>;
   const className = "flex min-h-16 min-w-0 touch-manipulation items-center gap-3 rounded-lg px-2 py-2 outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring";
-  return agent.conversationId
+  const row = agent.conversationId
     ? <Link href={`/chat/${agent.conversationId}`} className={className} data-agent={agent.id} data-agent-status={agent.status} aria-label={`Open ${agent.engine ? `${ENGINE_LABELS[agent.engine]} ` : ""}agent: ${agent.title}. ${STATUS[agent.status]}`} aria-describedby={description}>{content}</Link>
     : <div className={className} data-agent={agent.id} data-agent-status={agent.status}>{content}</div>;
+  return <div>{row}{agent.plan && agent.plan.length > 0 && <PlanChecklist steps={agent.plan} active={active || agent.status === "blocked"} className="ml-11" />}</div>;
 }
 
 export function AgentRows({ agents }: { agents: ChatAgent[] }) {

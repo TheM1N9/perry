@@ -1406,6 +1406,7 @@ const start_task = createTool({
     const taskId: Id<"tasks"> = await ctx.runMutation(internal.work.createTask, {
       title: input.title,
       prompt: input.prompt,
+      ...(ctx.conversationId ? { origin: ctx.conversationId } : {}),
     });
     return { taskId };
   },

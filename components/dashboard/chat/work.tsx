@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WorkLogBlock, WorkLogButton, WorkLogDetails, WorkLogList } from "./work-log";
 import { StepDetail } from "./step-card";
+import { NativePlan } from "./plan";
 import { Markdown } from "./markdown";
 import { summarize } from "@/convex/lib/activity";
 
@@ -139,11 +140,15 @@ function RunSteps({ runIds, live = false, held = false, unresponsive = false, om
   if (fetched !== undefined) cached.current = { identity, steps: fetched };
   const steps = fetched ?? (cached.current?.identity === identity ? cached.current.steps : undefined);
   if (steps === undefined) return <div ref={container}><Skeleton className="my-2 h-4 w-2/3" role="status" aria-label="Loading activity" /></div>;
-  const groups: Array<{ id: string; text: string } | { id: string; steps: WorkStep[] }> = [];
+  const groups: Array<{ id: string; text: string } | { id: string; steps: WorkStep[] } | { id: string; plan: WorkStep }> = [];
+  const latestPlan = [...steps].reverse().find((step) => step.kind === "plan")?.id;
   const omitted = omitText?.trim() ? [...steps].reverse().find((step) => step.kind === "commentary" && step.text?.trim() === omitText.trim())?.id : undefined;
   let previous: { id: string; steps: WorkStep[] } | undefined;
   for (const step of steps) {
-    if (step.kind === "commentary") {
+    if (step.kind === "plan") {
+      previous = undefined;
+      if (step.id === latestPlan && step.text?.trim()) groups.push({ id: "native-plan", plan: step });
+    } else if (step.kind === "commentary") {
       previous = undefined;
       const text = step.text?.trim();
       if (!text || step.id === omitted) continue;
@@ -156,7 +161,8 @@ function RunSteps({ runIds, live = false, held = false, unresponsive = false, om
     }
   }
   return <div ref={container} className="min-w-0 pt-2" data-work-timeline>
-    {groups.map((group) => <Fragment key={group.id}>{"text" in group
+    {groups.map((group) => <Fragment key={group.id}>{"plan" in group
+      ? <NativePlan text={group.plan.text ?? ""} active={live} /> : "text" in group
       ? <div className="py-2" data-commentary><Markdown text={group.text} /></div>
       : <WorkLogBlock><ToolGroup steps={group.steps} live={live} held={held} unresponsive={unresponsive} /></WorkLogBlock>}</Fragment>)}
   </div>;

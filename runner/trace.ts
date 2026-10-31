@@ -47,8 +47,7 @@ export function truncateTail(text: string, maxBytes = SPAN_BYTES): string {
 }
 
 /**
- * The span kind for each canonical item the trace keeps. Compaction, plans
- * and the like are not steps the owner needs to see, and are left out.
+ * The engine items kept in the chat timeline. Compaction has its own status.
  */
 const KINDS: Partial<Record<ItemType, Span["kind"]>> = {
   command_execution: "command",
@@ -58,6 +57,7 @@ const KINDS: Partial<Record<ItemType, Span["kind"]>> = {
   web_search: "webSearch",
   image_generation: "imageGeneration",
   reasoning: "reasoning",
+  plan: "plan",
 };
 const STATUS: Record<ItemStatus, Span["status"]> = { running: "running", completed: "ok", failed: "error", declined: "declined" };
 
@@ -70,7 +70,7 @@ function describe(item: EngineItem): Omit<Span, "callId" | "startedAt" | "endedA
     name: item.title,
     status: STATUS[item.status],
     input: item.input === undefined ? undefined : truncate(item.input),
-    output: item.output === undefined ? undefined : item.type === "command_execution" ? truncateTail(item.output) : truncate(item.output),
+    output: item.output === undefined ? undefined : item.type === "command_execution" ? truncateTail(item.output) : truncate(item.output, item.type === "plan" ? 16_384 : SPAN_BYTES),
   };
 }
 
@@ -151,7 +151,7 @@ export class TurnTrace {
       if (span.status !== "running") continue;
       this.spans.set(span.callId, {
         ...span,
-        status: span.kind === "commentary" ? "ok" : "error",
+        status: span.kind === "commentary" || span.kind === "plan" ? "ok" : "error",
         endedAt: Math.max(span.startedAt, atMs),
         durationMs: Math.max(0, atMs - span.startedAt),
         output: span.output ?? "The turn ended before this finished.",

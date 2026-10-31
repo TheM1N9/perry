@@ -48,7 +48,7 @@ const STATUS_FILTERS = [
   { value: "rejected", label: "Rejected" },
 ];
 const SPAN_KINDS: Record<SpanView["kind"], string> = {
-  command: "shell", fileChange: "files", mcpToolCall: "tool", dynamicToolCall: "tool", webSearch: "search", imageGeneration: "image", commentary: "Updates", reasoning: "thinking",
+  command: "shell", fileChange: "files", mcpToolCall: "tool", dynamicToolCall: "tool", webSearch: "search", imageGeneration: "image", commentary: "Updates", reasoning: "thinking", plan: "plan",
 };
 
 /** Every run: what it was asked, which tools it used, what it cost, and where it failed. The messages stay in the chat. */
