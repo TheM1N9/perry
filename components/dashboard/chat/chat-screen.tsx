@@ -108,7 +108,7 @@ async function store(file: File, uploadId?: string, signal?: AbortSignal): Promi
 export function ChatScreen() {
   const { dashboardKey } = useSession();
   const router = useRouter();
-  const params = useParams<{ id?: string }>();
+  const params = useParams<{ id?: string }>()!;
   const paramId = (params.id ? decodeURIComponent(params.id) : null) as ChatId | null;
   /** A chat made from /chat by its first message, until the address catches up. */
   const [createdId, setCreatedId] = useState<ChatId | null>(null);
@@ -224,7 +224,7 @@ export function ChatScreen() {
     if (!paramId) window.setTimeout(() => composer.current?.focus(), 0);
   }, [paramId]);
   // Needs you starts an answer here with ?draft=, which is taken in, then out of the address.
-  const search = useSearchParams();
+  const search = useSearchParams()!;
   const handed = search.get("draft");
   // A new chat started inside a project (?project=) is in it from its first message.
   const inProject = paramId ? null : search.get("project");

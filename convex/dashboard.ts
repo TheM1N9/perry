@@ -161,6 +161,7 @@ export type ChatSummary = {
   parentConversationId?: Id<"conversations">;
   branchedFromMessageId?: string;
   status: ChatStatus;
+  replyCompleted?: boolean;
   pinned: boolean;
   /** Set on the chat where a scheduled job's results collect. */
   jobId?: Id<"jobs">;
@@ -210,6 +211,7 @@ export const listChats = query({
         parentConversationId: chat.parentConversationId ?? (chat.taskId ? tasks.get(chat.taskId)?.origin : undefined),
         branchedFromMessageId: chat.branchedFromMessageId,
         status: chat.providerAgent ? (chat.providerAgent.status === "running" ? "running" : chat.providerAgent.status === "failed" ? "error" : "idle") : asking.has(chat._id) ? "needs-approval" : running ? "running" : latestRun?.status === "error" && latestRun.error !== STOPPED ? "error" : "idle",
+        replyCompleted: chat.providerAgent ? chat.providerAgent.status === "done" : latestRun?.status === "ok",
         pinned: chat.pinnedAt !== undefined,
         jobId: chat.jobId,
         taskId: chat.taskId,
@@ -442,12 +444,11 @@ export const searchChats = action({
     const snippets = new Map<string, string>(messages.map((message) => [message.threadId, message.text ?? ""]));
     return chats.filter((chat) =>
       titleOf(chat).toLocaleLowerCase().includes(needle) || snippets.has(chat.threadId),
-    ).slice(0, 30).map((chat) => ({
-      id: chat._id,
-      title: titleOf(chat),
-      snippet: snippets.get(chat.threadId)?.slice(0, 160) ?? "",
-      lastMessageAt: chat.lastMessageAt,
-    }));
+    ).slice(0, 30).map((chat) => {
+      const text = questionAnswerText(snippets.get(chat.threadId) ?? "");
+      const start = Math.max(0, text.toLocaleLowerCase().indexOf(needle) - 50);
+      return { id: chat._id, title: titleOf(chat), snippet: text.slice(start, start + 160), lastMessageAt: chat.lastMessageAt };
+    });
   },
 });
 

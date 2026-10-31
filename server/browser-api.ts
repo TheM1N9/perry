@@ -7,7 +7,7 @@ export class BrowserDenied extends Error {
 }
 const loopback = (url: URL) => ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
 /** Owner bearer key + same-origin protected transport. Pet keys and arbitrary pages cannot call this. */
-export async function authorizeBrowser(request: Request, conversationId: string) {
+export async function authorizeBrowser(request: Request, conversationId: string, peerAddress?: string) {
   if (!isAdmin(request)) throw new BrowserDenied("Unlock the owner dashboard first.", 401);
   const url = new URL(request.url);
   const origin = request.headers.get("origin");
@@ -22,7 +22,8 @@ export async function authorizeBrowser(request: Request, conversationId: string)
   const chat = z.object({ contact: z.unknown().optional() }).parse((await backend().runQuery("dashboard:getChat", { key: request.headers.get("x-perry-key"), id: conversationId })).value);
   if (chat.contact) throw new BrowserDenied("The owner's browser is unavailable in contact chats.", 403);
   const forwarded = request.headers.get("x-forwarded-for")?.split(",").map((value) => value.trim()) ?? [];
-  const localTransport = loopback(dashboard) && forwarded.every((address) => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address));
+  const localAddress = (address: string) => ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address);
+  const localTransport = Boolean(peerAddress && localAddress(peerAddress)) && loopback(dashboard) && forwarded.every(localAddress);
   return { importEnabled: localTransport };
 }
 export function browserFailure(error: unknown) {

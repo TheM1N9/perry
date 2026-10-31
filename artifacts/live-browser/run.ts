@@ -43,7 +43,7 @@ const site = `http://127.0.0.1:${address.port}`;
 const browser = await import("../../convex/lib/browser");
 const { backend } = await import("../../server/index");
 const { controlBrowser, browserStatus } = await import("../../server/browser-host");
-const { POST } = await import("../../app/api/browser/route");
+const { POST } = await import("../../server/browser-routes/control");
 const sessions = await import("../../server/browser-sessions");
 const { browserIdentity, browserState, importPreview, importProfile, importResult } = await import("../../lib/browser-protocol");
 const { modules } = await import("../../server/modules");
@@ -71,7 +71,7 @@ async function denied(work: () => Promise<unknown>) { let refused = false; try {
 function identity() { return browserIdentity.parse(browser.identity(chat)); }
 async function owner(request: Parameters<typeof controlBrowser>[1]) { return controlBrowser(chat, request, true); }
 async function route(body: unknown, headers: Record<string, string> = {}, url = "http://localhost:7377/api/browser") {
-  return POST(new Request(url, { method: "POST", headers: { "content-type": "application/json", origin: new URL(url).origin, "x-perry-key": key, ...headers }, body: JSON.stringify(body) }));
+  return POST(new Request(url, { method: "POST", headers: { "content-type": "application/json", origin: new URL(url).origin, "x-perry-key": key, ...headers }, body: JSON.stringify(body) }), "127.0.0.1");
 }
 try {
   await check("owner auth, same-origin, insecure remote, and unknown chat denied", async () => {
@@ -141,7 +141,7 @@ try {
     await owner({ action: "navigate", identity: identity(), url: site });
     await browser.withOwnerBrowser(chat, () => browser.hostCommand("Runtime.evaluate", { expression: "document.querySelector('input[type=file]').click()", userGesture: true }));
     await waitFor(() => browser.browserControl(chat).upload !== null);
-    const { POST: upload } = await import("../../app/api/browser/upload/route");
+    const { POST: upload } = await import("../../server/browser-routes/upload");
     const response = await upload(new Request("http://localhost:7377/api/browser/upload", { method: "POST", headers: { origin: "http://localhost:7377", "x-perry-key": key, "x-perry-chat": chat, "x-browser-identity": JSON.stringify(identity()), "x-file-name": "owner-upload.txt" }, body: "upload fixture" }));
     expect(response.ok, "Manual upload rejected.");
     const files = z.object({ result: z.object({ value: z.string() }) }).parse(await browser.withOwnerBrowser(chat, () => browser.hostCommand("Runtime.evaluate", { expression: "document.querySelector('input[type=file]').files[0].name", returnByValue: true })));

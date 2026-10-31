@@ -202,7 +202,7 @@ try {
   await click("[data-chat-panel-toggle]");
   await settle();
   const opened = await panel();
-  check("toggleOpensDockedLauncher", opened.mode === "docked" && opened.open && !opened.inert && opened.pressed === "true" && opened.launcher === "DFBW"
+  check("toggleOpensDockedLauncher", opened.mode === "docked" && opened.open && !opened.inert && opened.pressed === "true" && opened.launcher === "DFBAW"
     && opened.tabs.length === 0 && opened.focus === "launcher" && opened.width === 540, opened);
   check("chatNarrowsWhenDocked", opened.chatWidth <= closed.chatWidth - 500 && opened.chatWidth >= 360, { closed: closed.chatWidth, opened: opened.chatWidth });
   await shot("launcher-light.png");

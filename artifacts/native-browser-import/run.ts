@@ -39,7 +39,7 @@ const { importKeys, clearImportKeys } = await import("../../server/browser-impor
 const { controlBrowser } = await import("../../server/browser-host");
 const { browserState } = await import("../../lib/browser-protocol");
 const { backend } = await import("../../server/index");
-const { POST } = await import("../../app/api/browser/route");
+const { POST } = await import("../../server/browser-routes/control");
 try {
   source = spawn(process.env.PERRY_BROWSER_PATH, [`--user-data-dir=${sourceRoot}`, "--remote-debugging-port=0", "--headless=new", "--no-first-run", "about:blank"], { windowsHide: true, stdio: "ignore" });
   await wait(() => existsSync(join(sourceRoot, "DevToolsActivePort")));
@@ -64,7 +64,7 @@ try {
   runtime = backend();
   chat = await runtime.runMutation("dashboard:createChat", { key }) as string;
   other = await runtime.runMutation("dashboard:createChat", { key }) as string;
-  const route = (request: object, id = chat, origin = "http://localhost:7377", bearer = key) => POST(new Request(`${origin}/api/browser`, { method: "POST", headers: { "content-type": "application/json", origin, "x-perry-key": bearer }, body: JSON.stringify({ conversationId: id, request }) }));
+  const route = (request: object, id = chat, origin = "http://localhost:7377", bearer = key) => POST(new Request(`${origin}/api/browser`, { method: "POST", headers: { "content-type": "application/json", origin, "x-perry-key": bearer }, body: JSON.stringify({ conversationId: id, request }) }), "127.0.0.1");
   check("personal Chrome attachment is disabled", !(await route({ action: "connectChrome" })).ok);
   check("wrong owner key denied", (await route({ action: "nativeProfiles" }, chat, "http://localhost:7377", "wrong")).status === 401);
   check("remote native import denied", !(await route({ action: "nativeProfiles" }, chat, "https://example.test")).ok);

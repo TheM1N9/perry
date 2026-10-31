@@ -9,11 +9,10 @@ import { authorizeBrowser, browserFailure } from "@/server/browser-api";
 import { browserStatus } from "@/server/browser-host";
 import { backend } from "@/server/index";
 
-export const runtime = "nodejs";
-export async function POST(request: Request) {
+export async function POST(request: Request, peerAddress?: string) {
   try {
     const scope = request.headers.get("x-perry-chat") ?? "";
-    const { importEnabled } = await authorizeBrowser(request, scope);
+    const { importEnabled } = await authorizeBrowser(request, scope, peerAddress);
     const expected = browserIdentity.parse(JSON.parse(request.headers.get("x-browser-identity") ?? "null"));
     browser.checkIdentity(expected, scope);
     const state = browser.browserControl(scope);

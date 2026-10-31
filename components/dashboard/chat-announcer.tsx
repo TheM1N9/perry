@@ -72,7 +72,7 @@ export function ChatsAnnouncer({ chats, openId }: { chats: ChatSummary[] | undef
     const lines = chats.flatMap((chat) => {
       const from = before.get(chat.id);
       if (from === undefined || from === chat.status) return [];
-      if (chat.status === "idle" && (from === "running" || from === "needs-approval")) {
+      if (chat.status === "idle" && chat.replyCompleted && (from === "running" || from === "needs-approval")) {
         toast.success("Reply ready", {
           id: `chat-done:${chat.id}`,
           description: chat.title || "Your chat",
@@ -82,7 +82,7 @@ export function ChatsAnnouncer({ chats, openId }: { chats: ChatSummary[] | undef
       }
       if (chat.id === openId) return [];
       const what = chat.status === "needs-approval" ? "needs your approval" : chat.status === "error" ? "failed"
-        : chat.status === "idle" && from === "running" ? "finished" : null;
+        : chat.status === "idle" && from === "running" ? chat.replyCompleted ? "finished" : "stopped" : null;
       return what ? [`${chat.title || "A chat"} ${what}`] : [];
     });
     if (lines.length) announce(lines.join(". "));

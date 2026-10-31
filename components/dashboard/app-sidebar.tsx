@@ -52,7 +52,7 @@ const CHAT_PAGE = 25;
 
 export function AppSidebar() {
   const { dashboardKey } = useSession();
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const palette = usePalette();
   const { setOpenMobile } = useSidebar();
   const { label } = useShortcuts();
